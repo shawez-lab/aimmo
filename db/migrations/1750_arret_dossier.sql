@@ -1,6 +1,6 @@
 -- SV09 · Un dossier de vente peut s'arrêter, et le bien peut en ouvrir un autre [R233].
 -- `sale_files.property_id` portait UNIQUE, que SQLite ne sait pas retirer : la table est refaite, à l'identique, ligne à
--- ligne. Les liens des autres tables sont vérifiés à la fin de la transaction de la migration. L'unicité devient « un
+-- ligne. Les lignes recopiées gardent leurs identifiants : les liens des autres tables restent justes. L'unicité devient « un
 -- seul dossier ouvert par bien », tenue par un déclencheur dont le message contient UNIQUE, comme l'erreur d'avant.
 PRAGMA defer_foreign_keys = ON;
 CREATE TABLE sale_files_refaite (

@@ -432,6 +432,7 @@ export class Commissions {
       `SELECT c.file_id, c.agent_id, c.compromis_on, c.fee_cents, c.fee_charge FROM commissions c
        WHERE c.network_id = ?${own ? ' AND EXISTS (SELECT 1 FROM commission_shares s WHERE s.file_id = c.file_id AND s.beneficiary_id = ?)' : ''}
          AND EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = c.file_id)
+         AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = c.file_id)
        ORDER BY c.compromis_on, c.file_id`,
       own ? [viewer.networkId, viewer.userId] : [viewer.networkId],
     );

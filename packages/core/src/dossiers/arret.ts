@@ -17,7 +17,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
-import { actorOf, gateSaleFile, openFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
+import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import type { PieceStore } from './pieces.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -58,7 +58,7 @@ export class ArretDossier {
     return { ok: true, value: row ? { reason: row.reason, on: localTime(new Date(row.at), TIME_ZONE).date } : null };
   }
 
-  /** L'agent du bien rapporte l'arrêt. Le bien ne quitte « sous offre » que si aucun autre dossier n'est ouvert. */
+  /** L'agent du bien rapporte l'arrêt : l'arrêt et le statut du bien s'écrivent ensemble. */
   async stop(viewer: Viewer, fileId: string, input: { reason: unknown; proofRef: unknown }): Promise<{ ok: true; value: SaleFileStop } | FileRefusal | FileUnknown | Problem> {
     const g = await gateSaleFile(this.deps(), viewer, fileId, true, 'sale_file_stop');
     if (!g.ok) return g;
@@ -73,9 +73,9 @@ export class ArretDossier {
       const results = await runBatch(this.db, [
         { sql: 'INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES (?, ?, ?, ?, ?, ?)', params: [fileId, g.file.network_id, reason, input.proofRef, at, actorOf(viewer)] },
         {
-          sql: `UPDATE properties SET status = 'draft', updated_at = ? WHERE id = ? AND status = 'under_offer'
-                AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND ${openFile('f')})`,
-          params: [at, g.file.property_id, g.file.property_id],
+          // Ce dossier était le seul ouvert du bien, la base le garantit : rien d'autre ne tient le bien sous offre.
+          sql: "UPDATE properties SET status = 'draft', updated_at = ? WHERE id = ? AND status = 'under_offer'",
+          params: [at, g.file.property_id],
         },
       ]);
       moved = results[1]?.changes === 1;

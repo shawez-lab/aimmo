@@ -34,14 +34,14 @@ export interface OfferStepFacts {
   transmitted: boolean;
   /** La dernière proposition de la chaîne, ou null. */
   last: Pick<Proposal, 'transmittedAt' | 'response'> | null;
-  file: { compromisStarted: boolean } | null;
+  file: { compromisStarted: boolean; stopped?: boolean } | null;
   /** Une autre offre du bien est déjà acceptée, ou a son dossier. */
   otherTaken: boolean;
 }
 
 /** Le seul prochain pas d'une offre, tiré de ses faits : une fonction pure, sans conseil ni préférence [R57]. */
 export function nextStep(f: OfferStepFacts): OfferNextStep {
-  if (f.file) return f.file.compromisStarted ? 'aucun' : 'preparer_compromis';
+  if (f.file) return f.file.compromisStarted || f.file.stopped ? 'aucun' : 'preparer_compromis';
   // Toute offre reçue est transmise au vendeur, même échue [R56].
   if (!f.transmitted) return 'transmettre';
   if (f.state === 'acceptee') return f.otherTaken ? 'aucun' : 'ouvrir_dossier';
@@ -73,7 +73,7 @@ export interface OfferBoardLine extends ComparisonRow {
   next: OfferNextStep;
   /** La proposition que le prochain pas concerne, s'il y en a une. */
   proposalId: string | null;
-  file: { id: string; compromisStarted: boolean } | null;
+  file: { id: string; compromisStarted: boolean; stopped: boolean } | null;
   history: { at: string; event: string; amountEur?: number }[];
 }
 
@@ -122,7 +122,7 @@ export class SuiviOffres {
       const transmitted = await this.db.first('SELECT offer_id FROM offer_transmissions WHERE offer_id = ?', [offer.id]);
       const fileRow = await this.db.first<{ id: string }>('SELECT id FROM sale_files WHERE offer_id = ?', [offer.id]);
       const file = fileRow
-        ? { id: fileRow.id, compromisStarted: !!(await this.db.first("SELECT file_id FROM sale_file_steps WHERE file_id = ? AND step = 'compromis_en_preparation'", [fileRow.id])) }
+        ? { id: fileRow.id, compromisStarted: !!(await this.db.first("SELECT file_id FROM sale_file_steps WHERE file_id = ? AND step = 'compromis_en_preparation'", [fileRow.id])), stopped: !!(await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileRow.id])) }
         : null;
       const history = await this.contre.history(viewer, offer.id);
       const buyer = await this.buyer(viewer, offer);

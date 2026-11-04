@@ -128,6 +128,7 @@ export class FinancementDossier {
       return { ok: false, rule: 'R16', code: 'not_buyer' };
     }
     if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
+    if (await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'file_stopped' };
     return this.write(file, input, ['step', 'day'], 'acquereur', actor);
   }
 

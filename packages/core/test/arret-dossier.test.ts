@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { ArretDossier, ActeVente, Echeancier, RelancesPieces } from '../src/dossiers/index.ts';
-import { DossiersVente, TransmissionOffres } from '../src/offres/index.ts';
+import { ArretDossier, ActeVente, BouclierFonds, Echeancier, FinancementDossier, RelancesPieces, SALE_FOLLOW_UP_PURPOSE } from '../src/dossiers/index.ts';
+import { DossiersVente, TransmissionOffres, nextStep } from '../src/offres/index.ts';
 import { SqlSourcesAcquereur } from '../src/espaces/index.ts';
 import { Commissions } from '../src/pilotage/commissions.ts';
 import { TableauAgent } from '../src/pilotage/tableau-agent.ts';
@@ -135,8 +135,8 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     const t = await setup();
     await t.db.run("INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES (?, ?, 'autre', ?, 'a', 'b')", [t.fileId, t.network.id, STOP_PROOF]);
     const closing = async (u: { db: typeof t.db; fileId: string; network: { id: string } }) => {
-      const columns = (await u.db.all<{ name: string; notnull: number }>('PRAGMA table_info(sale_file_closings)')).filter((c) => c.notnull);
-      const values: Record<string, string> = { file_id: u.fileId, network_id: u.network.id };
+      const columns = (await u.db.all<{ name: string; notnull: number; pk: number }>('PRAGMA table_info(sale_file_closings)')).filter((c) => c.notnull || c.pk);
+      const values: Record<string, string> = { file_id: u.fileId, network_id: u.network.id, aftersale: 'a_demarrer' };
       return u.db.run(`INSERT INTO sale_file_closings (${columns.map((c) => c.name).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, columns.map((c) => values[c.name] ?? '2027-03-01'));
     };
     await expect(closing(t)).rejects.toThrow(/arrêté/);
@@ -189,6 +189,49 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect(await read()).toBe(true);
     await t.stop();
     expect(await read()).toBe(false);
+  });
+
+  it('[R233] la liste des commissions ne montre plus une commission prévue d’un dossier arrêté', async () => {
+    const t = await withCompromis(false);
+    await t.commissions.sync(t.network.id);
+    const seen = async () => {
+      const r = await t.commissions.list(t.direction);
+      return r.ok && r.value.map((c) => c.fileId);
+    };
+    expect(await seen()).toEqual([t.fileId]);
+    await t.stop();
+    expect(await seen()).toEqual([]);
+  });
+
+  it('[R233] l’acquéreur n’écrit plus sur un dossier arrêté depuis son espace', async () => {
+    const t = await setup();
+    const financement = new FinancementDossier(t.db, t.acces, t.journal, { now: t.now });
+    const declare = () => financement.declareByBuyer(t.network.id, [t.buyerId], t.fileId, { step: 'refus', day: '2027-03-01' }, 'client:essai');
+    await t.stop();
+    expect(await declare()).toMatchObject({ ok: false, code: 'file_stopped' });
+    expect(await t.db.first('SELECT 1 FROM sale_file_financing WHERE file_id = ?', [t.fileId])).toBeNull();
+  });
+
+  it('[R233] un rappel qui attendait ne part plus une fois le dossier arrêté', async () => {
+    const t = await setup();
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'vendeuse@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.personId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    const bouclier = new BouclierFonds(t.db, t.acces, t.journal, { now: t.now });
+    t.setClock(new Date('2027-03-07T21:30:00.000Z')); // Un dimanche soir : le rappel attend [R01].
+    const m = await t.store.recordMessage({ networkId: t.network.id, agentId: t.alexId, personId: t.personId, channel: 'email', direction: 'in', authorKind: 'person', body: 'Le notaire demande un virement sur un autre compte.', occurredAt: t.now() });
+    await bouclier.scan(m.id);
+    const alert = () => t.db.first<{ reminder_status: string | null }>('SELECT reminder_status FROM sale_file_fund_alerts WHERE file_id = ?', [t.fileId]);
+    expect((await alert())?.reminder_status).toBe('waiting');
+    await t.stop();
+    t.setClock(new Date('2027-03-08T09:00:00.000Z'));
+    await bouclier.run(t.network.id, t.now());
+    expect((await alert())?.reminder_status).toBe('waiting');
+    expect(await t.db.all('SELECT 1 FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [t.personId])).toEqual([]);
+  });
+
+  it('[R233] le tableau des offres ne propose plus de préparer le compromis d’un dossier arrêté', () => {
+    expect(nextStep({ state: 'acceptee', transmitted: true, last: null, file: { compromisStarted: false, stopped: true }, otherTaken: false })).toBe('aucun');
+    expect(nextStep({ state: 'acceptee', transmitted: true, last: null, file: { compromisStarted: false }, otherTaken: false })).toBe('preparer_compromis');
   });
 
   it('[R233] l’acquéreur d’un dossier arrêté ne le voit plus avancer dans son espace', async () => {
