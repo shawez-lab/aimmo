@@ -434,7 +434,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       const sold = await w.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [w.propertyId]);
       must(sold?.status === 'sold', `bien vendu attendu, reçu ${String(sold?.status)}`);
       await new Publication(w.db, w.acces, w.journal, { now: w.now, channels: w.portals }).sync(w.network.id, w.propertyId);
-      must(w.portals.every((p) => p.received.at(-1)?.state === 'retiree'), 'l’annonce du bien vendu n’est pas retirée des portails');
+      must(w.portals.every((p) => p.received.at(-1)?.state === 'vendu'), 'les portails ne disent pas le bien vendu');
     },
   },
   {
