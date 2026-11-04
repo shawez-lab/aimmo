@@ -15,6 +15,7 @@ import {
   Visites,
   applyMigrations,
   createCaptation,
+  euros,
   fromSyncSqlite,
   parisInstant,
   type JournalEntry,
@@ -154,18 +155,12 @@ export class TrapChannel implements OutboundChannel {
 export interface JourneyGaps {
   /** SV07 : un contact venu d'un formulaire n'a que son prénom ; rien sur sa fiche ne complète son nom, seul un import CSV le fait. */
   lastName: boolean;
-  /** SV08 : rien ne passe un bien publié à « disponible », et le premier message dit alors qu'il n'est plus en vente. */
-  availableOnceListed: boolean;
 }
 
-const ALL_SHORTCUTS: JourneyGaps = { lastName: true, availableOnceListed: true };
+const ALL_SHORTCUTS: JourneyGaps = { lastName: true };
 
 async function gapLastName(w: JourneyWorld, personId: string, lastName: string): Promise<void> {
   if (w.shortcuts.lastName) await w.db.run('UPDATE persons SET last_name = ? WHERE id = ?', [lastName, personId]);
-}
-
-async function gapAvailableOnceListed(w: JourneyWorld): Promise<void> {
-  if (w.shortcuts.availableOnceListed) await w.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [w.propertyId]);
 }
 
 export async function journeyWorld(shortcuts: JourneyGaps = ALL_SHORTCUTS) {
@@ -314,7 +309,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
   {
     id: 'annonce',
     label: 'L’annonce est validée, puis publiée une fois le délai passé',
-    events: ['annonce.validee', 'annonce.publiee'],
+    events: ['annonce.validee', 'annonce.publiee', 'bien.disponible'],
     async run(w) {
       const annonces = new Annonces(w.db, w.acces, w.journal, { now: w.now });
       const publication = new Publication(w.db, w.acces, w.journal, { now: w.now, channels: w.portals });
@@ -323,11 +318,14 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       // Pendant le délai de rétractation, rien ne sort [R42].
       await publication.sync(w.network.id, w.propertyId);
       must(w.portals.every((p) => p.received.length === 0), 'annonce sortie pendant le délai de rétractation');
+      const held = await w.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [w.propertyId]);
+      must(held?.status === 'draft', 'bien dit disponible pendant le délai de rétractation');
       w.setClock(paris('2027-02-25', '10:00'));
       const r = await publication.sync(w.network.id, w.propertyId);
       must(r.created, 'annonce non publiée après le délai');
       must(w.portals.every((p) => p.received.length === 1), 'un portail n’a pas reçu l’annonce');
-      await gapAvailableOnceListed(w);
+      const listed = await w.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [w.propertyId]);
+      must(listed?.status === 'available', `bien disponible attendu, reçu ${String(listed?.status)}`);
     },
   },
   {
@@ -347,6 +345,9 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       w.buyer = await personOf(w, BUYER_EMAIL);
       const reply = await w.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [w.buyer]);
       must(reply?.body.includes('est disponible'), 'la réponse ne dit pas que le bien publié est disponible');
+      const published = w.portals[0]!.received.at(-1)!.priceEur;
+      must(published !== null && published !== 200000, 'le jeu doit distinguer le prix publié de celui de la fiche');
+      must(reply?.body.includes(euros(published)), 'la réponse ne donne pas le prix de l’annonce');
       const q = await w.db.first<{ category: string }>('SELECT category FROM qualifications WHERE person_id = ?', [w.buyer]);
       must(q?.category === 'buyer', `acquéreur attendu, reçu ${String(q?.category)}`);
       const project = await w.db.first<{ id: string }>("SELECT id FROM projects WHERE person_id = ? AND kind = 'buy'", [w.buyer]);

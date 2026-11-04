@@ -14,6 +14,7 @@
  * recherche a bougé depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
  * direction voit tout le réseau [R16].
  */
+import { shownPrice } from '../biens/prix-publie.ts';
 import type { Acces } from '../acces/acces.ts';
 import { decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -379,7 +380,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: p.price_eur, surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
+    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
   }
 
   /**

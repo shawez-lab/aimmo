@@ -15,6 +15,7 @@
  * calculer (loyer de marché inconnu, barème des frais non réglé, bien sans prix ni surface) ne laisse rien partir ; la
  * commune et le type de logement d'un bien sont dits par son agent, jamais devinés.
  */
+import { shownPrice } from '../biens/prix-publie.ts';
 import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { ALERT_CHANNELS, ALERT_PURPOSE, checkUnsubscribeBase, newUnsubscribeLine } from '../acquereurs/alertes.ts';
@@ -155,6 +156,7 @@ export class AlertesInvestisseurs {
         WHERE p.id = ? AND p.network_id = ? AND p.status = 'available'`,
       [propertyId, networkId],
     );
+    if (property) property.price_eur = await shownPrice(this.db, propertyId, property.price_eur);
     if (!property || property.price_eur === null || property.price_eur <= 0) return [];
     if (!(await this.gate.canDiffuse(networkId, propertyId, this.now())).allowed) return [];
     const projects = await this.db.all<{ id: string; person_id: string; agent_id: string | null }>(

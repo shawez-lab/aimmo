@@ -23,6 +23,7 @@ import { PremiereReponse, type ReplyWriter } from './premiere-reponse.ts';
 import { ConversationRelais, type RelayOutcome } from './relais.ts';
 import { appendEvent } from '../journal/journal.ts';
 import { Attribution } from '../qualification/attribution.ts';
+import { Diffusion } from '../documents/retractation.ts';
 import { Qualification, type Qualifier } from '../qualification/qualification.ts';
 import { Rappels } from '../qualification/rappel.ts';
 import { FicheAcquereur } from '../acquereurs/fiche-acquereur.ts';
@@ -214,8 +215,11 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
     ...(options.channels ? {} : { staging: new PaliersCanaux(db, journal, { now, realChannels: options.realChannels ?? [] }) }),
     now,
   });
-  const premiere = new PremiereReponse(db, fiche, reception, new ReconnaissanceBien(db), controle, options.writer ? { writer: options.writer } : {});
   const acces = new Acces(db, store, fiche, journal, { now });
+  const premiere = new PremiereReponse(db, fiche, reception, new ReconnaissanceBien(db), controle, {
+    ...(options.writer ? { writer: options.writer } : {}),
+    diffusion: new Diffusion(db, acces, journal, { now }),
+  });
   const relais = new ConversationRelais(db, store, fiche, reception, premiere, acces, { now });
   const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, {
     now,
