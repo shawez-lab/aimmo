@@ -3671,9 +3671,18 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### IN15 · Les engagements manqués à rappeler, à l'écran
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-04)
+- Reste : fusionnée (#366). Relecture forte 3 P1 corrigés ; Codex non attendu (H03). Depuis le réseau, la fiche porte « Retour au réseau » : « Retour à ma journée » faisait effacer la clé de la direction. Le script des finances ne sert plus ses retraits ni ses commentaires, pour tenir son budget. Les boutons d'une ligne se touchent sur téléphone : l'écart est dans la feuille de style du socle, voie 1.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : IN12
 - Cahier : Besoins et solutions, « Le bouche-à-oreille » ; R201.
 - Objectif : dans `finances.js`, sur « Le réseau » : la direction lit les rappels à faire, ouvre la fiche, et dit rappelé, injoignable ou sans appel, en un geste.
 - Critères : « ne pas appeler » dit, sans bouton « rappelé » (test) ; droits [R16] (test) ; réponse perdue dite telle (test) ; déconnexion et réponse en vol (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### IN16 · Un écart entre les boutons d'une ligne de liste
+- Statut : à faire
+- Qui : Claude, voie 1 (feuille de style de l'application, fichier du socle) · Relecture : normale · Dépend de : IN15
+- Cahier : Le produit, système de design ; R201.
+- Objectif : trouvé par IN15 : dans `.liste`, deux boutons sur un même rang se touchent à la largeur d'un téléphone (« Voir la fiche » et « Rappelé », par exemple). Leur donner un écart, sans changer leur taille.
+- Critères : la règle d'écart est dans la feuille servie (test) ; budget tenu [R201] (test).
 - Attend : rien.

@@ -603,3 +603,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 01:20 · SV03 · le test de restauration du mois, son reçu et la preuve à l'écran de la direction, éteint jusqu'à H50 (#365) ; relecture forte 4 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV04
 - 2026-11-04 01:20 · voie 1 · fin de séance : SV02 et SV03 fusionnées ; verrou libéré, relance · prochaine : SV04
 - 2026-11-04 01:20 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra SV04 · prochaine : SV04
+- 2026-11-04 01:45 · IN15 · les rappels à faire à l'écran de la direction, « ne pas appeler » sans bouton « Rappelé », retour de la fiche au réseau sans perdre la clé (#366) ; relecture forte 3 P1 corrigés ; budget du script des finances retrouvé ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : aucune pour la voie 2
+- 2026-11-04 01:45 · voie 2 · plus rien de faisable : tous les modules sont découpés ; restent SV04 (en cours, voie 1), IN16 (voie 1), et ce qui attend un humain (B04 après H37, C09, SV05) ; verrou libéré
+- 2026-11-04 01:45 · VOIE 2 : IN15, #366, relancé non (les trois questions du plafond répondent oui, mais il ne reste aucune tâche à la voie 2)
