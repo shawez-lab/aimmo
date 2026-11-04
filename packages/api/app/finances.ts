@@ -1114,4 +1114,7 @@ globalThis.AIMMO_FINANCES = function (t) {
   }
   return { report: report, commissions: commissions, path: path, settings: settings, invoices: invoices, exportInvoices: exportInvoices };
 };
-`;
+`
+  // Les retraits et les commentaires ne partent pas chez le client : ce script a son budget [R201]. Une chaîne ne tient que sur une ligne.
+  .replace(/^[ \t]+/gm, '')
+  .replace(/^\/\*.*\*\/\n/gm, '');
