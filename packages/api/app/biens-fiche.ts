@@ -23,8 +23,19 @@ const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_name: 'Un nom : des lettres, sans chiffre ni adresse.',
   no_name: 'Écrivez le nom à ajouter.',
   already_named: 'Ce nom est déjà écrit sur la fiche : il ne se remplace pas ici.',
+  bad_reason: 'Choisissez le motif de la correction.',
+  name_required: 'Une fiche garde au moins un prénom ou un nom.',
+  name_on_merged_fiche: 'Une fiche réunie porte ce nom : écrivez le bon plutôt que de le vider.',
+  name_changed: 'Ce nom vient de changer : relisez la fiche, puis recommencez.',
   no_agent: 'Cette fiche n’a pas encore d’agent : attribuez-la d’abord.',
   agent_file_incomplete: 'Votre dossier d’agent n’est pas complet : le bien ne peut pas être créé.',
+});
+
+export const CORRECTION_REASONS: Readonly<Record<string, string>> = Object.freeze({
+  faute_de_frappe: 'Faute de frappe',
+  nom_dans_prenom: 'Nom écrit à la place du prénom',
+  demande_de_la_personne: 'Demande de la personne',
+  etat_civil: 'Changement d’état civil',
 });
 
 export const BIENS_FICHE_SCRIPT = `'use strict';
@@ -32,6 +43,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
   var el = t.el;
   var KINDS = ${JSON.stringify(KIND_LABELS)};
   var CODES = ${JSON.stringify(CODES)};
+  var REASONS = ${JSON.stringify(CORRECTION_REASONS)};
   var LOST = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez sans changer la saisie : il ne sera pas créé deux fois.';
   function line(b) {
     var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? b.surfaceM2 + ' m²' : null].filter(Boolean).join(', ');
@@ -86,8 +98,52 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(form);
     box.appendChild(section);
   }
+  function who(a, b) { return [a, b].filter(Boolean).join(' ') || 'sans nom'; }
+  function correctionBlock(box, personId, f) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Corriger le nom'));
+    section.appendChild(el('p', 'Le nom d’avant reste lisible ici. Les documents déjà générés ne changent pas.', 'doux'));
+    var form = el('div', null, 'decision');
+    var id = t.cSeq();
+    var state = t.cState();
+    var first = field(form, id + '-prenom', 'Prénom', false);
+    first.value = f.firstName || '';
+    var last = field(form, id + '-nom', 'Nom de famille', false);
+    last.value = f.lastName || '';
+    var reason = t.cSelect(form, id + '-motif', 'Motif', REASONS, 'faute_de_frappe');
+    form.appendChild(t.accordButton('Corriger le nom', function () {
+      state.textContent = 'Enregistrement…';
+      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/nom/corrections', 'POST', { firstName: first.value.trim() || null, lastName: last.value.trim() || null, reason: reason.value }).then(function (res) {
+        if (res.gone) return false;
+        if (!res.ok) {
+          var code = res.body && res.body.code;
+          if (CODES[code]) { state.textContent = CODES[code]; return false; }
+          if (res.offline || res.status >= 500 || !res.body) { state.textContent = 'La réponse n’est pas arrivée : le nom est peut-être corrigé. Réessayez sans changer la saisie.'; return false; }
+          return t.accordFailed(res, personId, state, 'Le nom n’est pas corrigé : réessayez.');
+        }
+        return t.openFiche(personId).then(function (read) {
+          if (read) t.$('fiche-etat').textContent = res.body.data.changed ? 'Nom corrigé.' : 'Le nom était déjà celui-ci.';
+          return read;
+        });
+      });
+    }));
+    form.appendChild(state);
+    section.appendChild(form);
+    var history = el('ul');
+    section.appendChild(history);
+    box.appendChild(section);
+    t.send('/v1/fiches/' + encodeURIComponent(personId) + '/nom/corrections', 'GET').then(function (res) {
+      if (res.gone) return;
+      if (!res.ok) { state.textContent = 'Les corrections d’avant n’ont pas pu être lues.'; return; }
+      (res.body.data || []).forEach(function (c) {
+        history.appendChild(el('li', String(c.at).slice(0, 10) + ' : ' + who(c.oldFirstName, c.oldLastName) + ' devient ' + who(c.newFirstName, c.newLastName) + ' (' + (REASONS[c.reason] || 'motif inconnu') + ').'));
+      });
+    });
+  }
   return function (box, personId, f) {
-    if (f && (!f.firstName || !f.lastName)) nameBlock(box, personId, f);
+    // La direction corrige ce qui est écrit ; une fiche sans aucun nom se remplit, avec ou sans elle.
+    if (f && f.nameCorrectable === true && (f.firstName || f.lastName)) correctionBlock(box, personId, f);
+    else if (f && (!f.firstName || !f.lastName)) nameBlock(box, personId, f);
     var section = el('section', null, 'bloc');
     section.appendChild(el('h3', 'Biens du client'));
     var list = el('ul');

@@ -286,6 +286,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
 export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // relation-clients
   persons: { locate: by('id') },
+  person_name_corrections: { locate: by('person_id') },
   person_identifiers: { locate: by('person_id') },
   consents: { locate: by('person_id') },
   exclusions: { locate: by('person_id') },

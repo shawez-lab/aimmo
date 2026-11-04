@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, NEW_PROPERTY_KINDS, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '@aimmo/core';
-import { BIENS_FICHE_SCRIPT, KIND_LABELS } from '../app/biens-fiche.ts';
+import { Acces, FicheClient, FicheUnique, NAME_CORRECTION_REASONS, NEW_PROPERTY_KINDS, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '@aimmo/core';
+import { BIENS_FICHE_SCRIPT, CORRECTION_REASONS, KIND_LABELS } from '../app/biens-fiche.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
 import { biensFicheRoutes, type BiensFicheServices } from '../src/biens-fiche.ts';
@@ -283,6 +283,62 @@ describe('SV06 · le bloc de la fiche', () => {
       named(lost)[0]!.listeners.click!({});
       await lost.tick();
       expect(lost.body.textContent).toContain('le nom est peut-être écrit');
+    });
+  });
+
+  describe('SV10 · la direction corrige un nom', () => {
+    const CORR = `/v1/fiches/${ID}/nom/corrections`;
+    const FULL = { ...FICHE, lastName: 'Exemple', nameCorrectable: true };
+    const button = (a: Awaited<ReturnType<typeof opened>>) => a.named(a.body, 'Corriger le nom');
+    const PAST = { id: 'c1', oldFirstName: 'Léo', oldLastName: 'Exempel', newFirstName: 'Client', newLastName: 'Exemple', reason: 'faute_de_frappe', actor: 'direction:d', at: '2027-01-02T10:00:00.000Z' };
+    const press = async (a: Awaited<ReturnType<typeof opened>>) => {
+      button(a)[0]!.listeners.click!({});
+      await a.tick();
+    };
+
+    it('[R16] l’agent ne voit ni le bloc ni l’appel : il ne dépend que de ce que dit le serveur', async () => {
+      const a = await opened({ [`/v1/fiches/${ID}/resume`]: ok({ ...FICHE, lastName: 'Exemple' }) });
+      await a.load();
+      expect(button(a)).toHaveLength(0);
+      expect(a.calls.some((c) => c.url === CORR)).toBe(false);
+    });
+
+    it('[R17] la direction lit les valeurs d’avant ; les champs portent leur libellé et la valeur en vigueur', async () => {
+      const a = await opened({ [`/v1/fiches/${ID}/resume`]: ok(FULL), [CORR]: ok([PAST]) });
+      await a.load();
+      expect(button(a)).toHaveLength(1);
+      expect(a.body.textContent).toContain('2027-01-02 : Léo Exempel devient Client Exemple (Faute de frappe).');
+      expect(a.input('-nom').value).toBe('Exemple');
+      const motif = a.body.all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-motif'))!;
+      expect(a.body.all().some((l) => l.tagName === 'label' && l.attributes.for === motif.attributes.id)).toBe(true);
+    });
+
+    it('la correction part avec son motif, un champ vidé part nul, puis la fiche est relue', async () => {
+      const a = await opened({ [`/v1/fiches/${ID}/resume`]: ok(FULL), [CORR]: async (init) => (init.method === 'POST' ? Response.json({ ok: true, data: { firstName: null, lastName: 'Client', changed: true } }) : Response.json({ ok: true, data: [] })) });
+      await a.load();
+      a.input('-prenom').value = '  ';
+      a.input('-nom').value = 'Client';
+      await press(a);
+      const post = a.calls.find((c) => c.method === 'POST' && c.url === CORR)!;
+      expect(post.body).toEqual({ firstName: null, lastName: 'Client', reason: 'faute_de_frappe' });
+      expect(a.calls.filter((c) => c.method === 'POST' && c.url === CORR)).toHaveLength(1);
+      expect(a.calls.filter((c) => c.url === `/v1/fiches/${ID}/resume`)).toHaveLength(2);
+    });
+
+    it('un refus et une réponse perdue se disent, sans se dire faits', async () => {
+      const refusal = await opened({ [`/v1/fiches/${ID}/resume`]: ok(FULL), [CORR]: async (init) => (init.method === 'POST' ? Response.json({ ok: false, code: 'name_changed' }, { status: 409 }) : Response.json({ ok: true, data: [] })) });
+      await refusal.load();
+      await press(refusal);
+      expect(refusal.body.textContent).toContain('Ce nom vient de changer');
+      const lost = await opened({ [`/v1/fiches/${ID}/resume`]: ok(FULL), [CORR]: async (init) => (init.method === 'POST' ? new Response('panne', { status: 500 }) : Response.json({ ok: true, data: [] })) });
+      await lost.load();
+      await press(lost);
+      expect(lost.body.textContent).toContain('le nom est peut-être corrigé');
+    });
+
+    it('les motifs de l’écran sont ceux du socle ; [R201] le script tient son budget', () => {
+      expect(Object.keys(CORRECTION_REASONS).sort()).toEqual([...NAME_CORRECTION_REASONS].sort());
+      expect(budgetProblems({ html: '', js: BIENS_FICHE_SCRIPT }, BUDGETS.page)).toEqual([]);
     });
   });
 
