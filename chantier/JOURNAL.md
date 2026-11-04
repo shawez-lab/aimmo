@@ -610,3 +610,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 01:54 · VOIE 2 : aucune tâche, rien, relancé non (il ne reste aucune tâche à la voie 2)
 - 2026-11-04 02:04 · SV04 · le parcours complet fictif passe en 11 étapes et tourne chaque mois ; il a trouvé trois trous du produit : SV08, SV06, SV07 (#367) ; relecture forte 3 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV08
 - 2026-11-04 02:26 · SV08 · un bien publié devient disponible, le premier message et les alertes le disent, au prix de l'annonce (#368) ; relecture forte 2 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV06
+- 2026-11-04 02:54 · voie 2 · plus rien de faisable : les tâches ouvertes sont à la voie 1 ou attendent un humain ; SV06 en cours (#369), SV07 (touche `parcours-complet.ts` et `app.ts`, déjà changés par #369) et IN16 (socle) restent à la voie 1 ; B04, C09, W23, X17 et SV05 attendent H37, H14, H05, H06, H13, H43, H24, H29, H50 ; verrou libéré · prochaine : aucune pour la voie 2
+- 2026-11-04 02:54 · VOIE 2 : relance refusée, question 2 (les deux dernières séances voie 2 n'ont produit aucun commit de code ni tâche terminée)
+- 2026-11-04 02:54 · VOIE 2 : aucune tâche, rien, relancé non
