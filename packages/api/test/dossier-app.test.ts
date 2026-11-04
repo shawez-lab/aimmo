@@ -32,6 +32,7 @@ const READS: Record<string, Answer> = {
   'GET /v1/dossiers/f1/pieces': ok(PIECES),
   'GET /v1/dossiers/f1/echeancier': ok(SCHEDULE),
   'GET /v1/dossiers/f1/acte': ok(null),
+  'GET /v1/dossiers/f1/arret': ok(null),
   'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: true, steps: [] }),
 };
 const BASE: Record<string, Answer> = {
@@ -142,6 +143,29 @@ describe('N12 · écran du dossier de vente', () => {
     expect(text).not.toContain('Ce qui tient le dossier');
     expect(t.find(t.body(), 'Ranger la pièce')).toBeUndefined();
     expect(text).toContain('Pièces reçues : 1 sur 2');
+  });
+
+  it('[R233] un dossier arrêté le dit, sans chemin ni geste ; l’arrêt demande raison, preuve et confirmation', async () => {
+    const off = await run({ 'GET /v1/dossiers/f1/arret': ok({ reason: 'pret_refuse', on: '2027-03-20' }) });
+    await off.open();
+    expect(off.body().textContent).toContain('Prêt refusé, le 20 mars 2027.');
+    expect(off.body().textContent).not.toContain('Ce qui tient le dossier');
+    for (const b of ['Ranger la pièce', 'Ranger la date', 'Arrêter ce dossier']) expect(off.find(off.body(), b)).toBeUndefined();
+    const ref = 'preuves/0b6f1d2e-4444-4a2b-8c3d-000000000001.pdf';
+    const t = await run({ 'POST /v1/dossiers/f1/preuves': ok({ ref }), 'POST /v1/dossiers/f1/arret': ok({ reason: 'autre', on: '2027-03-20' }) });
+    await t.open();
+    const stop = () => t.find(t.body(), 'Arrêter ce dossier');
+    await t.click(stop());
+    expect(t.state()).toBe('Choisissez la raison.');
+    t.input('dossier-arret-raison').value = 'pret_refuse';
+    await t.click(stop());
+    expect(t.state()).toBe('Joignez la preuve de l’arrêt.');
+    t.input('dossier-arret-preuve').files = [pdf()];
+    await t.click(stop());
+    expect(t.state()).toContain('cela ne se défait pas');
+    expect(t.posts().filter((c) => c.url.endsWith('/arret'))).toEqual([]);
+    await t.click(t.find(t.body(), 'Confirmer l’arrêt : Prêt refusé'));
+    expect(t.posts().filter((c) => c.url.endsWith('/arret')).map((c) => c.body)).toEqual([{ reason: 'pret_refuse', proofRef: ref }]);
   });
 
   it('[R15] la pièce se choisit dans la liste attendue : aucune pièce d’identité, aucune référence à saisir', async () => {

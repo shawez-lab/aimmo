@@ -22,8 +22,11 @@ export interface SaleFileRow {
 }
 
 export type FileRefusal = { ok: false; rule: 'R16'; code: string };
-export type FileUnknown = { ok: false; rule: null; code: 'unknown_file' };
+export type FileUnknown = { ok: false; rule: null; code: 'unknown_file' | 'file_stopped' };
 export type FileGate = { ok: true; file: SaleFileRow; kind: PropertyKind; agentId: string | null } | FileRefusal | FileUnknown;
+
+/** La condition SQL d'un dossier encore ouvert : il n'a pas d'arrêt [R233]. `f` est l'alias de `sale_files`. */
+export const openFile = (f: string): string => `NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = ${f}.id)`;
 
 export const actorOf = (viewer: Viewer): string => `${String(viewer.role)}:${viewer.userId}`;
 
@@ -52,5 +55,7 @@ export async function gateSaleFile(
   }
   if (p.view !== 'full') return refuseFile(deps.journal, deps.now, viewer, fileId, kind, 'not_assigned');
   if (write && (viewer.role !== 'agent' || viewer.userId !== p.value.agent_id)) return refuseFile(deps.journal, deps.now, viewer, fileId, kind, 'role');
+  // Un dossier arrêté reste lisible et ne reçoit plus rien [R233].
+  if (write && (await deps.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileId]))) return { ok: false, rule: null, code: 'file_stopped' };
   return { ok: true, file, kind: p.value.kind as PropertyKind, agentId: p.value.agent_id };
 }

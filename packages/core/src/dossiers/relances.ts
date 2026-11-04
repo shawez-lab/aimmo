@@ -30,7 +30,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
 import { SELLER_UPDATE_PURPOSE, nameWords } from '../visites/compte-rendu.ts';
-import { gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
+import { gateSaleFile, openFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import { fundsInOutgoing } from './bouclier.ts';
 import { PiecesDossier, type Piece, type PieceStore } from './pieces.ts';
 
@@ -150,7 +150,7 @@ export class RelancesPieces {
     await this.db.run("UPDATE sale_file_reminders SET status = 'closed', rule = 'jour_passe', updated_at = ? WHERE network_id = ? AND status IN ('waiting', 'failed') AND day < ?", [this.now().toISOString(), networkId, today]);
     const files = await this.db.all<{ id: string; property_id: string; buyer_person_id: string; agent_id: string | null; city: string | null; reference: string }>(
       `SELECT f.id, f.property_id, f.buyer_person_id, p.agent_id, p.city, p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id
-       WHERE f.network_id = ? AND p.status = 'under_offer' ORDER BY f.opened_at, f.id`,
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND ${openFile('f')} ORDER BY f.opened_at, f.id`,
       [networkId],
     );
     let sent = 0;

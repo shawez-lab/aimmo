@@ -27,6 +27,7 @@ import { mandateFeeAt } from '../dossiers/acte.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { openFile } from '../dossiers/acces-dossier.ts';
 
 export const COMMISSION_STATUSES = ['prevue', 'due', 'facturee', 'payee'] as const;
 export type CommissionStatus = (typeof COMMISSION_STATUSES)[number];
@@ -276,7 +277,7 @@ export class Commissions {
          JOIN properties p ON p.id = f.property_id
          JOIN sale_file_dates d ON d.file_id = f.id AND d.kind = 'compromis_signe'
            AND d.version = (SELECT MAX(version) FROM sale_file_dates WHERE file_id = f.id AND kind = 'compromis_signe')
-       WHERE f.network_id = ? AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
+       WHERE f.network_id = ? AND ${openFile('f')} AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
        ORDER BY f.opened_at, f.id`,
       [networkId],
     );
@@ -400,7 +401,7 @@ export class Commissions {
     const refusal = await this.readerRefusal(viewer);
     if (refusal) return this.refuse(viewer, 'commissions_blocked', refusal);
     const rows = await this.db.all<{ id: string }>(
-      `SELECT f.id FROM sale_files f WHERE f.network_id = ?
+      `SELECT f.id FROM sale_files f WHERE f.network_id = ? AND ${openFile('f')}
          AND EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe')
          AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
        UNION

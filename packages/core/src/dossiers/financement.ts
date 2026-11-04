@@ -19,7 +19,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
+import { actorOf, gateSaleFile, openFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import { Echeancier, addDays } from './echeancier.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -167,7 +167,7 @@ export class FinancementDossier {
     const today = localTime(this.now(), TIME_ZONE).date;
     const files = await this.db.all<{ id: string; offer_id: string; property_id: string; agent_id: string | null }>(
       `SELECT f.id, f.offer_id, f.property_id, p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id
-       WHERE f.network_id = ? AND p.status = 'under_offer' ORDER BY f.opened_at, f.id`,
+       WHERE f.network_id = ? AND p.status = 'under_offer' AND ${openFile('f')} ORDER BY f.opened_at, f.id`,
       [networkId],
     );
     let created = 0;
@@ -207,7 +207,7 @@ export class FinancementDossier {
     const rows = await this.db.all<{ file_id: string; property_id: string; offer_id: string; kind: FinancingAlert['kind']; due_day: string; created_at: string }>(
       `SELECT a.file_id, f.property_id, f.offer_id, a.kind, a.due_day, a.created_at FROM sale_file_financing_alerts a JOIN sale_files f ON f.id = a.file_id
        JOIN properties p ON p.id = f.property_id
-       WHERE a.network_id = ? AND a.agent_id = ? AND p.agent_id = a.agent_id AND p.status = 'under_offer' ORDER BY a.created_at, a.kind`,
+       WHERE a.network_id = ? AND a.agent_id = ? AND p.agent_id = a.agent_id AND p.status = 'under_offer' AND ${openFile('f')} ORDER BY a.created_at, a.kind`,
       [viewer.networkId, viewer.userId],
     );
     const alerts: FinancingAlert[] = [];

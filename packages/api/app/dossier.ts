@@ -45,6 +45,7 @@ const REFUSALS = {
   no_loan_condition: 'L’offre n’a pas de condition de prêt : rien à suivre.',
   compromis_missing: 'Saisissez d’abord la signature du compromis.',
   already_closed: 'L’acte est déjà rangé.',
+  file_stopped: 'Ce dossier est arrêté : il ne reçoit plus rien.',
   not_under_offer: 'Le bien n’est plus sous offre : voyez avec la direction.',
   no_mandate_in_force: 'Aucun mandat en vigueur le jour du compromis : voyez avec la direction.',
   fee_unknown: 'Les honoraires du mandat signé ne se lisent pas : voyez avec la direction.',
@@ -62,6 +63,7 @@ const DATE_NAMES: Record<DateKind, string> = {
 };
 const STEP_NAMES: Record<FinancingStep, string> = { demande_deposee: 'Demande de prêt déposée', accord_principe: 'Accord de principe', offre_pret_emise: 'Offre de prêt reçue par l’acquéreur', offre_pret_acceptee: 'Offre de prêt acceptée', refus: 'Refus de prêt' };
 const BY_NAMES: Record<DeclaredBy, string> = { acquereur: 'l’acquéreur', courtier: 'le courtier' };
+const STOPS = { retractation_acquereur: 'Rétractation de l’acquéreur', pret_refuse: 'Prêt refusé', preemption: 'Préemption de la commune', accord_des_parties: 'Accord des parties', autre: 'Autre raison' };
 export const DEADLINES = { fin_retractation: 'Fin du délai de rétractation', reponse_preemption: 'Réponse de la commune', date_limite_pret: 'Date limite du prêt', etat_date: 'État daté', acte: 'Acte' };
 const ITEMS = { pret: 'le prêt', fiche_bien: 'la fiche du bien', copropriete: 'la copropriété' };
 const WHO = { acquereur: 'à l’acquéreur', vendeur: 'au vendeur', commune: 'à la commune', banque: 'à la banque', syndic: 'au syndic', agent: 'à vous' };
@@ -124,7 +126,7 @@ export const DOSSIER_JS = `
 export const DOSSIER_SCRIPT = `'use strict';
 globalThis.AIMMO_DOSSIER = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
-  var NO = ${JSON.stringify(REFUSALS)}, PIECES = ${JSON.stringify(PIECE_NAMES)}, DEADLINES = ${JSON.stringify(DEADLINES)}, ITEMS = ${JSON.stringify(ITEMS)};
+  var STOPS = ${JSON.stringify(STOPS)}, NO = ${JSON.stringify(REFUSALS)}, PIECES = ${JSON.stringify(PIECE_NAMES)}, DEADLINES = ${JSON.stringify(DEADLINES)}, ITEMS = ${JSON.stringify(ITEMS)};
   var WHO = ${JSON.stringify(WHO)}, REASONS = ${JSON.stringify(REASONS)}, SCHEDULE = ${JSON.stringify(SCHEDULE)}, IDENTITY = ${JSON.stringify(IDENTITY)}, LAPSING = ${JSON.stringify(LAPSING)};
   var KINDS = ${JSON.stringify(DATE_KINDS)}, DATES = ${JSON.stringify(DATE_NAMES)}, STEPS = ${JSON.stringify(FINANCING_STEPS)}, STEP = ${JSON.stringify(STEP_NAMES)}, BYS = ${JSON.stringify(DECLARED_BY)}, BY = ${JSON.stringify(BY_NAMES)};
   var TYPES = ${JSON.stringify(FILE_DEPOSIT_TYPES)}, MAX = ${FILE_DEPOSIT_MAX_BYTES};
@@ -154,7 +156,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
   function load(message) {
     var mine = ++seq;
     state('Chargement…');
-    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET'), send(base() + '/acte', 'GET'), send(base() + '/financement', 'GET')]).then(function (all) {
+    return Promise.all([send(base() + '/chemin', 'GET'), send(base() + '/pieces', 'GET'), send(base() + '/echeancier', 'GET'), send(base() + '/acte', 'GET'), send(base() + '/financement', 'GET'), send(base() + '/arret', 'GET')]).then(function (all) {
       if (mine !== seq || all.some(function (r) { return r.gone; })) return false;
       var failed = all.filter(function (r) { return !r.ok; })[0];
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
@@ -164,14 +166,16 @@ globalThis.AIMMO_DOSSIER = function (t) {
       clear(body());
       state(message || '');
       var closing = all[3].body.data;
+      var stopped = all[5].body.data;
       var path = all[0].body.data.path;
-      if (closing) drawClosed(closing); else drawPath(path, all[1].body.data.identity);
+      if (stopped) drawStopped(stopped); else if (closing) drawClosed(closing); else drawPath(path, all[1].body.data.identity);
       // Le code a jugé les pièces pour le jour visé : celles qu'il dit périmées ne laissent pas écrire « complet ».
-      var stale = closing ? [] : (Array.isArray(path.lines) ? path.lines : []).filter(function (l) { return l.reason === 'piece_perimee'; }).map(function (l) { return l.item; });
-      drawPieces(all[1].body.data, !closing, stale);
-      drawSchedule(all[2].body.data, !closing);
-      drawFinancing(all[4].body.data, !closing);
-      if (!closing) drawAct(all[2].body.data);
+      var stale = closing || all[5].body.data ? [] : (Array.isArray(path.lines) ? path.lines : []).filter(function (l) { return l.reason === 'piece_perimee'; }).map(function (l) { return l.item; });
+      var live = !closing && !stopped;
+      drawPieces(all[1].body.data, live, stale);
+      drawSchedule(all[2].body.data, live);
+      drawFinancing(all[4].body.data, live);
+      if (live) { drawAct(all[2].body.data); drawStop(); }
       return true;
     });
   }
@@ -181,6 +185,39 @@ globalThis.AIMMO_DOSSIER = function (t) {
     if (l.reason === 'identite_a_verifier' && identity === 'non_visible') return 'Identité de l’acquéreur : hors de vos droits, voyez avec la direction.';
     var name = itemName(l.item);
     return (REASONS[l.reason] || 'À vérifier') + (name ? ' : ' + name : '') + (WHO[l.who] ? ' · ' + WHO[l.who] : '') + (l.notBefore ? ' · pas avant le ' + day(l.notBefore) : '');
+  }
+  function drawStopped(s) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Dossier arrêté'));
+    box.appendChild(el('strong', (STOPS[s.reason] || 'Arrêté') + ', le ' + day(s.on) + '.'));
+    box.appendChild(el('p', 'Le dossier reste lisible. Le bien revient à la vente au prochain passage, si son mandat le permet.', 'doux'));
+    body().appendChild(box);
+  }
+  // L'arrêt rend le bien à la vente et ne se reprend pas : il se confirme, sur la raison montrée [R233].
+  function drawStop() {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Arrêter le dossier'));
+    box.appendChild(el('p', 'Si la vente ne se fera pas. L’arrêt est définitif : une reprise demande une nouvelle offre.', 'doux'));
+    var which = choice(box, 'dossier-arret-raison', 'La raison', Object.keys(STOPS), function (k) { return STOPS[k]; });
+    var proof = picker(box, 'dossier-arret-preuve', 'La preuve : lettre reçue, refus de prêt, accord écrit', '/preuves', 'Joignez la preuve de l’arrêt.');
+    var sure = null;
+    function drop() { if (sure) { box.removeChild(sure); sure = null; } }
+    box.appendChild(button('Arrêter ce dossier', function () {
+      drop();
+      if (!which.value) { state('Choisissez la raison.'); return; }
+      if (!proof.input.files || !proof.input.files[0]) { state('Joignez la preuve de l’arrêt.'); return; }
+      var chosen = which.value;
+      state('Le dossier sera arrêté et le bien reviendra à la vente : cela ne se défait pas.');
+      sure = button('Confirmer l’arrêt : ' + STOPS[chosen], act(function () {
+        if (which.value !== chosen) { drop(); state('La raison a changé : recommencez.'); return false; }
+        return proof.get().then(function (ref) {
+          if (!ref) return false;
+          return post('/arret', { reason: chosen, proofRef: ref }, 'Dossier arrêté.', 'Le dossier n’est pas arrêté : réessayez.', proof);
+        });
+      }));
+      box.appendChild(sure);
+    }));
+    body().appendChild(box);
   }
   function drawClosed(c) {
     var box = el('section', null, 'bloc');

@@ -2,7 +2,7 @@
  * Offre acceptée : dossier de vente, bloqué sans identité vérifiée (M09, O07) [R57, R58].
  *
  * Une acceptation rapportée avec sa preuve (de l'offre, ou de la dernière proposition après des contre-offres) ouvre un
- * dossier de vente minimal : bien, offre, acquéreur, montant convenu. M10 le complétera. Un seul dossier ouvert par bien,
+ * dossier de vente minimal : bien, offre, acquéreur, montant convenu. M10 le complétera. Un seul dossier ouvert par bien [R233],
  * donc une seule offre acceptée à la fois. Le bien passe « sous offre », ce que la publication (M07) montre partout au
  * passage suivant. Le dossier ne passe « compromis en préparation » que si l'identité de l'acquéreur est vérifiée, selon
  * la règle de D03 ; sinon il reste bloqué et la raison est rendue [R58].
@@ -115,6 +115,7 @@ export class DossiersVente {
     }
     const found = await this.transmission.offerFor(viewer, f.offer_id, true);
     if (!found.ok) return found as Refusal | Problem;
+    if (await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'file_stopped' };
     // L'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, lecture écrite au journal [R16].
     const buyer = await this.acces.readFiche(viewer, f.buyer_person_id);
     if (!buyer.ok) return buyer as Refusal;

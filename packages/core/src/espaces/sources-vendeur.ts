@@ -339,7 +339,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
     const members = await this.fiche.membersOf(personId);
     return this.db.first<{ id: string }>(
       `SELECT f.id FROM sale_files f JOIN sale_file_sellers v ON v.file_id = f.id
-       WHERE f.network_id = ? AND f.property_id = ? AND f.opened_at >= ? AND v.person_id IN (${placeholders(members.length)})`,
+       WHERE f.network_id = ? AND f.property_id = ? AND f.opened_at >= ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = f.id) AND v.person_id IN (${placeholders(members.length)})`,
       [networkId, propertyId, since, ...members],
     );
   }

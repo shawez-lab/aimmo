@@ -24,6 +24,7 @@ import { DecisionEnvoi } from '../envoi/service.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { openFile } from '../dossiers/acces-dossier.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { euros } from '../annonces/mentions.ts';
@@ -39,6 +40,9 @@ export type ResponseOutcome = 'acceptee' | 'refusee' | 'contre_offre';
 
 /** Un instant complet : date, heure et fuseau (Z ou décalage). */
 export const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+/** Une offre dont le dossier a été arrêté n'empêche plus d'accepter les autres [R233]. `o` est l'alias de `offer_register`. */
+export const liveOffer = (o: string): string => `NOT EXISTS (SELECT 1 FROM sale_files live_ JOIN sale_file_stops live_s ON live_s.file_id = live_.id WHERE live_.offer_id = ${o}.id)`;
+
 export const PROOF_REF = /^preuves\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:pdf|jpg|png|eml|txt)$/;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
@@ -108,17 +112,17 @@ export class TransmissionOffres {
   async otherAccepted(propertyId: string, offerId: string): Promise<boolean> {
     const direct = await this.db.first(
       `SELECT r.offer_id FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id
-       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' LIMIT 1`,
+       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')} LIMIT 1`,
       [propertyId, offerId],
     );
     if (direct) return true;
     const proposal = await this.db.first(
       `SELECT p.id FROM offer_proposals p JOIN offer_register o ON o.id = p.offer_id JOIN proposal_responses r ON r.proposal_id = p.id
-       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' LIMIT 1`,
+       WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')} LIMIT 1`,
       [propertyId, offerId],
     );
     if (proposal) return true;
-    return !!(await this.db.first('SELECT id FROM sale_files WHERE property_id = ? AND offer_id <> ? LIMIT 1', [propertyId, offerId]));
+    return !!(await this.db.first(`SELECT f.id FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ? AND ${openFile('f')} LIMIT 1`, [propertyId, offerId]));
   }
 
   /** L'état d'une offre, lu dans les seuls faits enregistrés. */
@@ -202,9 +206,9 @@ export class TransmissionOffres {
     const { changes } = await this.db.run(
       `INSERT INTO offer_responses (offer_id, network_id, outcome, proof_ref, responded_at, recorded_by, at)
        SELECT ?, ?, ?, ?, ?, ?, ? WHERE (? <> 'acceptee' OR (
-          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
-          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee')
-          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ?))) ON CONFLICT (offer_id) DO NOTHING`,
+          NOT EXISTS (SELECT 1 FROM offer_responses r JOIN offer_register o ON o.id = r.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')})
+          AND NOT EXISTS (SELECT 1 FROM proposal_responses r JOIN offer_proposals p ON p.id = r.proposal_id JOIN offer_register o ON o.id = p.offer_id WHERE o.property_id = ? AND o.id <> ? AND r.outcome = 'acceptee' AND ${liveOffer('o')})
+          AND NOT EXISTS (SELECT 1 FROM sale_files f WHERE f.property_id = ? AND f.offer_id <> ? AND ${openFile('f')}))) ON CONFLICT (offer_id) DO NOTHING`,
       [offerId, found.networkId, input.outcome, input.proofRef, respondedAt.toISOString(), this.actor(viewer), this.now().toISOString(), input.outcome, pid, offerId, pid, offerId, pid, offerId],
     );
     if (changes !== 1) {

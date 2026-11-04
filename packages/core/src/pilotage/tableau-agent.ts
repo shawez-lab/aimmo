@@ -121,6 +121,7 @@ export class TableauAgent {
            ORDER BY CASE st.status WHEN 'prevue' THEN 1 WHEN 'due' THEN 2 WHEN 'facturee' THEN 3 ELSE 4 END DESC LIMIT 1) AS status
        FROM commission_shares s JOIN commissions c ON c.file_id = s.file_id
        WHERE c.network_id = ? AND s.beneficiary_id = ? AND s.kind IN ('agent', 'partage')
+         AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = s.file_id)
          AND EXISTS (SELECT 1 FROM commission_steps st WHERE st.file_id = s.file_id)
          AND NOT EXISTS (SELECT 1 FROM commission_steps st WHERE st.file_id = s.file_id AND st.status = 'payee')
        GROUP BY s.file_id ORDER BY s.file_id`,

@@ -46,6 +46,18 @@ describeWithSqlite('N08 · routes de M10', () => {
     expect(await read(t.direction)).toMatchObject({ status: 403, body: { ok: false, code: 'not_agent' } });
   });
 
+  it('[R16] [R233] la route d’arrêt : l’agent arrête, la direction lit, un refus est un refus', async () => {
+    const t = await setup();
+    expect((await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/arret`)).body.data).toBeNull();
+    expect(await t.call(t.direction, 'POST', `/dossiers/${t.fileId}/arret`, { reason: 'autre', proofRef: ACT_PROOF })).toMatchObject({ status: 403, body: { ok: false, rule: 'R16' } });
+    expect((await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/arret`, { reason: 'caprice', proofRef: ACT_PROOF })).body).toMatchObject({ ok: false, code: 'bad_reason' });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/arret`, { reason: 'autre', proofRef: ACT_PROOF })).toMatchObject({ status: 200, body: { ok: true, data: { reason: 'autre' } } });
+    expect((await t.call(t.direction, 'GET', `/dossiers/${t.fileId}/arret`)).body.data).toMatchObject({ reason: 'autre' });
+    const again = await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/dates`, { kind: 'compromis_signe', day: '2027-03-01', proofRef: PROOF });
+    expect(again.body).toMatchObject({ ok: false, code: 'file_stopped' });
+    expect(again.status).toBe(400);
+  });
+
   for (const kind of ['appartement', 'maison', 'terrain'] as DossierKind[]) {
     it(`dossier test « ${kind} » complet, sans pièce manquante, suivi par les routes de l’offre acceptée à l’acte`, async () => {
       const t = await setup(kind);
