@@ -617,3 +617,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-04 03:34 · SV07 · l'agent complète le nom d'une fiche, le parcours complet n'a plus de raccourci, R19 lit toutes les fiches réunies (#370) ; relecture forte 1 P0 et 3 P1 corrigés ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : IN16
 - 2026-11-04 03:45 · IN16 · un écart entre les boutons d'une ligne de liste (#371) ; Codex non attendu (H03) ; vérification GitHub verte · prochaine : SV09
 - 2026-11-04 03:45 · voie 1 · fin de séance : SV04, SV08, SV06, SV07 et IN16 fusionnées ; SV09, SV10 et SV11 ajoutées au plan ; verrou libéré, relance · prochaine : SV09
+- 2026-11-04 03:45 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra SV09 · prochaine : SV09
