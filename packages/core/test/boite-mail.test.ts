@@ -201,6 +201,25 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     expect(await t.outbox()).toHaveLength(1);
   });
 
+  it('[R408] la lecture de la boîte ne saute jamais un mail : refusé, il est gardé ; illisible, la lecture s’arrête avant lui', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    await t.person('Noa', 'noa@example.test');
+    const many = Array.from({ length: 21 }, (_, i) => att(`photo-${i}.jpg`, 'image/jpeg', jpeg(30_000 + i)));
+    const queue: MailIn[] = [t.mail('noa@example.test', 'Toutes les photos', many, { receivedAt: new Date(TUE_10H - 30 * MIN) }), t.mail('noa@example.test', 'Et un mot', [], { receivedAt: new Date(TUE_10H - 20 * MIN) })];
+    const since: (Date | null)[] = [];
+    const provider: MailboxProvider = { provider: 'gmail', receivedSince: async (_agent, s) => (since.push(s), queue.filter((q) => s === null || q.receivedAt.getTime() >= s.getTime())) };
+    const first = await t.boite.sync(me, provider);
+    expect(first).toMatchObject({ ok: true, value: [{ outcome: 'rattache' }] });
+    expect(await t.db.all("SELECT refusal FROM mailbox_mails WHERE status = 'refuse'")).toEqual([{ refusal: 'too_many_attachments' }]);
+
+    // Un mail illisible : la lecture s'arrête, le plus récent attend, le curseur ne passe pas au-delà.
+    queue.push({ ...t.mail('noa@example.test', 'cassé', [], { receivedAt: new Date(TUE_10H - 15 * MIN) }), externalId: '' }, t.mail('noa@example.test', 'Plus tard', [], { receivedAt: new Date(TUE_10H - 10 * MIN) }));
+    expect(await t.boite.sync(me, provider)).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
+    expect(await t.db.all("SELECT id FROM messages WHERE body = 'Plus tard'")).toHaveLength(0);
+    expect(since[1]?.toISOString()).toBe(new Date(TUE_10H - 20 * MIN).toISOString());
+  });
+
   it('[R409] une fiche passée à un autre agent depuis le tri : sa réponse n’est plus montrée ni validable [R16]', async () => {
     const t = await setup();
     const me = t.asAgent(t.alex.id);
@@ -222,6 +241,12 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     const stop = await t.boite.sort(me, t.mail('noa@example.test', 'STOP, ne me contactez plus.'));
     expect(stop).toMatchObject({ ok: true, value: { outcome: 'rattache', draftId: null } });
     expect(await t.db.all("SELECT id FROM exclusions WHERE person_id = ? AND reason = 'stop'", [noa])).toHaveLength(1);
+
+    // Une demande d'arrêt tout au bout d'un très long mail compte aussi : le texte entier est lu.
+    const lou = await t.person('Lou', 'lou@example.test');
+    const long = await t.boite.sort(me, t.mail('lou@example.test', `${'Bonjour, voici un long récit. '.repeat(1_000)}Ne me contactez plus.`));
+    expect(long).toMatchObject({ ok: true, value: { outcome: 'rattache', draftId: null } });
+    expect(await t.db.all("SELECT id FROM exclusions WHERE person_id = ? AND reason = 'stop'", [lou])).toHaveLength(1);
 
     // Un mail reçu la veille, validé un mardi à 22 h : refusé pour l'heure seulement, la réponse reste à valider [R01].
     const ari = await t.person('Ari', 'ari@example.test');

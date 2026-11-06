@@ -220,7 +220,14 @@ export class BoiteMail {
     for (const mail of [...mails].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())) {
       if (mail.provider !== provider.provider) continue;
       const r = await this.sort(viewer, mail);
-      if (r.ok) out.push(r.value);
+      if (r.ok) {
+        out.push(r.value);
+        continue;
+      }
+      // Un mail refusé mais gardé (trop de pièces jointes) ne bloque pas la suite ; un mail illisible arrête la lecture
+      // avant qu'un mail plus récent ne fasse avancer le curseur au-delà de lui [R18].
+      if (r.code === 'too_many_attachments') continue;
+      return r;
     }
     return { ok: true, value: out };
   }
@@ -232,10 +239,19 @@ export class BoiteMail {
     if (typeof mail.externalId !== 'string' || mail.externalId.length === 0 || mail.externalId.length > 200) return { ok: false, rule: 'R408', code: 'bad_mail' };
     if (typeof mail.threadId !== 'string' || mail.threadId.length === 0 || mail.threadId.length > 200) return { ok: false, rule: 'R408', code: 'bad_mail' };
     if (!(mail.receivedAt instanceof Date) || Number.isNaN(mail.receivedAt.getTime())) return { ok: false, rule: 'R408', code: 'bad_mail' };
-    if (mail.attachments.length > MAX_ATTACHMENTS) return { ok: false, rule: 'R410', code: 'too_many_attachments' };
+    if (!Array.isArray(mail.attachments)) return { ok: false, rule: 'R408', code: 'bad_mail' };
     const networkId = viewer.networkId;
     const agentId = viewer.userId;
     const now = this.now();
+    // Trop de pièces jointes : le mail est gardé comme refusé, jamais sauté en silence par la lecture suivante [R410].
+    if (mail.attachments.length > MAX_ATTACHMENTS) {
+      await this.db.run(
+        "INSERT OR IGNORE INTO mailbox_mails (id, network_id, agent_id, provider, external_id, status, refusal, received_at, created_at, done_at) VALUES (?, ?, ?, ?, ?, 'refuse', 'too_many_attachments', ?, ?, ?)",
+        [this.newId(), networkId, agentId, mail.provider, mail.externalId, mail.receivedAt.toISOString(), now.toISOString(), now.toISOString()],
+      );
+      await appendEvent(this.journal, { type: 'boite.mail.trie', actor: this.actor(viewer), subject: null, data: { rule: 'R410', outcome: 'refuse', code: 'too_many_attachments' } }, this.now);
+      return { ok: false, rule: 'R410', code: 'too_many_attachments' };
+    }
 
     // Prendre le mail : deux lectures du même mail n'en trient qu'une [R18].
     const mailId = this.newId();
@@ -286,8 +302,9 @@ export class BoiteMail {
       body,
       occurredAt: mail.receivedAt,
     });
-    // Une demande d'arrêt, un refus ou « vendu » valent dès la réception, comme pour tout message [R04, R02].
-    const exclusion = classifyReceived(body);
+    // Une demande d'arrêt, un refus ou « vendu » valent dès la réception, comme pour tout message [R04, R02] : lus dans
+    // le texte entier, jamais dans la seule partie gardée dans la fiche.
+    const exclusion = classifyReceived(String(mail.body ?? ''));
     if (exclusion) {
       for (const id of members) {
         const m = await this.store.getPerson(id);

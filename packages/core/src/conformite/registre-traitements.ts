@@ -814,7 +814,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   client_dates: ['id', 'network_id', 'kind', 'created_at'],
   client_date_texts: ['id', 'network_id', 'kind', 'channel', 'texts', 'seq', 'created_at'],
   client_date_messages: ['network_id', 'kind', 'year', 'date_id', 'status', 'rule', 'message_id', 'created_at', 'done_at'],
-  mailbox_mails: ['id', 'network_id', 'provider', 'status', 'project_id', 'message_id', 'received_at', 'created_at', 'done_at'],
+  mailbox_mails: ['id', 'network_id', 'provider', 'status', 'refusal', 'project_id', 'message_id', 'received_at', 'created_at', 'done_at'],
   mailbox_attachments: ['id', 'network_id', 'project_id', 'ref', 'size', 'first_mail_id', 'stored_at'],
   mailbox_attachment_links: ['mail_id', 'outcome', 'attachment_id', 'created_at'],
   mailbox_drafts: ['id', 'network_id', 'mail_id', 'status', 'validated_at', 'rule', 'sent_message_id', 'created_at'],

@@ -10,8 +10,10 @@ CREATE TABLE IF NOT EXISTS mailbox_mails (
   provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook')),
   external_id TEXT NOT NULL CHECK (length(external_id) BETWEEN 1 AND 200),
   -- `en_cours` : pris par un tri ; `rattache` : rangé dans une fiche ; `inconnu` : aucune fiche visible de l'agent ;
-  -- `ambigu` : plusieurs fiches, l'agent choisit.
-  status TEXT NOT NULL CHECK (status IN ('en_cours', 'rattache', 'inconnu', 'ambigu')),
+  -- `ambigu` : plusieurs fiches, l'agent choisit ; `refuse` : mail gardé sans être trié (trop de pièces jointes),
+  -- pour que la lecture suivante ne le saute jamais en silence.
+  status TEXT NOT NULL CHECK (status IN ('en_cours', 'rattache', 'inconnu', 'ambigu', 'refuse')),
+  refusal TEXT CHECK (refusal IS NULL OR refusal IN ('too_many_attachments')),
   person_id TEXT,
   -- Le dossier : le seul projet ouvert de la fiche ; NULL quand il y en a zéro ou plusieurs (l'agent choisit).
   project_id TEXT,
