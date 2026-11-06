@@ -18,7 +18,7 @@ import { personSubject } from '../acces/acces.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localDay } from '../mandats/plan-du-jour.ts';
-import type { Brief } from './brief.ts';
+import { briefWithCurrentName, type Brief } from './brief.ts';
 import { AGENDA_TIME_ZONE, parisInstant, type AppointmentKind } from './creneaux.ts';
 
 export interface DayAppointment {
@@ -142,7 +142,7 @@ export class JourneeRendezVous {
         );
       } else {
         const root = await this.unique.rootOf(row.person_id);
-        const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [root]);
+        const person = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [root]);
         firstName = person?.first_name ?? null;
         const stored = await this.db.first<{ content: string; agent_id: string; prepared_at: string }>(
           'SELECT content, agent_id, prepared_at FROM appointment_briefs WHERE appointment_id = ? AND network_id = ?',
@@ -161,7 +161,7 @@ export class JourneeRendezVous {
           );
           if (changed) briefMissing = 'changed';
           else if (!(await this.propertyAllowed(viewer, row, actor))) briefMissing = 'property';
-          else brief = JSON.parse(stored.content) as Brief;
+          else brief = briefWithCurrentName(JSON.parse(stored.content) as Brief, person);
         }
       }
       if (allowed) reads.push({ root: await this.unique.rootOf(row.person_id), members: ids, appointment: row.id, brief: brief !== null });

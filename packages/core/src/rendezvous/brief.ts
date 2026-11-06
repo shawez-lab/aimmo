@@ -166,6 +166,16 @@ interface AppointmentRow {
   status: string;
 }
 
+/**
+ * Le brief rangé ne change pas [R17] ; l'agent lit le nom d'aujourd'hui, celui de la fiche gardée, jamais celui d'avant une
+ * correction (SV13). Un nom encore absent reste dit absent.
+ */
+export function briefWithCurrentName(brief: Brief, person: { first_name: string | null; last_name: string | null } | null): Brief {
+  const name = [person?.first_name, person?.last_name].filter((p) => p && p.trim()).join(' ');
+  if (!name) return brief;
+  return { ...brief, items: brief.items.map((i) => (i.section === 'client' && i.label === 'Nom' && i.value !== null ? { ...i, value: name } : i)) };
+}
+
 export type BriefRead = { ok: true; brief: Brief } | { ok: false; code: 'unknown' | 'not_agent' | 'not_ready' };
 
 export class BriefsRendezVous {
@@ -432,11 +442,9 @@ export class BriefsRendezVous {
     // Le brief suit l'agent qui l'a reçu : un rendez-vous passé à un autre agent ne lui ouvre pas l'ancien brief.
     if (!row) return { ok: false, code: 'not_ready' };
     if (row.agent_id !== viewer.userId) return { ok: false, code: 'not_agent' };
-    const brief = JSON.parse(row.content) as Brief;
-    // Le brief rangé ne change pas ; l'agent lit le nom d'aujourd'hui, jamais celui d'avant une correction (SV13).
-    const person = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT p.first_name, p.last_name FROM persons p JOIN appointments a ON a.person_id = p.id WHERE a.id = ?', [appointmentId]);
-    const name = [person?.first_name, person?.last_name].filter((p) => p && p.trim()).join(' ');
-    return { ok: true, brief: name ? { ...brief, items: brief.items.map((i) => (i.section === 'client' && i.label === 'Nom' && i.value !== null ? { ...i, value: name } : i)) } : brief };
+    const booked = await this.db.first<{ person_id: string }>('SELECT person_id FROM appointments WHERE id = ?', [appointmentId]);
+    const person = booked ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [await this.fiche.rootOf(booked.person_id)]) : null;
+    return { ok: true, brief: briefWithCurrentName(JSON.parse(row.content) as Brief, person) };
   }
 }
 

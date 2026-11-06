@@ -403,11 +403,13 @@ export class AnciensContacts {
   }
 
   /**
-   * Le texte qui partira si l'agent ne change rien, celui que l'écran montre. Un nom corrigé depuis la préparation : le texte
-   * rangé salue peut-être l'ancien, le texte du code prend sa place ; la ligne rangée, elle, ne change pas (SV10, SV13).
+   * Le texte qui partira si l'agent ne change rien, celui que l'écran montre. Un nom corrigé depuis la préparation, ou une
+   * salutation qui n'est plus celle de la fiche (nom complété, fiches réunies) : le texte du code prend la place du texte
+   * rangé, qui ne change pas (SV10, SV13).
    */
   private async currentDraft(r: FollowupRow, members: readonly string[], firstName: string | null): Promise<{ text: string; by: 'ia' | 'secours' }> {
-    const stale = await this.db.first(`SELECT 1 FROM person_name_corrections WHERE created_at >= ? AND person_id IN (${marks(members.length)})`, [r.created_at, ...members]);
+    const greeted = r.draft.startsWith(firstName ? `Bonjour ${firstName},` : 'Bonjour,');
+    const stale = !greeted || (await this.db.first(`SELECT 1 FROM person_name_corrections WHERE created_at >= ? AND person_id IN (${marks(members.length)})`, [r.created_at, ...members])) !== null;
     return stale ? { text: oldContactFallback(r.reason, firstName), by: 'secours' } : { text: r.draft, by: r.draft_by };
   }
 
