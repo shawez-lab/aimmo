@@ -66,7 +66,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : un rendez-vous ajouté d'un côté apparaît de l'autre (tests avec faux serveurs) ; aucun doublon ; rappels sous le contrôle central (R01 à R05).
 
 ### HX03 · Assistant juridique de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06) : module `packages/core/src/juridique/`, aucune migration, règles R250 à R253. Le code choisit les textes d'une bibliothèque fermée (six textes de départ : Hoguet art. 6, CCH L271-1 et L271-4, loi de 1965 art. 46, consommation L221-18, civil 1589), par groupes de termes et termes d'exclusion ; l'IA ne fait que reformuler, et reçoit la question réduite à une liste fermée de mots, sans date. Un paragraphe sans texte, avec un texte non reçu, un nombre absent du résumé (unité comprise, mots de quantité compris) ou une promesse est refusé : les résumés répondent. Chaque citation donne le texte d'origine et celui qui fixe la teneur citée, avec sa date, et dit « jamais vérifiée » et « pas relue par l'avocat » tant que H54 n'est pas fait. Litige (formes fléchies) et question trop longue : jamais de réponse. Relecture forte : 5 P0, 3 P1 corrigés en quatre tours ; Codex : 6 P0 corrigés en cinq tours, puis rien à signaler (#385).
+- Reste : écran de l'agent et branchement au Worker ; fournisseur d'IA réel (H13) ; relecture de la bibliothèque par l'avocat et vérification de chaque version sur Légifrance (H54) ; d'autres textes (bail, mandat exclusif, DPE et location) à ajouter seulement relus.
 - Objectif : comme Hektor Voice : l'agent pose une question juridique ou réglementaire et reçoit une réponse. Jamais vu : chaque réponse cite son texte de loi et sa date, et dit « je ne sais pas, voyez votre avocat » plutôt que d'inventer.
 - Critères : aucune réponse sans source citée (test) ; refus explicite quand aucune source ne couvre la question (test).
 
