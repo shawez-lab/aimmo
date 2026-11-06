@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS voice_notes (
   channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'facebook')),
   external_id TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('en_cours', 'transcrite', 'impossible')),
-  reason TEXT CHECK (reason IN ('indisponible', 'echec', 'vide', 'incertaine')),
+  failure TEXT CHECK (failure IN ('indisponible', 'echec', 'vide', 'incertaine')),
   media_ref TEXT,
   mime TEXT,
   transcript TEXT,
@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS voice_notes (
   created_at TEXT NOT NULL,
   UNIQUE (network_id, channel, external_id),
   CHECK (
-    (status = 'transcrite' AND reason IS NULL AND transcript IS NOT NULL AND media_ref IS NOT NULL)
-    OR (status = 'en_cours' AND reason IS NULL AND transcript IS NULL AND media_ref IS NULL AND language IS NULL AND confidence IS NULL)
-    OR (status = 'impossible' AND reason IS NOT NULL AND transcript IS NULL AND media_ref IS NULL AND language IS NULL)
+    (status = 'transcrite' AND failure IS NULL AND transcript IS NOT NULL AND media_ref IS NOT NULL)
+    OR (status = 'en_cours' AND failure IS NULL AND transcript IS NULL AND media_ref IS NULL AND language IS NULL AND confidence IS NULL)
+    OR (status = 'impossible' AND failure IS NOT NULL AND transcript IS NULL AND media_ref IS NULL AND language IS NULL)
   )
 );
 -- Une note est réservée (`en_cours`) avant d'aller au transcripteur : deux livraisons simultanées ne la transcrivent qu'une

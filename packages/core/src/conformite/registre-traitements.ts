@@ -767,7 +767,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   send_reservations: ['key', 'reservation_id', 'network_id', 'message_id', 'created_at'],
   send_quota_slots: ['network_id', 'kind', 'day', 'slot', 'reservation_id', 'created_at'],
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
-  voice_notes: ['id', 'network_id', 'channel', 'status', 'reason', 'mime', 'language', 'confidence', 'created_at'],
+  voice_notes: ['id', 'network_id', 'channel', 'status', 'failure', 'mime', 'language', 'confidence', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],
   attach_log: ['id', 'network_id', 'inbound_id', 'message_id', 'outcome', 'exclusion', 'silenced', 'occurred_at', 'created_at'],

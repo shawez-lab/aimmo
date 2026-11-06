@@ -153,8 +153,8 @@ describeWithSqlite('HX23 · notes vocales transcrites et traitées', () => {
       expect(unread, label).toHaveLength(1);
       // L'agent garde de quoi écouter la note : son contenu brut, avec la référence du média.
       expect(unread[0]!.raw_payload, label).toContain('MEDIA-wamid.X');
-      const row = await first<{ status: string; reason: string; transcript: string | null; media_ref: string | null }>(t.db, 'SELECT * FROM voice_notes');
-      expect(row, label).toMatchObject({ status: 'impossible', reason, transcript: null, media_ref: null });
+      const row = await first<{ status: string; failure: string; transcript: string | null; media_ref: string | null }>(t.db, 'SELECT * FROM voice_notes');
+      expect(row, label).toMatchObject({ status: 'impossible', failure: reason, transcript: null, media_ref: null });
     }
   });
 

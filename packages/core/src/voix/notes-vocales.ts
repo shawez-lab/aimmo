@@ -51,7 +51,7 @@ export interface VoiceNoteRow {
   channel: VoiceChannel;
   external_id: string;
   status: 'en_cours' | 'transcrite' | 'impossible';
-  reason: ImpossibleReason | null;
+  failure: ImpossibleReason | null;
   media_ref: string | null;
   mime: string | null;
   transcript: string | null;
@@ -242,7 +242,7 @@ export class NotesVocales {
         note.remove();
         inProgress += 1;
       } else if (row.status === 'transcrite') note.asText(row.transcript!);
-      else unreadable.push({ channel: note.channel, reason: `note vocale : ${REASON_TEXT[row.reason!]}`, raw: JSON.stringify(note.remove()) });
+      else unreadable.push({ channel: note.channel, reason: `note vocale : ${REASON_TEXT[row.failure!]}`, raw: JSON.stringify(note.remove()) });
     }
     return { raw: copy, unreadable, inProgress };
   }
@@ -281,7 +281,7 @@ export class NotesVocales {
     const ok = typeof outcome !== 'string';
     // Un IBAN dicté ne se range jamais en clair, comme dans un message écrit [R15].
     const { changes } = await this.db.run(
-      `UPDATE voice_notes SET status = ?, reason = ?, media_ref = ?, mime = ?, transcript = ?, language = ?, confidence = ?
+      `UPDATE voice_notes SET status = ?, failure = ?, media_ref = ?, mime = ?, transcript = ?, language = ?, confidence = ?
        WHERE id = ? AND status = 'en_cours' AND created_at = ?`,
       [
         ok ? 'transcrite' : 'impossible',
@@ -302,7 +302,7 @@ export class NotesVocales {
     // Ni texte, ni audio, ni identifiant du canal au journal [R13].
     await appendEvent(
       this.journal,
-      { type: 'voix.note_recue', actor: 'system', subject: `voice_note:${row.id}`, data: { rule: ok ? 'R240' : 'R241', channel: note.channel, status: row.status, reason: row.reason } },
+      { type: 'voix.note_recue', actor: 'system', subject: `voice_note:${row.id}`, data: { rule: ok ? 'R240' : 'R241', channel: note.channel, status: row.status, failure: row.failure } },
       this.now,
     );
     return row;
