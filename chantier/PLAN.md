@@ -222,7 +222,7 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 - Critères : un mail d'un client connu est rattaché à sa fiche (test) ; aucune réponse envoyée sans validation (test) ; une pièce jointe est rangée une seule fois, par son empreinte (test).
 
 ### HX27 · Notifications sur le téléphone, réglables
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Hektor et iad : des notifications sur le téléphone, réglables par l'agent. Jamais vu : un contact chaud arrive en moins d'une minute, le reste est groupé par urgence, et les heures calmes de l'agent sont tenues sauf pour un client qui vient d'écrire.
 - Critères : un contact chaud est notifié tout de suite (test) ; rien de non urgent pendant les heures calmes (test) ; aucune donnée personnelle dans le texte visible écran verrouillé (test).
 
