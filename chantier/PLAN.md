@@ -49,7 +49,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Reste : HX59 ; écrans et branchement au Worker ; clé d'accès au rôle `partner` pour une agence.
 
 ### HX59 · La part de l'agence partenaire déduite de la commission
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : HX01
 - Objectif : K01 répartit encore 100 % des honoraires entre l'agent, le parrain et le réseau, sans déduire la part d'une agence partenaire (relevée par la relecture forte de HX01). Au compromis, quand le dossier est rattaché à une délégation signée, la part de l'agence est sortie des honoraires avant la grille ; la somme agent, parrain, réseau et agence fait toujours les honoraires [R69], et le relevé de HX01 à l'acte retrouve la même part.
