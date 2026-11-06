@@ -44,7 +44,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de client copiée) et dans les présentations publiques de Hektor, Hektor Voice et Modelo. Ce qu'AIMMO a déjà est écarté ; voici ce qui manque. Chaque tâche fait la même chose qu'eux ET un pas de plus, écrit dans « Jamais vu ». Relecture forte pour toutes. Section 9 du protocole.
 
 ### HX01 · Partage de biens entre agences et partage d'honoraires
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Interkab (Hektor) : publier un bien aux autres agences du réseau et aux agences partenaires, demander une co-visite, envoyer la fiche, signer un bon de délégation qui fixe le partage des honoraires. Jamais vu : le partage est calculé et garanti par le code jusqu'à l'acte, et chaque agence voit en direct où en est le dossier, sans appeler.
 - Critères : délégation signée avant toute visite (test) ; partage appliqué à la facture (test) ; aucune coordonnée du vendeur donnée à l'autre agence avant la signature de la délégation (test).
 
