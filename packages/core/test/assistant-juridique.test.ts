@@ -187,6 +187,13 @@ describe('assistant juridique (HX03)', () => {
     expect(one('hoguet-6', 'Voyez aussi l’article 7 de la loi.').ok).toBe(false);
     expect(one('cch-l271-1', 'Depuis la loi du 6 août 2015, l’acquéreur a 10 jours (article L271-1).').ok).toBe(true);
     expect(one('cch-l271-1', 'Depuis 2017, l’acquéreur a 10 jours.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Depuis 2015, l’acquéreur a 10 jours.').ok).toBe(true);
+    expect(one('cch-l271-1', 'L’acquéreur qui se rétracte perd jusqu’à 2000 euros.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Le délai est de 2015 heures.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Le délai est de 2015 jours depuis la loi de 2015.').ok).toBe(false);
+    expect(one('copro-46', 'Au-delà de 1997 m² la mention n’est plus due.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Selon la loi de 2000, l’acquéreur a 10 jours.').ok).toBe(true);
+    expect(one('cch-l271-1', 'La loi n° 2000-1208 a créé ce délai, porté à 10 jours en 1208.').ok).toBe(false);
   });
 
   it('[R15] un nom dit en passant, une date de naissance ou de signature ne partent jamais à l’IA', async () => {

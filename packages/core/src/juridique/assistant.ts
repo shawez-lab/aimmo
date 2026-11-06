@@ -329,25 +329,26 @@ export const FORBIDDEN_LEGAL_PHRASES: readonly string[] = [
 ];
 
 const REFERENCE = new RegExp(
-  `\\b(?:articles?\\s+|art\\.?\\s*)?l\\.?\\s?\\d+(?:-\\d+)+\\b|\\b(?:articles?|art\\.?)\\s+\\d+(?:-\\d+)*\\b|\\bn°\\s*\\d+-\\d+\\b|\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})\\s+\\d{4}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b|\\b(?:1[6-9]|20)\\d{2}\\b`,
+  `\\b(?:articles?\\s+|art\\.?\\s*)?l\\.?\\s?\\d+(?:-\\d+)+\\b|\\b(?:articles?|art\\.?)\\s+\\d+(?:-\\d+)*\\b|\\bn°\\s*\\d+-\\d+\\b|\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})\\s+\\d{4}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b`,
   'giu',
 );
+/** Une année seule ne vaut référence que dans « loi de 2015 », « depuis 2015 », jamais suivie d'une unité. */
+const YEAR = /\b(loi|ordonnance|decret|décret|texte|depuis|en|de|du)\s+((?:1[6-9]|20)\d{2})\b(?![\s  ]*(?:%|pour ?cent|euros?|€|m2|m²|m[eè]tres?|jours?|mois|ans?|ann[eé]es?|heures?|semaines?|fois))/giu;
 const refKey = (t: string): string => plain(t).replace(/^(?:articles?|art\.?)\s*/, '').replace(/\s+/g, ' ').replace(/^l\.?\s?/, 'l').trim();
 
-/** Les références entières d'un texte : son article, ses numéros, ses dates complètes et ses années. */
-function referencesOf(s: LegalFacts['sources'][number]): string[] {
-  const out: string[] = [];
-  for (const t of [s.title, s.article, s.origin, s.wording, s.textDate, s.wordingDate]) {
-    for (const m of t.matchAll(REFERENCE)) out.push(refKey(m[0]));
-    // L'année seule d'une date complète du texte : « la loi de 2001 ».
-    for (const m of t.matchAll(/(?<!\d)(?:1[6-9]|20)\d{2}(?!\d)/g)) out.push(m[0]);
-  }
-  return out;
+/** Les références entières d'un texte : son article, ses numéros et ses dates complètes ; ses années, à part. */
+function referencesOf(s: LegalFacts['sources'][number]): { refs: string[]; years: string[] } {
+  const refs: string[] = [];
+  for (const t of [s.title, s.article, s.origin, s.wording, s.textDate, s.wordingDate]) for (const m of t.matchAll(REFERENCE)) refs.push(refKey(m[0]));
+  // Les années des seules dates du texte, jamais celles qu'on lirait dans un numéro de loi (« 2000-1208 »).
+  return { refs, years: [s.textDate.slice(0, 4), s.wordingDate.slice(0, 4)] };
 }
 
 /** Le texte sans les références qui appartiennent aux textes cités ; une autre référence reste, et ses nombres comptent. */
-function withoutReferences(text: string, refs: readonly string[]): string {
-  return text.replace(REFERENCE, (m) => (refs.includes(refKey(m)) ? ' ' : m));
+function withoutReferences(text: string, refs: readonly string[], years: readonly string[]): string {
+  return text
+    .replace(REFERENCE, (m) => (refs.includes(refKey(m)) ? ' ' : m))
+    .replace(YEAR, (m, word: string, year: string) => (years.includes(year) ? `${word} ` : m));
 }
 
 /** Contrôle un brouillon de l'IA : chaque paragraphe cite des textes reçus et n'écrit que leurs nombres [R251]. */
@@ -377,15 +378,18 @@ export function checkDraft(draft: unknown, facts: LegalFacts): { ok: true; draft
     const withUnit = new Set<string>();
     const bare = new Set<string>();
     const refs: string[] = [];
+    const years: string[] = [];
     for (const id of ids) {
       const s = given.get(id);
       if (!s) continue;
       const fromSummary = quantitiesIn(s.summary);
       for (const q of fromSummary.withUnit) withUnit.add(q);
       for (const n of fromSummary.bare) bare.add(n);
-      refs.push(...referencesOf(s));
+      const r = referencesOf(s);
+      refs.push(...r.refs);
+      years.push(...r.years);
     }
-    const said = quantitiesIn(withoutReferences(text, refs));
+    const said = quantitiesIn(withoutReferences(text, refs, years));
     if ([...said.withUnit].some((q) => !withUnit.has(q)) || [...said.bare].some((n) => !bare.has(n))) problems.add('nombre_sans_source');
     const w = words(text);
     if (FORBIDDEN_LEGAL_PHRASES.some((f) => has(w, f))) problems.add('tournure_interdite');
