@@ -78,7 +78,7 @@ header = '''/**
  * La police des factures PDF/A-3 (HX60), écrite par `scripts/police-facture.py`, à ne pas modifier à la main.
  *
  * Poppins, Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins), sous licence SIL Open
- * Font License 1.1 (https://openfontlicense.org) : réduite aux caractères WinAnsi pour être intégrée à chaque facture.
+ * Font License 1.1 (texte entier dans `facturx-police-OFL.txt`) : réduite aux caractères WinAnsi pour être intégrée à chaque facture.
  * `widths` donne la chasse des codes 32 à 255, en millièmes de corps, 0 pour un code absent de WinAnsi.
  */
 export interface PoliceFacture {
