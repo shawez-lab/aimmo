@@ -72,6 +72,21 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Objectif : comme Hektor Voice : créer un bien, un contact ou un rendez-vous en parlant. Jamais vu : en sortant d'une visite, l'agent dicte une minute et l'appli remplit la fiche, l'avis de visite et la relance du vendeur, à valider d'un geste.
 - Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
 
+### HX07 · La boutique de l'agent
+- Statut : à faire
+- Objectif : comme « La Boutik » : commander panneaux « À vendre », cartes de visite, flyers, vitrines. Jamais vu : les supports sont générés depuis le bien lui-même (photos, prix, QR vers la fiche avec le mot-clé qui déclenche la réponse automatique) et commandés en un geste.
+- Critères : aucun prix ni mention inventés sur un support (test) ; QR qui mène à la bonne fiche (test) ; rien n'est commandé ni payé sans validation de l'agent.
+
+### HX08 · Remises négociées pour les agents du réseau
+- Statut : à faire
+- Objectif : comme « Mes remises » : les offres négociées pour les agents (diagnostiqueurs, photographes, assurances, outils). Jamais vu : l'appli propose la bonne remise au bon moment du dossier, par exemple le diagnostiqueur au moment du mandat.
+- Critères : chaque remise a sa source et sa date de fin, retirée seule à expiration (test).
+
+### HX09 · Actualités utiles, pas du bruit
+- Statut : à faire
+- Objectif : comme « Mes actualités » : la veille juridique et marché. Jamais vu : chaque actualité dit en une ligne ce qu'elle change pour l'agent et quels de ses dossiers sont concernés.
+- Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
