@@ -173,7 +173,7 @@ export function coveringSources(question: string, library: readonly LegalSource[
 
 const MONTHS = 'janvier|fevrier|février|mars|avril|mai|juin|juillet|aout|août|septembre|octobre|novembre|decembre|décembre';
 const BORN = /\bn[ée]e?s?\s+(?:le|en|à|a)\s+[^,;.?!\n]*/giu;
-const DATE_DIGITS = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g;
+const DATE_DIGITS = /\b\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?\b/g;
 const DATE_WORDS = new RegExp(`(?:\\b\\d{1,2}(?:er)?\\s+)?(?<![\\p{L}])(?:${MONTHS})(?![\\p{L}])(?:\\s+(?:dernier|prochain|\\d{4}))?`, 'giu');
 const YEAR_ALONE = /(?<!\d)(?:19|20)\d{2}(?!\d)/g;
 /** Les mots outils et le vocabulaire d'une question d'agent, que l'IA peut lire : liste fermée [R15]. */

@@ -226,6 +226,8 @@ describe('assistant juridique (HX03)', () => {
     }
     expect(scrubQuestion('Mon client M. Dupont peut-il se rétracter ?')).toBe('Mon client M. … peut-il se rétracter ?');
     // Une date sans jour, un mois seul ou une année ne partent pas non plus.
+    expect(scrubQuestion('Signé le 12/10, peut-il se rétracter ?')).toBe('Signé le [date], peut-il se rétracter ?');
+    expect(scrubQuestion('Signé le 3.11 ou le 4-11 ?')).toBe('Signé le [date] ou le [date] ?');
     for (const q of ['Mon client a signé le compromis en janvier 2026, peut-il se rétracter ?', 'Signé en mars dernier, peut-il se rétracter ?', 'Compromis de 2025 : peut-il se rétracter ?']) {
       const out = scrubQuestion(q);
       for (const leak of ['janvier', '2026', 'mars', '2025']) expect(out).not.toContain(leak);
