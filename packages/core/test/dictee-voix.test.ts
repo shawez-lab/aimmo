@@ -109,6 +109,12 @@ describe('HX06 · lecture de la dictée', () => {
     expect(at('La visite de 14 h s’est bien passée.')).toBeUndefined();
     expect(at('Visite mardi à 10 h ou à 11 h.')).toBeUndefined();
     expect(at('Il a 14 habitants dans sa rue, visite mardi à 10 h.')).toBe('2026-12-08T09:00:00.000Z');
+    // Une heure dite en partie n'est pas lue.
+    expect(at('Estimation mardi à 14 h 5.')).toBeUndefined();
+    expect(at('Estimation mardi à 14 heures et demie.')).toBeUndefined();
+    expect(at('Estimation mardi à midi et quart.')).toBeUndefined();
+    expect(at('Estimation mardi à 10 h moins le quart.')).toBeUndefined();
+    expect(at('Estimation mardi à 14 h 05.')).toBe('2026-12-08T13:05:00.000Z');
     // Un 31 février n'existe pas.
     expect(at('Visite le 31 février à 10 h.')).toBeUndefined();
   });
@@ -392,6 +398,18 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     // Rejouée : rien ne part deux fois.
     expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report })).toMatchObject({ ok: true, appointmentId: r.appointmentId });
     expect(await t.toSeller()).toHaveLength(1);
+  });
+
+  it('[R261] une visite d’un autre bien à l’heure de la contre-visite n’est pas prise pour elle : le créneau est refusé', async () => {
+    const t = await withVisit({ write: async () => GOOD });
+    const b2 = await t.store.createProperty({ networkId: t.network.id, agentId: t.samId, reference: 'B2', kind: 'home', city: 'Talant', priceEur: 200_000, surfaceM2: 70, rooms: 3, status: 'available' });
+    const project = (await t.db.first<{ project_id: string }>('SELECT project_id FROM visits WHERE appointment_id = ?', [t.visitId]))!.project_id;
+    const other = await t.visites.schedule(t.alex, { propertyId: b2.id, projectId: project, start: new Date('2026-12-05T09:00:00.000Z') });
+    expect(other.ok).toBe(true);
+    const before = await t.counts();
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: GOOD })).toMatchObject({ ok: false, code: 'slot_not_free' });
+    expect(await t.counts()).toEqual(before);
+    expect(await t.toSeller()).toEqual([]);
   });
 
   it('[R260] un compte rendu qui porte un chiffre ou une offre que la dictée ne dit pas est refusé, rien ne part', async () => {

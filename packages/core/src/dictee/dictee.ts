@@ -217,7 +217,7 @@ export class Dictee {
     const kind = rdv ? (rdv.get('appointmentKind')!.value as AppointmentKind) : null;
     // Le créneau, vérifié avant de créer quoi que ce soit d'autre [R32, R33].
     if (start && kind && personId) {
-      const existing = await this.bookedFor(viewer, personId, kind, start);
+      const existing = await this.bookedFor(viewer, personId, kind, start, bien ? input.requestId : (counterVisit?.property_id ?? null), counterVisit?.project_id ?? null);
       if (!existing) {
         const free = await this.deps.rendezVous.freeSlotsFor(viewer.userId, kind, new Date(start.getTime() - DAY_MS), new Date(start.getTime() + DAY_MS));
         if (!free.some((s) => s.start.getTime() === start.getTime())) return { ok: false, rule: 'R32', code: 'slot_not_free' };
@@ -246,7 +246,7 @@ export class Dictee {
 
     let booked: string | null = null;
     if (start && kind && personId) {
-      const existing = await this.bookedFor(viewer, personId, kind, start);
+      const existing = await this.bookedFor(viewer, personId, kind, start, bien ? input.requestId : (counterVisit?.property_id ?? null), counterVisit?.project_id ?? null);
       if (existing) booked = existing;
       else {
         if (counterVisit && this.deps.visites) {
@@ -299,12 +299,19 @@ export class Dictee {
     return { ok: true, personId, contact: contactState, propertyId, appointmentId: booked, report: delivery };
   }
 
-  /** Un rendez-vous déjà pris pour cette personne, à cette heure et de cette sorte : la même demande rejouée. */
-  private async bookedFor(viewer: Viewer, personId: string, kind: AppointmentKind, start: Date): Promise<string | null> {
+  /**
+   * Le rendez-vous de la même demande rejouée : même personne, heure, sorte et bien, et pour une contre-visite le même
+   * projet d'achat. Un autre rendez-vous à cette heure n'est jamais pris pour celui-ci : le créneau sera refusé [R32].
+   */
+  private async bookedFor(viewer: Viewer, personId: string, kind: AppointmentKind, start: Date, propertyId: string | null, projectId: string | null): Promise<string | null> {
     const members = await this.deps.fiche.membersOf(personId);
     const row = await this.db.first<{ id: string }>(
-      `SELECT id FROM appointments WHERE agent_id = ? AND network_id = ? AND kind = ? AND start_at = ? AND status = 'booked' AND person_id IN (${members.map(() => '?').join(', ')}) ORDER BY created_at, id LIMIT 1`,
-      [viewer.userId, viewer.networkId, kind, start.toISOString(), ...members],
+      `SELECT a.id FROM appointments a
+        WHERE a.agent_id = ? AND a.network_id = ? AND a.kind = ? AND a.start_at = ? AND a.status = 'booked' AND a.property_id IS ?
+          AND a.person_id IN (${members.map(() => '?').join(', ')})
+          AND (? IS NULL OR EXISTS (SELECT 1 FROM visits v WHERE v.appointment_id = a.id AND v.project_id = ?))
+        ORDER BY a.created_at, a.id LIMIT 1`,
+      [viewer.userId, viewer.networkId, kind, start.toISOString(), propertyId, ...members, projectId, projectId],
     );
     return row?.id ?? null;
   }
