@@ -3,7 +3,8 @@
 -- ligne. C'est la seule exception à la garde [R17] sur les migrations, écrite dans son test : rien n'est effacé, la
 -- recopie est vérifiée complète, colonne par colonne, avant que l'ancienne table ne parte. Si une seule ligne manque ou
 -- diffère, la vérification échoue et la migration s'arrête sans rien changer.
--- Les liens des autres tables vers `sale_files` sont vérifiés à la fin de la transaction de la migration.
+-- Les liens des autres tables vers `sale_files` sont reportés le temps du DROP et du RENAME, qui rétablit leur table ;
+-- le test le vérifie après coup par `PRAGMA foreign_key_check`.
 -- L'unicité devient « un seul dossier ouvert par bien », tenue par un déclencheur dont le message contient UNIQUE.
 PRAGMA defer_foreign_keys = ON;
 CREATE TABLE sale_files_refaite (

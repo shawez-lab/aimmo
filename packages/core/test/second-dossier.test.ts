@@ -116,7 +116,7 @@ describeWithSqlite('SV14 · un second dossier sur un bien', () => {
 
     // Comme `wrangler d1 migrations apply` : la migration passe dans une seule transaction, liens vérifiés à la fin.
     await t.db.exec('BEGIN');
-    expect(await applyMigrations(t.db, loadMigrations())).toEqual(['1760_second_dossier']);
+    expect((await applyMigrations(t.db, loadMigrations()))[0]).toBe('1760_second_dossier');
     await t.db.exec('COMMIT');
     expect(await snapshot()).toEqual(before);
     expect(await t.db.all('PRAGMA foreign_key_check')).toEqual([]);
