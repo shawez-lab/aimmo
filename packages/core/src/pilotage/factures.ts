@@ -300,7 +300,7 @@ export class Factures {
   /**
    * Le XML Factur-X de la facture, écrit une seule fois puis relu tel quel [R254]. Une identité manque : rien n'est
    * écrit, et ce qui manque va une fois au journal, par règle EN 16931, sans aucune donnée [R13] ; il sera écrit au
-   * passage suivant si l'identité est donnée entre-temps, tant que la facture n'est pas partie.
+   * passage suivant si l'identité est donnée entre-temps, même si la facture est déjà partie en essai sans lui.
    */
   private async facturX(invoiceId: string, networkId: string, v: InvoiceView): Promise<string | null> {
     const stored = await this.db.first<{ xml: string }>('SELECT xml FROM invoice_facturx WHERE invoice_id = ?', [invoiceId]);
@@ -309,13 +309,20 @@ export class Factures {
       'SELECT d.recipient_person_id AS person_id FROM invoices i LEFT JOIN invoices o ON o.id = i.corrects_invoice_id JOIN invoice_drafts d ON d.id = COALESCE(i.draft_id, o.draft_id) WHERE i.id = ?',
       [invoiceId],
     ))?.person_id ?? null;
-    const seller = await this.identites.emetteur(networkId, v.issuer);
+    let seller: IdentiteEmetteur | null = null;
     // Le client d'une facture d'honoraires est la personne qui paie ; celui d'un reversement, la société du réseau.
     let buyer: IdentiteClient | null = null;
-    if (recipient) buyer = await this.identites.client(networkId, recipient);
-    else {
-      const reseau = await this.identites.emetteur(networkId, 'reseau');
-      buyer = reseau ? { name: reseau.name, siren: reseau.siren, address: reseau.address } : null;
+    try {
+      seller = await this.identites.emetteur(networkId, v.issuer);
+      if (recipient) buyer = await this.identites.client(networkId, recipient);
+      else {
+        const reseau = await this.identites.emetteur(networkId, 'reseau');
+        buyer = reseau ? { name: reseau.name, siren: reseau.siren, address: reseau.address } : null;
+      }
+    } catch (error) {
+      // Une panne des identités n'arrête ni la facture ni le passage : sans XML cette fois, repris au suivant.
+      await appendEvent(this.journal, { type: 'facture.facturx_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      return null;
     }
     const built = factureElectronique({ content: v.content, seller, buyer });
     if (!built.ok) {
@@ -367,14 +374,18 @@ export class Factures {
       ))?.person_id ?? null;
       await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}), ...(recipient ? { client: `person:${recipient}` } : {}) } }, this.now);
     }
+    // Le XML s'écrit dès que les identités sont là, même pour une facture déjà partie en essai sans lui [R254].
+    const facturX = await this.facturX(invoiceId, row.network_id, v);
     if (!v.transmitted) {
-      const facturX = await this.facturX(invoiceId, row.network_id, v);
+      let ref: string | null = null;
       try {
-        const r = await this.plateforme.transmit({ id: invoiceId, content: v.content, facturX });
-        await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, r.ref, this.now().toISOString()]);
+        ref = (await this.plateforme.transmit({ id: invoiceId, content: v.content, facturX })).ref;
       } catch (error) {
         await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, attempt, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
       }
+      // Hors du bloc de panne : une écriture ratée après un envoi reçu ne se dit jamais en panne, l'essai reste
+      // réservé et ne se reprend qu'après l'heure, la plateforme écartant le doublon par l'identifiant [R255].
+      if (ref !== null) await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, ref, this.now().toISOString()]);
     }
     if (row.kind === 'honoraires' && !(await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]))) {
       const step = await this.commissions.recordStep(row.network_id, v.fileId, 'facturee', `facture:${v.content.label}`, actor);

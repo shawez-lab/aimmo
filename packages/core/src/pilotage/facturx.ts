@@ -124,7 +124,8 @@ export function manquesFacturX(input: FacturXInput): string[] {
   const sign = c.kind === 'avoir' ? -1 : 1;
   if (c.htCents * sign < 0 || c.vatCents * sign < 0 || c.ttcCents * sign <= 0) missing.push('signe_des_montants (BR-CO-15)');
   if (c.htCents + c.vatCents !== c.ttcCents) missing.push('total_ttc (BR-CO-15)');
-  if (Math.round((Math.abs(c.htCents) * c.vatBp) / 10_000) !== Math.abs(c.vatCents)) missing.push('total_tva (BR-CO-17)');
+  // K02 tire le HT du TTC : la TVA recalculée sur le HT peut s'écarter d'un centime, ce que BR-CO-17 admet.
+  if (Math.abs(Math.round((Math.abs(c.htCents) * c.vatBp) / 10_000) - Math.abs(c.vatCents)) > 1) missing.push('total_tva (BR-CO-17)');
   return missing;
 }
 

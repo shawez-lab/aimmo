@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { validateXML } from 'xmllint-wasm';
 import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
-import { Commissions, Factures, PlateformeEssai, factureElectronique, manquesFacturX, pilotageHourlyJob, totauxFacturX, type IdentitesFacturation, type InvoiceContent } from '../src/pilotage/index.ts';
+import { Commissions, Factures, PlateformeEssai, factureElectronique, splitVat, manquesFacturX, pilotageHourlyJob, totauxFacturX, type IdentitesFacturation, type InvoiceContent } from '../src/pilotage/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -102,8 +102,22 @@ it('[R254] rien d’inventé : sans identité, sans adresse, sans TVA dite ou av
   expect(manquesFacturX({ content: HONORAIRES, seller: { ...AGENT, regime: { category: 'E', exemptionReason: '' } }, buyer: CLIENT })).toEqual(['taux_tva (BR-E-05)', 'motif_exoneration (BR-E-10)']);
   // Les totaux se recomptent au centime ; un avoir sans facture corrigée ni signe négatif n'existe pas.
   expect(manquesFacturX({ content: { ...HONORAIRES, ttcCents: 1_000_001 }, seller: RESEAU, buyer: CLIENT })).toEqual(['total_ttc (BR-CO-15)']);
-  expect(manquesFacturX({ content: { ...HONORAIRES, vatCents: 166_666, ttcCents: 999_999 }, seller: RESEAU, buyer: CLIENT })).toEqual(['total_tva (BR-CO-17)']);
+  expect(manquesFacturX({ content: { ...HONORAIRES, vatCents: 166_600, ttcCents: 999_933 }, seller: RESEAU, buyer: CLIENT })).toEqual(['total_tva (BR-CO-17)']);
   expect(manquesFacturX({ content: { ...HONORAIRES, kind: 'avoir' }, seller: RESEAU, buyer: CLIENT })).toEqual(['facture_corrigee (BT-25)', 'signe_des_montants (BR-CO-15)']);
+});
+
+it('[R254] tout TTC coupé par K02 donne une TVA que le contrôle admet : l’écart d’arrondi d’un centime ne bloque jamais une facture', async () => {
+  // 12 345,03 € : HT 10 287,53 €, TVA 2 057,50 €, quand le HT × 20 % ferait 2 057,51 €.
+  const { htCents, vatCents } = splitVat(1_234_503, 2000);
+  const r = factureElectronique({ content: { ...HONORAIRES, htCents, vatCents, ttcCents: 1_234_503 }, seller: RESEAU, buyer: CLIENT });
+  if (!r.ok) throw new Error(r.missing.join(', '));
+  expect(await xsdErrors(r.xml)).toEqual([]);
+  for (const vatBp of [2000, 1000, 550]) {
+    for (let ttc = 1; ttc < 20_000; ttc += 7) {
+      const split = splitVat(ttc, vatBp);
+      expect(manquesFacturX({ content: { ...HONORAIRES, ...split, vatBp, ttcCents: ttc }, seller: RESEAU, buyer: CLIENT })).toEqual([]);
+    }
+  }
 });
 
 const ACT_PROOF = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
@@ -194,6 +208,32 @@ describeWithSqlite('HX04 · facture électronique, partie seule le jour de l’a
       ['emetteur', 'client'],
     ]);
     expect(JSON.stringify(waiting)).not.toMatch(/Acheteur|Alex/);
+  });
+
+  it('[R254] une facture partie en essai sans XML reçoit son Factur-X dès que les identités sont données ; une panne des identités n’arrête rien', async () => {
+    const t = await deed();
+    let broken = true;
+    const identites: IdentitesFacturation = {
+      emetteur: async (n, i) => {
+        if (broken) throw new Error('panne');
+        return IDENTITES.emetteur(n, i);
+      },
+      client: IDENTITES.client,
+    };
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: t.plateforme, identites });
+    await f.prepare(t.network.id);
+    expect(await f.issueOnDeed(t.network.id)).toBe(2);
+    expect(t.plateforme.received).toHaveLength(2);
+    expect((await t.journal.all()).filter((e) => e.type === 'facture.facturx_panne')).toHaveLength(2);
+    broken = false;
+    await f.reconcile(t.network.id);
+    const list = await f.list(t.direction);
+    if (!list.ok) throw new Error('list');
+    expect(list.value.every((v) => v.facturX !== null)).toBe(true);
+    const stored = await t.db.all<{ xml: string }>('SELECT xml FROM invoice_facturx');
+    for (const x of stored) expect(await xsdErrors(x.xml)).toEqual([]);
+    // Jamais renvoyée pour autant.
+    expect(t.plateforme.received).toHaveLength(2);
   });
 
   it('[R255] un brouillon qui ne retombe plus sur le dossier ne part pas seul : l’écart va au journal, une fois', async () => {
