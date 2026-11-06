@@ -46,7 +46,7 @@ export class SqlEcheancesDocumentsAgent implements EcheancesDocumentsAgent {
   }
 }
 
-/** Le passage de chaque heure : commissions, puis factures, puis reversements, pour chaque réseau, dans cet ordre. */
+/** Le passage de chaque heure : commissions, puis factures (émises seules le jour de l'acte, HX04), puis reversements, pour chaque réseau, dans cet ordre. */
 export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
   const now = options.now ?? (() => new Date());
   return {
@@ -62,6 +62,7 @@ export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, option
       for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) {
         await commissions.sync(n.id);
         await factures.prepare(n.id);
+        await factures.issueOnDeed(n.id);
         await factures.reconcile(n.id);
         await encaissements.run(n.id);
         await manques.syncIfDue(n.id);

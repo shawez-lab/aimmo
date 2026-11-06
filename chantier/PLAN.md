@@ -73,9 +73,18 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucune réponse sans source citée (test) ; refus explicite quand aucune source ne couvre la question (test).
 
 ### HX04 · Facture électronique
-- Statut : à faire
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06), lecture prudente : XML Factur-X profil EN 16931 (`packages/core/src/pilotage/facturx.ts`), validé dans les tests contre le schéma officiel 1.09 (`xmllint-wasm`, en dépendance de développement seulement) et vérifié en local avec le schematron officiel ; migration `1803`, règles R254 et R255. Aucune identité inventée : sans SIREN, adresse, régime et numéro de TVA, conditions de paiement, aucun XML, et ce qui manque va au journal. Le jour de l'acte, le passage horaire émet seul les factures qui retombent au centime sur le dossier (part de l'agence déjà déduite). Chaque envoi est réservé en base, donc jamais deux envois. Relecture forte : 4 P1 corrigés (arrondi de TVA, second envoi après une écriture ratée, XML après coup, panne des identités).
+- Reste : conteneur PDF/A-3 (HX60), identités réelles (H09, H26), adresse des clients, branchement d'une vraie plateforme.
 - Objectif : la facturation électronique obligatoire en France : factures au format Factur-X, réception et émission par une plateforme agréée, comme le pousse Ma Boîte Immo. Jamais vu : la facture d'honoraires part toute seule le jour de l'acte, partage d'honoraires déjà déduit.
 - Critères : Factur-X valide (test) ; montants égaux à ceux du dossier (test) ; aucune facture émise deux fois (test).
+
+### HX60 · Factur-X complet : le PDF/A-3 qui porte le XML
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : HX04
+- Objectif : HX04 écrit le XML EN 16931. Il reste à le joindre à un PDF/A-3 lisible (police intégrée, profil de couleurs, métadonnées XMP Factur-X, pièce jointe `factur-x.xml` en relation `Data`), sans dépendance lourde dans le Worker.
+- Critères : le PDF passe veraPDF en PDF/A-3b (test ou vérification écrite) ; le XML joint est octet pour octet celui rangé (test) ; montants du PDF égaux à ceux du XML (test).
 
 ### HX05 · Annonces dans plusieurs langues et portails internationaux
 - Statut : à faire
