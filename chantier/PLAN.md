@@ -96,7 +96,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque traduction garde les chiffres et mentions légales à l'identique (test) ; rien ne part sans validation de l'agent.
 
 ### HX06 · Création d'un bien et d'un contact à la voix
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor Voice : créer un bien, un contact ou un rendez-vous en parlant. Jamais vu : en sortant d'une visite, l'agent dicte une minute et l'appli remplit la fiche, l'avis de visite et la relance du vendeur, à valider d'un geste.
 - Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
 
