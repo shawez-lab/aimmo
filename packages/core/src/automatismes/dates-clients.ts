@@ -56,7 +56,7 @@ export interface DatesTickReport {
   messagesInTrial: number;
   refused: number;
   postponed: number;
-  /** Dates du jour laissées sans message : pas d'accord rangé ou pas de texte pour un canal permis [R404]. */
+  /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou pas de texte pour un canal permis [R404]. */
   withoutConsent: number;
 }
 
@@ -105,6 +105,7 @@ export class DatesClients {
   private readonly fiche: FicheUnique;
   private readonly controle: ControleEnvois;
   private readonly acces: Acces;
+  private readonly decisions: DecisionEnvoi;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -118,6 +119,7 @@ export class DatesClients {
     this.fiche = new FicheUnique(db, store, { now: this.now });
     this.acces = new Acces(db, store, this.fiche, journal, { now: this.now });
     const decisions = new DecisionEnvoi(db, store, this.fiche, { now: this.now });
+    this.decisions = decisions;
     // Seuls les canaux du mode essai : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, this.fiche, decisions, { channels: trialChannels(db, journal, this.now), journal: new SqlSendJournal(db, undefined, this.now), now: this.now });
   }
@@ -195,16 +197,6 @@ export class DatesClients {
     return row ? (JSON.parse(row.texts) as string[]) : null;
   }
 
-  /** Le premier canal où un accord « dates des clients » est en vigueur sur une fiche de la personne [R03, R404]. */
-  private async consentedChannels(members: readonly string[], at: string): Promise<Set<string>> {
-    const rows = await this.db.all<{ channel: string }>(
-      `SELECT DISTINCT channel FROM consents WHERE person_id IN (${marks(members.length)}) AND purpose = ? AND given_at <= ?
-         AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
-      [...members, DATES_PURPOSE, at, at],
-    );
-    return new Set(rows.map((r) => r.channel));
-  }
-
   /**
    * Un passage : prépare les messages de date du jour, par le contrôle central, en mode essai. Hors des heures permises
    * (la nuit, le dimanche), il ne prépare rien [R01, R405].
@@ -229,11 +221,13 @@ export class DatesClients {
       if (occasion === undefined) continue;
       const year = Number(occasion.slice(0, 4));
       const members = await this.fiche.membersOf(d.root);
-      const consented = await this.consentedChannels(members, now.toISOString());
       let channel: AutomationChannel | null = null;
       let texts: string[] | null = null;
       for (const c of AUTOMATION_CHANNELS) {
-        if (!consented.has(c)) continue;
+        // La même décision que le contrôle central, lue sans rien écrire : l'accord « dates des clients » en vigueur sur
+        // ce canal, toutes fiches réunies et retraits compris, et aucune exclusion [R03, R02, R04, R404].
+        const decision = await this.decisions.decide(d.root, { channel: c, kind: 'follow_up', purpose: DATES_PURPOSE, conversationId: null, at: now });
+        if (!decision.allowed) continue;
         const t = await this.textsOf(networkId, d.kind, c);
         if (t) {
           channel = c;
@@ -241,7 +235,7 @@ export class DatesClients {
           break;
         }
       }
-      // Sans accord rangé, ou sans texte pour un canal permis : rien n'est préparé, aucune place n'est prise [R404].
+      // Sans accord en vigueur, exclue, ou sans texte pour un canal permis : rien n'est préparé, aucune place n'est prise [R404].
       if (channel === null || texts === null) {
         report.withoutConsent += 1;
         continue;

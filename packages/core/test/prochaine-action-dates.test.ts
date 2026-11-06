@@ -93,6 +93,9 @@ describeWithSqlite('HX25 · prochaine action, filtres et dates des clients', () 
     await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'buy' });
     await t.store.recordMessage({ networkId: t.network.id, agentId: t.alex.id, personId: noa, channel: 'email', direction: 'out', authorKind: 'agent', body: 'Bonjour Noa.', occurredAt: new Date(TUE_10H - 3 * HOUR) });
     await t.store.recordMessage({ networkId: t.network.id, agentId: t.alex.id, personId: noa, channel: 'email', direction: 'in', authorKind: 'person', body: 'Bonjour, des nouvelles ?', occurredAt: new Date(TUE_10H - HOUR) });
+    // Une réponse dont l'envoi a échoué n'est pas une réponse : la fiche reste « répondre ».
+    const failedReply = await t.store.recordMessage({ networkId: t.network.id, agentId: t.alex.id, personId: noa, channel: 'email', direction: 'out', authorKind: 'agent', body: 'Je reviens vers vous.', occurredAt: new Date(TUE_10H - HOUR / 2) });
+    await t.db.run("INSERT INTO send_log (id, network_id, agent_id, person_id, message_id, channel, kind, outcome, rule, reason, occurred_at, created_at) VALUES ('log-f', ?, ?, ?, ?, 'email', 'reply', 'failed', NULL, 'panne (test)', ?, ?)", [t.network.id, t.alex.id, noa, failedReply.id, new Date(TUE_10H - HOUR / 2).toISOString(), new Date(TUE_10H).toISOString()]);
     cases.push({ id: noa, action: 'repondre', table: 'messages', text: /^Répondre : message reçu le 12\/10 à 9 h 00, sans réponse depuis\.$/ });
 
     // Un projet ouvert, dernier échange il y a 20 jours : relancer.
@@ -244,22 +247,24 @@ describeWithSqlite('HX25 · prochaine action, filtres et dates des clients', () 
     await t.dates.recordDate(me, { personId: ok, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
     await t.consent(ok);
 
-    // Date et accord, mais la personne a demandé l'arrêt : le contrôle central refuse, rien ne part [R04].
+    // Date et accord, mais la personne a demandé l'arrêt : rien n'est préparé, aucune place prise [R04].
     const stopped = await t.person('Tim');
     await t.dates.recordDate(me, { personId: stopped, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
     await t.consent(stopped);
     await t.store.addExclusion({ networkId: t.network.id, agentId: t.alex.id, personId: stopped, reason: 'stop', notedAt: new Date(TUE_10H - HOUR) });
+    // Un accord ancien encore ouvert, puis un accord plus récent retiré : le retrait l'emporte, rien n'est préparé [R03].
+    const reWithdrawn = await t.person('Lou');
+    await t.dates.recordDate(me, { personId: reWithdrawn, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
+    await t.consent(reWithdrawn, TUE_10H - 10 * DAY);
+    const later = await t.consent(reWithdrawn, TUE_10H - 2 * DAY);
+    await t.store.withdrawConsent(later.id, new Date(TUE_10H - DAY));
 
     const report = await t.dates.tick(t.network.id);
-    expect(report).toMatchObject({ closed: false, messagesInTrial: 1, refused: 1, withoutConsent: 3 });
-    // Le message passe par le contrôle central, en relance avec son sujet : chaque essai y est écrit.
-    expect(await t.db.all("SELECT person_id, outcome, rule FROM send_log WHERE kind = 'follow_up' ORDER BY person_id = ? DESC", [ok])).toEqual([
-      { person_id: ok, outcome: 'sent', rule: null },
-      { person_id: stopped, outcome: 'refused', rule: 'R04' },
-    ]);
+    expect(report).toMatchObject({ closed: false, messagesInTrial: 1, refused: 0, withoutConsent: 5 });
+    // Le message passe par le contrôle central, en relance avec son sujet : un seul essai, celui de la personne qui a dit oui.
+    expect(await t.db.all("SELECT person_id, outcome, rule FROM send_log WHERE kind = 'follow_up'")).toEqual([{ person_id: ok, outcome: 'sent', rule: null }]);
     expect(await t.outbox()).toEqual([{ person_id: ok, body: expect.stringContaining('Zoé, joyeux anniversaire') }]);
-    const rows = await t.db.all<{ person_id: string; status: string }>('SELECT person_id, status FROM client_date_messages ORDER BY person_id');
-    expect(rows).toEqual([{ person_id: ok, status: 'essai' }, { person_id: stopped, status: 'refuse' }].sort((a, b) => a.person_id.localeCompare(b.person_id)));
+    expect(await t.db.all('SELECT person_id, status FROM client_date_messages')).toEqual([{ person_id: ok, status: 'essai' }]);
     // Une seule fois par an : un second passage le même jour ne prépare rien.
     expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 0 });
     expect(await t.outbox()).toHaveLength(1);

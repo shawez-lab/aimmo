@@ -112,7 +112,14 @@ export class ProchaineAction {
     }
 
     // 2. Le dernier message est celui de la personne : lui répondre.
-    const messages = fiche.messages.filter((m) => m.occurred_at <= at).sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.created_at.localeCompare(b.created_at));
+    // Un message sortant dont l'envoi a échoué n'est pas une réponse : il n'est jamais arrivé à la personne.
+    const outIds = fiche.messages.filter((m) => m.direction === 'out').map((m) => m.id);
+    const failed = new Set(
+      outIds.length === 0
+        ? []
+        : (await this.db.all<{ message_id: string }>(`SELECT message_id FROM send_log WHERE outcome = 'failed' AND message_id IN (${outIds.map(() => '?').join(', ')})`, outIds)).map((r) => r.message_id),
+    );
+    const messages = fiche.messages.filter((m) => m.occurred_at <= at && !failed.has(m.id)).sort((a, b) => a.occurred_at.localeCompare(b.occurred_at) || a.created_at.localeCompare(b.created_at));
     const last = messages[messages.length - 1];
     if (last && last.direction === 'in') {
       return done('repondre', `Répondre : message reçu ${this.when(last.occurred_at)}, sans réponse depuis.`, `message:${last.id}`, last.occurred_at);
