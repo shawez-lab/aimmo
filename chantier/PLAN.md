@@ -80,7 +80,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : Factur-X valide (test) ; montants égaux à ceux du dossier (test) ; aucune facture émise deux fois (test).
 
 ### HX60 · Factur-X complet : le PDF/A-3 qui porte le XML
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06) : `pdfFacturX(xml)` écrit à la main, sans dépendance, un PDF/A-3b tiré du seul XML rangé (tout ce qui est imprimé est relu dedans) ; police Poppins (OFL) réduite à WinAnsi par `scripts/police-facture.py` ; profil sRGB écrit par le code ; un caractère hors police n'est jamais remplacé (pas de PDF, manque dit), un espacement s'imprime en espace ; PDF identique octet pour octet pour la même facture ; R256. veraPDF (image `verapdf/cli`, flavour 3b) passe les trois exemples dans le travail « Vérifier le PDF/A », lancé seulement quand ces fichiers changent. Relecture forte 1 P1 corrigé ; Codex 3 P2 corrigés (coupure des colonnes, montant sur sa page, pagination des identités).
+- Reste : fusionnée (#388). Brancher le PDF sur l'envoi à la plateforme et l'écran des factures (voie 1, `app.ts`).
 - Qui : Claude, relecture forte
 - Dépendances : HX04
 - Objectif : HX04 écrit le XML EN 16931. Il reste à le joindre à un PDF/A-3 lisible (police intégrée, profil de couleurs, métadonnées XMP Factur-X, pièce jointe `factur-x.xml` en relation `Data`), sans dépendance lourde dans le Worker.
