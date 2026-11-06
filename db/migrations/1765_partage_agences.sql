@@ -49,10 +49,13 @@ CREATE TABLE IF NOT EXISTS agency_delegation_steps (
   delegation_id TEXT NOT NULL REFERENCES agency_delegations (id) ON DELETE RESTRICT,
   step TEXT NOT NULL CHECK (step IN ('acceptee', 'signee')),
   proof_ref TEXT,
+  -- L'attestation de l'agent que le mandat autorise la délégation : exigée pour le bon signé, et seulement pour lui.
+  mandate_clause INTEGER CHECK (mandate_clause IS NULL OR mandate_clause = 1),
   at TEXT NOT NULL,
   by TEXT NOT NULL,
   PRIMARY KEY (delegation_id, step),
-  CHECK ((step = 'signee') = (proof_ref IS NOT NULL))
+  CHECK ((step = 'signee') = (proof_ref IS NOT NULL)),
+  CHECK ((step = 'signee') = (mandate_clause IS NOT NULL))
 );
 CREATE TRIGGER IF NOT EXISTS agency_delegation_steps_fige BEFORE UPDATE ON agency_delegation_steps BEGIN SELECT RAISE(ABORT, 'agency_delegation_steps : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS agency_delegation_steps_garde BEFORE DELETE ON agency_delegation_steps BEGIN SELECT RAISE(ABORT, 'agency_delegation_steps : rien ne s''efface'); END;
@@ -90,6 +93,12 @@ CREATE TABLE IF NOT EXISTS agency_delegation_files (
   at TEXT NOT NULL,
   by TEXT NOT NULL
 );
+CREATE TRIGGER IF NOT EXISTS agency_delegation_files_apres_signature BEFORE INSERT ON agency_delegation_files
+WHEN NOT EXISTS (SELECT 1 FROM agency_delegation_steps s WHERE s.delegation_id = NEW.delegation_id AND s.step = 'signee')
+  OR NOT EXISTS (
+    SELECT 1 FROM agency_delegations d JOIN agency_shares a ON a.id = d.share_id JOIN sale_files f ON f.property_id = a.property_id
+    WHERE d.id = NEW.delegation_id AND f.id = NEW.file_id)
+BEGIN SELECT RAISE(ABORT, 'agency_delegation_files : délégation non signée ou autre bien'); END;
 CREATE TRIGGER IF NOT EXISTS agency_delegation_files_fige BEFORE UPDATE ON agency_delegation_files BEGIN SELECT RAISE(ABORT, 'agency_delegation_files : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS agency_delegation_files_garde BEFORE DELETE ON agency_delegation_files BEGIN SELECT RAISE(ABORT, 'agency_delegation_files : rien ne s''efface'); END;
 
@@ -107,9 +116,15 @@ CREATE TABLE IF NOT EXISTS agency_fee_statements (
 );
 CREATE TRIGGER IF NOT EXISTS agency_fee_statements_fige BEFORE UPDATE ON agency_fee_statements BEGIN SELECT RAISE(ABORT, 'agency_fee_statements : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS agency_fee_statements_garde BEFORE DELETE ON agency_fee_statements BEGIN SELECT RAISE(ABORT, 'agency_fee_statements : rien ne s''efface'); END;
-CREATE TRIGGER IF NOT EXISTS agency_fee_statements_taux BEFORE INSERT ON agency_fee_statements
-WHEN NEW.partner_share_bp <> (SELECT d.partner_share_bp FROM agency_delegations d WHERE d.id = NEW.delegation_id)
-BEGIN SELECT RAISE(ABORT, 'agency_fee_statements : partage différent de la délégation'); END;
+-- Le relevé ne s'écrit que calculé : le dossier rattaché, acte signé, honoraires dus de N06, taux du bon, part de
+-- l'agence au centime inférieur (division entière). Toute autre écriture est refusée par la base.
+CREATE TRIGGER IF NOT EXISTS agency_fee_statements_calcul BEFORE INSERT ON agency_fee_statements
+WHEN NEW.partner_share_bp IS NOT (SELECT d.partner_share_bp FROM agency_delegations d WHERE d.id = NEW.delegation_id)
+  OR NEW.file_id IS NOT (SELECT f.file_id FROM agency_delegation_files f WHERE f.delegation_id = NEW.delegation_id)
+  OR NOT EXISTS (SELECT 1 FROM sale_file_closings k WHERE k.file_id = NEW.file_id)
+  OR NEW.fee_cents IS NOT (SELECT c.fee_eur * 100 FROM sale_commissions c WHERE c.file_id = NEW.file_id)
+  OR NEW.partner_cents <> (NEW.fee_cents * NEW.partner_share_bp) / 10000
+BEGIN SELECT RAISE(ABORT, 'agency_fee_statements : relevé non calculé'); END;
 
 -- La facture de rétrocession que l'agence adresse : rangée une fois, et seulement au montant du relevé [R235].
 CREATE TABLE IF NOT EXISTS agency_partner_invoices (

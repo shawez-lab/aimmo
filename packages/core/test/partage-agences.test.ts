@@ -82,6 +82,11 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
       t.db.run("INSERT INTO agency_visits (id, delegation_id, network_id, wished_at, requested_by, requested_at) VALUES ('v1', ?, ?, ?, 'x', 'x')", [d.id, t.network.id, wishedAt]),
     ).rejects.toThrow(/non signée/);
     await expect(t.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, at, by) VALUES ('nope', 'signee', 'x', 'x', 'x')")).rejects.toThrow();
+    // Ni un bon signé sans l'attestation du mandat, ni un dossier rattaché avant la signature, par une écriture directe.
+    await expect(t.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, at, by) VALUES (?, 'signee', 'x', 'x', 'x')", [d.id])).rejects.toThrow(/CHECK/);
+    const fileId = await t.openFile();
+    await expect(t.db.run("INSERT INTO agency_delegation_files (delegation_id, file_id, at, by) VALUES (?, ?, 'x', 'x')", [d.id, fileId])).rejects.toThrow(/non signée/);
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
     // Le bon signé, sans l'attestation de la clause du mandat, n'est pas rangé.
     expect(await t.p.recordSigned(t.agent, t.shareId, { proofRef: BON, mandateAllowsDelegation: false })).toEqual({ ok: false, rule: 'R234', code: 'mandate_clause' });
     expect(await t.p.recordSigned(t.agent, t.shareId, { proofRef: 'preuves/0b6f1d2e-8888-4a2b-8c3d-000000000099.pdf', mandateAllowsDelegation: true })).toEqual({ ok: false, rule: null, code: 'not_stored' });
@@ -170,6 +175,17 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
     expect(await t.p.statement(t.agent, t.shareId)).toEqual({ ok: true, value: expected });
     expect(await t.p.statement(t.stranger, t.shareId)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     await expect(t.db.run('UPDATE agency_fee_statements SET partner_cents = 1')).rejects.toThrow(/rien ne change/);
+    // Un relevé saisi à la main, à un autre partage ou d'autres honoraires, est refusé par la base.
+    const dl = (await t.db.first<{ id: string }>('SELECT id FROM agency_delegations'))!;
+    for (const [fee, partner] of [[1_000_000, 900_000], [2_000_000, 800_000], [1_000_000, 399_999]] as const) {
+      await expect(
+        t.db.run(
+          "INSERT INTO agency_fee_statements (delegation_id, network_id, file_id, fee_cents, partner_share_bp, partner_cents, own_cents, computed_at) VALUES (?, ?, ?, ?, 4000, ?, ?, 'x')",
+          [dl.id, t.network.id, fileId, fee, partner, fee - partner],
+        ),
+      ).rejects.toThrow(/non calculé/);
+    }
+    expect(dl.id).toBeTruthy();
     // La facture de l'agence : refusée à un autre montant, par l'application comme par la base.
     expect(await t.p.recordPartnerInvoice(t.direction, t.shareId, { ttcCents: 400_001, proofRef: FACTURE })).toEqual({ ok: false, rule: 'R235', code: 'montant_different' });
     const d = (await t.db.first<{ id: string }>('SELECT id FROM agency_delegations'))!;

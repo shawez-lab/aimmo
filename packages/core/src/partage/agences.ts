@@ -266,7 +266,7 @@ export class PartageAgences {
     const d = await this.delegationOf(shareId);
     if (!d) return { ok: false, rule: null, code: 'no_delegation' };
     const at = this.now().toISOString();
-    await this.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, at, by) VALUES (?, 'acceptee', NULL, ?, ?) ON CONFLICT DO NOTHING", [d.id, at, this.actor(viewer)]);
+    await this.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, mandate_clause, at, by) VALUES (?, 'acceptee', NULL, NULL, ?, ?) ON CONFLICT DO NOTHING", [d.id, at, this.actor(viewer)]);
     const kept = (await this.stepAt(d.id, 'acceptee'))!;
     if (kept === at) await this.event(viewer, 'partage.delegation', `agency_share:${shareId}`, { step: 'acceptee' });
     return { ok: true, value: { acceptedOn: this.day(kept) } };
@@ -286,7 +286,7 @@ export class PartageAgences {
     if (!(await this.proofs.has(input.proofRef))) return { ok: false, rule: null, code: 'not_stored' };
     if (!(await this.stepAt(d.id, 'acceptee'))) return { ok: false, rule: 'R234', code: 'not_accepted' };
     const at = this.now().toISOString();
-    await this.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, at, by) VALUES (?, 'signee', ?, ?, ?) ON CONFLICT DO NOTHING", [d.id, input.proofRef, at, this.actor(viewer)]);
+    await this.db.run("INSERT INTO agency_delegation_steps (delegation_id, step, proof_ref, mandate_clause, at, by) VALUES (?, 'signee', ?, 1, ?, ?) ON CONFLICT DO NOTHING", [d.id, input.proofRef, at, this.actor(viewer)]);
     const kept = (await this.stepAt(d.id, 'signee'))!;
     if (kept === at) await this.event(viewer, 'partage.delegation', `agency_share:${shareId}`, { step: 'signee', mandateClause: true });
     return { ok: true, value: { signedOn: this.day(kept) } };
