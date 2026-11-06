@@ -23,7 +23,7 @@ export interface Request {
 export interface FakeServer {
   name: string;
   provider(now: () => Date): AgendaProvider;
-  agentAdd(start: Date, end: Date, options?: { free?: boolean; parisLocal?: boolean }): string;
+  agentAdd(start: Date, end: Date, options?: { free?: boolean; parisLocal?: boolean; weekly?: boolean }): string;
   agentMove(id: string, start: Date, end: Date): void;
   agentRemove(id: string): void;
   live(): Live[];
@@ -82,6 +82,7 @@ interface GItem {
   start: Date;
   end: Date;
   key: string | null;
+  etat: string | null;
   seq: number;
 }
 
@@ -104,7 +105,7 @@ class GoogleServer extends Base implements FakeServer {
       summary: i.summary,
       start: { dateTime: i.start.toISOString() },
       end: { dateTime: i.end.toISOString() },
-      ...(i.key ? { extendedProperties: { private: { aimmo: i.key } } } : {}),
+      ...(i.key ? { extendedProperties: { private: { aimmo: i.key, ...(i.etat ? { 'aimmo-etat': i.etat } : {}) } } } : {}),
     };
   }
 
@@ -127,9 +128,9 @@ class GoogleServer extends Base implements FakeServer {
       }
       return this.page(all.filter((i) => q.get('showDeleted') === 'true' || i.status !== 'cancelled').map((i) => this.out(i, false)), q, true);
     }
-    const b = body ? (JSON.parse(body) as { id?: string; summary: string; status: string; transparency: string; start: { dateTime: string }; end: { dateTime: string }; extendedProperties?: { private?: { aimmo?: string } } }) : null;
+    const b = body ? (JSON.parse(body) as { id?: string; summary: string; status: string; transparency: string; start: { dateTime: string }; end: { dateTime: string }; extendedProperties?: { private?: { aimmo?: string; 'aimmo-etat'?: string } } }) : null;
     const apply = (id: string) => {
-      const item: GItem = { id, status: b!.status, transparency: b!.transparency, summary: b!.summary, start: new Date(b!.start.dateTime), end: new Date(b!.end.dateTime), key: b!.extendedProperties?.private?.aimmo ?? null, seq: ++this.seq };
+      const item: GItem = { id, status: b!.status, transparency: b!.transparency, summary: b!.summary, start: new Date(b!.start.dateTime), end: new Date(b!.end.dateTime), key: b!.extendedProperties?.private?.aimmo ?? null, etat: b!.extendedProperties?.private?.['aimmo-etat'] ?? null, seq: ++this.seq };
       this.items.set(id, item);
       return res(200, this.out(item, true));
     };
@@ -154,7 +155,7 @@ class GoogleServer extends Base implements FakeServer {
 
   agentAdd(start: Date, end: Date, options: { free?: boolean } = {}): string {
     const id = `x${++this.n}`;
-    this.items.set(id, { id, status: 'confirmed', transparency: options.free ? 'transparent' : 'opaque', summary: 'Perso', start, end, key: null, seq: ++this.seq });
+    this.items.set(id, { id, status: 'confirmed', transparency: options.free ? 'transparent' : 'opaque', summary: 'Perso', start, end, key: null, etat: null, seq: ++this.seq });
     return id;
   }
   agentMove(id: string, start: Date, end: Date): void {
@@ -164,7 +165,8 @@ class GoogleServer extends Base implements FakeServer {
     this.items.set(id, { ...this.items.get(id)!, status: 'cancelled', seq: ++this.seq });
   }
   live(): Live[] {
-    return [...this.items.values()].map((i) => ({ id: i.id, key: i.key, start: i.start, end: i.end, cancelled: i.status === 'cancelled', title: i.summary }));
+    // `cancelled` chez Google veut dire supprimé : l'événement n'est plus dans l'agenda de l'agent.
+    return [...this.items.values()].filter((i) => i.status !== 'cancelled').map((i) => ({ id: i.id, key: i.key, start: i.start, end: i.end, cancelled: i.etat === 'annule', title: i.summary }));
   }
 }
 
@@ -211,8 +213,14 @@ class OutlookServer extends Base implements FakeServer {
       const since = token === null ? 0 : Number(token);
       if (token !== null && since < this.expiredBelow) return res(410, { error: 'syncStateNotFound' });
       // La lecture des changements ne rend pas les propriétés étendues ; une suppression ne garde que l'identifiant.
-      const value = all.filter((i) => i.seq > since && (token !== null || !i.removed)).map((i) => (i.removed ? { id: i.id, '@removed': { reason: 'deleted' } } : this.out(i, false)));
-      return res(200, { value, '@odata.deltaLink': `${this.root}/calendarView/delta?$deltatoken=${this.seq}` });
+      // Le lien garde pour toujours la fenêtre de la première lecture, comme chez Graph.
+      const from = new Date(q.get('startDateTime')!);
+      const to = new Date(q.get('endDateTime')!);
+      const value = all
+        .filter((i) => i.seq > since && (token !== null || !i.removed) && i.start < to && i.end > from)
+        .map((i) => (i.removed ? { id: i.id, '@removed': { reason: 'deleted' } } : this.out(i, false)));
+      const window = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString() });
+      return res(200, { value, '@odata.deltaLink': `${this.root}/calendarView/delta?${window}&$deltatoken=${this.seq}` });
     }
     if (method === 'GET' && path === '/events') {
       const value = /ep\/value eq '((?:[^']|'')*)'\)$/.exec(q.get('$filter') ?? '')?.[1]?.replace(/''/g, "'");
@@ -271,6 +279,7 @@ interface AFile {
   start: Date;
   end: Date;
   deleted: boolean;
+  weekly: boolean;
   seq: number;
 }
 
@@ -292,9 +301,21 @@ class AppleServer extends Base implements FakeServer {
     return new AppleAgenda(conn(this.fetch), async () => AppleServer.CAL, { now });
   }
 
-  private icsOf(start: Date, end: Date, options: { free?: boolean; parisLocal?: boolean }, uid: string): string {
+  private icsOf(start: Date, end: Date, options: { free?: boolean; parisLocal?: boolean; weekly?: boolean }, uid: string): string {
     const time = (d: Date) => (options.parisLocal ? `;TZID=Europe/Paris:${parisLocal(d)}` : `:${stamp(d)}`);
-    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', `UID:${uid}`, `DTSTART${time(start)}`, `DTEND${time(end)}`, 'SUMMARY:Perso', `TRANSP:${options.free ? 'TRANSPARENT' : 'OPAQUE'}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', `UID:${uid}`, `DTSTART${time(start)}`, `DTEND${time(end)}`, ...(options.weekly ? ['RRULE:FREQ=WEEKLY'] : []), 'SUMMARY:Perso', `TRANSP:${options.free ? 'TRANSPARENT' : 'OPAQUE'}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+  }
+
+  /** Avec `expand`, une série devient ses occurrences de la fenêtre, en UTC, comme le fait un serveur CalDAV. */
+  private expanded(f: AFile, from: Date, to: Date): AFile {
+    const week = 7 * 86_400_000;
+    const span = f.end.getTime() - f.start.getTime();
+    const out: string[] = [];
+    for (let t = f.start.getTime(); t < to.getTime(); t += week) {
+      if (t + span <= from.getTime()) continue;
+      out.push('BEGIN:VEVENT', `UID:${f.path}`, `RECURRENCE-ID:${stamp(new Date(t))}`, `DTSTART:${stamp(new Date(t))}`, `DTEND:${stamp(new Date(t + span))}`, 'SUMMARY:Perso', 'END:VEVENT');
+    }
+    return { ...f, ics: ['BEGIN:VCALENDAR', 'VERSION:2.0', ...out, 'END:VCALENDAR', ''].join('\r\n') };
   }
 
   private resp(f: AFile): string {
@@ -314,7 +335,14 @@ class AppleServer extends Base implements FakeServer {
         const d = (s: string) => new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}Z`);
         const from = d(m[1]!);
         const to = d(m[2]!);
-        return ms(all.filter((f) => !f.deleted && f.start < to && f.end > from).map((f) => this.resp(f)).join(''));
+        const expand = body.includes('expand');
+        // Sans `expand`, une série est rendue telle quelle : son DTSTART est la première occurrence.
+        return ms(
+          all
+            .filter((f) => !f.deleted && f.start < to && (f.weekly || f.end > from))
+            .map((f) => this.resp(f.weekly && expand ? this.expanded(f, from, to) : f))
+            .join(''),
+        );
       }
       const token = /<d:sync-token>([^<]*)<\/d:sync-token>/.exec(body)?.[1] ?? '';
       const since = token ? Number(token.replace('tok-', '')) : 0;
@@ -331,15 +359,15 @@ class AppleServer extends Base implements FakeServer {
       const end = /DTEND:(\d{8}T\d{6}Z)/.exec(body)![1]!;
       const d = (s: string) => new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}Z`);
       const existed = this.files.has(url.pathname) && !this.files.get(url.pathname)!.deleted;
-      this.files.set(url.pathname, { path: url.pathname, ics: body, start: d(start), end: d(end), deleted: false, seq: ++this.seq });
+      this.files.set(url.pathname, { path: url.pathname, ics: body, start: d(start), end: d(end), deleted: false, weekly: false, seq: ++this.seq });
       return res(existed ? 204 : 201);
     }
     return res(405);
   }
 
-  agentAdd(start: Date, end: Date, options: { free?: boolean; parisLocal?: boolean } = {}): string {
+  agentAdd(start: Date, end: Date, options: { free?: boolean; parisLocal?: boolean; weekly?: boolean } = {}): string {
     const path = `${this.calPath}agent-${++this.n}.ics`;
-    this.files.set(path, { path, ics: this.icsOf(start, end, options, `agent-${this.n}`), start, end, deleted: false, seq: ++this.seq });
+    this.files.set(path, { path, ics: this.icsOf(start, end, options, `agent-${this.n}`), start, end, deleted: false, weekly: options.weekly ?? false, seq: ++this.seq });
     return path;
   }
   agentMove(id: string, start: Date, end: Date): void {

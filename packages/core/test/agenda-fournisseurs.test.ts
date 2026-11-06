@@ -162,12 +162,14 @@ for (const make of SERVERS) {
       server.agentRemove(w.ours()[0]!.id);
       await w.sync.run();
       const status = (await w.rdv.get(a.id))?.status;
-      if (status === 'booked') {
-        // La relecture complète ne dit pas si l'événement a été supprimé : le rendez-vous reste et son événement est remis, noté.
+      if (name === 'Google Agenda') {
+        // Google rend les suppressions dans la relecture complète : elle est connue, le rendez-vous est annulé.
+        expect(status).toBe('cancelled');
+      } else {
+        // Outlook et Apple ne rendent pas ce qui a disparu : jamais annulé sur ce seul silence, l'événement est remis, noté.
+        expect(status).toBe('booked');
         expect(w.ours().filter((e) => !e.cancelled)).toHaveLength(1);
         expect((await w.journal.all()).some((e) => e.type === 'rdv.agenda.manquant')).toBe(true);
-      } else {
-        expect(status).toBe('cancelled');
       }
     });
   });
@@ -184,6 +186,11 @@ describe('HX02 · lecture des réponses des services', () => {
     expect(keyOfGoogleId('x1')).toBeNull();
   });
 
+  it('une réponse CalDAV dont une propriété manque (propstat 404) n’est pas lue comme une suppression', () => {
+    const xml = `<D:multistatus xmlns:D="DAV:"><D:response><D:href>/c/a.ics</D:href><D:propstat><D:prop><C:calendar-data/></D:prop><D:status>HTTP/1.1 404 Not Found</D:status></D:propstat><D:propstat><D:prop><D:getetag>"1"</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response><D:sync-token>t</D:sync-token></D:multistatus>`;
+    expect(parseMultistatus(xml).responses).toEqual([{ href: '/c/a.ics', status: 200, data: null }]);
+  });
+
   it('les réponses CalDAV se lisent quels que soient les préfixes, échappées ou en CDATA', () => {
     const xml = `<?xml version="1.0"?><multistatus xmlns="DAV:"><response><href>/c/a.ics</href><propstat><prop><cal:calendar-data xmlns:cal="urn:ietf:params:xml:ns:caldav">BEGIN:VEVENT&#13;
 END:VEVENT</cal:calendar-data></prop><status>HTTP/1.1 200 OK</status></propstat></response><response><href>/c/b.ics</href><status>HTTP/1.1 404 Not Found</status></response><sync-token>http://x/sync/7</sync-token></multistatus>`;
@@ -196,7 +203,43 @@ END:VEVENT</cal:calendar-data></prop><status>HTTP/1.1 200 OK</status></propstat>
   });
 });
 
-describeWithSqlite('HX02 · Apple : heures locales', () => {
+describeWithSqlite('HX02 · Apple et Outlook : récurrences, heures locales, fenêtre', () => {
+  it('[R33] une série hebdomadaire Apple commencée la semaine d’avant bloque chaque occurrence', async () => {
+    const server = SERVERS[2]!();
+    const w = await world(server);
+    server.agentAdd(at('2026-11-03', '14:00'), at('2026-11-03', '15:00'), { weekly: true });
+    const slots = await w.slots();
+    expect(slots).not.toContain(at('2026-11-10', '14:30').getTime());
+    expect(slots).toContain(at('2026-11-10', '15:00').getTime());
+  });
+
+  it('Outlook : la fenêtre des changements est relue avant sa fin, et un déplacement lointain revient', async () => {
+    const server = SERVERS[1]!();
+    let clock = NOW;
+    const db = fromSyncSqlite(openMemoryDatabase());
+    await applyMigrations(db, loadMigrations());
+    const store = new FicheClient(db);
+    const net = await store.createNetwork('Réseau test');
+    const paul = await store.createAgent({ networkId: net.id, firstName: 'Paul', lastName: 'Essai' });
+    const lea = await store.createPerson({ networkId: net.id, agentId: paul.id, firstName: 'Léa', lastName: 'Exemple' });
+    const journal = new SqlJournalStore(db);
+    const now = () => clock;
+    let sync: AgendaSync;
+    const rdv = new RendezVous(db, journal, { now, agenda: { busy: (a, f, t) => sync.busySource().busy(a, f, t) } });
+    sync = new AgendaSync(db, journal, server.provider(now), rdv, { now });
+    await rdv.setAvailability({ role: 'agent', userId: paul.id, networkId: net.id }, WEEK);
+    await sync.run();
+    // Seize mois plus tard, un rendez-vous loin au-delà de la première fenêtre.
+    clock = at('2028-03-06', '08:00');
+    const r = await rdv.book({ networkId: net.id, agentId: paul.id, personId: lea.id, kind: 'estimation', start: at('2028-03-07', '09:00'), source: 'agent' });
+    if (!r.ok) throw new Error(r.code);
+    await sync.run();
+    const e = server.live().find((x) => x.key === `aimmo:${r.appointment.id}`)!;
+    server.agentRemove(e.id);
+    await sync.run();
+    expect((await rdv.get(r.appointment.id))?.status).toBe('cancelled');
+  });
+
   it('[R33] un événement Apple à l’heure de Paris (TZID) bloque le bon créneau', async () => {
     const server = SERVERS[2]!();
     const w = await world(server);

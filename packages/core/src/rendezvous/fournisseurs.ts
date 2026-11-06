@@ -115,7 +115,8 @@ function fromGoogle(item: GoogleItem): AgendaEvent {
     id: item.id,
     start: googleTime(item.start),
     end: googleTime(item.end),
-    cancelled: item.status === 'cancelled',
+    // Supprimé par l'agent (`cancelled` chez Google), ou annulé par AIMMO (l'événement reste, marqué).
+    cancelled: item.status === 'cancelled' || item.extendedProperties?.private?.['aimmo-etat'] === 'annule',
     // Un événement supprimé ne garde que son identifiant : la clé se relit dans l'identifiant choisi par AIMMO.
     key: item.extendedProperties?.private?.aimmo ?? keyOfGoogleId(item.id),
   };
@@ -154,13 +155,14 @@ export class GoogleAgenda implements AgendaProvider {
 
   async write(agentId: string, eventId: string | null, event: AgendaWrite): Promise<{ eventId: string }> {
     const own = googleEventId(event.key);
+    // Chez Google, `status: cancelled` supprime l'événement : un rendez-vous annulé reste donc confirmé, libre et marqué.
     const body = {
-      summary: event.title,
+      summary: event.cancelled ? `Annulé · ${event.title}` : event.title,
       start: { dateTime: event.start.toISOString() },
       end: { dateTime: event.end.toISOString() },
-      status: event.cancelled ? 'cancelled' : 'confirmed',
-      transparency: 'opaque',
-      extendedProperties: { private: { aimmo: event.key } },
+      status: 'confirmed',
+      transparency: event.cancelled ? 'transparent' : 'opaque',
+      extendedProperties: { private: { aimmo: event.key, 'aimmo-etat': event.cancelled ? 'annule' : 'actif' } },
     };
     const put = (id: string) =>
       call(this.c, agentId, `${this.base}/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -177,14 +179,14 @@ export class GoogleAgenda implements AgendaProvider {
   async changes(agentId: string, cursor: string | null): Promise<AgendaChanges> {
     if (cursor) {
       try {
-        const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ syncToken: cursor, showDeleted: 'true', singleEvents: 'true' }));
+        const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ syncToken: cursor, showDeleted: 'true', singleEvents: 'true', maxResults: '2500' }));
         return { events: items.map(fromGoogle), cursor: syncToken ?? cursor };
       } catch (error) {
         // Curseur périmé : Google demande une lecture complète.
         if (!(error instanceof AgendaHttpError && error.status === 410)) throw error;
       }
     }
-    const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ showDeleted: 'true', singleEvents: 'true' }));
+    const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ showDeleted: 'true', singleEvents: 'true', maxResults: '2500' }));
     if (!syncToken) throw new AgendaHttpError(502);
     return { events: items.map(fromGoogle), cursor: syncToken, complete: { from: null, to: null } };
   }
@@ -295,11 +297,18 @@ export class OutlookAgenda implements AgendaProvider {
     return { eventId: (await json<GraphItem>(r)).id };
   }
 
+  /**
+   * Le curseur garde la fin de la fenêtre lue (`<fin>|<lien>`) : le lien de Graph garde pour toujours la fenêtre de sa
+   * première lecture ; à moins de 60 jours de sa fin, une lecture complète repart sur une fenêtre neuve.
+   */
   async changes(agentId: string, cursor: string | null): Promise<AgendaChanges> {
-    if (cursor) {
+    const sep = cursor ? cursor.indexOf('|') : -1;
+    const end = sep > 0 ? new Date(cursor!.slice(0, sep)) : null;
+    const link = sep > 0 ? cursor!.slice(sep + 1) : null;
+    if (link && end && end.getTime() - this.now().getTime() > 60 * 86_400_000) {
       try {
-        const { items, delta } = await this.pages(agentId, cursor);
-        return { events: items.map(fromGraph), cursor: delta ?? cursor };
+        const { items, delta } = await this.pages(agentId, link);
+        return { events: items.map(fromGraph), cursor: `${end.toISOString()}|${delta ?? link}` };
       } catch (error) {
         // Lien périmé : Graph demande une lecture complète.
         if (!(error instanceof AgendaHttpError && error.status === 410)) throw error;
@@ -311,7 +320,7 @@ export class OutlookAgenda implements AgendaProvider {
     const q = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString() });
     const { items, delta } = await this.pages(agentId, `${this.base}/calendarView/delta?${q}`);
     if (!delta) throw new AgendaHttpError(502);
-    return { events: items.map(fromGraph), cursor: delta, complete: { from, to } };
+    return { events: items.map(fromGraph), cursor: `${to.toISOString()}|${delta}`, complete: { from, to } };
   }
 }
 
@@ -345,29 +354,38 @@ export function parseMultistatus(xml: string): { responses: DavResponse[]; syncT
     rest = rest.replace(m[0], '');
     const href = tag('href').exec(body)?.[1]?.trim();
     if (!href) continue;
-    const status = Number(/HTTP\/[\d.]+\s+(\d{3})/.exec(body)?.[1] ?? 200);
-    const data = tag('calendar-data').exec(body)?.[1];
+    // Seul le statut propre à la réponse (hors `propstat`) dit qu'une ressource n'existe plus.
+    const own = body.replace(/<(?:[\w-]+:)?propstat\b[\s\S]*?<\/(?:[\w-]+:)?propstat>/gi, '');
+    const status = Number(/HTTP\/[\d.]+\s+(\d{3})/.exec(own)?.[1] ?? 200);
+    // Le contenu ne compte que dans un `propstat` en 200.
+    const ok = [...body.matchAll(/<(?:[\w-]+:)?propstat\b[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?propstat>/gi)].map((p) => p[1] ?? '').filter((p) => /HTTP\/[\d.]+\s+200/.test(p));
+    const data = ok.map((p) => tag('calendar-data').exec(p)?.[1]).find((d) => d !== undefined);
     responses.push({ href: xmlText(href), status, data: data ? xmlText(data.trim()) : null });
   }
   const token = tag('sync-token').exec(rest)?.[1]?.trim();
   return { responses, syncToken: token ? xmlText(token) : null };
 }
 
-/** Les propriétés du premier VEVENT, lignes dépliées : nom, paramètres, valeur. */
-function vevent(ics: string): Map<string, { params: string; value: string }> | null {
+type Props = Map<string, { params: string; value: string }>;
+
+/** Les propriétés de chaque VEVENT, lignes dépliées : nom, paramètres, valeur. */
+function vevents(ics: string): Props[] {
   const lines = ics.replace(/\r\n[ \t]|\n[ \t]/g, '').split(/\r?\n/);
-  const out = new Map<string, { params: string; value: string }>();
-  let inside = false;
+  const all: Props[] = [];
+  let out: Props | null = null;
   for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') inside = true;
-    else if (line === 'END:VEVENT') return out;
-    else if (inside) {
+    if (line === 'BEGIN:VEVENT') out = new Map();
+    else if (line === 'END:VEVENT') {
+      if (out) all.push(out);
+      out = null;
+    } else if (out) {
       const m = /^([A-Z0-9-]+)((?:;[^:]*)?):(.*)$/i.exec(line);
       if (m && !out.has(m[1]!.toUpperCase())) out.set(m[1]!.toUpperCase(), { params: m[2] ?? '', value: m[3] ?? '' });
     }
   }
-  return null;
+  return all;
 }
+const vevent = (ics: string): Props | null => vevents(ics)[0] ?? null;
 
 /** Une heure iCalendar : UTC (`Z`), sinon heure de Paris ; une date seule vaut minuit, heure de Paris. */
 function icsTime(p: { params: string; value: string } | undefined): Date {
@@ -407,9 +425,7 @@ export function appleIcs(event: AgendaWrite, stamp: Date): string {
 /** L'UID et le nom du fichier tirés de la clé : seuls lettres, chiffres et tirets. */
 export const appleUid = (key: string): string => key.replace(/[^A-Za-z0-9-]/g, '-');
 
-function fromIcs(href: string, ics: string): AgendaEvent | null {
-  const e = vevent(ics);
-  if (!e) return null;
+function fromProps(href: string, e: Props): AgendaEvent {
   const key = e.get('X-AIMMO-KEY')?.value.replace(/\\(.)/g, '$1') ?? null;
   return {
     id: href,
@@ -420,7 +436,12 @@ function fromIcs(href: string, ics: string): AgendaEvent | null {
   };
 }
 
-const isFree = (ics: string): boolean => vevent(ics)?.get('TRANSP')?.value.toUpperCase() === 'TRANSPARENT';
+function fromIcs(href: string, ics: string): AgendaEvent | null {
+  const e = vevent(ics);
+  return e ? fromProps(href, e) : null;
+}
+
+const isFree = (e: Props): boolean => e.get('TRANSP')?.value.toUpperCase() === 'TRANSPARENT';
 
 export class AppleAgenda implements AgendaProvider {
   private readonly now: () => Date;
@@ -442,14 +463,17 @@ export class AppleAgenda implements AgendaProvider {
   async events(agentId: string, from: Date, to: Date): Promise<AgendaEvent[]> {
     const { responses } = await this.report(
       agentId,
-      `<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${icsStamp(from)}" end="${icsStamp(to)}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+      `<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data><c:expand start="${icsStamp(from)}" end="${icsStamp(to)}"/></c:calendar-data></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${icsStamp(from)}" end="${icsStamp(to)}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
     );
     const out: AgendaEvent[] = [];
     for (const r of responses) {
       if (r.status !== 200 || !r.data) continue;
-      const e = fromIcs(r.href, r.data);
-      if (!e || e.cancelled || (isFree(r.data) && !e.key)) continue;
-      if (e.start < to && e.end > from) out.push(e);
+      // Développée par le serveur (`expand`), une série rend chaque occurrence comme un VEVENT à part.
+      for (const props of vevents(r.data)) {
+        const e = fromProps(r.href, props);
+        if (e.cancelled || (isFree(props) && !e.key)) continue;
+        if (e.start < to && e.end > from) out.push(e);
+      }
     }
     return out;
   }
