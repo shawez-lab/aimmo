@@ -90,12 +90,13 @@ CREATE TABLE IF NOT EXISTS automation_runs (
 );
 CREATE INDEX IF NOT EXISTS automation_runs_due ON automation_runs (network_id, status, due_at);
 
--- Un seul message de scénario par personne et par jour, tous scénarios confondus [R402].
+-- Un seul message de scénario parti par personne et par jour, tous scénarios confondus [R402].
 CREATE TABLE IF NOT EXISTS automation_daily_messages (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   person_id TEXT NOT NULL,
   day TEXT NOT NULL,
-  run_id TEXT NOT NULL REFERENCES automation_runs (id) ON DELETE RESTRICT,
+  -- Vide quand le message qui l'avait prise a été refusé par le contrôle central : la place est rendue.
+  run_id TEXT REFERENCES automation_runs (id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL,
   PRIMARY KEY (network_id, person_id, day)
 );

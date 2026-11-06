@@ -132,6 +132,9 @@ interface RunRow {
   due_at: string;
 }
 
+/** La version citée est la dernière allumée du scénario : paramètres, le scénario, la version, le scénario [R401]. */
+const STILL_LIT = `EXISTS (SELECT 1 FROM automation_switches w WHERE w.scenario_id = ? AND w.version = ? AND w.lit = 1
+  AND w.seq = (SELECT MAX(seq) FROM automation_switches WHERE scenario_id = ?))`;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -492,10 +495,12 @@ export class ScenariosAutomatiques {
       const def = await this.definitionOf(s.scenarioId, s.version);
       // Jamais le passé : seulement les faits venus après l'allumage [R401].
       for (const fact of await this.facts(networkId, def, new Date(s.since), new Date(now.getTime() + 1))) {
+        // Rangé seulement si cette version est encore celle allumée, dans la même écriture : un arrêt venu entre-temps
+        // ne laisse naître aucun passage [R401].
         const inserted = await this.db.run(
           `INSERT OR IGNORE INTO automation_runs (id, network_id, scenario_id, version, trigger_ref, person_id, triggered_at, due_at, status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'a_faire', ?)`,
-          [this.newId(), networkId, s.scenarioId, s.version, fact.ref, fact.personId, fact.at, this.dueAt(def, fact.at).toISOString(), now.toISOString()],
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'a_faire', ? WHERE ${STILL_LIT}`,
+          [this.newId(), networkId, s.scenarioId, s.version, fact.ref, fact.personId, fact.at, this.dueAt(def, fact.at).toISOString(), now.toISOString(), s.scenarioId, s.version, s.scenarioId],
         );
         report.created += inserted.changes;
       }
@@ -521,7 +526,8 @@ export class ScenariosAutomatiques {
         }
       }
       // Réserver le passage : deux planificateurs en même temps n'en font qu'un [R18].
-      const claimed = await this.db.run("UPDATE automation_runs SET status = 'en_cours' WHERE id = ? AND status = 'a_faire'", [run.id]);
+      // Et seulement si sa version est encore celle allumée à cet instant [R401].
+      const claimed = await this.db.run(`UPDATE automation_runs SET status = 'en_cours' WHERE id = ? AND status = 'a_faire' AND ${STILL_LIT}`, [run.id, run.scenario_id, run.version, run.scenario_id]);
       if (claimed.changes !== 1) continue;
       try {
         await this.execute(networkId, run, def, now, report);
@@ -547,9 +553,11 @@ export class ScenariosAutomatiques {
       const day = this.day(now);
       // Un seul message de scénario par personne et par jour, tous scénarios confondus [R402].
       // La place du jour est prise sous la fiche gardée ; une place prise avant la réunion sous une autre fiche compte aussi.
+      // Une place rendue (message refusé) se reprend.
       await this.db.run('INSERT OR IGNORE INTO automation_daily_messages (network_id, person_id, day, run_id, created_at) VALUES (?, ?, ?, ?, ?)', [networkId, root, day, run.id, now.toISOString()]);
+      await this.db.run('UPDATE automation_daily_messages SET run_id = ? WHERE network_id = ? AND person_id = ? AND day = ? AND run_id IS NULL', [run.id, networkId, root, day]);
       const holders = await this.db.all<{ run_id: string }>(
-        `SELECT run_id FROM automation_daily_messages WHERE network_id = ? AND day = ? AND person_id IN (${members.map(() => '?').join(', ')})`,
+        `SELECT run_id FROM automation_daily_messages WHERE network_id = ? AND day = ? AND run_id IS NOT NULL AND person_id IN (${members.map(() => '?').join(', ')})`,
         [networkId, day, ...members],
       );
       if (!holders.some((h) => h.run_id === run.id) || holders.some((h) => h.run_id !== run.id)) {
@@ -569,6 +577,8 @@ export class ScenariosAutomatiques {
           figures: [],
         });
         messageStatus = result.status === 'sent' ? 'essai' : 'refuse';
+        // Refusé par le contrôle central, rien n'est parti : la place du jour est rendue à un autre scénario [R402].
+        if (result.status !== 'sent') await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
         messageRule = result.status === 'sent' ? null : result.rule;
         messageId = result.messageId;
       }
