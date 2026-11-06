@@ -216,7 +216,8 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 - Critères : chaque action proposée cite sa raison (test) ; aucun message de date sans date donnée et accord rangé (test) ; un filtre ne montre jamais une fiche hors des droits de l'agent (test).
 
 ### HX26 · Tri de la boîte mail de l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#391), migration `1902`, R408 à R411. Décidé, lecture prudente : une adresse inconnue ne crée jamais de fiche et n'en garde rien ; zéro ou plusieurs projets ouverts : aucune pièce rangée ; noms de fichier d'identité, de banque, d'impôts ou de revenus jamais rangés, au singulier comme au pluriel ; 20 pièces au plus par mail, à leur place ; la réponse validée part comme réponse de la conversation du mail (R21 peut la refuser si l'agent a déjà répondu dans ce fil) ; un tri coupé se reprend sans doublon et le curseur ne dépasse jamais un mail pas fini. Codex : 7 P0 corrigés en 5 tours, dernière version avec un seul P2, corrigé. Restent : vrais accès Gmail, Outlook et Drive (H05, H55) ; choix du dossier par l'agent pour les pièces en attente ; mails envoyés par l'agent lui-même ; branchement au Worker, routes et écran (voie 1, `app.ts`).
 - Objectif : comme Talqor : trier les mails, préparer les réponses, relier Gmail, Outlook et Drive. Jamais vu : chaque mail est rattaché à sa fiche et à son dossier, les pièces jointes utiles sont rangées dans le bon dossier, et la réponse préparée cite ce qu'elle reprend du dossier ; rien ne part sans validation.
 - Critères : un mail d'un client connu est rattaché à sa fiche (test) ; aucune réponse envoyée sans validation (test) ; une pièce jointe est rangée une seule fois, par son empreinte (test).
 
