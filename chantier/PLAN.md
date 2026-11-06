@@ -144,6 +144,10 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 
 ## Captation et voix
 
+Voie : 2
+
+Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX01 à HX20). Le cahier ne parle pas encore des notes vocales ni des appels : la source est la demande de Shawez du 2026-11-06 ci-dessus. Règles R240 à R249 et migrations à partir de `1800` réservées à ce groupe. Le code vit dans `packages/core/src/voix/` ; `app.ts`, `packages/core/src/index.ts` et les adaptateurs de réception ne changent pas : le branchement au Worker sera une tâche de la voie 1. Ordre : HX23 d'abord (rien d'extérieur), puis HX21, puis HX22. Le vrai service de transcription attend un humain (fournisseur, clé, accord de sous-traitance) : d'ici là, une interface et un faux transcripteur dans les tests.
+
 ### HX21 · Appels entrants résumés et rangés dans la fiche
 - Statut : à faire
 - Objectif : comme Leedflow d'Apimo et le suivi des appels de Hektor : résumé automatique de chaque appel, enregistrement dans la fiche, provenance des appels venus du site. Jamais vu : chaque information tirée de l'appel renvoie à la phrase dite, la qualification de Q01 s'applique comme pour un message, et la provenance se mesure par les liens d'appel marqués de AT05, sans jamais prendre un second numéro. L'enregistrement n'a lieu qu'après annonce et accord de l'appelant.
@@ -155,7 +159,10 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : la mention de l'assistant est dite au début de chaque appel (test) ; aucun chiffre donné qui ne vienne de la fiche du bien (test) ; un rendez-vous n'est pris que sur un créneau libre (test).
 
 ### HX23 · Messages vocaux transcrits et traités
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : C01, C06, Q01
+- Cahier : M02 Capter ; Conformité (R13, R15) ; demande de Shawez du 2026-11-06.
+- Attend : un fournisseur de transcription, sa clé et son accord de sous-traitance (ligne de `HUMAIN.md` à écrire par HX23) pour de vraies notes ; rien pour le code.
 - Objectif : comme Septeo : retranscrire les messages audio. Jamais vu : les notes vocales reçues sur WhatsApp, Instagram et Messenger entrent dans la chaîne de C01 comme un texte : transcrites, qualifiées par Q01, et la réponse part dans la langue de la personne ; l'audio d'origine reste lisible depuis la fiche.
 - Critères : une note vocale donne la même qualification que le même texte écrit (test) ; la transcription est marquée comme telle et liée à son audio (test) ; une transcription impossible passe la main à l'agent, sans réponse inventée (test).
 
