@@ -59,7 +59,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : délégation signée avant toute visite (test) ; partage appliqué à la facture (test) ; aucune coordonnée du vendeur donnée à l'autre agence avant la signature de la délégation (test).
 
 ### HX02 · Agenda relié à Google, Outlook et Apple
-- Statut : à faire
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06) : trois adaptateurs de `AgendaProvider` dans `packages/core/src/rendezvous/fournisseurs.ts` (Google Calendar v3, Graph, CalDAV iCloud), testés contre de faux serveurs ; meilleur créneau dans `trajets.ts` (estimation à vol d'oiseau majorée, sans service extérieur) ; règles R236 et R237 ; aucune migration. Un rendez-vous annulé reste dans l'agenda, libre et marqué « Annulé » (Google : jamais `status: cancelled`, qui supprime). Après une relecture complète, un événement manquant est remis, jamais pris pour une annulation. Rappels aux acheteurs : déjà sous le contrôle central par V04. Relecture forte : 2 P0, 4 P1 corrigés ; Codex : 3 P0, 3 P1 corrigés en quatre tours (DURATION, retraits Outlook relus, UID Apple, VALARM, TZID), puis rien à signaler (#383).
+- Reste : connexion OAuth de chaque agent (Google H21, Outlook et Apple H53), branchement au Worker et à l'écran, position des biens (géocodage) pour le meilleur créneau.
 - Objectif : synchronisation dans les deux sens avec Google Agenda, Outlook et Apple, et rappels de rendez-vous par SMS ou mail aux acheteurs. Jamais vu : l'appli propose elle-même le meilleur créneau en tenant compte des trajets entre visites.
 - Critères : un rendez-vous ajouté d'un côté apparaît de l'autre (tests avec faux serveurs) ; aucun doublon ; rappels sous le contrôle central (R01 à R05).
 
