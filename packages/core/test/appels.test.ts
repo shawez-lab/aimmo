@@ -261,6 +261,47 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     expect(r.ok).toBe(true);
   });
 
+  it('[R15] l’IA ne reçoit ni le nom que l’appelant se donne, ni celui de sa fiche, ni son numéro', async () => {
+    const segments: CallSegment[] = [
+      { speaker: 'appelant', startS: 0, endS: 4, text: 'Bonjour, je m’appelle Nina Exemple, mon numéro est le 06 00 00 03 01.' },
+      { speaker: 'appelant', startS: 5, endS: 9, text: 'Je cherche une maison à Talant.' },
+    ];
+    const seen: string[] = [];
+    const qualifier = { qualify: async (b: { text: string }) => (seen.push(b.text), { category: 'buyer', route: null, city: 'Talant', budgetMinEur: null, budgetMaxEur: null, priceEur: null, deadline: null, financing: null, criteria: [] }) };
+    const t = await setup(ok(segments), { qualifier });
+    const known = await t.store.createPerson({ networkId: t.network.id, firstName: 'Zoé', lastName: 'Fictive' });
+    await t.fiche.addIdentifier({ networkId: t.network.id, personId: known.id, kind: 'phone', value: '0600000301' });
+    await t.appels.receive(t.network.id, call({ callId: 'N1' }));
+    await t.appels.receive(t.network.id, call({ callId: 'N2' }));
+    expect(seen).toHaveLength(2);
+    for (const text of seen) expect(text).not.toMatch(/Nina|Exemple|Zoé|Fictive|06 00|0600/);
+    expect(seen[0]).toMatch(/Talant/);
+  });
+
+  it('[R244] un journal en panne après le rangement : la livraison suivante ajoute l’événement, une seule fois, sans retranscrire', async () => {
+    const tr = ok();
+    const t = await setup(tr);
+    let fail = true;
+    const journal = {
+      ...t.journal,
+      append: async (e: Parameters<typeof t.journal.append>[0]) => {
+        if (fail) throw new Error('journal en panne');
+        return t.journal.append(e);
+      },
+      last: () => t.journal.last(),
+      all: () => t.journal.all(),
+      bySubject: (s: string) => t.journal.bySubject(s),
+      byPeriod: (a: string, b: string) => t.journal.byPeriod(a, b),
+    };
+    const appels = new Appels(t.db, journal, t.store, t.fiche, tr, { now: () => at(60) });
+    await expect(appels.receive(t.network.id, call())).rejects.toThrow();
+    fail = false;
+    expect(await appels.receive(t.network.id, call())).toMatchObject({ ok: true, already: true, status: 'traite' });
+    await appels.receive(t.network.id, call());
+    expect(tr.calls).toHaveLength(1);
+    expect((await t.journal.all()).filter((e) => e.type === 'voix.appel_recu')).toHaveLength(1);
+  });
+
   it('un appel mal formé est refusé sans rien ranger', async () => {
     const t = await setup(ok());
     for (const bad of [null, {}, call({ provider: 'Essai !' }), call({ callId: '' }), call({ endedAt: at(-1) }), call({ endedAt: at(5 * 3600) })]) {

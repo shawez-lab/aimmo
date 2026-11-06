@@ -29,6 +29,7 @@ import {
   declaredFinancing,
   findCommune,
   qualifyByRules,
+  withoutNames,
   type Category,
   type Qualified,
   type Route,
@@ -283,6 +284,7 @@ export class Appels {
     if (!held) throw new Error('Appel non rangé.');
     if (claimed === 0) {
       if (held.status === 'en_cours') return { ok: true, callId: held.id, status: 'en_cours', personId: null, already: true };
+      await this.journalOnce(held);
       return { ok: true, callId: held.id, status: held.status, personId: held.person_id, already: true };
     }
 
@@ -310,7 +312,7 @@ export class Appels {
         if (typeof outcome === 'string') {
           update = { ...base, status: 'impossible', failure: outcome, person_id: person.id, attach, recording_ref: recordingRef };
         } else {
-          const { qualified, source } = await this.qualify(outcome.segments);
+          const { qualified, source } = await this.qualify(outcome.segments, person);
           const fields = citeFields(qualified, outcome.segments, this.communes);
           update = {
             ...base,
@@ -340,15 +342,26 @@ export class Appels {
     // Repris entre-temps par une autre livraison : c'est elle qui finit.
     if (changes === 0) {
       if (row.status === 'en_cours') return { ok: true, callId: row.id, status: 'en_cours', personId: null, already: true };
+      await this.journalOnce(row);
       return { ok: true, callId: row.id, status: row.status, personId: row.person_id, already: true };
     }
-    // Ni texte, ni numéro, ni référence d'enregistrement au journal [R13].
+    await this.journalOnce(row);
+    return { ok: true, callId: row.id, status: row.status as Exclude<CallStatus, 'en_cours'>, personId: row.person_id, already: false };
+  }
+
+  /**
+   * L'appel va au journal une seule fois [R244] : une livraison suivante d'un appel rangé dont l'événement manque (journal
+   * en panne après le rangement) l'ajoute, sans rien retranscrire. Ni texte, ni numéro, ni enregistrement [R13].
+   */
+  private async journalOnce(row: CallRow): Promise<void> {
+    const subject = `call:${row.id}`;
+    if ((await this.journal.bySubject(subject)).some((e) => e.type === 'voix.appel_recu')) return;
     await appendEvent(
       this.journal,
       {
         type: 'voix.appel_recu',
         actor: 'system',
-        subject: `call:${row.id}`,
+        subject,
         data: {
           rule: row.status === 'traite' ? 'R243' : row.status === 'masque' ? 'R244' : 'R242',
           status: row.status,
@@ -359,7 +372,6 @@ export class Appels {
       },
       this.now,
     );
-    return { ok: true, callId: row.id, status: row.status as Exclude<CallStatus, 'en_cours'>, personId: row.person_id, already: false };
   }
 
   /** Les appels d'une fiche, du plus récent au plus ancien, fiches réunies comprises. */
@@ -470,17 +482,22 @@ export class Appels {
     return readCallTranscript(value, durationS, this.minConfidence);
   }
 
-  /** Q01 sur les seules paroles de l'appelant, sans coordonnées [R15] ; l'IA refusée laisse les règles fixes [R23]. */
-  private async qualify(segments: readonly CallSegment[]): Promise<{ qualified: Qualified; source: 'ai' | 'rules' }> {
+  /**
+   * Q01 sur les seules paroles de l'appelant. L'IA ne reçoit ni coordonnée, ni nom de la fiche, ni le nom que l'appelant se
+   * donne [R15] ; sa sortie, contrôlée sur ce même texte, refusée, laisse les règles fixes [R23].
+   */
+  private async qualify(segments: readonly CallSegment[], person: Person): Promise<{ qualified: Qualified; source: 'ai' | 'rules' }> {
     const text = withoutContactDetails(segments.filter((s) => s.speaker === 'appelant').map((s) => s.text).join('\n'));
     const rules = qualifyByRules(text, { communes: this.communes });
     if (!this.qualifier) return { qualified: rules, source: 'rules' };
+    const names = [person.first_name, person.last_name].filter((n): n is string => typeof n === 'string' && n.trim() !== '');
+    const brief = withoutNames(text, names, this.communes);
     const raw = await this.withTimeout(
-      () => this.qualifier!.qualify({ text, channel: 'phone', propertyRecognized: false, communes: this.communes }),
+      () => this.qualifier!.qualify({ text: brief, channel: 'phone', propertyRecognized: false, communes: this.communes }),
       this.aiTimeoutMs,
     );
     if (raw === 'late' || raw === 'error') return { qualified: rules, source: 'rules' };
-    const checked = checkAiQualification(raw, text, this.communes);
+    const checked = checkAiQualification(raw, brief, this.communes);
     if ('rule' in checked) return { qualified: rules, source: 'rules' };
     return { qualified: checked, source: 'ai' };
   }
