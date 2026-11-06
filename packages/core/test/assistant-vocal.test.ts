@@ -130,7 +130,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(await t.assistant.start(t.call())).toEqual({ ok: false, code: 'line_off' });
     await t.assistant.setLine(t.asPaul, { agentId: t.paul.id, phone: AGENT_PHONE, enabled: true });
 
-    const { said } = await t.talk(t.call(), ['oui', 'C’est combien et il y a combien de pièces ?', 'Je voudrais un rendez-vous pour le visiter', 'le premier']);
+    const { said } = await t.talk(t.call(), ['oui', 'C’est combien et il y a combien de pièces ?', 'Je voudrais un rendez-vous pour le visiter', 'le premier', 'oui']);
     // Ni numéro de téléphone ni autre moyen de joindre l'agent : aucun nombre de plus de 6 chiffres.
     for (const s of said) for (const n of numbersIn(s)) expect(n.replace('.', '').length).toBeLessThanOrEqual(6);
     // Le numéro de l'agent et celui de l'appelant ne sont jamais au journal [R13].
@@ -150,6 +150,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
       'Le prix est négociable ?',
       'D’accord, je voudrais visiter',
       'le deuxième',
+      'oui, c’est parfait',
     ]);
     const allowed = sheetNumbers({ price_eur: 210000, surface_m2: 62, rooms: 3 }, SHEET);
     // Tous les créneaux proposés pendant l'appel.
@@ -217,13 +218,19 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     // Le premier créneau est pris par quelqu'un d'autre pendant l'appel : refusé, d'autres créneaux sont proposés.
     const taken = await t.reservation.book({ networkId: t.network.id, agentId: t.paul.id, kind: 'visite', start: new Date(first), source: 'site', email: 'autre.personne@example.test', consentProof: 'case cochée (test)' });
     expect(taken.ok).toBe(true);
-    const refused = await t.assistant.hear(turn.state, 'le premier');
+    const asked = await t.assistant.hear(unknown.state, 'le premier');
+    expect(asked.state.phase).toBe('confirm');
+    expect(asked.say[0]).toBe(`Je réserve une visite ${appointmentWhen(new Date(first)).text}. C’est bien cela ?`);
+    // Désigner un créneau ne réserve rien : seul le rendez-vous de l'autre personne existe.
+    expect((await appointments(t.db)).map((r) => r.source)).toEqual(['site']);
+    const refused = await t.assistant.hear(asked.state, 'oui');
     expect(refused.state.booked).toBeNull();
     expect(refused.say.join(' ')).toContain('Ce créneau vient d’être pris.');
     expect(refused.state.offered).not.toContain(first);
     expect(refused.state.phase).toBe('choose');
 
-    const booked = await t.assistant.hear(refused.state, 'le premier');
+    const again = await t.assistant.hear(refused.state, 'le premier');
+    const booked = await t.assistant.hear(again.state, 'oui');
     expect(booked.done).toBe(true);
     expect(booked.state.booked).toEqual({ kind: 'visite', start: refused.state.offered[0] });
     const rows = await appointments(t.db);
@@ -241,9 +248,34 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     }
     expect(await appointments(t.db)).toHaveLength(0);
     // Après un refus, un choix franc réserve.
-    const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', 'non, pas le premier', 'le deuxième']);
+    const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', 'non, pas le premier', 'le deuxième', 'oui']);
     expect(state.booked).not.toBeNull();
     expect(await appointments(t.db)).toHaveLength(1);
+  });
+
+  it('[R248] une question sur un créneau ne le réserve pas ; seul un oui franc au créneau répété réserve', async () => {
+    const t = await setup();
+    for (const lines of [
+      ['le premier est à quelle heure ?'],
+      ['quel jour est le deuxième'],
+      ['le premier', 'euh, c’est à quelle heure ?'],
+      ['le premier', 'oui mais pas avant midi'],
+      ['le premier', 'le deuxième plutôt'],
+    ]) {
+      const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', ...lines]);
+      expect(state.booked, lines.join(' / ')).toBeNull();
+    }
+    expect(await appointments(t.db)).toHaveLength(0);
+  });
+
+  it('[R242] un accord à l’enregistrement assorti d’une réserve n’en est pas un', async () => {
+    const t = await setup();
+    for (const answer of ['Oui pour parler, mais pas pour enregistrer', 'oui, enfin non', 'oui ? c’est enregistré pourquoi', 'ok mais sans enregistrement', 'je ne sais pas']) {
+      const { state } = await t.talk(t.call(), [answer]);
+      expect(state.consentAt, answer).toBeNull();
+    }
+    const { state } = await t.talk(t.call(), ['Oui, d’accord.']);
+    expect(state.consentAt).not.toBeNull();
   });
 
   it('[R248] un numéro masqué ne réserve rien ; un refus de rendez-vous ne réserve rien', async () => {
@@ -258,7 +290,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
 
   it('[R242] [R244] [R18] la main passe à l’agent avec le résumé de HX21, une seule fois ; sans accord, rien de ce qui est dit n’est gardé', async () => {
     const t = await setup();
-    const { state } = await t.talk(t.call(), ['oui', 'Le prix est négociable ?', 'je voudrais visiter', 'le deuxième']);
+    const { state } = await t.talk(t.call(), ['oui', 'Le prix est négociable ?', 'je voudrais visiter', 'le deuxième', 'oui']);
     expect(state.booked).not.toBeNull();
     const end = { endedAt: new Date(Date.parse(state.startedAt) + 120_000), recordingRef: 'REC-ASSISTANT-1' };
     const h = await t.assistant.finish(state, end);
@@ -296,6 +328,8 @@ it('HX22 · les intentions se lisent par des règles fixes', () => {
   expect(saysYes('Non')).toBe(false);
   expect(saysYes('oui... enfin non')).toBe(false);
   expect(saysYes('euh')).toBe(false);
+  expect(saysYes('Oui pour parler, mais pas pour enregistrer')).toBe(false);
+  expect(saysYes('Oui, bien sûr, allez-y.')).toBe(true);
   expect(topicsIn('Il y a combien de pièces ?')).toEqual(['pieces']);
   expect(topicsIn('Combien coûte-t-il ?')).toEqual(['prix']);
   expect(topicsIn('Le vendeur est pressé ?')).toEqual(['autre']);

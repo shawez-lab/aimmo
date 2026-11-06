@@ -19,7 +19,8 @@
  *
  * Décidé, lecture prudente : la reconnaissance de la parole est celle du service téléphonique ; les intentions sont
  * lues par des règles fixes, sans IA, et ce que dit l'appelant n'est envoyé à aucune IA par l'assistant [R15]. Un « non »
- * ou un « pas » dans le choix d'un créneau ne réserve jamais rien. Rien de ce qui est dit au journal [R13].
+ * ou un « pas », ou une question, dans le choix d'un créneau ne réserve jamais rien : le créneau désigné est répété, et
+ * seul un oui franc le réserve. L'accord à l'enregistrement n'est, lui aussi, qu'un oui sans réserve. Rien de ce qui est dit au journal [R13].
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -61,7 +62,7 @@ export type Topic = (typeof TOPICS)[number];
 /** Ce que l'assistant peut dire du bien : une phrase par sujet, et les nombres qu'elle porte, tous tirés de la fiche. */
 export type PropertyFacts = Partial<Record<Exclude<Topic, 'autre'>, string>>;
 
-export type Phase = 'consent' | 'ask' | 'choose' | 'done';
+export type Phase = 'consent' | 'ask' | 'choose' | 'confirm' | 'done';
 
 /** L'état d'un appel entre deux tours de parole, en JSON : le branchement le garde le temps de l'appel. */
 export interface AssistantState {
@@ -84,7 +85,11 @@ export interface AssistantState {
   phase: Phase;
   /** Les débuts des créneaux proposés pendant cet appel, seuls réservables [R248]. */
   offered: string[];
+  /** Le créneau désigné, répété à l'appelant ; réservé seulement après son oui franc [R248]. */
+  pending: string | null;
   misses: number;
+  /** Créneaux choisis puis pris entre-temps : au second, l'agent rappellera. */
+  lost: number;
   turns: number;
   unanswered: Topic[];
   booked: { kind: AppointmentKind; start: string } | null;
@@ -225,6 +230,7 @@ const BYE = /\b(?:au revoir|c'est tout|ce sera tout|rien d'autre|merci,? au revo
 const YES = /\b(?:oui|ouais|d'accord|ok|okay|bien sur|allez-y|pas de probleme|ca marche|entendu|volontiers)\b/;
 const NO = /\b(?:non|pas d'accord|refuse|je ne veux pas|surtout pas|sans enregistrement)\b/;
 const NEGATION = /\b(?:non|pas|aucun|aucune|ni|jamais|refuse|plutot pas)\b|\bn'/;
+const QUESTION = /\?|\b(?:quel|quelle|quels|quelles|quand|combien|est-ce|comment|pourquoi|c'est ou|ou est|ou ca)\b/;
 const WEEKDAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
 /** Les sujets de la fiche demandés dans une phrase ; `autre` pour une question que la fiche ne couvre pas. */
@@ -237,10 +243,12 @@ export function topicsIn(utterance: string): Topic[] {
   return found;
 }
 
-/** L'accord à l'enregistrement : seulement un oui sans non. Un doute vaut refus. */
+/** Un oui franc : la phrase entière n'est faite que de mots d'accord. « Oui, mais pas pour enregistrer » n'en est pas un. */
+const PLAIN_YES = /^(?:(?:oui|ouais|d'accord|je suis d'accord|ok|okay|bien sur|allez-y|allez y|ca marche|entendu|volontiers|tout a fait|absolument|parfait|tres bien|c'est bon|pas de probleme|pas de souci|c'est parfait|merci|bonjour|madame|monsieur)[\s,.!]*)+$/;
+
+/** L'accord, à l'enregistrement comme à un créneau : seulement un oui franc, sans réserve ni question. Un doute vaut refus. */
 export function saysYes(utterance: string): boolean {
-  const p = plain(utterance);
-  return YES.test(p) && !NO.test(p);
+  return PLAIN_YES.test(plain(utterance).replace(/[’]/g, "'").trim());
 }
 
 /** Le créneau choisi parmi ceux proposés, par son rang, son jour ou son heure ; null si rien ne désigne un seul créneau. */
@@ -351,7 +359,9 @@ export class AssistantVocal {
       consentAt: null,
       phase: 'consent',
       offered: [],
+      pending: null,
       misses: 0,
+      lost: 0,
       turns: 0,
       unanswered: [],
       booked: null,
@@ -385,11 +395,28 @@ export class AssistantVocal {
     }
 
     const p = plain(text);
+    if (state.phase === 'confirm') {
+      const pending = state.pending;
+      state.pending = null;
+      state.phase = 'choose';
+      // Seul un oui franc au créneau répété réserve ; tout le reste le laisse libre [R248].
+      if (pending && state.offered.includes(pending) && saysYes(text)) return this.book(state, pending);
+      if (BYE.test(p)) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
+      state.misses += 1;
+      if (state.misses >= 2) return this.close(state, [`Je n’ai rien réservé ; ${state.agentName} vous rappellera pour fixer le rendez-vous.`]);
+      return this.reply(state, [`Je n’ai rien réservé. Lequel préférez-vous : ${this.listOffers(state.offered)} ?`]);
+    }
+
     if (state.phase === 'choose') {
       if (BYE.test(p)) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
-      // Un refus ou une négation ne vaut jamais choix : « non, pas le premier » ne réserve rien [R248].
-      const pick = NEGATION.test(p) ? null : chosenSlot(text, state.offered);
-      if (pick) return this.book(state, pick);
+      // Une négation ou une question ne vaut jamais choix : « non, pas le premier », « le premier est à quelle heure ? » [R248].
+      const pick = NEGATION.test(p) || QUESTION.test(p) ? null : chosenSlot(text, state.offered);
+      if (pick) {
+        state.pending = pick;
+        state.phase = 'confirm';
+        state.misses = 0;
+        return this.reply(state, [`Je réserve ${this.what(state)} ${appointmentWhen(new Date(pick)).text}. C’est bien cela ?`]);
+      }
       if (NO.test(p) && !YES.test(p) && !/\b(?:pas|plutot|autre)\b/.test(p)) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
       state.misses += 1;
       if (state.misses >= 2) return this.close(state, [`Je n’ai pas compris le créneau choisi ; ${state.agentName} vous rappellera pour le fixer.`]);
@@ -483,6 +510,10 @@ export class AssistantVocal {
       : `Je peux vous proposer un rendez-vous avec ${state.agentName}. Que souhaitez-vous ?`;
   }
 
+  private what(state: AssistantState): string {
+    return state.kind === 'visite' ? 'une visite' : state.kind === 'estimation' ? 'une estimation' : 'un rendez-vous téléphonique';
+  }
+
   private listOffers(offered: readonly string[]): string {
     const whens = offered.map((s) => appointmentWhen(new Date(s)).text);
     return whens.length > 1 ? `${whens.slice(0, -1).join(', ')} ou ${whens[whens.length - 1]}` : whens[0]!;
@@ -508,10 +539,10 @@ export class AssistantVocal {
     }
     if (offered.length === 0) return this.close(state, [...before, `Je n’ai pas de créneau libre à vous proposer ; ${state.agentName} vous rappellera.`]);
     state.offered = offered;
+    state.pending = null;
     state.phase = 'choose';
     state.misses = 0;
-    const what = state.kind === 'visite' ? 'une visite' : state.kind === 'estimation' ? 'une estimation' : 'un rendez-vous téléphonique';
-    return this.reply(state, [...before, `Je peux vous proposer ${what} ${this.listOffers(offered)}. Lequel vous convient ?`]);
+    return this.reply(state, [...before, `Je peux vous proposer ${this.what(state)} ${this.listOffers(offered)}. Lequel vous convient ?`]);
   }
 
   /** Réserve le créneau choisi, revérifié libre par la réservation en ligne ; sinon de nouveaux créneaux [R248, R32]. */
@@ -529,15 +560,13 @@ export class AssistantVocal {
     if (result.ok) {
       state.booked = { kind: state.kind, start };
       state.offered = [];
+      state.pending = null;
       return this.close(state, [`C’est réservé, ${appointmentWhen(new Date(start)).text}. Vous recevrez une confirmation par message, et ${state.agentName} aura le résumé de notre échange.`]);
     }
     if (result.code === 'not_free' || result.code === 'taken' || result.code === 'agenda_busy' || result.code === 'outside_availability' || result.code === 'too_soon') {
-      if (state.misses >= 1) return this.close(state, [`Ce créneau vient d’être pris ; ${state.agentName} vous rappellera pour en fixer un autre.`]);
-      state.misses += 1;
-      const exclude = [...state.offered];
-      const turn = await this.propose({ ...state, offered: [] }, ['Ce créneau vient d’être pris.'], exclude);
-      turn.state.misses = state.misses;
-      return turn;
+      if (state.lost >= 1) return this.close(state, [`Ce créneau vient d’être pris ; ${state.agentName} vous rappellera pour en fixer un autre.`]);
+      state.lost += 1;
+      return this.propose(state, ['Ce créneau vient d’être pris.'], [...state.offered]);
     }
     return this.close(state, [`Je n’ai pas pu réserver ; ${state.agentName} vous rappellera pour fixer le rendez-vous.`]);
   }
