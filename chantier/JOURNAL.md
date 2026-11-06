@@ -643,3 +643,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 04:53 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
 - 2026-11-06 04:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-06 05:35 · SV12, SV13 · SV12 fusionnée sans le second dossier, passé à SV14 (#375) ; SV13 : les textes préparés suivent un nom corrigé, l'écran montre ce qui part (#376), relecture forte 1 P1 et Codex 1 P0 corrigés · prochaine : aucune, le reste attend un humain (S11, B03, B04, C09, X17, W23, SV05, SV14)
+- 2026-11-06 05:53 · voie 2 · plus rien de faisable : aucune proposition ouverte ; Feuille de route découpée et faite ; SV14 attend H51 ; S11, B03, B04, C09, W23, X17 et SV05 attendent un humain ; verrou resté libre, non pris · prochaine : aucune pour la voie 2
+- 2026-11-06 05:53 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
+- 2026-11-06 05:53 · VOIE 2 : aucune tâche, rien, relancé non
