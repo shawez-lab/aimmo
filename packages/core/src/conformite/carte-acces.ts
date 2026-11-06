@@ -327,6 +327,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
   calls: { locate: by('person_id') },
   call_journal: { locate: [via('call_id', 'calls')] },
+  // HX22 : le passage de main de l'assistant vocal se retrouve par l'appel rangé.
+  voice_assistant_calls: { locate: [via('call_row_id', 'calls')] },
   contact_keys: { locate: by('person_id') },
   attach_log: { locate: by('person_id') },
   conversation_handovers: { locate: by('person_id') },
@@ -490,6 +492,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_zones: out('agent', 'Communes de l\'agent.'),
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),
+  voice_assistant_lines: out('agent', 'Ligne de l\'assistant vocal : le numéro de l\'agent, rien d\'un client.'),
   agent_legal_mentions: out('agent', 'Mentions légales de l\'agent : statut et immatriculation.'),
   agent_review_links: out('agent', 'Lien d\'avis de l\'agent.'),
   agent_onboardings: out('agent', 'Intégration de l\'agent.'),
