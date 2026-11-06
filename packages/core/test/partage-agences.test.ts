@@ -169,6 +169,9 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
     t.setClock(at9('2027-06-11'));
     const acte = await new ActeVente(t.db, t.acces, t.journal, storage, { now: t.now }).record(t.agent, fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF });
     expect(acte).toMatchObject({ ok: true, value: { commission: { feeEur: 10000 } } });
+    // La facture se juge sur le relevé dû, même si personne ne l'a encore lu.
+    expect(await t.p.recordPartnerInvoice(t.direction, t.shareId, { ttcCents: 400_001, proofRef: FACTURE })).toEqual({ ok: false, rule: 'R235', code: 'montant_different' });
+    expect(await t.db.first('SELECT 1 AS n FROM agency_fee_statements')).toEqual({ n: 1 });
     // Le relevé : 40 % des honoraires dus, venus du mandat, jamais saisis.
     const expected = { feeCents: 1_000_000, partnerShareBp: 4_000, partnerCents: 400_000, ownCents: 600_000, partnerInvoiceReceivedOn: null };
     expect(await t.p.statement(t.agency, t.shareId)).toEqual({ ok: true, value: expected });
@@ -221,7 +224,11 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
     const fileId = await t.openFile();
     expect(await t.p.attachFile(t.agent, t.shareId, fileId)).toEqual({ ok: false, rule: 'R234', code: 'delegation_non_signee' });
     // Le bien n'est plus en vente : la fiche commune le dit, sans dire pourquoi.
-    expect(await t.p.progress(t.agency, t.shareId)).toMatchObject({ ok: true, value: { stage: 'bien_indisponible' } });
+    // Le jour n'est pas connu : il n'est jamais celui de la lecture.
+    const gone = await t.p.progress(t.agency, t.shareId);
+    expect(gone).toMatchObject({ ok: true, value: { stage: 'bien_indisponible' } });
+    if (!gone.ok) throw new Error();
+    expect(gone.value.steps.at(-1)).toEqual({ stage: 'bien_indisponible', on: null });
     // Un bien sous offre ne se partage plus.
     const reg = await t.p.registerAgency(t.direction, { businessName: 'Agence du Port Fictive', cardNumber: 'CPI 2101 2027 000 000 003' });
     if (!reg.ok) throw new Error(reg.code);
@@ -248,5 +255,14 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
     expect(await t.p.proposeDelegation(t.agency, t.shareId, { partnerShareBp: 5_000 })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.p.progress(t.stranger, t.shareId)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.p.progress(t.direction, t.shareId)).toMatchObject({ ok: true, value: { stage: 'partage' } });
+    // [R16] chaque lecture réussie de l'étape ou du relevé est écrite au journal de qui lit.
+    await t.p.progress(t.agency, t.shareId);
+    await t.p.statement(t.agency, t.shareId);
+    const reads = (await t.journal.all()).filter((e) => e.type === 'partage.lu' && e.subject === `agency_share:${t.shareId}`);
+    expect(reads.map((e) => [e.actor, (e.data as { kind: string }).kind])).toEqual([
+      [`direction:direction-1`, 'progress'],
+      [`partner:${t.agency.userId}`, 'progress'],
+      [`partner:${t.agency.userId}`, 'statement'],
+    ]);
   });
 });

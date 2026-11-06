@@ -61,8 +61,9 @@ export type DelegationStage = (typeof DELEGATION_STAGES)[number];
 
 export interface DelegationProgress {
   stage: DelegationStage;
-  /** Les étapes passées, dans l'ordre, chacune avec son jour à Paris : ni nom, ni montant d'un client. */
-  steps: { stage: DelegationStage; on: string }[];
+  /** Les étapes passées, dans l'ordre, chacune avec son jour à Paris : ni nom, ni montant d'un client. `null` : un jour
+   * que rien ne date (le bien devenu indisponible par ailleurs), jamais le jour de la lecture. */
+  steps: { stage: DelegationStage; on: string | null }[];
 }
 
 export interface FeeStatement {
@@ -357,12 +358,15 @@ export class PartageAgences {
   async progress(viewer: Viewer, shareId: string): Promise<Result<DelegationProgress>> {
     const g = await this.gate(viewer, shareId, 'agency_progress', 'read');
     if (!g.ok) return g;
-    return { ok: true, value: await this.progressOf(shareId) };
+    const value = await this.progressOf(shareId);
+    // Chaque lecture réussie est écrite au journal de qui lit, avant de rendre la réponse [R16].
+    await this.event(viewer, 'partage.lu', `agency_share:${shareId}`, { kind: 'progress' });
+    return { ok: true, value };
   }
 
   private async progressOf(shareId: string): Promise<DelegationProgress> {
     const share = (await this.share(shareId))!;
-    const steps: ({ stage: DelegationStage; at: string } | { stage: DelegationStage; day: string })[] = [{ stage: 'partage', at: share.shared_at }];
+    const steps: ({ stage: DelegationStage; at: string } | { stage: DelegationStage; day: string | null })[] = [{ stage: 'partage', at: share.shared_at }];
     const d = await this.delegationOf(shareId);
     let fileId: string | null = null;
     if (d) {
@@ -394,7 +398,7 @@ export class PartageAgences {
     if (!fileId) {
       // Sans dossier de l'agence, le bien vendu ou retiré par ailleurs se dit, sans dire pourquoi ni à qui.
       const status = (await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [share.property_id]))!.status;
-      if (status !== 'available') steps.push({ stage: 'bien_indisponible', at: this.now().toISOString() });
+      if (status !== 'available') steps.push({ stage: 'bien_indisponible', day: null });
     }
     const last = steps[steps.length - 1]!;
     return { stage: last.stage, steps: steps.map((s) => ({ stage: s.stage, on: 'day' in s ? s.day : this.day(s.at) })) };
@@ -407,29 +411,34 @@ export class PartageAgences {
   async statement(viewer: Viewer, shareId: string): Promise<Result<FeeStatement | null>> {
     const g = await this.gate(viewer, shareId, 'agency_statement', 'read');
     if (!g.ok) return g;
-    const d = await this.delegationOf(shareId);
-    if (!d) return { ok: true, value: null };
-    let row = await this.statementRow(d.id);
-    if (!row) {
-      const due = await this.db.first<{ file_id: string; fee_eur: number }>(
-        `SELECT f.file_id, c.fee_eur FROM agency_delegation_files f
-         JOIN sale_file_closings k ON k.file_id = f.file_id
-         JOIN sale_commissions c ON c.file_id = f.file_id
-         WHERE f.delegation_id = ?`,
-        [d.id],
-      );
-      if (!due) return { ok: true, value: null };
-      const feeCents = due.fee_eur * 100;
-      const split = splitAgencyFee(feeCents, d.partner_share_bp);
-      const { changes } = await this.db.run(
-        `INSERT INTO agency_fee_statements (delegation_id, network_id, file_id, fee_cents, partner_share_bp, partner_cents, own_cents, computed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-        [d.id, g.share.network_id, due.file_id, feeCents, d.partner_share_bp, split.partnerCents, split.ownCents, this.now().toISOString()],
-      );
-      if (changes === 1) await appendEvent(this.journal, { type: 'partage.releve', actor: 'system:partage', subject: `agency_share:${shareId}`, data: { rule: 'R235' } }, this.now);
-      row = (await this.statementRow(d.id))!;
-    }
-    return { ok: true, value: row };
+    const value = await this.ensureStatement(g.share);
+    await this.event(viewer, 'partage.lu', `agency_share:${shareId}`, { kind: 'statement' });
+    return { ok: true, value };
+  }
+
+  /** Le relevé rangé, ou calculé et rangé s'il est dû ; `null` sans délégation, sans dossier rattaché ou avant l'acte. */
+  private async ensureStatement(share: ShareRow): Promise<FeeStatement | null> {
+    const d = await this.delegationOf(share.id);
+    if (!d) return null;
+    const row = await this.statementRow(d.id);
+    if (row) return row;
+    const due = await this.db.first<{ file_id: string; fee_eur: number }>(
+      `SELECT f.file_id, c.fee_eur FROM agency_delegation_files f
+       JOIN sale_file_closings k ON k.file_id = f.file_id
+       JOIN sale_commissions c ON c.file_id = f.file_id
+       WHERE f.delegation_id = ?`,
+      [d.id],
+    );
+    if (!due) return null;
+    const feeCents = due.fee_eur * 100;
+    const split = splitAgencyFee(feeCents, d.partner_share_bp);
+    const { changes } = await this.db.run(
+      `INSERT INTO agency_fee_statements (delegation_id, network_id, file_id, fee_cents, partner_share_bp, partner_cents, own_cents, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      [d.id, share.network_id, due.file_id, feeCents, d.partner_share_bp, split.partnerCents, split.ownCents, this.now().toISOString()],
+    );
+    if (changes === 1) await appendEvent(this.journal, { type: 'partage.releve', actor: 'system:partage', subject: `agency_share:${share.id}`, data: { rule: 'R235' } }, this.now);
+    return this.statementRow(d.id);
   }
 
   private async statementRow(delegationId: string): Promise<FeeStatement | null> {
@@ -458,7 +467,8 @@ export class PartageAgences {
     const g = await this.gate(viewer, shareId, 'agency_invoice', 'read');
     if (!g.ok) return g;
     const d = await this.delegationOf(shareId);
-    const st = d ? await this.statementRow(d.id) : null;
+    // Le relevé dû est calculé ici s'il ne l'a pas encore été : la facture ne dépend d'aucune lecture d'avant.
+    const st = await this.ensureStatement(g.share);
     if (!d || !st) return { ok: false, rule: 'R235', code: 'no_statement' };
     if (typeof input.ttcCents !== 'number' || !Number.isInteger(input.ttcCents) || input.ttcCents !== st.partnerCents) {
       await this.event(viewer, 'partage.facture_refusee', `agency_share:${shareId}`, { rule: 'R235', code: 'montant_different' });
