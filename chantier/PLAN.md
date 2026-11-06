@@ -46,10 +46,11 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 ### HX01 · Partage de biens entre agences et partage d'honoraires
 - Statut : fait (2026-11-06)
 - Décidé (2026-11-06), lecture prudente : module `packages/core/src/partage/`, migration `1765`, règles R234 et R235. Les coordonnées du vendeur ne vont jamais à l'agence, même après signature : la co-visite passe par l'agent du bien. Le bon signé exige l'attestation que le mandat autorise la délégation. Part de l'agence au centime inférieur. La base refuse une visite ou un dossier rattaché avant signature, un relevé non calculé, une facture à un autre montant. Relecture forte : 2 P0 corrigés, 1 P1 laissé à HX59. Codex : 1 P0, 1 P1, 1 P2 corrigés, puis rien à signaler (#380).
-- Reste : HX59 ; écrans et branchement au Worker ; clé d'accès au rôle `partner` pour une agence.
+- Reste : écrans et branchement au Worker ; clé d'accès au rôle `partner` pour une agence.
 
 ### HX59 · La part de l'agence partenaire déduite de la commission
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06) : table à part `commission_agency_shares` (migration `1770`), la table des parts ne se refait pas [R17] ; partage et parrainage calculés sur le reste ; rattachement refusé après la commission prévue, par le code et par la base. Relecture forte : 1 P1 (test) corrigé ; Codex rien à signaler (#382).
 - Qui : Claude, relecture forte
 - Dépendances : HX01
 - Objectif : K01 répartit encore 100 % des honoraires entre l'agent, le parrain et le réseau, sans déduire la part d'une agence partenaire (relevée par la relecture forte de HX01). Au compromis, quand le dossier est rattaché à une délégation signée, la part de l'agence est sortie des honoraires avant la grille ; la somme agent, parrain, réseau et agence fait toujours les honoraires [R69], et le relevé de HX01 à l'acte retrouve la même part.
