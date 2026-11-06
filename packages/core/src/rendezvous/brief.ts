@@ -442,9 +442,8 @@ export class BriefsRendezVous {
     // Le brief suit l'agent qui l'a reçu : un rendez-vous passé à un autre agent ne lui ouvre pas l'ancien brief.
     if (!row) return { ok: false, code: 'not_ready' };
     if (row.agent_id !== viewer.userId) return { ok: false, code: 'not_agent' };
-    const booked = await this.db.first<{ person_id: string }>('SELECT person_id FROM appointments WHERE id = ?', [appointmentId]);
-    const person = booked ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE id = ?', [await this.fiche.rootOf(booked.person_id)]) : null;
-    return { ok: true, brief: briefWithCurrentName(JSON.parse(row.content) as Brief, person) };
+    // Le brief tel qu'il est rangé : aucune lecture de la fiche ici, l'accès à la fiche se contrôle dans `JourneeRendezVous` [R16].
+    return { ok: true, brief: JSON.parse(row.content) as Brief };
   }
 }
 

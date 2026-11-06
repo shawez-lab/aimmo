@@ -130,6 +130,17 @@ describeWithSqlite('A02 · rendez-vous du jour de l’agent', () => {
     expect((await w.db.first<{ content: string }>('SELECT content FROM appointment_briefs WHERE appointment_id = ?', [a.appointment.id]))!.content).not.toContain('Corrigé');
   });
 
+  it('SV13 [R16] une fiche passée à un autre agent après une correction : l’ancien agent ne lit pas le nouveau nom', async () => {
+    const w = await world();
+    const lea = await w.person(w.paul.id, 'Léa');
+    const a = await w.book(w.paul.id, lea.id, at('2026-11-10', '10:00'));
+    w.setClock(at('2026-11-10', '08:07'));
+    expect(await w.briefs.run()).toEqual([a.appointment.id]);
+    await w.db.run("UPDATE persons SET last_name = 'Corrigé', agent_id = ? WHERE id = ?", [w.lise.id, lea.id]);
+    const r = await w.journee.read(w.asPaul);
+    expect(r.ok && JSON.stringify(r.value)).not.toContain('Corrigé');
+  });
+
   it('[R16] une fiche passée à un autre agent ne montre ni prénom ni brief ; une fusion après le brief le cache', async () => {
     const w = await world();
     const lea = await w.person(w.paul.id, 'Léa');

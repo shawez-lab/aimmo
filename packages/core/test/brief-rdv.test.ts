@@ -160,17 +160,6 @@ describeWithSqlite('V05 · brief du rendez-vous', () => {
     expect(value(b, 'Document')).toContain('Étude des ventes du quartier');
   });
 
-  it('SV13 · un nom corrigé après la préparation : l’agent lit le nouveau, et le brief rangé ne change pas [R17]', async () => {
-    const w = await world();
-    const { property } = await fullData(w);
-    const a = await w.book(at('2026-11-10', '10:00'), { propertyId: property.id });
-    await w.runAt(at('2026-11-10', '08:07'));
-    const person = await w.db.first<{ person_id: string }>('SELECT person_id FROM appointments WHERE id = ?', [a.id]);
-    await w.db.run("UPDATE persons SET last_name = 'Exemplaire' WHERE id = ?", [person!.person_id]);
-    expect(value(await w.read(a.id), 'Nom')).toEqual(['Léa Exemplaire']);
-    expect((await w.db.first<{ content: string }>('SELECT content FROM appointment_briefs WHERE appointment_id = ?', [a.id]))!.content).toContain('Léa Exemple"');
-  });
-
   it('[R34] ce qui manque est dit, rien n’est inventé', async () => {
     const w = await world();
     const marc = await w.store.createPerson({ networkId: w.net.id, agentId: w.paul.id, firstName: null as never });
