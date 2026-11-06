@@ -426,4 +426,54 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     // Le message parti tient la place : un troisième le même jour serait refusé.
     expect(await t.db.all('SELECT run_id IS NOT NULL AS held FROM automation_daily_messages')).toEqual([{ held: 1 }]);
   });
+
+  it('[R400] [R402] l’essai ne compte des scénarios allumés que les messages que le contrôle central aurait laissés partir', async () => {
+    const t = await setup();
+    // Inès, arrivée il y a 6 jours, n'a donné son accord que par SMS.
+    t.setClock(TUE_10H - 6 * DAY);
+    const ines = await t.person('Inès', false);
+    await t.store.addIdentifier({ networkId: t.network.id, personId: ines, kind: 'phone', value: '0600000001' });
+    await t.store.addConsent({ networkId: t.network.id, personId: ines, purpose: AUTOMATION_PURPOSE, channel: 'sms', proof: 'case cochée (test)', givenAt: new Date(TUE_10H - 7 * DAY) });
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: ines, kind: 'sell' });
+    t.setClock(TUE_10H);
+    const mail = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const mailId = mail.ok ? mail.value.scenarioId : '';
+    expect(await t.scenarios.simulate(t.direction, mailId)).toMatchObject({ ok: true, value: { messages: 0, refused: { R03: 1 } } });
+    await t.scenarios.switchOn(t.direction, mailId);
+    const sms = await t.scenarios.compose(t.direction, { ...PROJECT, message: { channel: 'sms', text: 'Bonjour {prenom}, votre projet est bien noté. Je reviens vers vous très vite.' } });
+    const smsId = sms.ok ? sms.value.scenarioId : '';
+    expect(await t.scenarios.simulate(t.direction, smsId)).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 0, canSwitchOn: true } });
+    expect(await t.scenarios.switchOn(t.direction, smsId)).toMatchObject({ ok: true });
+  });
+
+  it('[R401] [R01] refusé pour l’heure par le contrôle central, le passage attend le lendemain au lieu de se clore', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    // Mardi 19 h 59 min 59 s : le passage commence ; quand le message arrive au contrôle central, il est 20 h.
+    const BEFORE_20H = Date.parse('2027-10-12T17:59:59.000Z');
+    t.setClock(BEFORE_20H);
+    const ines = await t.person('Inès');
+    let clock = BEFORE_20H;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => t.db.run(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      all: async <T,>(sql: string, params?: readonly (string | number | null)[]) => {
+        if (sql.startsWith('SELECT id, first_name FROM persons WHERE id IN')) clock = BEFORE_20H + 1000;
+        return t.db.all<T>(sql, params as never);
+      },
+    };
+    const late = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(clock) });
+    expect(await late.tick(t.network.id)).toMatchObject({ created: 1, messagesInTrial: 0, messagesRefused: 0, tasks: 0, postponed: 1 });
+    expect(await t.db.first('SELECT status, due_at FROM automation_runs WHERE person_id = ?', [ines])).toEqual({ status: 'a_faire', due_at: '2027-10-13T06:00:00.000Z' });
+    expect(await t.db.all('SELECT run_id FROM automation_daily_messages')).toEqual([{ run_id: null }]);
+    // Le lendemain à 8 h, il part, avec sa tâche, une seule fois.
+    t.setClock(Date.parse('2027-10-13T06:00:00.000Z'));
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, tasks: 1 });
+    expect(await t.count('automation_tasks')).toBe(1);
+  });
 });

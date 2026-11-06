@@ -324,6 +324,32 @@ export class ScenariosAutomatiques {
   }
 
   /**
+   * Ce que le contrôle central dirait d'un message, lu sans rien écrire : la décision à l'heure du passage [R01 à R04],
+   * une coordonnée pour ce canal, et jamais deux fois le même texte à la même personne [R05]. `null` : il partirait.
+   */
+  private async preflight(message: NonNullable<ScenarioDefinition['message']>, fact: Fact, dueAt: Date, textsOf: Map<string, Set<string>>): Promise<string | null> {
+    const decision = await this.decisions.decide(fact.personId, { channel: message.channel, kind: 'follow_up', purpose: AUTOMATION_PURPOSE, conversationId: null, at: dueAt });
+    if (!decision.allowed) return (decision.rule as SendRule | null) ?? 'refus';
+    const view = await this.fiche.view(fact.personId);
+    if (!view.identifiers.some((i) => IDENTIFIER_FOR[message.channel].includes(i.kind))) return 'sans_coordonnee';
+    const body = sameText(renderScenarioText(message.text, view.members.map((m) => m.first_name).find((n) => n) ?? null));
+    let seen = textsOf.get(fact.personId);
+    if (!seen) {
+      seen = new Set<string>();
+      for (const m of view.messages) {
+        if (m.direction !== 'out') continue;
+        seen.add(sameText(m.body));
+        // Sans sa mention de premier message [R06].
+        seen.add(sameText(m.body.split('\n\n').slice(1).join('\n\n')));
+      }
+      textsOf.set(fact.personId, seen);
+    }
+    if (seen.has(body)) return 'R05';
+    seen.add(body);
+    return null;
+  }
+
+  /**
    * Rejoue la dernière version sur les faits du mois passé, avec les scénarios déjà allumés. N'envoie rien, ne range ni
    * message, ni passage, ni tâche : seul le compte rendu de l'essai est gardé [R400, R402].
    */
@@ -339,57 +365,33 @@ export class ScenariosAutomatiques {
     const def = current.definition;
     const facts = await this.facts(viewer.networkId, def, from, to);
     const refusedBy: Record<string, number> = {};
+    /** Les textes déjà partis ou qui partiraient dans l'essai, par personne [R05]. */
+    const textsOf = new Map<string, Set<string>>();
     const allowed: Planned[] = [];
     const refuse = (rule: string): void => {
       refusedBy[rule] = (refusedBy[rule] ?? 0) + 1;
     };
-    /** Les textes déjà partis ou qui partiraient dans l'essai, par personne [R05]. */
-    const textsOf = new Map<string, Set<string>>();
     let tasks = 0;
     for (const fact of facts) {
       const dueAt = this.dueAt(def, fact.at);
       if (def.task !== null) tasks += 1;
       if (def.message === null) continue;
-      const message = def.message;
-      // La décision du contrôle central, lue sans rien écrire, à l'heure où le message serait parti [R01 à R04].
-      const decision = await this.decisions.decide(fact.personId, { channel: message.channel, kind: 'follow_up', purpose: AUTOMATION_PURPOSE, conversationId: null, at: dueAt });
-      if (!decision.allowed) {
-        refuse((decision.rule as SendRule | null) ?? 'refus');
-        continue;
-      }
-      // Les autres contrôles du contrôle central, lus sans rien écrire : une coordonnée pour ce canal, le même texte
-      // jamais deux fois à la même personne [R05].
-      const view = await this.fiche.view(fact.personId);
-      if (!view.identifiers.some((i) => IDENTIFIER_FOR[message.channel].includes(i.kind))) {
-        refuse('sans_coordonnee');
-        continue;
-      }
-      const body = sameText(renderScenarioText(message.text, view.members.map((m) => m.first_name).find((n) => n) ?? null));
-      let seen = textsOf.get(fact.personId);
-      if (!seen) {
-        seen = new Set<string>();
-        for (const m of view.messages) {
-          if (m.direction !== 'out') continue;
-          seen.add(sameText(m.body));
-          // Sans sa mention de premier message [R06].
-          seen.add(sameText(m.body.split('\n\n').slice(1).join('\n\n')));
-        }
-        textsOf.set(fact.personId, seen);
-      }
-      if (seen.has(body)) {
-        refuse('R05');
-        continue;
-      }
-      seen.add(body);
-      allowed.push({ scenarioId, ref: fact.ref, personId: fact.personId, dueAt });
+      const rule = await this.preflight(def.message, fact, dueAt, textsOf);
+      if (rule !== null) refuse(rule);
+      else allowed.push({ scenarioId, ref: fact.ref, personId: fact.personId, dueAt });
     }
     // Les messages des scénarios déjà allumés, sur la même période, pour voir les doubles du même jour [R402].
     const others: Planned[] = [];
+    const otherTexts = new Map<string, Set<string>>();
     for (const lit of await this.litScenarios(viewer.networkId)) {
       if (lit.scenarioId === scenarioId) continue;
       const otherDef = await this.definitionOf(lit.scenarioId, lit.version);
       if (otherDef.message === null) continue;
-      for (const fact of await this.facts(viewer.networkId, otherDef, from, to)) others.push({ scenarioId: lit.scenarioId, ref: fact.ref, personId: fact.personId, dueAt: this.dueAt(otherDef, fact.at) });
+      // Seulement ce que le contrôle central leur aurait laissé envoyer [R400].
+      for (const fact of await this.facts(viewer.networkId, otherDef, from, to)) {
+        const dueAt = this.dueAt(otherDef, fact.at);
+        if ((await this.preflight(otherDef.message, fact, dueAt, otherTexts)) === null) others.push({ scenarioId: lit.scenarioId, ref: fact.ref, personId: fact.personId, dueAt });
+      }
     }
     const taken = new Set(others.map((p) => `${p.personId}|${this.day(p.dueAt)}`));
     let sameDayTwice = 0;
@@ -576,6 +578,14 @@ export class ScenariosAutomatiques {
           fallbackTexts: [body],
           figures: [],
         });
+        // Refusé pour l'heure seulement (passé 20 h pendant le passage) : le passage attend la prochaine heure permise,
+        // la place du jour est rendue, rien n'est perdu [R01].
+        if (result.status === 'refused' && result.rule === 'R01') {
+          await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
+          await this.db.run("UPDATE automation_runs SET status = 'a_faire', due_at = ? WHERE id = ? AND status = 'en_cours'", [afterSendingTime(this.now(), 0, this.settings.window).toISOString(), run.id]);
+          report.postponed += 1;
+          return;
+        }
         messageStatus = result.status === 'sent' ? 'essai' : 'refuse';
         // Refusé par le contrôle central, rien n'est parti : la place du jour est rendue à un autre scénario [R402].
         if (result.status !== 'sent') await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
