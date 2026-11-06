@@ -3657,7 +3657,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV12 · Un second dossier sur un bien, et ce que le client lit après un arrêt
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Reste : fusionnée (#375), sans le second dossier, passé à SV14. Relecture forte 2 P0 et 3 P1 corrigés ; Codex sans remarque. La sortie à 10 ans des dossiers et des clients n'existe pour personne ; un signalement sur une offre ou un mandat ne fige pas le dossier lié.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV09
 - Cahier : M09 Offre ; M10 Compromis et acte ; Conformité.
 - Trouvé par la relecture de SV09 : l'unicité de `sale_files.property_id` empêche un second dossier ; les espaces du vendeur et de l'acquéreur montrent encore l'offre « acceptée » après l'arrêt ; le gel d'un signalement ne contient pas `sale_file_stops` ; la durée de conservation compte encore l'acquéreur d'un dossier arrêté comme client.
@@ -3676,8 +3677,17 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Critères : droits [R16] (test) ; aucun nom au journal [R13] (test) ; l'ancienne valeur reste lisible par la direction [R17] (test) ; document déjà généré inchangé (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
-### SV13 · Les textes déjà préparés quand un nom est corrigé
+### SV14 · Un second dossier sur un bien
 - Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV12
+- Cahier : M09 Offre ; M10 Compromis et acte.
+- Trouvé par SV09 : l'unicité de `sale_files.property_id` empêche un second dossier après un arrêt. Le travail prêt est dans le commit `bba3231e` de la branche `chantier/SV09`.
+- Objectif : si H51 répond oui, table refaite, un seul dossier ouvert par bien, l'exception écrite dans le test [R17].
+- Critères : un second dossier s'ouvre après un arrêt, et tous les passages lisent le bon (test) ; deux dossiers ouverts sur un bien refusés (test) ; aucune donnée perdue à la recopie (test).
+- Attend : H51.
+
+### SV13 · Les textes déjà préparés quand un nom est corrigé
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV10
 - Cahier : M02 Capter ; Conformité, droit de rectification.
 - Trouvé par la relecture de SV10 : la relance d'un ancien contact repart du texte du code après une correction, mais l'écran de validation montre encore le brouillon rangé, et les autres brouillons à valider n'ont pas été inventoriés (comptes rendus, points de la semaine, réponses préparées).
