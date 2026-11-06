@@ -3687,7 +3687,9 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51.
 
 ### SV13 · Les textes déjà préparés quand un nom est corrigé
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Reste : fusionnée (#376). Relecture forte 1 P1 corrigé ; Codex 1 P0 corrigé, puis sans remarque ; vérification GitHub verte.
+- Décidé (2026-11-06), lecture prudente : la ligne rangée ne change jamais [R17]. Le remerciement remplace sa seule salutation ; la relance d'un ancien contact prend le texte du code après une correction ou si la salutation n'est plus celle de la fiche ; le nom du brief n'est remplacé que sur l'écran de la journée, après son contrôle d'accès [R16]. `BriefsRendezVous.read` rend le brief tel qu'il est rangé. `referrals.first_name` et `partner_recommendations.first_name` gardent le prénom donné à la recommandation : affichage seul, aucun texte envoyé.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV10
 - Cahier : M02 Capter ; Conformité, droit de rectification.
 - Trouvé par la relecture de SV10 : la relance d'un ancien contact repart du texte du code après une correction, mais l'écran de validation montre encore le brouillon rangé, et les autres brouillons à valider n'ont pas été inventoriés (comptes rendus, points de la semaine, réponses préparées).
