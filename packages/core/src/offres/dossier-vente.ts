@@ -78,8 +78,9 @@ export class DossiersVente {
     if (amount === null) return { ok: false, rule: null, code: 'not_accepted' };
     const property = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [offer.propertyId]);
     if (!property || ['sold', 'rented', 'withdrawn'].includes(property.status)) return { ok: false, rule: null, code: 'not_on_sale' };
-    // Un bien n'a qu'un dossier : après un arrêt, un autre attend la décision H51 [R233]. Dit tel quel, jamais « déjà ouvert ».
-    if (await this.db.first('SELECT 1 FROM sale_files f JOIN sale_file_stops s ON s.file_id = f.id WHERE f.property_id = ?', [offer.propertyId])) return { ok: false, rule: null, code: 'previous_file_stopped' };
+    // Un seul dossier ouvert par bien ; après un arrêt, un nouveau s'ouvre sur une autre offre (H51) [R233]. L'offre d'un
+    // dossier arrêté n'en rouvre pas : dit tel quel, jamais « déjà ouvert ».
+    if (await this.db.first('SELECT 1 FROM sale_files f JOIN sale_file_stops s ON s.file_id = f.id WHERE f.offer_id = ?', [offerId])) return { ok: false, rule: null, code: 'previous_file_stopped' };
     const id = this.newId();
     const openedAt = this.now().toISOString();
     // Le vendeur du dossier, rangé une fois : le mandant du dernier mandat vivant ce jour-là. Un ancien mandant, ou celui

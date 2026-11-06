@@ -60,25 +60,28 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect(await t.statusOf()).toBe('draft');
   });
 
-  it('[R233] autre dossier : un bien n’en a qu’un, et un arrêt rejoué ne change rien', async () => {
+  it('[R233] autre dossier : un seul ouvert à la fois, un arrêt rejoué ne change rien, un second s’ouvre après (SV14)', async () => {
     const t = await setup();
     await t.listed();
     expect((await t.secondOffer()).answer).toMatchObject({ ok: false, code: 'other_accepted' });
     await t.stop();
+    expect(await t.stop()).toMatchObject({ ok: false, code: 'file_stopped' });
     await t.publication.sync(t.network.id, t.propertyId);
     expect(await t.statusOf()).toBe('available');
+    expect((await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'bien.offre_tombee')).toHaveLength(1);
     // L'offre arrêtée ne bloque plus la réponse du vendeur à une autre offre, qui reste un fait à ranger [R57].
     const { offer, answer } = await t.secondOffer();
     expect(answer).toMatchObject({ ok: true });
-    // Le deuxième dossier est refusé et le dit ; l'offre arrêtée aussi. Le bien ne bouge pas.
-    expect(await t.dossiers.open(t.agent, offer.id)).toEqual({ ok: false, rule: null, code: 'previous_file_stopped' });
+    // L'offre du dossier arrêté n'en rouvre pas un ; l'autre offre ouvre le second dossier (H51).
     expect(await t.dossiers.open(t.agent, t.offerId)).toEqual({ ok: false, rule: null, code: 'previous_file_stopped' });
-    expect(await t.stop()).toMatchObject({ ok: false, code: 'file_stopped' });
-    expect(await t.statusOf()).toBe('available');
-    expect((await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'bien.offre_tombee')).toHaveLength(1);
-    // Le verrou de la base, sans passer par le service.
+    const second = await t.dossiers.open(t.agent, offer.id);
+    expect(second).toMatchObject({ ok: true, value: { propertyId: t.propertyId, offerId: offer.id } });
+    expect(await t.statusOf()).toBe('under_offer');
+    // Le verrou de la base, sans passer par le service : jamais deux dossiers ouverts sur un bien.
+    t.setClock(at9('2027-03-07'));
+    const third = await t.record({ validUntil: '2027-03-20' });
     await expect(
-      t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('x', ?, ?, ?, ?, 1, 'a', 'b')", [t.network.id, t.propertyId, offer.id, t.buyerId]),
+      t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('x', ?, ?, ?, ?, 1, 'a', 'b')", [t.network.id, t.propertyId, third.id, t.buyerId]),
     ).rejects.toThrow(/UNIQUE/);
   });
 

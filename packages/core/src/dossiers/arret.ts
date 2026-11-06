@@ -3,8 +3,8 @@
  *
  * L'agent du bien rapporte qu'un dossier s'arrête, avec une raison d'une liste fermée et la preuve reçue. Rien ne
  * s'arrête tout seul : ni une date passée, ni un prêt non obtenu [R57]. Un dossier arrêté reste lisible, ne reçoit plus
- * rien et ne relance plus personne ; son offre ne bloque plus les autres. Un deuxième dossier sur le même bien reste
- * impossible : la table porte une unicité que seule une table refaite lèverait, ce que R17 interdit sans décision (H51).
+ * rien et ne relance plus personne ; son offre ne bloque plus les autres. Un deuxième dossier s'ouvre ensuite sur le même
+ * bien, sur une autre offre acceptée, jamais deux ouverts à la fois (H51, SV14).
  *
  * Décidé, lecture prudente : le bien quitte « sous offre » pour « en préparation », jamais directement pour
  * « disponible ». Le passage de publication suivant le rend disponible si la porte de diffusion reste ouverte et que son
