@@ -87,6 +87,8 @@ export type TranslationProblem =
   | 'trop_long'
   | 'chiffre_manquant'
   | 'chiffre_ajoute'
+  | 'chiffres_intervertis'
+  | 'classes_interverties'
   | 'chiffre_autre_ecriture'
   | 'nombre_en_lettres'
   | 'classe_manquante'
@@ -96,11 +98,21 @@ export type TranslationProblem =
 const MAX_TITLE = 160;
 const MAX_BODY = 4000;
 
-const numbersOf = (s: string): string[] => (s.match(NUMBER) ?? []).map((n) => n.replace(/[  ]/g, ' ')).sort();
+/** Une unité collée au nombre, qui doit le suivre aussi dans la traduction : « 62 m² » n'est jamais « 62 sq ft ». */
+const UNIT_AFTER = /^[   ]?(m²|m2|€|%)/;
+
+/** Les nombres, dans leur ordre, chacun avec son unité : intervertir « 3 pièces » et « 62 m² » est refusé. */
+const numbersOf = (s: string): string[] =>
+  [...s.matchAll(NUMBER)].map((m) => {
+    const unit = UNIT_AFTER.exec(s.slice(m.index + m[0].length))?.[1] ?? '';
+    return `${m[0].replace(/[  ]/g, ' ')}${unit === '' ? '' : ` ${unit === 'm2' ? 'm²' : unit}`}`;
+  });
+/** Les lettres de classe, dans leur ordre : « classe D, climat B » n'est jamais « classe B, climat D ». */
 const classesOf = (s: string, language: ListingLanguage | 'fr'): string[] => {
   const text = language === 'en' ? s.replace(ENGLISH_ARTICLE, (m) => m.slice(0, -1)) : s;
-  return (text.match(CLASS_LETTER) ?? []).sort();
+  return text.match(CLASS_LETTER) ?? [];
 };
+const sameSequence = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** Les éléments de `a` absents de `b`, comptés avec leurs répétitions. */
 function missing(a: readonly string[], b: readonly string[]): string[] {
@@ -124,10 +136,12 @@ function checkField(source: string, translated: string, language: ListingLanguag
   const tn = numbersOf(translated);
   if (missing(sn, tn).length > 0) problems.push('chiffre_manquant');
   if (missing(tn, sn).length > 0) problems.push('chiffre_ajoute');
+  if (!problems.includes('chiffre_manquant') && !problems.includes('chiffre_ajoute') && !sameSequence(sn, tn)) problems.push('chiffres_intervertis');
   const sc = classesOf(source, 'fr');
   const tc = classesOf(translated, language);
   if (missing(sc, tc).length > 0) problems.push('classe_manquante');
   if (missing(tc, sc).length > 0) problems.push('classe_ajoutee');
+  if (!problems.includes('classe_manquante') && !problems.includes('classe_ajoutee') && !sameSequence(sc, tc)) problems.push('classes_interverties');
   const words = new Set((translated.toLowerCase().normalize('NFC').match(/[\p{L}\p{M}]+/gu) ?? []));
   if (NUMBER_WORDS[language].some((w) => words.has(w.normalize('NFC')))) problems.push('nombre_en_lettres');
   if (LINK_OR_MAIL.test(translated)) problems.push('lien_ou_mail');
@@ -155,8 +169,9 @@ export function maskFigures(text: string, values: string[]): string {
 
 /** Remet les valeurs à la place des repères ; null si un repère manque, revient deux fois, est inconnu, ou si l'IA a écrit un chiffre. */
 export function unmaskFigures(text: string, values: readonly string[], expected: readonly number[]): string | null {
+  // Chaque repère une fois, et dans l'ordre du français : des repères intervertis échangeraient des chiffres.
   const seen = [...text.matchAll(MARKER)].map((m) => Number(m[1]));
-  if (seen.length !== expected.length || missing(expected.map(String), seen.map(String)).length > 0) return null;
+  if (!sameSequence(seen.map(String), expected.map(String))) return null;
   const rest = text.replace(MARKER, '');
   if (ANY_DIGIT.test(rest) || /[⟦⟧]/.test(rest)) return null;
   return text.replace(MARKER, (_, n: string) => values[Number(n) - 1]!);
@@ -473,20 +488,39 @@ export class AnnoncesTraduites {
   }
 
   /**
-   * L'annonce à répondre à un acheteur étranger, dans sa langue [R259] : la traduction validée et à jour de l'annonce
-   * publiable, sinon l'anglaise, sinon rien (la réponse reste en français). Le prix et les mentions sont ceux de la
-   * version française, jamais traduits.
+   * L'annonce à répondre à un acheteur étranger, dans sa langue [R259] : la traduction validée et à jour de la dernière
+   * version publiée, encore en vente ou sous offre, sinon l'anglaise, sinon rien (la réponse reste en français). Le prix,
+   * les mentions et la version sont ceux de la version publiée, jamais traduits.
    */
-  async forBuyer(networkId: string, propertyId: string, language: ListingLanguage | 'fr'): Promise<{ language: ListingLanguage; title: string; body: string; rightToLeft: boolean } | null> {
+  async forBuyer(networkId: string, propertyId: string, language: ListingLanguage | 'fr'): Promise<{ language: ListingLanguage; title: string; body: string; rightToLeft: boolean; priceEur: number; mentions: string; version: number } | null> {
     if (language === 'fr') return null;
-    const draft = await this.source(networkId, propertyId);
-    if (!draft) return null;
+    const published = await publishedListing(this.db, networkId, propertyId);
+    if (!published) return null;
     for (const l of language === 'en' ? (['en'] as const) : ([language, 'en'] as const)) {
-      const t = await this.current(networkId, propertyId, draft, l);
-      if (t) return { language: l, title: t.title, body: t.body, rightToLeft: RIGHT_TO_LEFT.has(l) };
+      const t = await this.current(networkId, propertyId, published.draft, l);
+      if (t) return { language: l, title: t.title, body: t.body, rightToLeft: RIGHT_TO_LEFT.has(l), priceEur: published.listing.priceEur, mentions: published.listing.mentions, version: published.listing.version };
     }
     return null;
   }
+}
+
+const ON_PORTALS = new Set(['en_vente', 'sous_offre']);
+
+type Published = { listing: ListingPayload & { priceEur: number; mentions: string; title: string; body: string }; draft: { id: string; title: string; body: string } };
+
+/** La dernière version publiée d'un bien, si elle est encore en vente ou sous offre, complète, et tirée d'une annonce. */
+function toPublished(r: { seq: number; payload: string; draft_id: string | null }): Published | null {
+  const l = { ...(JSON.parse(r.payload) as Omit<ListingPayload, 'version'>), version: Number(r.seq) };
+  if (!ON_PORTALS.has(l.state) || l.priceEur === null || l.mentions === null || l.title === null || l.body === null || !r.draft_id) return null;
+  return { listing: l as Published['listing'], draft: { id: r.draft_id, title: l.title, body: l.body } };
+}
+
+async function publishedListing(db: SqlDatabase, networkId: string, propertyId: string): Promise<Published | null> {
+  const r = await db.first<{ seq: number; payload: string; draft_id: string | null }>(
+    'SELECT seq, payload, draft_id FROM listing_versions WHERE network_id = ? AND property_id = ? ORDER BY seq DESC LIMIT 1',
+    [networkId, propertyId],
+  );
+  return r ? toPublished(r) : null;
 }
 
 // ——— Portails étrangers [R259] ———
@@ -494,8 +528,6 @@ export class AnnoncesTraduites {
 export interface TranslatedListingPayload extends ListingPayload {
   language: ListingLanguage;
 }
-
-const ON_PORTALS = new Set(['en_vente', 'sous_offre']);
 
 /**
  * Le flux des portails étrangers : pour la dernière version publiée de chaque bien encore en vente ou sous offre,
@@ -520,9 +552,9 @@ export class ExportPortailsEtrangers {
     );
     const out: TranslatedListingPayload[] = [];
     for (const r of rows) {
-      const l = { ...(JSON.parse(r.payload) as Omit<ListingPayload, 'version'>), version: Number(r.seq) };
-      if (!ON_PORTALS.has(l.state) || l.priceEur === null || l.mentions === null || l.title === null || l.body === null || !r.draft_id) continue;
-      const draft = { id: r.draft_id, title: l.title, body: l.body };
+      const p = toPublished(r);
+      if (!p) continue;
+      const { listing: l, draft } = p;
       for (const language of LISTING_LANGUAGES.filter((x) => languages.includes(x))) {
         const t = await this.traductions.current(networkId, r.property_id, draft, language);
         if (t) out.push({ ...l, language, title: t.title, body: t.body });

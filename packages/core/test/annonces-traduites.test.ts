@@ -36,6 +36,17 @@ describe('HX05 · contrôle d’une traduction', () => {
     expect(controlTranslation(FR, { title: FR.title, body: `${FR.body} δύο` }, 'el').body).toEqual(['nombre_en_lettres']);
   });
 
+  it('[R257] des chiffres ou des classes intervertis, ou une unité changée, sont refusés', () => {
+    const fr = { title: FR.title, body: `${FR.body} Climat B.` };
+    const body = (b: string) => controlTranslation(fr, { title: EN.title, body: b }, 'en').body;
+    expect(body(`${EN.body} Climate B.`)).toEqual([]);
+    expect(body(`${EN.body.replace('class D', 'class B')} Climate D.`)).toEqual(['classes_interverties']);
+    expect(body(`${EN.body.replace('62 m²', '3 m²').replace('3 rooms', '62 rooms')} Climate B.`)).toEqual(['chiffre_manquant', 'chiffre_ajoute']);
+    expect(controlTranslation(FR, { title: EN.title, body: 'Apartment in Dijon, 3 rooms including 2 bedrooms, 62 m². On the 3e floor of 5. Price 210 000 €. Energy class D.' }, 'en').body).toEqual(['chiffres_intervertis']);
+    expect(body(`${EN.body.replace('62 m²', '62 sq ft')} Climate B.`)).toEqual(['chiffre_manquant', 'chiffre_ajoute']);
+    expect(body(`${EN.body.replace('210 000 €', '210 000 $')} Climate B.`)).toEqual(['chiffre_manquant', 'chiffre_ajoute']);
+  });
+
   it('[R257] une classe énergie changée ou ajoutée, un lien ou une adresse mail sont refusés ; un texte vide aussi', () => {
     const body = (b: string) => controlTranslation(FR, { title: EN.title, body: b }, 'en').body;
     expect(body(EN.body.replace('class D', 'class B'))).toEqual(['classe_manquante', 'classe_ajoutee']);
@@ -57,6 +68,8 @@ describe('HX05 · contrôle d’une traduction', () => {
     expect(unmaskFigures(`${masked} ⟦1⟧`, values, all)).toBeNull();
     expect(unmaskFigures(`${masked} 4`, values, all)).toBeNull();
     expect(unmaskFigures(`${masked} ⟦9⟧`.replace('⟦7⟧', ''), values, all)).toBeNull();
+    // Repères intervertis : « 3 m², 62 pièces » ne passe jamais.
+    expect(unmaskFigures(masked.replace('⟦1⟧', '⟦X⟧').replace('⟦2⟧', '⟦1⟧').replace('⟦X⟧', '⟦2⟧'), values, all)).toBeNull();
   });
 });
 
@@ -131,6 +144,8 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
     expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, rule: 'R257', code: 'ia_refusee' });
     s.ia.edit = (x) => x.replace(/⟦\d+⟧/, '');
     expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, rule: 'R257', code: 'ia_refusee' });
+    s.ia.edit = (x) => x.replace(/⟦(\d+)⟧(.*)⟦(\d+)⟧/, '⟦$3⟧$2⟦$1⟧');
+    expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, rule: 'R257', code: 'ia_refusee' });
     s.ia.edit = (x) => `${x} three`;
     expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, rule: 'R257', code: 'ia_refusee' });
     expect((await s.db.all('SELECT id FROM listing_translations')).length).toBe(1);
@@ -138,6 +153,7 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
     const events = await s.journal.bySubject(`property:${s.propertyId}`);
     const refused = events.filter((e) => e.type === 'annonce.traduction_ia_refusee');
     expect(refused.map((e) => e.data)).toEqual([
+      { rule: 'R257', language: 'en', codes: ['reperes'] },
       { rule: 'R257', language: 'en', codes: ['reperes'] },
       { rule: 'R257', language: 'en', codes: ['reperes'] },
       { rule: 'R257', language: 'en', codes: ['nombre_en_lettres'] },
@@ -182,10 +198,16 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
     const fresh = await s.annonces.propose(s.agent, s.propertyId);
     if (!fresh.ok) throw new Error(fresh.code);
     const before = (await s.tr.read(s.agent, s.propertyId, 'en')) as { ok: true; value: { id: string } };
+    // Tant que le passage n'a pas retiré l'annonce, l'acheteur reçoit ce qui est publié, comme les portails.
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toMatchObject({ language: 'en' });
+    await s.publication.sync(s.network.id, s.propertyId);
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toBeNull();
+    expect(await s.exporter.listings(s.network.id)).toEqual([]);
     expect((await s.tr.validate(s.agent, before.value.id)).ok).toBe(false);
     expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, code: 'no_listing' });
     expect((await s.annonces.validate(s.agent, fresh.value.id)).ok).toBe(true);
+    await s.publication.sync(s.network.id, s.propertyId);
+    expect(await s.exporter.listings(s.network.id)).toEqual([]);
     // Validée, la nouvelle annonce : l'ancienne traduction ne vaut plus pour elle.
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ar')).toBeNull();
     const again = await s.tr.propose(s.agent, s.propertyId, 'en');
@@ -235,10 +257,28 @@ describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jam
     await s.tr.validate(s.agent, en.value.id);
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ur')).toMatchObject({ language: 'en', rightToLeft: false });
     await s.tr.validate(s.agent, ur.value.id);
-    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ur')).toEqual({ language: 'ur', title: ur.value.title, body: ur.value.body, rightToLeft: true });
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ur')).toEqual({ language: 'ur', title: ur.value.title, body: ur.value.body, rightToLeft: true, priceEur: s.french.priceEur, mentions: s.french.mentions, version: s.french.version });
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'el')).toMatchObject({ language: 'en' });
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'fr')).toBeNull();
     expect(await s.tr.forBuyer('autre-reseau', s.propertyId, 'ur')).toBeNull();
+    // Vendu, ou retiré : plus rien à envoyer, même traduit et validé.
+    await s.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [s.propertyId]);
+    await s.publication.sync(s.network.id, s.propertyId);
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ur')).toBeNull();
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toBeNull();
+  });
+
+  it('[R259] une annonce validée mais jamais publiée n’est envoyée à personne', async () => {
+    const t = await setupAnnonce();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    expect((await t.annonces.validate(t.agent, t.draftId)).ok).toBe(true);
+    const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator: new FakeTranslator() });
+    const p = await tr.propose(t.agent, t.propertyId, 'en');
+    if (!p.ok) throw new Error(p.code);
+    expect((await tr.validate(t.agent, p.value.id)).ok).toBe(true);
+    // Délai de rétractation encore ouvert : aucune version publiée.
+    expect(await tr.forBuyer(t.network.id, t.propertyId, 'en')).toBeNull();
+    expect(await new ExportPortailsEtrangers(t.db, t.acces, t.journal).listings(t.network.id)).toEqual([]);
   });
 
   it('[R257] la base refuse de changer ou d’effacer une traduction, une validation ou une déclaration de langues', async () => {
