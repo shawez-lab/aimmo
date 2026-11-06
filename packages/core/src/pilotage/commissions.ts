@@ -22,6 +22,7 @@
 import type { Acces } from '../acces/acces.ts';
 import { ROLES, decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { mandateFeeAt } from '../dossiers/acte.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -50,7 +51,9 @@ export interface PrimesParrainage {
 }
 
 export interface CommissionShare {
-  kind: 'reseau' | 'agent' | 'partage' | 'parrainage';
+  /** `agence` : la part d'une agence partenaire (HX01), sortie des honoraires avant la grille ; `beneficiaryId` porte
+   * `agence:<id>`, lue par la direction seulement [R235]. */
+  kind: 'reseau' | 'agent' | 'partage' | 'parrainage' | 'agence';
   beneficiaryId: string | null;
   reason: 'fichier_commun' | 'binome' | null;
   amountCents: number;
@@ -310,25 +313,45 @@ export class Commissions {
         const grid = (await this.db.first<{ default_rate_bp: number; agent_rates: string }>('SELECT default_rate_bp, agent_rates FROM commission_grids WHERE id = ?', [row.grid_id]))!;
         const rate = this.rateOf(grid, row.agent_id);
         let shares: CommissionShare[];
+        // La part d'une agence partenaire, si le dossier vient d'une délégation signée (HX01) : sortie des honoraires
+        // avant la grille, au centime inférieur, dans la même écriture que les autres parts [R235].
+        const agency = await this.db.first<{ delegation_id: string; partner_share_bp: number }>(
+          'SELECT d.id AS delegation_id, d.partner_share_bp FROM agency_delegation_files f JOIN agency_delegations d ON d.id = f.delegation_id WHERE f.file_id = ?',
+          [f.id],
+        );
+        const agencyCents = agency ? Math.floor((row.fee_cents * agency.partner_share_bp) / 10_000) : 0;
+        const base = row.fee_cents - agencyCents;
         try {
           const splits = this.partages ? await this.partages.of(networkId, f.id, row.agent_id) : [];
-          const networkBefore = row.fee_cents - Math.floor((row.fee_cents * rate) / 10_000);
+          const networkBefore = base - Math.floor((base * rate) / 10_000);
           const prime = this.primes ? await this.primes.of(networkId, row.agent_id, networkBefore) : null;
-          shares = computeShares(row.fee_cents, row.agent_id, rate, splits, prime);
+          shares = computeShares(base, row.agent_id, rate, splits, prime);
         } catch {
           await this.waiting(f.id, 'commission.attente', 'partage_invalide');
           continue;
         }
         const values = shares.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-        await this.db.run(
-          `INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents)
+        await runBatch(this.db, [
+          {
+            sql: `INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents)
            SELECT column1, column2, column3, column4, column5, column6 FROM (VALUES ${values})
            WHERE NOT EXISTS (SELECT 1 FROM commission_shares WHERE file_id = ?)`,
-          [...shares.flatMap((sh, i) => [f.id, i + 1, sh.kind, sh.beneficiaryId, sh.reason, sh.amountCents]), f.id],
-        );
+            params: [...shares.flatMap((sh, i) => [f.id, i + 1, sh.kind, sh.beneficiaryId, sh.reason, sh.amountCents]), f.id],
+          },
+          ...(agency
+            ? [
+                {
+                  sql: 'INSERT INTO commission_agency_shares (file_id, delegation_id, partner_share_bp, amount_cents, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+                  params: [f.id, agency.delegation_id, agency.partner_share_bp, agencyCents, at],
+                },
+              ]
+            : []),
+        ]);
       }
       // L'étape « prévue » seulement sur des parts qui font les honoraires, au centime [R69].
-      const sum = (await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ?', [f.id]))?.n ?? 0;
+      const sum =
+        ((await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ?', [f.id]))?.n ?? 0) +
+        ((await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM commission_agency_shares WHERE file_id = ?', [f.id]))?.n ?? 0);
       if (sum !== row.fee_cents) {
         await this.waiting(f.id, 'commission.ecart', 'parts');
         continue;
@@ -447,7 +470,16 @@ export class Commissions {
         )
       )
         .filter((s) => !own || s.beneficiary_id === viewer.userId)
-        .map((s) => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: s.amount_cents }));
+        .map((s): CommissionShare => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: s.amount_cents }));
+      if (!own) {
+        // La part d'une agence partenaire, pour la direction seulement [R235].
+        const agencyShare = await this.db.first<{ agency_id: string; amount_cents: number }>(
+          `SELECT a.agency_id, x.amount_cents FROM commission_agency_shares x
+           JOIN agency_delegations d ON d.id = x.delegation_id JOIN agency_shares a ON a.id = d.share_id WHERE x.file_id = ?`,
+          [r.file_id],
+        );
+        if (agencyShare) shares.push({ kind: 'agence', beneficiaryId: `agence:${agencyShare.agency_id}`, reason: null, amountCents: agencyShare.amount_cents });
+      }
       const whole = !own || r.agent_id === viewer.userId;
       const receipt = await this.db.first<{ received_at: string; payout_due_at: string }>('SELECT received_at, payout_due_at FROM commission_receipts WHERE file_id = ?', [r.file_id]);
       const payout = await this.db.first<{ paid_at: string }>('SELECT paid_at FROM commission_payouts WHERE file_id = ?', [r.file_id]);
