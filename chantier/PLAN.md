@@ -44,7 +44,16 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de client copiée) et dans les présentations publiques de Hektor, Hektor Voice et Modelo. Ce qu'AIMMO a déjà est écarté ; voici ce qui manque. Chaque tâche fait la même chose qu'eux ET un pas de plus, écrit dans « Jamais vu ». Relecture forte pour toutes. Section 9 du protocole.
 
 ### HX01 · Partage de biens entre agences et partage d'honoraires
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06), lecture prudente : module `packages/core/src/partage/`, migration `1765`, règles R234 et R235. Les coordonnées du vendeur ne vont jamais à l'agence, même après signature : la co-visite passe par l'agent du bien. Le bon signé exige l'attestation que le mandat autorise la délégation. Part de l'agence au centime inférieur. La base refuse une visite ou un dossier rattaché avant signature, un relevé non calculé, une facture à un autre montant. Relecture forte : 2 P0 corrigés, 1 P1 laissé à HX59. Codex : 1 P0, 1 P1, 1 P2 corrigés, puis rien à signaler (#380).
+- Reste : HX59 ; écrans et branchement au Worker ; clé d'accès au rôle `partner` pour une agence.
+
+### HX59 · La part de l'agence partenaire déduite de la commission
+- Statut : à faire
+- Qui : Claude, relecture forte
+- Dépendances : HX01
+- Objectif : K01 répartit encore 100 % des honoraires entre l'agent, le parrain et le réseau, sans déduire la part d'une agence partenaire (relevée par la relecture forte de HX01). Au compromis, quand le dossier est rattaché à une délégation signée, la part de l'agence est sortie des honoraires avant la grille ; la somme agent, parrain, réseau et agence fait toujours les honoraires [R69], et le relevé de HX01 à l'acte retrouve la même part.
+- Critères : avec un bon à 40 % et 10 000 € d'honoraires, les parts de l'agent, du réseau et de l'agence font 10 000 € (test) ; aucune facture de reversement ne porte la part de l'agence (test) ; une délégation signée après le compromis ne change pas une commission prévue, l'écart va au journal (test).
 - Objectif : comme Interkab (Hektor) : publier un bien aux autres agences du réseau et aux agences partenaires, demander une co-visite, envoyer la fiche, signer un bon de délégation qui fixe le partage des honoraires. Jamais vu : le partage est calculé et garanti par le code jusqu'à l'acte, et chaque agence voit en direct où en est le dossier, sans appeler.
 - Critères : délégation signée avant toute visite (test) ; partage appliqué à la facture (test) ; aucune coordonnée du vendeur donnée à l'autre agence avant la signature de la délégation (test).
 

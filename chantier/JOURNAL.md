@@ -669,3 +669,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 11:48 · HX23 · fusionnée (#379) : notes vocales WhatsApp, Instagram et Messenger transcrites une fois et traitées comme un texte, transcription impossible passée à l'agent sans réponse ; groupe « Captation et voix » réservé à la voie 2 ; H52 ajoutée · prochaine : HX21
 - 2026-11-06 11:48 · VOIE 2 : relance refusée, question 2 (sur mes trois dernières séances voie 2, celles de 08:55 et 09:55 n'ont produit ni commit ni tâche terminée)
 - 2026-11-06 11:48 · VOIE 2 : HX23, a4489218 (#379), relancé non
+- 2026-11-06 12:35 · HX01 · fusionnée (#380) : partage entre agences, bon de délégation, co-visite après signature, relevé à l'acte et facture de l'agence au montant exact, suivi en direct · prochaine : HX59
