@@ -7,6 +7,7 @@ import {
   LAWYER_NOTICE,
   NOT_VALIDATED,
   STALE,
+  TOO_LONG,
   UNCHECKED,
   askLegal,
   checkDraft,
@@ -269,6 +270,9 @@ describe('assistant juridique (HX03)', () => {
     // Un litige dit après la limite de longueur compte aussi.
     const long = `L’acquéreur peut-il se rétracter du compromis ?${' Merci.'.repeat(400)} Il menace d’aller au tribunal.`;
     expect((await askLegal(long, { writer: w, now })).status).toBe('litige');
+    // Une question trop longue n'est jamais coupée : elle est refusée entière, et l'IA n'est pas appelée.
+    const outside = await askLegal(`Mon acheteur peut-il se rétracter du compromis ?${' Merci.'.repeat(400)} Il s’agit d’un local commercial.`, { writer: w, now });
+    expect(outside).toEqual({ status: 'je_ne_sais_pas', text: TOO_LONG, citations: [], notice: LAWYER_NOTICE });
     expect(w.seen).toHaveLength(0);
   });
 

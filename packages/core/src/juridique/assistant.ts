@@ -36,6 +36,8 @@ export const DONT_KNOW =
 /** La réponse à une question sur un litige [R253]. */
 export const DISPUTE =
   'Cette question porte sur un litige : je n’y réponds pas. Voyez votre avocat, avec les pièces du dossier.';
+/** La réponse à une question trop longue pour être contrôlée entière. */
+export const TOO_LONG = 'Question trop longue : posez-la en moins de 2 000 caractères, sans pièces jointes ni copie de mails.';
 export const UNCHECKED = 'Version jamais vérifiée sur Légifrance : à vérifier avant de vous en servir.';
 export const STALE = 'Version vérifiée il y a plus d’un an : à revérifier sur Légifrance avant de vous en servir.';
 export const NOT_VALIDATED = 'Texte pas encore relu par l’avocat du réseau.';
@@ -445,8 +447,8 @@ type Outcome = 'ia' | 'textes' | 'ia_refusee' | 'ia_en_panne' | 'ia_ne_sait_pas'
 export async function askLegal(question: string, options: AskOptions = {}): Promise<LegalAnswer> {
   const library = options.library ?? DEFAULT_LEGAL_LIBRARY;
   const now = options.now ?? (() => new Date());
-  const full = typeof question === 'string' ? question.normalize('NFC').trim() : '';
-  const q = full.slice(0, MAX_QUESTION_LENGTH);
+  // Rien n'est coupé : une question trop longue est refusée entière, pour qu'aucun terme ne se perde avant le contrôle.
+  const q = typeof question === 'string' ? question.normalize('NFC').trim() : '';
 
   const finish = async (answer: LegalAnswer, outcome: Outcome, problems: DraftProblem[] = []): Promise<LegalAnswer> => {
     if (options.journal) {
@@ -476,8 +478,8 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
   });
 
   if (q === '') return finish(refuse('je_ne_sais_pas'), 'question_invalide');
-  // Le litige se lit sur toute la question, jamais sur sa seule partie gardée.
-  if (isDispute(full)) return finish(refuse('litige'), 'litige');
+  if (isDispute(q)) return finish(refuse('litige'), 'litige');
+  if (q.length > MAX_QUESTION_LENGTH) return finish({ status: 'je_ne_sais_pas', text: TOO_LONG, citations: [], notice: LAWYER_NOTICE }, 'question_invalide');
   const sources = coveringSources(q, library);
   if (sources.length === 0) return finish(refuse('je_ne_sais_pas'), 'aucun_texte');
 
