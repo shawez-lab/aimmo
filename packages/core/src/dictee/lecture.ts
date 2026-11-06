@@ -120,14 +120,14 @@ const has = (sentence: string, pattern: RegExp): boolean => pattern.test(fold(se
 // Les expressions s'appliquent au texte sans accents et en minuscules.
 const PHONE = /(?<![\d+])(?:\+33[\s.-]?|0)[1-9](?:[\s.-]?\d{2}){4}(?!\d)/;
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/;
-const SURFACE = /(?<![\d.,])(\d{1,6})\s?(?:m²|m2|metres? carres?)(?![\p{L}\d])/u;
-const ROOMS = /(?<![\d.,])(\d{1,2})\s?pieces?\b|\b[tf](\d{1,2})\b/u;
+const SURFACE = /(?<![\d.,]|\d[\s\u00a0\u202f])(\d{1,6})\s?(?:m²|m2|metres? carres?)(?![\p{L}\d])/u;
+const ROOMS = /(?<![\d.,]|\d[\s\u00a0\u202f])(\d{1,2})\s?pieces?\b|\b[tf](\d{1,2})\b/u;
 const PRICE = /(?<![\d.,])(\d{1,3}(?:[\s.  ]\d{3})+|\d{1,10})\s?(?:€|euros?\b|(k€|k euros?\b|mille euros?\b))/u;
 const PRICE_CONTEXT = /\b(?:prix|vend|vendre|vendu|mise? en vente|mettre en vente|demande|affiche)\b/;
 const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite|remise|rabais|baisse|baisser|negoci\w*|paye|payee|achete|achetee|achat|acquis|acquise|marge)\b/;
 /** Le prix demandé suit de près « prix », « vend » ou « demande », sans autre nombre entre eux. */
 const PRICE_LEAD = /\b(?:prix|vend\w*|demande|affiche)\b[^\d]{0,30}$/;
-const POSTAL = /(?<![\d.,])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
+const POSTAL = /(?<![\d.,]|\d[\s\u00a0\u202f])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
 
 const KINDS: readonly [RegExp, PropertyKind][] = [
   [/\bfonds de commerce\b/, 'business'],

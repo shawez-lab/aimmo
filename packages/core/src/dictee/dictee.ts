@@ -194,6 +194,14 @@ export class Dictee {
       }
     }
     if (rdv && !contact && visitPerson === null) return { ok: false, rule: null, code: 'appointment_without_person' };
+    // Une visite passe par la prise de visite (bon de visite, bien diffusable, projet d'achat) : seule une contre-visite
+    // du même bien, pour le même acquéreur, se dicte ; une autre se prend à l'écran des visites [R40, R42].
+    let counterVisit: { property_id: string; project_id: string } | null = null;
+    if (rdv?.get('appointmentKind')?.value === 'visite') {
+      if (appointmentId === null || contact) return { ok: false, rule: null, code: 'visit_needs_listing' };
+      counterVisit = await this.db.first<{ property_id: string; project_id: string }>('SELECT property_id, project_id FROM visits WHERE appointment_id = ?', [appointmentId]);
+      if (!counterVisit) return { ok: false, rule: null, code: 'visit_needs_listing' };
+    }
 
     // Le contact : retrouvé par son téléphone ou son mail, sinon créé sous l'identifiant de la demande.
     let personId: string | null = null;
@@ -241,10 +249,17 @@ export class Dictee {
       const existing = await this.bookedFor(viewer, personId, kind, start);
       if (existing) booked = existing;
       else {
-        // Aucune confirmation ne part : le contact n'a rien demandé par message.
-        const r = await this.deps.rendezVous.book({ networkId: viewer.networkId, agentId: viewer.userId, personId, propertyId, kind, start, source: 'agent', channel: null });
-        if (!r.ok) return { ok: false, rule: r.rule, code: r.code };
-        booked = r.appointment.id;
+        if (counterVisit && this.deps.visites) {
+          // La contre-visite : même bien, même projet d'achat, avec son bon de visite ; aucune confirmation.
+          const r = await this.deps.visites.schedule(viewer, { propertyId: counterVisit.property_id, projectId: counterVisit.project_id, start, channel: null });
+          if (!r.ok) return r;
+          booked = r.visit.appointment.id;
+        } else {
+          // Aucune confirmation ne part : le contact n'a rien demandé par message.
+          const r = await this.deps.rendezVous.book({ networkId: viewer.networkId, agentId: viewer.userId, personId, propertyId, kind, start, source: 'agent', channel: null });
+          if (!r.ok) return { ok: false, rule: r.rule, code: r.code };
+          booked = r.appointment.id;
+        }
       }
     }
 

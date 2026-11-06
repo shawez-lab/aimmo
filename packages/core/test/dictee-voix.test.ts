@@ -75,6 +75,13 @@ describe('HX06 · lecture de la dictée', () => {
     }
   });
 
+  it('[R260] une surface ou un nombre de pièces groupés en milliers ne sont jamais lus à moitié', () => {
+    const d = readDictation('Madame Zoé Exemple vend sa maison de 1 200 m² au 21240 Talant.', { now: NOW });
+    expect(value(d, 'bien', 'surfaceM2')).toBeUndefined();
+    expect(value(d, 'bien', 'postalCode')).toBe('21240');
+    expect(value(readDictation('Il vend une maison de 1 12 pièces.', { now: NOW }), 'bien', 'rooms')).toBeUndefined();
+  });
+
   it('[R260] un champ dit deux fois avec deux valeurs n’est pas proposé : l’agent tranchera', () => {
     const d = readDictation('Elle vend sa maison de 100 m² à Dijon. Prix demandé 250 000 euros. Non, prix demandé 260 000 euros.', { now: NOW });
     expect(value(d, 'bien', 'priceEur')).toBeUndefined();
@@ -377,6 +384,11 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     });
     // La relance de l'acquéreur, une seule (T06).
     expect(await t.db.all("SELECT kind FROM visit_tasks WHERE appointment_id = ?", [t.visitId])).toEqual([{ kind: 'relance_acquereur' }]);
+    // La contre-visite est une vraie visite : même bien, même projet, son bon de visite.
+    expect(await t.db.first('SELECT property_id, project_id FROM visits WHERE appointment_id = ?', [r.appointmentId])).toEqual(
+      await t.db.first('SELECT property_id, project_id FROM visits WHERE appointment_id = ?', [t.visitId]),
+    );
+    expect(await t.visites.accessVisit(t.alex, r.appointmentId!)).toMatchObject({ ok: true });
     // Rejouée : rien ne part deux fois.
     expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report })).toMatchObject({ ok: true, appointmentId: r.appointmentId });
     expect(await t.toSeller()).toHaveLength(1);
@@ -400,6 +412,15 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     });
     expect(await t.counts()).toEqual(before);
     expect(await t.toSeller()).toEqual([]);
+  });
+
+  it('une visite dictée hors d’une contre-visite se prend à l’écran des visites : rien n’est créé', async () => {
+    const t = await setup();
+    const before = await t.counts();
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: 'Monsieur Paul Essai veut visiter, visite mardi à 10 h.', keep: { contact: ['firstName', 'lastName'], rendezvous: ['appointmentKind', 'start'] } })).toEqual({
+      ok: false, rule: null, code: 'visit_needs_listing',
+    });
+    expect(await t.counts()).toEqual(before);
   });
 
   it('[R16] la visite d’un autre agent ne se lit ni ne se valide', async () => {
