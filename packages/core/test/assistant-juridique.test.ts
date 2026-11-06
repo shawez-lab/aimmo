@@ -11,7 +11,8 @@ import {
   askLegal,
   checkDraft,
   coveringSources,
-  numbersIn,
+  quantitiesIn,
+  scrubQuestion,
   type LegalFacts,
   type LegalSource,
   type LegalWriter,
@@ -26,9 +27,11 @@ const LIB: LegalSource[] = [
     id: 'loi-a-3',
     title: 'Loi d’essai n° 1 du 4 mai 2001',
     article: 'article 3',
+    origin: 'loi d’essai n° 1 du 4 mai 2001',
     textDate: '2001-05-04',
     summary: 'Le délai de réflexion de l’acheteur est de 10 jours.',
     match: [['reflexion'], ['acheteur', 'acquereur']],
+    exclude: ['professionnel'],
     url: 'https://www.legifrance.gouv.fr/essai',
     checkedOn: '2026-10-01',
     validatedBy: 'avocat:essai',
@@ -37,9 +40,11 @@ const LIB: LegalSource[] = [
     id: 'loi-b-7',
     title: 'Loi d’essai n° 2 du 9 juin 2010',
     article: 'article 7',
+    origin: 'loi d’essai n° 2 du 9 juin 2010',
     textDate: '2010-06-09',
     summary: 'Le panneau doit être retiré dans les quinze jours après la fin du mandat.',
     match: [['panneau'], ['retirer', 'retire', 'enlever']],
+    exclude: [],
     url: null,
     checkedOn: '2024-01-01',
     validatedBy: null,
@@ -105,7 +110,7 @@ describe('assistant juridique (HX03)', () => {
   });
 
   it('[R251] un paragraphe sans source, avec une source non reçue, un nombre inventé ou une promesse est refusé : les textes répondent', async () => {
-    const facts: LegalFacts = { question: 'q', sources: [{ id: 'loi-a-3', title: LIB[0]!.title, article: 'article 3', textDate: '2001-05-04', summary: LIB[0]!.summary }] };
+    const facts: LegalFacts = { question: 'q', sources: [{ id: 'loi-a-3', title: LIB[0]!.title, article: 'article 3', origin: LIB[0]!.origin, textDate: '2001-05-04', summary: LIB[0]!.summary }] };
     const bad = (text: string, sources: string[]) => checkDraft({ kind: 'answer', paragraphs: [{ text, sources }] }, facts);
     expect(bad('Dix jours.', [])).toEqual({ ok: false, problems: ['sans_source', 'nombre_sans_source'] });
     expect(bad('Dix jours.', ['loi-b-7'])).toEqual({ ok: false, problems: ['source_non_fournie', 'nombre_sans_source'] });
@@ -142,8 +147,34 @@ describe('assistant juridique (HX03)', () => {
     expect(a.status === 'reponse' && a.writtenBy).toBe('textes');
   });
 
-  it('[R251] les nombres d’un texte se lisent en chiffres ou en lettres', () => {
-    expect([...numbersIn('10 jours, quinze jours, 10 000 €, un vingtième')].sort()).toEqual(['0.05', '10', '10000', '15'].sort());
+  it('[R251] les nombres d’un texte se lisent en chiffres ou en lettres, avec leur unité', () => {
+    const q = quantitiesIn('10 jours, quinze jours, 10 000 €, plus d’un vingtième, dans un délai d’un an, 8 m², 3,5 %, article 6');
+    expect([...q.withUnit].sort()).toEqual(['10|jour', '15|jour', '10000|eur', '1|vingtieme', '1|an', '8|m2', '3.5|pct'].sort());
+    expect([...q.bare]).toEqual(['6']);
+  });
+
+  it('[R251] un nombre pris dans la référence ou la date d’un texte, ou une unité changée, ne passe jamais', () => {
+    const facts = (id: string): LegalFacts => {
+      const s = DEFAULT_LEGAL_LIBRARY.find((x) => x.id === id)!;
+      return { question: 'q', sources: [{ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary }] };
+    };
+    const one = (id: string, text: string) => checkDraft({ kind: 'answer', paragraphs: [{ text, sources: [id] }] }, facts(id));
+    expect(one('hoguet-6', 'Vos honoraires sont plafonnés à 9 % du prix et payables 2 jours après la signature du mandat.').ok).toBe(false);
+    expect(one('cch-l271-1', 'L’acheteur dispose de 6 jours ouvrés, ou un mois s’il paie comptant.').ok).toBe(false);
+    expect(one('cch-l271-1', 'La rétractation coûte 1 % du prix.').ok).toBe(false);
+    expect(one('cch-l271-1', 'L’acquéreur a dix jours, depuis le lendemain de la première présentation de la lettre (article L271-1).').ok).toBe(true);
+    expect(one('copro-46', 'L’acquéreur doit agir dans un délai de deux ans.').ok).toBe(false);
+    expect(one('copro-46', 'L’action en diminution du prix se forme dans un délai d’un an après l’acte authentique.').ok).toBe(true);
+    expect(one('hoguet-6', 'La loi du 2 janvier 1970 impose un mandat écrit.').ok).toBe(true);
+  });
+
+  it('[R15] un nom dit en passant, une date de naissance ou de signature ne partent jamais à l’IA', async () => {
+    const w = writer(() => ({ kind: 'unknown' }));
+    await askLegal('Mon client Jean Martin, né le 3 mai 1960, a signé le 12/10/2026 : délai de réflexion de l’acheteur selon la loi Carrez ?', { library: LIB, writer: w, now });
+    const sent = w.seen[0]!.question;
+    for (const leak of ['Jean', 'Martin', '1960', '3 mai', '12/10/2026']) expect(sent).not.toContain(leak);
+    expect(sent).toContain('Carrez');
+    expect(scrubQuestion('Gérard Dumont veut savoir si le DPE est obligatoire. Mme Lefort aussi.')).toBe('[nom] [nom] veut savoir si le DPE est obligatoire. [nom] [nom] aussi.');
   });
 
   it('[R15] l’IA ne reçoit ni nom ni coordonnée, et seulement les textes retenus', async () => {
@@ -192,6 +223,7 @@ describe('assistant juridique (HX03)', () => {
       expect(s.title.length).toBeGreaterThan(0);
       expect(s.article).toMatch(/^article /);
       expect(s.textDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(s.origin.length).toBeGreaterThan(0);
       expect(s.match.length).toBeGreaterThan(0);
       // Pas encore relue par l'avocat (H54) : rien ne doit prétendre le contraire.
       expect(s.validatedBy).toBeNull();
@@ -204,6 +236,13 @@ describe('assistant juridique (HX03)', () => {
     expect(first('La surface Carrez est fausse sur un appartement en copropriété')).toBe('copro-46');
     expect(coveringSources('Quel préavis pour un bail meublé ?')).toEqual([]);
     expect(coveringSources('Comment calculer la plus-value ?')).toEqual([]);
+    // Des questions voisines que la bibliothèque ne couvre pas : je ne sais pas, jamais un texte hors sujet.
+    expect(coveringSources('Quand le vendeur peut-il annuler son mandat exclusif signé en agence ?')).toEqual([]);
+    expect(coveringSources('Mon acheteur veut annuler le compromis après la fin des conditions suspensives')).toEqual([]);
+    expect(coveringSources('Mon acheteur veut se rétracter du compromis après la fin des conditions suspensives')).toEqual([]);
+    expect(coveringSources('Le vendeur peut-il résilier son mandat exclusif signé chez lui, et se rétracter ?')).toEqual([]);
+    expect(coveringSources('Quelle TVA sur mes honoraires, et quand les toucher ?')).toEqual([]);
+    expect(coveringSources('Quelle est la durée de validité des diagnostics pour une location ?')).toEqual([]);
   });
 
   it('[R251] la réponse du code sur la bibliothèque de départ passe son propre contrôle', async () => {
@@ -212,7 +251,7 @@ describe('assistant juridique (HX03)', () => {
     if (a.status !== 'reponse') return;
     const facts: LegalFacts = {
       question: 'q',
-      sources: DEFAULT_LEGAL_LIBRARY.map((s) => ({ id: s.id, title: s.title, article: s.article, textDate: s.textDate, summary: s.summary })),
+      sources: DEFAULT_LEGAL_LIBRARY.map((s) => ({ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary })),
     };
     expect(checkDraft({ kind: 'answer', paragraphs: a.paragraphs }, facts).ok).toBe(true);
     expect(a.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);

@@ -43,7 +43,7 @@ export const NOT_VALIDATED = 'Texte pas encore relu par l’avocat du réseau.';
 /** Ce que l'IA reçoit : la question sans nom ni coordonnée, et les seuls textes retenus par le code. */
 export interface LegalFacts {
   question: string;
-  sources: { id: string; title: string; article: string; textDate: string; summary: string }[];
+  sources: { id: string; title: string; article: string; origin: string; textDate: string; summary: string }[];
 }
 
 /** Ce que l'IA rend : des paragraphes qui citent chacun leurs textes, ou l'aveu qu'elle ne sait pas. */
@@ -58,6 +58,8 @@ export interface Citation {
   id: string;
   title: string;
   article: string;
+  /** Le texte qui a créé l'article, et sa date. */
+  origin: string;
   textDate: string;
   url: string | null;
   checkedOn: string | null;
@@ -138,6 +140,7 @@ export function coveringSources(question: string, library: readonly LegalSource[
   const scored: { s: LegalSource; hits: number; i: number }[] = [];
   library.forEach((s, i) => {
     if (s.match.length === 0) return;
+    if (s.exclude.some((t) => has(w, t))) return;
     let hits = 0;
     for (const group of s.match) {
       const n = group.filter((t) => has(w, t)).length;
@@ -150,6 +153,48 @@ export function coveringSources(question: string, library: readonly LegalSource[
     .sort((a, b) => b.hits - a.hits || a.i - b.i)
     .slice(0, MAX_SOURCES)
     .map((x) => x.s);
+}
+
+const MONTHS = 'janvier|fevrier|février|mars|avril|mai|juin|juillet|aout|août|septembre|octobre|novembre|decembre|décembre';
+const BORN = /\bn[ée]e?s?\s+(?:le|en|à|a)\s+[^,;.?!\n]*/giu;
+const DATE_DIGITS = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g;
+const DATE_WORDS = new RegExp(`\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})(?:\\s+\\d{4})?\\b`, 'giu');
+/** Les mots à majuscule qui ne sont jamais un nom de personne dans une question juridique. */
+const KEPT_CAPITALIZED = new Set(['carrez', 'hoguet', 'alur', 'elan', 'macron', 'pinel', 'boutin', 'sru', 'legifrance', 'code', 'loi', 'article', 'cour', 'cassation', 'conseil', 'etat', 'france', 'europe', 'notaire', 'mandat', 'compromis']);
+const WORD = /[\p{L}][\p{L}'’-]*/gu;
+
+/**
+ * La question telle que l'IA la reçoit [R15] : sans coordonnée, sans nom connu, sans date (une date de naissance ou de
+ * signature ne sert pas à dire le droit), et sans aucun mot à majuscule qui pourrait être un nom : hors début de phrase,
+ * tout mot à majuscule qui n'est ni un sigle ni un terme juridique connu devient « [nom] » ; en début de phrase aussi,
+ * dès qu'il est suivi d'un autre mot ainsi retiré (« Jean Martin »).
+ */
+export function scrubQuestion(question: string, knownNames: readonly string[] = []): string {
+  const out = withoutContactDetails(withoutNames(question, knownNames)).replace(BORN, '[date]').replace(DATE_DIGITS, '[date]').replace(DATE_WORDS, '[date]');
+  const tokens = [...out.matchAll(WORD)].map((m) => ({ text: m[0], at: m.index! }));
+  const isName = (t: string): boolean => {
+    if (!/^\p{Lu}/u.test(t)) return false;
+    if (t === t.toUpperCase() && t.replace(/[^\p{L}]/gu, '').length <= 6) return false; // sigle : DPE, SCI, M, MME
+    return !KEPT_CAPITALIZED.has(plain(t).replace(/['’-].*$/, ''));
+  };
+  const atStart = (at: number): boolean => /(?:^|[.!?:\n]\s*|["«(]\s*)$/u.test(out.slice(0, at));
+  const remove = new Set<number>();
+  tokens.forEach((t, i) => {
+    if (!isName(t.text)) return;
+    if (!atStart(t.at)) {
+      remove.add(i);
+      const prev = tokens[i - 1];
+      if (prev && isName(prev.text) && atStart(prev.at)) remove.add(i - 1);
+    }
+  });
+  let result = '';
+  let last = 0;
+  tokens.forEach((t, i) => {
+    if (!remove.has(i)) return;
+    result += out.slice(last, t.at) + '[nom]';
+    last = t.at + t.text.length;
+  });
+  return result + out.slice(last);
 }
 
 const DAY = 86_400_000;
@@ -165,6 +210,7 @@ export function citationOf(s: LegalSource, now: Date): Citation {
     id: s.id,
     title: s.title,
     article: s.article,
+    origin: s.origin,
     textDate: s.textDate,
     url: s.url,
     checkedOn: s.checkedOn,
@@ -174,6 +220,8 @@ export function citationOf(s: LegalSource, now: Date): Citation {
 }
 
 const NUMBER_WORDS: Record<string, number> = {
+  un: 1,
+  une: 1,
   deux: 2,
   trois: 3,
   quatre: 4,
@@ -196,26 +244,52 @@ const NUMBER_WORDS: Record<string, number> = {
   soixante: 60,
   cent: 100,
   mille: 1000,
-  demi: 0.5,
-  moitie: 0.5,
-  tiers: 1 / 3,
-  quart: 0.25,
-  vingtieme: 1 / 20,
-  dixieme: 1 / 10,
 };
+const NUM = `(\\d+(?:[ \\u00a0\\u202f.]\\d{3})*(?:,\\d+)?|${Object.keys(NUMBER_WORDS).join('|')})`;
+const UNITS: [RegExp, string][] = [
+  [/^(?:%|pour ?cent)$/, 'pct'],
+  [/^jours?$/, 'jour'],
+  [/^mois$/, 'mois'],
+  [/^(?:ans?|annees?)$/, 'an'],
+  [/^semaines?$/, 'semaine'],
+  [/^heures?$/, 'heure'],
+  [/^(?:m2|m²|metres? carres?)$/, 'm2'],
+  [/^(?:euros?|€)$/, 'eur'],
+  [/^(?:vingtiemes?)$/, 'vingtieme'],
+  [/^(?:dixiemes?)$/, 'dixieme'],
+  [/^(?:centiemes?)$/, 'centieme'],
+  [/^(?:quarts?)$/, 'quart'],
+  [/^tiers$/, 'tiers'],
+  [/^moities?$/, 'moitie'],
+];
+const UNIT = '(%|pour ?cent|jours?|mois|annees?|ans?|semaines?|heures?|m2|m²|metres? carres?|euros?|€|vingtiemes?|dixiemes?|centiemes?|quarts?|tiers|moities?)';
+const QUANTITY = new RegExp(`(?<![a-z0-9])${NUM}\\s*${UNIT}(?![a-z0-9])`, 'g');
+const BARE = new RegExp(`(?<![a-z0-9])${NUM}(?![a-z0-9])`, 'g');
 
-/** Les nombres qu'un texte écrit, en chiffres ou en toutes lettres (« dix », « 10 », « 10 000 », « 3,5 %»). */
-export function numbersIn(text: string): Set<string> {
-  const out = new Set<string>();
-  const p = plain(text);
-  for (const m of p.matchAll(/\d+(?:[   .]\d{3})*(?:,\d+)?/g)) {
-    out.add(String(Number(m[0].replace(/[   .]/g, '').replace(',', '.'))));
+function valueOf(token: string): number {
+  return NUMBER_WORDS[token] ?? Number(token.replace(/[   .]/g, '').replace(',', '.'));
+}
+
+/**
+ * Les nombres qu'un texte écrit, en chiffres ou en lettres : avec leur unité (« 10 jours » → `10|jour`, « d'un an » →
+ * `1|an`, « un vingtième » → `1|vingtieme`), et seuls (« article 6 » → `6`, sans « un » ni « une »).
+ */
+export function quantitiesIn(text: string): { withUnit: Set<string>; bare: Set<string> } {
+  const p = plain(text).replace(/ | /g, ' ');
+  const withUnit = new Set<string>();
+  const taken: [number, number][] = [];
+  for (const m of p.matchAll(QUANTITY)) {
+    const unit = UNITS.find(([re]) => re.test(m[2]!))![1];
+    withUnit.add(`${valueOf(m[1]!)}|${unit}`);
+    taken.push([m.index!, m.index! + m[0].length]);
   }
-  for (const m of p.matchAll(/[a-z]+/g)) {
-    const v = NUMBER_WORDS[m[0]] ?? NUMBER_WORDS[m[0].replace(/s$/, '')];
-    if (v !== undefined) out.add(String(v));
+  const bare = new Set<string>();
+  for (const m of p.matchAll(BARE)) {
+    const i = m.index!;
+    if (m[1] === 'un' || m[1] === 'une' || taken.some(([a, b]) => i >= a && i < b)) continue;
+    bare.add(String(valueOf(m[1]!)));
   }
-  return out;
+  return { withUnit, bare };
 }
 
 /** Les promesses et tournures qu'un assistant juridique n'écrit jamais. */
@@ -258,14 +332,19 @@ export function checkDraft(draft: unknown, facts: LegalFacts): { ok: true; draft
     if (text.length > MAX_PARAGRAPH_LENGTH) problems.add('trop_long');
     if (ids.length === 0) problems.add('sans_source');
     if (ids.some((id) => !given.has(id))) problems.add('source_non_fournie');
-    const allowed = new Set<string>();
+    // Un nombre avec son unité ne vient que du résumé d'un texte cité ; un nombre seul, du résumé ou de la référence.
+    const withUnit = new Set<string>();
+    const bare = new Set<string>();
     for (const id of ids) {
       const s = given.get(id);
       if (!s) continue;
-      for (const n of numbersIn(`${s.title} ${s.article} ${s.summary}`)) allowed.add(n);
-      for (const n of numbersIn(s.textDate.replace(/-/g, ' '))) allowed.add(n);
+      const fromSummary = quantitiesIn(s.summary);
+      for (const q of fromSummary.withUnit) withUnit.add(q);
+      for (const n of fromSummary.bare) bare.add(n);
+      for (const n of quantitiesIn(`${s.title} ${s.article} ${s.origin} ${s.textDate.replace(/-/g, ' ')}`).bare) bare.add(n);
     }
-    for (const n of numbersIn(text)) if (!allowed.has(n)) problems.add('nombre_sans_source');
+    const said = quantitiesIn(text);
+    if ([...said.withUnit].some((q) => !withUnit.has(q)) || [...said.bare].some((n) => !bare.has(n))) problems.add('nombre_sans_source');
     const w = words(text);
     if (FORBIDDEN_LEGAL_PHRASES.some((f) => has(w, f))) problems.add('tournure_interdite');
     paragraphs.push({ text, sources: ids });
@@ -334,8 +413,8 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
 
   if (!options.writer) return byTexts('textes');
   const facts: LegalFacts = {
-    question: withoutContactDetails(withoutNames(q, options.knownNames ?? [])),
-    sources: sources.map((s) => ({ id: s.id, title: s.title, article: s.article, textDate: s.textDate, summary: s.summary })),
+    question: scrubQuestion(q, options.knownNames ?? []),
+    sources: sources.map((s) => ({ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary })),
   };
   let raw: unknown;
   try {
