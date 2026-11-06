@@ -326,6 +326,33 @@ it('[R256] un espacement autre que l’espace (tabulation, espace fine, saut de 
   expect(xmlJoint((r as { pdf: Uint8Array }).pdf)).toEqual(new TextEncoder().encode(xml));
 });
 
+it('[R256] un long nom ou une longue adresse se coupe dans sa colonne : rien ne déborde de la page ni ne chevauche l’en-tête', () => {
+  const long = 'Société de transaction et de gestion immobilière Exemple et associés réunis en groupement fictif';
+  const xml = xmlOf(
+    { ...HONORAIRES, label: 'F-2027-000000000000000000000000000001' },
+    { ...RESEAU, name: long, address: { ...RESEAU.address, line1: `${long}, 1 rue Inventée` } },
+    { ...CLIENT, name: `${long} ${long}`, address: { ...CLIENT.address, line1: `${long}, 2 place Imaginaire` } },
+  );
+  const pdf = pdfOf(xml);
+  const decoder = new TextDecoder('windows-1252');
+  const width = (face: string, size: number, hex: string) => {
+    const font = face === 'FB' ? POPPINS_BOLD : POPPINS_REGULAR;
+    return hex.match(/../g)!.reduce((sum, h) => sum + font.widths[parseInt(h, 16) - 32]!, 0) * (size / 1000);
+  };
+  const boxes: { x1: number; x2: number; y: number; text: string }[] = [];
+  for (const m of latin1(pdf).matchAll(/BT \/(F[RB]) ([\d.]+) Tf [\d. ]+ rg ([\d.]+) ([\d.]+) Td <([0-9a-f]*)> Tj ET/g)) {
+    const x = Number(m[3]);
+    const x2 = x + width(m[1]!, Number(m[2]), m[5]!);
+    boxes.push({ x1: x, x2, y: Number(m[4]), text: decoder.decode(Uint8Array.from(m[5]!.match(/../g)!.map((h) => parseInt(h, 16)))) });
+    expect(x2, decoder.decode(Uint8Array.from(m[5]!.match(/../g)!.map((h) => parseInt(h, 16))))).toBeLessThanOrEqual(595.28 - 56 + 0.01);
+  }
+  // Dans l'en-tête, aucune ligne de l'émetteur ne chevauche une ligne de droite à la même hauteur.
+  const top = boxes.filter((b) => b.y > 841.89 - 56 - 120);
+  for (const a of top) for (const b of top) if (a !== b && Math.abs(a.y - b.y) < 12 && a.x1 < b.x1) expect(a.x2, `${a.text} / ${b.text}`).toBeLessThan(b.x1);
+  const flat = printed(pdf).join(' ');
+  for (const word of long.split(' ')) expect(flat).toContain(word);
+});
+
 it('[R256] de longues mentions passent à la page suivante, numérotée, sans rien perdre ni déborder', () => {
   const mentions = Array.from({ length: 40 }, (_, i) => `Mention inventée numéro ${i + 1} : ${'texte de remplissage '.repeat(12).trim()}.`);
   const pdf = pdfOf(xmlOf({ ...HONORAIRES, mentions, designation: `Honoraires ${'tres-long-mot-sans-espace'.repeat(8)}` }));

@@ -270,37 +270,38 @@ function layout(v: VueFacturX): string[][] {
   const rightEdge = PAGE_W - MARGIN;
   const avoir = v.typeCode === '381';
 
-  // En-tête : l'émetteur à gauche, la nature et le numéro à droite.
+  // En-tête : l'émetteur à gauche, la nature et le numéro à droite, chacun coupé à la largeur de sa colonne.
   p.ops0(left, rightEdge);
-  let y = PAGE_H - MARGIN - 14;
-  p.text(left, y, v.seller.name, 'B', 13);
+  const sellerW = (rightEdge - left) * 0.56;
+  const headW = rightEdge - left - sellerW - 24;
+  /** Écrit un texte coupé à `max`, ligne après ligne, aligné à gauche en `x` ou à droite sur `x` ; rend le nouveau `y`. */
+  const block = (x: number, y0: number, s: string, face: Face, size: number, max: number, step: number, color = INK, alignRight = false): number => {
+    let y = y0;
+    wrap(FACES[face], s, size, max).forEach((line, i) => {
+      if (i > 0) y -= step;
+      if (alignRight) p.right(x, y, line, face, size, color);
+      else p.text(x, y, line, face, size, color);
+    });
+    return y;
+  };
+  let y = block(left, PAGE_H - MARGIN - 14, v.seller.name, 'B', 13, sellerW, 16);
   for (const l of [...adresseLignes(v.seller), ...(v.seller.siren ? [`SIREN ${v.seller.siren}`] : []), ...(v.seller.vatId ? [`TVA ${v.seller.vatId}`] : [])]) {
-    y -= 13;
-    p.text(left, y, l, 'R', 9, MUTED);
+    y = block(left, y - 13, l, 'R', 9, sellerW, 12, MUTED);
   }
   let ry = PAGE_H - MARGIN - 18;
   p.right(rightEdge, ry, avoir ? 'Avoir' : 'Facture', 'B', 22, ACCENT);
-  ry -= 18;
-  p.right(rightEdge, ry, `N° ${v.id}`, 'B', 10);
-  ry -= 14;
-  p.right(rightEdge, ry, `Émise le ${dateImprimee(v.issuedOn)}`, 'R', 9, MUTED);
-  if (v.deliveryOn) {
-    ry -= 13;
-    p.right(rightEdge, ry, `Acte du ${dateImprimee(v.deliveryOn)}`, 'R', 9, MUTED);
-  }
-  if (avoir && v.corrects) {
-    ry -= 13;
-    p.right(rightEdge, ry, `Corrige la facture ${v.corrects}`, 'R', 9, MUTED);
-  }
+  ry = block(rightEdge, ry - 18, `N° ${v.id}`, 'B', 10, headW, 13, INK, true);
+  ry = block(rightEdge, ry - 14, `Émise le ${dateImprimee(v.issuedOn)}`, 'R', 9, headW, 12, MUTED, true);
+  if (v.deliveryOn) ry = block(rightEdge, ry - 13, `Acte du ${dateImprimee(v.deliveryOn)}`, 'R', 9, headW, 12, MUTED, true);
+  if (avoir && v.corrects) ry = block(rightEdge, ry - 13, `Corrige la facture ${v.corrects}`, 'R', 9, headW, 12, MUTED, true);
   p.y = Math.min(y, ry) - 34;
 
-  // Le client.
+  // Le client, coupé à la largeur de la page.
+  const fullW = rightEdge - left;
   p.text(left, p.y, 'Facturé à', 'B', 8, ACCENT);
-  p.y -= 15;
-  p.text(left, p.y, v.buyer.name, 'B', 11);
+  p.y = block(left, p.y - 15, v.buyer.name, 'B', 11, fullW, 14);
   for (const l of [...adresseLignes(v.buyer), ...(v.buyer.siren ? [`SIREN ${v.buyer.siren}`] : [])]) {
-    p.y -= 13;
-    p.text(left, p.y, l, 'R', 9, MUTED);
+    p.y = block(left, p.y - 13, l, 'R', 9, fullW, 12, MUTED);
   }
 
   // La ligne facturée.
