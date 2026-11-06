@@ -672,3 +672,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 12:35 · HX01 · fusionnée (#380) : partage entre agences, bon de délégation, co-visite après signature, relevé à l'acte et facture de l'agence au montant exact, suivi en direct · prochaine : HX59
 - 2026-11-06 13:05 · HX59 · fusionnée (#382) : la part de l'agence sort des honoraires avant la grille, tout fait toujours les honoraires · prochaine : HX02
 - 2026-11-06 13:06 · voie 1 : relance de la séance suivante refusée (permission « lancer maintenant » refusée, deuxième fois) ; la prochaine séance planifiée reprendra à HX02
+- 2026-11-06 13:21 · HX21 · fusionnée (#381) : appels entrants rangés une fois, enregistrés seulement avec annonce et accord, rattachés à la fiche par le numéro, chaque champ cité par la phrase de l'appelant, provenance par code AT05 ; R242 à R245 en service · prochaine : HX22
+- 2026-11-06 13:21 · VOIE 2 : relance refusée, question 2 (sur mes trois dernières séances voie 2, celle de 09:55 n'a produit ni commit ni tâche terminée)
+- 2026-11-06 13:21 · VOIE 2 : HX21, 541fa590 (#381), relancé non
