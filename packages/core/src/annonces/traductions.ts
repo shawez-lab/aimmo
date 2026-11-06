@@ -27,6 +27,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { replyLanguage } from '../captation/premiere-reponse.ts';
+import { publicTextProblems, sentences } from './annonce-sourcee.ts';
 import { Annonces } from './annonces.ts';
 import type { PortalFormat } from './portails.ts';
 import type { ListingPayload } from './publication.ts';
@@ -93,7 +94,75 @@ export type TranslationProblem =
   | 'nombre_en_lettres'
   | 'classe_manquante'
   | 'classe_ajoutee'
-  | 'lien_ou_mail';
+  | 'lien_ou_mail'
+  | 'adresse'
+  | 'critere_discriminant'
+  | 'mot_interdit'
+  | 'mot_latin_sans_source';
+
+/**
+ * Ce qu'aucune annonce traduite ne peut porter, comme l'annonce française [R46] : une voie nommée, un critère
+ * discriminant, un mot interdit. Listes fermées par langue, mots entiers ; le contrôle français (publicTextProblems)
+ * s'applique en plus à chaque phrase, pour ce qui resterait écrit en français. Une garde de plus : l'IA ne reçoit que
+ * l'annonce française déjà contrôlée, et l'agent relit avant de valider.
+ */
+const PUBLIC_TERMS: Readonly<Record<ListingLanguage, { adresse: readonly string[]; critere_discriminant: readonly string[]; mot_interdit: readonly string[] }>> = {
+  en: {
+    adresse: ['street', 'st', 'road', 'rd', 'avenue', 'ave', 'lane', 'boulevard', 'blvd', 'alley', 'quay', 'rue'],
+    critere_discriminant: ['origin', 'ethnic', 'ethnicity', 'race', 'racial', 'religion', 'religious', 'christian', 'christians', 'muslim', 'muslims', 'jewish', 'jew', 'catholic', 'protestant', 'hindu', 'sikh', 'nationality', 'foreigner', 'foreigners', 'foreign', 'french only', 'disability', 'disabled', 'handicapped', 'no children', 'no kids', 'without children', 'children', 'kids', 'couple', 'couples', 'single', 'singles', 'retired', 'retiree', 'retirees', 'pensioner', 'pensioners', 'family', 'families', 'young', 'senior', 'seniors', 'elderly', 'age', 'aged', 'man', 'men', 'woman', 'women', 'gender', 'sex', 'orientation', 'pregnant', 'pregnancy', 'opinion', 'opinions', 'union', 'surname', 'appearance', 'reserved for', 'exclusively for', 'only for', 'ideal for', 'perfect for', 'french', 'european', 'african', 'asian', 'arab'],
+    mot_interdit: ['free', 'ai', 'artificial intelligence', 'chatgpt', 'gpt', 'robot', 'bot', 'algorithm', 'generated', 'automatically'],
+  },
+  el: {
+    adresse: ['οδός', 'οδό', 'οδού', 'λεωφόρος', 'λεωφόρο', 'πλατεία', 'στενό'],
+    critere_discriminant: ['θρησκεία', 'φυλή', 'εθνικότητα', 'παιδιά', 'οικογένεια', 'οικογένειες', 'ζευγάρι', 'συνταξιούχος', 'συνταξιούχοι', 'μουσουλμάνος', 'χριστιανός', 'εβραίος', 'ξένος', 'ξένοι', 'γυναίκα', 'γυναίκες', 'άνδρας', 'άνδρες', 'ηλικία'],
+    mot_interdit: ['δωρεάν', 'ρομπότ', 'αλγόριθμος'],
+  },
+  ar: {
+    adresse: ['شارع', 'طريق', 'زقاق', 'جادة', 'ساحة'],
+    critere_discriminant: ['دين', 'عرق', 'جنسية', 'أطفال', 'عائلة', 'عائلات', 'مسلم', 'مسلمين', 'مسيحي', 'يهودي', 'أجنبي', 'أجانب', 'نساء', 'رجال', 'متقاعد', 'عمر'],
+    mot_interdit: ['مجاني', 'مجانا', 'مجانًا', 'روبوت', 'خوارزمية'],
+  },
+  fa: {
+    adresse: ['خیابان', 'کوچه', 'بلوار', 'میدان'],
+    critere_discriminant: ['دین', 'مذهب', 'نژاد', 'ملیت', 'کودک', 'کودکان', 'بچه', 'خانواده', 'مسلمان', 'مسیحی', 'یهودی', 'خارجی', 'زنان', 'مردان', 'بازنشسته', 'سن'],
+    mot_interdit: ['رایگان', 'ربات', 'الگوریتم'],
+  },
+  ur: {
+    adresse: ['سڑک', 'گلی', 'شاہراہ', 'چوک'],
+    critere_discriminant: ['مذہب', 'نسل', 'قومیت', 'بچے', 'بچوں', 'خاندان', 'مسلمان', 'عیسائی', 'یہودی', 'ہندو', 'غیر ملکی', 'خواتین', 'مرد', 'ریٹائرڈ', 'عمر'],
+    mot_interdit: ['مفت', 'روبوٹ', 'الگورتھم'],
+  },
+  hi: {
+    adresse: ['सड़क', 'गली', 'मार्ग', 'चौक'],
+    critere_discriminant: ['धर्म', 'जाति', 'नस्ल', 'राष्ट्रीयता', 'बच्चे', 'बच्चों', 'परिवार', 'मुस्लिम', 'ईसाई', 'यहूदी', 'हिंदू', 'सिख', 'विदेशी', 'महिलाएं', 'पुरुष', 'सेवानिवृत्त', 'उम्र'],
+    mot_interdit: ['मुफ्त', 'मुफ़्त', 'रोबोट', 'एल्गोरिदम'],
+  },
+  pa: {
+    adresse: ['ਸੜਕ', 'ਗਲੀ', 'ਮਾਰਗ', 'ਚੌਕ'],
+    critere_discriminant: ['ਧਰਮ', 'ਜਾਤ', 'ਨਸਲ', 'ਕੌਮੀਅਤ', 'ਬੱਚੇ', 'ਬੱਚਿਆਂ', 'ਪਰਿਵਾਰ', 'ਮੁਸਲਮਾਨ', 'ਈਸਾਈ', 'ਸਿੱਖ', 'ਹਿੰਦੂ', 'ਵਿਦੇਸ਼ੀ', 'ਔਰਤਾਂ', 'ਮਰਦ', 'ਉਮਰ'],
+    mot_interdit: ['ਮੁਫ਼ਤ', 'ਮੁਫਤ', 'ਰੋਬੋਟ'],
+  },
+};
+
+const fold = (t: string): string => t.normalize('NFC').toLowerCase();
+/** Un terme entier (un ou plusieurs mots) dans le texte, sans être collé à une autre lettre. */
+const hasTerm = (text: string, term: string): boolean => {
+  const escaped = fold(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escaped}(?![\\p{L}\\p{M}\\p{N}])`, 'u').test(fold(text));
+};
+
+function publicProblems(source: string, translated: string, language: ListingLanguage): TranslationProblem[] {
+  const out = new Set<TranslationProblem>();
+  for (const sentence of sentences(translated)) for (const p of publicTextProblems(sentence)) out.add(p.code as TranslationProblem);
+  const terms = PUBLIC_TERMS[language];
+  for (const code of ['adresse', 'critere_discriminant', 'mot_interdit'] as const) if (terms[code].some((t) => hasTerm(translated, t))) out.add(code);
+  // Hors anglais, un mot en lettres latines ne peut être qu'un nom repris du français (Dijon) : sinon, refusé.
+  if (language !== 'en') {
+    const known = new Set((fold(source).match(/\p{Script=Latin}+/gu) ?? []));
+    if ((fold(translated).match(/\p{Script=Latin}+/gu) ?? []).some((w) => !known.has(w))) out.add('mot_latin_sans_source');
+  }
+  return [...out];
+}
 
 const MAX_TITLE = 160;
 const MAX_BODY = 4000;
@@ -145,6 +214,7 @@ function checkField(source: string, translated: string, language: ListingLanguag
   const words = new Set((translated.toLowerCase().normalize('NFC').match(/[\p{L}\p{M}]+/gu) ?? []));
   if (NUMBER_WORDS[language].some((w) => words.has(w.normalize('NFC')))) problems.push('nombre_en_lettres');
   if (LINK_OR_MAIL.test(translated)) problems.push('lien_ou_mail');
+  problems.push(...publicProblems(source, translated, language));
   return problems;
 }
 
@@ -360,20 +430,22 @@ export class AnnoncesTraduites {
     return null;
   }
 
-  private async askTranslator(language: ListingLanguage, masked: { title: string; body: string }): Promise<{ title: string; body: string } | null> {
-    if (!this.translator) return null;
+  /** L'IA traduit ; une panne, un délai dépassé ou une réponse hors format rend sa raison, jamais son texte d'erreur. */
+  private async askTranslator(translator: ListingTranslator, language: ListingLanguage, masked: { title: string; body: string }): Promise<{ title: string; body: string } | { failure: 'panne' | 'delai' | 'hors_format' }> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = Symbol('delai');
     try {
       const out = await Promise.race([
-        this.translator.translate({ language, title: masked.title, body: masked.body }),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => resolve(null), this.timeoutMs);
+        translator.translate({ language, title: masked.title, body: masked.body }),
+        new Promise<typeof late>((resolve) => {
+          timer = setTimeout(() => resolve(late), this.timeoutMs);
         }),
       ]);
-      if (!out || typeof out.title !== 'string' || typeof out.body !== 'string') return null;
+      if (out === late) return { failure: 'delai' };
+      if (!out || typeof out.title !== 'string' || typeof out.body !== 'string') return { failure: 'hors_format' };
       return { title: out.title.trim(), body: out.body.trim() };
     } catch {
-      return null;
+      return { failure: 'panne' };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -400,8 +472,12 @@ export class AnnoncesTraduites {
     const titleMarkers = values.map((_, i) => i + 1);
     const body = maskFigures(draft.body, values);
     const bodyMarkers = values.map((_, i) => i + 1).slice(titleMarkers.length);
-    const out = await this.askTranslator(language, { title, body });
-    if (!out) return { ok: false, rule: null, code: 'ia_indisponible' };
+    const out = await this.askTranslator(this.translator, language, { title, body });
+    if ('failure' in out) {
+      // Au journal : la langue et la raison seulement, jamais le texte ni l'erreur du fournisseur [R13].
+      await appendEvent(this.journal, { type: 'annonce.traduction_ia_indisponible', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R257', language, reason: out.failure } }, this.now);
+      return { ok: false, rule: null, code: 'ia_indisponible' };
+    }
     const t = unmaskFigures(out.title, values, titleMarkers);
     const b = unmaskFigures(out.body, values, bodyMarkers);
     const control = t !== null && b !== null ? controlTranslation(draft, { title: t, body: b }, language) : null;

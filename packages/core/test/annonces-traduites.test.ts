@@ -56,6 +56,25 @@ describe('HX05 · contrôle d’une traduction', () => {
     expect(controlTranslation(FR, { title: ' ', body: EN.body }, 'en').title).toEqual(['texte_vide']);
   });
 
+  it('[R257] [R46] une voie nommée, un critère discriminant ou un mot interdit sont refusés dans chaque langue, comme en français', () => {
+    const body = (b: string, l: ListingLanguage = 'en') => controlTranslation(FR, { title: FR.title, body: b }, l).body;
+    expect(body(`${EN.body} Adresse : rue des Essais.`)).toContain('adresse');
+    expect(body(`${EN.body} Near Elm Street.`)).toEqual(['adresse']);
+    expect(body(`${EN.body} Ideal for a young couple.`)).toEqual(['critere_discriminant']);
+    expect(body(`${EN.body} No children.`)).toEqual(['critere_discriminant']);
+    expect(body(`${EN.body} Free parking.`)).toEqual(['mot_interdit']);
+    expect(body(`${FR.body} قرب شارع النخيل.`, 'ar')).toEqual(['adresse']);
+    expect(body(`${FR.body} مناسب لعائلة مسلم.`, 'ar')).toEqual(['critere_discriminant']);
+    expect(body(`${FR.body} نزدیک خیابان.`, 'fa')).toEqual(['adresse']);
+    expect(body(`${FR.body} गली के पास।`, 'hi')).toEqual(['adresse']);
+    expect(body(`${FR.body} ਸੜਕ ਦੇ ਨੇੜੇ।`, 'pa')).toEqual(['adresse']);
+    expect(body(`${FR.body} قریب سڑک۔`, 'ur')).toEqual(['adresse']);
+    expect(body(`${FR.body} κοντά στην οδό.`, 'el')).toEqual(['adresse']);
+    // Hors anglais, un mot latin qui n'est pas dans le français (une voie, un nom) est refusé ; « Dijon » repris passe.
+    expect(body(`${FR.body} Près de Essais.`, 'ar')).toEqual(['mot_latin_sans_source']);
+    expect(body(`${FR.body} ديجون Dijon.`, 'ar')).toEqual([]);
+  });
+
   it('[R257] les repères : l’IA ne voit ni chiffre ni classe, et chaque repère revient une fois', () => {
     const values: string[] = [];
     const masked = maskFigures(FR.body, values);
@@ -88,13 +107,16 @@ describe('HX05 · langue de l’acheteur', () => {
   });
 });
 
+/** La marque de chaque langue dans les textes de l'IA de test, dans son écriture : hors anglais, aucun mot latin inventé. */
+const MARK: Record<ListingLanguage, string> = { en: 'en', ur: 'اردو', hi: 'हिंदी', pa: 'ਪੰਜਾਬੀ', fa: 'فارسی', ar: 'عربي', el: 'ελ' };
+
 /** Une IA de test : elle rend les repères tels quels, et garde ce qu'elle a reçu. */
 class FakeTranslator implements ListingTranslator {
   received: { language: ListingLanguage; title: string; body: string }[] = [];
   edit: (s: string) => string = (s) => s;
   async translate(input: { language: ListingLanguage; title: string; body: string }) {
     this.received.push(input);
-    return { title: this.edit(`[${input.language}] ${input.title}`), body: this.edit(`[${input.language}] ${input.body}`) };
+    return { title: this.edit(`[${MARK[input.language]}] ${input.title}`), body: this.edit(`[${MARK[input.language]}] ${input.body}`) };
   }
 }
 
@@ -159,6 +181,23 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
       { rule: 'R257', language: 'en', codes: ['nombre_en_lettres'] },
     ]);
     expect(JSON.stringify(events)).not.toContain('[en]');
+  });
+
+  it('[R257] une IA en panne, trop lente ou hors format : rien n’est gardé, la raison va au journal sans le texte ni l’erreur', async () => {
+    const t = await setup();
+    const cases: [ListingTranslator, string][] = [
+      [{ translate: async () => { throw new Error('clé secrète refusée'); } }, 'panne'],
+      [{ translate: () => new Promise(() => {}) }, 'delai'],
+      [{ translate: async () => ({ title: 1, body: null }) as unknown as { title: string; body: string } }, 'hors_format'],
+    ];
+    for (const [translator] of cases) {
+      const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator, timeoutMs: 20 });
+      expect(await tr.propose(t.agent, t.propertyId, 'en')).toMatchObject({ ok: false, code: 'ia_indisponible' });
+    }
+    const events = (await t.journal.bySubject(`property:${t.propertyId}`)).filter((e) => e.type === 'annonce.traduction_ia_indisponible');
+    expect(events.map((e) => e.data)).toEqual(cases.map(([, reason]) => ({ rule: 'R257', language: 'en', reason })));
+    expect(JSON.stringify(events)).not.toContain('secrète');
+    expect((await t.db.all('SELECT id FROM listing_translations')).length).toBe(0);
   });
 
   it('[R258] rien ne part sans validation de l’agent du bien ; seule la dernière traduction se valide ; la direction et un autre agent ne valident pas', async () => {
@@ -232,7 +271,7 @@ describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jam
       expect(l.priceEur).toBe(s.french.priceEur);
       expect(l.media).toEqual(s.french.media);
       expect(l.version).toBe(s.french.version);
-      expect(l.title).toContain(`[${l.language}]`);
+      expect(l.title).toContain(`[${MARK[l.language]}]`);
     }
     const feed = await s.exporter.feed(s.network.id);
     expect(feed.body).toContain('langue="ar" sens="rtl"');
