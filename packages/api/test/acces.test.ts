@@ -131,6 +131,17 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
     expect((await exchange(w.db, inTime, new Date(T0.getTime() + 24 * 3600_000 - 1000))).status).toBe(200);
   });
 
+  it('Z05 : des ouvertures en GET, même avec le jeton, ne consomment rien ; le POST consomme une seule fois', async () => {
+    const w = await world();
+    const token = await invite(w);
+    for (const path of ['/v1/acces/invitation', `/v1/acces/invitation?jeton=${token}`, '/app/']) {
+      for (let i = 0; i < 2; i++) expect([200, 405]).toContain((await call(w.db, path)).status);
+    }
+    expect((w.raw.prepare('SELECT COUNT(*) AS n FROM access_invitations WHERE used_at IS NOT NULL').get() as { n: number }).n).toBe(0);
+    expect((await exchange(w.db, token)).status).toBe(200);
+    expect((await exchange(w.db, token)).status).toBe(410);
+  });
+
   it('un jeton inconnu ou mal formé n’ouvre rien', async () => {
     const w = await world();
     await invite(w);
@@ -467,9 +478,16 @@ describe('Z02 · la page ouvre l’application déjà connectée', () => {
     await settle();
     return { els, storage, calls, replaced };
   }
+  /** Le lien ouvert, puis le clic sur « Entrer sur ce téléphone » (Z05). */
+  async function openAndEnter(hash: string, invitation: Answer, stored: [string, string][] = []) {
+    const t = await open(hash, invitation, stored);
+    t.els['entrer-invitation']!.listeners.click!({});
+    await settle();
+    return t;
+  }
 
   it('le lien entre sans rien saisir, garde les deux clés sur l’appareil et passe de la journée au réseau', async () => {
-    const t = await open(`#invitation=${TOKEN}`, async (init) => {
+    const t = await openAndEnter(`#invitation=${TOKEN}`, async (init) => {
       expect(JSON.parse(init.body!)).toEqual({ jeton: TOKEN });
       return Response.json({ ok: true, data: { cles: [{ role: 'agent', cle: AGENT_KEY }, { role: 'direction', cle: DIR_KEY }] } });
     });
@@ -491,7 +509,7 @@ describe('Z02 · la page ouvre l’application déjà connectée', () => {
   });
 
   it('un lien déjà servi ne garde rien et le dit simplement', async () => {
-    const t = await open(`#invitation=${TOKEN}`, async () => Response.json({ ok: false, error: { code: 'invitation_used' } }, { status: 410 }));
+    const t = await openAndEnter(`#invitation=${TOKEN}`, async () => Response.json({ ok: false, error: { code: 'invitation_used' } }, { status: 410 }));
     expect(t.storage.size).toBe(0);
     expect(t.els.connexion!.hidden).toBe(false);
     expect(t.els.erreur!.textContent).toBe('Ce lien a déjà servi. Demandez un nouveau lien.');
@@ -499,13 +517,44 @@ describe('Z02 · la page ouvre l’application déjà connectée', () => {
   });
 
   it('un lien expiré le dit aussi, et un lien tronqué ne part même pas', async () => {
-    const t = await open(`#invitation=${TOKEN}`, async () => Response.json({ ok: false, error: { code: 'invitation_expired' } }, { status: 410 }));
+    const t = await openAndEnter(`#invitation=${TOKEN}`, async () => Response.json({ ok: false, error: { code: 'invitation_expired' } }, { status: 410 }));
     expect(t.els.erreur!.textContent).toContain('expiré');
     const cut = await open('#invitation=TTT', async () => {
       throw new Error('aucun appel attendu');
     });
     expect(cut.calls.some((c) => c.url === '/v1/acces/invitation')).toBe(false);
     expect(cut.els.erreur!.textContent).toContain('incomplet');
+  });
+
+  it('Z05 : ouvrir le lien, même plusieurs fois, ne consomme rien ; seul le clic échange le jeton, une seule fois', async () => {
+    let exchanges = 0;
+    const answer: Answer = async () => {
+      exchanges += 1;
+      return Response.json({ ok: true, data: { cles: [{ role: 'agent', cle: AGENT_KEY }] } });
+    };
+    // Un aperçu de lien ou une double ouverture : la page s'affiche, rien ne part, rien n'est gardé.
+    for (let i = 0; i < 3; i++) {
+      const seen = await open(`#invitation=${TOKEN}`, answer);
+      expect(seen.calls.some((c) => c.url === '/v1/acces/invitation')).toBe(false);
+      expect(seen.els.invitation!.hidden).toBe(false);
+      expect(seen.els['entrer-invitation']!.textContent ?? '').toBeDefined();
+      expect(seen.storage.size).toBe(0);
+      expect(seen.replaced).toEqual(['/app/']);
+    }
+    expect(exchanges).toBe(0);
+    // Le clic échange le jeton ; un second clic n'envoie rien de plus.
+    const t = await open(`#invitation=${TOKEN}`, answer);
+    t.els['entrer-invitation']!.listeners.click!({});
+    t.els['entrer-invitation']!.listeners.click!({});
+    await settle();
+    expect(exchanges).toBe(1);
+    expect(t.storage.get('aimmo.cle')).toBe(AGENT_KEY);
+    expect(t.els.accueil!.hidden).toBe(false);
+  });
+
+  it('Z05 : la page porte un seul bouton « Entrer sur ce téléphone »', () => {
+    expect(HTML).toContain('<button id="entrer-invitation" type="button">Entrer sur ce téléphone</button>');
+    expect(HTML.match(/id="entrer-invitation"/g)).toHaveLength(1);
   });
 
   it('une clé de direction retirée n’efface que elle : la journée d’agent reste ouverte', async () => {
