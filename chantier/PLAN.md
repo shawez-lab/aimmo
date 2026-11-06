@@ -197,7 +197,7 @@ Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX0
 
 Voie : 2
 
-Réservé le 2026-11-06 par la voie 2. Le code vit dans `packages/core/src/automatismes/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à partir de `1900` réservées à ce groupe. Le code vit dans `packages/core/src/automatismes/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
 
 ### HX24 · Scénarios automatiques réglables, essayés avant d'être allumés
 - Statut : en cours (voie 2)

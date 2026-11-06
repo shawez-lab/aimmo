@@ -210,6 +210,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
   mandate: 'journal',
@@ -331,6 +332,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   call_journal: { locate: [via('call_id', 'calls')] },
   // HX22 : le passage de main de l'assistant vocal se retrouve par l'appel rangé.
   voice_assistant_calls: { locate: [via('call_row_id', 'calls')] },
+  // HX24 : le passage d'un scénario, la place du message du jour et la tâche, rattachés à la fiche.
+  automation_runs: { locate: by('person_id') },
+  automation_daily_messages: { locate: by('person_id') },
+  automation_tasks: { locate: by('person_id') },
+  automation_scenarios: out('sans_client', 'Scénario composé par la direction : un déclencheur, une attente, un texte fixe, aucune donnée de client.'),
+  automation_simulations: out('sans_client', 'Essai d\'un scénario sur le passé : des comptes, aucune personne.'),
+  automation_switches: out('sans_client', 'Allumages et arrêts d\'un scénario par la direction.'),
   contact_keys: { locate: by('person_id') },
   attach_log: { locate: by('person_id') },
   conversation_handovers: { locate: by('person_id') },
