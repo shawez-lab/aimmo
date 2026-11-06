@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS automation_simulations (
   period_from TEXT NOT NULL,
   period_to TEXT NOT NULL,
   messages INTEGER NOT NULL CHECK (messages >= 0),
-  persons INTEGER NOT NULL CHECK (persons >= 0),
+  reached INTEGER NOT NULL CHECK (reached >= 0),
   tasks INTEGER NOT NULL CHECK (tasks >= 0),
   refused TEXT NOT NULL,
   same_day_twice INTEGER NOT NULL CHECK (same_day_twice >= 0),

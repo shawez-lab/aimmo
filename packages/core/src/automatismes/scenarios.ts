@@ -359,7 +359,7 @@ export class ScenariosAutomatiques {
     const persons = new Set(allowed.map((p) => p.personId)).size;
     const id = this.newId();
     await this.db.run(
-      `INSERT INTO automation_simulations (id, network_id, scenario_id, version, period_from, period_to, messages, persons, tasks, refused, same_day_twice, created_by, created_at)
+      `INSERT INTO automation_simulations (id, network_id, scenario_id, version, period_from, period_to, messages, reached, tasks, refused, same_day_twice, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, viewer.networkId, scenarioId, current.version, from.toISOString(), to.toISOString(), allowed.length, persons, tasks, JSON.stringify(refusedBy), sameDayTwice, this.actor(viewer), to.toISOString()],
     );
