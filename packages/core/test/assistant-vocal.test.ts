@@ -35,7 +35,7 @@ function fakeTranscriber(): CallTranscriber & { calls: number } {
   return t;
 }
 
-async function setup(options: { sheet?: unknown; status?: 'available' | 'under_offer' | 'draft' } = {}) {
+async function setup(options: { listed?: boolean; sheet?: unknown; status?: 'available' | 'under_offer' | 'draft' } = {}) {
   let clock = parisInstant('2026-11-09', 8 * 60)!.getTime();
   const now = (): Date => new Date((clock += 1));
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -57,6 +57,15 @@ async function setup(options: { sheet?: unknown; status?: 'available' | 'under_o
   if (sheet !== null) {
     const saved = await new FicheBien(db, acces, journal, { now }).save(asPaul, property.id, sheet);
     if (!saved.ok) throw new Error('fiche');
+  }
+  // L'annonce publiée, avec un prix changé par avenant : c'est lui qui se dit, pas le prix de la fiche de base [R44].
+  if (options.listed !== false) {
+    await db.run('PRAGMA foreign_keys = OFF');
+    await db.run(
+      "INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES (?, ?, ?, 1, 'en_vente', 'brouillon-1', 215000, '{}', 'h', 'test', ?)",
+      ['annonce-1', property.id, network.id, now().toISOString()],
+    );
+    await db.run('PRAGMA foreign_keys = ON');
   }
   const transcriber = fakeTranscriber();
   const appels = new Appels(db, journal, store, fiche, transcriber, { now });
@@ -157,7 +166,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
       'le deuxième',
       'oui, c’est parfait',
     ]);
-    const allowed = sheetNumbers({ price_eur: 210000, surface_m2: 62, rooms: 3 }, SHEET);
+    const allowed = sheetNumbers({ price_eur: 215000, surface_m2: 62, rooms: 3 }, SHEET);
     // Tous les créneaux proposés pendant l'appel.
     const slots = new Set(turns.flatMap((x) => x.state.offered));
     expect(state.booked).not.toBeNull();
@@ -167,7 +176,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     }
     // Les faits demandés sont dits, tels que la fiche les porte.
     const all = said.join(' ');
-    for (const piece of ['210 000 €', '62 m²', '3 pièces', '2 chambres', '3e étage sur 5, avec ascenseur', 'classe énergie est D', 'entre 1 100 et 1 550 €', '1 800 € de charges', 'collectif', '1 place de stationnement', 'un balcon', '1965', 'à Dijon.']) {
+    for (const piece of ['Le prix de l’annonce est de 215 000 €.', '62 m²', '3 pièces', '2 chambres', '3e étage sur 5, avec ascenseur', 'classe énergie est D', 'entre 1 100 et 1 550 €', '1 800 € de charges', 'collectif', '1 place de stationnement', 'un balcon', '1965', 'à Dijon.']) {
       expect(all).toContain(piece);
     }
     // Jamais l'adresse ni la référence ; une question hors fiche passe à l'agent, sans réponse inventée.
@@ -180,7 +189,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     const t = await setup({ sheet: { ...SHEET, coownership: null, energy: null } });
     const { said, state } = await t.talk(t.call(), ['oui', 'Le prix et la surface ?', 'Et les charges, et le DPE ?']);
     const all = said.join(' ');
-    expect(all).toContain('Le prix affiché est de 210 000 €, honoraires compris.');
+    expect(all).toContain('Le prix de l’annonce est de 215 000 €.');
     expect(all).toContain('La surface est de 62 m².');
     expect(all).toContain('Je n’ai pas cette information dans la fiche ; Paul vous la donnera.');
     expect(state.unanswered).toEqual(['energie', 'charges']);
@@ -193,6 +202,17 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(figuresFromSheet('Le prix est de 210 000 €, avec une surface de cent mètres carrés.', allowed)).toBe(false);
     expect(figuresFromSheet('Il y a deux chambres.', allowed)).toBe(false);
     expect(figuresFromSheet('Le bien a un balcon et une terrasse.', allowed)).toBe(true);
+  });
+
+  it('[R247] [R44] le prix dit est celui de l’annonce publiée ; sans annonce en ligne, aucun prix n’est dit', async () => {
+    const listed = await setup();
+    expect((await listed.talk(listed.call(), ['oui', 'Quel est le prix ?'])).said.join(' ')).not.toContain('210');
+    const t = await setup({ listed: false });
+    const { said, state } = await t.talk(t.call(), ['oui', 'Quel est le prix ?']);
+    const all = said.join(' ');
+    expect(all).not.toMatch(/210|215/);
+    expect(all).toContain('Je n’ai pas cette information dans la fiche ; Paul vous la donnera.');
+    expect(state.unanswered).toEqual(['prix']);
   });
 
   it('[R247] un bien d’un autre agent, ou qui n’est pas en vente, ne donne aucun chiffre', async () => {

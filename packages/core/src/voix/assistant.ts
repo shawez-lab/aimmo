@@ -149,10 +149,10 @@ const HEATING: Record<string, string> = {
 };
 const OUTDOOR: Record<string, string> = { balcon: 'un balcon', terrasse: 'une terrasse', jardin: 'un jardin', cour: 'une cour' };
 
-/** Les phrases que l'assistant peut dire d'un bien : seulement ce que la fiche porte, sans adresse ni référence [R247]. */
+/** Les phrases que l'assistant peut dire d'un bien : seulement ce que la fiche porte, sans adresse ni référence [R247]. `price_eur` : le prix publié. */
 export function propertyFacts(p: Pick<Property, 'city' | 'surface_m2' | 'rooms' | 'price_eur'>, sheet: PropertySheet | null): PropertyFacts {
   const f: PropertyFacts = {};
-  if (p.price_eur !== null) f.prix = `Le prix affiché est de ${spoken(p.price_eur)} €, honoraires compris.`;
+  if (p.price_eur !== null) f.prix = `Le prix de l’annonce est de ${spoken(p.price_eur)} €.`;
   if (p.surface_m2 !== null) f.surface = `La surface est de ${spoken(p.surface_m2)} m².`;
   if (p.rooms !== null) f.pieces = `Le bien compte ${spoken(p.rooms)} pièce${p.rooms > 1 ? 's' : ''}.`;
   if (p.city !== null && !/\d/.test(p.city)) f.commune = `Le bien se trouve à ${p.city}.`;
@@ -600,6 +600,10 @@ export class AssistantVocal {
     const p = read.value;
     if (p.agent_id !== agentId || (p.status !== 'available' && p.status !== 'under_offer')) return { facts: {}, underOffer: false, propertyId: null };
     const sheet = await this.sheets.read(viewer, propertyId);
-    return { facts: propertyFacts(p, sheet.ok ? sheet.value.sheet : null), underOffer: p.status === 'under_offer', propertyId };
+    // Le prix dit est celui de l'annonce publiée, avenants compris, le même que sur tous les canaux [R44] ; sans annonce
+    // en ligne, aucun prix n'est dit : l'agent le donnera.
+    const listing = await this.db.first<{ state: string; price_eur: number | null }>('SELECT state, price_eur FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
+    const published = listing && (listing.state === 'en_vente' || listing.state === 'sous_offre') && listing.price_eur !== null ? Number(listing.price_eur) : null;
+    return { facts: propertyFacts({ ...p, price_eur: published }, sheet.ok ? sheet.value.sheet : null), underOffer: p.status === 'under_offer', propertyId };
   }
 }
