@@ -265,10 +265,12 @@ export class Dictee {
       {
         type: 'dictee.validee',
         actor: this.actor(viewer),
-        subject: `dictation:${input.requestId}`,
+        // Au journal de la personne dictée, sinon de la visite : son droit d'accès le retrouve [R96].
+        subject: personId ? `person:${personId}` : `visit:${appointmentId}`,
         // Seulement des noms de champs et des identifiants : aucun texte dicté [R13].
         data: {
           rule: 'R261',
+          request: input.requestId,
           contact: contactState ?? 'none',
           fields: [...kept.entries()].flatMap(([t, m]) => [...m.keys()].map((k) => `${t}.${k}`)).sort(),
           ...(personId ? { person: personId } : {}),
