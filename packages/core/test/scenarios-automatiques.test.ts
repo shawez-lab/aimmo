@@ -334,4 +334,38 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(rules.filter((r) => r === null)).toHaveLength(1);
     expect(rules.filter((r) => r === 'R402')).toHaveLength(2);
   });
+
+  it('[R400] [R402] un allumage venu pendant un essai rend cet essai caduc', async () => {
+    const t = await setup();
+    t.setClock(TUE_10H - 6 * DAY);
+    const ines = await t.person('Inès');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: ines, kind: 'buy' });
+    t.setClock(TUE_10H);
+    const a = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const b = await t.scenarios.compose(t.direction, { ...PROJECT, projectKind: 'buy' });
+    const [aId, bId] = [a.ok ? a.value.scenarioId : '', b.ok ? b.value.scenarioId : ''];
+    await t.scenarios.simulate(t.direction, bId);
+    // B s'allume juste après que l'essai de A a lu les scénarios allumés, et avant qu'il range son compte rendu.
+    let interleaved = false;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => t.db.run(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      all: async <T,>(sql: string, params?: readonly (string | number | null)[]) => {
+        const rows = await t.db.all<T>(sql, params as never);
+        if (!interleaved && sql.includes('FROM automation_switches s')) {
+          interleaved = true;
+          expect(await t.scenarios.switchOn(t.direction, bId)).toMatchObject({ ok: true });
+        }
+        return rows;
+      },
+    };
+    const racing = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(TUE_10H) });
+    expect(await racing.simulate(t.direction, aId)).toMatchObject({ ok: true, value: { sameDayTwice: 0 } });
+    expect(interleaved).toBe(true);
+    expect(await racing.switchOn(t.direction, aId)).toEqual({ ok: false, rule: 'R400', code: 'simulation_before_last_switch_on' });
+    // Un nouvel essai voit B, et le double du même jour.
+    expect(await t.scenarios.simulate(t.direction, aId)).toMatchObject({ ok: true, value: { sameDayTwice: 1, canSwitchOn: false } });
+  });
 });

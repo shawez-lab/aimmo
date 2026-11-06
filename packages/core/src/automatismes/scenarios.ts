@@ -329,6 +329,8 @@ export class ScenariosAutomatiques {
     if (refused) return refused;
     const current = await this.latest(viewer.networkId, scenarioId);
     if (!current) return { ok: false, rule: 'R16', code: 'unknown' };
+    // Le nombre d'allumages est lu avant les scénarios allumés : un allumage venu pendant l'essai le rend caduc [R400].
+    const revision = await this.litRevision(viewer.networkId);
     const to = this.now();
     const from = new Date(to.getTime() - this.settings.simulationDays * DAY);
     const def = current.definition;
@@ -394,7 +396,6 @@ export class ScenariosAutomatiques {
       else taken.add(key);
     }
     const persons = new Set(allowed.map((p) => p.personId)).size;
-    const revision = await this.litRevision(viewer.networkId);
     const id = this.newId();
     await this.db.run(
       `INSERT INTO automation_simulations (id, network_id, scenario_id, version, period_from, period_to, messages, reached, tasks, refused, same_day_twice, lit_revision, created_by, created_at)
