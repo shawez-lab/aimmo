@@ -109,11 +109,13 @@ for (const make of SERVERS) {
       const r = await w.sync.run();
       expect(r.moved).toBe(1);
       expect((await w.rdv.get(a.id))?.status).toBe('cancelled');
-      const now = await w.db.first<{ start_at: string }>("SELECT start_at FROM appointments WHERE replaces_id = ? AND status = 'booked'", [a.id]);
+      const now = await w.db.first<{ id: string; start_at: string }>("SELECT id, start_at FROM appointments WHERE replaces_id = ? AND status = 'booked'", [a.id]);
       expect(now?.start_at).toBe(at('2026-11-10', '15:00').toISOString());
       await w.sync.run();
       expect(w.ours()).toHaveLength(1);
-      expect(w.ours()[0]).toMatchObject({ start: at('2026-11-10', '15:00'), cancelled: false });
+      // L'événement repris est bien réécrit pour le nouveau rendez-vous, sans panne.
+      expect(w.ours()[0]).toMatchObject({ key: `aimmo:${now!.id}`, start: at('2026-11-10', '15:00'), cancelled: false });
+      expect((await w.journal.all()).some((e) => e.type === 'rdv.agenda.panne')).toBe(false);
     });
 
     it('un rendez-vous supprimé dans l’agenda est annulé dans AIMMO', async () => {

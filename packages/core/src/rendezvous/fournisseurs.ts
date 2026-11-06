@@ -457,13 +457,13 @@ const icsEscape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/;/g, 
 const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
 /** Le fichier iCalendar d'un rendez-vous : l'heure, le type, la clé ; rien d'autre. */
-export function appleIcs(event: AgendaWrite, stamp: Date): string {
+export function appleIcs(event: AgendaWrite, stamp: Date, uid: string = appleUid(event.key)): string {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//AIMMO//Agenda//FR',
     'BEGIN:VEVENT',
-    `UID:${appleUid(event.key)}`,
+    `UID:${uid}`,
     `DTSTAMP:${icsStamp(stamp)}`,
     `DTSTART:${icsStamp(event.start)}`,
     `DTEND:${icsStamp(event.end)}`,
@@ -537,8 +537,11 @@ export class AppleAgenda implements AgendaProvider {
     const base = await this.calendarUrl(agentId);
     const own = new URL(`${appleUid(event.key)}.ics`, base).pathname;
     const href = eventId ?? own;
+    // Un rendez-vous décalé reprend l'événement de celui qu'il remplace : la ressource garde son UID (RFC 4791,
+    // `no-uid-conflict`), tiré de son nom de fichier.
+    const uid = eventId ? decodeURIComponent(href.split('/').pop() ?? '').replace(/\.ics$/, '') || appleUid(event.key) : appleUid(event.key);
     // Le nom du fichier vient de la clé : la même écriture reprise remplace le fichier, sans jamais le doubler.
-    const r = await call(this.c, agentId, new URL(href, base).toString(), { method: 'PUT', headers: { 'Content-Type': 'text/calendar; charset=utf-8' }, body: appleIcs(event, this.now()) });
+    const r = await call(this.c, agentId, new URL(href, base).toString(), { method: 'PUT', headers: { 'Content-Type': 'text/calendar; charset=utf-8' }, body: appleIcs(event, this.now(), uid) });
     if (!r.ok) throw new AgendaHttpError(r.status);
     return { eventId: href };
   }

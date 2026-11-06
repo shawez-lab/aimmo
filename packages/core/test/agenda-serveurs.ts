@@ -365,6 +365,9 @@ class AppleServer extends Base implements FakeServer {
       const end = /DTEND:(\d{8}T\d{6}Z)/.exec(body)![1]!;
       const d = (s: string) => new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}Z`);
       const existed = this.files.has(url.pathname) && !this.files.get(url.pathname)!.deleted;
+      // RFC 4791 : une ressource existante ne change jamais d'UID.
+      const uid = (ics: string) => /UID:([^\r\n]*)/.exec(ics)?.[1];
+      if (existed && uid(this.files.get(url.pathname)!.ics) !== uid(body)) return res(409, '<error><no-uid-conflict/></error>', 'application/xml');
       this.files.set(url.pathname, { path: url.pathname, ics: body, start: d(start), end: d(end), deleted: false, weekly: false, seq: ++this.seq });
       return res(existed ? 204 : 201);
     }
