@@ -372,6 +372,20 @@ it('[R256] une désignation qui continue sur une autre page garde son montant en
   expect(pages.join('\n').split(`<${amountHex}>`).length - 1).toBe(2);
 });
 
+it('[R256] des identités démesurées passent à la page suivante : rien n’est imprimé sous la marge ni perdu', () => {
+  const name = 'Societe fictive '.repeat(200).trim();
+  const pdf = pdfOf(xmlOf(HONORAIRES, { ...RESEAU, name }, { ...CLIENT, name: `Client ${'inventé '.repeat(150).trim()}` }));
+  const text = latin1(pdf);
+  expect(Number(/\/Count (\d+)/.exec(text)![1])).toBeGreaterThan(1);
+  for (const m of text.matchAll(/ (-?[\d.]+) (-?[\d.]+) Td </g)) {
+    expect(Number(m[2])).toBeGreaterThanOrEqual(56);
+    expect(Number(m[2])).toBeLessThanOrEqual(841.89 - 56);
+  }
+  const lines = printed(pdf);
+  for (const s of ['Facturé à', 'Désignation', 'Montant HT', 'Total TTC', '2 place Imaginaire']) expect(lines).toContain(s);
+  expect(lines.join(' ').split('Societe').length - 1).toBe(200);
+});
+
 it('[R256] de longues mentions passent à la page suivante, numérotée, sans rien perdre ni déborder', () => {
   const mentions = Array.from({ length: 40 }, (_, i) => `Mention inventée numéro ${i + 1} : ${'texte de remplissage '.repeat(12).trim()}.`);
   const pdf = pdfOf(xmlOf({ ...HONORAIRES, mentions, designation: `Honoraires ${'tres-long-mot-sans-espace'.repeat(8)}` }));

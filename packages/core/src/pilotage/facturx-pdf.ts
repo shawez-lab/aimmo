@@ -279,22 +279,30 @@ function layout(v: VueFacturX): string[][] {
     let y = y0;
     wrap(FACES[face], s, size, max).forEach((line, i) => {
       if (i > 0) y -= step;
+      // Plus de place : la suite va en haut d'une nouvelle page, jamais sous la marge.
+      if (y < MARGIN + 40) {
+        p.pages.push([]);
+        y = PAGE_H - MARGIN - size;
+      }
       if (alignRight) p.right(x, y, line, face, size, color);
       else p.text(x, y, line, face, size, color);
     });
     return y;
   };
-  let y = block(left, PAGE_H - MARGIN - 14, v.seller.name, 'B', 13, sellerW, 16);
-  for (const l of [...adresseLignes(v.seller), ...(v.seller.siren ? [`SIREN ${v.seller.siren}`] : []), ...(v.seller.vatId ? [`TVA ${v.seller.vatId}`] : [])]) {
-    y = block(left, y - 13, l, 'R', 9, sellerW, 12, MUTED);
-  }
   let ry = PAGE_H - MARGIN - 18;
   p.right(rightEdge, ry, avoir ? 'Avoir' : 'Facture', 'B', 22, ACCENT);
   ry = block(rightEdge, ry - 18, `N° ${v.id}`, 'B', 10, headW, 13, INK, true);
   ry = block(rightEdge, ry - 14, `Émise le ${dateImprimee(v.issuedOn)}`, 'R', 9, headW, 12, MUTED, true);
   if (v.deliveryOn) ry = block(rightEdge, ry - 13, `Acte du ${dateImprimee(v.deliveryOn)}`, 'R', 9, headW, 12, MUTED, true);
   if (avoir && v.corrects) ry = block(rightEdge, ry - 13, `Corrige la facture ${v.corrects}`, 'R', 9, headW, 12, MUTED, true);
-  p.y = Math.min(y, ry) - 34;
+  // L'émetteur après la colonne de droite, qui tient toujours en haut de la première page : s'il est très long, il
+  // continue sur la page suivante, et la suite part de là.
+  let y = block(left, PAGE_H - MARGIN - 14, v.seller.name, 'B', 13, sellerW, 16);
+  for (const l of [...adresseLignes(v.seller), ...(v.seller.siren ? [`SIREN ${v.seller.siren}`] : []), ...(v.seller.vatId ? [`TVA ${v.seller.vatId}`] : [])]) {
+    y = block(left, y - 13, l, 'R', 9, sellerW, 12, MUTED);
+  }
+  p.y = (p.pages.length > 1 ? y : Math.min(y, ry)) - 34;
+  p.room(60);
 
   // Le client, coupé à la largeur de la page.
   const fullW = rightEdge - left;
@@ -306,6 +314,7 @@ function layout(v: VueFacturX): string[][] {
 
   // La ligne facturée.
   p.y -= 34;
+  p.room(60);
   const amountCol = rightEdge;
   p.text(left, p.y, 'Désignation', 'B', 8, ACCENT);
   p.right(amountCol, p.y, 'Montant HT', 'B', 8, ACCENT);
