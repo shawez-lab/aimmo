@@ -1,0 +1,40 @@
+name: Vérifier le PDF/A
+
+# HX60 [R256] : les factures PDF passent veraPDF, le validateur de référence de la PDF Association, en PDF/A-3b.
+# Ne tourne que si le code des factures PDF change, pour ne pas dépenser de minutes ailleurs.
+on:
+  pull_request:
+    paths:
+      - 'packages/core/src/pilotage/facturx*.ts'
+      - 'packages/core/test/facture-pdf.test.ts'
+      - '.github/workflows/verifier-pdfa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verapdf:
+    name: veraPDF PDF/A-3b
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Factures d'exemple
+        env:
+          FACTURX_PDF_OUT: ${{ runner.temp }}/pdfa/facture.pdf
+        run: npx vitest run packages/core/test/facture-pdf.test.ts
+      - name: veraPDF
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/pdfa:/data" verapdf/cli:latest --flavour 3b --format text /data/facture.pdf /data/facture-avoir.pdf /data/facture-reversement.pdf | tee "$RUNNER_TEMP/rapport.txt"
+          grep -q '^PASS ' "$RUNNER_TEMP/rapport.txt"
+          if grep -v '^PASS ' "$RUNNER_TEMP/rapport.txt" | grep -q .; then
+            docker run --rm -v "$RUNNER_TEMP/pdfa:/data" verapdf/cli:latest --flavour 3b --format text --verbose /data/facture.pdf /data/facture-avoir.pdf /data/facture-reversement.pdf
+            exit 1
+          fi
+          test "$(grep -c '^PASS ' "$RUNNER_TEMP/rapport.txt")" -eq 3

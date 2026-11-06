@@ -15,3 +15,4 @@ export * from './engagements-tenus.ts';
 export * from './temps-gagne.ts';
 export * from './disponibilite.ts';
 export * from './engagements-manques.ts';
+export * from './facturx-pdf.ts';
