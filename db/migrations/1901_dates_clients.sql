@@ -30,11 +30,12 @@ CREATE TABLE IF NOT EXISTS client_date_texts (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   kind TEXT NOT NULL CHECK (kind IN ('anniversaire', 'fete')),
   channel TEXT NOT NULL CHECK (channel IN ('email', 'sms', 'whatsapp')),
-  text TEXT NOT NULL CHECK (length(trim(text)) > 0),
+  -- Liste JSON de 1 à 5 textes : chaque année prend le premier qui n'est jamais parti à la personne [R05].
+  texts TEXT NOT NULL CHECK (length(trim(texts)) > 2),
   seq INTEGER NOT NULL CHECK (seq >= 1),
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  UNIQUE (network_id, kind, seq)
+  UNIQUE (network_id, kind, channel, seq)
 );
 
 CREATE TRIGGER IF NOT EXISTS client_date_texts_sans_modification
