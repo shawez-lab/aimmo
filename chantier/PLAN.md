@@ -186,8 +186,12 @@ Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX0
 
 ## Contacts et automatismes
 
+Voie : 2
+
+Réservé le 2026-11-06 par la voie 2. Le code vit dans `packages/core/src/automatismes/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX24 · Scénarios automatiques réglables, essayés avant d'être allumés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Automator d'Apimo et Mission Builder de Modelo : la direction compose ses propres scénarios, un déclencheur, une attente, un message, une tâche. Jamais vu : avant d'être allumé, chaque scénario est rejoué sur le journal du mois passé et dit combien de messages il aurait envoyés et à combien de personnes ; il ne peut envoyer que par le contrôle central.
 - Critères : un scénario allumé passe toujours par le contrôle central (test) ; la simulation sur le passé n'envoie rien (test) ; un scénario qui enverrait deux fois à la même personne le même jour est refusé (test).
 
