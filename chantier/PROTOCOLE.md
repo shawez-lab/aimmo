@@ -74,6 +74,8 @@ Deux séances travaillent en même temps, chacune sur son module, pour aller deu
 - Les deux voies ne touchent jamais au même fichier de code en même temps. Si un fichier du socle doit changer, la voie 2 laisse la tâche à la voie 1 et passe à la suivante.
 - `PLAN.md` et `JOURNAL.md` : toujours `git pull --rebase` juste avant de les modifier ; en cas de conflit, garder les deux lignes.
 
+- **Voie 3**, la tâche planifiée « Chef de chantier AIMMO voie 3 », verrou `chantier/VERROU-3.md` : mêmes règles que la voie 2, sur un troisième module ou un troisième groupe de tâches HX, réservé par `Voie : 3`. Elle ne prend jamais une tâche réservée à une autre voie.
+
 ## 9. Exigence : mille fois mieux
 
 AIMMO doit faire ce que personne d'autre ne fait. Chaque module découpé contient au moins une tâche « Jamais vu » : une fonction qu'aucun réseau, logiciel ou outil d'IA grand public n'offre, écrite comme critère d'acceptation testable, et nommée dans la proposition. Chaque écran suit le système de design d'AIMMO : rien de générique, rien qui ressemble à un site fait par une IA, rapide, accessible, beau sur téléphone d'abord.
