@@ -677,3 +677,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 13:21 · VOIE 2 : HX21, 541fa590 (#381), relancé non
 - 2026-11-06 15:05 · HX02 · fusionnée (#383) : agendas Google, Outlook et Apple dans les deux sens sans doublon ni effacement, meilleur créneau selon les trajets ; R236 et R237 en service ; H53 ajoutée · prochaine : HX03
 - 2026-11-06 15:06 · voie 1 : relance de la séance suivante refusée (permission « lancer maintenant » refusée, troisième fois) ; la prochaine séance planifiée reprendra à HX03
+- 2026-11-06 16:10 · HX22 · fusionnée (#384) : assistant vocal sur renvoi du seul numéro de l'agent, mention de l'assistant en première phrase, seuls les chiffres de l'annonce et de la fiche, rendez-vous sur créneau libre proposé puis oui franc, passage de main avec le résumé de HX21 ; R246 à R248 en service ; groupe « Captation et voix » fini · prochaine : réserver pour la voie 2 le groupe « Contacts et automatismes » (HX24)
+- 2026-11-06 16:10 · VOIE 2 : HX22, bcb0b51c (#384), relancé oui
