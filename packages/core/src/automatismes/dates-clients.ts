@@ -8,7 +8,8 @@
  * envois, en mode essai : rien ne part vraiment [R26]. Le texte est fixe, écrit par la direction, jamais par l'IA
  * [R403]. Le journal ne garde ni date ni texte [R13]. Rien ne s'efface [R17].
  */
-import { decideAccess, type Viewer } from '../acces/droits.ts';
+import { Acces } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -103,6 +104,7 @@ export class DatesClients {
   private readonly settings: DatesSettings;
   private readonly fiche: FicheUnique;
   private readonly controle: ControleEnvois;
+  private readonly acces: Acces;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -114,6 +116,7 @@ export class DatesClients {
     this.settings = options.settings ?? DEFAULT_DATES_SETTINGS;
     const store = new FicheClient(db, { now: this.now });
     this.fiche = new FicheUnique(db, store, { now: this.now });
+    this.acces = new Acces(db, store, this.fiche, journal, { now: this.now });
     const decisions = new DecisionEnvoi(db, store, this.fiche, { now: this.now });
     // Seuls les canaux du mode essai : aucun vrai canal ne peut être passé de l'extérieur [R26].
     this.controle = new ControleEnvois(db, this.fiche, decisions, { channels: trialChannels(db, journal, this.now), journal: new SqlSendJournal(db, undefined, this.now), now: this.now });
@@ -134,11 +137,11 @@ export class DatesClients {
    */
   async recordDate(viewer: Viewer, input: { personId: string; kind: unknown; month: unknown; day: unknown; proof: unknown }): Promise<ScenarioResult<{ dateId: string }>> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'role', 'record');
-    const person = await this.db.first<{ network_id: string }>('SELECT network_id FROM persons WHERE id = ?', [input.personId]);
-    if (!person) return this.refuse(viewer, 'unknown', 'record');
-    const view = await this.fiche.view(input.personId);
-    const access = decideAccess(viewer, { kind: 'person', networkId: person.network_id, agentIds: view.members.map((m) => m.agent_id) });
-    if (!access.allowed) return this.refuse(viewer, access.code, 'record');
+    // La fiche lue sous droits : agent qui la suit, actif, au dossier complet, ou direction ; la lecture va au journal [R16, R82].
+    const read = await this.acces.readFiche(viewer, input.personId);
+    if (!read.ok) return { ok: false, rule: read.rule, code: read.code };
+    const view = read.value;
+    const person = { network_id: view.person.network_id };
     if (typeof input.kind !== 'string' || !(CLIENT_DATE_KINDS as readonly string[]).includes(input.kind)) return { ok: false, rule: 'R404', code: 'bad_kind' };
     if (!isInt(input.month, 1, 12) || !isInt(input.day, 1, DAYS_IN_MONTH[input.month - 1]!)) return { ok: false, rule: 'R404', code: 'bad_date' };
     // D'où vient la date : la personne l'a donnée. Jamais une date devinée, ni tirée d'une pièce d'identité [R404, R15].
@@ -147,7 +150,7 @@ export class DatesClients {
     await this.db.run('INSERT INTO client_dates (id, network_id, person_id, kind, month, day, proof, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
       id,
       person.network_id,
-      input.personId,
+      view.person.id,
       input.kind,
       input.month,
       input.day,
