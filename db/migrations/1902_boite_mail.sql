@@ -9,11 +9,11 @@ CREATE TABLE IF NOT EXISTS mailbox_mails (
   agent_id TEXT NOT NULL,
   provider TEXT NOT NULL CHECK (provider IN ('gmail', 'outlook')),
   external_id TEXT NOT NULL CHECK (length(external_id) BETWEEN 1 AND 200),
-  -- `en_cours` : pris par un tri ; `rattache` : rangé dans une fiche ; `inconnu` : aucune fiche visible de l'agent ;
-  -- `ambigu` : plusieurs fiches, l'agent choisit ; `refuse` : mail gardé sans être trié (trop de pièces jointes),
-  -- pour que la lecture suivante ne le saute jamais en silence.
-  status TEXT NOT NULL CHECK (status IN ('en_cours', 'rattache', 'inconnu', 'ambigu', 'refuse')),
-  refusal TEXT CHECK (refusal IS NULL OR refusal IN ('too_many_attachments')),
+  -- `en_cours` : pris par un tri depuis `claimed_at` ; `a_reprendre` : tri coupé par une panne, repris à la lecture
+  -- suivante ; `rattache` : rangé dans une fiche ; `inconnu` : aucune fiche visible de l'agent ; `ambigu` : plusieurs
+  -- fiches, l'agent choisit.
+  status TEXT NOT NULL CHECK (status IN ('en_cours', 'a_reprendre', 'rattache', 'inconnu', 'ambigu')),
+  claimed_at TEXT NOT NULL,
   person_id TEXT,
   -- Le dossier : le seul projet ouvert de la fiche ; NULL quand il y en a zéro ou plusieurs (l'agent choisit).
   project_id TEXT,
@@ -61,8 +61,9 @@ CREATE TABLE IF NOT EXISTS mailbox_attachment_links (
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   -- `range` : rangée ; `deja_range` : la même empreinte était déjà au dossier ; `en_attente` : pas de dossier choisi ;
   -- `inutile` : petite image de signature ; `interdit` : pièce d'identité, RIB ou document fiscal [R15] ;
-  -- `type_refuse` : ni PDF, ni JPEG, ni PNG confirmé par les premiers octets, ou trop lourd.
-  outcome TEXT NOT NULL CHECK (outcome IN ('range', 'deja_range', 'en_attente', 'inutile', 'interdit', 'type_refuse')),
+  -- `type_refuse` : ni PDF, ni JPEG, ni PNG confirmé par les premiers octets, ou trop lourd ; `trop` : au-delà des 20
+  -- premières pièces du mail, laissée à l'agent.
+  outcome TEXT NOT NULL CHECK (outcome IN ('range', 'deja_range', 'en_attente', 'inutile', 'interdit', 'type_refuse', 'trop')),
   attachment_id TEXT REFERENCES mailbox_attachments (id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL,
   PRIMARY KEY (mail_id, sha256)

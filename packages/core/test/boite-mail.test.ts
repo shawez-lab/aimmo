@@ -201,23 +201,55 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     expect(await t.outbox()).toHaveLength(1);
   });
 
-  it('[R408] la lecture de la boîte ne saute jamais un mail : refusé, il est gardé ; illisible, la lecture s’arrête avant lui', async () => {
+  it('[R408] la lecture de la boîte ne saute jamais un mail : trop de pièces, il est trié quand même ; illisible ou en panne, la lecture le reprend', async () => {
     const t = await setup();
     const me = t.asAgent(t.alex.id);
-    await t.person('Noa', 'noa@example.test');
+    const noa = await t.person('Noa', 'noa@example.test');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    // 21 photos et une demande d'arrêt : l'arrêt vaut quand même, les 20 premières pièces sont rangées, la dernière laissée [R04, R410].
     const many = Array.from({ length: 21 }, (_, i) => att(`photo-${i}.jpg`, 'image/jpeg', jpeg(30_000 + i)));
-    const queue: MailIn[] = [t.mail('noa@example.test', 'Toutes les photos', many, { receivedAt: new Date(TUE_10H - 30 * MIN) }), t.mail('noa@example.test', 'Et un mot', [], { receivedAt: new Date(TUE_10H - 20 * MIN) })];
+    const queue: MailIn[] = [t.mail('noa@example.test', 'Toutes les photos. Ne me contactez plus.', many, { receivedAt: new Date(TUE_10H - 30 * MIN) }), t.mail('noa@example.test', 'Et un mot', [], { receivedAt: new Date(TUE_10H - 20 * MIN) })];
     const since: (Date | null)[] = [];
     const provider: MailboxProvider = { provider: 'gmail', receivedSince: async (_agent, s) => (since.push(s), queue.filter((q) => s === null || q.receivedAt.getTime() >= s.getTime())) };
     const first = await t.boite.sync(me, provider);
-    expect(first).toMatchObject({ ok: true, value: [{ outcome: 'rattache' }] });
-    expect(await t.db.all("SELECT refusal FROM mailbox_mails WHERE status = 'refuse'")).toEqual([{ refusal: 'too_many_attachments' }]);
+    if (!first.ok) throw new Error('lecture attendue');
+    expect(first.value.map((v) => v.outcome)).toEqual(['rattache', 'rattache']);
+    expect(first.value[0]!.attachments.filter((o) => o === 'range')).toHaveLength(20);
+    expect(first.value[0]!.attachments.at(-1)).toBe('trop');
+    expect(first.value[0]!.draftId).toBeNull();
+    expect(await t.db.all("SELECT id FROM exclusions WHERE person_id = ? AND reason = 'stop'", [noa])).toHaveLength(1);
 
     // Un mail illisible : la lecture s'arrête, le plus récent attend, le curseur ne passe pas au-delà.
     queue.push({ ...t.mail('noa@example.test', 'cassé', [], { receivedAt: new Date(TUE_10H - 15 * MIN) }), externalId: '' }, t.mail('noa@example.test', 'Plus tard', [], { receivedAt: new Date(TUE_10H - 10 * MIN) }));
     expect(await t.boite.sync(me, provider)).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
     expect(await t.db.all("SELECT id FROM messages WHERE body = 'Plus tard'")).toHaveLength(0);
     expect(since[1]?.toISOString()).toBe(new Date(TUE_10H - 20 * MIN).toISOString());
+  });
+
+  it('[R410] une panne du stockage rend le mail à la lecture suivante, qui le finit sans rien doubler [R18]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    let broken = true;
+    const puts: string[] = [];
+    const boite = new BoiteMail(t.db, t.journal, { put: async (key) => { if (broken) throw new Error('stockage indisponible (test)'); puts.push(key); } }, { now: () => new Date(TUE_10H) });
+    const mail = t.mail('noa@example.test', 'Le DPE', [att('dpe.pdf', 'application/pdf', pdf('dpe'))]);
+    const queue = [mail];
+    const provider: MailboxProvider = { provider: 'gmail', receivedSince: async (_a, s) => queue.filter((q) => s === null || q.receivedAt.getTime() >= s.getTime()) };
+    await expect(boite.sync(me, provider)).rejects.toThrow('stockage indisponible');
+    expect(await t.db.first('SELECT status FROM mailbox_mails')).toEqual({ status: 'a_reprendre' });
+    // Un mail plus récent arrive : le curseur reste au mail coupé.
+    queue.push(t.mail('noa@example.test', 'Et après', [], { receivedAt: new Date(TUE_10H - 5 * MIN) }));
+    broken = false;
+    const again = await boite.sync(me, provider);
+    if (!again.ok) throw new Error('lecture attendue');
+    expect(again.value.map((v) => v.outcome)).toEqual(['rattache', 'rattache']);
+    expect(again.value[0]!.attachments).toEqual(['range']);
+    expect(again.value[0]!.draftId).not.toBeNull();
+    expect(puts).toEqual([expect.stringMatching(new RegExp(`^boite/${project.id}/`))]);
+    expect(await t.db.all("SELECT id FROM messages WHERE body = 'Le DPE'")).toHaveLength(1);
+    expect(await t.db.all("SELECT status FROM mailbox_mails ORDER BY received_at")).toEqual([{ status: 'rattache' }, { status: 'rattache' }]);
   });
 
   it('[R409] une fiche passée à un autre agent depuis le tri : sa réponse n’est plus montrée ni validable [R16]', async () => {

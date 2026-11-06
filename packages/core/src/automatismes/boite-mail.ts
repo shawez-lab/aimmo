@@ -42,6 +42,7 @@ export const MAIL_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 export const MAIL_SIGNATURE_IMAGE_MAX_BYTES = 20 * 1024;
 const MAX_BODY = 20_000;
 const MAX_ATTACHMENTS = 20;
+const STALE_CLAIM_MS = 10 * 60_000;
 
 /**
  * Ce qui n'est jamais rangé depuis un mail, reconnu au nom du fichier : identité, banque, impôts, revenus [R15].
@@ -107,7 +108,7 @@ export interface DossierFileStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
 }
 
-export type AttachmentOutcome = 'range' | 'deja_range' | 'en_attente' | 'inutile' | 'interdit' | 'type_refuse';
+export type AttachmentOutcome = 'range' | 'deja_range' | 'en_attente' | 'inutile' | 'interdit' | 'type_refuse' | 'trop';
 export type MailOutcome = 'rattache' | 'inconnu' | 'ambigu';
 
 export interface DraftSource {
@@ -211,23 +212,23 @@ export class BoiteMail {
     return (await this.db.first('SELECT 1 FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId])) !== null;
   }
 
-  /** Lit les mails reçus depuis le dernier tri de cette boîte, et les trie un par un, les plus anciens d'abord. */
+  /**
+   * Lit les mails reçus depuis le dernier tri de cette boîte, et les trie un par un, les plus anciens d'abord. Le curseur
+   * ne dépasse jamais un tri coupé : la lecture reprend au plus ancien mail pas encore fini [R18]. Un mail illisible
+   * arrête la lecture avant qu'un mail plus récent ne fasse avancer le curseur au-delà de lui.
+   */
   async sync(viewer: Viewer, provider: MailboxProvider): Promise<ScenarioResult<SortedMail[]>> {
     if (!(await this.ownAgent(viewer))) return this.refuse(viewer, 'not_mailbox_agent', 'sync');
-    const last = await this.db.first<{ at: string | null }>('SELECT MAX(received_at) AS at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ?', [viewer.networkId, viewer.userId, provider.provider]);
+    const scope = [viewer.networkId, viewer.userId, provider.provider];
+    const unfinished = await this.db.first<{ at: string | null }>("SELECT MIN(received_at) AS at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ? AND status IN ('en_cours', 'a_reprendre')", scope);
+    const last = unfinished?.at ? unfinished : await this.db.first<{ at: string | null }>('SELECT MAX(received_at) AS at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ?', scope);
     const mails = await provider.receivedSince(viewer.userId, last?.at ? new Date(last.at) : null);
     const out: SortedMail[] = [];
-    for (const mail of [...mails].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())) {
+    for (const mail of [...mails].sort((x, y) => x.receivedAt.getTime() - y.receivedAt.getTime())) {
       if (mail.provider !== provider.provider) continue;
       const r = await this.sort(viewer, mail);
-      if (r.ok) {
-        out.push(r.value);
-        continue;
-      }
-      // Un mail refusé mais gardé (trop de pièces jointes) ne bloque pas la suite ; un mail illisible arrête la lecture
-      // avant qu'un mail plus récent ne fasse avancer le curseur au-delà de lui [R18].
-      if (r.code === 'too_many_attachments') continue;
-      return r;
+      if (!r.ok) return r;
+      out.push(r.value);
     }
     return { ok: true, value: out };
   }
@@ -243,27 +244,35 @@ export class BoiteMail {
     const networkId = viewer.networkId;
     const agentId = viewer.userId;
     const now = this.now();
-    // Trop de pièces jointes : le mail est gardé comme refusé, jamais sauté en silence par la lecture suivante [R410].
-    if (mail.attachments.length > MAX_ATTACHMENTS) {
-      await this.db.run(
-        "INSERT OR IGNORE INTO mailbox_mails (id, network_id, agent_id, provider, external_id, status, refusal, received_at, created_at, done_at) VALUES (?, ?, ?, ?, ?, 'refuse', 'too_many_attachments', ?, ?, ?)",
-        [this.newId(), networkId, agentId, mail.provider, mail.externalId, mail.receivedAt.toISOString(), now.toISOString(), now.toISOString()],
-      );
-      await appendEvent(this.journal, { type: 'boite.mail.trie', actor: this.actor(viewer), subject: null, data: { rule: 'R410', outcome: 'refuse', code: 'too_many_attachments' } }, this.now);
-      return { ok: false, rule: 'R410', code: 'too_many_attachments' };
-    }
 
-    // Prendre le mail : deux lectures du même mail n'en trient qu'une [R18].
-    const mailId = this.newId();
+    // Prendre le mail : deux lectures du même mail n'en trient qu'une [R18]. Un tri coupé par une panne, ou abandonné
+    // depuis plus de 10 minutes, se reprend sur la même ligne, sans rien doubler.
+    let mailId = this.newId();
     const taken = await this.db.run(
-      "INSERT OR IGNORE INTO mailbox_mails (id, network_id, agent_id, provider, external_id, status, received_at, created_at) VALUES (?, ?, ?, ?, ?, 'en_cours', ?, ?)",
-      [mailId, networkId, agentId, mail.provider, mail.externalId, mail.receivedAt.toISOString(), now.toISOString()],
+      "INSERT OR IGNORE INTO mailbox_mails (id, network_id, agent_id, provider, external_id, status, claimed_at, received_at, created_at) VALUES (?, ?, ?, ?, ?, 'en_cours', ?, ?, ?)",
+      [mailId, networkId, agentId, mail.provider, mail.externalId, now.toISOString(), mail.receivedAt.toISOString(), now.toISOString()],
     );
     if (taken.changes !== 1) {
-      const existing = await this.db.first<{ id: string }>('SELECT id FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ? AND external_id = ?', [networkId, agentId, mail.provider, mail.externalId]);
-      return { ok: true, value: { mailId: existing?.id ?? '', outcome: null, personId: null, projectId: null, attachments: [], draftId: null } };
+      const existing = await this.db.first<{ id: string; status: string; claimed_at: string }>('SELECT id, status, claimed_at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ? AND external_id = ?', [networkId, agentId, mail.provider, mail.externalId]);
+      const resumable = existing && (existing.status === 'a_reprendre' || (existing.status === 'en_cours' && Date.parse(existing.claimed_at) < now.getTime() - STALE_CLAIM_MS));
+      const retaken = resumable
+        ? await this.db.run("UPDATE mailbox_mails SET status = 'en_cours', claimed_at = ? WHERE id = ? AND status = ? AND claimed_at = ?", [now.toISOString(), existing.id, existing.status, existing.claimed_at])
+        : { changes: 0 };
+      if (retaken.changes !== 1) return { ok: true, value: { mailId: existing?.id ?? '', outcome: null, personId: null, projectId: null, attachments: [], draftId: null } };
+      mailId = existing!.id;
     }
+    try {
+      return { ok: true, value: await this.sortClaimed(viewer, mail, mailId, now) };
+    } catch (error) {
+      // Une panne rend le mail à la lecture suivante, jamais perdu ni tenu pour trié.
+      await this.db.run("UPDATE mailbox_mails SET status = 'a_reprendre' WHERE id = ? AND status = 'en_cours'", [mailId]);
+      throw error;
+    }
+  }
 
+  private async sortClaimed(viewer: Viewer, mail: MailIn, mailId: string, now: Date): Promise<SortedMail> {
+    const networkId = viewer.networkId;
+    const agentId = viewer.userId;
     // 1. La fiche : l'adresse normalisée, parmi les seules fiches que l'agent peut voir [R16, R408].
     const candidates = await this.fiche.findByIdentifier(networkId, 'email', mail.from);
     const visible: string[] = [];
@@ -276,34 +285,13 @@ export class BoiteMail {
       const outcome: MailOutcome = roots.length === 0 ? 'inconnu' : 'ambigu';
       await this.db.run('UPDATE mailbox_mails SET status = ?, done_at = ? WHERE id = ?', [outcome, now.toISOString(), mailId]);
       await appendEvent(this.journal, { type: 'boite.mail.trie', actor: this.actor(viewer), subject: null, data: { rule: 'R408', outcome, attachments: mail.attachments.length } }, this.now);
-      return { ok: true, value: { mailId, outcome, personId: null, projectId: null, attachments: [], draftId: null } };
+      return { mailId, outcome, personId: null, projectId: null, attachments: [], draftId: null };
     }
     const personId = roots[0]!;
     const members = await this.fiche.membersOf(personId);
 
-    // 2. Le dossier : le seul projet ouvert de la fiche, fiches réunies comprises ; sinon l'agent choisit.
-    const open = (await this.db.all<{ id: string; stage: string }>(`SELECT id, stage FROM projects WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, id`, [networkId, ...members])).filter(
-      (p) => !CLOSED_PROJECT_STAGES.includes(p.stage),
-    );
-    const projectId = open.length === 1 ? open[0]!.id : null;
-
-    // 3. Le mail entre dans la fiche comme un message reçu, IBAN masqué [R15], dans la conversation de son fil.
-    const body = maskIban(String(mail.body ?? '').slice(0, MAX_BODY)).trim() || '(mail sans texte)';
-    const person = await this.store.getPerson(personId);
-    const message = await this.store.recordMessage({
-      networkId,
-      agentId: person?.agent_id ?? null,
-      personId,
-      projectId,
-      conversationId: `email:${mail.provider}:${mail.threadId}`,
-      channel: 'email',
-      direction: 'in',
-      authorKind: 'person',
-      body,
-      occurredAt: mail.receivedAt,
-    });
-    // Une demande d'arrêt, un refus ou « vendu » valent dès la réception, comme pour tout message [R04, R02] : lus dans
-    // le texte entier, jamais dans la seule partie gardée dans la fiche.
+    // 2. Une demande d'arrêt, un refus ou « vendu » valent dès la réception, comme pour tout message [R04, R02], avant
+    // tout le reste et quoi que portent les pièces jointes : lus dans le texte entier, jamais dans la seule partie gardée.
     const exclusion = classifyReceived(String(mail.body ?? ''));
     if (exclusion) {
       for (const id of members) {
@@ -312,7 +300,25 @@ export class BoiteMail {
       }
     }
 
-    // 4. Les pièces jointes, une seule fois par empreinte dans le dossier [R410].
+    // 3. Le dossier : le seul projet ouvert de la fiche, fiches réunies comprises ; sinon l'agent choisit.
+    const open = (await this.db.all<{ id: string; stage: string }>(`SELECT id, stage FROM projects WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, id`, [networkId, ...members])).filter(
+      (p) => !CLOSED_PROJECT_STAGES.includes(p.stage),
+    );
+    const projectId = open.length === 1 ? open[0]!.id : null;
+
+    // 4. Le mail entre dans la fiche comme un message reçu, IBAN masqué [R15], dans la conversation de son fil ; une
+    // seule fois, même repris après une panne.
+    const conversationId = `email:${mail.provider}:${mail.threadId}`;
+    let messageId = (await this.db.first<{ message_id: string | null }>('SELECT message_id FROM mailbox_mails WHERE id = ?', [mailId]))?.message_id ?? null;
+    if (messageId === null) {
+      const body = maskIban(String(mail.body ?? '').slice(0, MAX_BODY)).trim() || '(mail sans texte)';
+      const person = await this.store.getPerson(personId);
+      const message = await this.store.recordMessage({ networkId, agentId: person?.agent_id ?? null, personId, projectId, conversationId, channel: 'email', direction: 'in', authorKind: 'person', body, occurredAt: mail.receivedAt });
+      messageId = message.id;
+      await this.db.run('UPDATE mailbox_mails SET person_id = ?, project_id = ?, message_id = ? WHERE id = ?', [personId, projectId, messageId, mailId]);
+    }
+
+    // 5. Les pièces jointes, une seule fois par empreinte dans le dossier [R410].
     const outcomes: AttachmentOutcome[] = [];
     const kept: string[] = [];
     const seen = new Set<string>();
@@ -320,52 +326,48 @@ export class BoiteMail {
       const sha = await sha256Hex(a.bytes);
       if (seen.has(sha)) continue;
       seen.add(sha);
-      const judged = judgeAttachment(a);
       let outcome: AttachmentOutcome;
       let attachmentId: string | null = null;
+      const judged = seen.size > MAX_ATTACHMENTS ? ({ ok: false, outcome: 'trop' } as const) : judgeAttachment(a);
       if (!judged.ok) outcome = judged.outcome;
       else if (projectId === null) outcome = 'en_attente';
       else {
-        const already = await this.db.first<{ id: string }>('SELECT id FROM mailbox_attachments WHERE network_id = ? AND project_id = ? AND sha256 = ?', [networkId, projectId, sha]);
-        if (already) {
-          outcome = 'deja_range';
-          attachmentId = already.id;
-        } else {
+        const lookup = () => this.db.first<{ id: string; first_mail_id: string }>('SELECT id, first_mail_id FROM mailbox_attachments WHERE network_id = ? AND project_id = ? AND sha256 = ?', [networkId, projectId, sha]);
+        let row = await lookup();
+        if (!row) {
           const id = this.newId();
           const ref = `boite/${projectId}/${sha}.${judged.ext}`;
           await this.files.put(ref, a.bytes, judged.type);
           // Deux tris en même temps du même fichier : la contrainte d'unicité n'en garde qu'un [R18, R410].
-          const ins = await this.db.run(
+          await this.db.run(
             'INSERT OR IGNORE INTO mailbox_attachments (id, network_id, project_id, sha256, ref, content_type, size, first_mail_id, stored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [id, networkId, projectId, sha, ref, judged.type, a.bytes.length, mailId, now.toISOString()],
           );
-          if (ins.changes === 1) {
-            outcome = 'range';
-            attachmentId = id;
-          } else {
-            outcome = 'deja_range';
-            attachmentId = (await this.db.first<{ id: string }>('SELECT id FROM mailbox_attachments WHERE network_id = ? AND project_id = ? AND sha256 = ?', [networkId, projectId, sha]))?.id ?? null;
-          }
+          row = await lookup();
         }
+        if (!row) throw new Error('pièce jointe introuvable après son rangement');
+        // Rangée par ce mail-ci, au premier essai ou à la reprise : « rangée » ; par un autre mail : « déjà rangée ».
+        outcome = row.first_mail_id === mailId ? 'range' : 'deja_range';
+        attachmentId = row.id;
       }
       await this.db.run('INSERT OR IGNORE INTO mailbox_attachment_links (mail_id, sha256, outcome, attachment_id, created_at) VALUES (?, ?, ?, ?, ?)', [mailId, sha, outcome, attachmentId, now.toISOString()]);
       if (attachmentId) kept.push(attachmentId);
       outcomes.push(outcome);
     }
 
-    // 5. La réponse préparée, sauf si la personne a demandé l'arrêt ou est exclue : elle attend la validation [R409].
+    // 6. La réponse préparée, sauf si la personne a demandé l'arrêt ou est exclue : elle attend la validation [R409].
     let draftId: string | null = null;
-    const blocked = await this.decisions.decide(personId, { channel: 'email', kind: 'reply', conversationId: `email:${mail.provider}:${mail.threadId}`, at: now });
+    const blocked = await this.decisions.decide(personId, { channel: 'email', kind: 'reply', conversationId, at: now });
     if (!exclusion && !(blocked.allowed === false && (blocked.rule === 'R02' || blocked.rule === 'R04'))) {
       const draft = await this.compose(agentId, members, personId, kept, now);
-      draftId = this.newId();
       await this.db.run(
-        "INSERT INTO mailbox_drafts (id, network_id, mail_id, agent_id, person_id, body, sentences, figures, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepare', ?)",
-        [draftId, networkId, mailId, agentId, personId, draft.sentences.map((s) => s.text).join('\n\n'), JSON.stringify(draft.sentences), JSON.stringify(draft.figures), now.toISOString()],
+        "INSERT OR IGNORE INTO mailbox_drafts (id, network_id, mail_id, agent_id, person_id, body, sentences, figures, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepare', ?)",
+        [this.newId(), networkId, mailId, agentId, personId, draft.sentences.map((s) => s.text).join('\n\n'), JSON.stringify(draft.sentences), JSON.stringify(draft.figures), now.toISOString()],
       );
+      draftId = (await this.db.first<{ id: string }>('SELECT id FROM mailbox_drafts WHERE mail_id = ?', [mailId]))?.id ?? null;
     }
 
-    await this.db.run("UPDATE mailbox_mails SET status = 'rattache', person_id = ?, project_id = ?, message_id = ?, done_at = ? WHERE id = ?", [personId, projectId, message.id, now.toISOString(), mailId]);
+    await this.db.run("UPDATE mailbox_mails SET status = 'rattache', done_at = ? WHERE id = ?", [now.toISOString(), mailId]);
     const count = (o: AttachmentOutcome) => outcomes.filter((x) => x === o).length;
     await appendEvent(
       this.journal,
@@ -373,11 +375,11 @@ export class BoiteMail {
         type: 'boite.mail.trie',
         actor: this.actor(viewer),
         subject: `person:${personId}`,
-        data: { rule: 'R408', outcome: 'rattache', dossier: projectId !== null, range: count('range'), dejaRange: count('deja_range'), enAttente: count('en_attente'), interdit: count('interdit'), inutile: count('inutile'), refuse: count('type_refuse'), reponsePreparee: draftId !== null },
+        data: { rule: 'R408', outcome: 'rattache', dossier: projectId !== null, range: count('range'), dejaRange: count('deja_range'), enAttente: count('en_attente'), interdit: count('interdit'), inutile: count('inutile'), refuse: count('type_refuse'), trop: count('trop'), reponsePreparee: draftId !== null },
       },
       this.now,
     );
-    return { ok: true, value: { mailId, outcome: 'rattache', personId, projectId, attachments: outcomes, draftId } };
+    return { mailId, outcome: 'rattache', personId, projectId, attachments: outcomes, draftId };
   }
 
   /** Les phrases fixes de la réponse, chacune avec la ligne du dossier qu'elle reprend [R411]. Jamais d'IA. */
