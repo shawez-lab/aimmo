@@ -518,4 +518,75 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(interleaved).toBe(true);
     expect(await t.db.all('SELECT status, message_status FROM automation_runs')).toEqual([{ status: 'fait', message_status: 'essai' }]);
   });
+
+  it('[R401] [R402] [R05] repris après une panne, un passage ne refait ni sa tâche ni son message, et garde sa place du jour', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    t.setClock(TUE_10H + HOUR);
+    const ines = await t.person('Inès');
+    let broken = true;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      first: (sql, params) => t.db.first(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      run: async (sql, params) => {
+        if (broken && sql.startsWith("UPDATE automation_runs SET status = 'fait'")) {
+          broken = false;
+          throw new Error('panne de la base (test)');
+        }
+        return t.db.run(sql, params);
+      },
+    };
+    const flaky = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(TUE_10H + HOUR) });
+    await expect(flaky.tick(t.network.id)).rejects.toThrow(/panne/);
+    expect(await t.db.first('SELECT status FROM automation_runs')).toEqual({ status: 'a_faire' });
+    expect(await flaky.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, tasks: 1 });
+    expect(await t.outbox()).toHaveLength(1);
+    expect(await t.count('automation_tasks')).toBe(1);
+    expect(await t.db.first('SELECT status, message_status, task_id IS NOT NULL AS task FROM automation_runs')).toEqual({ status: 'fait', message_status: 'essai', task: 1 });
+    // La place du jour reste tenue par le message parti : un second scénario le même jour est refusé.
+    const p = await t.scenarios.compose(t.direction, { ...PROJECT, projectKind: null });
+    const pId = p.ok ? p.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, pId);
+    await t.scenarios.switchOn(t.direction, pId);
+    t.setClock(TUE_10H + 2 * HOUR);
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: ines, kind: 'sell' });
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 1 });
+    expect(await t.outbox()).toHaveLength(1);
+  });
+
+  it('[R401] un arrêt suivi aussitôt d’un allumage n’annule pas les passages du nouvel allumage', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 24 });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    let interleaved = false;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      first: (sql, params) => t.db.first(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      run: async (sql, params) => {
+        const result = await t.db.run(sql, params);
+        if (!interleaved && sql.includes('VALUES (?, ?, ?, ?, 0, NULL')) {
+          interleaved = true;
+          // Entre l'arrêt rangé et ses annulations : un nouvel essai, un allumage, un contact, un passage rangé.
+          await t.scenarios.simulate(t.direction, id);
+          expect(await t.scenarios.switchOn(t.direction, id)).toMatchObject({ ok: true });
+          await t.person('Inès');
+          expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 1 });
+        }
+        return result;
+      },
+    };
+    const racing = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(TUE_10H) });
+    expect(await racing.switchOff(t.direction, id)).toEqual({ ok: true, value: { cancelled: 0 } });
+    expect(interleaved).toBe(true);
+    expect(await t.db.all('SELECT status FROM automation_runs')).toEqual([{ status: 'a_faire' }]);
+  });
 });

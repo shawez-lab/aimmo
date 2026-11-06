@@ -478,7 +478,12 @@ export class ScenariosAutomatiques {
       await this.nextSeq(scenarioId),
       this.actor(viewer),
     ]);
-    const cancelled = await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE scenario_id = ? AND status = 'a_faire'", [now, scenarioId]);
+    // Annulés seulement tant que cet arrêt est le dernier état, lu dans la même écriture : un allumage venu juste après
+    // garde ses passages [R401].
+    const cancelled = await this.db.run(
+      "UPDATE automation_runs SET status = 'annule', done_at = ? WHERE scenario_id = ? AND status = 'a_faire' AND (SELECT lit FROM automation_switches WHERE scenario_id = ? ORDER BY seq DESC LIMIT 1) = 0",
+      [now, scenarioId, scenarioId],
+    );
     await appendEvent(this.journal, { type: 'automatismes.eteint', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule: 'R401', cancelled: cancelled.changes } }, this.now);
     return { ok: true, value: { cancelled: cancelled.changes } };
   }
@@ -557,7 +562,17 @@ export class ScenariosAutomatiques {
     let messageStatus: 'essai' | 'refuse' | null = null;
     let messageRule: string | null = null;
     let messageId: string | null = null;
-    if (def.message !== null) {
+    const subject = `scenario:${run.scenario_id}:${run.trigger_ref}`;
+    // Repris après une panne, un message déjà parti l'est resté : il garde sa place du jour, rien ne repart [R05, R402].
+    const alreadySent =
+      def.message === null
+        ? null
+        : await this.db.first<{ message_id: string }>(`SELECT message_id FROM message_subjects WHERE subject = ? AND person_id IN (${members.map(() => '?').join(', ')}) LIMIT 1`, [subject, ...members]);
+    if (alreadySent) {
+      messageStatus = 'essai';
+      messageId = alreadySent.message_id;
+      report.messagesInTrial += 1;
+    } else if (def.message !== null) {
       const day = this.day(now);
       // Un seul message de scénario par personne et par jour, tous scénarios confondus [R402].
       // La place du jour est prise sous la fiche gardée ; une place prise avant la réunion sous une autre fiche compte aussi.
@@ -580,7 +595,7 @@ export class ScenariosAutomatiques {
           channel: def.message.channel,
           kind: 'follow_up',
           purpose: AUTOMATION_PURPOSE,
-          subject: `scenario:${run.scenario_id}:${run.trigger_ref}`,
+          subject,
           fallbackTexts: [body],
           figures: [],
         });
@@ -603,9 +618,9 @@ export class ScenariosAutomatiques {
     }
     let taskId: string | null = null;
     if (def.task !== null) {
-      taskId = this.newId();
-      await this.db.run('INSERT INTO automation_tasks (id, network_id, run_id, agent_id, person_id, title, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-        taskId,
+      // Une seule tâche par passage, même repris après une panne : celle déjà rangée est retrouvée.
+      await this.db.run('INSERT OR IGNORE INTO automation_tasks (id, network_id, run_id, agent_id, person_id, title, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        this.newId(),
         networkId,
         run.id,
         agentId,
@@ -614,6 +629,7 @@ export class ScenariosAutomatiques {
         this.day(new Date(now.getTime() + def.task.dueInDays * DAY)),
         now.toISOString(),
       ]);
+      taskId = (await this.db.first<{ id: string }>('SELECT id FROM automation_tasks WHERE run_id = ?', [run.id]))?.id ?? null;
       report.tasks += 1;
     }
     await this.db.run("UPDATE automation_runs SET status = 'fait', message_status = ?, message_rule = ?, message_id = ?, task_id = ?, done_at = ? WHERE id = ? AND status = 'en_cours'", [
