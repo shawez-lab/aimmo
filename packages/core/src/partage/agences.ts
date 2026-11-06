@@ -347,6 +347,11 @@ export class PartageAgences {
     const current = await this.db.first<{ file_id: string; at: string }>('SELECT file_id, at FROM agency_delegation_files WHERE delegation_id = ?', [d.id]);
     if (current) return current.file_id === fileId ? { ok: true, value: { attachedOn: this.day(current.at) } } : { ok: false, rule: 'R235', code: 'already_attached' };
     if (await this.db.first('SELECT 1 FROM agency_delegation_files WHERE file_id = ?', [fileId])) return { ok: false, rule: 'R235', code: 'file_taken' };
+    // Une commission déjà prévue ne change plus (HX59) : l'écart va au journal, la direction tranche.
+    if (await this.db.first('SELECT 1 FROM commissions WHERE file_id = ?', [fileId])) {
+      await this.event(viewer, 'partage.ecart', `agency_share:${shareId}`, { rule: 'R235', code: 'commission_prevue' });
+      return { ok: false, rule: 'R235', code: 'commission_prevue' };
+    }
     const at = this.now().toISOString();
     const { changes } = await this.db.run('INSERT INTO agency_delegation_files (delegation_id, file_id, at, by) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [d.id, fileId, at, this.actor(viewer)]);
     if (changes !== 1) return { ok: false, rule: 'R235', code: 'already_attached' };

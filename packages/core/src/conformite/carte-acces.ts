@@ -529,6 +529,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agency_delegation_files: out('partenaire', 'Dossier de vente rattaché à une délégation.'),
   agency_fee_statements: out('partenaire', 'Relevé du partage d\'honoraires entre agences.'),
   agency_partner_invoices: out('partenaire', 'Facture de rétrocession reçue d\'une agence.'),
+  commission_agency_shares: out('partenaire', 'Part d\'une agence partenaire sur une commission.'),
   partner_credentials: out('partenaire', 'Justificatifs du partenaire.'),
   partner_credential_alerts: out('partenaire', 'Alertes des justificatifs du partenaire.'),
   partner_referrals: { locate: [via('project_id', 'projects')] },
