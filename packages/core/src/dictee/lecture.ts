@@ -1,0 +1,344 @@
+/**
+ * La lecture d'une dictée de l'agent (HX06) : en sortant d'une visite, l'agent dicte une minute (le texte vient de la
+ * dictée de son téléphone) ; le code en tire le contact, le bien et le rendez-vous, champ par champ.
+ *
+ * Aucun champ n'est inventé [R260] : chaque champ vient d'une seule phrase de la dictée, avec le passage exact qui le
+ * porte. Le code lit, aucune IA ne propose de valeur. Un champ dit deux fois avec deux valeurs différentes n'est pas
+ * proposé ; un nombre dit en lettres, une surface à virgule, un prix sans « prix » ni « vend » dans sa phrase ne le sont
+ * pas non plus : l'agent les saisira lui-même. Un bien n'est lu que si sa sorte est dite, et jamais pour un acquéreur ;
+ * un rendez-vous n'est lu que d'une seule phrase qui dit sa sorte, son jour et son heure.
+ *
+ * Décidé, lecture prudente : un jour de la semaine dit (« mardi ») est le prochain, jamais aujourd'hui ; une date sans
+ * année est la prochaine à venir ; une heure dite sans minutes est pile.
+ */
+import { localTime } from '../envoi/horaires.ts';
+import { normalizeIdentifier } from '../fiche/normalize.ts';
+import { DEFAULT_COMMUNES } from '../qualification/regles.ts';
+import type { PropertyKind } from '../db/types.ts';
+import { AGENDA_TIME_ZONE, parisInstant, type AppointmentKind } from '../rendezvous/creneaux.ts';
+
+export type DictationTarget = 'contact' | 'bien' | 'rendezvous';
+
+export const DICTATION_KEYS = {
+  contact: ['firstName', 'lastName', 'phone', 'email', 'project'],
+  bien: ['kind', 'postalCode', 'city', 'surfaceM2', 'rooms', 'priceEur'],
+  rendezvous: ['appointmentKind', 'start'],
+} as const;
+
+export type DictatedKey = (typeof DICTATION_KEYS)[DictationTarget][number];
+
+/** Un champ tiré de la dictée : sa valeur, la phrase qui la porte (son rang) et le passage exact de cette phrase. */
+export interface DictatedField {
+  target: DictationTarget;
+  key: DictatedKey;
+  value: string | number;
+  sentence: number;
+  quote: string;
+}
+
+export interface DictationDraft {
+  sentences: string[];
+  fields: DictatedField[];
+  /** Les champs dits plusieurs fois avec des valeurs différentes : aucun n'est proposé. */
+  conflicts: { target: DictationTarget; key: DictatedKey }[];
+}
+
+/** La longueur la plus longue d'une dictée : un peu plus d'une minute de parole. */
+export const DICTATION_MAX_CHARS = 5000;
+
+/** Les abréviations qu'un point ne termine pas. */
+const ABBREVIATIONS = /(?:^|[\s(])(?:M|Mme|Mlle|Me|Dr|St|Ste|av|bd)$/u;
+
+/** Coupe la dictée en phrases : un point, un point d'exclamation ou d'interrogation suivi d'un blanc, ou un retour à la ligne. */
+export function splitSentences(text: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  const push = (end: number) => {
+    const s = text.slice(start, end).trim();
+    if (s.length > 0) out.push(s);
+  };
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i]!;
+    if (c === '\n') {
+      push(i);
+      start = i + 1;
+      continue;
+    }
+    if ((c === '.' || c === '!' || c === '?') && (i + 1 === text.length || /\s/.test(text[i + 1]!))) {
+      if (c === '.' && ABBREVIATIONS.test(text.slice(start, i))) continue;
+      push(i + 1);
+      start = i + 1;
+    }
+  }
+  push(text.length);
+  return out;
+}
+
+/** Une recherche sans accents ni casse, qui rend le passage exact du texte d'origine. */
+function fold(text: string): { folded: string; index: number[] } {
+  let folded = '';
+  const index: number[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const f = text[i]!.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    for (const ch of f) {
+      folded += ch;
+      index.push(i);
+    }
+  }
+  index.push(text.length);
+  return { folded, index };
+}
+
+interface Hit {
+  value: string | number;
+  quote: string;
+  at: number;
+  end: number;
+}
+
+/** Chaque passage d'une expression, lue sans accents ni casse, avec le passage d'origine. */
+function hits(sentence: string, pattern: RegExp, read: (m: RegExpExecArray) => string | number | null): Hit[] {
+  const { folded, index } = fold(sentence);
+  const re = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`);
+  const out: Hit[] = [];
+  for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+    if (m[0].length === 0) {
+      re.lastIndex += 1;
+      continue;
+    }
+    const value = read(m);
+    if (value === null) continue;
+    const at = index[m.index]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value, quote: sentence.slice(at, end).trim(), at, end });
+  }
+  return out;
+}
+
+const has = (sentence: string, pattern: RegExp): boolean => pattern.test(fold(sentence).folded);
+
+// Les expressions s'appliquent au texte sans accents et en minuscules.
+const PHONE = /(?<![\d+])(?:\+33[\s.-]?|0)[1-9](?:[\s.-]?\d{2}){4}(?!\d)/;
+const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/;
+const SURFACE = /(?<![\d.,])(\d{1,6})\s?(?:m²|m2|metres? carres?)(?![\p{L}\d])/u;
+const ROOMS = /(?<![\d.,])(\d{1,2})\s?pieces?\b|\b[tf](\d{1,2})\b/u;
+const PRICE = /(?<![\d.,])(\d{1,3}(?:[\s.  ]\d{3})+|\d{1,10})\s?(?:€|euros?\b|(k€|k euros?\b|mille euros?\b))/u;
+const PRICE_CONTEXT = /\b(?:prix|vend|vendre|vendu|mise? en vente|mettre en vente|demande|affiche)\b/;
+const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite)\b/;
+const POSTAL = /(?<![\d.,])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
+
+const KINDS: readonly [RegExp, PropertyKind][] = [
+  [/\bfonds de commerce\b/, 'business'],
+  [/\bmurs (?:commerciaux|d'un commerce|d’un commerce)\b/, 'business_walls'],
+  [/\blocal (?:commercial|professionnel)\b|\bbureaux?\b/, 'commercial'],
+  [/\bimmeuble\b/, 'building'],
+  [/\bterrain\b/, 'land'],
+  [/\bappartement\b|\bmaison\b|\bvilla\b|\bstudio\b|\bduplex\b|\bloft\b|\bpavillon\b/, 'home'],
+];
+
+const SELL = /\b(?:vendre|vend|vendeur|vendeuse|vendeurs|mettre en vente|mise en vente|estimer|faire estimer)\b/;
+const BUY = /\b(?:acheter|achete|acheteur|acheteuse|acheteurs|acquereur|acquereurs|cherche|recherche)\b/;
+
+/** Après « s'appelle », « Madame », « Monsieur » : un ou deux mots à majuscule, lus dans le texte d'origine. */
+const NAME = /\b(?:s['’]appellent?|se nomment?|nommee?|madame|monsieur|mme|m\.)\s+/;
+const CAPITALIZED = /^(\p{Lu}[\p{L}'’-]*)(?:\s+(\p{Lu}[\p{L}'’-]*))?/u;
+
+const APPOINTMENT_WORDS = /\b(?:rendez-vous|rendez vous|rdv|rappel\w*|revoir|repasser|passer|visite|visiter|estimation|estimer|signature|signer|appel|appeler|telephoner)\b/;
+const APPOINTMENT_KINDS_READ: readonly [RegExp, AppointmentKind][] = [
+  [/\b(?:estimation|estimer)\b/, 'estimation'],
+  [/\b(?:signature|signer)\b/, 'signature'],
+  [/\b(?:rappel\w*|appel|appeler|telephoner)\b/, 'appel'],
+  [/\b(?:visite|visiter|contre-visite)\b/, 'visite'],
+];
+const WEEKDAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
+const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?)\\b`);
+const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])/u;
+
+const addDays = (date: string, n: number): string => {
+  const d = new Date(`${date}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Le jour dit, en date de Paris, depuis aujourd'hui. */
+function dayOf(m: RegExpExecArray, today: { date: string; weekday: number }): string | null {
+  if (m[1]) return addDays(today.date, m[1].startsWith('apres') ? 2 : 1);
+  if (m[2]) {
+    const target = WEEKDAY_NAMES.indexOf(m[2]) + 1;
+    const ahead = ((target - today.weekday + 7) % 7) || 7;
+    return addDays(today.date, ahead);
+  }
+  const day = m[3] === '1er' ? 1 : Number(m[3]);
+  const month = MONTHS.indexOf(m[4]!) + 1;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const thisYear = Number(today.date.slice(0, 4));
+  const build = (y: number): string | null => {
+    const iso = `${y}-${pad(month)}-${pad(day)}`;
+    const d = new Date(`${iso}T12:00:00.000Z`);
+    return d.getUTCMonth() + 1 === month && d.getUTCDate() === day ? iso : null;
+  };
+  if (m[5]) {
+    const date = build(Number(m[5]));
+    return date !== null && date >= today.date ? date : null;
+  }
+  const date = build(thisYear);
+  if (date === null) return null;
+  return date >= today.date ? date : build(thisYear + 1);
+}
+
+function readContact(sentence: string): Hit[][] {
+  const phones = hits(sentence, PHONE, (m) => normalizeIdentifier('phone', m[0]));
+  const emails = hits(sentence, EMAIL, (m) => normalizeIdentifier('email', m[0]));
+  // Le passage d'un mail n'est pas lu comme un téléphone, ni l'inverse.
+  return [phones, emails];
+}
+
+function readNames(sentence: string, communes: readonly string[]): { first: Hit[]; last: Hit[] } {
+  const first: Hit[] = [];
+  const last: Hit[] = [];
+  const { folded, index } = fold(sentence);
+  const re = new RegExp(NAME.source, 'g');
+  const isCommune = (w: string) => communes.some((c) => fold(c).folded === fold(w).folded);
+  for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+    const civility = !/^s|^se|^nomm/.test(m[0]);
+    const from = index[m.index + m[0].length]!;
+    const rest = sentence.slice(from);
+    const n = CAPITALIZED.exec(rest);
+    if (!n) continue;
+    const words = [n[1]!, ...(n[2] ? [n[2]] : [])].filter((w) => !isCommune(w));
+    if (words.length === 0) continue;
+    const quoteEnd = from + rest.indexOf(words.at(-1)!) + words.at(-1)!.length;
+    const quote = sentence.slice(index[m.index]!, quoteEnd).trim();
+    const at = index[m.index]!;
+    if (words.length === 2) {
+      first.push({ value: words[0]!, quote, at, end: quoteEnd });
+      last.push({ value: words[1]!, quote, at, end: quoteEnd });
+    } else if (civility) last.push({ value: words[0]!, quote, at, end: quoteEnd });
+    else first.push({ value: words[0]!, quote, at, end: quoteEnd });
+  }
+  return { first, last };
+}
+
+function readCity(sentence: string, communes: readonly string[]): Hit[] {
+  const out: Hit[] = [];
+  const { folded, index } = fold(sentence);
+  // La plus longue d'abord : « Fontaine-lès-Dijon » avant « Dijon » ; un passage pris ne sert qu'une fois.
+  const taken: [number, number][] = [];
+  const sorted = [...communes].sort((a, b) => b.length - a.length);
+  for (const commune of sorted) {
+    const key = fold(commune).folded.replace(/[^a-z0-9]+/g, '[^a-z0-9]+');
+    const re = new RegExp(`(?<![a-z0-9])${key}(?![a-z0-9])`, 'g');
+    for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+      const a = m.index;
+      const b = m.index + m[0].length;
+      if (taken.some(([x, y]) => a < y && b > x)) continue;
+      taken.push([a, b]);
+      out.push({ value: commune, quote: sentence.slice(index[a]!, index[b]!), at: index[a]!, end: index[b]! });
+    }
+  }
+  return out;
+}
+
+const overlaps = (h: Hit, others: readonly Hit[]) => others.some((o) => h.at < o.end && h.end > o.at);
+
+/**
+ * Lit la dictée : chaque champ vient d'une phrase, avec son passage exact [R260]. `now` sert aux jours dits
+ * (« demain », « mardi ») ; `communes` est la liste de la zone de l'agent.
+ */
+export function readDictation(dictation: string, options: { now: Date; communes?: readonly string[] }): DictationDraft {
+  const communes = options.communes ?? DEFAULT_COMMUNES;
+  const sentences = splitSentences(dictation.normalize('NFC'));
+  const today = localTime(options.now, AGENDA_TIME_ZONE);
+  const found: DictatedField[] = [];
+  const add = (target: DictationTarget, key: DictatedKey, sentence: number, list: readonly Hit[]) => {
+    for (const h of list) found.push({ target, key, value: h.value, sentence, quote: h.quote });
+  };
+
+  let kindSeen = false;
+  sentences.forEach((s, i) => {
+    const [phones, emails] = readContact(s) as [Hit[], Hit[]];
+    const phonesOutsideMails = phones.filter((p) => !overlaps(p, emails));
+    add('contact', 'phone', i, phonesOutsideMails);
+    add('contact', 'email', i, emails);
+    const names = readNames(s, communes);
+    add('contact', 'firstName', i, names.first);
+    add('contact', 'lastName', i, names.last);
+    const sell = hits(s, SELL, () => 'sell');
+    const buy = hits(s, BUY, () => 'buy');
+    add('contact', 'project', i, [...sell, ...buy]);
+
+    const contacts = [...phonesOutsideMails, ...emails];
+    const kinds: Hit[] = [];
+    for (const [re, kind] of KINDS) for (const h of hits(s, re, () => kind)) if (!overlaps(h, kinds)) kinds.push(h);
+    if (kinds.length > 0) kindSeen = true;
+    add('bien', 'kind', i, kinds);
+    add('bien', 'surfaceM2', i, hits(s, SURFACE, (m) => Number(m[1])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    add('bien', 'rooms', i, hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    if (has(s, PRICE_CONTEXT) && !has(s, NOT_A_PRICE)) {
+      add(
+        'bien',
+        'priceEur',
+        i,
+        hits(s, PRICE, (m) => {
+          const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
+          const v = m[2] ? n * 1000 : n;
+          return Number.isInteger(v) && v >= 1 && v <= 1_000_000_000 ? v : null;
+        }).filter((h) => !overlaps(h, contacts)),
+      );
+    }
+    const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0)];
+    add('bien', 'postalCode', i, hits(s, POSTAL, (m) => m[1]!).filter((h) => !overlaps(h, numbers)));
+    add('bien', 'city', i, readCity(s, communes));
+
+    // Le rendez-vous : sa sorte, son jour et son heure, dans la même phrase.
+    if (has(s, APPOINTMENT_WORDS)) {
+      const days = hits(s, DAY, (m) => dayOf(m, today));
+      const times = hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter((h) => !overlaps(h, numbers));
+      const sorts: Hit[] = [];
+      for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
+      if (days.length === 1 && times.length === 1) {
+        const day = days[0]!;
+        const time = times[0]!;
+        const start = parisInstant(day.value as string, time.value as number);
+        if (start) {
+          const a = Math.min(day.at, time.at);
+          const b = Math.max(day.end, time.end);
+          found.push({ target: 'rendezvous', key: 'start', value: start.toISOString(), sentence: i, quote: s.slice(a, b).trim() });
+          add('rendezvous', 'appointmentKind', i, sorts);
+        }
+      } else if (days.length >= 1 && times.length >= 1) {
+        // Deux jours ou deux heures dans la phrase : le rendez-vous n'est pas lu, l'agent le prendra lui-même.
+        found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
+      }
+    }
+  });
+
+  // Un champ dit plusieurs fois doit dire la même chose ; sinon il n'est pas proposé. La première phrase qui le dit
+  // porte le renvoi.
+  const fields: DictatedField[] = [];
+  const conflicts: DictationDraft['conflicts'] = [];
+  for (const target of Object.keys(DICTATION_KEYS) as DictationTarget[]) {
+    for (const key of DICTATION_KEYS[target] as readonly DictatedKey[]) {
+      const all = found.filter((f) => f.target === target && f.key === key);
+      if (all.length === 0) continue;
+      const values = new Set(all.map((f) => f.value));
+      if (values.size > 1 || all[0]!.value === '') conflicts.push({ target, key });
+      else fields.push(all[0]!);
+    }
+  }
+  // Un bien n'existe que si sa sorte est dite, et jamais pour un acquéreur ; un rendez-vous, que s'il a son heure.
+  const project = fields.find((f) => f.target === 'contact' && f.key === 'project')?.value;
+  const keepBien = kindSeen && fields.some((f) => f.target === 'bien' && f.key === 'kind') && project !== 'buy';
+  const keepRdv = fields.some((f) => f.target === 'rendezvous' && f.key === 'start');
+  return {
+    sentences,
+    fields: fields.filter((f) => (f.target === 'bien' ? keepBien : f.target === 'rendezvous' ? keepRdv : true)),
+    conflicts: conflicts.filter((c) => (c.target === 'bien' ? keepBien : c.target === 'rendezvous' ? keepRdv || c.key === 'start' : true)),
+  };
+}
+
+/** Le champ d'une cible dans la lecture, s'il y est. */
+export function fieldOf(draft: DictationDraft, target: DictationTarget, key: DictatedKey): DictatedField | undefined {
+  return draft.fields.find((f) => f.target === target && f.key === key);
+}
