@@ -412,6 +412,42 @@ function vevents(ics: string): Props[] {
 const vevent = (ics: string): Props | null => vevents(ics)[0] ?? null;
 
 /** Une heure iCalendar : UTC (`Z`), sinon heure de Paris ; une date seule vaut minuit, heure de Paris. */
+/**
+ * Le fuseau d'une heure locale : celui de `TZID` s'il est un nom IANA connu, sinon Paris (un fuseau propre au
+ * calendrier, décrit par un VTIMEZONE, n'est pas lu : les agents sont en France).
+ */
+function zoneOf(params: string): string {
+  const tzid = /;TZID=("?)([^;:"]+)\1/i.exec(params)?.[2]?.trim();
+  if (!tzid) return 'Europe/Paris';
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tzid });
+    return tzid;
+  } catch {
+    return 'Europe/Paris';
+  }
+}
+
+/** L'heure murale d'un instant dans un fuseau, en millisecondes comme si c'était de l'UTC. */
+function wallOf(t: number, zone: string): number {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t));
+  const v = (k: string) => Number(p.find((x) => x.type === k)?.value);
+  return Date.UTC(v('year'), v('month') - 1, v('day'), v('hour'), v('minute'), v('second'));
+}
+
+/**
+ * Un instant à une heure locale d'un fuseau, secondes comprises. Une heure qui n'existe pas (passage à l'heure d'été)
+ * est prise au décalage d'avant ; une heure qui existe deux fois, à la première.
+ */
+function zoned(date: string, minutes: number, seconds: number, zone: string): Date | null {
+  const [y, mo, d] = date.split('-').map(Number) as [number, number, number];
+  const wall = Date.UTC(y, mo - 1, d, Math.floor(minutes / 60), minutes % 60, seconds);
+  if (Number.isNaN(wall)) return null;
+  const candidates = new Set<number>();
+  for (const probe of [wall - 86_400_000, wall, wall + 86_400_000]) candidates.add(wall - (wallOf(probe, zone) - probe));
+  const exact = [...candidates].filter((t) => wallOf(t, zone) === wall).sort((a, b) => a - b);
+  return new Date(exact[0] ?? wall - (wallOf(wall - 86_400_000, zone) - (wall - 86_400_000)));
+}
+
 function icsTime(p: { params: string; value: string } | undefined): Date {
   if (!p) return EPOCH;
   const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(p.value.trim());
@@ -419,7 +455,7 @@ function icsTime(p: { params: string; value: string } | undefined): Date {
   const date = `${m[1]}-${m[2]}-${m[3]}`;
   if (m[4] === undefined) return parisInstant(date, 0) ?? EPOCH;
   if (m[7]) return new Date(`${date}T${m[4]}:${m[5]}:${m[6]}Z`);
-  return parisInstant(date, Number(m[4]) * 60 + Number(m[5])) ?? EPOCH;
+  return zoned(date, Number(m[4]) * 60 + Number(m[5]), Number(m[6]), zoneOf(p.params)) ?? EPOCH;
 }
 
 /** Une durée iCalendar (`PT1H`, `P1D`, `P2W`) : jours de calendrier, et le reste en millisecondes ; `null` si illisible. */
@@ -453,8 +489,8 @@ function icsEnd(e: Map<string, { params: string; value: string }>): Date {
   else {
     // Heure locale ou date seule : on avance la date, puis on reprend la même heure de Paris.
     const minutes = m[4] === undefined ? 0 : Number(m[4]) * 60 + Number(m[5]);
-    base = parisInstant(addDaysTo(`${m[1]}-${m[2]}-${m[3]}`, duration.days), minutes) ?? start;
-    if (m[6] && m[4] !== undefined) base = new Date(base.getTime() + Number(m[6]) * 1000);
+    const zone = m[4] === undefined ? 'Europe/Paris' : zoneOf(e.get('DTSTART')!.params);
+    base = zoned(addDaysTo(`${m[1]}-${m[2]}-${m[3]}`, duration.days), minutes, m[4] === undefined ? 0 : Number(m[6]), zone) ?? start;
   }
   return new Date(base.getTime() + duration.ms);
 }

@@ -246,6 +246,17 @@ describeWithSqlite('HX02 · Apple et Outlook : récurrences, heures locales, fen
     expect(events.map((e) => e.end.toISOString())).toEqual([at('2026-11-11', '00:00').toISOString()]);
   });
 
+  it('Apple : une heure locale suit son TZID ; un TZID inconnu vaut Paris', async () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a', 'DTSTART;TZID=Europe/London:20261110T100000', 'DTEND;TZID="Europe/London":20261110T110000', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:b', 'DTSTART;TZID=Zone Maison:20261110T100000', 'DURATION:PT1H', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const xml = `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:response><D:href>/c/a.ics</D:href><D:propstat><D:prop><C:calendar-data>${ics}</C:calendar-data></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>`;
+    const fetch = async () => new Response(xml, { status: 207 });
+    const events = await new AppleAgenda({ fetch, authorization: async () => 'x' }, async () => 'https://caldav.example.test/c/').events('agent', at('2026-11-10', '00:00'), at('2026-11-11', '00:00'));
+    expect(events.map((e) => [e.start.toISOString(), e.end.toISOString()])).toEqual([
+      ['2026-11-10T10:00:00.000Z', '2026-11-10T11:00:00.000Z'],
+      [at('2026-11-10', '10:00').toISOString(), at('2026-11-10', '11:00').toISOString()],
+    ]);
+  });
+
   it('Outlook : un retrait rendu pour un événement sorti de la fenêtre n’annule pas le rendez-vous', async () => {
     const server = SERVERS[1]!();
     const w = await world(server);
