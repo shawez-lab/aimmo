@@ -210,6 +210,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
@@ -336,6 +337,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   automation_runs: { locate: by('person_id') },
   automation_daily_messages: { locate: by('person_id') },
   automation_tasks: { locate: by('person_id') },
+  client_dates: { locate: by('person_id') },
+  client_date_messages: { locate: by('person_id') },
+  client_date_texts: out('sans_client', 'Textes des messages de date écrits par la direction : aucune donnée de client.'),
   automation_scenarios: out('sans_client', 'Scénario composé par la direction : un déclencheur, une attente, un texte fixe, aucune donnée de client.'),
   automation_simulations: out('sans_client', 'Essai d\'un scénario sur le passé : des comptes, aucune personne.'),
   automation_switches: out('sans_client', 'Allumages et arrêts d\'un scénario par la direction.'),
