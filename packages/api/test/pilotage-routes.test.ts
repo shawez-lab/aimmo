@@ -167,14 +167,14 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     await t.acte();
     await t.runJobs();
     await t.runJobs(); // rejoué : rien de plus [R18]
+    // Le jour de l'acte, les factures partent seules au passage (HX04) : plus aucun brouillon à valider, chacune une fois.
     const drafts = await t.call(t.direction, 'GET', '/pilotage/factures/brouillons');
-    expect(drafts.status).toBe(200);
-    expect(drafts.body!.data.length).toBeGreaterThan(0);
-    expect(new Set(drafts.body!.data.map((d: { id: string }) => d.id)).size).toBe(drafts.body!.data.length);
-    expect((await t.call(t.agent, 'GET', '/pilotage/commissions')).body!.data[0].status).toBe('due');
-    // La direction valide les brouillons : la commission devient facturée, puis l'encaissement fixe l'échéance.
-    for (const d of drafts.body!.data) expect((await t.call(t.direction, 'POST', `/pilotage/factures/brouillons/${d.id}/valider`)).status).toBe(200);
-    await t.runJobs();
+    expect(drafts).toMatchObject({ status: 200, body: { data: [] } });
+    const invoices = await t.call(t.direction, 'GET', '/pilotage/factures');
+    expect(invoices.status).toBe(200);
+    expect(invoices.body!.data.map((i: { content: { kind: string } }) => i.content.kind)).toEqual(['honoraires', 'reversement']);
+    expect((await t.call(t.agent, 'GET', '/pilotage/commissions')).body!.data[0].status).toBe('facturee');
+    // Puis l'encaissement fixe l'échéance.
     const receipt = await t.call(t.direction, 'POST', `/pilotage/dossiers/${t.fileId}/encaissement`, { receivedAt: '2027-06-11T08:00:00.000Z', proofRef: 'preuves/releve-1.pdf' });
     expect(receipt).toMatchObject({ status: 200, body: { ok: true, data: { payoutDueAt: '2027-06-14T08:00:00.000Z' } } });
     const tasks = await t.call(t.direction, 'GET', '/pilotage/reversements');
