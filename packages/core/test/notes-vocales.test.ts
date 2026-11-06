@@ -187,6 +187,53 @@ describeWithSqlite('HX23 · notes vocales transcrites et traitées', () => {
     expect(await u.captation.reception.forAgent(u.network.id)).toHaveLength(1);
   });
 
+  it('[R18] [R240] deux livraisons simultanées de la même note ne la transcrivent qu’une fois', async () => {
+    let release: (v: unknown) => void = () => {};
+    const transcriber = fakeTranscriber(() => new Promise((resolve) => (release = resolve)));
+    const t = await setup(transcriber);
+    const first = t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.C1'));
+    await new Promise((r) => setTimeout(r, 0));
+    const second = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.C1'));
+    expect(second).toEqual([]);
+    release({ text: SELL, language: 'fr', confidence: 0.9 });
+    expect(await first).toEqual([expect.objectContaining({ status: 'replied' })]);
+    expect(transcriber.calls).toHaveLength(1);
+    expect((await t.db.all('SELECT * FROM qualifications')).length).toBe(1);
+    expect((await t.db.all('SELECT * FROM inbound_messages')).length).toBe(1);
+  });
+
+  it('[R18] une réservation restée en cours après une coupure est reprise', async () => {
+    const transcriber = ok();
+    const t = await setup(transcriber);
+    const old = new Date(TUESDAY_10H - 10 * 60_000).toISOString();
+    await t.db.run("INSERT INTO voice_notes (id, network_id, channel, external_id, status, created_at) VALUES ('vn-old', ?, 'whatsapp', 'wamid.S1', 'en_cours', ?)", [t.network.id, old]);
+    const [r] = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.S1'));
+    expect(r).toMatchObject({ status: 'replied' });
+    expect(transcriber.calls).toHaveLength(1);
+  });
+
+  it('[R15] un IBAN dicté n’est rangé en clair nulle part', async () => {
+    const t = await setup(ok('Voici mon IBAN FR76 3000 6000 0112 3456 7890 189 pour le dépôt.'));
+    await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.I1'));
+    const rows = JSON.stringify(await t.db.all('SELECT transcript FROM voice_notes')) + JSON.stringify(await t.db.all('SELECT body FROM inbound_messages'));
+    expect(rows.replace(/\s/g, '')).not.toContain('FR7630006000011234567890189');
+    expect(rows).not.toContain('7890 189');
+  });
+
+  it('[R240] une note Meta en attente (standby) est transcrite comme une autre ; nos propres notes ne le sont jamais', async () => {
+    const transcriber = ok();
+    const t = await setup(transcriber);
+    const standby = metaVoice('instagram', 'ig-sb1') as { entry: Record<string, unknown>[] };
+    standby.entry[0]!.standby = standby.entry[0]!.messaging;
+    delete standby.entry[0]!.messaging;
+    const [r] = await t.vocale.receive(t.network.id, 'instagram', standby, { ownIds: ['OWN-1'] });
+    expect(r).toMatchObject({ status: expect.not.stringMatching(/unreadable/) });
+    expect(await t.notes.forInbound(t.network.id, r!.inboundId)).toMatchObject({ transcription: true });
+    const own = await t.vocale.receive(t.network.id, 'instagram', metaVoice('instagram', 'ig-own1', 'OWN-1'), { ownIds: ['OWN-1'] });
+    expect(own).toEqual([]);
+    expect(transcriber.calls).toHaveLength(1);
+  });
+
   it('[R15] le transcripteur ne reçoit que la référence de l’audio, jamais le numéro ni le nom', async () => {
     const transcriber = ok();
     const t = await setup(transcriber);
@@ -219,7 +266,7 @@ describeWithSqlite('HX23 · notes vocales transcrites et traitées', () => {
     const raw = waText('wamid.N1', SELL);
     const prepared = await t.notes.prepare(t.network.id, 'whatsapp', raw);
     expect(prepared.raw).toBe(raw);
-    expect(await t.notes.prepare(t.network.id, 'email', { text: 'x' })).toEqual({ raw: { text: 'x' }, unreadable: [] });
+    expect(await t.notes.prepare(t.network.id, 'email', { text: 'x' })).toEqual({ raw: { text: 'x' }, unreadable: [], inProgress: 0 });
     expect(transcriber.calls).toHaveLength(0);
   });
 });

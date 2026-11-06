@@ -13,6 +13,7 @@
  */
 import type { ChaineCaptation, ChainHooks, ChainResult } from '../captation/chaine.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { maskIban } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { AdaptContext, UnreadableInbound } from '../reception/entrant.ts';
@@ -49,7 +50,7 @@ export interface VoiceNoteRow {
   network_id: string;
   channel: VoiceChannel;
   external_id: string;
-  status: 'transcrite' | 'impossible';
+  status: 'en_cours' | 'transcrite' | 'impossible';
   reason: ImpossibleReason | null;
   media_ref: string | null;
   mime: string | null;
@@ -97,9 +98,9 @@ interface FoundNote {
 }
 
 /** Les notes vocales d'une notification WhatsApp ou Meta. Une notification d'une autre source n'en a pas. */
-function findNotes(source: string, raw: unknown): FoundNote[] {
+function findNotes(source: string, raw: unknown, ownIds: readonly string[]): FoundNote[] {
   if (source === 'whatsapp') return findWhatsApp(raw);
-  if (source === 'instagram' || source === 'facebook') return findMeta(source, raw);
+  if (source === 'instagram' || source === 'facebook') return findMeta(source, raw, new Set(ownIds));
   return [];
 }
 
@@ -140,14 +141,20 @@ function findWhatsApp(raw: unknown): FoundNote[] {
   return found;
 }
 
-function findMeta(channel: 'instagram' | 'facebook', raw: unknown): FoundNote[] {
+function findMeta(channel: 'instagram' | 'facebook', raw: unknown, own: ReadonlySet<string>): FoundNote[] {
   const found: FoundNote[] = [];
   if (!isObj(raw) || !Array.isArray(raw.entry)) return found;
   for (const entry of raw.entry) {
-    if (!isObj(entry) || !Array.isArray(entry.messaging)) continue;
-    const messaging = entry.messaging;
-    for (const item of [...messaging]) {
+    if (!isObj(entry)) continue;
+    // Comme l'adaptateur : `standby` porte les messages reçus pendant qu'une autre application a la main.
+    for (const key of ['messaging', 'standby']) {
+      const messaging = entry[key];
+      if (!Array.isArray(messaging)) continue;
+      for (const item of [...messaging]) {
       if (!isObj(item) || !isObj(item.message) || item.message.is_echo === true) continue;
+      // Nos propres messages ne sont pas des messages reçus.
+      const senderId = isObj(item.sender) ? str(item.sender.id) : null;
+      if (senderId !== null && own.has(senderId)) continue;
       const message = item.message;
       const attachments = Array.isArray(message.attachments) ? message.attachments : [];
       const audio = attachments.find((a) => isObj(a) && a.type === 'audio' && isObj(a.payload) && str(a.payload.url) !== null);
@@ -171,6 +178,7 @@ function findMeta(channel: 'instagram' | 'facebook', raw: unknown): FoundNote[] 
           return structuredClone(item);
         },
       });
+      }
     }
   }
   return found;
@@ -217,16 +225,26 @@ export class NotesVocales {
    * Prépare une notification brute pour la chaîne : chaque note vocale devient le texte transcrit, ou sort de la
    * notification pour être rangée illisible. La notification d'origine n'est pas modifiée.
    */
-  async prepare(networkId: string, source: string, raw: unknown): Promise<{ raw: unknown; unreadable: UnreadableInbound[] }> {
-    if (findNotes(source, raw).length === 0) return { raw, unreadable: [] };
+  async prepare(
+    networkId: string,
+    source: string,
+    raw: unknown,
+    ownIds: readonly string[] = [],
+  ): Promise<{ raw: unknown; unreadable: UnreadableInbound[]; inProgress: number }> {
+    if (findNotes(source, raw, ownIds).length === 0) return { raw, unreadable: [], inProgress: 0 };
     const copy = structuredClone(raw);
     const unreadable: UnreadableInbound[] = [];
-    for (const note of findNotes(source, copy)) {
+    let inProgress = 0;
+    for (const note of findNotes(source, copy, ownIds)) {
       const row = await this.transcribeOnce(networkId, note);
-      if (row.status === 'transcrite') note.asText(row.transcript!);
+      if (row === 'en_cours') {
+        // Une autre livraison de la même note la transcrit en ce moment : elle seule la fera entrer dans la chaîne [R18].
+        note.remove();
+        inProgress += 1;
+      } else if (row.status === 'transcrite') note.asText(row.transcript!);
       else unreadable.push({ channel: note.channel, reason: `note vocale : ${REASON_TEXT[row.reason!]}`, raw: JSON.stringify(note.remove()) });
     }
-    return { raw: copy, unreadable };
+    return { raw: copy, unreadable, inProgress };
   }
 
   /** La note d'un message reçu, telle que la fiche la montre, ou null si ce message n'était pas une note transcrite. */
@@ -241,42 +259,52 @@ export class NotesVocales {
     return { transcription: true, channel: row.channel, mediaRef: row.media_ref!, mime: row.mime, language: row.language, confidence: row.confidence! };
   }
 
-  /** Une note n'est transcrite qu'une fois : une notification reçue deux fois relit la première transcription [R18]. */
-  private async transcribeOnce(networkId: string, note: FoundNote): Promise<VoiceNoteRow> {
-    const existing = await this.find(networkId, note);
-    if (existing) return existing;
-    const outcome = await this.transcribe(note.audio);
+  /**
+   * Une note n'est transcrite qu'une fois [R18, R240] : elle est d'abord réservée, et une seule livraison gagne la
+   * réservation ; une livraison suivante relit la transcription, ou dit « en cours » tant qu'elle n'est pas finie. Une
+   * réservation restée en cours au-delà de trois délais (Worker coupé) est reprise.
+   */
+  private async transcribeOnce(networkId: string, note: FoundNote): Promise<VoiceNoteRow | 'en_cours'> {
     const id = this.newId();
-    const at = this.now().toISOString();
+    const at = this.now();
+    const stale = new Date(at.getTime() - 3 * this.timeoutMs).toISOString();
+    const { changes: claimed } = await this.db.run(
+      `INSERT INTO voice_notes (id, network_id, channel, external_id, status, created_at) VALUES (?, ?, ?, ?, 'en_cours', ?)
+       ON CONFLICT (network_id, channel, external_id) DO UPDATE SET created_at = excluded.created_at
+       WHERE voice_notes.status = 'en_cours' AND voice_notes.created_at < ?`,
+      [id, networkId, note.channel, note.externalId, at.toISOString(), stale],
+    );
+    const held = await this.find(networkId, note);
+    if (!held) throw new Error('Note vocale non rangée.');
+    if (claimed === 0) return held.status === 'en_cours' ? 'en_cours' : held;
+    const outcome = await this.transcribe(note.audio);
     const ok = typeof outcome !== 'string';
+    // Un IBAN dicté ne se range jamais en clair, comme dans un message écrit [R15].
     const { changes } = await this.db.run(
-      `INSERT OR IGNORE INTO voice_notes (id, network_id, channel, external_id, status, reason, media_ref, mime, transcript, language, confidence, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `UPDATE voice_notes SET status = ?, reason = ?, media_ref = ?, mime = ?, transcript = ?, language = ?, confidence = ?
+       WHERE id = ? AND status = 'en_cours' AND created_at = ?`,
       [
-      id,
-      networkId,
-      note.channel,
-      note.externalId,
-      ok ? 'transcrite' : 'impossible',
-      ok ? null : outcome,
-      ok ? note.audio.mediaRef : null,
-      ok ? note.audio.mime : null,
-      ok ? outcome.text : null,
-      ok ? outcome.language : null,
-      ok ? outcome.confidence : null,
-      at,
+        ok ? 'transcrite' : 'impossible',
+        ok ? null : outcome,
+        ok ? note.audio.mediaRef : null,
+        ok ? note.audio.mime : null,
+        ok ? maskIban(outcome.text) : null,
+        ok ? outcome.language : null,
+        ok ? outcome.confidence : null,
+        held.id,
+        at.toISOString(),
       ],
     );
     const row = await this.find(networkId, note);
     if (!row) throw new Error('Note vocale non rangée.');
-    if (changes > 0) {
-      // Ni texte, ni audio, ni identifiant du canal au journal [R13].
-      await appendEvent(
-        this.journal,
-        { type: 'voix.note_recue', actor: 'system', subject: `voice_note:${row.id}`, data: { rule: ok ? 'R240' : 'R241', channel: note.channel, status: row.status, reason: row.reason } },
-        this.now,
-      );
-    }
+    // Reprise entre-temps par une autre livraison : c'est elle qui finit.
+    if (changes === 0) return row.status === 'en_cours' ? 'en_cours' : row;
+    // Ni texte, ni audio, ni identifiant du canal au journal [R13].
+    await appendEvent(
+      this.journal,
+      { type: 'voix.note_recue', actor: 'system', subject: `voice_note:${row.id}`, data: { rule: ok ? 'R240' : 'R241', channel: note.channel, status: row.status, reason: row.reason } },
+      this.now,
+    );
     return row;
   }
 
@@ -318,7 +346,7 @@ export class ChaineVocale {
 
   async receive(networkId: string, source: Parameters<ChaineCaptation['receive']>[1], raw: unknown, ctx: Partial<AdaptContext> = {}, hooks: ChainHooks = {}): Promise<ChainResult[]> {
     const started = this.now().getTime();
-    const prepared = await this.notes.prepare(networkId, source, raw);
+    const prepared = await this.notes.prepare(networkId, source, raw, ctx.ownIds ?? []);
     const results = await this.chaine.receive(networkId, source, prepared.raw, ctx, hooks);
     if (prepared.unreadable.length > 0) {
       const stored = await this.reception.store(networkId, { messages: [], unreadable: prepared.unreadable, ignored: 0 });
