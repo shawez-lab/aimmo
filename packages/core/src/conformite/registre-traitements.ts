@@ -66,6 +66,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
       calls: ['call_id', 'person_id', 'recording_ref', 'transcript', 'fields', 'consent_announced_at', 'consent_given_at', 'origin_content_id'],
       call_journal: [],
+      // HX22 : le passage de main de l'assistant vocal, rattaché à l'appel ; les sujets sans réponse avec l'accord seulement.
+      voice_assistant_calls: ['agent_id', 'call_id', 'call_row_id', 'unanswered'],
       contact_keys: ['person_id'],
       attach_log: ['person_id', 'reason'],
       conversation_handovers: ['agent_id', 'person_id', 'conversation_id', 'reason'],
@@ -370,6 +372,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       agent_zones: ['agent_id', 'commune'],
       agent_availabilities: ['agent_id'],
       agent_public_cards: ['agent_id', 'phone', 'email', 'set_by'],
+      // HX22 : le numéro de l'agent, vers lequel il renvoie ses appels sans réponse.
+      voice_assistant_lines: ['agent_id', 'phone'],
       agent_legal_mentions: ['agent_id', 'rsac_number', 'rsac_registry', 'set_by'],
       agent_review_links: ['agent_id', 'url', 'set_by'],
       agent_onboardings: ['agent_id', 'candidate_id', 'created_by'],
@@ -782,6 +786,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
   voice_notes: ['id', 'network_id', 'channel', 'status', 'failure', 'mime', 'language', 'confidence', 'created_at'],
   call_journal: ['call_id', 'claimed_at', 'done'],
+  voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
+  voice_assistant_lines: ['network_id', 'enabled', 'updated_at'],
   calls: ['id', 'network_id', 'provider', 'status', 'failure', 'attach', 'started_at', 'ended_at', 'language', 'confidence', 'category', 'route', 'qualification_source', 'origin_kind', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],
