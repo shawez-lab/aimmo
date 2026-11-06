@@ -160,10 +160,11 @@ Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX0
 - Critères : la mention de l'assistant est dite au début de chaque appel (test) ; aucun chiffre donné qui ne vienne de la fiche du bien (test) ; un rendez-vous n'est pris que sur un créneau libre (test).
 
 ### HX23 · Messages vocaux transcrits et traités
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-06)
+- Reste : fusionnée (#379). Relecture forte : 1 P0 (IBAN dicté en clair) et 3 P1 corrigés (double transcription simultanée, notes `standby`, nos propres notes) ; Codex sans remarque. Restent : la réponse dans la langue de la personne (HX05), le vrai transcripteur (H52), le branchement au Worker et à l'écran de la fiche (voie 1, `app.ts`).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : C01, C06, Q01
 - Cahier : M02 Capter ; Conformité (R13, R15) ; demande de Shawez du 2026-11-06.
-- Attend : un fournisseur de transcription, sa clé et son accord de sous-traitance (ligne de `HUMAIN.md` à écrire par HX23) pour de vraies notes ; rien pour le code.
+- Attend : un fournisseur de transcription, sa clé et son accord de sous-traitance (H52) pour de vraies notes ; rien pour le code.
 - Objectif : comme Septeo : retranscrire les messages audio. Jamais vu : les notes vocales reçues sur WhatsApp, Instagram et Messenger entrent dans la chaîne de C01 comme un texte : transcrites, qualifiées par Q01, et la réponse part dans la langue de la personne ; l'audio d'origine reste lisible depuis la fiche.
 - Critères : une note vocale donne la même qualification que le même texte écrit (test) ; la transcription est marquée comme telle et liée à son audio (test) ; une transcription impossible passe la main à l'agent, sans réponse inventée (test).
 
