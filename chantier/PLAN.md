@@ -80,7 +80,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : Factur-X valide (test) ; montants égaux à ceux du dossier (test) ; aucune facture émise deux fois (test).
 
 ### HX60 · Factur-X complet : le PDF/A-3 qui porte le XML
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : HX04
 - Objectif : HX04 écrit le XML EN 16931. Il reste à le joindre à un PDF/A-3 lisible (police intégrée, profil de couleurs, métadonnées XMP Factur-X, pièce jointe `factur-x.xml` en relation `Data`), sans dépendance lourde dans le Worker.
