@@ -382,16 +382,14 @@ export class ScenariosAutomatiques {
     }
     // Les messages des scénarios déjà allumés, sur la même période, pour voir les doubles du même jour [R402].
     const others: Planned[] = [];
-    const otherTexts = new Map<string, Set<string>>();
     for (const lit of await this.litScenarios(viewer.networkId)) {
       if (lit.scenarioId === scenarioId) continue;
       const otherDef = await this.definitionOf(lit.scenarioId, lit.version);
       if (otherDef.message === null) continue;
-      // Seulement ce que le contrôle central leur aurait laissé envoyer [R400].
-      for (const fact of await this.facts(viewer.networkId, otherDef, from, to)) {
-        const dueAt = this.dueAt(otherDef, fact.at);
-        if ((await this.preflight(otherDef.message, fact, dueAt, otherTexts)) === null) others.push({ scenarioId: lit.scenarioId, ref: fact.ref, personId: fact.personId, dueAt });
-      }
+      // Lecture prudente : chaque message prévu d'un scénario allumé tient sa journée, même si le contrôle central avait
+      // pu le refuser. Un refus d'hier (accord manquant, texte déjà parti) peut ne plus valoir demain ; un double
+      // annoncé à tort fait seulement refuser l'allumage, jamais partir un message [R402].
+      for (const fact of await this.facts(viewer.networkId, otherDef, from, to)) others.push({ scenarioId: lit.scenarioId, ref: fact.ref, personId: fact.personId, dueAt: this.dueAt(otherDef, fact.at) });
     }
     const taken = new Set(others.map((p) => `${p.personId}|${this.day(p.dueAt)}`));
     let sameDayTwice = 0;

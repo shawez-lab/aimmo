@@ -427,7 +427,7 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(await t.db.all('SELECT run_id IS NOT NULL AS held FROM automation_daily_messages')).toEqual([{ held: 1 }]);
   });
 
-  it('[R400] [R402] l’essai ne compte des scénarios allumés que les messages que le contrôle central aurait laissés partir', async () => {
+  it('[R400] [R402] l’essai compte chaque message prévu des scénarios allumés, même refusé hier : lecture prudente', async () => {
     const t = await setup();
     // Inès, arrivée il y a 6 jours, n'a donné son accord que par SMS.
     t.setClock(TUE_10H - 6 * DAY);
@@ -442,8 +442,17 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     await t.scenarios.switchOn(t.direction, mailId);
     const sms = await t.scenarios.compose(t.direction, { ...PROJECT, message: { channel: 'sms', text: 'Bonjour {prenom}, votre projet est bien noté. Je reviens vers vous très vite.' } });
     const smsId = sms.ok ? sms.value.scenarioId : '';
-    expect(await t.scenarios.simulate(t.direction, smsId)).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 0, canSwitchOn: true } });
-    expect(await t.scenarios.switchOn(t.direction, smsId)).toMatchObject({ ok: true });
+    // Le mail refusé hier faute d'accord tient quand même sa journée : l'accord peut venir d'ici le prochain fait.
+    expect(await t.scenarios.simulate(t.direction, smsId)).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 1, canSwitchOn: false } });
+    expect(await t.scenarios.switchOn(t.direction, smsId)).toEqual({ ok: false, rule: 'R402', code: 'same_day_twice' });
+    // Le même cas, quand le mail est vraiment parti ce jour-là : le double est toujours vu, jamais effacé par son envoi.
+    await t.store.addIdentifier({ networkId: t.network.id, personId: ines, kind: 'email', value: 'ines@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: ines, purpose: AUTOMATION_PURPOSE, channel: 'email', proof: 'case cochée (test)', givenAt: new Date(TUE_10H) });
+    t.setClock(TUE_10H + HOUR);
+    const bruno = await t.person('Bruno');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: bruno, kind: 'sell' });
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+    expect(await t.scenarios.simulate(t.direction, smsId)).toMatchObject({ ok: true, value: { sameDayTwice: 1, canSwitchOn: false } });
   });
 
   it('[R401] [R01] refusé pour l’heure par le contrôle central, le passage attend le lendemain au lieu de se clore', async () => {
