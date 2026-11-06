@@ -3685,7 +3685,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV14 · Un second dossier sur un bien
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV12
 - Cahier : M09 Offre ; M10 Compromis et acte.
 - Trouvé par SV09 : l'unicité de `sale_files.property_id` empêche un second dossier après un arrêt. Le travail prêt est dans le commit `bba3231e` de la branche `chantier/SV09`.
