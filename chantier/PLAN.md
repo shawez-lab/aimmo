@@ -206,7 +206,7 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 - Critères : un scénario allumé passe toujours par le contrôle central (test) ; la simulation sur le passé n'envoie rien (test) ; un scénario qui enverrait deux fois à la même personne le même jour est refusé (test).
 
 ### HX25 · Prochaine action, filtres et dates des clients
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Modelo et Hektor : la prochaine action suggérée sur chaque fiche, des filtres avancés par budget, secteur et catégorie, et les messages d'anniversaire et de fête. Jamais vu : la prochaine action dit en une ligne pourquoi elle est proposée, d'après le journal, et un message de date n'est préparé que si la personne a donné cette date et son accord, jamais la nuit ni le dimanche.
 - Critères : chaque action proposée cite sa raison (test) ; aucun message de date sans date donnée et accord rangé (test) ; un filtre ne montre jamais une fiche hors des droits de l'agent (test).
 
