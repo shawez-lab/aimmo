@@ -280,6 +280,17 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     expect(t.puts).toHaveLength(19);
   });
 
+  it('[R408] deux mails du même fil à la même heure restent deux messages, sans bloquer la lecture [R18]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    await t.person('Noa', 'noa@example.test');
+    const at = new Date(TUE_10H - 10 * MIN);
+    const a = await t.boite.sort(me, t.mail('noa@example.test', 'Premier mot', [], { threadId: 'fil-x', receivedAt: at }));
+    const b = await t.boite.sort(me, t.mail('noa@example.test', 'Second mot', [], { threadId: 'fil-x', receivedAt: at }));
+    expect([a, b]).toMatchObject([{ ok: true, value: { outcome: 'rattache' } }, { ok: true, value: { outcome: 'rattache' } }]);
+    expect(await t.db.all("SELECT body FROM messages WHERE conversation_id = 'email:gmail:fil-x' ORDER BY rowid")).toEqual([{ body: 'Premier mot' }, { body: 'Second mot' }]);
+  });
+
   it('[R409] une fiche passée à un autre agent depuis le tri : sa réponse n’est plus montrée ni validable [R16]', async () => {
     const t = await setup();
     const me = t.asAgent(t.alex.id);

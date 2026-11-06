@@ -310,11 +310,14 @@ export class BoiteMail {
     // seule fois, même repris après une panne.
     const conversationId = `email:${mail.provider}:${mail.threadId}`;
     let messageId = (await this.db.first<{ message_id: string | null }>('SELECT message_id FROM mailbox_mails WHERE id = ?', [mailId]))?.message_id ?? null;
+    const body = maskIban(String(mail.body ?? '').slice(0, MAX_BODY)).trim() || '(mail sans texte)';
     if (messageId === null) {
-      // Coupé entre le message et son lien : le même mail du même fil, à la même heure, est déjà dans la fiche.
+      // Coupé entre le message et son lien : le même texte du même fil, à la même heure, rangé dans la fiche et lié à
+      // aucun autre mail de la boîte, est ce message-là. Un autre mail du même fil à la même heure n'est jamais pris pour lui.
       const found = await this.db.first<{ id: string }>(
-        `SELECT id FROM messages WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND conversation_id = ? AND direction = 'in' AND channel = 'email' AND occurred_at = ? ORDER BY rowid LIMIT 1`,
-        [networkId, ...members, conversationId, mail.receivedAt.toISOString()],
+        `SELECT id FROM messages m WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND conversation_id = ? AND direction = 'in' AND channel = 'email' AND occurred_at = ? AND body = ?
+           AND NOT EXISTS (SELECT 1 FROM mailbox_mails b WHERE b.message_id = m.id) ORDER BY rowid LIMIT 1`,
+        [networkId, ...members, conversationId, mail.receivedAt.toISOString(), body],
       );
       if (found) {
         messageId = found.id;
@@ -322,7 +325,6 @@ export class BoiteMail {
       }
     }
     if (messageId === null) {
-      const body = maskIban(String(mail.body ?? '').slice(0, MAX_BODY)).trim() || '(mail sans texte)';
       const person = await this.store.getPerson(personId);
       const message = await this.store.recordMessage({ networkId, agentId: person?.agent_id ?? null, personId, projectId, conversationId, channel: 'email', direction: 'in', authorKind: 'person', body, occurredAt: mail.receivedAt });
       messageId = message.id;
