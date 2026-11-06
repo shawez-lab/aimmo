@@ -192,6 +192,11 @@ describe('assistant juridique (HX03)', () => {
     expect(one('cch-l271-1', 'Le délai est de 2015 heures.').ok).toBe(false);
     expect(one('cch-l271-1', 'Le délai est de 2015 jours depuis la loi de 2015.').ok).toBe(false);
     expect(one('copro-46', 'Au-delà de 1997 m² la mention n’est plus due.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Il paie une pénalité de 2000 dollars.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Il perd un dépôt de 2000, en euros.').ok).toBe(false);
+    expect(one('copro-46', 'Au-delà d’un lot de 1997 m la mention n’est plus due.').ok).toBe(false);
+    expect(one('copro-46', 'Le seuil de 8 m² vient du décret de 1997.').ok).toBe(true);
+    expect(one('cch-l271-1', 'Le délai est passé à 10 jours en 2015.').ok).toBe(true);
     expect(one('cch-l271-1', 'Selon la loi de 2000, l’acquéreur a 10 jours.').ok).toBe(true);
     expect(one('cch-l271-1', 'La loi n° 2000-1208 a créé ce délai, porté à 10 jours en 1208.').ok).toBe(false);
   });

@@ -332,8 +332,11 @@ const REFERENCE = new RegExp(
   `\\b(?:articles?\\s+|art\\.?\\s*)?l\\.?\\s?\\d+(?:-\\d+)+\\b|\\b(?:articles?|art\\.?)\\s+\\d+(?:-\\d+)*\\b|\\bn°\\s*\\d+-\\d+\\b|\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})\\s+\\d{4}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b`,
   'giu',
 );
-/** Une année seule ne vaut référence que dans « loi de 2015 », « depuis 2015 », jamais suivie d'une unité. */
-const YEAR = /\b(loi|ordonnance|decret|décret|texte|depuis|en|de|du)\s+((?:1[6-9]|20)\d{2})\b(?![\s  ]*(?:%|pour ?cent|euros?|€|m2|m²|m[eè]tres?|jours?|mois|ans?|ann[eé]es?|heures?|semaines?|fois))/giu;
+/**
+ * Une année seule ne vaut référence que dans « la loi (n° …) de 2015 », « depuis 2015 » ou « en 2015 », suivie d'une
+ * fin de phrase ou d'un signe de ponctuation : jamais ailleurs, et jamais suivie d'un mot (une unité, connue ou non).
+ */
+const YEAR = /\b((?:loi|ordonnance|decret|décret)(?:\s+n°\s*\d+-\d+)?\s+(?:de|du)|depuis|en)\s+((?:1[6-9]|20)\d{2})(?=[\s  ]*(?:[.;:!?,)\]]|$))/giu;
 const refKey = (t: string): string => plain(t).replace(/^(?:articles?|art\.?)\s*/, '').replace(/\s+/g, ' ').replace(/^l\.?\s?/, 'l').trim();
 
 /** Les références entières d'un texte : son article, ses numéros et ses dates complètes ; ses années, à part. */
@@ -348,7 +351,7 @@ function referencesOf(s: LegalFacts['sources'][number]): { refs: string[]; years
 function withoutReferences(text: string, refs: readonly string[], years: readonly string[]): string {
   return text
     .replace(REFERENCE, (m) => (refs.includes(refKey(m)) ? ' ' : m))
-    .replace(YEAR, (m, word: string, year: string) => (years.includes(year) ? `${word} ` : m));
+    .replace(YEAR, (m, intro: string, year: string) => (years.includes(year) ? `${intro} ` : m));
 }
 
 /** Contrôle un brouillon de l'IA : chaque paragraphe cite des textes reçus et n'écrit que leurs nombres [R251]. */
