@@ -266,6 +266,9 @@ describe('assistant juridique (HX03)', () => {
     ]) {
       expect((await askLegal(q, { writer: w, now })).status).toBe('litige');
     }
+    // Un litige dit après la limite de longueur compte aussi.
+    const long = `L’acquéreur peut-il se rétracter du compromis ?${' Merci.'.repeat(400)} Il menace d’aller au tribunal.`;
+    expect((await askLegal(long, { writer: w, now })).status).toBe('litige');
     expect(w.seen).toHaveLength(0);
   });
 

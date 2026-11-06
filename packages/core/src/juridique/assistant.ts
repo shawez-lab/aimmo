@@ -445,7 +445,8 @@ type Outcome = 'ia' | 'textes' | 'ia_refusee' | 'ia_en_panne' | 'ia_ne_sait_pas'
 export async function askLegal(question: string, options: AskOptions = {}): Promise<LegalAnswer> {
   const library = options.library ?? DEFAULT_LEGAL_LIBRARY;
   const now = options.now ?? (() => new Date());
-  const q = typeof question === 'string' ? question.normalize('NFC').trim().slice(0, MAX_QUESTION_LENGTH) : '';
+  const full = typeof question === 'string' ? question.normalize('NFC').trim() : '';
+  const q = full.slice(0, MAX_QUESTION_LENGTH);
 
   const finish = async (answer: LegalAnswer, outcome: Outcome, problems: DraftProblem[] = []): Promise<LegalAnswer> => {
     if (options.journal) {
@@ -475,7 +476,8 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
   });
 
   if (q === '') return finish(refuse('je_ne_sais_pas'), 'question_invalide');
-  if (isDispute(q)) return finish(refuse('litige'), 'litige');
+  // Le litige se lit sur toute la question, jamais sur sa seule partie gardée.
+  if (isDispute(full)) return finish(refuse('litige'), 'litige');
   const sources = coveringSources(q, library);
   if (sources.length === 0) return finish(refuse('je_ne_sais_pas'), 'aucun_texte');
 
