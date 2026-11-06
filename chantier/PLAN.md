@@ -166,7 +166,7 @@ Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX0
 - Critères : aucun enregistrement sans accord rangé (test) ; chaque champ rempli renvoie à un passage de la transcription (test) ; l'appel est rattaché à la bonne fiche, sans doublon (test).
 
 ### HX22 · Assistant vocal quand l'agent ne peut pas répondre
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Talqor, PriceHubble et Kleio : un secrétariat vocal qui répond pendant les visites, qualifie l'appelant et propose des créneaux. Jamais vu : l'agent garde son seul numéro, l'appel arrive par un simple renvoi sur non-réponse ; l'assistant se présente comme assistant dès la première phrase, ne donne que les chiffres de la fiche du bien, réserve sur un créneau libre de V01, puis passe la main à l'agent avec le résumé de HX21.
 - Critères : la mention de l'assistant est dite au début de chaque appel (test) ; aucun chiffre donné qui ne vienne de la fiche du bien (test) ; un rendez-vous n'est pris que sur un créneau libre (test).
 
