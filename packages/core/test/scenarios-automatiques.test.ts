@@ -589,4 +589,70 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(interleaved).toBe(true);
     expect(await t.db.all('SELECT status FROM automation_runs')).toEqual([{ status: 'a_faire' }]);
   });
+
+  it('[R401] [R05] une panne avant la remise à la boîte d’essai ne compte jamais le message comme parti', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0, task: null });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    t.setClock(TUE_10H + HOUR);
+    await t.person('Inès');
+    let broken = true;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      first: (sql, params) => t.db.first(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      run: async (sql, params) => {
+        if (broken && sql.startsWith('UPDATE send_reservations SET message_id')) {
+          broken = false;
+          throw new Error('panne de la base (test)');
+        }
+        return t.db.run(sql, params);
+      },
+    };
+    const flaky = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(TUE_10H + HOUR) });
+    await expect(flaky.tick(t.network.id)).rejects.toThrow(/panne/);
+    const report = await flaky.tick(t.network.id);
+    expect(report.messagesInTrial).toBe(0);
+    expect(await t.outbox()).toHaveLength(0);
+    expect(await t.db.first('SELECT message_status FROM automation_runs')).toEqual({ message_status: 'refuse' });
+    // Rien n'est parti : la place du jour est rendue.
+    expect(await t.db.all('SELECT run_id FROM automation_daily_messages')).toEqual([{ run_id: null }]);
+  });
+
+  it('[R401] un arrêt puis un rallumage de la même version pendant le passage ne font pas rejouer les faits d’avant', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    t.setClock(TUE_10H + HOUR);
+    let interleaved = false;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => t.db.run(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      all: async <T,>(sql: string, params?: readonly (string | number | null)[]) => {
+        const rows = await t.db.all<T>(sql, params as never);
+        if (!interleaved && sql.includes('FROM automation_switches s')) {
+          interleaved = true;
+          // Inès arrive, puis le scénario est arrêté et rallumé : elle est d'avant le nouvel allumage.
+          await t.person('Inès');
+          t.setClock(TUE_10H + 2 * HOUR);
+          await t.scenarios.switchOff(t.direction, id);
+          await t.scenarios.simulate(t.direction, id);
+          expect(await t.scenarios.switchOn(t.direction, id)).toMatchObject({ ok: true });
+        }
+        return rows;
+      },
+    };
+    const racing = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(TUE_10H + 2 * HOUR) });
+    expect(await racing.tick(t.network.id)).toMatchObject({ created: 0, messagesInTrial: 0 });
+    expect(interleaved).toBe(true);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 0 });
+    expect(await t.count('automation_runs')).toBe(0);
+  });
 });

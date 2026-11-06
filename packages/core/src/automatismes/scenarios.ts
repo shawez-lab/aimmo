@@ -135,6 +135,8 @@ interface RunRow {
 /** La version citée est la dernière allumée du scénario : paramètres, le scénario, la version, le scénario [R401]. */
 const STILL_LIT = `EXISTS (SELECT 1 FROM automation_switches w WHERE w.scenario_id = ? AND w.version = ? AND w.lit = 1
   AND w.seq = (SELECT MAX(seq) FROM automation_switches WHERE scenario_id = ?))`;
+/** L'allumage lu est encore le dernier état du scénario : paramètres, le scénario, la séquence de l'allumage [R401]. */
+const SAME_SWITCH = '(SELECT MAX(seq) FROM automation_switches WHERE scenario_id = ?) = ?';
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -250,14 +252,14 @@ export class ScenariosAutomatiques {
   }
 
   /** Les scénarios allumés du réseau : la version allumée et l'heure de l'allumage. */
-  private async litScenarios(networkId: string): Promise<{ scenarioId: string; version: number; since: string }[]> {
-    const rows = await this.db.all<{ scenario_id: string; version: number; lit: number; at: string }>(
-      `SELECT s.scenario_id, s.version, s.lit, s.at FROM automation_switches s
+  private async litScenarios(networkId: string): Promise<{ scenarioId: string; version: number; since: string; seq: number }[]> {
+    const rows = await this.db.all<{ scenario_id: string; version: number; lit: number; at: string; seq: number }>(
+      `SELECT s.scenario_id, s.version, s.lit, s.at, s.seq FROM automation_switches s
        WHERE s.network_id = ? AND s.seq = (SELECT MAX(seq) FROM automation_switches WHERE scenario_id = s.scenario_id)
        ORDER BY s.scenario_id`,
       [networkId],
     );
-    return rows.filter((r) => r.lit === 1).map((r) => ({ scenarioId: r.scenario_id, version: r.version, since: r.at }));
+    return rows.filter((r) => r.lit === 1).map((r) => ({ scenarioId: r.scenario_id, version: r.version, since: r.at, seq: r.seq }));
   }
 
   /** Compose un scénario, ou une nouvelle version d'un scénario du réseau. La version d'avant reste [R403, R17]. */
@@ -500,12 +502,12 @@ export class ScenariosAutomatiques {
       const def = await this.definitionOf(s.scenarioId, s.version);
       // Jamais le passé : seulement les faits venus après l'allumage [R401].
       for (const fact of await this.facts(networkId, def, new Date(s.since), new Date(now.getTime() + 1))) {
-        // Rangé seulement si cette version est encore celle allumée, dans la même écriture : un arrêt venu entre-temps
-        // ne laisse naître aucun passage [R401].
+        // Rangé seulement si l'allumage lu est encore le dernier état du scénario, dans la même écriture : un arrêt, ou
+        // un arrêt suivi d'un nouvel allumage, venu entre-temps ne laisse naître aucun passage d'avant [R401].
         const inserted = await this.db.run(
           `INSERT OR IGNORE INTO automation_runs (id, network_id, scenario_id, version, trigger_ref, person_id, triggered_at, due_at, status, created_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'a_faire', ? WHERE ${STILL_LIT}`,
-          [this.newId(), networkId, s.scenarioId, s.version, fact.ref, fact.personId, fact.at, this.dueAt(def, fact.at).toISOString(), now.toISOString(), s.scenarioId, s.version, s.scenarioId],
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'a_faire', ? WHERE ${SAME_SWITCH}`,
+          [this.newId(), networkId, s.scenarioId, s.version, fact.ref, fact.personId, fact.at, this.dueAt(def, fact.at).toISOString(), now.toISOString(), s.scenarioId, s.seq],
         );
         report.created += inserted.changes;
       }
@@ -563,11 +565,16 @@ export class ScenariosAutomatiques {
     let messageRule: string | null = null;
     let messageId: string | null = null;
     const subject = `scenario:${run.scenario_id}:${run.trigger_ref}`;
-    // Repris après une panne, un message déjà parti l'est resté : il garde sa place du jour, rien ne repart [R05, R402].
+    // Repris après une panne, un message déjà remis à la boîte d'essai l'est resté : il garde sa place du jour, rien ne
+    // repart [R05, R402]. Un sujet rangé sans remise n'en est pas un : le contrôle central le refusera, place rendue.
     const alreadySent =
       def.message === null
         ? null
-        : await this.db.first<{ message_id: string }>(`SELECT message_id FROM message_subjects WHERE subject = ? AND person_id IN (${members.map(() => '?').join(', ')}) LIMIT 1`, [subject, ...members]);
+        : await this.db.first<{ message_id: string }>(
+            `SELECT s.message_id FROM message_subjects s JOIN trial_outbox o ON o.message_id = s.message_id
+             WHERE s.subject = ? AND s.person_id IN (${members.map(() => '?').join(', ')}) LIMIT 1`,
+            [subject, ...members],
+          );
     if (alreadySent) {
       messageStatus = 'essai';
       messageId = alreadySent.message_id;
