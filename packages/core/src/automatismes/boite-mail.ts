@@ -311,6 +311,17 @@ export class BoiteMail {
     const conversationId = `email:${mail.provider}:${mail.threadId}`;
     let messageId = (await this.db.first<{ message_id: string | null }>('SELECT message_id FROM mailbox_mails WHERE id = ?', [mailId]))?.message_id ?? null;
     if (messageId === null) {
+      // Coupé entre le message et son lien : le même mail du même fil, à la même heure, est déjà dans la fiche.
+      const found = await this.db.first<{ id: string }>(
+        `SELECT id FROM messages WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND conversation_id = ? AND direction = 'in' AND channel = 'email' AND occurred_at = ? ORDER BY rowid LIMIT 1`,
+        [networkId, ...members, conversationId, mail.receivedAt.toISOString()],
+      );
+      if (found) {
+        messageId = found.id;
+        await this.db.run('UPDATE mailbox_mails SET person_id = ?, project_id = ?, message_id = ? WHERE id = ?', [personId, projectId, messageId, mailId]);
+      }
+    }
+    if (messageId === null) {
       const body = maskIban(String(mail.body ?? '').slice(0, MAX_BODY)).trim() || '(mail sans texte)';
       const person = await this.store.getPerson(personId);
       const message = await this.store.recordMessage({ networkId, agentId: person?.agent_id ?? null, personId, projectId, conversationId, channel: 'email', direction: 'in', authorKind: 'person', body, occurredAt: mail.receivedAt });
@@ -322,13 +333,14 @@ export class BoiteMail {
     const outcomes: AttachmentOutcome[] = [];
     const kept: string[] = [];
     const seen = new Set<string>();
-    for (const a of mail.attachments) {
+    for (const [position, a] of mail.attachments.entries()) {
       const sha = await sha256Hex(a.bytes);
       if (seen.has(sha)) continue;
       seen.add(sha);
       let outcome: AttachmentOutcome;
       let attachmentId: string | null = null;
-      const judged = seen.size > MAX_ATTACHMENTS ? ({ ok: false, outcome: 'trop' } as const) : judgeAttachment(a);
+      // La limite tient à la place de la pièce dans le mail, doublons compris.
+      const judged = position >= MAX_ATTACHMENTS ? ({ ok: false, outcome: 'trop' } as const) : judgeAttachment(a);
       if (!judged.ok) outcome = judged.outcome;
       else if (projectId === null) outcome = 'en_attente';
       else {

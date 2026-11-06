@@ -252,6 +252,34 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     expect(await t.db.all("SELECT status FROM mailbox_mails ORDER BY received_at")).toEqual([{ status: 'rattache' }, { status: 'rattache' }]);
   });
 
+  it('[R410] coupé entre le message et son lien, le mail repris ne double pas le message ; la limite de 20 pièces tient à leur place [R18]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    // Panne juste après le message : le lien vers la fiche n'est pas écrit.
+    const realRun = t.db.run.bind(t.db);
+    let fail = true;
+    (t.db as { run: typeof t.db.run }).run = async (sql, params) => {
+      if (fail && sql.startsWith('UPDATE mailbox_mails SET person_id')) {
+        fail = false;
+        throw new Error('coupure (test)');
+      }
+      return realRun(sql, params);
+    };
+    const dup = jpeg(40_000);
+    const pieces = [att('a.jpg', 'image/jpeg', dup), att('a-bis.jpg', 'image/jpeg', dup), ...Array.from({ length: 19 }, (_, i) => att(`p-${i}.jpg`, 'image/jpeg', jpeg(41_000 + i)))];
+    const mail = t.mail('noa@example.test', 'Un mot et des photos', pieces);
+    await expect(t.boite.sort(me, mail)).rejects.toThrow('coupure');
+    const again = await t.boite.sort(me, mail);
+    if (!again.ok) throw new Error('tri attendu');
+    expect(await t.db.all("SELECT id FROM messages WHERE body = 'Un mot et des photos'")).toHaveLength(1);
+    // 21 pièces dont un doublon parmi les 20 premières : la 21e reste à l'agent.
+    expect(again.value.attachments.filter((o) => o === 'range')).toHaveLength(19);
+    expect(again.value.attachments.at(-1)).toBe('trop');
+    expect(t.puts).toHaveLength(19);
+  });
+
   it('[R409] une fiche passée à un autre agent depuis le tri : sa réponse n’est plus montrée ni validable [R16]', async () => {
     const t = await setup();
     const me = t.asAgent(t.alex.id);
