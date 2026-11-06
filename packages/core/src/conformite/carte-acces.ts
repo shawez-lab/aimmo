@@ -264,6 +264,8 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   candidate: { excluded: 'candidat', why: 'Un candidat au réseau.' },
   partner: { excluded: 'partenaire', why: 'Un partenaire professionnel.' },
   partner_prospect: { excluded: 'partenaire', why: 'Un futur partenaire.' },
+  partner_agency: { excluded: 'partenaire', why: 'Une agence partenaire, un professionnel (HX01).' },
+  agency_share: { excluded: 'partenaire', why: 'Un bien partagé avec une agence partenaire : ni nom ni montant d\'un client (HX01).' },
   pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
@@ -516,6 +518,17 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // partenaires : les mises en relation du client, par son projet.
   partners: out('partenaire', 'Fiche du partenaire.'),
   partner_zones: out('partenaire', 'Zones du partenaire.'),
+  // HX01 : le partage d'un bien avec une agence partenaire ne porte aucune personne ; un relevé porte les honoraires
+  // d'un dossier, déjà rendus par la commission du dossier.
+  partner_agencies: out('partenaire', 'Une agence partenaire, un professionnel.'),
+  agency_shares: out('partenaire', 'Un bien partagé avec une agence.'),
+  agency_delegations: out('partenaire', 'Le bon de délégation entre agences.'),
+  agency_delegation_steps: out('partenaire', 'Accord et signature du bon de délégation.'),
+  agency_visits: out('partenaire', 'Co-visite demandée par une agence.'),
+  agency_visits_done: out('partenaire', 'Co-visite faite.'),
+  agency_delegation_files: out('partenaire', 'Dossier de vente rattaché à une délégation.'),
+  agency_fee_statements: out('partenaire', 'Relevé du partage d\'honoraires entre agences.'),
+  agency_partner_invoices: out('partenaire', 'Facture de rétrocession reçue d\'une agence.'),
   partner_credentials: out('partenaire', 'Justificatifs du partenaire.'),
   partner_credential_alerts: out('partenaire', 'Alertes des justificatifs du partenaire.'),
   partner_referrals: { locate: [via('project_id', 'projects')] },

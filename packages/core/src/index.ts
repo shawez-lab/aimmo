@@ -44,6 +44,8 @@ export * as investir from './investir/index.ts';
 export * as commerces from './commerces/index.ts';
 // M19 sous son propre nom, comme M17 (X10).
 export * as studio from './studio/index.ts';
+// HX01 sous son propre nom, comme M19.
+export * as partage from './partage/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
