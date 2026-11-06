@@ -326,8 +326,15 @@ export class Factures {
     }
     const built = factureElectronique({ content: v.content, seller, buyer });
     if (!built.ok) {
-      const seen = (await this.journal.bySubject(`sale_file:${v.fileId}`)).some((e) => e.type === 'facture.facturx_attente' && e.data.label === v.content.label);
-      if (!seen) await appendEvent(this.journal, { type: 'facture.facturx_attente', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, missing: built.missing.map((m) => m.split(' ')[0]!) } }, this.now);
+      // Une fois par manque, avec sa règle EN 16931 : un manque nouveau (une identité donnée sans son adresse, par
+      // exemple) va au journal même si la facture attendait déjà pour autre chose.
+      const before = new Set(
+        (await this.journal.bySubject(`sale_file:${v.fileId}`))
+          .filter((e) => e.type === 'facture.facturx_attente' && e.data.label === v.content.label)
+          .flatMap((e) => (Array.isArray(e.data.missing) ? (e.data.missing as string[]) : [])),
+      );
+      const fresh = built.missing.filter((m) => !before.has(m));
+      if (fresh.length > 0) await appendEvent(this.journal, { type: 'facture.facturx_attente', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, missing: fresh } }, this.now);
       return null;
     }
     await this.db.run('INSERT INTO invoice_facturx (invoice_id, profile, xml, sha256, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [invoiceId, FACTURX_PROFILE, built.xml, await sha256(built.xml), this.now().toISOString()]);

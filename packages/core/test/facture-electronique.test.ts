@@ -204,10 +204,18 @@ describeWithSqlite('HX04 · facture électronique, partie seule le jour de l’a
     expect(t.plateforme.xml.size).toBe(0);
     const waiting = (await t.journal.all()).filter((e) => e.type === 'facture.facturx_attente');
     expect(waiting.map((e) => e.data.missing)).toEqual([
-      ['emetteur', 'client'],
-      ['emetteur', 'client'],
+      ['emetteur (BR-06)', 'client (BR-07)'],
+      ['emetteur (BR-06)', 'client (BR-07)'],
     ]);
     expect(JSON.stringify(waiting)).not.toMatch(/Acheteur|Alex/);
+    // Les identités arrivent sans l'adresse du client : ce manque nouveau va au journal, une fois, avec sa règle.
+    const partial = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: t.plateforme, identites: { emetteur: IDENTITES.emetteur, client: async () => ({ ...CLIENT, address: { ...CLIENT.address, line1: '' } }) } });
+    await partial.reconcile(t.network.id);
+    await partial.reconcile(t.network.id);
+    const after = (await t.journal.all()).filter((e) => e.type === 'facture.facturx_attente').slice(2);
+    expect(after.map((e) => e.data.missing)).toEqual([['client.adresse.ligne (BR-10)']]);
+    // Le reversement, dont le client est la société du réseau, reçoit son XML.
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM invoice_facturx')).toEqual({ n: 1 });
   });
 
   it('[R254] une facture partie en essai sans XML reçoit son Factur-X dès que les identités sont données ; une panne des identités n’arrête rien', async () => {
