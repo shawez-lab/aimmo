@@ -214,7 +214,7 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 - Critères : chaque action proposée cite sa raison (test) ; aucun message de date sans date donnée et accord rangé (test) ; un filtre ne montre jamais une fiche hors des droits de l'agent (test).
 
 ### HX26 · Tri de la boîte mail de l'agent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Talqor : trier les mails, préparer les réponses, relier Gmail, Outlook et Drive. Jamais vu : chaque mail est rattaché à sa fiche et à son dossier, les pièces jointes utiles sont rangées dans le bon dossier, et la réponse préparée cite ce qu'elle reprend du dossier ; rien ne part sans validation.
 - Critères : un mail d'un client connu est rattaché à sa fiche (test) ; aucune réponse envoyée sans validation (test) ; une pièce jointe est rangée une seule fois, par son empreinte (test).
 
