@@ -344,14 +344,32 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
   });
 });
 
+const SECOND_FILE_DROP = 'DROP TABLE sale_files;';
+
 describe('[R17] le code n’efface aucune donnée', () => {
+  it('[R17] l’exception H51 : un seul DROP, sur `sale_files`, après une recopie vérifiée complète, et nulle part ailleurs', () => {
+    const exceptions = readdirSync(migrationsDir).filter((f) => /\bDROP\s+TABLE\b/i.test(readFileSync(migrationsDir + f, 'utf8').replace(/^\s*--.*$/gm, '')));
+    expect(exceptions).toEqual(['1760_second_dossier.sql']);
+    const sql = readFileSync(migrationsDir + '1760_second_dossier.sql', 'utf8').replace(/^\s*--.*$/gm, '');
+    expect(sql.match(/\bDROP\b/gi)).toHaveLength(1);
+    const drop = sql.indexOf(SECOND_FILE_DROP);
+    const copy = sql.indexOf('INSERT INTO sale_files_refaite');
+    const check = sql.indexOf('INSERT INTO sale_files_recopie');
+    expect(copy).toBeGreaterThan(-1);
+    expect(check).toBeGreaterThan(copy);
+    expect(drop).toBeGreaterThan(check);
+    expect(sql).toMatch(/complete INTEGER NOT NULL CHECK \(complete = 1\)/);
+  });
+
   const files = (dir: string): string[] =>
     readdirSync(dir).flatMap((f) => (statSync(dir + f).isDirectory() ? files(`${dir}${f}/`) : [dir + f]));
 
   it('aucun DELETE, DROP ni TRUNCATE dans le code du cœur ni dans les migrations', () => {
     const src = fileURLToPath(new URL('../src/', import.meta.url));
     for (const file of [...files(src), ...files(migrationsDir)]) {
-      const text = readFileSync(file, 'utf8').replace(/^\s*(--|\/\/|\*).*$/gm, '');
+      let text = readFileSync(file, 'utf8').replace(/^\s*(--|\/\/|\*).*$/gm, '');
+      // La seule exception, décidée par Shawez (H51) : `sale_files` refaite pour un second dossier, testée à part.
+      if (file.endsWith('/1760_second_dossier.sql')) text = text.replace(SECOND_FILE_DROP, '');
       expect(text, file).not.toMatch(/\bDELETE\s+FROM\b|\bDROP\s+(TABLE|INDEX|VIEW)\b|\bTRUNCATE\b|ON DELETE CASCADE/i);
     }
   });

@@ -21,7 +21,7 @@ const REFUSALS = {
   already_answered: 'Une réponse est déjà rangée.',
   already_recorded: 'Cette proposition est déjà rangée.',
   already_open: 'Le dossier de vente est déjà ouvert.',
-  previous_file_stopped: 'Ce bien a déjà un dossier arrêté : un nouveau dossier n’est pas encore possible. Voyez avec la direction.',
+  previous_file_stopped: 'Le dossier de cette offre a été arrêté : un nouveau dossier s’ouvre sur une nouvelle offre acceptée.',
   already_started: 'Le compromis est déjà en préparation.',
   not_transmitted: 'Transmettez d’abord, puis rapportez la réponse.',
   no_counter_asked: 'Aucune contre-offre n’attend de proposition.',
