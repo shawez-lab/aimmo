@@ -193,6 +193,10 @@ describe('assistant juridique (HX03)', () => {
     expect(one('cch-l271-1', 'Le délai est de 2015 jours depuis la loi de 2015.').ok).toBe(false);
     expect(one('copro-46', 'Au-delà de 1997 m² la mention n’est plus due.').ok).toBe(false);
     expect(one('cch-l271-1', 'Il paie une pénalité de 2000 dollars.').ok).toBe(false);
+    expect(one('hoguet-6', 'Les honoraires sont plafonnés à un million d’euros.').ok).toBe(false);
+    expect(one('hoguet-6', 'Les honoraires sont au plus le double du prix.').ok).toBe(false);
+    expect(one('hoguet-6', 'Il faut une dizaine de mandats.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Aucun frais : l’acquéreur a dix jours.').ok).toBe(false);
     expect(one('cch-l271-1', 'Il perd un dépôt de 2000, en euros.').ok).toBe(false);
     expect(one('copro-46', 'Au-delà d’un lot de 1997 m la mention n’est plus due.').ok).toBe(false);
     expect(one('copro-46', 'Le seuil de 8 m² vient du décret de 1997.').ok).toBe(true);
@@ -220,6 +224,9 @@ describe('assistant juridique (HX03)', () => {
       expect(out).not.toContain('Gérard');
     }
     expect(scrubQuestion('Mon client M. Dupont peut-il se rétracter ?')).toBe('Mon client M. … peut-il se rétracter ?');
+    // Un nom mis entre crochets par l'agent n'est pas une marque du filtre.
+    expect(scrubQuestion('Mon client [Dupont] veut se rétracter du compromis.')).not.toContain('Dupont');
+    expect(scrubQuestion('Mon client [Dupont] veut se rétracter du compromis.')).toBe('Mon client […] veut se rétracter du compromis.');
   });
 
   it('[R15] l’IA ne reçoit ni nom ni coordonnée, et seulement les textes retenus', async () => {

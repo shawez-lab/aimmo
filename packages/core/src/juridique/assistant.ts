@@ -181,6 +181,8 @@ const QUESTION_WORDS = new Set(
   ).split(' '),
 );
 const WORD = /[\p{L}]+/gu;
+/** Les seules marques entre crochets posées par les filtres : un autre mot entre crochets est un mot comme un autre. */
+const REDACTION_MARKERS = new Set(['nom', 'mail', 'adresse', 'téléphone', 'date', 'compte']);
 
 /** Les mots qu'une bibliothèque emploie : ceux-là aussi passent à l'IA. */
 function libraryWords(library: readonly LegalSource[]): Set<string> {
@@ -205,7 +207,7 @@ export function scrubQuestion(question: string, library: readonly LegalSource[] 
   let last = 0;
   for (const m of out.matchAll(WORD)) {
     const k = plain(m[0]);
-    const inBrackets = out[m.index! - 1] === '[' && out[m.index! + m[0].length] === ']';
+    const inBrackets = out[m.index! - 1] === '[' && out[m.index! + m[0].length] === ']' && REDACTION_MARKERS.has(m[0]);
     if (inBrackets || QUESTION_WORDS.has(k) || allowed.has(k)) continue;
     result += out.slice(last, m.index!) + '…';
     last = m.index! + m[0].length;
@@ -310,6 +312,19 @@ export function quantitiesIn(text: string): { withUnit: Set<string>; bare: Set<s
   return { withUnit, bare };
 }
 
+/**
+ * Les mots qui disent une quantité sans chiffre (« un million », « le double », « une dizaine ») : un seul absent du
+ * résumé des textes cités, et le paragraphe est refusé [R251].
+ */
+const QUANTITY_WORDS = /^(?:millions?|milliards?|milliers?|centaines?|dizaines?|douzaines?|quinzaines?|vingtaines?|trentaines?|double|doubles|triple|triples|quadruple|moities?|moitie|tiers|quarts?|demi|demie|cents|mille|vingts|zero|aucun|nul)$/;
+
+/** Les mots de quantité sans chiffre qu'un texte emploie. */
+function quantityWordsIn(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of plain(text).matchAll(/[a-z]+/g)) if (QUANTITY_WORDS.test(m[0])) out.add(m[0].replace(/s$/, ''));
+  return out;
+}
+
 /** Les promesses et tournures qu'un assistant juridique n'écrit jamais. */
 export const FORBIDDEN_LEGAL_PHRASES: readonly string[] = [
   'je vous garantis',
@@ -393,6 +408,8 @@ export function checkDraft(draft: unknown, facts: LegalFacts): { ok: true; draft
       years.push(...r.years);
     }
     const said = quantitiesIn(withoutReferences(text, refs, years));
+    const summaryWords = new Set(ids.flatMap((id) => [...quantityWordsIn(given.get(id)?.summary ?? '')]));
+    if ([...quantityWordsIn(text)].some((w) => !summaryWords.has(w))) problems.add('nombre_sans_source');
     if ([...said.withUnit].some((q) => !withUnit.has(q)) || [...said.bare].some((n) => !bare.has(n))) problems.add('nombre_sans_source');
     const w = words(text);
     if (FORBIDDEN_LEGAL_PHRASES.some((f) => has(w, f))) problems.add('tournure_interdite');
