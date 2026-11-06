@@ -416,32 +416,41 @@ function icsTime(p: { params: string; value: string } | undefined): Date {
   return parisInstant(date, Number(m[4]) * 60 + Number(m[5])) ?? EPOCH;
 }
 
-/** Une durée iCalendar (`PT1H`, `P1D`, `P2W`, `-PT5M` refusée), en millisecondes ; `null` si illisible. */
-function icsDuration(value: string): number | null {
-  const m = /^\+?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value.trim());
-  if (!m || value.trim() === 'P' || /T$/.test(value.trim())) return null;
+/** Une durée iCalendar (`PT1H`, `P1D`, `P2W`) : jours de calendrier, et le reste en millisecondes ; `null` si illisible. */
+function icsDuration(value: string): { days: number; ms: number } | null {
+  const v = value.trim();
+  const m = /^\+?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(v);
+  if (!m || /P$|T$/.test(v)) return null;
   const [w, d, h, min, sec] = m.slice(1).map((x) => Number(x ?? 0)) as [number, number, number, number, number];
-  return ((((w * 7 + d) * 24 + h) * 60 + min) * 60 + sec) * 1000;
+  return { days: w * 7 + d, ms: ((h * 60 + min) * 60 + sec) * 1000 };
 }
 
+const addDaysTo = (date: string, days: number): string => {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+
 /**
- * La fin d'un VEVENT (RFC 5545, 3.6.1) : DTEND, sinon DTSTART plus DURATION ; sans l'un ni l'autre, une date seule
- * dure un jour, une heure ne dure rien.
+ * La fin d'un VEVENT (RFC 5545, 3.6.1 et 3.3.6) : DTEND, sinon DTSTART plus DURATION, les jours comptés en jours de
+ * calendrier à l'heure de Paris (changement d'heure compris) ; sans l'un ni l'autre, une date seule dure un jour, une
+ * heure ne dure rien.
  */
 function icsEnd(e: Map<string, { params: string; value: string }>): Date {
   const start = icsTime(e.get('DTSTART'));
   if (e.get('DTEND')) return icsTime(e.get('DTEND'));
-  const duration = e.get('DURATION');
-  if (duration) {
-    const ms = icsDuration(duration.value);
-    return ms === null ? start : new Date(start.getTime() + ms);
+  const raw = e.get('DTSTART')?.value.trim() ?? '';
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(raw);
+  const duration = e.get('DURATION') ? icsDuration(e.get('DURATION')!.value) : m && m[4] === undefined ? { days: 1, ms: 0 } : null;
+  if (!duration || !m) return start;
+  let base: Date;
+  if (duration.days === 0 || m[7]) base = new Date(start.getTime() + duration.days * 86_400_000);
+  else {
+    // Heure locale ou date seule : on avance la date, puis on reprend la même heure de Paris.
+    const minutes = m[4] === undefined ? 0 : Number(m[4]) * 60 + Number(m[5]);
+    base = parisInstant(addDaysTo(`${m[1]}-${m[2]}-${m[3]}`, duration.days), minutes) ?? start;
+    if (m[6] && m[4] !== undefined) base = new Date(base.getTime() + Number(m[6]) * 1000);
   }
-  const dateOnly = /^\d{8}$/.test(e.get('DTSTART')?.value.trim() ?? '');
-  if (!dateOnly) return start;
-  // Un jour de calendrier, heure de Paris, changement d'heure compris.
-  const v = e.get('DTSTART')!.value.trim();
-  const next = new Date(Date.UTC(Number(v.slice(0, 4)), Number(v.slice(4, 6)) - 1, Number(v.slice(6, 8)) + 1)).toISOString().slice(0, 10);
-  return parisInstant(next, 0) ?? start;
+  return new Date(base.getTime() + duration.ms);
 }
 
 const icsEscape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');

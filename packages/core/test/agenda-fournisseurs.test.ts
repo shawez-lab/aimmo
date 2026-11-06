@@ -228,6 +228,14 @@ describeWithSqlite('HX02 · Apple et Outlook : récurrences, heures locales, fen
       });
   });
 
+  it('[R33] une durée en jours se compte en jours de calendrier à l’heure de Paris, changement d’heure compris', async () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a', 'DTSTART;TZID=Europe/Paris:20261024T100000', 'DURATION:P2D', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const xml = `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:response><D:href>/c/a.ics</D:href><D:propstat><D:prop><C:calendar-data>${ics}</C:calendar-data></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>`;
+    const fetch = async () => new Response(xml, { status: 207 });
+    const events = await new AppleAgenda({ fetch, authorization: async () => 'x' }, async () => 'https://caldav.example.test/c/').events('agent', at('2026-10-26', '09:00'), at('2026-10-26', '10:00'));
+    expect(events.map((e) => e.end.toISOString())).toEqual([at('2026-10-26', '10:00').toISOString()]);
+  });
+
   it('Outlook : un retrait rendu pour un événement sorti de la fenêtre n’annule pas le rendez-vous', async () => {
     const server = SERVERS[1]!();
     const w = await world(server);
