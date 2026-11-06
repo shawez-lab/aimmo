@@ -512,8 +512,16 @@ export class ScenariosAutomatiques {
     );
     for (const run of due) {
       if (litVersion.get(run.scenario_id) !== run.version) {
-        await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE id = ? AND status = 'a_faire'", [now.toISOString(), run.id]);
-        continue;
+        // Annulé seulement si sa version n'est vraiment plus allumée, lu dans la même écriture : un allumage venu après
+        // la lecture des scénarios garde ses passages [R401].
+        const cancelled = await this.db.run(`UPDATE automation_runs SET status = 'annule', done_at = ? WHERE id = ? AND status = 'a_faire' AND NOT ${STILL_LIT}`, [
+          now.toISOString(),
+          run.id,
+          run.scenario_id,
+          run.version,
+          run.scenario_id,
+        ]);
+        if (cancelled.changes === 1) continue;
       }
       const def = await this.definitionOf(run.scenario_id, run.version);
       // Le soir ou le dimanche, le passage attend la prochaine heure permise, sans rien prendre [R01].

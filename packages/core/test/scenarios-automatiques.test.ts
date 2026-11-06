@@ -485,4 +485,37 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, tasks: 1 });
     expect(await t.count('automation_tasks')).toBe(1);
   });
+
+  it('[R401] un planificateur en retard n’annule jamais le passage d’un scénario allumé pendant qu’il tournait', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
+    const id = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, id);
+    const wrap = (all: SqlDatabase['all']): SqlDatabase => ({ ...t.db, exec: (sql) => t.db.exec(sql), run: (sql, params) => t.db.run(sql, params), first: (sql, params) => t.db.first(sql, params), all });
+    // Un second planificateur qui ne fait que ranger les passages.
+    const second = new ScenariosAutomatiques(
+      wrap(async <T,>(sql: string, params?: readonly (string | number | null)[]) => (sql.includes("status = 'a_faire' AND due_at") ? [] : t.db.all<T>(sql, params as never))),
+      t.journal,
+      { now: () => new Date(TUE_10H) },
+    );
+    // Le premier lit les scénarios allumés (aucun) ; pendant ce temps, l'allumage, un contact, et le second qui range.
+    let interleaved = false;
+    const first = new ScenariosAutomatiques(
+      wrap(async <T,>(sql: string, params?: readonly (string | number | null)[]) => {
+        const rows = await t.db.all<T>(sql, params as never);
+        if (!interleaved && sql.includes('FROM automation_switches s')) {
+          interleaved = true;
+          expect(await t.scenarios.switchOn(t.direction, id)).toMatchObject({ ok: true });
+          await t.person('Inès');
+          expect(await second.tick(t.network.id)).toMatchObject({ created: 1 });
+        }
+        return rows;
+      }),
+      t.journal,
+      { now: () => new Date(TUE_10H) },
+    );
+    expect(await first.tick(t.network.id)).toMatchObject({ created: 0, messagesInTrial: 1 });
+    expect(interleaved).toBe(true);
+    expect(await t.db.all('SELECT status, message_status FROM automation_runs')).toEqual([{ status: 'fait', message_status: 'essai' }]);
+  });
 });
