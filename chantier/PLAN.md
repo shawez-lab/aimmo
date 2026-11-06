@@ -38,6 +38,40 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
 - Critères : chaque écran passe un contrôle d'accessibilité automatique et un budget de performance (tests) ; aucun écran en dehors du système de design (test) ; Codex relit aussi les captures.
 
+## Phase 3 : faire mieux que Hektor et Modelo (demande de Shawez du 2026-11-06)
+
+Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de client copiée) et dans les présentations publiques de Hektor, Hektor Voice et Modelo. Ce qu'AIMMO a déjà est écarté ; voici ce qui manque. Chaque tâche fait la même chose qu'eux ET un pas de plus, écrit dans « Jamais vu ». Relecture forte pour toutes. Section 9 du protocole.
+
+### HX01 · Partage de biens entre agences et partage d'honoraires
+- Statut : à faire
+- Objectif : comme Interkab (Hektor) : publier un bien aux autres agences du réseau et aux agences partenaires, demander une co-visite, envoyer la fiche, signer un bon de délégation qui fixe le partage des honoraires. Jamais vu : le partage est calculé et garanti par le code jusqu'à l'acte, et chaque agence voit en direct où en est le dossier, sans appeler.
+- Critères : délégation signée avant toute visite (test) ; partage appliqué à la facture (test) ; aucune coordonnée du vendeur donnée à l'autre agence avant la signature de la délégation (test).
+
+### HX02 · Agenda relié à Google, Outlook et Apple
+- Statut : à faire
+- Objectif : synchronisation dans les deux sens avec Google Agenda, Outlook et Apple, et rappels de rendez-vous par SMS ou mail aux acheteurs. Jamais vu : l'appli propose elle-même le meilleur créneau en tenant compte des trajets entre visites.
+- Critères : un rendez-vous ajouté d'un côté apparaît de l'autre (tests avec faux serveurs) ; aucun doublon ; rappels sous le contrôle central (R01 à R05).
+
+### HX03 · Assistant juridique de l'agent
+- Statut : à faire
+- Objectif : comme Hektor Voice : l'agent pose une question juridique ou réglementaire et reçoit une réponse. Jamais vu : chaque réponse cite son texte de loi et sa date, et dit « je ne sais pas, voyez votre avocat » plutôt que d'inventer.
+- Critères : aucune réponse sans source citée (test) ; refus explicite quand aucune source ne couvre la question (test).
+
+### HX04 · Facture électronique
+- Statut : à faire
+- Objectif : la facturation électronique obligatoire en France : factures au format Factur-X, réception et émission par une plateforme agréée, comme le pousse Ma Boîte Immo. Jamais vu : la facture d'honoraires part toute seule le jour de l'acte, partage d'honoraires déjà déduit.
+- Critères : Factur-X valide (test) ; montants égaux à ceux du dossier (test) ; aucune facture émise deux fois (test).
+
+### HX05 · Annonces dans plusieurs langues et portails internationaux
+- Statut : à faire
+- Objectif : comme Hektor : diffusion vers les portails étrangers. Jamais vu : chaque annonce existe en anglais et dans les langues que parle l'agent (Shawez : anglais, ourdou, hindi, pendjabi, persan, arabe, grec), et l'appli répond à l'acheteur étranger dans sa langue.
+- Critères : chaque traduction garde les chiffres et mentions légales à l'identique (test) ; rien ne part sans validation de l'agent.
+
+### HX06 · Création d'un bien et d'un contact à la voix
+- Statut : à faire
+- Objectif : comme Hektor Voice : créer un bien, un contact ou un rendez-vous en parlant. Jamais vu : en sortant d'une visite, l'agent dicte une minute et l'appli remplit la fiche, l'avis de visite et la relance du vendeur, à valider d'un geste.
+- Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
