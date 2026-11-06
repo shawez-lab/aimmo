@@ -110,31 +110,42 @@ export interface AskOptions {
 const words = (text: string): string => ` ${plain(text).replace(/[^a-z0-9-]+/g, ' ').replace(/\s+/g, ' ').trim()} `;
 const has = (w: string, term: string): boolean => w.includes(` ${words(term).trim()} `);
 
-const DISPUTE_TERMS = [
-  'litige',
-  'proces',
-  'tribunal',
-  'assigner',
-  'assignation',
-  'plainte',
-  'porter plainte',
-  'poursuivre',
-  'poursuites',
-  'avocat adverse',
-  'mise en demeure',
-  'contentieux',
-  'attaquer en justice',
-  'en justice',
-  'condamne',
-  'condamnation',
-  'prud hommes',
-  'mediateur',
-];
+/** Les termes d'un litige, formes fléchies comprises (« tribunaux », « poursuivi », « assigné », « plainte déposée »). */
+const DISPUTE_WORDS = new RegExp(
+  `(?:^| )(?:${[
+    'litiges?',
+    'litigieu\\w*',
+    'proces',
+    'tribunal',
+    'tribunaux',
+    'assign\\w*',
+    'plaintes?',
+    'poursui\\w*',
+    'contentieu\\w*',
+    'condamn\\w*',
+    'prud hom\\w*',
+    'prudhom\\w*',
+    'mediat\\w*',
+    'justice',
+    'juges?',
+    'jugements?',
+    'huissiers?',
+    'commissaires? de justice',
+    'mise en demeure',
+    'mis en demeure',
+    'mettre en demeure',
+    'avocat adverse',
+    'dommages et interets',
+    'dommages interets',
+    'attaqu\\w*',
+    'recours',
+    'conflit\\w*',
+  ].join('|')})(?= |$)`,
+);
 
 /** La question porte-t-elle sur un litige ? Toujours renvoyée à l'avocat [R253]. */
 export function isDispute(question: string): boolean {
-  const w = words(question);
-  return DISPUTE_TERMS.some((t) => has(w, t));
+  return DISPUTE_WORDS.test(words(question).trim());
 }
 
 /** Les textes qui couvrent la question : ceux dont chaque groupe de termes y trouve un mot, les plus précis d'abord. */
@@ -161,7 +172,8 @@ export function coveringSources(question: string, library: readonly LegalSource[
 const MONTHS = 'janvier|fevrier|février|mars|avril|mai|juin|juillet|aout|août|septembre|octobre|novembre|decembre|décembre';
 const BORN = /\bn[ée]e?s?\s+(?:le|en|à|a)\s+[^,;.?!\n]*/giu;
 const DATE_DIGITS = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g;
-const DATE_WORDS = new RegExp(`\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})(?:\\s+\\d{4})?\\b`, 'giu');
+const DATE_WORDS = new RegExp(`(?:\\b\\d{1,2}(?:er)?\\s+)?(?<![\\p{L}])(?:${MONTHS})(?![\\p{L}])(?:\\s+(?:dernier|prochain|\\d{4}))?`, 'giu');
+const YEAR_ALONE = /(?<!\d)(?:19|20)\d{2}(?!\d)/g;
 /** Les mots outils et le vocabulaire d'une question d'agent, que l'IA peut lire : liste fermée [R15]. */
 const QUESTION_WORDS = new Set(
   (
@@ -201,7 +213,7 @@ function libraryWords(library: readonly LegalSource[]): Set<string> {
  * place, devient « … ».
  */
 export function scrubQuestion(question: string, library: readonly LegalSource[] = DEFAULT_LEGAL_LIBRARY, knownNames: readonly string[] = []): string {
-  const out = withoutContactDetails(withoutNames(question, knownNames)).replace(BORN, '[date]').replace(DATE_DIGITS, '[date]').replace(DATE_WORDS, '[date]');
+  const out = withoutContactDetails(withoutNames(question, knownNames)).replace(BORN, '[date]').replace(DATE_DIGITS, '[date]').replace(DATE_WORDS, '[date]').replace(YEAR_ALONE, '[date]');
   const allowed = libraryWords(library);
   let result = '';
   let last = 0;

@@ -224,6 +224,12 @@ describe('assistant juridique (HX03)', () => {
       expect(out).not.toContain('Gérard');
     }
     expect(scrubQuestion('Mon client M. Dupont peut-il se rétracter ?')).toBe('Mon client M. … peut-il se rétracter ?');
+    // Une date sans jour, un mois seul ou une année ne partent pas non plus.
+    for (const q of ['Mon client a signé le compromis en janvier 2026, peut-il se rétracter ?', 'Signé en mars dernier, peut-il se rétracter ?', 'Compromis de 2025 : peut-il se rétracter ?']) {
+      const out = scrubQuestion(q);
+      for (const leak of ['janvier', '2026', 'mars', '2025']) expect(out).not.toContain(leak);
+      expect(out).toContain('[date]');
+    }
     // Un nom mis entre crochets par l'agent n'est pas une marque du filtre.
     expect(scrubQuestion('Mon client [Dupont] veut se rétracter du compromis.')).not.toContain('Dupont');
     expect(scrubQuestion('Mon client [Dupont] veut se rétracter du compromis.')).toBe('Mon client […] veut se rétracter du compromis.');
@@ -250,6 +256,16 @@ describe('assistant juridique (HX03)', () => {
     const w = writer(() => ({ kind: 'unknown' }));
     const a = await askLegal('L’acheteur menace d’aller au tribunal sur son délai de réflexion, que faire ?', { library: LIB, writer: w, now });
     expect(a).toEqual({ status: 'litige', text: DISPUTE, citations: [], notice: LAWYER_NOTICE });
+    expect(w.seen).toHaveLength(0);
+    for (const q of [
+      'Je suis poursuivi devant les tribunaux, puis-je toucher mes honoraires avant l’acte ?',
+      'Le vendeur m’a assigné : puis-je toucher mes honoraires avant l’acte ?',
+      'L’acquéreur a déposé plainte, peut-il se rétracter du compromis ?',
+      'Après une mise en demeure, l’acquéreur peut-il se rétracter du compromis ?',
+      'Le juge peut-il annuler le compromis si l’acquéreur veut se rétracter ?',
+    ]) {
+      expect((await askLegal(q, { writer: w, now })).status).toBe('litige');
+    }
     expect(w.seen).toHaveLength(0);
   });
 
