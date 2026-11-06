@@ -22,6 +22,9 @@ export interface LegalSource {
   origin: string;
   /** La date de ce texte d'origine, AAAA-MM-JJ. La version en vigueur peut être plus récente : voir `checkedOn`. */
   textDate: string;
+  /** Le texte qui a donné au résumé sa teneur actuelle (souvent le même que `origin`), et sa date, AAAA-MM-JJ. */
+  wording: string;
+  wordingDate: string;
   /** Ce que dit le texte, sans rien y ajouter. Seuls ses nombres, avec leur unité, peuvent être écrits dans une réponse [R251]. */
   summary: string;
   /**
@@ -49,6 +52,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article 6',
     origin: 'loi n° 70-9 du 2 janvier 1970',
     textDate: '1970-01-02',
+    wording: 'loi n° 70-9 du 2 janvier 1970',
+    wordingDate: '1970-01-02',
     summary:
       'Les conventions conclues avec l’agent immobilier doivent être rédigées par écrit. Aucune somme représentative d’honoraires, de frais de recherche, de démarche, de publicité ou d’entremise n’est due à l’agent, ni ne peut être exigée ou acceptée par lui, avant que l’opération ait été effectivement conclue et constatée dans un seul acte écrit contenant l’engagement des parties.',
     match: [
@@ -66,6 +71,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article L271-1',
     origin: 'loi n° 2000-1208 du 13 décembre 2000 (SRU)',
     textDate: '2000-12-13',
+    wording: 'loi n° 2015-990 du 6 août 2015 (délai porté à 10 jours)',
+    wordingDate: '2015-08-06',
     summary:
       'L’acquéreur non professionnel d’un immeuble à usage d’habitation peut se rétracter dans un délai de 10 jours à compter du lendemain de la première présentation de la lettre lui notifiant l’acte (promesse ou compromis).',
     match: [RETRACT, ['acquereur', 'acheteur', 'compromis', 'promesse', 'avant-contrat', 'avant contrat']],
@@ -80,6 +87,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article L271-4',
     origin: 'ordonnance n° 2005-655 du 8 juin 2005',
     textDate: '2005-06-08',
+    wording: 'ordonnance n° 2005-655 du 8 juin 2005',
+    wordingDate: '2005-06-08',
     summary:
       'En cas de vente de tout ou partie d’un immeuble bâti, un dossier de diagnostic technique, fourni par le vendeur, est annexé à la promesse de vente ou, à défaut, à l’acte authentique de vente.',
     match: [['diagnostic', 'diagnostics', 'ddt'], ['vente', 'vendre', 'vendeur', 'compromis', 'promesse', 'fournir', 'annexer', 'annexe']],
@@ -94,6 +103,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article 46',
     origin: 'loi n° 96-1107 du 18 décembre 1996 (loi Carrez)',
     textDate: '1996-12-18',
+    wording: 'loi n° 96-1107 du 18 décembre 1996, seuil de 8 m² fixé par le décret n° 97-532 du 23 mai 1997',
+    wordingDate: '1997-05-23',
     summary:
       'Toute promesse et tout acte de vente d’un lot de copropriété mentionnent la superficie de la partie privative de ce lot, sauf pour les caves, garages, emplacements de stationnement et les lots d’une superficie inférieure à 8 m² (seuil fixé par décret). Sans cette mention, l’acquéreur peut demander la nullité de l’acte au plus tard dans un délai d’un mois à compter de l’acte authentique. Si la superficie réelle est inférieure de plus d’un vingtième à celle exprimée, le vendeur supporte une diminution du prix proportionnelle, à la demande de l’acquéreur intentée dans un délai d’un an à compter de l’acte authentique.',
     match: [['carrez', 'superficie', 'surface', 'metrage', 'mesurage'], ['copropriete', 'lot', 'appartement', 'privative', 'carrez']],
@@ -108,6 +119,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article L221-18',
     origin: 'ordonnance n° 2016-301 du 14 mars 2016',
     textDate: '2016-03-14',
+    wording: 'ordonnance n° 2016-301 du 14 mars 2016',
+    wordingDate: '2016-03-14',
     summary:
       'Le consommateur dispose d’un délai de 14 jours pour exercer son droit de rétractation d’un contrat conclu à distance ou hors établissement, sans avoir à motiver sa décision.',
     match: [RETRACT, ['hors etablissement', 'distance', 'domicile', 'en ligne', 'chez lui', 'chez elle', 'chez le client']],
@@ -122,6 +135,8 @@ export const DEFAULT_LEGAL_LIBRARY: readonly LegalSource[] = [
     article: 'article 1589',
     origin: 'loi du 6 mars 1804 (titre de la vente du Code civil)',
     textDate: '1804-03-06',
+    wording: 'loi du 6 mars 1804 (titre de la vente du Code civil)',
+    wordingDate: '1804-03-06',
     summary: 'La promesse de vente vaut vente lorsqu’il y a consentement réciproque des deux parties sur la chose et sur le prix.',
     match: [['promesse', 'compromis', 'offre acceptee', 'offre signee'], ['vaut vente', 'engage', 'engagement', 'definitif', 'oblige']],
     exclude: ['condition suspensive', 'conditions suspensives', 'retractation', 'retracter', 'unilaterale', 'indemnite d immobilisation'],

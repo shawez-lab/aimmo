@@ -43,7 +43,7 @@ export const NOT_VALIDATED = 'Texte pas encore relu par l’avocat du réseau.';
 /** Ce que l'IA reçoit : la question sans nom ni coordonnée, et les seuls textes retenus par le code. */
 export interface LegalFacts {
   question: string;
-  sources: { id: string; title: string; article: string; origin: string; textDate: string; summary: string }[];
+  sources: { id: string; title: string; article: string; origin: string; textDate: string; wording: string; wordingDate: string; summary: string }[];
 }
 
 /** Ce que l'IA rend : des paragraphes qui citent chacun leurs textes, ou l'aveu qu'elle ne sait pas. */
@@ -61,6 +61,9 @@ export interface Citation {
   /** Le texte qui a créé l'article, et sa date. */
   origin: string;
   textDate: string;
+  /** Le texte qui a donné au résumé sa teneur actuelle, et sa date : celle que la réponse cite d'abord. */
+  wording: string;
+  wordingDate: string;
   url: string | null;
   checkedOn: string | null;
   validatedBy: string | null;
@@ -159,42 +162,55 @@ const MONTHS = 'janvier|fevrier|février|mars|avril|mai|juin|juillet|aout|août|
 const BORN = /\bn[ée]e?s?\s+(?:le|en|à|a)\s+[^,;.?!\n]*/giu;
 const DATE_DIGITS = /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b/g;
 const DATE_WORDS = new RegExp(`\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})(?:\\s+\\d{4})?\\b`, 'giu');
-/** Les mots à majuscule qui ne sont jamais un nom de personne dans une question juridique. */
-const KEPT_CAPITALIZED = new Set(['carrez', 'hoguet', 'alur', 'elan', 'macron', 'pinel', 'boutin', 'sru', 'legifrance', 'code', 'loi', 'article', 'cour', 'cassation', 'conseil', 'etat', 'france', 'europe', 'notaire', 'mandat', 'compromis']);
-const WORD = /[\p{L}][\p{L}'’-]*/gu;
+/** Les mots outils et le vocabulaire d'une question d'agent, que l'IA peut lire : liste fermée [R15]. */
+const QUESTION_WORDS = new Set(
+  (
+    'le la les l un une des de du d au aux a à et ou en dans pour par sur sous avec sans ni ne n pas plus moins tres ' +
+    'je j me m moi mon ma mes tu te ton ta tes il elle ils elles on nous vous leur leurs son sa ses se s lui eux y ' +
+    'ce cet cette ces c ca cela ceci qui que qu quoi quel quelle quels quelles lequel laquelle dont ou quand comment ' +
+    'combien pourquoi est sont etre ete etait a ai as ont avoir avait peut peuvent pouvez puis-je puis doit doivent ' +
+    'dois devez faut faire fait font fais veut veulent voudrait souhaite si alors donc mais car apres avant pendant ' +
+    'depuis jusqu jusque entre fin debut jour jours mois an ans annee annees semaine semaines delai delais date ' +
+    'client clients cliente vendeur vendeurs vendeuse acquereur acquereurs acheteur acheteurs proprietaire locataire ' +
+    'agent agence notaire avocat banque mandat mandats bien biens maison appartement immeuble lot terrain parking cave ' +
+    'garage vente vendre vendu achat acheter achete signer signe signee signes signature contrat acte offre prix ' +
+    'honoraires commission frais somme sommes payer paye toucher verser obligatoire obligation obliger droit droits ' +
+    'loi lois code article texte regle regles legal legale legalement possible permis interdit valable nul nulle ' +
+    'oui non bien encore deja toujours jamais aussi meme autre autres premier premiere dernier derniere nouveau nouvelle ' +
+    'monsieur madame m mme mr me mlle selon carrez hoguet alur elan macron sru climat dpe ddt sci tva'
+  ).split(' '),
+);
+const WORD = /[\p{L}]+/gu;
+
+/** Les mots qu'une bibliothèque emploie : ceux-là aussi passent à l'IA. */
+function libraryWords(library: readonly LegalSource[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of library) {
+    const text = [s.title, s.article, s.summary, ...s.match.flat(), ...s.exclude].join(' ');
+    for (const m of plain(text).matchAll(/[a-z]+/g)) out.add(m[0]);
+  }
+  return out;
+}
 
 /**
  * La question telle que l'IA la reçoit [R15] : sans coordonnée, sans nom connu, sans date (une date de naissance ou de
- * signature ne sert pas à dire le droit), et sans aucun mot à majuscule qui pourrait être un nom : hors début de phrase,
- * tout mot à majuscule qui n'est ni un sigle ni un terme juridique connu devient « [nom] » ; en début de phrase aussi,
- * dès qu'il est suivi d'un autre mot ainsi retiré (« Jean Martin »).
+ * signature ne sert pas à dire le droit), et réduite à une liste fermée de mots : les mots outils, le vocabulaire d'une
+ * question d'agent et les mots de la bibliothèque. Tout autre mot, nom de personne compris, quelle que soit sa casse ou sa
+ * place, devient « … ».
  */
-export function scrubQuestion(question: string, knownNames: readonly string[] = []): string {
+export function scrubQuestion(question: string, library: readonly LegalSource[] = DEFAULT_LEGAL_LIBRARY, knownNames: readonly string[] = []): string {
   const out = withoutContactDetails(withoutNames(question, knownNames)).replace(BORN, '[date]').replace(DATE_DIGITS, '[date]').replace(DATE_WORDS, '[date]');
-  const tokens = [...out.matchAll(WORD)].map((m) => ({ text: m[0], at: m.index! }));
-  const isName = (t: string): boolean => {
-    if (!/^\p{Lu}/u.test(t)) return false;
-    if (t === t.toUpperCase() && t.replace(/[^\p{L}]/gu, '').length <= 6) return false; // sigle : DPE, SCI, M, MME
-    return !KEPT_CAPITALIZED.has(plain(t).replace(/['’-].*$/, ''));
-  };
-  const atStart = (at: number): boolean => /(?:^|[.!?:\n]\s*|["«(]\s*)$/u.test(out.slice(0, at));
-  const remove = new Set<number>();
-  tokens.forEach((t, i) => {
-    if (!isName(t.text)) return;
-    if (!atStart(t.at)) {
-      remove.add(i);
-      const prev = tokens[i - 1];
-      if (prev && isName(prev.text) && atStart(prev.at)) remove.add(i - 1);
-    }
-  });
+  const allowed = libraryWords(library);
   let result = '';
   let last = 0;
-  tokens.forEach((t, i) => {
-    if (!remove.has(i)) return;
-    result += out.slice(last, t.at) + '[nom]';
-    last = t.at + t.text.length;
-  });
-  return result + out.slice(last);
+  for (const m of out.matchAll(WORD)) {
+    const k = plain(m[0]);
+    const inBrackets = out[m.index! - 1] === '[' && out[m.index! + m[0].length] === ']';
+    if (inBrackets || QUESTION_WORDS.has(k) || allowed.has(k)) continue;
+    result += out.slice(last, m.index!) + '…';
+    last = m.index! + m[0].length;
+  }
+  return (result + out.slice(last)).replace(/…(?:[\s'’-]*…)+/g, '…');
 }
 
 const DAY = 86_400_000;
@@ -212,6 +228,8 @@ export function citationOf(s: LegalSource, now: Date): Citation {
     article: s.article,
     origin: s.origin,
     textDate: s.textDate,
+    wording: s.wording,
+    wordingDate: s.wordingDate,
     url: s.url,
     checkedOn: s.checkedOn,
     validatedBy: s.validatedBy,
@@ -310,6 +328,28 @@ export const FORBIDDEN_LEGAL_PHRASES: readonly string[] = [
   'inutile d appeler',
 ];
 
+const REFERENCE = new RegExp(
+  `\\b(?:articles?\\s+|art\\.?\\s*)?l\\.?\\s?\\d+(?:-\\d+)+\\b|\\b(?:articles?|art\\.?)\\s+\\d+(?:-\\d+)*\\b|\\bn°\\s*\\d+-\\d+\\b|\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})\\s+\\d{4}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b|\\b(?:1[6-9]|20)\\d{2}\\b`,
+  'giu',
+);
+const refKey = (t: string): string => plain(t).replace(/^(?:articles?|art\.?)\s*/, '').replace(/\s+/g, ' ').replace(/^l\.?\s?/, 'l').trim();
+
+/** Les références entières d'un texte : son article, ses numéros, ses dates complètes et ses années. */
+function referencesOf(s: LegalFacts['sources'][number]): string[] {
+  const out: string[] = [];
+  for (const t of [s.title, s.article, s.origin, s.wording, s.textDate, s.wordingDate]) {
+    for (const m of t.matchAll(REFERENCE)) out.push(refKey(m[0]));
+    // L'année seule d'une date complète du texte : « la loi de 2001 ».
+    for (const m of t.matchAll(/(?<!\d)(?:1[6-9]|20)\d{2}(?!\d)/g)) out.push(m[0]);
+  }
+  return out;
+}
+
+/** Le texte sans les références qui appartiennent aux textes cités ; une autre référence reste, et ses nombres comptent. */
+function withoutReferences(text: string, refs: readonly string[]): string {
+  return text.replace(REFERENCE, (m) => (refs.includes(refKey(m)) ? ' ' : m));
+}
+
 /** Contrôle un brouillon de l'IA : chaque paragraphe cite des textes reçus et n'écrit que leurs nombres [R251]. */
 export function checkDraft(draft: unknown, facts: LegalFacts): { ok: true; draft: LegalDraft } | { ok: false; problems: DraftProblem[] } {
   if (typeof draft !== 'object' || draft === null) return { ok: false, problems: ['format'] };
@@ -332,18 +372,20 @@ export function checkDraft(draft: unknown, facts: LegalFacts): { ok: true; draft
     if (text.length > MAX_PARAGRAPH_LENGTH) problems.add('trop_long');
     if (ids.length === 0) problems.add('sans_source');
     if (ids.some((id) => !given.has(id))) problems.add('source_non_fournie');
-    // Un nombre avec son unité ne vient que du résumé d'un texte cité ; un nombre seul, du résumé ou de la référence.
+    // Un nombre ne vient que du résumé d'un texte cité ; seules ses références entières (article, numéro du texte, date
+    // complète, année) peuvent s'y ajouter, et elles sont ôtées avant le contrôle.
     const withUnit = new Set<string>();
     const bare = new Set<string>();
+    const refs: string[] = [];
     for (const id of ids) {
       const s = given.get(id);
       if (!s) continue;
       const fromSummary = quantitiesIn(s.summary);
       for (const q of fromSummary.withUnit) withUnit.add(q);
       for (const n of fromSummary.bare) bare.add(n);
-      for (const n of quantitiesIn(`${s.title} ${s.article} ${s.origin} ${s.textDate.replace(/-/g, ' ')}`).bare) bare.add(n);
+      refs.push(...referencesOf(s));
     }
-    const said = quantitiesIn(text);
+    const said = quantitiesIn(withoutReferences(text, refs));
     if ([...said.withUnit].some((q) => !withUnit.has(q)) || [...said.bare].some((n) => !bare.has(n))) problems.add('nombre_sans_source');
     const w = words(text);
     if (FORBIDDEN_LEGAL_PHRASES.some((f) => has(w, f))) problems.add('tournure_interdite');
@@ -413,8 +455,8 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
 
   if (!options.writer) return byTexts('textes');
   const facts: LegalFacts = {
-    question: scrubQuestion(q, options.knownNames ?? []),
-    sources: sources.map((s) => ({ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary })),
+    question: scrubQuestion(q, library, options.knownNames ?? []),
+    sources: sources.map((s) => ({ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, wording: s.wording, wordingDate: s.wordingDate, summary: s.summary })),
   };
   let raw: unknown;
   try {

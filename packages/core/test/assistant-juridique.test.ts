@@ -29,6 +29,8 @@ const LIB: LegalSource[] = [
     article: 'article 3',
     origin: 'loi d’essai n° 1 du 4 mai 2001',
     textDate: '2001-05-04',
+    wording: 'loi d’essai n° 1 du 4 mai 2001',
+    wordingDate: '2001-05-04',
     summary: 'Le délai de réflexion de l’acheteur est de 10 jours.',
     match: [['reflexion'], ['acheteur', 'acquereur']],
     exclude: ['professionnel'],
@@ -42,6 +44,8 @@ const LIB: LegalSource[] = [
     article: 'article 7',
     origin: 'loi d’essai n° 2 du 9 juin 2010',
     textDate: '2010-06-09',
+    wording: 'loi d’essai n° 2 du 9 juin 2010',
+    wordingDate: '2010-06-09',
     summary: 'Le panneau doit être retiré dans les quinze jours après la fin du mandat.',
     match: [['panneau'], ['retirer', 'retire', 'enlever']],
     exclude: [],
@@ -50,6 +54,17 @@ const LIB: LegalSource[] = [
     validatedBy: null,
   },
 ];
+
+const asFact = (s: LegalSource): LegalFacts['sources'][number] => ({
+  id: s.id,
+  title: s.title,
+  article: s.article,
+  origin: s.origin,
+  textDate: s.textDate,
+  wording: s.wording,
+  wordingDate: s.wordingDate,
+  summary: s.summary,
+});
 
 function writer(answer: (f: LegalFacts) => unknown): LegalWriter & { seen: LegalFacts[] } {
   const seen: LegalFacts[] = [];
@@ -110,7 +125,7 @@ describe('assistant juridique (HX03)', () => {
   });
 
   it('[R251] un paragraphe sans source, avec une source non reçue, un nombre inventé ou une promesse est refusé : les textes répondent', async () => {
-    const facts: LegalFacts = { question: 'q', sources: [{ id: 'loi-a-3', title: LIB[0]!.title, article: 'article 3', origin: LIB[0]!.origin, textDate: '2001-05-04', summary: LIB[0]!.summary }] };
+    const facts: LegalFacts = { question: 'q', sources: [asFact(LIB[0]!)] };
     const bad = (text: string, sources: string[]) => checkDraft({ kind: 'answer', paragraphs: [{ text, sources }] }, facts);
     expect(bad('Dix jours.', [])).toEqual({ ok: false, problems: ['sans_source', 'nombre_sans_source'] });
     expect(bad('Dix jours.', ['loi-b-7'])).toEqual({ ok: false, problems: ['source_non_fournie', 'nombre_sans_source'] });
@@ -156,7 +171,7 @@ describe('assistant juridique (HX03)', () => {
   it('[R251] un nombre pris dans la référence ou la date d’un texte, ou une unité changée, ne passe jamais', () => {
     const facts = (id: string): LegalFacts => {
       const s = DEFAULT_LEGAL_LIBRARY.find((x) => x.id === id)!;
-      return { question: 'q', sources: [{ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary }] };
+      return { question: 'q', sources: [asFact(s)] };
     };
     const one = (id: string, text: string) => checkDraft({ kind: 'answer', paragraphs: [{ text, sources: [id] }] }, facts(id));
     expect(one('hoguet-6', 'Vos honoraires sont plafonnés à 9 % du prix et payables 2 jours après la signature du mandat.').ok).toBe(false);
@@ -166,6 +181,12 @@ describe('assistant juridique (HX03)', () => {
     expect(one('copro-46', 'L’acquéreur doit agir dans un délai de deux ans.').ok).toBe(false);
     expect(one('copro-46', 'L’action en diminution du prix se forme dans un délai d’un an après l’acte authentique.').ok).toBe(true);
     expect(one('hoguet-6', 'La loi du 2 janvier 1970 impose un mandat écrit.').ok).toBe(true);
+    expect(one('hoguet-6', 'La loi n° 70-9, article 6, impose un mandat écrit.').ok).toBe(true);
+    expect(one('copro-46', 'La mention n’est pas obligatoire pour un lot de moins de 10 mètres.').ok).toBe(false);
+    expect(one('hoguet-6', 'Les honoraires peuvent atteindre 2 fois le montant prévu au mandat.').ok).toBe(false);
+    expect(one('hoguet-6', 'Voyez aussi l’article 7 de la loi.').ok).toBe(false);
+    expect(one('cch-l271-1', 'Depuis la loi du 6 août 2015, l’acquéreur a 10 jours (article L271-1).').ok).toBe(true);
+    expect(one('cch-l271-1', 'Depuis 2017, l’acquéreur a 10 jours.').ok).toBe(false);
   });
 
   it('[R15] un nom dit en passant, une date de naissance ou de signature ne partent jamais à l’IA', async () => {
@@ -174,7 +195,19 @@ describe('assistant juridique (HX03)', () => {
     const sent = w.seen[0]!.question;
     for (const leak of ['Jean', 'Martin', '1960', '3 mai', '12/10/2026']) expect(sent).not.toContain(leak);
     expect(sent).toContain('Carrez');
-    expect(scrubQuestion('Gérard Dumont veut savoir si le DPE est obligatoire. Mme Lefort aussi.')).toBe('[nom] [nom] veut savoir si le DPE est obligatoire. [nom] [nom] aussi.');
+    for (const [q, name] of [
+      ['Mon client M. Dupont peut-il se rétracter ?', 'Dupont'],
+      ['Le vendeur DUPONT peut-il se rétracter ?', 'DUPONT'],
+      ['Martin veut se rétracter du compromis.', 'Martin'],
+      ['mon client jean martin peut-il se rétracter ?', 'martin'],
+      ['Gérard Dumont veut savoir si le DPE est obligatoire. Mme Lefort aussi.', 'Lefort'],
+    ] as const) {
+      const out = scrubQuestion(q);
+      expect(out).not.toContain(name);
+      expect(out.toLowerCase()).not.toContain('jean');
+      expect(out).not.toContain('Gérard');
+    }
+    expect(scrubQuestion('Mon client M. Dupont peut-il se rétracter ?')).toBe('Mon client M. … peut-il se rétracter ?');
   });
 
   it('[R15] l’IA ne reçoit ni nom ni coordonnée, et seulement les textes retenus', async () => {
@@ -224,6 +257,9 @@ describe('assistant juridique (HX03)', () => {
       expect(s.article).toMatch(/^article /);
       expect(s.textDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(s.origin.length).toBeGreaterThan(0);
+      expect(s.wording.length).toBeGreaterThan(0);
+      expect(s.wordingDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(s.wordingDate >= s.textDate).toBe(true);
       expect(s.match.length).toBeGreaterThan(0);
       // Pas encore relue par l'avocat (H54) : rien ne doit prétendre le contraire.
       expect(s.validatedBy).toBeNull();
@@ -251,9 +287,11 @@ describe('assistant juridique (HX03)', () => {
     if (a.status !== 'reponse') return;
     const facts: LegalFacts = {
       question: 'q',
-      sources: DEFAULT_LEGAL_LIBRARY.map((s) => ({ id: s.id, title: s.title, article: s.article, origin: s.origin, textDate: s.textDate, summary: s.summary })),
+      sources: DEFAULT_LEGAL_LIBRARY.map(asFact),
     };
     expect(checkDraft({ kind: 'answer', paragraphs: a.paragraphs }, facts).ok).toBe(true);
     expect(a.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);
+    // La date citée est celle du texte qui a donné les 10 jours, pas celle de la loi SRU qui en donnait 7.
+    expect(a.citations[0]).toEqual(expect.objectContaining({ id: 'cch-l271-1', wordingDate: '2015-08-06' }));
   });
 });
