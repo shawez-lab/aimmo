@@ -664,3 +664,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 09:55 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
 - 2026-11-06 09:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-06 10:39 · SV14 · fusionnée (#377) : second dossier après un arrêt, table refaite avec recopie vérifiée, exception R17 bornée · prochaine : Z05
+- 2026-11-06 11:13 · Z05 · fusionnée (#378) : le lien d'accès ne s'échange qu'au clic sur « Entrer sur ce téléphone », jamais à l'ouverture · prochaine : HX01
