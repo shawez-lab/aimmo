@@ -31,6 +31,28 @@ Un document XML en UTF-8, une annonce par bien, triées par référence. Une mê
 - `prix` : le prix publié, honoraires inclus quand l'acquéreur les paie, en euros entiers.
 - `mentions` : les mentions obligatoires calculées par le code, une par ligne.
 
+## Portails étrangers : format d'essai `aimmo-essai-international-1` (HX05)
+
+Le même flux, une annonce par bien et par langue traduite et validée par l'agent du bien : anglais toujours, et chaque langue que l'agent déclare parler (ourdou `ur`, hindi `hi`, pendjabi en gurmukhi `pa`, persan `fa`, arabe `ar`, grec `el`). Triées par référence, puis dans cet ordre de langues.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<flux format="aimmo-essai-international-1">
+  <annonce reference="REF-1" version="3" etat="en_vente" langue="ar" sens="rtl">
+    <prix devise="EUR">210000</prix>
+    <titre>… traduit …</titre>
+    <texte>… traduit …</texte>
+    <mentions langue="fr">… mentions françaises, au caractère près …</mentions>
+    <medias>…</medias>
+  </annonce>
+</flux>
+```
+
+- Seuls le titre et le texte sont traduits. Prix, mentions, médias, état et version sont ceux de la version française publiée [R259].
+- Une traduction garde les mêmes nombres, écrits pareil, et la même classe énergie ; l'IA ne les voit jamais [R257].
+- Une traduction n'entre au flux que validée par l'agent du bien, sur l'annonce française publiée, dans une langue qu'il parle encore [R258].
+- `sens` : `rtl` pour l'ourdou, le persan et l'arabe, sinon `ltr`.
+
 ## Ajouter un portail
 
 Un portail réel s'ajoute par un format qui suit l'interface `PortalFormat` (`packages/core/src/annonces/portails.ts`), avec ses tests, une fois son accord de flux obtenu (H10).
