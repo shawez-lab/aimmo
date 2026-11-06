@@ -663,3 +663,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 09:55 · voie 2 · plus rien de faisable : aucune proposition ouverte ; la voie 1 travaille (verrou pris à 09:24) ; SV14 (en cours, voie 1) et Z05 (priorité de Shawez, voie 1, page d'accès du Worker du socle) lui sont réservées ; B04 attend H05, H14, la fin de H37 et 7 jours d'ombre ; C09 attend H04, H05, H06, H13 ; SV05 attend H29 et H50 ; verrou resté libre, non pris · prochaine : aucune pour la voie 2
 - 2026-11-06 09:55 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
 - 2026-11-06 09:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-06 10:39 · SV14 · fusionnée (#377) : second dossier après un arrêt, table refaite avec recopie vérifiée, exception R17 bornée · prochaine : Z05

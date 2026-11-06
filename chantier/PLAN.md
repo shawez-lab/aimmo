@@ -24,7 +24,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Critères : le lien n'apparaît pas dans la sortie du travail (test) ; le mode mail reste le défaut (test) ; lien à usage unique et expiré refusé (tests de Z02 repris).
 
 ### Z05 · Le lien d'accès ne doit jamais être brûlé par une simple ouverture
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte
 - Dépendances : aucune
 - Objectif : le 2026-11-06, le premier lien de Shawez était « déjà servi » quand il l'a ouvert : un aperçu de lien, un navigateur intégré ou une double ouverture l'a consommé. Ouvrir le lien (GET) ne doit rien consommer : la page affiche un seul bouton « Entrer sur ce téléphone », et seul ce clic (POST) consomme l'invitation et range la clé.
@@ -3764,7 +3764,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV14 · Un second dossier sur un bien
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Reste : fusionnée (#377). Relecture forte sans P0 ni P1 ; Codex 1 P1 (R233 à réécrire) corrigé, puis sans remarque ; vérification GitHub verte. Une table de preuve `sale_files_recopie` gardée.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV12
 - Cahier : M09 Offre ; M10 Compromis et acte.
 - Trouvé par SV09 : l'unicité de `sale_files.property_id` empêche un second dossier après un arrêt. Le travail prêt est dans le commit `bba3231e` de la branche `chantier/SV09`.
