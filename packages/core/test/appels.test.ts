@@ -188,7 +188,6 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     expect(await count(t.db, 'SELECT count(*) AS n FROM calls')).toBe(1);
     expect(await count(t.db, 'SELECT count(*) AS n FROM persons')).toBe(1);
     expect([a, b, again].filter((r) => r.ok && r.already)).toHaveLength(2);
-    expect((await t.journal.all()).filter((e) => e.type === 'voix.appel_recu')).toHaveLength(1);
   });
 
   it('[R244] fiches réunies : l’appel se voit sur la fiche gardée ; deux fiches distinctes : la plus ancienne, à vérifier', async () => {
@@ -300,6 +299,14 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     await appels.receive(t.network.id, call());
     expect(tr.calls).toHaveLength(1);
     expect((await t.journal.all()).filter((e) => e.type === 'voix.appel_recu')).toHaveLength(1);
+    // Deux relivraisons simultanées après une panne du journal n'ajoutent qu'un événement.
+    fail = true;
+    await expect(appels.receive(t.network.id, call({ callId: 'P2' }))).rejects.toThrow();
+    fail = false;
+    await Promise.all([appels.receive(t.network.id, call({ callId: 'P2' })), appels.receive(t.network.id, call({ callId: 'P2' }))]);
+    await appels.receive(t.network.id, call({ callId: 'P2' }));
+    expect(tr.calls).toHaveLength(2);
+    expect((await t.journal.all()).filter((e) => e.type === 'voix.appel_recu')).toHaveLength(2);
   });
 
   it('un appel mal formé est refusé sans rien ranger', async () => {

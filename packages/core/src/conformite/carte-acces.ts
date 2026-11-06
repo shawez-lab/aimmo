@@ -324,6 +324,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
   calls: { locate: by('person_id') },
+  call_journal: { locate: [via('call_id', 'calls')] },
   contact_keys: { locate: by('person_id') },
   attach_log: { locate: by('person_id') },
   conversation_handovers: { locate: by('person_id') },

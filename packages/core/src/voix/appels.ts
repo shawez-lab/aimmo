@@ -355,7 +355,28 @@ export class Appels {
    */
   private async journalOnce(row: CallRow): Promise<void> {
     const subject = `call:${row.id}`;
-    if ((await this.journal.bySubject(subject)).some((e) => e.type === 'voix.appel_recu')) return;
+    const claim = this.now().toISOString();
+    const stale = new Date(this.now().getTime() - 60_000).toISOString();
+    // Une seule livraison à la fois tient la réservation : deux relivraisons simultanées n'ajoutent qu'un événement.
+    const { changes } = await this.db.run(
+      `INSERT INTO call_journal (call_id, claimed_at) VALUES (?, ?)
+       ON CONFLICT (call_id) DO UPDATE SET claimed_at = excluded.claimed_at
+       WHERE call_journal.done = 0 AND call_journal.claimed_at < ?`,
+      [row.id, claim, stale],
+    );
+    if (changes === 0) return;
+    try {
+      // Un précédent détenteur a pu écrire l'événement avant d'être coupé : il n'est jamais doublé.
+      if (!(await this.journal.bySubject(subject)).some((e) => e.type === 'voix.appel_recu')) await this.appendCallEvent(row, subject);
+    } catch (error) {
+      // Journal en panne : la réservation est lâchée tout de suite, la livraison suivante réessaiera.
+      await this.db.run("UPDATE call_journal SET claimed_at = '' WHERE call_id = ? AND claimed_at = ? AND done = 0", [row.id, claim]);
+      throw error;
+    }
+    await this.db.run('UPDATE call_journal SET done = 1 WHERE call_id = ? AND done = 0', [row.id]);
+  }
+
+  private async appendCallEvent(row: CallRow, subject: string): Promise<void> {
     await appendEvent(
       this.journal,
       {

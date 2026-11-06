@@ -65,6 +65,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       voice_notes: ['external_id', 'media_ref', 'transcript'],
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
       calls: ['call_id', 'person_id', 'recording_ref', 'transcript', 'fields', 'consent_announced_at', 'consent_given_at', 'origin_content_id'],
+      call_journal: [],
       contact_keys: ['person_id'],
       attach_log: ['person_id', 'reason'],
       conversation_handovers: ['agent_id', 'person_id', 'conversation_id', 'reason'],
@@ -770,6 +771,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   send_quota_slots: ['network_id', 'kind', 'day', 'slot', 'reservation_id', 'created_at'],
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
   voice_notes: ['id', 'network_id', 'channel', 'status', 'failure', 'mime', 'language', 'confidence', 'created_at'],
+  call_journal: ['call_id', 'claimed_at', 'done'],
   calls: ['id', 'network_id', 'provider', 'status', 'failure', 'attach', 'started_at', 'ended_at', 'language', 'confidence', 'category', 'route', 'qualification_source', 'origin_kind', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],

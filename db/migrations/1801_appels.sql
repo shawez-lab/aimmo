@@ -39,3 +39,12 @@ CREATE INDEX IF NOT EXISTS calls_person ON calls (person_id);
 -- Un appel est réservé (`en_cours`) avant tout le reste : deux livraisons du même appel ne le rangent qu'une fois. Ensuite,
 -- rien ne change.
 CREATE TRIGGER IF NOT EXISTS calls_fige BEFORE UPDATE ON calls WHEN OLD.status <> 'en_cours' BEGIN SELECT RAISE(ABORT, 'calls : rien ne change'); END;
+-- L'événement d'un appel va au journal une seule fois [R244], même si le journal tombe en panne juste après le rangement :
+-- une livraison suivante prend cette réservation, vérifie le journal, ajoute l'événement s'il manque, puis la ferme.
+-- Une réservation lâchée sur une panne, ou restée ouverte (Worker coupé), est reprise.
+CREATE TABLE IF NOT EXISTS call_journal (
+  call_id TEXT PRIMARY KEY REFERENCES calls (id) ON DELETE RESTRICT,
+  claimed_at TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1))
+);
+CREATE TRIGGER IF NOT EXISTS call_journal_fige BEFORE UPDATE ON call_journal WHEN OLD.done = 1 BEGIN SELECT RAISE(ABORT, 'call_journal : rien ne change'); END;
