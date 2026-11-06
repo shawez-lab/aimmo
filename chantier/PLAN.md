@@ -89,7 +89,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : le PDF passe veraPDF en PDF/A-3b (test ou vérification écrite) ; le XML joint est octet pour octet celui rangé (test) ; montants du PDF égaux à ceux du XML (test).
 
 ### HX05 · Annonces dans plusieurs langues et portails internationaux
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor : diffusion vers les portails étrangers. Jamais vu : chaque annonce existe en anglais et dans les langues que parle l'agent (Shawez : anglais, ourdou, hindi, pendjabi, persan, arabe, grec), et l'appli répond à l'acheteur étranger dans sa langue.
 - Critères : chaque traduction garde les chiffres et mentions légales à l'identique (test) ; rien ne part sans validation de l'agent.
 
