@@ -263,7 +263,8 @@ Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX0
 ## Photo, vidéo et visite
 
 ### HX40 · Retouches déclarées et filigrane
-- Statut : bloquée : contredit X02 (aucune retouche locale), décision de Shawez attendue
+- Statut : à faire
+- Décidé (2026-11-06) par Shawez : retouches locales autorisées (ciel, reflets, objets retirés), chaque photo retouchée porte la mention « photo retouchée » ; X02 est assoupli en conséquence, avec test
 - Objectif : comme Hektor, HOQI et Apimo : remplacer le ciel, enlever les reflets, effacer un objet, poser un filigrane. Jamais vu : chaque retouche locale est inscrite au certificat de X02 et l'image porte la mention « aménagement virtuel » de R48 ; chaque photo exportée porte le filigrane de l'agent et l'identifiant de contenu de AT05, pour qu'une photo reprise par d'autres ramène à lui.
 - Critères : une retouche locale sans mention est refusée (test) ; le certificat liste chaque retouche (test) ; chaque photo exportée porte le filigrane (test).
 
