@@ -214,9 +214,9 @@ export class DatesClients {
     const now = this.now();
     if (afterSendingTime(now, 0, this.settings.window).getTime() > now.getTime()) return { ...report, closed: true };
     const local = localTime(now, this.settings.window.timeZone);
-    const year = Number(local.date.slice(0, 4));
-    const wanted = new Set(occasionDays(local.date, this.settings.window));
-    const rows = await this.db.all<DateRow>('SELECT id, person_id, kind, month, day FROM client_dates WHERE network_id = ? ORDER BY created_at, id', [networkId]);
+    const wanted = occasionDays(local.date, this.settings.window);
+    // L'ordre où les dates ont été rangées, même à la même milliseconde : le numéro de ligne, jamais l'identifiant [R404].
+    const rows = await this.db.all<DateRow>('SELECT id, person_id, kind, month, day FROM client_dates WHERE network_id = ? ORDER BY created_at, rowid', [networkId]);
     // La dernière date rangée compte, par fiche gardée et par sorte : une correction remplace l'ancienne [R404].
     const latest = new Map<string, DateRow & { root: string }>();
     for (const r of rows) {
@@ -224,7 +224,10 @@ export class DatesClients {
       latest.set(`${root}|${r.kind}`, { ...r, root });
     }
     for (const d of latest.values()) {
-      if (!wanted.has(occasionOf(d.month, d.day, year))) continue;
+      // L'année est celle du jour souhaité : un 31 décembre tombé un dimanche se souhaite le 1er janvier, pour son année [R405].
+      const occasion = wanted.find((day) => occasionOf(d.month, d.day, Number(day.slice(0, 4))) === day);
+      if (occasion === undefined) continue;
+      const year = Number(occasion.slice(0, 4));
       const members = await this.fiche.membersOf(d.root);
       const consented = await this.consentedChannels(members, now.toISOString());
       let channel: AutomationChannel | null = null;

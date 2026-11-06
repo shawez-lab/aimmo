@@ -303,6 +303,39 @@ describeWithSqlite('HX25 · prochaine action, filtres et dates des clients', () 
     for (const s of sent) expect(new Date(s.at).getUTCDay()).not.toBe(0);
   });
 
+  it('[R405] un 31 décembre tombé un dimanche se souhaite le 1er janvier, pour l’année de la date', async () => {
+    const t = await setup();
+    await t.dates.setTexts(t.direction, { kind: 'anniversaire', channel: 'email', texts: BIRTHDAY_TEXTS });
+    const sam = await t.person('Sam');
+    await t.consent(sam);
+    await t.dates.recordDate(t.asAgent(t.alex.id), { personId: sam, kind: 'anniversaire', month: 12, day: 31, proof: 'dit au téléphone (test)' });
+    // Le dimanche 31 décembre 2028 : rien ; le lundi 1er janvier 2029 à 10 h : souhaitée, comptée pour 2028.
+    t.setClock(Date.parse('2028-12-31T09:00:00.000Z'));
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ closed: true });
+    t.setClock(Date.parse('2029-01-01T09:00:00.000Z'));
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+    expect(await t.db.all('SELECT year, status FROM client_date_messages')).toEqual([{ year: 2028, status: 'essai' }]);
+    expect(await t.db.first("SELECT subject FROM message_subjects WHERE subject LIKE 'date:%'")).toEqual({ subject: 'date:anniversaire:2028' });
+    // Le 31 décembre 2029 (un lundi) : celle de 2029, une fois.
+    t.setClock(Date.parse('2029-12-31T09:00:00.000Z'));
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+    expect(await t.outbox()).toHaveLength(2);
+  });
+
+  it('[R404] une correction rangée à la même milliseconde compte, quel que soit son identifiant', async () => {
+    const t = await setup();
+    let k = 1000;
+    // Des identifiants qui décroissent : la correction a le plus petit.
+    const dates = new DatesClients(t.db, t.journal, { now: t.now, newId: () => `ffffffff-0000-4000-8000-${String(--k).padStart(12, '0')}` });
+    await dates.setTexts(t.direction, { kind: 'anniversaire', channel: 'email', texts: BIRTHDAY_TEXTS });
+    const sam = await t.person('Sam');
+    await t.consent(sam);
+    await dates.recordDate(t.asAgent(t.alex.id), { personId: sam, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
+    await dates.recordDate(t.asAgent(t.alex.id), { personId: sam, kind: 'anniversaire', month: 12, day: 31, proof: 'corrigé au téléphone (test)' });
+    expect(await dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 0 });
+    expect(await t.outbox()).toHaveLength(0);
+  });
+
   it('[R405] [R403] seule la direction écrit les textes, contrôlés, sans chiffre ; l’an suivant prend un autre texte', async () => {
     const t = await setup();
     const me = t.asAgent(t.alex.id);
