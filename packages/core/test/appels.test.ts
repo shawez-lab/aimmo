@@ -138,6 +138,20 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     expect(citeFields(q, segments, ['Talant', 'Dijon'])).toEqual([]);
   });
 
+  it('[R243] un apport du même montant n’est jamais la source d’un budget', async () => {
+    const segments: CallSegment[] = [
+      { speaker: 'appelant', startS: 0, endS: 4, text: 'Mon apport est de 300 000 €.' },
+      { speaker: 'appelant', startS: 5, endS: 9, text: 'Je cherche une maison avec un budget de 300 000 €.' },
+    ];
+    const t = await setup(ok(segments));
+    const r = await t.appels.receive(t.network.id, call());
+    if (!r.ok) throw new Error('refusé');
+    const budget = (await t.appels.get(t.network.id, r.callId))!.summary.find((l) => l.key === 'budgetMaxEur');
+    expect(budget).toEqual({ key: 'budgetMaxEur', value: 300000, quote: 'Je cherche une maison avec un budget de 300 000 €.', atS: 5 });
+    // Seul, l'apport ne porte aucun budget : sans autre passage, le budget n'est pas rangé.
+    expect(citeFields({ ...qualifyByRules('x'), budgetMaxEur: 300000 }, [segments[0]!], ['Talant']).some((f) => f.key === 'budgetMaxEur')).toBe(false);
+  });
+
   it('[R243] la qualification de l’appel est celle de Q01 sur les mêmes mots écrits', async () => {
     const t = await setup(ok());
     const r = await t.appels.receive(t.network.id, call());

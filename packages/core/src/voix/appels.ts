@@ -219,7 +219,7 @@ export function readCallTranscript(
 
 /**
  * Ne garde d'une qualification que les champs qu'un passage de l'appelant porte à lui seul [R243] : la commune citée
- * dans le passage, le montant dit dans le passage, le délai, le financement déclaré ou le critère que les règles fixes
+ * dans le passage, le montant que Q01 lit dans ce seul passage comme ce même champ, le délai, le financement déclaré ou le critère que les règles fixes
  * lisent dans ce seul passage. Le premier passage qui porte le champ est sa source.
  */
 export function citeFields(q: Qualified, segments: readonly CallSegment[], communes: readonly string[]): CitedField[] {
@@ -233,7 +233,9 @@ export function citeFields(q: Qualified, segments: readonly CallSegment[], commu
   if (q.city !== null) push('city', q.city, first((r) => findCommune(r.text, communes) === q.city));
   for (const key of ['budgetMinEur', 'budgetMaxEur', 'priceEur'] as const) {
     const v = q[key];
-    if (v !== null) push(key, v, first((r) => r.amounts.includes(v)));
+    // Le passage doit porter ce montant comme ce champ, selon Q01 : un apport, des frais ou un revenu du même montant ne
+    // sont jamais la source d'un budget ou d'un prix.
+    if (v !== null) push(key, v, first((r) => r.amounts.includes(v) && r.rules[key] === v));
   }
   if (q.deadline !== null) push('deadline', q.deadline, first((r) => r.rules.deadline === q.deadline));
   if (q.financing !== null) push('financing', q.financing, first((r) => declaredFinancing(r.text) === q.financing));
