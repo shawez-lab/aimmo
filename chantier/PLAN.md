@@ -66,7 +66,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : un rendez-vous ajouté d'un côté apparaît de l'autre (tests avec faux serveurs) ; aucun doublon ; rappels sous le contrôle central (R01 à R05).
 
 ### HX03 · Assistant juridique de l'agent
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor Voice : l'agent pose une question juridique ou réglementaire et reçoit une réponse. Jamais vu : chaque réponse cite son texte de loi et sa date, et dit « je ne sais pas, voyez votre avocat » plutôt que d'inventer.
 - Critères : aucune réponse sans source citée (test) ; refus explicite quand aucune source ne couvre la question (test).
 
