@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS voice_assistant_lines (
   phone TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
   updated_at TEXT NOT NULL,
-  UNIQUE (network_id, phone)
+  -- Un numéro ne désigne qu'un agent, tous réseaux confondus : l'appel renvoyé ne peut aller qu'à lui.
+  UNIQUE (phone)
 );
 
 -- Le passage de main à l'agent, une seule fois par appel [R18] : le rendez-vous pris sur un créneau libre proposé

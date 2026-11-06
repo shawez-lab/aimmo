@@ -126,6 +126,11 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     // Une autre personne que l'agent ne règle pas sa ligne ; un numéro déjà pris par un autre agent est refusé.
     expect(await t.assistant.setLine(t.asLise, { agentId: t.paul.id, phone: '06 00 00 09 02', enabled: false })).toEqual({ ok: false, code: 'forbidden' });
     expect(await t.assistant.setLine(t.asLise, { agentId: t.lise.id, phone: AGENT_PHONE, enabled: true })).toEqual({ ok: false, code: 'taken' });
+    // Le même numéro dans un autre réseau est refusé aussi : l'appel renvoyé ne peut aller qu'à un seul agent.
+    const store = new FicheClient(t.db, { now: t.now });
+    const elsewhere = await store.createNetwork('Autre réseau');
+    const nina = await store.createAgent({ networkId: elsewhere.id, firstName: 'Nina', lastName: 'Essai' });
+    expect(await t.assistant.setLine({ role: 'agent', userId: nina.id, networkId: elsewhere.id }, { agentId: nina.id, phone: '+33600000901', enabled: true })).toEqual({ ok: false, code: 'taken' });
     expect(await t.assistant.setLine(t.asPaul, { agentId: t.paul.id, phone: AGENT_PHONE, enabled: false })).toEqual({ ok: true });
     expect(await t.assistant.start(t.call())).toEqual({ ok: false, code: 'line_off' });
     await t.assistant.setLine(t.asPaul, { agentId: t.paul.id, phone: AGENT_PHONE, enabled: true });

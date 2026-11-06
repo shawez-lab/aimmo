@@ -331,11 +331,13 @@ export class AssistantVocal {
     if (!validDate(call.startedAt) || !FORWARD_REASONS.includes(call.forwardReason) || typeof call.forwardedFrom !== 'string') return { ok: false, code: 'bad_call' };
     const forwardedFrom = normalizePhone(call.forwardedFrom);
     if (forwardedFrom === null) return { ok: false, code: 'not_forwarded' };
-    const line = await this.db.first<{ agent_id: string; network_id: string; enabled: number }>(
-      "SELECT l.agent_id, l.network_id, l.enabled FROM voice_assistant_lines l JOIN agents a ON a.id = l.agent_id AND a.status = 'active' WHERE l.phone = ?",
+    // Le numéro est unique dans la base ; si deux lignes le portaient, l'appel n'irait à aucune [R246].
+    const lines = await this.db.all<{ agent_id: string; network_id: string; enabled: number }>(
+      "SELECT l.agent_id, l.network_id, l.enabled FROM voice_assistant_lines l JOIN agents a ON a.id = l.agent_id AND a.network_id = l.network_id AND a.status = 'active' WHERE l.phone = ?",
       [forwardedFrom],
     );
-    if (!line) return { ok: false, code: 'no_line' };
+    if (lines.length !== 1) return { ok: false, code: 'no_line' };
+    const line = lines[0]!;
     if (line.enabled !== 1) return { ok: false, code: 'line_off' };
     const agent = (await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ?', [line.agent_id]))!;
     const from = typeof call.from === 'string' ? normalizePhone(call.from) : null;
