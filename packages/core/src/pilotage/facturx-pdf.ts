@@ -53,8 +53,14 @@ export interface VueFacturX {
   corrects: string | null;
 }
 
+/**
+ * Un texte du XML, ses entités rendues ; tout espacement (tabulation, saut de ligne, espace fine, espace
+ * idéographique…) s'imprime en espace simple, l'espace insécable restant insécable : la police n'a qu'eux deux.
+ */
 const unesc = (v: string): string =>
-  v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  v
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[^\S\u00a0]/g, ' ');
 
 const first = (xml: string, tag: string): string | null => {
   const m = new RegExp(`<ram:${tag}(?: [^>]*)?>([^<]*)</ram:${tag}>`).exec(xml);
@@ -149,7 +155,7 @@ function winAnsi(ch: string): number | null {
 /** Les caractères d'un texte que la police intégrée n'a pas, dans l'ordre, sans doublon. */
 export function horsPolice(text: string): string[] {
   const out: string[] = [];
-  for (const ch of text.replace(/\s/g, ' ')) {
+  for (const ch of text) {
     const code = winAnsi(ch);
     const name = `U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`;
     if ((code === null || POPPINS_REGULAR.widths[code - 32] === 0 || POPPINS_BOLD.widths[code - 32] === 0) && !out.includes(name)) out.push(name);

@@ -315,6 +315,17 @@ it('[R256] un caractère que la police n’a pas n’est jamais remplacé : pas 
   expect(pdfFacturX(xmlOf(HONORAIRES).replace(/<ram:GrandTotalAmount>[^<]*<\/ram:GrandTotalAmount>/, ''))).toEqual({ ok: false, missing: ['xml_facturx (R254)'] });
 });
 
+it('[R256] un espacement autre que l’espace (tabulation, espace fine, saut de ligne) s’imprime en espace, sans jamais faire tomber le PDF', () => {
+  const xml = xmlOf({ ...HONORAIRES, designation: 'Honoraires\tde\u2009transaction\u202Fbien\u3000REF-T-1', mentions: ['Ligne une\u2028ligne deux'] }, { ...RESEAU, name: 'Réseau\tFictif SAS' });
+  const r = pdfFacturX(xml);
+  expect(r.ok).toBe(true);
+  const lines = printed((r as { pdf: Uint8Array }).pdf);
+  expect(lines).toContain('Réseau Fictif SAS');
+  expect(lines).toContain('Honoraires de transaction bien REF-T-1');
+  expect(lines).toContain('Ligne une ligne deux');
+  expect(xmlJoint((r as { pdf: Uint8Array }).pdf)).toEqual(new TextEncoder().encode(xml));
+});
+
 it('[R256] de longues mentions passent à la page suivante, numérotée, sans rien perdre ni déborder', () => {
   const mentions = Array.from({ length: 40 }, (_, i) => `Mention inventée numéro ${i + 1} : ${'texte de remplissage '.repeat(12).trim()}.`);
   const pdf = pdfOf(xmlOf({ ...HONORAIRES, mentions, designation: `Honoraires ${'tres-long-mot-sans-espace'.repeat(8)}` }));
