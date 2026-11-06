@@ -87,6 +87,36 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Objectif : comme « Mes actualités » : la veille juridique et marché. Jamais vu : chaque actualité dit en une ligne ce qu'elle change pour l'agent et quels de ses dossiers sont concernés.
 - Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
 
+### HX10 · Les clés des biens
+- Statut : à faire
+- Objectif : comme Hektor (gestion des clés, armoire à clés) : chaque trousseau a son numéro, on sait qui l'a, depuis quand, pour quelle visite. Jamais vu : l'agenda rappelle de rendre la clé après la visite, et le vendeur voit dans son espace qui est entré chez lui et quand.
+- Critères : une clé ne peut être chez deux personnes à la fois (test) ; tout mouvement est au journal (test).
+
+### HX11 · Pige des annonces de particuliers
+- Statut : à faire
+- Objectif : comme Ma Pige (Pigimmo, Directannonces) : repérer les biens vendus par des particuliers dans le secteur. Jamais vu : pour chacun, l'écart avec le prix du marché et un premier message utile prêt à valider, jamais envoyé seul ; et la mention « pas d'agence » est toujours respectée.
+- Critères : une annonce marquée « pas d'agence » n'entre jamais dans la file (test) ; contrôle central et accords (R01 à R05) ; aucun envoi automatique.
+
+### HX12 · Appli utilisable sans réseau, et photo HDR
+- Statut : à faire
+- Objectif : comme l'appli Hektor (mode hors connexion, Pix HDR) : en cave ou à la campagne, l'agent consulte et remplit la visite sans réseau, tout part au retour du réseau ; les photos prises dans l'appli sont en HDR. Jamais vu : l'appli guide le cadrage pièce par pièce et refuse une photo floue ou trop sombre avant qu'on reparte.
+- Critères : saisie hors ligne puis envoi sans perte ni doublon (test) ; photo trop sombre ou floue signalée (test).
+
+### HX13 · Mode présentation pendant la visite
+- Statut : à faire
+- Objectif : comme Live Visit et le mode présentation : montrer à l'acquéreur, sur le téléphone, le bien et les biens qui lui correspondent, sans montrer les données de l'agence. Jamais vu : à la fin, l'acquéreur note chaque pièce d'un geste, et l'appli en tire le compte rendu au vendeur et la prochaine proposition.
+- Critères : aucune donnée confidentielle (vendeur, honoraires, notes) visible en mode présentation (test).
+
+### HX14 · Stock de panneaux
+- Statut : à faire
+- Objectif : comme Hektor (gestion des panneaux) : combien de panneaux, où ils sont posés, lesquels récupérer. Jamais vu : à la vente ou à la fin du mandat, la tâche « récupérer le panneau » est créée toute seule, avec l'adresse dans la tournée.
+- Critères : un panneau posé est rattaché à un bien (test) ; tâche créée à la fin du mandat (test).
+
+### HX15 · Statistiques et contenus du site
+- Statut : à faire
+- Objectif : comme « Gérer mon site » : statistiques de visite, pages rédactionnelles, formulaires, partenaires. Jamais vu : chaque chiffre dit quelle page amène des vendeurs, et l'appli propose la prochaine page à écrire pour en attirer plus.
+- Critères : aucune donnée personnelle de visiteur conservée (R15, test) ; chaque statistique relie la page à des demandes réelles.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
