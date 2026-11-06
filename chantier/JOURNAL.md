@@ -665,3 +665,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 09:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-06 10:39 · SV14 · fusionnée (#377) : second dossier après un arrêt, table refaite avec recopie vérifiée, exception R17 bornée · prochaine : Z05
 - 2026-11-06 11:13 · Z05 · fusionnée (#378) : le lien d'accès ne s'échange qu'au clic sur « Entrer sur ce téléphone », jamais à l'ouverture · prochaine : HX01
+- 2026-11-06 11:14 · voie 1 : relance de la séance suivante refusée (permission « lancer maintenant » refusée) ; la prochaine séance planifiée reprendra à HX01
