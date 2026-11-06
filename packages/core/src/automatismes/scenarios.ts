@@ -614,10 +614,12 @@ export class ScenariosAutomatiques {
           report.postponed += 1;
           return;
         }
-        messageStatus = result.status === 'sent' ? 'essai' : 'refuse';
-        // Refusé par le contrôle central, rien n'est parti : la place du jour est rendue à un autre scénario [R402].
-        if (result.status !== 'sent') await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
-        messageRule = result.status === 'sent' ? null : result.rule;
+        // Remis à la boîte d'essai, il est parti, même si le contrôle central a ensuite noté une panne : il garde sa place.
+        const delivered = result.messageId !== null && (await this.db.first<{ n: number }>('SELECT 1 AS n FROM trial_outbox WHERE message_id = ?', [result.messageId])) !== null;
+        messageStatus = delivered ? 'essai' : 'refuse';
+        // Refusé, ou en panne avant la remise : rien n'est parti, la place du jour est rendue à un autre scénario [R402].
+        if (!delivered) await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
+        messageRule = delivered ? null : (result.rule ?? result.status);
         messageId = result.messageId;
       }
       if (messageStatus === 'essai') report.messagesInTrial += 1;

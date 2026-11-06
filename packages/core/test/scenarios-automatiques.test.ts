@@ -655,4 +655,41 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 0 });
     expect(await t.count('automation_runs')).toBe(0);
   });
+
+  it('[R402] un message remis à la boîte d’essai garde sa place du jour, même si le journal tombe ensuite en panne', async () => {
+    const t = await setup();
+    const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0, task: null });
+    const wId = w.ok ? w.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, wId);
+    await t.scenarios.switchOn(t.direction, wId);
+    const p = await t.scenarios.compose(t.direction, { ...PROJECT, projectKind: null, waitHours: 1 });
+    const pId = p.ok ? p.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, pId);
+    await t.scenarios.switchOn(t.direction, pId);
+    t.setClock(TUE_10H + HOUR);
+    const ines = await t.person('Inès');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: ines, kind: 'sell' });
+    // Le journal à empreintes tombe une fois, juste après la remise à la boîte d'essai.
+    let broken = true;
+    const journal = {
+      ...t.journal,
+      all: () => t.journal.all(),
+      last: () => t.journal.last(),
+      bySubject: (subject: string) => t.journal.bySubject(subject),
+      byPeriod: (from: string, to: string) => t.journal.byPeriod(from, to),
+      append: async (entry: Parameters<typeof t.journal.append>[0]) => {
+        if (broken && entry.type === 'envoi.essai') {
+          broken = false;
+          throw new Error('panne du journal (test)');
+        }
+        return t.journal.append(entry);
+      },
+    };
+    const flaky = new ScenariosAutomatiques(t.db, journal, { now: () => new Date(TUE_10H + HOUR) });
+    expect(await flaky.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+    expect(await t.outbox()).toHaveLength(1);
+    t.setClock(TUE_10H + 2 * HOUR);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 1 });
+    expect(await t.outbox()).toHaveLength(1);
+  });
 });
