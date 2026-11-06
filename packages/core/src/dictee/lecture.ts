@@ -145,6 +145,7 @@ const BUY = /\b(?:acheter|achete|acheteur|acheteuse|acheteurs|acquereur|acquereu
 const NAME = /\b(?:s['’]appell(?:e|ent)|se nomm(?:e|ent)|nommee?|madame|monsieur|mme|m\.)\s+/;
 const CAPITALIZED = /^(\p{Lu}[\p{L}'’-]*)(?:\s+(\p{Lu}[\p{L}'’-]*))?(?:\s+(\p{Lu}[\p{L}'’-]*))?/u;
 /** Les particules d'un nom de famille : « Le Gall », « De Souza », « Van Damme » ne sont pas un prénom suivi d'un nom. */
+const LOWER_PARTICLE_NEXT = /^\s+(?:de|du|des|le|la|les|van|von|der|den|da|di|del|della|dos|das|el|al|ben|bin|mac|saint|sainte)\s+\p{L}|^\s*(?:d|l)['’]\s*\p{L}/u;
 const PARTICLE = /^(?:le|la|les|de|du|des|d|l|van|von|der|den|da|di|del|della|dos|das|el|al|ben|bin|mac|mc|saint|sainte|st|ste)$/;
 
 const APPOINTMENT_WORDS = /\b(?:rendez-vous|rendez vous|rdv|rappel\w*|revoir|repasser|passer|visite|visiter|estimation|estimer|signature|signer|appel|appeler|telephoner)\b/;
@@ -219,6 +220,8 @@ function readNames(sentence: string, communes: readonly string[]): { first: Hit[
     let pos = 0;
     for (const w of words) pos = rest.indexOf(w, pos) + w.length;
     const quoteEnd = from + pos;
+    // Un nom qui continue par une particule en minuscule (« Jean de Souza ») : coupé, il serait faux ; rien n'est proposé.
+    if (LOWER_PARTICLE_NEXT.test(rest.slice(pos))) continue;
     const quote = sentence.slice(index[m.index]!, quoteEnd).trim();
     const at = index[m.index]!;
     const particle = words.map((w) => PARTICLE.test(fold(w).folded.replace(/['’]$/, '')));
@@ -237,6 +240,26 @@ function readNames(sentence: string, communes: readonly string[]): { first: Hit[
     }
   }
   return { first, last };
+}
+
+/**
+ * Tous les mots qui suivent « Madame », « Monsieur », « s'appelle »… jusqu'à quatre, particules comprises, qu'un champ
+ * en soit tiré ou non : ce qu'il faut retirer d'un texte envoyé à une IA [R15].
+ */
+export function unproposedNames(dictation: string): string[] {
+  const out: string[] = [];
+  const text = dictation.normalize('NFC');
+  const { folded, index } = fold(text);
+  const re = new RegExp(NAME.source, 'g');
+  for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+    const rest = text.slice(index[m.index + m[0].length]!);
+    const words = /^(?:[\p{L}'’-]+\s*){1,4}/u.exec(rest)?.[0].split(/\s+/).filter(Boolean) ?? [];
+    for (const w of words) {
+      if (!/^\p{Lu}/u.test(w) && !PARTICLE.test(fold(w).folded.replace(/['’].*$/, ''))) break;
+      out.push(w.replace(/^(?:d|l)['’]/iu, ''));
+    }
+  }
+  return out.filter((w) => w.length > 0);
 }
 
 function readCity(sentence: string, communes: readonly string[]): Hit[] {

@@ -23,9 +23,10 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { AppointmentKind } from '../rendezvous/creneaux.ts';
 import type { RendezVous } from '../rendezvous/reservation.ts';
-import { checkReport, type ComptesRendus, type VisitReport } from '../visites/compte-rendu.ts';
+import { withoutContactDetails } from '../captation/premiere-reponse.ts';
+import { checkReport, redactNames, type ComptesRendus, type VisitReport } from '../visites/compte-rendu.ts';
 import type { Visites } from '../visites/visites.ts';
-import { DICTATION_KEYS, DICTATION_MAX_CHARS, fieldOf, readDictation, type DictatedField, type DictatedKey, type DictationDraft, type DictationTarget } from './lecture.ts';
+import { DICTATION_KEYS, DICTATION_MAX_CHARS, fieldOf, readDictation, unproposedNames, type DictatedField, type DictatedKey, type DictationDraft, type DictationTarget } from './lecture.ts';
 
 export type DictationRefusal = { ok: false; rule: string | null; code: string; keys?: string[] };
 
@@ -94,6 +95,17 @@ export class Dictee {
     return readDictation(dictation, { now: at, ...(this.options.communes ? { communes: this.options.communes } : {}) });
   }
 
+  /**
+   * La dictée telle que le compte rendu la reçoit : sans les noms ni les coordonnées des contacts dictés, qui ne servent
+   * pas l'avis de visite et ne sont encore dans aucune fiche que T06 saurait retirer [R15]. Les chiffres restent.
+   */
+  private forReport(dictation: string): string {
+    const draft = this.read(dictation, this.now());
+    const names = draft.fields.filter((f) => f.target === 'contact' && (f.key === 'firstName' || f.key === 'lastName')).map((f) => String(f.value));
+    // Les noms qui suivent « Madame », « s'appelle »… même quand aucun n'est proposé (nom à particule, trois mots).
+    return redactNames(withoutContactDetails(dictation), [...names, ...unproposedNames(dictation)]);
+  }
+
   /** Seul un agent dicte, pour lui-même ; la direction ne crée rien en son nom. */
   private async gate(viewer: Viewer, dictation: unknown): Promise<DictationRefusal | null> {
     if (viewer.role !== 'agent') {
@@ -116,7 +128,7 @@ export class Dictee {
     let report: VisitReport | null = null;
     if (input.appointmentId) {
       if (!this.deps.comptes) return { ok: false, rule: null, code: 'no_visit_reports' };
-      const preview = await this.deps.comptes.preview(viewer, input.appointmentId, input.dictation);
+      const preview = await this.deps.comptes.preview(viewer, input.appointmentId, this.forReport(input.dictation));
       if (!preview.ok) return preview;
       report = preview.report;
     }
@@ -267,7 +279,7 @@ export class Dictee {
     if (report !== null && appointmentId !== null && this.deps.comptes) {
       const state = await this.db.first<{ status: string }>('SELECT status FROM visit_reports WHERE appointment_id = ?', [appointmentId]);
       if (state?.status !== 'valide') {
-        const d = await this.deps.comptes.dictate(viewer, appointmentId, input.dictation, { withoutWriter: true });
+        const d = await this.deps.comptes.dictate(viewer, appointmentId, this.forReport(input.dictation), { withoutWriter: true });
         if (!d.ok && d.code !== 'already_validated') return d;
       }
       const v = await this.deps.comptes.validate(viewer, appointmentId, report);

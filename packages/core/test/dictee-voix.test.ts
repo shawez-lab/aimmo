@@ -128,6 +128,9 @@ describe('HX06 · lecture de la dictée', () => {
     expect(names('Madame De Souza vend.')).toEqual([undefined, 'De Souza']);
     expect(names('Il s’appelle Jean Van Damme.')).toEqual(['Jean', 'Van Damme']);
     expect(names('Madame Claire Exemple vend.')).toEqual(['Claire', 'Exemple']);
+    // Une particule en minuscule après le prénom : rien n'est coupé.
+    expect(names('Monsieur Jean de Souza veut vendre sa maison.')).toEqual([undefined, undefined]);
+    expect(names('Madame Anne d’Exemple vend.')).toEqual([undefined, undefined]);
     // Trois mots sans particule : le partage n'est pas sûr.
     expect(names('Il s’appelle Jean Pierre Martin.')).toEqual([undefined, undefined]);
   });
@@ -419,6 +422,21 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: { ...GOOD, readyToOffer: true } })).toMatchObject({ ok: false, rule: 'R260', code: 'report_invented_offer' });
     expect(await t.counts()).toEqual(before);
     expect(await t.toSeller()).toEqual([]);
+  });
+
+  it('[R15] le compte rendu ne reçoit ni le nom ni les coordonnées d’un contact dicté, ni ne les range', async () => {
+    const briefs: string[] = [];
+    const t = await withVisit({ write: async (b) => (briefs.push(b.dictation), GOOD) });
+    const dictation = `${AFTER_VISIT} Monsieur Jean de Testeur veut vendre sa maison, son numéro 06 11 22 33 44. Madame Zoé Testeur aussi.`;
+    const p = await t.voix.prepare(t.alex, { dictation, appointmentId: t.visitId });
+    expect(p).toMatchObject({ ok: true, report: GOOD });
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toMatch(/Jean|Testeur|Zoé|06 11/);
+    expect(briefs[0]).toContain('cuisine est à refaire');
+    if (!p.ok) return;
+    expect(await t.voix.validate(t.alex, { readAt: p.readAt, requestId: key(9), dictation, appointmentId: t.visitId, keep: {}, report: GOOD })).toMatchObject({ ok: true });
+    const kept = await t.db.first<{ dictation: string }>('SELECT dictation FROM visit_reports WHERE appointment_id = ?', [t.visitId]);
+    expect(kept!.dictation).not.toMatch(/Jean|Testeur|Zoé|06 11/);
   });
 
   it('[R52] un compte rendu qui nomme l’acquéreur est refusé avant toute écriture', async () => {
