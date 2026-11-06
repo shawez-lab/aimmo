@@ -117,6 +117,259 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Objectif : comme « Gérer mon site » : statistiques de visite, pages rédactionnelles, formulaires, partenaires. Jamais vu : chaque chiffre dit quelle page amène des vendeurs, et l'appli propose la prochaine page à écrire pour en attirer plus.
 - Critères : aucune donnée personnelle de visiteur conservée (R15, test) ; chaque statistique relie la page à des demandes réelles.
 
+### HX16 · Veille des nouveaux diagnostics énergétiques par secteur
+- Statut : à faire
+- Objectif : comme Hektor : suivre chaque jour les nouveaux diagnostics énergétiques publiés par l'ADEME dans un secteur, les voir sur une carte et recevoir une alerte quotidienne par secteur de veille. Jamais vu : chaque logement classé F ou G est croisé avec sa date d'interdiction de louer, déjà calculée par M15, et l'appli prépare une lettre « Au propriétaire » de G06 qui explique ce que cette date change pour lui, sans jamais chercher son nom.
+- Critères : aucun nom ni coordonnée de propriétaire rangé (test) ; un diagnostic déjà vu ne remonte jamais deux fois (test) ; l'alerte ne contient que les communes de la zone de l'agent (test).
+
+### HX17 · Score de vente par adresse
+- Statut : à faire
+- Objectif : comme Maline, Keyzia et Modelo : croiser ventes DVF, diagnostics, cadastre et durée de détention pour donner à chaque adresse une probabilité de vente et mettre en avant les signaux forts. Jamais vu : chaque point du score cite sa donnée publique, sa source et sa date, et l'écran montre en face le taux de mandats réellement signés par tranche de score, lu dans G10, pour qu'on sache si le score marche.
+- Critères : chaque point du score renvoie à sa source et à sa date (test) ; le même jeu de données donne le même score (test) ; aucune donnée personnelle dans le calcul ni dans le résultat (test).
+
+### HX18 · Adresse probable d'une annonce de particulier, et bien créé sans ressaisie
+- Statut : à faire
+- Objectif : comme Hektor : retrouver l'adresse d'une annonce de pige et la transformer en fiche bien sans ressaisie. Jamais vu : l'adresse est proposée avec son niveau de confiance, tiré du croisement surface, classe énergie et date du diagnostic avec le cadastre, et la fiche du bien créée garde la source « pige » jusqu'au mandat, pour mesurer ce que la pige rapporte. Les coordonnées du propriétaire ne sont jamais cherchées. Dépend de HX11.
+- Critères : chaque adresse proposée montre sa confiance et ses sources (test) ; la fiche du bien reprend tous les champs de l'annonce, source « pige » (test) ; une annonce « pas d'agence » n'est jamais convertie (test).
+
+### HX19 · Carte des opportunités et tournée de prospection
+- Statut : à faire
+- Objectif : comme Hektor, Modelo, Keyzia et Maline : une carte des opportunités du secteur, la vue des rues, et un itinéraire optimisé de porte-à-porte. Jamais vu : une seule tournée mêle les visites du jour, les panneaux à récupérer de HX14, les lettres de G06 et les nouveaux diagnostics de HX16, calée dans les créneaux libres de V01 avec les temps de trajet.
+- Critères : la tournée tient dans les créneaux libres de l'agent (test) ; aucune adresse hors de la zone de l'agent (test) ; le lien vers la vue des rues ne porte aucune clé ni donnée de client (test).
+
+### HX20 · Séquence de prospection sur plusieurs canaux
+- Statut : à faire
+- Objectif : comme Maline et SIANA : une séquence par prospect sur mail, SMS, appel, courrier et porte-à-porte, et un plan de prospection chaque matin. Jamais vu : chaque étape est vérifiée avant de partir contre les accords, la liste d'opposition au démarchage et les horaires des appels de AC06, et la séquence s'arrête d'elle-même sur tous les canaux à la première réponse ou opposition ; les étapes du jour entrent dans le plan du jour de G01.
+- Critères : aucun envoi hors du contrôle central (test) ; une opposition arrête la séquence sur tous les canaux (test) ; un appel n'est proposé que dans les horaires permis (test).
+
+## Captation et voix
+
+### HX21 · Appels entrants résumés et rangés dans la fiche
+- Statut : à faire
+- Objectif : comme Leedflow d'Apimo et le suivi des appels de Hektor : résumé automatique de chaque appel, enregistrement dans la fiche, provenance des appels venus du site. Jamais vu : chaque information tirée de l'appel renvoie à la phrase dite, la qualification de Q01 s'applique comme pour un message, et la provenance se mesure par les liens d'appel marqués de AT05, sans jamais prendre un second numéro. L'enregistrement n'a lieu qu'après annonce et accord de l'appelant.
+- Critères : aucun enregistrement sans accord rangé (test) ; chaque champ rempli renvoie à un passage de la transcription (test) ; l'appel est rattaché à la bonne fiche, sans doublon (test).
+
+### HX22 · Assistant vocal quand l'agent ne peut pas répondre
+- Statut : à faire
+- Objectif : comme Talqor, PriceHubble et Kleio : un secrétariat vocal qui répond pendant les visites, qualifie l'appelant et propose des créneaux. Jamais vu : l'agent garde son seul numéro, l'appel arrive par un simple renvoi sur non-réponse ; l'assistant se présente comme assistant dès la première phrase, ne donne que les chiffres de la fiche du bien, réserve sur un créneau libre de V01, puis passe la main à l'agent avec le résumé de HX21.
+- Critères : la mention de l'assistant est dite au début de chaque appel (test) ; aucun chiffre donné qui ne vienne de la fiche du bien (test) ; un rendez-vous n'est pris que sur un créneau libre (test).
+
+### HX23 · Messages vocaux transcrits et traités
+- Statut : à faire
+- Objectif : comme Septeo : retranscrire les messages audio. Jamais vu : les notes vocales reçues sur WhatsApp, Instagram et Messenger entrent dans la chaîne de C01 comme un texte : transcrites, qualifiées par Q01, et la réponse part dans la langue de la personne ; l'audio d'origine reste lisible depuis la fiche.
+- Critères : une note vocale donne la même qualification que le même texte écrit (test) ; la transcription est marquée comme telle et liée à son audio (test) ; une transcription impossible passe la main à l'agent, sans réponse inventée (test).
+
+## Contacts et automatismes
+
+### HX24 · Scénarios automatiques réglables, essayés avant d'être allumés
+- Statut : à faire
+- Objectif : comme Automator d'Apimo et Mission Builder de Modelo : la direction compose ses propres scénarios, un déclencheur, une attente, un message, une tâche. Jamais vu : avant d'être allumé, chaque scénario est rejoué sur le journal du mois passé et dit combien de messages il aurait envoyés et à combien de personnes ; il ne peut envoyer que par le contrôle central.
+- Critères : un scénario allumé passe toujours par le contrôle central (test) ; la simulation sur le passé n'envoie rien (test) ; un scénario qui enverrait deux fois à la même personne le même jour est refusé (test).
+
+### HX25 · Prochaine action, filtres et dates des clients
+- Statut : à faire
+- Objectif : comme Modelo et Hektor : la prochaine action suggérée sur chaque fiche, des filtres avancés par budget, secteur et catégorie, et les messages d'anniversaire et de fête. Jamais vu : la prochaine action dit en une ligne pourquoi elle est proposée, d'après le journal, et un message de date n'est préparé que si la personne a donné cette date et son accord, jamais la nuit ni le dimanche.
+- Critères : chaque action proposée cite sa raison (test) ; aucun message de date sans date donnée et accord rangé (test) ; un filtre ne montre jamais une fiche hors des droits de l'agent (test).
+
+### HX26 · Tri de la boîte mail de l'agent
+- Statut : à faire
+- Objectif : comme Talqor : trier les mails, préparer les réponses, relier Gmail, Outlook et Drive. Jamais vu : chaque mail est rattaché à sa fiche et à son dossier, les pièces jointes utiles sont rangées dans le bon dossier, et la réponse préparée cite ce qu'elle reprend du dossier ; rien ne part sans validation.
+- Critères : un mail d'un client connu est rattaché à sa fiche (test) ; aucune réponse envoyée sans validation (test) ; une pièce jointe est rangée une seule fois, par son empreinte (test).
+
+### HX27 · Notifications sur le téléphone, réglables
+- Statut : à faire
+- Objectif : comme Hektor et iad : des notifications sur le téléphone, réglables par l'agent. Jamais vu : un contact chaud arrive en moins d'une minute, le reste est groupé par urgence, et les heures calmes de l'agent sont tenues sauf pour un client qui vient d'écrire.
+- Critères : un contact chaud est notifié tout de suite (test) ; rien de non urgent pendant les heures calmes (test) ; aucune donnée personnelle dans le texte visible écran verrouillé (test).
+
+## Recherche de biens et site
+
+### HX28 · Recherche de biens en langage courant
+- Statut : à faire
+- Objectif : comme Hektor, Zefir et Kleio : l'acquéreur décrit ce qu'il cherche avec ses mots. Jamais vu : la phrase devient une fiche acquéreur de T01, avec ses critères indispensables et ses préférences, les communes voisines proposées et marquées comme telles, et les critères ajustés après chaque refus ; chaque résultat dit pourquoi il correspond.
+- Critères : chaque critère renvoie aux mots de la phrase (test) ; seuls des biens diffusables sont montrés (test) ; une fiche acquéreur n'est créée qu'avec l'accord de la personne (test).
+
+### HX29 · Points d'intérêt et trajets autour du bien
+- Statut : à faire
+- Objectif : comme Apimo : écoles, commerces, transports autour du bien. Jamais vu : les temps de trajet à pied, en transport et en voiture vers ce qui compte pour cet acquéreur, avec la source et la date de chaque donnée, sans jamais révéler l'adresse exacte du bien.
+- Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
+
+### HX30 · Visibilité dans les moteurs d'IA
+- Statut : à faire
+- Objectif : comme Hektor, Kappn et Artur'in : être cité par ChatGPT, Perplexity et Google. Jamais vu : des pages de réponses factuelles, chaque chiffre sourcé, un fichier de présentation pour les robots d'IA, et la mesure des contacts venus d'une IA dans l'origine des contacts de AT05.
+- Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
+
+### HX31 · Écran de vitrine en agence
+- Statut : à faire
+- Objectif : comme Clap.show d'Apimo : un écran en vitrine qui fait défiler les biens. Jamais vu : l'écran ne montre que les biens diffusables au prix publié du moment, avec un code QR qui mène à la fiche et compte les contacts venus de la vitrine.
+- Critères : un bien vendu ou retiré disparaît de l'écran à la mise à jour suivante (test) ; le QR mène à la bonne fiche, marquée « vitrine » (test).
+
+## Estimation
+
+### HX32 · Avis de valeur enrichi : concurrence, loyer possible et quartier
+- Statut : à faire
+- Objectif : comme Hektor, Modelo et Immofacile : les biens concurrents en ligne, l'estimation locative et les données du quartier dans l'avis de valeur. Jamais vu : pour chaque concurrent, le nombre de jours en ligne et ses baisses de prix, lus dans la pige de HX11, et le loyer possible tiré de Y02 avec sa fiabilité, pour que le vendeur voie le marché réel.
+- Critères : chaque concurrent cite sa source et sa date de relevé (test) ; le loyer affiché dit sa source et sa fiabilité (test) ; aucun nom ni adresse exacte de concurrent dans l'avis imprimé (test).
+
+## Mandat et documents
+
+### HX33 · Mandat par questionnaire
+- Statut : à faire
+- Objectif : comme Modelo et ImmoSign : des clauses choisies par questionnaire, des modèles qui s'adaptent au cas, un mandat prérempli depuis l'estimation. Jamais vu : chaque clause retenue dit quelle réponse l'a déclenchée et sur quel texte elle repose, et le prix du mandat est comparé à la fourchette validée de E09 avec l'écart affiché avant signature.
+- Critères : chaque clause renvoie à sa réponse et à son texte (test) ; un écart de prix au-delà du réglage est signalé avant signature (test) ; seul un modèle validé par une personne désignée sert à un vrai mandat (test).
+
+### HX34 · État des risques et déclaration d'intention d'aliéner préparés
+- Statut : à faire
+- Objectif : comme Modelo et Hektor : commander ou produire l'état des risques depuis le dossier, préparer la déclaration d'intention d'aliéner. Jamais vu : l'état des risques est rempli depuis les données de Géorisques déjà collectées par E03, daté, et sa fin de validité à 6 mois entre dans le chemin critique de N07 ; la déclaration est préparée pour le notaire, champs repris du dossier.
+- Critères : chaque rubrique de l'état cite sa source et sa date (test) ; un état de plus de 6 mois à la date de l'acte est signalé (test) ; aucun champ de la déclaration n'est rempli sans donnée du dossier (test).
+
+### HX35 · Copropriété et urbanisme résumés
+- Statut : à faire
+- Objectif : comme Talqor et Hektor : résumé des procès-verbaux de copropriété et du plan local d'urbanisme, données de copropriété et de syndic préremplies. Jamais vu : chaque phrase du résumé renvoie à la page du document d'où elle vient, les données publiques du registre des copropriétés et la zone du plan d'urbanisme sont lues avec leur date, et les travaux votés à venir sont signalés à l'acquéreur.
+- Critères : aucune phrase du résumé sans renvoi à sa page (test) ; les données publiques citent leur source et leur date (test) ; le résumé dit « non trouvé » plutôt que d'inventer (test).
+
+## Signature et recommandé
+
+### HX36 · Lettre recommandée électronique et notification de l'avant-contrat
+- Statut : à faire
+- Objectif : comme Modelo, ImmoSign, Immofacile et la FNAIM : envoyer une lettre recommandée électronique et la notification qui ouvre le délai de rétractation de l'acquéreur. Jamais vu : la date de première présentation revient seule dans l'échéancier de N02 et lance le calcul de la rétractation, sans ressaisie.
+- Critères : la date de première présentation remplit N02 (test) ; un envoi recommandé passe par le contrôle central (test) ; la preuve de dépôt est rangée au dossier (test).
+
+### HX37 · Ordre des signataires, annexes groupées et rappels
+- Statut : à faire
+- Objectif : comme Modelo et Hektor : ordre et groupes de signataires, signature d'un document avec toutes ses annexes, suivi et rappel. Jamais vu : avant de signer, chaque signataire lit en mots simples ce que chaque annexe change pour lui ; les rappels partent par le contrôle central, jamais la nuit ni le dimanche.
+- Critères : l'ordre des signataires est tenu (test) ; un document et ses annexes ont une seule empreinte de dossier (test) ; aucun rappel hors des heures d'envoi (test).
+
+## Diffusion
+
+### HX38 · Diffusion surveillée portail par portail
+- Statut : à faire
+- Objectif : comme Modelo et Neo : choix des portails bien par bien, contrôle des champs exigés, tâche de correction quand un portail rejette, retrait temporaire, vérification de la mise en ligne, classement des portails. Jamais vu : l'appli relit chaque annonce en ligne et signale tout écart avec la version publiée, prix, diagnostic ou mentions, et le vendeur reçoit le lien de chaque annonce une fois vérifiée.
+- Critères : un rejet crée une seule tâche de correction (test) ; un écart de prix entre portail et version publiée est signalé (test) ; le classement des portails se fait sur les contacts et mandats réels (test).
+
+### HX39 · Texte par portail et légendes des photos
+- Statut : à faire
+- Objectif : comme Apimo et Hektor : un texte différent par portail et des titres de photos générés. Jamais vu : seul le texte change, prix et mentions restent identiques partout, et chaque photo reçoit une légende utile aussi aux personnes malvoyantes, sans rien affirmer que la photo ne montre pas.
+- Critères : prix et mentions identiques dans tous les textes (test) ; aucune légende ne cite un élément absent de la fiche (test).
+
+## Photo, vidéo et visite
+
+### HX40 · Retouches déclarées et filigrane
+- Statut : bloquée : contredit X02 (aucune retouche locale), décision de Shawez attendue
+- Objectif : comme Hektor, HOQI et Apimo : remplacer le ciel, enlever les reflets, effacer un objet, poser un filigrane. Jamais vu : chaque retouche locale est inscrite au certificat de X02 et l'image porte la mention « aménagement virtuel » de R48 ; chaque photo exportée porte le filigrane de l'agent et l'identifiant de contenu de AT05, pour qu'une photo reprise par d'autres ramène à lui.
+- Critères : une retouche locale sans mention est refusée (test) ; le certificat liste chaque retouche (test) ; chaque photo exportée porte le filigrane (test).
+
+### HX41 · Aménagement virtuel des pièces
+- Statut : à faire
+- Objectif : comme Hektor, Apimo, HOQI et Talqor : meubler une pièce vide, redécorer en plusieurs styles, rénover sols et murs, désencombrer, transformer un objet. Jamais vu : chaque image transformée est toujours publiée à côté de la photo réelle, jamais en couverture seule, et le certificat dit exactement ce qui a changé.
+- Critères : mention « aménagement virtuel » sur l'image (test) ; l'original est toujours publié à côté (test) ; une image transformée ne peut pas être la seule photo d'une pièce (test).
+
+### HX42 · Vidéo depuis les photos, voix off et avatar
+- Statut : à faire
+- Objectif : comme Hektor, Talqor et Kappn : vidéo animée à partir des photos, mobilier qui apparaît, voix off, sous-titres, avatar de l'agent. Jamais vu : la voix et l'avatar ne viennent que de l'agent lui-même, avec son accord écrit, et la vidéo porte la mention « vidéo générée » ; les sous-titres sortent dans les langues de HX05 ; l'adresse exacte est refusée comme en P06.
+- Critères : aucune voix ni avatar sans accord écrit de l'agent (test) ; la mention est présente sur chaque vidéo générée (test) ; une adresse exacte dans le texte est refusée (test).
+
+### HX43 · Visite à 360 degrés avec contact
+- Statut : à faire
+- Objectif : comme Hektor, Immofacile, Apimo et Optimhome : une visite 360 ou 3D faite au téléphone, avec un formulaire de contact dedans. Jamais vu : chaque vue est reliée à sa pièce du plan de X04, aucune vue ne montre la rue ni le numéro, et le contact pris dans la visite arrive dans C01 avec son origine.
+- Critères : un contact de la visite est rattaché au bien et à son origine (test) ; une vue sans pièce rattachée n'est pas publiée (test).
+
+### HX44 · Avant et après la visite : dossier envoyé, visite à distance et son bon
+- Statut : à faire
+- Objectif : comme Talqor et Live Visit de Hektor : envoyer le dossier du bien avant la visite, faire visiter à distance, éditer le bon de visite ensuite. Jamais vu : le dossier envoyé est celui de la version publiée du jour, sans donnée confidentielle, et le bon de visite d'une visite à distance se signe en ligne par D08 juste après.
+- Critères : aucun nom de vendeur, honoraire ni note interne dans le dossier envoyé (test) ; un bon de visite à distance est signé avant toute offre (test) ; l'envoi passe par le contrôle central (test).
+
+## Offre, avant-contrat et notaire
+
+### HX45 · Avant-contrat préparé, et projet du notaire comparé à l'offre
+- Statut : à faire
+- Objectif : comme Hektor et Modelo : avant-contrat généré depuis l'offre, suivi du dépôt de garantie, récupération du projet notarial. Jamais vu : quand le projet du notaire arrive, l'appli le compare à l'offre acceptée, prix, conditions suspensives, dates, et signale chaque différence ; le dépôt de garantie est suivi comme versé au notaire, jamais à AIMMO.
+- Critères : chaque différence entre projet et offre est signalée (test) ; aucun texte ne demande un versement à AIMMO, règle de N05 (test) ; les dates de l'avant-contrat remplissent N02 (test).
+
+## Après-vente et avis
+
+### HX46 · Avis clients vérifiables, publiés partout
+- Statut : à faire
+- Objectif : comme Opinion System, Immodvisor et Hektor : avis vérifiés, étoiles sur les annonces, diffusion sur Google, le site, les portails et les réseaux. Jamais vu : chaque avis porte une preuve qu'il vient d'un dossier réellement clos, vérifiable par n'importe qui sans donnée personnelle, et tous les avis sont montrés, jamais triés par la note.
+- Critères : un avis sans dossier clos est refusé (test) ; aucun avis masqué selon sa note (test) ; la vérification publique ne révèle aucune donnée personnelle (test).
+
+## Mise en location
+
+### HX47 · Dossiers de location contrôlés contre la fraude
+- Statut : à faire
+- Objectif : comme MonsieurHugo : repérer les faux bulletins de salaire et faux avis d'imposition. Jamais vu : le code vérifie ce qui est vérifiable, code 2D-Doc de l'avis d'imposition, existence de l'employeur dans la base Sirene, calculs du bulletin, et rend un constat ligne par ligne à l'agent, jamais une note de la personne.
+- Critères : un avis d'imposition au code 2D-Doc faux est signalé (test) ; le résultat est un constat, sans note ni classement (test) ; aucune pièce hors de la liste officielle n'est demandée (test).
+
+## Commerces, neuf et viager
+
+### HX48 · Programmes neufs et viager
+- Statut : à faire
+- Objectif : comme Hektor et Apimo : vendre des lots de programmes neufs et des biens en viager. Jamais vu : pour le viager, bouquet et rente calculés par le code, chaque chiffre avec sa source et son hypothèse comme Y03, rejouable, avec mise en relation de l'expert viager de M18 ; pour le neuf, la grille des lots tenue à jour et les frais réduits calculés.
+- Critères : un calcul de viager se rejoue à l'identique (test) ; chaque chiffre cite sa source et son hypothèse (test) ; un lot vendu disparaît de la grille publiée (test).
+
+## Facturation
+
+### HX49 · Factures fournisseurs et rapprochement bancaire
+- Statut : à faire
+- Objectif : comme Ma Boîte Immo : factures fournisseurs lues par l'IA, rapprochement bancaire automatique, relance des impayés. Jamais vu : chaque encaissement est relié à sa facture et à la ligne de banque qui le prouve, et une facture d'honoraires non payée à son échéance prépare une relance validée par la direction.
+- Critères : un encaissement n'est rapproché qu'à une seule facture (test) ; un montant lu sur une facture fournisseur est vérifié contre son total et sa TVA (test) ; aucune relance sans validation (test).
+
+## Pilotage
+
+### HX50 · Rapports sur mesure et export complet
+- Statut : à faire
+- Objectif : comme Immofacile et Modelo : rapports personnalisables et export intégral des données. Jamais vu : chaque agent emporte à tout moment l'export complet de ses propres données, avec son empreinte, et chaque chiffre d'un rapport s'ouvre sur ses lignes comme en K04.
+- Critères : l'export d'un agent ne contient que ses données (test) ; aucun rapport ne compare deux agents entre eux, règle R14 (test) ; chaque chiffre renvoie à ses lignes (test).
+
+## Formation
+
+### HX51 · Quiz et attestations de formation
+- Statut : à faire
+- Objectif : comme Immofacile et l'Akadémie de Hektor : quiz d'auto-formation et attestations conservées. Jamais vu : les questions sont tirées des vraies règles du réseau et des modules de l'académie, chaque erreur renvoie au module à revoir, et l'attestation se vérifie par son empreinte.
+- Critères : chaque question renvoie à sa règle ou à son module (test) ; une attestation modifiée échoue à la vérification (test).
+
+## Marketing et réseaux sociaux
+
+### HX52 · Calendrier de publication sur tous les réseaux
+- Statut : à faire
+- Objectif : comme Hektor : publications automatiques avec calendrier, connexion à Facebook, Instagram, LinkedIn, TikTok, YouTube et la fiche Google, contenus prêts chaque semaine. Jamais vu : le calendrier suit les règles réglées par l'agent, par exemple un bien nouveau chaque jour, jamais un bien repris tant qu'un autre n'est pas sorti, le nombre de publications par réseau, et chaque publication porte son lien marqué de AT20.
+- Critères : aucun bien repris tant qu'un bien n'est jamais sorti (test) ; le nombre réglé par réseau et par jour est tenu (test) ; tout passe par le contrôle central (test).
+
+### HX53 · Lettre d'information et magazine des biens
+- Statut : à faire
+- Objectif : comme Artur'in et Netty : newsletters et magazine immobilier. Jamais vu : chaque lettre est faite pour sa personne, biens qui lui correspondent, valeur suivie de son bien si elle l'a demandée, prix de son quartier de AT01, et le magazine imprimable sort de la même base.
+- Critères : aucune lettre sans accord rangé (test) ; lien de désinscription dans chaque lettre (test) ; aucun prix qui ne vienne de la base (test).
+
+### HX54 · Publicité payante mesurée au mandat
+- Statut : à faire
+- Objectif : comme Hektor : campagnes Google Ads gérées, et de même sur Meta. Jamais vu : chaque campagne est jugée sur les mandats et ventes qu'elle rapporte, lus dans G10, et s'arrête seule quand le coût par contact dépasse le seuil réglé.
+- Critères : aucune dépense sans validation de la direction (test) ; arrêt automatique au seuil (test) ; aucun ciblage par un critère interdit pour le logement (test).
+
+## Intégrations
+
+### HX55 · Serveur MCP et API ouverte
+- Statut : à faire
+- Objectif : comme Neo, Apimo et Maline : piloter le logiciel depuis ChatGPT ou Claude et ouvrir une API aux partenaires. Jamais vu : chaque outil agit sous les droits de l'agent de S08, n'écrit que des brouillons à valider et passe au journal ; une lecture publique des biens diffusables répond aussi aux assistants d'achat comme AQQI.
+- Critères : aucun appel hors des droits de l'agent (test) ; aucune écriture définitive sans validation (test) ; la lecture publique ne rend que des biens diffusables, sans donnée personnelle (test).
+
+## Sécurité et conformité
+
+### HX56 · Clé d'accès, double authentification et données en Europe
+- Statut : à faire
+- Objectif : comme iad : connexion par empreinte ou visage et double authentification, et comme Hektor, Modelo et Talqor : hébergement en Europe. Jamais vu : une clé d'accès par appareil, retirée d'un geste par la direction, et un test de configuration qui échoue si une base ou un stockage sort de la juridiction européenne.
+- Critères : un appareil retiré ne se connecte plus (test) ; une action sensible exige un second facteur (test) ; une base hors Europe fait échouer la vérification (test).
+
+### HX57 · Contrôle du gel des avoirs
+- Statut : à faire
+- Objectif : comme Modelo : vérifier chaque client contre le registre national des gels. Jamais vu : les dossiers ouverts sont revérifiés à chaque mise à jour du registre, et une correspondance va au seul responsable, sans rien changer à ce que voit le client, comme L05.
+- Critères : une correspondance alerte le responsable et fige le dossier (test) ; le client ne voit aucune différence (test) ; chaque contrôle est daté avec la version du registre (test).
+
+### HX58 · Réclamations des clients et médiateur
+- Statut : à faire
+- Objectif : comme Hektor : médiateur de la consommation pris en charge. Jamais vu : chaque réclamation est suivie avec son délai de réponse, et le médiateur est proposé de lui-même au client si la réclamation n'est pas réglée à l'échéance.
+- Critères : chaque réclamation a son échéance et ses alertes (test) ; le médiateur est proposé à l'échéance (test).
+
+---
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
