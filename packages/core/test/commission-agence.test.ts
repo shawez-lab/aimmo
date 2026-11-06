@@ -16,7 +16,7 @@ const ACT_PROOF = 'preuves/0b6f1d2e-8989-4a2b-8c3d-000000000003.pdf';
 const at9 = (day: string) => new Date(`${day}T08:00:00.000Z`);
 
 describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la commission', () => {
-  async function setup(attach: 'avant' | 'apres' | 'jamais' = 'avant') {
+  async function setup(attach: 'avant' | 'apres' | 'jamais' = 'avant', options: ConstructorParameters<typeof Commissions>[3] = {}) {
     const t = await setupOffre();
     await t.annonces.validate(t.agent, t.draftId);
     await t.publication.sync(t.network.id, t.propertyId);
@@ -45,7 +45,7 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     const fileId = opened.value.id;
     if (attach === 'avant') expect(await p.attachFile(t.agent, shareId, fileId)).toMatchObject({ ok: true });
     // Grille à 70 % pour l'agent, compromis signé.
-    const c = new Commissions(t.db, t.acces, t.journal, { now: t.now });
+    const c = new Commissions(t.db, t.acces, t.journal, { now: t.now, ...options });
     expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 })).toMatchObject({ ok: true });
     await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt: new Date('2027-03-01T11:30:00.000Z') });
     expect(await dossiers.startCompromis(t.agent, fileId)).toMatchObject({ ok: true });
@@ -91,6 +91,32 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     await t.acte();
     // Le relevé de l'acte retrouve la même part.
     expect(await t.p.statement(t.agency, t.shareId)).toMatchObject({ ok: true, value: { partnerCents: 400_000, ownCents: 600_000 } });
+  });
+
+  it('[R235] [R69] avec un partage entre agents et une prime de parrainage : tout se calcule sur ce qui reste après l’agence', async () => {
+    const seen: number[] = [];
+    const t = await setup('avant', {
+      partages: { of: async () => [{ agentId: 'agent-binome', ratioBp: 5_000, reason: 'binome' as const }] },
+      primes: {
+        of: async (_n: string, _a: string, networkShareCents: number) => {
+          seen.push(networkShareCents);
+          return { parrainId: 'agent-parrain', amountCents: Math.floor(networkShareCents / 10) };
+        },
+      },
+    });
+    // 10 000 € : l'agence 4 000 € ; sur 6 000 €, l'agent 4 200 € dont 2 100 € au binôme ; réseau 1 800 € dont 180 € au parrain.
+    expect(seen).toEqual([180_000]);
+    const list = await t.c.list(t.direction);
+    if (!list.ok) throw new Error();
+    expect(list.value[0]!.shares.map((s) => [s.kind, s.beneficiaryId, s.amountCents])).toEqual([
+      ['reseau', null, 162_000],
+      ['agent', t.alexId, 210_000],
+      ['partage', 'agent-binome', 210_000],
+      ['parrainage', 'agent-parrain', 18_000],
+      ['agence', `agence:${t.agency.userId}`, 400_000],
+    ]);
+    expect(list.value[0]!.shares.reduce((a, s) => a + s.amountCents, 0)).toBe(1_000_000);
+    expect(list.value[0]!.status).toBe('prevue');
   });
 
   it('[R235] aucune facture de reversement ne porte la part de l’agence ; la facture d’honoraires reste entière', async () => {

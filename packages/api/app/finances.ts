@@ -34,6 +34,7 @@ const SHARE_NAMES: Record<string, string> = {
   agent: 'Part de l’agent',
   partage: 'Partage',
   parrainage: 'Prime de parrainage',
+  agence: 'Part de l’agence partenaire',
 };
 const SPLIT_REASONS: Record<string, string> = {
   fichier_commun: 'fichier commun',
