@@ -68,6 +68,11 @@ export const INDEX_HTML = `<!doctype html>
 </form>
 <p id="erreur" role="alert" hidden></p>
 </section>
+<section id="invitation" hidden>
+<h2>Votre accès à AIMMO</h2>
+<p>Ce lien ne sert qu’une fois. Ouvrez-le sur le téléphone que vous garderez pour AIMMO.</p>
+<button id="entrer-invitation" type="button">Entrer sur ce téléphone</button>
+</section>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
 <button id="vers-reseau" type="button" class="secondaire" hidden>Voir le réseau</button>
@@ -1991,8 +1996,8 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
-    $('sortir').hidden = id === 'connexion' || id === 'attente';
+    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    $('sortir').hidden = id === 'connexion' || id === 'attente' || id === 'invitation';
   }
   function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };
@@ -2048,7 +2053,7 @@ ${LOUER_JS}
       return enter(main);
     }, function () {
       if (mine !== session) return false;
-      return refuse('Pas de réseau. Rouvrez le lien du mail quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
+      return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
   function enter(key) {
@@ -2220,9 +2225,17 @@ ${LOUER_JS}
       try { if (typeof history !== 'undefined') history.replaceState(null, '', '/app/'); } catch (e) { /* rien à remplacer */ }
     }
     if (invited) {
-      accept(invited[1]);
+      // Z05 : ouvrir le lien ne consomme rien. Un aperçu de lien, un navigateur intégré ou une double ouverture
+      // n'échangent jamais le jeton : seul le clic sur « Entrer sur ce téléphone » le fait, une seule fois.
+      var pending = invited[1];
+      show('invitation');
+      $('entrer-invitation').addEventListener('click', function () {
+        var token = pending;
+        pending = null;
+        if (token) accept(token);
+      });
     } else if (hash.indexOf('#invitation=') === 0) {
-      refuse('Lien d’invitation incomplet. Ouvrez le lien du mail en entier.');
+      refuse('Lien d’invitation incomplet. Ouvrez votre lien d’accès en entier.');
     } else {
       var key = readKey();
       if (key) enter(key); else show('connexion');
