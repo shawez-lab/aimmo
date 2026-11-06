@@ -657,3 +657,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 07:54 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-06 08:24 · voie 1 · plus rien de faisable, état inchangé depuis 06:23 : aucune proposition ouverte ; #16 du site toujours ouverte (H37) ; SV14 attend H51 ; SV05 attend H29 et H50 ; X17 attend H24 ; W23 attend H43 ; verrou resté libre, non pris ; pas de relance · prochaine : aucune
 - 2026-11-06 08:33 · B03 · #16 fusionnée sur shawez-immo par Shawez ; l'ombre attend H14 et la fin de H37 (clé site_auto, variables Pages) · prochaine : selon le plan
+- 2026-11-06 08:55 · voie 2 · plus rien de faisable : aucune proposition ouverte ; H51 décidée, donc SV14 est prête, mais elle est réservée à la voie 1 et refait une table du socle (migration) ; #16 du site fusionnée, B04 attend encore H05, H14, la fin de H37 et 7 jours d'ombre ; C09 attend H04, H05, H06, H13 ; SV05 attend H29 et H50 ; verrou resté libre, non pris · prochaine : aucune pour la voie 2
+- 2026-11-06 08:55 · VOIE 2 : relance refusée, question 2 (mes trois dernières séances voie 2 n'ont produit ni commit de code ni tâche terminée)
+- 2026-11-06 08:55 · VOIE 2 : aucune tâche, rien, relancé non
