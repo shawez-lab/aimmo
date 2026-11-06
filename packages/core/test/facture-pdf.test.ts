@@ -353,6 +353,25 @@ it('[R256] un long nom ou une longue adresse se coupe dans sa colonne : rien ne 
   for (const word of long.split(' ')) expect(flat).toContain(word);
 });
 
+it('[R256] une désignation qui continue sur une autre page garde son montant en face de sa première ligne, sous « Montant HT »', () => {
+  const xml = xmlOf({ ...HONORAIRES, designation: 'Honoraires '.repeat(350).trim() });
+  const pdf = pdfOf(xml);
+  const pages = [...objects(pdf).values()].filter((o) => o.stream && /^<<\s+\/Length \d+ >>$/.test(o.dict)).map((o) => latin1(o.stream!));
+  expect(pages.length).toBeGreaterThan(1);
+  const hex = (t: string) => [...new TextEncoder().encode(t)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const amount = montantImprime('10416.67');
+  const amountHex = [...amount].map((c) => (c === '€' ? '80' : c === '\u00a0' ? 'a0' : c.charCodeAt(0).toString(16).padStart(2, '0'))).join('');
+  expect(pages[0]).toContain(`<${hex('Montant HT')}>`);
+  const first = /([\d.]+) Td <([0-9a-f]*)> Tj ET/g;
+  const rows = [...pages[0]!.matchAll(first)];
+  const amountRow = rows.find((r) => r[2] === amountHex)!;
+  const firstLine = rows.find((r) => r[2]!.startsWith(hex('Honoraires Honoraires')))!;
+  expect(amountRow).toBeDefined();
+  expect(amountRow[1]).toBe(firstLine[1]);
+  // Deux fois en tout, la ligne et le total HT : jamais égaré sur une autre page.
+  expect(pages.join('\n').split(`<${amountHex}>`).length - 1).toBe(2);
+});
+
 it('[R256] de longues mentions passent à la page suivante, numérotée, sans rien perdre ni déborder', () => {
   const mentions = Array.from({ length: 40 }, (_, i) => `Mention inventée numéro ${i + 1} : ${'texte de remplissage '.repeat(12).trim()}.`);
   const pdf = pdfOf(xmlOf({ ...HONORAIRES, mentions, designation: `Honoraires ${'tres-long-mot-sans-espace'.repeat(8)}` }));

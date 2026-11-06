@@ -311,9 +311,10 @@ function layout(v: VueFacturX): string[][] {
   p.right(amountCol, p.y, 'Montant HT', 'B', 8, ACCENT);
   p.y -= 8;
   p.rule(left, rightEdge, p.y, 0.8, ACCENT);
-  const lineTop = p.y;
+  // Le montant se pose en face de la première ligne, sur sa page, même si la désignation continue plus loin.
+  p.room(10 * 1.5);
+  p.right(amountCol, p.y - 10 * 1.45, montantImprime(v.ht), 'R', 10);
   p.paragraph(left, v.designation, 'R', 10, rightEdge - left - 120);
-  p.right(amountCol, lineTop - 10 * 1.45, montantImprime(v.ht), 'R', 10);
   p.y -= 10;
   p.rule(left, rightEdge, p.y);
 
