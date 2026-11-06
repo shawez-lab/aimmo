@@ -24,6 +24,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Acces } from '../acces/acces.ts';
 import { Commissions } from './commissions.ts';
+import { FACTURX_PROFILE, factureElectronique, type IdentiteClient, type IdentiteEmetteur } from './facturx.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const TRIAL_NOTICE = 'Facture d’essai, sans valeur comptable.';
@@ -58,7 +59,25 @@ export interface InvoiceView {
   issuer: string;
   content: InvoiceContent;
   transmitted: { mode: 'essai'; platformRef: string } | null;
+  /** Le XML Factur-X écrit pour cette facture, par son empreinte ; `null` tant qu'une identité manque (HX04). */
+  facturX: { profile: string; sha256: string } | null;
 }
+
+/**
+ * Les identités réelles de la facture électronique (HX04) : la société du réseau et chaque agent qui facture, avec
+ * leur SIREN, leur adresse, leur régime de TVA et leurs conditions de paiement ; l'adresse du client qui paie. Rien
+ * n'est deviné : une identité absente rend `null`, et la facture attend, sans XML [R254].
+ */
+export interface IdentitesFacturation {
+  emetteur(networkId: string, issuer: string): Promise<IdentiteEmetteur | null>;
+  client(networkId: string, personId: string): Promise<IdentiteClient | null>;
+}
+
+/** Tant que la société n'est pas créée (H09) et que les adresses ne sont pas saisies : aucune identité. */
+export const AUCUNE_IDENTITE: IdentitesFacturation = { emetteur: async () => null, client: async () => null };
+
+const sha256 = async (text: string): Promise<string> =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 export interface DraftView {
   id: string;
@@ -73,15 +92,18 @@ export interface DraftView {
 /** La plateforme agréée de facturation électronique, derrière une interface ; seule celle d'essai existe [R26]. */
 export interface PlateformeFacturation {
   readonly mode: 'essai';
-  transmit(invoice: { id: string; content: InvoiceContent }): Promise<{ ref: string }>;
+  transmit(invoice: { id: string; content: InvoiceContent; facturX: string | null }): Promise<{ ref: string }>;
 }
 
 /** La plateforme d'essai : elle reçoit, ne transmet rien à personne. */
 export class PlateformeEssai implements PlateformeFacturation {
   readonly mode = 'essai' as const;
   readonly received: string[] = [];
-  async transmit(invoice: { id: string; content: InvoiceContent }): Promise<{ ref: string }> {
+  /** Les XML Factur-X reçus, par numéro de facture. */
+  readonly xml = new Map<string, string>();
+  async transmit(invoice: { id: string; content: InvoiceContent; facturX: string | null }): Promise<{ ref: string }> {
     this.received.push(invoice.content.label);
+    if (invoice.facturX) this.xml.set(invoice.content.label, invoice.facturX);
     return { ref: `essai:${invoice.id}` };
   }
 }
@@ -109,18 +131,20 @@ export class Factures {
   private readonly plateforme: PlateformeFacturation;
   private readonly vat: { honoraires: number; reversement: number };
   private readonly commissions: Commissions;
+  private readonly identites: IdentitesFacturation;
 
   constructor(
     private readonly db: SqlDatabase,
     acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string; plateforme?: PlateformeFacturation; vatBp?: { honoraires: number; reversement: number } } = {},
+    options: { now?: () => Date; newId?: () => string; plateforme?: PlateformeFacturation; vatBp?: { honoraires: number; reversement: number }; identites?: IdentitesFacturation } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.plateforme = options.plateforme ?? new PlateformeEssai();
     if (this.plateforme.mode !== 'essai') throw new Error('Aucune facture réelle tant que H26 n’est pas fait [R26].');
     this.vat = options.vatBp ?? { ...DEFAULT_VAT_BP };
+    this.identites = options.identites ?? AUCUNE_IDENTITE;
     this.commissions = new Commissions(db, acces, journal, { now: this.now });
   }
 
@@ -274,6 +298,67 @@ export class Factures {
   }
 
   /**
+   * Le XML Factur-X de la facture, écrit une seule fois puis relu tel quel [R254]. Une identité manque : rien n'est
+   * écrit, et ce qui manque va une fois au journal, par règle EN 16931, sans aucune donnée [R13] ; il sera écrit au
+   * passage suivant si l'identité est donnée entre-temps, même si la facture est déjà partie en essai sans lui.
+   */
+  private async facturX(invoiceId: string, networkId: string, v: InvoiceView): Promise<string | null> {
+    const stored = await this.db.first<{ xml: string }>('SELECT xml FROM invoice_facturx WHERE invoice_id = ?', [invoiceId]);
+    if (stored) return stored.xml;
+    const recipient = (await this.db.first<{ person_id: string | null }>(
+      'SELECT d.recipient_person_id AS person_id FROM invoices i LEFT JOIN invoices o ON o.id = i.corrects_invoice_id JOIN invoice_drafts d ON d.id = COALESCE(i.draft_id, o.draft_id) WHERE i.id = ?',
+      [invoiceId],
+    ))?.person_id ?? null;
+    let seller: IdentiteEmetteur | null = null;
+    // Le client d'une facture d'honoraires est la personne qui paie ; celui d'un reversement, la société du réseau.
+    let buyer: IdentiteClient | null = null;
+    try {
+      seller = await this.identites.emetteur(networkId, v.issuer);
+      if (recipient) buyer = await this.identites.client(networkId, recipient);
+      else {
+        const reseau = await this.identites.emetteur(networkId, 'reseau');
+        buyer = reseau ? { name: reseau.name, siren: reseau.siren, address: reseau.address } : null;
+      }
+    } catch (error) {
+      // Une panne des identités n'arrête ni la facture ni le passage : sans XML cette fois, repris au suivant.
+      await appendEvent(this.journal, { type: 'facture.facturx_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      return null;
+    }
+    const built = factureElectronique({ content: v.content, seller, buyer });
+    if (!built.ok) {
+      // Une fois par manque, avec sa règle EN 16931 : un manque nouveau (une identité donnée sans son adresse, par
+      // exemple) va au journal même si la facture attendait déjà pour autre chose.
+      const before = new Set(
+        (await this.journal.bySubject(`sale_file:${v.fileId}`))
+          .filter((e) => e.type === 'facture.facturx_attente' && e.data.label === v.content.label)
+          .flatMap((e) => (Array.isArray(e.data.missing) ? (e.data.missing as string[]) : [])),
+      );
+      const fresh = built.missing.filter((m) => !before.has(m));
+      if (fresh.length > 0) await appendEvent(this.journal, { type: 'facture.facturx_attente', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, missing: fresh } }, this.now);
+      return null;
+    }
+    await this.db.run('INSERT INTO invoice_facturx (invoice_id, profile, xml, sha256, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [invoiceId, FACTURX_PROFILE, built.xml, await sha256(built.xml), this.now().toISOString()]);
+    return (await this.db.first<{ xml: string }>('SELECT xml FROM invoice_facturx WHERE invoice_id = ?', [invoiceId]))!.xml;
+  }
+
+  /**
+   * Réserve un essai d'envoi : le numéro d'essai suivant, pris par une seule écriture. Rend `null` si un autre essai est
+   * en cours : réservé, ni réussi, ni dit en panne au journal, depuis moins d'une heure (au-delà, une coupure l'a
+   * perdu, et la plateforme écarte un doublon par l'identifiant de la facture).
+   */
+  private async claimTransmission(invoiceId: string, fileId: string, label: string): Promise<number | null> {
+    const last = await this.db.first<{ attempt: number; at: string }>('SELECT attempt, at FROM invoice_transmission_claims WHERE invoice_id = ? ORDER BY attempt DESC LIMIT 1', [invoiceId]);
+    if (last) {
+      const failed = (await this.journal.bySubject(`sale_file:${fileId}`)).some((e) => e.type === 'facture.envoi_en_panne' && e.data.label === label && e.data.attempt === last.attempt);
+      const stale = this.now().getTime() - Date.parse(last.at) > 3_600_000;
+      if (!failed && !stale) return null;
+    }
+    const attempt = (last?.attempt ?? 0) + 1;
+    const { changes } = await this.db.run('INSERT INTO invoice_transmission_claims (invoice_id, attempt, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [invoiceId, attempt, this.now().toISOString()]);
+    return changes === 1 ? attempt : null;
+  }
+
+  /**
    * Ce qui suit une facture rangée, repris tant qu'il manque : l'envoi à la plateforme d'essai, la ligne du journal, et
    * pour une facture d'honoraires non annulée, la commission « facturée » [R67]. Une panne de la plateforme laisse la
    * facture rangée, sans envoi, reprise au passage suivant ; elle va au journal, sans donnée [R13].
@@ -281,14 +366,11 @@ export class Factures {
   private async follow(invoiceId: string, actor: string): Promise<void> {
     const v = (await this.byId(invoiceId))!;
     const row = (await this.db.first<{ network_id: string; kind: InvoiceKind }>('SELECT network_id, kind FROM invoices WHERE id = ?', [invoiceId]))!;
-    if (!v.transmitted) {
-      try {
-        const r = await this.plateforme.transmit({ id: invoiceId, content: v.content });
-        await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, r.ref, this.now().toISOString()]);
-      } catch (error) {
-        await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
-      }
-    }
+    // Un seul envoi à la fois : l'essai est réservé en base avant d'appeler la plateforme ; un autre passage qui le
+    // trouve en cours s'arrête là, et le gagnant fait la suite, ligne du journal comprise, avant l'envoi (HX04) [R255].
+    // L'identifiant de la facture va aussi à la plateforme, qui écarte un second envoi du même identifiant.
+    const attempt = v.transmitted ? null : await this.claimTransmission(invoiceId, v.fileId, v.content.label);
+    if (!v.transmitted && attempt === null) return;
     const type = row.kind === 'avoir' ? 'facture.avoir' : 'facture.emise';
     if (!(await this.journal.bySubject(`sale_file:${v.fileId}`)).some((e) => e.type === type && e.data.label === v.content.label)) {
       // Au journal : la sorte, le numéro et le client qui paie (sa fiche, pour sa demande d'accès), jamais un montant
@@ -298,6 +380,19 @@ export class Factures {
         [invoiceId],
       ))?.person_id ?? null;
       await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}), ...(recipient ? { client: `person:${recipient}` } : {}) } }, this.now);
+    }
+    // Le XML s'écrit dès que les identités sont là, même pour une facture déjà partie en essai sans lui [R254].
+    const facturX = await this.facturX(invoiceId, row.network_id, v);
+    if (!v.transmitted) {
+      let ref: string | null = null;
+      try {
+        ref = (await this.plateforme.transmit({ id: invoiceId, content: v.content, facturX })).ref;
+      } catch (error) {
+        await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, attempt, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      }
+      // Hors du bloc de panne : une écriture ratée après un envoi reçu ne se dit jamais en panne, l'essai reste
+      // réservé et ne se reprend qu'après l'heure, la plateforme écartant le doublon par l'identifiant [R255].
+      if (ref !== null) await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, ref, this.now().toISOString()]);
     }
     if (row.kind === 'honoraires' && !(await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]))) {
       const step = await this.commissions.recordStep(row.network_id, v.fileId, 'facturee', `facture:${v.content.label}`, actor);
@@ -324,15 +419,50 @@ export class Factures {
   async validate(viewer: Viewer, draftId: string): Promise<{ ok: true; value: InvoiceView } | InvoiceRefusal | InvoiceProblem> {
     const refusal = await this.directionRefusal(viewer, 'invoice');
     if (refusal) return refusal;
+    return this.issue(viewer.networkId, draftId, this.actor(viewer));
+  }
+
+  /**
+   * Le jour de l'acte, les factures partent toutes seules (HX04) [R255] : chaque brouillon d'un dossier dont l'acte est
+   * signé est validé par le système, sans attendre la direction, s'il retombe encore au centime sur le dossier — les
+   * honoraires de la commission, la part de chaque agent après la part de l'agence partenaire (HX59). Un écart n'émet
+   * rien et va une fois au journal. La numérotation reste celle de K02 : jamais deux factures d'un même brouillon.
+   * Rend le nombre de factures émises.
+   */
+  async issueOnDeed(networkId: string): Promise<number> {
+    const today = localTime(this.now(), TIME_ZONE).date;
+    const rows = await this.db.all<{ id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; amount_cents: number }>(
+      `SELECT d.id, d.file_id, d.kind, d.issuer, d.amount_cents FROM invoice_drafts d JOIN sale_file_closings c ON c.file_id = d.file_id
+       WHERE d.network_id = ? AND c.signed_on <= ? AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.draft_id = d.id)
+       ORDER BY d.created_at, CASE d.kind WHEN 'honoraires' THEN 0 ELSE 1 END, d.issuer, d.round`,
+      [networkId, today],
+    );
+    let issued = 0;
+    for (const d of rows) {
+      const expected =
+        d.kind === 'honoraires'
+          ? (await this.db.first<{ n: number }>('SELECT fee_cents AS n FROM commissions WHERE file_id = ?', [d.file_id]))?.n
+          : (await this.db.first<{ n: number | null }>("SELECT SUM(amount_cents) AS n FROM commission_shares WHERE file_id = ? AND kind IN ('agent', 'partage') AND beneficiary_id = ?", [d.file_id, d.issuer.slice(6)]))?.n;
+      if (expected !== d.amount_cents) {
+        await this.waiting(d.file_id, `ecart_dossier:${d.kind}`);
+        continue;
+      }
+      const r = await this.issue(networkId, d.id, 'system:facturation');
+      if (r.ok) issued += 1;
+    }
+    return issued;
+  }
+
+  private async issue(networkId: string, draftId: string, actor: string): Promise<{ ok: true; value: InvoiceView } | InvoiceProblem> {
     const d = await this.db.first<{ id: string; network_id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; recipient_person_id: string | null; amount_cents: number; vat_bp: number }>(
       'SELECT id, network_id, file_id, kind, issuer, recipient_person_id, amount_cents, vat_bp FROM invoice_drafts WHERE id = ?',
       [draftId],
     );
-    if (!d || d.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
+    if (!d || d.network_id !== networkId) return { ok: false, rule: null, code: 'unknown' };
     const done = await this.db.first<{ id: string }>('SELECT id FROM invoices WHERE draft_id = ?', [draftId]);
     if (done) {
       // Déjà numérotée : ce qui aurait manqué après une coupure est repris.
-      await this.follow(done.id, this.actor(viewer));
+      await this.follow(done.id, actor);
       return { ok: false, rule: null, code: 'already' };
     }
     // Une vente annulée par un avoir n'émet plus aucune facture, même d'un brouillon préparé avant.
@@ -363,11 +493,11 @@ export class Factures {
         corrects: null,
         reason: null,
       },
-      this.actor(viewer),
+      actor,
     );
     if (id === 'busy') return { ok: false, rule: null, code: 'busy' };
     if (!id) return { ok: false, rule: null, code: 'already' };
-    await this.follow(id, this.actor(viewer));
+    await this.follow(id, actor);
     return { ok: true, value: (await this.byId(id))! };
   }
 
@@ -424,13 +554,13 @@ export class Factures {
   }
 
   private async byId(id: string): Promise<InvoiceView | null> {
-    const r = await this.db.first<{ id: string; file_id: string; issuer: string; kind: InvoiceKind; year: number; number: number; content: string; platform_ref: string | null }>(
-      'SELECT i.id, i.file_id, i.issuer, i.kind, i.year, i.number, i.content, t.platform_ref FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id WHERE i.id = ?',
+    const r = await this.db.first<{ id: string; file_id: string; issuer: string; kind: InvoiceKind; year: number; number: number; content: string; platform_ref: string | null; profile: string | null; sha256: string | null }>(
+      'SELECT i.id, i.file_id, i.issuer, i.kind, i.year, i.number, i.content, t.platform_ref, x.profile, x.sha256 FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id LEFT JOIN invoice_facturx x ON x.invoice_id = i.id WHERE i.id = ?',
       [id],
     );
     if (!r) return null;
     const content = { ...(JSON.parse(r.content) as Omit<InvoiceContent, 'label'>), label: this.label(r.kind, r.issuer, r.year, r.number) };
-    return { id: r.id, fileId: r.file_id, issuer: r.issuer, content, transmitted: r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null };
+    return { id: r.id, fileId: r.file_id, issuer: r.issuer, content, transmitted: r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null, facturX: r.profile && r.sha256 ? { profile: r.profile, sha256: r.sha256 } : null };
   }
 
   /** Les factures : la direction voit le réseau ; un agent, seulement les reversements émis à son nom [R16, R68]. */

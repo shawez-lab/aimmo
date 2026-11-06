@@ -133,6 +133,27 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     expect(JSON.stringify(drafts.value)).not.toContain(t.agency.userId);
   });
 
+  it('[R255] [R235] le jour de l’acte, les factures partent seules, part de l’agence déjà déduite : honoraires entiers, reversement sur le reste', async () => {
+    const t = await setup('avant');
+    await t.acte();
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now });
+    await f.prepare(t.network.id);
+    expect(await f.issueOnDeed(t.network.id)).toBe(2);
+    const list = await f.list(t.direction);
+    if (!list.ok) throw new Error();
+    expect(list.value.map((v) => [v.content.kind, v.issuer, v.content.ttcCents])).toEqual([
+      ['honoraires', 'reseau', 1_000_000],
+      ['reversement', `agent:${t.alexId}`, 420_000],
+    ]);
+    // Le reversement de l'agent, la part du réseau et celle de l'agence font les honoraires facturés au client [R69].
+    const shares = await t.c.list(t.direction);
+    if (!shares.ok) throw new Error();
+    const reseau = shares.value[0]!.shares.find((s) => s.kind === 'reseau')!.amountCents;
+    const agence = shares.value[0]!.shares.find((s) => s.kind === 'agence')!.amountCents;
+    expect(420_000 + reseau + agence).toBe(list.value[0]!.content.ttcCents);
+    expect(JSON.stringify(list.value)).not.toContain(t.agency.userId);
+  });
+
   it('[R235] un dossier rattaché après la commission prévue ne la change pas : refusé, l’écart au journal, la base le refuse aussi', async () => {
     const t = await setup('apres');
     expect(await t.p.attachFile(t.agent, t.shareId, t.fileId)).toEqual({ ok: false, rule: 'R235', code: 'commission_prevue' });
