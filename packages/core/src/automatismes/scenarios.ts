@@ -155,6 +155,26 @@ export function renderScenarioText(template: string, firstName: string | null): 
   return name === '' ? template.replace(/\s*\{prenom\}/, '').replace(/\s+,/, ',') : template.replace(FIRST_NAME_SLOT, name);
 }
 
+/**
+ * Un texte fixe de la direction pour un message automatique : le prénom une seule fois, et dès maintenant les contrôles
+ * du contrôle central, sans aucun chiffre, mention comprise dans la longueur du canal [R06 à R10, R403].
+ */
+export function checkFixedText(channel: AutomationChannel, input: unknown, rule = 'R403'): ScenarioResult<string> {
+  const bad = (code: string, r: string | null = rule): ScenarioResult<string> => ({ ok: false, rule: r, code });
+  const body = text(input, 4000);
+  if (body === null) return bad('bad_text');
+  // Le prénom une seule fois : le premier message s'adresse à la personne par son prénom [R08].
+  if (body.split(FIRST_NAME_SLOT).length !== 2) return bad('first_name_slot');
+  if (/[{}]/.test(body.replace(FIRST_NAME_SLOT, ''))) return bad('first_name_slot');
+  for (const firstName of [SAMPLE_FIRST_NAME, null]) {
+    const problems = checkText(renderScenarioText(body, firstName), { audience: 'client', channel, firstOfConversation: true, firstName, figures: [] });
+    if (problems.length > 0) return bad(`text_${problems[0]!.rule}`, problems[0]!.rule);
+  }
+  // Mention comprise, le texte tient dans le canal : sinon le contrôle central le refuserait à chaque envoi.
+  if (body.replace(FIRST_NAME_SLOT, 'x'.repeat(40)).length + LONGEST_MENTION > DEFAULT_TEXT_SETTINGS.maxLength[channel]) return bad('text_length');
+  return { ok: true, value: body };
+}
+
 /** Lit une définition reçue, champ par champ, en listes fermées [R403]. */
 export function parseScenario(input: unknown, settings: ScenarioSettings = DEFAULT_SCENARIO_SETTINGS): ScenarioResult<ScenarioDefinition> {
   const bad = (code: string, rule: string | null = 'R403'): ScenarioResult<ScenarioDefinition> => ({ ok: false, rule, code });
@@ -177,19 +197,9 @@ export function parseScenario(input: unknown, settings: ScenarioSettings = DEFAU
     if (Object.keys(mm).some((k) => k !== 'channel' && k !== 'text')) return bad('unknown_field');
     const channel = mm['channel'];
     if (typeof channel !== 'string' || !(AUTOMATION_CHANNELS as readonly string[]).includes(channel)) return bad('bad_channel');
-    const body = text(mm['text'], 4000);
-    if (body === null) return bad('bad_text');
-    // Le prénom une seule fois : le premier message s'adresse à la personne par son prénom [R08].
-    if (body.split(FIRST_NAME_SLOT).length !== 2) return bad('first_name_slot');
-    if (/[{}]/.test(body.replace(FIRST_NAME_SLOT, ''))) return bad('first_name_slot');
-    // Le texte passe dès maintenant les contrôles du contrôle central, sans aucun chiffre [R06 à R10].
-    for (const firstName of [SAMPLE_FIRST_NAME, null]) {
-      const problems = checkText(renderScenarioText(body, firstName), { audience: 'client', channel: channel as AutomationChannel, firstOfConversation: true, firstName, figures: [] });
-      if (problems.length > 0) return bad(`text_${problems[0]!.rule}`, problems[0]!.rule);
-    }
-    // Mention comprise, le texte tient dans le canal : sinon le contrôle central le refuserait à chaque envoi.
-    if (body.replace(FIRST_NAME_SLOT, 'x'.repeat(40)).length + LONGEST_MENTION > DEFAULT_TEXT_SETTINGS.maxLength[channel as AutomationChannel]) return bad('text_length');
-    message = { channel: channel as AutomationChannel, text: body };
+    const checked = checkFixedText(channel as AutomationChannel, mm['text']);
+    if (!checked.ok) return checked;
+    message = { channel: channel as AutomationChannel, text: checked.value };
   }
   let task: ScenarioDefinition['task'] = null;
   const t = i['task'] ?? null;
