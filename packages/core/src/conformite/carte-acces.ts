@@ -230,6 +230,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   listing: 'journal',
   inbound: 'journal',
   voice_note: 'journal',
+  call: 'journal',
   message: 'journal',
   task: 'journal',
   alert: 'journal',
@@ -323,6 +324,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
+  // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
+  calls: { locate: by('person_id') },
+  call_journal: { locate: [via('call_id', 'calls')] },
   contact_keys: { locate: by('person_id') },
   attach_log: { locate: by('person_id') },
   conversation_handovers: { locate: by('person_id') },
@@ -595,6 +599,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'listing_drafts', 'id', { prefix: 'listing:' }),
       via('subject', 'inbound_messages', 'id', { prefix: 'inbound:' }),
       via('subject', 'voice_notes', 'id', { prefix: 'voice_note:' }),
+      via('subject', 'calls', 'id', { prefix: 'call:' }),
       via('subject', 'messages', 'id', { prefix: 'message:' }),
       via('subject', 'appointment_tasks', 'id', { prefix: 'task:' }),
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
