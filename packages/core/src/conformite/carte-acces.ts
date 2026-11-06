@@ -318,6 +318,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   send_reservations: { locate: by('person_id') },
   inbound_messages: { locate: by('person_id') },
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
+  // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
+  voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
   contact_keys: { locate: by('person_id') },
   attach_log: { locate: by('person_id') },
   conversation_handovers: { locate: by('person_id') },

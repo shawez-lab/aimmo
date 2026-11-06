@@ -52,7 +52,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     donnees: ['Coordonnées de messagerie', 'Contenu des messages', 'Journal des envois et des refus'],
     duree: '3 ans après le dernier contact, comme la fiche du client.',
     destinataires: ['L\'agent attribué', 'La direction du réseau, en lecture', 'Le responsable de la conformité'],
-    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
+    sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)', 'Fournisseur de transcription des notes vocales (à choisir, H52)'],
     tables: {
       messages: ['agent_id', 'person_id', 'conversation_id', 'body'],
       message_kinds: ['agent_id'],
@@ -61,6 +61,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       send_reservations: ['person_id'],
       inbound_messages: ['agent_id', 'external_id', 'conversation_ref', 'sender_channel_id', 'sender_name', 'sender_identifiers', 'subject', 'body', 'post_ref', 'raw_payload', 'person_id'],
       reception_log: ['agent_id', 'reason'],
+      // HX23 : la transcription d'une note vocale et le lien vers son audio chez le canal.
+      voice_notes: ['external_id', 'media_ref', 'transcript'],
       contact_keys: ['person_id'],
       attach_log: ['person_id', 'reason'],
       conversation_handovers: ['agent_id', 'person_id', 'conversation_id', 'reason'],
@@ -765,6 +767,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   send_reservations: ['key', 'reservation_id', 'network_id', 'message_id', 'created_at'],
   send_quota_slots: ['network_id', 'kind', 'day', 'slot', 'reservation_id', 'created_at'],
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
+  voice_notes: ['id', 'network_id', 'channel', 'status', 'reason', 'mime', 'language', 'confidence', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],
   attach_log: ['id', 'network_id', 'inbound_id', 'message_id', 'outcome', 'exclusion', 'silenced', 'occurred_at', 'created_at'],
