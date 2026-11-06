@@ -38,8 +38,18 @@ export interface AgendaProvider {
   events(agentId: string, from: Date, to: Date): Promise<AgendaEvent[]>;
   /** Écrit l'événement de la clé : le crée s'il n'existe pas, sinon le met à jour. Rend son identifiant. */
   write(agentId: string, eventId: string | null, event: AgendaWrite): Promise<{ eventId: string }>;
-  /** Les événements changés depuis le curseur (tous au premier appel), et le curseur suivant. */
-  changes(agentId: string, cursor: string | null): Promise<{ events: AgendaEvent[]; cursor: string }>;
+  /**
+   * Les événements changés depuis le curseur (tous au premier appel), et le curseur suivant. Une lecture complète
+   * (premier appel, curseur périmé) le dit par `complete`, avec la fenêtre lue (`null` : sans limite) : un événement
+   * d'AIMMO absent de cette fenêtre a disparu sans que la suppression soit connue.
+   */
+  changes(agentId: string, cursor: string | null): Promise<AgendaChanges>;
+}
+
+export interface AgendaChanges {
+  events: AgendaEvent[];
+  cursor: string;
+  complete?: { from: Date | null; to: Date | null };
 }
 
 export const AGENDA_KEY_PREFIX = 'aimmo:';
@@ -249,7 +259,7 @@ export class AgendaSync {
   async pull(agentId: string): Promise<Omit<AgendaSyncResult, 'written' | 'failed'>> {
     const result = { moved: 0, cancelled: 0, conflicts: 0 };
     const cursorRow = await this.db.first<{ cursor: string }>('SELECT cursor FROM agenda_cursors WHERE agent_id = ?', [agentId]);
-    let page: { events: AgendaEvent[]; cursor: string };
+    let page: AgendaChanges;
     try {
       page = await this.provider.changes(agentId, cursorRow?.cursor ?? null);
     } catch (error) {
@@ -257,7 +267,8 @@ export class AgendaSync {
       throw error;
     }
     for (const event of page.events) {
-      if (!event.key?.startsWith(AGENDA_KEY_PREFIX)) continue;
+      // Un événement supprimé peut revenir sans sa clé (Outlook, Apple) : il est retrouvé par son identifiant.
+      if (event.key !== null && !event.key.startsWith(AGENDA_KEY_PREFIX)) continue;
       // L'événement peut avoir été repris par un décalage : on suit la chaîne jusqu'au rendez-vous qui le tient.
       const row = await this.db.first<CalendarRow>(
         "SELECT appointment_id, agent_id, event_id, synced_status, synced_start, state FROM appointment_calendar WHERE agent_id = ? AND event_id = ? AND (synced_status IS NULL OR synced_status <> 'replaced') ORDER BY updated_at DESC LIMIT 1",
@@ -297,6 +308,24 @@ export class AgendaSync {
         await this.setRow(a.id, a.agent_id, { state: 'conflict', synced_start: null });
         await this.log('rdv.agenda.conflit', a, { rule: moved.rule, code: moved.code });
         result.conflicts++;
+      }
+    }
+    if (page.complete) {
+      // Lecture complète : un rendez-vous tenu dont l'événement n'y est plus n'est jamais annulé sur ce seul silence.
+      // Il reste, son événement est remis au passage suivant, et c'est noté.
+      const seen = new Set(page.events.filter((e) => !e.cancelled).map((e) => e.id));
+      const now = this.now().toISOString();
+      const rows = await this.db.all<{ appointment_id: string; event_id: string; start_at: string }>(
+        `SELECT c.appointment_id, c.event_id, a.start_at FROM appointment_calendar c JOIN appointments a ON a.id = c.appointment_id
+         WHERE c.agent_id = ? AND c.state = 'synced' AND c.synced_status = 'booked' AND c.event_id IS NOT NULL AND a.status = 'booked' AND a.end_at > ?`,
+        [agentId, now],
+      );
+      const { from, to } = page.complete;
+      for (const r of rows) {
+        const start = new Date(r.start_at);
+        if (seen.has(r.event_id) || (from && start < from) || (to && start >= to)) continue;
+        await this.setRow(r.appointment_id, agentId, { state: 'pending', synced_start: null });
+        await this.log('rdv.agenda.manquant', { id: r.appointment_id, agent_id: agentId }, {});
       }
     }
     await this.db.run(

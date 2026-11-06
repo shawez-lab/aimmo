@@ -1,0 +1,503 @@
+/**
+ * L'agenda de l'agent chez Google, Outlook et Apple (HX02), derrière l'interface `AgendaProvider` de V03.
+ *
+ * Chaque adaptateur parle au service par `fetch`, avec l'en-tête d'autorisation que lui donne la connexion de l'agent
+ * (jamais rangé ici, jamais écrit au journal). Les mêmes règles valent pour les trois [R236] :
+ *   - un rendez-vous n'a jamais deux événements dans un agenda : l'identifiant de l'événement est tiré de la clé du
+ *     rendez-vous (Google : identifiant choisi ; Apple : nom du fichier ; Outlook : `transactionId` et propriété cherchée
+ *     avant toute création), si bien qu'une écriture reprise après une coupure retrouve l'événement déjà créé ;
+ *   - l'agenda ne reçoit que l'heure, le type et l'intitulé sans nom ni coordonnée de `agendaTitle` ;
+ *   - un rendez-vous annulé laisse son événement marqué annulé : AIMMO n'efface jamais rien dans l'agenda ;
+ *   - un événement « disponible » de l'agent (transparent, libre) ne bloque aucun créneau.
+ * Une réponse en erreur lève `AgendaHttpError`, dont seul le nom va au journal [R13].
+ */
+import { parisInstant } from './creneaux.ts';
+import { AGENDA_KEY_PREFIX, type AgendaChanges, type AgendaEvent, type AgendaProvider, type AgendaWrite } from './agenda.ts';
+
+export type FetchFn = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Response>;
+
+export interface AgendaConnection {
+  fetch: FetchFn;
+  /** La valeur de l'en-tête `Authorization` pour l'agent (jeton OAuth, ou mot de passe d'application chez Apple). */
+  authorization(agentId: string): Promise<string>;
+}
+
+/** Une réponse en erreur du service d'agenda : le statut seul, jamais le corps. */
+export class AgendaHttpError extends Error {
+  override readonly name = 'AgendaHttpError';
+  constructor(readonly status: number) {
+    super(`Agenda : réponse ${status}.`);
+  }
+}
+
+const EPOCH = new Date(0);
+
+async function call(c: AgendaConnection, agentId: string, url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+  const headers = { ...init.headers, Authorization: await c.authorization(agentId) };
+  return c.fetch(url, { ...init, headers });
+}
+
+async function json<T>(r: Response): Promise<T> {
+  if (!r.ok) throw new AgendaHttpError(r.status);
+  return (await r.json()) as T;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Google Agenda (API Calendar v3)
+
+const B32 = '0123456789abcdefghijklmnopqrstuv';
+
+/** L'identifiant Google tiré de la clé : base32hex en minuscules, les seuls caractères que Google accepte. */
+export function googleEventId(key: string): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+  for (const byte of new TextEncoder().encode(key)) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += B32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+/** La clé AIMMO d'un identifiant Google, ou `null` si l'événement n'a pas été créé par AIMMO. */
+export function keyOfGoogleId(id: string): string | null {
+  if (!/^[0-9a-v]+$/.test(id)) return null;
+  const bytes: number[] = [];
+  let bits = 0;
+  let value = 0;
+  for (const ch of id) {
+    value = ((value << 5) | B32.indexOf(ch)) & 0xffff;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+    return text.startsWith(AGENDA_KEY_PREFIX) && googleEventId(text) === id ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+interface GoogleTime {
+  dateTime?: string;
+  date?: string;
+}
+interface GoogleItem {
+  id: string;
+  status?: string;
+  transparency?: string;
+  start?: GoogleTime;
+  end?: GoogleTime;
+  extendedProperties?: { private?: Record<string, string> };
+}
+interface GooglePage {
+  items?: GoogleItem[];
+  nextPageToken?: string;
+  nextSyncToken?: string;
+}
+
+const googleTime = (t: GoogleTime | undefined): Date => {
+  if (t?.dateTime) return new Date(t.dateTime);
+  if (t?.date) return parisInstant(t.date, 0) ?? EPOCH;
+  return EPOCH;
+};
+
+function fromGoogle(item: GoogleItem): AgendaEvent {
+  return {
+    id: item.id,
+    start: googleTime(item.start),
+    end: googleTime(item.end),
+    cancelled: item.status === 'cancelled',
+    // Un événement supprimé ne garde que son identifiant : la clé se relit dans l'identifiant choisi par AIMMO.
+    key: item.extendedProperties?.private?.aimmo ?? keyOfGoogleId(item.id),
+  };
+}
+
+export class GoogleAgenda implements AgendaProvider {
+  private readonly base: string;
+  constructor(
+    private readonly c: AgendaConnection,
+    options: { calendarId?: string; base?: string } = {},
+  ) {
+    this.base = `${options.base ?? 'https://www.googleapis.com/calendar/v3'}/calendars/${encodeURIComponent(options.calendarId ?? 'primary')}/events`;
+  }
+
+  private async pages(agentId: string, params: URLSearchParams): Promise<{ items: GoogleItem[]; syncToken: string | null }> {
+    const items: GoogleItem[] = [];
+    let pageToken: string | null = null;
+    for (let i = 0; i < 100; i++) {
+      const q = new URLSearchParams(params);
+      if (pageToken) q.set('pageToken', pageToken);
+      const page: GooglePage = await json<GooglePage>(await call(this.c, agentId, `${this.base}?${q}`));
+      items.push(...(page.items ?? []));
+      if (!page.nextPageToken) return { items, syncToken: page.nextSyncToken ?? null };
+      pageToken = page.nextPageToken;
+    }
+    throw new AgendaHttpError(508);
+  }
+
+  async events(agentId: string, from: Date, to: Date): Promise<AgendaEvent[]> {
+    const params = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', maxResults: '250' });
+    const { items } = await this.pages(agentId, params);
+    return items
+      .filter((i) => i.status !== 'cancelled' && !(i.transparency === 'transparent' && !i.extendedProperties?.private?.aimmo))
+      .map(fromGoogle);
+  }
+
+  async write(agentId: string, eventId: string | null, event: AgendaWrite): Promise<{ eventId: string }> {
+    const own = googleEventId(event.key);
+    const body = {
+      summary: event.title,
+      start: { dateTime: event.start.toISOString() },
+      end: { dateTime: event.end.toISOString() },
+      status: event.cancelled ? 'cancelled' : 'confirmed',
+      transparency: 'opaque',
+      extendedProperties: { private: { aimmo: event.key } },
+    };
+    const put = (id: string) =>
+      call(this.c, agentId, `${this.base}/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let r = await put(eventId ?? own);
+    if (r.status === 404 || r.status === 410) {
+      // Jamais écrit (ou disparu) : création sous l'identifiant tiré de la clé. Déjà là, il est repris, jamais doublé.
+      r = await call(this.c, agentId, this.base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, id: own }) });
+      if (r.status === 409) r = await put(own);
+    }
+    const saved = await json<GoogleItem>(r);
+    return { eventId: saved.id };
+  }
+
+  async changes(agentId: string, cursor: string | null): Promise<AgendaChanges> {
+    if (cursor) {
+      try {
+        const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ syncToken: cursor, showDeleted: 'true', singleEvents: 'true' }));
+        return { events: items.map(fromGoogle), cursor: syncToken ?? cursor };
+      } catch (error) {
+        // Curseur périmé : Google demande une lecture complète.
+        if (!(error instanceof AgendaHttpError && error.status === 410)) throw error;
+      }
+    }
+    const { items, syncToken } = await this.pages(agentId, new URLSearchParams({ showDeleted: 'true', singleEvents: 'true' }));
+    if (!syncToken) throw new AgendaHttpError(502);
+    return { events: items.map(fromGoogle), cursor: syncToken, complete: { from: null, to: null } };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Outlook (Microsoft Graph)
+
+/** Les propriétés étendues posées par AIMMO sur l'événement Outlook : la clé, et l'état du rendez-vous. */
+export const OUTLOOK_KEY_PROP = 'String {6f3c5e4a-2b1d-4c8e-9a7f-1d2e3f4a5b6c} Name aimmo';
+export const OUTLOOK_STATE_PROP = 'String {6f3c5e4a-2b1d-4c8e-9a7f-1d2e3f4a5b6c} Name aimmo-etat';
+
+interface GraphTime {
+  dateTime: string;
+  timeZone?: string;
+}
+interface GraphItem {
+  id: string;
+  isCancelled?: boolean;
+  showAs?: string;
+  start?: GraphTime;
+  end?: GraphTime;
+  singleValueExtendedProperties?: { id: string; value: string }[];
+  '@removed'?: unknown;
+}
+interface GraphPage {
+  value?: GraphItem[];
+  '@odata.nextLink'?: string;
+  '@odata.deltaLink'?: string;
+}
+
+// Les heures sont demandées en UTC (en-tête `Prefer`) ; Graph les rend sans suffixe.
+const graphTime = (t: GraphTime | undefined): Date => (t?.dateTime ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(t.dateTime) ? t.dateTime : `${t.dateTime}Z`) : EPOCH);
+const prop = (item: GraphItem, id: string): string | null => item.singleValueExtendedProperties?.find((p) => p.id.toLowerCase() === id.toLowerCase())?.value ?? null;
+
+function fromGraph(item: GraphItem): AgendaEvent {
+  if (item['@removed'] !== undefined) return { id: item.id, start: EPOCH, end: EPOCH, cancelled: true, key: null };
+  return {
+    id: item.id,
+    start: graphTime(item.start),
+    end: graphTime(item.end),
+    cancelled: item.isCancelled === true || prop(item, OUTLOOK_STATE_PROP) === 'annule',
+    key: prop(item, OUTLOOK_KEY_PROP),
+  };
+}
+
+const UTC = { Prefer: 'outlook.timezone="UTC"' };
+const EXPAND = `singleValueExtendedProperties($filter=id eq '${OUTLOOK_KEY_PROP}' or id eq '${OUTLOOK_STATE_PROP}')`;
+
+export class OutlookAgenda implements AgendaProvider {
+  private readonly base: string;
+  private readonly now: () => Date;
+  constructor(
+    private readonly c: AgendaConnection,
+    options: { base?: string; now?: () => Date } = {},
+  ) {
+    this.base = options.base ?? 'https://graph.microsoft.com/v1.0/me';
+    this.now = options.now ?? (() => new Date());
+  }
+
+  private async pages(agentId: string, first: string): Promise<{ items: GraphItem[]; delta: string | null }> {
+    const items: GraphItem[] = [];
+    let url: string | undefined = first;
+    for (let i = 0; i < 100 && url; i++) {
+      const page: GraphPage = await json<GraphPage>(await call(this.c, agentId, url, { headers: UTC }));
+      items.push(...(page.value ?? []));
+      if (page['@odata.deltaLink']) return { items, delta: page['@odata.deltaLink'] };
+      url = page['@odata.nextLink'];
+    }
+    if (url) throw new AgendaHttpError(508);
+    return { items, delta: null };
+  }
+
+  async events(agentId: string, from: Date, to: Date): Promise<AgendaEvent[]> {
+    const q = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString(), $top: '100', $expand: EXPAND });
+    const { items } = await this.pages(agentId, `${this.base}/calendarView?${q}`);
+    return items.filter((i) => !(i.showAs === 'free' && prop(i, OUTLOOK_KEY_PROP) === null)).map(fromGraph).filter((e) => !e.cancelled);
+  }
+
+  private async findByKey(agentId: string, key: string): Promise<string | null> {
+    const filter = `singleValueExtendedProperties/Any(ep: ep/id eq '${OUTLOOK_KEY_PROP}' and ep/value eq '${key.replace(/'/g, "''")}')`;
+    const page = await json<GraphPage>(await call(this.c, agentId, `${this.base}/events?${new URLSearchParams({ $filter: filter, $top: '1' })}`, { headers: UTC }));
+    return page.value?.[0]?.id ?? null;
+  }
+
+  async write(agentId: string, eventId: string | null, event: AgendaWrite): Promise<{ eventId: string }> {
+    const body = {
+      subject: event.cancelled ? `Annulé · ${event.title}` : event.title,
+      start: { dateTime: event.start.toISOString().slice(0, 19), timeZone: 'UTC' },
+      end: { dateTime: event.end.toISOString().slice(0, 19), timeZone: 'UTC' },
+      // Annulé : l'événement reste, libre et marqué ; Graph n'annule que les réunions avec invités.
+      showAs: event.cancelled ? 'free' : 'busy',
+      singleValueExtendedProperties: [
+        { id: OUTLOOK_KEY_PROP, value: event.key },
+        { id: OUTLOOK_STATE_PROP, value: event.cancelled ? 'annule' : 'actif' },
+      ],
+    };
+    const patch = (id: string) =>
+      call(this.c, agentId, `${this.base}/events/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (eventId) {
+      const r = await patch(eventId);
+      if (r.status !== 404) return { eventId: (await json<GraphItem>(r)).id };
+    }
+    const found = await this.findByKey(agentId, event.key);
+    if (found) return { eventId: (await json<GraphItem>(await patch(found))).id };
+    // `transactionId` : Graph ne crée pas deux fois l'événement d'une même clé, même si la réponse s'est perdue.
+    const r = await call(this.c, agentId, `${this.base}/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, transactionId: event.key }) });
+    return { eventId: (await json<GraphItem>(r)).id };
+  }
+
+  async changes(agentId: string, cursor: string | null): Promise<AgendaChanges> {
+    if (cursor) {
+      try {
+        const { items, delta } = await this.pages(agentId, cursor);
+        return { events: items.map(fromGraph), cursor: delta ?? cursor };
+      } catch (error) {
+        // Lien périmé : Graph demande une lecture complète.
+        if (!(error instanceof AgendaHttpError && error.status === 410)) throw error;
+      }
+    }
+    const now = this.now().getTime();
+    const from = new Date(now - 31 * 86_400_000);
+    const to = new Date(now + 400 * 86_400_000);
+    const q = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString() });
+    const { items, delta } = await this.pages(agentId, `${this.base}/calendarView/delta?${q}`);
+    if (!delta) throw new AgendaHttpError(502);
+    return { events: items.map(fromGraph), cursor: delta, complete: { from, to } };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Apple (iCloud, CalDAV)
+
+const xmlText = (s: string): string =>
+  s
+    .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1')
+    .replace(/&#13;/g, '\r')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+const tag = (name: string): RegExp => new RegExp(`<(?:[\\w-]+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:[\\w-]+:)?${name}>`, 'i');
+
+interface DavResponse {
+  href: string;
+  status: number;
+  data: string | null;
+}
+
+/** Les réponses d'un `multistatus` : l'adresse, le statut, et le contenu iCalendar s'il y est. */
+export function parseMultistatus(xml: string): { responses: DavResponse[]; syncToken: string | null } {
+  const responses: DavResponse[] = [];
+  const re = /<(?:[\w-]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[\w-]+:)?response>/gi;
+  let rest = xml;
+  for (const m of xml.matchAll(re)) {
+    const body = m[1] ?? '';
+    rest = rest.replace(m[0], '');
+    const href = tag('href').exec(body)?.[1]?.trim();
+    if (!href) continue;
+    const status = Number(/HTTP\/[\d.]+\s+(\d{3})/.exec(body)?.[1] ?? 200);
+    const data = tag('calendar-data').exec(body)?.[1];
+    responses.push({ href: xmlText(href), status, data: data ? xmlText(data.trim()) : null });
+  }
+  const token = tag('sync-token').exec(rest)?.[1]?.trim();
+  return { responses, syncToken: token ? xmlText(token) : null };
+}
+
+/** Les propriétés du premier VEVENT, lignes dépliées : nom, paramètres, valeur. */
+function vevent(ics: string): Map<string, { params: string; value: string }> | null {
+  const lines = ics.replace(/\r\n[ \t]|\n[ \t]/g, '').split(/\r?\n/);
+  const out = new Map<string, { params: string; value: string }>();
+  let inside = false;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') inside = true;
+    else if (line === 'END:VEVENT') return out;
+    else if (inside) {
+      const m = /^([A-Z0-9-]+)((?:;[^:]*)?):(.*)$/i.exec(line);
+      if (m && !out.has(m[1]!.toUpperCase())) out.set(m[1]!.toUpperCase(), { params: m[2] ?? '', value: m[3] ?? '' });
+    }
+  }
+  return null;
+}
+
+/** Une heure iCalendar : UTC (`Z`), sinon heure de Paris ; une date seule vaut minuit, heure de Paris. */
+function icsTime(p: { params: string; value: string } | undefined): Date {
+  if (!p) return EPOCH;
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(p.value.trim());
+  if (!m) return EPOCH;
+  const date = `${m[1]}-${m[2]}-${m[3]}`;
+  if (m[4] === undefined) return parisInstant(date, 0) ?? EPOCH;
+  if (m[7]) return new Date(`${date}T${m[4]}:${m[5]}:${m[6]}Z`);
+  return parisInstant(date, Number(m[4]) * 60 + Number(m[5])) ?? EPOCH;
+}
+
+const icsEscape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+/** Le fichier iCalendar d'un rendez-vous : l'heure, le type, la clé ; rien d'autre. */
+export function appleIcs(event: AgendaWrite, stamp: Date): string {
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//AIMMO//Agenda//FR',
+    'BEGIN:VEVENT',
+    `UID:${appleUid(event.key)}`,
+    `DTSTAMP:${icsStamp(stamp)}`,
+    `DTSTART:${icsStamp(event.start)}`,
+    `DTEND:${icsStamp(event.end)}`,
+    `SUMMARY:${icsEscape(event.title)}`,
+    `STATUS:${event.cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
+    'TRANSP:OPAQUE',
+    `X-AIMMO-KEY:${icsEscape(event.key)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n');
+}
+
+/** L'UID et le nom du fichier tirés de la clé : seuls lettres, chiffres et tirets. */
+export const appleUid = (key: string): string => key.replace(/[^A-Za-z0-9-]/g, '-');
+
+function fromIcs(href: string, ics: string): AgendaEvent | null {
+  const e = vevent(ics);
+  if (!e) return null;
+  const key = e.get('X-AIMMO-KEY')?.value.replace(/\\(.)/g, '$1') ?? null;
+  return {
+    id: href,
+    start: icsTime(e.get('DTSTART')),
+    end: icsTime(e.get('DTEND')),
+    cancelled: e.get('STATUS')?.value.toUpperCase() === 'CANCELLED',
+    key,
+  };
+}
+
+const isFree = (ics: string): boolean => vevent(ics)?.get('TRANSP')?.value.toUpperCase() === 'TRANSPARENT';
+
+export class AppleAgenda implements AgendaProvider {
+  private readonly now: () => Date;
+  constructor(
+    private readonly c: AgendaConnection,
+    /** L'adresse CalDAV du calendrier de l'agent, terminée par `/`. */
+    private readonly calendarUrl: (agentId: string) => Promise<string>,
+    options: { now?: () => Date } = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+  }
+
+  private async report(agentId: string, body: string): Promise<{ responses: DavResponse[]; syncToken: string | null }> {
+    const r = await call(this.c, agentId, await this.calendarUrl(agentId), { method: 'REPORT', headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' }, body });
+    if (r.status !== 207) throw new AgendaHttpError(r.status);
+    return parseMultistatus(await r.text());
+  }
+
+  async events(agentId: string, from: Date, to: Date): Promise<AgendaEvent[]> {
+    const { responses } = await this.report(
+      agentId,
+      `<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:time-range start="${icsStamp(from)}" end="${icsStamp(to)}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+    );
+    const out: AgendaEvent[] = [];
+    for (const r of responses) {
+      if (r.status !== 200 || !r.data) continue;
+      const e = fromIcs(r.href, r.data);
+      if (!e || e.cancelled || (isFree(r.data) && !e.key)) continue;
+      if (e.start < to && e.end > from) out.push(e);
+    }
+    return out;
+  }
+
+  async write(agentId: string, eventId: string | null, event: AgendaWrite): Promise<{ eventId: string }> {
+    const base = await this.calendarUrl(agentId);
+    const own = new URL(`${appleUid(event.key)}.ics`, base).pathname;
+    const href = eventId ?? own;
+    // Le nom du fichier vient de la clé : la même écriture reprise remplace le fichier, sans jamais le doubler.
+    const r = await call(this.c, agentId, new URL(href, base).toString(), { method: 'PUT', headers: { 'Content-Type': 'text/calendar; charset=utf-8' }, body: appleIcs(event, this.now()) });
+    if (!r.ok) throw new AgendaHttpError(r.status);
+    return { eventId: href };
+  }
+
+  async changes(agentId: string, cursor: string | null): Promise<AgendaChanges> {
+    const body = (token: string | null) =>
+      `<?xml version="1.0" encoding="utf-8"?><d:sync-collection xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:sync-token>${token ?? ''}</d:sync-token><d:sync-level>1</d:sync-level><d:prop><d:getetag/><c:calendar-data/></d:prop></d:sync-collection>`;
+    let page: { responses: DavResponse[]; syncToken: string | null };
+    let complete = cursor === null;
+    try {
+      page = await this.report(agentId, body(cursor));
+    } catch (error) {
+      // Jeton périmé (RFC 6578, `valid-sync-token`) : lecture complète.
+      if (!(cursor && error instanceof AgendaHttpError && (error.status === 403 || error.status === 409))) throw error;
+      page = await this.report(agentId, body(null));
+      complete = true;
+    }
+    if (!page.syncToken) throw new AgendaHttpError(502);
+    const base = await this.calendarUrl(agentId);
+    const events: AgendaEvent[] = [];
+    for (const r of page.responses) {
+      if (r.status === 404 || r.status === 410) {
+        events.push({ id: r.href, start: EPOCH, end: EPOCH, cancelled: true, key: null });
+        continue;
+      }
+      let data = r.data;
+      if (!data) {
+        const got = await call(this.c, agentId, new URL(r.href, base).toString());
+        if (got.status === 404) {
+          events.push({ id: r.href, start: EPOCH, end: EPOCH, cancelled: true, key: null });
+          continue;
+        }
+        if (!got.ok) throw new AgendaHttpError(got.status);
+        data = await got.text();
+      }
+      const e = fromIcs(r.href, data);
+      if (e) events.push(e);
+    }
+    return { events, cursor: page.syncToken, ...(complete ? { complete: { from: null, to: null } } : {}) };
+  }
+}
