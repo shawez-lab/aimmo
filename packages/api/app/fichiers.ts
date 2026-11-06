@@ -2053,7 +2053,7 @@ ${LOUER_JS}
       return enter(main);
     }, function () {
       if (mine !== session) return false;
-      return refuse('Pas de réseau. Rouvrez le lien du mail quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
+      return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
   function enter(key) {
@@ -2235,7 +2235,7 @@ ${LOUER_JS}
         if (token) accept(token);
       });
     } else if (hash.indexOf('#invitation=') === 0) {
-      refuse('Lien d’invitation incomplet. Ouvrez le lien du mail en entier.');
+      refuse('Lien d’invitation incomplet. Ouvrez votre lien d’accès en entier.');
     } else {
       var key = readKey();
       if (key) enter(key); else show('connexion');
