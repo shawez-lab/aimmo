@@ -211,6 +211,7 @@ const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Su
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
+  mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
@@ -340,6 +341,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   automation_tasks: { locate: by('person_id') },
   client_dates: { locate: by('person_id') },
   client_date_messages: { locate: by('person_id') },
+  mailbox_mails: { locate: by('person_id') },
+  mailbox_drafts: { locate: by('person_id') },
+  mailbox_attachments: { locate: [via('project_id', 'projects')] },
+  mailbox_attachment_links: { locate: [via('mail_id', 'mailbox_mails')] },
   client_date_texts: out('sans_client', 'Textes des messages de date écrits par la direction : aucune donnée de client.'),
   automation_scenarios: out('sans_client', 'Scénario composé par la direction : un déclencheur, une attente, un texte fixe, aucune donnée de client.'),
   automation_simulations: out('sans_client', 'Essai d\'un scénario sur le passé : des comptes, aucune personne.'),
