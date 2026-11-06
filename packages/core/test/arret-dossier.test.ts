@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
 import { ArretDossier, ActeVente, BouclierFonds, Echeancier, FinancementDossier, RelancesPieces, SALE_FOLLOW_UP_PURPOSE } from '../src/dossiers/index.ts';
 import { DossiersVente, TransmissionOffres, nextStep } from '../src/offres/index.ts';
-import { SqlSourcesAcquereur } from '../src/espaces/index.ts';
+import { SqlSourcesAcquereur, SqlSourcesVendeur } from '../src/espaces/index.ts';
+import { conformite } from '../src/index.ts';
 import { Commissions } from '../src/pilotage/commissions.ts';
 import { TableauAgent } from '../src/pilotage/tableau-agent.ts';
 import { verifyChain } from '../src/index.ts';
@@ -231,5 +232,85 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     expect((await sources.filesOf(t.network.id, t.buyerId)).map((f) => f.fileId)).toEqual([t.fileId]);
     await t.stop();
     expect(await sources.filesOf(t.network.id, t.buyerId)).toEqual([]);
+  });
+
+  it('[R233] après l’arrêt, l’acquéreur et le vendeur lisent que la vente ne se fait plus, sans la raison', async () => {
+    const t = await setup();
+    const identity = { state: async () => ({ identityVerifiedOn: '2027-02-20' }) };
+    const acquereur = new SqlSourcesAcquereur(t.db, t.acces, identity, t.journal, { now: t.now });
+    const vendeur = new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now });
+    const read = async () => ({
+      buyer: (await acquereur.offersOf(t.network.id, t.buyerId))[0]!,
+      seller: (await vendeur.offersOf(t.network.id, t.propertyId, t.personId))[0]!,
+    });
+    const before = await read();
+    expect(before.buyer.state).toBe('acceptée');
+    expect(before.seller.state).toBe('acceptée');
+    t.setClock(at9('2027-03-10'));
+    await t.stop();
+    const after = await read();
+    for (const offer of [after.buyer, after.seller]) {
+      expect(offer.state).toBe('la vente ne se fait plus');
+      expect(offer.stateAt).toBe(at9('2027-03-10').toISOString());
+      // La raison reste à l'agent : un prêt refusé ne se dit pas à l'autre partie [R14].
+      expect(JSON.stringify(offer)).not.toMatch(/acceptée|pret_refuse|prêt/);
+    }
+    // Le montant reste lisible : le dossier arrêté reste lisible, seul son état change.
+    expect(after.buyer.amountEur).toBe(before.buyer.amountEur);
+  });
+
+  it('[R233] [R14] le droit d’accès du vendeur ne dit pas la raison de l’arrêt ; celui de l’acquéreur la dit', async () => {
+    const t = await setup();
+    await t.stop();
+    const seller = await conformite.assembleAccessDetail(t.db, [t.personId]);
+    expect(JSON.stringify(seller.response)).not.toContain('pret_refuse');
+    expect(seller.response.sections.map((x) => x.table)).not.toContain('sale_file_stops');
+    const buyer = await conformite.assembleAccessDetail(t.db, [t.buyerId]);
+    expect(buyer.response.sections.find((x) => x.table === 'sale_file_stops')?.rows).toHaveLength(1);
+    expect(JSON.stringify(buyer.response)).toContain('pret_refuse');
+  });
+
+  it('[R233] le vendeur lit le statut de son bien en français après l’arrêt, jamais un code', async () => {
+    const t = await setup();
+    const vendeur = new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now });
+    await t.stop();
+    expect((await vendeur.sellerPropertiesOf(t.network.id, t.personId))[0]?.status).toBe('pas en vente pour l’instant');
+  });
+
+  it('[R233] une autre offre du même bien garde son état après l’arrêt', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-03-02'));
+    const refused = await t.record({ validUntil: '2027-03-20' });
+    await t.transmission.transmit(t.agent, refused.id, { via: 'telephone' });
+    await t.transmission.respond(t.agent, refused.id, { outcome: 'refusee', proofRef: PROOF, respondedAt: at9('2027-03-02').toISOString() });
+    await t.stop();
+    const vendeur = new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now });
+    const states = Object.fromEntries((await vendeur.offersOf(t.network.id, t.propertyId, t.personId)).map((o) => [o.id, o.state]));
+    expect(states).toEqual({ [t.offerId]: 'la vente ne se fait plus', [refused.id]: 'refusée' });
+  });
+
+  it('[R94] [R233] l’arrêt fait partie du dossier figé : présent au gel, et vu s’il arrive après', async () => {
+    const t = await setup();
+    const signalement = new conformite.SignalementSoupcon(t.db, t.acces, t.journal, { now: t.now });
+    const responsable = { role: 'compliance', userId: 'conformite-1', networkId: t.network.id } as Parameters<typeof signalement.list>[0];
+    const ref = `sale_file:${t.fileId}`;
+    await signalement.report(t.agent, ref, { note: 'Paiement proposé en espèces.' });
+    t.setClock(at9('2027-03-10'));
+    await t.stop();
+    t.setClock(at9('2027-03-11'));
+    await signalement.report(t.agent, ref, { note: 'Le dossier a été arrêté depuis.' });
+    const list = await signalement.list(responsable);
+    if (!list.ok) throw new Error(list.code);
+    const first = list.value.find((r) => r.note.startsWith('Paiement'));
+    const second = list.value.find((r) => r.note.startsWith('Le dossier'));
+    // Gelé avant l'arrêt : l'arrêt apparaît comme un ajout, pas un silence.
+    const late = await signalement.checkFrozen(responsable, first!.reportId);
+    expect(late.ok && late.value.added.map((a) => a.table)).toContain('sale_file_stops');
+    // Gelé après l'arrêt : il est dans la copie, et son retrait forcé se verrait.
+    expect(await signalement.checkFrozen(responsable, second!.reportId)).toMatchObject({ ok: true, value: { intact: true } });
+    for (const { name } of await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'sale_file_stops'")) await t.db.exec(`DROP TRIGGER "${name}"`);
+    await t.db.run('DELETE FROM sale_file_stops WHERE file_id = ?', [t.fileId]);
+    const gone = await signalement.checkFrozen(responsable, second!.reportId);
+    expect(gone.ok && gone.value.missing.map((m) => m.table)).toContain('sale_file_stops');
   });
 });

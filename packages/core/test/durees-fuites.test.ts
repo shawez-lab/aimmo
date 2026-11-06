@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 import { FicheUnique, conformite, verifyChain, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { ArretDossier } from '../src/dossiers/index.ts';
+import { REGISTRE_TRAITEMENTS } from '../src/conformite/registre-traitements.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -95,6 +97,21 @@ describeWithSqlite('L08 · prospects à 3 ans', () => {
     expect(ids).not.toContain(t.personId);
     expect(ids).not.toContain(t.buyerId);
     for (const o of [sci, x, y]) expect(ids).not.toContain(o);
+  });
+
+  it('[R97] [R233] l’acquéreur d’un dossier arrêté n’entre pas aux prospects : son dossier est gardé 10 ans', async () => {
+    const t = await setup();
+    const proof = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
+    t.storage.refs.add(proof);
+    t.setClock(new Date('2027-03-10T10:00:00.000Z'));
+    expect(await new ArretDossier(t.db, t.acces, t.journal, t.storage, { now: t.now }).stop(t.agent, t.fileId, { reason: 'pret_refuse', proofRef: proof })).toMatchObject({ ok: true });
+    for (const at of ['2030-03-10T10:00:00.000Z', '2030-04-10T10:00:00.000Z', '2033-03-10T10:00:00.000Z']) {
+      t.setClock(new Date(at));
+      await t.durees.run(t.network.id);
+    }
+    expect((await t.listed()).map((x) => x.personId)).not.toContain(t.buyerId);
+    expect(await t.db.first('SELECT 1 FROM prospect_retention_cycles WHERE person_id = ?', [t.buyerId])).toBeNull();
+    expect(REGISTRE_TRAITEMENTS.find((x) => x.id === 'offres-dossiers-vente')?.duree).toContain('abandon du dossier');
   });
 
   it('[R97] [R17] sans réponse, l’effacement suit la procédure de L07 en essai : rien n’est effacé ni envoyé', async () => {

@@ -35,7 +35,7 @@ import type { ClientParties, ClientSide } from './entree.ts';
 import { DOCUMENT_TITLES, LIVE_MANDATES, placeholders, sourcePerson } from './lecture.ts';
 import { buyerSides } from './sources-acquereur.ts';
 import { ownerWindows } from './sources-proprietaire.ts';
-import type { SellerAppointment, SellerDeedDate, SellerDocument, SellerOffer, SellerProperty, SellerVisit, SellerWeeklyPoint, SourcePerson, SourcesVendeur } from './vendeur.ts';
+import { OFFER_STOPPED_AT, OFFER_STOPPED_STATE, type SellerAppointment, type SellerDeedDate, type SellerDocument, type SellerOffer, type SellerProperty, type SellerVisit, type SellerWeeklyPoint, type SourcePerson, type SourcesVendeur } from './vendeur.ts';
 
 /** Le lecteur que reçoivent les modules appelés par l'espace : jamais une personne. */
 export const ESPACE_READER = 'system:espace';
@@ -120,6 +120,26 @@ const SELLER_PIECES: ReadonlySet<Piece> = (() => {
   return all;
 })();
 
+/** Le statut du bien, dit au vendeur en français, jamais le code de la base. */
+const SELLER_PROPERTY_STATES: Record<string, string> = {
+  draft: 'pas en vente pour l’instant',
+  available: 'en vente',
+  under_offer: 'sous offre',
+  sold: 'vendu',
+  rented: 'loué',
+  withdrawn: 'retiré de la vente',
+};
+
+/** L'état d'une offre, dit au vendeur en français, jamais le code du registre. */
+const SELLER_OFFER_STATES: Record<string, string> = {
+  recue: 'reçue',
+  transmise: 'transmise',
+  acceptee: 'acceptée',
+  refusee: 'refusée',
+  contre_offre: 'contre-proposition en cours',
+  echue: 'échue',
+};
+
 /**
  * Les côtés d'une personne dans ses dossiers. EC08 : le vendeur ; EC09 : le propriétaire (dernier à avoir pris le bien,
  * par mandat, mise en location ou acte, quand il n'est ni vendeur ni bailleur) et le bailleur (une mise en location à
@@ -199,7 +219,7 @@ export class SqlSourcesVendeur implements SourcesVendeur {
         propertyId: p.id,
         reference: p.reference,
         city: p.city ?? 'non communiquée',
-        status: p.status,
+        status: SELLER_PROPERTY_STATES[p.status] ?? 'non communiqué',
         statusAt: p.updated_at,
         askingPriceEur: terms?.priceEur ?? null,
         mandateSignedAt: terms?.priceEur === null || terms?.priceEur === undefined ? null : (lastAmendment?.signedAt ?? latest.signed_at),
@@ -237,8 +257,8 @@ export class SqlSourcesVendeur implements SourcesVendeur {
   async offersOf(networkId: string, propertyId: string, personId: string): Promise<readonly SellerOffer[]> {
     const since = await this.since(networkId, propertyId, personId);
     if (!since) return [];
-    const rows = await this.db.all<{ id: string; seq: number; buyer_person_id: string; valid_until: string; received_at: string; responded_at: string | null }>(
-      `SELECT o.id, o.seq, o.buyer_person_id, o.valid_until, o.received_at, s.responded_at
+    const rows = await this.db.all<{ id: string; seq: number; buyer_person_id: string; valid_until: string; received_at: string; responded_at: string | null; stopped_at: string | null }>(
+      `SELECT o.id, o.seq, o.buyer_person_id, o.valid_until, o.received_at, s.responded_at, (${OFFER_STOPPED_AT}) AS stopped_at
        FROM offer_register o LEFT JOIN offer_responses s ON s.offer_id = o.id
        WHERE o.network_id = ? AND o.property_id = ? ORDER BY o.seq`,
       [networkId, propertyId],
@@ -262,8 +282,8 @@ export class SqlSourcesVendeur implements SourcesVendeur {
         netSellerEur: row?.netSellerEur ?? null,
         conditions: row?.conditions ?? [],
         validUntil: row ? (lastProposal?.valid_until ?? o.valid_until) : null,
-        state: row?.state ?? null,
-        stateAt: o.responded_at ?? o.received_at,
+        state: row ? (o.stopped_at ? OFFER_STOPPED_STATE : (SELLER_OFFER_STATES[row.state] ?? null)) : null,
+        stateAt: o.stopped_at ?? o.responded_at ?? o.received_at,
         buyer: await this.person(o.buyer_person_id),
       });
     }

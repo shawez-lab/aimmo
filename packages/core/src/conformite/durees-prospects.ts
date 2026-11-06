@@ -12,6 +12,8 @@
  * - un client n'est pas un prospect, et n'est jamais listé : une personne qui a signé un mandat, l'acquéreur d'un
  *   dossier de vente, le locataire ou le propriétaire d'un bail fait par AIMMO, une personne identifiée pour la lutte
  *   contre le blanchiment et les bénéficiaires effectifs d'une société cliente. Ses durées sont celles du contrat ;
+ * - l'acquéreur d'un dossier arrêté reste hors de cette liste : le registre garde un dossier 10 ans après son abandon,
+ *   l'arrêt est gardé [R233], et un dossier peut être signalé [R94]. La sortie à 10 ans n'existe pas encore, pour aucun client ;
  * - « 3 ans » se compte en jours de Paris, par le calendrier : un contact du 10 février 2024 est listé le 10 février
  *   2027, pas la veille ;
  * - la demande de consentement est préparée en mode essai, sans canal ni envoi [R26] ; quand le plan la mettra en
