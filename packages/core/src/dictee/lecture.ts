@@ -124,7 +124,9 @@ const SURFACE = /(?<![\d.,])(\d{1,6})\s?(?:m²|m2|metres? carres?)(?![\p{L}\d])/
 const ROOMS = /(?<![\d.,])(\d{1,2})\s?pieces?\b|\b[tf](\d{1,2})\b/u;
 const PRICE = /(?<![\d.,])(\d{1,3}(?:[\s.  ]\d{3})+|\d{1,10})\s?(?:€|euros?\b|(k€|k euros?\b|mille euros?\b))/u;
 const PRICE_CONTEXT = /\b(?:prix|vend|vendre|vendu|mise? en vente|mettre en vente|demande|affiche)\b/;
-const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite)\b/;
+const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite|remise|rabais|baisse|baisser|negoci\w*|paye|payee|achete|achetee|achat|acquis|acquise|marge)\b/;
+/** Le prix demandé suit de près « prix », « vend » ou « demande », sans autre nombre entre eux. */
+const PRICE_LEAD = /\b(?:prix|vend\w*|demande|affiche)\b[^\d]{0,30}$/;
 const POSTAL = /(?<![\d.,])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
 
 const KINDS: readonly [RegExp, PropertyKind][] = [
@@ -140,8 +142,10 @@ const SELL = /\b(?:vendre|vend|vendeur|vendeuse|vendeurs|mettre en vente|mise en
 const BUY = /\b(?:acheter|achete|acheteur|acheteuse|acheteurs|acquereur|acquereurs|cherche|recherche)\b/;
 
 /** Après « s'appelle », « Madame », « Monsieur » : un ou deux mots à majuscule, lus dans le texte d'origine. */
-const NAME = /\b(?:s['’]appellent?|se nomment?|nommee?|madame|monsieur|mme|m\.)\s+/;
-const CAPITALIZED = /^(\p{Lu}[\p{L}'’-]*)(?:\s+(\p{Lu}[\p{L}'’-]*))?/u;
+const NAME = /\b(?:s['’]appell(?:e|ent)|se nomm(?:e|ent)|nommee?|madame|monsieur|mme|m\.)\s+/;
+const CAPITALIZED = /^(\p{Lu}[\p{L}'’-]*)(?:\s+(\p{Lu}[\p{L}'’-]*))?(?:\s+(\p{Lu}[\p{L}'’-]*))?/u;
+/** Les particules d'un nom de famille : « Le Gall », « De Souza », « Van Damme » ne sont pas un prénom suivi d'un nom. */
+const PARTICLE = /^(?:le|la|les|de|du|des|d|l|van|von|der|den|da|di|del|della|dos|das|el|al|ben|bin|mac|mc|saint|sainte|st|ste)$/;
 
 const APPOINTMENT_WORDS = /\b(?:rendez-vous|rendez vous|rdv|rappel\w*|revoir|repasser|passer|visite|visiter|estimation|estimer|signature|signer|appel|appeler|telephoner)\b/;
 const APPOINTMENT_KINDS_READ: readonly [RegExp, AppointmentKind][] = [
@@ -206,16 +210,30 @@ function readNames(sentence: string, communes: readonly string[]): { first: Hit[
     const rest = sentence.slice(from);
     const n = CAPITALIZED.exec(rest);
     if (!n) continue;
-    const words = [n[1]!, ...(n[2] ? [n[2]] : [])].filter((w) => !isCommune(w));
+    // Les mots à majuscule qui suivent, jusqu'au premier nom de commune.
+    const all = [n[1]!, ...(n[2] ? [n[2]] : []), ...(n[3] ? [n[3]] : [])];
+    const cut = all.findIndex(isCommune);
+    const words = cut === -1 ? all : all.slice(0, cut);
     if (words.length === 0) continue;
-    const quoteEnd = from + rest.indexOf(words.at(-1)!) + words.at(-1)!.length;
+    let pos = 0;
+    for (const w of words) pos = rest.indexOf(w, pos) + w.length;
+    const quoteEnd = from + pos;
     const quote = sentence.slice(index[m.index]!, quoteEnd).trim();
     const at = index[m.index]!;
-    if (words.length === 2) {
-      first.push({ value: words[0]!, quote, at, end: quoteEnd });
-      last.push({ value: words[1]!, quote, at, end: quoteEnd });
-    } else if (civility) last.push({ value: words[0]!, quote, at, end: quoteEnd });
-    else first.push({ value: words[0]!, quote, at, end: quoteEnd });
+    const particle = words.map((w) => PARTICLE.test(fold(w).folded.replace(/['’]$/, '')));
+    const push = (list: Hit[], value: string) => list.push({ value, quote, at, end: quoteEnd });
+    // Une particule finale, deux mots sans particule après trois, ou une particule entre deux mots seulement :
+    // le partage entre prénom et nom n'est pas sûr, rien n'est proposé.
+    if (particle.at(-1)) continue;
+    if (words.length === 1) push(civility ? last : first, words[0]!);
+    else if (particle[0]) push(last, words.join(' '));
+    else if (words.length === 2 && !particle[1]) {
+      push(first, words[0]!);
+      push(last, words[1]!);
+    } else if (words.length === 3 && particle[1]) {
+      push(first, words[0]!);
+      push(last, `${words[1]} ${words[2]}`);
+    }
   }
   return { first, last };
 }
@@ -284,7 +302,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
           const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
           const v = m[2] ? n * 1000 : n;
           return Number.isInteger(v) && v >= 1 && v <= 1_000_000_000 ? v : null;
-        }).filter((h) => !overlaps(h, contacts)),
+        }).filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
       );
     }
     const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0)];

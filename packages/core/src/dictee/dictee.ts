@@ -51,6 +51,8 @@ export interface DictationValidation {
   /** Tiré par l'écran, une fois par dictée : la même demande rejouée ne crée rien de plus. */
   requestId: string;
   dictation: string;
+  /** L'instant de la lecture montrée, rendu par `prepare` : la dictée est relue à ce même instant. */
+  readAt: string;
   /** La visite dont l'agent sort, s'il y en a une. */
   appointmentId?: string | null;
   keep: Partial<Record<DictationTarget, readonly string[]>>;
@@ -69,6 +71,8 @@ export interface DictationOutcome {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY_MS = 86_400_000;
+/** Une lecture plus ancienne se refait : le jour dit et les créneaux ont pu changer. */
+const READ_VALID_MS = 12 * 3_600_000;
 
 export class Dictee {
   private readonly now: () => Date;
@@ -86,8 +90,8 @@ export class Dictee {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  private read(dictation: string): DictationDraft {
-    return readDictation(dictation, { now: this.now(), ...(this.options.communes ? { communes: this.options.communes } : {}) });
+  private read(dictation: string, at: Date): DictationDraft {
+    return readDictation(dictation, { now: at, ...(this.options.communes ? { communes: this.options.communes } : {}) });
   }
 
   /** Seul un agent dicte, pour lui-même ; la direction ne crée rien en son nom. */
@@ -106,7 +110,7 @@ export class Dictee {
    * La lecture de la dictée, à montrer à l'agent : chaque champ avec sa phrase, et pour une visite le compte rendu de
    * l'IA. Rien n'est rangé [R261].
    */
-  async prepare(viewer: Viewer, input: { dictation: string; appointmentId?: string | null }): Promise<{ ok: true; draft: DictationDraft; report: VisitReport | null } | DictationRefusal> {
+  async prepare(viewer: Viewer, input: { dictation: string; appointmentId?: string | null }): Promise<{ ok: true; draft: DictationDraft; readAt: string; report: VisitReport | null } | DictationRefusal> {
     const refused = await this.gate(viewer, input.dictation);
     if (refused) return refused;
     let report: VisitReport | null = null;
@@ -116,7 +120,9 @@ export class Dictee {
       if (!preview.ok) return preview;
       report = preview.report;
     }
-    return { ok: true, draft: this.read(input.dictation), report };
+    const at = this.now();
+    // L'instant de la lecture revient avec la validation : « demain » ou « mardi » y disent le même jour [R260].
+    return { ok: true, draft: this.read(input.dictation, at), readAt: at.toISOString(), report };
   }
 
   /** Les champs gardés, tous retrouvés dans la dictée relue, ou le refus qui nomme ceux qui n'y sont pas [R260]. */
@@ -149,7 +155,10 @@ export class Dictee {
     const refused = await this.gate(viewer, input.dictation);
     if (refused) return refused;
     if (typeof input.requestId !== 'string' || !UUID.test(input.requestId)) return { ok: false, rule: null, code: 'bad_request' };
-    const draft = this.read(input.dictation);
+    const readAt = typeof input.readAt === 'string' ? new Date(input.readAt) : new Date(NaN);
+    const now = this.now();
+    if (Number.isNaN(readAt.getTime()) || readAt.getTime() > now.getTime() || now.getTime() - readAt.getTime() > READ_VALID_MS) return { ok: false, rule: null, code: 'stale_reading' };
+    const draft = this.read(input.dictation, readAt);
     const kept = this.kept(draft, input.keep);
     if (!(kept instanceof Map)) return kept;
     const contact = kept.get('contact');
@@ -179,6 +188,9 @@ export class Dictee {
         // Le compte rendu ne porte que ce que la dictée dit : aucun chiffre ni offre qu'elle ne porte [R10, R260].
         const checked = checkReport(report, input.dictation);
         if (!checked.ok) return { ok: false, rule: checked.code === 'contact' ? 'R52' : 'R260', code: `report_${checked.code}` };
+        // L'acquéreur nommé ou une coordonnée de sa fiche : refusé avant d'écrire quoi que ce soit [R52].
+        const named = await this.deps.comptes.refusalFor(appointmentId, checked.report);
+        if (named) return { ...named, code: `report_${named.code}` };
       }
     }
     if (rdv && !contact && visitPerson === null) return { ok: false, rule: null, code: 'appointment_without_person' };
@@ -204,7 +216,9 @@ export class Dictee {
       }
     }
 
+    // Les vérifications sont faites : la fiche est créée, ou la fiche retrouvée reçoit les coordonnées dictées.
     if (contact && contactState === 'created') await this.createContact(viewer, input.requestId, contact);
+    if (contact && personId && contactState === 'matched') await this.attachIdentifiers(viewer, personId, contact);
     if (contact && personId) await this.openProject(viewer, personId, contact, Boolean(bien));
 
     let propertyId: string | null = null;
@@ -299,10 +313,6 @@ export class Dictee {
       const read = await this.deps.acces.readFiche(viewer, personId);
       // La fiche d'un autre agent : rien n'en est dit, rien n'y est ajouté [R16].
       if (!read.ok || read.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
-      for (const kind of ['phone', 'email'] as const) {
-        const f = contact.get(kind);
-        if (f) await this.deps.fiche.addIdentifier({ networkId: viewer.networkId, personId, kind, value: String(f.value) });
-      }
       return { ok: true, personId, state: 'matched' };
     }
     return { ok: true, personId: requestId, state: 'created' };
@@ -324,9 +334,13 @@ export class Dictee {
         if (!/UNIQUE|PRIMARY/i.test(String(error))) throw error;
       }
     }
+    await this.attachIdentifiers(viewer, requestId, contact);
+  }
+
+  private async attachIdentifiers(viewer: Viewer, personId: string, contact: Map<DictatedKey, DictatedField>): Promise<void> {
     for (const kind of ['phone', 'email'] as const satisfies readonly IdentifierKind[]) {
       const f = contact.get(kind);
-      if (f) await this.deps.fiche.addIdentifier({ networkId: viewer.networkId, personId: requestId, kind, value: String(f.value) });
+      if (f) await this.deps.fiche.addIdentifier({ networkId: viewer.networkId, personId, kind, value: String(f.value) });
     }
   }
 

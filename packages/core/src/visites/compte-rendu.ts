@@ -275,11 +275,8 @@ export class ComptesRendus {
       source = 'agent';
     }
     if (!report) return { ok: false, rule: null, code: 'no_report' };
-    if (this.names(report, await this.buyerNames(v.person_id))) return { ok: false, rule: 'R52', code: 'buyer_named' };
-    // Aucune coordonnée de la fiche de l'acquéreur, telle qu'elle y est rangée [R52].
-    const reportText = plain([report.opinion, ...report.strengths, ...report.reservations].join(' '));
-    const identifiers = (await this.fiche.view(v.person_id)).identifiers.map((i) => plain(i.value)).filter((x) => x.length > 2);
-    if (identifiers.some((x) => reportText.includes(x) || reportText.replace(/[\s.-]/g, '').includes(x.replace(/[\s.+-]/g, '')))) return { ok: false, rule: 'R52', code: 'contact' };
+    const named = await this.namesBuyer(v.person_id, report);
+    if (named) return named;
     const at = this.now();
     const iso = at.toISOString();
     const { changes } = await this.db.run(
@@ -304,6 +301,21 @@ export class ComptesRendus {
       );
     }
     return this.sendToSeller(appointmentId);
+  }
+
+  /** Le refus d'un compte rendu qui nomme l'acquéreur de la visite ou porte une coordonnée de sa fiche [R52] ; null sinon. */
+  async refusalFor(appointmentId: string, report: VisitReport): Promise<VisitReportRefusal | null> {
+    const v = await this.db.first<{ person_id: string }>('SELECT person_id FROM visits WHERE appointment_id = ?', [appointmentId]);
+    return v ? this.namesBuyer(v.person_id, report) : { ok: false, rule: null, code: 'unknown' };
+  }
+
+  private async namesBuyer(buyerId: string, report: VisitReport): Promise<VisitReportRefusal | null> {
+    if (this.names(report, await this.buyerNames(buyerId))) return { ok: false, rule: 'R52', code: 'buyer_named' };
+    // Aucune coordonnée de la fiche de l'acquéreur, telle qu'elle y est rangée [R52].
+    const reportText = plain([report.opinion, ...report.strengths, ...report.reservations].join(' '));
+    const identifiers = (await this.fiche.view(buyerId)).identifiers.map((i) => plain(i.value)).filter((x) => x.length > 2);
+    if (identifiers.some((x) => reportText.includes(x) || reportText.replace(/[\s.-]/g, '').includes(x.replace(/[\s.+-]/g, '')))) return { ok: false, rule: 'R52', code: 'contact' };
+    return null;
   }
 
   /** Reprend les comptes rendus validés qui n'ont pas pu partir pour l'heure ou une panne. */

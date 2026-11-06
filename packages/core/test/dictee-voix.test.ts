@@ -106,6 +106,28 @@ describe('HX06 · lecture de la dictée', () => {
     expect(at('Visite le 31 février à 10 h.')).toBeUndefined();
   });
 
+  it('[R260] un nom à particule n’est jamais coupé en prénom et nom', () => {
+    const names = (text: string) => {
+      const d = readDictation(text, { now: NOW });
+      return [value(d, 'contact', 'firstName'), value(d, 'contact', 'lastName')];
+    };
+    expect(names('Je sors de chez Monsieur Le Gall, il vend sa maison.')).toEqual([undefined, 'Le Gall']);
+    expect(names('Madame De Souza vend.')).toEqual([undefined, 'De Souza']);
+    expect(names('Il s’appelle Jean Van Damme.')).toEqual(['Jean', 'Van Damme']);
+    expect(names('Madame Claire Exemple vend.')).toEqual(['Claire', 'Exemple']);
+    // Trois mots sans particule : le partage n'est pas sûr.
+    expect(names('Il s’appelle Jean Pierre Martin.')).toEqual([undefined, undefined]);
+  });
+
+  it('[R260] seul un montant qui suit « prix », « vend » ou « demande » est le prix demandé', () => {
+    const price = (text: string) => value(readDictation(text, { now: NOW }), 'bien', 'priceEur');
+    expect(price('Il vend sa maison, il demande une remise de 5 000 euros.')).toBeUndefined();
+    expect(price('Il vend sa maison car il a payé 180 000 euros en 2015.')).toBeUndefined();
+    expect(price('Il vend sa maison de 90 m², la toiture a coûté 15 000 euros.')).toBeUndefined();
+    expect(price('Elle veut vendre sa maison 300 000 euros.')).toBe(300000);
+    expect(price('Il vend sa maison, prix affiché 250 k€.')).toBe(250000);
+  });
+
   it('la coupure en phrases ne coupe ni un mail, ni « M. », ni un numéro à points', () => {
     expect(splitSentences('M. Exemple a appelé. Son mail est m.exemple@example.test, son numéro 06.12.34.56.78. Voilà')).toEqual([
       'M. Exemple a appelé.',
@@ -142,7 +164,7 @@ async function setup(writer?: ReportWriter) {
     const n = async (t: string) => (await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`))!.n;
     return { persons: await n('persons'), identifiers: await n('person_identifiers'), properties: await n('properties'), projects: await n('projects'), appointments: await n('appointments'), reports: await n('visit_reports') };
   };
-  return { db, journal, store, fiche, rdv, visites, comptes, voix, network, alex: as('agent', alex.id), sam: as('agent', sam.id), direction: as('direction', 'd-1'), alexId: alex.id, samId: sam.id, as, counts, setClock: (t: number) => (clock = t) };
+  return { now, db, journal, store, fiche, rdv, visites, comptes, voix, network, alex: as('agent', alex.id), sam: as('agent', sam.id), direction: as('direction', 'd-1'), alexId: alex.id, samId: sam.id, as, counts, setClock: (t: number) => (clock = t) };
 }
 
 const KEEP_ALL = {
@@ -164,7 +186,7 @@ describeWithSqlite('HX06 · création à la voix', () => {
 
   it('[R261] validée d’un geste : la fiche, ses coordonnées, le bien et le rendez-vous, sans aucun message au contact', async () => {
     const t = await setup();
-    const r = await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    const r = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
     expect(r).toMatchObject({ ok: true, contact: 'created', personId: key(1), propertyId: key(1), report: null });
     if (!r.ok) return;
     expect(await t.db.first('SELECT first_name, last_name, agent_id FROM persons WHERE id = ?', [key(1)])).toEqual({ first_name: 'Claire', last_name: 'Exemple', agent_id: t.alexId });
@@ -191,9 +213,9 @@ describeWithSqlite('HX06 · création à la voix', () => {
 
   it('[R261] la même demande rejouée ne crée rien de plus', async () => {
     const t = await setup();
-    const a = await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    const a = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
     const after = await t.counts();
-    const b = await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    const b = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
     expect(b).toMatchObject({ ok: true, personId: key(1), propertyId: key(1) });
     if (a.ok && b.ok) expect(b.appointmentId).toBe(a.appointmentId);
     expect(await t.counts()).toEqual(after);
@@ -203,40 +225,40 @@ describeWithSqlite('HX06 · création à la voix', () => {
     const t = await setup();
     const before = await t.counts();
     const dictation = 'Madame Claire Exemple vend sa maison de 120 m² au 21240 Talant.';
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation, keep: { contact: ['firstName'], bien: ['kind', 'postalCode', 'city', 'surfaceM2', 'priceEur'] } })).toEqual({
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation, keep: { contact: ['firstName'], bien: ['kind', 'postalCode', 'city', 'surfaceM2', 'priceEur'] } })).toEqual({
       ok: false, rule: 'R260', code: 'not_dictated', keys: ['bien.priceEur'],
     });
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation, keep: { contact: ['firstName', 'birthday'] } })).toMatchObject({ ok: false, rule: 'R260', keys: ['contact.birthday'] });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation, keep: { contact: ['firstName', 'birthday'] } })).toMatchObject({ ok: false, rule: 'R260', keys: ['contact.birthday'] });
     // Un compte rendu qui porte un chiffre que la dictée ne dit pas.
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation, keep: {}, report: { opinion: 'Offre à 300 000 euros.', strengths: [], reservations: [], interest: 'fort', readyToOffer: false } })).toMatchObject({ ok: false, code: 'report_without_visit' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation, keep: {}, report: { opinion: 'Offre à 300 000 euros.', strengths: [], reservations: [], interest: 'fort', readyToOffer: false } })).toMatchObject({ ok: false, code: 'report_without_visit' });
     expect(await t.counts()).toEqual(before);
   });
 
   it('[R260] un bien incomplet, sans propriétaire ou d’un acquéreur n’est pas créé, et rien d’autre non plus', async () => {
     const t = await setup();
     const before = await t.counts();
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: 'Madame Claire Exemple vend sa maison à Talant.', keep: { contact: ['lastName'], bien: ['kind', 'city'] } })).toEqual({
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: 'Madame Claire Exemple vend sa maison à Talant.', keep: { contact: ['lastName'], bien: ['kind', 'city'] } })).toEqual({
       ok: false, rule: null, code: 'incomplete_property', keys: ['bien.postalCode', 'bien.surfaceM2'],
     });
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: { bien: KEEP_ALL.bien } })).toMatchObject({ ok: false, code: 'property_without_owner' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: { bien: KEEP_ALL.bien } })).toMatchObject({ ok: false, code: 'property_without_owner' });
     expect(await t.counts()).toEqual(before);
   });
 
   it('[R261] seul l’agent qui dicte valide : la direction ne crée rien en son nom', async () => {
     const t = await setup();
     expect(await t.voix.prepare(t.direction, { dictation: SELLER_DICTATION })).toEqual({ ok: false, rule: 'R16', code: 'role' });
-    expect(await t.voix.validate(t.direction, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.voix.validate(t.direction, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect((await t.counts()).persons).toBe(0);
     // Une demande déjà prise par un autre agent n'est pas la sienne.
-    await t.voix.validate(t.sam, { requestId: key(1), dictation: 'Madame Claire Exemple.', keep: { contact: ['lastName', 'firstName'] } });
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: 'Madame Claire Exemple.', keep: { contact: ['lastName'] } })).toEqual({ ok: false, rule: null, code: 'bad_request' });
+    await t.voix.validate(t.sam, { readAt: t.now().toISOString(), requestId: key(1), dictation: 'Madame Claire Exemple.', keep: { contact: ['lastName', 'firstName'] } });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: 'Madame Claire Exemple.', keep: { contact: ['lastName'] } })).toEqual({ ok: false, rule: null, code: 'bad_request' });
   });
 
   it('[R262] un numéro déjà dans une fiche de l’agent : le contact la rejoint, ses noms restent', async () => {
     const t = await setup();
     const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Clara', lastName: 'Exemple' });
     await t.store.addIdentifier({ networkId: t.network.id, personId: known.id, kind: 'phone', value: '+33612345678' });
-    const r = await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    const r = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
     expect(r).toMatchObject({ ok: true, contact: 'matched', personId: known.id });
     expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [known.id])).toEqual({ first_name: 'Clara' });
     expect((await t.counts()).persons).toBe(1);
@@ -251,14 +273,43 @@ describeWithSqlite('HX06 · création à la voix', () => {
     await t.store.addIdentifier({ networkId: t.network.id, personId: a.id, kind: 'phone', value: '+33612345678' });
     await t.store.addIdentifier({ networkId: t.network.id, personId: b.id, kind: 'email', value: 'claire.exemple@example.test' });
     const before = await t.counts();
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R262', code: 'ambiguous_contact' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R262', code: 'ambiguous_contact' });
     expect(await t.counts()).toEqual(before);
 
     const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.samId, firstName: 'C' });
     await t.store.addIdentifier({ networkId: t.network.id, personId: other.id, kind: 'phone', value: '+33698765432' });
     const mid = await t.counts();
-    expect(await t.voix.validate(t.alex, { requestId: key(2), dictation: 'Madame Claire Essai vend, son numéro 06 98 76 54 32.', keep: { contact: ['firstName', 'phone'] } })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(2), dictation: 'Madame Claire Essai vend, son numéro 06 98 76 54 32.', keep: { contact: ['firstName', 'phone'] } })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.counts()).toEqual(mid);
+  });
+
+  it('[R261] un créneau pris : la fiche retrouvée ne reçoit rien non plus', async () => {
+    const t = await setup();
+    const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Clara' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: known.id, kind: 'phone', value: '+33612345678' });
+    const someone = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Déjà' });
+    await t.rdv.book({ networkId: t.network.id, agentId: t.alexId, personId: someone.id, kind: 'visite', start: new Date('2026-12-08T09:00:00.000Z'), source: 'agent' });
+    const before = await t.counts();
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toMatchObject({ ok: false, code: 'slot_not_free' });
+    expect(await t.counts()).toEqual(before);
+  });
+
+  it('[R260] la dictée est relue à l’instant de la lecture : « demain » ne glisse pas d’un jour', async () => {
+    const t = await setup();
+    const dictation = 'Monsieur Paul Essai veut vendre. Rendez-vous d’estimation demain à 10 h.';
+    // Lue à 23 h 59, validée à 0 h 01 : le rendez-vous reste celui montré.
+    t.setClock(Date.parse('2026-12-03T22:59:00.000Z'));
+    const p = await t.voix.prepare(t.alex, { dictation });
+    if (!p.ok) throw new Error(p.code);
+    expect(dictee.fieldOf(p.draft, 'rendezvous', 'start')?.value).toBe('2026-12-04T09:00:00.000Z');
+    t.setClock(Date.parse('2026-12-03T23:01:00.000Z'));
+    const r = await t.voix.validate(t.alex, { readAt: p.readAt, requestId: key(1), dictation, keep: { contact: ['firstName', 'lastName', 'project'], rendezvous: ['appointmentKind', 'start'] } });
+    expect(r).toMatchObject({ ok: true });
+    if (r.ok) expect(await t.db.first('SELECT start_at FROM appointments WHERE id = ?', [r.appointmentId])).toEqual({ start_at: '2026-12-04T09:00:00.000Z' });
+    // Une lecture absente, à venir ou trop ancienne se refait.
+    for (const readAt of ['', '2026-12-04T00:00:00.000Z', '2026-12-03T10:00:00.000Z']) {
+      expect(await t.voix.validate(t.alex, { readAt, requestId: key(2), dictation, keep: { contact: ['firstName'] } }), readAt).toEqual({ ok: false, rule: null, code: 'stale_reading' });
+    }
   });
 
   it('[R261] un créneau pris : rien n’est créé, ni fiche, ni bien', async () => {
@@ -267,10 +318,10 @@ describeWithSqlite('HX06 · création à la voix', () => {
     const taken = await t.rdv.book({ networkId: t.network.id, agentId: t.alexId, personId: someone.id, kind: 'visite', start: new Date('2026-12-08T09:00:00.000Z'), source: 'agent' });
     expect(taken.ok).toBe(true);
     const before = await t.counts();
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R32', code: 'slot_not_free' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({ ok: false, rule: 'R32', code: 'slot_not_free' });
     expect(await t.counts()).toEqual(before);
     // Sans le rendez-vous, le reste se crée.
-    expect(await t.voix.validate(t.alex, { requestId: key(1), dictation: SELLER_DICTATION, keep: { contact: KEEP_ALL.contact, bien: KEEP_ALL.bien } })).toMatchObject({ ok: true, appointmentId: null });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: { contact: KEEP_ALL.contact, bien: KEEP_ALL.bien } })).toMatchObject({ ok: true, appointmentId: null });
   });
 });
 
@@ -314,7 +365,7 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     expect(await t.counts()).toEqual(before);
     expect(await t.toSeller()).toEqual([]);
 
-    const r = await t.voix.validate(t.alex, { requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report });
+    const r = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report });
     expect(r).toMatchObject({ ok: true, personId: t.buyer.id, contact: null, report: { delivery: 'sent', rule: null } });
     if (!r.ok) return;
     const sent = await t.toSeller();
@@ -327,15 +378,26 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     // La relance de l'acquéreur, une seule (T06).
     expect(await t.db.all("SELECT kind FROM visit_tasks WHERE appointment_id = ?", [t.visitId])).toEqual([{ kind: 'relance_acquereur' }]);
     // Rejouée : rien ne part deux fois.
-    expect(await t.voix.validate(t.alex, { requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report })).toMatchObject({ ok: true, appointmentId: r.appointmentId });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: p.report })).toMatchObject({ ok: true, appointmentId: r.appointmentId });
     expect(await t.toSeller()).toHaveLength(1);
   });
 
   it('[R260] un compte rendu qui porte un chiffre ou une offre que la dictée ne dit pas est refusé, rien ne part', async () => {
     const t = await withVisit();
     const before = await t.counts();
-    expect(await t.voix.validate(t.alex, { requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: { ...GOOD, opinion: 'Prête à offrir 240 000 euros.' } })).toMatchObject({ ok: false, rule: 'R260', code: 'report_invented_figure' });
-    expect(await t.voix.validate(t.alex, { requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: { ...GOOD, readyToOffer: true } })).toMatchObject({ ok: false, rule: 'R260', code: 'report_invented_offer' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: { ...GOOD, opinion: 'Prête à offrir 240 000 euros.' } })).toMatchObject({ ok: false, rule: 'R260', code: 'report_invented_figure' });
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: { ...GOOD, readyToOffer: true } })).toMatchObject({ ok: false, rule: 'R260', code: 'report_invented_offer' });
+    expect(await t.counts()).toEqual(before);
+    expect(await t.toSeller()).toEqual([]);
+  });
+
+  it('[R52] un compte rendu qui nomme l’acquéreur est refusé avant toute écriture', async () => {
+    const t = await withVisit();
+    const dictation = `${AFTER_VISIT} Madame Zoé Testeur veut vendre, son numéro 06 11 22 33 44.`;
+    const before = await t.counts();
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation, appointmentId: t.visitId, keep: { contact: ['firstName', 'lastName', 'phone', 'project'], rendezvous: ['appointmentKind', 'start'] }, report: { ...GOOD, opinion: 'Inès a aimé la lumière du séjour.' } })).toEqual({
+      ok: false, rule: 'R52', code: 'report_buyer_named',
+    });
     expect(await t.counts()).toEqual(before);
     expect(await t.toSeller()).toEqual([]);
   });
@@ -343,7 +405,7 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
   it('[R16] la visite d’un autre agent ne se lit ni ne se valide', async () => {
     const t = await withVisit({ write: async () => GOOD });
     expect(await t.voix.prepare(t.sam, { dictation: AFTER_VISIT, appointmentId: t.visitId })).toMatchObject({ ok: false, rule: 'R16' });
-    expect(await t.voix.validate(t.sam, { requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: GOOD })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.voix.validate(t.sam, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: {}, report: GOOD })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.toSeller()).toEqual([]);
   });
 });
