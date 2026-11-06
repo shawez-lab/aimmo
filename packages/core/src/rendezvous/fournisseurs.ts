@@ -308,7 +308,7 @@ export class OutlookAgenda implements AgendaProvider {
     if (link && end && end.getTime() - this.now().getTime() > 60 * 86_400_000) {
       try {
         const { items, delta } = await this.pages(agentId, link);
-        return { events: items.map(fromGraph), cursor: `${end.toISOString()}|${delta ?? link}` };
+        return { events: await this.confirmed(agentId, items), cursor: `${end.toISOString()}|${delta ?? link}` };
       } catch (error) {
         // Lien périmé : Graph demande une lecture complète.
         if (!(error instanceof AgendaHttpError && error.status === 410)) throw error;
@@ -320,7 +320,25 @@ export class OutlookAgenda implements AgendaProvider {
     const q = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString() });
     const { items, delta } = await this.pages(agentId, `${this.base}/calendarView/delta?${q}`);
     if (!delta) throw new AgendaHttpError(502);
-    return { events: items.map(fromGraph), cursor: `${to.toISOString()}|${delta}`, complete: { from, to } };
+    return { events: await this.confirmed(agentId, items), cursor: `${to.toISOString()}|${delta}`, complete: { from, to } };
+  }
+
+  /**
+   * Graph rend aussi `@removed` pour un événement qui sort de la fenêtre, sans être supprimé : chaque retrait est
+   * vérifié en relisant l'événement, et seul un événement introuvable compte comme supprimé.
+   */
+  private async confirmed(agentId: string, items: GraphItem[]): Promise<AgendaEvent[]> {
+    const out: AgendaEvent[] = [];
+    for (const item of items) {
+      if (item['@removed'] === undefined) {
+        out.push(fromGraph(item));
+        continue;
+      }
+      const r = await call(this.c, agentId, `${this.base}/events/${encodeURIComponent(item.id)}?${new URLSearchParams({ $expand: EXPAND })}`, { headers: UTC });
+      if (r.status === 404 || r.status === 410) out.push(fromGraph(item));
+      else out.push(fromGraph(await json<GraphItem>(r)));
+    }
+    return out;
   }
 }
 
@@ -398,6 +416,34 @@ function icsTime(p: { params: string; value: string } | undefined): Date {
   return parisInstant(date, Number(m[4]) * 60 + Number(m[5])) ?? EPOCH;
 }
 
+/** Une durée iCalendar (`PT1H`, `P1D`, `P2W`, `-PT5M` refusée), en millisecondes ; `null` si illisible. */
+function icsDuration(value: string): number | null {
+  const m = /^\+?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value.trim());
+  if (!m || value.trim() === 'P' || /T$/.test(value.trim())) return null;
+  const [w, d, h, min, sec] = m.slice(1).map((x) => Number(x ?? 0)) as [number, number, number, number, number];
+  return ((((w * 7 + d) * 24 + h) * 60 + min) * 60 + sec) * 1000;
+}
+
+/**
+ * La fin d'un VEVENT (RFC 5545, 3.6.1) : DTEND, sinon DTSTART plus DURATION ; sans l'un ni l'autre, une date seule
+ * dure un jour, une heure ne dure rien.
+ */
+function icsEnd(e: Map<string, { params: string; value: string }>): Date {
+  const start = icsTime(e.get('DTSTART'));
+  if (e.get('DTEND')) return icsTime(e.get('DTEND'));
+  const duration = e.get('DURATION');
+  if (duration) {
+    const ms = icsDuration(duration.value);
+    return ms === null ? start : new Date(start.getTime() + ms);
+  }
+  const dateOnly = /^\d{8}$/.test(e.get('DTSTART')?.value.trim() ?? '');
+  if (!dateOnly) return start;
+  // Un jour de calendrier, heure de Paris, changement d'heure compris.
+  const v = e.get('DTSTART')!.value.trim();
+  const next = new Date(Date.UTC(Number(v.slice(0, 4)), Number(v.slice(4, 6)) - 1, Number(v.slice(6, 8)) + 1)).toISOString().slice(0, 10);
+  return parisInstant(next, 0) ?? start;
+}
+
 const icsEscape = (s: string): string => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 const icsStamp = (d: Date): string => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
@@ -430,7 +476,7 @@ function fromProps(href: string, e: Props): AgendaEvent {
   return {
     id: href,
     start: icsTime(e.get('DTSTART')),
-    end: icsTime(e.get('DTEND')),
+    end: icsEnd(e),
     cancelled: e.get('STATUS')?.value.toUpperCase() === 'CANCELLED',
     key,
   };

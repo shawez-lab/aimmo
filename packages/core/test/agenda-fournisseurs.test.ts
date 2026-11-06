@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   APPOINTMENT_PURPOSE,
   AgendaSync,
+  AppleAgenda,
   FicheClient,
   RendezVous,
   SqlJournalStore,
@@ -211,6 +212,33 @@ describeWithSqlite('HX02 · Apple et Outlook : récurrences, heures locales, fen
     const slots = await w.slots();
     expect(slots).not.toContain(at('2026-11-10', '14:30').getTime());
     expect(slots).toContain(at('2026-11-10', '15:00').getTime());
+  });
+
+  it('[R33] un événement Apple avec DURATION au lieu de DTEND bloque toute sa durée', () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a', 'DTSTART:20261110T130000Z', 'DURATION:PT1H30M', 'END:VEVENT', 'BEGIN:VEVENT', 'UID:b', 'DTSTART;VALUE=DATE:20261111', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const xml = `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:response><D:href>/c/a.ics</D:href><D:propstat><D:prop><C:calendar-data>${ics}</C:calendar-data></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>`;
+    const fetch = async () => new Response(xml, { status: 207 });
+    return new AppleAgenda({ fetch, authorization: async () => 'x' }, async () => 'https://caldav.example.test/c/')
+      .events('agent', at('2026-11-10', '00:00'), at('2026-11-12', '00:00'))
+      .then((events) => {
+        expect(events.map((e) => [e.start.toISOString(), e.end.toISOString()])).toEqual([
+          ['2026-11-10T13:00:00.000Z', '2026-11-10T14:30:00.000Z'],
+          [at('2026-11-11', '00:00').toISOString(), at('2026-11-12', '00:00').toISOString()],
+        ]);
+      });
+  });
+
+  it('Outlook : un retrait rendu pour un événement sorti de la fenêtre n’annule pas le rendez-vous', async () => {
+    const server = SERVERS[1]!();
+    const w = await world(server);
+    const a = await w.book(at('2026-11-10', '09:00'));
+    await w.sync.run();
+    // L'agent repousse l'événement de deux ans : Graph le signale comme retiré de la fenêtre, il existe toujours.
+    server.agentMove(w.ours()[0]!.id, at('2028-11-14', '09:00'), at('2028-11-14', '10:00'));
+    await w.sync.run();
+    const booked = await w.db.all<{ id: string }>("SELECT id FROM appointments WHERE status = 'booked' AND (id = ? OR replaces_id = ?)", [a.id, a.id]);
+    expect(booked).toHaveLength(1);
+    expect(w.ours()).toHaveLength(1);
   });
 
   it('Outlook : la fenêtre des changements est relue avant sa fin, et un déplacement lointain revient', async () => {

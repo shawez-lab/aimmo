@@ -216,9 +216,11 @@ class OutlookServer extends Base implements FakeServer {
       // Le lien garde pour toujours la fenêtre de la première lecture, comme chez Graph.
       const from = new Date(q.get('startDateTime')!);
       const to = new Date(q.get('endDateTime')!);
+      // Un événement changé hors de la fenêtre revient en `@removed`, même s'il existe encore, comme chez Graph.
+      const inside = (i: OItem) => i.start < to && i.end > from;
       const value = all
-        .filter((i) => i.seq > since && (token !== null || !i.removed) && i.start < to && i.end > from)
-        .map((i) => (i.removed ? { id: i.id, '@removed': { reason: 'deleted' } } : this.out(i, false)));
+        .filter((i) => i.seq > since && (token !== null ? true : !i.removed && inside(i)))
+        .map((i) => (i.removed || !inside(i) ? { id: i.id, '@removed': { reason: i.removed ? 'deleted' : 'changed' } } : this.out(i, false)));
       const window = new URLSearchParams({ startDateTime: from.toISOString(), endDateTime: to.toISOString() });
       return res(200, { value, '@odata.deltaLink': `${this.root}/calendarView/delta?${window}&$deltatoken=${this.seq}` });
     }
@@ -236,6 +238,10 @@ class OutlookServer extends Base implements FakeServer {
       return res(201, this.out(item, true));
     }
     const m = /^\/events\/(.+)$/.exec(path);
+    if (method === 'GET' && m) {
+      const item = this.items.get(decodeURIComponent(m[1]!));
+      return item && !item.removed ? res(200, this.out(item, true)) : res(404);
+    }
     if (method === 'PATCH' && m) {
       const before = this.items.get(decodeURIComponent(m[1]!));
       if (!before || before.removed) return res(404);
