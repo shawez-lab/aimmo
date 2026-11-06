@@ -179,6 +179,15 @@ describeWithSqlite('W10 · branchement de M15 dans le socle', () => {
     expect(notices[0]!.body).toContain('Bonjour Lou, votre logement est classé G');
   });
 
+  it('SV13 · le texte rangé ne porte aucun prénom : corrigé avant l’envoi, le propriétaire est salué par le nouveau', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE persons SET first_name = 'Corrigé' WHERE id = ?", [t.owner.id]);
+    await new EnvoisLocation(t.db, t.journal, { now: t.now }).run(t.network.id);
+    const notices = (await t.outbox()).filter((m) => /classé G/.test(m.body));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.body).toContain('Bonjour Corrigé, votre logement est classé G');
+  });
+
   it('[R86] l’agent qui a fait le contrôle et la présentation est parti : rien de ce qu’il a préparé ne part', async () => {
     const t = await setup();
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.agent.userId]);

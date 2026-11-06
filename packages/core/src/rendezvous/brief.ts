@@ -432,7 +432,11 @@ export class BriefsRendezVous {
     // Le brief suit l'agent qui l'a reçu : un rendez-vous passé à un autre agent ne lui ouvre pas l'ancien brief.
     if (!row) return { ok: false, code: 'not_ready' };
     if (row.agent_id !== viewer.userId) return { ok: false, code: 'not_agent' };
-    return { ok: true, brief: JSON.parse(row.content) as Brief };
+    const brief = JSON.parse(row.content) as Brief;
+    // Le brief rangé ne change pas ; l'agent lit le nom d'aujourd'hui, jamais celui d'avant une correction (SV13).
+    const person = await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT p.first_name, p.last_name FROM persons p JOIN appointments a ON a.person_id = p.id WHERE a.id = ?', [appointmentId]);
+    const name = [person?.first_name, person?.last_name].filter((p) => p && p.trim()).join(' ');
+    return { ok: true, brief: name ? { ...brief, items: brief.items.map((i) => (i.section === 'client' && i.label === 'Nom' && i.value !== null ? { ...i, value: name } : i)) } : brief };
   }
 }
 

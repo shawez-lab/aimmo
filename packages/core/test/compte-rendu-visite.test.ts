@@ -93,6 +93,18 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     expect(await t.toSeller()).toHaveLength(5);
   });
 
+  it('SV13 · un prénom corrigé après la dictée : le vendeur est salué par le nouveau, à la validation', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const v = await t.visit();
+    t.setClock(v.end + 10 * 60_000);
+    expect(await t.comptes.dictate(t.as('agent', t.alex.id), v.id, 'Inès a aimé la lumière du séjour et le jardin, la cuisine est à refaire, intérêt fort.')).toMatchObject({ ok: true });
+    await t.db.run("UPDATE persons SET first_name = 'Viktor' WHERE id = ?", [t.seller.id]);
+    expect(await t.comptes.validate(t.as('agent', t.alex.id), v.id)).toEqual({ ok: true, delivery: 'sent', rule: null });
+    const sent = (await t.toSeller()).at(-1)!;
+    expect(sent.body).toContain('Bonjour Viktor,');
+    expect(sent.body).not.toContain('Victor');
+  });
+
   it('rien ne part au vendeur sans validation ; un compte rendu qui nomme l’acquéreur est refusé [R52]', async () => {
     const t = await setup({ write: async () => ({ ...GOOD, opinion: 'Inès a aimé le séjour.' }) });
     const v = await t.visit();

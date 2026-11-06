@@ -356,4 +356,39 @@ describeWithSqlite('G09 · anciens contacts relancés quand la loi le permet', (
     expect(sent).toContain('Bonjour Agnès');
     expect(sent).not.toContain('Inès');
   });
+
+  const correctAfterPreparation = async (t: Awaited<ReturnType<typeof setup>>, personId: string) => {
+    await t.db.run("INSERT INTO person_name_corrections (id, network_id, person_id, old_first_name, new_first_name, reason, actor, created_at) VALUES ('c-1', ?, ?, 'Inès', 'Agnès', 'faute_de_frappe', 'direction:d', '2099-01-01T00:00:00.000Z')", [t.network.id, personId]);
+    await t.db.run("UPDATE persons SET first_name = 'Agnès' WHERE id = ?", [personId]);
+  };
+
+  it('SV13 · après une correction, l’écran montre le texte qui partira, et la ligne rangée ne change pas [R17]', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    await correctAfterPreparation(t, ines.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    const shown = list.value[0]!;
+    expect(shown.draft).toContain('Bonjour Agnès');
+    expect(shown.draft).not.toContain('Inès');
+    expect(shown.draftBy).toBe('secours');
+    expect((await t.db.first<{ draft: string }>('SELECT draft FROM old_contact_followups WHERE id = ?', [shown.followupId]))!.draft).toContain('Inès');
+    await t.anciens.validate(t.agent(), shown.followupId);
+    expect((await t.outbox()).map((m) => m.body).join(' ')).toContain(shown.draft);
+  });
+
+  it('SV13 · le texte écrit par l’agent part tel quel, même après une correction', async () => {
+    const t = await setup();
+    const ines = await t.contact('Inès');
+    await t.valued(ines.id, 400);
+    await t.anciens.prepareMonth(t.network.id);
+    await correctAfterPreparation(t, ines.id);
+    const list = await t.anciens.toValidate(t.agent());
+    if (!list.ok) throw new Error(list.code);
+    const mine = 'Bonjour Agnès, je repense à notre échange sur votre appartement. Dites-moi si vous souhaitez en reparler.';
+    expect(await t.anciens.validate(t.agent(), list.value[0]!.followupId, { text: mine })).toMatchObject({ ok: true, value: { status: 'essai' } });
+    expect((await t.outbox()).map((m) => m.body).join(' ')).toContain(mine);
+  });
 });
