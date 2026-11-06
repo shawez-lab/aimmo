@@ -461,12 +461,13 @@ export class BoiteMail {
     // L'agent doit encore pouvoir voir la fiche, dossier d'agent valide compris : sinon rien ne part [R16, R82].
     const access = await this.acces.readFiche(viewer, draft.person_id);
     if (!access.ok) return { ok: false, rule: 'R16', code: access.code };
+    // Tout ce que l'envoi doit lire est lu avant de prendre la validation : une lecture en panne ne bloque jamais la réponse.
+    const mail = await this.db.first<{ provider: string; message_id: string | null; project_id: string | null }>('SELECT provider, message_id, project_id FROM mailbox_mails WHERE id = ?', [draft.mail_id]);
+    const conversation = mail?.message_id ? (await this.db.first<{ conversation_id: string | null }>('SELECT conversation_id FROM messages WHERE id = ?', [mail.message_id]))?.conversation_id ?? null : null;
     const at = this.now().toISOString();
     // Prendre la validation : de deux validations en même temps, une seule envoie [R18, R409].
     const won = await this.db.run("UPDATE mailbox_drafts SET status = 'valide', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'prepare'", [viewer.userId, at, draftId]);
     if (won.changes !== 1) return { ok: false, rule: 'R409', code: 'already_validated' };
-    const mail = await this.db.first<{ provider: string; message_id: string | null; project_id: string | null }>('SELECT provider, message_id, project_id FROM mailbox_mails WHERE id = ?', [draft.mail_id]);
-    const conversation = mail?.message_id ? (await this.db.first<{ conversation_id: string | null }>('SELECT conversation_id FROM messages WHERE id = ?', [mail.message_id]))?.conversation_id ?? null : null;
     let result;
     try {
       result = await this.controle.send({
