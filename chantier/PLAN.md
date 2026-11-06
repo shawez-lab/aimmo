@@ -89,7 +89,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : le PDF passe veraPDF en PDF/A-3b (test ou vérification écrite) ; le XML joint est octet pour octet celui rangé (test) ; montants du PDF égaux à ceux du XML (test).
 
 ### HX05 · Annonces dans plusieurs langues et portails internationaux
-- Statut : en cours
+- Statut : fait (2026-11-06)
+- Décidé (2026-11-06), lecture prudente : module `packages/core/src/annonces/traductions.ts`, migration `1804`, règles R257 à R259. L'IA ne voit ni chiffre ni classe énergie (repères rendus dans l'ordre, valeurs remises par le code) ; mêmes nombres, même ordre, même unité, mêmes classes ; voies, critères discriminants et mots interdits refusés par langue, et hors anglais aucun mot latin absent du français ; prix et mentions jamais traduits. Anglais toujours ouvert, autres langues seulement déclarées par l'agent ; seul l'agent du bien valide. Flux `aimmo-essai-international-1` et réponse à l'acheteur depuis la version publiée. Relecture forte : 2 P0, 1 P1 corrigés ; Codex : 1 P0, 1 P1 corrigés, puis rien à signaler (#390).
+- Reste : écran de l'agent et branchement au Worker ; IA réelle (H13) ; envoi de la réponse par le contrôle central ; portails étrangers réels (H10).
 - Objectif : comme Hektor : diffusion vers les portails étrangers. Jamais vu : chaque annonce existe en anglais et dans les langues que parle l'agent (Shawez : anglais, ourdou, hindi, pendjabi, persan, arabe, grec), et l'appli répond à l'acheteur étranger dans sa langue.
 - Critères : chaque traduction garde les chiffres et mentions légales à l'identique (test) ; rien ne part sans validation de l'agent.
 
