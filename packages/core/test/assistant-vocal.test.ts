@@ -261,6 +261,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
       ['le premier', 'euh, c’est à quelle heure ?'],
       ['le premier', 'oui mais pas avant midi'],
       ['le premier', 'le deuxième plutôt'],
+      ['le premier', 'Merci.'],
     ]) {
       const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', ...lines]);
       expect(state.booked, lines.join(' / ')).toBeNull();
@@ -270,7 +271,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
 
   it('[R242] un accord à l’enregistrement assorti d’une réserve n’en est pas un', async () => {
     const t = await setup();
-    for (const answer of ['Oui pour parler, mais pas pour enregistrer', 'oui, enfin non', 'oui ? c’est enregistré pourquoi', 'ok mais sans enregistrement', 'je ne sais pas']) {
+    for (const answer of ['Oui pour parler, mais pas pour enregistrer', 'oui, enfin non', 'oui ? c’est enregistré pourquoi', 'ok mais sans enregistrement', 'je ne sais pas', 'Bonjour.', 'Merci.']) {
       const { state } = await t.talk(t.call(), [answer]);
       expect(state.consentAt, answer).toBeNull();
     }
@@ -330,6 +331,9 @@ it('HX22 · les intentions se lisent par des règles fixes', () => {
   expect(saysYes('euh')).toBe(false);
   expect(saysYes('Oui pour parler, mais pas pour enregistrer')).toBe(false);
   expect(saysYes('Oui, bien sûr, allez-y.')).toBe(true);
+  expect(saysYes('Bonjour, oui, merci.')).toBe(true);
+  // Une politesse seule n'est pas un accord.
+  for (const courtesy of ['Bonjour.', 'Merci.', 'Monsieur', 'merci bonjour', '']) expect(saysYes(courtesy), courtesy).toBe(false);
   expect(topicsIn('Il y a combien de pièces ?')).toEqual(['pieces']);
   expect(topicsIn('Combien coûte-t-il ?')).toEqual(['prix']);
   expect(topicsIn('Le vendeur est pressé ?')).toEqual(['autre']);

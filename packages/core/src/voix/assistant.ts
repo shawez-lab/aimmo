@@ -243,8 +243,10 @@ export function topicsIn(utterance: string): Topic[] {
   return found;
 }
 
-/** Un oui franc : la phrase entière n'est faite que de mots d'accord. « Oui, mais pas pour enregistrer » n'en est pas un. */
-const PLAIN_YES = /^(?:(?:oui|ouais|d'accord|je suis d'accord|ok|okay|bien sur|allez-y|allez y|ca marche|entendu|volontiers|tout a fait|absolument|parfait|tres bien|c'est bon|pas de probleme|pas de souci|c'est parfait|merci|bonjour|madame|monsieur)[\s,.!]*)+$/;
+/** Un oui franc : au moins un mot d'accord, et rien d'autre que d'autres mots d'accord ou des politesses. « Oui, mais pas pour enregistrer », « Merci. » n'en sont pas. */
+const AGREE = "oui|ouais|d'accord|je suis d'accord|ok|okay|bien sur|allez-y|allez y|ca marche|entendu|volontiers|tout a fait|absolument|parfait|tres bien|c'est bon|pas de probleme|pas de souci|c'est parfait";
+const COURTESY = 'merci|bonjour|madame|monsieur';
+const PLAIN_YES = new RegExp(`^(?:(?:${COURTESY})[\\s,.!]*)*(?:${AGREE})[\\s,.!]*(?:(?:${AGREE}|${COURTESY})[\\s,.!]*)*$`);
 
 /** L'accord, à l'enregistrement comme à un créneau : seulement un oui franc, sans réserve ni question. Un doute vaut refus. */
 export function saysYes(utterance: string): boolean {
