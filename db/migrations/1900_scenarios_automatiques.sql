@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS automation_simulations (
   tasks INTEGER NOT NULL CHECK (tasks >= 0),
   refused TEXT NOT NULL,
   same_day_twice INTEGER NOT NULL CHECK (same_day_twice >= 0),
+  -- Le nombre d'allumages du réseau vu par l'essai : un allumage venu depuis rend l'essai caduc [R400].
+  lit_revision INTEGER NOT NULL CHECK (lit_revision >= 0),
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (scenario_id, version) REFERENCES automation_scenarios (id, version) ON DELETE RESTRICT

@@ -22,12 +22,12 @@ import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { PROJECT_KINDS, type ProjectKind } from '../db/types.ts';
-import { ControleEnvois } from '../envoi/controle.ts';
 import { DEFAULT_SEND_SETTINGS, type SendRule } from '../envoi/decision.ts';
 import { afterSendingTime, localTime, type SendingWindow } from '../envoi/horaires.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
-import { checkText } from '../envoi/texte.ts';
+import { ControleEnvois, DEFAULT_CONTROLE_SETTINGS } from '../envoi/controle.ts';
+import { DEFAULT_TEXT_SETTINGS, checkText, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -137,6 +137,12 @@ const DAY = 24 * HOUR;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const text = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
 const SAMPLE_FIRST_NAME = 'Camille';
+/** Les coordonnées de la fiche par où part chaque canal, comme au contrôle central. */
+const IDENTIFIER_FOR: Readonly<Record<AutomationChannel, readonly string[]>> = { email: ['email'], sms: ['phone'], whatsapp: ['whatsapp', 'phone'] };
+/** Un texte comparé comme au contrôle central : minuscules, sans accents ni ponctuation [R05]. */
+const sameText = (body: string): string => plain(body).replace(/[^a-z0-9]+/g, ' ').trim();
+/** La plus longue mention que le contrôle central peut ajouter au premier message [R06]. */
+const LONGEST_MENTION = Math.max(DEFAULT_CONTROLE_SETTINGS.mentionWithAgent.length + 40, DEFAULT_CONTROLE_SETTINGS.mentionWithoutAgent.length) + 2;
 
 /** Le texte du message pour une personne : son prénom à la place de `{prenom}`, ou rien s'il n'est pas connu. */
 export function renderScenarioText(template: string, firstName: string | null): string {
@@ -176,6 +182,8 @@ export function parseScenario(input: unknown, settings: ScenarioSettings = DEFAU
       const problems = checkText(renderScenarioText(body, firstName), { audience: 'client', channel: channel as AutomationChannel, firstOfConversation: true, firstName, figures: [] });
       if (problems.length > 0) return bad(`text_${problems[0]!.rule}`, problems[0]!.rule);
     }
+    // Mention comprise, le texte tient dans le canal : sinon le contrôle central le refuserait à chaque envoi.
+    if (body.replace(FIRST_NAME_SLOT, 'x'.repeat(40)).length + LONGEST_MENTION > DEFAULT_TEXT_SETTINGS.maxLength[channel as AutomationChannel]) return bad('text_length');
     message = { channel: channel as AutomationChannel, text: body };
   }
   let task: ScenarioDefinition['task'] = null;
@@ -327,18 +335,47 @@ export class ScenariosAutomatiques {
     const facts = await this.facts(viewer.networkId, def, from, to);
     const refusedBy: Record<string, number> = {};
     const allowed: Planned[] = [];
+    const refuse = (rule: string): void => {
+      refusedBy[rule] = (refusedBy[rule] ?? 0) + 1;
+    };
+    /** Les textes déjà partis ou qui partiraient dans l'essai, par personne [R05]. */
+    const textsOf = new Map<string, Set<string>>();
     let tasks = 0;
     for (const fact of facts) {
       const dueAt = this.dueAt(def, fact.at);
       if (def.task !== null) tasks += 1;
       if (def.message === null) continue;
+      const message = def.message;
       // La décision du contrôle central, lue sans rien écrire, à l'heure où le message serait parti [R01 à R04].
-      const decision = await this.decisions.decide(fact.personId, { channel: def.message.channel, kind: 'follow_up', purpose: AUTOMATION_PURPOSE, conversationId: null, at: dueAt });
+      const decision = await this.decisions.decide(fact.personId, { channel: message.channel, kind: 'follow_up', purpose: AUTOMATION_PURPOSE, conversationId: null, at: dueAt });
       if (!decision.allowed) {
-        const rule: SendRule | string = decision.rule ?? 'refus';
-        refusedBy[rule] = (refusedBy[rule] ?? 0) + 1;
+        refuse((decision.rule as SendRule | null) ?? 'refus');
         continue;
       }
+      // Les autres contrôles du contrôle central, lus sans rien écrire : une coordonnée pour ce canal, le même texte
+      // jamais deux fois à la même personne [R05].
+      const view = await this.fiche.view(fact.personId);
+      if (!view.identifiers.some((i) => IDENTIFIER_FOR[message.channel].includes(i.kind))) {
+        refuse('sans_coordonnee');
+        continue;
+      }
+      const body = sameText(renderScenarioText(message.text, view.members.map((m) => m.first_name).find((n) => n) ?? null));
+      let seen = textsOf.get(fact.personId);
+      if (!seen) {
+        seen = new Set<string>();
+        for (const m of view.messages) {
+          if (m.direction !== 'out') continue;
+          seen.add(sameText(m.body));
+          // Sans sa mention de premier message [R06].
+          seen.add(sameText(m.body.split('\n\n').slice(1).join('\n\n')));
+        }
+        textsOf.set(fact.personId, seen);
+      }
+      if (seen.has(body)) {
+        refuse('R05');
+        continue;
+      }
+      seen.add(body);
       allowed.push({ scenarioId, ref: fact.ref, personId: fact.personId, dueAt });
     }
     // Les messages des scénarios déjà allumés, sur la même période, pour voir les doubles du même jour [R402].
@@ -357,11 +394,12 @@ export class ScenariosAutomatiques {
       else taken.add(key);
     }
     const persons = new Set(allowed.map((p) => p.personId)).size;
+    const revision = await this.litRevision(viewer.networkId);
     const id = this.newId();
     await this.db.run(
-      `INSERT INTO automation_simulations (id, network_id, scenario_id, version, period_from, period_to, messages, reached, tasks, refused, same_day_twice, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, scenarioId, current.version, from.toISOString(), to.toISOString(), allowed.length, persons, tasks, JSON.stringify(refusedBy), sameDayTwice, this.actor(viewer), to.toISOString()],
+      `INSERT INTO automation_simulations (id, network_id, scenario_id, version, period_from, period_to, messages, reached, tasks, refused, same_day_twice, lit_revision, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, scenarioId, current.version, from.toISOString(), to.toISOString(), allowed.length, persons, tasks, JSON.stringify(refusedBy), sameDayTwice, revision, this.actor(viewer), to.toISOString()],
     );
     await appendEvent(
       this.journal,
@@ -372,6 +410,11 @@ export class ScenariosAutomatiques {
       ok: true,
       value: { simulationId: id, scenarioId, version: current.version, from: from.toISOString(), to: to.toISOString(), messages: allowed.length, persons, tasks, refused: refusedBy, sameDayTwice, canSwitchOn: sameDayTwice === 0 },
     };
+  }
+
+  /** Le nombre d'allumages du réseau : un essai ne vaut que si aucun autre allumage n'est venu depuis [R400]. */
+  private async litRevision(networkId: string): Promise<number> {
+    return (await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM automation_switches WHERE network_id = ? AND lit = 1', [networkId]))?.n ?? 0;
   }
 
   private async nextSeq(scenarioId: string): Promise<number> {
@@ -389,29 +432,26 @@ export class ScenariosAutomatiques {
     const current = await this.latest(viewer.networkId, scenarioId);
     if (!current) return { ok: false, rule: 'R16', code: 'unknown' };
     const now = this.now();
-    const sim = await this.db.first<{ id: string; same_day_twice: number; created_at: string }>(
-      'SELECT id, same_day_twice, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+    const sim = await this.db.first<{ id: string; same_day_twice: number; lit_revision: number; created_at: string }>(
+      'SELECT id, same_day_twice, lit_revision, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
       [scenarioId, current.version],
     );
-    const lastLit = await this.db.first<{ at: string | null }>('SELECT MAX(at) AS at FROM automation_switches WHERE network_id = ? AND lit = 1', [viewer.networkId]);
     const refuse = async (rule: string, code: string): Promise<ScenarioResult<{ version: number }>> => {
       await appendEvent(this.journal, { type: 'automatismes.allumage_refuse', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule, code, version: current.version } }, this.now);
       return { ok: false, rule, code };
     };
     if (!sim) return refuse('R400', 'not_simulated');
     if (now.getTime() - Date.parse(sim.created_at) > this.settings.simulationValidHours * HOUR) return refuse('R400', 'simulation_too_old');
-    if (lastLit?.at && Date.parse(lastLit.at) > Date.parse(sim.created_at)) return refuse('R400', 'simulation_before_last_switch_on');
+    if (sim.lit_revision !== (await this.litRevision(viewer.networkId))) return refuse('R400', 'simulation_before_last_switch_on');
     if (sim.same_day_twice > 0) return refuse('R402', 'same_day_twice');
-    await this.db.run('INSERT INTO automation_switches (id, network_id, scenario_id, version, lit, simulation_id, at, seq, by) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)', [
-      this.newId(),
-      viewer.networkId,
-      scenarioId,
-      current.version,
-      sim.id,
-      now.toISOString(),
-      await this.nextSeq(scenarioId),
-      this.actor(viewer),
-    ]);
+    // L'allumage n'est rangé que si aucun autre n'est venu entre-temps, dans la même écriture : de deux allumages
+    // simultanés sur des essais du même état, un seul passe [R400].
+    const inserted = await this.db.run(
+      `INSERT INTO automation_switches (id, network_id, scenario_id, version, lit, simulation_id, at, seq, by)
+       SELECT ?, ?, ?, ?, 1, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM automation_switches WHERE network_id = ? AND lit = 1) = ?`,
+      [this.newId(), viewer.networkId, scenarioId, current.version, sim.id, now.toISOString(), await this.nextSeq(scenarioId), this.actor(viewer), viewer.networkId, sim.lit_revision],
+    );
+    if (inserted.changes !== 1) return refuse('R400', 'simulation_before_last_switch_on');
     // Une version plus ancienne cède la place : ses passages en attente sont annulés, jamais effacés.
     await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE scenario_id = ? AND version <> ? AND status = 'a_faire'", [now.toISOString(), scenarioId, current.version]);
     await appendEvent(this.journal, { type: 'automatismes.allume', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule: 'R400', version: current.version, simulation: sim.id } }, this.now);
@@ -494,7 +534,10 @@ export class ScenariosAutomatiques {
   }
 
   private async execute(networkId: string, run: RunRow, def: ScenarioDefinition, now: Date, report: TickReport): Promise<void> {
-    const person = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [run.person_id]);
+    // La fiche d'aujourd'hui : deux fiches réunies depuis le fait ne sont plus qu'une personne [R402].
+    const root = await this.fiche.rootOf(run.person_id);
+    const members = await this.fiche.membersOf(root);
+    const person = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [root]);
     const agentId = person?.agent_id ?? null;
     let messageStatus: 'essai' | 'refuse' | null = null;
     let messageRule: string | null = null;
@@ -502,18 +545,21 @@ export class ScenariosAutomatiques {
     if (def.message !== null) {
       const day = this.day(now);
       // Un seul message de scénario par personne et par jour, tous scénarios confondus [R402].
-      await this.db.run('INSERT OR IGNORE INTO automation_daily_messages (network_id, person_id, day, run_id, created_at) VALUES (?, ?, ?, ?, ?)', [networkId, run.person_id, day, run.id, now.toISOString()]);
-      const holder = await this.db.first<{ run_id: string }>('SELECT run_id FROM automation_daily_messages WHERE network_id = ? AND person_id = ? AND day = ?', [networkId, run.person_id, day]);
-      if (holder?.run_id !== run.id) {
+      // La place du jour est prise sous la fiche gardée ; une place prise avant la réunion sous une autre fiche compte aussi.
+      await this.db.run('INSERT OR IGNORE INTO automation_daily_messages (network_id, person_id, day, run_id, created_at) VALUES (?, ?, ?, ?, ?)', [networkId, root, day, run.id, now.toISOString()]);
+      const holders = await this.db.all<{ run_id: string }>(
+        `SELECT run_id FROM automation_daily_messages WHERE network_id = ? AND day = ? AND person_id IN (${members.map(() => '?').join(', ')})`,
+        [networkId, day, ...members],
+      );
+      if (!holders.some((h) => h.run_id === run.id) || holders.some((h) => h.run_id !== run.id)) {
         messageStatus = 'refuse';
         messageRule = 'R402';
       } else {
-        const members = await this.fiche.membersOf(run.person_id);
         const body = renderScenarioText(def.message.text, await ficheFirstName(this.db, members));
         const result = await this.controle.send({
           networkId,
           agentId,
-          personId: run.person_id,
+          personId: root,
           channel: def.message.channel,
           kind: 'follow_up',
           purpose: AUTOMATION_PURPOSE,
@@ -536,7 +582,7 @@ export class ScenariosAutomatiques {
         networkId,
         run.id,
         agentId,
-        run.person_id,
+        root,
         def.task.title,
         this.day(new Date(now.getTime() + def.task.dueInDays * DAY)),
         now.toISOString(),
@@ -553,7 +599,7 @@ export class ScenariosAutomatiques {
     ]);
     await appendEvent(
       this.journal,
-      { type: 'automatismes.passage', actor: 'system:automatismes', subject: `person:${run.person_id}`, data: { rule: 'R401', scenario: run.scenario_id, run: run.id, mode: 'essai', message: messageStatus, messageRule, task: taskId !== null } },
+      { type: 'automatismes.passage', actor: 'system:automatismes', subject: `person:${root}`, data: { rule: 'R401', scenario: run.scenario_id, run: run.id, mode: 'essai', message: messageStatus, messageRule, task: taskId !== null } },
       this.now,
     );
   }

@@ -795,7 +795,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   call_journal: ['call_id', 'claimed_at', 'done'],
   voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
   automation_scenarios: ['id', 'version', 'network_id', 'definition', 'created_at'],
-  automation_simulations: ['id', 'network_id', 'scenario_id', 'version', 'period_from', 'period_to', 'messages', 'reached', 'tasks', 'refused', 'same_day_twice', 'created_at'],
+  automation_simulations: ['id', 'network_id', 'scenario_id', 'version', 'period_from', 'period_to', 'messages', 'reached', 'tasks', 'refused', 'same_day_twice', 'lit_revision', 'created_at'],
   automation_switches: ['id', 'network_id', 'scenario_id', 'version', 'lit', 'simulation_id', 'at', 'seq'],
   automation_runs: ['id', 'network_id', 'scenario_id', 'version', 'triggered_at', 'due_at', 'status', 'message_status', 'message_rule', 'message_id', 'task_id', 'done_at', 'created_at'],
   automation_daily_messages: ['network_id', 'day', 'run_id', 'created_at'],

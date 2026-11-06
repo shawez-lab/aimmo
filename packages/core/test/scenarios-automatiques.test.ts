@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { AUTOMATION_PURPOSE, ScenariosAutomatiques, parseScenario, renderScenarioText } from '../src/automatismes/scenarios.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -76,6 +76,7 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
       [{ ...WELCOME, message: { channel: 'email', text: 'Bonjour {prenom}, passez au 12 rue des Lilas.' } }, 'text_R09'],
       [{ ...WELCOME, message: null, task: null }, 'empty_scenario'],
       [{ ...WELCOME, task: { title: 'Appeler', dueInDays: 31 } }, 'bad_task_due'],
+      [{ ...WELCOME, message: { channel: 'sms', text: `Bonjour {prenom}, ${'merci pour votre demande. '.repeat(13)}` } }, 'text_length'],
     ];
     for (const [input, code] of bad) expect([code, await t.scenarios.compose(t.direction, input)]).toEqual([code, expect.objectContaining({ ok: false, code })]);
     const v1 = await t.scenarios.compose(t.direction, WELCOME);
@@ -110,6 +111,8 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     const sans = await t.person('Sans', false);
     const exclu = await t.person('Exclu');
     await t.store.addExclusion({ networkId: t.network.id, personId: exclu, reason: 'network_list', notedAt: new Date(TUE_10H - 11 * DAY) });
+    const sansMail = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Muet' });
+    await t.store.addConsent({ networkId: t.network.id, personId: sansMail.id, purpose: AUTOMATION_PURPOSE, channel: 'email', proof: 'case cochée (test)', givenAt: new Date(TUE_10H - 11 * DAY) });
     const repris = await t.person('Repris');
     await t.db.run("INSERT INTO import_keys (network_id, key, target_kind, target_id, created_at) VALUES (?, 'site:compte:1', 'person', ?, ?)", [t.network.id, repris, new Date(TUE_10H).toISOString()]);
     // Trop vieux, et d'un autre réseau : jamais dans l'essai.
@@ -122,7 +125,7 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     const made = await t.scenarios.compose(t.direction, WELCOME);
     const id = made.ok ? made.value.scenarioId : '';
     const report = await t.scenarios.simulate(t.direction, id);
-    expect(report).toMatchObject({ ok: true, value: { version: 1, messages: 3, persons: 3, tasks: 5, refused: { R03: 1, R02: 1 }, sameDayTwice: 0, canSwitchOn: true } });
+    expect(report).toMatchObject({ ok: true, value: { version: 1, messages: 3, persons: 3, tasks: 6, refused: { R03: 1, R02: 1, sans_coordonnee: 1 }, sameDayTwice: 0, canSwitchOn: true } });
     // Rien n'est parti ni rangé : ni message, ni journal d'envoi, ni boîte d'essai, ni passage, ni tâche [R400].
     expect({ messages: await t.count('messages'), send_log: await t.count('send_log'), trial_outbox: await t.count('trial_outbox'), message_kinds: await t.count('message_kinds') }).toEqual(before);
     for (const table of ['automation_runs', 'automation_tasks', 'automation_daily_messages']) expect([table, await t.count(table)]).toEqual([table, 0]);
@@ -155,7 +158,15 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     expect(await t.scenarios.switchOn(t.direction, id)).toEqual({ ok: false, rule: 'R400', code: 'simulation_before_last_switch_on' });
     await t.scenarios.simulate(t.direction, id);
     expect(await t.scenarios.switchOn(t.direction, id)).toEqual({ ok: true, value: { version: 2 } });
-    expect((await t.journal.all()).filter((e) => e.type === 'automatismes.allumage_refuse').map((e) => e.data['code'])).toEqual(['not_simulated', 'not_simulated', 'simulation_too_old', 'simulation_before_last_switch_on']);
+    // Même à la même milliseconde : deux essais faits avant le premier allumage, le second ne vaut plus.
+    const c = await t.scenarios.compose(t.direction, { ...PROJECT, projectKind: 'buy' });
+    const d = await t.scenarios.compose(t.direction, { ...PROJECT, projectKind: 'rent' });
+    const [cId, dId] = [c.ok ? c.value.scenarioId : '', d.ok ? d.value.scenarioId : ''];
+    await t.scenarios.simulate(t.direction, cId);
+    await t.scenarios.simulate(t.direction, dId);
+    expect(await t.scenarios.switchOn(t.direction, cId)).toMatchObject({ ok: true });
+    expect(await t.scenarios.switchOn(t.direction, dId)).toEqual({ ok: false, rule: 'R400', code: 'simulation_before_last_switch_on' });
+    expect((await t.journal.all()).filter((e) => e.type === 'automatismes.allumage_refuse').map((e) => e.data['code'])).toEqual(['not_simulated', 'not_simulated', 'simulation_too_old', 'simulation_before_last_switch_on', 'simulation_before_last_switch_on']);
     await expect(t.db.run("INSERT INTO automation_switches (id, network_id, scenario_id, version, lit, simulation_id, at, seq, by) VALUES ('s9', ?, ?, 2, 1, NULL, 'x', 99, 'x')", [t.network.id, id])).rejects.toThrow();
   });
 
@@ -170,9 +181,9 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     t.setClock(TUE_10H);
     const p = await t.scenarios.compose(t.direction, PROJECT);
     const projectId = p.ok ? p.value.scenarioId : '';
-    expect(await t.scenarios.simulate(t.direction, projectId)).toMatchObject({ ok: true, value: { messages: 2, persons: 1, sameDayTwice: 1, canSwitchOn: false } });
-    expect(await t.scenarios.switchOn(t.direction, projectId)).toEqual({ ok: false, rule: 'R402', code: 'same_day_twice' });
-    // Le scénario de bienvenue, seul : rien en double. Allumé, il rend double le scénario des projets d'un seul projet.
+    // Le même texte ne part jamais deux fois à la même personne : le second est compté refusé, comme au contrôle central [R05].
+    expect(await t.scenarios.simulate(t.direction, projectId)).toMatchObject({ ok: true, value: { messages: 1, persons: 1, refused: { R05: 1 }, sameDayTwice: 0, canSwitchOn: true } });
+    // Le scénario de bienvenue, seul : rien en double. Allumé, il rend double un scénario qui vise Inès le même jour.
     const w = await t.scenarios.compose(t.direction, { ...WELCOME, waitHours: 0 });
     const welcomeId = w.ok ? w.value.scenarioId : '';
     expect(await t.scenarios.simulate(t.direction, welcomeId)).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 0 } });
@@ -295,5 +306,32 @@ describeWithSqlite('HX24 · scénarios automatiques réglables, essayés avant d
     await t.scenarios.switchOn(t.direction, id);
     expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 0 });
     expect((await t.db.all<{ lit: number }>('SELECT lit FROM automation_switches ORDER BY seq')).map((r) => r.lit)).toEqual([1, 0, 1]);
+  });
+
+  it('[R402] [R05] deux fiches réunies avant le passage ne reçoivent qu’un message de scénario ce jour-là', async () => {
+    const t = await setup();
+    const a = await t.scenarios.compose(t.direction, { ...WELCOME, task: null });
+    const aId = a.ok ? a.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, aId);
+    await t.scenarios.switchOn(t.direction, aId);
+    const b = await t.scenarios.compose(t.direction, { ...PROJECT, waitHours: 2 });
+    const bId = b.ok ? b.value.scenarioId : '';
+    await t.scenarios.simulate(t.direction, bId);
+    expect(await t.scenarios.switchOn(t.direction, bId)).toMatchObject({ ok: true });
+    // Deux fiches de la même personne : l'une arrive comme contact, l'autre ouvre un projet de vente.
+    t.setClock(TUE_10H + HOUR);
+    const first = await t.person('Inès');
+    const second = await t.person('Ines');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: second, kind: 'sell' });
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 3 });
+    // Réunies avant que les passages soient dus.
+    const [survivorId, mergedId] = first > second ? [first, second] : [second, first];
+    await new FicheUnique(t.db, t.store).merge({ survivorId, mergedId, reason: 'test' });
+    t.setClock(TUE_10H + 3 * HOUR + 1000);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, messagesRefused: 2 });
+    expect(await t.outbox()).toHaveLength(1);
+    const rules = (await t.db.all<{ message_rule: string | null }>('SELECT message_rule FROM automation_runs')).map((r) => r.message_rule);
+    expect(rules.filter((r) => r === null)).toHaveLength(1);
+    expect(rules.filter((r) => r === 'R402')).toHaveLength(2);
   });
 });
