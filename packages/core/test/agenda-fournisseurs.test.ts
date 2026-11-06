@@ -238,6 +238,14 @@ describeWithSqlite('HX02 · Apple et Outlook : récurrences, heures locales, fen
     expect(events.map((e) => e.end.toISOString())).toEqual([at('2026-10-26', '10:00').toISOString()]);
   });
 
+  it('[R33] le DURATION d’un rappel (VALARM) n’est pas la durée de l’événement', async () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a', 'DTSTART;VALUE=DATE:20261110', 'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT15M', 'REPEAT:2', 'DURATION:PT5M', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const xml = `<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:response><D:href>/c/a.ics</D:href><D:propstat><D:prop><C:calendar-data>${ics}</C:calendar-data></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>`;
+    const fetch = async () => new Response(xml, { status: 207 });
+    const events = await new AppleAgenda({ fetch, authorization: async () => 'x' }, async () => 'https://caldav.example.test/c/').events('agent', at('2026-11-10', '09:00'), at('2026-11-10', '10:00'));
+    expect(events.map((e) => e.end.toISOString())).toEqual([at('2026-11-11', '00:00').toISOString()]);
+  });
+
   it('Outlook : un retrait rendu pour un événement sorti de la fenêtre n’annule pas le rendez-vous', async () => {
     const server = SERVERS[1]!();
     const w = await world(server);

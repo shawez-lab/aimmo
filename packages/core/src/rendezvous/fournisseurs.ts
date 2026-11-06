@@ -222,8 +222,8 @@ interface GraphPage {
 const graphTime = (t: GraphTime | undefined): Date => (t?.dateTime ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(t.dateTime) ? t.dateTime : `${t.dateTime}Z`) : EPOCH);
 const prop = (item: GraphItem, id: string): string | null => item.singleValueExtendedProperties?.find((p) => p.id.toLowerCase() === id.toLowerCase())?.value ?? null;
 
+/** Un événement Graph présent ; un retrait (`@removed`) ne passe jamais ici sans avoir été relu (`confirmed`). */
 function fromGraph(item: GraphItem): AgendaEvent {
-  if (item['@removed'] !== undefined) return { id: item.id, start: EPOCH, end: EPOCH, cancelled: true, key: null };
   return {
     id: item.id,
     start: graphTime(item.start),
@@ -335,7 +335,7 @@ export class OutlookAgenda implements AgendaProvider {
         continue;
       }
       const r = await call(this.c, agentId, `${this.base}/events/${encodeURIComponent(item.id)}?${new URLSearchParams({ $expand: EXPAND })}`, { headers: UTC });
-      if (r.status === 404 || r.status === 410) out.push(fromGraph(item));
+      if (r.status === 404 || r.status === 410) out.push({ id: item.id, start: EPOCH, end: EPOCH, cancelled: true, key: null });
       else out.push(fromGraph(await json<GraphItem>(r)));
     }
     return out;
@@ -391,12 +391,18 @@ function vevents(ics: string): Props[] {
   const lines = ics.replace(/\r\n[ \t]|\n[ \t]/g, '').split(/\r?\n/);
   const all: Props[] = [];
   let out: Props | null = null;
+  // Les composants imbriqués (VALARM) ont leurs propres propriétés : elles ne sont pas celles de l'événement.
+  let nested = 0;
   for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') out = new Map();
-    else if (line === 'END:VEVENT') {
+    if (line === 'BEGIN:VEVENT') {
+      out = new Map();
+      nested = 0;
+    } else if (line === 'END:VEVENT') {
       if (out) all.push(out);
       out = null;
-    } else if (out) {
+    } else if (out && /^BEGIN:/i.test(line)) nested++;
+    else if (out && /^END:/i.test(line)) nested = Math.max(0, nested - 1);
+    else if (out && nested === 0) {
       const m = /^([A-Z0-9-]+)((?:;[^:]*)?):(.*)$/i.exec(line);
       if (m && !out.has(m[1]!.toUpperCase())) out.set(m[1]!.toUpperCase(), { params: m[2] ?? '', value: m[3] ?? '' });
     }
