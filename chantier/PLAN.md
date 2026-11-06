@@ -150,7 +150,7 @@ Voie : 2
 Réservé et découpé le 2026-11-06 par la voie 2 (la voie 1 tient Z05 puis HX01 à HX20). Le cahier ne parle pas encore des notes vocales ni des appels : la source est la demande de Shawez du 2026-11-06 ci-dessus. Règles R240 à R249 et migrations à partir de `1800` réservées à ce groupe. Le code vit dans `packages/core/src/voix/` ; `app.ts`, `packages/core/src/index.ts` et les adaptateurs de réception ne changent pas : le branchement au Worker sera une tâche de la voie 1. Ordre : HX23 d'abord (rien d'extérieur), puis HX21, puis HX22. Le vrai service de transcription attend un humain (fournisseur, clé, accord de sous-traitance) : d'ici là, une interface et un faux transcripteur dans les tests.
 
 ### HX21 · Appels entrants résumés et rangés dans la fiche
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Leedflow d'Apimo et le suivi des appels de Hektor : résumé automatique de chaque appel, enregistrement dans la fiche, provenance des appels venus du site. Jamais vu : chaque information tirée de l'appel renvoie à la phrase dite, la qualification de Q01 s'applique comme pour un message, et la provenance se mesure par les liens d'appel marqués de AT05, sans jamais prendre un second numéro. L'enregistrement n'a lieu qu'après annonce et accord de l'appelant.
 - Critères : aucun enregistrement sans accord rangé (test) ; chaque champ rempli renvoie à un passage de la transcription (test) ; l'appel est rattaché à la bonne fiche, sans doublon (test).
 
