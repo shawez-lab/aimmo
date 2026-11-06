@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS calls (
   route TEXT,
   fields TEXT,
   qualification_source TEXT CHECK (qualification_source IN ('ai', 'rules')),
-  origin_content_id TEXT,
+  origin_content_id TEXT REFERENCES public_contents (id) ON DELETE RESTRICT,
   origin_kind TEXT,
   created_at TEXT NOT NULL,
   UNIQUE (network_id, provider, call_id),

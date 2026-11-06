@@ -57,7 +57,7 @@ async function setup(transcriber: CallTranscriber | null, options: ConstructorPa
   return { db, journal, store, fiche, network, appels };
 }
 
-const count = async (db: SqlDatabase, sql: string, params: unknown[] = []): Promise<number> =>
+const count = async (db: SqlDatabase, sql: string, params: string[] = []): Promise<number> =>
   ((await db.all<{ n: number }>(sql, params))[0]?.n as number) ?? 0;
 
 describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche', () => {
@@ -169,6 +169,16 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     expect(row.map((x) => x.attach)).toEqual(['created', 'matched']);
   });
 
+  it('[R244] deux appels simultanés d’un numéro inconnu finissent sur une seule fiche gardée', async () => {
+    const t = await setup(ok());
+    const [a, b] = await Promise.all([t.appels.receive(t.network.id, call({ callId: 'S1' })), t.appels.receive(t.network.id, call({ callId: 'S2' }))]);
+    if (!a.ok || !b.ok) throw new Error('refusé');
+    expect(await t.fiche.rootOf(a.personId!)).toBe(await t.fiche.rootOf(b.personId!));
+    const kept = await count(t.db, 'SELECT count(*) AS n FROM persons WHERE id NOT IN (SELECT merged_id FROM person_merges WHERE undone_at IS NULL)');
+    expect(kept).toBe(1);
+    expect(await t.appels.forPerson(t.network.id, a.personId!)).toHaveLength(2);
+  });
+
   it('[R244] [R18] le même appel livré deux fois n’est rangé, transcrit et journalisé qu’une fois', async () => {
     const tr = ok();
     const t = await setup(tr);
@@ -185,7 +195,8 @@ describeWithSqlite('HX21 · appels entrants résumés et rangés dans la fiche',
     const t = await setup(ok());
     const old = await t.store.createPerson({ networkId: t.network.id });
     await t.fiche.addIdentifier({ networkId: t.network.id, personId: old.id, kind: 'phone', value: '0600000301' });
-    const twin = await t.store.createPerson({ networkId: t.network.id });
+    // Créée une minute plus tard : la plus ancienne est sans ambiguïté `old`.
+    const twin = await new FicheClient(t.db, { now: () => at(120) }).createPerson({ networkId: t.network.id });
     await t.fiche.addIdentifier({ networkId: t.network.id, personId: twin.id, kind: 'phone', value: '0600000301' });
     const r = await t.appels.receive(t.network.id, call());
     expect(r).toMatchObject({ personId: old.id });

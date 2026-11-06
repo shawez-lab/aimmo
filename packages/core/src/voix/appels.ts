@@ -440,9 +440,12 @@ export class Appels {
     const owner = await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key = ?', [networkId, key]);
     const ownerRoot = owner ? await this.fiche.rootOf(owner.person_id) : created.id;
     if (ownerRoot !== created.id) {
-      // Le même numéro est arrivé au même moment par un autre chemin : sa fiche gagne, la nôtre reste vide.
+      // Le même numéro est arrivé au même moment par un autre chemin : sa fiche gagne, la nôtre, vide, la rejoint (S04).
       const person = await this.store.getPerson(ownerRoot);
-      if (person) return { person, attach: 'matched' };
+      if (person) {
+        await this.fiche.merge({ survivorId: person.id, mergedId: created.id, reason: 'même numéro, appel simultané' });
+        return { person, attach: 'matched' };
+      }
     }
     await this.fiche.addIdentifier({ networkId, personId: created.id, kind: 'phone', value: phone });
     return { person: created, attach: 'created' };
