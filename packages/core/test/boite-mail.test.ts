@@ -74,12 +74,12 @@ describe('HX26 · pièces jointes, sans base', () => {
   });
 
   it('[R410] une pièce d’identité, un RIB ou un document fiscal ne sont jamais rangés, quel que soit leur type [R15]', () => {
-    for (const name of ['CNI recto.pdf', 'carte_identite.jpg', 'Passeport.PDF', 'RIB-compte.pdf', 'releve bancaire mars.pdf', 'Avis d’imposition 2026.pdf', 'titre-de-séjour.png', 'bulletin de salaire.pdf', 'justificatif_domicile.pdf', 'permis de conduire.jpg']) {
+    for (const name of ['CNI recto.pdf', 'carte_identite.jpg', 'Passeport.PDF', 'RIB-compte.pdf', 'releve bancaire mars.pdf', 'Avis d’imposition 2026.pdf', 'titre-de-séjour.png', 'bulletin de salaire.pdf', 'justificatif_domicile.pdf', 'permis de conduire.jpg', 'attestation-revenus.pdf', 'banque.pdf', 'Relevés bancaires.pdf', 'avis fiscaux.pdf', 'Passport scan.pdf', 'payslips.pdf']) {
       expect(forbiddenAttachment(name)).toBe(true);
       expect(judgeAttachment(att(name, 'application/pdf', pdf('x')))).toEqual({ ok: false, outcome: 'interdit' });
     }
     // Un mot entier seulement : « tribune » n'est pas un RIB, « permis de construire » n'est pas un permis de conduire.
-    for (const name of ['tribune.pdf', 'permis de construire.pdf', 'diagnostic-electricite.pdf', 'compromis signé.pdf']) expect(forbiddenAttachment(name)).toBe(false);
+    for (const name of ['tribune.pdf', 'permis de construire.pdf', 'diagnostic-electricite.pdf', 'compromis signé.pdf', 'taxe fonciere.pdf', 'compte rendu de visite.pdf']) expect(forbiddenAttachment(name)).toBe(false);
   });
 });
 
@@ -199,6 +199,20 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     // Une seconde validation ne renvoie rien.
     expect(await t.boite.validate(me, draftId)).toMatchObject({ ok: false, rule: 'R409', code: 'already_validated' });
     expect(await t.outbox()).toHaveLength(1);
+  });
+
+  it('[R409] une fiche passée à un autre agent depuis le tri : sa réponse n’est plus montrée ni validable [R16]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const r = await t.boite.sort(me, t.mail('noa@example.test', 'Bonjour'));
+    if (!r.ok || !r.value.draftId) throw new Error('réponse attendue');
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.lea.id, noa]);
+    expect(await t.boite.drafts(me)).toEqual({ ok: true, value: [] });
+    expect(await t.boite.validate(me, r.value.draftId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.outbox()).toHaveLength(0);
+    // La réponse reste préparée : rien n'a été pris ni envoyé.
+    expect(await t.db.first('SELECT status FROM mailbox_drafts WHERE id = ?', [r.value.draftId])).toEqual({ status: 'prepare' });
   });
 
   it('[R409] une demande d’arrêt par mail exclut la personne et ne prépare aucune réponse [R04] ; hors des heures, la réponse attend', async () => {

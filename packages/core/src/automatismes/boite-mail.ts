@@ -49,8 +49,10 @@ const MAX_ATTACHMENTS = 20;
  */
 const FORBIDDEN_NAME_WORDS: readonly string[][] = [
   ['identite'],
+  ['identity'],
   ['cni'],
   ['passeport'],
+  ['passport'],
   ['permis', 'conduire'],
   ['permis', 'de', 'conduire'],
   ['titre', 'sejour'],
@@ -59,12 +61,18 @@ const FORBIDDEN_NAME_WORDS: readonly string[][] = [
   ['iban'],
   ['releve'],
   ['bancaire'],
+  ['banque'],
+  ['bank'],
   ['imposition'],
   ['impot'],
-  ['impots'],
   ['fiscal'],
+  ['fiscale'],
+  ['tax'],
   ['salaire'],
+  ['salary'],
   ['paie'],
+  ['payslip'],
+  ['revenu'],
   ['domicile'],
   ['blanchiment'],
 ];
@@ -132,11 +140,14 @@ export interface BoiteMailOptions {
 const marks = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 const two = (n: number): string => String(n).padStart(2, '0');
 
-/** Les mots du nom d'un fichier, sans accent ni extension. */
+const singular = (w: string): string => (w.length > 3 ? w.replace(/aux$/, 'al').replace(/s$/, '') : w);
+
+/** Les mots du nom d'un fichier, sans accent ni extension, au singulier (« revenus », « fiscaux »). */
 function nameWords(fileName: string): string[] {
   return plain(fileName.replace(/\.[a-z0-9]{1,5}$/i, ''))
     .split(/[^a-z0-9]+/)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map(singular);
 }
 
 /** Le nom du fichier dit-il une pièce qui n'est jamais rangée [R15] ? Les mots se cherchent entiers, dans l'ordre. */
@@ -144,7 +155,7 @@ export function forbiddenAttachment(fileName: string): boolean {
   const words = nameWords(fileName);
   return FORBIDDEN_NAME_WORDS.some((seq) => {
     for (let i = 0; i + seq.length <= words.length; i += 1) {
-      if (seq.every((w, k) => words[i + k] === w)) return true;
+      if (seq.every((w, k) => words[i + k] === singular(w))) return true;
     }
     return false;
   });
@@ -397,7 +408,13 @@ export class BoiteMail {
       "SELECT id, mail_id, person_id, body, sentences FROM mailbox_drafts WHERE network_id = ? AND agent_id = ? AND status = 'prepare' ORDER BY created_at, id",
       [viewer.networkId, viewer.userId],
     );
-    return { ok: true, value: rows.map((r) => ({ id: r.id, mailId: r.mail_id, personId: r.person_id, body: r.body, sentences: JSON.parse(r.sentences) as DraftSentence[] })) };
+    // Les droits se relisent à chaque fois : une fiche passée à un autre agent depuis le tri n'est plus montrée [R16].
+    const out: { id: string; mailId: string; personId: string; body: string; sentences: DraftSentence[] }[] = [];
+    for (const r of rows) {
+      if (!(await this.acces.readFiche(viewer, r.person_id)).ok) continue;
+      out.push({ id: r.id, mailId: r.mail_id, personId: r.person_id, body: r.body, sentences: JSON.parse(r.sentences) as DraftSentence[] });
+    }
+    return { ok: true, value: out };
   }
 
   /**
@@ -408,6 +425,9 @@ export class BoiteMail {
     if (!(await this.ownAgent(viewer))) return this.refuse(viewer, 'not_mailbox_agent', 'validate', 'R409');
     const draft = await this.db.first<{ id: string; network_id: string; agent_id: string; person_id: string; mail_id: string; body: string; figures: string; status: string }>('SELECT * FROM mailbox_drafts WHERE id = ?', [draftId]);
     if (!draft || draft.network_id !== viewer.networkId || draft.agent_id !== viewer.userId) return this.refuse(viewer, 'not_mailbox_agent', 'validate', 'R409');
+    // L'agent doit encore pouvoir voir la fiche, dossier d'agent valide compris : sinon rien ne part [R16, R82].
+    const access = await this.acces.readFiche(viewer, draft.person_id);
+    if (!access.ok) return { ok: false, rule: 'R16', code: access.code };
     const at = this.now().toISOString();
     // Prendre la validation : de deux validations en même temps, une seule envoie [R18, R409].
     const won = await this.db.run("UPDATE mailbox_drafts SET status = 'valide', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'prepare'", [viewer.userId, at, draftId]);
