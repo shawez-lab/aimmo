@@ -5,7 +5,7 @@ import { numbersIn } from '../src/envoi/texte.ts';
 import { ReservationEnLigne } from '../src/rendezvous/en-ligne.ts';
 import { appointmentWhen } from '../src/rendezvous/reservation.ts';
 import { Appels, type CallSegment, type CallTranscriber } from '../src/voix/appels.ts';
-import { AssistantVocal, chosenSlot, figuresFromSheet, propertyFacts, saysYes, topicsIn, type AssistantState, type ForwardedCall, type Phraser, type Turn } from '../src/voix/assistant.ts';
+import { AssistantVocal, chosenSlot, figuresFromSheet, propertyFacts, saysYes, topicsIn, type AssistantState, type ForwardedCall, type Turn } from '../src/voix/assistant.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -35,7 +35,7 @@ function fakeTranscriber(): CallTranscriber & { calls: number } {
   return t;
 }
 
-async function setup(options: { phraser?: Phraser; sheet?: unknown; status?: 'available' | 'under_offer' | 'draft' } = {}) {
+async function setup(options: { sheet?: unknown; status?: 'available' | 'under_offer' | 'draft' } = {}) {
   let clock = parisInstant('2026-11-09', 8 * 60)!.getTime();
   const now = (): Date => new Date((clock += 1));
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -61,7 +61,7 @@ async function setup(options: { phraser?: Phraser; sheet?: unknown; status?: 'av
   const transcriber = fakeTranscriber();
   const appels = new Appels(db, journal, store, fiche, transcriber, { now });
   const reservation = new ReservationEnLigne(db, journal, rdvOptions);
-  const assistant = new AssistantVocal(db, journal, acces, reservation, appels, { now, ...(options.phraser ? { phraser: options.phraser } : {}) });
+  const assistant = new AssistantVocal(db, journal, acces, reservation, appels, { now });
   expect(await assistant.setLine(asPaul, { agentId: paul.id, phone: AGENT_PHONE, enabled: true })).toEqual({ ok: true });
   let n = 0;
   const call = (over: Partial<ForwardedCall> = {}): ForwardedCall => ({
@@ -104,7 +104,7 @@ const appointments = (db: SqlDatabase) => db.all<{ start_at: string; source: str
 
 describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondre', () => {
   it('[R246] la mention de l’assistant est la première phrase de chaque appel, avant l’annonce de l’enregistrement', async () => {
-    const t = await setup({ phraser: { rephrase: async () => 'Bonjour, ici Paul en personne.' } });
+    const t = await setup();
     for (const forwardReason of ['no_answer', 'busy', 'unreachable'] as const) {
       for (const over of [{}, { from: null }, { propertyId: null }]) {
         const s = await t.assistant.start(t.call({ forwardReason, ...over }));
@@ -170,32 +170,23 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(state.unanswered).toEqual(['autre']);
   });
 
-  it('[R247] une reformulation par l’IA qui change un chiffre est écartée ; ce qui manque à la fiche n’est pas deviné', async () => {
-    const asked: string[] = [];
-    const phraser: Phraser = {
-      async rephrase(text) {
-        asked.push(text);
-        if (text.startsWith('Le prix')) return 'Il est affiché à 210 000 €, et le vendeur accepterait 195 000 €.';
-        if (text.startsWith('La surface')) return 'Il fait 62 m² au sol.';
-        return 42;
-      },
-    };
-    const t = await setup({ phraser, sheet: { ...SHEET, coownership: null, energy: null } });
+  it('[R247] ce qui manque à la fiche n’est pas deviné ; un nombre étranger ou en lettres fait taire la phrase', async () => {
+    const t = await setup({ sheet: { ...SHEET, coownership: null, energy: null } });
     const { said, state } = await t.talk(t.call(), ['oui', 'Le prix et la surface ?', 'Et les charges, et le DPE ?']);
     const all = said.join(' ');
     expect(all).toContain('Le prix affiché est de 210 000 €, honoraires compris.');
-    expect(all).not.toContain('195');
-    expect(all).toContain('Il fait 62 m² au sol.');
+    expect(all).toContain('La surface est de 62 m².');
     expect(all).toContain('Je n’ai pas cette information dans la fiche ; Paul vous la donnera.');
     expect(state.unanswered).toEqual(['energie', 'charges']);
-    // L'IA ne reçoit que les phrases fixes de l'assistant, jamais ce que dit l'appelant [R15].
-    expect(asked.every((a) => !a.includes('charges') || a.startsWith('Le bien'))).toBe(true);
-    expect(asked.some((a) => a.includes('Et les charges'))).toBe(false);
 
-    // Le contrôle lui-même : un nombre étranger fait taire la phrase.
+    // Le contrôle lui-même : un nombre étranger, ou un nombre écrit en lettres, fait taire la phrase.
     const facts = propertyFacts({ city: 'Dijon', surface_m2: 62, rooms: 3, price_eur: 210000 }, null);
-    expect(figuresFromSheet('Le prix est de 199 000 €.', new Set(Object.values(facts).flatMap((f) => numbersIn(f ?? ''))))).toBe(false);
-    expect(figuresFromSheet(facts.prix!, new Set(numbersIn(facts.prix!)))).toBe(true);
+    const allowed = new Set(Object.values(facts).flatMap((f) => numbersIn(f ?? '')));
+    expect(figuresFromSheet(facts.prix!, allowed)).toBe(true);
+    expect(figuresFromSheet('Le prix est de 199 000 €.', allowed)).toBe(false);
+    expect(figuresFromSheet('Le prix est de 210 000 €, avec une surface de cent mètres carrés.', allowed)).toBe(false);
+    expect(figuresFromSheet('Il y a deux chambres.', allowed)).toBe(false);
+    expect(figuresFromSheet('Le bien a un balcon et une terrasse.', allowed)).toBe(true);
   });
 
   it('[R247] un bien d’un autre agent, ou qui n’est pas en vente, ne donne aucun chiffre', async () => {
@@ -242,6 +233,19 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(second).toBeDefined();
   });
 
+  it('[R248] « non, pas le premier » ne réserve rien : une négation ne vaut jamais choix', async () => {
+    const t = await setup();
+    for (const refusal of ['non, pas le premier', 'pas le deuxième', 'je ne veux pas le dernier', 'aucun, le premier ne me va pas']) {
+      const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', refusal]);
+      expect(state.booked, refusal).toBeNull();
+    }
+    expect(await appointments(t.db)).toHaveLength(0);
+    // Après un refus, un choix franc réserve.
+    const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', 'non, pas le premier', 'le deuxième']);
+    expect(state.booked).not.toBeNull();
+    expect(await appointments(t.db)).toHaveLength(1);
+  });
+
   it('[R248] un numéro masqué ne réserve rien ; un refus de rendez-vous ne réserve rien', async () => {
     const t = await setup();
     const masked = await t.talk(t.call({ from: null }), ['oui', 'Je voudrais un rendez-vous']);
@@ -252,7 +256,7 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(await appointments(t.db)).toHaveLength(0);
   });
 
-  it('[R242] [R18] la main passe à l’agent avec le résumé de HX21, une seule fois ; sans accord, rien de ce qui est dit n’est gardé', async () => {
+  it('[R242] [R244] [R18] la main passe à l’agent avec le résumé de HX21, une seule fois ; sans accord, rien de ce qui est dit n’est gardé', async () => {
     const t = await setup();
     const { state } = await t.talk(t.call(), ['oui', 'Le prix est négociable ?', 'je voudrais visiter', 'le deuxième']);
     expect(state.booked).not.toBeNull();
@@ -274,6 +278,16 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(h2.unanswered).toEqual([]);
     expect(h2.call).toMatchObject({ status: 'sans_enregistrement', recordingRef: null, transcript: [] });
     expect(t.transcriber.calls).toBe(1);
+
+    // [R244] Numéro masqué, même avec l'accord : rien de ce qui est dit n'est gardé, pas même les sujets.
+    const masked = await t.talk(t.call({ from: null }), ['oui', 'Le prix est négociable ?']);
+    expect(masked.state.consentAt).not.toBeNull();
+    expect(masked.state.unanswered).toEqual(['autre']);
+    const h3 = await t.assistant.finish(masked.state, { endedAt: new Date(Date.parse(masked.state.startedAt) + 60_000), recordingRef: 'REC-ASSISTANT-3' });
+    expect(h3.unanswered).toEqual([]);
+    expect(h3.call).toMatchObject({ status: 'masque' });
+    const rows = await t.db.all<{ unanswered: string | null }>('SELECT unanswered FROM voice_assistant_calls ORDER BY created_at');
+    expect(rows.map((r) => r.unanswered)).toEqual(['["autre"]', null, null]);
   });
 });
 

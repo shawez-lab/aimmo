@@ -7,8 +7,9 @@
  * deuxième annonce l'enregistrement et demande l'accord, rangé avec son heure pour HX21 [R246, R242].
  *
  * L'assistant ne dit que des chiffres de la fiche du bien (le bien de l'agent, en vente ou sous offre) et des créneaux
- * qu'il propose. Toute phrase, y compris celle reformulée par une IA, est vérifiée : un nombre qui ne vient ni de la
- * fiche ni d'un créneau proposé la fait remplacer par la phrase fixe. Une question que la fiche ne couvre pas est
+ * qu'il propose. Il ne dit que des phrases fixes, jamais reformulées par une IA : un nombre écrit en lettres ou une
+ * tournure inventée ne se vérifient pas. Chaque phrase est encore contrôlée avant d'être dite : un nombre qui ne vient ni
+ * de la fiche ni d'un créneau proposé, ou un nombre en lettres, la fait taire. Une question que la fiche ne couvre pas est
  * renvoyée à l'agent, jamais devinée [R247]. Il ne négocie rien et ne donne ni adresse ni numéro.
  *
  * Un rendez-vous n'est pris que sur un créneau proposé pendant cet appel et encore libre au moment de réserver, par la
@@ -17,8 +18,8 @@
  * le rendez-vous pris et les sujets restés sans réponse, ceux-ci gardés seulement avec l'accord d'enregistrement.
  *
  * Décidé, lecture prudente : la reconnaissance de la parole est celle du service téléphonique ; les intentions sont
- * lues par des règles fixes, sans IA, et ce que dit l'appelant n'est jamais envoyé à l'IA de reformulation, qui ne
- * reçoit que la phrase fixe de l'assistant [R15]. Rien de ce qui est dit au journal [R13].
+ * lues par des règles fixes, sans IA, et ce que dit l'appelant n'est envoyé à aucune IA par l'assistant [R15]. Un « non »
+ * ou un « pas » dans le choix d'un créneau ne réserve jamais rien. Rien de ce qui est dit au journal [R13].
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -99,17 +100,9 @@ export interface Turn {
 
 export type StartResult = ({ ok: true } & Turn) | { ok: false; code: 'bad_call' | 'no_line' | 'line_off' | 'not_forwarded' };
 
-/** Une IA qui reformule une phrase fixe de l'assistant, pour qu'elle sonne naturelle. Elle ne reçoit que cette phrase. */
-export interface Phraser {
-  rephrase(text: string): Promise<unknown>;
-}
-
 export interface AssistantOptions {
   now?: () => Date;
   newId?: () => string;
-  phraser?: Phraser;
-  /** Au-delà, la reformulation est abandonnée : la phrase fixe. */
-  phraserTimeoutMs?: number;
   /** Jours de créneaux cherchés. 7 par défaut. */
   slotDays?: number;
 }
@@ -200,9 +193,12 @@ export function allowedFigures(facts: PropertyFacts, offered: readonly string[])
   return allowed;
 }
 
-/** Vrai si chaque nombre de la phrase vient de la fiche ou d'un créneau proposé [R247]. */
+/** Les nombres en lettres : jamais dans une phrase de l'assistant, car ils ne se vérifient pas contre la fiche. « un » et « une » sont des articles. */
+const NUMBER_WORDS = /\b(?:deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|vingts?|trente|quarante|cinquante|soixante|septante|octante|nonante|cents?|milles?|millions?|milliards?|demie?|quart|moitie|double|triple|dizaines?|douzaines?|centaines?|milliers?)\b/;
+
+/** Vrai si chaque nombre de la phrase vient de la fiche ou d'un créneau proposé, et qu'aucun n'est en lettres [R247]. */
 export function figuresFromSheet(text: string, allowed: ReadonlySet<string>): boolean {
-  return numbersIn(text).every((n) => allowed.has(n));
+  return !NUMBER_WORDS.test(plain(text)) && numbersIn(text).every((n) => allowed.has(n));
 }
 
 // Les intentions, par des règles fixes.
@@ -228,6 +224,7 @@ const SELLER = /\b(?:vendre|estimer|estimation|faire estimer|mettre en vente)\b/
 const BYE = /\b(?:au revoir|c'est tout|ce sera tout|rien d'autre|merci,? au revoir|bonne journee|non merci)\b/;
 const YES = /\b(?:oui|ouais|d'accord|ok|okay|bien sur|allez-y|pas de probleme|ca marche|entendu|volontiers)\b/;
 const NO = /\b(?:non|pas d'accord|refuse|je ne veux pas|surtout pas|sans enregistrement)\b/;
+const NEGATION = /\b(?:non|pas|aucun|aucune|ni|jamais|refuse|plutot pas)\b|\bn'/;
 const WEEKDAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
 /** Les sujets de la fiche demandés dans une phrase ; `autre` pour une question que la fiche ne couvre pas. */
@@ -274,8 +271,6 @@ export function chosenSlot(utterance: string, offered: readonly string[]): strin
 export class AssistantVocal {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly phraser: Phraser | null;
-  private readonly phraserTimeoutMs: number;
   private readonly slotDays: number;
   private readonly sheets: FicheBien;
 
@@ -289,8 +284,6 @@ export class AssistantVocal {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.phraser = options.phraser ?? null;
-    this.phraserTimeoutMs = options.phraserTimeoutMs ?? 2_500;
     this.slotDays = options.slotDays ?? 7;
     this.sheets = new FicheBien(db, acces, journal, { now: this.now });
   }
@@ -393,9 +386,11 @@ export class AssistantVocal {
 
     const p = plain(text);
     if (state.phase === 'choose') {
-      const pick = chosenSlot(text, state.offered);
+      if (BYE.test(p)) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
+      // Un refus ou une négation ne vaut jamais choix : « non, pas le premier » ne réserve rien [R248].
+      const pick = NEGATION.test(p) ? null : chosenSlot(text, state.offered);
       if (pick) return this.book(state, pick);
-      if (BYE.test(p) || (NO.test(p) && !YES.test(p))) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
+      if (NO.test(p) && !YES.test(p) && !/\b(?:pas|plutot|autre)\b/.test(p)) return this.close(state, [`Très bien, ${state.agentName} vous rappellera.`]);
       state.misses += 1;
       if (state.misses >= 2) return this.close(state, [`Je n’ai pas compris le créneau choisi ; ${state.agentName} vous rappellera pour le fixer.`]);
       return this.reply(state, [`Pardon, lequel préférez-vous : ${this.listOffers(state.offered)} ?`]);
@@ -408,7 +403,7 @@ export class AssistantVocal {
     const said: string[] = [];
     for (const t of topics) {
       const fact = t === 'autre' ? undefined : state.facts[t];
-      if (fact) said.push(await this.phrase(fact, state));
+      if (fact) said.push(fact);
       else {
         if (!state.unanswered.includes(t)) state.unanswered.push(t);
         said.push(
@@ -457,8 +452,8 @@ export class AssistantVocal {
       originCode: state.originCode,
     });
     const callRowId = received.ok ? received.callId : null;
-    // Sans accord d'enregistrement, rien de ce qui a été dit n'est gardé, pas même les sujets [R242].
-    const unanswered = state.consentAt ? state.unanswered.filter((t) => TOPICS.includes(t)) : [];
+    // Sans accord d'enregistrement, ou pour un numéro masqué, rien de ce qui a été dit n'est gardé, pas même les sujets [R242, R244].
+    const unanswered = state.consentAt && state.from !== null ? state.unanswered.filter((t) => TOPICS.includes(t)) : [];
     try {
       await this.db.run(
         `INSERT INTO voice_assistant_calls (id, network_id, agent_id, provider, call_id, call_row_id, property_id, appointment_kind, appointment_start, unanswered, created_at)
@@ -545,32 +540,6 @@ export class AssistantVocal {
       return turn;
     }
     return this.close(state, [`Je n’ai pas pu réserver ; ${state.agentName} vous rappellera pour fixer le rendez-vous.`]);
-  }
-
-  /** Reformule une phrase de la fiche par l'IA, si elle est là ; la phrase fixe si la reformulation change un nombre [R247]. */
-  private async phrase(fact: string, state: AssistantState): Promise<string> {
-    if (!this.phraser) return fact;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const out = await Promise.race([
-        this.phraser.rephrase(fact),
-        new Promise<null>((resolve) => {
-          timer = setTimeout(() => resolve(null), this.phraserTimeoutMs);
-        }),
-      ]);
-      if (typeof out !== 'string') return fact;
-      const text = out.replace(/\s+/g, ' ').trim();
-      if (text === '' || text.length > MAX_SAID) return fact;
-      // Mêmes nombres que la phrase de la fiche, ni plus ni moins.
-      const want = numbersIn(fact).sort().join('|');
-      if (numbersIn(text).sort().join('|') !== want) return fact;
-      if (!figuresFromSheet(text, allowedFigures(state.facts, state.offered))) return fact;
-      return text;
-    } catch {
-      return fact;
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
   }
 
   private reply(state: AssistantState, say: string[]): Turn {
