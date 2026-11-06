@@ -62,6 +62,15 @@ export function thankYouText(firstName: string | null, side: 'vendeur' | 'acquer
   return `${hello} merci pour votre confiance tout au long de ${what}. C'était un plaisir de vous accompagner jusqu'à la signature. Votre agent immobilier reste là pour toute question : il suffit de répondre à ce message.`;
 }
 
+/**
+ * Le message préparé, salué par le prénom d'aujourd'hui : le texte rangé ne change jamais [R17], mais un prénom corrigé, ou
+ * écrit après la préparation, ne laisse pas partir l'ancien (SV13). L'écran et l'envoi lisent ce même texte.
+ */
+export function thankYouGreeted(draft: string, firstName: string | null): string {
+  const rest = draft.indexOf(' merci pour votre confiance');
+  return rest < 0 ? draft : `${firstName ? `Bonjour ${firstName},` : 'Bonjour,'}${draft.slice(rest)}`;
+}
+
 export class Remerciements {
   private readonly now: () => Date;
   private readonly unique: FicheUnique;
@@ -153,6 +162,7 @@ export class Remerciements {
     if (claim.changes !== 1) return 'waiting';
     const others = (await this.db.all<{ person_id: string }>('SELECT person_id FROM thank_you_tasks WHERE file_id = ? AND side <> ?', [fileId, t.side])).map((o) => o.person_id);
     const sale = await this.dossiers.byId(t.network_id, fileId);
+    const firstName = await this.firstName(personId);
     const result = await this.controle.send({
       networkId: t.network_id,
       agentId: t.agent_id,
@@ -163,11 +173,11 @@ export class Remerciements {
       kind: 'follow_up',
       purpose: THANK_YOU_PURPOSE,
       subject: `merci:${fileId}`,
-      fallbackTexts: [t.draft],
+      fallbackTexts: [thankYouGreeted(t.draft, firstName)],
       // Les chiffres de la référence du bien, lus dans la base [R10].
       figures: (sale?.reference.match(/\d+/g) ?? []).map(Number),
       // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
-      sellerNames: await this.forbiddenNames(others, await this.firstName(personId)),
+      sellerNames: await this.forbiddenNames(others, firstName),
     });
     let status: ThankYouSendStatus = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' ? 'waiting' : 'refused';
     let rule = result.status === 'sent' ? null : result.rule;
@@ -266,7 +276,8 @@ export class Remerciements {
     await appendEvent(this.journal, { type: 'apres_vente.lecture', actor: `agent:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { kind: 'thank_you_tasks', count: rows.length } }, this.now);
     const value: ThankYouTask[] = [];
     for (const r of rows) {
-      value.push({ fileId: r.file_id, personId: r.person_id, firstName: await this.firstName(r.person_id), side: r.side, dueDay: r.due_day, draft: r.draft, calledAt: r.called_at, decision: r.decision, sendStatus: r.send_status, rule: r.rule });
+      const firstName = await this.firstName(r.person_id);
+      value.push({ fileId: r.file_id, personId: r.person_id, firstName, side: r.side, dueDay: r.due_day, draft: thankYouGreeted(r.draft, firstName), calledAt: r.called_at, decision: r.decision, sendStatus: r.send_status, rule: r.rule });
     }
     return { ok: true, value };
   }

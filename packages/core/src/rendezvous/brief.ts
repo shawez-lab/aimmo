@@ -166,6 +166,16 @@ interface AppointmentRow {
   status: string;
 }
 
+/**
+ * Le brief rangé ne change pas [R17] ; l'agent lit le nom d'aujourd'hui, celui de la fiche gardée, jamais celui d'avant une
+ * correction (SV13). Un nom encore absent reste dit absent.
+ */
+export function briefWithCurrentName(brief: Brief, person: { first_name: string | null; last_name: string | null } | null): Brief {
+  const name = [person?.first_name, person?.last_name].filter((p) => p && p.trim()).join(' ');
+  if (!name) return brief;
+  return { ...brief, items: brief.items.map((i) => (i.section === 'client' && i.label === 'Nom' && i.value !== null ? { ...i, value: name } : i)) };
+}
+
 export type BriefRead = { ok: true; brief: Brief } | { ok: false; code: 'unknown' | 'not_agent' | 'not_ready' };
 
 export class BriefsRendezVous {
@@ -432,6 +442,7 @@ export class BriefsRendezVous {
     // Le brief suit l'agent qui l'a reçu : un rendez-vous passé à un autre agent ne lui ouvre pas l'ancien brief.
     if (!row) return { ok: false, code: 'not_ready' };
     if (row.agent_id !== viewer.userId) return { ok: false, code: 'not_agent' };
+    // Le brief tel qu'il est rangé : aucune lecture de la fiche ici, l'accès à la fiche se contrôle dans `JourneeRendezVous` [R16].
     return { ok: true, brief: JSON.parse(row.content) as Brief };
   }
 }

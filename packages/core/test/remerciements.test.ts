@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { Remerciements, THANK_YOU_JOB, THANK_YOU_PURPOSE, thankYouJob, thankYouText, type ClosedSale } from '../src/apres-vente/index.ts';
+import { Remerciements, THANK_YOU_JOB, THANK_YOU_PURPOSE, thankYouGreeted, thankYouJob, thankYouText, type ClosedSale } from '../src/apres-vente/index.ts';
 import { checkText } from '../src/envoi/texte.ts';
 import { FicheClient } from '../src/db/fiche-client.ts';
 import { FicheUnique } from '../src/fiche/fusion.ts';
@@ -22,6 +22,14 @@ it('[R08] [R10] le message préparé est écrit par le code et passe le contrôl
   expect(job.name).toBe(THANK_YOU_JOB);
   expect(job.weekdays).toEqual([1, 2, 3, 4, 5, 6]);
   expect(Math.max(...job.hours)).toBeLessThan(20);
+});
+
+it('SV13 · seule la salutation suit le prénom d’aujourd’hui, le reste du message préparé ne bouge pas', () => {
+  const draft = thankYouText('Léa', 'vendeur', { city: 'Dijon', reference: 'REF-T-1' });
+  expect(thankYouGreeted(draft, 'Lia')).toBe(thankYouText('Lia', 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }));
+  expect(thankYouGreeted(draft, null)).toBe(thankYouText(null, 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }));
+  expect(thankYouGreeted(thankYouText(null, 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }), 'Lia')).toBe(thankYouText('Lia', 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }));
+  expect(thankYouGreeted(draft, 'L$&a')).toContain('Bonjour L$&a,');
 });
 
 describeWithSqlite('F03 · remerciement : l’agent appelle, le message est préparé', () => {
@@ -67,6 +75,39 @@ describeWithSqlite('F03 · remerciement : l’agent appelle, le message est pré
     // Le message préparé ne nomme jamais un client de l'autre côté [R19].
     const forSara = list.ok ? list.value.find((x) => x.fileId === 'f1' && x.side === 'vendeur')! : null;
     expect(forSara?.draft).not.toMatch(/Bruno|Achat/);
+  });
+
+  it('SV13 · prénom corrigé après la préparation : l’écran montre le nouveau, il part, et le texte rangé reste [R17]', async () => {
+    const t = await setup();
+    const s = await t.client('Sara');
+    t.close('f1', '2027-03-08', [{ personId: s, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 18));
+    await t.merci.run(t.network.id);
+    await t.db.run("UPDATE persons SET first_name = 'Sarah' WHERE id = ?", [s]);
+    t.setClock(paris('2027-03-09', 11));
+    const list = await t.merci.list(t.agent);
+    if (!list.ok) throw new Error(list.code);
+    expect(list.value[0]!.draft.startsWith('Bonjour Sarah, merci')).toBe(true);
+    expect(await t.merci.decide(t.agent, 'f1', s, 'send')).toEqual({ ok: true, status: 'sent' });
+    const [sent] = await t.inbox(s);
+    expect(sent!.body).toContain(list.value[0]!.draft);
+    expect(sent!.body).not.toContain('Sara,');
+    expect((await t.db.first<{ draft: string }>('SELECT draft FROM thank_you_tasks WHERE file_id = ?', ['f1']))!.draft).toContain('Bonjour Sara,');
+  });
+
+  it('SV13 · validé un dimanche, corrigé avant le lundi : le message qui attendait part avec le nouveau prénom', async () => {
+    const t = await setup();
+    const s = await t.client('Sara');
+    t.close('f1', '2027-03-08', [{ personId: s, side: 'vendeur' }]);
+    t.setClock(paris('2027-03-08', 18));
+    await t.merci.run(t.network.id);
+    t.setClock(paris('2027-03-14', 20));
+    expect(await t.merci.decide(t.agent, 'f1', s, 'send')).toEqual({ ok: true, status: 'waiting' });
+    await t.db.run("UPDATE persons SET first_name = 'Sarah' WHERE id = ?", [s]);
+    t.setClock(paris('2027-03-15', 10));
+    await t.merci.run(t.network.id);
+    const [sent] = await t.inbox(s);
+    expect(sent!.body).toContain('Bonjour Sarah, merci');
   });
 
   it('[R26] validé, le message passe par le contrôle central et va dans la boîte d’essai ; non validé, rien ne part', async () => {

@@ -86,6 +86,22 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     }
   });
 
+  it('SV13 · un prénom corrigé après la préparation : l’écran et le message disent le nouveau', async () => {
+    const t = await setup();
+    const s = await t.seller(0);
+    await t.point.prepare(t.network.id);
+    await t.db.run("UPDATE persons SET first_name = 'Corrigé' WHERE id = ?", [s.person.id]);
+    t.setClock(MON1_8H + HOUR);
+    const read = await t.point.read(t.as('agent', t.alex.id), s.mandateId, '2026-12-07');
+    if (!read.ok) throw new Error(read.code);
+    expect(read.text).toContain('Bonjour Corrigé,');
+    expect(read.text).not.toContain('VendeurA');
+    expect(await t.point.validate(t.as('agent', t.alex.id), s.mandateId, '2026-12-07', ['relancer les acquéreurs du fichier commun'])).toMatchObject({ ok: true });
+    const [sent] = await t.inbox(s.person.id);
+    expect(sent!.body).toContain('Bonjour Corrigé,');
+    expect(sent!.body).not.toContain('VendeurA');
+  });
+
   it('chaque chiffre est lu dans la base ; une donnée absente est « non communiquée » [R53] ; avis des visiteurs sans nom', async () => {
     const t = await setup();
     const s = await t.seller(1);

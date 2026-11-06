@@ -392,12 +392,25 @@ export class AnciensContacts {
         continue;
       }
       const members = await this.fiche.membersOf(root);
-      items.push({ followupId: r.id, personId: root, firstName: await ficheFirstName(this.db, members), reason: r.reason, reasonLabel: OLD_CONTACT_REASON_LABELS[r.reason], reasonDay: r.reason_day, draft: r.draft, draftBy: r.draft_by });
+      const firstName = await ficheFirstName(this.db, members);
+      const current = await this.currentDraft(r, members, firstName);
+      items.push({ followupId: r.id, personId: root, firstName, reason: r.reason, reasonLabel: OLD_CONTACT_REASON_LABELS[r.reason], reasonDay: r.reason_day, draft: current.text, draftBy: current.by });
     }
     items.sort((a, b) => RANK[a.reason] - RANK[b.reason] || (a.reasonDay < b.reasonDay ? -1 : a.reasonDay > b.reasonDay ? 1 : 0) || (a.followupId < b.followupId ? -1 : 1));
     // La lecture est au journal avant que la liste soit rendue, sans donnée personnelle [R16, R13].
     await appendEvent(this.journal, { type: 'anciens_contacts.liste_lue', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', count: items.length } }, this.now);
     return { ok: true, value: items };
+  }
+
+  /**
+   * Le texte qui partira si l'agent ne change rien, celui que l'écran montre. Un nom corrigé depuis la préparation, ou une
+   * salutation qui n'est plus celle de la fiche (nom complété, fiches réunies) : le texte du code prend la place du texte
+   * rangé, qui ne change pas (SV10, SV13).
+   */
+  private async currentDraft(r: FollowupRow, members: readonly string[], firstName: string | null): Promise<{ text: string; by: 'ia' | 'secours' }> {
+    const greeted = r.draft.startsWith(firstName ? `Bonjour ${firstName},` : 'Bonjour,');
+    const stale = !greeted || (await this.db.first(`SELECT 1 FROM person_name_corrections WHERE created_at >= ? AND person_id IN (${marks(members.length)})`, [r.created_at, ...members])) !== null;
+    return stale ? { text: oldContactFallback(r.reason, firstName), by: 'secours' } : { text: r.draft, by: r.draft_by };
   }
 
   private async close(r: FollowupRow, rule: string, by: string, status: 'sans_base' | 'expiree' = 'sans_base'): Promise<void> {
@@ -418,7 +431,7 @@ export class AnciensContacts {
     if (r.status !== 'a_valider') return { ok: false, rule: null, code: 'already_decided' };
     const root = await this.fiche.rootOf(r.person_id);
     if ((await this.agentOf(viewer.networkId, root)) !== viewer.userId) return this.refused(viewer, 'not_assigned');
-    let text = r.draft;
+    let text: string | null = null;
     if (input.text !== undefined) {
       if (typeof input.text !== 'string') return { ok: false, rule: null, code: 'bad_text' };
       const problem = checkOldContactText(input.text);
@@ -444,11 +457,9 @@ export class AnciensContacts {
     const claimed = await this.db.run("UPDATE old_contact_followups SET status = 'en_envoi' WHERE id = ? AND status = 'a_valider'", [r.id]);
     if (claimed.changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
     const firstName = await ficheFirstName(this.db, members);
-    // Un nom corrigé depuis la préparation : le texte rangé salue peut-être l'ancien, le texte du code part à sa place (SV10).
-    const stale = input.text === undefined && (await this.db.first(`SELECT 1 FROM person_name_corrections WHERE created_at >= ? AND person_id IN (${members.map(() => '?').join(', ')})`, [r.created_at, ...members])) !== null;
-    if (stale) text = oldContactFallback(r.reason, firstName);
     // Le texte de l'agent part tel quel ou pas du tout ; celui de l'IA a le texte du code en secours [R12].
-    const texts = input.text === undefined && r.draft_by === 'ia' ? [text, oldContactFallback(r.reason, firstName)] : [text];
+    const current = text === null ? await this.currentDraft(r, members, firstName) : null;
+    const texts = text !== null ? [text] : current!.by === 'ia' ? [current!.text, oldContactFallback(r.reason, firstName)] : [current!.text];
     let result: Awaited<ReturnType<ControleEnvois['send']>>;
     try {
       result = await this.controle.send({
