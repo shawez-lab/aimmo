@@ -676,3 +676,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-06 13:21 · VOIE 2 : relance refusée, question 2 (sur mes trois dernières séances voie 2, celle de 09:55 n'a produit ni commit ni tâche terminée)
 - 2026-11-06 13:21 · VOIE 2 : HX21, 541fa590 (#381), relancé non
 - 2026-11-06 15:05 · HX02 · fusionnée (#383) : agendas Google, Outlook et Apple dans les deux sens sans doublon ni effacement, meilleur créneau selon les trajets ; R236 et R237 en service ; H53 ajoutée · prochaine : HX03
+- 2026-11-06 15:06 · voie 1 : relance de la séance suivante refusée (permission « lancer maintenant » refusée, troisième fois) ; la prochaine séance planifiée reprendra à HX03
