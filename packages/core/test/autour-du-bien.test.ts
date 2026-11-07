@@ -249,7 +249,7 @@ describe('HX29 · ce qui compte pour cet acquéreur (Jamais vu)', () => {
     expect(view.missingCategories).toEqual(['gare']);
   });
 
-  it('ses destinations n\'entrent jamais dans la page publique, et sa vue ne dit pas l\'adresse [R428, R426]', () => {
+  it('ses destinations n\'entrent jamais dans la page publique, et sa vue ne dit pas l\'adresse [R428] [R426]', () => {
     const view = buyerTrips(BIEN, POIS, { destinations: [TRAVAIL], categories: ['commerce_alimentaire'] }, NOW);
     const { page } = publicSurroundings(BIEN, POIS, NOW);
     const pageText = JSON.stringify(page) + renderSurroundings(page);
