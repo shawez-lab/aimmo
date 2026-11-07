@@ -279,8 +279,12 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 
 ## Mandat et documents
 
+Voie : 2
+
+Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à partir de `2100` réservées à ce groupe. Le code vit dans `packages/core/src/mandat-questionnaire/` (HX33) et dans des fichiers neufs de `packages/core/src/documents/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX33 · Mandat par questionnaire
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Modelo et ImmoSign : des clauses choisies par questionnaire, des modèles qui s'adaptent au cas, un mandat prérempli depuis l'estimation. Jamais vu : chaque clause retenue dit quelle réponse l'a déclenchée et sur quel texte elle repose, et le prix du mandat est comparé à la fourchette validée de E09 avec l'écart affiché avant signature.
 - Critères : chaque clause renvoie à sa réponse et à son texte (test) ; un écart de prix au-delà du réglage est signalé avant signature (test) ; seul un modèle validé par une personne désignée sert à un vrai mandat (test).
 
