@@ -243,6 +243,34 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.validate(s.agentAlex, pb.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R05', code: 'bien_deja_contacte' });
   });
 
+  it('[R273] la même annonce revue « pas d’agence » sans surface ferme quand même le bien', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    const id = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    const p = await s.pige.prepare(s.agentAlex, id);
+    if (!p.ok) throw new Error('prepare');
+    expect((await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, kind: undefined, noAgency: true }])).noAgency).toBe(1);
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R273' });
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('[R05] deux remises en même temps de deux messages d’un même bien relié : une seule passe', async () => {
+    const s = await setup();
+    const b = s.ad({ source: 'Site B', surfaceM2: 100 });
+    await s.pige.ingest(s.network.id, [s.ad(), b]);
+    const a = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site A'"))!.id;
+    const bId = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site B'"))!.id;
+    const pa = await s.pige.prepare(s.agentAlex, a);
+    const pb = await s.pige.prepare(s.agentAlex, bId);
+    if (!pa.ok || !pb.ok) throw new Error('prepare');
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 90 }]);
+    const both = await Promise.all([s.pige.validate(s.agentAlex, pa.draftId, 'annonce'), s.pige.validate(s.agentAlex, pb.draftId, 'annonce')]);
+    expect(both.filter((v) => v.ok)).toHaveLength(1);
+    expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_handovers'))!.n).toBe(1);
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();

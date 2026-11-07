@@ -149,21 +149,23 @@ const intIn = (v: unknown, min: number, max: number): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : null;
 
 /**
- * Ce qui suffit à reconnaître le bien d'une annonce qui dit « pas d'agence » : sorte, code postal, commune et surface.
- * Lu avant tout le reste, pour qu'un prix ou une date manquants n'empêchent jamais de fermer le bien [R273].
+ * Ce qui suffit à fermer le bien d'une annonce qui dit « pas d'agence », lu avant tout le reste : sa clé sur son site,
+ * dès que la source et la référence se lisent, et le bien (sorte, code postal, commune, surface) quand il se lit. Un
+ * prix, une date ou une surface manquants n'empêchent jamais de fermer ce qui se reconnaît [R273].
  */
-export function noAgencyKey(raw: RawAd): (Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> & { ref: { source: string; sourceRef: string } | null }) | null {
+export function noAgencyKey(raw: RawAd): { key: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> | null; ref: { source: string; sourceRef: string } | null } | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const says = raw.noAgency === true || (typeof raw.text === 'string' && saysNoAgency(raw.text));
   if (!says) return null;
-  const { kind, commune, postalCode } = raw;
-  if (typeof kind !== 'string' || !(PIGE_KINDS as readonly string[]).includes(kind)) return null;
-  if (typeof commune !== 'string' || !COMMUNE.test(commune.trim())) return null;
-  if (typeof postalCode !== 'string' || !POSTAL.test(postalCode)) return null;
-  const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
-  if (surfaceM2 === null) return null;
   const ref = typeof raw.source === 'string' && SOURCE.test(raw.source.trim()) && typeof raw.sourceRef === 'string' && SOURCE_REF.test(raw.sourceRef) ? { source: raw.source.trim(), sourceRef: raw.sourceRef } : null;
-  return { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2, ref };
+  const { kind, commune, postalCode } = raw;
+  const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
+  const key =
+    typeof kind === 'string' && (PIGE_KINDS as readonly string[]).includes(kind) && typeof commune === 'string' && COMMUNE.test(commune.trim()) && typeof postalCode === 'string' && POSTAL.test(postalCode) && surfaceM2 !== null
+      ? { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 }
+      : null;
+  if (!key && !ref) return null;
+  return { key, ref };
 }
 
 /** Lit une annonce reçue ; rend null quand elle n'est pas utilisable. */
@@ -331,13 +333,19 @@ export class Pige {
       // par un autre site sort de la file avec elle [R273].
       const closing = noAgencyKey(raw);
       if (closing) {
-        if (!zones.get(communeSlug(closing.commune))) {
+        const keys: string[] = [];
+        // L'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée ou portera : si elle est déjà
+        // connue, ou si son bien est dans une zone du réseau.
+        if (closing.ref) {
+          const known = await this.db.first('SELECT 1 AS x FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, closing.ref.source, closing.ref.sourceRef]);
+          if (known || (closing.key && zones.get(communeSlug(closing.key.commune)))) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
+        }
+        // Le bien dit, à 1 m² près, dans une commune du réseau.
+        if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
+        if (keys.length === 0) {
           outside += 1;
           continue;
         }
-        // Le bien dit, et l'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée avant.
-        const keys = await nearFingerprints(closing);
-        if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
         for (const f of keys) {
           await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
         }
@@ -635,10 +643,13 @@ export class Pige {
       local.minutes >= DEFAULT_SEND_SETTINGS.initiativeFrom &&
       local.minutes < DEFAULT_SEND_SETTINGS.initiativeUntil;
     if (!inHours) return this.refused(viewer, d.id, { ok: false, rule: 'R01', code: 'hors_heures' });
+    // La même condition dans l'écriture : deux remises en même temps pour un même bien relié, une seule passe.
     const r = await this.db.run(
       `INSERT INTO pige_handovers (draft_id, agent_id, channel, handed_at) SELECT ?, ?, 'annonce', ?
-        WHERE NOT EXISTS (SELECT 1 FROM pige_handovers WHERE draft_id = ?)`,
-      [d.id, viewer.userId, at.toISOString(), d.id],
+        WHERE NOT EXISTS (SELECT 1 FROM pige_handovers WHERE draft_id = ?)
+          AND NOT EXISTS (SELECT 1 FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
+                           WHERE o.network_id = ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')}))`,
+      [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, ...linked],
     );
     if (r.changes !== 1) return this.refused(viewer, d.id, { ok: false, rule: 'R05', code: 'deja_remis' });
     await appendEvent(this.journal, { type: 'pige.remise', actor: this.actor(viewer), subject: `pige_draft:${d.id}`, data: { rule: 'R275', channel: 'annonce' } }, this.now);
