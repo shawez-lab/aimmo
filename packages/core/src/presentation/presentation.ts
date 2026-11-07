@@ -159,6 +159,9 @@ export function renderPresentation(input: { visited: PresentedProperty; rooms: r
   );
 }
 
+/** La feuille de style de la page, retirée avant la relecture. */
+const STYLE_SHEET = new RegExp(`<${'style'}>[\\s\\S]*?</${'style'}>`, 'g');
+
 /** Les mots d'un nom, accents et casse ignorés, coupés sur tout ce qui n'est ni lettre ni chiffre : « Victor. »,
  * « Marc-Victor » donnent « victor ». Les mots de moins de 3 lettres ne nomment personne seuls. */
 const wordsOf = (text: string): string[] => plain(text).split(/[^\p{L}\d]+/u).filter((w) => w.length >= 3);
@@ -169,7 +172,7 @@ const wordsOf = (text: string): string[] => plain(text).split(/[^\p{L}\d]+/u).fi
  * qui a été trouvé, vide si rien [R279].
  */
 export function confidentialIn(html: string, secrets: { names: readonly string[]; values: readonly string[] }): string[] {
-  const page = html.replace(/<style>[\s\S]*?<\/style>/g, ' ');
+  const page = html.replace(STYLE_SHEET, ' ');
   const attributes = [...page.matchAll(/="([^"]*)"/g)].map((m) => m[1]!).join(' ');
   const text = plain(`${visibleText(page)} ${visibleText(attributes)}`);
   const words = new Set(wordsOf(text));

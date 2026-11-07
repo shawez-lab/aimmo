@@ -154,6 +154,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       visit_field_notes: ['agent_id', 'body'],
       visit_photos: ['agent_id'],
       visit_shot_skips: ['agent_id', 'reason'],
+      // HX13 : les notes que l'acquéreur donne à chaque pièce, à la fin de la visite.
+      presentation_ratings: ['ratings', 'content_hash', 'recorded_by'],
       daily_plans: ['agent_id', 'items', 'removed'],
       visits: ['person_id', 'agent_id', 'created_by'],
       visit_slip_templates: ['body', 'created_by', 'validated_by'],
@@ -981,6 +983,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
+  presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
   pige_ads: ['id', 'network_id', 'source', 'source_ref', 'fingerprint', 'kind', 'surface_m2', 'rooms', 'price_eur', 'published_at', 'collected_at'],
   pige_oppositions: ['network_id', 'fingerprint', 'noted_at'],
