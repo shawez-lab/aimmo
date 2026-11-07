@@ -125,7 +125,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
 
 ### HX10 · Les clés des biens
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/cles/`, migration `1808`, règles R270 à R272. Numéro donné par le code, unique dans le réseau ; libellé sans chiffre, adresse ni code. Sortie par l'agent du bien ou la direction seuls, vers un agent actif : visite ou estimation pour un rendez-vous prévu du bien tenu par lui (retour à sa fin), sinon photos, diagnostic ou travaux, retour dans les 12 h. Une seule sortie ouverte, relue à l'écriture et gardée par déclencheur, rendez-vous aussi. Le détenteur peut dire la clé perdue, pas rendue. Rappels de l'agent (fin de visite, tout de suite si annulée) ; vue du vendeur depuis son mandat, agent en prénom et initiale, aucun visiteur. Relecture forte : 2 P1 corrigés ; Codex : 1 P0 corrigé (rendez-vous annulé entre lecture et écriture), puis rien à signaler (#399).
+- Reste : écrans de l'armoire et du vendeur, branchement au Worker (`app.ts`) ; rappel dans l'agenda externe (HX02) ; clé remise à un partenaire sans agent.
 - Objectif : comme Hektor (gestion des clés, armoire à clés) : chaque trousseau a son numéro, on sait qui l'a, depuis quand, pour quelle visite. Jamais vu : l'agenda rappelle de rendre la clé après la visite, et le vendeur voit dans son espace qui est entré chez lui et quand.
 - Critères : une clé ne peut être chez deux personnes à la fois (test) ; tout mouvement est au journal (test).
 
