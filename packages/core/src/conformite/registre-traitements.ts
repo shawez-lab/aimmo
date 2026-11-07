@@ -202,6 +202,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX36 : la lettre recommandée vise l'acquéreur ; le compromis joint et les preuves du prestataire le nomment.
       registered_letters: ['person_id', 'document_ref', 'prepared_by'],
       registered_letter_events: ['proof_ref', 'message_id', 'recorded_by'],
+      // HX37 : le circuit de signature range un document et des annexes du dossier, ses signataires, leurs lectures, signatures et rappels.
+      signature_circuits: ['document_ref', 'prepared_by'],
+      signature_circuit_annexes: ['ref'],
+      signature_circuit_signers: ['person_id'],
+      signature_circuit_events: ['person_id', 'proof_ref', 'message_id', 'by'],
       mandate_withdrawals: ['proof', 'recorded_by'],
       mandate_tasks: ['agent_id'],
       signed_amendments: ['scan_ref', 'copy_content', 'copy_hash', 'registered_by'],
@@ -965,6 +970,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   coownership_summaries: ['id', 'network_id', 'file_id', 'version', 'hash', 'prepared_at'],
   registered_letters: ['id', 'network_id', 'file_id', 'purpose', 'hash', 'prepared_at'],
   registered_letter_events: ['letter_id', 'network_id', 'file_id', 'seq', 'kind', 'occurred_at', 'day', 'trial', 'rule', 'recorded_at'],
+  signature_circuits: ['id', 'network_id', 'file_id', 'document_hash', 'envelope_hash', 'prepared_at'],
+  signature_circuit_annexes: ['circuit_id', 'network_id', 'file_id', 'position', 'kind', 'hash'],
+  signature_circuit_signers: ['circuit_id', 'network_id', 'file_id', 'role', 'grp'],
+  signature_circuit_events: ['circuit_id', 'network_id', 'file_id', 'seq', 'kind', 'annex_position', 'shown_hash', 'envelope_hash', 'n', 'rule', 'at'],
   mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'sent_on', 'created_at'],
   mandate_tasks: ['id', 'network_id', 'mandate_id', 'kind', 'due_day', 'dedup_key', 'created_at', 'done_at'],
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],
