@@ -289,6 +289,16 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX31 : l'écran de vitrine ; seul l'agent dont l'écran montre les biens, ou qui l'a réglé, est nommé.
       vitrine_screens: ['agent_id', 'created_by'],
       vitrine_screen_switches: ['by_actor'],
+      // HX38 : la diffusion surveillée portail par portail ; qui a réglé, choisi ou retiré, l'agent de la tâche, et le texte
+      // d'un rejet, qui vient du portail et peut citer n'importe quoi. Le prix et les classes relus en ligne sont ceux de l'annonce.
+      diffusion_portal_settings: ['set_by'],
+      diffusion_portal_choices: ['by_actor'],
+      diffusion_portal_suspensions: ['reason', 'by_actor'],
+      diffusion_portal_resumptions: ['by_actor'],
+      diffusion_portal_feedback: ['detail', 'online_url'],
+      diffusion_portal_checks: [],
+      diffusion_portal_tasks: ['agent_id'],
+      diffusion_portal_task_closures: ['reason'],
     },
   },
   {
@@ -1014,6 +1024,14 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_keys: ['id', 'network_id', 'property_id', 'number', 'label', 'created_at'],
   vitrine_screens: ['id', 'network_id', 'label', 'seconds_per_slide', 'created_at'],
   vitrine_screen_switches: ['id', 'screen_id', 'active', 'at'],
+  diffusion_portal_settings: ['id', 'network_id', 'code', 'label', 'host', 'required_fields', 'min_photos', 'active', 'set_at'],
+  diffusion_portal_choices: ['id', 'network_id', 'property_id', 'portal', 'chosen', 'at'],
+  diffusion_portal_suspensions: ['id', 'network_id', 'property_id', 'portal', 'until_at', 'at'],
+  diffusion_portal_resumptions: ['suspension_id', 'at'],
+  diffusion_portal_feedback: ['id', 'network_id', 'property_id', 'portal', 'version_id', 'outcome', 'code', 'at'],
+  diffusion_portal_checks: ['id', 'network_id', 'property_id', 'portal', 'version_id', 'acceptance_id', 'outcome', 'gaps', 'at'],
+  diffusion_portal_tasks: ['id', 'network_id', 'property_id', 'portal', 'kind', 'first_ref', 'created_at'],
+  diffusion_portal_task_closures: ['task_id', 'ref', 'at'],
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],

@@ -580,6 +580,15 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // HX31 : les écrans de vitrine, sans donnée d'un client.
   vitrine_screens: out('agent', 'Écran de vitrine du réseau ou d\'un agent.'),
   vitrine_screen_switches: out('sans_client', 'Allumage ou extinction d\'un écran de vitrine.'),
+  // HX38 : la diffusion surveillée d'un bien, trouvée par le bien de la personne.
+  diffusion_portal_settings: out('sans_client', 'Réglage d\'un portail par la direction : son domaine et les champs qu\'il exige.'),
+  diffusion_portal_choices: { locate: [via('property_id', 'properties')] },
+  diffusion_portal_suspensions: { locate: [via('property_id', 'properties')] },
+  diffusion_portal_resumptions: { locate: [via('suspension_id', 'diffusion_portal_suspensions')] },
+  diffusion_portal_feedback: { locate: [via('property_id', 'properties')] },
+  diffusion_portal_checks: { locate: [via('property_id', 'properties')] },
+  diffusion_portal_tasks: out('agent', 'Tâche de correction de l\'agent du bien, quand un portail rejette ou montre un écart.'),
+  diffusion_portal_task_closures: out('agent', 'Fermeture d\'une tâche de correction de l\'agent.'),
   // HX07 : la boutique de l'agent, sans donnée d'un client.
   shop_tariffs: out('sans_client', 'Tarifs des supports imprimés, depuis le devis d\'un imprimeur.'),
   shop_orders: out('agent', 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle.'),
