@@ -285,6 +285,34 @@ describeWithSqlite('HX16 · veille des nouveaux diagnostics énergétiques', () 
     expect((await verifyChain(events)).ok).toBe(true);
   });
 
+  it('[R288, R289] un diagnostic et son alerte sont rangés ensemble : une panne au milieu ne perd jamais l’alerte', async () => {
+    const t = await setup();
+    await t.veille.watch(t.agentAlex, { commune: 'Talant', postcode: '21240' });
+    let fail = true;
+    const flaky: SqlDatabase = {
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => t.db.run(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      batch: async (statements) => {
+        if (fail && statements.some((st) => st.sql.includes('dpe_alert_items'))) {
+          fail = false;
+          // Le diagnostic passe, puis la ligne d'alerte casse : le lot entier doit être annulé.
+          await t.db.batch!([statements[0]!, { sql: 'INSERT INTO dpe_alert_items (sector_id) VALUES (NULL)' }]);
+        }
+        return t.db.batch!(statements);
+      },
+    };
+    const v = new VeilleDpe(flaky, t.source.feed, t.journal, { now: t.now });
+    t.source.set('21240', [row()]);
+    await expect(v.run()).rejects.toThrow();
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM dpe_diagnoses'))!.n).toBe(0);
+    expect(await v.run()).toMatchObject({ inserted: 1, alerted: 1 });
+    const a = await v.alerts(t.agentAlex);
+    if (!a.ok) throw new Error('alerte');
+    expect(a.alerts[0]!.items).toHaveLength(1);
+  });
+
   it('[R288] sans source, rien ne se passe ; une panne sur un code postal n’arrête pas les autres', async () => {
     const t = await setup();
     const silent = new VeilleDpe(t.db, null, t.journal, { now: t.now });

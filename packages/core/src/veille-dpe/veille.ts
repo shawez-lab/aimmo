@@ -22,7 +22,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { agentState } from '../acces/etat-agent.ts';
 import { communeSlug } from '../attirer/liste-biens.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { plain } from '../envoi/texte.ts';
 import type { Fetcher } from '../estimation/collecte.ts';
@@ -396,22 +396,26 @@ export class VeilleDpe {
           // Seules les communes suivies entrent : rien d'une commune hors des secteurs [R289].
           if (!watched.has(slug)) continue;
           const id = this.newId();
-          const { changes } = await this.db.run(
-            `INSERT INTO dpe_diagnoses (id, network_id, number, kind, energy_class, ghg_class, surface_m2, diagnosed_on, received_on, street_number, street, postcode, commune, commune_slug, lat, lon, first_seen_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (network_id, number) DO NOTHING`,
-            [id, q.networkId, d.number, d.kind, d.energyClass, d.ghgClass, d.surfaceM2, d.diagnosedOn, d.receivedOn, d.streetNumber, d.street, d.postcode, d.commune, slug, d.lat, d.lon, this.now().toISOString()],
-          );
-          // Déjà vu : il ne remonte jamais une deuxième fois [R288].
-          if (changes !== 1) continue;
+          const at = this.now().toISOString();
+          const sectors = live.filter((s) => s.network_id === q.networkId && s.postcode === q.postcode && s.commune_slug === slug);
+          // Le diagnostic et ses lignes d'alerte en un seul lot, tout ou rien : une panne entre les deux ne laisse jamais
+          // un diagnostic rangé sans son alerte. Déjà vu, rien n'est écrit : il ne remonte jamais deux fois [R288, R289].
+          const results = await runBatch(this.db, [
+            {
+              sql: `INSERT INTO dpe_diagnoses (id, network_id, number, kind, energy_class, ghg_class, surface_m2, diagnosed_on, received_on, street_number, street, postcode, commune, commune_slug, lat, lon, first_seen_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (network_id, number) DO NOTHING`,
+              params: [id, q.networkId, d.number, d.kind, d.energyClass, d.ghgClass, d.surfaceM2, d.diagnosedOn, d.receivedOn, d.streetNumber, d.street, d.postcode, d.commune, slug, d.lat, d.lon, at],
+            },
+            ...sectors.map((s) => ({
+              sql: `INSERT INTO dpe_alert_items (sector_id, diagnosis_id, network_id, alerted_on, created_at)
+                    SELECT ?, d.id, d.network_id, ?, ? FROM dpe_diagnoses d WHERE d.id = ? AND d.network_id = ?
+                    ON CONFLICT (sector_id, diagnosis_id) DO NOTHING`,
+              params: [s.id, today, at, id, q.networkId],
+            })),
+          ]);
+          if (results[0]?.changes !== 1) continue;
           inserted += 1;
-          for (const s of live) {
-            if (s.network_id !== q.networkId || s.postcode !== q.postcode || s.commune_slug !== slug) continue;
-            const r = await this.db.run(
-              'INSERT INTO dpe_alert_items (sector_id, diagnosis_id, network_id, alerted_on, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (sector_id, diagnosis_id) DO NOTHING',
-              [s.id, id, q.networkId, today, this.now().toISOString()],
-            );
-            report.alerted += r.changes;
-          }
+          for (const r of results.slice(1)) report.alerted += r.changes;
         }
         report.inserted += inserted;
         if (inserted > 0) {
