@@ -270,6 +270,8 @@ export function firstMessage(input: { kind: PigeKind; commune: string; surfaceM2
 export interface PigeOptions {
   now?: () => Date;
   newId?: () => string;
+  /** Réglage : au plus tant d'annonces suivies pour un bien ; au-delà, tout se ferme. */
+  maxLinkedAds?: number;
 }
 
 interface AdRow {
@@ -292,11 +294,12 @@ export function refKey(source: string, sourceRef: string): Promise<string> {
 }
 
 /** Au plus tant d'annonces suivies pour relier un bien d'un site et d'une correction à l'autre. */
-const MAX_LINKED_ADS = 400;
+export const MAX_LINKED_ADS = 400;
 
 export class Pige {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly maxLinkedAds: number;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -306,6 +309,7 @@ export class Pige {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.maxLinkedAds = options.maxLinkedAds ?? MAX_LINKED_ADS;
   }
 
   private actor(viewer: Viewer): string {
@@ -417,7 +421,12 @@ export class Pige {
     const keys: string[] = [];
     if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
     // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
-    if (key) keys.push(...(await this.linkedKeys(networkId, await adFingerprint(key), await nearFingerprints(key))));
+    if (key) {
+      const l = await this.linked(networkId, await adFingerprint(key), await nearFingerprints(key));
+      // Trop relié pour être suivi en entier : l'annonce n'entre pas [R273].
+      if (!l.complete) return true;
+      keys.push(...l.keys);
+    }
     if (keys.length === 0) return false;
     let closed = false;
     for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
@@ -561,12 +570,17 @@ export class Pige {
    * [R273, R04, R05].
    */
   private async linkedKeys(networkId: string, fingerprint: string, seeds: readonly string[] = []): Promise<string[]> {
+    return (await this.linked(networkId, fingerprint, seeds)).keys;
+  }
+
+  /** Le parcours lui-même ; `complete` est faux quand la limite l'a coupé : alors tout se ferme [R273]. */
+  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = []): Promise<{ keys: string[]; complete: boolean }> {
     const start = [...new Set([fingerprint, ...seeds])];
     const fps = new Set<string>(start);
     const refs = new Set<string>();
     const keys = new Set<string>(start);
     let frontier = start;
-    while (frontier.length > 0 && refs.size < MAX_LINKED_ADS) {
+    while (frontier.length > 0 && refs.size < this.maxLinkedAds) {
       const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
         `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2
            FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
@@ -590,11 +604,13 @@ export class Pige {
       }
       frontier = next;
     }
-    return [...keys];
+    return { keys: [...keys], complete: frontier.length === 0 };
   }
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
-    const keys = await this.linkedKeys(networkId, fingerprint);
+    const { keys, complete } = await this.linked(networkId, fingerprint);
+    // Un bien relié à trop d'annonces pour être suivi en entier : fermé, jamais supposé ouvert.
+    if (!complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
     const marks = JSON.stringify(keys);
     if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R273', code: 'pas_agence' };
     if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R04', code: 'opposition' };
@@ -610,7 +626,9 @@ export class Pige {
     if (g) return g;
     const ad = await this.openAdFor(viewer, adId);
     if ('ok' in ad) return ad;
-    const near = await this.linkedKeys(viewer.networkId, ad.fingerprint);
+    const l = await this.linked(viewer.networkId, ad.fingerprint);
+    if (!l.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
+    const near = l.keys;
     if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [viewer.networkId, JSON.stringify(near)])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };
     }
