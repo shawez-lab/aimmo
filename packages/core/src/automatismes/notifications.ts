@@ -12,7 +12,7 @@
  * Chaque envoi est réservé en base avant l'appel au service de notification : deux passages n'envoient jamais le même
  * groupe, et un passage coupé avant la réponse rend ses notifications au passage suivant [R18]. Rien ne s'efface [R17].
  * Rien ne part que par la porte du contrôle central (`AgentPushGate`), en mode essai tant que la voie 1 n'a pas ajouté
- * `sendToAgent` au contrôle central et que le vrai service (Web Push, H56) n'est pas là. Le branchement au planificateur, aux routes et à l'écran des réglages est
+ * `sendToAgent` au contrôle central et que le vrai service (Web Push, H57) n'est pas là. Le branchement au planificateur, aux routes et à l'écran des réglages est
  * une tâche de la voie 1 (`app.ts`).
  */
 import { Acces } from '../acces/acces.ts';
@@ -118,7 +118,7 @@ export interface PushPayload {
 
 /**
  * La porte de sortie des notifications aux agents : le contrôle central des envois, et lui seul [R26]. Sa méthode
- * `sendToAgent` sur `ControleEnvois` (fichier du socle) est une tâche de la voie 1, avec le vrai service Web Push (H56) ;
+ * `sendToAgent` sur `ControleEnvois` (fichier du socle) est une tâche de la voie 1, avec le vrai service Web Push (H57) ;
  * d'ici là, la seule porte du code est `BoiteEssaiNotifications`, qui garde l'envoi et n'envoie rien.
  */
 export interface AgentPushGate {

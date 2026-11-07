@@ -46,6 +46,10 @@ export * as commerces from './commerces/index.ts';
 export * as studio from './studio/index.ts';
 // HX01 sous son propre nom, comme M19.
 export * as partage from './partage/index.ts';
+// HX06 sous son propre nom, comme HX01.
+export * as dictee from './dictee/index.ts';
+// HX07 sous son propre nom, comme HX06.
+export * as boutique from './boutique/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
