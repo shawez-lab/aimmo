@@ -402,6 +402,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   appointment_briefs: { locate: [via('appointment_id', 'appointments')] },
   appointment_reports: { locate: [via('appointment_id', 'appointments')] },
   appointment_tasks: { locate: by('person_id') },
+  // HX12 : ce qui est saisi pendant une visite, retrouvé par son rendez-vous.
+  offline_ops: { locate: [via('appointment_id', 'appointments')] },
+  visit_field_notes: { locate: [via('appointment_id', 'appointments')] },
+  visit_photos: { locate: [via('appointment_id', 'appointments')] },
+  visit_shot_skips: { locate: [via('appointment_id', 'appointments')] },
   daily_plans: { locate: [{ json: 'items', idFields: ['personId', 'memberIds'], onlyMine: ['personId', 'memberIds'] }] },
   visits: { locate: by('person_id') },
   visit_slip_templates: out('sans_client', 'Modèle de bon de visite du réseau.'),
