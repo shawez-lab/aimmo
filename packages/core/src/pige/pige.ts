@@ -16,6 +16,8 @@
  *   WhatsApp ou mail, la décision unique du contrôle central refuse faute d'accord préalable [R03]. Un non ou un stop du
  *   particulier ferme ce bien pour toujours [R04, R02]. AIMMO n'envoie rien : ce module n'a aucun canal [R275].
  *
+ * Un bien se reconnaît d'un site à l'autre par sorte, code postal, commune et surface à 1 m² près, ni prix ni pièces :
+ * le doute ferme plus, jamais moins.
  * Décidé (2026-11-07), lecture prudente : répondre à l'annonce par sa propre messagerie, message collé par l'agent, est
  * tenu pour hors du champ de R03, qui vise le téléphone, le SMS, WhatsApp et le mail ; à faire confirmer (H58).
  * Rien ne change ni ne s'efface [R17] ; chaque mouvement au journal, sans donnée du particulier [R13].
@@ -184,11 +186,22 @@ async function sha256(text: string): Promise<string> {
 }
 
 /**
- * L'empreinte d'un bien, la même d'un site à l'autre et après une baisse de prix : sorte, code postal, commune, surface
- * et pièces. Jamais le prix : un bien dont le prix baisse reste le même bien, et ne reçoit pas un second message [R05].
+ * L'empreinte d'un bien, la même d'un site à l'autre et après une baisse de prix : sorte, code postal, commune et
+ * surface. Ni le prix (un bien dont le prix baisse reste le même bien, sans second message [R05]), ni les pièces, qu'un
+ * site peut taire : le doute ferme plus, jamais moins [R273].
  */
-export function adFingerprint(ad: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2' | 'rooms'>): Promise<string> {
-  return sha256(['pige', ad.kind, ad.postalCode, communeSlug(ad.commune), ad.surfaceM2, ad.rooms ?? ''].join('|'));
+export function adFingerprint(ad: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>): Promise<string> {
+  return sha256(['pige', ad.kind, ad.postalCode, communeSlug(ad.commune), ad.surfaceM2].join('|'));
+}
+
+/** Écart de surface d'un site à l'autre tenu pour le même bien, en m², pour fermer un bien ou éviter un second message. */
+export const SURFACE_TOLERANCE_M2 = 1;
+
+/** Les empreintes du même bien à la surface près : celles qu'un « pas d'agence », un non ou un message ferment. */
+export async function nearFingerprints(ad: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>): Promise<string[]> {
+  const out: string[] = [];
+  for (let d = -SURFACE_TOLERANCE_M2; d <= SURFACE_TOLERANCE_M2; d += 1) out.push(await adFingerprint({ ...ad, surfaceM2: ad.surfaceM2 + d }));
+  return out;
 }
 
 const KIND_WORD: Record<PigeKind, { noun: string; plural: string }> = {
@@ -301,7 +314,9 @@ export class Pige {
       const fingerprint = await adFingerprint(ad);
       if (ad.noAgency) {
         // Seule l'empreinte reste ; le même bien déjà entré par un autre site sort de la file avec elle [R273].
-        await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, fingerprint, now.toISOString()]);
+        for (const f of await nearFingerprints(ad)) {
+          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
+        }
         noAgency += 1;
         continue;
       }
@@ -309,10 +324,10 @@ export class Pige {
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
-            AND NOT EXISTS (SELECT 1 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?)`,
+            AND NOT EXISTS (SELECT 1 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? AND price_eur = ?)`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
-          networkId, fingerprint, networkId, ad.source, ad.sourceRef,
+          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur,
         ],
       );
       added += r.changes;
@@ -353,11 +368,11 @@ export class Pige {
               (SELECT count(DISTINCT b.source) FROM pige_ads b WHERE b.network_id = a.network_id AND b.fingerprint = a.fingerprint) AS sites
          FROM pige_ads a
         WHERE a.network_id = ? AND a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
-          AND a.id = (SELECT b.id FROM pige_ads b WHERE b.network_id = a.network_id AND b.fingerprint = a.fingerprint ORDER BY b.published_at, b.id LIMIT 1)
+          AND a.id = (SELECT b.id FROM pige_ads b WHERE b.network_id = a.network_id AND b.fingerprint = a.fingerprint AND b.published_at >= ? ORDER BY b.published_at, b.id LIMIT 1)
           AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.fingerprint)
           AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.fingerprint)
         ORDER BY a.published_at DESC, a.id`,
-      [networkId, ...communes, since],
+      [networkId, ...communes, since, since],
     );
   }
 
@@ -434,7 +449,9 @@ export class Pige {
     if (g) return g;
     const ad = await this.openAdFor(viewer, adId);
     if ('ok' in ad) return ad;
-    if (await this.db.first('SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint = ?', [viewer.networkId, ad.fingerprint])) {
+    const near = await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 });
+    const nearIn = near.map(() => '?').join(', ');
+    if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn})`, [viewer.networkId, ...near])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };
     }
     const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ?', [viewer.userId]);
@@ -447,12 +464,12 @@ export class Pige {
     const r = await this.db.run(
       `INSERT INTO pige_drafts (id, network_id, fingerprint, ad_id, agent_id, body, gap_pct, market_source, market_last_sale, created_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        WHERE NOT EXISTS (SELECT 1 FROM pige_drafts WHERE network_id = ? AND fingerprint = ?)
+        WHERE NOT EXISTS (SELECT 1 FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn}))
           AND NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
           AND NOT EXISTS (SELECT 1 FROM pige_oppositions WHERE network_id = ? AND fingerprint = ?)`,
       [
         id, viewer.networkId, ad.fingerprint, ad.id, viewer.userId, body, market?.gapPct ?? null, market?.source ?? null, market?.dvfLastSale ?? null, this.now().toISOString(),
-        viewer.networkId, ad.fingerprint, viewer.networkId, ad.fingerprint, viewer.networkId, ad.fingerprint,
+        viewer.networkId, ...near, viewer.networkId, ad.fingerprint, viewer.networkId, ad.fingerprint,
       ],
     );
     if (r.changes !== 1) return (await this.closedReason(viewer.networkId, ad.fingerprint)) ?? { ok: false, rule: 'R05', code: 'deja_prepare' };
@@ -517,15 +534,16 @@ export class Pige {
     const g = await this.gate(viewer, `pige_ad:${String(adId)}`, false);
     if (g) return g;
     if (typeof adId !== 'string') return { ok: false, rule: null, code: 'unknown_ad' };
-    const ad = await this.db.first<{ fingerprint: string; commune: string }>('SELECT fingerprint, commune FROM pige_ads WHERE id = ? AND network_id = ?', [adId, viewer.networkId]);
+    const ad = await this.db.first<{ kind: PigeKind; postal_code: string; surface_m2: number; commune: string }>(
+      'SELECT kind, postal_code, surface_m2, commune FROM pige_ads WHERE id = ? AND network_id = ?',
+      [adId, viewer.networkId],
+    );
     if (!ad) return { ok: false, rule: null, code: 'unknown_ad' };
     if (viewer.role === 'agent' && !(await this.zoneCommunes(viewer.networkId, viewer.userId)).has(communeSlug(ad.commune))) return { ok: false, rule: null, code: 'hors_zone' };
-    await this.db.run('INSERT OR IGNORE INTO pige_oppositions (network_id, fingerprint, noted_by, noted_at) VALUES (?, ?, ?, ?)', [
-      viewer.networkId,
-      ad.fingerprint,
-      this.actor(viewer),
-      this.now().toISOString(),
-    ]);
+    // Le même bien à la surface près, sur tous ses sites, est fermé avec lui [R04].
+    for (const f of await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 })) {
+      await this.db.run('INSERT OR IGNORE INTO pige_oppositions (network_id, fingerprint, noted_by, noted_at) VALUES (?, ?, ?, ?)', [viewer.networkId, f, this.actor(viewer), this.now().toISOString()]);
+    }
     await appendEvent(this.journal, { type: 'pige.opposition', actor: this.actor(viewer), subject: `pige_ad:${adId}`, data: { rule: 'R04' } }, this.now);
     return { ok: true };
   }

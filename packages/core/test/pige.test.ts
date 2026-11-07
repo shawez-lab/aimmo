@@ -77,10 +77,10 @@ it('[R273] une annonce sans surface, sans prix ou à venir n’est pas lue ; rie
   expect(JSON.stringify(clean)).not.toMatch(/06|Jean|Appelez/);
 });
 
-it('l’empreinte d’un bien ne dépend ni du site ni du prix', async () => {
-  const a = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 90, rooms: 4 });
-  expect(await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'TALANT', surfaceM2: 90, rooms: 4 })).toBe(a);
-  expect(await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 91, rooms: 4 })).not.toBe(a);
+it('l’empreinte d’un bien ne dépend ni du site, ni du prix, ni des pièces', async () => {
+  const a = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 90 });
+  expect(await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'TALANT', surfaceM2: 90 })).toBe(a);
+  expect(await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 91 })).not.toBe(a);
 });
 
 it('le premier message ne porte que les chiffres donnés, ni question ni parenthèse', () => {
@@ -105,10 +105,53 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     const q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value.map((e) => e.surfaceM2)).toEqual([120]);
     // Même la base refuse de la ranger.
-    const fp = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 90, rooms: 4 });
+    const fp = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 90 });
     await expect(
       s.db.run("INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at) VALUES ('z', ?, 'Site C', 'c1', ?, 'house', 'Talant', '21240', 90, 4, 200000, '2026-12-01', '2026-12-01')", [s.network.id, fp]),
     ).rejects.toThrow(/pas d'agence/);
+  });
+
+  it('[R273] un site qui tait les pièces ou arrondit la surface d’un mètre ne rouvre pas un bien « pas d’agence »', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, [s.ad(), s.ad({ surfaceM2: 60, rooms: 3 })]);
+    await s.pige.ingest(s.network.id, [
+      s.ad({ source: 'Site B', rooms: undefined, noAgency: true }),
+      s.ad({ source: 'Site C', surfaceM2: 61, rooms: undefined, text: 'Agences s’abstenir' }),
+    ]);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    const first = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE surface_m2 = 90"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: false, rule: 'R273' });
+  });
+
+  it('[R274] la même annonce revue à un autre prix garde la baisse ; rejouée telle quelle, rien ne double', async () => {
+    const s = await setup();
+    const one = s.ad();
+    await s.pige.ingest(s.network.id, [one]);
+    expect((await s.pige.ingest(s.network.id, [one])).added).toBe(0);
+    s.at(MONDAY_10H + DAY);
+    expect((await s.pige.ingest(s.network.id, [{ ...one, priceEur: 252_000 }])).added).toBe(1);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([252_000]);
+  });
+
+  it('un bien republié après 60 jours reste dans la file par sa nouvelle annonce', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, [s.ad({ publishedAt: new Date(MONDAY_10H - 59 * DAY).toISOString() })]);
+    s.at(MONDAY_10H + 5 * DAY);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', publishedAt: new Date(MONDAY_10H + 4 * DAY).toISOString() })]);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.source)).toEqual(['Site B']);
+  });
+
+  it('[R05] un bien vu à un mètre carré près sur un autre site n’a pas de second message', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, [s.ad()]);
+    const first = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    expect((await s.pige.prepare(s.agentAlex, first)).ok).toBe(true);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', surfaceM2: 91, rooms: undefined })]);
+    const other = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site B'"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, other)).toMatchObject({ ok: false, rule: 'R05' });
   });
 
   it('[R273] un bien déjà en file sort de la file quand une autre annonce de lui dit « pas d’agence », et ne reçoit plus de message', async () => {
@@ -243,7 +286,7 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.oppose(s.agentSam, adId)).toMatchObject({ ok: false, code: 'hors_zone' });
     expect(await s.pige.oppose(s.agentAlex, adId)).toEqual({ ok: true });
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
-    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' })]);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' }), s.ad({ source: 'Site C', surfaceM2: 89, rooms: undefined })]);
     const q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value).toEqual([]);
     // La base refuse aussi la remise.
