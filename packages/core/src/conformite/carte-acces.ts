@@ -525,6 +525,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),
   agent_language_declarations: out('agent', 'Langues que l\'agent déclare parler.'),
+  // HX31 : les écrans de vitrine, sans donnée d'un client.
+  vitrine_screens: out('agent', 'Écran de vitrine du réseau ou d\'un agent.'),
+  vitrine_screen_switches: out('sans_client', 'Allumage ou extinction d\'un écran de vitrine.'),
   // HX07 : la boutique de l'agent, sans donnée d'un client.
   shop_tariffs: out('sans_client', 'Tarifs des supports imprimés, depuis le devis d\'un imprimeur.'),
   shop_orders: out('agent', 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle.'),
@@ -794,6 +797,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   public_content_posts: out('sans_client', 'Référence d\'une publication du réseau chez un réseau social : aucune personne.'),
   contact_origins: { locate: [via('inbound_id', 'inbound_messages')] },
   contact_ai_engines: { locate: [via('inbound_id', 'inbound_messages')] },
+  contact_vitrines: { locate: [via('inbound_id', 'inbound_messages')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
