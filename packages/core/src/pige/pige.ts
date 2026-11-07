@@ -352,10 +352,11 @@ export class Pige {
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
+              OR coalesce((SELECT published_at FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
               OR coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?)`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
-          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, fingerprint, ad.priceEur,
+          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, ad.publishedAt, networkId, fingerprint, ad.priceEur,
         ],
       );
       added += r.changes;

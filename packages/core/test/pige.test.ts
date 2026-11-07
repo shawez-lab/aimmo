@@ -148,6 +148,18 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([279_000]);
   });
 
+  it('une annonce republiée au même prix est relevée, et reste dans la file au-delà de 60 jours', async () => {
+    const s = await setup();
+    const a = s.ad({ publishedAt: new Date(MONDAY_10H - 59 * DAY).toISOString() });
+    await s.pige.ingest(s.network.id, [a]);
+    s.at(MONDAY_10H + 5 * DAY);
+    const again = { ...a, publishedAt: new Date(MONDAY_10H + 4 * DAY).toISOString() };
+    expect((await s.pige.ingest(s.network.id, [again])).added).toBe(1);
+    expect((await s.pige.ingest(s.network.id, [again])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.length).toBe(1);
+  });
+
   it('[R274] une annonce revenue à son ancien prix est relevée à ce prix', async () => {
     const s = await setup();
     const one = s.ad();
