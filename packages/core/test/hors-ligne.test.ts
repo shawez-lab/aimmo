@@ -252,6 +252,36 @@ describeWithSqlite('HX12 · l’appli sans réseau, côté serveur', () => {
     expect(await t.db.first('SELECT count(*) AS n FROM offline_ops')).toEqual({ n: 2 });
   });
 
+  it('[R276] une panne de la base pendant la réception laisse la saisie au téléphone, qui la renvoie ensuite', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    let broken = true;
+    const flaky: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, params) => t.db.run(sql, params),
+      all: (sql, params) => t.db.all(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      batch: async (statements) => {
+        if (broken) throw new Error('base indisponible');
+        return t.db.batch ? t.db.batch(statements) : Promise.all(statements.map((st) => t.db.run(st.sql, st.params)));
+      },
+    };
+    const server = new HorsLigne(flaky, t.journal, { now: () => new Date(v.start + 10 * MIN) });
+    const box = new Outbox(new MemoryOutboxStorage(), { now: () => new Date(v.start + 5 * MIN) });
+    await box.add('visite.note', v.id, { text: 'Note gardée' });
+    const { transport } = wire(async (b) => {
+      const r = await server.receive(t.agentAlex, b);
+      if (!r.ok) throw new Error(r.code);
+      return { results: r.results };
+    });
+    expect(await box.flush(transport)).toMatchObject({ offline: true, refused: 0, left: 1 });
+    broken = false;
+    expect(await box.flush(transport)).toMatchObject({ offline: false, sent: 1, left: 0 });
+    expect(await t.db.all('SELECT body FROM visit_field_notes')).toEqual([{ body: 'Note gardée' }]);
+  });
+
   it('[R276] rejouée, une saisie rend la même réponse ; un autre contenu sous le même identifiant est refusé, jamais écrit par-dessus', async () => {
     const t = await setup();
     const v = await t.visit();

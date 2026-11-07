@@ -265,15 +265,9 @@ export class HorsLigne {
         params: [...values, viewer.networkId, viewer.userId, deviceId, opId, hash, now.toISOString()],
       });
     }
-    let first: { changes: number } | undefined;
-    try {
-      [first] = await runBatch(this.db, statements);
-    } catch {
-      // Le rendez-vous ou l'agent ont changé entre la lecture et l'écriture : rien n'est gardé, la saisie reste au téléphone.
-      const again = await this.stored(viewer, deviceId, opId);
-      if (again) return answer(again);
-      return { opId, outcome: 'refuse', again: false, code: 'non_range', rule: null };
-    }
+    // Une panne de la base fait échouer tout l'envoi : aucune réponse, donc le téléphone garde la saisie et la renverra.
+    // Ce qui a été reçu avant dans le même envoi sera reconnu au renvoi, sans doublon [R276].
+    const [first] = await runBatch(this.db, statements);
     if (!first || first.changes === 0) {
       // Le même identifiant reçu au même moment par un autre envoi : on rend sa réponse à lui.
       const again = await this.stored(viewer, deviceId, opId);
