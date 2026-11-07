@@ -146,7 +146,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : saisie hors ligne puis envoi sans perte ni doublon (test) ; photo trop sombre ou floue signalée (test).
 
 ### HX13 · Mode présentation pendant la visite
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Live Visit et le mode présentation : montrer à l'acquéreur, sur le téléphone, le bien et les biens qui lui correspondent, sans montrer les données de l'agence. Jamais vu : à la fin, l'acquéreur note chaque pièce d'un geste, et l'appli en tire le compte rendu au vendeur et la prochaine proposition.
 - Critères : aucune donnée confidentielle (vendeur, honoraires, notes) visible en mode présentation (test).
 
