@@ -118,7 +118,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque remise a sa source et sa date de fin, retirée seule à expiration (test).
 
 ### HX09 · Actualités utiles, pas du bruit
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme « Mes actualités » : la veille juridique et marché. Jamais vu : chaque actualité dit en une ligne ce qu'elle change pour l'agent et quels de ses dossiers sont concernés.
 - Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
 
