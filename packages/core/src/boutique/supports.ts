@@ -63,7 +63,7 @@ const CSS =
 .frise{height:0;border-top:2mm solid var(--accent);border-bottom:1mm solid var(--moutarde)}
 .prix{font-weight:700;color:var(--accent);margin:0;letter-spacing:-.01em}
 .mentions{border-left:2pt solid var(--moutarde);padding:1mm 3mm;margin:0;font-size:7.5pt;line-height:1.35;white-space:pre-line}
-.qr{display:grid;grid-template-columns:auto 1fr;gap:4mm;align-items:center}.qr svg{display:block}
+.qr{display:grid;grid-template-columns:auto 1fr;gap:4mm;align-items:center}.qr svg{display:block;color:var(--encre);background:var(--papier)}
 .mot{margin:0;font-weight:700}.mot strong{color:var(--accent);white-space:nowrap}
 .ref{font:600 8pt var(--police-texte);letter-spacing:.08em;color:var(--doux)}
 .photo{width:100%;object-fit:cover;background:var(--trait)}
@@ -128,9 +128,10 @@ function qrBlock(url: string, keyword: string | null, phone: string): string | S
 }
 
 function document(support: Support, title: string, body: string): string {
+  const style = `${CSS}@page{size:${PAGE_SIZE[support]};margin:0}`;
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
-    `<style>${CSS}@page{size:${PAGE_SIZE[support]};margin:0}</style></head><body>${body}</body></html>`
+    `<style>${style}</style></head><body>${body}</body></html>`
   );
 }
 

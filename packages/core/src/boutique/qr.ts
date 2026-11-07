@@ -309,7 +309,10 @@ export function encodeQr(text: string): { ok: true; qr: QrCode } | QrRefusal {
   return { ok: true, qr: best! };
 }
 
-/** Le code dessiné en SVG : un seul chemin, marge de quatre modules, à l'échelle de son cadre. */
+/**
+ * Le code dessiné en SVG : un seul chemin, marge de quatre modules, à l'échelle de son cadre. Les couleurs viennent de
+ * la feuille du support (encre sur papier, `.qr svg`), jamais du dessin [R201].
+ */
 export function qrSvg(qr: QrCode, label: string): string {
   const quiet = 4;
   const side = qr.size + quiet * 2;
@@ -318,5 +321,5 @@ export function qrSvg(qr: QrCode, label: string): string {
     if (dark) d += `M${x + quiet} ${y + quiet}h1v1h-1z`;
   }));
   const safe = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" role="img" aria-label="${safe}" shape-rendering="crispEdges"><rect width="${side}" height="${side}" fill="#ffffff"/><path d="${d}" fill="#000000"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" role="img" aria-label="${safe}" shape-rendering="crispEdges"><path d="${d}" fill="currentColor"/></svg>`;
 }
