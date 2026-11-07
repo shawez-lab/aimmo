@@ -301,7 +301,8 @@ export class RecommandeElectronique {
 
   /**
    * Une lettre que le contrôle central a remise au prestataire, sans que son envoi ait été rangé ici (une coupure entre
-   * les deux) : l'envoi est retrouvé par son sujet et la référence rendue par le prestataire, et rangé, sans renvoyer
+   * les deux) : l'envoi est retrouvé par le sujet du dossier, le fil de la lettre et la référence rendue par le
+   * prestataire, et rangé, sans renvoyer
    * [R461, R462]. Rend vrai si la lettre a un envoi rangé.
    */
   private async reconcile(letter: LetterRow): Promise<boolean> {
@@ -309,8 +310,8 @@ export class RecommandeElectronique {
     const m = await this.db.first<{ message_id: string; occurred_at: string }>(
       `SELECT s.message_id, m.occurred_at FROM message_subjects s JOIN messages m ON m.id = s.message_id
        JOIN outbound_refs r ON r.message_id = s.message_id AND r.channel = 'email'
-       WHERE s.subject = ? AND s.network_id = ? ORDER BY m.occurred_at LIMIT 1`,
-      [`recommande:${letter.id}`, letter.network_id],
+       WHERE s.subject = ? AND s.network_id = ? AND m.conversation_id = ? ORDER BY m.occurred_at LIMIT 1`,
+      [`recommande:${letter.file_id}`, letter.network_id, `recommande:${letter.id}`],
     );
     if (!m) return false;
     await this.addEvent(letter, { kind: 'envoi', occurredAt: new Date(Date.parse(m.occurred_at)).toISOString(), proofRef: null, messageId: m.message_id, trial: false, rule: null, by: 'system:recommande' });
@@ -377,7 +378,9 @@ export class RecommandeElectronique {
       channel: 'email',
       kind: 'alert',
       purpose: REGISTERED_LETTER_PURPOSE,
-      subject: `recommande:${letterId}`,
+      // Le sujet est le dossier : le contrôle central le réserve d'un coup avant la remise, une seule lettre part par
+      // dossier même si deux gestes se croisent ; une lettre d'essai, refusée ou en panne le rend [R05, R461].
+      subject: `recommande:${letter.file_id}`,
       fallbackTexts: [text.body],
       figures: text.figures,
       // Le texte du code, tel quel : ni IA, ni mention de l'assistant ajoutée à un acte juridique.

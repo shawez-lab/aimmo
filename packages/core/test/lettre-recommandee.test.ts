@@ -13,8 +13,12 @@ class FakeProvider implements RegisteredLetterProvider {
   readonly sent: { to: string; body: string; messageId: string; attachmentRef: string }[] = [];
   during: (() => void) | null = null;
   noRef = false;
+  hold: Promise<void> | null = null;
+  pending = 0;
   async post(letter: { to: string; body: string; messageId: string; attachmentRef: string }) {
     this.during?.();
+    this.pending += 1;
+    if (this.hold) await this.hold;
     this.sent.push(letter);
     return { externalId: this.noRef ? '' : `lre-${this.sent.length}` };
   }
@@ -187,6 +191,23 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     // Le journal ne porte ni adresse ni texte.
     const events = JSON.stringify(await t.db.all("SELECT data FROM journal WHERE type LIKE 'dossier.recommande%'"));
     for (const s of ['acheteur@example.test', 'rétractation', 'Acheteur']) expect(events).not.toContain(s);
+  });
+
+  it('[R461] deux gestes qui se croisent : une seule lettre part pour le dossier', async () => {
+    const t = await setup();
+    const a = await t.ready();
+    const b = await t.ready();
+    let release!: () => void;
+    t.port.hold = new Promise((r) => (release = r));
+    const first = t.lre.send(t.agent, a);
+    while (t.port.pending === 0) await new Promise((r) => setTimeout(r, 5));
+    // La première lettre attend la réponse du prestataire : la seconde est refusée par le contrôle central.
+    expect(await t.lre.send(t.agent, b)).toMatchObject({ ok: true, value: { sent: false, rule: 'R05' } });
+    release();
+    expect(await first).toMatchObject({ ok: true, value: { sent: true } });
+    expect(t.port.sent).toHaveLength(1);
+    expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM registered_letter_events WHERE file_id = ? AND kind = 'envoi'", [t.fileId])).toEqual({ n: 1 });
+    expect(await t.lre.send(t.agent, b)).toEqual({ ok: false, rule: 'R461', code: 'already_sent' });
   });
 
   it('[R461] une signature corrigée après la préparation demande une nouvelle lettre', async () => {
