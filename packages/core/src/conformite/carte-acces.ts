@@ -169,6 +169,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.etat_risques_prepare': 'partage',
   'dossier.etat_risques_range': 'partage',
   'dossier.etat_risques_perime_a_l_acte': 'partage',
+  // HX35 : le résumé de copropriété et les travaux votés signalés ; le journal n'en porte que des identifiants et des nombres.
+  'dossier.copropriete_resumee': 'partage',
+  'dossier.travaux_votes_signales': 'partage',
   'dossier.dia_preparee': INTERNE('Préparation par l\'agent de la déclaration pour le notaire : des nombres de champs, sans donnée d\'un client.'),
   'dossier.acte_signe': 'partage',
   'dossier.acte_refuse': 'partage',
@@ -439,6 +442,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   signed_documents: { locate: [via('document_id', 'documents')] },
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
   risk_statements: { locate: [via('file_id', 'sale_files')] },
+  coownership_summaries: { locate: [via('file_id', 'sale_files')] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
   signed_amendments: { locate: [via('document_id', 'documents')] },
