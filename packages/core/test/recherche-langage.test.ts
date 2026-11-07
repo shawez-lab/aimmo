@@ -97,6 +97,18 @@ describe('HX28 · lecture de la phrase', () => {
     }
   });
 
+  it('une négation ne fait jamais un critère, quel qu’il soit [R420]', () => {
+    const t1 = parsePhrase('pas de T1, plutôt une maison');
+    expect(t1.criteria.map((c) => [c.field, c.value])).toEqual([['propertyKinds', 'house']]);
+    expect(t1.ignored).toEqual([expect.objectContaining({ words: 'T1', reason: 'negation' })]);
+    for (const phrase of ['sans Chenôve, à Dijon', 'surtout pas à Chenôve, à Dijon', 'hors Chenôve, à Dijon']) {
+      const r = parsePhrase(phrase);
+      expect(r.criteria.map((c) => c.value), phrase).toEqual(['Dijon']);
+      expect(r.ignored.map((i) => i.words), phrase).toEqual(['Chenôve']);
+    }
+    expect(parsePhrase('maison à Dijon, pas de 3 chambres, sans 200 m²').criteria.map((c) => c.field)).toEqual(['propertyKinds', 'communes']);
+  });
+
   it('une phrase trop longue est lue sur 500 caractères', () => {
     const { criteria } = parsePhrase(`${'a '.repeat(260)} maison à Dijon`);
     expect(criteria).toEqual([]);
@@ -267,6 +279,16 @@ describeWithSqlite('HX28 · recherche sur la base', () => {
     expect(after.results.map((x) => x.propertyId)).toEqual([c.id]);
     expect(after.search.criteria.find((x) => x.field === 'budgetMaxEur')!.source).toEqual({ kind: 'refus', propertyId: a.id, reason: 'trop_cher' });
     expect(after.results[0]!.reasons.find((x) => x.text.startsWith('Prix'))!.from).toBe('ajusté après un refus (trop cher)');
+    // Un bien qui ne peut pas être montré ne se refuse pas : rien de lui ne passe dans les critères [R421].
+    const hidden = await t.property('R4', { city: 'Dijon', price: 333_333, surface: 101, rooms: 4 });
+    const sold = await t.property('R5', { city: 'Talant', price: 312_345, surface: 99, rooms: 4, status: 'sold' });
+    t.blocked.add(hidden.id);
+    for (const reason of ['trop_cher', 'trop_petit', 'pas_assez_de_pieces', 'commune'] as const) {
+      const leak = await t.recherche.search(t.network.id, PHRASE, [{ refuse: hidden.id, reason }, { refuse: sold.id, reason }]);
+      expect(leak.search).toEqual(first.search);
+      const text = JSON.stringify(leak);
+      for (const secret of [hidden.id, sold.id, '317460', '297471']) expect(text).not.toContain(secret);
+    }
     // Un bien d'un autre réseau ou une raison hors liste ne changent rien.
     const odd = await t.recherche.search(t.network.id, PHRASE, [{ refuse: 'inconnu', reason: 'trop_cher' }, { refuse: c.id, reason: 'moche' as never }]);
     expect(odd.results).toHaveLength(3);

@@ -234,8 +234,14 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
     if (NICE_MARKERS.test(clause) && !MUST_MARKERS.test(clause)) return 'nice';
     return 'must';
   };
-  const negated = (at: number): boolean => /(?<![a-z])(sans|pas de|pas d'|pas d’|aucun|aucune|ni)\s*$/.test(f.slice(Math.max(0, at - 12), at));
+  const negated = (at: number): boolean =>
+    /(?<![a-z])(sans|pas de|pas d'|pas d’|pas un|pas une|pas a|pas au|pas en|pas sur|hors|hors de|aucun|aucune|ni|surtout pas|jamais)\s*$/.test(f.slice(Math.max(0, at - 14), at));
   const add = (field: PhraseField, value: string | number, start: number, end: number): void => {
+    // Une négation, devant n'importe quel critère, n'en fait aucun : elle est dite une fois [R420].
+    if (negated(start)) {
+      if (!ignored.some((i) => i.start === start)) ignored.push({ words: text.slice(start, end), start, end, reason: 'negation' });
+      return;
+    }
     if (criteria.some((c) => c.field === field && c.value === value)) return;
     criteria.push({ field, value, strength: strengthAt(start), source: words(start, end) });
   };
@@ -304,19 +310,11 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
 
   for (const [pattern, kind] of KIND_WORDS) {
     scan(new RegExp(`${B}(${pattern})${E}`, 'g'), (_m, start, end) => {
-      if (negated(start)) {
-        ignored.push({ words: text.slice(start, end), start, end, reason: 'negation' });
-        return;
-      }
       add('propertyKinds', kind, start, end);
     });
   }
   for (const [pattern, feature] of FEATURE_WORDS) {
     scan(new RegExp(`${B}(${pattern})${E}`, 'g'), (_m, start, end) => {
-      if (negated(start)) {
-        ignored.push({ words: text.slice(start, end), start, end, reason: 'negation' });
-        return;
-      }
       add('features', feature, start, end);
     });
   }
@@ -621,8 +619,9 @@ export class RechercheLangage {
         continue;
       }
       if (!(REFUSAL_REASONS as readonly string[]).includes(step.reason)) continue;
-      const p = await this.db.first<Property>('SELECT * FROM properties WHERE id = ? AND network_id = ?', [step.refuse, networkId]);
-      if (!p) continue;
+      // Seul un bien qui peut être montré se refuse : un autre ne laisse rien deviner de lui dans les critères [R421].
+      const p = await this.db.first<Property>("SELECT * FROM properties WHERE id = ? AND network_id = ? AND status = 'available'", [step.refuse, networkId]);
+      if (!p || !(await this.diffusion.canDiffuse(networkId, p.id, this.now())).allowed) continue;
       search = applyRefusal(search, { id: p.id, match: await this.reader.propertyForMatch(p) }, step.reason, step.feature, this.tolerances);
     }
     return search;
