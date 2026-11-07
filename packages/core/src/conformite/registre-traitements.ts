@@ -188,6 +188,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       mandate_questionnaire_gap_acks: ['by_agent'],
       signed_documents: ['scan_ref', 'copy_content', 'copy_hash', 'registered_by'],
       mandate_early_starts: ['proof', 'recorded_by'],
+      // HX34 : l'état des risques préparé porte l'adresse et la parcelle du bien, et qui l'a préparé.
+      risk_statements: ['content', 'prepared_by'],
       mandate_withdrawals: ['proof', 'recorded_by'],
       mandate_tasks: ['agent_id'],
       signed_amendments: ['scan_ref', 'copy_content', 'copy_hash', 'registered_by'],
@@ -931,6 +933,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   mandate_questionnaire_gap_acks: ['questionnaire_id', 'at'],
   signed_documents: ['document_id', 'network_id', 'signed_at', 'place', 'mandate_id', 'number', 'created_at', 'completed_at'],
   mandate_early_starts: ['mandate_id', 'network_id', 'received_at', 'created_at'],
+  risk_statements: ['id', 'network_id', 'file_id', 'version', 'complete', 'statement_date', 'valid_until', 'hash', 'prepared_at'],
   mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'sent_on', 'created_at'],
   mandate_tasks: ['id', 'network_id', 'mandate_id', 'kind', 'due_day', 'dedup_key', 'created_at', 'done_at'],
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],
