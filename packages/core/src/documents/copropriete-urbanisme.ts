@@ -214,8 +214,11 @@ function sentenceMatchesQuote(text: string, quote: string): boolean {
   return words.some((w) => q.includes(w.slice(0, Math.max(5, w.length - 2))));
 }
 
-/** Un vote se lit dans l'extrait de travaux votés. */
-const VOTE = /\b(?:vot|adopt|approuv|decid)/;
+/** Une décision acquise se lit dans l'extrait de travaux votés : voté, adopté, approuvé, ou l'assemblée décide. */
+const VOTE = /(?<![\p{L}])(?:votee?s?|adoptee?s?|approuvee?s?|decide)(?![\p{L}])/u;
+/** Une décision à venir, refusée ou niée n'est pas un vote : à voter, non adopté, rejeté, n'est pas voté... */
+const NOT_VOTED = /(?<![\p{L}])(?:(?:ne|n')\s*\p{L}+\s+(?:pas|point|jamais)|pas\s+(?:encore\s+)?(?:vot|adopt|approuv)|non[\s-]+(?:vot|adopt|approuv)|rejet|refus|ajourn|a\s+voter|soumis\s+au\s+vote|mis\s+au\s+vote\s+lors|prochaine\s+assemblee|sera\s+(?:vot|soumis|present))/u;
+const isVoted = (quote: string) => VOTE.test(quote) && !NOT_VOTED.test(quote);
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -251,7 +254,7 @@ export function checkSentence(p: ProposedSentence, docs: readonly SourceDocument
   const page = normalizedPages[p.document]![p.page - 1]!;
   if (!page.includes(quote)) return { ok: false, reason: 'extrait_absent_de_la_page' };
   if (!sentenceMatchesQuote(p.text, p.quote)) return { ok: false, reason: 'phrase_sans_rapport_avec_l_extrait' };
-  if (p.topic === 'travaux_votes' && !VOTE.test(strip(quote))) return { ok: false, reason: 'vote_absent_de_l_extrait' };
+  if (p.topic === 'travaux_votes' && !isVoted(strip(quote))) return { ok: false, reason: 'vote_absent_de_l_extrait' };
   const cite: Citation = { documentRef: doc.ref, kind: doc.kind, page: p.page, quote: p.quote.trim(), meetingDay: doc.meetingDay ?? null };
   if (p.works === undefined) return { ok: true, value: { topic: p.topic, text: p.text.trim(), cite } };
   // Des travaux : seulement votés ou à l'étude, montant et échéance lus dans l'extrait.

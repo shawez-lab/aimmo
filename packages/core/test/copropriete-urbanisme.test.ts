@@ -11,7 +11,7 @@ const PV: SourceDocument = {
   pages: [
     "Procès-verbal de l'assemblée générale ordinaire de la résidence Les Tilleuls de l'Exemple.\nQuorum atteint : 6 120 / 10 000 tantièmes.",
     "Résolution n° 7 : l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 € TTC.\nAppel de fonds exigible le 1er septembre 2027. Adoptée à la majorité de l'article 25.\nRésolution n° 8 adoptée : réfection de la toiture-ter-\nrasse, budget de 12 500 €, travaux à réaliser avant le 30/04/2027.",
-    "Résolution n° 9 : étude d'un remplacement de l'ascenseur, devis à présenter à la prochaine assemblée.\nAucune procédure judiciaire n'est en cours contre le syndicat.\nRésolution n° 10 adoptée : changement des boîtes aux lettres de l'entrée.\nRésolution n° 25 : travaux de peinture votés sans budget fixé, à réaliser le 11/3/2027.",
+    "Résolution n° 9 : étude d'un remplacement de l'ascenseur, devis à présenter à la prochaine assemblée.\nAucune procédure judiciaire n'est en cours contre le syndicat.\nRésolution n° 10 adoptée : changement des boîtes aux lettres de l'entrée.\nRésolution n° 25 : travaux de peinture votés sans budget fixé, à réaliser le 11/3/2027.\nRésolution n° 26 : le remplacement de l’ascenseur n’est pas adopté. Le remplacement de l’ascenseur est à voter lors de la prochaine assemblée.",
   ],
 };
 const FICHE: SourceDocument = { kind: 'fiche_synthetique', ref: 'dossiers/test/fiche.pdf', pages: ['Fiche synthétique. Montant du fonds de travaux au 31/12/2026 : 9 400 €. Charges courantes du budget prévisionnel : 21 000 € par an.'] };
@@ -71,6 +71,9 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
       S({ topic: 'travaux_votes', text: 'Des travaux de peinture sont votés', document: 0, page: 3, quote: 'travaux de peinture votés sans budget fixé, à réaliser le 11/3/2027', works: { dueOn: '2027-03-01' } }),
       // Des travaux « votés » dont l'extrait ne dit aucun vote.
       S({ topic: 'travaux_votes', text: "Le remplacement de l'ascenseur est voté", document: 0, page: 3, quote: "étude d'un remplacement de l'ascenseur" }),
+      // Une décision refusée ou à venir n'est pas un vote.
+      S({ topic: 'travaux_votes', text: "Le remplacement de l'ascenseur est voté", document: 0, page: 3, quote: "le remplacement de l'ascenseur n'est pas adopté" }),
+      S({ topic: 'travaux_votes', text: "Le remplacement de l'ascenseur est voté", document: 0, page: 3, quote: "Le remplacement de l'ascenseur est à voter lors de la prochaine assemblée" }),
     ];
     const r = await t.copro.prepare(t.agent, t.fileId, { documents: [PV, FICHE, PLU], sentences: [...sentences(), ...bad], publicData: publicData() });
     if (!r.ok) throw new Error(r.code);
@@ -88,6 +91,8 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
       { index: 17, reason: 'montant_absent_de_l_extrait' },
       { index: 18, reason: 'echeance_absente_de_l_extrait' },
       { index: 19, reason: 'vote_absent_de_l_extrait' },
+      { index: 20, reason: 'vote_absent_de_l_extrait' },
+      { index: 21, reason: 'vote_absent_de_l_extrait' },
     ]);
     // Chaque phrase gardée renvoie à son document et à une page où son extrait se lit.
     const docs = [PV, FICHE, PLU];
