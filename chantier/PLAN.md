@@ -111,7 +111,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucun prix ni mention inventés sur un support (test) ; QR qui mène à la bonne fiche (test) ; rien n'est commandé ni payé sans validation de l'agent.
 
 ### HX08 · Remises négociées pour les agents du réseau
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/remises/`, migration `1806`, règles R266 et R267. Remise rangée par la direction seule, avec fournisseur, source et date de fin ; échue, elle disparaît seule le lendemain (jour de Paris), sans passage ; retrait ajouté, rien ne change. Moment lu dans la base : estimation, mandat inscrit, annonce en vente, compromis en préparation (étape `compromis_en_preparation` du dossier vivant), acte de moins de 90 jours ; sans moment sûr (offre acceptée sans compromis commencé, annonce sous offre, vendue ou retirée), rien n'est proposé. Diagnostiqueur, déménageur, artisan : remise pour le client seulement (R76, art. R271-3 CCH), diagnostiqueur pris dans l'annuaire, certifié ce jour-là et dans la zone ; ni courtier, ni banque, ni notaire. Remises pour le client dans un ordre tiré au sort (R75). Relecture forte : 2 P1 corrigés ; Codex : 1 P0 corrigé, puis rien à signaler (#395).
+- Reste : écran des remises et branchement au Worker (`app.ts`). Test instable vu en CI, sans lien : `dossier-commerce.test.ts` CE23 « le même code rouvre ensuite le dossier » (« jeton »), vert à la relance.
 - Objectif : comme « Mes remises » : les offres négociées pour les agents (diagnostiqueurs, photographes, assurances, outils). Jamais vu : l'appli propose la bonne remise au bon moment du dossier, par exemple le diagnostiqueur au moment du mandat.
 - Critères : chaque remise a sa source et sa date de fin, retirée seule à expiration (test).
 
