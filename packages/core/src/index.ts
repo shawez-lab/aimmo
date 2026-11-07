@@ -56,6 +56,7 @@ export * as remises from './remises/index.ts';
 export * as actualites from './actualites/index.ts';
 // HX10 sous son propre nom, comme HX09.
 export * as cles from './cles/index.ts';
+export * as pige from './pige/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
