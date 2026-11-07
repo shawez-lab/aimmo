@@ -6,7 +6,7 @@
  *   À la validation, le support est tiré de nouveau : s'il a changé (nouvelle version de l'annonce, nouveau prix, bien
  *   vendu, autre page), la commande est périmée et rien ne part [R264].
  * - Le prix d'une commande vient du dernier tarif réglé par la direction pour ce support et cette quantité, encore en
- *   vigueur, jamais d'une saisie ; un tarif changé ou échu depuis la préparation périme la commande [R264].
+ *   vigueur, jamais d'une saisie, et la commande ne part qu'à l'imprimeur nommé par ce tarif ; un tarif changé ou échu depuis la préparation périme la commande [R264].
  * - Préparer ne commande rien. Seul l'agent qui a préparé valide, d'un geste ; l'envoi est réservé avant de partir,
  *   donc jamais deux envois d'une commande. AIMMO ne paie rien : l'imprimeur facture l'agent au prix du tarif [R265].
  * - Aucune donnée personnelle au journal : seulement des identifiants internes [R13].
@@ -69,6 +69,7 @@ interface TariffRow {
   id: string;
   price_cents: number;
   valid_until: string;
+  printer: string;
 }
 
 interface OrderRow {
@@ -145,10 +146,10 @@ export class Boutique {
   /** Le tarif qui fait foi : le dernier réglé pour ce support et cette quantité, s'il est encore en vigueur. Jamais un plus ancien. */
   private async tariff(networkId: string, support: Support, quantity: number): Promise<TariffRow | null> {
     const t = await this.db.first<TariffRow>(
-      'SELECT id, price_cents, valid_until FROM shop_tariffs WHERE network_id = ? AND support = ? AND quantity = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
+      'SELECT id, price_cents, valid_until, printer FROM shop_tariffs WHERE network_id = ? AND support = ? AND quantity = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
       [networkId, support, quantity],
     );
-    return t && t.valid_until >= this.today() ? { id: t.id, price_cents: Number(t.price_cents), valid_until: t.valid_until } : null;
+    return t && t.valid_until >= this.today() ? { id: t.id, price_cents: Number(t.price_cents), valid_until: t.valid_until, printer: t.printer } : null;
   }
 
   private async agentCard(agentId: string): Promise<AgentCard | null> {
@@ -220,6 +221,8 @@ export class Boutique {
     if (!preview.ok) return preview;
     const tariff = await this.tariff(viewer.networkId, preview.support, input.quantity);
     if (!tariff) return { ok: false, rule: null, code: 'pas_de_tarif' };
+    // Le prix est celui du devis d'un imprimeur : la commande ne part qu'à cet imprimeur-là [R264].
+    if (tariff.printer !== this.printer.name) return { ok: false, rule: null, code: 'imprimeur_different' };
     const hash = await sha256(preview.html);
     const { changes } = await this.db.run(
       `INSERT INTO shop_orders (id, network_id, agent_id, property_id, support, quantity, listing_version_id, target_url, html, content_hash, tariff_id, price_cents, prepared_by, prepared_at)
@@ -253,6 +256,7 @@ export class Boutique {
     if ((await sha256(now.html)) !== order.content_hash || now.html !== order.html) return { ok: false, rule: null, code: 'support_perime' };
     const tariff = await this.tariff(order.network_id, order.support, Number(order.quantity));
     if (!tariff || tariff.id !== order.tariff_id || tariff.price_cents !== Number(order.price_cents)) return { ok: false, rule: null, code: 'tarif_change' };
+    if (tariff.printer !== this.printer.name) return { ok: false, rule: null, code: 'imprimeur_different' };
 
     const at = this.now().toISOString();
     if (!resumed) {

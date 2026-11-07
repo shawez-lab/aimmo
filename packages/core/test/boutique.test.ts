@@ -113,6 +113,8 @@ describe('HX07 · supports tirés du bien', () => {
     const r = flyer();
     expect(r.ok && r.html).toContain('<span class="virtuel">Aménagement virtuel</span>');
     expect(r.ok && r.html).toContain('alt="Photo du bien, aménagement virtuel"');
+    // L'imprimeur reçoit le seul HTML : la photo a son adresse entière, sur le site de la page du bien.
+    expect(r.ok && r.html).toContain('src="https://reseau.exemple.test/medias/biens/b1/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg"');
   });
 
   it('[R263] le code QR mène à la page du bien, et le mot-clé porte sa référence', () => {
@@ -163,7 +165,7 @@ describe('HX07 · supports tirés du bien', () => {
 
 /** Un imprimeur de test : il garde ce qu'il reçoit, et peut tomber en panne. */
 class FakePrinter implements Imprimeur {
-  readonly name = 'imprimeur-test';
+  readonly name = 'Imprimerie exemple';
   received: PrintOrder[] = [];
   fail = false;
   async order(o: PrintOrder): Promise<{ ref: string }> {
@@ -256,6 +258,17 @@ describeWithSqlite('HX07 · la boutique de l’agent', () => {
     expect((await t.tariff('flyer', 100, 5200, '2027-03-02')).ok).toBe(true);
     t.setClock(new Date('2027-03-03T08:00:00.000Z'));
     expect(await prep('commande-0004')).toEqual({ ok: false, rule: null, code: 'pas_de_tarif' });
+  });
+
+  it('[R264] la commande ne part qu’à l’imprimeur nommé par le tarif qui fixe son prix', async () => {
+    const t = await setupBoutique();
+    await t.boutique.setTariff(t.direction, { support: 'flyer', quantity: 100, priceCents: 4900, printer: 'Autre imprimerie', source: 'Devis n° D-2', validUntil: '2027-12-31' });
+    expect(await t.boutique.prepare(t.agent, { requestId: 'commande-0070', support: 'flyer', propertyId: t.propertyId, quantity: 100 })).toEqual({ ok: false, rule: null, code: 'imprimeur_different' });
+    await t.tariff('flyer', 100, 4900);
+    await t.boutique.prepare(t.agent, { requestId: 'commande-0071', support: 'flyer', propertyId: t.propertyId, quantity: 100 });
+    const other = new Boutique(t.db, t.acces, t.journal, { now: t.now, printer: { name: 'Autre imprimerie', order: async () => ({ ref: 'X' }) }, referencement: t.referencement });
+    expect(await other.validate(t.agent, 'commande-0071')).toEqual({ ok: false, rule: null, code: 'imprimeur_different' });
+    expect(await t.boutique.validate(t.agent, 'commande-0071')).toMatchObject({ ok: true });
   });
 
   it('[R265] préparer ne commande rien ; le geste de l’agent envoie exactement le support vu, une seule fois', async () => {

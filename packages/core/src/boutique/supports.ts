@@ -81,7 +81,8 @@ const CSS =
 .carte{width:85mm;height:55mm;padding:5mm;grid-template-columns:1fr auto;gap:2mm 4mm}.carte .nom{font:700 12pt/1.1 var(--police-titre);margin:0}
 .carte p{margin:0;font-size:8pt}.carte .qr svg{width:20mm;height:20mm}.carte .titre{color:var(--accent);font-weight:600}`;
 
-const mediaUrl = (ref: string): string => `/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
+/** L'adresse entière d'une photo, sur le site de la page du bien : l'imprimeur reçoit le seul HTML. */
+const mediaUrl = (origin: string, ref: string): string => `${origin}/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
 
 /**
  * Les nombres d'un texte, sans séparateur de milliers : « 210 000 € » donne « 210000 ». Un séparateur ne compte que
@@ -174,7 +175,7 @@ export function renderSupport(input: SupportInput): RenderedSupport | SupportRef
     // La première photo de l'annonce publiée, avec sa mention d'aménagement virtuel sur l'image [R48].
     const first = p.media.find((m) => m.kind === 'photo');
     const photo = first
-      ? `<div class="cadre"><img class="photo" src="${escapeHtml(mediaUrl(first.ref))}" alt="${first.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}">${first.overlay ? `<span class="virtuel">${escapeHtml(first.overlay)}</span>` : ''}</div>`
+      ? `<div class="cadre"><img class="photo" src="${escapeHtml(mediaUrl(new URL(input.url).origin, first.ref))}" alt="${first.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}">${first.overlay ? `<span class="virtuel">${escapeHtml(first.overlay)}</span>` : ''}</div>`
       : '';
     body =
       `<section class="support ${input.support}"><p class="marque">AIMMO · ${escapeHtml(SUPPORT_LABEL[input.support])}</p><div class="frise" aria-hidden="true"></div>` +
