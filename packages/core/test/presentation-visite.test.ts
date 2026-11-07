@@ -170,6 +170,8 @@ describe('HX13 · notes et compte rendu, par le code seul', () => {
     expect(confidentialIn('<h2>Chez Marc</h2>', { names: ['Marc-Victor'], values: [] })).toEqual(['marc']);
     expect(confidentialIn('<h2>Vendeur d&#39;accord à 230 000</h2>', { names: [], values: ["Vendeur d'accord à 230 000"] })).toEqual(["vendeur d'accord a 230 000"]);
     expect(confidentialIn('<img alt="Victor">', { names: ['Victor'], values: [] })).toEqual(['victor']);
+    expect(confidentialIn('<p>Contacter au 06 11 22 33 44</p>', { names: [], values: ['+33611223344'] })).toEqual(['33611223344']);
+    expect(confidentialIn('<p>Contacter au +33 6 11 22 33 44</p>', { names: [], values: ['0611223344'] })).toEqual(['0611223344']);
     expect(confidentialIn('<p>Maison de 4 pièces</p>', { names: ['Inès Durand'], values: ['acheteur1@example.test'] })).toEqual([]);
   });
 });
@@ -232,6 +234,9 @@ describeWithSqlite('HX13 · mode présentation pendant la visite', () => {
     expect(r.presentation.leftOut).toEqual([{ propertyId: t.b2.property.id, reason: 'confidentiel' }]);
     expect(r.presentation.html).not.toContain('Proprio');
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces de Victor.';
+    expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
+    // Le numéro du vendeur, rangé au format international, n'apparaît pas au format national.
+    t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison, contacter au 06 11 22 33 44';
     expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
     // La note du projet du vendeur, recopiée dans l'annonce, n'est jamais montrée.
     const owner = await t.store.createProject({ networkId: t.network.id, agentId: t.sam.id, personId: t.b1.seller.id, kind: 'sell' });

@@ -184,6 +184,9 @@ export function confidentialIn(html: string, secrets: { names: readonly string[]
     if (x.length >= 4 && text.includes(x)) found.push(x);
     const digits = x.replace(/[^\d]/g, '');
     if (digits.length >= 8 && flat.includes(digits)) found.push(digits);
+    // Un numéro rangé au format international se lit aussi au format national, et l'inverse : « +33 6 11… » comme
+    // « 06 11… ». Les 9 derniers chiffres suffisent à le reconnaître sous l'un ou l'autre.
+    else if (digits.length >= 9 && flat.includes(digits.slice(-9))) found.push(digits);
   }
   return [...new Set(found)];
 }
