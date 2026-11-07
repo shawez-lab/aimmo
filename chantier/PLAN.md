@@ -146,7 +146,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : saisie hors ligne puis envoi sans perte ni doublon (test) ; photo trop sombre ou floue signalée (test).
 
 ### HX13 · Mode présentation pendant la visite
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/presentation/`, migration `1811`, règles R279 à R281. La page ne prend que la dernière version publiée des annonces (titre, prix, mentions publiées, photo, référence) ; les mentions publiées restent, la loi les veut sur toute présentation [R43]. Bien visité en vente ou sous offre et diffusable ; au plus 4 autres biens en vente, disponibles, diffusables, qui répondent à la recherche et pas déjà visités, raisons sans chiffre de la recherche. Relecture avant rendu sur le texte affiché et les attributs, contre chaque dossier montré et la visite : noms (coupés sur la ponctuation), coordonnées (numéro national comme international), numéros de mandat, notes de visite, dictée, notes des projets. Notes par pièce (aimée, moyenne, pas aimée) de la liste de cadrage, une fois, figées avec leur liste de pièces et la réponse du premier envoi. Compte rendu par le code seul, jamais « prêt à faire une offre », pièces regroupées au-delà de 5, envoyé par T06 seulement après validation de l'agent et jamais à la place d'une dictée ; prochaine proposition : contre-visite si intérêt fort, sinon premier bien qui répond. Relecture forte : 1 P0 corrigé ; Codex : 6 P0 corrigés en trois tours, puis rien à signaler (#407).
+- Reste : écran du téléphone et branchement au Worker (`app.ts`).
 - Objectif : comme Live Visit et le mode présentation : montrer à l'acquéreur, sur le téléphone, le bien et les biens qui lui correspondent, sans montrer les données de l'agence. Jamais vu : à la fin, l'acquéreur note chaque pièce d'un geste, et l'appli en tire le compte rendu au vendeur et la prochaine proposition.
 - Critères : aucune donnée confidentielle (vendeur, honoraires, notes) visible en mode présentation (test).
 
