@@ -102,7 +102,9 @@ const isDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) 
 const text = (v: unknown, min: number, max: number): string | null => {
   if (typeof v !== 'string') return null;
   const t = v.trim().replace(/\s+/g, ' ');
-  return t.length >= min && t.length <= max ? t : null;
+  // En caractères, comme `length()` de la base : un emoji compte pour un.
+  const n = [...t].length;
+  return n >= min && n <= max ? t : null;
 };
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -129,8 +131,9 @@ export function normaliseSourceUrl(input: unknown): string | null {
   u.hash = '';
   for (const key of [...u.searchParams.keys()]) if (TRACKING.test(key)) u.searchParams.delete(key);
   u.searchParams.sort();
-  let out = u.toString();
-  if (u.pathname.length > 1 && u.pathname.endsWith('/') && u.search === '') out = out.slice(0, -1);
+  // Sans barre finale, avec ou sans paramètres : « /a/?b=2 » et « /a?b=2 » sont la même source.
+  if (u.pathname.length > 1) u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+  const out = u.toString();
   return out.length <= 500 ? out : null;
 }
 
@@ -270,8 +273,9 @@ export class Actualites {
     if (!target) return { ok: false, rule: 'R269', code: 'bad_target' };
     const id = this.newId();
     const r = await this.db.run(
-      `INSERT OR IGNORE INTO network_news (id, network_id, topic, title, impact, source_name, source_url, source_date, target, published_on, set_by, set_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO network_news (id, network_id, topic, title, impact, source_name, source_url, source_date, target, published_on, set_by, set_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (network_id, source_url) DO NOTHING`,
       [id, viewer.networkId, input.topic, title, impact, sourceName, sourceUrl, input.sourceDate, JSON.stringify(target), today, this.actor(viewer), this.now().toISOString()],
     );
     // La même source, déjà rangée : jamais deux fois la même actualité [R269].
@@ -287,7 +291,7 @@ export class Actualites {
     if (!n) return { ok: false, rule: null, code: 'unknown_news' };
     const reason = text(reasonInput, 2, 200);
     if (!reason) return { ok: false, rule: null, code: 'bad_reason' };
-    const r = await this.db.run('INSERT OR IGNORE INTO network_news_withdrawals (news_id, reason, withdrawn_by, withdrawn_at) VALUES (?, ?, ?, ?)', [newsId, reason, this.actor(viewer), this.now().toISOString()]);
+    const r = await this.db.run('INSERT INTO network_news_withdrawals (news_id, reason, withdrawn_by, withdrawn_at) VALUES (?, ?, ?, ?) ON CONFLICT (news_id) DO NOTHING', [newsId, reason, this.actor(viewer), this.now().toISOString()]);
     if (r.changes === 0) return { ok: false, rule: null, code: 'deja_retiree' };
     await appendEvent(this.journal, { type: 'actualite.retiree', actor: this.actor(viewer), subject: `news:${newsId}`, data: { rule: 'R269' } }, this.now);
     return { ok: true };
@@ -394,7 +398,7 @@ export class Actualites {
         if (concerned.length === 0) continue;
       }
       // Réservée avant d'être rendue : deux fils demandés en même temps ne la montrent qu'une fois.
-      const res = await this.db.run('INSERT OR IGNORE INTO network_news_deliveries (news_id, agent_id, network_id, concerned, shown_at) VALUES (?, ?, ?, ?, ?)', [v.id, viewer.userId, viewer.networkId, concerned.length, this.now().toISOString()]);
+      const res = await this.db.run('INSERT INTO network_news_deliveries (news_id, agent_id, network_id, concerned, shown_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (news_id, agent_id) DO NOTHING', [v.id, viewer.userId, viewer.networkId, concerned.length, this.now().toISOString()]);
       if (res.changes === 0) continue;
       items.push({ ...v, concerned });
     }

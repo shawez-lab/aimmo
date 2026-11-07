@@ -48,9 +48,11 @@ async function setup() {
 
 describe('HX09 · adresse de la source', () => {
   it('[R268] une seule forme par source : sans suivi, sans ancre, sans barre finale ; https public seulement', () => {
-    expect(normaliseSourceUrl('https://Exemple.test/a/?utm_source=x&b=2&fbclid=y#haut')).toBe('https://exemple.test/a/?b=2');
+    expect(normaliseSourceUrl('https://Exemple.test/a/?utm_source=x&b=2&fbclid=y#haut')).toBe('https://exemple.test/a?b=2');
     expect(normaliseSourceUrl('https://exemple.test/a/')).toBe('https://exemple.test/a');
     expect(normaliseSourceUrl('https://exemple.test/a')).toBe('https://exemple.test/a');
+    expect(normaliseSourceUrl('https://exemple.test/a/?b=2')).toBe(normaliseSourceUrl('https://exemple.test/a?b=2'));
+    expect(normaliseSourceUrl('https://exemple.test/')).toBe('https://exemple.test/');
     for (const bad of ['http://exemple.test/a', 'https://moi:secret@exemple.test/a', 'https://exemple.test:8443/a', 'https://192.168.0.1/a', 'https://localhost/a', 'ftp://exemple.test', 'exemple.test/a', 'https://exemple.test/a b', '', 42]) {
       expect(normaliseSourceUrl(bad)).toBeNull();
     }
@@ -103,6 +105,17 @@ describeWithSqlite('HX09 · actualités utiles', () => {
     const t = await setup();
     await t.add({ sourceUrl: 'https://exemple.test/loi/1' });
     expect(await t.actu.publish(t.direction, { ...t.base(), sourceUrl: 'https://EXEMPLE.test/loi/1/?utm_source=lettre#art-2' })).toEqual({ ok: false, rule: 'R269', code: 'deja_rangee' });
+    // Barre finale avec des paramètres : la même source aussi.
+    await t.add({ sourceUrl: 'https://exemple.test/loi/2/?article=3' });
+    expect(await t.actu.publish(t.direction, { ...t.base(), sourceUrl: 'https://exemple.test/loi/2?article=3' })).toEqual({ ok: false, rule: 'R269', code: 'deja_rangee' });
+  });
+
+  it('[R268] une longueur se compte en caractères, comme la base : jamais un refus pris pour un doublon', async () => {
+    const t = await setup();
+    expect(await t.actu.publish(t.direction, { ...t.base(), title: '🏠🏠' })).toEqual({ ok: false, rule: null, code: 'bad_title' });
+    const id = await t.add({ title: '🏠🏠🏠🏠' });
+    expect(await t.actu.withdraw(t.direction, id, '😀')).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    expect(await t.actu.withdraw(t.direction, id, '😀😀')).toEqual({ ok: true });
   });
 
   it('[R269] une actualité n’est montrée qu’une fois à un agent, jamais deux, même demandée deux fois en même temps', async () => {
