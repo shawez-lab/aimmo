@@ -38,6 +38,7 @@ import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
+import { frenchDay } from './recommande.ts';
 import { ONLINE_SIGNATURE_PURPOSE } from './signature-en-ligne.ts';
 
 export const ANNEX_KINDS = ['diagnostics', 'etat_risques', 'copropriete', 'mesurage', 'mobilier'] as const;
@@ -153,13 +154,28 @@ export async function plainWords(kind: AnnexKind, role: SignerRole): Promise<{ t
 }
 
 /** Le texte du rappel, écrit par le code : prénom et nom de l'agent, aucun chiffre, aucun prix, aucune adresse. */
-export function reminderText(input: { firstName: string; agentName: string; n: number }): string {
-  // Chaque rappel a son texte : le contrôle central ne laisse jamais partir deux fois le même message [R05].
+export function reminderText(input: { firstName: string; agentName: string; n: number; preparedAt: Date }): string {
+  // Chaque rappel a son texte, et chaque circuit le sien par son heure de préparation : le contrôle central ne laisse
+  // jamais partir deux fois le même message à la personne [R05].
   const opening = ['Votre signature est attendue', 'Petit rappel : votre signature est toujours attendue', 'Dernier rappel : votre signature est toujours attendue'][Math.min(input.n, MAX_REMINDERS) - 1];
+  const p = preparedParts(input.preparedAt);
   return [
     `Bonjour ${input.firstName},`,
-    `${opening} sur les documents de votre vente. Votre agent, ${input.agentName}, peut vous les présenter quand vous le souhaitez, avec ce que chaque annexe change pour vous.`,
+    `${opening} sur les documents de votre vente préparés le ${frenchDay(p.day)} à ${p.hour} h ${String(p.minute).padStart(2, '0')}. Votre agent, ${input.agentName}, peut vous les présenter quand vous le souhaitez, avec ce que chaque annexe change pour vous.`,
   ].join('\n\n');
+}
+
+/** Le jour, l'heure et la minute de la préparation, à Paris. */
+function preparedParts(at: Date): { day: string; hour: number; minute: number } {
+  const l = localTime(at, DEFAULT_SEND_SETTINGS.timeZone);
+  return { day: l.date, hour: Math.floor(l.minutes / 60), minute: l.minutes % 60 };
+}
+
+/** Les chiffres que porte le rappel [R10]. */
+function reminderFigures(at: Date): (string | number)[] {
+  const p = preparedParts(at);
+  const [y, , d] = p.day.split('-').map(Number) as [number, number, number];
+  return [d, y, p.hour, String(p.minute).padStart(2, '0'), p.minute];
 }
 
 interface CircuitRow {
@@ -520,9 +536,10 @@ export class CircuitSignature {
               kind: 'reminder',
               purpose: ONLINE_SIGNATURE_PURPOSE,
               subject,
+              // Le texte du code, sans IA ; le contrôle central y ajoute la mention due [R06].
+              conversationId: `circuit:${c.id}`,
               fallbackTexts: [text],
-              figures: [],
-              asWritten: { refuseWithoutMention: false, thread: `circuit:${c.id}` },
+              figures: reminderFigures(new Date(c.prepared_at)),
             })
           : null;
         const ok = result?.status === 'sent' && result.messageId !== null;
@@ -544,7 +561,7 @@ export class CircuitSignature {
       [c.file_id],
     );
     if (!firstName || !agent) return null;
-    return reminderText({ firstName, agentName: `${agent.first_name} ${agent.last_name}`, n });
+    return reminderText({ firstName, agentName: `${agent.first_name} ${agent.last_name}`, n, preparedAt: new Date(c.prepared_at) });
   }
 
   private async view(circuitId: string): Promise<Circuit | null> {

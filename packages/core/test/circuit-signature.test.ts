@@ -146,10 +146,14 @@ describeWithSqlite('HX37 · ordre des signataires, annexes groupées et rappels'
     t.setClock(new Date('2027-03-03T14:00:00.000Z'));
     expect(await t.circuit.remind(t.network.id)).toEqual({ sent: 1, refused: 0, skipped: null });
     expect(await t.messages()).toBe(1);
-    const body = await t.db.first<{ body: string; person_id: string }>("SELECT body, person_id FROM messages WHERE conversation_id = ?", [`circuit:${c.id}`]);
+    const body = await t.db.first<{ body: string; person_id: string; with_mention: number }>(
+      'SELECT m.body, m.person_id, l.with_mention FROM messages m JOIN send_log l ON l.message_id = m.id WHERE m.conversation_id = ?',
+      [`circuit:${c.id}`],
+    );
     expect(body?.person_id).toBe(t.sellerId);
-    expect(body?.body).toContain('Votre signature est attendue sur les documents de votre vente.');
-    expect(body?.body).not.toMatch(/\d/);
+    expect(body?.body).toContain('Votre signature est attendue sur les documents de votre vente préparés le 1er mars 2027 à 13 h 00.');
+    // Le premier message automatique de la conversation porte la mention de l'assistant [R06].
+    expect(body?.with_mention).toBe(1);
     // Le même passage relancé : rien ne repart.
     expect(await t.circuit.remind(t.network.id)).toEqual({ sent: 0, refused: 0, skipped: null });
     // Vendredi 5 mars à 22 h, puis dimanche 7 mars à 11 h à Paris : rien n'est tenté.
@@ -192,6 +196,19 @@ describeWithSqlite('HX37 · ordre des signataires, annexes groupées et rappels'
     expect(await t.circuit.remind(t.network.id)).toEqual({ sent: 0, refused: 0, skipped: null });
     expect(await t.messages()).toBe(1);
     expect(await t.db.all("SELECT kind, n, rule FROM signature_circuit_events WHERE circuit_id = ? AND kind LIKE 'rappel%'", [c.id])).toEqual([{ kind: 'rappel', n: 1, rule: 'R467' }]);
+  });
+
+  it('[R467] [R05] deux circuits pour la même personne ont chacun leurs rappels', async () => {
+    const t = await setup();
+    const c = await t.prepare([{ personId: t.sellerId, group: 1 }]);
+    t.setClock(new Date('2027-03-01T13:30:00.000Z'));
+    const d = await t.circuit.prepare(t.agent, t.fileId, { document: { ref: t.upload(), hash: H('9') }, annexes: [], signers: [{ personId: t.sellerId, group: 1 }] });
+    if (!d.ok) throw new Error(d.code);
+    for (const day of ['2027-03-03T14:00:00.000Z', '2027-03-05T14:00:00.000Z', '2027-03-08T14:00:00.000Z']) {
+      t.setClock(new Date(day));
+      expect(await t.circuit.remind(t.network.id), day).toEqual({ sent: 2, refused: 0, skipped: null });
+    }
+    expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM signature_circuit_events WHERE circuit_id IN (?, ?) AND kind = 'rappel'", [c.id, d.value.id])).toEqual({ n: 6 });
   });
 
   it(`[R467] [R03] un rappel sans accord est refusé par le contrôle central ; ${MAX_REMINDERS} rappels au plus ; rien quand tous ont signé`, async () => {
