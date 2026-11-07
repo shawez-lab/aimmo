@@ -132,7 +132,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : une clé ne peut être chez deux personnes à la fois (test) ; tout mouvement est au journal (test).
 
 ### HX11 · Pige des annonces de particuliers
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Ma Pige (Pigimmo, Directannonces) : repérer les biens vendus par des particuliers dans le secteur. Jamais vu : pour chacun, l'écart avec le prix du marché et un premier message utile prêt à valider, jamais envoyé seul ; et la mention « pas d'agence » est toujours respectée.
 - Critères : une annonce marquée « pas d'agence » n'entre jamais dans la file (test) ; contrôle central et accords (R01 à R05) ; aucun envoi automatique.
 
