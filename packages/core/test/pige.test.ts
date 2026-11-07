@@ -135,6 +135,19 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: false, rule: 'R273' });
   });
 
+  it('[R274] le prix du moment est celui de la dernière relève, tous sites réunis', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', priceEur: 252_000 })]);
+    s.at(MONDAY_10H + 2 * DAY);
+    expect((await s.pige.ingest(s.network.id, [a])).added).toBe(1);
+    expect((await s.pige.ingest(s.network.id, [a])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([279_000]);
+  });
+
   it('[R274] une annonce revenue à son ancien prix est relevée à ce prix', async () => {
     const s = await setup();
     const one = s.ad();
@@ -278,7 +291,8 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     // Lundi, 21 h à Paris : hors des heures.
     s.at(MONDAY_10H + 11 * 3_600_000);
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R01' });
-    s.at(MONDAY_10H);
+    // Samedi, 10 h : permis [R01].
+    s.at(MONDAY_10H + 5 * DAY);
     const v = await s.pige.validate(s.agentAlex, p.draftId, 'annonce');
     expect(v).toEqual({ ok: true, body: p.body, channel: 'annonce' });
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R05', code: 'deja_remis' });

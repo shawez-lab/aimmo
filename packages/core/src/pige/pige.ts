@@ -28,7 +28,7 @@ import { communeSlug } from '../attirer/liste-biens.ts';
 import type { CommunePrices } from '../attirer/prix-versions.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { decideSend, DEFAULT_SEND_SETTINGS } from '../envoi/decision.ts';
-import { isWorkingDay, localTime } from '../envoi/horaires.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { checkText, plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -351,10 +351,11 @@ export class Pige {
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
-            AND coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?`,
+            AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
+              OR coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?)`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
-          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur,
+          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, fingerprint, ad.priceEur,
         ],
       );
       added += r.changes;
@@ -537,7 +538,6 @@ export class Pige {
     const local = localTime(at, DEFAULT_SEND_SETTINGS.timeZone);
     const inHours =
       DEFAULT_SEND_SETTINGS.initiativeDays.includes(local.weekday) &&
-      isWorkingDay(local) &&
       local.minutes >= DEFAULT_SEND_SETTINGS.initiativeFrom &&
       local.minutes < DEFAULT_SEND_SETTINGS.initiativeUntil;
     if (!inHours) return this.refused(viewer, d.id, { ok: false, rule: 'R01', code: 'hors_heures' });
