@@ -250,7 +250,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque critère renvoie aux mots de la phrase (test) ; seuls des biens diffusables sont montrés (test) ; une fiche acquéreur n'est créée qu'avec l'accord de la personne (test).
 
 ### HX29 · Points d'intérêt et trajets autour du bien
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#398), R425 à R428, rien en base. Décidé, lecture prudente : données de plus de deux ans écartées ; estimation à vol d'oiseau (détour compté) à pied et en voiture seulement, marquée ; transport jamais estimé, dit « non calculé » ; temps arrondis à 5 min au-dessus, aucune distance en mètres, zone publiée = centre d'une case de 0,005° ; adresse de source publiée sans paramètres ni ancre, chemin portant une position refusé ; nom de lieu qui reprend la rue du bien remplacé par sa sorte. Codex 4 P0 et 1 P2 corrigés. Restent : routes, page publique du bien et écran de l'agent (voie 1, `app.ts`) ; choix d'une vraie source de lieux et des horaires du réseau de transport.
 - Qui : Claude · Relecture : normale · Dépend de : HX28
 - Objectif : comme Apimo : écoles, commerces, transports autour du bien. Jamais vu : les temps de trajet à pied, en transport et en voiture vers ce qui compte pour cet acquéreur, avec la source et la date de chaque donnée, sans jamais révéler l'adresse exacte du bien.
 - Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
