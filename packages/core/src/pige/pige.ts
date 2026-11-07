@@ -416,14 +416,15 @@ export class Pige {
     const key = readPropertyKey(raw);
     const keys: string[] = [];
     if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
-    if (key) keys.push(await adFingerprint(key));
+    // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
+    if (key) keys.push(...(await this.linkedKeys(networkId, await adFingerprint(key))));
     if (keys.length === 0) return false;
     let closed = false;
     for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
       const hit = await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(keys)]);
       if (!hit) continue;
       closed = true;
-      const all = [...keys, ...(key ? await nearFingerprints(key) : [])];
+      const all = [...new Set([...keys, ...(key ? await nearFingerprints(key) : [])])];
       for (const f of all) {
         await this.db.run(
           table === 'pige_no_agency'

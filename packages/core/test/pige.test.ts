@@ -369,6 +369,18 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     }
   });
 
+  it('[R273] un refus rangé sous la seule clé d’une annonce suit le bien jusqu’à l’annonce incomplète d’un autre site', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, noAgency: true }]);
+    const b = s.ad({ source: 'Site B' });
+    await s.pige.ingest(s.network.id, [{ ...b, priceEur: undefined }]);
+    expect((await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 95 }])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();
