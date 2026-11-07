@@ -300,7 +300,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à par
 - Critères : chaque rubrique de l'état cite sa source et sa date (test) ; un état de plus de 6 mois à la date de l'acte est signalé (test) ; aucun champ de la déclaration n'est rempli sans donnée du dossier (test).
 
 ### HX35 · Copropriété et urbanisme résumés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Talqor et Hektor : résumé des procès-verbaux de copropriété et du plan local d'urbanisme, données de copropriété et de syndic préremplies. Jamais vu : chaque phrase du résumé renvoie à la page du document d'où elle vient, les données publiques du registre des copropriétés et la zone du plan d'urbanisme sont lues avec leur date, et les travaux votés à venir sont signalés à l'acquéreur.
 - Critères : aucune phrase du résumé sans renvoi à sa page (test) ; les données publiques citent leur source et leur date (test) ; le résumé dit « non trouvé » plutôt que d'inventer (test).
 
