@@ -387,16 +387,25 @@ export class Pige {
     };
   }
 
-  /** Le premier vu de chaque bien ouvert de la file, dans les communes demandées, du plus récent au plus ancien. */
+  /**
+   * Le premier vu de chaque bien ouvert de la file, dans les communes demandées, du plus récent au plus ancien. Seule
+   * compte la dernière relève de chaque annonce : une annonce dont la surface a été corrigée depuis ne garde pas
+   * l'ancien bien dans la file.
+   */
   private async openAds(networkId: string, communes: readonly string[]): Promise<AdRow[]> {
     if (communes.length === 0) return [];
     const since = new Date(this.now().getTime() - PIGE_MAX_AGE_DAYS * DAY).toISOString();
     return this.db.all<AdRow>(
-      `SELECT a.id, a.source, a.fingerprint, a.kind, a.commune, a.postal_code, a.surface_m2, a.rooms, a.price_eur, a.published_at,
-              (SELECT count(DISTINCT b.source) FROM pige_ads b WHERE b.network_id = a.network_id AND b.fingerprint = a.fingerprint) AS sites
-         FROM pige_ads a
-        WHERE a.network_id = ? AND a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
-          AND a.id = (SELECT b.id FROM pige_ads b WHERE b.network_id = a.network_id AND b.fingerprint = a.fingerprint AND b.published_at >= ? ORDER BY b.published_at, b.id LIMIT 1)
+      `WITH current AS (
+         SELECT a.* FROM pige_ads a
+          WHERE a.network_id = ?
+            AND a.rowid = (SELECT b.rowid FROM pige_ads b WHERE b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1)
+       )
+       SELECT a.id, a.source, a.fingerprint, a.kind, a.commune, a.postal_code, a.surface_m2, a.rooms, a.price_eur, a.published_at,
+              (SELECT count(DISTINCT c.source) FROM current c WHERE c.fingerprint = a.fingerprint) AS sites
+         FROM current a
+        WHERE a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
+          AND a.id = (SELECT c.id FROM current c WHERE c.fingerprint = a.fingerprint AND c.published_at >= ? ORDER BY c.published_at, c.id LIMIT 1)
           AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.fingerprint)
           AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.fingerprint)
         ORDER BY a.published_at DESC, a.id`,
@@ -408,7 +417,7 @@ export class Pige {
    * Le prix du moment d'un bien : la dernière relève de chacune de ses annonces, puis celle publiée le plus récemment
    * (à égalité, la moins chère). Une relève rejouée sans changement n'ajoute rien et ne change pas ce prix.
    */
-  private async latestPrice(networkId: string, fingerprint: string): Promise<number> {
+  private async latestPrice(networkId: string, fingerprint: string): Promise<number | null> {
     const r = await this.db.first<{ price_eur: number }>(
       `SELECT a.price_eur FROM pige_ads a
         WHERE a.network_id = ? AND a.fingerprint = ?
@@ -416,7 +425,7 @@ export class Pige {
         ORDER BY a.published_at DESC, a.price_eur ASC LIMIT 1`,
       [networkId, fingerprint],
     );
-    return r?.price_eur ?? 0;
+    return r?.price_eur ?? null;
   }
 
   /** La file de pige : l'agent voit les biens de ses communes ; la direction, ceux du réseau. */
@@ -427,7 +436,9 @@ export class Pige {
     const rows = await this.openAds(viewer.networkId, [...new Set(zones.values())]);
     const out: PigeEntry[] = [];
     for (const r of rows) {
+      // Jamais un prix inventé : sans relève en cours, le bien ne se montre pas.
       const priceEur = await this.latestPrice(viewer.networkId, r.fingerprint);
+      if (priceEur === null) continue;
       const gap = await this.marketGap(viewer.networkId, { commune: r.commune, kind: r.kind, surfaceM2: r.surface_m2, priceEur });
       const d = await this.db.first<{ id: string; body: string; agent_id: string; handed: number }>(
         'SELECT d.id, d.body, d.agent_id, EXISTS (SELECT 1 FROM pige_handovers h WHERE h.draft_id = d.id) AS handed FROM pige_drafts d WHERE d.network_id = ? AND d.fingerprint = ?',
@@ -490,6 +501,7 @@ export class Pige {
     }
     const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ?', [viewer.userId]);
     const priceEur = await this.latestPrice(viewer.networkId, ad.fingerprint);
+    if (priceEur === null) return { ok: false, rule: null, code: 'annonce_remplacee' };
     const market = await this.marketGap(viewer.networkId, { commune: ad.commune, kind: ad.kind, surfaceM2: ad.surface_m2, priceEur });
     const body = firstMessage({ kind: ad.kind, commune: ad.commune, surfaceM2: ad.surface_m2, agentFirstName: (agent?.first_name ?? '').trim(), market });
     const problems = checkText(body, { audience: 'client', channel: 'email', firstOfConversation: true, figures: [ad.surface_m2, ...(market ? [market.medianPerM2] : [])], maxQuestions: 0 });

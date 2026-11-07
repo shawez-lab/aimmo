@@ -151,6 +151,18 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([279_000]);
   });
 
+  it('[R274] une annonce dont la surface est corrigée ne laisse pas l’ancien bien en file, ni un prix à zéro', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95, priceEur: 252_000 }]);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => [e.surfaceM2, e.priceEur])).toEqual([[95, 252_000]]);
+    const old = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE surface_m2 = 90'))!.id;
+    expect(await s.pige.prepare(s.agentAlex, old)).toMatchObject({ ok: false, code: 'annonce_remplacee' });
+  });
+
   it('une annonce republiée au même prix est relevée, et reste dans la file au-delà de 60 jours', async () => {
     const s = await setup();
     const a = s.ad({ publishedAt: new Date(MONDAY_10H - 59 * DAY).toISOString() });
