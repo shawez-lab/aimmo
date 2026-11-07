@@ -228,6 +228,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       network_news: ['topic', 'source_name', 'source_url', 'set_by'],
       network_news_withdrawals: ['reason', 'withdrawn_by'],
       network_news_deliveries: ['agent_id'],
+      // HX10 : les clés des biens ; seuls les agents qui les ont eues, ou les ont notées, sont nommés.
+      property_keys: ['created_by'],
+      property_key_loans: ['holder_agent_id', 'handed_by'],
+      property_key_returns: ['recorded_by'],
+      property_key_retirements: ['retired_by'],
     },
   },
   {
@@ -935,6 +940,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   network_news: ['id', 'network_id', 'title', 'impact', 'source_date', 'target', 'published_on', 'set_at'],
   network_news_withdrawals: ['news_id', 'withdrawn_at'],
   network_news_deliveries: ['news_id', 'network_id', 'concerned', 'shown_at'],
+  property_keys: ['id', 'network_id', 'property_id', 'number', 'label', 'created_at'],
+  property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
+  property_key_returns: ['loan_id', 'outcome', 'returned_at'],
+  property_key_retirements: ['key_id', 'reason', 'retired_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
