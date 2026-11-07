@@ -256,6 +256,8 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   pige_ad: { excluded: 'sans_client', why: 'Annonce de particulier : le bien sans adresse, jamais le particulier.' },
   pige_draft: { excluded: 'sans_client', why: 'Premier message de pige de l\'agent, sans nom ni coordonnée du particulier.' },
   sign: { excluded: 'sans_client', why: 'Panneau du stock : son numéro, ses poses et retraits, sans adresse ni donnée d\'un client.' },
+  dpe: { excluded: 'non_rattachable', why: 'Diagnostic publié par l\'ADEME et sa lettre « Au propriétaire », sans adresse ni nom.' },
+  dpe_sector: { excluded: 'agent', why: 'Secteur de veille des diagnostics de l\'agent, sans adresse.' },
   key: { excluded: 'sans_client', why: 'Trousseau d\'un bien : son numéro et les agents qui l\'ont eu, sans donnée d\'un client.' },
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
@@ -591,6 +593,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sign_pickup_tasks: out('agent', 'Tâche « récupérer le panneau » de l\'agent de la pose.'),
   // HX15 : les vues du site, sans rien d'un visiteur.
   site_page_views: out('non_rattachable', 'Nombre de vues d\'un contenu public par jour : aucune donnée d\'un visiteur.'),
+  // HX16 : la veille des diagnostics énergétiques publiés ; le logement, jamais son propriétaire, qui n'est pas cherché.
+  dpe_watch_sectors: out('agent', 'Secteur de veille de l\'agent : une commune de ses zones et son code postal.'),
+  dpe_watch_stops: out('agent', 'Fin d\'un secteur de veille de l\'agent.'),
+  dpe_diagnoses: out('non_rattachable', 'Diagnostic publié par l\'ADEME : le logement et son adresse, aucun propriétaire, jamais cherché.'),
+  dpe_alert_items: out('agent', 'Ligne de l\'alerte du jour d\'un secteur de veille de l\'agent.'),
+  dpe_letters: out('non_rattachable', 'Lettre « Au propriétaire » d\'un logement classé F ou G, sans nom, écrite par le code.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),
