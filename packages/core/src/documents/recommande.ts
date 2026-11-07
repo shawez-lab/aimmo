@@ -36,6 +36,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
@@ -255,11 +256,12 @@ export class RecommandeElectronique {
   private async text(fileId: string, personId: string, agentId: string): Promise<{ body: string; figures: (string | number)[] } | null> {
     const signed = (await this.dates(fileId)).compromis_signe;
     if (!signed) return null;
-    const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [personId]);
+    // Le prénom de la fiche gardée, fiches réunies comprises [R08].
+    const firstName = await ficheFirstName(this.db, await this.fiche.membersOf(personId));
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [agentId]);
-    if (!person?.first_name || !agent) return null;
+    if (!firstName || !agent) return null;
     return {
-      body: letterText({ firstName: person.first_name, signedOn: signed.day, agentName: `${agent.first_name} ${agent.last_name}` }),
+      body: letterText({ firstName, signedOn: signed.day, agentName: `${agent.first_name} ${agent.last_name}` }),
       figures: letterFigures(signed.day),
     };
   }
