@@ -54,6 +54,8 @@ export * as boutique from './boutique/index.ts';
 export * as remises from './remises/index.ts';
 // HX09 sous son propre nom, comme HX08.
 export * as actualites from './actualites/index.ts';
+// HX10 sous son propre nom, comme HX09.
+export * as cles from './cles/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
