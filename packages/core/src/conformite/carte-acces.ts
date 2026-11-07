@@ -255,6 +255,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   news: { excluded: 'sans_client', why: 'Actualité du réseau, de source publique, sans donnée d\'un client.' },
   pige_ad: { excluded: 'sans_client', why: 'Annonce de particulier : le bien sans adresse, jamais le particulier.' },
   pige_draft: { excluded: 'sans_client', why: 'Premier message de pige de l\'agent, sans nom ni coordonnée du particulier.' },
+  sign: { excluded: 'sans_client', why: 'Panneau du stock : son numéro, ses poses et retraits, sans adresse ni donnée d\'un client.' },
   key: { excluded: 'sans_client', why: 'Trousseau d\'un bien : son numéro et les agents qui l\'ont eu, sans donnée d\'un client.' },
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
@@ -583,6 +584,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   property_key_loans: out('agent', 'Sortie d\'un trousseau : l\'agent qui l\'a, depuis quand, pour quoi.'),
   property_key_returns: out('agent', 'Retour d\'un trousseau à l\'armoire.'),
   property_key_retirements: out('sans_client', 'Trousseau rendu au propriétaire ou perdu.'),
+  // HX14 : le stock de panneaux. L'adresse d'une pose est celle du bien : trouvée par le bien de la personne.
+  signs: out('sans_client', 'Panneau du stock du réseau, avec son numéro et son format.'),
+  sign_placements: { locate: [via('property_id', 'properties')] },
+  sign_removals: out('agent', 'Panneau récupéré ou perdu, noté par l\'agent ou la direction.'),
+  sign_pickup_tasks: out('agent', 'Tâche « récupérer le panneau » de l\'agent de la pose.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),
