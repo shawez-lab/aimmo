@@ -181,7 +181,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque point du score renvoie à sa source et à sa date (test) ; le même jeu de données donne le même score (test) ; aucune donnée personnelle dans le calcul ni dans le résultat (test).
 
 ### HX18 · Adresse probable d'une annonce de particulier, et bien créé sans ressaisie
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor : retrouver l'adresse d'une annonce de pige et la transformer en fiche bien sans ressaisie. Jamais vu : l'adresse est proposée avec son niveau de confiance, tiré du croisement surface, classe énergie et date du diagnostic avec le cadastre, et la fiche du bien créée garde la source « pige » jusqu'au mandat, pour mesurer ce que la pige rapporte. Les coordonnées du propriétaire ne sont jamais cherchées. Dépend de HX11.
 - Critères : chaque adresse proposée montre sa confiance et ses sources (test) ; la fiche du bien reprend tous les champs de l'annonce, source « pige » (test) ; une annonce « pas d'agence » n'est jamais convertie (test).
 
