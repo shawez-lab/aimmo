@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS pige_ad_energy (
 CREATE TRIGGER IF NOT EXISTS pige_ad_energy_fige BEFORE UPDATE ON pige_ad_energy BEGIN SELECT RAISE(ABORT, 'pige_ad_energy : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS pige_ad_energy_garde BEFORE DELETE ON pige_ad_energy BEGIN SELECT RAISE(ABORT, 'pige_ad_energy : rien ne s''efface'); END;
 
--- Les adresses proposées pour une annonce, un jour : chacune avec sa confiance et ses sources publiques [R294].
+-- Les adresses proposées pour une annonce, un jour : le numéro de chaque diagnostic retenu et sa confiance, jamais la rue
+-- ni le numéro de voie. Un bien fermé plus tard ne laisse ainsi aucune adresse probable derrière lui [R294, R273].
 CREATE TABLE IF NOT EXISTS pige_address_proposals (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
@@ -63,5 +64,23 @@ WHEN EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = NEW.network_id 
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé');
 END;
+-- Toutes les empreintes et clés reliées au bien de pige converti (autre site, surface à 1 m² près, surface corrigée) :
+-- chacune ne sert qu'à un bien, et aucune n'est fermée. Rangées dans le même lot que le bien : deux conversions d'un même
+-- bien relié, en même temps, n'en gardent qu'une [R295, R273, R04].
+CREATE TABLE IF NOT EXISTS pige_property_keys (
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  key TEXT NOT NULL CHECK (length(key) = 64),
+  property_id TEXT NOT NULL REFERENCES pige_properties (property_id) ON DELETE RESTRICT,
+  PRIMARY KEY (network_id, key)
+);
+CREATE TRIGGER IF NOT EXISTS pige_property_keys_ferme
+BEFORE INSERT ON pige_property_keys
+WHEN EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = NEW.network_id AND n.fingerprint = NEW.key)
+  OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = NEW.network_id AND o.fingerprint = NEW.key)
+BEGIN
+  SELECT RAISE(ABORT, 'pige_property_keys : bien fermé');
+END;
+CREATE TRIGGER IF NOT EXISTS pige_property_keys_fige BEFORE UPDATE ON pige_property_keys BEGIN SELECT RAISE(ABORT, 'pige_property_keys : rien ne change'); END;
+CREATE TRIGGER IF NOT EXISTS pige_property_keys_garde BEFORE DELETE ON pige_property_keys BEGIN SELECT RAISE(ABORT, 'pige_property_keys : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS pige_properties_fige BEFORE UPDATE ON pige_properties BEGIN SELECT RAISE(ABORT, 'pige_properties : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS pige_properties_garde BEFORE DELETE ON pige_properties BEGIN SELECT RAISE(ABORT, 'pige_properties : rien ne s''efface'); END;

@@ -633,6 +633,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // HX18 : l'adresse probable d'une annonce de pige, tirée des diagnostics publiés ; jamais le particulier.
   pige_ad_energy: out('sans_client', 'Classe énergie et date du diagnostic dites par une annonce de particulier.'),
   pige_address_proposals: out('agent', 'Adresses probables d\'une annonce, tirées des diagnostics publiés, pour l\'agent de la zone.'),
+  pige_property_keys: out('sans_client', 'Empreinte reliée à un bien créé depuis la pige : un seul bien par bien de pige.'),
   pige_properties: { locate: [via('property_id', 'properties')] },
   voice_assistant_lines: out('agent', 'Ligne de l\'assistant vocal : le numéro de l\'agent, rien d\'un client.'),
   agent_legal_mentions: out('agent', 'Mentions légales de l\'agent : statut et immatriculation.'),

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { AdressePige, AdemeDiagnosisSearch, proposeAddresses, type AdFacts, type DiagnosisSearch } from '../src/adresse-pige/adresse.ts';
 import type { CadastreService } from '../src/estimation/collecte.ts';
-import { cleanAd, Pige, type RawAd } from '../src/pige/pige.ts';
+import { adFingerprint, cleanAd, Pige, type RawAd } from '../src/pige/pige.ts';
 import type { Diagnosis } from '../src/veille-dpe/veille.ts';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -172,9 +172,10 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     expect(r.missing).toEqual([]);
     expect(JSON.stringify(r)).not.toMatch(/Jean|0600000000|proprietaire/);
     expect(s.queries).toEqual([{ postcode: '21240', kind: 'house', surfaceMin: 89, surfaceMax: 91, energyClass: 'F' }]);
-    // Rangé tel quel, sans rien du particulier.
+    // Rangé : le numéro du diagnostic et la confiance, jamais l'adresse, qu'un bien fermé plus tard ne laisserait pas.
     const row = await s.db.first<{ candidates: string }>('SELECT candidates FROM pige_address_proposals WHERE id = ?', [r.proposalId]);
-    expect(JSON.parse(row!.candidates)).toEqual(r.candidates);
+    expect(JSON.parse(row!.candidates)).toEqual([{ diagnosisNumber: '2621E0000001T', confidence: 100, level: 'forte' }]);
+    expect(row!.candidates).not.toMatch(/Essais|"7"/);
     // Un autre agent, la conformité : refusés ; au journal, aucune adresse.
     expect(await s.adresses.propose(s.agentSam, adId)).toMatchObject({ ok: false, code: 'hors_zone' });
     expect(await s.adresses.propose(s.compliance, adId)).toMatchObject({ ok: false, rule: 'R16' });
@@ -215,7 +216,9 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     expect(prop).toEqual({ agent_id: s.alex.id, kind: 'home', postal_code: '21240', city: 'Talant', surface_m2: 90, rooms: 4, price_eur: 279_000, status: 'draft' });
     expect(await s.adresses.sourceOf(s.agentAlex, r.value.propertyId)).toMatchObject({ ok: true, source: 'pige', adSite: 'Site A', confidence: 100 });
     // Un seul bien par bien de pige, même vu sur un autre site.
-    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' })]);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', surfaceM2: 91 })]);
+    const siteB = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site B'"))!.id;
+    expect(await s.adresses.convert(s.agentAlex, { adId: siteB })).toMatchObject({ ok: false, rule: 'R295', code: 'deja_cree' });
     expect(await s.adresses.convert(s.agentAlex, { adId })).toMatchObject({ ok: false, rule: 'R295', code: 'deja_cree' });
     // Une adresse qui n'a pas été proposée ne se retient pas.
     await s.pige.ingest(s.network.id, [s.ad({ surfaceM2: 140, rooms: 6 })]);
@@ -237,19 +240,24 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const big = q.value.find((e) => e.surfaceM2 === 90)!.adId;
     const small = q.value.find((e) => e.surfaceM2 === 60)!.adId;
     // Le même bien revu « pas d'agence » sur un autre site : il est fermé.
-    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', text: 'Agences s’abstenir' })]);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', surfaceM2: 91, text: 'Agences s’abstenir' })]);
     expect(await s.adresses.propose(s.agentAlex, big)).toMatchObject({ ok: false, rule: 'R273', code: 'pas_agence' });
     expect(await s.adresses.convert(s.agentAlex, { adId: big })).toMatchObject({ ok: false, rule: 'R273', code: 'pas_agence' });
     // Le particulier a dit non : fermé aussi.
     await s.pige.oppose(s.agentAlex, small);
     expect(await s.adresses.convert(s.agentAlex, { adId: small })).toMatchObject({ ok: false, rule: 'R04' });
     expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_properties'))!.n).toBe(0);
-    // Même la base refuse.
+    expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM properties'))!.n).toBe(0);
+    // Même la base refuse : l'empreinte exacte, et une empreinte seulement reliée (92 m², fermée avec le 91 m² du site B).
     const fp = (await s.db.first<{ fingerprint: string }>('SELECT fingerprint FROM pige_ads WHERE id = ?', [big]))!.fingerprint;
     const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'BX', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
     await expect(
       s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, fp, s.alex.id]),
     ).rejects.toThrow(/bien fermé/);
+    const free = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 300 });
+    await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, free, s.alex.id]);
+    const near = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 92 });
+    await expect(s.db.run('INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', [s.network.id, near, prop.id])).rejects.toThrow(/bien fermé/);
   });
 
   it('[R296] ce que la pige rapporte : biens créés et mandats signés, par niveau de confiance ; l’agent voit les siens', async () => {

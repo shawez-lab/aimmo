@@ -277,6 +277,19 @@ export class AdressePige {
     if (g) return g;
     const ad = await this.open(viewer, adId);
     if ('ok' in ad) return ad;
+    const { candidates, missing } = await this.compute(viewer, ad);
+    const id = this.newId();
+    // Rangés : le numéro de chaque diagnostic et sa confiance, jamais l'adresse elle-même, qui se relit à la source [R273].
+    const kept = candidates.map((c) => ({ diagnosisNumber: c.diagnosisNumber, confidence: c.confidence, level: c.level }));
+    await this.db.run('INSERT INTO pige_address_proposals (id, network_id, ad_id, agent_id, candidates, missing, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      id, viewer.networkId, ad.id, viewer.userId, JSON.stringify(kept), JSON.stringify(missing), this.now().toISOString(),
+    ]);
+    await appendEvent(this.journal, { type: 'pige.adresses_proposees', actor: this.actor(viewer), subject: `pige_ad:${ad.id}`, data: { rule: 'R294', candidates: candidates.length, best: candidates[0]?.confidence ?? null } }, this.now);
+    return { ok: true, proposalId: id, adId: ad.id, candidates, missing };
+  }
+
+  /** Les adresses probables, relues aux sources à chaque fois [R294]. */
+  private async compute(viewer: Viewer, ad: OpenAd): Promise<{ candidates: AddressCandidate[]; missing: { source: string; reason: string }[] }> {
     const energy = await this.energyOf(ad.id);
     const now = this.now();
     const today = now.toISOString().slice(0, 10);
@@ -335,13 +348,7 @@ export class AdressePige {
     }
     if (!this.services.cadastre) missing.push({ source: CADASTRE_SOURCE, reason: 'cadastre non branché' });
     else if (cadastreDown) missing.push({ source: CADASTRE_SOURCE, reason: 'cadastre injoignable' });
-    const candidates = proposeAddresses(facts, diagnoses, { byDiagnosis, readOn: today });
-    const id = this.newId();
-    await this.db.run('INSERT INTO pige_address_proposals (id, network_id, ad_id, agent_id, candidates, missing, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
-      id, viewer.networkId, ad.id, viewer.userId, JSON.stringify(candidates), JSON.stringify(missing), now.toISOString(),
-    ]);
-    await appendEvent(this.journal, { type: 'pige.adresses_proposees', actor: this.actor(viewer), subject: `pige_ad:${ad.id}`, data: { rule: 'R294', candidates: candidates.length, best: candidates[0]?.confidence ?? null } }, this.now);
-    return { ok: true, proposalId: id, adId: ad.id, candidates, missing };
+    return { candidates: proposeAddresses(facts, diagnoses, { byDiagnosis, readOn: today }), missing };
   }
 
   /**
@@ -356,7 +363,7 @@ export class AdressePige {
     const linked = await this.pige.linkedOf(viewer.networkId, ad.fingerprint);
     if (!linked.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
     // Un seul bien par bien de pige, même vu sur un autre site ou à 1 m² près.
-    if (await this.db.first('SELECT 1 AS x FROM pige_properties WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))', [viewer.networkId, JSON.stringify(linked.keys)])) {
+    if (await this.db.first('SELECT 1 AS x FROM pige_property_keys WHERE network_id = ? AND key IN (SELECT value FROM json_each(?))', [viewer.networkId, JSON.stringify(linked.keys)])) {
       return { ok: false, rule: 'R295', code: 'deja_cree' };
     }
     let chosen: AddressCandidate | null = null;
@@ -364,8 +371,9 @@ export class AdressePige {
     if (input.diagnosisNumber !== undefined && input.diagnosisNumber !== null) {
       if (typeof input.proposalId !== 'string' || typeof input.diagnosisNumber !== 'string') return { ok: false, rule: 'R294', code: 'adresse_inconnue' };
       const p = await this.db.first<{ id: string; candidates: string }>('SELECT id, candidates FROM pige_address_proposals WHERE id = ? AND network_id = ? AND ad_id = ? AND agent_id = ?', [input.proposalId, viewer.networkId, ad.id, viewer.userId]);
-      const found = p ? (JSON.parse(p.candidates) as AddressCandidate[]).find((c) => c.diagnosisNumber === input.diagnosisNumber) : undefined;
-      // Seule une adresse proposée, avec sa confiance et ses sources, se retient : jamais une adresse tapée.
+      const proposed = p ? (JSON.parse(p.candidates) as { diagnosisNumber: string }[]).some((c) => c.diagnosisNumber === input.diagnosisNumber) : false;
+      // Seule une adresse proposée se retient, jamais une adresse tapée ; relue aux sources, avec sa confiance du moment.
+      const found = proposed ? (await this.compute(viewer, ad)).candidates.find((c) => c.diagnosisNumber === input.diagnosisNumber) : undefined;
       if (!p || !found) return { ok: false, rule: 'R294', code: 'adresse_inconnue' };
       chosen = found;
       proposalId = p.id;
@@ -391,12 +399,14 @@ export class AdressePige {
               chosen?.diagnosisNumber ?? null, chosen?.streetNumber ?? null, chosen?.street ?? null, chosen?.confidence ?? null, viewer.userId, at,
             ],
           },
+          // Chaque clé reliée : un seul bien par bien de pige, et aucune clé fermée, vérifié par la base [R295, R273].
+          ...[...new Set([ad.fingerprint, ...linked.keys])].map((key) => ({ sql: 'INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', params: [viewer.networkId, key, propertyId] })),
         ]);
         break;
       } catch (error) {
         const msg = String(error);
         if (/bien fermé/.test(msg)) return (await this.closed(viewer.networkId, ad.fingerprint)) ?? { ok: false, rule: 'R273', code: 'pas_agence' };
-        if (/pige_properties\.network_id|UNIQUE.*fingerprint|fingerprint/.test(msg) && /UNIQUE/i.test(msg)) return { ok: false, rule: 'R295', code: 'deja_cree' };
+        if (/UNIQUE/i.test(msg) && /pige_propert/.test(msg)) return { ok: false, rule: 'R295', code: 'deja_cree' };
         if (!/UNIQUE/i.test(msg) || attempt >= 3) throw error;
         reference = this.newReference();
       }
