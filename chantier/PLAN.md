@@ -265,7 +265,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
 
 ### HX31 · Écran de vitrine en agence
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#402), migration `2002`, R432 à R434. Décidé, lecture prudente : seuls les biens « en vente » et disponibles, porte de diffusion relue à chaque rendu, page de référence en ligne exigée ; titre, prix, mentions et photo de la dernière version publiée, la page se relit et refuse tout chiffre sans source ; dix biens au plus pour tenir le budget d'une page publique, photos servies par le site même (`/medias/…`) ; rechargement toutes les 5 minutes qui reprend au bien en cours ; code QR vers la page de référence avec le code du bien (AT05) et `vitrine=<code de l'écran>` ; contact compté sur un seul code d'écran du réseau, l'écran et le bien seulement ; mesure du mois pour la direction, l'agent pour ses écrans. Codex 1 P0 et 2 P2 corrigés en 3 tours, dernière version sans remarque. Restent : route publique `/vitrine/<code>` servie par le site du réseau, transmission du lien d'arrivée à la captation pour `Vitrine.record`, écran de réglage et de mesure (voie 1, `app.ts`).
 - Objectif : comme Clap.show d'Apimo : un écran en vitrine qui fait défiler les biens. Jamais vu : l'écran ne montre que les biens diffusables au prix publié du moment, avec un code QR qui mène à la fiche et compte les contacts venus de la vitrine.
 - Critères : un bien vendu ou retiré disparaît de l'écran à la mise à jour suivante (test) ; le QR mène à la bonne fiche, marquée « vitrine » (test).
 
