@@ -125,7 +125,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
 
 ### HX10 · Les clés des biens
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor (gestion des clés, armoire à clés) : chaque trousseau a son numéro, on sait qui l'a, depuis quand, pour quelle visite. Jamais vu : l'agenda rappelle de rendre la clé après la visite, et le vendeur voit dans son espace qui est entré chez lui et quand.
 - Critères : une clé ne peut être chez deux personnes à la fois (test) ; tout mouvement est au journal (test).
 
