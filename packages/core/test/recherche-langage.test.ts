@@ -82,6 +82,10 @@ describe('HX28 · lecture de la phrase', () => {
     expect(surface('terrain à Dijon, 1 200 m² minimum')).toMatchObject({ value: 1200, source: { words: '1 200 m²' } });
     expect(surface('terrain à Dijon, 1\u00a0000 m²')?.value).toBe(1000);
     expect(surface('terrain à Dijon, 12 000 m2')?.value).toBe(12_000);
+    expect(surface('terrain à Dijon, 1 200,5 m² minimum')).toMatchObject({ value: 1201, source: { words: '1 200,5 m²' } });
+    expect(surface('terrain à Dijon, pas de 1 200,5 m²')).toBeUndefined();
+    // Un nombre ne commence jamais au milieu d'un autre : « 1 200,55 m² » ne fait pas « 200,55 m² ».
+    expect(surface('terrain à Dijon, 1 200,555 m²')).toBeUndefined();
     expect(surface('terrain à Dijon, pas de 1 200 m²')).toBeUndefined();
     expect(parsePhrase('terrain à Dijon, pas de 1 200 m²').ignored.map((i) => i.words)).toEqual(['1 200 m²']);
     const strength = (phrase: string) => parsePhrase(phrase).criteria.filter((c) => c.field === 'features').map((c) => [c.value, c.strength]);
