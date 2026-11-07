@@ -333,8 +333,13 @@ Réservé le 2026-11-07 par la voie 2. Règles R460 à R469 et migrations à par
 
 ## Diffusion
 
+Voie : 2
+
+Réservé le 2026-11-07 par la voie 2. Règles R470 à R489 et migrations à partir de `2200` réservées à ce groupe. Le code vit dans `packages/core/src/diffusion/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts`, `packages/core/src/annonces/` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX38 · Diffusion surveillée portail par portail
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, relecture forte
 - Objectif : comme Modelo et Neo : choix des portails bien par bien, contrôle des champs exigés, tâche de correction quand un portail rejette, retrait temporaire, vérification de la mise en ligne, classement des portails. Jamais vu : l'appli relit chaque annonce en ligne et signale tout écart avec la version publiée, prix, diagnostic ou mentions, et le vendeur reçoit le lien de chaque annonce une fois vérifiée.
 - Critères : un rejet crée une seule tâche de correction (test) ; un écart de prix entre portail et version publiée est signalé (test) ; le classement des portails se fait sur les contacts et mandats réels (test).
 
