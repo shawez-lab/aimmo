@@ -132,6 +132,23 @@ describeWithSqlite('HX10 · les clés des biens', () => {
     // Un rendez-vous annulé ne fait plus sortir la clé ; un agent parti ne la prend pas.
     await t.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ? WHERE id = ?", [new Date(MONDAY_9H).toISOString(), v.id]);
     expect(await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'visite', appointmentId: v.id })).toEqual({ ok: false, rule: 'R271', code: 'rendez_vous_passe' });
+    // Annulé entre la lecture et l'écriture : la base relit le rendez-vous, rien ne sort.
+    const late = await t.visit();
+    const read = t.db.first.bind(t.db);
+    let armed = true;
+    t.db.first = (async (sql: string, params?: readonly (string | number | null)[]) => {
+      const row = await read(sql, params as never);
+      if (armed && sql.includes('FROM appointments WHERE id = ? AND network_id = ?')) {
+        armed = false;
+        await t.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ? WHERE id = ?", [new Date(MONDAY_9H).toISOString(), late.id]);
+      }
+      return row;
+    }) as typeof t.db.first;
+    expect(await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'visite', appointmentId: late.id })).toEqual({ ok: false, rule: 'R271', code: 'rendez_vous_passe' });
+    t.db.first = read;
+    await expect(
+      t.db.run("INSERT INTO property_key_loans (id, key_id, network_id, holder_agent_id, purpose, appointment_id, due_at, handed_by, out_at) VALUES ('l3', ?, ?, ?, 'visite', ?, '2026-12-09T12:00:00.000Z', 't', '2026-12-07T09:00:00.000Z')", [key.keyId, t.network.id, t.alex.id, late.id]),
+    ).rejects.toThrow();
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
     expect(await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'photos', dueAt: new Date(MONDAY_9H + HOUR).toISOString() })).toEqual({ ok: false, rule: 'R271', code: 'bad_holder' });
   });

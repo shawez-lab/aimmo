@@ -46,6 +46,15 @@ WHEN EXISTS (SELECT 1 FROM property_key_loans l WHERE l.key_id = NEW.key_id AND 
 BEGIN
   SELECT RAISE(ABORT, 'property_key_loans : trousseau déjà sorti ou retiré');
 END;
+-- Pour une visite ou une estimation : un rendez-vous prévu, du même bien, de la même sorte, tenu par celui qui prend la clé.
+CREATE TRIGGER IF NOT EXISTS property_key_loans_rendez_vous
+BEFORE INSERT ON property_key_loans
+WHEN NEW.appointment_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM appointments a JOIN property_keys k ON k.id = NEW.key_id
+   WHERE a.id = NEW.appointment_id AND a.status = 'booked' AND a.agent_id = NEW.holder_agent_id AND a.property_id = k.property_id AND a.kind = NEW.purpose)
+BEGIN
+  SELECT RAISE(ABORT, 'property_key_loans : rendez-vous non valable');
+END;
 CREATE TRIGGER IF NOT EXISTS property_key_loans_fige BEFORE UPDATE ON property_key_loans BEGIN SELECT RAISE(ABORT, 'property_key_loans : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS property_key_loans_garde BEFORE DELETE ON property_key_loans BEGIN SELECT RAISE(ABORT, 'property_key_loans : rien ne s''efface'); END;
 

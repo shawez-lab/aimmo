@@ -252,6 +252,7 @@ export class Cles {
     const now = this.now();
     let dueAt: string;
     let appointmentId: string | null = null;
+    let appointmentEnd: string | null = null;
     if (WITH_APPOINTMENT.has(purpose)) {
       if (typeof input.appointmentId !== 'string') return { ok: false, rule: 'R271', code: 'sans_rendez_vous' };
       const a = await this.db.first<{ id: string; agent_id: string; property_id: string | null; kind: string; status: string; end_at: string }>(
@@ -263,6 +264,7 @@ export class Cles {
       // La clé va à celui qui tient le rendez-vous, personne d'autre.
       if (a.agent_id !== holder) return { ok: false, rule: 'R271', code: 'pas_son_rendez_vous' };
       appointmentId = a.id;
+      appointmentEnd = a.end_at;
       dueAt = new Date(Date.parse(a.end_at)).toISOString();
     } else {
       if (input.appointmentId !== undefined && input.appointmentId !== null) return { ok: false, rule: 'R271', code: 'bad_appointment' };
@@ -275,10 +277,16 @@ export class Cles {
     // même temps n'en font jamais qu'une [R271].
     const r = await this.db.run(
       `INSERT INTO property_key_loans (id, key_id, network_id, holder_agent_id, purpose, appointment_id, due_at, handed_by, out_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${IN_CABINET}`,
-      [id, keyId, viewer.networkId, holder, purpose, appointmentId, dueAt, this.actor(viewer), now.toISOString(), keyId, keyId],
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${IN_CABINET}
+          AND (? IS NULL OR EXISTS (SELECT 1 FROM appointments a WHERE a.id = ? AND a.status = 'booked' AND a.end_at = ? AND a.agent_id = ? AND a.property_id = ? AND a.kind = ?))`,
+      [id, keyId, viewer.networkId, holder, purpose, appointmentId, dueAt, this.actor(viewer), now.toISOString(), keyId, keyId, appointmentId, appointmentId, appointmentEnd, holder, key.property_id, purpose],
     );
     if (r.changes === 0) {
+      // Le rendez-vous annulé ou décalé entre la lecture et l'écriture : la clé ne sort pas.
+      if (appointmentId) {
+        const still = await this.db.first<{ id: string }>("SELECT id FROM appointments WHERE id = ? AND status = 'booked' AND end_at = ?", [appointmentId, appointmentEnd]);
+        if (!still) return { ok: false, rule: 'R271', code: 'rendez_vous_passe' };
+      }
       const retired = await this.db.first<{ key_id: string }>('SELECT key_id FROM property_key_retirements WHERE key_id = ?', [keyId]);
       return { ok: false, rule: 'R271', code: retired ? 'retire' : 'deja_sorti' };
     }
