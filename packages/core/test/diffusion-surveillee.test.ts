@@ -198,6 +198,15 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     expect(await t.d.resume(t.agent, s2.suspensionId)).toEqual({ ok: false, rule: 'R472', code: 'deja_repris' });
     expect((await t.d.portalListings(t.network.id, 'seloger')).length).toBe(1);
     await expect(t.db.run('DELETE FROM diffusion_portal_suspensions')).rejects.toThrow(/efface/);
+    // Deux retraits demandés en même temps : un seul passe, et la base refuse un second écrit à la main.
+    const both = await Promise.all([
+      t.d.suspend(t.agent, { propertyId: t.propertyId, portal: 'seloger', reason: 'travaux' }),
+      t.d.suspend(t.agent, { propertyId: t.propertyId, portal: 'seloger', reason: 'correction' }),
+    ]);
+    expect(both.filter((x) => x.ok).length).toBe(1);
+    await expect(
+      t.db.run("INSERT INTO diffusion_portal_suspensions (id, network_id, property_id, portal, reason, by_actor, at) VALUES ('z', ?, ?, 'seloger', 'autre', 'x', '2027-03-06T00:00:00.000Z')", [t.network.id, t.propertyId]),
+    ).rejects.toThrow(/déjà en cours/);
   });
 
   it('[R473] l’annonce en ligne est relue : un écart de prix avec la version publiée est signalé et ouvre une tâche, une relecture conforme la ferme', async () => {
@@ -239,6 +248,22 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     t.reader.pages.set(URL_SL, await t.online());
     await t.d.suspend(t.agent, { propertyId: t.propertyId, portal: 'seloger', reason: 'correction' });
     expect(await t.d.verify(t.network.id, t.propertyId, 'seloger', t.reader)).toEqual({ ok: true, outcome: 'toujours_en_ligne', gaps: [{ field: 'retrait' }] });
+  });
+
+  it('[R473] la relecture suit l’adresse de la version acceptée la plus récente, même si une plus ancienne est acceptée après', async () => {
+    const t = await setup();
+    await t.d.choose(t.agent, t.propertyId, 'seloger', true);
+    const first = (await t.version()).seq;
+    await t.amend(190000);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const second = (await t.version()).seq;
+    const newUrl = 'https://www.seloger.com/annonces/achat/appartement/dijon-21/456.htm';
+    await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: second, outcome: 'acceptee', onlineUrl: newUrl });
+    t.setClock(new Date('2027-03-01T09:00:00.000Z'));
+    await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: first, outcome: 'acceptee', onlineUrl: URL_SL });
+    t.reader.pages.set(newUrl, await t.online());
+    expect(await t.d.verify(t.network.id, t.propertyId, 'seloger', t.reader)).toEqual({ ok: true, outcome: 'conforme', gaps: [] });
+    expect((await t.d.sellerLinks(t.network.id, t.propertyId)).map((l) => l.url)).toEqual([newUrl]);
   });
 
   it('[R474] le vendeur n’a le lien que d’une annonce relue conforme à la version publiée du moment', async () => {

@@ -282,12 +282,23 @@ export class DiffusionSurveillee {
       until = new Date(input.until).toISOString();
       if (until <= at) return { ok: false, rule: 'R472', code: 'until_passe' };
     }
-    if (await this.activeSuspension(o.propertyId, portal.code, this.now())) return { ok: false, rule: 'R472', code: 'deja_retire' };
     const id = this.newId();
-    await this.db.run(
-      'INSERT INTO diffusion_portal_suspensions (id, network_id, property_id, portal, reason, until_at, by_actor, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, viewer.networkId, o.propertyId, portal.code, input.reason, until, this.actor(viewer), at],
-    );
+    // Vérifié et écrit en une seule instruction, et gardé par la base : deux retraits en même temps n'en font qu'un [R472].
+    let changes = 0;
+    try {
+      ({ changes } = await this.db.run(
+        `INSERT INTO diffusion_portal_suspensions (id, network_id, property_id, portal, reason, until_at, by_actor, at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM diffusion_portal_suspensions s WHERE s.property_id = ? AND s.portal = ? AND (s.until_at IS NULL OR s.until_at > ?)
+              AND NOT EXISTS (SELECT 1 FROM diffusion_portal_resumptions r WHERE r.suspension_id = s.id))`,
+        [id, viewer.networkId, o.propertyId, portal.code, input.reason, until, this.actor(viewer), at, o.propertyId, portal.code, at],
+      ));
+    } catch (e) {
+      if (!/déjà en cours/.test(String((e as Error)?.message ?? e))) throw e;
+      changes = 0;
+    }
+    if (changes !== 1) return { ok: false, rule: 'R472', code: 'deja_retire' };
     await appendEvent(this.journal, { type: 'diffusion.retrait_temporaire', actor: this.actor(viewer), subject: `property:${o.propertyId}`, data: { rule: 'R472', portal: portal.code, reason: input.reason, until } }, this.now);
     return { ok: true, suspensionId: id };
   }
@@ -504,7 +515,9 @@ export class DiffusionSurveillee {
     const portal = await this.portal(networkId, portalCode);
     if (!portal) return { ok: false, rule: 'R473', code: 'portail_inconnu' };
     const acceptance = await this.db.first<{ id: string; online_url: string }>(
-      `SELECT id, online_url FROM diffusion_portal_feedback WHERE property_id = ? AND portal = ? AND network_id = ? AND outcome = 'acceptee' ORDER BY at DESC, rowid DESC LIMIT 1`,
+      // L'acceptation de la version la plus récente, même arrivée avant celle d'une version plus ancienne [R473].
+      `SELECT f.id, f.online_url FROM diffusion_portal_feedback f JOIN listing_versions lv ON lv.id = f.version_id
+        WHERE f.property_id = ? AND f.portal = ? AND f.network_id = ? AND f.outcome = 'acceptee' ORDER BY lv.seq DESC, f.at DESC, f.rowid DESC LIMIT 1`,
       [propertyId, portal.code, networkId],
     );
     if (!acceptance) return { ok: false, rule: 'R473', code: 'pas_en_ligne' };

@@ -50,6 +50,18 @@ CREATE INDEX IF NOT EXISTS diffusion_portal_suspensions_bien ON diffusion_portal
 CREATE TRIGGER IF NOT EXISTS diffusion_portal_suspensions_garde BEFORE DELETE ON diffusion_portal_suspensions BEGIN SELECT RAISE(ABORT, 'diffusion_portal_suspensions : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS diffusion_portal_suspensions_fige BEFORE UPDATE ON diffusion_portal_suspensions BEGIN SELECT RAISE(ABORT, 'diffusion_portal_suspensions : rien ne se réécrit'); END;
 
+-- Un seul retrait en cours par bien et portail, gardé par la base [R472].
+CREATE TRIGGER IF NOT EXISTS diffusion_portal_suspensions_un_seul
+BEFORE INSERT ON diffusion_portal_suspensions
+WHEN EXISTS (
+  SELECT 1 FROM diffusion_portal_suspensions s
+  WHERE s.property_id = NEW.property_id AND s.portal = NEW.portal AND (s.until_at IS NULL OR s.until_at > NEW.at)
+    AND NOT EXISTS (SELECT 1 FROM diffusion_portal_resumptions r WHERE r.suspension_id = s.id)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'diffusion_portal_suspensions : un retrait est déjà en cours');
+END;
+
 CREATE TABLE IF NOT EXISTS diffusion_portal_resumptions (
   suspension_id TEXT PRIMARY KEY REFERENCES diffusion_portal_suspensions (id) ON DELETE RESTRICT,
   by_actor TEXT NOT NULL,
