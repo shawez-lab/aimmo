@@ -99,6 +99,7 @@ describe('HX29 · sources et dates de chaque lieu', () => {
     expect(checkSource({ name: 'X', url: 'https://exemple.fr/a', date: '2027-02-30' }, NOW)).toBe('date');
     expect(checkSource({ name: 'X', url: 'https://exemple.fr/a', date: '2027-01-01' }, NOW)).toBeNull();
     expect(checkSource(null, NOW)).toBe('source');
+    expect(checkSource({ name: 'X', url: 'https://donnees.exemple.fr/lieux/%', date: '2027-01-01' }, NOW)).toBe('source');
   });
 
   it('au plus trois lieux de chaque sorte, à moins de 1,5 km, les plus proches d\'abord', () => {

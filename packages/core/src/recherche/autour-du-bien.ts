@@ -191,7 +191,13 @@ export function publicUrl(url: unknown): string | null {
     return null;
   }
   if (u.protocol !== 'https:' || !u.hostname.includes('.') || u.username !== '' || u.password !== '') return null;
-  if (COORDINATE_IN_PATH.test(decodeURIComponent(u.pathname))) return null;
+  let path: string;
+  try {
+    path = decodeURIComponent(u.pathname);
+  } catch {
+    return null;
+  }
+  if (COORDINATE_IN_PATH.test(path)) return null;
   return `${u.origin}${u.pathname}`;
 }
 
