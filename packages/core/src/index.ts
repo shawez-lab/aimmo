@@ -50,6 +50,8 @@ export * as partage from './partage/index.ts';
 export * as dictee from './dictee/index.ts';
 // HX07 sous son propre nom, comme HX06.
 export * as boutique from './boutique/index.ts';
+// HX08 sous son propre nom, comme HX07.
+export * as remises from './remises/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

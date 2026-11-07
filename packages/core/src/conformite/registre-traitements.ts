@@ -219,6 +219,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       shop_order_validations: ['validated_by'],
       shop_order_sends: [],
       shop_order_results: [],
+      // HX08 : les remises négociées ; seul l'agent qui écarte une remise pour un bien est nommé.
+      network_discounts: ['beneficiary', 'set_by'],
+      network_discount_withdrawals: ['reason', 'withdrawn_by'],
+      network_discount_dismissals: ['agent_id'],
     },
   },
   {
@@ -919,6 +923,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   shop_order_validations: ['order_id', 'validated_at'],
   shop_order_sends: ['order_id', 'printer', 'reserved_at'],
   shop_order_results: ['order_id', 'outcome', 'printer_ref', 'at'],
+  network_discounts: ['id', 'network_id', 'category', 'supplier', 'partner_id', 'title', 'terms', 'source', 'moment', 'valid_from', 'valid_until', 'set_at'],
+  network_discount_withdrawals: ['discount_id', 'withdrawn_at'],
+  network_discount_dismissals: ['discount_id', 'property_id', 'network_id', 'dismissed_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
