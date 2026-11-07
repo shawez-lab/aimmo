@@ -186,11 +186,21 @@ export class ComptesRendus {
     return [...new Set([...whole, ...whole.flatMap((n) => n.split(/[^\p{L}]+/u)).filter((w) => w.length > 1 && !PARTICLES.has(plain(w)))])];
   }
 
-  /** La dictée de l'agent, et le compte rendu que l'IA en tire ; tant qu'il n'est pas validé, une nouvelle dictée le remplace. */
-  async dictate(viewer: Viewer, appointmentId: string, dictation: string): Promise<{ ok: true; report: VisitReport | null; source: 'ai' | null } | VisitReportRefusal> {
+  /**
+   * Le compte rendu que l'IA tire de la dictée, sans rien ranger : la dictée à la voix (HX06) le montre à l'agent avant
+   * qu'il valide d'un geste [R261].
+   */
+  async preview(viewer: Viewer, appointmentId: string, dictation: string): Promise<{ ok: true; report: VisitReport | null } | VisitReportRefusal> {
     const visit = await this.visites.accessVisit(viewer, appointmentId);
     if (!visit.ok) return visit;
     if (typeof dictation !== 'string' || dictation.trim() === '' || dictation.length > 5000) return { ok: false, rule: null, code: 'bad_dictation' };
+    const done = await this.db.first<{ status: string }>('SELECT status FROM visit_reports WHERE appointment_id = ?', [appointmentId]);
+    if (done?.status === 'valide') return { ok: false, rule: null, code: 'already_validated' };
+    return { ok: true, report: await this.draftReport(appointmentId, dictation) };
+  }
+
+  /** Le compte rendu de l'IA, contrôlé ; null sans IA, en panne, ou refusé. */
+  private async draftReport(appointmentId: string, dictation: string): Promise<VisitReport | null> {
     const v = (await this.db.first<{ network_id: string; person_id: string; property_id: string }>('SELECT network_id, person_id, property_id FROM visits WHERE appointment_id = ?', [appointmentId]))!;
     const seller = await this.seller(v.network_id, v.property_id);
     const names = [...(await this.buyerNames(v.person_id)), ...(seller ? await this.buyerNames(seller.person_id) : [])];
@@ -212,6 +222,19 @@ export class ComptesRendus {
         await appendEvent(this.journal, { type: 'compte_rendu.ia_absente', actor: 'system:compte_rendu', subject: `visit:${appointmentId}`, data: {} }, this.now);
       }
     }
+    return report;
+  }
+
+  /**
+   * La dictée de l'agent, et le compte rendu que l'IA en tire ; tant qu'il n'est pas validé, une nouvelle dictée le
+   * remplace. Avec `withoutWriter`, l'IA n'est pas appelée : l'agent écrira ou validera son compte rendu (HX06).
+   */
+  async dictate(viewer: Viewer, appointmentId: string, dictation: string, options: { withoutWriter?: boolean } = {}): Promise<{ ok: true; report: VisitReport | null; source: 'ai' | null } | VisitReportRefusal> {
+    const visit = await this.visites.accessVisit(viewer, appointmentId);
+    if (!visit.ok) return visit;
+    if (typeof dictation !== 'string' || dictation.trim() === '' || dictation.length > 5000) return { ok: false, rule: null, code: 'bad_dictation' };
+    const v = (await this.db.first<{ network_id: string }>('SELECT network_id FROM visits WHERE appointment_id = ?', [appointmentId]))!;
+    const report = options.withoutWriter ? null : await this.draftReport(appointmentId, dictation);
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
       `INSERT INTO visit_reports (appointment_id, network_id, dictation, report, source, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'brouillon', ?, ?, ?)
@@ -252,11 +275,8 @@ export class ComptesRendus {
       source = 'agent';
     }
     if (!report) return { ok: false, rule: null, code: 'no_report' };
-    if (this.names(report, await this.buyerNames(v.person_id))) return { ok: false, rule: 'R52', code: 'buyer_named' };
-    // Aucune coordonnée de la fiche de l'acquéreur, telle qu'elle y est rangée [R52].
-    const reportText = plain([report.opinion, ...report.strengths, ...report.reservations].join(' '));
-    const identifiers = (await this.fiche.view(v.person_id)).identifiers.map((i) => plain(i.value)).filter((x) => x.length > 2);
-    if (identifiers.some((x) => reportText.includes(x) || reportText.replace(/[\s.-]/g, '').includes(x.replace(/[\s.+-]/g, '')))) return { ok: false, rule: 'R52', code: 'contact' };
+    const named = await this.namesBuyer(v.person_id, report);
+    if (named) return named;
     const at = this.now();
     const iso = at.toISOString();
     const { changes } = await this.db.run(
@@ -281,6 +301,21 @@ export class ComptesRendus {
       );
     }
     return this.sendToSeller(appointmentId);
+  }
+
+  /** Le refus d'un compte rendu qui nomme l'acquéreur de la visite ou porte une coordonnée de sa fiche [R52] ; null sinon. */
+  async refusalFor(appointmentId: string, report: VisitReport): Promise<VisitReportRefusal | null> {
+    const v = await this.db.first<{ person_id: string }>('SELECT person_id FROM visits WHERE appointment_id = ?', [appointmentId]);
+    return v ? this.namesBuyer(v.person_id, report) : { ok: false, rule: null, code: 'unknown' };
+  }
+
+  private async namesBuyer(buyerId: string, report: VisitReport): Promise<VisitReportRefusal | null> {
+    if (this.names(report, await this.buyerNames(buyerId))) return { ok: false, rule: 'R52', code: 'buyer_named' };
+    // Aucune coordonnée de la fiche de l'acquéreur, telle qu'elle y est rangée [R52].
+    const reportText = plain([report.opinion, ...report.strengths, ...report.reservations].join(' '));
+    const identifiers = (await this.fiche.view(buyerId)).identifiers.map((i) => plain(i.value)).filter((x) => x.length > 2);
+    if (identifiers.some((x) => reportText.includes(x) || reportText.replace(/[\s.-]/g, '').includes(x.replace(/[\s.+-]/g, '')))) return { ok: false, rule: 'R52', code: 'contact' };
+    return null;
   }
 
   /** Reprend les comptes rendus validés qui n'ont pas pu partir pour l'heure ou une panne. */
