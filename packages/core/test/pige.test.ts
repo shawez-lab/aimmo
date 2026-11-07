@@ -356,6 +356,19 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect((await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).ok).toBe(true);
   });
 
+  it('[R273] [R04] une annonce incomplète d’un bien fermé ferme sa clé : corrigée ensuite, elle n’entre pas', async () => {
+    for (const how of ['pas_agence', 'non'] as const) {
+      const s = await setup();
+      await s.pige.ingest(s.network.id, [how === 'pas_agence' ? s.ad({ noAgency: true }) : s.ad()]);
+      if (how === 'non') expect(await s.pige.oppose(s.agentAlex, (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id)).toEqual({ ok: true });
+      const b = s.ad({ source: 'Site B' });
+      await s.pige.ingest(s.network.id, [{ ...b, priceEur: undefined }]);
+      expect((await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 95 }])).added, how).toBe(0);
+      const q = await s.pige.queue(s.agentAlex);
+      expect(q.ok && q.value, how).toEqual([]);
+    }
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();

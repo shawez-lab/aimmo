@@ -368,16 +368,10 @@ export class Pige {
         noAgency += 1;
         continue;
       }
-      // Une annonce déjà fermée par sa clé : son bien, dès qu'il se lit, même sans prix ni date, est fermé avec elle sur
-      // tous les sites, à 1 m² près ; rien d'autre n'est gardé d'elle [R273].
-      const ref0 = readRef(raw);
-      if (ref0 && (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, await refKey(ref0.source, ref0.sourceRef)]))) {
-        const key0 = readPropertyKey(raw);
-        if (key0) {
-          for (const f of await nearFingerprints(key0)) {
-            await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
-          }
-        }
+      // Avant d'exiger une annonce complète : si sa clé ou son bien, dès qu'ils se lisent, sont déjà fermés (« pas
+      // d'agence » ou non du particulier), la fermeture passe à l'autre, pour qu'une correction plus tard ne rouvre rien ;
+      // rien d'autre n'est gardé de cette annonce [R273, R04].
+      if (await this.carryClosures(networkId, raw, now)) {
         noAgency += 1;
         continue;
       }
@@ -396,14 +390,6 @@ export class Pige {
         continue;
       }
       const fingerprint = await adFingerprint(ad);
-      const ref = await refKey(ad.source, ad.sourceRef);
-      // Le bien est déjà fermé « pas d'agence » : cette annonce l'est aussi, par sa clé, pour qu'une correction de sa
-      // surface ne le rouvre pas ; rien d'autre n'est gardé d'elle [R273].
-      if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, fingerprint])) {
-        await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, ref, now.toISOString()]);
-        noAgency += 1;
-        continue;
-      }
       const r = await this.db.run(
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -419,6 +405,35 @@ export class Pige {
     }
     await appendEvent(this.journal, { type: 'pige.collectee', actor: 'system:pige', subject: `network:${networkId}`, data: { rule: 'R273', added, noAgency, outside, unreadable } }, this.now);
     return { added, noAgency, outside, unreadable };
+  }
+
+  /**
+   * Fait passer une fermeture déjà rangée entre la clé d'une annonce et son bien (à 1 m² près), dans les deux sens, pour
+   * « pas d'agence » comme pour un non. Rend vrai si l'annonce est fermée : elle n'entre pas.
+   */
+  private async carryClosures(networkId: string, raw: RawAd, now: Date): Promise<boolean> {
+    const ref = readRef(raw);
+    const key = readPropertyKey(raw);
+    const keys: string[] = [];
+    if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
+    if (key) keys.push(await adFingerprint(key));
+    if (keys.length === 0) return false;
+    let closed = false;
+    for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
+      const hit = await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(keys)]);
+      if (!hit) continue;
+      closed = true;
+      const all = [...keys, ...(key ? await nearFingerprints(key) : [])];
+      for (const f of all) {
+        await this.db.run(
+          table === 'pige_no_agency'
+            ? 'INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)'
+            : "INSERT OR IGNORE INTO pige_oppositions (network_id, fingerprint, noted_by, noted_at) VALUES (?, ?, 'system:pige', ?)",
+          [networkId, f, now.toISOString()],
+        );
+      }
+    }
+    return closed;
   }
 
   /** Un passage de la source : les annonces des derniers jours. */
