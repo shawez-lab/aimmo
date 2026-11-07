@@ -79,6 +79,11 @@ describe('HX28 · lecture de la phrase', () => {
     const surface = (phrase: string) => parsePhrase(phrase).criteria.find((c) => c.field === 'surfaceMinM2');
     expect(surface('maison à Dijon, 80,5 m² minimum')).toMatchObject({ value: 81, source: { words: '80,5 m²' } });
     expect(surface('maison à Dijon, 80.5 m²')?.value).toBe(81);
+    expect(surface('terrain à Dijon, 1 200 m² minimum')).toMatchObject({ value: 1200, source: { words: '1 200 m²' } });
+    expect(surface('terrain à Dijon, 1\u00a0000 m²')?.value).toBe(1000);
+    expect(surface('terrain à Dijon, 12 000 m2')?.value).toBe(12_000);
+    expect(surface('terrain à Dijon, pas de 1 200 m²')).toBeUndefined();
+    expect(parsePhrase('terrain à Dijon, pas de 1 200 m²').ignored.map((i) => i.words)).toEqual(['1 200 m²']);
     const strength = (phrase: string) => parsePhrase(phrase).criteria.filter((c) => c.field === 'features').map((c) => [c.value, c.strength]);
     expect(strength('maison, si possible un jardin et un garage')).toEqual([
       ['garden', 'nice'],

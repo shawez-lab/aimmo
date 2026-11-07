@@ -274,8 +274,9 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
 
   // La surface, avant les sommes : « 80 m² » n'est pas un budget.
   // Une surface décimale (« 80,5 m² ») se lit en entier, arrondie au mètre au-dessus : jamais moins que demandé.
-  scan(/(?<![a-z0-9.,])(\d{1,5}(?:[.,]\d{1,2})?)\s*(m2|m²|m 2|metres? carres?|mcarres?)(?![a-z0-9])/g, (m, start, end) => {
-    const n = Math.ceil(Number((m[1] ?? '').replace(',', '.')));
+  // « 1 200 m² » se lit en entier, espaces insécables compris.
+  scan(/(?<![a-z0-9.,])(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d{1,6}(?:[.,]\d{1,2})?)\s*(m2|m²|m 2|metres? carres?|mcarres?)(?![a-z0-9])/g, (m, start, end) => {
+    const n = Math.ceil(Number((m[1] ?? '').replace(/[ \u00a0\u202f]/g, '').replace(',', '.')));
     if (n < 1 || n > 100_000) return false;
     add('surfaceMinM2', n, start, end);
   });
