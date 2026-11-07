@@ -139,7 +139,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : une annonce marquée « pas d'agence » n'entre jamais dans la file (test) ; contrôle central et accords (R01 à R05) ; aucun envoi automatique.
 
 ### HX12 · Appli utilisable sans réseau, et photo HDR
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme l'appli Hektor (mode hors connexion, Pix HDR) : en cave ou à la campagne, l'agent consulte et remplit la visite sans réseau, tout part au retour du réseau ; les photos prises dans l'appli sont en HDR. Jamais vu : l'appli guide le cadrage pièce par pièce et refuse une photo floue ou trop sombre avant qu'on reparte.
 - Critères : saisie hors ligne puis envoi sans perte ni doublon (test) ; photo trop sombre ou floue signalée (test).
 
