@@ -60,7 +60,7 @@ const CSS =
   PRINT_DESIGN_CSS +
   `.support{position:relative;overflow:hidden;display:grid;gap:4mm;align-content:start}
 .marque{font:600 8pt/1 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.frise{height:2mm;background:repeating-linear-gradient(135deg,var(--accent) 0 3mm,var(--moutarde) 3mm 6mm)}
+.frise{height:0;border-top:2mm solid var(--accent);border-bottom:1mm solid var(--moutarde)}
 .prix{font-weight:700;color:var(--accent);margin:0;letter-spacing:-.01em}
 .mentions{border-left:2pt solid var(--moutarde);padding:1mm 3mm;margin:0;font-size:7.5pt;line-height:1.35;white-space:pre-line}
 .qr{display:grid;grid-template-columns:auto 1fr;gap:4mm;align-items:center}.qr svg{display:block}
@@ -72,7 +72,7 @@ const CSS =
 .panneau{width:800mm;height:600mm;padding:30mm;background:var(--papier);border:12mm solid var(--accent)}
 .panneau .vendre{font:800 150mm/0.9 var(--police-titre);margin:0;color:var(--accent);letter-spacing:-.03em}
 .panneau .tel{font:700 70mm/1 var(--police-titre);margin:0;color:var(--encre)}
-.panneau .qr svg{width:170mm;height:170mm}.panneau .mot{font-size:22mm}.panneau .ref{font-size:12mm}
+.panneau .qr svg{width:170mm;height:170mm}.panneau .mot{font-size:22mm}.panneau .ref{font-size:12mm}.panneau .marque{font-size:14mm}
 .flyer{width:148mm;height:210mm;padding:10mm}.flyer .photo{height:70mm}.flyer h1{font-size:15pt}.flyer .prix{font-size:24pt}
 .flyer .qr svg{width:28mm;height:28mm}.flyer .mot{font-size:9pt}
 .vitrine{width:210mm;height:297mm;padding:14mm}.vitrine .photo{height:120mm}.vitrine h1{font-size:20pt}.vitrine .prix{font-size:34pt}
@@ -97,10 +97,10 @@ export function unsourcedFigures(visible: string, sources: readonly string[]): s
   return [...new Set(figuresIn(visible))].filter((n) => !allowed.has(n));
 }
 
-/** Le texte que l'œil lit : sans balise, sans le dessin du code QR, entités rendues. */
+/** Le texte imprimé : le corps seul, sans balise ni dessin du code QR, entités rendues. */
 export function visibleText(html: string): string {
   return html
-    .replace(/<style[\s\S]*?<\/style>/g, ' ')
+    .replace(/<head>[\s\S]*?<\/head>/g, ' ')
     .replace(/<svg[\s\S]*?<\/svg>/g, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&#39;/g, "'")
@@ -130,7 +130,7 @@ function qrBlock(url: string, keyword: string | null, phone: string): string | S
 function document(support: Support, title: string, body: string): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
-    `<style>@page{size:${PAGE_SIZE[support]};margin:0}${CSS}</style></head><body>${body}</body></html>`
+    `<style>${CSS}@page{size:${PAGE_SIZE[support]};margin:0}</style></head><body>${body}</body></html>`
   );
 }
 
