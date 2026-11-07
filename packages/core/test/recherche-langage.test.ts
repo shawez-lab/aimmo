@@ -296,6 +296,15 @@ describeWithSqlite('HX28 · recherche sur la base', () => {
       const text = JSON.stringify(leak);
       for (const secret of [hidden.id, sold.id, '317460', '297471']) expect(text).not.toContain(secret);
     }
+    // Un refus fait quand le bien était en vente garde son effet après la vente : le budget ne remonte pas.
+    await t.db.run("UPDATE properties SET status = 'sold' WHERE id = ?", [a.id]);
+    // La mise en vente rangée par IN11 ; son mandat n'importe pas ici, les clés étrangères sont coupées le temps de l'écrire.
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run('INSERT INTO property_on_sale (property_id, network_id, mandate_id, on_sale_at, noted_at) VALUES (?, ?, ?, ?, ?)', [a.id, t.network.id, 'mandat-invente', new Date(START).toISOString(), new Date(START).toISOString()]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    const later = await t.recherche.search(t.network.id, PHRASE, [{ refuse: a.id, reason: 'trop_cher' }]);
+    expect(later.search.criteria.find((x) => x.field === 'budgetMaxEur')).toEqual(after.search.criteria.find((x) => x.field === 'budgetMaxEur'));
+    await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [a.id]);
     // Un bien d'un autre réseau ou une raison hors liste ne changent rien.
     const odd = await t.recherche.search(t.network.id, PHRASE, [{ refuse: 'inconnu', reason: 'trop_cher' }, { refuse: c.id, reason: 'moche' as never }]);
     expect(odd.results).toHaveLength(3);

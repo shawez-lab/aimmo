@@ -627,9 +627,13 @@ export class RechercheLangage {
         continue;
       }
       if (!(REFUSAL_REASONS as readonly string[]).includes(step.reason)) continue;
-      // Seul un bien qui peut être montré se refuse : un autre ne laisse rien deviner de lui dans les critères [R421].
-      const p = await this.db.first<Property>("SELECT * FROM properties WHERE id = ? AND network_id = ? AND status = 'available'", [step.refuse, networkId]);
-      if (!p || !(await this.diffusion.canDiffuse(networkId, p.id, this.now())).allowed) continue;
+      // Seul un bien montrable se refuse, ou un bien déjà mis en vente un jour (IN11), dont l'annonce a été publique :
+      // un refus fait avant sa vente garde son effet [R424], et un bien jamais montré ne laisse rien deviner [R421].
+      const p = await this.db.first<Property>('SELECT * FROM properties WHERE id = ? AND network_id = ?', [step.refuse, networkId]);
+      if (!p) continue;
+      const shown = p.status === 'available' && (await this.diffusion.canDiffuse(networkId, p.id, this.now())).allowed;
+      const onceOnSale = await this.db.first<{ n: number }>('SELECT 1 AS n FROM property_on_sale WHERE property_id = ? AND network_id = ?', [p.id, networkId]);
+      if (!shown && !onceOnSale) continue;
       search = applyRefusal(search, { id: p.id, match: await this.reader.propertyForMatch(p) }, step.reason, step.feature, this.tolerances);
     }
     return search;
