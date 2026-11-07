@@ -120,6 +120,8 @@ const PERSON_MARKERS = /(?:^| )(?:m|mr|mme|mlle|mm|dr|me|monsieur|madame|mademoi
 const KINDS: Record<string, DpeKind> = { appartement: 'apartment', maison: 'house', immeuble: 'building' };
 
 const words = (t: string): string => plain(t).replace(/[^a-z0-9]+/g, ' ').trim();
+/** Vrai si le texte porte une civilité ou une marque de personne : il est alors écarté entier [R288, R292]. */
+export const carriesPerson = (t: string): boolean => PERSON_MARKERS.test(` ${words(t)} `);
 const text = (v: unknown, max: number): string | null => {
   if (typeof v !== 'string' || /[\r\n\t<>]/.test(v)) return null;
   const t = v.trim().replace(/\s+/g, ' ');

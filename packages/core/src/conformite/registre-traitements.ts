@@ -274,6 +274,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       dpe_diagnoses: ['street_number', 'street', 'postcode', 'commune', 'commune_slug', 'lat', 'lon'],
       dpe_alert_items: [],
       dpe_letters: ['agent_id', 'body'],
+      // HX17 : le score de vente d'une adresse ; l'adresse notée et l'agent qui l'a notée, jamais un propriétaire. Le
+      // mandat relié et qui l'a relié.
+      // Le score, son empreinte et le score relié sont inscrits par prudence : leur nom ressemble à une donnée personnelle.
+      address_scores: ['agent_id', 'address_key', 'label', 'postcode', 'commune', 'commune_slug', 'points', 'score', 'facts_hash'],
+      address_score_mandates: ['mandate_id', 'address_key', 'linked_by', 'score_id'],
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
@@ -1022,6 +1027,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   dpe_diagnoses: ['id', 'network_id', 'number', 'kind', 'energy_class', 'ghg_class', 'surface_m2', 'diagnosed_on', 'received_on', 'first_seen_at'],
   dpe_alert_items: ['sector_id', 'diagnosis_id', 'network_id', 'alerted_on', 'created_at'],
   dpe_letters: ['id', 'network_id', 'diagnosis_id', 'energy_class', 'banned_from', 'created_at'],
+  address_scores: ['id', 'network_id', 'band', 'scored_on', 'created_at'],
+  address_score_mandates: ['network_id', 'linked_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
