@@ -222,7 +222,7 @@ export class Actualites {
 
   constructor(
     private readonly db: SqlDatabase,
-    acces: Acces,
+    private readonly acces: Acces,
     private readonly journal: JournalStore,
     options: ActualitesOptions = {},
   ) {
@@ -393,7 +393,11 @@ export class Actualites {
       if (!isWholeNetwork(v.target)) {
         for (const d of dossiers) {
           const why = Actualites.match(v.target, d);
-          if (why) concerned.push({ propertyId: d.id, reference: d.reference, why });
+          if (!why) continue;
+          // Lu par le chemin des droits, qui écrit la lecture du bien au journal avant de rendre quoi que ce soit [R16].
+          const read = await this.acces.readProperty(viewer, d.id);
+          if (!read.ok || read.view !== 'full' || read.value.agent_id !== viewer.userId) continue;
+          concerned.push({ propertyId: d.id, reference: d.reference, why });
         }
         // Ciblée, et aucun de ses dossiers n'est touché : du bruit pour lui, pas montrée (elle pourra l'être plus tard).
         if (concerned.length === 0) continue;

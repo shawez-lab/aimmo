@@ -132,19 +132,23 @@ describeWithSqlite('HX09 · actualités utiles', () => {
     expect(Number(shown!.n)).toBe(2);
   });
 
-  it('[R269] jamais vu : chaque actualité dit quels dossiers de l’agent elle touche, et pourquoi, lu dans la base', async () => {
+  it('[R269] [R16] jamais vu : chaque actualité dit quels dossiers de l’agent elle touche, et pourquoi, lu dans la base', async () => {
     const t = await setup();
     const g = await t.property('REF-G-1', 'G');
     await t.property('REF-C-1', 'C');
     const f = await t.property('REF-F-2', 'F', '21000', true);
     await t.property('REF-F-3', 'F', '71000');
     const id = await t.add({ target: { energyClasses: ['F', 'G'], postcodes: ['21000'] } });
+    const readsOf = async () => (await t.db.all<{ subject: string }>("SELECT subject FROM journal WHERE type = 'bien.lu' ORDER BY rowid")).map((r) => r.subject);
+    const before = (await readsOf()).length;
     const [item] = await t.feed();
     expect(item!.id).toBe(id);
     expect(item!.concerned).toEqual([
       { propertyId: f, reference: 'REF-F-2', why: 'Classe énergie F, 21000.' },
       { propertyId: g, reference: 'REF-G-1', why: 'Classe énergie G, 21000.' },
     ]);
+    // Chaque dossier montré est lu par le chemin des droits, et sa lecture est au journal [R16].
+    expect((await readsOf()).slice(before).sort()).toEqual([`property:${f}`, `property:${g}`].sort());
     // Le moment et la copropriété, lus aussi dans la base : le mandat du bien REF-T-1 est inscrit, son lot en copropriété.
     const m = await t.add({ target: { moments: ['mandat'], coownership: true } });
     const [mi] = await t.feed();
