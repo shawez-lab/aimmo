@@ -212,6 +212,7 @@ const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Su
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),
+  vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',

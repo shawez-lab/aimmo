@@ -138,6 +138,9 @@ const VITRINE_CSS =
   '.pied{padding:var(--e-3) var(--e-4)}' +
   '@media (min-width:60rem){.bien{grid-template-columns:3fr 2fr;align-items:center}.bien .cadre{grid-row:span 5}.qr svg{width:12rem;height:12rem}}';
 
+/** La feuille de l'écran : la base du système, puis ses règles propres. */
+const CSS = DESIGN_CSS + VITRINE_CSS;
+
 /** Le petit script de défilement : un bien à la fois, dans l'ordre, sans rien charger ni rien envoyer. */
 const script = (seconds: number): string =>
   `<script>(function(){var s=document.querySelectorAll('main>section');if(s.length<2)return;var i=0;` +
@@ -172,7 +175,7 @@ function page(slides: readonly string[], at: Date, seconds: number): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="${VITRINE_REFRESH_SECONDS}">` +
-    `<meta name="theme-color" content="${THEME_COLOR}"><title>Nos biens en vente</title><style>${DESIGN_CSS}${VITRINE_CSS}</style></head>` +
+    `<meta name="theme-color" content="${THEME_COLOR}"><title>Nos biens en vente</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div>` +
     `<h1 class="visuellement-cache">Nos biens en vente</h1><main>${body}</main>` +
     `<footer class="pied doux"><p>Prix et disponibilités vérifiés le ${clock.day} à ${clock.time}.</p></footer>${script(seconds)}</body></html>`
