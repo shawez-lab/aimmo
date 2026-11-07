@@ -322,7 +322,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R460 à R469 et migrations à par
 - Critères : la date de première présentation remplit N02 (test) ; un envoi recommandé passe par le contrôle central (test) ; la preuve de dépôt est rangée au dossier (test).
 
 ### HX37 · Ordre des signataires, annexes groupées et rappels
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Modelo et Hektor : ordre et groupes de signataires, signature d'un document avec toutes ses annexes, suivi et rappel. Jamais vu : avant de signer, chaque signataire lit en mots simples ce que chaque annexe change pour lui ; les rappels partent par le contrôle central, jamais la nuit ni le dimanche.
 - Critères : l'ordre des signataires est tenu (test) ; un document et ses annexes ont une seule empreinte de dossier (test) ; aucun rappel hors des heures d'envoi (test).
 
