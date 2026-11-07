@@ -793,6 +793,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   public_contents: out('agent', 'Identifiant d\'un contenu public du réseau : un bien, un prix, une page d\'agent, une publication ; aucune personne cliente.'),
   public_content_posts: out('sans_client', 'Référence d\'une publication du réseau chez un réseau social : aucune personne.'),
   contact_origins: { locate: [via('inbound_id', 'inbound_messages')] },
+  contact_ai_engines: { locate: [via('inbound_id', 'inbound_messages')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
