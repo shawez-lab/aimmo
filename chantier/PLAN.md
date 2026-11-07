@@ -154,6 +154,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 
 ### HX14 · Stock de panneaux
 - Statut : en cours
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/panneaux/`, migration `1812`, règles R282 à R284. Panneau du stock rangé par la direction seule, numéro donné par le code, format grand, moyen ou petit. Pose par l'agent du bien en activité ou la direction, seulement quand la porte de diffusion de D05 le permet (un panneau est une publicité, R42) et que le bien n'est pas vendu, à une adresse au code postal et à la commune du bien ; la pose garde le mandat qui la permettait et l'agent du bien. Un seul endroit à la fois, relu dans l'instruction d'écriture et gardé par déclencheur ; perdu, plus jamais posé. Passage à 6 h, 13 h et 19 h : bien vendu (fiche, dernière annonce, acte signé d'un dossier non arrêté) ou porte fermée (échu, rétracté, annulé…) range « récupérer le panneau », une fois par pose ; rendu comme arrêt de tournée (`PickupStop`, sans client) pour HX19. Comptes du stock pour la direction et les agents actifs, poses avec adresse : toutes pour la direction, les siennes pour l'agent. Journal sans adresse. Rien n'est envoyé.
 - Objectif : comme Hektor (gestion des panneaux) : combien de panneaux, où ils sont posés, lesquels récupérer. Jamais vu : à la vente ou à la fin du mandat, la tâche « récupérer le panneau » est créée toute seule, avec l'adresse dans la tournée.
 - Critères : un panneau posé est rattaché à un bien (test) ; tâche créée à la fin du mandat (test).
 
