@@ -171,14 +171,28 @@ function parseDay(date: unknown): number | null {
   return t;
 }
 
+/** Une position écrite dans un chemin (« 47.32173 ») : jamais publiée [R426]. */
+const COORDINATE_IN_PATH = /\d{1,3}[.,]\d{3,}/;
+
 function validHttps(url: unknown): boolean {
-  if (typeof url !== 'string' || url.length > 500) return false;
+  return publicUrl(url) !== null;
+}
+
+/**
+ * L'adresse publiée d'une source : son site et son chemin seulement, sans paramètres ni ancre, qui pourraient porter le
+ * départ du trajet ; un chemin qui contient une position est refusé [R426].
+ */
+export function publicUrl(url: unknown): string | null {
+  if (typeof url !== 'string' || url.length > 500) return null;
+  let u: URL;
   try {
-    const u = new URL(url);
-    return u.protocol === 'https:' && u.hostname.includes('.') && u.username === '' && u.password === '';
+    u = new URL(url);
   } catch {
-    return false;
+    return null;
   }
+  if (u.protocol !== 'https:' || !u.hostname.includes('.') || u.username !== '' || u.password !== '') return null;
+  if (COORDINATE_IN_PATH.test(decodeURIComponent(u.pathname))) return null;
+  return `${u.origin}${u.pathname}`;
 }
 
 /** Pourquoi une source ne peut pas être montrée, ou `null` si elle le peut [R425]. */
@@ -246,7 +260,7 @@ export function tripsBetween(
       } catch {
         candidate = null;
       }
-      if (candidate && acceptableTrip(candidate, mode, now)) trip = { ...candidate, kind: 'calcul' };
+      if (candidate && acceptableTrip(candidate, mode, now)) trip = candidate;
     }
     if (!trip) trip = estimateTrip(from, to, mode, now);
     if (!trip) {
@@ -259,16 +273,16 @@ export function tripsBetween(
       atMostMinutes,
       text: tripText(mode, atMostMinutes, trip.kind),
       kind: trip.kind,
-      source: trip.source.url === undefined
+      source: trip.kind === 'estimation'
         ? { name: trip.source.name, date: trip.source.date }
-        : { name: trip.source.name, url: trip.source.url, date: trip.source.date },
+        : { name: trip.source.name, url: publicUrl(trip.source.url)!, date: trip.source.date },
     });
   }
   return { trips, absent };
 }
 
 function acceptableTrip(trip: Trip, mode: TravelMode, now: number): boolean {
-  if (!trip || trip.mode !== mode) return false;
+  if (!trip || trip.mode !== mode || trip.kind !== 'calcul') return false;
   if (!Number.isFinite(trip.minutes) || trip.minutes < 0 || trip.minutes > 24 * 60) return false;
   return checkSource(trip.source, now, true) === null;
 }
@@ -279,7 +293,7 @@ export function areaOf(location: Coordinates): Coordinates & { radiusM: number }
   return { lat: snap(location.lat), lon: snap(location.lon), radiusM: AREA_RADIUS_M };
 }
 
-const STREET_PREFIX = /^(?:rue|avenue|av|boulevard|bd|place|pl|chemin|allee|impasse|quai|route|cours|square|passage|sentier|rond-point|esplanade|promenade)\s+(?:(?:de|du|des|d)\s+|(?:la|le|les|l)\s+)*/;
+const STREET_PREFIX = /^(?:rue|avenue|av|boulevard|bd|place|pl|chemin|allee|impasse|quai|route|cours|square|passage|sentier|rond point|esplanade|promenade)\s+(?:(?:de|du|des|d)\s+|(?:la|le|les|l)\s+)*/;
 
 export function normalizeText(s: string): string {
   return s
@@ -314,7 +328,7 @@ function showPoi(
     category: poi.category,
     label: POI_LABELS[poi.category],
     name: revealsStreet(poi.name, core) || poi.name.trim() === '' ? null : poi.name.trim().slice(0, 120),
-    source: { name: poi.source.name, url: poi.source.url, date: poi.source.date },
+    source: { name: poi.source.name, url: publicUrl(poi.source.url)!, date: poi.source.date },
     trips,
     absent,
   };
@@ -426,7 +440,13 @@ export function renderSurroundings(page: PublicSurroundings): string {
   if (page.points.length === 0) lines.push('Aucun lieu relevé à moins de 1,5 km avec une source datée.');
   for (const p of page.points) {
     const trips = [...p.trips.map((t) => t.text), ...p.absent.map((a) => a.text)].join(' · ');
-    lines.push(`${p.label}${p.name ? ` · ${p.name}` : ''} : ${trips}. Source : ${p.source.name}, relevé du ${frDate(p.source.date)}.`);
+    const calculs = p.trips
+      .filter((t) => t.kind === 'calcul')
+      .map((t) => ` Temps ${MODE_LABELS[t.mode]} : ${t.source.name} (${t.source.url}), relevé du ${frDate(t.source.date)}.`)
+      .join('');
+    lines.push(
+      `${p.label}${p.name ? ` · ${p.name}` : ''} : ${trips}. Source : ${p.source.name} (${p.source.url}), relevé du ${frDate(p.source.date)}.${calculs}`,
+    );
   }
   const estimation = page.points.flatMap((p) => p.trips).find((t) => t.kind === 'estimation');
   if (estimation) lines.push(`Les estimations sont calculées à vol d'oiseau, détour compté, le ${frDate(estimation.source.date)}.`);

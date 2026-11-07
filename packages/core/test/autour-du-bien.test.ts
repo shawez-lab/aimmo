@@ -70,9 +70,16 @@ describe('HX29 · sources et dates de chaque lieu', () => {
     for (const p of page.points) {
       const [y, m, d] = p.source.date.split('-');
       expect(text).toContain(`${p.label}`);
-      expect(text).toContain(`Source : ${p.source.name}, relevé du ${d}/${m}/${y}.`);
+      expect(text).toContain(`Source : ${p.source.name} (${p.source.url}), relevé du ${d}/${m}/${y}.`);
     }
     expect(page.sources.map((s) => s.name).sort()).toEqual([ANNUAIRE.name, OSM.name].sort());
+  });
+
+  it('chaque temps calculé cite, dans le texte, sa propre source et sa date [R425] [R427]', () => {
+    const { page } = publicSurroundings(BIEN, POIS, NOW, transitProvider);
+    const text = renderSurroundings(page);
+    const tramLine = text.split('\n').find((l) => l.startsWith('Arrêt de tram'))!;
+    expect(tramLine).toContain(`Temps en transport : ${RESEAU.name} (${RESEAU.url}), relevé du 01/02/2027.`);
   });
 
   it('une donnée sans source sûre, sans date, du futur ou trop vieille n\'est jamais montrée [R425]', () => {
@@ -146,6 +153,7 @@ describe('HX29 · temps de trajet', () => {
       (_f, _t, mode) => ({ mode, minutes: -3, kind: 'calcul', source: RESEAU }),
       (_f, _t, mode) => ({ mode, minutes: Number.NaN, kind: 'calcul', source: RESEAU }),
       () => ({ mode: 'voiture', minutes: 4, kind: 'calcul', source: RESEAU }) as Trip,
+      (_f, _t, mode) => ({ mode, minutes: 12, kind: 'estimation', source: RESEAU }),
       () => {
         throw new Error('service en panne');
       },
@@ -158,6 +166,15 @@ describe('HX29 · temps de trajet', () => {
       if (transport) expect(transport.source).toEqual(RESEAU);
       expect(p!.trips.filter((t) => t.mode === 'pied').every((t) => t.kind === 'estimation')).toBe(true);
     }
+  });
+
+  it('une estimation venue du service n\'est jamais prise pour un calcul, et le transport n\'est jamais estimé [R427]', () => {
+    const estimating: TripProvider = (_f, _t, mode) => ({ mode, minutes: 12, kind: 'estimation', source: RESEAU });
+    const { page } = publicSurroundings(BIEN, POIS.slice(0, 1), NOW, estimating);
+    const [p] = page.points;
+    expect(p!.trips.map((t) => t.mode)).toEqual(['pied', 'voiture']);
+    expect(p!.trips.every((t) => t.kind === 'estimation' && t.source.name !== RESEAU.name)).toBe(true);
+    expect(p!.absent.map((a) => a.mode)).toEqual(['transport']);
   });
 
   it('les temps sont arrondis à 5 minutes au-dessus, jamais moins de 5 [R426]', () => {
@@ -196,6 +213,9 @@ describe('HX29 · jamais l\'adresse exacte', () => {
     expect(renderSurroundings(page!)).toContain('Commerce alimentaire : ');
     expect(streetCore('Avenue de la Liberté Fictive')).toBe('liberte fictive');
     expect(streetCore("Allée de l'Orme")).toBe('orme');
+    expect(streetCore('Rond-point des Tilleuls')).toBe('tilleuls');
+    const rond = publicSurroundings({ ...BIEN, street: 'Rond-point des Tilleuls Inventés' }, POIS, NOW).page;
+    expect(rond.points.find((p) => p.category === 'ecole' && p.name === null)?.label).toBe('École');
   });
 
   it('la seule position publiée est le centre d\'une case d\'environ 500 m, pas le bien [R426]', () => {
@@ -206,6 +226,23 @@ describe('HX29 · jamais l\'adresse exacte', () => {
     // Deux biens de la même case donnent la même zone.
     expect(areaOf({ lat: 47.3201, lon: 5.0401 })).toEqual(area);
     expect(pages[0]!.area).toEqual(area);
+  });
+
+  it('une adresse de source ne publie ni paramètres ni position du trajet [R426]', () => {
+    const leaky: TripProvider = (from, _t, mode) =>
+      mode === 'transport'
+        ? { mode, minutes: 9, kind: 'calcul', source: { ...RESEAU, url: `https://reseau.exemple.fr/trajet?from=${from.lat},${from.lon}#${from.lat}` } }
+        : null;
+    const { page } = publicSurroundings(BIEN, POIS, NOW, leaky);
+    const shown = JSON.stringify(page) + renderSurroundings(page);
+    expect(shown).not.toContain(String(BIEN.lat));
+    expect(shown).not.toContain('from=');
+    expect(page.points[0]!.trips.find((t) => t.mode === 'transport')!.source.url).toBe('https://reseau.exemple.fr/trajet');
+    const inPath: TripProvider = (from, _t, mode) =>
+      mode === 'transport' ? { mode, minutes: 9, kind: 'calcul', source: { ...RESEAU, url: `https://reseau.exemple.fr/trajet/${from.lat}/${from.lon}` } } : null;
+    const second = publicSurroundings(BIEN, POIS, NOW, inPath).page;
+    expect(second.points.flatMap((p) => p.trips).map((t) => t.mode)).not.toContain('transport');
+    expect(JSON.stringify(second)).not.toContain(String(BIEN.lat));
   });
 
   it('aucune distance en mètres n\'est publiée', () => {
