@@ -118,7 +118,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque remise a sa source et sa date de fin, retirée seule à expiration (test).
 
 ### HX09 · Actualités utiles, pas du bruit
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/actualites/`, migration `1807`, règles R268 et R269. La direction seule range une actualité avec éditeur, adresse https publique et date de la source (jamais à venir), et la ligne unique de ce qu'elle change pour l'agent ; aucune IA. Adresse ramenée à une forme unique (suivi, ancre, barre finale retirés) : une source n'est rangée qu'une fois. Cible fermée (sortes de biens, codes postaux, moments du dossier lus par `Remises.momentOf`, classes énergie et copropriété lues dans la fiche du bien) ; dossiers concernés lus au moment de montrer, parmi les seuls dossiers vivants de l'agent, chacun lu par `Acces.readProperty` (au journal) avec sa raison. Une actualité ciblée qui ne touche aucun de ses dossiers ne lui est pas montrée ; sans cible, tout le réseau. Montrée une fois par agent (réservation en base, qui relit le retrait), plus après un retrait ni 60 jours après sa publication ; agent parti dès minuit le jour de son départ. Rien n'est envoyé. Relecture forte : 2 P1 corrigés ; Codex : 3 P0 corrigés (départ du jour, retrait pendant le fil, lecture des biens au journal), puis rien à signaler (#397).
+- Reste : écran du fil et de la saisie par la direction, branchement au Worker (`app.ts`). Une actualité réservée puis perdue par une coupure avant d'être rendue n'est pas remontrée.
 - Objectif : comme « Mes actualités » : la veille juridique et marché. Jamais vu : chaque actualité dit en une ligne ce qu'elle change pour l'agent et quels de ses dossiers sont concernés.
 - Critères : chaque actualité cite sa source (test) ; aucune n'est montrée deux fois.
 
