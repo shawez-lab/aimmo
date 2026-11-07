@@ -95,7 +95,7 @@ export interface SummarySentence {
   works?: { amountEur: number | null; dueOn: string | null };
 }
 
-export type RejectReason = 'sujet_inconnu' | 'texte_vide' | 'plusieurs_phrases' | 'document_inconnu' | 'document_hors_sujet' | 'page_inexistante' | 'extrait_trop_court' | 'extrait_absent_de_la_page' | 'montant_absent_de_l_extrait' | 'echeance_absente_de_l_extrait' | 'travaux_mal_formes';
+export type RejectReason = 'sujet_inconnu' | 'texte_vide' | 'plusieurs_phrases' | 'document_inconnu' | 'document_hors_sujet' | 'page_inexistante' | 'extrait_trop_court' | 'extrait_absent_de_la_page' | 'montant_absent_de_l_extrait' | 'echeance_absente_de_l_extrait' | 'travaux_mal_formes' | 'phrase_sans_rapport_avec_l_extrait' | 'vote_absent_de_l_extrait';
 
 /** Une rubrique du résumé : ses phrases vérifiées, ou « non trouvé » avec sa raison [R450]. */
 export type TopicLine =
@@ -182,11 +182,40 @@ export function normalize(text: string): string {
     .trim();
 }
 
+/** Le texte, séparateurs de milliers retirés : « 48 000,00 » devient « 48000,00 ». */
+function joinThousands(text: string): string {
+  return normalize(text).replace(/(\d)[\s.\u202f\u00a0](?=\d{3}(?!\d))/g, '$1');
+}
+
 /** Les nombres entiers d'un texte, séparateurs de milliers retirés : « 48 000,00 € » donne 48000 et 0. */
 function numbersOf(text: string): number[] {
-  const joined = normalize(text).replace(/(\d)[\s.  ](?=\d{3}\b)/g, '$1');
-  return (joined.match(/\d+/g) ?? []).map(Number);
+  return (joinThousands(text).match(/\d+/g) ?? []).map(Number);
 }
+
+/** Les montants en euros d'un texte : un nombre suivi de « € », « euros » ou « EUR », jamais un numéro de résolution. */
+function amountsOf(text: string): number[] {
+  return [...joinThousands(text).matchAll(/(?<![\d,.])(\d+)(?:[,.]\d{1,2})?\s*(?:€|euros?(?![\p{L}])|eur(?![\p{L}]))/gu)].map((m) => Number(m[1]));
+}
+
+const strip = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '');
+/** Des mots trop généraux pour montrer qu'une phrase dit ce que dit son extrait. */
+const GENERIC = new Set(['travaux', 'assemblee', 'generale', 'copropriete', 'coproprietaires', 'syndicat', 'resolution', 'adopte', 'adoptee', 'adoptes', 'adoptees', 'votes', 'votee', 'votees', 'prevus', 'prevue', 'montant', 'budget', 'depuis', 'pendant', 'avant', 'apres', 'selon', 'janvier', 'fevrier', 'avril', 'juillet', 'septembre', 'octobre', 'novembre', 'decembre']);
+
+/**
+ * La phrase dit ce que dit son extrait : chacun de ses nombres s'y lit, et au moins un de ses mots porteurs (cinq
+ * lettres et plus, hors mots généraux) s'y retrouve, au pluriel ou au féminin près.
+ */
+function sentenceMatchesQuote(text: string, quote: string): boolean {
+  const inQuote = new Set(numbersOf(quote));
+  if (!numbersOf(text).every((n) => inQuote.has(n))) return false;
+  const q = strip(normalize(quote));
+  const words = (strip(normalize(text)).match(/\p{L}{5,}/gu) ?? []).filter((w) => !GENERIC.has(w));
+  if (words.length === 0) return false;
+  return words.some((w) => q.includes(w.slice(0, Math.max(5, w.length - 2))));
+}
+
+/** Un vote se lit dans l'extrait de travaux votés. */
+const VOTE = /\b(?:vot|adopt|approuv|decid)/;
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -221,6 +250,8 @@ export function checkSentence(p: ProposedSentence, docs: readonly SourceDocument
   if (quote.length < MIN_QUOTE) return { ok: false, reason: 'extrait_trop_court' };
   const page = normalizedPages[p.document]![p.page - 1]!;
   if (!page.includes(quote)) return { ok: false, reason: 'extrait_absent_de_la_page' };
+  if (!sentenceMatchesQuote(p.text, p.quote)) return { ok: false, reason: 'phrase_sans_rapport_avec_l_extrait' };
+  if (p.topic === 'travaux_votes' && !VOTE.test(strip(quote))) return { ok: false, reason: 'vote_absent_de_l_extrait' };
   const cite: Citation = { documentRef: doc.ref, kind: doc.kind, page: p.page, quote: p.quote.trim(), meetingDay: doc.meetingDay ?? null };
   if (p.works === undefined) return { ok: true, value: { topic: p.topic, text: p.text.trim(), cite } };
   // Des travaux : seulement votés ou à l'étude, montant et échéance lus dans l'extrait.
@@ -228,8 +259,8 @@ export function checkSentence(p: ProposedSentence, docs: readonly SourceDocument
   const { amountEur, dueOn } = p.works;
   if (amountEur !== undefined && (!Number.isInteger(amountEur) || amountEur <= 0 || amountEur > 1e9)) return { ok: false, reason: 'travaux_mal_formes' };
   if (dueOn !== undefined && !isDay(dueOn)) return { ok: false, reason: 'travaux_mal_formes' };
-  if (amountEur !== undefined && !numbersOf(p.quote).includes(amountEur)) return { ok: false, reason: 'montant_absent_de_l_extrait' };
-  if (dueOn !== undefined && !dayMentions(dueOn).some((m) => quote.includes(m))) return { ok: false, reason: 'echeance_absente_de_l_extrait' };
+  if (amountEur !== undefined && !amountsOf(p.quote).includes(amountEur)) return { ok: false, reason: 'montant_absent_de_l_extrait' };
+  if (dueOn !== undefined && !dayMentions(dueOn).some((m) => new RegExp(`(?<![\\d])${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\d])`).test(quote))) return { ok: false, reason: 'echeance_absente_de_l_extrait' };
   return { ok: true, value: { topic: p.topic, text: p.text.trim(), cite, works: { amountEur: amountEur ?? null, dueOn: dueOn ?? null } } };
 }
 
@@ -439,7 +470,7 @@ export class CoproprieteUrbanisme {
     const eur = (n: number) => `${new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ')} €`;
     const lines = works.map(
       (w) =>
-        `Travaux votés en assemblée du ${fr(w.votedOn)} : ${w.text.replace(/[.!?]$/, '')}` +
+        `Travaux votés en assemblée du ${fr(w.votedOn)} : « ${w.cite.quote} »` +
         `${w.amountEur !== null ? `, ${eur(w.amountEur)}` : ''}` +
         `${w.dueOn !== null ? `, échéance le ${fr(w.dueOn)}` : ', échéance non trouvée'} (procès-verbal, p. ${w.cite.page}).`,
     );

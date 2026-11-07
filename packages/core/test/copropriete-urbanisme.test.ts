@@ -10,8 +10,8 @@ const PV: SourceDocument = {
   meetingDay: '2027-01-15',
   pages: [
     "Procès-verbal de l'assemblée générale ordinaire de la résidence Les Tilleuls de l'Exemple.\nQuorum atteint : 6 120 / 10 000 tantièmes.",
-    "Résolution n° 7 : l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 € TTC.\nAppel de fonds exigible le 1er septembre 2027. Adoptée à la majorité de l'article 25.\nRésolution n° 8 : réfection de la toiture-ter-\nrasse, budget de 12 500 €, travaux à réaliser avant le 30/04/2027.",
-    "Résolution n° 9 : étude d'un remplacement de l'ascenseur, devis à présenter à la prochaine assemblée.\nAucune procédure judiciaire n'est en cours contre le syndicat.",
+    "Résolution n° 7 : l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 € TTC.\nAppel de fonds exigible le 1er septembre 2027. Adoptée à la majorité de l'article 25.\nRésolution n° 8 adoptée : réfection de la toiture-ter-\nrasse, budget de 12 500 €, travaux à réaliser avant le 30/04/2027.",
+    "Résolution n° 9 : étude d'un remplacement de l'ascenseur, devis à présenter à la prochaine assemblée.\nAucune procédure judiciaire n'est en cours contre le syndicat.\nRésolution n° 10 adoptée : changement des boîtes aux lettres de l'entrée.\nRésolution n° 25 : travaux de peinture votés sans budget fixé, à réaliser le 11/3/2027.",
   ],
 };
 const FICHE: SourceDocument = { kind: 'fiche_synthetique', ref: 'dossiers/test/fiche.pdf', pages: ['Fiche synthétique. Montant du fonds de travaux au 31/12/2026 : 9 400 €. Charges courantes du budget prévisionnel : 21 000 € par an.'] };
@@ -21,8 +21,8 @@ const S = (o: Partial<ProposedSentence> & Pick<ProposedSentence, 'topic' | 'text
 
 function sentences(): ProposedSentence[] {
   return [
-    S({ topic: 'travaux_votes', text: 'Le ravalement de la façade sur rue est voté', document: 0, page: 2, quote: 'ravalement de la façade sur rue pour un montant de 48 000,00 € TTC. Appel de fonds exigible le 1er septembre 2027', works: { amountEur: 48000, dueOn: '2027-09-01' } }),
-    S({ topic: 'travaux_votes', text: 'La réfection de la toiture-terrasse est votée', document: 0, page: 2, quote: 'réfection de la toiture-terrasse, budget de 12 500 €, travaux à réaliser avant le 30/04/2027', works: { amountEur: 12500, dueOn: '2027-04-30' } }),
+    S({ topic: 'travaux_votes', text: 'Le ravalement de la façade sur rue est voté', document: 0, page: 2, quote: "l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 € TTC. Appel de fonds exigible le 1er septembre 2027", works: { amountEur: 48000, dueOn: '2027-09-01' } }),
+    S({ topic: 'travaux_votes', text: 'La réfection de la toiture-terrasse est votée', document: 0, page: 2, quote: 'adoptée : réfection de la toiture-terrasse, budget de 12 500 €, travaux à réaliser avant le 30/04/2027', works: { amountEur: 12500, dueOn: '2027-04-30' } }),
     S({ topic: 'travaux_a_l_etude', text: "Le remplacement de l'ascenseur est à l'étude", document: 0, page: 3, quote: "étude d'un remplacement de l'ascenseur" }),
     S({ topic: 'procedures', text: 'Aucune procédure judiciaire en cours contre le syndicat', document: 0, page: 3, quote: "Aucune procédure judiciaire n’est en cours contre le syndicat" }),
     S({ topic: 'fonds_travaux', text: 'Le fonds de travaux est de 9 400 € au 31 décembre 2026', document: 1, page: 1, quote: 'Montant du fonds de travaux au 31/12/2026 : 9 400 €' }),
@@ -59,10 +59,18 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
       S({ topic: 'syndic', text: 'Document inconnu', document: 9, page: 1, quote: 'Fiche synthétique. Montant' }),
       S({ topic: 'charges', text: 'Les charges sont élevées. Le syndic est cher', document: 1, page: 1, quote: 'Charges courantes du budget prévisionnel' }),
       // Un montant ou une échéance qui ne se lisent pas dans l'extrait.
-      S({ topic: 'travaux_votes', text: 'Ravalement voté', document: 0, page: 2, quote: 'ravalement de la façade sur rue pour un montant de 48 000,00 €', works: { amountEur: 84000 } }),
-      S({ topic: 'travaux_votes', text: 'Ravalement voté', document: 0, page: 2, quote: 'ravalement de la façade sur rue pour un montant de 48 000,00 €', works: { dueOn: '2027-09-01' } }),
+      S({ topic: 'travaux_votes', text: 'Ravalement voté', document: 0, page: 2, quote: "l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 €", works: { amountEur: 84000 } }),
+      S({ topic: 'travaux_votes', text: 'Ravalement voté', document: 0, page: 2, quote: "l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 €", works: { dueOn: '2027-09-01' } }),
       // Un sujet d'urbanisme cité dans un document de copropriété.
       S({ topic: 'servitudes', text: 'Servitude', document: 0, page: 1, quote: 'résidence Les Tilleuls' }),
+      // Une phrase inventée, appuyée sur un extrait réel mais sans rapport : écartée.
+      S({ topic: 'travaux_votes', text: 'Le remplacement des fenêtres est voté pour 90 000 €', document: 0, page: 3, quote: "Aucune procédure judiciaire n'est en cours contre le syndicat" }),
+      // Un numéro de résolution n'est pas un montant.
+      S({ topic: 'travaux_votes', text: 'Des travaux de peinture sont votés', document: 0, page: 3, quote: 'Résolution n° 25 : travaux de peinture votés sans budget fixé', works: { amountEur: 25 } }),
+      // Le 1/3/2027 ne se lit pas dans le 11/3/2027.
+      S({ topic: 'travaux_votes', text: 'Des travaux de peinture sont votés', document: 0, page: 3, quote: 'travaux de peinture votés sans budget fixé, à réaliser le 11/3/2027', works: { dueOn: '2027-03-01' } }),
+      // Des travaux « votés » dont l'extrait ne dit aucun vote.
+      S({ topic: 'travaux_votes', text: "Le remplacement de l'ascenseur est voté", document: 0, page: 3, quote: "étude d'un remplacement de l'ascenseur" }),
     ];
     const r = await t.copro.prepare(t.agent, t.fileId, { documents: [PV, FICHE, PLU], sentences: [...sentences(), ...bad], publicData: publicData() });
     if (!r.ok) throw new Error(r.code);
@@ -76,6 +84,10 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
       { index: 13, reason: 'montant_absent_de_l_extrait' },
       { index: 14, reason: 'echeance_absente_de_l_extrait' },
       { index: 15, reason: 'document_hors_sujet' },
+      { index: 16, reason: 'phrase_sans_rapport_avec_l_extrait' },
+      { index: 17, reason: 'montant_absent_de_l_extrait' },
+      { index: 18, reason: 'echeance_absente_de_l_extrait' },
+      { index: 19, reason: 'vote_absent_de_l_extrait' },
     ]);
     // Chaque phrase gardée renvoie à son document et à une page où son extrait se lit.
     const docs = [PV, FICHE, PLU];
@@ -139,7 +151,7 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
 
   it('[R451] jamais vu : les travaux votés à venir sont signalés à l’acquéreur avec l’assemblée, la page, le montant et l’échéance lus au procès-verbal', async () => {
     const t = await setup();
-    const extra = S({ topic: 'travaux_votes', text: 'Le changement des boîtes aux lettres est voté', document: 0, page: 3, quote: "Aucune procédure judiciaire n'est en cours" }); // extrait réel mais sans échéance
+    const extra = S({ topic: 'travaux_votes', text: 'Le changement des boîtes aux lettres est voté', document: 0, page: 3, quote: 'Résolution n° 10 adoptée : changement des boîtes aux lettres' }); // sans échéance lisible
     const r = await t.copro.prepare(t.agent, t.fileId, { documents: [PV, FICHE, PLU], sentences: [...sentences(), extra], publicData: publicData() });
     if (!r.ok) throw new Error(r.code);
     // Au 1er mars 2027 : les trois travaux votés sont à venir, celui sans échéance lisible compris.
@@ -155,8 +167,8 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
     const n = await t.copro.buyerNotice(t.agent, t.fileId);
     if (!n.ok) throw new Error(n.code);
     expect(n.value.lines).toEqual([
-      'Travaux votés en assemblée du 15/01/2027 : Le ravalement de la façade sur rue est voté, 48 000 €, échéance le 01/09/2027 (procès-verbal, p. 2).',
-      'Travaux votés en assemblée du 15/01/2027 : Le changement des boîtes aux lettres est voté, échéance non trouvée (procès-verbal, p. 3).',
+      "Travaux votés en assemblée du 15/01/2027 : « l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000,00 € TTC. Appel de fonds exigible le 1er septembre 2027 », 48 000 €, échéance le 01/09/2027 (procès-verbal, p. 2).",
+      'Travaux votés en assemblée du 15/01/2027 : « Résolution n° 10 adoptée : changement des boîtes aux lettres », échéance non trouvée (procès-verbal, p. 3).',
     ]);
     const rows = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'dossier.travaux_votes_signales'");
     expect(rows.map((x) => Object.keys(JSON.parse(x.data)).sort())).toEqual([['summary', 'works']]);
