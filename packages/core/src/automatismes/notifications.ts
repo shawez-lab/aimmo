@@ -18,7 +18,7 @@
 import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
-import { runBatch, type SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -52,6 +52,8 @@ export const GROUP_PERIOD_MS: Readonly<Record<GroupedUrgency, number>> = { haute
 export const JUST_WROTE_MS = 30 * MIN;
 /** Un envoi réservé sans réponse du service depuis ce délai : passage coupé, ses notifications sont reprises [R18]. */
 const STALE_RESERVATION_MS = 2 * MIN;
+/** Identifiants par écriture : D1 n'accepte pas plus de 100 paramètres. */
+const CLAIM_CHUNK = 90;
 const URGENCY_ORDER: readonly Urgency[] = ['immediate', 'haute', 'normale', 'basse'];
 
 /** Les mots des textes visibles écran verrouillé, au singulier et au pluriel [R415]. */
@@ -426,11 +428,17 @@ export class Notifications {
       [pushId, agent.network_id, agentId, urgency, due.length, text.title, text.body, at.toISOString(), urgency, agentId, urgency, periodStart],
     );
     if (reserved.changes !== 1) return null;
-    const { changes } = await this.db.run(
-      `UPDATE agent_notifications SET status = 'en_envoi', push_id = ? WHERE status = 'a_envoyer' AND id IN (${placeholders(due.length)})
+    // Par paquets de 90 identifiants au plus, sous la limite de 100 paramètres de D1, dans un même lot tout ou rien.
+    const claims: SqlStatement[] = [];
+    for (let i = 0; i < due.length; i += CLAIM_CHUNK) {
+      const ids = due.slice(i, i + CLAIM_CHUNK).map((n) => n.id);
+      claims.push({
+        sql: `UPDATE agent_notifications SET status = 'en_envoi', push_id = ? WHERE status = 'a_envoyer' AND id IN (${placeholders(ids.length)})
        AND EXISTS (SELECT 1 FROM agent_pushes WHERE id = ? AND status = 'reservee')`,
-      [pushId, ...due.map((n) => n.id), pushId],
-    );
+        params: [pushId, ...ids, pushId],
+      });
+    }
+    const changes = (await runBatch(this.db, claims)).reduce((sum, r) => sum + r.changes, 0);
     if (changes !== due.length) {
       // Le texte ne dirait pas le bon nombre : rien ne part [R18].
       await this.finish(pushId, 'abandonnee', at.toISOString());

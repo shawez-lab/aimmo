@@ -367,4 +367,17 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect((await t.notifications.flush()).map((p) => [p.urgency, p.status])).toEqual([['normale', 'partie']]);
     expect(t.sent).toHaveLength(1);
   });
+  it('[R414] un groupe de 150 notifications part en un seul envoi, chaque écriture sous 100 paramètres', async () => {
+    const t = await setup();
+    const noa = await t.person('Noa');
+    for (let i = 0; i < 150; i++) await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: `tache:${i}` });
+    const run = t.db.run.bind(t.db);
+    let most = 0;
+    (t.db as { run: typeof t.db.run }).run = (async (sql: string, params: readonly (string | number | null)[] = []) => ((most = Math.max(most, params.length)), run(sql, params))) as typeof t.db.run;
+    const batch = t.db.batch?.bind(t.db);
+    if (batch) (t.db as { batch: typeof batch }).batch = async (statements) => (statements.forEach((st) => (most = Math.max(most, st.params?.length ?? 0))), batch(statements));
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count, p.status])).toEqual([['normale', 150, 'partie']]);
+    expect(t.sent.map((x) => x.payload.body)).toEqual(['150 tâches à faire']);
+    expect(most).toBeLessThanOrEqual(100);
+  });
 });
