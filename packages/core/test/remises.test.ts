@@ -172,6 +172,10 @@ describeWithSqlite('HX08 · remises négociées', () => {
     s = await t.suggest();
     expect(s!.moment).toBe('en_vente');
     expect(t.ids(s)).toEqual([onSale]);
+    // Annonce retirée sans dossier vivant : aucun moment sûr, rien n'est proposé, pas même au mandat.
+    const seq = (await t.db.first<{ n: number }>('SELECT MAX(seq) AS n FROM listing_versions WHERE property_id = ?', [t.propertyId]))!.n;
+    await t.db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('lv-retrait', ?, ?, ?, 'retiree', NULL, NULL, '{}', 'h', 'retrait', ?)", [t.propertyId, t.network.id, Number(seq) + 1, t.now().toISOString()]);
+    expect(await t.suggest()).toBeNull();
   });
 
   it('[R267] un bien sans mandat inscrit est en estimation, celui au mandat inscrit est au mandat', async () => {
@@ -184,7 +188,7 @@ describeWithSqlite('HX08 · remises négociées', () => {
     expect(await t.remises.momentOf(t.network.id, t.propertyId)).toBe('mandat');
   });
 
-  it('[R267] compromis en cours, puis acte : chaque moment a ses remises, et plus rien 90 jours après l’acte', async () => {
+  it('[R267] offre acceptée sans compromis commencé, compromis en préparation, puis acte : chaque moment a ses remises, et plus rien 90 jours après l’acte', async () => {
     const t = await setup();
     const compromis = await t.add({ category: 'demenageur', beneficiary: 'client', moment: 'compromis', validUntil: '2027-12-31' });
     const acte = await t.add({ category: 'artisan', beneficiary: 'client', moment: 'acte', validUntil: '2027-12-31' });
@@ -194,6 +198,9 @@ describeWithSqlite('HX08 · remises négociées', () => {
       [t.network.id, t.propertyId, t.personId, at, t.alexId, at],
     );
     await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('f1', ?, ?, 'o1', ?, 205000, ?, 'agent')", [t.network.id, t.propertyId, t.personId, at]);
+    // Offre acceptée, compromis pas encore commencé : aucun moment sûr, rien n'est proposé.
+    expect(await t.suggest()).toBeNull();
+    await t.db.run("INSERT INTO sale_file_steps (file_id, step, at, by) VALUES ('f1', 'compromis_en_preparation', ?, 'agent')", [at]);
     let s = await t.suggest();
     expect(s!.moment).toBe('compromis');
     expect(t.ids(s)).toEqual([compromis]);
@@ -221,6 +228,7 @@ describeWithSqlite('HX08 · remises négociées', () => {
     await t.db.run("INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES ('f1', ?, 'pret_refuse', 'arrets/f1.pdf', ?, 'agent')", [t.network.id, at]);
     expect(await t.remises.momentOf(t.network.id, t.propertyId)).toBe('mandat');
     await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('f2', ?, ?, 'o2', ?, 205000, '2027-02-12T09:30:00.000Z', 'agent')", [t.network.id, t.propertyId, t.personId]);
+    await t.db.run("INSERT INTO sale_file_steps (file_id, step, at, by) VALUES ('f1', 'compromis_en_preparation', ?, 'agent'), ('f2', 'compromis_en_preparation', ?, 'agent')", [at, at]);
     expect(t.ids(await t.suggest())).toEqual([compromis]);
     await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES ('f2', ?, '2027-05-03', 'actes/f2.pdf', 'a_demarrer', ?, 'agent')", [t.network.id, at]);
     t.setClock(new Date('2027-05-04T10:00:00.000Z'));

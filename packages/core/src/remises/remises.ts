@@ -119,7 +119,7 @@ const WHY: Record<DossierMoment, string> = {
   estimation: 'Bien en estimation, sans mandat inscrit au registre.',
   mandat: 'Mandat inscrit au registre, annonce pas encore en vente.',
   en_vente: 'Annonce en vente.',
-  compromis: 'Compromis en cours.',
+  compromis: 'Compromis en préparation.',
   acte: 'Acte signé il y a moins de 90 jours.',
 };
 
@@ -256,11 +256,15 @@ export class Remises {
     return { ok: true, value: (await this.active(viewer.networkId)).map(toView) };
   }
 
-  /** Le moment du dossier d'un bien, lu dans la base, jamais déclaré ; `null` passé 90 jours après l'acte [R267]. */
+  /**
+   * Le moment du dossier d'un bien, lu dans la base, jamais déclaré [R267]. `null` quand aucun moment n'est sûr : offre
+   * acceptée sans compromis commencé, annonce sous offre, vendue ou retirée, ou plus de 90 jours après l'acte.
+   */
   async momentOf(networkId: string, propertyId: string): Promise<DossierMoment | null> {
     // Le dossier vivant du bien : jamais un dossier arrêté, car un bien peut en avoir un second (SV14).
-    const file = await this.db.first<{ id: string; signed_on: string | null }>(
-      `SELECT f.id, c.signed_on
+    const file = await this.db.first<{ id: string; signed_on: string | null; started: number }>(
+      `SELECT f.id, c.signed_on,
+              EXISTS (SELECT 1 FROM sale_file_steps st WHERE st.file_id = f.id AND st.step = 'compromis_en_preparation') AS started
          FROM sale_files f LEFT JOIN sale_file_closings c ON c.file_id = f.id
         WHERE f.property_id = ? AND f.network_id = ?
           AND NOT EXISTS (SELECT 1 FROM sale_file_stops s WHERE s.file_id = f.id)
@@ -272,9 +276,12 @@ export class Remises {
       const today = Date.parse(`${this.today()}T00:00:00Z`);
       return (today - deedDay) / 86_400_000 < AFTER_DEED_DAYS ? 'acte' : null;
     }
-    if (file) return 'compromis';
+    // Offre acceptée, compromis pas encore commencé (contrôles d'identité en cours) : rien à proposer maintenant.
+    if (file) return Number(file.started) ? 'compromis' : null;
     const listing = await this.db.first<{ state: string }>('SELECT state FROM listing_versions WHERE property_id = ? AND network_id = ? ORDER BY seq DESC LIMIT 1', [propertyId, networkId]);
     if (listing?.state === 'en_vente') return 'en_vente';
+    // Annonce sous offre, vendue ou retirée sans dossier vivant : aucun moment sûr, rien à proposer.
+    if (listing) return null;
     const mandate = await this.db.first<{ seq: number }>(
       `SELECT r.seq FROM mandate_register r
         WHERE r.network_id = ? AND r.property_id = ? AND r.kind = 'inscription'
@@ -296,7 +303,7 @@ export class Remises {
     if (!p.ok) return p.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_property' } : this.refuse(viewer, subject, String(p.code));
     if (p.view !== 'full' || p.value.agent_id !== viewer.userId) return this.refuse(viewer, subject, 'not_assigned');
     const moment = await this.momentOf(p.value.network_id, propertyId);
-    // Après les 90 jours de l'acte, plus rien n'est proposé pour ce bien.
+    // Aucun moment sûr : rien n'est proposé.
     if (moment === null) return { ok: true, value: null };
     const dismissed = new Set(
       (await this.db.all<{ discount_id: string }>('SELECT discount_id FROM network_discount_dismissals WHERE property_id = ? AND agent_id = ?', [propertyId, viewer.userId])).map((r) => r.discount_id),
