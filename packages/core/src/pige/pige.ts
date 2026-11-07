@@ -264,6 +264,10 @@ interface AdRow {
   sites: number;
 }
 
+/** Les empreintes liées à celle de la ligne `a` : celles de toutes les annonces où elle a été vue. */
+const RELATED = `SELECT b.fingerprint FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
+  WHERE x.network_id = a.network_id AND x.fingerprint = a.fingerprint`;
+
 export class Pige {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -352,10 +356,10 @@ export class Pige {
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
-              OR coalesce((SELECT published_at FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?)`,
+              OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?)`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
-          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, ad.publishedAt,
+          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, `${ad.publishedAt}|${fingerprint}|${ad.rooms ?? ''}`,
         ],
       );
       added += r.changes;
@@ -406,8 +410,8 @@ export class Pige {
          FROM current a
         WHERE a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
           AND a.id = (SELECT c.id FROM current c WHERE c.fingerprint = a.fingerprint AND c.published_at >= ? ORDER BY c.published_at, c.id LIMIT 1)
-          AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.fingerprint)
-          AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.fingerprint)
+          AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint IN (${RELATED}))
+          AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint IN (${RELATED}))
         ORDER BY a.published_at DESC, a.id`,
       [networkId, ...communes, since, since],
     );
@@ -479,9 +483,25 @@ export class Pige {
     return ad;
   }
 
+  /**
+   * Les empreintes liées à celle-ci : toutes celles qu'ont portées les annonces où elle a été vue, avant ou après une
+   * surface corrigée. Un « pas d'agence », un non ou un message sur l'une vaut pour toutes [R273, R04, R05].
+   */
+  private async relatedFingerprints(networkId: string, fingerprint: string): Promise<string[]> {
+    const rows = await this.db.all<{ fingerprint: string }>(
+      `SELECT DISTINCT b.fingerprint FROM pige_ads x
+         JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
+        WHERE x.network_id = ? AND x.fingerprint = ?`,
+      [networkId, fingerprint],
+    );
+    return [...new Set([fingerprint, ...rows.map((r) => r.fingerprint)])];
+  }
+
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
-    if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, fingerprint])) return { ok: false, rule: 'R273', code: 'pas_agence' };
-    if (await this.db.first('SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint = ?', [networkId, fingerprint])) return { ok: false, rule: 'R04', code: 'opposition' };
+    const related = await this.relatedFingerprints(networkId, fingerprint);
+    const marks = related.map(() => '?').join(', ');
+    if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...related])) return { ok: false, rule: 'R273', code: 'pas_agence' };
+    if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...related])) return { ok: false, rule: 'R04', code: 'opposition' };
     return null;
   }
 
@@ -494,7 +514,12 @@ export class Pige {
     if (g) return g;
     const ad = await this.openAdFor(viewer, adId);
     if ('ok' in ad) return ad;
-    const near = await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 });
+    const near = [
+      ...new Set([
+        ...(await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 })),
+        ...(await this.relatedFingerprints(viewer.networkId, ad.fingerprint)),
+      ]),
+    ];
     const nearIn = near.map(() => '?').join(', ');
     if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn})`, [viewer.networkId, ...near])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };

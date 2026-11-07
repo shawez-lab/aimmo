@@ -163,6 +163,34 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.prepare(s.agentAlex, old)).toMatchObject({ ok: false, code: 'annonce_remplacee' });
   });
 
+  it('[R04] [R275] un non sur l’annonce corrigée ferme aussi le message préparé avant la correction', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a, s.ad({ source: 'Site B' })]);
+    const old = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site A'"))!.id;
+    const p = await s.pige.prepare(s.agentAlex, old);
+    if (!p.ok) throw new Error('prepare');
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95 }]);
+    const fresh = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE surface_m2 = 95'))!.id;
+    expect(await s.pige.prepare(s.agentAlex, fresh)).toMatchObject({ ok: false, rule: 'R05' });
+    expect(await s.pige.oppose(s.agentAlex, fresh)).toEqual({ ok: true });
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
+    // Le même bien resté à 90 m² sur le site B sort aussi de la file.
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('une surface corrigée seule, même prix et même date, est relevée', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    expect((await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95 }])).added).toBe(1);
+    expect((await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95 }])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.surfaceM2)).toEqual([95]);
+  });
+
   it('une annonce republiée au même prix est relevée, et reste dans la file au-delà de 60 jours', async () => {
     const s = await setup();
     const a = s.ad({ publishedAt: new Date(MONDAY_10H - 59 * DAY).toISOString() });
