@@ -101,7 +101,7 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
       s.ad({ source: 'Site B', text: 'Maison à vendre.' }),
       s.ad({ surfaceM2: 120, rooms: 5 }),
     ]);
-    expect(r).toEqual({ added: 1, noAgency: 2, outside: 0, unreadable: 0 });
+    expect(r).toEqual({ added: 1, noAgency: 3, outside: 0, unreadable: 0 });
     const q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value.map((e) => e.surfaceM2)).toEqual([120]);
     // Même la base refuse de la ranger.
@@ -215,6 +215,32 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
     const q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('[R273] une annonce écartée parce que le bien est « pas d’agence » ne rentre pas après une correction de surface', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, [s.ad({ noAgency: true })]);
+    const b = s.ad({ source: 'Site B' });
+    expect((await s.pige.ingest(s.network.id, [b])).added).toBe(0);
+    s.at(MONDAY_10H + DAY);
+    expect((await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 95 }])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('[R05] [R275] deux messages préparés pour deux annonces reliées ensuite : un seul est remis', async () => {
+    const s = await setup();
+    const b = s.ad({ source: 'Site B', surfaceM2: 100 });
+    await s.pige.ingest(s.network.id, [s.ad(), b]);
+    const a = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site A'"))!.id;
+    const bId = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site B'"))!.id;
+    const pa = await s.pige.prepare(s.agentAlex, a);
+    const pb = await s.pige.prepare(s.agentAlex, bId);
+    if (!pa.ok || !pb.ok) throw new Error('prepare');
+    expect((await s.pige.validate(s.agentAlex, pa.draftId, 'annonce')).ok).toBe(true);
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 90 }]);
+    expect(await s.pige.validate(s.agentAlex, pb.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R05', code: 'bien_deja_contacte' });
   });
 
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {

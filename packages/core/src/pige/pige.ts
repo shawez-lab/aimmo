@@ -364,6 +364,13 @@ export class Pige {
         noAgency += 1;
         continue;
       }
+      // Le bien est déjà fermé « pas d'agence » : cette annonce l'est aussi, par sa clé, pour qu'une correction de sa
+      // surface ne le rouvre pas ; rien d'autre n'est gardé d'elle [R273].
+      if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, fingerprint])) {
+        await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, ref, now.toISOString()]);
+        noAgency += 1;
+        continue;
+      }
       const r = await this.db.run(
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -613,6 +620,15 @@ export class Pige {
       const rule = (decision.rule ?? 'R03') as Problem['rule'];
       return this.refused(viewer, d.id, { ok: false, rule, code: 'controle', reason: decision.reason });
     }
+    // Un seul message par bien : un autre message du même bien, relié depuis par une correction, déjà remis, ferme
+    // celui-ci [R05, R275].
+    const linked = await this.linkedKeys(viewer.networkId, d.fingerprint);
+    const handed = await this.db.first(
+      `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
+        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')})`,
+      [viewer.networkId, d.id, ...linked],
+    );
+    if (handed) return this.refused(viewer, d.id, { ok: false, rule: 'R05', code: 'bien_deja_contacte' });
     const local = localTime(at, DEFAULT_SEND_SETTINGS.timeZone);
     const inHours =
       DEFAULT_SEND_SETTINGS.initiativeDays.includes(local.weekday) &&
