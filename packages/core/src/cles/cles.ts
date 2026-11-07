@@ -304,7 +304,14 @@ export class Cles {
     }
     const at = this.now().toISOString();
     const statements = [{ sql: 'INSERT INTO property_key_returns (loan_id, outcome, recorded_by, returned_at) VALUES (?, ?, ?, ?) ON CONFLICT (loan_id) DO NOTHING', params: [loan.id, outcome, this.actor(viewer), at] }];
-    if (outcome === 'perdu') statements.push({ sql: "INSERT INTO property_key_retirements (key_id, reason, retired_by, retired_at) VALUES (?, 'perdu', ?, ?) ON CONFLICT (key_id) DO NOTHING", params: [keyId, this.actor(viewer), at] });
+    // Le retrait n'est écrit que si ce retour « perdu » vient d'être écrit : un « rendu » noté juste avant le laisse dehors.
+    if (outcome === 'perdu')
+      statements.push({
+        sql: `INSERT INTO property_key_retirements (key_id, reason, retired_by, retired_at)
+              SELECT ?, 'perdu', ?, ? WHERE EXISTS (SELECT 1 FROM property_key_returns r WHERE r.loan_id = ? AND r.outcome = 'perdu' AND r.recorded_by = ? AND r.returned_at = ?)
+              ON CONFLICT (key_id) DO NOTHING`,
+        params: [keyId, this.actor(viewer), at, loan.id, this.actor(viewer), at],
+      });
     const [res] = await runBatch(this.db, statements);
     if (!res || res.changes === 0) return { ok: false, rule: 'R271', code: 'pas_sorti' };
     await appendEvent(this.journal, { type: outcome === 'rendu' ? 'cle.rendue' : 'cle.perdue', actor: this.actor(viewer), subject: `key:${keyId}`, data: { rule: 'R271', loan: loan.id, holder: `agent:${loan.holder_agent_id}` } }, this.now);
@@ -369,7 +376,7 @@ export class Cles {
     if (!key) return { ok: false, rule: null, code: 'unknown_key' };
     const k = await this.keeper(viewer, key.property_id);
     if (!k.ok) return k;
-    const rows = await this.db.all<LoanRow>(`${LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.id`, [keyId]);
+    const rows = await this.db.all<LoanRow>(`${LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.rowid`, [keyId]);
     return {
       ok: true,
       value: rows.map((l) => ({

@@ -142,6 +142,7 @@ describeWithSqlite('HX10 · les clés des biens', () => {
     const v = await t.visit();
     await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'visite', appointmentId: v.id });
     await t.cles.giveBack(t.agentSam, key.keyId);
+    // Deux sorties dans la même milliseconde gardent leur ordre dans l'histoire.
     await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'photos', dueAt: new Date(MONDAY_9H + HOUR).toISOString() });
     // Celui qui l'avait peut dire qu'il l'a perdue, pas qu'il l'a rendue : c'est l'armoire qui le note.
     expect(await t.cles.giveBack(t.agentAlex, key.keyId, 'rendu')).toMatchObject({ ok: false, rule: 'R16' });
@@ -157,6 +158,20 @@ describeWithSqlite('HX10 · les clés des biens', () => {
     // L'histoire du trousseau : chaque sortie, qui, depuis quand, et son retour.
     const h = await t.cles.history(t.direction, key.keyId);
     expect(h.ok && h.value.map((m) => [m.holder.name, m.purpose, m.returned?.outcome])).toEqual([['Alex A.', 'visite', 'rendu'], ['Alex A.', 'photos', 'perdu']]);
+  });
+
+  it('[R271] une perte dite après un retour noté ne retire pas le trousseau rendu', async () => {
+    const t = await setup();
+    const key = await t.register();
+    await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'photos', dueAt: new Date(MONDAY_9H + HOUR).toISOString() });
+    const both = await Promise.all([t.cles.giveBack(t.agentSam, key.keyId, 'rendu'), t.cles.giveBack(t.agentAlex, key.keyId, 'perdu')]);
+    expect(both.filter((r) => r.ok).length).toBe(1);
+    const retired = await t.db.first<{ n: number }>('SELECT count(*) AS n FROM property_key_retirements');
+    const lost = await t.db.first<{ n: number }>("SELECT count(*) AS n FROM property_key_returns WHERE outcome = 'perdu'");
+    // Retiré seulement si c'est la perte qui a été notée, et toujours au journal.
+    expect(Number(retired!.n)).toBe(Number(lost!.n));
+    const events = await t.db.all<{ type: string }>("SELECT type FROM journal WHERE subject = ? AND type IN ('cle.rendue', 'cle.perdue')", [`key:${key.keyId}`]);
+    expect(events.length).toBe(1);
   });
 
   it('[R271] perdu, le trousseau ne sort plus ; rendu au propriétaire seulement depuis l’armoire', async () => {
