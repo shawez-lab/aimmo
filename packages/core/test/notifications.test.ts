@@ -391,6 +391,9 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(await t.notifications.inbound(await t.message(noa))).toEqual([{ ok: true, value: null, reason: 'deja_dit' }]);
     // Noa vient d'écrire : le contact chaud part, seul, et rien d'autre après lui.
     expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([['immediate', 1]]);
+    // 8 h 15 : le contact chaud est parti à 7 h 50, un nouveau message de Noa dans les 30 minutes n'est pas redit.
+    t.setClock(WED_8H + 15 * MIN);
+    expect(await t.notifications.inbound(await t.message(noa))).toEqual([{ ok: true, value: null, reason: 'deja_dit' }]);
     t.setClock(WED_8H + 20 * MIN);
     expect(await t.notifications.flush()).toEqual([]);
     expect(t.sent.map((x) => x.payload.body)).toEqual(['Un contact chaud à rappeler maintenant']);

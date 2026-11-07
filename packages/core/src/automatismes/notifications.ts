@@ -309,8 +309,8 @@ export class Notifications {
     if (input.kind === 'client_ecrit') {
       const hot = await this.db.first<{ n: number }>(
         `SELECT count(*) AS n FROM agent_notifications WHERE agent_id = ? AND kind = 'contact_chaud' AND person_id IN (${placeholders(members.length)})
-         AND (created_at >= ? OR status IN ('a_envoyer', 'en_envoi'))`,
-        [agent.id, ...members, new Date(at.getTime() - JUST_WROTE_MS).toISOString()],
+         AND (created_at >= ? OR sent_at >= ? OR status IN ('a_envoyer', 'en_envoi'))`,
+        [agent.id, ...members, new Date(at.getTime() - JUST_WROTE_MS).toISOString(), new Date(at.getTime() - JUST_WROTE_MS).toISOString()],
       );
       if (Number(hot?.n ?? 0) > 0) return { ok: true, value: null, reason: 'deja_dit' };
     }
