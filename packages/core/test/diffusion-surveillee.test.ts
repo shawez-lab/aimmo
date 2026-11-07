@@ -193,9 +193,12 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     expect(await racing.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: first, outcome: 'rejet', code: 'photo_trop_petite' })).toEqual({ ok: true, stored: true, taskId: null });
     expect(await t.d.tasks(t.agent)).toEqual({ ok: true, tasks: [] });
     // À l'inverse : une acceptation de la version 2 va fermer la tâche, et le rejet de la version 3 passe juste avant.
+    // Le second avenant est signé plus tard que le premier : c'est lui qui fait le prix de la version 3.
+    t.setClock(new Date('2027-03-01T09:00:00.000Z'));
     await t.amend(185000);
     await t.publication.sync(t.network.id, t.propertyId);
     const third = (await t.version()).seq;
+    expect(third).toBeGreaterThan(second);
     const opened = await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: second, outcome: 'rejet', code: 'doublon' });
     expect(opened.ok && opened.taskId).not.toBeNull();
     before = { match: 'INSERT INTO diffusion_portal_task_closures', run: () => t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: third, outcome: 'rejet', code: 'prix_illisible' }) };
