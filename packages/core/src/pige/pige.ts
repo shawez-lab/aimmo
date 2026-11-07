@@ -420,13 +420,18 @@ export class Pige {
     const key = readPropertyKey(raw);
     const keys: string[] = [];
     if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
+    // Ce que cette annonce a déjà porté sur son site : le parcours part aussi de là.
+    const before = ref
+      ? (await this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, ref.source, ref.sourceRef])).map((r) => r.fingerprint)
+      : [];
     // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
-    if (key) {
-      const l = await this.linked(networkId, await adFingerprint(key), await nearFingerprints(key));
+    if (key || before.length > 0) {
+      const seeds = [...(key ? await nearFingerprints(key) : []), ...before];
+      const l = await this.linked(networkId, key ? await adFingerprint(key) : (before[0] ?? ''), seeds);
       // Trop relié pour être suivi en entier : l'annonce n'entre pas, et sa clé et son bien sont fermés pour de bon, par
       // prudence, pour qu'une correction plus tard ne les rouvre pas [R273].
       if (!l.complete) {
-        const closeAll = [...keys, ...(await nearFingerprints(key))];
+        const closeAll = [...keys, ...(key ? await nearFingerprints(key) : [])];
         for (const f of closeAll) {
           await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
         }

@@ -383,6 +383,18 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     }
   });
 
+  it('[R273] une correction incomplète d’une annonce déjà vue suit l’histoire de cette annonce jusqu’au refus', async () => {
+    const s = await setup();
+    const a = s.ad();
+    const b = s.ad({ source: 'Site B' });
+    await s.pige.ingest(s.network.id, [a, b]);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, noAgency: true }]);
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 95, priceEur: undefined }]);
+    expect((await s.pige.ingest(s.network.id, [s.ad({ source: 'Site C', surfaceM2: 95 })])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
   it('[R273] un bien relié à plus d’annonces que la limite se ferme, jamais supposé ouvert', async () => {
     const s = await setup(3);
     const a = s.ad();
