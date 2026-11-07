@@ -164,6 +164,46 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     expect((await t.d.tasks(t.agent))).toEqual({ ok: true, tasks: [] });
   });
 
+  it('[R471] un rejet et une acceptation traités en même temps : la décision se relit dans l’écriture même', async () => {
+    const t = await setup();
+    await t.d.choose(t.agent, t.propertyId, 'seloger', true);
+    const first = (await t.version()).seq;
+    await t.amend(190000);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const second = (await t.version()).seq;
+    // Une base qui, juste avant l'écriture visée, laisse passer l'autre traitement en entier.
+    let before: { match: string; run: () => Promise<unknown> } | null = null;
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        if (key !== 'run') return Reflect.get(target, key, receiver);
+        return async (sql: string, params?: unknown[]) => {
+          if (before && sql.includes(before.match)) {
+            const b = before;
+            before = null;
+            await b.run();
+          }
+          return target.run(sql, params as never);
+        };
+      },
+    });
+    let n = 1000;
+    const racing = new DiffusionSurveillee(db, t.acces, t.journal, { now: t.now, newId: () => `r-${++n}` });
+    // Le rejet de la version 1 a lu « aucune acceptation » ; l'acceptation de la version 2 passe avant qu'il écrive sa tâche.
+    before = { match: 'INSERT INTO diffusion_portal_tasks', run: () => t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: second, outcome: 'acceptee', onlineUrl: URL_SL }) };
+    expect(await racing.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: first, outcome: 'rejet', code: 'photo_trop_petite' })).toEqual({ ok: true, stored: true, taskId: null });
+    expect(await t.d.tasks(t.agent)).toEqual({ ok: true, tasks: [] });
+    // À l'inverse : une acceptation de la version 2 va fermer la tâche, et le rejet de la version 3 passe juste avant.
+    await t.amend(185000);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const third = (await t.version()).seq;
+    const opened = await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: second, outcome: 'rejet', code: 'doublon' });
+    expect(opened.ok && opened.taskId).not.toBeNull();
+    before = { match: 'INSERT INTO diffusion_portal_task_closures', run: () => t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: third, outcome: 'rejet', code: 'prix_illisible' }) };
+    await racing.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq: second, outcome: 'acceptee', onlineUrl: URL_SL });
+    const tasks = await t.d.tasks(t.agent);
+    expect(tasks.ok && tasks.tasks.map((x) => [x.kind, x.rejection?.code])).toEqual([['rejet', 'prix_illisible']]);
+  });
+
   it('[R473] une adresse en ligne hors du domaine du portail, ou sans https, est refusée', async () => {
     const t = await setup();
     const { seq } = await t.version();

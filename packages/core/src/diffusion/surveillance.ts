@@ -117,6 +117,12 @@ export interface PortalRank {
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem = { ok: false; rule: 'R470' | 'R471' | 'R472' | 'R473' | 'R475' | null; code: string };
 
+/** Une condition relue dans l'instruction même qui écrit : rien ne passe entre la lecture et l'écriture. */
+interface Guard {
+  sql: string;
+  params: (string | number)[];
+}
+
 interface VersionRow {
   id: string;
   seq: number;
@@ -424,16 +430,16 @@ export class DiffusionSurveillee {
           WHERE NOT EXISTS (SELECT 1 FROM diffusion_portal_feedback WHERE version_id = ? AND portal = ? AND outcome = 'rejet' AND code = ?)`,
         [id, networkId, propertyId, portal.code, v.id, input.code, detail, at, v.id, portal.code, input.code],
       );
-      // Un rejet déjà rangé, ou d'une version plus ancienne qu'une version déjà acceptée, n'ouvre rien [R471].
-      const lastAccepted = await this.db.first<{ seq: number | null }>(
-        `SELECT MAX(lv.seq) AS seq FROM diffusion_portal_feedback f JOIN listing_versions lv ON lv.id = f.version_id WHERE f.property_id = ? AND f.portal = ? AND f.outcome = 'acceptee'`,
-        [propertyId, portal.code],
-      );
-      const stale = lastAccepted?.seq !== null && lastAccepted?.seq !== undefined && Number(v.seq) < Number(lastAccepted.seq);
-      const taskId =
-        changes === 1 && !stale
-          ? await this.openTask(networkId, propertyId, portal.code, 'rejet', id)
-          : ((await this.openTaskRows(propertyId, portal.code)).find((t) => t.kind === 'rejet')?.id ?? null);
+      // Un rejet déjà rangé, ou d'une version plus ancienne qu'une version déjà acceptée, n'ouvre rien. Le contrôle de
+      // l'acceptation est fait dans l'instruction même qui ouvre la tâche : une acceptation rangée entre-temps l'empêche,
+      // une acceptation rangée après la trouve ouverte et la ferme [R471].
+      const newerAccepted = {
+        sql: `NOT EXISTS (SELECT 1 FROM diffusion_portal_feedback f JOIN listing_versions lv ON lv.id = f.version_id
+               WHERE f.property_id = ? AND f.portal = ? AND f.outcome = 'acceptee' AND lv.seq > ?)`,
+        params: [propertyId, portal.code, Number(v.seq)],
+      };
+      const opened = changes === 1 ? await this.openTask(networkId, propertyId, portal.code, 'rejet', id, newerAccepted) : null;
+      const taskId = opened ?? (await this.openTaskRows(propertyId, portal.code)).find((t) => t.kind === 'rejet')?.id ?? null;
       if (changes === 1) await appendEvent(this.journal, { type: 'diffusion.rejet', actor: 'system:diffusion', subject: `property:${propertyId}`, data: { rule: 'R471', portal: portal.code, seq: Number(v.seq), code: input.code, task: taskId } }, this.now);
       return { ok: true, stored: changes === 1, taskId };
     }
@@ -454,13 +460,13 @@ export class DiffusionSurveillee {
           WHERE NOT EXISTS (SELECT 1 FROM diffusion_portal_feedback WHERE version_id = ? AND portal = ? AND outcome = 'acceptee')`,
         [id, networkId, propertyId, portal.code, v.id, url.href, at, v.id, portal.code],
       );
-      const lastRejected = await this.db.first<{ seq: number | null }>(
-        `SELECT MAX(lv.seq) AS seq FROM diffusion_portal_feedback f JOIN listing_versions lv ON lv.id = f.version_id WHERE f.property_id = ? AND f.portal = ? AND f.outcome = 'rejet'`,
-        [propertyId, portal.code],
-      );
-      if (lastRejected?.seq === null || lastRejected?.seq === undefined || Number(v.seq) >= Number(lastRejected.seq)) {
-        for (const t of (await this.openTaskRows(propertyId, portal.code)).filter((x) => x.kind === 'rejet')) await this.close(t.id, 'acceptee', id);
-      }
+      // Fermée seulement si aucun rejet d'une version plus récente n'est rangé, contrôlé dans l'instruction même [R471].
+      const noNewerRejection = {
+        sql: `NOT EXISTS (SELECT 1 FROM diffusion_portal_feedback f JOIN listing_versions lv ON lv.id = f.version_id
+               WHERE f.property_id = ? AND f.portal = ? AND f.outcome = 'rejet' AND lv.seq > ?)`,
+        params: [propertyId, portal.code, Number(v.seq)],
+      };
+      for (const t of (await this.openTaskRows(propertyId, portal.code)).filter((x) => x.kind === 'rejet')) await this.close(t.id, 'acceptee', id, noNewerRejection);
       if (changes === 1) await appendEvent(this.journal, { type: 'diffusion.acceptee', actor: 'system:diffusion', subject: `property:${propertyId}`, data: { rule: 'R473', portal: portal.code, seq: Number(v.seq) } }, this.now);
       return { ok: true, stored: changes === 1, taskId: null };
     }
@@ -476,16 +482,21 @@ export class DiffusionSurveillee {
   }
 
   /** Une seule tâche ouverte par bien, portail et sorte ; rend celle qui l'est [R471]. */
-  private async openTask(networkId: string, propertyId: string, portal: string, kind: 'rejet' | 'ecart', ref: string): Promise<string> {
+  /**
+   * Une seule tâche ouverte par bien, portail et sorte ; rend celle qui l'est [R471]. Avec `guard`, la tâche ne s'ouvre
+   * que si la condition tient au moment même de l'écriture ; sinon rien, et `null`.
+   */
+  private async openTask(networkId: string, propertyId: string, portal: string, kind: 'rejet' | 'ecart', ref: string, guard?: Guard): Promise<string | null> {
     const existing = (await this.openTaskRows(propertyId, portal)).find((t) => t.kind === kind);
     if (existing) return existing.id;
-    const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [propertyId]);
     const id = this.newId();
     try {
-      await this.db.run(
-        `INSERT INTO diffusion_portal_tasks (id, network_id, property_id, portal, kind, agent_id, first_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, networkId, propertyId, portal, kind, agent?.agent_id ?? null, ref, this.now().toISOString()],
+      const { changes } = await this.db.run(
+        `INSERT INTO diffusion_portal_tasks (id, network_id, property_id, portal, kind, agent_id, first_ref, created_at)
+         SELECT ?, ?, ?, ?, ?, (SELECT agent_id FROM properties WHERE id = ?), ?, ? WHERE ${guard?.sql ?? '1'}`,
+        [id, networkId, propertyId, portal, kind, propertyId, ref, this.now().toISOString(), ...(guard?.params ?? [])],
       );
+      if (changes !== 1) return null;
     } catch (e) {
       // Une autre réponse, arrivée en même temps, a ouvert la tâche : la base l'a gardée seule.
       const again = (await this.openTaskRows(propertyId, portal)).find((t) => t.kind === kind);
@@ -496,10 +507,11 @@ export class DiffusionSurveillee {
     return id;
   }
 
-  private async close(taskId: string, reason: 'acceptee' | 'conforme' | 'portail_abandonne', ref: string | null): Promise<void> {
+  private async close(taskId: string, reason: 'acceptee' | 'conforme' | 'portail_abandonne', ref: string | null, guard?: Guard): Promise<void> {
     const { changes } = await this.db.run(
-      'INSERT INTO diffusion_portal_task_closures (task_id, reason, ref, at) SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM diffusion_portal_task_closures WHERE task_id = ?)',
-      [taskId, reason, ref, this.now().toISOString(), taskId],
+      `INSERT INTO diffusion_portal_task_closures (task_id, reason, ref, at) SELECT ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM diffusion_portal_task_closures WHERE task_id = ?) AND ${guard?.sql ?? '1'}`,
+      [taskId, reason, ref, this.now().toISOString(), taskId, ...(guard?.params ?? [])],
     );
     if (changes === 1) await appendEvent(this.journal, { type: 'diffusion.tache_fermee', actor: 'system:diffusion', subject: `task:${taskId}`, data: { rule: 'R471', reason } }, this.now);
   }
