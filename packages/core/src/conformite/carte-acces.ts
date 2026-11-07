@@ -589,6 +589,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sign_placements: { locate: [via('property_id', 'properties')] },
   sign_removals: out('agent', 'Panneau récupéré ou perdu, noté par l\'agent ou la direction.'),
   sign_pickup_tasks: out('agent', 'Tâche « récupérer le panneau » de l\'agent de la pose.'),
+  // HX15 : les vues du site, sans rien d'un visiteur.
+  site_page_views: out('non_rattachable', 'Nombre de vues d\'un contenu public par jour : aucune donnée d\'un visiteur.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),

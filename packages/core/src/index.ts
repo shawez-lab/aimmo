@@ -61,6 +61,7 @@ export * as horsLigne from './hors-ligne/index.ts';
 // HX13 sous son propre nom, comme HX12.
 export * as presentation from './presentation/index.ts';
 export * as panneaux from './panneaux/index.ts';
+export * as statistiquesSite from './statistiques-site/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';

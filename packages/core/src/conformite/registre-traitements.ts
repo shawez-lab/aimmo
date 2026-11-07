@@ -259,6 +259,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       sign_placements: ['agent_id', 'street_number', 'street', 'postcode', 'city', 'placed_by'],
       sign_removals: ['removed_by', 'removed_at'],
       sign_pickup_tasks: ['agent_id', 'reason', 'detail'],
+      // HX15 : les vues du site, un compteur par contenu et par jour ; rien d'un visiteur. Le code du contenu est inscrit
+      // par prudence (son nom ressemble à une donnée personnelle).
+      site_page_views: ['content_id'],
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
@@ -997,6 +1000,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sign_placements: ['id', 'network_id', 'sign_id', 'property_id', 'mandate_id', 'placed_at'],
   sign_removals: ['placement_id', 'network_id', 'outcome'],
   sign_pickup_tasks: ['placement_id', 'network_id', 'due_day', 'created_at'],
+  site_page_views: ['network_id', 'day', 'views'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
