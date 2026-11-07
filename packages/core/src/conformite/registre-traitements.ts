@@ -232,7 +232,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_keys: ['created_by'],
       property_key_loans: ['holder_agent_id', 'handed_by'],
       property_key_returns: ['recorded_by'],
-      property_key_retirements: ['retired_by'],
+      property_key_retirements: ['reason', 'retired_by'],
     },
   },
   {
@@ -943,7 +943,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_keys: ['id', 'network_id', 'property_id', 'number', 'label', 'created_at'],
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
-  property_key_retirements: ['key_id', 'reason', 'retired_at'],
+  property_key_retirements: ['key_id', 'retired_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
