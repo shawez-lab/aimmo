@@ -218,7 +218,11 @@ export interface ScoreAdresseOptions {
   newId?: () => string;
 }
 
-const isDay = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(Date.parse(`${v}T00:00:00.000Z`)).toISOString().slice(0, 10) === v;
+const isDay = (v: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00.000Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 
 export class ScoreAdresse {
   private readonly now: () => Date;
@@ -279,6 +283,8 @@ export class ScoreAdresse {
     if (found.parcel.ok) {
       const v = found.parcel.value;
       parcel = { id: String(v.id), areaM2: typeof v.area === 'number' && Number.isFinite(v.area) && v.area > 0 ? v.area : null, source: SOURCES.parcel, readOn: found.parcel.collectedAt.slice(0, 10) };
+      // Une parcelle sans contenance publiée : le signal ne peut pas se juger, et cela se dit [R291].
+      if (parcel.areaM2 === null) missing.push({ source: SOURCES.parcel, reason: 'contenance_absente' });
     } else missing.push({ source: SOURCES.parcel, reason: found.parcel.reason });
     let sales: AddressFacts['sales'] = null;
     const department = departmentOf(g.postalCode);

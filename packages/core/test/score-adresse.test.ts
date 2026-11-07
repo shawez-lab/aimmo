@@ -294,6 +294,23 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     expect(m.ok && m.bands.find((b) => b.band === 'tres_fort')).toMatchObject({ scored: 1, signed: 1 });
   });
 
+  it('[R291] une parcelle sans contenance se dit manquante ; une date de diagnostic impossible est illisible, sans casser le score', async () => {
+    const base = fakeServices().services;
+    const t = await setup({
+      ...base,
+      cadastre: { parcelAt: async () => ({ id: '21617000AB0042', section: 'AB', number: '0042', area: null }) },
+      energy: { latestFor: async () => ({ energyClass: 'F', ghgClass: null, date: '2026-13-01', diagnosisNumber: null }) },
+    });
+    const r = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.missing).toEqual([
+      { source: 'Diagnostics de performance énergétique (ADEME)', reason: 'illisible' },
+      { source: 'Cadastre (IGN, API Carto)', reason: 'contenance_absente' },
+    ]);
+    expect(r.value.points.map((p) => p.signal)).toEqual(['ventes_voisinage']);
+  });
+
   it('[R291] rien ne change ni ne s’efface', async () => {
     const t = await setup();
     const r = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
