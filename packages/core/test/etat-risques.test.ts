@@ -143,6 +143,32 @@ describeWithSqlite('HX34 · état des risques et déclaration d’intention d’
     expect(events).not.toContain(String(sale!.amount_eur));
   });
 
+  it('[R446] un terrain : sa surface vient du bien, pas de surface habitable', async () => {
+    const t = await setupDossier('terrain');
+    const etat = new EtatRisques(t.db, t.acces, t.journal, t.storage, { now: t.now });
+    const p = await t.db.first<{ surface_m2: number }>('SELECT surface_m2 FROM properties WHERE id = ?', [t.propertyId]);
+    const r = await etat.dia(t.agent, t.fileId);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.lines.find((l) => l.field === 'surface_terrain')).toEqual({ field: 'surface_terrain', value: p!.surface_m2, from: { kind: 'bien', ref: `property:${t.propertyId}` } });
+    expect(r.value.lines.find((l) => l.field === 'surface_habitable')).toEqual({ field: 'surface_habitable', value: null, from: null, reason: 'sans_objet' });
+    expect(r.value.lines.find((l) => l.field === 'nature')).toMatchObject({ value: 'terrain non bâti' });
+  });
+
+  it('[R447] une erreur de la base qui n’est pas un conflit de version n’est pas tue', async () => {
+    const t = await setup();
+    const run = t.db.run.bind(t.db);
+    t.db.run = (async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INSERT INTO risk_statements')) throw new Error('disque plein');
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    await expect(t.etat.prepare(t.agent, t.fileId, facts())).rejects.toThrow('disque plein');
+    t.db.run = (async (sql: string, params?: unknown[]) => {
+      if (sql.includes('INSERT INTO risk_statements')) throw new Error('UNIQUE constraint failed: risk_statements.file_id, risk_statements.version');
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    expect(await t.etat.prepare(t.agent, t.fileId, facts())).toEqual({ ok: false, rule: null, code: 'busy' });
+  });
+
   it('[R16] [R447] seul l’agent du bien prépare et range ; direction et conformité lisent ; rien ne s’efface ni ne se réécrit', async () => {
     const t = await setup();
     expect(await t.etat.prepare(t.sam, t.fileId, facts())).toMatchObject({ ok: false, rule: 'R16' });

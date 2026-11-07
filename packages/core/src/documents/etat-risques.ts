@@ -229,8 +229,10 @@ export class EtatRisques {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, g.file.network_id, fileId, version, content, complete ? 1 : 0, statementDate, until, hash, actorOf(viewer), preparedAt],
       );
-    } catch {
-      return { ok: false, rule: null, code: 'busy' };
+    } catch (error) {
+      // Deux préparations au même instant : la seconde trouve sa version prise. Toute autre erreur remonte.
+      if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
+      throw error;
     }
     await appendEvent(this.journal, { type: 'dossier.etat_risques_prepare', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { statement: id, version, complete, filled: rubrics.filter((l) => l.filled).length } }, this.now);
     return { ok: true, value: { id, fileId, version, rubrics, complete, statementDate, validUntil: until, hash, preparedAt } };
@@ -312,10 +314,15 @@ export class EtatRisques {
     const f = fiche();
     if (f && sheet?.coownership) put('lot_copropriete', sheet.coownership.isCoownership ? 'oui' : 'non', f);
     else none('lot_copropriete', 'absent_du_dossier');
-    if (property?.kind === 'land') none('surface_habitable', 'sans_objet');
-    else put('surface_habitable', property?.surface_m2 ?? null, bien);
-    if (f && sheet?.characteristics?.landM2 != null) put('surface_terrain', sheet.characteristics.landM2, f);
-    else none('surface_terrain', 'absent_du_dossier');
+    // Un terrain : sa surface est celle du bien ; un bâti : la surface habitable, et le terrain d'après sa fiche.
+    if (property?.kind === 'land') {
+      none('surface_habitable', 'sans_objet');
+      put('surface_terrain', property.surface_m2, bien);
+    } else {
+      put('surface_habitable', property?.surface_m2 ?? null, bien);
+      if (f && sheet?.characteristics?.landM2 != null) put('surface_terrain', sheet.characteristics.landM2, f);
+      else none('surface_terrain', 'absent_du_dossier');
+    }
     put('prix', sale?.amount_eur ?? null, { kind: 'dossier', ref: `sale_file:${fileId}` });
     const acte = schedule.dates.acte_prevu;
     if (acte) put('date_acte_prevue', acte.day, { kind: 'echeancier', ref: `sale_file:${fileId}`, version: acte.version });
