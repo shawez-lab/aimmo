@@ -113,7 +113,7 @@ interface LetterRow {
   purpose: 'notification_avant_contrat';
   person_id: string;
   document_ref: string;
-  body_hash: string;
+  hash: string;
   prepared_by: string;
   prepared_at: string;
 }
@@ -281,7 +281,7 @@ export class RecommandeElectronique {
     if (!text) return { ok: false, rule: null, code: 'compromis_not_signed' };
     const id = this.newId();
     await this.db.run(
-      'INSERT INTO registered_letters (id, network_id, file_id, purpose, person_id, document_ref, body_hash, prepared_by, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO registered_letters (id, network_id, file_id, purpose, person_id, document_ref, hash, prepared_by, prepared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, g.file.network_id, fileId, 'notification_avant_contrat', g.file.buyer_person_id, ref, await sha256(text.body), actorOf(viewer), this.now().toISOString()],
     );
     await appendEvent(this.journal, { type: 'dossier.recommande_prepare', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { letter: id } }, this.now);
@@ -304,7 +304,7 @@ export class RecommandeElectronique {
     if (!(await this.store.has(letter.document_ref))) return { ok: false, rule: 'R462', code: 'not_stored' };
     // Le texte est refait maintenant : une date de signature corrigée depuis la préparation demande une nouvelle lettre.
     const text = await this.text(letter.file_id, letter.person_id, viewer.userId);
-    if (!text || (await sha256(text.body)) !== letter.body_hash) return { ok: false, rule: null, code: 'changed' };
+    if (!text || (await sha256(text.body)) !== letter.hash) return { ok: false, rule: null, code: 'changed' };
     const result = await this.controle.send({
       networkId: letter.network_id,
       agentId: viewer.userId,
@@ -324,7 +324,8 @@ export class RecommandeElectronique {
     if (result.status === 'sent' && result.messageId) {
       const trial = (await this.db.first('SELECT 1 FROM trial_outbox WHERE message_id = ?', [result.messageId])) !== null;
       if (!(await this.addEvent(letter, { kind: 'envoi', occurredAt: at, proofRef: null, messageId: result.messageId, trial, rule: null, by }))) return { ok: false, rule: null, code: 'busy' };
-      await appendEvent(this.journal, { type: trial ? 'dossier.recommande_essai' : 'dossier.recommande_envoye', actor: by, subject: `sale_file:${letter.file_id}`, data: { rule: trial ? 'R463' : 'R461', letter: letterId, message: result.messageId } }, this.now);
+      if (trial) await appendEvent(this.journal, { type: 'dossier.recommande_essai', actor: by, subject: `sale_file:${letter.file_id}`, data: { rule: 'R463', letter: letterId, message: result.messageId } }, this.now);
+      else await appendEvent(this.journal, { type: 'dossier.recommande_envoye', actor: by, subject: `sale_file:${letter.file_id}`, data: { rule: 'R461', letter: letterId, message: result.messageId } }, this.now);
       return { ok: true, value: { ...(await this.view(letterId))!, sent: !trial, rule: trial ? 'R463' : null } };
     }
     const rule = result.rule ?? (result.status === 'failed' ? 'panne' : 'refus');

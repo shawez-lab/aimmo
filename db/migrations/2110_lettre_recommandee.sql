@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS registered_letters (
   -- Le compromis signé, joint à la lettre : une référence du stockage des pièces, jamais son contenu.
   document_ref TEXT NOT NULL CHECK (length(document_ref) BETWEEN 10 AND 300),
   -- L'empreinte du texte de la lettre, écrit par le code : le texte part par le contrôle central, qui le range.
-  body_hash TEXT NOT NULL CHECK (length(body_hash) = 64),
+  hash TEXT NOT NULL CHECK (length(hash) = 64),
   prepared_by TEXT NOT NULL,
   prepared_at TEXT NOT NULL
 );
