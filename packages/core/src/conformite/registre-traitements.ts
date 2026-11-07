@@ -239,6 +239,13 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_key_loans: ['holder_agent_id', 'handed_by'],
       property_key_returns: ['recorded_by'],
       property_key_retirements: ['reason', 'retired_by'],
+      // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
+      // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
+      pige_no_agency: [],
+      pige_ads: ['commune', 'postal_code'],
+      pige_oppositions: ['noted_by'],
+      pige_drafts: ['agent_id', 'body'],
+      pige_handovers: ['draft_id', 'agent_id'],
       // HX31 : l'écran de vitrine ; seul l'agent dont l'écran montre les biens, ou qui l'a réglé, est nommé.
       vitrine_screens: ['agent_id', 'created_by'],
       vitrine_screen_switches: ['by_actor'],
@@ -962,6 +969,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],
+  pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
+  pige_ads: ['id', 'network_id', 'source', 'source_ref', 'fingerprint', 'kind', 'surface_m2', 'rooms', 'price_eur', 'published_at', 'collected_at'],
+  pige_oppositions: ['network_id', 'fingerprint', 'noted_at'],
+  pige_drafts: ['id', 'network_id', 'fingerprint', 'ad_id', 'gap_pct', 'market_source', 'market_last_sale', 'created_at'],
+  pige_handovers: ['channel', 'handed_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
