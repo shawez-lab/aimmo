@@ -269,6 +269,8 @@ describeWithSqlite('HX07 · la boutique de l’agent', () => {
     // Rejouée, la même demande rend la même commande, sans en créer une autre.
     expect(await t.boutique.prepare(t.agent, { requestId: 'commande-0010', support: 'flyer', propertyId: t.propertyId, quantity: 100 })).toMatchObject({ ok: true, orderId: 'commande-0010' });
     expect((await t.boutique.orders(t.agent)).length).toBe(1);
+    expect(await t.boutique.prepare(t.agent, { requestId: 'commande-0010', support: 'flyer', propertyId: t.propertyId, quantity: 250 })).toEqual({ ok: false, rule: null, code: 'demande_differente' });
+    expect(await t.boutique.prepare(t.agent, { requestId: 'commande-0010', support: 'panneau', propertyId: t.propertyId, quantity: 100 })).toEqual({ ok: false, rule: null, code: 'demande_differente' });
     // Un autre agent, la direction : ni validation, ni envoi.
     expect(await t.boutique.validate(t.sam, 'commande-0010')).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.boutique.validate(t.direction, 'commande-0010')).toMatchObject({ ok: false, rule: 'R16' });
@@ -284,6 +286,17 @@ describeWithSqlite('HX07 · la boutique de l’agent', () => {
     ]);
     expect(t.printer.received).toHaveLength(1);
     expect((await t.boutique.orders(t.agent))[0]).toMatchObject({ status: 'envoyee' });
+  });
+
+  it('[R265] une validation rangée sans envoi réservé (coupure) se reprend au geste suivant, une seule fois', async () => {
+    const t = await setupBoutique();
+    await t.tariff('flyer', 100, 4900);
+    await t.boutique.prepare(t.agent, { requestId: 'commande-0015', support: 'flyer', propertyId: t.propertyId, quantity: 100 });
+    await t.db.run("INSERT INTO shop_order_validations (order_id, validated_by, validated_at) VALUES ('commande-0015', ?, 'x')", [`agent:${t.alexId}`]);
+    expect(t.printer.received).toEqual([]);
+    expect(await t.boutique.validate(t.agent, 'commande-0015')).toEqual({ ok: true, printerRef: 'IMP-1' });
+    expect(await t.boutique.validate(t.agent, 'commande-0015')).toEqual({ ok: false, rule: null, code: 'deja_validee' });
+    expect(t.printer.received).toHaveLength(1);
   });
 
   it('[R265] deux gestes au même instant : un seul envoi', async () => {

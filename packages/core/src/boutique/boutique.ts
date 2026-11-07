@@ -211,6 +211,9 @@ export class Boutique {
     const existing = await this.db.first<OrderRow>('SELECT * FROM shop_orders WHERE id = ?', [input.requestId]);
     if (existing) {
       if (existing.agent_id !== viewer.userId || existing.network_id !== viewer.networkId) return this.refuse(viewer, `shop_order:${existing.id}`, 'not_owner');
+      // La même demande, et seulement elle : un autre support, bien ou quantité sous la même clé est refusé.
+      const sameProperty = existing.support === 'carte' ? input.propertyId === undefined || input.propertyId === null : existing.property_id === input.propertyId;
+      if (existing.support !== input.support || !sameProperty || Number(existing.quantity) !== input.quantity) return { ok: false, rule: null, code: 'demande_differente' };
       return { ok: true, orderId: existing.id, priceCents: Number(existing.price_cents), html: existing.html };
     }
     const preview = await this.preview(viewer, input);
@@ -241,7 +244,9 @@ export class Boutique {
     if (!order || order.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_order' };
     const subject = `shop_order:${order.id}`;
     if (viewer.role !== 'agent' || viewer.userId !== order.agent_id) return this.refuse(viewer, subject, 'not_owner');
-    if (await this.db.first('SELECT 1 AS x FROM shop_order_validations WHERE order_id = ?', [order.id])) return { ok: false, rule: null, code: 'deja_validee' };
+    if (await this.db.first('SELECT 1 AS x FROM shop_order_sends WHERE order_id = ?', [order.id])) return { ok: false, rule: null, code: 'deja_validee' };
+    // Une validation rangée sans envoi réservé (coupure entre les deux) se reprend au geste suivant, sans rien doubler.
+    const resumed = (await this.db.first('SELECT 1 AS x FROM shop_order_validations WHERE order_id = ?', [order.id])) !== null;
 
     const now = await this.preview(viewer, { support: order.support, propertyId: order.property_id });
     if (!now.ok) return { ok: false, rule: null, code: 'support_perime' };
@@ -250,8 +255,10 @@ export class Boutique {
     if (!tariff || tariff.id !== order.tariff_id || tariff.price_cents !== Number(order.price_cents)) return { ok: false, rule: null, code: 'tarif_change' };
 
     const at = this.now().toISOString();
-    const v = await this.db.run('INSERT INTO shop_order_validations (order_id, validated_by, validated_at) VALUES (?, ?, ?) ON CONFLICT (order_id) DO NOTHING', [order.id, this.actor(viewer), at]);
-    if (v.changes === 0) return { ok: false, rule: null, code: 'deja_validee' };
+    if (!resumed) {
+      const v = await this.db.run('INSERT INTO shop_order_validations (order_id, validated_by, validated_at) VALUES (?, ?, ?) ON CONFLICT (order_id) DO NOTHING', [order.id, this.actor(viewer), at]);
+      if (v.changes === 0) return { ok: false, rule: null, code: 'deja_validee' };
+    }
     await appendEvent(this.journal, { type: 'boutique.commande_validee', actor: this.actor(viewer), subject, data: { support: order.support, quantity: Number(order.quantity), priceCents: Number(order.price_cents) } }, this.now);
     const s = await this.db.run('INSERT INTO shop_order_sends (order_id, printer, reserved_at) VALUES (?, ?, ?) ON CONFLICT (order_id) DO NOTHING', [order.id, this.printer.name, at]);
     if (s.changes === 0) return { ok: false, rule: null, code: 'deja_validee' };
