@@ -86,6 +86,12 @@ export interface DocumentFacts {
   mandateId?: string | null;
 }
 
+/**
+ * Une partie ajoutée au document par un autre module (le questionnaire de HX33) : du HTML déjà échappé, son style en
+ * jetons du système de design, ce qui y manque, et si elle est d'essai. Elle reçoit le prix lu dans la base.
+ */
+export type DocumentAnnex = (ctx: { priceEur: number | null; templateValidated: boolean }) => Promise<{ html: string; css: string; missing: string[]; trial: boolean }>;
+
 export interface GenerateRequest {
   kind: DocumentKind;
   personId: string;
@@ -284,7 +290,7 @@ export class Modeles {
   }
 
   /** Génère un document depuis la dernière version du modèle, pour une fiche et un bien que l'on voit en entier [R16]. */
-  async generate(viewer: Viewer, request: GenerateRequest): Promise<{ ok: true; document: GeneratedDocument } | Refusal | Problem> {
+  async generate(viewer: Viewer, request: GenerateRequest, annex?: DocumentAnnex): Promise<{ ok: true; document: GeneratedDocument } | Refusal | Problem> {
     if (!(DOCUMENT_KINDS as readonly string[]).includes(request.kind)) return { ok: false, rule: null, code: 'unknown_kind' };
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'document', 'role');
     const inputs = readInputs(request.inputs ?? {});
@@ -362,9 +368,13 @@ export class Modeles {
     if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Un avenant ne change que le prix et la durée par ses propres champs : les saisies du mandat n'y ont pas cours.
     if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
-    const missing = fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined));
-    const mode = template.status === 'valide' ? 'reel' : 'essai';
-    const content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
+    // Une annexe (le questionnaire de HX33) s'ajoute au document même : ce qui se signe est ce qu'elle montre, et une
+    // annexe d'essai ou incomplète rend le document entier d'essai ou incomplet [R40, R442].
+    const extra = annex ? await annex({ priceEur: facts.priceEur, templateValidated: template.status === 'valide' }) : null;
+    const missing = [...fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined)), ...(extra?.missing ?? [])];
+    const mode = template.status === 'valide' && !extra?.trial ? 'reel' : 'essai';
+    let content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
+    if (extra) content = content.replace('</style>', `${extra.css}</style>`).replace('\n</body>', `\n${extra.html}\n</body>`);
     const contentHash = await sha256(content);
     const id = this.newId();
     const at = this.now().toISOString();
