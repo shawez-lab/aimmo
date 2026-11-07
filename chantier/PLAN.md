@@ -257,7 +257,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
 
 ### HX30 · Visibilité dans les moteurs d'IA
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Hektor, Kappn et Artur'in : être cité par ChatGPT, Perplexity et Google. Jamais vu : des pages de réponses factuelles, chaque chiffre sourcé, un fichier de présentation pour les robots d'IA, et la mesure des contacts venus d'une IA dans l'origine des contacts de AT05.
 - Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
 
