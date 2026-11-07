@@ -32,10 +32,10 @@ async function setup() {
   };
   let m = 0;
   /** Une conversation venue de tel contenu, d'une personne qui vend, achète ou n'est pas encore rattachée. */
-  const demande = async (contentId: string | null, o: { project?: string | null; mandate?: boolean; at?: number; conv?: string } = {}) => {
+  const demande = async (contentId: string | null, o: { project?: string | null; mandate?: boolean; at?: number; conv?: string; personId?: string } = {}) => {
     m += 1;
-    let personId: string | null = null;
-    if (o.project !== null) {
+    let personId: string | null = o.personId ?? null;
+    if (o.project !== null && !o.personId) {
       const person = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Inès', lastName: `Durand${m}` });
       personId = person.id;
       if (o.project) await store.createProject({ networkId: network.id, agentId: alex.id, personId, kind: o.project as 'sell' });
@@ -69,7 +69,12 @@ async function setup() {
   };
   const zone = async (agentId: string, commune: string) =>
     db.run('INSERT INTO agent_zones (id, network_id, agent_id, commune, created_at) VALUES (?, ?, ?, ?, ?)', [`z-${agentId}-${commune}`, network.id, agentId, commune, new Date(NOW).toISOString()]);
-  return { db, journal, stats, store, network, other, alex, sam, as, direction: as('direction', 'd1'), agentAlex: as('agent', alex.id), agentSam: as('agent', sam.id), bien, content, demande, views, zone, setClock: (t: number) => (clock = t) };
+  const person = async (project: string | null) => {
+    const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Martin' });
+    if (project) await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: project as 'sell' });
+    return p.id;
+  };
+  return { db, journal, stats, store, person, network, other, alex, sam, as, direction: as('direction', 'd1'), agentAlex: as('agent', alex.id), agentSam: as('agent', sam.id), bien, content, demande, views, zone, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('HX15 · statistiques du site', () => {
@@ -130,6 +135,32 @@ describeWithSqlite('HX15 · statistiques du site', () => {
     // Aucun nom dans le résultat.
     expect(JSON.stringify(r)).not.toMatch(/Inès|Durand|Inventée/);
     expect(await t.stats.pages(t.direction, { days: 3 })).toEqual({ ok: false, rule: null, code: 'bad_period' });
+  });
+
+  it('[R286] une demande est nommée par son premier message, sa personne est la première rattachée, et un mandat compte sans projet', async () => {
+    const t = await setup();
+    const prix = await t.content('prix', 'dijon-test');
+    // Le premier message n'a pas d'origine ; le suivant la donne : la demande reste nommée par le premier.
+    const first = await t.demande(null, { project: null, conv: 'conv-a', at: NOW - 12 * DAY });
+    const second = await t.demande(prix, { project: null, conv: 'conv-a', at: NOW - 11 * DAY });
+    // Deux personnes dans une conversation : celle du premier message compte, quel que soit l'ordre de leurs identifiants.
+    const buyer = await t.person('buy');
+    const seller = await t.person('sell');
+    // Le premier rattaché a le plus grand identifiant : un tri par identifiant prendrait l'autre, de rôle contraire.
+    const firstPerson = buyer > seller ? buyer : seller;
+    const laterPerson = firstPerson === buyer ? seller : buyer;
+    const conv = await t.demande(prix, { personId: firstPerson, conv: 'conv-b', at: NOW - 8 * DAY });
+    await t.demande(null, { personId: laterPerson, conv: 'conv-b', at: NOW - 7 * DAY });
+    // Un mandat signé sans projet de vente : compté comme mandat et comme vendeur.
+    const mandat = await t.demande(prix, { mandate: true });
+    const r = await t.stats.pages(t.direction);
+    if (!r.ok) throw new Error('pages');
+    const p = r.pages.find((x) => x.contentId === prix)!;
+    expect(p.demandes).toEqual([first, conv, mandat].sort());
+    expect(p.demandes).not.toContain(second);
+    const expected = firstPerson === seller ? [conv, mandat].sort() : [mandat];
+    expect(p.vendeurs).toEqual(expected);
+    expect(p.mandats).toEqual([mandat]);
   });
 
   it('[R286] [R16] l’agent voit sa page et ses biens ; ni la conformité ni un agent parti ne voient rien', async () => {

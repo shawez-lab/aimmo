@@ -5,8 +5,9 @@
  *   contenu et par jour de Paris. Rien d'autre n'est gardé du visiteur : ni adresse IP, ni navigateur, ni page d'arrivée,
  *   ni cookie, ni heure ; la fonction ne reçoit d'ailleurs rien d'autre que le code [R285, R156].
  * - Chaque chiffre est relié à des demandes réelles : une demande est une conversation reçue dont la première origine
- *   connue est ce contenu (la règle de la mesure de AT05), nommée par son premier message ; un vendeur, une demande dont
- *   la personne a un projet de vente ou d'estimation ; un mandat, une demande dont la personne a signé un mandat ensuite.
+ *   connue est ce contenu (la règle de la mesure de AT05), nommée par son premier message ; sa personne est la première
+ *   rattachée à ses messages ; un mandat, une demande dont la personne a signé un mandat ensuite, projet ou non ; un
+ *   vendeur, une demande dont la personne a un projet de vente, d'estimation ou de cession, ou un tel mandat.
  *   La direction voit tout le réseau ; l'agent, sa page et ses biens [R286, R16]. Aucun nom.
  * - Jamais vu : la prochaine page à écrire, par une règle écrite, sans IA. Parmi les pages rédactionnelles (prix,
  *   quartier), la sorte qui amène le plus de vendeurs par vue ; puis, parmi les communes des zones qui n'ont pas encore
@@ -114,10 +115,12 @@ export class StatistiquesSite {
 
   /** Les conversations commencées dans la période, chacune avec sa première origine connue (la règle de AT05). */
   private async conversations(networkId: string, from: string, to: string): Promise<Conversation[]> {
-    const rows = await this.db.all<{ known: string | null; person_id: string | null; first_at: string }>(
+    // Le premier message, la première origine connue et la première personne rattachée : chacun par l'ordre des messages.
+    const rows = await this.db.all<{ known: string | null; person: string | null; first: string; first_at: string }>(
       `SELECT min(m.received_at) AS first_at,
+              min(m.received_at || '|' || m.id) AS first,
               min(CASE WHEN o.content_id IS NOT NULL THEN m.received_at || '|' || m.id || '|' || o.content_id END) AS known,
-              min(m.person_id) AS person_id
+              min(CASE WHEN m.person_id IS NOT NULL THEN m.received_at || '|' || m.id || '|' || m.person_id END) AS person
          FROM inbound_messages m LEFT JOIN contact_origins o ON o.inbound_id = m.id
         WHERE m.network_id = ? AND m.status <> 'unreadable' AND m.kind <> 'unreadable'
         GROUP BY m.channel, coalesce(m.conversation_ref, m.kind || ':' || m.external_id, m.id)
@@ -127,8 +130,8 @@ export class StatistiquesSite {
     const out: Conversation[] = [];
     for (const r of rows) {
       if (!r.known) continue;
-      const [, inbound, contentId] = r.known.split('|');
-      out.push({ firstInbound: inbound!, contentId: contentId!, personId: r.person_id, firstAt: r.first_at });
+      const last = (v: string): string => v.slice(v.lastIndexOf('|') + 1);
+      out.push({ firstInbound: last(r.first), contentId: last(r.known), personId: r.person ? last(r.person) : null, firstAt: r.first_at });
     }
     return out;
   }
@@ -160,10 +163,11 @@ export class StatistiquesSite {
           `SELECT COUNT(*) AS n FROM projects WHERE person_id = ? AND network_id = ? AND kind IN (${SELLER_PROJECTS.map(() => '?').join(', ')})`,
           [conv.personId, networkId, ...SELLER_PROJECTS],
         );
-        if ((seller?.n ?? 0) === 0) continue;
-        vendeurs.push(conv.firstInbound);
+        // Un mandat compte de lui-même, projet ou non ; qui signe un mandat est un vendeur.
         const mandate = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandates WHERE person_id = ? AND network_id = ? AND signed_at >= ?', [conv.personId, networkId, conv.firstAt]);
-        if ((mandate?.n ?? 0) > 0) mandats.push(conv.firstInbound);
+        const signed = (mandate?.n ?? 0) > 0;
+        if (signed) mandats.push(conv.firstInbound);
+        if (signed || (seller?.n ?? 0) > 0) vendeurs.push(conv.firstInbound);
       }
       const demandes = convs.map((x) => x.firstInbound).sort();
       stats.push({ contentId: c.id, kind: c.kind, ref: c.ref, views: v, demandes, vendeurs: vendeurs.sort(), mandats: mandats.sort(), vendeursPour1000Vues: per1000(vendeurs.length, v) });
