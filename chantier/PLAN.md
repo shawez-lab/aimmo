@@ -227,7 +227,8 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 - Critères : un mail d'un client connu est rattaché à sa fiche (test) ; aucune réponse envoyée sans validation (test) ; une pièce jointe est rangée une seule fois, par son empreinte (test).
 
 ### HX27 · Notifications sur le téléphone, réglables
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#393), migration `1903`, R412 à R415. Décidé, lecture prudente : heures calmes par défaut 21 h à 8 h, et tout le dimanche ; le contact chaud ne se coupe pas, part seul, mais attend lui aussi les heures calmes sauf si la personne vient d'écrire (30 minutes) ; chaque notification gardée est relue avant de partir (droits, exclusion), sinon annulée ; texte écran verrouillé fait de mots fixes et de nombres seulement. Aucune notification ne part hors de la porte `AgentPushGate` : d'ici SV15, la seule porte est la boîte d'essai. Codex : 9 P0 corrigés en 7 tours, dernière version sans remarque. Restent : SV15 (porte dans le contrôle central), vrai service Web Push (H57), branchement au planificateur de chaque minute, à Q04 (`hotContact`), à la réception (`inbound`), aux routes et à l'écran des réglages (voie 1, `app.ts`).
 - Objectif : comme Hektor et iad : des notifications sur le téléphone, réglables par l'agent. Jamais vu : un contact chaud arrive en moins d'une minute, le reste est groupé par urgence, et les heures calmes de l'agent sont tenues sauf pour un client qui vient d'écrire.
 - Critères : un contact chaud est notifié tout de suite (test) ; rien de non urgent pendant les heures calmes (test) ; aucune donnée personnelle dans le texte visible écran verrouillé (test).
 
@@ -4076,6 +4077,15 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Objectif : si H51 répond oui, table refaite, un seul dossier ouvert par bien, l'exception écrite dans le test [R17].
 - Critères : un second dossier s'ouvre après un arrêt, et tous les passages lisent le bon (test) ; deux dossiers ouverts sur un bien refusés (test) ; aucune donnée perdue à la recopie (test).
 - Attend : H51.
+
+### SV15 · Les notifications aux agents passent par le contrôle central
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX27
+- Cahier : Architecture technique (contrôle central des envois) ; demande de HX27.
+- Trouvé par HX27 (voie 2, qui ne touche pas au socle) : `Notifications` n'envoie que par `AgentPushGate.sendToAgent`.
+- Objectif : ajouter `sendToAgent` à `ControleEnvois` (une seule fois par `pushId` [R05], agent actif, journal des envois sans donnée [R13]) et en faire la seule porte branchée ; le vrai service Web Push n'est branché qu'avec H57.
+- Critères : seul le contrôle central appelle le service de notification (test, comme S06) ; un même `pushId` ne part jamais deux fois (test) ; en mode essai, rien ne part vers un téléphone (test).
+- Attend : H57 pour le vrai service ; rien pour le code.
 
 ### SV13 · Les textes déjà préparés quand un nom est corrigé
 - Statut : fait (2026-11-06)
