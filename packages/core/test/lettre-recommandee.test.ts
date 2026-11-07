@@ -1,7 +1,6 @@
 import { expect, it } from 'vitest';
 import { Echeancier, buyerWithdrawalLastDay } from '../src/dossiers/echeancier.ts';
-import { REGISTERED_LETTER_PURPOSE, RecommandeElectronique, letterText } from '../src/documents/recommande.ts';
-import { FakeChannel } from '../src/envoi/canaux.ts';
+import { REGISTERED_LETTER_PURPOSE, RecommandeElectronique, letterText, type RegisteredLetterProvider } from '../src/documents/recommande.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -9,10 +8,22 @@ import { describeWithSqlite } from './sqlite.ts';
 const THU_10H = new Date('2027-03-11T09:00:00.000Z');
 let proofs = 0;
 
+/** Un faux prestataire : il garde les lettres remises, avec leur pièce jointe, et rend sa référence. */
+class FakeProvider implements RegisteredLetterProvider {
+  readonly sent: { to: string; body: string; messageId: string; attachmentRef: string }[] = [];
+  during: (() => void) | null = null;
+  noRef = false;
+  async post(letter: { to: string; body: string; messageId: string; attachmentRef: string }) {
+    this.during?.();
+    this.sent.push(letter);
+    return { externalId: this.noRef ? '' : `lre-${this.sent.length}` };
+  }
+}
+
 async function setup(o: { consent?: boolean; real?: boolean } = {}) {
   const t = await setupDossier('maison');
-  const port = new FakeChannel('email');
-  const lre = new RecommandeElectronique(t.db, t.acces, t.journal, t.storage, { now: t.now, ...(o.real === false ? {} : { port }) });
+  const port = new FakeProvider();
+  const lre = new RecommandeElectronique(t.db, t.acces, t.journal, t.storage, { now: t.now, ...(o.real === false ? {} : { provider: port }) });
   const echeancier = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
   await t.startCompromis();
   t.setClock(THU_10H);
@@ -42,7 +53,7 @@ async function setup(o: { consent?: boolean; real?: boolean } = {}) {
     t.setClock(new Date(THU_10H.getTime() + 3_600_000));
     return { id, sent: s.value };
   };
-  const fill = async (id: string, kind: string, occurredAt: string, ref = proof(), providerRef = 'fake-1') => lre.recordProof({ letterId: id, providerRef, kind, occurredAt, proofRef: ref });
+  const fill = async (id: string, kind: string, occurredAt: string, ref = proof(), providerRef = 'lre-1') => lre.recordProof({ letterId: id, providerRef, kind, occurredAt, proofRef: ref });
   return { ...t, port, lre, echeancier, proof, compromis, ready, sendNow, fill };
 }
 
@@ -72,7 +83,7 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     // Écrite par le système, avec la preuve même du prestataire : personne n'a rien ressaisi.
     expect(await t.db.all("SELECT day, proof_ref, by FROM sale_file_dates WHERE file_id = ? AND kind = 'notification_acquereur'", [t.fileId])).toEqual([{ day: '2027-03-13', proof_ref: ref, by: 'system:recommande' }]);
     // La même preuve reçue deux fois : rien ne change, aucune version de plus.
-    expect(await t.fill(id, 'premiere_presentation', '2027-03-12T23:30:00.000Z', ref)).toMatchObject({ ok: true, value: { schedule: null } });
+    expect(await t.fill(id, 'premiere_presentation', '2027-03-12T23:30:00.000Z', ref)).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'deja_la' } } });
     // Refusée ou non réclamée, la lettre a été présentée : la date reste.
     const refused = await t.fill(id, 'refus', '2027-03-13T07:00:00.000Z');
     expect(refused).toMatchObject({ ok: true, value: { letter: { status: 'refus' }, schedule: null } });
@@ -83,6 +94,18 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     const t = await setup();
     const { id } = await t.sendNow();
     const typed = await t.echeancier.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-11', proofRef: PROOF });
+    // Le même jour que la preuve, saisi à la main : la preuve s'ajoute quand même, en nouvelle version.
+    const v = await setup();
+    const vs = await v.sendNow();
+    const vt = await v.echeancier.record(v.agent, v.fileId, { kind: 'notification_acquereur', day: '2027-03-11', proofRef: PROOF });
+    if (!vt.ok) throw new Error(vt.code);
+    await v.fill(vs.id, 'depot', '2027-03-11T09:01:00.000Z');
+    const vRef = v.proof();
+    expect(await v.fill(vs.id, 'premiere_presentation', '2027-03-11T09:30:00.000Z', vRef)).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'ecrite' } } });
+    expect(await v.db.all("SELECT version, proof_ref, by FROM sale_file_dates WHERE file_id = ? AND kind = 'notification_acquereur' ORDER BY version", [v.fileId])).toEqual([
+      { version: 1, proof_ref: PROOF, by: `agent:${v.alexId}` },
+      { version: 2, proof_ref: vRef, by: 'system:recommande' },
+    ]);
     if (!typed.ok) throw new Error(typed.code);
     await t.fill(id, 'depot', '2027-03-11T09:01:00.000Z');
     t.setClock(new Date('2027-03-12T10:00:00.000Z'));
@@ -102,11 +125,19 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     u.setClock(new Date('2027-03-12T10:00:00.000Z'));
     const corrected = await u.echeancier.record(u.agent, u.fileId, { kind: 'compromis_signe', day: '2027-03-12', proofRef: PROOF });
     if (!corrected.ok) throw new Error(corrected.code);
-    const late = await u.fill(sent.id, 'premiere_presentation', '2027-03-11T10:00:00.000Z');
+    const lateRef = u.proof();
+    const late = await u.fill(sent.id, 'premiere_presentation', '2027-03-11T10:00:00.000Z', lateRef);
     if (!late.ok) throw new Error(late.code);
     expect(late.value.schedule).toEqual({ filled: false, reason: 'before_compromis', day: '2027-03-11', withdrawalLastDay: null });
     expect(await u.db.first("SELECT 1 AS x FROM sale_file_dates WHERE file_id = ? AND kind = 'notification_acquereur'", [u.fileId])).toBeNull();
     expect(await u.db.first("SELECT 1 AS x FROM journal WHERE type = 'dossier.recommande_date_non_ecrite'")).toEqual({ x: 1 });
+    // La signature remise au 10 mars, la même preuve reçue de nouveau : l'échéancier est repris, sans preuve de plus.
+    const back = await u.echeancier.record(u.agent, u.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    if (!back.ok) throw new Error(back.code);
+    const retried = await u.fill(sent.id, 'premiere_presentation', '2027-03-11T10:00:00.000Z', lateRef);
+    expect(retried).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'ecrite', day: '2027-03-11' } } });
+    expect(await u.fill(sent.id, 'premiere_presentation', '2027-03-11T10:00:00.000Z', lateRef)).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'deja_la' } } });
+    expect(await u.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM registered_letter_events WHERE kind = 'premiere_presentation'")).toEqual({ n: 1 });
   });
 
   it('[R461] la lettre ne part que par le contrôle central, au geste de l’agent du bien, avec l’accord de l’acquéreur, une seule fois', async () => {
@@ -136,6 +167,8 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     expect(t.port.sent[0]!.body).toContain('10 mars 2027');
     expect(t.port.sent[0]!.body).not.toMatch(/assistant|€|rue/i);
     expect(t.port.sent[0]!.to).toBe('acheteur@example.test');
+    // Le compromis signé, rangé au dossier, est remis au prestataire avec la lettre.
+    expect(t.port.sent[0]!.attachmentRef).toBe(t.compromis);
     // Passée par le contrôle central : rangée au journal des envois.
     expect(await t.db.all("SELECT outcome, rule FROM send_log WHERE person_id = ? ORDER BY rowid", [t.buyerId])).toEqual([
       { outcome: 'refused', rule: 'R03' },
@@ -163,6 +196,21 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     expect(t.port.sent[0]!.body).toContain('9 mars 2027');
   });
 
+  it('[R462] une preuve de dépôt faite pendant la remise au prestataire est acceptée ; une remise sans référence est une panne', async () => {
+    const t = await setup();
+    const id = await t.ready();
+    // Le prestataire met deux secondes à répondre ; son dépôt est daté d'une seconde après le début de l'envoi.
+    t.port.during = () => t.setClock(new Date(THU_10H.getTime() + 2000));
+    const s = await t.lre.send(t.agent, id);
+    expect(s).toMatchObject({ ok: true, value: { sent: true } });
+    expect(await t.fill(id, 'depot', '2027-03-11T09:00:01.000Z')).toMatchObject({ ok: true, value: { letter: { status: 'deposee' } } });
+    // Un prestataire qui ne rend pas de référence : l'envoi est dit en panne, aucune preuve ne pourra s'y rattacher.
+    const u = await setup();
+    u.port.noRef = true;
+    const uid = await u.ready();
+    expect(await u.lre.send(u.agent, uid)).toMatchObject({ ok: true, value: { sent: false, rule: 'panne', status: 'preparee' } });
+  });
+
   it('[R462] chaque preuve du prestataire est rangée au dossier, dans l’ordre, une seule fois, en ajout seul', async () => {
     const t = await setup();
     const id = await t.ready();
@@ -172,9 +220,9 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     if (!s.ok) throw new Error(s.code);
     t.setClock(new Date('2027-03-11T10:00:00.000Z'));
     // Une preuve non rangée, mal formée, d'une autre lettre, datée du futur ou d'avant l'envoi : refusée.
-    expect(await t.lre.recordProof({ letterId: id, providerRef: 'fake-1', kind: 'depot', occurredAt: '2027-03-11T09:00:00.000Z', proofRef: 'preuves/0b6f1d2e-7777-4a2b-8c3d-999999999999.pdf' })).toEqual({ ok: false, rule: 'R462', code: 'not_stored' });
+    expect(await t.lre.recordProof({ letterId: id, providerRef: 'lre-1', kind: 'depot', occurredAt: '2027-03-11T09:00:00.000Z', proofRef: 'preuves/0b6f1d2e-7777-4a2b-8c3d-999999999999.pdf' })).toEqual({ ok: false, rule: 'R462', code: 'not_stored' });
     expect(await t.fill(id, 'depot', '2027-03-11T09:00:00.000Z', 'ailleurs/x.pdf')).toEqual({ ok: false, rule: 'R462', code: 'bad_ref' });
-    expect(await t.fill(id, 'depot', '2027-03-11T09:00:00.000Z', t.proof(), 'fake-2')).toEqual({ ok: false, rule: 'R462', code: 'unknown_ref' });
+    expect(await t.fill(id, 'depot', '2027-03-11T09:00:00.000Z', t.proof(), 'lre-2')).toEqual({ ok: false, rule: 'R462', code: 'unknown_ref' });
     expect(await t.fill(id, 'depot', '2027-03-11T11:00:00.000Z')).toEqual({ ok: false, rule: null, code: 'bad_time' });
     expect(await t.fill(id, 'depot', '2027-03-11T08:59:00.000Z')).toEqual({ ok: false, rule: null, code: 'out_of_order' });
     expect(await t.fill(id, 'tampon', '2027-03-11T09:00:00.000Z')).toEqual({ ok: false, rule: null, code: 'unknown_proof' });
@@ -220,8 +268,12 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     expect(await t.fill(id, 'depot', '2027-03-11T09:00:00.000Z')).toEqual({ ok: false, rule: 'R463', code: 'trial' });
     expect(await t.db.first("SELECT 1 AS x FROM sale_file_dates WHERE file_id = ? AND kind = 'notification_acquereur'", [t.fileId])).toBeNull();
     // Une lettre d'essai n'empêche pas d'en préparer une vraie le jour où le port est branché.
-    expect(await t.lre.prepare(t.agent, t.fileId, { documentRef: t.compromis })).toMatchObject({ ok: true });
-    // Le port du prestataire est sur le canal email, et nul autre.
-    expect(() => new RecommandeElectronique(t.db, t.acces, t.journal, t.storage, { port: new FakeChannel('sms') })).toThrow(/canal email/);
+    // Une lettre d'essai ne compte pour rien : le prestataire branché, la vraie lettre part.
+    const provider = new FakeProvider();
+    const real = new RecommandeElectronique(t.db, t.acces, t.journal, t.storage, { now: t.now, provider });
+    const fresh = await real.prepare(t.agent, t.fileId, { documentRef: t.compromis });
+    if (!fresh.ok) throw new Error(fresh.code);
+    expect(await real.send(t.agent, fresh.value.id)).toMatchObject({ ok: true, value: { sent: true, status: 'envoyee' } });
+    expect(provider.sent).toHaveLength(1);
   });
 });

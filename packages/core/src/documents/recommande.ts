@@ -30,8 +30,8 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from '../dossiers/acces-dossier.ts';
 import { BUYER_WITHDRAWAL_DAYS, DATE_KINDS, buyerWithdrawalLastDay, orderProblem, type DateKind } from '../dossiers/echeancier.ts';
 import type { PieceStore } from '../dossiers/pieces.ts';
-import type { OutboundChannel } from '../envoi/canaux.ts';
-import { ControleEnvois } from '../envoi/controle.ts';
+import type { DeliveryReceipt, OutboundChannel, OutboundMessage } from '../envoi/canaux.ts';
+import { ControleEnvois, type ChannelStaging } from '../envoi/controle.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
@@ -163,20 +163,45 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Le prestataire de lettre recommandée électronique. Il reçoit la lettre et la référence du compromis joint, qu'il
+ * va chercher au stockage des pièces, et rend la référence sous laquelle il enverra ses preuves.
+ */
+export interface RegisteredLetterProvider {
+  post(letter: { to: string; body: string; messageId: string; attachmentRef: string }): Promise<{ externalId: string }>;
+}
+
+/**
+ * Le port du prestataire, sur le canal `email`, remis au seul contrôle central pour une lettre : il y joint le compromis
+ * de cette lettre [R461]. Une remise sans référence de preuve est une panne : aucune preuve ne pourrait s'y rattacher.
+ */
+class LetterPort implements OutboundChannel {
+  readonly channel = 'email' as const;
+  constructor(
+    private readonly provider: RegisteredLetterProvider,
+    private readonly attachmentRef: string,
+  ) {}
+
+  async deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
+    const r = await this.provider.post({ to: message.to, body: message.body, messageId: message.messageId, attachmentRef: this.attachmentRef });
+    if (typeof r?.externalId !== 'string' || r.externalId.trim() === '') throw new Error('Le prestataire n’a pas rendu de référence.');
+    return { externalId: r.externalId };
+  }
+}
+
 export interface RecommandeOptions {
   now?: () => Date;
   newId?: () => string;
-  /**
-   * Le port du prestataire de lettre recommandée électronique, sur le canal `email`, remis au seul contrôle central.
-   * Absent : la boîte d'essai, rien ne part [R463].
-   */
-  port?: OutboundChannel;
+  /** Le prestataire de lettre recommandée électronique. Absent : la boîte d'essai, rien ne part [R463]. */
+  provider?: RegisteredLetterProvider;
 }
 
 export class RecommandeElectronique {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly controle: ControleEnvois;
+  private readonly fiche: FicheUnique;
+  private readonly decisions: DecisionEnvoi;
+  private readonly provider: RegisteredLetterProvider | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -187,13 +212,25 @@ export class RecommandeElectronique {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    if (options.port && options.port.channel !== 'email') throw new Error('Le port de la lettre recommandée est sur le canal email.');
+    this.provider = options.provider ?? null;
     const fiches = new FicheClient(db, { now: this.now });
-    const fiche = new FicheUnique(db, fiches, { now: this.now });
-    const decisions = new DecisionEnvoi(db, fiches, fiche, { now: this.now });
-    // Un seul canal : le port du prestataire, ou l'essai. Aucun autre canal ne peut recevoir la lettre [R461, R463].
-    const channels = options.port ? [options.port] : trialChannels(db, journal, this.now).filter((c) => c.channel === 'email');
-    this.controle = new ControleEnvois(db, fiche, decisions, { channels, journal: new SqlSendJournal(db, undefined, this.now), now: this.now });
+    this.fiche = new FicheUnique(db, fiches, { now: this.now });
+    this.decisions = new DecisionEnvoi(db, fiches, this.fiche, { now: this.now });
+  }
+
+  /**
+   * Le contrôle central pour une lettre : la boîte d'essai, et un palier qui ne mène qu'au port du prestataire avec le
+   * compromis de cette lettre. Sans prestataire, la lettre reste en essai et ne compte pour rien : ni sujet, ni texte
+   * [R05, R463]. Aucun autre canal ne peut recevoir la lettre [R461].
+   */
+  private controleFor(attachmentRef: string): ControleEnvois {
+    const real = this.provider ? new LetterPort(this.provider, attachmentRef) : null;
+    const staging: ChannelStaging = {
+      route: async (_network, channel) => ({ real: channel === 'email' ? real : null, confirm: async () => {} }),
+      failed: async () => {},
+    };
+    const channels = trialChannels(this.db, this.journal, this.now).filter((c) => c.channel === 'email');
+    return new ControleEnvois(this.db, this.fiche, this.decisions, { channels, staging, journal: new SqlSendJournal(this.db, undefined, this.now), now: this.now });
   }
 
   private gate(viewer: Viewer, fileId: string, write: boolean) {
@@ -305,7 +342,9 @@ export class RecommandeElectronique {
     // Le texte est refait maintenant : une date de signature corrigée depuis la préparation demande une nouvelle lettre.
     const text = await this.text(letter.file_id, letter.person_id, viewer.userId);
     if (!text || (await sha256(text.body)) !== letter.hash) return { ok: false, rule: null, code: 'changed' };
-    const result = await this.controle.send({
+    // L'heure de l'envoi est prise avant la remise : une preuve de dépôt faite pendant la remise la suit [R462].
+    const at = this.now().toISOString();
+    const result = await this.controleFor(letter.document_ref).send({
       networkId: letter.network_id,
       agentId: viewer.userId,
       preparedBy: viewer.userId,
@@ -320,9 +359,8 @@ export class RecommandeElectronique {
       asWritten: { refuseWithoutMention: false, thread: `recommande:${letterId}` },
     });
     const by = actorOf(viewer);
-    const at = this.now().toISOString();
     if (result.status === 'sent' && result.messageId) {
-      const trial = (await this.db.first('SELECT 1 FROM trial_outbox WHERE message_id = ?', [result.messageId])) !== null;
+      const trial = result.trial !== false;
       if (!(await this.addEvent(letter, { kind: 'envoi', occurredAt: at, proofRef: null, messageId: result.messageId, trial, rule: null, by }))) return { ok: false, rule: null, code: 'busy' };
       if (trial) await appendEvent(this.journal, { type: 'dossier.recommande_essai', actor: by, subject: `sale_file:${letter.file_id}`, data: { rule: 'R463', letter: letterId, message: result.messageId } }, this.now);
       else await appendEvent(this.journal, { type: 'dossier.recommande_envoye', actor: by, subject: `sale_file:${letter.file_id}`, data: { rule: 'R461', letter: letterId, message: result.messageId } }, this.now);
@@ -358,8 +396,12 @@ export class RecommandeElectronique {
     if (!ref || typeof input.providerRef !== 'string' || input.providerRef !== ref.external_id) return { ok: false, rule: 'R462', code: 'unknown_ref' };
     const same = events.find((e) => e.kind === kind);
     if (same) {
-      // La même preuve reçue deux fois : rien ne change.
-      if (same.proof_ref === input.proofRef && Date.parse(same.occurred_at) === occurred.getTime()) return { ok: true, value: { letter: (await this.view(letter.id))!, schedule: null } };
+      // La même preuve reçue deux fois : rien de plus n'est rangé ; une première présentation reprend l'échéancier,
+      // qu'une coupure aurait pu laisser sans sa date [R460].
+      if (same.proof_ref === input.proofRef && Date.parse(same.occurred_at) === occurred.getTime()) {
+        const schedule = kind === 'premiere_presentation' ? await this.fillSchedule(letter, same.day, input.proofRef) : null;
+        return { ok: true, value: { letter: (await this.view(letter.id))!, schedule } };
+      }
       return { ok: false, rule: 'R462', code: 'already_recorded' };
     }
     const previous: LetterEventKind = kind === 'depot' ? 'envoi' : kind === 'premiere_presentation' ? 'depot' : 'premiere_presentation';
@@ -383,7 +425,12 @@ export class RecommandeElectronique {
     if (await this.closed(letter.file_id)) return refuse('closed');
     if (await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [letter.file_id])) return refuse('file_stopped');
     const dates = await this.dates(letter.file_id);
-    if (dates.notification_acquereur?.day === day) return done(true, 'deja_la');
+    // Déjà là avec cette preuve même : rien à écrire. La même date saisie à la main reçoit la preuve en nouvelle version.
+    const current = dates.notification_acquereur;
+    if (current?.day === day) {
+      const latest = await this.db.first<{ proof_ref: string }>("SELECT proof_ref FROM sale_file_dates WHERE file_id = ? AND kind = 'notification_acquereur' AND version = ?", [letter.file_id, current.version]);
+      if (latest?.proof_ref === proofRef) return done(true, 'deja_la');
+    }
     const proposed = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
     proposed.notification_acquereur = day;
     const problem = orderProblem(proposed);
