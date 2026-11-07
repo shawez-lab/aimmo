@@ -68,6 +68,8 @@ export interface FlushReport {
 export class Outbox {
   private state: OutboxState | null = null;
   private flushing: Promise<FlushReport> | null = null;
+  /** Chaque lecture-écriture de la boîte passe l'une après l'autre : deux saisies faites ensemble ne s'écrasent jamais. */
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly storage: OutboxStorage,
@@ -76,6 +78,12 @@ export class Outbox {
 
   private newId(): string {
     return (this.options.newId ?? (() => crypto.randomUUID()))();
+  }
+
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
   private async current(): Promise<OutboxState> {
@@ -87,7 +95,11 @@ export class Outbox {
   }
 
   /** Ranger une saisie : elle est sur le téléphone avant que la fonction rende la main. */
-  async add(kind: OpKind, appointmentId: string, payload: Record<string, unknown>): Promise<PendingOp> {
+  add(kind: OpKind, appointmentId: string, payload: Record<string, unknown>): Promise<PendingOp> {
+    return this.exclusive(() => this.addNow(kind, appointmentId, payload));
+  }
+
+  private async addNow(kind: OpKind, appointmentId: string, payload: Record<string, unknown>): Promise<PendingOp> {
     const s = await this.current();
     const op: PendingOp = { opId: this.newId(), seq: s.nextSeq, kind, appointmentId, writtenAt: (this.options.now ?? (() => new Date()))().toISOString(), payload };
     const next: OutboxState = { ...s, nextSeq: s.nextSeq + 1, pending: [...s.pending, op] };
@@ -96,12 +108,12 @@ export class Outbox {
     return op;
   }
 
-  async pending(): Promise<PendingOp[]> {
-    return [...(await this.current()).pending];
+  pending(): Promise<PendingOp[]> {
+    return this.exclusive(async () => [...(await this.current()).pending]);
   }
 
-  async refused(): Promise<RefusedOp[]> {
-    return [...(await this.current()).refused];
+  refused(): Promise<RefusedOp[]> {
+    return this.exclusive(async () => [...(await this.current()).refused]);
   }
 
   /** Tout envoyer, dans l'ordre, par lots. Deux appels en même temps n'en font qu'un. */
@@ -114,7 +126,7 @@ export class Outbox {
     let sent = 0;
     let refused = 0;
     for (;;) {
-      const s = await this.current();
+      const s = await this.exclusive(() => this.current());
       const batch = [...s.pending].sort((a, b) => a.seq - b.seq).slice(0, BATCH_SIZE);
       if (batch.length === 0) return { offline: false, sent, refused, left: 0 };
       let results: OpResult[];
@@ -127,23 +139,27 @@ export class Outbox {
       const byId = new Map<string, OpResult>();
       const asked = new Set(batch.map((o) => o.opId));
       for (const r of results) if (r && typeof r.opId === 'string' && asked.has(r.opId)) byId.set(r.opId, r);
-      const now = await this.current();
-      const keep: PendingOp[] = [];
-      const newlyRefused: RefusedOp[] = [];
-      for (const op of now.pending) {
-        const r = byId.get(op.opId);
-        if (!r) keep.push(op);
-        else if (r.outcome === 'applique') sent++;
-        else if (r.outcome === 'refuse') {
-          refused++;
-          newlyRefused.push({ ...op, code: typeof r.code === 'string' ? r.code : 'refuse', rule: typeof r.rule === 'string' ? r.rule : null });
-        } else keep.push(op);
-      }
-      const next: OutboxState = { ...now, pending: keep, refused: [...now.refused, ...newlyRefused] };
-      await this.storage.save(next);
-      this.state = next;
+      // La boîte relue et réécrite d'un seul tenant : une saisie ajoutée pendant l'envoi reste dedans.
+      const tally = await this.exclusive(async () => {
+        const now = await this.current();
+        const keep: PendingOp[] = [];
+        const newlyRefused: RefusedOp[] = [];
+        for (const op of now.pending) {
+          const r = byId.get(op.opId);
+          if (!r) keep.push(op);
+          else if (r.outcome === 'applique') sent++;
+          else if (r.outcome === 'refuse') {
+            refused++;
+            newlyRefused.push({ ...op, code: typeof r.code === 'string' ? r.code : 'refuse', rule: typeof r.rule === 'string' ? r.rule : null });
+          } else keep.push(op);
+        }
+        const next: OutboxState = { ...now, pending: keep, refused: [...now.refused, ...newlyRefused] };
+        await this.storage.save(next);
+        this.state = next;
+        return keep.length;
+      });
       // Une réponse qui ne nomme aucune saisie du lot : on s'arrête là, rien n'est perdu, la suite repartira.
-      if (byId.size === 0) return { offline: false, sent, refused, left: keep.length };
+      if (byId.size === 0) return { offline: false, sent, refused, left: tally };
     }
   }
 }

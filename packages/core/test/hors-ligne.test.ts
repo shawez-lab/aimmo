@@ -152,6 +152,25 @@ describe('HX12 · la boîte d’envoi du téléphone', () => {
     expect(await box.refused()).toMatchObject([{ code: 'bad_note', payload: { text: '' } }]);
   });
 
+  it('[R276] deux saisies faites en même temps sont toutes deux gardées, chacune avec son numéro', async () => {
+    const storage = new MemoryOutboxStorage();
+    const box = new Outbox(storage);
+    const ops = await Promise.all([box.add('visite.note', 'rdv-test-1', { text: 'Un' }), box.add('visite.note', 'rdv-test-1', { text: 'Deux' }), box.add('visite.note', 'rdv-test-1', { text: 'Trois' })]);
+    expect(ops.map((o) => o.seq)).toEqual([1, 2, 3]);
+    expect(storage.saved?.pending.map((o) => o.payload.text)).toEqual(['Un', 'Deux', 'Trois']);
+    // Une saisie ajoutée pendant un envoi reste dans la boîte.
+    let late: Promise<PendingOp> | null = null;
+    const { transport } = wire(async (b) => {
+      if (!late) {
+        late = box.add('visite.note', 'rdv-test-1', { text: 'Quatre' });
+        await late;
+      }
+      return { results: b.ops.map((o) => ({ opId: o.opId, outcome: 'applique' as const, again: false })) };
+    });
+    const report = await box.flush(transport);
+    expect(report).toMatchObject({ sent: 4, left: 0 });
+  });
+
   it('[R276] une réponse qui ne nomme aucune saisie ne retire rien', async () => {
     const box = new Outbox(new MemoryOutboxStorage());
     await box.add('visite.note', 'rdv-test-1', { text: 'Note' });
@@ -256,6 +275,21 @@ describeWithSqlite('HX12 · l’appli sans réseau, côté serveur', () => {
     // Rien ne change ni ne s'efface.
     await expect(t.db.run("UPDATE visit_field_notes SET body = 'x'")).rejects.toThrow();
     await expect(t.db.run('DELETE FROM offline_ops')).rejects.toThrow();
+  });
+
+  it('[R276] deux envois concurrents d’un même identifiant, de contenus différents, n’écrivent qu’une seule chose', async () => {
+    const t = await setup();
+    const v = await t.visit(t.alex, t.land.id);
+    t.setClock(v.start + 10 * MIN);
+    const at = new Date(v.start).toISOString();
+    const note = { opId: 'op-test-0001', seq: 1, kind: 'visite.note', appointmentId: v.id, writtenAt: at, payload: { text: 'Note' } };
+    const skip = { ...note, kind: 'visite.sans_objet', payload: { shot: 'limites', reason: 'acces_refuse' } };
+    const [a, b] = await Promise.all([t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [note] }), t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [skip] })]);
+    const outcomes = [a, b].map((r) => (r.ok ? r.results[0]?.code ?? r.results[0]?.outcome : r.code)).sort();
+    expect(outcomes).toEqual(['applique', 'conflit']);
+    const notes = (await t.db.first<{ n: number }>('SELECT count(*) AS n FROM visit_field_notes'))?.n ?? 0;
+    const skips = (await t.db.first<{ n: number }>('SELECT count(*) AS n FROM visit_shot_skips'))?.n ?? 0;
+    expect(notes + skips).toBe(1);
   });
 
   it('[R277] le serveur refait le jugement de la photo : une photo sombre ou d’une seule lumière est refusée, quoi qu’en dise le téléphone', async () => {

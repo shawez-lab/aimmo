@@ -16,7 +16,7 @@
 import type { Viewer } from '../acces/droits.ts';
 import { agentState } from '../acces/etat-agent.ts';
 import { sha256Of } from '../conformite/demandes-personnes.ts';
-import type { SqlDatabase, SqlStatement } from '../db/sql.ts';
+import type { SqlDatabase, SqlStatement, SqlValue } from '../db/sql.ts';
 import { runBatch } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -88,7 +88,14 @@ export interface HorsLigneOptions {
   thresholds?: PhotoThresholds;
 }
 
-type Verdict = { ok: true; statement: SqlStatement | null } | { ok: false; rule: string | null; code: string };
+/** Ce que la saisie range, si elle est reçue : une ligne d'une table, écrite seulement par l'envoi qui a gagné la saisie. */
+interface EntityRow {
+  table: 'visit_field_notes' | 'visit_shot_skips' | 'visit_photos';
+  columns: readonly string[];
+  values: SqlValue[];
+}
+
+type Verdict = { ok: true; row: EntityRow } | { ok: false; rule: string | null; code: string };
 
 export class HorsLigne {
   private readonly now: () => Date;
@@ -247,7 +254,17 @@ export class HorsLigne {
         params: [viewer.networkId, viewer.userId, deviceId, opId, o.seq as number, kind, appointmentId, hash, outcome, rule, code, writtenAt, now.toISOString()],
       },
     ];
-    if (verdict.ok && verdict.statement) statements.push(verdict.statement);
+    if (verdict.ok) {
+      // L'écriture n'a lieu que si cette saisie, avec ce contenu, vient d'être gagnée : un envoi concurrent sous le même
+      // identifiant, d'un autre contenu, n'écrit rien [R276].
+      const { table, columns, values } = verdict.row;
+      statements.push({
+        sql: `INSERT INTO ${table} (${columns.join(', ')}) SELECT ${columns.map(() => '?').join(', ')}
+               WHERE EXISTS (SELECT 1 FROM offline_ops WHERE network_id = ? AND agent_id = ? AND device_id = ? AND op_id = ? AND content_hash = ? AND outcome = 'applique' AND received_at = ?)
+               ON CONFLICT (id) DO NOTHING`,
+        params: [...values, viewer.networkId, viewer.userId, deviceId, opId, hash, now.toISOString()],
+      });
+    }
     let first: { changes: number } | undefined;
     try {
       [first] = await runBatch(this.db, statements);
@@ -284,10 +301,7 @@ export class HorsLigne {
       const shot = inPlan(payload.shot) ? payload.shot : null;
       return {
         ok: true,
-        statement: {
-          sql: `INSERT INTO visit_field_notes (id, network_id, appointment_id, agent_id, shot, body, written_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
-          params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, text, writtenAt, received],
-        },
+        row: { table: 'visit_field_notes', columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'body', 'written_at', 'received_at'], values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, text, writtenAt, received] },
       };
     }
     if (!p) return { ok: false, rule: null, code: 'sans_bien' };
@@ -297,10 +311,7 @@ export class HorsLigne {
       if (typeof payload.reason !== 'string' || !(SKIP_REASONS as readonly string[]).includes(payload.reason)) return { ok: false, rule: 'R277', code: 'bad_reason' };
       return {
         ok: true,
-        statement: {
-          sql: `INSERT INTO visit_shot_skips (id, network_id, appointment_id, agent_id, shot, reason, written_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
-          params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, payload.reason, writtenAt, received],
-        },
+        row: { table: 'visit_shot_skips', columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'reason', 'written_at', 'received_at'], values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, payload.reason, writtenAt, received] },
       };
     }
     // La photo : les prises réduites, décodées puis fondues et jugées ici, comme sur le téléphone [R277].
@@ -310,10 +321,7 @@ export class HorsLigne {
     if (!r.ok) return { ok: false, rule: 'R277', code: r.code === 'photo_refusee' ? (r.verdict?.problems[0] ?? 'photo_refusee') : r.code };
     return {
       ok: true,
-      statement: {
-        sql: `INSERT INTO visit_photos (id, network_id, appointment_id, agent_id, shot, exposures, brightness, clipped, sharpness, taken_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
-        params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received],
-      },
+      row: { table: 'visit_photos', columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'], values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received] },
     };
   }
 }
