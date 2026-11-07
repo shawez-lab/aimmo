@@ -380,4 +380,19 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(t.sent.map((x) => x.payload.body)).toEqual(['150 tâches à faire']);
     expect(most).toBeLessThanOrEqual(100);
   });
+  it('[R412] un contact chaud gardé la nuit dit aussi le message de la même personne arrivé avant son départ', async () => {
+    const t = await setup();
+    const noa = await t.person('Noa');
+    t.setClock(TUE_23H);
+    // Gardé par les heures calmes : Noa n'a pas écrit depuis 30 minutes.
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'contact_chaud', sourceKey: 'cb:noa' });
+    t.setClock(WED_8H - 10 * MIN);
+    // 7 h 50, encore en heures calmes : le message de Noa est dit par le contact chaud qui attend.
+    expect(await t.notifications.inbound(await t.message(noa))).toEqual([{ ok: true, value: null, reason: 'deja_dit' }]);
+    // Noa vient d'écrire : le contact chaud part, seul, et rien d'autre après lui.
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([['immediate', 1]]);
+    t.setClock(WED_8H + 20 * MIN);
+    expect(await t.notifications.flush()).toEqual([]);
+    expect(t.sent.map((x) => x.payload.body)).toEqual(['Un contact chaud à rappeler maintenant']);
+  });
 });

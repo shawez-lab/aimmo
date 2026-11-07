@@ -305,10 +305,11 @@ export class Notifications {
       urgency = level;
     }
     const at = this.now();
-    // Un message de la personne déjà dit par son contact chaud, il y a peu, n'est pas redit.
+    // Un message de la personne déjà dit par son contact chaud, il y a peu ou encore à partir, n'est pas redit [R412].
     if (input.kind === 'client_ecrit') {
       const hot = await this.db.first<{ n: number }>(
-        `SELECT count(*) AS n FROM agent_notifications WHERE agent_id = ? AND kind = 'contact_chaud' AND person_id IN (${placeholders(members.length)}) AND created_at >= ?`,
+        `SELECT count(*) AS n FROM agent_notifications WHERE agent_id = ? AND kind = 'contact_chaud' AND person_id IN (${placeholders(members.length)})
+         AND (created_at >= ? OR status IN ('a_envoyer', 'en_envoi'))`,
         [agent.id, ...members, new Date(at.getTime() - JUST_WROTE_MS).toISOString()],
       );
       if (Number(hot?.n ?? 0) > 0) return { ok: true, value: null, reason: 'deja_dit' };
@@ -443,6 +444,15 @@ export class Notifications {
       // Le texte ne dirait pas le bon nombre : rien ne part [R18].
       await this.finish(pushId, 'abandonnee', at.toISOString());
       return null;
+    }
+    if (urgency === 'immediate') {
+      // Le contact chaud dit à sa place les messages pas encore partis de la même personne, même arrivés pendant
+      // qu'il attendait [R412].
+      const members = await this.fiche.membersOf(due[0]?.person_id ?? '');
+      await this.db.run(
+        `UPDATE agent_notifications SET status = 'remplacee' WHERE agent_id = ? AND kind = 'client_ecrit' AND status = 'a_envoyer' AND person_id IN (${placeholders(members.length)})`,
+        [agentId, ...members],
+      );
     }
     // Une réservation reprise entre-temps par un autre passage n'envoie rien : ses notifications sont déjà rendues [R18].
     const live = await this.db.first<{ status: string }>('SELECT status FROM agent_pushes WHERE id = ?', [pushId]);
