@@ -310,6 +310,11 @@ export class Vitrine {
         leave('pas_en_vente');
         continue;
       }
+      // Les places prises, plus rien de coûteux n'est relu pour les biens suivants.
+      if (slides.length >= VITRINE_MAX_SLIDES) {
+        leave('au_dela');
+        continue;
+      }
       // La porte de toute diffusion, demandée à chaque rendu, pas seulement au dernier passage de la publication [R42].
       if (!(await this.diffusion.canDiffuse(s.network_id, l.propertyId, at)).allowed) {
         leave('diffusion');
@@ -318,10 +323,6 @@ export class Vitrine {
       const canonical = await this.referencement.canonicalFor(s.network_id, l.propertyId);
       if (!canonical) {
         leave('pas_de_page');
-        continue;
-      }
-      if (slides.length >= VITRINE_MAX_SLIDES) {
-        leave('au_dela');
         continue;
       }
       const content = await this.origine.contentFor(s.network_id, 'bien', l.propertyId);
