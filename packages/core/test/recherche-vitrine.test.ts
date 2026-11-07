@@ -3,8 +3,8 @@ import { contentOfPath } from '../src/attirer/origine-contacts.ts';
 import { Referencement } from '../src/attirer/referencement.ts';
 import { euros, PageBien } from '../src/annonces/index.ts';
 import { visibleText } from '../src/boutique/supports.ts';
-import { htmlProblems } from '../src/design/audit.ts';
-import { screenCodeOf, Vitrine, vitrineLink, VITRINE_PARAM, VITRINE_REFRESH_SECONDS } from '../src/recherche/vitrine.ts';
+import { BUDGETS, budgetProblems, htmlProblems } from '../src/design/audit.ts';
+import { renderSlide, renderVitrinePage, screenCodeOf, Vitrine, vitrineLink, VITRINE_MAX_SLIDES, VITRINE_PARAM, VITRINE_REFRESH_SECONDS } from '../src/recherche/vitrine.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { modulesFromSvg, readQr } from './qr-lecture.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -25,6 +25,35 @@ describe('HX31 · lien de vitrine', () => {
     expect(vitrineLink('https://reseau.exemple.test/biens/b1', 'aaaabbbbcccc', 'pas-un-code')).toBeNull();
     expect(vitrineLink('http://reseau.exemple.test/biens/b1', 'aaaabbbbcccc', SCREEN)).toBeNull();
     expect(screenCodeOf(new URL(`https://x.test/?vitrine=${SCREEN}&vitrine=${OTHER}`))).toBeNull();
+  });
+});
+
+describe('HX31 · poids de la page', () => {
+  it('[R201] un écran plein, au nombre de biens permis, tient dans le budget d’une page publique, codes QR compris', () => {
+    const N = '\u00a0';
+    const S = '\u202f';
+    const slides: string[] = [];
+    for (let i = 0; i < VITRINE_MAX_SLIDES; i++) {
+      const id = crypto.randomUUID();
+      const one = renderSlide(
+        {
+          listing: {
+            title: `Maison de 5 pièces avec jardin et garage à Fontaine-lès-Dijon, proche des écoles ${i}`,
+            priceEur: 345000 + i,
+            mentions: `Prix : 345${S}00${i}${N}€ honoraires inclus, soit 330${S}000${N}€ hors honoraires et 4,55${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.\nClasse énergie D, classe climat C. Montant estimé des dépenses annuelles d'énergie entre 1${S}100${N}€ et 1${S}550${N}€.\nCarte professionnelle n° CPI 2101 2027 000 000 001.`,
+            photo: { ref: `biens/${id}/${crypto.randomUUID()}.jpg`, overlay: i % 2 ? 'Aménagement virtuel' : null },
+          },
+          reference: `REF-2027-${1000 + i}`,
+          link: `https://www.reseau-immobilier-exemple.test/biens/${id}?o=abcdefghijkl&vitrine=${SCREEN}`,
+        },
+        i + 1,
+      );
+      expect(one).not.toBe('qr_trop_long');
+      slides.push(one);
+    }
+    const html = renderVitrinePage(slides, new Date('2027-03-01T08:00:00.000Z'), 10);
+    expect(htmlProblems(html)).toEqual([]);
+    expect(budgetProblems({ html }, BUDGETS.page)).toEqual([]);
   });
 });
 
@@ -69,7 +98,8 @@ describeWithSqlite('HX31 · écran de vitrine en agence', () => {
     // Ni la personne vendeuse, ni l'adresse, ni le nom de l'écran.
     expect(r.html).not.toMatch(/Léa|Exemple|21000|Vitrine de l’agence/);
     // La page se recharge seule : c'est la « mise à jour suivante ».
-    expect(r.html).toContain(`<meta http-equiv="refresh" content="${VITRINE_REFRESH_SECONDS}">`);
+    expect(r.html).toContain(`<noscript><meta http-equiv="refresh" content="${VITRINE_REFRESH_SECONDS}"></noscript>`);
+    expect(r.html).toContain(`location.reload()},${VITRINE_REFRESH_SECONDS * 1000})`);
     await t.amend(190000);
     await t.publication.sync(t.network.id, t.propertyId);
     const after = (await new PageBien(t.db, t.acces, t.journal).inputFor(t.network.id, t.propertyId))!;
@@ -232,8 +262,9 @@ describeWithSqlite('HX31 · écran de vitrine en agence', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(htmlProblems(r.html)).toEqual([]);
+    expect(budgetProblems({ html: r.html }, BUDGETS.page)).toEqual([]);
     expect(r.html).not.toMatch(/<link|<script src|@import/);
-    for (const m of r.html.matchAll(/src="([^"]+)"/g)) expect(m[1]!.startsWith('https://reseau.exemple.test/medias/')).toBe(true);
+    for (const m of r.html.matchAll(/src="([^"]+)"/g)) expect(m[1]!.startsWith('/medias/')).toBe(true);
     // La photo d'aménagement virtuel garde sa mention sur l'image [R48].
     if (r.html.includes('aménagement virtuel')) expect(r.html).toContain('<span class="virtuel">Aménagement virtuel</span>');
   });

@@ -14,7 +14,8 @@
  *
  * Décidé, lecture prudente : seuls les biens « en vente » ; « sous offre » n'est pas montré en vitrine, pour ne pas faire
  * venir pour un bien qu'on ne peut plus visiter. Un bien sans page de référence en ligne n'a pas de code QR, donc pas de
- * place à l'écran. Trente biens au plus, l'annonce la plus récente d'abord. Sans script, la page montre tous les biens
+ * place à l'écran. La page est servie par le site du réseau, qui sert aussi les photos (`/medias/…`). Dix biens au
+ * plus, l'annonce la plus récente d'abord. Sans script, la page montre tous les biens
  * les uns sous les autres ; avec, un seul à la fois. Le nom de l'écran n'est jamais montré : il ne sert qu'à la mesure.
  *
  * Le branchement au Worker (route publique `/vitrine/<code>`, transmission du lien d'arrivée à la captation, écran de
@@ -39,7 +40,8 @@ import { parisDayStart } from '../pilotage/tableau-agent.ts';
 export const VITRINE_PARAM = 'vitrine';
 /** La page se recharge toutes les 5 minutes : un prix ou un retrait y arrive à la mise à jour suivante [R432]. */
 export const VITRINE_REFRESH_SECONDS = 300;
-export const VITRINE_MAX_SLIDES = 30;
+/** Dix biens au plus : la page tient dans le budget d'une page publique, codes QR compris [R201]. */
+export const VITRINE_MAX_SLIDES = 10;
 export const DEFAULT_SECONDS_PER_SLIDE = 10;
 
 const CODE = /^[a-z2-7]{12}$/;
@@ -110,7 +112,8 @@ export function screenCodeOf(url: URL): string | null {
   return codes.length === 1 && CODE.test(codes[0]!) ? codes[0]! : null;
 }
 
-const mediaUrl = (origin: string, ref: string): string => `${origin}/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
+/** La photo, servie par le site même qui sert l'écran : rien ne vient d'ailleurs [R201]. */
+const mediaPath = (ref: string): string => `/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
 
 /** L'heure de Paris, en « 14 h 05 », et le jour, en « 07/11/2026 ». */
 function parisClock(at: Date): { day: string; time: string } {
@@ -141,25 +144,29 @@ const VITRINE_CSS =
 /** La feuille de l'écran : la base du système, puis ses règles propres. */
 const CSS = DESIGN_CSS + VITRINE_CSS;
 
-/** Le petit script de défilement : un bien à la fois, dans l'ordre, sans rien charger ni rien envoyer. */
+/**
+ * Le petit script de défilement : un bien à la fois, dans l'ordre, sans rien charger ni rien envoyer. Toutes les 5
+ * minutes, la page se recharge et reprend au bien où elle en était (noté dans l'ancre de l'adresse) : la mise à jour
+ * suivante ne fait jamais repartir du premier bien, et tous les biens passent, quel que soit leur nombre.
+ */
 const script = (seconds: number): string =>
-  `<script>(function(){var s=document.querySelectorAll('main>section');if(s.length<2)return;var i=0;` +
-  `for(var k=1;k<s.length;k++)s[k].hidden=true;setInterval(function(){s[i].hidden=true;i=(i+1)%s.length;s[i].hidden=false},${seconds * 1000})})()</script>`;
+  `<script>(function(){var s=document.querySelectorAll('main>section'),n=s.length,i=parseInt(location.hash.slice(1),10);i=i>=0&&i<n?i:0;` +
+  `for(var k=0;k<n;k++)s[k].hidden=k!==i;if(n>1)setInterval(function(){s[i].hidden=true;i=(i+1)%n;s[i].hidden=false},${seconds * 1000});` +
+  `setTimeout(function(){history.replaceState(null,'','#'+i);location.reload()},${VITRINE_REFRESH_SECONDS * 1000})})()</script>`;
 
-interface SlideInput {
-  listing: PublishedListing;
+export interface SlideInput {
+  listing: Pick<PublishedListing, 'title' | 'priceEur' | 'mentions' | 'photo'>;
   reference: string;
   link: string;
-  origin: string;
 }
 
 /** Une diapositive : seulement ce que dit la dernière version publiée de l'annonce, jamais l'adresse [R432]. */
-function slideHtml(input: SlideInput, index: number): string | 'qr_trop_long' {
+export function renderSlide(input: SlideInput, index: number): string | 'qr_trop_long' {
   const l = input.listing;
   const qr = encodeQr(input.link);
   if (!qr.ok) return 'qr_trop_long';
   const photo = l.photo
-    ? `<div class="cadre"><img class="photo" src="${escapeHtml(mediaUrl(input.origin, l.photo.ref))}" alt="${l.photo.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}">${l.photo.overlay ? `<span class="virtuel">${escapeHtml(l.photo.overlay)}</span>` : ''}</div>`
+    ? `<div class="cadre"><img class="photo" src="${escapeHtml(mediaPath(l.photo.ref))}" alt="${l.photo.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}">${l.photo.overlay ? `<span class="virtuel">${escapeHtml(l.photo.overlay)}</span>` : ''}</div>`
     : '';
   return (
     `<section class="bien" aria-labelledby="b${index}">${photo}<h2 id="b${index}">${escapeHtml(l.title)}</h2>` +
@@ -169,12 +176,13 @@ function slideHtml(input: SlideInput, index: number): string | 'qr_trop_long' {
   );
 }
 
-function page(slides: readonly string[], at: Date, seconds: number): string {
+/** La page entière de l'écran, à partir des diapositives déjà rendues. */
+export function renderVitrinePage(slides: readonly string[], at: Date, seconds: number): string {
   const clock = parisClock(at);
   const body = slides.length > 0 ? slides.join('') : '<section class="bien"><h2>Nos biens arrivent bientôt.</h2></section>';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-    `<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="${VITRINE_REFRESH_SECONDS}">` +
+    `<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><noscript><meta http-equiv="refresh" content="${VITRINE_REFRESH_SECONDS}"></noscript>` +
     `<meta name="theme-color" content="${THEME_COLOR}"><title>Nos biens en vente</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div>` +
     `<h1 class="visuellement-cache">Nos biens en vente</h1><main>${body}</main>` +
@@ -322,7 +330,7 @@ export class Vitrine {
         leave('pas_de_page');
         continue;
       }
-      const one = slideHtml({ listing: l, reference, link, origin: new URL(canonical).origin }, slides.length + 1);
+      const one = renderSlide({ listing: l, reference, link }, slides.length + 1);
       if (one === 'qr_trop_long') {
         leave('qr_trop_long');
         continue;
@@ -336,7 +344,7 @@ export class Vitrine {
       html.push(one);
       slides.push({ propertyId: l.propertyId, reference, versionId: l.versionId, priceEur: l.priceEur, link });
     }
-    const full = page(html, at, s.seconds_per_slide);
+    const full = renderVitrinePage(html, at, s.seconds_per_slide);
     // Toute la page se relit à la fin : seuls l'annonce, l'heure du relevé et le numéro des diapositives sont permis.
     const allowed = [...slides.flatMap((x) => [x.reference, euros(x.priceEur)]), ...listings.flatMap((l) => [l.title, l.mentions, l.photo?.overlay ?? '']), clock.day, clock.time];
     if (unsourcedFigures(visibleText(full.replace(/<script>[\s\S]*?<\/script>/g, ' ')), allowed).length > 0) throw new Error('Vitrine : un chiffre sans source.');
