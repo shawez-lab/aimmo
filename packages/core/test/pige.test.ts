@@ -271,6 +271,36 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_handovers'))!.n).toBe(1);
   });
 
+  it('[R273] une annonce vue d’abord « pas d’agence » sans surface ni sorte ne rentre jamais ensuite', async () => {
+    const s = await setup();
+    const a = s.ad();
+    expect((await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, kind: undefined, noAgency: true }])).noAgency).toBe(1);
+    expect((await s.pige.ingest(s.network.id, [a])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('[R273] une fermeture rangée juste avant la remise l’empêche, dans l’écriture même', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    const id = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    const p = await s.pige.prepare(s.agentAlex, id);
+    if (!p.ok) throw new Error('prepare');
+    // La fermeture arrive entre les lectures et l'écriture de la remise.
+    const run = s.db.run.bind(s.db);
+    let once = false;
+    s.db.run = async (sql, params) => {
+      if (!once && sql.includes('INSERT INTO pige_handovers')) {
+        once = true;
+        await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, noAgency: true }]);
+      }
+      return run(sql, params);
+    };
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R273' });
+    expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_handovers'))!.n).toBe(0);
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();

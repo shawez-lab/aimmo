@@ -334,12 +334,9 @@ export class Pige {
       const closing = noAgencyKey(raw);
       if (closing) {
         const keys: string[] = [];
-        // L'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée ou portera : si elle est déjà
-        // connue, ou si son bien est dans une zone du réseau.
-        if (closing.ref) {
-          const known = await this.db.first('SELECT 1 AS x FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, closing.ref.source, closing.ref.sourceRef]);
-          if (known || (closing.key && zones.get(communeSlug(closing.key.commune)))) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
-        }
+        // L'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée ou portera, dès que sa source et
+        // sa référence se lisent : une empreinte seule, sans rien d'elle, même vue pour la première fois incomplète.
+        if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
         // Le bien dit, à 1 m² près, dans une commune du réseau.
         if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
         if (keys.length === 0) {
@@ -648,10 +645,12 @@ export class Pige {
       `INSERT INTO pige_handovers (draft_id, agent_id, channel, handed_at) SELECT ?, ?, 'annonce', ?
         WHERE NOT EXISTS (SELECT 1 FROM pige_handovers WHERE draft_id = ?)
           AND NOT EXISTS (SELECT 1 FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
-                           WHERE o.network_id = ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')}))`,
-      [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, ...linked],
+                           WHERE o.network_id = ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')}))
+          AND NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${linked.map(() => '?').join(', ')}))
+          AND NOT EXISTS (SELECT 1 FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${linked.map(() => '?').join(', ')}))`,
+      [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, ...linked, viewer.networkId, ...linked, viewer.networkId, ...linked],
     );
-    if (r.changes !== 1) return this.refused(viewer, d.id, { ok: false, rule: 'R05', code: 'deja_remis' });
+    if (r.changes !== 1) return this.refused(viewer, d.id, (await this.closedReason(viewer.networkId, d.fingerprint)) ?? { ok: false, rule: 'R05', code: 'deja_remis' });
     await appendEvent(this.journal, { type: 'pige.remise', actor: this.actor(viewer), subject: `pige_draft:${d.id}`, data: { rule: 'R275', channel: 'annonce' } }, this.now);
     return { ok: true, body: d.body, channel: 'annonce' };
   }
