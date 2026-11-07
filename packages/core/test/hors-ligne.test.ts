@@ -1,0 +1,350 @@
+import { describe, expect, it } from 'vitest';
+import { MemoryOutboxStorage, Outbox, type OpResult, type PendingOp, type Transport } from '../src/hors-ligne/boite.ts';
+import { departureCheck, shotPlan } from '../src/hors-ligne/cadrage.ts';
+import { decodeLuma, encodeLuma, fuseExposures, hdrPhoto, judgePhoto, type Luma } from '../src/hors-ligne/photo.ts';
+import { HorsLigne } from '../src/hors-ligne/reception.ts';
+import { Acces, FicheClient, FicheUnique, RendezVous, SqlJournalStore, Visites, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Images, réseau, agents, vendeur, acquéreurs et biens inventés.
+const W = 64;
+const H = 64;
+const scene = (f: (v: number) => number = (v) => v): Luma => {
+  const luma = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const v = 128 + 70 * Math.sign(Math.sin(x * 0.7) * Math.sin(y * 0.7)) + (x - 32) * 1.5;
+      luma[y * W + x] = Math.max(0, Math.min(255, Math.round(f(v))));
+    }
+  return { width: W, height: H, luma };
+};
+const blur = (img: Luma, r = 3): Luma => {
+  let a = img.luma;
+  for (let k = 0; k < 2; k++) {
+    const b = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        let s = 0;
+        let n = 0;
+        for (let dy = -r; dy <= r; dy++)
+          for (let dx = -r; dx <= r; dx++) {
+            const xx = x + dx;
+            const yy = y + dy;
+            if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+            s += a[yy * W + xx] as number;
+            n++;
+          }
+        b[y * W + x] = Math.round(s / n);
+      }
+    a = b;
+  }
+  return { width: W, height: H, luma: a };
+};
+const dark = scene((v) => v * 0.25);
+const bright = scene((v) => v * 2.2);
+
+describe('HX12 · la photo de l’appli', () => {
+  it('[R277] une photo trop sombre, brûlée ou floue est refusée avec ce qu’il faut faire ; une photo nette et claire passe', () => {
+    expect(judgePhoto(scene())).toMatchObject({ ok: true, problems: [], advice: null });
+    expect(judgePhoto(dark)).toMatchObject({ ok: false, problems: ['trop_sombre'] });
+    expect(judgePhoto(dark).advice).toMatch(/Trop sombre/);
+    expect(judgePhoto(bright)).toMatchObject({ ok: false, problems: ['brulee'] });
+    const flou = judgePhoto(blur(scene()));
+    expect(flou).toMatchObject({ ok: false, problems: ['floue'] });
+    expect(flou.advice).toMatch(/Floue/);
+    // Mêmes entrées, même verdict.
+    expect(judgePhoto(blur(scene()))).toEqual(flou);
+  });
+
+  it('[R277] la photo HDR fond au moins deux prises de lumières différentes ; une seule lumière n’est pas une photo HDR', () => {
+    const r = hdrPhoto([dark, bright]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.exposures).toBe(2);
+    // La fusion rattrape ce que chaque prise seule rate : ni trop sombre ni brûlée.
+    expect(r.verdict.figures.brightness).toBeGreaterThan(60);
+    expect(r.verdict.figures.clipped).toBeLessThan(0.2);
+    expect(r.image).toEqual(fuseExposures([dark, bright]));
+    expect(hdrPhoto([scene()])).toMatchObject({ ok: false, code: 'pas_hdr' });
+    expect(hdrPhoto([scene(), scene()])).toMatchObject({ ok: false, code: 'pas_hdr' });
+    // Deux prises floues : fondues, toujours floues.
+    expect(hdrPhoto([blur(dark), blur(bright)])).toMatchObject({ ok: false, code: 'photo_refusee', verdict: { problems: ['floue'] } });
+    // Prises abîmées ou de tailles différentes : refusées.
+    expect(hdrPhoto([dark, { width: 32, height: 32, luma: new Uint8Array(32 * 32) }])).toMatchObject({ ok: false, code: 'prises_invalides' });
+    expect(hdrPhoto([{ width: 10, height: 10, luma: new Uint8Array(100) }, dark])).toMatchObject({ ok: false, code: 'prises_invalides' });
+    expect(hdrPhoto('photo')).toMatchObject({ ok: false, code: 'prises_invalides' });
+  });
+
+  it('[R277] l’image réduite voyage en texte sans rien perdre ; un texte abîmé ne fait pas une image', () => {
+    const e = encodeLuma(dark);
+    expect(decodeLuma(e)).toEqual(dark);
+    expect(decodeLuma({ ...e, width: 65 })).toBeNull();
+    expect(decodeLuma({ width: 64, height: 64, data: '!!!' })).toBeNull();
+    expect(decodeLuma(null)).toBeNull();
+  });
+
+  it('[R277] la liste de cadrage vient de la fiche du bien, pièce par pièce, et dit ce qui manque avant de repartir', () => {
+    const plan = shotPlan('home', 4);
+    expect(plan.map((s) => s.key)).toEqual(['facade', 'sejour', 'cuisine', 'chambre-1', 'chambre-2', 'chambre-3', 'salle-d-eau', 'exterieur']);
+    for (const s of plan) expect(s.advice.length).toBeGreaterThan(10);
+    expect(shotPlan('home', 1).filter((s) => s.key.startsWith('chambre'))).toHaveLength(1);
+    expect(shotPlan('home', 40).filter((s) => s.key.startsWith('chambre'))).toHaveLength(12);
+    expect(shotPlan('land', null).map((s) => s.key)).toEqual(['vue-ensemble', 'acces', 'limites']);
+    expect(shotPlan('commercial', null).map((s) => s.key)).toEqual(['facade', 'espace-principal', 'reserve']);
+    const small = shotPlan('land', null);
+    expect(departureCheck(small, ['vue-ensemble'], [])).toMatchObject({ canLeave: false, missing: ['acces', 'limites'] });
+    expect(departureCheck(small, ['vue-ensemble', 'acces'], ['limites'])).toMatchObject({ canLeave: true, missing: [] });
+  });
+});
+
+/** Un transport qui passe par un serveur de test et peut perdre le réseau à volonté. */
+function wire(receive: (b: { deviceId: string; ops: PendingOp[] }) => Promise<{ results: OpResult[] }>) {
+  const state = { network: true, loseAnswer: false, calls: 0 };
+  const transport: Transport = async (batch) => {
+    state.calls++;
+    if (!state.network) throw new Error('hors ligne');
+    // Les saisies voyagent en texte, comme sur le réseau.
+    const r = await receive(JSON.parse(JSON.stringify(batch)));
+    if (state.loseAnswer) throw new Error('réponse perdue');
+    return r;
+  };
+  return { state, transport };
+}
+
+describe('HX12 · la boîte d’envoi du téléphone', () => {
+  it('[R276] sans réseau, tout reste rangé ; au retour, tout part dans l’ordre et ne quitte la boîte que sur une réponse qui le nomme', async () => {
+    const storage = new MemoryOutboxStorage();
+    let n = 0;
+    const box = new Outbox(storage, { newId: () => `id-test-${++n}` });
+    const seen: string[][] = [];
+    const answered = new Set<string>();
+    const { state, transport } = wire(async (b) => {
+      seen.push(b.ops.map((o) => o.opId));
+      return { results: b.ops.filter((o) => !answered.has(o.opId)).slice(0, 2).map((o) => ({ opId: o.opId, outcome: 'applique' as const, again: false })) };
+    });
+    state.network = false;
+    await box.add('visite.note', 'rdv-test-1', { text: 'Parquet à revoir' });
+    await box.add('visite.note', 'rdv-test-1', { text: 'Belle lumière' });
+    await box.add('visite.sans_objet', 'rdv-test-1', { shot: 'exterieur', reason: 'piece_absente' });
+    expect(await box.flush(transport)).toMatchObject({ offline: true, sent: 0, left: 3 });
+    // Rangé sur le téléphone : une autre boîte sur le même rangement (appli relancée) retrouve tout, dans l'ordre.
+    const reopened = new Outbox(storage, { newId: () => `id-test-${++n}` });
+    expect((await reopened.pending()).map((o) => o.seq)).toEqual([1, 2, 3]);
+    state.network = true;
+    // Le serveur ne répond qu'à deux saisies par envoi : la troisième reste, puis part au tour suivant.
+    expect(await reopened.flush(transport)).toMatchObject({ offline: false, sent: 3, left: 0 });
+    expect(seen.flat()).toEqual(['id-test-2', 'id-test-3', 'id-test-4', 'id-test-4']);
+    expect(await reopened.pending()).toEqual([]);
+  });
+
+  it('[R276] une saisie refusée sort de la file mais reste visible de l’agent ; deux envois lancés ensemble n’en font qu’un', async () => {
+    const box = new Outbox(new MemoryOutboxStorage());
+    await box.add('visite.note', 'rdv-test-1', { text: '' });
+    await box.add('visite.note', 'rdv-test-1', { text: 'Cave saine' });
+    const { state, transport } = wire(async (b) => ({
+      results: b.ops.map((o) => (o.payload.text === '' ? { opId: o.opId, outcome: 'refuse' as const, again: false, code: 'bad_note', rule: null } : { opId: o.opId, outcome: 'applique' as const, again: false })),
+    }));
+    const [a, b] = await Promise.all([box.flush(transport), box.flush(transport)]);
+    expect(a).toEqual(b);
+    expect(state.calls).toBe(1);
+    expect(a).toMatchObject({ sent: 1, refused: 1, left: 0 });
+    expect(await box.refused()).toMatchObject([{ code: 'bad_note', payload: { text: '' } }]);
+  });
+
+  it('[R276] une réponse qui ne nomme aucune saisie ne retire rien', async () => {
+    const box = new Outbox(new MemoryOutboxStorage());
+    await box.add('visite.note', 'rdv-test-1', { text: 'Note' });
+    const { transport } = wire(async () => ({ results: [{ opId: 'autre-saisie', outcome: 'applique', again: false }] }));
+    expect(await box.flush(transport)).toMatchObject({ sent: 0, left: 1 });
+    expect(await box.pending()).toHaveLength(1);
+  });
+});
+
+// Lundi 7 décembre 2026, 9 h à Paris.
+const MONDAY_9H = Date.parse('2026-12-07T08:00:00.000Z');
+const HOUR = 3_600_000;
+const MIN = 60_000;
+const WEEK = { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) };
+
+async function setup() {
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  let clock = MONDAY_9H;
+  const now = (): Date => new Date(clock);
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const fiche = new FicheUnique(db, store, { now });
+  const acces = new Acces(db, store, fiche, journal, { now });
+  const rdv = new RendezVous(db, journal, { now });
+  const visites = new Visites(db, journal, acces, { diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) }, rendezVous: rdv, now });
+  const server = new HorsLigne(db, journal, { now });
+  const network = await store.createNetwork('Réseau test');
+  const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
+  const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Bienveillant' });
+  const as = (role: 'agent' | 'direction', userId: string) => ({ role, userId, networkId: network.id });
+  const agentAlex = as('agent', alex.id);
+  const agentSam = as('agent', sam.id);
+  const direction = as('direction', 'd1');
+  await rdv.setAvailability(agentAlex, WEEK);
+  await rdv.setAvailability(agentSam, WEEK);
+  await visites.createSlipTemplate(direction, 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.');
+  const seller = await store.createPerson({ networkId: network.id, agentId: sam.id, firstName: 'Victorine', lastName: 'Vendeuse' });
+  await store.addIdentifier({ networkId: network.id, personId: seller.id, kind: 'email', value: 'victorine.vendeuse@example.test' });
+  const property = await store.createProperty({ networkId: network.id, agentId: sam.id, reference: 'B1', kind: 'home', city: 'Talant', priceEur: 250_000, surfaceM2: 90, rooms: 4, status: 'available' });
+  const land = await store.createProperty({ networkId: network.id, agentId: sam.id, reference: 'T1', kind: 'land', city: 'Talant', priceEur: 90_000, surfaceM2: 800, rooms: 0, status: 'available' });
+  let n = 0;
+  /** Une visite d'une acquéreuse inventée, tenue par `agent`, le lendemain. */
+  const visit = async (agent = alex, propertyId = property.id) => {
+    n += 1;
+    const buyer = await store.createPerson({ networkId: network.id, agentId: agent.id, firstName: 'Inès', lastName: 'Durandal' });
+    await store.addIdentifier({ networkId: network.id, personId: buyer.id, kind: 'phone', value: '06 12 34 56 78' });
+    const project = await store.createProject({ networkId: network.id, agentId: agent.id, personId: buyer.id, kind: 'buy' });
+    const r = await visites.schedule(as('agent', agent.id), { propertyId, projectId: project.id, start: new Date(MONDAY_9H + 24 * HOUR + n * 90 * MIN) });
+    if (!r.ok) throw new Error(r.code);
+    return { id: r.visit.appointment.id, start: Date.parse(r.visit.appointment.start_at) };
+  };
+  return { db, journal, server, store, network, alex, sam, agentAlex, agentSam, direction, property, land, visit, setClock: (t: number) => (clock = t) };
+}
+
+const photoPayload = (shot: string, exposures: Luma[] = [dark, bright]) => ({ shot, exposures: exposures.map(encodeLuma) });
+
+describeWithSqlite('HX12 · l’appli sans réseau, côté serveur', () => {
+  it('[R276] la même saisie rejouée après une réponse perdue ne fait aucun doublon ; rien n’est perdu', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    let k = 0;
+    const box = new Outbox(new MemoryOutboxStorage(), { newId: () => `dev-or-op-${++k}`, now: () => new Date(v.start + 5 * MIN) });
+    const { state, transport } = wire(async (b) => {
+      const r = await t.server.receive(t.agentAlex, b);
+      if (!r.ok) throw new Error(r.code);
+      return { results: r.results };
+    });
+    await box.add('visite.note', v.id, { text: 'Les acquéreurs reviennent avec un artisan.' });
+    await box.add('visite.photo', v.id, photoPayload('sejour'));
+    // Le serveur range tout, puis la réponse se perd : le téléphone garde tout.
+    state.loseAnswer = true;
+    expect(await box.flush(transport)).toMatchObject({ offline: true, left: 2 });
+    state.loseAnswer = false;
+    expect(await box.flush(transport)).toMatchObject({ offline: false, sent: 2, left: 0 });
+    expect(await t.db.all('SELECT body FROM visit_field_notes')).toEqual([{ body: 'Les acquéreurs reviennent avec un artisan.' }]);
+    expect(await t.db.all('SELECT shot, exposures FROM visit_photos')).toEqual([{ shot: 'sejour', exposures: 2 }]);
+    expect(await t.db.first('SELECT count(*) AS n FROM offline_ops')).toEqual({ n: 2 });
+  });
+
+  it('[R276] rejouée, une saisie rend la même réponse ; un autre contenu sous le même identifiant est refusé, jamais écrit par-dessus', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    const op = { opId: 'op-test-0001', seq: 1, kind: 'visite.note', appointmentId: v.id, writtenAt: new Date(v.start).toISOString(), payload: { text: 'Première note' } };
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [op] })).toEqual({ ok: true, results: [{ opId: 'op-test-0001', outcome: 'applique', again: false, code: null, rule: 'R276' }] });
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [op] })).toEqual({ ok: true, results: [{ opId: 'op-test-0001', outcome: 'applique', again: true, code: null, rule: 'R276' }] });
+    const changed = { ...op, payload: { text: 'Autre note' } };
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [changed] })).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'conflit', rule: 'R276' }] });
+    expect(await t.db.all('SELECT body FROM visit_field_notes')).toEqual([{ body: 'Première note' }]);
+    // Un refus rejoué rend le même refus.
+    const empty = { ...op, opId: 'op-test-0002', seq: 2, payload: { text: '   ' } };
+    const first = await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [empty] });
+    expect(first).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'bad_note', again: false }] });
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [empty] })).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'bad_note', again: true }] });
+    // Les saisies d'un envoi passent dans leur ordre, même arrivées mélangées.
+    const later = { ...op, opId: 'op-test-0004', seq: 4, payload: { text: 'Quatre' } };
+    const earlier = { ...op, opId: 'op-test-0003', seq: 3, payload: { text: 'Trois' } };
+    const r = await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [later, earlier] });
+    expect(r.ok && r.results.map((x) => x.opId)).toEqual(['op-test-0003', 'op-test-0004']);
+    // Rien ne change ni ne s'efface.
+    await expect(t.db.run("UPDATE visit_field_notes SET body = 'x'")).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM offline_ops')).rejects.toThrow();
+  });
+
+  it('[R277] le serveur refait le jugement de la photo : une photo sombre ou d’une seule lumière est refusée, quoi qu’en dise le téléphone', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    const at = new Date(v.start).toISOString();
+    const ops = [
+      { opId: 'op-photo-01', seq: 1, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: { ...photoPayload('cuisine', [scene((x) => x * 0.2), scene((x) => x * 0.42)]), verdict: { ok: true } } },
+      { opId: 'op-photo-02', seq: 2, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: photoPayload('cuisine', [scene(), scene()]) },
+      { opId: 'op-photo-03', seq: 3, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: photoPayload('cuisine', [blur(dark), blur(bright)]) },
+      { opId: 'op-photo-04', seq: 4, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: photoPayload('grenier') },
+      { opId: 'op-photo-05', seq: 5, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: { shot: 'cuisine', exposures: [{ width: 64, height: 64, data: 'abc' }] } },
+    ];
+    const r = await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops });
+    expect(r.ok && r.results.map((x) => [x.outcome, x.code, x.rule])).toEqual([
+      ['refuse', 'trop_sombre', 'R277'],
+      ['refuse', 'pas_hdr', 'R277'],
+      ['refuse', 'floue', 'R277'],
+      ['refuse', 'bad_shot', 'R277'],
+      ['refuse', 'prises_invalides', 'R277'],
+    ]);
+    expect(await t.db.first('SELECT count(*) AS n FROM visit_photos')).toEqual({ n: 0 });
+  });
+
+  it('[R277] l’agent ne repart pas tant que chaque photo de la liste n’est ni acceptée ni dite sans objet', async () => {
+    const t = await setup();
+    const v = await t.visit(t.alex, t.land.id);
+    t.setClock(v.start + 10 * MIN);
+    const at = new Date(v.start).toISOString();
+    const send = (opId: string, seq: number, kind: string, payload: Record<string, unknown>) => t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [{ opId, seq, kind, appointmentId: v.id, writtenAt: at, payload }] });
+    expect(await t.server.departure(t.agentAlex, v.id)).toMatchObject({ ok: true, check: { canLeave: false, missing: ['vue-ensemble', 'acces', 'limites'] } });
+    await send('op-test-0001', 1, 'visite.photo', photoPayload('vue-ensemble'));
+    await send('op-test-0002', 2, 'visite.photo', photoPayload('acces'));
+    expect(await send('op-test-0003', 3, 'visite.sans_objet', { shot: 'limites', reason: 'parce_que' })).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'bad_reason' }] });
+    expect(await t.server.departure(t.agentAlex, v.id)).toMatchObject({ ok: true, check: { canLeave: false, missing: ['limites'] } });
+    expect(await send('op-test-0004', 4, 'visite.sans_objet', { shot: 'limites', reason: 'acces_refuse' })).toMatchObject({ ok: true, results: [{ outcome: 'applique' }] });
+    expect(await t.server.departure(t.agentAlex, v.id)).toMatchObject({ ok: true, check: { canLeave: true, missing: [] } });
+    // La direction le lit aussi ; un autre agent, non.
+    expect(await t.server.departure(t.direction, v.id)).toMatchObject({ ok: true, check: { canLeave: true } });
+    expect(await t.server.departure(t.agentSam, v.id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R16] seul l’agent du rendez-vous y saisit ; la direction ne saisit rien ; une heure impossible ou un rendez-vous annulé refusent', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    const op = { opId: 'op-test-0001', seq: 1, kind: 'visite.note', appointmentId: v.id, writtenAt: new Date(v.start).toISOString(), payload: { text: 'Note' } };
+    expect(await t.server.receive(t.agentSam, { deviceId: 'device-test-2', ops: [op] })).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'pas_son_rendez_vous', rule: 'R16' }] });
+    expect(await t.server.receive(t.direction, { deviceId: 'device-test-3', ops: [op] })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'court', ops: [op] })).toMatchObject({ ok: false, code: 'bad_device' });
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: Array.from({ length: 51 }, () => op) })).toMatchObject({ ok: false, code: 'bad_batch' });
+    const future = { ...op, opId: 'op-test-0002', seq: 2, writtenAt: new Date(v.start + 2 * HOUR).toISOString() };
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [future] })).toMatchObject({ ok: true, results: [{ code: 'heure_invalide' }] });
+    await t.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [v.id]);
+    expect(await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [{ ...op, opId: 'op-test-0003' }] })).toMatchObject({ ok: true, results: [{ code: 'rendez_vous_annule' }] });
+    expect(await t.db.first('SELECT count(*) AS n FROM visit_field_notes')).toEqual({ n: 0 });
+  });
+
+  it('[R13] le journal garde la sorte et la réponse de chaque saisie, jamais le texte de la note', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    t.setClock(v.start + 10 * MIN);
+    await t.server.receive(t.agentAlex, { deviceId: 'device-test-1', ops: [{ opId: 'op-test-0001', seq: 1, kind: 'visite.note', appointmentId: v.id, writtenAt: new Date(v.start).toISOString(), payload: { text: 'Madame Durandal hésite' } }] });
+    const rows = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type LIKE 'hors_ligne.%'");
+    expect(rows.map((r) => r.type)).toEqual(['hors_ligne.recu']);
+    expect(JSON.stringify(rows)).not.toMatch(/Durandal|hésite/);
+  });
+
+  it('[R278] le paquet du jour ne garde que les visites prévues de l’agent, la fiche du bien sans client, jusqu’à la fin du jour de Paris', async () => {
+    const t = await setup();
+    const a = await t.visit();
+    const b = await t.visit(t.alex, t.land.id);
+    await t.visit(t.sam);
+    const cancelled = await t.visit();
+    await t.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [cancelled.id]);
+    const r = await t.server.pack(t.agentAlex, '2026-12-08');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.pack.validUntil).toBe('2026-12-08T23:00:00.000Z');
+    expect(r.pack.appointments.map((x) => x.appointmentId)).toEqual([a.id, b.id]);
+    expect(r.pack.appointments[0]).toMatchObject({ kind: 'visite', property: { reference: 'B1', kind: 'home', city: 'Talant', surfaceM2: 90, rooms: 4 } });
+    expect(r.pack.appointments[0]?.shots.map((s) => s.key)).toContain('chambre-3');
+    const text = JSON.stringify(r.pack);
+    for (const secret of ['Inès', 'Durandal', '06 12', '0612', 'Victorine', 'Vendeuse', 'example.test', 'Sam', 'Bienveillant']) expect(text).not.toContain(secret);
+    expect(Object.keys(r.pack.appointments[0] ?? {}).sort()).toEqual(['accepted', 'appointmentId', 'end', 'kind', 'property', 'shots', 'skipped', 'start']);
+    // Seulement aujourd'hui ou demain ; seul un agent en activité.
+    expect(await t.server.pack(t.agentAlex)).toMatchObject({ ok: true, pack: { day: '2026-12-07', appointments: [] } });
+    expect(await t.server.pack(t.agentAlex, '2026-12-09')).toMatchObject({ ok: false, code: 'bad_day' });
+    expect(await t.server.pack(t.direction)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+});

@@ -1,0 +1,319 @@
+/**
+ * L'appli sans réseau, côté serveur (HX12) [R276, R277, R278].
+ *
+ * - Le paquet du jour : avant de partir, le téléphone garde les visites et estimations du jour de l'agent, chacune avec
+ *   la fiche du bien (référence, sorte, commune, surface, pièces) et sa liste de photos. Jamais le nom, le numéro, le mail
+ *   ni l'adresse d'un client : un téléphone perdu ne livre personne. Le paquet ne vaut que jusqu'à la fin du jour de
+ *   Paris [R278].
+ * - La réception : au retour du réseau, les saisies arrivent avec l'identifiant tiré par le téléphone. Chacune est
+ *   reçue une seule fois ; rejouée, elle rend la même réponse sans rien refaire ; un autre contenu sous le même
+ *   identifiant est refusé, jamais écrit par-dessus [R276]. Une photo est jugée de nouveau ici, sur les prises réduites
+ *   envoyées : le verdict du téléphone ne compte pas [R277].
+ * - Le départ : la liste de cadrage du bien dit ce qui manque encore ; l'agent ne repart pas tant qu'une photo n'est ni
+ *   acceptée ni dite sans objet [R277].
+ * - Rien n'est envoyé à personne.
+ */
+import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
+import { sha256Of } from '../conformite/demandes-personnes.ts';
+import type { SqlDatabase, SqlStatement } from '../db/sql.ts';
+import { runBatch } from '../db/sql.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+import { parisDayStart } from '../pilotage/tableau-agent.ts';
+import { parisDay } from '../studio/bibliotheque.ts';
+import { OP_KINDS, type OpKind, type OpResult } from './boite.ts';
+import { SKIP_REASONS, departureCheck, shotPlan, type DepartureCheck, type Shot } from './cadrage.ts';
+import { decodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type PhotoThresholds } from './photo.ts';
+
+export const MAX_OPS_PER_BATCH = 50;
+export const MAX_NOTE_LENGTH = 2000;
+/** Une saisie plus vieille que tant de jours n'est plus reçue. */
+export const MAX_OP_AGE_DAYS = 30;
+/** L'horloge du téléphone peut avancer de tant de minutes, pas plus. */
+export const MAX_CLOCK_SKEW_MINUTES = 5;
+const DAY = 86_400_000;
+const ID = /^[A-Za-z0-9_-]{8,64}$/;
+const VISIT_KINDS: ReadonlySet<string> = new Set(['visite', 'estimation']);
+
+type Refusal = { ok: false; rule: 'R16'; code: string };
+
+/** Ce que le téléphone garde pour une visite ou une estimation : rien d'un client [R278]. */
+export interface PackedAppointment {
+  appointmentId: string;
+  kind: 'visite' | 'estimation';
+  start: string;
+  end: string;
+  property: { reference: string; kind: string; city: string | null; postalCode: string | null; surfaceM2: number | null; rooms: number | null } | null;
+  shots: Shot[];
+  accepted: string[];
+  skipped: string[];
+}
+
+export interface OfflinePack {
+  day: string;
+  /** Après cette heure, le téléphone efface le paquet. */
+  validUntil: string;
+  appointments: PackedAppointment[];
+}
+
+interface AppointmentRow {
+  id: string;
+  agent_id: string;
+  property_id: string | null;
+  kind: string;
+  status: string;
+  start_at: string;
+  end_at: string;
+}
+
+interface PropertyRow {
+  reference: string;
+  kind: string;
+  city: string | null;
+  postal_code: string | null;
+  surface_m2: number | null;
+  rooms: number | null;
+}
+
+interface StoredOp {
+  content_hash: string;
+  outcome: 'applique' | 'refuse';
+  rule: string | null;
+  code: string | null;
+}
+
+export interface HorsLigneOptions {
+  now?: () => Date;
+  thresholds?: PhotoThresholds;
+}
+
+type Verdict = { ok: true; statement: SqlStatement | null } | { ok: false; rule: string | null; code: string };
+
+export class HorsLigne {
+  private readonly now: () => Date;
+  private readonly thresholds: PhotoThresholds;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly journal: JournalStore,
+    options: HorsLigneOptions = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.thresholds = options.thresholds ?? PHOTO_THRESHOLDS;
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private async refuse(viewer: Viewer, subject: string, code: string): Promise<Refusal> {
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'hors_ligne', code } }, this.now);
+    return { ok: false, rule: 'R16', code };
+  }
+
+  /** Un agent du réseau, en activité : seul lui saisit hors ligne. */
+  private async activeAgent(viewer: Viewer, subject: string): Promise<Refusal | null> {
+    if (viewer.role !== 'agent') return this.refuse(viewer, subject, 'role');
+    const a = await this.db.first<{ id: string }>('SELECT id FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
+    if (!a || (await agentState(this.db, viewer.networkId, viewer.userId, this.now())) !== 'actif') return this.refuse(viewer, subject, 'agent_inactive');
+    return null;
+  }
+
+  private async appointment(networkId: string, id: string): Promise<AppointmentRow | null> {
+    return this.db.first<AppointmentRow>('SELECT id, agent_id, property_id, kind, status, start_at, end_at FROM appointments WHERE id = ? AND network_id = ?', [id, networkId]);
+  }
+
+  /** La fiche du bien, réduite à ce qui sert au cadrage : jamais l'adresse ni le vendeur [R278]. */
+  private async property(networkId: string, id: string | null): Promise<PropertyRow | null> {
+    if (!id) return null;
+    return this.db.first<PropertyRow>('SELECT reference, kind, city, postal_code, surface_m2, rooms FROM properties WHERE id = ? AND network_id = ?', [id, networkId]);
+  }
+
+  private async shotsDone(networkId: string, appointmentId: string): Promise<{ accepted: string[]; skipped: string[] }> {
+    const accepted = await this.db.all<{ shot: string }>('SELECT DISTINCT shot FROM visit_photos WHERE network_id = ? AND appointment_id = ? ORDER BY shot', [networkId, appointmentId]);
+    const skipped = await this.db.all<{ shot: string }>('SELECT DISTINCT shot FROM visit_shot_skips WHERE network_id = ? AND appointment_id = ? ORDER BY shot', [networkId, appointmentId]);
+    return { accepted: accepted.map((r) => r.shot), skipped: skipped.map((r) => r.shot) };
+  }
+
+  /** Le paquet du jour de Paris, pour le téléphone de l'agent : ses visites et estimations prévues, sans client [R278]. */
+  async pack(viewer: Viewer, dayInput?: unknown): Promise<{ ok: true; pack: OfflinePack } | Refusal | { ok: false; rule: null; code: string }> {
+    const refused = await this.activeAgent(viewer, `agent:${viewer.userId}`);
+    if (refused) return refused;
+    const today = parisDay(this.now());
+    const day = dayInput === undefined ? today : dayInput;
+    // Seulement aujourd'hui ou demain : un paquet ne traîne pas sur un téléphone.
+    const tomorrow = parisDay(new Date(parisDayStart(today).getTime() + DAY + 3 * 3_600_000));
+    if (day !== today && day !== tomorrow) return { ok: false, rule: null, code: 'bad_day' };
+    const from = parisDayStart(day as string);
+    const next = parisDayStart(parisDay(new Date(from.getTime() + DAY + 3 * 3_600_000)));
+    const rows = await this.db.all<AppointmentRow>(
+      `SELECT id, agent_id, property_id, kind, status, start_at, end_at FROM appointments
+        WHERE network_id = ? AND agent_id = ? AND status = 'booked' AND kind IN ('visite', 'estimation') AND start_at >= ? AND start_at < ?
+        ORDER BY start_at, id`,
+      [viewer.networkId, viewer.userId, from.toISOString(), next.toISOString()],
+    );
+    const appointments: PackedAppointment[] = [];
+    for (const a of rows) {
+      const p = await this.property(viewer.networkId, a.property_id);
+      const done = await this.shotsDone(viewer.networkId, a.id);
+      appointments.push({
+        appointmentId: a.id,
+        kind: a.kind as 'visite' | 'estimation',
+        start: a.start_at,
+        end: a.end_at,
+        property: p ? { reference: p.reference, kind: p.kind, city: p.city, postalCode: p.postal_code, surfaceM2: p.surface_m2, rooms: p.rooms } : null,
+        shots: p ? shotPlan(p.kind, p.rooms) : [],
+        accepted: done.accepted,
+        skipped: done.skipped,
+      });
+    }
+    await appendEvent(this.journal, { type: 'hors_ligne.paquet', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R278', day, count: appointments.length } }, this.now);
+    return { ok: true, pack: { day: day as string, validUntil: next.toISOString(), appointments } };
+  }
+
+  /** Ce qui manque avant de repartir, pour une visite ou une estimation de l'agent [R277]. */
+  async departure(viewer: Viewer, appointmentId: string): Promise<{ ok: true; check: DepartureCheck } | Refusal | { ok: false; rule: null; code: string }> {
+    const subject = `appointment:${appointmentId}`;
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, subject, 'role');
+    const a = await this.appointment(viewer.networkId, appointmentId);
+    if (!a) return { ok: false, rule: null, code: 'unknown_appointment' };
+    if (viewer.role === 'agent' && a.agent_id !== viewer.userId) return this.refuse(viewer, subject, 'pas_son_rendez_vous');
+    const p = await this.property(viewer.networkId, a.property_id);
+    if (!p || !VISIT_KINDS.has(a.kind)) return { ok: false, rule: null, code: 'sans_bien' };
+    const done = await this.shotsDone(viewer.networkId, a.id);
+    return { ok: true, check: departureCheck(shotPlan(p.kind, p.rooms), done.accepted, done.skipped) };
+  }
+
+  /**
+   * Recevoir les saisies d'un téléphone, dans leur ordre. Chaque saisie a sa réponse ; une coupure en plein envoi ne
+   * perd rien, puisque le téléphone ne retire que ce qui a une réponse, et le même envoi rejoué ne fait aucun doublon
+   * [R276].
+   */
+  async receive(viewer: Viewer, input: { deviceId?: unknown; ops?: unknown }): Promise<{ ok: true; results: OpResult[] } | Refusal | { ok: false; rule: null; code: string }> {
+    const refused = await this.activeAgent(viewer, `agent:${viewer.userId}`);
+    if (refused) return refused;
+    if (typeof input.deviceId !== 'string' || !ID.test(input.deviceId)) return { ok: false, rule: null, code: 'bad_device' };
+    if (!Array.isArray(input.ops) || input.ops.length > MAX_OPS_PER_BATCH) return { ok: false, rule: null, code: 'bad_batch' };
+    const deviceId = input.deviceId;
+    const raw = input.ops as unknown[];
+    const ordered = raw
+      .map((op, i) => ({ op, i, seq: typeof op === 'object' && op !== null && Number.isInteger((op as { seq?: unknown }).seq) ? ((op as { seq: number }).seq) : Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => a.seq - b.seq || a.i - b.i);
+    const results: OpResult[] = [];
+    for (const { op } of ordered) results.push(await this.receiveOne(viewer, deviceId, op));
+    return { ok: true, results };
+  }
+
+  private async stored(viewer: Viewer, deviceId: string, opId: string): Promise<StoredOp | null> {
+    return this.db.first<StoredOp>(
+      'SELECT content_hash, outcome, rule, code FROM offline_ops WHERE network_id = ? AND agent_id = ? AND device_id = ? AND op_id = ?',
+      [viewer.networkId, viewer.userId, deviceId, opId],
+    );
+  }
+
+  private async receiveOne(viewer: Viewer, deviceId: string, input: unknown): Promise<OpResult> {
+    const o = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+    const opId = typeof o.opId === 'string' ? o.opId : '';
+    const bad: OpResult = { opId, outcome: 'refuse', again: false, code: 'saisie_invalide', rule: 'R276' };
+    if (!ID.test(opId) || !Number.isInteger(o.seq) || (o.seq as number) < 1) return bad;
+    if (typeof o.kind !== 'string' || !(OP_KINDS as readonly string[]).includes(o.kind)) return bad;
+    if (typeof o.appointmentId !== 'string' || !ID.test(o.appointmentId)) return bad;
+    if (typeof o.writtenAt !== 'string' || Number.isNaN(Date.parse(o.writtenAt))) return bad;
+    if (typeof o.payload !== 'object' || o.payload === null || Array.isArray(o.payload)) return bad;
+    const kind = o.kind as OpKind;
+    const appointmentId = o.appointmentId;
+    const writtenAt = new Date(Date.parse(o.writtenAt)).toISOString();
+    const payload = o.payload as Record<string, unknown>;
+    const hash = await sha256Of({ kind, appointmentId, seq: o.seq, writtenAt, payload });
+
+    const answer = (s: StoredOp): OpResult =>
+      s.content_hash === hash
+        ? { opId, outcome: s.outcome, again: true, code: s.code, rule: s.rule }
+        : { opId, outcome: 'refuse', again: false, code: 'conflit', rule: 'R276' };
+    const before = await this.stored(viewer, deviceId, opId);
+    if (before) return answer(before);
+
+    const now = this.now();
+    const entityId = await sha256Of({ n: viewer.networkId, a: viewer.userId, d: deviceId, o: opId });
+    const verdict = await this.evaluate(viewer, entityId, kind, appointmentId, writtenAt, payload, now);
+    const outcome = verdict.ok ? 'applique' : 'refuse';
+    const rule = verdict.ok ? 'R276' : verdict.rule;
+    const code = verdict.ok ? null : verdict.code;
+    const statements: SqlStatement[] = [
+      {
+        sql: `INSERT INTO offline_ops (network_id, agent_id, device_id, op_id, seq, kind, appointment_id, content_hash, outcome, rule, code, written_at, received_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        params: [viewer.networkId, viewer.userId, deviceId, opId, o.seq as number, kind, appointmentId, hash, outcome, rule, code, writtenAt, now.toISOString()],
+      },
+    ];
+    if (verdict.ok && verdict.statement) statements.push(verdict.statement);
+    let first: { changes: number } | undefined;
+    try {
+      [first] = await runBatch(this.db, statements);
+    } catch {
+      // Le rendez-vous ou l'agent ont changé entre la lecture et l'écriture : rien n'est gardé, la saisie reste au téléphone.
+      const again = await this.stored(viewer, deviceId, opId);
+      if (again) return answer(again);
+      return { opId, outcome: 'refuse', again: false, code: 'non_range', rule: null };
+    }
+    if (!first || first.changes === 0) {
+      // Le même identifiant reçu au même moment par un autre envoi : on rend sa réponse à lui.
+      const again = await this.stored(viewer, deviceId, opId);
+      if (again) return answer(again);
+    }
+    await appendEvent(this.journal, { type: verdict.ok ? 'hors_ligne.recu' : 'hors_ligne.refuse', actor: this.actor(viewer), subject: `appointment:${appointmentId}`, data: { rule: rule ?? 'R276', kind, code } }, this.now);
+    return { opId, outcome, again: false, code, rule };
+  }
+
+  private async evaluate(viewer: Viewer, entityId: string, kind: OpKind, appointmentId: string, writtenAt: string, payload: Record<string, unknown>, now: Date): Promise<Verdict> {
+    const at = Date.parse(writtenAt);
+    if (at > now.getTime() + MAX_CLOCK_SKEW_MINUTES * 60_000 || at < now.getTime() - MAX_OP_AGE_DAYS * DAY) return { ok: false, rule: 'R276', code: 'heure_invalide' };
+    const a = await this.appointment(viewer.networkId, appointmentId);
+    if (!a || a.agent_id !== viewer.userId) return { ok: false, rule: 'R16', code: 'pas_son_rendez_vous' };
+    if (!VISIT_KINDS.has(a.kind)) return { ok: false, rule: null, code: 'mauvais_rendez_vous' };
+    if (a.status === 'cancelled') return { ok: false, rule: null, code: 'rendez_vous_annule' };
+    const p = await this.property(viewer.networkId, a.property_id);
+    const plan = p ? shotPlan(p.kind, p.rooms) : [];
+    const inPlan = (v: unknown): v is string => typeof v === 'string' && plan.some((s) => s.key === v);
+    const received = now.toISOString();
+    if (kind === 'visite.note') {
+      const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+      if (text.length === 0 || [...text].length > MAX_NOTE_LENGTH) return { ok: false, rule: null, code: 'bad_note' };
+      if (payload.shot !== undefined && payload.shot !== null && !inPlan(payload.shot)) return { ok: false, rule: null, code: 'bad_shot' };
+      const shot = inPlan(payload.shot) ? payload.shot : null;
+      return {
+        ok: true,
+        statement: {
+          sql: `INSERT INTO visit_field_notes (id, network_id, appointment_id, agent_id, shot, body, written_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
+          params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, text, writtenAt, received],
+        },
+      };
+    }
+    if (!p) return { ok: false, rule: null, code: 'sans_bien' };
+    if (!inPlan(payload.shot)) return { ok: false, rule: 'R277', code: 'bad_shot' };
+    const shot = payload.shot;
+    if (kind === 'visite.sans_objet') {
+      if (typeof payload.reason !== 'string' || !(SKIP_REASONS as readonly string[]).includes(payload.reason)) return { ok: false, rule: 'R277', code: 'bad_reason' };
+      return {
+        ok: true,
+        statement: {
+          sql: `INSERT INTO visit_shot_skips (id, network_id, appointment_id, agent_id, shot, reason, written_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
+          params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, payload.reason, writtenAt, received],
+        },
+      };
+    }
+    // La photo : les prises réduites, décodées puis fondues et jugées ici, comme sur le téléphone [R277].
+    const exposures = Array.isArray(payload.exposures) ? payload.exposures.map(decodeLuma) : null;
+    if (!exposures || exposures.some((e) => e === null)) return { ok: false, rule: 'R277', code: 'prises_invalides' };
+    const r = hdrPhoto(exposures, this.thresholds);
+    if (!r.ok) return { ok: false, rule: 'R277', code: r.code === 'photo_refusee' ? (r.verdict?.problems[0] ?? 'photo_refusee') : r.code };
+    return {
+      ok: true,
+      statement: {
+        sql: `INSERT INTO visit_photos (id, network_id, appointment_id, agent_id, shot, exposures, brightness, clipped, sharpness, taken_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
+        params: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received],
+      },
+    };
+  }
+}
