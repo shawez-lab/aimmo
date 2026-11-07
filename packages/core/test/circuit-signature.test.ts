@@ -130,9 +130,9 @@ describeWithSqlite('HX37 · ordre des signataires, annexes groupées et rappels'
     expect(await t.circuit.acknowledge(t.agent, c.id, { personId: t.sellerId, position: 2, textHash: seller.value[1]!.textHash })).toMatchObject({ ok: true, value: { signers: [{ read: [1, 2] }, { read: [] }] } });
     expect(await t.sign(c.id, t.sellerId, c.envelopeHash)).toMatchObject({ ok: true });
     // La lecture est rangée avec l'empreinte du texte montré.
-    expect(await t.db.all("SELECT annex_position, text_hash FROM signature_circuit_events WHERE circuit_id = ? AND kind = 'lecture' ORDER BY seq", [c.id])).toEqual([
-      { annex_position: 1, text_hash: (await plainWords('diagnostics', 'vendeur')).hash },
-      { annex_position: 2, text_hash: (await plainWords('copropriete', 'vendeur')).hash },
+    expect(await t.db.all("SELECT annex_position, shown_hash FROM signature_circuit_events WHERE circuit_id = ? AND kind = 'lecture' ORDER BY seq", [c.id])).toEqual([
+      { annex_position: 1, shown_hash: (await plainWords('diagnostics', 'vendeur')).hash },
+      { annex_position: 2, shown_hash: (await plainWords('copropriete', 'vendeur')).hash },
     ]);
   });
 
@@ -150,6 +150,8 @@ describeWithSqlite('HX37 · ordre des signataires, annexes groupées et rappels'
     expect(body?.person_id).toBe(t.sellerId);
     expect(body?.body).toContain('Votre signature est attendue sur les documents de votre vente.');
     expect(body?.body).not.toMatch(/\d/);
+    // Le même passage relancé : rien ne repart.
+    expect(await t.circuit.remind(t.network.id)).toEqual({ sent: 0, refused: 0, skipped: null });
     // Vendredi 5 mars à 22 h, puis dimanche 7 mars à 11 h à Paris : rien n'est tenté.
     for (const night of ['2027-03-05T21:00:00.000Z', '2027-03-06T19:30:00.000Z', '2027-03-07T10:00:00.000Z', '2027-03-08T06:59:00.000Z']) {
       t.setClock(new Date(night));
@@ -175,6 +177,21 @@ describeWithSqlite('HX37 · ordre des signataires, annexes groupées et rappels'
       { person_id: t.sellerId, n: 2 },
       { person_id: t.buyerId, n: 1 },
     ]);
+  });
+
+  it('[R467] [R05] un rappel remis sans être rangé est retrouvé au passage suivant, sans repartir', async () => {
+    const t = await setup();
+    const c = await t.prepare([{ personId: t.sellerId, group: 1 }]);
+    t.setClock(new Date('2027-03-03T14:00:00.000Z'));
+    // Une coupure : le contrôle central a remis le rappel, la ligne du circuit n'a pas été écrite.
+    const realAdd = (t.circuit as unknown as { addEvent: (...a: unknown[]) => Promise<boolean> }).addEvent.bind(t.circuit);
+    (t.circuit as unknown as { addEvent: unknown }).addEvent = async () => false;
+    await t.circuit.remind(t.network.id);
+    (t.circuit as unknown as { addEvent: unknown }).addEvent = realAdd;
+    expect(await t.messages()).toBe(1);
+    expect(await t.circuit.remind(t.network.id)).toEqual({ sent: 0, refused: 0, skipped: null });
+    expect(await t.messages()).toBe(1);
+    expect(await t.db.all("SELECT kind, n, rule FROM signature_circuit_events WHERE circuit_id = ? AND kind LIKE 'rappel%'", [c.id])).toEqual([{ kind: 'rappel', n: 1, rule: 'R467' }]);
   });
 
   it(`[R467] [R03] un rappel sans accord est refusé par le contrôle central ; ${MAX_REMINDERS} rappels au plus ; rien quand tous ont signé`, async () => {

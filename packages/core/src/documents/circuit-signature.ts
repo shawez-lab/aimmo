@@ -184,7 +184,7 @@ interface EventRow {
   kind: 'lecture' | 'signature' | 'rappel' | 'rappel_refuse';
   person_id: string;
   annex_position: number | null;
-  text_hash: string | null;
+  shown_hash: string | null;
   envelope_hash: string | null;
   n: number | null;
   at: string;
@@ -329,7 +329,7 @@ export class CircuitSignature {
   }
 
   private async eventsOf(circuitId: string): Promise<EventRow[]> {
-    return this.db.all<EventRow>('SELECT seq, kind, person_id, annex_position, text_hash, envelope_hash, n, at FROM signature_circuit_events WHERE circuit_id = ? ORDER BY seq', [circuitId]);
+    return this.db.all<EventRow>('SELECT seq, kind, person_id, annex_position, shown_hash, envelope_hash, n, at FROM signature_circuit_events WHERE circuit_id = ? ORDER BY seq', [circuitId]);
   }
 
   private async addEvent(
@@ -339,7 +339,7 @@ export class CircuitSignature {
     const last = await this.db.first<{ seq: number | null }>('SELECT MAX(seq) AS seq FROM signature_circuit_events WHERE circuit_id = ?', [c.id]);
     try {
       await this.db.run(
-        `INSERT INTO signature_circuit_events (circuit_id, network_id, file_id, seq, kind, person_id, annex_position, text_hash, envelope_hash, proof_ref, n, message_id, rule, at, by)
+        `INSERT INTO signature_circuit_events (circuit_id, network_id, file_id, seq, kind, person_id, annex_position, shown_hash, envelope_hash, proof_ref, n, message_id, rule, at, by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           c.id,
@@ -411,7 +411,7 @@ export class CircuitSignature {
     if (input.textHash !== w.hash) return { ok: false, rule: 'R466', code: 'text_changed' };
     const events = await this.eventsOf(r.circuit.id);
     if (events.some((e) => e.kind === 'signature' && e.person_id === signer.person_id)) return { ok: false, rule: null, code: 'already_signed' };
-    const done = events.some((e) => e.kind === 'lecture' && e.person_id === signer.person_id && Number(e.annex_position) === annex.position && e.text_hash === w.hash);
+    const done = events.some((e) => e.kind === 'lecture' && e.person_id === signer.person_id && Number(e.annex_position) === annex.position && e.shown_hash === w.hash);
     if (!done) {
       if (!(await this.addEvent(r.circuit, { kind: 'lecture', personId: signer.person_id, annexPosition: annex.position, textHash: w.hash, rule: 'R466', by: actorOf(viewer) }))) return { ok: false, rule: null, code: 'busy' };
       await appendEvent(this.journal, { type: 'dossier.circuit_lecture', actor: actorOf(viewer), subject: `sale_file:${r.circuit.file_id}`, data: { rule: 'R466', circuit: r.circuit.id, annex: annex.position } }, this.now);
@@ -440,7 +440,7 @@ export class CircuitSignature {
     if (envelope !== c.envelope_hash || input.envelopeHash !== envelope) return { ok: false, rule: 'R465', code: 'envelope_mismatch' };
     for (const a of annexes) {
       const w = await plainWords(a.kind, signer.role);
-      const read = events.some((e) => e.kind === 'lecture' && e.person_id === signer.person_id && Number(e.annex_position) === a.position && e.text_hash === w.hash);
+      const read = events.some((e) => e.kind === 'lecture' && e.person_id === signer.person_id && Number(e.annex_position) === a.position && e.shown_hash === w.hash);
       if (!read) return { ok: false, rule: 'R466', code: 'annexes_not_read' };
     }
     if (typeof input.proofRef !== 'string' || !PROOF_REF.test(input.proofRef)) return { ok: false, rule: 'R465', code: 'bad_ref' };
@@ -499,6 +499,16 @@ export class CircuitSignature {
         const last = mine.length ? Math.max(turnStart, ...mine.map((e) => Date.parse(e.at))) : turnStart;
         if (at.getTime() - last < interval) continue;
         const n = mine.length + 1;
+        const subject = `circuit:${c.id}:${s.person_id}:${n}`;
+        // Un rappel remis par le contrôle central sans être rangé ici (une coupure entre les deux) : il est rangé, sans
+        // repartir [R05].
+        const before = await this.db.first<{ message_id: string }>('SELECT message_id FROM message_subjects WHERE subject = ? AND network_id = ? LIMIT 1', [subject, c.network_id]);
+        if (before) {
+          if (await this.addEvent(c, { kind: 'rappel', personId: s.person_id, n, messageId: before.message_id, rule: 'R467', by: 'system:circuit' })) {
+            await appendEvent(this.journal, { type: 'dossier.circuit_rappel', actor: 'system:circuit', subject: `sale_file:${c.file_id}`, data: { rule: 'R467', circuit: c.id, n } }, this.now);
+          }
+          continue;
+        }
         const text = await this.reminder(c, s.person_id, n);
         const agent = await this.db.first<{ agent_id: string | null }>('SELECT p.agent_id FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [c.file_id]);
         const result = text
@@ -509,7 +519,7 @@ export class CircuitSignature {
               channel: 'email',
               kind: 'reminder',
               purpose: ONLINE_SIGNATURE_PURPOSE,
-              subject: `circuit:${c.id}:${s.person_id}:${n}`,
+              subject,
               fallbackTexts: [text],
               figures: [],
               asWritten: { refuseWithoutMention: false, thread: `circuit:${c.id}` },
@@ -518,7 +528,8 @@ export class CircuitSignature {
         const ok = result?.status === 'sent' && result.messageId !== null;
         const rule = ok ? 'R467' : (result?.rule ?? 'sans_texte');
         if (!(await this.addEvent(c, { kind: ok ? 'rappel' : 'rappel_refuse', personId: s.person_id, n, messageId: result?.messageId ?? null, rule, by: 'system:circuit' }))) continue;
-        await appendEvent(this.journal, { type: ok ? 'dossier.circuit_rappel' : 'dossier.circuit_rappel_refuse', actor: 'system:circuit', subject: `sale_file:${c.file_id}`, data: { rule, circuit: c.id, n } }, this.now);
+        if (ok) await appendEvent(this.journal, { type: 'dossier.circuit_rappel', actor: 'system:circuit', subject: `sale_file:${c.file_id}`, data: { rule, circuit: c.id, n } }, this.now);
+        else await appendEvent(this.journal, { type: 'dossier.circuit_rappel_refuse', actor: 'system:circuit', subject: `sale_file:${c.file_id}`, data: { rule, circuit: c.id, n } }, this.now);
         if (ok) sent += 1;
         else refused += 1;
       }

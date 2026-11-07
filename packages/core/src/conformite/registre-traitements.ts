@@ -970,7 +970,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   signature_circuits: ['id', 'network_id', 'file_id', 'document_hash', 'envelope_hash', 'prepared_at'],
   signature_circuit_annexes: ['circuit_id', 'network_id', 'file_id', 'position', 'kind', 'hash'],
   signature_circuit_signers: ['circuit_id', 'network_id', 'file_id', 'role', 'grp'],
-  signature_circuit_events: ['circuit_id', 'network_id', 'file_id', 'seq', 'kind', 'annex_position', 'text_hash', 'envelope_hash', 'n', 'rule', 'at'],
+  signature_circuit_events: ['circuit_id', 'network_id', 'file_id', 'seq', 'kind', 'annex_position', 'shown_hash', 'envelope_hash', 'n', 'rule', 'at'],
   mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'sent_on', 'created_at'],
   mandate_tasks: ['id', 'network_id', 'mandate_id', 'kind', 'due_day', 'dedup_key', 'created_at', 'done_at'],
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],

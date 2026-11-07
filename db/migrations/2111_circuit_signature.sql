@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS signature_circuit_events (
   person_id TEXT NOT NULL,
   -- Lecture : l'annexe lue et l'empreinte du texte en mots simples montré [R466].
   annex_position INTEGER,
-  text_hash TEXT CHECK (text_hash IS NULL OR length(text_hash) = 64),
+  shown_hash TEXT CHECK (shown_hash IS NULL OR length(shown_hash) = 64),
   -- Signature : l'empreinte du circuit signée, et la preuve rangée au stockage [R465].
   envelope_hash TEXT CHECK (envelope_hash IS NULL OR length(envelope_hash) = 64),
   proof_ref TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS signature_circuit_events (
   at TEXT NOT NULL,
   by TEXT NOT NULL,
   PRIMARY KEY (circuit_id, seq),
-  CHECK (kind <> 'lecture' OR (annex_position IS NOT NULL AND text_hash IS NOT NULL)),
+  CHECK (kind <> 'lecture' OR (annex_position IS NOT NULL AND shown_hash IS NOT NULL)),
   CHECK (kind <> 'signature' OR (envelope_hash IS NOT NULL AND proof_ref IS NOT NULL)),
   CHECK (kind NOT IN ('rappel', 'rappel_refuse') OR n IS NOT NULL)
 );
