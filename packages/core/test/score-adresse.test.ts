@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { Geocoded } from '../src/estimation/collecte.ts';
 import type { Sale } from '../src/estimation/fourchette.ts';
-import { ScoreAdresse, bandOf, computeScore, factsHash, type AddressFacts, type ScoreServices } from '../src/score-adresse/score.ts';
+import { BAN_SOURCE, ScoreAdresse, addressCarriesPerson, bandOf, computeScore, factsHash, type AddressFacts, type ScoreServices } from '../src/score-adresse/score.ts';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -30,7 +30,9 @@ it('[R291] chaque point du score cite sa donnée publique, sa source et sa date'
     expect(p.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   }
   expect(r.points[0]).toMatchObject({ points: 35, source: 'Diagnostics de performance énergétique (ADEME)', date: '2026-10-01' });
+  expect(r.points[1]).toMatchObject({ source: BAN_SOURCE, date: '2025-01-01' });
   expect(r.points[1]!.fact).toContain('1er janvier 2025');
+  expect(r.points[1]!.fact).toContain('1er octobre 2026');
   expect(r.points[2]).toMatchObject({ points: 15, source: 'DVF (DGFiP), fichiers du site', date: '2025-12-31' });
   expect(r.points[2]!.fact).toBe('10 ventes par an en moyenne à moins de 200 m, de 2021 à 2025.');
   expect(r.points[3]).toMatchObject({ points: 10, date: TODAY });
@@ -61,12 +63,13 @@ it('[R291] [R29] aucune vente d’une adresse ni durée de détention : les vent
   expect(computeScore(facts({ sales: { count: 4, years: [2021, 2022, 2023, 2024, 2025], lastSale: '2025-12-31', source: 'DVF', radiusM: 200 } }), TODAY).points.map((p) => p.signal)).not.toContain('ventes_voisinage');
 });
 
-function sale(i: number, kind: 'apartment' | 'house'): Sale {
-  return { id: `t:${i}`, kind, lat: 47.33, lon: 5.01, surface: 60, pricePerM2: 2500, month: '2024-05' };
+// Environ 0,0009 degré de latitude font 100 m.
+function sale(i: number, kind: 'apartment' | 'house', dLat = 0): Sale {
+  return { id: `t:${i}`, kind, lat: 47.33 + dLat, lon: 5.01, surface: 60, pricePerM2: 2500, month: '2024-05' };
 }
 
 /** Des services publics inventés, qui rendent aussi des champs de trop : ils ne doivent jamais passer [R291]. */
-function fakeServices(over: { geocoded?: Partial<Geocoded> | null; failSales?: boolean } = {}) {
+function fakeServices(over: { geocoded?: Partial<Geocoded> | null; failSales?: boolean; far?: number; issues?: number; department?: string } = {}) {
   const calls: string[] = [];
   const services: ScoreServices = {
     geocoder: {
@@ -79,10 +82,13 @@ function fakeServices(over: { geocoded?: Partial<Geocoded> | null; failSales?: b
     cadastre: { parcelAt: async () => ({ id: '21617000AB0042', section: 'AB', number: '0042', area: 1800, proprietaire: 'Jean Essai' }) as never },
     energy: { latestFor: async () => ({ energyClass: 'F', ghgClass: 'E', date: '2026-11-20', diagnosisNumber: '2621E0000002T', nom_proprietaire: 'Jean Essai', telephone: '0600000000' }) as never },
     sales: {
-      coverage: async () => ({ department: '21', lastSale: '2025-12-31', years: [2021, 2022, 2023, 2024, 2025], source: 'DVF (DGFiP), fichiers du site' }),
-      within: async (kind) => {
+      coverage: async () => ({ department: over.department ?? '21', lastSale: '2025-12-31', years: [2021, 2022, 2023, 2024, 2025], source: 'DVF (DGFiP), fichiers du site' }),
+      scan: async (kind) => {
         if (over.failSales) throw new Error('panne');
-        return Array.from({ length: kind === 'house' ? 15 : 35 }, (_, i) => sale(i, kind));
+        // 15 maisons et 35 appartements dans le rayon ; `far` ventes de plus à environ 400 m, hors du rayon.
+        const near = Array.from({ length: kind === 'house' ? 15 : 35 }, (_, i) => sale(i, kind, i % 2 === 0 ? 0.0013 : -0.0013));
+        const far = Array.from({ length: kind === 'house' ? (over.far ?? 0) : 0 }, (_, i) => sale(100 + i, kind, 0.0036));
+        return { sales: [...near, ...far], issues: kind === 'house' ? (over.issues ?? 0) : 0 };
       },
     },
   };
@@ -246,6 +252,46 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     // Chaque nombre se recalcule depuis la base : les mandats reliés sont ceux de G03.
     const linked = await t.db.all<{ mandate_id: string }>('SELECT l.mandate_id FROM address_score_mandates l JOIN mandates m ON m.id = l.mandate_id');
     expect(linked.map((l) => l.mandate_id)).toEqual([good]);
+  });
+
+  it('[R291] seules comptent les ventes à moins de 200 m ; des ventes illisibles ou un autre département se disent manquantes', async () => {
+    // 50 ventes à 150 m et 200 de plus à 400 m : seules les 50 comptent (10 par an).
+    const t = await setup(fakeServices({ far: 200 }).services);
+    const r = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
+    expect(r.ok && r.value.points.find((p) => p.signal === 'ventes_voisinage')?.fact).toBe('10 ventes par an en moyenne à moins de 200 m, de 2021 à 2025.');
+    const t2 = await setup(fakeServices({ issues: 1 }).services);
+    const r2 = await t2.scores.score(t2.agentAlex, { address: '7 rue des Essais, Talant' });
+    expect(r2.ok && r2.value.missing).toEqual([{ source: 'DVF (DGFiP), fichiers du site', reason: 'illisible' }]);
+    expect(r2.ok && r2.value.points.map((p) => p.signal)).not.toContain('ventes_voisinage');
+    const t3 = await setup(fakeServices({ department: '71' }).services);
+    const r3 = await t3.scores.score(t3.agentAlex, { address: '7 rue des Essais, Talant' });
+    expect(r3.ok && r3.value.missing).toEqual([{ source: 'DVF (DGFiP), fichiers du site', reason: 'hors_zone' }]);
+  });
+
+  it('[R292] le titre d’une voie n’est pas un nom ; une civilité dans l’adresse trouvée l’est', async () => {
+    expect(addressCarriesPerson('12 rue du Docteur Chaussier, Dijon')).toBe(false);
+    expect(addressCarriesPerson('3 boulevard Docteur Petitjean 21000 Dijon')).toBe(false);
+    expect(addressCarriesPerson('5 place du Président Wilson, Dijon')).toBe(false);
+    expect(addressCarriesPerson('M. Dupont 7 rue des Essais')).toBe(true);
+    expect(addressCarriesPerson('7 rue des Essais chez Martin')).toBe(true);
+    const t = await setup(fakeServices({ geocoded: { label: '12 Rue du Docteur Chaussier 21240 Talant' } }).services);
+    expect((await t.scores.score(t.agentAlex, { address: '12 rue du Docteur Chaussier, Talant' })).ok).toBe(true);
+    const t2 = await setup(fakeServices({ geocoded: { label: '7 Rue des Essais Mme Dupont 21240 Talant' } }).services);
+    expect(await t2.scores.score(t2.agentAlex, { address: '7 rue des Essais, Talant' })).toEqual({ ok: false, rule: 'R292', code: 'nom_dans_adresse' });
+    expect(await t2.db.all('SELECT id FROM address_scores')).toHaveLength(0);
+  });
+
+  it('[R293] un bien sans commune ne se relie pas ; un mandat signé le jour du score compte, quelle que soit l’heure', async () => {
+    const t = await setup();
+    const r = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
+    if (!r.ok) throw new Error('score');
+    const nowhere = await t.mandate(t.alex.id, null, MONDAY_9H + 10 * DAY);
+    expect(await t.scores.linkMandate(t.agentAlex, { scoreId: r.value.scoreId, mandateId: nowhere })).toEqual({ ok: false, rule: 'R293', code: 'commune_inconnue' });
+    // Le 7 décembre à 0 h 30, heure de Paris, avant le score de 9 h.
+    const sameDay = await t.mandate(t.alex.id, 'Talant', Date.parse('2026-12-06T23:30:00.000Z'));
+    expect(await t.scores.linkMandate(t.agentAlex, { scoreId: r.value.scoreId, mandateId: sameDay })).toEqual({ ok: true });
+    const m = await t.scores.measure(t.agentAlex);
+    expect(m.ok && m.bands.find((b) => b.band === 'tres_fort')).toMatchObject({ scored: 1, signed: 1 });
   });
 
   it('[R291] rien ne change ni ne s’efface', async () => {

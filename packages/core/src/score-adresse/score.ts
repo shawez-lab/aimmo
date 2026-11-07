@@ -20,7 +20,7 @@ import { communeSlug } from '../attirer/liste-biens.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { CollecteBien, SOURCES, type CadastreService, type EnergyService, type Geocoder } from '../estimation/collecte.ts';
-import type { SalesSource } from '../estimation/fourchette.ts';
+import { DEFAULT_RANGE_SETTINGS, departmentOf, distance, type EstimatedKind, type Sale, type SalesCoverage } from '../estimation/fourchette.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { banDate, dayInFrench } from '../location/logement.ts';
@@ -70,6 +70,9 @@ export interface AddressScore {
 const shiftDay = (day: string, days: number): string => new Date(Date.parse(`${day}T12:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
 const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) / DAY_MS);
 
+/** La source de la date d'interdiction de louer, reprise de M15. */
+export const BAN_SOURCE = 'Loi Climat et résilience, article L173-2 du code de la construction et de l’habitation (M15)';
+
 export function bandOf(score: number): ScoreBand {
   if (score >= 55) return 'tres_fort';
   if (score >= 35) return 'fort';
@@ -91,7 +94,13 @@ export function computeScore(facts: AddressFacts, today: string): AddressScore {
     const ban = e.energyClass === 'E' || e.energyClass === 'F' || e.energyClass === 'G' ? banDate(e.energyClass) : null;
     if (ban !== null && ban <= shiftDay(today, 3 * 365)) {
       const when = ban <= today ? `ne peut plus être loué depuis le ${dayInFrench(ban)}` : `ne pourra plus être loué à partir du ${dayInFrench(ban)}`;
-      points.push({ signal: 'interdiction_louer', points: 20, fact: `Logement classé ${e.energyClass} : il ${when} (loi Climat et résilience).`, source: e.source, date: e.diagnosedOn });
+      points.push({
+        signal: 'interdiction_louer',
+        points: 20,
+        fact: `Logement classé ${e.energyClass} par le diagnostic du ${dayInFrench(e.diagnosedOn)} (${e.source}) : il ${when}.`,
+        source: BAN_SOURCE,
+        date: ban,
+      });
     }
   }
   const s = facts.sales;
@@ -139,8 +148,32 @@ export interface ScoreServices {
   cadastre: CadastreService;
   energy: EnergyService;
   /** Les ventes publiées (DVF), lues seulement pour être comptées dans le rayon [R29]. */
-  sales: SalesSource;
+  sales: CountableSales;
 }
+
+/** Les ventes publiées : la couverture, et les ventes des tuiles autour d'un point avec le nombre de problèmes. */
+export interface CountableSales {
+  coverage(): Promise<SalesCoverage | null>;
+  scan(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<{ sales: Sale[]; issues: number }>;
+}
+
+const ROAD_TITLE = /(?:^| )(?:rue|avenue|av|boulevard|bd|place|allee|impasse|quai|square|chemin|cours|route|passage|promenade|rond point|esplanade|parc|residence)(?: (?:du|de la|de l|des|de|d))? (?:docteur|dr|maitre|me|m|monsieur|madame|president|general|marechal|professeur|abbe|cardinal|commandant|colonel|capitaine|lieutenant|chanoine|pere|mere|saint|sainte)(?= |$)/g;
+const plainWords = (t: string): string =>
+  t
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+/**
+ * Vrai si l'adresse porte une civilité ou un nom de personne. Le titre d'une voie (« rue du Docteur Chaussier ») n'en est
+ * pas un : il est retiré avant le contrôle [R292].
+ */
+export function addressCarriesPerson(t: string): boolean {
+  return carriesPerson(` ${plainWords(t)} `.replace(ROAD_TITLE, ' voie').trim());
+}
+
+const SALES_SOURCE = 'Demandes de valeurs foncières (DGFiP)';
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem = { ok: false; rule: 'R291' | 'R292' | 'R293' | null; code: string };
@@ -234,7 +267,7 @@ export class ScoreAdresse {
     if (!found.address.ok) return { ok: false, rule: 'R291', code: found.address.reason === 'adresse_incertaine' ? 'adresse_incertaine' : 'adresse_introuvable' };
     const g = found.address.value;
     if (!/^\d/.test(g.label.trim())) return { ok: false, rule: 'R291', code: 'sans_numero' };
-    if (carriesPerson(g.label) || carriesPerson(g.town)) return { ok: false, rule: 'R292', code: 'nom_dans_adresse' };
+    if (addressCarriesPerson(g.label) || addressCarriesPerson(g.town)) return { ok: false, rule: 'R292', code: 'nom_dans_adresse' };
     const missing: { source: string; reason: string }[] = [];
     // Seuls les champs nommés ici sont repris : tout autre champ rendu par un service est ignoré [R291].
     let energy: AddressFacts['energy'] = null;
@@ -248,16 +281,25 @@ export class ScoreAdresse {
       parcel = { id: String(v.id), areaM2: typeof v.area === 'number' && Number.isFinite(v.area) && v.area > 0 ? v.area : null, source: SOURCES.parcel, readOn: found.parcel.collectedAt.slice(0, 10) };
     } else missing.push({ source: SOURCES.parcel, reason: found.parcel.reason });
     let sales: AddressFacts['sales'] = null;
+    const department = departmentOf(g.postalCode);
     try {
       const coverage = await services.sales.coverage();
-      if (!coverage || coverage.years.length === 0) missing.push({ source: 'Demandes de valeurs foncières (DGFiP)', reason: 'introuvable' });
+      if (department === null || DEFAULT_RANGE_SETTINGS.dvfNotCovered.includes(department)) missing.push({ source: SALES_SOURCE, reason: 'dvf_non_couvert' });
+      else if (!coverage || coverage.years.length === 0) missing.push({ source: SALES_SOURCE, reason: 'introuvable' });
+      else if (coverage.department !== department) missing.push({ source: coverage.source, reason: 'hors_zone' });
       else {
-        const [flats, houses] = await Promise.all([services.sales.within('apartment', g.lat, g.lon, NEIGHBOURHOOD_RADIUS_M), services.sales.within('house', g.lat, g.lon, NEIGHBOURHOOD_RADIUS_M)]);
-        // Un compte, rien d'autre : ni prix, ni date, ni position d'une vente ne sortent d'ici [R29, R37].
-        sales = { count: flats.length + houses.length, years: [...coverage.years].sort((a, b) => a - b), lastSale: coverage.lastSale, source: coverage.source, radiusM: NEIGHBOURHOOD_RADIUS_M };
+        const [flats, houses] = await Promise.all([services.sales.scan('apartment', g.lat, g.lon, NEIGHBOURHOOD_RADIUS_M), services.sales.scan('house', g.lat, g.lon, NEIGHBOURHOOD_RADIUS_M)]);
+        // Une tuile absente ou illisible : le compte serait faux, il n'est pas fait [R291].
+        if (flats.issues + houses.issues > 0) missing.push({ source: coverage.source, reason: 'illisible' });
+        else {
+          // Les tuiles débordent le rayon : seules comptent les ventes à moins de 200 m. Un compte, rien d'autre : ni
+          // prix, ni date, ni position d'une vente ne sortent d'ici [R29, R37].
+          const near = [...flats.sales, ...houses.sales].filter((v) => distance(g.lat, g.lon, v.lat, v.lon) <= NEIGHBOURHOOD_RADIUS_M).length;
+          sales = { count: near, years: [...coverage.years].sort((x, y) => x - y), lastSale: coverage.lastSale, source: coverage.source, radiusM: NEIGHBOURHOOD_RADIUS_M };
+        }
       }
     } catch {
-      missing.push({ source: 'Demandes de valeurs foncières (DGFiP)', reason: 'panne' });
+      missing.push({ source: SALES_SOURCE, reason: 'panne' });
     }
     const key = g.banId && /^[\w-]{3,80}$/.test(g.banId) ? `ban:${g.banId}` : `label:${communeSlug(g.label)}`;
     return {
@@ -277,7 +319,7 @@ export class ScoreAdresse {
     if (typeof input.address !== 'string' || /[\r\n\t<>]/.test(input.address)) return { ok: false, rule: null, code: 'bad_address' };
     const address = input.address.trim().replace(/\s+/g, ' ');
     if (address.length < 5 || address.length > 200) return { ok: false, rule: null, code: 'bad_address' };
-    if (carriesPerson(address)) return { ok: false, rule: 'R292', code: 'nom_dans_adresse' };
+    if (addressCarriesPerson(address)) return { ok: false, rule: 'R292', code: 'nom_dans_adresse' };
     if (!this.services) return { ok: false, rule: null, code: 'sources_absentes' };
     const read = await this.collect(address, this.services);
     if (!read.ok) return read;
@@ -344,12 +386,14 @@ export class ScoreAdresse {
     );
     if (!m) return { ok: false, rule: null, code: 'unknown_mandate' };
     if (viewer.role === 'agent' && m.agent_id !== viewer.userId) return this.refuse(viewer, `address_score:${input.scoreId}`, 'pas_son_mandat');
-    const first = await this.db.first<{ id: string; created_at: string }>('SELECT id, created_at FROM address_scores WHERE network_id = ? AND address_key = ? ORDER BY created_at, id LIMIT 1', [viewer.networkId, s.address_key]);
-    const signed = Date.parse(m.signed_at);
-    const from = Date.parse(first!.created_at);
-    if (!(signed >= from)) return { ok: false, rule: 'R293', code: 'mandat_avant_score' };
-    if (signed > from + MANDATE_WINDOW_DAYS * DAY_MS) return { ok: false, rule: 'R293', code: 'mandat_hors_annee' };
-    if (m.city !== null && communeSlug(m.city) !== s.commune_slug) return { ok: false, rule: 'R293', code: 'autre_commune' };
+    const first = await this.db.first<{ id: string; scored_on: string }>('SELECT id, scored_on FROM address_scores WHERE network_id = ? AND address_key = ? ORDER BY created_at, id LIMIT 1', [viewer.networkId, s.address_key]);
+    // Au jour de Paris : un mandat signé le jour du premier score compte, quelle que soit l'heure [R293].
+    const signedOn = localTime(new Date(m.signed_at), TIME_ZONE).date;
+    if (signedOn < first!.scored_on) return { ok: false, rule: 'R293', code: 'mandat_avant_score' };
+    if (signedOn > shiftDay(first!.scored_on, MANDATE_WINDOW_DAYS)) return { ok: false, rule: 'R293', code: 'mandat_hors_annee' };
+    // Un bien sans commune ne se relie à aucune adresse : il gonflerait n'importe quelle tranche.
+    if (m.city === null || m.city.trim() === '') return { ok: false, rule: 'R293', code: 'commune_inconnue' };
+    if (communeSlug(m.city) !== s.commune_slug) return { ok: false, rule: 'R293', code: 'autre_commune' };
     const { changes } = await this.db.run('INSERT INTO address_score_mandates (mandate_id, network_id, address_key, score_id, linked_by, linked_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
       m.id,
       viewer.networkId,
@@ -370,9 +414,9 @@ export class ScoreAdresse {
   async measure(viewer: Viewer): Promise<{ ok: true; bands: BandMeasure[] } | Refusal> {
     const blocked = await this.member(viewer, true);
     if (blocked) return blocked;
-    const closedBefore = new Date(this.now().getTime() - MANDATE_WINDOW_DAYS * DAY_MS).toISOString();
-    const rows = await this.db.all<{ band: ScoreBand; created_at: string; signed_at: string | null }>(
-      `SELECT f.band, f.created_at, m.signed_at
+    const closedBy = shiftDay(this.today(), -MANDATE_WINDOW_DAYS);
+    const rows = await this.db.all<{ band: ScoreBand; scored_on: string; signed_at: string | null }>(
+      `SELECT f.band, f.scored_on, m.signed_at
          FROM address_scores f
          LEFT JOIN address_score_mandates l ON l.network_id = f.network_id AND l.address_key = f.address_key
          LEFT JOIN mandates m ON m.id = l.mandate_id AND m.network_id = f.network_id
@@ -383,9 +427,10 @@ export class ScoreAdresse {
     const bands: BandMeasure[] = SCORE_BANDS.map((band) => ({ band, label: BAND_LABELS[band], scored: 0, closed: 0, signed: 0, signedClosed: 0, rate: null }));
     for (const r of rows) {
       const b = bands.find((x) => x.band === r.band)!;
-      const closed = r.created_at <= closedBefore;
-      const from = Date.parse(r.created_at);
-      const counted = r.signed_at !== null && Date.parse(r.signed_at) >= from && Date.parse(r.signed_at) <= from + MANDATE_WINDOW_DAYS * DAY_MS;
+      // L'année d'une adresse est close quand son dernier jour est passé.
+      const closed = r.scored_on < closedBy;
+      const on = r.signed_at === null ? null : localTime(new Date(r.signed_at), TIME_ZONE).date;
+      const counted = on !== null && on >= r.scored_on && on <= shiftDay(r.scored_on, MANDATE_WINDOW_DAYS);
       b.scored += 1;
       if (closed) b.closed += 1;
       if (counted) b.signed += 1;
