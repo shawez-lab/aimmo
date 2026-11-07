@@ -125,7 +125,7 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
       const q = QUESTIONS[c.question];
       const said = (q.answers as Record<string, string>)[c.answer]!;
       expect(r.mandate.content).toContain(`Texte de test de la clause ${c.code}.`);
-      expect(r.mandate.content).toContain(`Retenue par la réponse « ${said} » à la question « ${q.label} ». Texte : ${CLAUSES[c.code].basis}.`);
+      expect(r.mandate.content).toContain(`Retenue par la réponse « ${said} » à la question « ${q.label} ». Texte : ${CLAUSES[c.code].basis}. Texte de la clause : version 1, empreinte ${c.hash}.`);
     }
     // Les clauses non déclenchées n'y sont pas.
     expect(r.mandate.content).not.toContain('clause tous_vendeurs');
@@ -268,6 +268,8 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     // Ni la direction ni un agent ne valident ; la conformité valide une fois, et jamais ce qu'elle a écrit.
     expect(await u.mq.validateClause(u.direction, ids.tous_vendeurs!)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await u.mq.validateClause(u.agent, ids.tous_vendeurs!)).toMatchObject({ ok: false, rule: 'R16' });
+    // La même personne, passée à la conformité, ne valide pas ce qu'elle a écrit comme direction.
+    expect(await u.mq.validateClause(u.as('compliance', 'direction-1'), ids.tous_vendeurs!)).toMatchObject({ ok: false, rule: 'R16', code: 'own_clause' });
     expect(await u.mq.validateClause(u.conformite, ids.tous_vendeurs!)).toEqual({ ok: true });
     expect(await u.mq.validateClause(u.conformite, ids.tous_vendeurs!)).toMatchObject({ ok: false, code: 'already_validated' });
     r = await u.prepare(answers);
@@ -292,6 +294,7 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     if (!r.ok) throw new Error(r.code);
     expect(r.mandate).toMatchObject({ mode: 'essai', missing: ['clause:bien_loue'], clauses: [{ code: 'bien_loue', status: 'manquante', clauseId: null }] });
     expect(r.mandate.content).toContain('[à écrire : clause « Bien vendu occupé »]');
+    expect(r.mandate.content).toContain('Texte de la clause : pas encore écrit.');
     expect(await t.mq.beforeSignature(t.agent, r.mandate.id)).toMatchObject({ ready: false, blockers: ['essai', 'manque'] });
   });
 

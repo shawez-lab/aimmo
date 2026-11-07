@@ -137,7 +137,8 @@ export function renderClauses(clauses: readonly (RetainedClause & { body: string
   if (clauses.length === 0) return '';
   const items = clauses.map((c) => {
     const q = QUESTIONS[c.question];
-    const why = `<p class="pourquoi">Retenue par la réponse « ${escapeHtml((q.answers as Record<string, string>)[c.answer]!)} » à la question « ${escapeHtml(q.label)} ». Texte : ${escapeHtml(c.basis)}.</p>`;
+    const version = c.version === null || c.hash === null ? 'Texte de la clause : pas encore écrit.' : `Texte de la clause : version ${c.version}, empreinte ${escapeHtml(c.hash)}.`;
+    const why = `<p class="pourquoi">Retenue par la réponse « ${escapeHtml((q.answers as Record<string, string>)[c.answer]!)} » à la question « ${escapeHtml(q.label)} ». Texte : ${escapeHtml(c.basis)}. ${version}</p>`;
     const body = c.body === null ? `<span class="manque">[à écrire : clause « ${escapeHtml(c.title)} »]</span>` : escapeHtml(c.body).replace(/\r\n?|\n/g, '<br>');
     return `<p${CLAUSES[c.code].evidence ? ' class="evidence"' : ''}><strong>${escapeHtml(c.title)}.</strong> ${body}</p>\n${why}`;
   });
@@ -246,7 +247,8 @@ export class MandatQuestionnaire {
     if (viewer.role !== 'compliance') return this.refuse(viewer, 'role', `clause:${clauseId}`);
     const row = await this.db.first<{ id: string; code: string; version: number; created_by: string }>('SELECT id, code, version, created_by FROM mandate_clause_versions WHERE id = ? AND network_id = ?', [clauseId, viewer.networkId]);
     if (!row) return { ok: false, rule: null, code: 'unknown_clause' };
-    if (row.created_by === this.actor(viewer)) return this.refuse(viewer, 'own_clause', `clause:${clauseId}`);
+    // La personne, quel que soit le rôle sous lequel elle a écrit : `<rôle>:<identifiant>` [R442].
+    if (row.created_by.slice(row.created_by.indexOf(':') + 1) === viewer.userId) return this.refuse(viewer, 'own_clause', `clause:${clauseId}`);
     const { changes } = await this.db.run('INSERT INTO mandate_clause_validations (clause_id, validated_by, validated_at) VALUES (?, ?, ?) ON CONFLICT (clause_id) DO NOTHING', [clauseId, this.actor(viewer), this.now().toISOString()]);
     if (changes !== 1) return { ok: false, rule: 'R442', code: 'already_validated' };
     await appendEvent(this.journal, { type: 'mandat_clause.valide', actor: this.actor(viewer), subject: `clause:${clauseId}`, data: { code: row.code, version: Number(row.version) } }, this.now);
@@ -328,7 +330,7 @@ export class MandatQuestionnaire {
         return {
           html,
           // Le style du questionnaire s'ajoute à la feuille du document, dans les jetons du système de design [R201].
-          css: '.pourquoi{font-size:.85em;color:var(--doux);margin-top:-.4em}.titre-clauses{margin-top:1.4em}',
+          css: '.pourquoi{font-size:.85em;color:var(--doux);margin-top:-.4em;overflow-wrap:anywhere}.titre-clauses{margin-top:1.4em}',
           missing: clauses.filter((c) => c.status === 'manquante').map((c) => `clause:${c.code}`),
           trial: clauses.some((c) => c.status !== 'valide'),
         };
