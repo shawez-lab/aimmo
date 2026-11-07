@@ -11,14 +11,14 @@
  *
  * Chaque envoi est réservé en base avant l'appel au service de notification : deux passages n'envoient jamais le même
  * groupe, et un passage coupé avant la réponse rend ses notifications au passage suivant [R18]. Rien ne s'efface [R17].
- * Le vrai service (Web Push, ses clés et les téléphones reliés) attend un humain (H56) : d'ici là, `PushSender` est une
- * interface, avec un faux dans les tests. Le branchement au planificateur, aux routes et à l'écran des réglages est
+ * Rien ne part que par la porte du contrôle central (`AgentPushGate`), en mode essai tant que la voie 1 n'a pas ajouté
+ * `sendToAgent` au contrôle central et que le vrai service (Web Push, H56) n'est pas là. Le branchement au planificateur, aux routes et à l'écran des réglages est
  * une tâche de la voie 1 (`app.ts`).
  */
 import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -114,9 +114,22 @@ export interface PushPayload {
   url: string;
 }
 
-/** Le service de notification (Web Push, H56) : envoie à tous les téléphones reliés de l'agent. */
-export interface PushSender {
-  send(agentId: string, payload: PushPayload): Promise<'ok' | 'aucun_appareil' | 'echec'>;
+/**
+ * La porte de sortie des notifications aux agents : le contrôle central des envois, et lui seul [R26]. Sa méthode
+ * `sendToAgent` sur `ControleEnvois` (fichier du socle) est une tâche de la voie 1, avec le vrai service Web Push (H56) ;
+ * d'ici là, la seule porte du code est `BoiteEssaiNotifications`, qui garde l'envoi et n'envoie rien.
+ */
+export interface AgentPushGate {
+  sendToAgent(order: { networkId: string; agentId: string; payload: PushPayload }): Promise<'ok' | 'aucun_appareil' | 'echec'>;
+}
+
+/** Le mode essai des notifications : chaque envoi est gardé ici, rien ne part vers un téléphone [R26]. */
+export class BoiteEssaiNotifications implements AgentPushGate {
+  readonly kept: { networkId: string; agentId: string; payload: PushPayload }[] = [];
+  async sendToAgent(order: { networkId: string; agentId: string; payload: PushPayload }): Promise<'ok'> {
+    this.kept.push(order);
+    return 'ok';
+  }
 }
 
 export interface NotificationSettings {
@@ -133,7 +146,7 @@ export interface NotificationRow {
   kind: NotificationKind;
   urgency: Urgency;
   dedup_key: string;
-  status: 'a_envoyer' | 'en_envoi' | 'envoyee' | 'sans_appareil' | 'remplacee';
+  status: 'a_envoyer' | 'en_envoi' | 'envoyee' | 'sans_appareil' | 'remplacee' | 'annulee';
   push_id: string | null;
   created_at: string;
   sent_at: string | null;
@@ -175,7 +188,7 @@ export class Notifications {
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    private readonly sender: PushSender,
+    private readonly gate: AgentPushGate = new BoiteEssaiNotifications(),
     options: NotificationsOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -312,7 +325,10 @@ export class Notifications {
         `UPDATE agent_notifications SET status = 'remplacee' WHERE agent_id = ? AND kind = 'client_ecrit' AND status = 'a_envoyer' AND person_id IN (${placeholders(members.length)})`,
         [agent.id, ...members],
       );
-      await this.pushGroup(agent.id, 'immediate');
+      for (let i = 0; i < 50; i++) {
+        const push = await this.pushGroup(agent.id, 'immediate');
+        if (!push || push.status === 'echec') break;
+      }
     }
     return { ok: true, value: (await this.db.first<NotificationRow>('SELECT * FROM agent_notifications WHERE id = ?', [row.id])) ?? row };
   }
@@ -328,8 +344,14 @@ export class Notifications {
     const pushes: PushRow[] = [];
     for (const { agent_id } of agents) {
       for (const urgency of URGENCY_ORDER) {
-        const push = await this.pushGroup(agent_id, urgency);
-        if (push) pushes.push(push);
+        // Les contacts chauds partent un par un ; les autres urgences, un groupe par passage [R412, R414].
+        for (let i = 0; i < (urgency === 'immediate' ? 50 : 1); i++) {
+          const push = await this.pushGroup(agent_id, urgency);
+          if (!push) break;
+          pushes.push(push);
+          // Un refus du service : on réessaie au passage suivant, pas dans celui-ci.
+          if (push.status === 'echec') break;
+        }
       }
     }
     return pushes;
@@ -349,7 +371,11 @@ export class Notifications {
     return rows.filter((r) => allowed.has(r.person_id));
   }
 
-  /** Envoie à l'agent le groupe dû de cette urgence, s'il y en a un. */
+  /**
+   * Envoie à l'agent le groupe dû de cette urgence, s'il y en a un ; un contact chaud part toujours seul [R412].
+   * Chaque notification est relue juste avant de partir : agent encore actif, fiche encore vue en entier [R16],
+   * personne pas exclue entre-temps [R25] ; sinon elle est annulée, jamais envoyée.
+   */
   private async pushGroup(agentId: string, urgency: Urgency): Promise<PushRow | null> {
     const at = this.now();
     const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
@@ -368,18 +394,26 @@ export class Notifications {
     if (waiting.length === 0) return null;
     const settings = await this.settings(agentId);
     const quiet = this.inQuiet(at, settings);
+    const viewer: Viewer = { role: 'agent', userId: agentId, networkId: agent.network_id };
     const due: NotificationRow[] = [];
     for (const n of waiting) {
       // Pendant les heures calmes, seule passe une personne qui vient d'écrire [R413].
       if (quiet && !(await this.justWrote(n.person_id, at))) continue;
       // Un réglage coupé depuis la création : la notification attend, elle n'est pas envoyée.
       if (n.kind !== 'contact_chaud' && settings.levels[n.kind as SettableKind] === 'coupee') continue;
+      const read = await this.acces.readFiche(viewer, n.person_id);
+      if (!read.ok || read.view !== 'full' || (await this.excluded(read.value.members.map((p) => p.id)))) {
+        await this.db.run("UPDATE agent_notifications SET status = 'annulee' WHERE id = ? AND status = 'a_envoyer'", [n.id]);
+        continue;
+      }
       due.push(n);
+      if (urgency === 'immediate') break;
     }
     if (due.length === 0) return null;
 
     const text = lockText(urgency, due.map((n) => n.kind));
     const pushId = this.newId();
+    // Réservation et prise des notifications, tout ou rien : un autre passage qui en a pris une fait tout annuler [R18].
     await this.db.run(
       "INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'reservee', ?, NULL)",
       [pushId, agent.network_id, agentId, urgency, due.length, text.title, text.body, at.toISOString()],
@@ -389,25 +423,18 @@ export class Notifications {
       [pushId, ...due.map((n) => n.id)],
     );
     if (changes !== due.length) {
-      // Un autre passage a pris une partie du groupe : rien ne part, le texte ne dirait pas le bon nombre [R18].
-      await this.db.run("UPDATE agent_notifications SET status = 'a_envoyer', push_id = NULL WHERE push_id = ? AND status = 'en_envoi'", [pushId]);
-      await this.db.run("UPDATE agent_pushes SET status = 'abandonnee', done_at = ? WHERE id = ?", [at.toISOString(), pushId]);
+      // Le texte ne dirait pas le bon nombre : rien ne part [R18].
+      await this.finish(pushId, 'abandonnee', at.toISOString());
       return null;
     }
     let outcome: 'ok' | 'aucun_appareil' | 'echec';
     try {
-      outcome = await this.sender.send(agentId, { pushId, urgency, title: text.title, body: text.body, url: `/notifications/${pushId}` });
+      outcome = await this.gate.sendToAgent({ networkId: agent.network_id, agentId, payload: { pushId, urgency, title: text.title, body: text.body, url: `/notifications/${pushId}` } });
     } catch {
       outcome = 'echec';
     }
-    const done = this.now().toISOString();
     const pushStatus = outcome === 'ok' ? 'partie' : outcome;
-    // Un passage plus lent que la reprise : l'envoi a déjà été déclaré coupé, ses notifications reprises ailleurs.
-    const claimed = await this.db.run("UPDATE agent_pushes SET status = ?, done_at = ? WHERE id = ? AND status = 'reservee'", [pushStatus, done, pushId]);
-    if (claimed.changes === 1) {
-      if (outcome === 'echec') await this.db.run("UPDATE agent_notifications SET status = 'a_envoyer', push_id = NULL WHERE push_id = ? AND status = 'en_envoi'", [pushId]);
-      else await this.db.run('UPDATE agent_notifications SET status = ?, sent_at = ? WHERE push_id = ? AND status = \'en_envoi\'', [outcome === 'ok' ? 'envoyee' : 'sans_appareil', done, pushId]);
-    }
+    await this.finish(pushId, pushStatus, this.now().toISOString());
     await appendEvent(
       this.journal,
       { type: 'notification.envoyee', actor: 'system:notifications', subject: `agent:${agentId}`, data: { push: pushId, urgency, count: due.length, status: pushStatus } },
@@ -416,14 +443,38 @@ export class Notifications {
     return this.db.first<PushRow>('SELECT * FROM agent_pushes WHERE id = ?', [pushId]);
   }
 
-  /** Un envoi réservé resté sans réponse : déclaré incertain, ses notifications reviennent à envoyer [R18]. */
+  /**
+   * L'envoi et ses notifications changent d'état ensemble, tout ou rien, et seulement si l'envoi était encore réservé :
+   * un passage plus lent que la reprise ne réécrit rien [R18].
+   */
+  private async finish(pushId: string, status: 'partie' | 'aucun_appareil' | 'echec' | 'incertaine' | 'abandonnee', at: string): Promise<void> {
+    const back = status === 'echec' || status === 'incertaine' || status === 'abandonnee';
+    const stillReserved = "EXISTS (SELECT 1 FROM agent_pushes WHERE id = ? AND status = 'reservee')";
+    await runBatch(this.db, [
+      back
+        ? { sql: `UPDATE agent_notifications SET status = 'a_envoyer', push_id = NULL WHERE push_id = ? AND status = 'en_envoi' AND ${stillReserved}`, params: [pushId, pushId] }
+        : { sql: `UPDATE agent_notifications SET status = ?, sent_at = ? WHERE push_id = ? AND status = 'en_envoi' AND ${stillReserved}`, params: [status === 'partie' ? 'envoyee' : 'sans_appareil', at, pushId, pushId] },
+      { sql: "UPDATE agent_pushes SET status = ?, done_at = ? WHERE id = ? AND status = 'reservee'", params: [status, at, pushId] },
+    ]);
+  }
+
+  /**
+   * Un envoi réservé resté sans réponse : déclaré incertain, ses notifications reviennent à envoyer. Et une
+   * notification restée « en envoi » derrière un envoi déjà fini (base sans lot) suit l'état de son envoi [R18].
+   */
   private async releaseStale(at: Date): Promise<void> {
     const limit = new Date(at.getTime() - STALE_RESERVATION_MS).toISOString();
     const stale = await this.db.all<{ id: string }>("SELECT id FROM agent_pushes WHERE status = 'reservee' AND reserved_at <= ?", [limit]);
-    for (const { id } of stale) {
-      const { changes } = await this.db.run("UPDATE agent_pushes SET status = 'incertaine', done_at = ? WHERE id = ? AND status = 'reservee'", [at.toISOString(), id]);
-      if (changes === 1) await this.db.run("UPDATE agent_notifications SET status = 'a_envoyer', push_id = NULL WHERE push_id = ? AND status = 'en_envoi'", [id]);
-    }
+    for (const { id } of stale) await this.finish(id, 'incertaine', at.toISOString());
+    await this.db.run(
+      `UPDATE agent_notifications SET status = 'a_envoyer', push_id = NULL WHERE status = 'en_envoi'
+       AND push_id IN (SELECT id FROM agent_pushes WHERE status IN ('echec', 'incertaine', 'abandonnee'))`,
+    );
+    await this.db.run(
+      `UPDATE agent_notifications SET status = CASE (SELECT status FROM agent_pushes p WHERE p.id = push_id) WHEN 'partie' THEN 'envoyee' ELSE 'sans_appareil' END,
+       sent_at = (SELECT done_at FROM agent_pushes p WHERE p.id = push_id)
+       WHERE status = 'en_envoi' AND push_id IN (SELECT id FROM agent_pushes WHERE status IN ('partie', 'aucun_appareil'))`,
+    );
   }
 
   private inQuiet(at: Date, s: NotificationSettings): boolean {

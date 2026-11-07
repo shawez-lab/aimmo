@@ -67,8 +67,9 @@ CREATE TABLE IF NOT EXISTS agent_notifications (
   urgency TEXT NOT NULL CHECK (urgency IN ('immediate', 'haute', 'normale', 'basse')),
   dedup_key TEXT NOT NULL UNIQUE,
   -- `a_envoyer` ; `en_envoi` : dans un envoi réservé ; `envoyee` ; `sans_appareil` : aucun téléphone relié, elle reste
-  -- à lire dans l'application ; `remplacee` : le contact chaud de la même personne l'a dite avant elle.
-  status TEXT NOT NULL CHECK (status IN ('a_envoyer', 'en_envoi', 'envoyee', 'sans_appareil', 'remplacee')),
+  -- à lire dans l'application ; `remplacee` : le contact chaud de la même personne l'a dite avant elle ; `annulee` :
+  -- relue avant de partir, la personne était exclue ou l'agent ne voyait plus sa fiche [R16, R25].
+  status TEXT NOT NULL CHECK (status IN ('a_envoyer', 'en_envoi', 'envoyee', 'sans_appareil', 'remplacee', 'annulee')),
   push_id TEXT REFERENCES agent_pushes (id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL,
   sent_at TEXT,

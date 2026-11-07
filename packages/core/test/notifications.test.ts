@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { LOCK_TITLE, Notifications, lockText, lockTextIsSafe, type PushPayload, type PushSender } from '../src/automatismes/notifications.ts';
+import { LOCK_TITLE, Notifications, lockText, lockTextIsSafe, type AgentPushGate, type PushPayload } from '../src/automatismes/notifications.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -10,7 +10,7 @@ const TUE_23H = Date.parse('2027-10-12T21:00:00.000Z');
 const WED_8H = Date.parse('2027-10-13T06:00:00.000Z');
 const MIN = 60_000;
 
-async function setup(options: { sender?: PushSender } = {}) {
+async function setup(options: { gate?: AgentPushGate } = {}) {
   const raw = openMemoryDatabase();
   const db: SqlDatabase = fromSyncSqlite(raw);
   await applyMigrations(db, loadMigrations());
@@ -32,7 +32,8 @@ async function setup(options: { sender?: PushSender } = {}) {
     return p.id;
   };
   const sent: { agentId: string; payload: PushPayload; at: number }[] = [];
-  const sender: PushSender = options.sender ?? { send: async (agentId, payload) => (sent.push({ agentId, payload, at: clock }), 'ok') };
+  // La porte du contrôle central, en essai : elle garde chaque envoi.
+  const gate: AgentPushGate = options.gate ?? { sendToAgent: async ({ agentId, payload }) => (sent.push({ agentId, payload, at: clock }), 'ok') };
   let k = 0;
   // La tâche « rappeler » d'un contact chaud (Q04), posée sans sa qualification : seule sa fiche compte ici.
   const callback = async (personId: string) => {
@@ -57,7 +58,7 @@ async function setup(options: { sender?: PushSender } = {}) {
     );
     return id;
   };
-  const notifications = new Notifications(db, journal, sender, { now, newId });
+  const notifications = new Notifications(db, journal, gate, { now, newId });
   return { db, journal, store, unique, network, alex, lea, asAgent, person, sent, callback, message, notifications, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 
@@ -227,8 +228,8 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     let mode: 'echec' | 'ok' | 'aucun_appareil' | 'bloque' = 'echec';
     const calls: PushPayload[] = [];
     const t = await setup({
-      sender: {
-        send: async (_agent, payload) => {
+      gate: {
+        sendToAgent: async ({ payload }) => {
           calls.push(payload);
           if (mode === 'bloque') throw new Error('coupure');
           return mode;
@@ -276,5 +277,56 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.lea.id]);
     expect(await t.notifications.inbound(await t.message(sacha))).toEqual([{ ok: true, value: null, reason: 'agent_parti' }]);
     expect(t.sent).toHaveLength(0);
+  });
+  it('[R412] deux contacts chauds gardés par les heures calmes partent chacun seul, à la fin', async () => {
+    const t = await setup();
+    t.setClock(TUE_23H);
+    const a = await t.person('Noa');
+    const b = await t.person('Sacha');
+    await t.notifications.notify({ agentId: t.alex.id, personId: a, kind: 'contact_chaud', sourceKey: 'cb:a' });
+    await t.notifications.notify({ agentId: t.alex.id, personId: b, kind: 'contact_chaud', sourceKey: 'cb:b' });
+    expect(t.sent).toHaveLength(0);
+    t.setClock(WED_8H);
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([
+      ['immediate', 1],
+      ['immediate', 1],
+    ]);
+    expect(t.sent.map((s) => s.payload.body)).toEqual(['Un contact chaud à rappeler maintenant', 'Un contact chaud à rappeler maintenant']);
+  });
+
+  it('[R16] une notification gardée est relue avant de partir : exclue ou fiche plus vue, elle est annulée', async () => {
+    const t = await setup();
+    t.setClock(TUE_23H);
+    const noa = await t.person('Noa');
+    const sacha = await t.person('Sacha');
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: 'tache:noa' });
+    await t.notifications.notify({ agentId: t.alex.id, personId: sacha, kind: 'tache', sourceKey: 'tache:sacha' });
+    await t.notifications.notify({ agentId: t.alex.id, personId: sacha, kind: 'contact_chaud', sourceKey: 'cb:sacha' });
+    // Dans la nuit, Noa est exclue et la fiche de Sacha passe à Léa.
+    await t.db.run("INSERT INTO exclusions (id, network_id, person_id, reason, noted_at, created_at) VALUES ('e1', ?, ?, 'stop', ?, ?)", [t.network.id, noa, new Date(TUE_23H + MIN).toISOString(), new Date(TUE_23H + MIN).toISOString()]);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.lea.id, sacha]);
+    t.setClock(WED_8H);
+    expect(await t.notifications.flush()).toEqual([]);
+    expect(t.sent).toHaveLength(0);
+    expect((await t.db.all<{ status: string }>('SELECT status FROM agent_notifications')).map((r) => r.status)).toEqual(['annulee', 'annulee', 'annulee']);
+  });
+
+  it('[R18] une notification restée « en envoi » derrière un envoi déjà fini suit son envoi au passage suivant', async () => {
+    const t = await setup();
+    const noa = await t.person('Noa');
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: 'tache:1' });
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'info', sourceKey: 'info:1' });
+    const at = new Date(t.clock()).toISOString();
+    // Une coupure entre l'état de l'envoi et celui de ses notifications : l'un est fini, l'autre pas.
+    await t.db.run("INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES ('rate', ?, ?, 'normale', 1, 'AIMMO', 'Une tâche à faire', 'echec', ?, ?)", [t.network.id, t.alex.id, at, at]);
+    await t.db.run("INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES ('parti', ?, ?, 'basse', 1, 'AIMMO', 'Une information', 'partie', ?, ?)", [t.network.id, t.alex.id, at, at]);
+    await t.db.run("UPDATE agent_notifications SET status = 'en_envoi', push_id = 'rate' WHERE kind = 'tache'");
+    await t.db.run("UPDATE agent_notifications SET status = 'en_envoi', push_id = 'parti' WHERE kind = 'info'");
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([['normale', 1]]);
+    expect(await t.db.all('SELECT kind, status FROM agent_notifications ORDER BY rowid')).toEqual([
+      { kind: 'tache', status: 'envoyee' },
+      { kind: 'info', status: 'envoyee' },
+    ]);
+    expect(t.sent).toHaveLength(1);
   });
 });
