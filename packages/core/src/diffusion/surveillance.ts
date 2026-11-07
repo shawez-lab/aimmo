@@ -536,6 +536,16 @@ export class DiffusionSurveillee {
     const version = await this.latestVersion(networkId, propertyId);
     if (!version) return { ok: false, rule: 'R473', code: 'pas_publiee' };
     const payload = JSON.parse(version.payload) as Omit<ListingPayload, 'version'>;
+    // L'état de diffusion sur lequel la relecture se fonde : réglage du portail, choix, retraits et reprises, relevés
+    // avant la lecture. Un changement rangé pendant la lecture rend le résultat périmé [R473].
+    const state = await this.db.first<{ settings: number; choices: number; suspensions: number; resumptions: number }>(
+      `SELECT
+         (SELECT COALESCE(MAX(rowid), 0) FROM diffusion_portal_settings WHERE network_id = ? AND code = ?) AS settings,
+         (SELECT COALESCE(MAX(rowid), 0) FROM diffusion_portal_choices WHERE property_id = ? AND portal = ?) AS choices,
+         (SELECT COALESCE(MAX(rowid), 0) FROM diffusion_portal_suspensions WHERE property_id = ? AND portal = ?) AS suspensions,
+         (SELECT COALESCE(MAX(r.rowid), 0) FROM diffusion_portal_resumptions r JOIN diffusion_portal_suspensions s ON s.id = r.suspension_id WHERE s.property_id = ? AND s.portal = ?) AS resumptions`,
+      [networkId, portal.code, propertyId, portal.code, propertyId, portal.code, propertyId, portal.code],
+    );
     const expected = (await this.plan(networkId, propertyId)).find((p) => p.portal === portal.code)?.status === 'a_diffuser';
     let outcome: CheckOutcome;
     let gaps: Gap[];
@@ -562,12 +572,23 @@ export class DiffusionSurveillee {
       [id, networkId, propertyId, portal.code, version.id, acceptance.id, outcome, JSON.stringify(outcome === 'illisible' ? [{ field: 'illisible' }] : gaps), this.now().toISOString()],
     );
     await appendEvent(this.journal, { type: 'diffusion.relecture', actor: 'system:diffusion', subject: `property:${propertyId}`, data: { rule: 'R473', portal: portal.code, seq: Number(version.seq), outcome, gaps: gaps.map((g) => g.field) } }, this.now);
-    // La relecture n'ouvre ni ne ferme rien si, au moment de l'écrire, une version plus récente est publiée ou une
-    // relecture plus récente est rangée : un résultat périmé ne décide pas [R473].
+    // La relecture n'ouvre ni ne ferme rien si, au moment de l'écrire, une version plus récente est publiée, une
+    // relecture plus récente est rangée, ou l'état de diffusion relevé avant la lecture a changé : un résultat périmé ne
+    // décide pas [R473].
     const current: Guard = {
       sql: `NOT EXISTS (SELECT 1 FROM listing_versions w WHERE w.property_id = ? AND w.seq > ?)
-        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_checks k WHERE k.property_id = ? AND k.portal = ? AND k.rowid > (SELECT c.rowid FROM diffusion_portal_checks c WHERE c.id = ?))`,
-      params: [propertyId, Number(version.seq), propertyId, portal.code, id],
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_checks k WHERE k.property_id = ? AND k.portal = ? AND k.rowid > (SELECT c.rowid FROM diffusion_portal_checks c WHERE c.id = ?))
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_settings x WHERE x.network_id = ? AND x.code = ? AND x.rowid > ?)
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_choices x WHERE x.property_id = ? AND x.portal = ? AND x.rowid > ?)
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_suspensions x WHERE x.property_id = ? AND x.portal = ? AND x.rowid > ?)
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_resumptions r JOIN diffusion_portal_suspensions x ON x.id = r.suspension_id WHERE x.property_id = ? AND x.portal = ? AND r.rowid > ?)`,
+      params: [
+        propertyId, Number(version.seq), propertyId, portal.code, id,
+        networkId, portal.code, Number(state?.settings ?? 0),
+        propertyId, portal.code, Number(state?.choices ?? 0),
+        propertyId, portal.code, Number(state?.suspensions ?? 0),
+        propertyId, portal.code, Number(state?.resumptions ?? 0),
+      ],
     };
     if (outcome === 'ecart' || outcome === 'introuvable' || outcome === 'toujours_en_ligne') await this.openTask(networkId, propertyId, portal.code, 'ecart', id, current);
     if (outcome === 'conforme' || outcome === 'retiree_absente') for (const t of (await this.openTaskRows(propertyId, portal.code)).filter((x) => x.kind === 'ecart')) await this.close(t.id, 'conforme', id, current);
@@ -598,7 +619,11 @@ export class DiffusionSurveillee {
         );
         if (f) rejection = { code: f.code, detail: f.detail, seq: Number(f.seq) };
       } else {
-        const c = await this.db.first<{ gaps: string }>('SELECT gaps FROM diffusion_portal_checks WHERE property_id = ? AND portal = ? ORDER BY at DESC, rowid DESC LIMIT 1', [r.property_id, r.portal]);
+        // Ce qui diffère : la dernière relecture qui a trouvé un écart, jamais une relecture conforme périmée [R473].
+        const c = await this.db.first<{ gaps: string }>(
+          `SELECT gaps FROM diffusion_portal_checks WHERE property_id = ? AND portal = ? AND outcome IN ('ecart', 'introuvable', 'toujours_en_ligne') ORDER BY at DESC, rowid DESC LIMIT 1`,
+          [r.property_id, r.portal],
+        );
         gaps = c ? (JSON.parse(c.gaps) as Gap[]) : [];
       }
       tasks.push({ taskId: r.id, propertyId: r.property_id, portal: r.portal, kind: r.kind, createdAt: r.created_at, rejection, gaps });
