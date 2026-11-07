@@ -417,7 +417,7 @@ export class Pige {
     const keys: string[] = [];
     if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
     // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
-    if (key) keys.push(...(await this.linkedKeys(networkId, await adFingerprint(key))));
+    if (key) keys.push(...(await this.linkedKeys(networkId, await adFingerprint(key), await nearFingerprints(key))));
     if (keys.length === 0) return false;
     let closed = false;
     for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
@@ -560,11 +560,12 @@ export class Pige {
    * leurs voisines et la clé de chaque annonce : un « pas d'agence », un non ou un message sur l'une vaut pour toutes
    * [R273, R04, R05].
    */
-  private async linkedKeys(networkId: string, fingerprint: string): Promise<string[]> {
-    const fps = new Set<string>([fingerprint]);
+  private async linkedKeys(networkId: string, fingerprint: string, seeds: readonly string[] = []): Promise<string[]> {
+    const start = [...new Set([fingerprint, ...seeds])];
+    const fps = new Set<string>(start);
     const refs = new Set<string>();
-    const keys = new Set<string>([fingerprint]);
-    let frontier = [fingerprint];
+    const keys = new Set<string>(start);
+    let frontier = start;
     while (frontier.length > 0 && refs.size < MAX_LINKED_ADS) {
       const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
         `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2
