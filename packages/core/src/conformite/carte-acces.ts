@@ -266,6 +266,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   sign: { excluded: 'sans_client', why: 'Panneau du stock : son numéro, ses poses et retraits, sans adresse ni donnée d\'un client.' },
   dpe: { excluded: 'non_rattachable', why: 'Diagnostic publié par l\'ADEME et sa lettre « Au propriétaire », sans adresse ni nom.' },
   dpe_sector: { excluded: 'agent', why: 'Secteur de veille des diagnostics de l\'agent, sans adresse.' },
+  address_score: { excluded: 'non_rattachable', why: 'Score de vente d\'une adresse : le score, sa tranche et le mandat relié, sans adresse ni nom.' },
   key: { excluded: 'sans_client', why: 'Trousseau d\'un bien : son numéro et les agents qui l\'ont eu, sans donnée d\'un client.' },
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
@@ -620,6 +621,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   dpe_diagnoses: out('non_rattachable', 'Diagnostic publié par l\'ADEME : le logement et son adresse, aucun propriétaire, jamais cherché.'),
   dpe_alert_items: out('agent', 'Ligne de l\'alerte du jour d\'un secteur de veille de l\'agent.'),
   dpe_letters: out('non_rattachable', 'Lettre « Au propriétaire » d\'un logement classé F ou G, sans nom, écrite par le code.'),
+  // HX17 : le score de vente d'une adresse, tiré de données publiques ; jamais son propriétaire, qui n'est pas cherché.
+  address_scores: out('non_rattachable', 'Score de vente d\'une adresse : ses points publics sourcés et datés, aucun propriétaire.'),
+  address_score_mandates: out('non_rattachable', 'Mandat signé relié à une adresse notée, pour mesurer le score.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),
