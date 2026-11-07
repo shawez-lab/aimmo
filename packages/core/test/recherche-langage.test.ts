@@ -76,6 +76,22 @@ describe('HX28 · lecture de la phrase', () => {
     expect(budget('maison à Dijon, 350.000 €')).toBe(350_000);
     expect(budget('maison à Dijon, 350 000 euros')).toBe(350_000);
     expect(budget('maison à Dijon, budget 300k, pas de 500k')).toBe(300_000);
+    const surface = (phrase: string) => parsePhrase(phrase).criteria.find((c) => c.field === 'surfaceMinM2');
+    expect(surface('maison à Dijon, 80,5 m² minimum')).toMatchObject({ value: 81, source: { words: '80,5 m²' } });
+    expect(surface('maison à Dijon, 80.5 m²')?.value).toBe(81);
+    const strength = (phrase: string) => parsePhrase(phrase).criteria.filter((c) => c.field === 'features').map((c) => [c.value, c.strength]);
+    expect(strength('maison, si possible un jardin et un garage')).toEqual([
+      ['garden', 'nice'],
+      ['garage', 'nice'],
+    ]);
+    expect(strength('maison avec jardin et si possible un garage')).toEqual([
+      ['garden', 'must'],
+      ['garage', 'nice'],
+    ]);
+    expect(strength('si possible un jardin, un garage')).toEqual([
+      ['garden', 'nice'],
+      ['garage', 'must'],
+    ]);
     const terrain = parsePhrase(PHRASES[5]!).criteria;
     expect(terrain.map((c) => [c.field, c.value])).toEqual([
       ['propertyKinds', 'land'],

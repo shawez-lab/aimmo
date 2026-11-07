@@ -185,20 +185,30 @@ const MUST_MARKERS = /(?<![a-z])(absolument|imperati(f|ve|vement)|indispensable|
 const NICE_MARKERS =
   /(?<![a-z])(si possible|idealement|dans l'?ideal|de preference|ce serait (bien|top|un plus)|serait un plus|un plus|en bonus|bonus|pourquoi pas|eventuellement|j'?aimerais|on aimerait|apprecie|bienvenue?s?|pas obligatoire|facultati(f|ve))(?![a-z])/;
 
-/** Les bornes de la partie de phrase qui contient la place `at` : virgule, point, point-virgule ou « mais ». */
-function clauseAt(folded: string, at: number): string {
-  const stops = /[,;.!?\n]|(?<![a-z])mais(?![a-z])|(?<![a-z])et(?![a-z])/g;
+/**
+ * La force d'un critère, lue dans sa partie de phrase (coupée aux virgules, points, « mais » et « et »). Une partie sans
+ * marque reprend celle de la partie à laquelle « et » la relie : « si possible un jardin et un garage » fait deux
+ * préférences, « avec jardin et si possible un garage » une exigence et une préférence.
+ */
+function strengthIn(folded: string, at: number): Strength {
+  const parts: { start: number; end: number; byEt: boolean }[] = [];
   let start = 0;
-  let end = folded.length;
-  for (const m of folded.matchAll(stops)) {
-    const i = m.index;
-    if (i < at) start = i + m[0].length;
-    else if (i >= at) {
-      end = i;
-      break;
-    }
+  let byEt = false;
+  for (const m of folded.matchAll(/(?<!\d)[,.](?!\d)|[;!?\n]|(?<![a-z])mais(?![a-z])|(?<![a-z])et(?![a-z])/g)) {
+    parts.push({ start, end: m.index, byEt });
+    start = m.index + m[0].length;
+    byEt = m[0] === 'et';
   }
-  return folded.slice(start, end);
+  parts.push({ start, end: folded.length, byEt });
+  let k = parts.findIndex((p) => at >= p.start && at < p.end);
+  if (k < 0) k = parts.length - 1;
+  for (; k >= 0; k -= 1) {
+    const clause = folded.slice(parts[k]!.start, parts[k]!.end);
+    if (MUST_MARKERS.test(clause)) return 'must';
+    if (NICE_MARKERS.test(clause)) return 'nice';
+    if (!parts[k]!.byEt) break;
+  }
+  return 'must';
 }
 
 /** Les mots discriminants de la liste fermée de R50, avec leur place. */
@@ -231,11 +241,7 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   const criteria: PhraseCriterion[] = [];
   const ignored: IgnoredWords[] = [];
   const words = (start: number, end: number) => ({ kind: 'phrase' as const, words: text.slice(start, end), start, end });
-  const strengthAt = (at: number): Strength => {
-    const clause = clauseAt(f, at);
-    if (NICE_MARKERS.test(clause) && !MUST_MARKERS.test(clause)) return 'nice';
-    return 'must';
-  };
+  const strengthAt = (at: number): Strength => strengthIn(f, at);
   const negated = (at: number): boolean =>
     /(?<![a-z])(sans|pas de|pas d'|pas d’|pas un|pas une|pas a|pas au|pas en|pas sur|hors|hors de|aucun|aucune|ni|ni de|ni d'|ni d’|ni un|ni une|ni a|ni au|surtout pas|jamais)\s*$/.test(f.slice(Math.max(0, at - 14), at));
   const add = (field: PhraseField, value: string | number, start: number, end: number): void => {
@@ -267,8 +273,9 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   }
 
   // La surface, avant les sommes : « 80 m² » n'est pas un budget.
-  scan(/(?<![a-z0-9])(\d{1,5})\s*(m2|m²|m 2|metres? carres?|mcarres?)(?![a-z0-9])/g, (m, start, end) => {
-    const n = Number(m[1]);
+  // Une surface décimale (« 80,5 m² ») se lit en entier, arrondie au mètre au-dessus : jamais moins que demandé.
+  scan(/(?<![a-z0-9.,])(\d{1,5}(?:[.,]\d{1,2})?)\s*(m2|m²|m 2|metres? carres?|mcarres?)(?![a-z0-9])/g, (m, start, end) => {
+    const n = Math.ceil(Number((m[1] ?? '').replace(',', '.')));
     if (n < 1 || n > 100_000) return false;
     add('surfaceMinM2', n, start, end);
   });
