@@ -161,6 +161,11 @@ describe('HX13 · notes et compte rendu, par le code seul', () => {
     expect(confidentialIn('<p>Maison de M. VENDEUR</p>', { names: ['Vendeur'], values: [] })).toEqual(['vendeur']);
     expect(confidentialIn('<p>Écrire à victor@example.test</p>', { names: [], values: ['victor@example.test'] })).toEqual(['victor@example.test']);
     expect(confidentialIn('<p>Appeler le 06 11 22 33 44</p>', { names: [], values: ['0611223344'] })).toEqual(['0611223344']);
+    expect(confidentialIn('<h2>Maison de Victor.</h2>', { names: ['Victor'], values: [] })).toEqual(['victor']);
+    expect(confidentialIn('<h2>Chez Marc-Victor</h2>', { names: ['Victor'], values: [] })).toEqual(['victor']);
+    expect(confidentialIn('<h2>Chez Marc</h2>', { names: ['Marc-Victor'], values: [] })).toEqual(['marc']);
+    expect(confidentialIn('<h2>Vendeur d&#39;accord à 230 000</h2>', { names: [], values: ["Vendeur d'accord à 230 000"] })).toEqual(["vendeur d'accord a 230 000"]);
+    expect(confidentialIn('<img alt="Victor">', { names: ['Victor'], values: [] })).toEqual(['victor']);
     expect(confidentialIn('<p>Maison de 4 pièces</p>', { names: ['Inès Durand'], values: ['acheteur1@example.test'] })).toEqual([]);
   });
 });
@@ -222,7 +227,7 @@ describeWithSqlite('HX13 · mode présentation pendant la visite', () => {
     expect(r.presentation.matches).toEqual([]);
     expect(r.presentation.leftOut).toEqual([{ propertyId: t.b2.property.id, reason: 'confidentiel' }]);
     expect(r.presentation.html).not.toContain('Proprio');
-    t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Chez Victor, maison de 4 pièces';
+    t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces de Victor.';
     expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
     // Le nom de l'acquéreur lui-même ne s'affiche pas non plus.
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces pour Durand';

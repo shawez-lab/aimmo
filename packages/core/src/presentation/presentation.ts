@@ -159,23 +159,28 @@ export function renderPresentation(input: { visited: PresentedProperty; rooms: r
   );
 }
 
-/** Les mots d'un nom, accents et casse ignorés ; les mots de moins de 3 lettres ne nomment personne seuls. */
-const wordsOf = (text: string): string[] => plain(text).split(/[^\p{L}\d@.+-]+/u).filter((w) => w.length >= 3);
+/** Les mots d'un nom, accents et casse ignorés, coupés sur tout ce qui n'est ni lettre ni chiffre : « Victor. »,
+ * « Marc-Victor » donnent « victor ». Les mots de moins de 3 lettres ne nomment personne seuls. */
+const wordsOf = (text: string): string[] => plain(text).split(/[^\p{L}\d]+/u).filter((w) => w.length >= 3);
 
 /**
  * Ce que la page trahirait d'un dossier : un mot d'un nom connu, une coordonnée ou une note, tels qu'ils y sont rangés.
- * Rend la liste de ce qui a été trouvé, vide si rien [R279].
+ * La page est lue comme elle s'affiche (balises retirées, entités rendues), et ses attributs aussi. Rend la liste de ce
+ * qui a été trouvé, vide si rien [R279].
  */
 export function confidentialIn(html: string, secrets: { names: readonly string[]; values: readonly string[] }): string[] {
-  const page = plain(html.replace(/<style>[\s\S]*?<\/style>/g, ' '));
-  const words = new Set(wordsOf(page.replace(/<[^>]+>/g, ' ')));
+  const page = html.replace(/<style>[\s\S]*?<\/style>/g, ' ');
+  const attributes = [...page.matchAll(/="([^"]*)"/g)].map((m) => m[1]!).join(' ');
+  const text = plain(`${visibleText(page)} ${visibleText(attributes)}`);
+  const words = new Set(wordsOf(text));
+  const flat = text.replace(/[\s.\-\u00a0\u202f]/g, '');
   const found: string[] = [];
   for (const n of secrets.names) for (const w of wordsOf(n)) if (words.has(w)) found.push(w);
   for (const v of secrets.values) {
     const x = plain(v).trim();
-    if (x.length >= 4 && page.includes(x)) found.push(x);
+    if (x.length >= 4 && text.includes(x)) found.push(x);
     const digits = x.replace(/[^\d]/g, '');
-    if (digits.length >= 8 && page.replace(/[\s.\-\u00a0\u202f]/g, '').includes(digits)) found.push(digits);
+    if (digits.length >= 8 && flat.includes(digits)) found.push(digits);
   }
   return [...new Set(found)];
 }
