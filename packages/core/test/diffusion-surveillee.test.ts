@@ -276,6 +276,29 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     expect(tasks.ok && tasks.tasks).toEqual([]);
   });
 
+  it('[R473] une relecture lente d’une version dépassée ne ferme pas l’écart trouvé sur la version du moment', async () => {
+    const t = await setup();
+    await t.d.choose(t.agent, t.propertyId, 'seloger', true);
+    const { seq } = await t.version();
+    await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq, outcome: 'acceptee', onlineUrl: URL_SL });
+    const oldPage = await t.online();
+    t.reader.pages.set(URL_SL, oldPage);
+    // Pendant que le lecteur lit la version 1, la version 2 est publiée puis relue : l'ancien prix est un écart.
+    const slow: OnlineListingReader = {
+      read: async () => {
+        await t.amend(190000);
+        await t.publication.sync(t.network.id, t.propertyId);
+        const r = await t.d.verify(t.network.id, t.propertyId, 'seloger', t.reader);
+        expect(r.ok && r.outcome).toBe('ecart');
+        return oldPage;
+      },
+    };
+    await t.d.verify(t.network.id, t.propertyId, 'seloger', slow);
+    const tasks = await t.d.tasks(t.agent);
+    expect(tasks.ok && tasks.tasks.map((x) => x.kind)).toEqual(['ecart']);
+    expect(await t.d.sellerLinks(t.network.id, t.propertyId)).toEqual([]);
+  });
+
   it('[R473] une annonce absente, illisible, ou retirée mais encore en ligne est dite', async () => {
     const t = await setup();
     await t.d.choose(t.agent, t.propertyId, 'seloger', true);

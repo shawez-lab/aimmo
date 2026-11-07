@@ -562,8 +562,15 @@ export class DiffusionSurveillee {
       [id, networkId, propertyId, portal.code, version.id, acceptance.id, outcome, JSON.stringify(outcome === 'illisible' ? [{ field: 'illisible' }] : gaps), this.now().toISOString()],
     );
     await appendEvent(this.journal, { type: 'diffusion.relecture', actor: 'system:diffusion', subject: `property:${propertyId}`, data: { rule: 'R473', portal: portal.code, seq: Number(version.seq), outcome, gaps: gaps.map((g) => g.field) } }, this.now);
-    if (outcome === 'ecart' || outcome === 'introuvable' || outcome === 'toujours_en_ligne') await this.openTask(networkId, propertyId, portal.code, 'ecart', id);
-    if (outcome === 'conforme' || outcome === 'retiree_absente') for (const t of (await this.openTaskRows(propertyId, portal.code)).filter((x) => x.kind === 'ecart')) await this.close(t.id, 'conforme', id);
+    // La relecture n'ouvre ni ne ferme rien si, au moment de l'écrire, une version plus récente est publiée ou une
+    // relecture plus récente est rangée : un résultat périmé ne décide pas [R473].
+    const current: Guard = {
+      sql: `NOT EXISTS (SELECT 1 FROM listing_versions w WHERE w.property_id = ? AND w.seq > ?)
+        AND NOT EXISTS (SELECT 1 FROM diffusion_portal_checks k WHERE k.property_id = ? AND k.portal = ? AND k.rowid > (SELECT c.rowid FROM diffusion_portal_checks c WHERE c.id = ?))`,
+      params: [propertyId, Number(version.seq), propertyId, portal.code, id],
+    };
+    if (outcome === 'ecart' || outcome === 'introuvable' || outcome === 'toujours_en_ligne') await this.openTask(networkId, propertyId, portal.code, 'ecart', id, current);
+    if (outcome === 'conforme' || outcome === 'retiree_absente') for (const t of (await this.openTaskRows(propertyId, portal.code)).filter((x) => x.kind === 'ecart')) await this.close(t.id, 'conforme', id, current);
     return { ok: true, outcome, gaps };
   }
 
