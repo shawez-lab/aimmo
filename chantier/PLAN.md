@@ -300,7 +300,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à par
 - Critères : chaque rubrique de l'état cite sa source et sa date (test) ; un état de plus de 6 mois à la date de l'acte est signalé (test) ; aucun champ de la déclaration n'est rempli sans donnée du dossier (test).
 
 ### HX35 · Copropriété et urbanisme résumés
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#406), migration `2102`, R448 à R452. Décidé, lecture prudente : le résumé est fait de phrases proposées (IA ou agent) et vérifiées par le code, chacune avec son document, sa page et son extrait, qui doit se lire sur cette page ; chaque nombre et au moins un mot porteur de la phrase se lisent dans l'extrait ; des travaux votés exigent une décision acquise lue juste avant le mot du vote (ni niée, ni à venir), un montant suivi de « € » ou « euros » et une échéance lue comme date entière ; l'acquéreur lit l'extrait même du procès-verbal ; registre des copropriétés (ANAH) et Géoportail de l'urbanisme seulement, avec jour de collecte et date de la donnée ; nom d'un syndic non professionnel jamais repris ; texte des pages non gardé. Codex 6 P0 corrigés, dernière version sans remarque. Restent : extraction du texte des PDF, collecte du registre et du Géoportail, routes, écran et branchement au Worker (voie 1, `app.ts`).
 - Objectif : comme Talqor et Hektor : résumé des procès-verbaux de copropriété et du plan local d'urbanisme, données de copropriété et de syndic préremplies. Jamais vu : chaque phrase du résumé renvoie à la page du document d'où elle vient, les données publiques du registre des copropriétés et la zone du plan d'urbanisme sont lues avec leur date, et les travaux votés à venir sont signalés à l'acquéreur.
 - Critères : aucune phrase du résumé sans renvoi à sa page (test) ; les données publiques citent leur source et leur date (test) ; le résumé dit « non trouvé » plutôt que d'inventer (test).
 
