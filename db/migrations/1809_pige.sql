@@ -28,9 +28,11 @@ CREATE TABLE IF NOT EXISTS pige_ads (
   price_eur INTEGER NOT NULL CHECK (price_eur BETWEEN 1000 AND 50000000),
   published_at TEXT NOT NULL,
   collected_at TEXT NOT NULL,
-  -- Une même annonce revue à un autre prix ajoute une ligne : la baisse est gardée, rien n'est réécrit.
-  UNIQUE (network_id, source, source_ref, price_eur)
+  -- Une même annonce revue à un autre prix que sa dernière vue ajoute une ligne : chaque changement est gardé, rien
+  -- n'est réécrit ; revue au même prix, rien n'est ajouté (contrôlé par le code).
+  CHECK (id <> '')
 );
+CREATE INDEX IF NOT EXISTS pige_ads_source ON pige_ads (network_id, source, source_ref, collected_at);
 CREATE INDEX IF NOT EXISTS pige_ads_file ON pige_ads (network_id, commune, published_at);
 CREATE INDEX IF NOT EXISTS pige_ads_fingerprint ON pige_ads (network_id, fingerprint);
 -- Une annonce « pas d'agence » n'entre jamais [R273].

@@ -148,6 +148,23 @@ interface CleanAd {
 const intIn = (v: unknown, min: number, max: number): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : null;
 
+/**
+ * Ce qui suffit à reconnaître le bien d'une annonce qui dit « pas d'agence » : sorte, code postal, commune et surface.
+ * Lu avant tout le reste, pour qu'un prix ou une date manquants n'empêchent jamais de fermer le bien [R273].
+ */
+export function noAgencyKey(raw: RawAd): Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const says = raw.noAgency === true || (typeof raw.text === 'string' && saysNoAgency(raw.text));
+  if (!says) return null;
+  const { kind, commune, postalCode } = raw;
+  if (typeof kind !== 'string' || !(PIGE_KINDS as readonly string[]).includes(kind)) return null;
+  if (typeof commune !== 'string' || !COMMUNE.test(commune.trim())) return null;
+  if (typeof postalCode !== 'string' || !POSTAL.test(postalCode)) return null;
+  const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
+  if (surfaceM2 === null) return null;
+  return { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 };
+}
+
 /** Lit une annonce reçue ; rend null quand elle n'est pas utilisable. */
 export function cleanAd(raw: RawAd, now: Date): CleanAd | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -301,6 +318,20 @@ export class Pige {
     let outside = 0;
     let unreadable = 0;
     for (const raw of raws) {
+      // « Pas d'agence » d'abord, même sur une annonce incomplète : seule l'empreinte reste, et le même bien déjà entré
+      // par un autre site sort de la file avec elle [R273].
+      const closing = noAgencyKey(raw);
+      if (closing) {
+        if (!zones.get(communeSlug(closing.commune))) {
+          outside += 1;
+          continue;
+        }
+        for (const f of await nearFingerprints(closing)) {
+          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
+        }
+        noAgency += 1;
+        continue;
+      }
       const ad = cleanAd(raw, now);
       if (!ad) {
         unreadable += 1;
@@ -311,20 +342,16 @@ export class Pige {
         outside += 1;
         continue;
       }
-      const fingerprint = await adFingerprint(ad);
       if (ad.noAgency) {
-        // Seule l'empreinte reste ; le même bien déjà entré par un autre site sort de la file avec elle [R273].
-        for (const f of await nearFingerprints(ad)) {
-          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
-        }
         noAgency += 1;
         continue;
       }
+      const fingerprint = await adFingerprint(ad);
       const r = await this.db.run(
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
-            AND NOT EXISTS (SELECT 1 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? AND price_eur = ?)`,
+            AND coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
           networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur,
@@ -376,10 +403,10 @@ export class Pige {
     );
   }
 
-  /** La dernière annonce vue d'un bien : son prix du moment. */
+  /** La dernière annonce relevée d'un bien, tous sites réunis : son prix du moment. */
   private async latestPrice(networkId: string, fingerprint: string): Promise<number> {
     const r = await this.db.first<{ price_eur: number }>(
-      'SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY published_at DESC, collected_at DESC, id DESC LIMIT 1',
+      'SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1',
       [networkId, fingerprint],
     );
     return r?.price_eur ?? 0;

@@ -124,6 +124,30 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: false, rule: 'R273' });
   });
 
+  it('[R273] une annonce « pas d’agence » sans prix ni date ferme quand même le bien', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, [s.ad()]);
+    const r = await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', priceEur: undefined, publishedAt: undefined, noAgency: true })]);
+    expect(r.noAgency).toBe(1);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    const first = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: false, rule: 'R273' });
+  });
+
+  it('[R274] une annonce revenue à son ancien prix est relevée à ce prix', async () => {
+    const s = await setup();
+    const one = s.ad();
+    await s.pige.ingest(s.network.id, [one]);
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...one, priceEur: 252_000 }]);
+    s.at(MONDAY_10H + 2 * DAY);
+    expect((await s.pige.ingest(s.network.id, [one])).added).toBe(1);
+    expect((await s.pige.ingest(s.network.id, [one])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([279_000]);
+  });
+
   it('[R274] la même annonce revue à un autre prix garde la baisse ; rejouée telle quelle, rien ne double', async () => {
     const s = await setup();
     const one = s.ad();
