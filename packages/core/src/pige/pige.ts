@@ -366,6 +366,10 @@ export class Pige {
       const fingerprint = await adFingerprint(ad);
       const ref = await refKey(ad.source, ad.sourceRef);
       if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, ref])) {
+        // L'annonce fermée se lit enfin en entier : son bien, à 1 m² près, est fermé avec elle sur tous les sites [R273].
+        for (const f of await nearFingerprints(ad)) {
+          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
+        }
         noAgency += 1;
         continue;
       }
@@ -651,6 +655,17 @@ export class Pige {
       [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, ...linked, viewer.networkId, ...linked, viewer.networkId, ...linked],
     );
     if (r.changes !== 1) return this.refused(viewer, d.id, (await this.closedReason(viewer.networkId, d.fingerprint)) ?? { ok: false, rule: 'R05', code: 'deja_remis' });
+    // La remise est réservée ; le texte n'est rendu que si, relu après l'écriture, rien ne la ferme : une correction qui a
+    // relié entre-temps ce bien à un non, un « pas d'agence » ou un autre message remis la garde pour toujours, sans
+    // texte rendu. Rien n'est jamais parti d'AIMMO [R04, R05, R273].
+    const after = await this.closedReason(viewer.networkId, d.fingerprint);
+    const relinked = await this.linkedKeys(viewer.networkId, d.fingerprint);
+    const twice = await this.db.first(
+      `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
+        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (${relinked.map(() => '?').join(', ')})`,
+      [viewer.networkId, d.id, ...relinked],
+    );
+    if (after || twice) return this.refused(viewer, d.id, after ?? { ok: false, rule: 'R05', code: 'bien_deja_contacte' });
     await appendEvent(this.journal, { type: 'pige.remise', actor: this.actor(viewer), subject: `pige_draft:${d.id}`, data: { rule: 'R275', channel: 'annonce' } }, this.now);
     return { ok: true, body: d.body, channel: 'annonce' };
   }

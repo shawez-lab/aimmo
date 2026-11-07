@@ -301,6 +301,37 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_handovers'))!.n).toBe(0);
   });
 
+  it('[R273] une annonce fermée par sa seule clé, lue ensuite en entier, ferme son bien sur les autres sites', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, kind: undefined, noAgency: true }]);
+    await s.pige.ingest(s.network.id, [a]);
+    expect((await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' })])).added).toBe(0);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
+  it('[R04] une correction qui relie le bien à un non juste avant la remise : aucun texte rendu', async () => {
+    const s = await setup();
+    const b = s.ad({ source: 'Site B', surfaceM2: 100 });
+    await s.pige.ingest(s.network.id, [s.ad(), b]);
+    const a = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site A'"))!.id;
+    const bId = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site B'"))!.id;
+    const p = await s.pige.prepare(s.agentAlex, a);
+    if (!p.ok) throw new Error('prepare');
+    expect(await s.pige.oppose(s.agentAlex, bId)).toEqual({ ok: true });
+    const run = s.db.run.bind(s.db);
+    let once = false;
+    s.db.run = async (sql, params) => {
+      if (!once && sql.includes('INSERT INTO pige_handovers')) {
+        once = true;
+        await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 90 }]);
+      }
+      return run(sql, params);
+    };
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();
