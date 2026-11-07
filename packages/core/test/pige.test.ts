@@ -392,6 +392,12 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     if (!p.ok) throw new Error('prepare');
     await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' }), s.ad({ source: 'Site C' }), s.ad({ source: 'Site D' })]);
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R273', code: 'bien_trop_relie' });
+    // Une annonce vue incomplète alors que le bien est trop relié pour être suivi garde sa clé fermée : corrigée
+    // ensuite, elle n'entre pas.
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95 }]);
+    const e = s.ad({ source: 'Site E' });
+    await s.pige.ingest(s.network.id, [{ ...e, priceEur: undefined }]);
+    expect((await s.pige.ingest(s.network.id, [{ ...e, surfaceM2: 110 }])).added).toBe(0);
   });
 
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {

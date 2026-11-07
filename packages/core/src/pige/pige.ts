@@ -423,8 +423,15 @@ export class Pige {
     // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
     if (key) {
       const l = await this.linked(networkId, await adFingerprint(key), await nearFingerprints(key));
-      // Trop relié pour être suivi en entier : l'annonce n'entre pas [R273].
-      if (!l.complete) return true;
+      // Trop relié pour être suivi en entier : l'annonce n'entre pas, et sa clé et son bien sont fermés pour de bon, par
+      // prudence, pour qu'une correction plus tard ne les rouvre pas [R273].
+      if (!l.complete) {
+        const closeAll = [...keys, ...(await nearFingerprints(key))];
+        for (const f of closeAll) {
+          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
+        }
+        return true;
+      }
       keys.push(...l.keys);
     }
     if (keys.length === 0) return false;
