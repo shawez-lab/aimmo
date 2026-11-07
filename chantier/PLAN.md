@@ -104,7 +104,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
 
 ### HX07 · La boutique de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/boutique/`, migration `1805`, règles R263 à R265. Panneau (sans prix), flyer et vitrine tirés de la dernière version publiée en vente, carte de visite tirée de la carte professionnelle ; le rendu se relit et refuse tout chiffre hors de l'annonce, de la carte et de la référence. Code QR écrit à la main (octets, niveau M, versions 1 à 10), vérifié module pour module contre python-qrcode 8.2 et par un lecteur de test séparé, vers `canonicalFor`. Mot-clé « RÉF <référence> » reconnu par `ReconnaissanceBien`. Prix du dernier tarif de la direction en vigueur, commande seulement à l'imprimeur de ce tarif ; préparer ne commande rien, seul l'agent valide, envoi réservé une fois, panne jamais renvoyée seule. Relecture forte : aucun P0 ni P1, 2 P2 corrigés ; Codex : 1 P0 (imprimeur du tarif) et 1 P2 (photo en adresse entière) corrigés, puis rien à signaler (#394).
+- Reste : écran de la boutique et branchement au Worker (`app.ts`) ; imprimeur réel (H56) ; le mot-clé envoyé au téléphone de l'agent ne déclenche la réponse que quand ce canal passe par la captation (C09).
 - Objectif : comme « La Boutik » : commander panneaux « À vendre », cartes de visite, flyers, vitrines. Jamais vu : les supports sont générés depuis le bien lui-même (photos, prix, QR vers la fiche avec le mot-clé qui déclenche la réponse automatique) et commandés en un geste.
 - Critères : aucun prix ni mention inventés sur un support (test) ; QR qui mène à la bonne fiche (test) ; rien n'est commandé ni payé sans validation de l'agent.
 
