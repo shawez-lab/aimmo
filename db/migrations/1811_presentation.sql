@@ -7,7 +7,11 @@ CREATE TABLE IF NOT EXISTS presentation_ratings (
   appointment_id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   property_id TEXT NOT NULL,
+  -- La liste des pièces telle qu'au moment de la note (clé et nom) : un changement de la fiche ne la refait pas.
+  rooms TEXT NOT NULL CHECK (json_valid(rooms)),
   ratings TEXT NOT NULL CHECK (json_valid(ratings)),
+  -- Le compte rendu et la prochaine proposition rendus au premier envoi : la même note rejouée rend la même réponse.
+  outcome TEXT NOT NULL CHECK (json_valid(outcome)),
   content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
   recorded_by TEXT NOT NULL,
   rated_at TEXT NOT NULL,

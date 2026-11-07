@@ -264,6 +264,13 @@ export function ratingsText(rooms: readonly Shot[], ratings: RoomRatings): strin
     .join(' ');
 }
 
+interface StoredRatings {
+  rooms: Shot[];
+  ratings: RoomRatings;
+  outcome: RatingOutcome;
+  hash: string;
+}
+
 interface VisitRow {
   network_id: string;
   property_id: string;
@@ -430,6 +437,7 @@ export class ModePresentation {
     const candidates = await this.matchingListings(v.network_id, listings, await this.search(v.project_id), skip);
     const matches: PresentedMatch[] = [];
     const leftOut: Presentation['leftOut'] = [];
+    const shownSecrets: { names: string[]; values: string[] }[] = [];
     for (const c of candidates) {
       if (matches.length >= PRESENTATION_MAX_MATCHES) {
         leftOut.push({ propertyId: c.listing.propertyId, reason: 'au_dela' });
@@ -438,7 +446,7 @@ export class ModePresentation {
       const m: PresentedMatch = { ...this.presented(c.listing, c.reference), reasons: c.reasons };
       const one = renderPresentation({ visited, rooms, matches: [m], action });
       const secrets = await this.secretsOf(v.network_id, m.propertyId);
-      if (confidentialIn(one, secrets).length > 0 || confidentialIn(one, visitSecrets).length > 0) {
+      if ([secrets, ownSecrets, visitSecrets].some((x) => confidentialIn(one, x).length > 0)) {
         leftOut.push({ propertyId: m.propertyId, reason: 'confidentiel' });
         continue;
       }
@@ -447,8 +455,11 @@ export class ModePresentation {
         continue;
       }
       matches.push(m);
+      shownSecrets.push(secrets);
     }
     const html = renderPresentation({ visited, rooms, matches, action });
+    // Toute la page se relit encore contre chaque dossier montré, celui du bien visité et la visite elle-même [R279].
+    if ([ownSecrets, visitSecrets, ...shownSecrets].some((x) => confidentialIn(html, x).length > 0)) throw new Error('Mode présentation : une donnée du dossier dans la page.');
     // Toute la page se relit à la fin : seuls les annonces publiées et les pièces du bien.
     const allowed = [...sourcesOf(visited), ...matches.flatMap(sourcesOf), ...roomSources];
     if (unsourcedFigures(visibleText(html), allowed).length > 0) throw new Error('Mode présentation : un chiffre sans source.');
@@ -472,51 +483,54 @@ export class ModePresentation {
     if (!appt || appt.status === 'cancelled') return { ok: false, rule: 'R280', code: 'cancelled' };
     const at = this.now();
     if (at.getTime() < Date.parse(appt.start_at)) return { ok: false, rule: 'R280', code: 'too_early' };
+    // Déjà notée : la même note rend la même réponse, celle du premier envoi, contre la liste des pièces d'alors.
+    const known = await this.stored(appointmentId);
+    if (known) return this.replay(known, raw);
     const p = await this.db.first<Property>('SELECT * FROM properties WHERE id = ? AND network_id = ?', [v.property_id, v.network_id]);
     if (!p) return { ok: false, rule: null, code: 'unknown' };
-    const rooms = shotPlan(p.kind, p.rooms);
+    const rooms = shotPlan(p.kind, p.rooms).map((r) => ({ key: r.key, label: r.label, advice: r.advice }));
     const checked = checkRatings(rooms, raw);
     if (!checked.ok) return { ok: false, rule: 'R280', code: checked.code };
-    const content = JSON.stringify(checked.ratings);
-    const hash = await sha256(content);
-    const known = await this.db.first<{ content_hash: string; ratings: string }>('SELECT content_hash, ratings FROM presentation_ratings WHERE appointment_id = ?', [appointmentId]);
-    if (known) {
-      if (known.content_hash !== hash) return { ok: false, rule: 'R280', code: 'already_rated' };
-      return { ok: true, already: true, outcome: await this.outcome(appointmentId, v, rooms, checked.ratings) };
-    }
     if (at.getTime() > Date.parse(appt.end_at) + RATING_WINDOW_HOURS * 3_600_000) return { ok: false, rule: 'R280', code: 'too_late' };
+    const content = JSON.stringify(checked.ratings);
+    const report = reportFromRatings(rooms, checked.ratings);
+    const outcome: RatingOutcome = { report, next: await this.nextProposal(v, report.interest) };
     const inserted = await this.db.run(
-      'INSERT OR IGNORE INTO presentation_ratings (appointment_id, network_id, property_id, ratings, content_hash, recorded_by, rated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [appointmentId, v.network_id, v.property_id, content, hash, this.actor(viewer), at.toISOString()],
+      'INSERT OR IGNORE INTO presentation_ratings (appointment_id, network_id, property_id, rooms, ratings, outcome, content_hash, recorded_by, rated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [appointmentId, v.network_id, v.property_id, JSON.stringify(rooms), content, JSON.stringify(outcome), await sha256(content), this.actor(viewer), at.toISOString()],
     );
     if (inserted.changes !== 1) {
-      // Un autre envoi a gagné entre la lecture et l'écriture : seule la même note rend la même réponse.
-      const won = await this.db.first<{ content_hash: string }>('SELECT content_hash FROM presentation_ratings WHERE appointment_id = ?', [appointmentId]);
-      if (won?.content_hash !== hash) return { ok: false, rule: 'R280', code: 'already_rated' };
-      return { ok: true, already: true, outcome: await this.outcome(appointmentId, v, rooms, checked.ratings) };
+      // Un autre envoi a gagné entre la lecture et l'écriture : seule la même note rend sa réponse.
+      const won = await this.stored(appointmentId);
+      return won ? this.replay(won, raw) : { ok: false, rule: 'R280', code: 'already_rated' };
     }
     await appendEvent(this.journal, { type: 'presentation.notee', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { rule: 'R280', pieces: rooms.length } }, this.now);
-    return { ok: true, already: false, outcome: await this.outcome(appointmentId, v, rooms, checked.ratings) };
+    return { ok: true, already: false, outcome };
   }
 
-  private async stored(appointmentId: string): Promise<RoomRatings | null> {
-    const row = await this.db.first<{ ratings: string }>('SELECT ratings FROM presentation_ratings WHERE appointment_id = ?', [appointmentId]);
-    return row ? (JSON.parse(row.ratings) as RoomRatings) : null;
+  private async replay(known: StoredRatings, raw: unknown): Promise<{ ok: true; already: true; outcome: RatingOutcome } | PresentationRefusal> {
+    const checked = checkRatings(known.rooms, raw);
+    if (!checked.ok || (await sha256(JSON.stringify(checked.ratings))) !== known.hash) return { ok: false, rule: 'R280', code: 'already_rated' };
+    return { ok: true, already: true, outcome: known.outcome };
   }
 
-  /** Le compte rendu et la prochaine proposition, tirés des notes rangées : rien n'est rangé ni envoyé ici [R281]. */
+  /** Les notes rangées, avec la liste des pièces notées et la réponse du premier envoi, figées ensemble [R280]. */
+  private async stored(appointmentId: string): Promise<StoredRatings | null> {
+    const row = await this.db.first<{ rooms: string; ratings: string; outcome: string; content_hash: string }>(
+      'SELECT rooms, ratings, outcome, content_hash FROM presentation_ratings WHERE appointment_id = ?',
+      [appointmentId],
+    );
+    if (!row) return null;
+    return { rooms: JSON.parse(row.rooms) as Shot[], ratings: JSON.parse(row.ratings) as RoomRatings, outcome: JSON.parse(row.outcome) as RatingOutcome, hash: row.content_hash };
+  }
+
+  /** Le compte rendu et la prochaine proposition tirés des notes, tels qu'au premier envoi : rien n'est rangé ni envoyé ici [R281]. */
   async outcomeOf(viewer: Viewer, appointmentId: string): Promise<{ ok: true; outcome: RatingOutcome } | PresentationRefusal> {
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
-    const ratings = await this.stored(appointmentId);
-    if (!ratings) return { ok: false, rule: 'R281', code: 'not_rated' };
-    const p = (await this.db.first<Property>('SELECT * FROM properties WHERE id = ?', [found.v.property_id]))!;
-    return { ok: true, outcome: await this.outcome(appointmentId, found.v, shotPlan(p.kind, p.rooms), ratings) };
-  }
-
-  private async outcome(appointmentId: string, v: VisitRow, rooms: readonly Shot[], ratings: RoomRatings): Promise<RatingOutcome> {
-    const report = reportFromRatings(rooms, ratings);
-    return { report, next: await this.nextProposal(v, report.interest) };
+    const known = await this.stored(appointmentId);
+    if (!known) return { ok: false, rule: 'R281', code: 'not_rated' };
+    return { ok: true, outcome: known.outcome };
   }
 
   /**
@@ -544,12 +558,11 @@ export class ModePresentation {
     if (!comptes) return { ok: false, rule: null, code: 'no_report_service' };
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
-    const ratings = await this.stored(appointmentId);
-    if (!ratings) return { ok: false, rule: 'R281', code: 'not_rated' };
-    const p = (await this.db.first<Property>('SELECT * FROM properties WHERE id = ?', [found.v.property_id]))!;
-    const rooms = shotPlan(p.kind, p.rooms);
-    const report = reportFromRatings(rooms, ratings);
-    const text = ratingsText(rooms, ratings);
+    const known = await this.stored(appointmentId);
+    if (!known) return { ok: false, rule: 'R281', code: 'not_rated' };
+    // Le compte rendu des notes telles qu'elles ont été données, sur la liste des pièces d'alors.
+    const report = known.outcome.report;
+    const text = ratingsText(known.rooms, known.ratings);
     const existing = await this.db.first<{ status: string; dictation: string }>('SELECT status, dictation FROM visit_reports WHERE appointment_id = ?', [appointmentId]);
     // Un compte rendu dicté par l'agent (T06) n'est jamais remplacé par les notes : l'agent le valide lui-même.
     if (existing && existing.dictation !== text) return { ok: false, rule: null, code: 'dictated_report' };

@@ -229,6 +229,12 @@ describeWithSqlite('HX13 · mode présentation pendant la visite', () => {
     expect(r.presentation.html).not.toContain('Proprio');
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces de Victor.';
     expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
+    // Un bien proposé qui trahirait le vendeur du bien visité est retiré lui aussi.
+    t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces à Talant';
+    t.listings.find((l) => l.propertyId === t.b2.property.id)!.title = 'Maison de Victor';
+    const cross = await t.mode.open(t.as('agent', t.alex.id), v.id);
+    expect(cross.ok && cross.presentation.leftOut).toEqual([{ propertyId: t.b2.property.id, reason: 'confidentiel' }]);
+    expect(cross.ok && cross.presentation.html).not.toContain('Victor');
     // Le nom de l'acquéreur lui-même ne s'affiche pas non plus.
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces pour Durand';
     expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
@@ -276,6 +282,23 @@ describeWithSqlite('HX13 · mode présentation pendant la visite', () => {
     expect(await t.db.all('SELECT appointment_id FROM presentation_ratings')).toHaveLength(1);
     await expect(t.db.run("UPDATE presentation_ratings SET ratings = '{}'")).rejects.toThrow(/rien ne change/);
     await expect(t.db.run('DELETE FROM presentation_ratings')).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R280] rejouée après un changement du bien, de sa diffusion ou de la fiche : la réponse du premier envoi', async () => {
+    const t = await setup();
+    const agent = t.as('agent', t.alex.id);
+    const v = await t.visit();
+    t.setClock(v.end);
+    const first = await t.mode.rate(agent, v.id, { ...all('moyen'), 'chambre-3': 'non' });
+    if (!first.ok) throw new Error(first.code);
+    expect(first.outcome.next).toMatchObject({ kind: 'bien', reference: 'B2' });
+    t.blocked.add(t.b2.property.id);
+    await t.db.run('UPDATE properties SET rooms = 2 WHERE id = ?', [t.b1.property.id]);
+    expect(await t.mode.rate(agent, v.id, { ...all('moyen'), 'chambre-3': 'non' })).toEqual({ ok: true, already: true, outcome: first.outcome });
+    expect(await t.mode.outcomeOf(agent, v.id)).toEqual({ ok: true, outcome: first.outcome });
+    // Le compte rendu au vendeur garde la chambre notée, même si la fiche n'en compte plus que deux pièces.
+    expect(await t.mode.validateReport(agent, v.id)).toMatchObject({ ok: true, delivery: 'sent' });
+    expect((await t.toSeller(t.b1.seller.id))[0]!.body).toContain('Réserves : Chambre 3.');
   });
 
   it('[R280] une visite annulée ne se note pas', async () => {
