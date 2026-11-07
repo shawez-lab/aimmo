@@ -250,6 +250,12 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_key_loans: ['holder_agent_id', 'handed_by'],
       property_key_returns: ['recorded_by'],
       property_key_retirements: ['reason', 'retired_by'],
+      // HX14 : le stock de panneaux ; l'adresse d'une pose (le bien du vendeur) et les agents qui posent ou récupèrent. Raisons et
+      // heure du retrait inscrites par prudence (leur nom ressemble à une donnée personnelle).
+      signs: ['created_by'],
+      sign_placements: ['agent_id', 'street_number', 'street', 'postcode', 'city', 'placed_by'],
+      sign_removals: ['removed_by', 'removed_at'],
+      sign_pickup_tasks: ['agent_id', 'reason', 'detail'],
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
@@ -982,6 +988,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],
+  signs: ['id', 'network_id', 'number', 'size', 'created_at'],
+  sign_placements: ['id', 'network_id', 'sign_id', 'property_id', 'mandate_id', 'placed_at'],
+  sign_removals: ['placement_id', 'network_id', 'outcome'],
+  sign_pickup_tasks: ['placement_id', 'network_id', 'due_day', 'created_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
