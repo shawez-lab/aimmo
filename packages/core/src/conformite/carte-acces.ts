@@ -437,6 +437,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_import_properties: { locate: [via('property_id', 'properties')] },
   // acquereurs
   buyer_searches: { locate: by('person_id') },
+  phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
   agent_whatsapp_alerts: { locate: by('person_id') },
