@@ -132,7 +132,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : une clé ne peut être chez deux personnes à la fois (test) ; tout mouvement est au journal (test).
 
 ### HX11 · Pige des annonces de particuliers
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/pige/`, migration `1809`, règles R273 à R275. Source de pige en port (aucun fournisseur branché) ; seules entrent les communes des zones du réseau ; texte de l'annonce lu pour « pas d'agence » (liste fermée) puis oublié, aucune coordonnée du particulier. Bien reconnu par sorte, code postal, commune et surface (à 1 m² près), ni prix ni pièces ; « pas d'agence », non du particulier et message suivis de proche en proche sur tout ce qui est relié (annonces, corrections, clé de chaque annonce), annonce incomplète comprise ; bien trop relié fermé. Écart au m² face à la case publiée des prix regroupés (AT01), sinon « marché non chiffré ». Premier message écrit par le code, une fois par bien, validé par l'agent de la zone : remis à coller dans la messagerie de l'annonce, dans les heures (samedi compris) ; téléphone, SMS, WhatsApp, mail refusés par la décision unique faute d'accord (R03) ; AIMMO n'envoie rien. Codex : 13 P0, 1 P1 et 7 P2 corrigés en douze tours, puis rien à signaler (#401).
+- Reste : écran de la file et branchement au Worker (`app.ts`) ; vraie source de pige ; H58 (avocat : messagerie de l'annonce hors de R03 ?).
 - Objectif : comme Ma Pige (Pigimmo, Directannonces) : repérer les biens vendus par des particuliers dans le secteur. Jamais vu : pour chacun, l'écart avec le prix du marché et un premier message utile prêt à valider, jamais envoyé seul ; et la mention « pas d'agence » est toujours respectée.
 - Critères : une annonce marquée « pas d'agence » n'entre jamais dans la file (test) ; contrôle central et accords (R01 à R05) ; aucun envoi automatique.
 
