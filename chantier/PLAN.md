@@ -111,7 +111,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucun prix ni mention inventés sur un support (test) ; QR qui mène à la bonne fiche (test) ; rien n'est commandé ni payé sans validation de l'agent.
 
 ### HX08 · Remises négociées pour les agents du réseau
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme « Mes remises » : les offres négociées pour les agents (diagnostiqueurs, photographes, assurances, outils). Jamais vu : l'appli propose la bonne remise au bon moment du dossier, par exemple le diagnostiqueur au moment du mandat.
 - Critères : chaque remise a sa source et sa date de fin, retirée seule à expiration (test).
 
