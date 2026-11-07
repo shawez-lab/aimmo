@@ -160,8 +160,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : un panneau posé est rattaché à un bien (test) ; tâche créée à la fin du mandat (test).
 
 ### HX15 · Statistiques et contenus du site
-- Statut : en cours
+- Statut : fait (2026-11-07)
 - Décidé (2026-11-07), lecture prudente : module `packages/core/src/statistiques-site/`, migration `1813`, règles R285 à R287. Vues comptées par le seul code porteur de AT05, en compteur par contenu et par jour de Paris (rien du visiteur). Demandes lues comme la mesure de AT05 (conversation, première origine connue), vendeurs par projet `sell`, `valuation` ou `sell_business`, mandats signés après le premier message ; chaque chiffre porte les identifiants des messages. Prochaine page : la sorte rédactionnelle (prix, quartier) qui amène le plus de vendeurs par vue, dans la commune des zones qui ne l'a pas encore et où les vendeurs arrivent déjà le plus ; texte et chiffres tirés par le code. Pages rédactionnelles : celles de prix et de quartier, déjà faites (AT01, quartier) ; formulaires et partenaires du site restent à leurs modules. Le critère « R15 » du plan vise en fait R156 et la nouvelle R285 : c'est elles que le test porte.
+- Reste : fusionnée (#410). Codex : 4 P0 corrigés en deux tours (premier message de la conversation, première personne rattachée, mandat compté sans projet, pages existantes lues dans leurs sources), puis rien à signaler. Restent : écran « Gérer mon site », branchement au Worker (`app.ts`, `countView` appelé par les pages publiques), filtre des robots ; formulaires et partenaires du site à leurs modules.
 - Objectif : comme « Gérer mon site » : statistiques de visite, pages rédactionnelles, formulaires, partenaires. Jamais vu : chaque chiffre dit quelle page amène des vendeurs, et l'appli propose la prochaine page à écrire pour en attirer plus.
 - Critères : aucune donnée personnelle de visiteur conservée (R15, test) ; chaque statistique relie la page à des demandes réelles.
 
