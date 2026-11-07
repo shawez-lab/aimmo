@@ -139,7 +139,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : une annonce marquée « pas d'agence » n'entre jamais dans la file (test) ; contrôle central et accords (R01 à R05) ; aucun envoi automatique.
 
 ### HX12 · Appli utilisable sans réseau, et photo HDR
-- Statut : en cours
+- Statut : fait (2026-11-07)
+- Décidé (2026-11-07), lecture prudente : module `packages/core/src/hors-ligne/`, migration `1810`, règles R276 à R278. Boîte d'envoi du téléphone (rangement en interface), chaque saisie (note, photo, photo sans objet) avec l'identifiant tiré par le téléphone ; elle ne sort de la boîte que sur une réponse qui la nomme, la refusée restant visible. Le serveur reçoit chaque saisie une fois, la rejouée rend la même réponse, un autre contenu sous le même identifiant est refusé ; l'écriture n'a lieu que pour l'envoi qui gagne la saisie ; une panne de la base ne répond rien, la saisie reste au téléphone. Photo HDR : au moins deux prises de lumières différentes fondues, jugée (sombre, brûlée, floue) sur le téléphone puis de nouveau par le serveur sur les prises réduites. Jamais vu : liste de cadrage pièce par pièce tirée de la fiche du bien, départ refusé tant qu'une photo n'est ni acceptée ni dite sans objet. Paquet du jour sans client (référence, sorte, commune, surface, pièces), aujourd'hui ou demain, valable jusqu'à la fin du jour de Paris. Codex : 3 P0 corrigés (boîte sérialisée, écriture gagnée par la saisie, panne de la base), puis rien à signaler (#405).
+- Reste : écran de la visite hors ligne, service worker et rangement IndexedDB, prise des expositions par la caméra et envoi de l'image entière, branchement au Worker (`app.ts`).
 - Objectif : comme l'appli Hektor (mode hors connexion, Pix HDR) : en cave ou à la campagne, l'agent consulte et remplit la visite sans réseau, tout part au retour du réseau ; les photos prises dans l'appli sont en HDR. Jamais vu : l'appli guide le cadrage pièce par pièce et refuse une photo floue ou trop sombre avant qu'on reparte.
 - Critères : saisie hors ligne puis envoi sans perte ni doublon (test) ; photo trop sombre ou floue signalée (test).
 
