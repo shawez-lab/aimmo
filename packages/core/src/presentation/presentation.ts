@@ -252,8 +252,17 @@ export function reportFromRatings(rooms: readonly Shot[], ratings: RoomRatings):
   const opinion =
     `Le visiteur a noté chaque pièce à la fin de la visite. ` +
     (middle.length > 0 ? `Avis moyen sur : ${middle.join(', ')}.` : 'Aucune pièce jugée moyenne.');
-  // Au plus 5 de chaque, comme tout compte rendu (T06) : les premières dans l'ordre de la visite.
-  return { opinion, strengths: strengths.slice(0, 5), reservations: reservations.slice(0, 5), interest: interestOf(ratings), readyToOffer: false };
+  // Au plus 5 entrées de chaque, comme tout compte rendu (T06) : au-delà, les pièces sont regroupées, aucune n'est perdue.
+  return { opinion, strengths: grouped(strengths), reservations: grouped(reservations), interest: interestOf(ratings), readyToOffer: false };
+}
+
+/** Les pièces en au plus 5 entrées, dans l'ordre de la visite, sans en perdre une. */
+export function grouped(labels: readonly string[], max = 5): string[] {
+  if (labels.length <= max) return [...labels];
+  const size = Math.ceil(labels.length / max);
+  const out: string[] = [];
+  for (let i = 0; i < labels.length; i += size) out.push(labels.slice(i, i + size).join(', '));
+  return out;
 }
 
 /** La dictée rangée avec le compte rendu : les notes elles-mêmes, écrites par le code, jamais par une IA. */
@@ -343,6 +352,13 @@ export class ModePresentation {
       for (const m of view.members) for (const n of [m.first_name, m.last_name]) if (typeof n === 'string' && n.trim() !== '') names.push(n);
       for (const i of view.identifiers) values.push(i.value);
     }
+    // Les notes des projets du dossier : celui qui possède le bien, et celui de chaque mandat.
+    const notes = await this.db.all<{ note: string | null }>(
+      `SELECT pp.note FROM project_properties x JOIN projects pp ON pp.id = x.project_id WHERE x.network_id = ? AND x.property_id = ? AND x.role = 'owned'
+       UNION SELECT pp.note FROM mandates m JOIN projects pp ON pp.id = m.project_id WHERE m.network_id = ? AND m.property_id = ?`,
+      [networkId, propertyId, networkId, propertyId],
+    );
+    for (const n of notes) if (typeof n.note === 'string' && n.note.trim() !== '') values.push(n.note);
     const register = await this.db.all<{ number: string }>('SELECT number FROM mandate_register WHERE network_id = ? AND property_id = ?', [networkId, propertyId]);
     for (const r of register) values.push(r.number);
     return { names, values };
@@ -355,7 +371,9 @@ export class ModePresentation {
     const values = buyer.identifiers.map((i) => i.value);
     const notes = await this.db.all<{ body: string }>('SELECT body FROM visit_field_notes WHERE appointment_id = ?', [appointmentId]);
     const report = await this.db.first<{ dictation: string }>('SELECT dictation FROM visit_reports WHERE appointment_id = ?', [appointmentId]);
-    return { names, values: [...values, ...notes.map((n) => n.body), ...(report ? [report.dictation] : [])] };
+    const project = await this.db.first<{ note: string | null }>('SELECT note FROM projects WHERE id = ?', [v.project_id]);
+    const projectNote = typeof project?.note === 'string' && project.note.trim() !== '' ? [project.note] : [];
+    return { names, values: [...values, ...notes.map((n) => n.body), ...(report ? [report.dictation] : []), ...projectNote] };
   }
 
   private async search(projectId: string): Promise<BuyerSearch | null> {

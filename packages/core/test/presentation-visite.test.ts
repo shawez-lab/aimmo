@@ -155,6 +155,10 @@ describe('HX13 · notes et compte rendu, par le code seul', () => {
     expect(r.interest).toBe('moyen');
     expect(r.opinion).toContain('Avis moyen sur : Façade ou entrée, Chambre 1');
     expect(reportFromRatings(ROOMS, all('aime')).readyToOffer).toBe(false);
+    // Plus de 5 pièces d'un même avis : regroupées, aucune perdue.
+    const many = reportFromRatings(ROOMS, all('non'));
+    expect(many.reservations.length).toBeLessThanOrEqual(5);
+    expect(many.reservations.join(', ')).toBe(ROOMS.map((x) => x.label).join(', '));
   });
 
   it('[R279] la relecture trouve un nom, une coordonnée ou une note du dossier, accents et casse ignorés', () => {
@@ -228,6 +232,12 @@ describeWithSqlite('HX13 · mode présentation pendant la visite', () => {
     expect(r.presentation.leftOut).toEqual([{ propertyId: t.b2.property.id, reason: 'confidentiel' }]);
     expect(r.presentation.html).not.toContain('Proprio');
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces de Victor.';
+    expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
+    // La note du projet du vendeur, recopiée dans l'annonce, n'est jamais montrée.
+    const owner = await t.store.createProject({ networkId: t.network.id, agentId: t.sam.id, personId: t.b1.seller.id, kind: 'sell' });
+    await t.db.run("UPDATE projects SET note = 'Séparation conflictuelle et vente urgente' WHERE id = ?", [owner.id]);
+    await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.sam.id, projectId: owner.id, propertyId: t.b1.property.id, role: 'owned' });
+    t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Séparation conflictuelle et vente urgente';
     expect(await t.mode.open(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R279', code: 'confidential' });
     // Un bien proposé qui trahirait le vendeur du bien visité est retiré lui aussi.
     t.listings.find((l) => l.propertyId === t.b1.property.id)!.title = 'Maison de 4 pièces à Talant';
