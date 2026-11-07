@@ -42,14 +42,14 @@ async function setup() {
     if (!r.ok) throw new Error(r.code);
     return r.discountId;
   };
-  const partner = async (trade: string, postcodes = ['21000'], insuredUntil = '2027-12-31') => {
+  const partner = async (trade: string, postcodes = ['21000'], insuredUntil = '2027-12-31', certifiedUntil = '2027-12-31') => {
     const r = await annuaire.addPartner(t.direction, { trade, businessName: `${trade} Exemple`, postcodes });
     if (!r.ok) throw new Error(r.code);
     const id = r.value.partnerId;
     const c = await annuaire.addCredential(t.direction, id, { kind: 'assurance_rcp', number: 'RCP-1', validFrom: '2027-01-01', validUntil: insuredUntil, proofRef: proofs.put(id) });
     if (!c.ok) throw new Error(c.code);
     if (trade === 'diagnostiqueur') {
-      const d = await annuaire.addCredential(t.direction, id, { kind: 'certification_diagnostic', domain: 'dpe', number: 'CERT-1', validFrom: '2027-01-01', validUntil: '2027-12-31', proofRef: proofs.put(id) });
+      const d = await annuaire.addCredential(t.direction, id, { kind: 'certification_diagnostic', domain: 'dpe', number: 'CERT-1', validFrom: '2027-01-01', validUntil: certifiedUntil, proofRef: proofs.put(id) });
       if (!d.ok) throw new Error(d.code);
     }
     return id;
@@ -204,6 +204,36 @@ describeWithSqlite('HX08 · remises négociées', () => {
     expect(t.ids(s)).toEqual([acte]);
     t.setClock(new Date('2027-08-01T10:00:00.000Z'));
     expect(await t.suggest()).toBeNull();
+  });
+
+  it('[R267] un dossier arrêté ne compte pas : le second dossier ouvert du bien fait le moment, compromis puis acte', async () => {
+    const t = await setup();
+    const compromis = await t.add({ category: 'demenageur', beneficiary: 'client', moment: 'compromis', validUntil: '2027-12-31' });
+    const acte = await t.add({ category: 'artisan', beneficiary: 'client', moment: 'acte', validUntil: '2027-12-31' });
+    const at = t.now().toISOString();
+    for (const [o, seq] of [['o1', 1], ['o2', 2]] as const) {
+      await t.db.run(
+        "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES (?, ?, ?, ?, ?, 205000, '[]', '2027-02-20', 50000, 155000, ?, ?, ?, ?, 'agent', '0', ?)",
+        [o, t.network.id, t.propertyId, seq, t.personId, `offres/${o}.pdf`, at, t.alexId, at, `h-${o}`],
+      );
+    }
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('f1', ?, ?, 'o1', ?, 205000, '2027-02-12T09:00:00.000Z', 'agent')", [t.network.id, t.propertyId, t.personId]);
+    await t.db.run("INSERT INTO sale_file_stops (file_id, network_id, reason, proof_ref, at, by) VALUES ('f1', ?, 'pret_refuse', 'arrets/f1.pdf', ?, 'agent')", [t.network.id, at]);
+    expect(await t.remises.momentOf(t.network.id, t.propertyId)).toBe('mandat');
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('f2', ?, ?, 'o2', ?, 205000, '2027-02-12T09:30:00.000Z', 'agent')", [t.network.id, t.propertyId, t.personId]);
+    expect(t.ids(await t.suggest())).toEqual([compromis]);
+    await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES ('f2', ?, '2027-05-03', 'actes/f2.pdf', 'a_demarrer', ?, 'agent')", [t.network.id, at]);
+    t.setClock(new Date('2027-05-04T10:00:00.000Z'));
+    expect(t.ids(await t.suggest())).toEqual([acte]);
+  });
+
+  it('[R267] [R73] un diagnostiqueur assuré mais sans certification valide ce jour-là n’est plus proposé', async () => {
+    const t = await setup();
+    const diag = await t.partner('diagnostiqueur', ['21000'], '2027-12-31', '2027-02-20');
+    const id = await t.add({ category: 'diagnostiqueur', partnerId: diag, beneficiary: 'client', source: 'Devis D-8' });
+    expect(t.ids(await t.suggest())).toContain(id);
+    t.setClock(new Date('2027-02-21T10:00:00.000Z'));
+    expect(t.ids(await t.suggest())).not.toContain(id);
   });
 
   it('[R267] [R73] un partenaire n’est proposé que justifié ce jour-là et dans la zone du bien ; le photographe, pas si les photos sont certifiées', async () => {

@@ -21,7 +21,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { Annuaire } from '../partenaires/annuaire.ts';
+import { Annuaire, CERTIFIED_DOMAINS } from '../partenaires/annuaire.ts';
 
 export const DISCOUNT_CATEGORIES = [
   { category: 'photographe', label: 'Photographe', trade: 'photographe' },
@@ -258,10 +258,13 @@ export class Remises {
 
   /** Le moment du dossier d'un bien, lu dans la base, jamais déclaré ; `null` passé 90 jours après l'acte [R267]. */
   async momentOf(networkId: string, propertyId: string): Promise<DossierMoment | null> {
-    const file = await this.db.first<{ id: string; signed_on: string | null; stopped: number }>(
-      `SELECT f.id, c.signed_on, EXISTS (SELECT 1 FROM sale_file_stops s WHERE s.file_id = f.id) AS stopped
+    // Le dossier vivant du bien : jamais un dossier arrêté, car un bien peut en avoir un second (SV14).
+    const file = await this.db.first<{ id: string; signed_on: string | null }>(
+      `SELECT f.id, c.signed_on
          FROM sale_files f LEFT JOIN sale_file_closings c ON c.file_id = f.id
-        WHERE f.property_id = ? AND f.network_id = ?`,
+        WHERE f.property_id = ? AND f.network_id = ?
+          AND NOT EXISTS (SELECT 1 FROM sale_file_stops s WHERE s.file_id = f.id)
+        ORDER BY f.opened_at DESC, f.rowid DESC LIMIT 1`,
       [propertyId, networkId],
     );
     if (file && file.signed_on) {
@@ -269,7 +272,7 @@ export class Remises {
       const today = Date.parse(`${this.today()}T00:00:00Z`);
       return (today - deedDay) / 86_400_000 < AFTER_DEED_DAYS ? 'acte' : null;
     }
-    if (file && !Number(file.stopped)) return 'compromis';
+    if (file) return 'compromis';
     const listing = await this.db.first<{ state: string }>('SELECT state FROM listing_versions WHERE property_id = ? AND network_id = ? ORDER BY seq DESC LIMIT 1', [propertyId, networkId]);
     if (listing?.state === 'en_vente') return 'en_vente';
     const mandate = await this.db.first<{ seq: number }>(
@@ -311,6 +314,12 @@ export class Remises {
         const zone = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM partner_zones WHERE partner_id = ? AND postcode = ?', [r.partner_id, postcode]);
         if (!zone || Number(zone.n) === 0) continue;
         if (!(await this.annuaire.proposableOn(p.value.network_id, r.partner_id, this.now()))) continue;
+        // Un diagnostiqueur doit avoir ce jour-là au moins une certification valide, pas seulement son assurance [R73].
+        if (r.category === 'diagnostiqueur') {
+          let certified = false;
+          for (const d of CERTIFIED_DOMAINS) if (await this.annuaire.proposableOn(p.value.network_id, r.partner_id, this.now(), d.domain)) certified = true;
+          if (!certified) continue;
+        }
       }
       keep.push({ ...toView(r), why: WHY[moment] });
     }
