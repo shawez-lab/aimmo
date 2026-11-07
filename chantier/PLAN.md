@@ -96,9 +96,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque traduction garde les chiffres et mentions légales à l'identique (test) ; rien ne part sans validation de l'agent.
 
 ### HX06 · Création d'un bien et d'un contact à la voix
-- Statut : en cours
+- Statut : fait (2026-11-07)
 - Décidé (2026-11-06), lecture prudente : module `packages/core/src/dictee/`, aucune migration, règles R260 à R262. Le code lit la dictée (aucune IA ne propose de champ) : contact (noms après « s'appelle », « Madame », « Monsieur », téléphone, mail, vendre ou acheter), bien (sorte, code postal, commune de la zone, surface, pièces, prix demandé), rendez-vous (sorte, jour et heure dans une même phrase ; un jour de la semaine est le prochain, jamais aujourd'hui). La validation relit la dictée et refuse tout champ absent ; l'agent retire, n'ajoute ni ne change rien. La fiche nouvelle prend l'identifiant de la demande, le bien aussi : rejouée, rien ne double. Après une visite, le compte rendu de T06 est montré sans être rangé (`ComptesRendus.preview`), puis validé avec le reste et envoyé au vendeur : c'est la « relance du vendeur ». Aucun message au contact dicté, aucune confirmation de rendez-vous.
-- Reste : écran de dictée et branchement au Worker (`app.ts`) ; nombres dits en lettres ; dictée en ligne sans réseau (HX12).
+- Reste : fusionnée (#392). Relecture forte : 1 P0, 4 P1 corrigés ; Codex : 5 P0, 1 P1 corrigés en trois tours (surface groupée, contre-visite par `Visites.schedule`, heure lue en partie, rendez-vous d'un autre bien, noms dictés retirés avant l'IA du compte rendu, particule en minuscule), puis rien à signaler. Restent : écran de dictée et branchement au Worker (`app.ts`) ; nombres dits en lettres ; dictée sans réseau (HX12) ; une course entre la vérification du créneau et la réservation laisse la fiche et le bien, la même demande rejouée reprend sans doubler.
 - Qui : Claude, relecture forte
 - Objectif : comme Hektor Voice : créer un bien, un contact ou un rendez-vous en parlant. Jamais vu : en sortant d'une visite, l'agent dicte une minute et l'appli remplit la fiche, l'avis de visite et la relance du vendeur, à valider d'un geste.
 - Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
