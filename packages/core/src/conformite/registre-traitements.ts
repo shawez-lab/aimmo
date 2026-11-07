@@ -827,7 +827,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   mailbox_drafts: ['id', 'network_id', 'mail_id', 'status', 'validated_at', 'rule', 'sent_message_id', 'created_at'],
   agent_notifications: ['id', 'network_id', 'kind', 'urgency', 'dedup_key', 'status', 'push_id', 'created_at', 'sent_at'],
   agent_notification_settings: ['id', 'network_id', 'quiet_start', 'quiet_end', 'levels', 'set_at'],
-  agent_pushes: ['id', 'network_id', 'urgency', 'count', 'lock_title', 'lock_body', 'status', 'reserved_at', 'done_at'],
+  agent_pushes: ['id', 'network_id', 'urgency', 'count', 'lock_title', 'lock_line', 'status', 'reserved_at', 'done_at'],
   voice_assistant_lines: ['network_id', 'enabled', 'updated_at'],
   calls: ['id', 'network_id', 'provider', 'status', 'failure', 'attach', 'started_at', 'ended_at', 'language', 'confidence', 'category', 'route', 'qualification_source', 'origin_kind', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],

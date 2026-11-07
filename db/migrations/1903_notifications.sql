@@ -27,7 +27,7 @@ END;
 
 -- Un envoi au téléphone de l'agent : une notification seule (contact chaud) ou un groupe d'une même urgence. Réservé en
 -- base avant l'appel au service de notification : deux passages n'envoient jamais le même groupe [R18].
--- `lock_title` et `lock_body` : le texte visible écran verrouillé, des phrases fixes et des nombres seulement [R415].
+-- `lock_title` et `lock_line` : le texte visible écran verrouillé, des phrases fixes et des nombres seulement [R415].
 CREATE TABLE IF NOT EXISTS agent_pushes (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS agent_pushes (
   urgency TEXT NOT NULL CHECK (urgency IN ('immediate', 'haute', 'normale', 'basse')),
   count INTEGER NOT NULL CHECK (count > 0),
   lock_title TEXT NOT NULL,
-  lock_body TEXT NOT NULL,
+  lock_line TEXT NOT NULL,
   -- `reservee` : pris par un passage ; `partie` : remise au service ; `aucun_appareil` : l'agent n'a pas de téléphone
   -- relié ; `echec` : refusée par le service, ses notifications sont reprises ; `incertaine` : passage coupé avant la
   -- réponse du service, ses notifications sont reprises ; `abandonnee` : un autre passage avait pris ses notifications,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS agent_pushes (
 );
 CREATE INDEX IF NOT EXISTS agent_pushes_agent ON agent_pushes (agent_id, reserved_at);
 
-CREATE TRIGGER IF NOT EXISTS agent_pushes_texte_fige BEFORE UPDATE OF lock_title, lock_body, count, urgency, agent_id ON agent_pushes
+CREATE TRIGGER IF NOT EXISTS agent_pushes_texte_fige BEFORE UPDATE OF lock_title, lock_line, count, urgency, agent_id ON agent_pushes
 BEGIN
   SELECT RAISE(ABORT, 'agent_pushes : le texte envoyé est celui réservé');
 END;

@@ -208,7 +208,7 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     await t.notifications.notify({ agentId: t.alex.id, personId: sacha, kind: 'rendez_vous', sourceKey: 'rdv:1' });
     await t.notifications.flush();
     expect(t.sent.length).toBeGreaterThan(0);
-    const outgoing = JSON.stringify(t.sent) + JSON.stringify(await t.db.all('SELECT lock_title, lock_body FROM agent_pushes'));
+    const outgoing = JSON.stringify(t.sent) + JSON.stringify(await t.db.all('SELECT lock_title, lock_line FROM agent_pushes'));
     const journal = JSON.stringify(await t.journal.all());
     for (const secret of ['Noa', 'Sacha', 'noa@example.test', '+33612345678', '06 12 34 56 78', 'Tuiles', '345', noa, sacha]) {
       expect(outgoing).not.toContain(secret);
@@ -249,7 +249,7 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     // (Le message suit le contact chaud de moins de 30 minutes : il n'est pas redit, on en prend un autre sujet.)
     expect(row).toBeNull();
     await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: 'tache:1' });
-    await t.db.run("INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_body, status, reserved_at) VALUES ('coupe', ?, ?, 'normale', 1, 'AIMMO', 'Une tâche à faire', 'reservee', ?)", [
+    await t.db.run("INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at) VALUES ('coupe', ?, ?, 'normale', 1, 'AIMMO', 'Une tâche à faire', 'reservee', ?)", [
       t.network.id,
       t.alex.id,
       new Date(t.clock()).toISOString(),
@@ -264,7 +264,7 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(await t.db.first("SELECT status FROM agent_notifications WHERE kind = 'tache'")).toEqual({ status: 'sans_appareil' });
     // Rien ne s'efface, et le texte envoyé reste celui réservé [R17].
     await expect(t.db.run('DELETE FROM agent_notifications')).rejects.toThrow();
-    await expect(t.db.run("UPDATE agent_pushes SET lock_body = 'Noa' WHERE id = 'coupe'")).rejects.toThrow();
+    await expect(t.db.run("UPDATE agent_pushes SET lock_line = 'Noa' WHERE id = 'coupe'")).rejects.toThrow();
   });
 
   it('[R16] jamais pour une personne exclue, ni pour un agent parti', async () => {

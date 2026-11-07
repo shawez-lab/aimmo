@@ -146,7 +146,7 @@ export interface PushRow {
   urgency: Urgency;
   count: number;
   lock_title: string;
-  lock_body: string;
+  lock_line: string;
   status: 'reservee' | 'partie' | 'aucun_appareil' | 'echec' | 'incertaine' | 'abandonnee';
   reserved_at: string;
   done_at: string | null;
@@ -312,7 +312,7 @@ export class Notifications {
         `UPDATE agent_notifications SET status = 'remplacee' WHERE agent_id = ? AND kind = 'client_ecrit' AND status = 'a_envoyer' AND person_id IN (${placeholders(members.length)})`,
         [agent.id, ...members],
       );
-      await this.deliver(agent.id, 'immediate');
+      await this.pushGroup(agent.id, 'immediate');
     }
     return { ok: true, value: (await this.db.first<NotificationRow>('SELECT * FROM agent_notifications WHERE id = ?', [row.id])) ?? row };
   }
@@ -328,7 +328,7 @@ export class Notifications {
     const pushes: PushRow[] = [];
     for (const { agent_id } of agents) {
       for (const urgency of URGENCY_ORDER) {
-        const push = await this.deliver(agent_id, urgency);
+        const push = await this.pushGroup(agent_id, urgency);
         if (push) pushes.push(push);
       }
     }
@@ -350,7 +350,7 @@ export class Notifications {
   }
 
   /** Envoie à l'agent le groupe dû de cette urgence, s'il y en a un. */
-  private async deliver(agentId: string, urgency: Urgency): Promise<PushRow | null> {
+  private async pushGroup(agentId: string, urgency: Urgency): Promise<PushRow | null> {
     const at = this.now();
     const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
     if (!agent || agent.status !== 'active') return null;
@@ -381,7 +381,7 @@ export class Notifications {
     const text = lockText(urgency, due.map((n) => n.kind));
     const pushId = this.newId();
     await this.db.run(
-      "INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_body, status, reserved_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'reservee', ?, NULL)",
+      "INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'reservee', ?, NULL)",
       [pushId, agent.network_id, agentId, urgency, due.length, text.title, text.body, at.toISOString()],
     );
     const { changes } = await this.db.run(
