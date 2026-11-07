@@ -167,7 +167,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucune donnée personnelle de visiteur conservée (R15, test) ; chaque statistique relie la page à des demandes réelles.
 
 ### HX16 · Veille des nouveaux diagnostics énergétiques par secteur
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor : suivre chaque jour les nouveaux diagnostics énergétiques publiés par l'ADEME dans un secteur, les voir sur une carte et recevoir une alerte quotidienne par secteur de veille. Jamais vu : chaque logement classé F ou G est croisé avec sa date d'interdiction de louer, déjà calculée par M15, et l'appli prépare une lettre « Au propriétaire » de G06 qui explique ce que cette date change pour lui, sans jamais chercher son nom.
 - Critères : aucun nom ni coordonnée de propriétaire rangé (test) ; un diagnostic déjà vu ne remonte jamais deux fois (test) ; l'alerte ne contient que les communes de la zone de l'agent (test).
 
