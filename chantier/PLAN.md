@@ -104,7 +104,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucun champ inventé, chaque champ rempli renvoie à la phrase dictée (test) ; rien n'est enregistré sans validation.
 
 ### HX07 · La boutique de l'agent
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme « La Boutik » : commander panneaux « À vendre », cartes de visite, flyers, vitrines. Jamais vu : les supports sont générés depuis le bien lui-même (photos, prix, QR vers la fiche avec le mot-clé qui déclenche la réponse automatique) et commandés en un geste.
 - Critères : aucun prix ni mention inventés sur un support (test) ; QR qui mène à la bonne fiche (test) ; rien n'est commandé ni payé sans validation de l'agent.
 
