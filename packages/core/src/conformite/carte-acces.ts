@@ -172,6 +172,13 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   // HX35 : le résumé de copropriété et les travaux votés signalés ; le journal n'en porte que des identifiants et des nombres.
   'dossier.copropriete_resumee': 'partage',
   'dossier.travaux_votes_signales': 'partage',
+  // HX36 : la lettre recommandée de l'avant-contrat et ses preuves ; le journal n'en porte que des identifiants et des règles.
+  'dossier.recommande_prepare': 'partage',
+  'dossier.recommande_envoye': 'partage',
+  'dossier.recommande_essai': 'partage',
+  'dossier.recommande_refuse': 'partage',
+  'dossier.recommande_preuve': 'partage',
+  'dossier.recommande_date_non_ecrite': 'partage',
   'dossier.dia_preparee': INTERNE('Préparation par l\'agent de la déclaration pour le notaire : des nombres de champs, sans donnée d\'un client.'),
   'dossier.acte_signe': 'partage',
   'dossier.acte_refuse': 'partage',
@@ -220,6 +227,7 @@ const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Su
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),
+  recommande: ENVOI('lettre recommandée de l\'avant-contrat, HX36'),
   vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
@@ -444,6 +452,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
   risk_statements: { locate: [via('file_id', 'sale_files')] },
   coownership_summaries: { locate: [via('file_id', 'sale_files')] },
+  registered_letters: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
+  registered_letter_events: { locate: [via('file_id', 'sale_files')] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
   signed_amendments: { locate: [via('document_id', 'documents')] },

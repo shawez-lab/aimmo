@@ -173,7 +173,7 @@ export interface FileTask {
   createdAt: string;
 }
 
-export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' | 'closed' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
+export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' | 'closed' } | { ok: false; rule: 'R460'; code: 'set_by_registered_letter' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
 
 export class Echeancier {
   private readonly now: () => Date;
@@ -248,6 +248,11 @@ export class Echeancier {
       return { ok: false, rule: 'R58', code: 'compromis_not_started' };
     }
     if (PAST_KINDS.includes(kind) && day > this.today()) return { ok: false, rule: null, code: 'future_day' };
+    // La première présentation prouvée par le prestataire de la lettre recommandée (HX36) fait foi : elle ne se
+    // ressaisit pas à la main [R460].
+    if (kind === 'notification_acquereur' && (await this.db.first("SELECT 1 FROM registered_letter_events WHERE file_id = ? AND kind = 'premiere_presentation'", [fileId]))) {
+      return { ok: false, rule: 'R460', code: 'set_by_registered_letter' };
+    }
     const dates = await this.datesOf(fileId);
     // Les dates telles qu'elles seraient après cette saisie : toutes doivent rester dans l'ordre, y compris celles déjà
     // saisies qui suivent la date corrigée.
