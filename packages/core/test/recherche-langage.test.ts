@@ -75,6 +75,7 @@ describe('HX28 · lecture de la phrase', () => {
     expect(budget('maison à Dijon, 250.5k')).toBe(250_500);
     expect(budget('maison à Dijon, 350.000 €')).toBe(350_000);
     expect(budget('maison à Dijon, 350 000 euros')).toBe(350_000);
+    expect(budget('maison à Dijon, budget 300k, pas de 500k')).toBe(300_000);
     const terrain = parsePhrase(PHRASES[5]!).criteria;
     expect(terrain.map((c) => [c.field, c.value])).toEqual([
       ['propertyKinds', 'land'],
@@ -350,6 +351,23 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
     const text = JSON.stringify(entries.filter((e) => e.type.startsWith('recherche.')));
     for (const forbidden of ['Dijon', '350', 'garage', 'Camille']) expect(text).not.toContain(forbidden);
     expect((await verifyChain(entries)).ok).toBe(true);
+  });
+
+  it('une commune refusée ne reste jamais dans la fiche rangée [R424]', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const dijon = await t.property('C1', { city: 'Dijon', price: 300_000, surface: 110, rooms: 5 });
+    const agent = t.as('agent', t.alex.id);
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, PHRASE)).ok).toBe(true);
+    // Refuser la dernière commune cherchée : rien n'est rangé, la fiche ne garde pas Dijon en silence.
+    const last = await t.recherche.save(t.acces, agent, t.acquereurs, project.id, PHRASE, [{ refuse: dijon.id, reason: 'commune' }]);
+    expect(last).toEqual({ ok: false, rule: 'R424', code: 'a_preciser' });
+    // Avec une autre commune qui reste, la liste rangée remplace l'ancienne, sans la commune refusée.
+    const phrase = 'Maison 4 pièces à Dijon ou Talant, 100 m² mini, budget 350 000 €';
+    const ok = await t.recherche.save(t.acces, agent, t.acquereurs, project.id, phrase, [{ refuse: dijon.id, reason: 'commune' }]);
+    expect(ok.ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))?.search.communes).toEqual(['Talant']);
   });
 
   it('un autre agent ne range rien dans la fiche d’un client qui n’est pas le sien [R16]', async () => {

@@ -291,19 +291,25 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
 
   // Les sommes : avec une unité (€, euros, k, millions), ou après un mot de budget.
   const budgets: { value: number; start: number; end: number }[] = [];
+  // Une somme niée (« pas de 500k ») est dite et écartée avant de choisir le plus haut budget.
+  const skipNegated = (start: number, end: number): boolean => {
+    if (!negated(start)) return false;
+    ignored.push({ words: text.slice(start, end), start, end, reason: 'negation' });
+    return true;
+  };
   scan(
     /(?<![a-z0-9])(\d{1,3}(?:[ .  ]\d{3})+|\d+(?:[.,]\d+)?)\s*(k\s*€|keur|k|m€|meur|millions?|mille|euros?|€)(?![a-z0-9])/g,
     (m, start, end) => {
       const unit = m[2] ?? '';
       const v = amount(m[1] ?? '', /euro|€/.test(unit) && !/k|m€|meur/.test(unit) ? '' : unit);
       if (v === null) return false;
-      budgets.push({ value: v, start, end });
+      if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
     },
   );
   scan(/(?<![a-z])(budget|max(imum)?|jusqu'?a|moins de|pas plus de|au plus)\s*(de\s*)?(\d{1,3}(?:[ .  ]\d{3})+|\d{5,10})(?![a-z0-9])/g, (m, start, end) => {
     const v = amount(m[4] ?? '', '');
     if (v === null) return false;
-    budgets.push({ value: v, start, end });
+    if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
   });
   if (budgets.length > 0) {
     const top = budgets.reduce((a, b) => (b.value > a.value ? b : a));
@@ -567,7 +573,7 @@ export interface PropertyReader {
   propertyForMatch(p: Property): Promise<MatchProperty>;
 }
 
-export type RechercheRefusal = { ok: false; rule: 'R16' | 'R50' | 'R420' | 'R422'; code: string };
+export type RechercheRefusal = { ok: false; rule: 'R16' | 'R50' | 'R420' | 'R422' | 'R424'; code: string };
 
 export interface RechercheLangageOptions {
   communes?: readonly string[];
@@ -711,11 +717,16 @@ export class RechercheLangage {
     const must = toBuyerSearch(search, 'must');
     const nice = toBuyerSearch(search, 'nice');
     if (search.criteria.length === 0) return this.refused(viewer, projectId, 'R420', 'aucun_critere');
+    // La fiche n'a pas d'exclusion : une commune ou un type écarté par un refus ne se range que si la liste qui reste
+    // dit ce qui est cherché ; sinon la fiche garderait ce qui a été refusé [R424].
+    const cleared = (search.excludedCommunes.length > 0 && must.communes.length === 0) || (search.excludedKinds.length > 0 && must.propertyKinds.length === 0);
+    if (cleared) return this.refused(viewer, projectId, 'R424', 'a_preciser');
     // La fiche n'a pas de préférences : les indispensables y vont, et les contraintes souhaitées s'y ajoutent pour
     // classer, sans jamais écarter un bien dans le rapprochement.
     const changes: Partial<BuyerSearch> = {};
     for (const field of PHRASE_FIELDS) {
-      if (!search.criteria.some((c) => c.field === field && (c.strength === 'must' || field === 'features'))) continue;
+      const excluded = (field === 'communes' && search.excludedCommunes.length > 0) || (field === 'propertyKinds' && search.excludedKinds.length > 0);
+      if (!excluded && !search.criteria.some((c) => c.field === field && (c.strength === 'must' || field === 'features'))) continue;
       if (LIST_FIELD.has(field)) {
         const list = field === 'features' ? [...new Set([...must.features, ...nice.features])] : (must[field] as string[]);
         (changes as Record<string, unknown>)[field] = list;
