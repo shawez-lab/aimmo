@@ -265,7 +265,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
 
 ### HX31 · Écran de vitrine en agence
-- Statut : à faire
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#402), migration `2002`, R432 à R434. Décidé, lecture prudente : seuls les biens « en vente » et disponibles, porte de diffusion relue à chaque rendu, page de référence en ligne exigée ; titre, prix, mentions et photo de la dernière version publiée, la page se relit et refuse tout chiffre sans source ; dix biens au plus pour tenir le budget d'une page publique, photos servies par le site même (`/medias/…`) ; rechargement toutes les 5 minutes qui reprend au bien en cours ; code QR vers la page de référence avec le code du bien (AT05) et `vitrine=<code de l'écran>` ; contact compté sur un seul code d'écran du réseau, l'écran et le bien seulement ; mesure du mois pour la direction, l'agent pour ses écrans. Codex 1 P0 et 2 P2 corrigés en 3 tours, dernière version sans remarque. Restent : route publique `/vitrine/<code>` servie par le site du réseau, transmission du lien d'arrivée à la captation pour `Vitrine.record`, écran de réglage et de mesure (voie 1, `app.ts`).
 - Objectif : comme Clap.show d'Apimo : un écran en vitrine qui fait défiler les biens. Jamais vu : l'écran ne montre que les biens diffusables au prix publié du moment, avec un code QR qui mène à la fiche et compte les contacts venus de la vitrine.
 - Critères : un bien vendu ou retiré disparaît de l'écran à la mise à jour suivante (test) ; le QR mène à la bonne fiche, marquée « vitrine » (test).
 
@@ -278,13 +279,18 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 
 ## Mandat et documents
 
+Voie : 2
+
+Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à partir de `2100` réservées à ce groupe. Le code vit dans `packages/core/src/mandat-questionnaire/` (HX33) et dans des fichiers neufs de `packages/core/src/documents/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX33 · Mandat par questionnaire
-- Statut : à faire
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#403), migration `2100`, R440 à R443. Décidé, lecture prudente : six questions et six clauses de liste fermée (exclusivité, rétractation hors agence ou à distance, accord de tous les vendeurs, bien loué, copropriété, honoraires à l'acquéreur), chaque référence de loi fixée dans le code, le texte de chaque clause écrit par la direction et validé par la conformité, jamais par son auteur sous un autre rôle ; clauses, réponses, version, empreinte et relevé du prix entrent dans le document même de D02 (annexe passée à `Modeles.generate`), qui passe les contrôles et se signe ; nouvelle ligne `questionnaire` des contrôles avant signature (D03) : un écart au-delà de 5 % (réglage de la direction), un avis validé ou un prix absents bloquent tant que l'agent du bien n'a pas dit les avoir montrés ; fourchette lue = celle que l'agent a validée, du dernier avis validé. Relecture forte 1 P0 et 1 P1, Codex 2 P0 corrigés, dernière version sans remarque. Test de HX28 rendu sûr (identifiant au hasard). Restent : vrais textes des clauses à faire écrire et valider (H08) ; routes, écran du questionnaire, branchement au Worker (voie 1, `app.ts`).
 - Objectif : comme Modelo et ImmoSign : des clauses choisies par questionnaire, des modèles qui s'adaptent au cas, un mandat prérempli depuis l'estimation. Jamais vu : chaque clause retenue dit quelle réponse l'a déclenchée et sur quel texte elle repose, et le prix du mandat est comparé à la fourchette validée de E09 avec l'écart affiché avant signature.
 - Critères : chaque clause renvoie à sa réponse et à son texte (test) ; un écart de prix au-delà du réglage est signalé avant signature (test) ; seul un modèle validé par une personne désignée sert à un vrai mandat (test).
 
 ### HX34 · État des risques et déclaration d'intention d'aliéner préparés
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Modelo et Hektor : commander ou produire l'état des risques depuis le dossier, préparer la déclaration d'intention d'aliéner. Jamais vu : l'état des risques est rempli depuis les données de Géorisques déjà collectées par E03, daté, et sa fin de validité à 6 mois entre dans le chemin critique de N07 ; la déclaration est préparée pour le notaire, champs repris du dossier.
 - Critères : chaque rubrique de l'état cite sa source et sa date (test) ; un état de plus de 6 mois à la date de l'acte est signalé (test) ; aucun champ de la déclaration n'est rempli sans donnée du dossier (test).
 

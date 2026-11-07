@@ -9,6 +9,7 @@
  * - mandants : les propriétaires du bien connus dans la base sont exactement le mandant du document ;
  * - identité : l'identité du mandant est vérifiée au coffre de la conformité, pièce valide ce jour-là et vérifiée depuis
  *   moins d'un an ; pour une société, son Kbis et chaque bénéficiaire effectif à 25 % ou plus (L03) [R92].
+ * - questionnaire : pour un mandat préparé par questionnaire (HX33), l'écart de prix a été montré au vendeur [R441].
  * Un seul échec suffit : le document ne peut pas être signé. Le résultat est gardé et rendu à l'agent.
  *
  * Décidé, lecture prudente : le modèle ne porte qu'un mandant ; un bien à plusieurs propriétaires ne passe pas tant
@@ -29,7 +30,7 @@ import { mandateExpired } from './conditions.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
 export { IDENTITY_PIECES, type IdentityPiece } from '../conformite/pieces-identite.ts';
-export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat'] as const;
+export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 export interface CheckLine {
@@ -162,6 +163,15 @@ export class ControlesSignature {
     lines.push(options.identitySignedAt ? await this.identityAtSignature(doc.network_id, doc.person_id, options.identitySignedAt) : await this.identity(doc.network_id, doc.person_id, at));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
+    // Un mandat préparé par questionnaire (HX33) : un écart de prix, un avis ou un prix absents doivent avoir été
+    // montrés au vendeur par l'agent du bien avant toute signature [R441].
+    // Une base d'avant la migration 2100 n'a aucun mandat par questionnaire.
+    const hasQuestionnaires = await this.db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'mandate_questionnaires'`);
+    const questionnaire = hasQuestionnaires ? await this.db.first<{ id: string; price_check: string }>('SELECT id, price_check FROM mandate_questionnaires WHERE document_id = ?', [doc.id]) : null;
+    if (questionnaire) {
+      const shown = questionnaire.price_check === 'dans_fourchette' || (await this.db.first('SELECT questionnaire_id FROM mandate_questionnaire_gap_acks WHERE questionnaire_id = ?', [questionnaire.id])) !== null;
+      lines.push({ check: 'questionnaire', ok: shown, code: shown ? 'price_checked' : `price_${questionnaire.price_check}_not_shown` });
+    }
 
     const passed = lines.every((l) => l.ok);
     const result: SignatureCheck = { documentId: doc.id, passed, lines, checkedAt: at.toISOString() };

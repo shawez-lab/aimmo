@@ -212,6 +212,7 @@ const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Su
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),
+  vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
@@ -282,6 +283,8 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
+  clause: { excluded: 'sans_client', why: 'Texte d\'une clause du questionnaire de mandat.' },
+  mandat_questionnaire: { excluded: 'sans_client', why: 'Mandat préparé par questionnaire : refus d\'accès et écart montré, seulement son identifiant ; sa préparation est au sujet de la fiche.' },
   lease_template: { excluded: 'sans_client', why: 'Modèle de bail.' },
   visit_template: { excluded: 'sans_client', why: 'Modèle de bon de visite.' },
   commune: { excluded: 'sans_client', why: 'Zone d\'une commune.' },
@@ -418,6 +421,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
+  mandate_clause_versions: out('sans_client', 'Texte d\'une clause du questionnaire de mandat, écrit par la direction.'),
+  mandate_clause_validations: out('sans_client', 'Validation d\'un texte de clause par la conformité.'),
+  mandate_price_gap_settings: out('sans_client', 'Écart de prix toléré, réglé par la direction.'),
+  mandate_questionnaires: { locate: [...by('person_id'), via('document_id', 'documents')] },
+  mandate_questionnaire_gap_acks: { locate: [via('questionnaire_id', 'mandate_questionnaires')] },
   signed_documents: { locate: [via('document_id', 'documents')] },
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
@@ -527,6 +535,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),
   agent_language_declarations: out('agent', 'Langues que l\'agent déclare parler.'),
+  // HX31 : les écrans de vitrine, sans donnée d'un client.
+  vitrine_screens: out('agent', 'Écran de vitrine du réseau ou d\'un agent.'),
+  vitrine_screen_switches: out('sans_client', 'Allumage ou extinction d\'un écran de vitrine.'),
   // HX07 : la boutique de l'agent, sans donnée d'un client.
   shop_tariffs: out('sans_client', 'Tarifs des supports imprimés, depuis le devis d\'un imprimeur.'),
   shop_orders: out('agent', 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle.'),
@@ -802,6 +813,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   public_content_posts: out('sans_client', 'Référence d\'une publication du réseau chez un réseau social : aucune personne.'),
   contact_origins: { locate: [via('inbound_id', 'inbound_messages')] },
   contact_ai_engines: { locate: [via('inbound_id', 'inbound_messages')] },
+  contact_vitrines: { locate: [via('inbound_id', 'inbound_messages')] },
 };
 
 /** Une colonne dont le nom désigne l'identifiant d'une personne de la fiche client. */
