@@ -259,7 +259,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
 
 ### HX30 · Visibilité dans les moteurs d'IA
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#400), migration `2001`, R429 à R431. Décidé, lecture prudente : quatre questions de liste fermée (prix au mètre carré, délai de vente, biens en vente, honoraires), une phrase fixe par fait sourcé et daté, relue par le code (tout nombre vient de la valeur ou de la date de la source) ; deux faits du même jour qui se contredisent ne publient rien ; `/llms.txt` sans chiffre hors référence d'un bien, sans mail ni numéro ; moteurs d'IA lus sur l'adresse exacte de la page d'où vient la personne ou un seul `utm_source` connu, jamais Google ni Bing ; mesure du mois par moteur comptée comme AT05. Codex 2 P0 corrigés, dernière version sans remarque. Restent : routes `/reponses/<commune>` et `/llms.txt`, transmission de la page d'où vient la personne par la captation, `/reponses/` dans `contentOfPath` de AT05, vraie source des chiffres (voie 1, `app.ts`).
 - Objectif : comme Hektor, Kappn et Artur'in : être cité par ChatGPT, Perplexity et Google. Jamais vu : des pages de réponses factuelles, chaque chiffre sourcé, un fichier de présentation pour les robots d'IA, et la mesure des contacts venus d'une IA dans l'origine des contacts de AT05.
 - Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
 
