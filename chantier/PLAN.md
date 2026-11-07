@@ -234,8 +234,13 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 
 ## Recherche de biens et site
 
+Voie : 2
+
+Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à partir de `2000` réservées à ce groupe. Le code vit dans `packages/core/src/recherche/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX28 · Recherche de biens en langage courant
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude · Relecture : forte · Dépend de : T01
 - Objectif : comme Hektor, Zefir et Kleio : l'acquéreur décrit ce qu'il cherche avec ses mots. Jamais vu : la phrase devient une fiche acquéreur de T01, avec ses critères indispensables et ses préférences, les communes voisines proposées et marquées comme telles, et les critères ajustés après chaque refus ; chaque résultat dit pourquoi il correspond.
 - Critères : chaque critère renvoie aux mots de la phrase (test) ; seuls des biens diffusables sont montrés (test) ; une fiche acquéreur n'est créée qu'avec l'accord de la personne (test).
 
