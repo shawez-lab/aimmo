@@ -307,8 +307,12 @@ Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à par
 
 ## Signature et recommandé
 
+Voie : 2
+
+Réservé le 2026-11-07 par la voie 2. Règles R460 à R469 et migrations à partir de `2110` réservées à ce groupe. Code dans des fichiers neufs de `packages/core/src/documents/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas.
+
 ### HX36 · Lettre recommandée électronique et notification de l'avant-contrat
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Modelo, ImmoSign, Immofacile et la FNAIM : envoyer une lettre recommandée électronique et la notification qui ouvre le délai de rétractation de l'acquéreur. Jamais vu : la date de première présentation revient seule dans l'échéancier de N02 et lance le calcul de la rétractation, sans ressaisie.
 - Critères : la date de première présentation remplit N02 (test) ; un envoi recommandé passe par le contrôle central (test) ; la preuve de dépôt est rangée au dossier (test).
 
