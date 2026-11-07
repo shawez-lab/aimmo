@@ -267,6 +267,13 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX15 : les vues du site, un compteur par contenu et par jour ; rien d'un visiteur. Le code du contenu est inscrit
       // par prudence (son nom ressemble à une donnée personnelle).
       site_page_views: ['content_id'],
+      // HX16 : la veille des diagnostics énergétiques publiés par l'ADEME ; l'adresse du logement diagnostiqué, jamais son
+      // propriétaire. Secteurs et lettres nomment l'agent ; le texte de la lettre est écrit par le code, sans nom.
+      dpe_watch_sectors: ['agent_id', 'commune', 'commune_slug', 'postcode', 'created_by'],
+      dpe_watch_stops: ['stopped_by'],
+      dpe_diagnoses: ['street_number', 'street', 'postcode', 'commune', 'commune_slug', 'lat', 'lon'],
+      dpe_alert_items: [],
+      dpe_letters: ['agent_id', 'body'],
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
@@ -1010,6 +1017,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sign_removals: ['placement_id', 'network_id', 'outcome'],
   sign_pickup_tasks: ['placement_id', 'network_id', 'due_day', 'created_at'],
   site_page_views: ['network_id', 'day', 'views'],
+  dpe_watch_sectors: ['id', 'network_id', 'created_at'],
+  dpe_watch_stops: ['sector_id', 'network_id', 'stopped_at'],
+  dpe_diagnoses: ['id', 'network_id', 'number', 'kind', 'energy_class', 'ghg_class', 'surface_m2', 'diagnosed_on', 'received_on', 'first_seen_at'],
+  dpe_alert_items: ['sector_id', 'diagnosis_id', 'network_id', 'alerted_on', 'created_at'],
+  dpe_letters: ['id', 'network_id', 'diagnosis_id', 'energy_class', 'banned_from', 'created_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
