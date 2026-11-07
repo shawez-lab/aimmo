@@ -299,6 +299,25 @@ export class RecommandeElectronique {
     }
   }
 
+  /**
+   * Une lettre que le contrôle central a remise au prestataire, sans que son envoi ait été rangé ici (une coupure entre
+   * les deux) : l'envoi est retrouvé par son sujet et la référence rendue par le prestataire, et rangé, sans renvoyer
+   * [R461, R462]. Rend vrai si la lettre a un envoi rangé.
+   */
+  private async reconcile(letter: LetterRow): Promise<boolean> {
+    if (await this.db.first("SELECT 1 FROM registered_letter_events WHERE letter_id = ? AND kind = 'envoi'", [letter.id])) return true;
+    const m = await this.db.first<{ message_id: string; occurred_at: string }>(
+      `SELECT s.message_id, m.occurred_at FROM message_subjects s JOIN messages m ON m.id = s.message_id
+       JOIN outbound_refs r ON r.message_id = s.message_id AND r.channel = 'email'
+       WHERE s.subject = ? AND s.network_id = ? ORDER BY m.occurred_at LIMIT 1`,
+      [`recommande:${letter.id}`, letter.network_id],
+    );
+    if (!m) return false;
+    await this.addEvent(letter, { kind: 'envoi', occurredAt: new Date(Date.parse(m.occurred_at)).toISOString(), proofRef: null, messageId: m.message_id, trial: false, rule: null, by: 'system:recommande' });
+    await appendEvent(this.journal, { type: 'dossier.recommande_envoye', actor: 'system:recommande', subject: `sale_file:${letter.file_id}`, data: { rule: 'R461', letter: letter.id, message: m.message_id } }, this.now);
+    return true;
+  }
+
   /** La lettre d'un dossier qui est vraiment partie, s'il y en a une. */
   private async sentLetterOf(fileId: string): Promise<boolean> {
     return (await this.db.first("SELECT 1 FROM registered_letter_events WHERE file_id = ? AND kind = 'envoi' AND trial = 0", [fileId])) !== null;
@@ -337,8 +356,12 @@ export class RecommandeElectronique {
     const g = await this.gate(viewer, letter.file_id, true);
     if (!g.ok) return g;
     if (await this.closed(letter.file_id)) return { ok: false, rule: null, code: 'closed' };
-    const events = await this.eventsOf(letterId);
-    if (events.some((e) => e.kind === 'envoi')) return { ok: false, rule: 'R461', code: 'already_sent' };
+    // Déjà remise au prestataire : rien ne repart, l'envoi est rangé s'il manquait.
+    const before = (await this.eventsOf(letterId)).some((e) => e.kind === 'envoi');
+    if (await this.reconcile(letter)) {
+      if (before) return { ok: false, rule: 'R461', code: 'already_sent' };
+      return { ok: true, value: { ...(await this.view(letterId))!, sent: true, rule: null } };
+    }
     if (await this.sentLetterOf(letter.file_id)) return { ok: false, rule: 'R461', code: 'already_sent' };
     if (!(await this.store.has(letter.document_ref))) return { ok: false, rule: 'R462', code: 'not_stored' };
     // Le texte est refait maintenant : une date de signature corrigée depuis la préparation demande une nouvelle lettre.
@@ -389,6 +412,7 @@ export class RecommandeElectronique {
     if (occurred.getTime() > this.now().getTime()) return { ok: false, rule: null, code: 'bad_time' };
     if (typeof input.proofRef !== 'string' || !PROOF_REF.test(input.proofRef)) return { ok: false, rule: 'R462', code: 'bad_ref' };
     if (!(await this.store.has(input.proofRef))) return { ok: false, rule: 'R462', code: 'not_stored' };
+    await this.reconcile(letter);
     const events = await this.eventsOf(letter.id);
     const sent = events.find((e) => e.kind === 'envoi');
     if (!sent) return { ok: false, rule: 'R461', code: 'not_sent' };

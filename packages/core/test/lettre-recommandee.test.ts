@@ -138,6 +138,11 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     expect(retried).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'ecrite', day: '2027-03-11' } } });
     expect(await u.fill(sent.id, 'premiere_presentation', '2027-03-11T10:00:00.000Z', lateRef)).toMatchObject({ ok: true, value: { schedule: { filled: true, reason: 'deja_la' } } });
     expect(await u.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM registered_letter_events WHERE kind = 'premiere_presentation'")).toEqual({ n: 1 });
+    // Prouvée par le prestataire, la date ne se ressaisit plus à la main : la fin de la rétractation ne bouge pas.
+    expect(await u.echeancier.record(u.agent, u.fileId, { kind: 'notification_acquereur', day: '2027-03-12', proofRef: PROOF })).toEqual({ ok: false, rule: 'R460', code: 'set_by_registered_letter' });
+    const kept = await u.echeancier.schedule(u.agent, u.fileId);
+    if (!kept.ok) throw new Error(kept.code);
+    expect(line(kept.value)).toMatchObject({ day: buyerWithdrawalLastDay('2027-03-11') });
   });
 
   it('[R461] la lettre ne part que par le contrôle central, au geste de l’agent du bien, avec l’accord de l’acquéreur, une seule fois', async () => {
@@ -209,6 +214,30 @@ describeWithSqlite('HX36 · lettre recommandée électronique et notification de
     u.port.noRef = true;
     const uid = await u.ready();
     expect(await u.lre.send(u.agent, uid)).toMatchObject({ ok: true, value: { sent: false, rule: 'panne', status: 'preparee' } });
+  });
+
+  it('[R461] [R462] une lettre remise au prestataire dont l’envoi n’a pas été rangé est retrouvée, sans repartir', async () => {
+    const t = await setup();
+    const id = await t.ready();
+    // Une coupure juste après la remise : l'envoi n'est pas rangé.
+    await t.db.run("CREATE TRIGGER essai_panne BEFORE INSERT ON registered_letter_events WHEN NEW.kind = 'envoi' BEGIN SELECT RAISE(ABORT, 'panne'); END");
+    await expect(t.lre.send(t.agent, id)).rejects.toThrow(/panne/);
+    expect(t.port.sent).toHaveLength(1);
+    await t.db.run('DROP TRIGGER essai_panne');
+    // La preuve de dépôt arrive : l'envoi est retrouvé par son sujet et la référence du prestataire.
+    t.setClock(new Date('2027-03-11T10:00:00.000Z'));
+    expect(await t.fill(id, 'depot', '2027-03-11T09:00:00.000Z')).toMatchObject({ ok: true, value: { letter: { status: 'deposee' } } });
+    // Le geste refait : rien ne repart.
+    expect(await t.lre.send(t.agent, id)).toEqual({ ok: false, rule: 'R461', code: 'already_sent' });
+    expect(t.port.sent).toHaveLength(1);
+    // Sans preuve reçue entre-temps, le geste refait range l'envoi retrouvé, sans renvoyer.
+    const u = await setup();
+    const uid = await u.ready();
+    await u.db.run("CREATE TRIGGER essai_panne BEFORE INSERT ON registered_letter_events WHEN NEW.kind = 'envoi' BEGIN SELECT RAISE(ABORT, 'panne'); END");
+    await expect(u.lre.send(u.agent, uid)).rejects.toThrow(/panne/);
+    await u.db.run('DROP TRIGGER essai_panne');
+    expect(await u.lre.send(u.agent, uid)).toMatchObject({ ok: true, value: { sent: true, status: 'envoyee' } });
+    expect(u.port.sent).toHaveLength(1);
   });
 
   it('[R462] chaque preuve du prestataire est rangée au dossier, dans l’ordre, une seule fois, en ajout seul', async () => {
