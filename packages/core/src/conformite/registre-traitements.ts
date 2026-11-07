@@ -233,6 +233,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_key_loans: ['holder_agent_id', 'handed_by'],
       property_key_returns: ['recorded_by'],
       property_key_retirements: ['reason', 'retired_by'],
+      // HX31 : l'écran de vitrine ; seul l'agent dont l'écran montre les biens, ou qui l'a réglé, est nommé.
+      vitrine_screens: ['agent_id', 'created_by'],
+      vitrine_screen_switches: ['by_actor'],
     },
   },
   {
@@ -731,7 +734,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Savoir quel contenu public (bien, prix, agent, quartier, simulateur, vidéo, publication, portail) a amené chaque contact, et mesurer chaque mois la part des contacts dont l\'origine est connue.',
     baseLegale: 'interet_legitime',
     personnes: ['Personnes qui contactent le réseau', 'Agents du réseau dont la page est un contenu public'],
-    donnees: ['Le contenu qui a amené un message reçu, sa sorte et la façon dont elle a été lue, en listes fermées (jamais l\'adresse de la page, un paramètre de suivi, un cookie ni un identifiant de navigateur)', 'Identifiants des contenus publics, et la référence d\'une publication du réseau chez un réseau social', 'Le moteur d\'IA par lequel le contact est arrivé, en liste fermée (jamais la question posée au moteur ni l\'adresse de la page)'],
+    donnees: ['Le contenu qui a amené un message reçu, sa sorte et la façon dont elle a été lue, en listes fermées (jamais l\'adresse de la page, un paramètre de suivi, un cookie ni un identifiant de navigateur)', 'Identifiants des contenus publics, et la référence d\'une publication du réseau chez un réseau social', 'Le moteur d\'IA par lequel le contact est arrivé, en liste fermée (jamais la question posée au moteur ni l\'adresse de la page)', 'L\'écran de vitrine et le bien dont le code QR a amené le contact (jamais l\'adresse de la page)'],
     duree: 'Celle du message reçu auquel l\'origine se rattache ; l\'identifiant d\'un contenu public, la durée du réseau.',
     destinataires: ['La direction du réseau, pour la mesure mensuelle', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
@@ -740,6 +743,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       public_content_posts: ['post_ref', 'content_id'],
       contact_origins: ['content_id', 'content_kind'],
       contact_ai_engines: ['engine'],
+      contact_vitrines: ['screen_id', 'property_id'],
     },
   },
   {
@@ -942,6 +946,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   network_news_withdrawals: ['news_id', 'withdrawn_at'],
   network_news_deliveries: ['news_id', 'network_id', 'concerned', 'shown_at'],
   property_keys: ['id', 'network_id', 'property_id', 'number', 'label', 'created_at'],
+  vitrine_screens: ['id', 'network_id', 'label', 'seconds_per_slide', 'created_at'],
+  vitrine_screen_switches: ['id', 'screen_id', 'active', 'at'],
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],
@@ -1202,6 +1208,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   public_content_posts: ['network_id', 'channel', 'created_at'],
   contact_origins: ['id', 'network_id', 'inbound_id', 'method', 'recorded_at'],
   contact_ai_engines: ['id', 'network_id', 'inbound_id', 'method', 'recorded_at'],
+  contact_vitrines: ['id', 'network_id', 'inbound_id', 'recorded_at'],
   business_safeguard_communes: ['id', 'network_id', 'in_perimeter', 'source', 'source_date', 'version', 'recorded_at'],
   business_transfer_files: ['id', 'network_id', 'property_id', 'created_at'],
   business_transfer_third_parties: ['id', 'file_id', 'network_id', 'kind', 'version', 'recorded_at'],
