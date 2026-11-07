@@ -70,6 +70,11 @@ describe('HX28 · lecture de la phrase', () => {
     expect(t3.find((c) => c.field === 'budgetMaxEur')?.value).toBe(250_000);
     expect(t3.find((c) => c.value === 'balcony')?.strength).toBe('nice');
     expect(parsePhrase(PHRASES[3]!).criteria.find((c) => c.field === 'budgetMaxEur')?.value).toBe(1_200_000);
+    const budget = (phrase: string) => parsePhrase(phrase).criteria.find((c) => c.field === 'budgetMaxEur')?.value;
+    expect(budget('maison à Dijon, budget 1.2 million')).toBe(1_200_000);
+    expect(budget('maison à Dijon, 250.5k')).toBe(250_500);
+    expect(budget('maison à Dijon, 350.000 €')).toBe(350_000);
+    expect(budget('maison à Dijon, 350 000 euros')).toBe(350_000);
     const terrain = parsePhrase(PHRASES[5]!).criteria;
     expect(terrain.map((c) => [c.field, c.value])).toEqual([
       ['propertyKinds', 'land'],
@@ -106,6 +111,7 @@ describe('HX28 · lecture de la phrase', () => {
       expect(r.criteria.map((c) => c.value), phrase).toEqual(['Dijon']);
       expect(r.ignored.map((i) => i.words), phrase).toEqual(['Chenôve']);
     }
+    expect(parsePhrase('maison, pas de jardin ni de garage, ni d’ascenseur').criteria.map((c) => c.value)).toEqual(['house']);
     expect(parsePhrase('maison à Dijon, pas de 3 chambres, sans 200 m²').criteria.map((c) => c.field)).toEqual(['propertyKinds', 'communes']);
   });
 

@@ -206,7 +206,9 @@ const DISCRIMINATING_PATTERN = new RegExp(`${B}(${DISCRIMINATING_TERMS.map(words
 
 /** Une somme lue dans la phrase, en euros, ou null. */
 function amount(raw: string, unit: string | undefined): number | null {
-  const digits = raw.replace(/[\s.  ]/g, '').replace(',', '.');
+  // « 350 000 » ou « 350.000 » : des milliers ; « 1.2 » ou « 1,2 » : une décimale.
+  const grouped = /^\d{1,3}(?:[\s.\u00a0\u202f]\d{3})+$/.test(raw);
+  const digits = grouped ? raw.replace(/[\s.\u00a0\u202f]/g, '') : raw.replace(',', '.');
   const n = Number(digits);
   if (!Number.isFinite(n)) return null;
   const u = (unit ?? '').replace(/\s/g, '');
@@ -235,7 +237,7 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
     return 'must';
   };
   const negated = (at: number): boolean =>
-    /(?<![a-z])(sans|pas de|pas d'|pas d’|pas un|pas une|pas a|pas au|pas en|pas sur|hors|hors de|aucun|aucune|ni|surtout pas|jamais)\s*$/.test(f.slice(Math.max(0, at - 14), at));
+    /(?<![a-z])(sans|pas de|pas d'|pas d’|pas un|pas une|pas a|pas au|pas en|pas sur|hors|hors de|aucun|aucune|ni|ni de|ni d'|ni d’|ni un|ni une|ni a|ni au|surtout pas|jamais)\s*$/.test(f.slice(Math.max(0, at - 14), at));
   const add = (field: PhraseField, value: string | number, start: number, end: number): void => {
     // Une négation, devant n'importe quel critère, n'en fait aucun : elle est dite une fois [R420].
     if (negated(start)) {
