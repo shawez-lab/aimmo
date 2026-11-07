@@ -352,11 +352,10 @@ export class Pige {
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
-              OR coalesce((SELECT published_at FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
-              OR coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?)`,
+              OR coalesce((SELECT published_at FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?)`,
         [
           this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
-          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, ad.publishedAt, networkId, fingerprint, ad.priceEur,
+          networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, ad.publishedAt,
         ],
       );
       added += r.changes;
@@ -405,10 +404,16 @@ export class Pige {
     );
   }
 
-  /** La dernière annonce relevée d'un bien, tous sites réunis : son prix du moment. */
+  /**
+   * Le prix du moment d'un bien : la dernière relève de chacune de ses annonces, puis celle publiée le plus récemment
+   * (à égalité, la moins chère). Une relève rejouée sans changement n'ajoute rien et ne change pas ce prix.
+   */
   private async latestPrice(networkId: string, fingerprint: string): Promise<number> {
     const r = await this.db.first<{ price_eur: number }>(
-      'SELECT price_eur FROM pige_ads WHERE network_id = ? AND fingerprint = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1',
+      `SELECT a.price_eur FROM pige_ads a
+        WHERE a.network_id = ? AND a.fingerprint = ?
+          AND a.rowid = (SELECT b.rowid FROM pige_ads b WHERE b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1)
+        ORDER BY a.published_at DESC, a.price_eur ASC LIMIT 1`,
       [networkId, fingerprint],
     );
     return r?.price_eur ?? 0;

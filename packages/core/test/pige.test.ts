@@ -135,16 +135,19 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: false, rule: 'R273' });
   });
 
-  it('[R274] le prix du moment est celui de la dernière relève, tous sites réunis', async () => {
+  it('[R274] le prix du moment est celui de l’annonce publiée le plus récemment ; une relève rejouée n’ajoute rien', async () => {
     const s = await setup();
     const a = s.ad();
-    await s.pige.ingest(s.network.id, [a]);
+    const b = s.ad({ source: 'Site B', priceEur: 252_000, publishedAt: new Date(MONDAY_10H - 1000).toISOString() });
+    expect((await s.pige.ingest(s.network.id, [a, b])).added).toBe(2);
     s.at(MONDAY_10H + DAY);
-    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', priceEur: 252_000 })]);
-    s.at(MONDAY_10H + 2 * DAY);
-    expect((await s.pige.ingest(s.network.id, [a])).added).toBe(1);
-    expect((await s.pige.ingest(s.network.id, [a])).added).toBe(0);
-    const q = await s.pige.queue(s.agentAlex);
+    expect((await s.pige.ingest(s.network.id, [a, b])).added).toBe(0);
+    expect((await s.pige.ingest(s.network.id, [a, b])).added).toBe(0);
+    let q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([252_000]);
+    // Le site A republie à son prix : la publication la plus récente l'emporte.
+    expect((await s.pige.ingest(s.network.id, [{ ...a, publishedAt: new Date(MONDAY_10H + DAY - 1000).toISOString() }])).added).toBe(1);
+    q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value.map((e) => e.priceEur)).toEqual([279_000]);
   });
 
