@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { CoproprieteUrbanisme, PUBLIC_SOURCES, TOPICS, normalize, renderSummary, type ProposedSentence, type PublicData, type SourceDocument } from '../src/documents/copropriete-urbanisme.ts';
+import { CoproprieteUrbanisme, PUBLIC_SOURCES, TOPICS, checkSentence, normalize, renderSummary, type ProposedSentence, type PublicData, type SourceDocument } from '../src/documents/copropriete-urbanisme.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -165,6 +165,15 @@ describeWithSqlite('HX35 · copropriété et urbanisme résumés', () => {
       ['2027-01-15', 12500, '2027-04-30', 'a_venir', 2],
       ['2027-01-15', null, null, 'echeance_non_trouvee', 3],
     ]);
+    // Seule la décision est jugée : une négation ailleurs dans l'extrait ne défait pas le vote ; une décision niée ou à venir n'en est pas un.
+    const page = 'Le ravalement est voté, les travaux ne sont pas commencés. Le ravalement n’a pas été voté. Le ravalement sera voté en juin. Le ravalement est soumis au vote. Le ravalement est non adopté.';
+    const one: SourceDocument[] = [{ kind: 'pv_assemblee', ref: 'dossiers/test/pv-b.pdf', meetingDay: '2027-01-15', pages: [page] }];
+    const judge = (quote: string) => {
+      const c = checkSentence({ topic: 'travaux_votes', text: 'Le ravalement est voté', document: 0, page: 1, quote }, one, [[normalize(page)]]);
+      return c.ok ? 'ok' : c.reason;
+    };
+    expect(judge('Le ravalement est voté, les travaux ne sont pas commencés')).toBe('ok');
+    for (const q of ['Le ravalement n’a pas été voté', 'Le ravalement sera voté en juin', 'Le ravalement est soumis au vote', 'Le ravalement est non adopté']) expect(judge(q)).toBe('vote_absent_de_l_extrait');
     // Les travaux à l'étude ne sont pas des travaux votés.
     expect(r.value.worksToNotify.some((w) => w.text.includes('ascenseur'))).toBe(false);
     // Lu le 15 mai 2027 : la toiture, échue le 30 avril, n'est plus à venir.

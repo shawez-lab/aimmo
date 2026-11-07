@@ -215,10 +215,14 @@ function sentenceMatchesQuote(text: string, quote: string): boolean {
 }
 
 /** Une décision acquise se lit dans l'extrait de travaux votés : voté, adopté, approuvé, ou l'assemblée décide. */
-const VOTE = /(?<![\p{L}])(?:votee?s?|adoptee?s?|approuvee?s?|decide)(?![\p{L}])/u;
-/** Une décision à venir, refusée ou niée n'est pas un vote : à voter, non adopté, rejeté, n'est pas voté... */
-const NOT_VOTED = /(?<![\p{L}])(?:(?:ne|n')\s*\p{L}+\s+(?:pas|point|jamais)|pas\s+(?:encore\s+)?(?:vot|adopt|approuv)|non[\s-]+(?:vot|adopt|approuv)|rejet|refus|ajourn|a\s+voter|soumis\s+au\s+vote|mis\s+au\s+vote\s+lors|prochaine\s+assemblee|sera\s+(?:vot|soumis|present))/u;
-const isVoted = (quote: string) => VOTE.test(quote) && !NOT_VOTED.test(quote);
+const VOTE = /(?<![\p{L}])(?:votee?s?|adoptee?s?|approuvee?s?|decide)(?![\p{L}])/gu;
+/**
+ * Ce qui, juste avant le mot du vote, le nie ou le remet à plus tard : « n'est pas adopté », « n'a pas été voté »,
+ * « non adopté », « pas encore voté », « sera voté », ou le nom « le vote », « au vote ». Seule la décision elle-même
+ * est jugée : une négation ailleurs dans l'extrait (« les travaux ne sont pas commencés ») ne compte pas.
+ */
+const NOT_BEFORE = /(?:(?<![\p{L}])(?:ne|n')\s*\p{L}+\s+(?:pas|point|jamais)(?:\s+(?:encore|ete))*|(?<![\p{L}])(?:pas|jamais)(?:\s+(?:encore|ete))*|(?<![\p{L}])non|(?<![\p{L}])(?:sera|seront|serait|seraient|sont\s+a|est\s+a)(?:\s+(?:encore|ete))*|(?<![\p{L}])(?:le|au|du|un|en|son|leur))[\s-]+$/u;
+const isVoted = (quote: string) => [...quote.matchAll(VOTE)].some((m) => !NOT_BEFORE.test(quote.slice(Math.max(0, m.index - 40), m.index)));
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
