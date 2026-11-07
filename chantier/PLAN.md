@@ -265,7 +265,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque chiffre publié renvoie à sa source (test) ; un contact venu d'un moteur d'IA est classé comme tel (test).
 
 ### HX31 · Écran de vitrine en agence
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Clap.show d'Apimo : un écran en vitrine qui fait défiler les biens. Jamais vu : l'écran ne montre que les biens diffusables au prix publié du moment, avec un code QR qui mène à la fiche et compte les contacts venus de la vitrine.
 - Critères : un bien vendu ou retiré disparaît de l'écran à la mise à jour suivante (test) ; le QR mène à la bonne fiche, marquée « vitrine » (test).
 
