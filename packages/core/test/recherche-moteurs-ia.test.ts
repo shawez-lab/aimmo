@@ -220,6 +220,8 @@ describe('HX30 · fichier de présentation pour les robots d\'IA', () => {
       { kind: 'bien', path: '/biens/bien-3', title: 'Écrire à camille@exemple.fr' },
       { kind: 'prix', path: '/prix/dijon?x=1', title: 'Prix' },
       { kind: 'prix', path: '/prix/dijon', title: '[lien](javascript:alert)' },
+      { kind: 'prix', path: '/prix/dijon/centre', title: 'Dijon centre : 2950 € le mètre carré' },
+      { kind: 'bien', path: '/biens/bien-4', title: 'Maison REF-4 à 199 000 €' },
       { kind: 'bien', path: '/biens/bien-1', title: 'Maison REF-1' },
     ]);
     if (!r.ok) throw new Error('fichier attendu');
@@ -232,6 +234,8 @@ describe('HX30 · fichier de présentation pour les robots d\'IA', () => {
       '/biens/bien-3': 'donnee_personnelle',
       '/prix/dijon?x=1': 'chemin',
       '/prix/dijon': 'titre',
+      '/prix/dijon/centre': 'chiffre',
+      '/biens/bien-4': 'chiffre',
     });
     expect(looksPersonal('+33 6 12 34 56 78')).toBe(true);
     expect(looksPersonal('Maison REF-2027')).toBe(false);
@@ -241,6 +245,7 @@ describe('HX30 · fichier de présentation pour les robots d\'IA', () => {
     expect(llmsTxt({ ...site, baseUrl: 'http://reseau.exemple.fr/' }, entries)).toEqual({ ok: false, code: 'bad_site' });
     expect(llmsTxt({ ...site, baseUrl: 'https://reseau.exemple.fr/espace' }, entries)).toEqual({ ok: false, code: 'bad_site' });
     expect(llmsTxt({ ...site, name: '' }, entries)).toEqual({ ok: false, code: 'bad_name' });
+    expect(llmsTxt({ ...site, name: 'Réseau Exemple, 300 ventes' }, entries)).toEqual({ ok: false, code: 'bad_name' });
     expect(llmsTxt({ ...site, summary: 'Le premier réseau avec 300 ventes par an.' }, entries)).toEqual({ ok: false, code: 'bad_summary' });
     expect(llmsTxt({ ...site, summary: 'Écrivez à contact@exemple.fr' }, entries)).toEqual({ ok: false, code: 'bad_summary' });
   });
@@ -260,6 +265,9 @@ describe('HX30 · le moteur d\'IA d\'où vient un contact', () => {
     expect(aiEngineOf({ link: 'https://reseau.exemple.fr/prix/dijon?utm_source=chatgpt.com' })).toEqual({ engine: 'chatgpt', method: 'utm' });
     expect(aiEngineOf({ landingPage: 'https://reseau.exemple.fr/biens/bien-1?utm_source=Perplexity' })).toEqual({ engine: 'perplexity', method: 'utm' });
     expect(aiEngineOf({ link: 'https://reseau.exemple.fr/?utm_source=newsletter' })).toBeNull();
+    // Une propriété héritée n'est jamais un moteur de la liste.
+    for (const v of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) expect(aiEngineOf({ link: `https://reseau.exemple.fr/?utm_source=${v}` })).toBeNull();
+    for (const h of ['constructor', '__proto__']) expect(aiEngineOf({ referrer: `https://${h}/` })).toBeNull();
     // Deux utm_source, ou deux moteurs différents : un doute, rien n'est deviné.
     expect(aiEngineOf({ link: 'https://reseau.exemple.fr/?utm_source=chatgpt.com&utm_source=claude.ai' })).toBeNull();
     expect(aiEngineOf({ referrer: 'https://claude.ai/', link: 'https://reseau.exemple.fr/?utm_source=chatgpt.com' })).toBeNull();
@@ -311,6 +319,7 @@ describeWithSqlite('HX30 · contacts venus d\'un moteur d\'IA', () => {
     expect(await moteurs.record('net-1', b, { referrer: 'https://www.google.com/' })).toEqual({ ok: true, engine: null, already: false });
     expect(await moteurs.stored(b)).toBeNull();
     expect(await moteurs.record('net-2', a, signals)).toEqual({ ok: false, code: 'unknown_inbound' });
+    expect(await moteurs.record('net-1', b, { link: 'https://reseau.exemple.fr/?utm_source=constructor' })).toEqual({ ok: true, engine: null, already: false });
   });
 
   it('un moteur rangé ne change pas et ne s\'efface pas [R17]', async () => {

@@ -9,7 +9,8 @@
  *    écarter la réponse [R429]. La page porte aussi ses données structurées (FAQPage) avec la citation de chaque source,
  *    pour que ChatGPT, Perplexity ou Google reprennent le chiffre avec sa source.
  * 2. Le fichier de présentation pour les robots d'IA (`/llms.txt`) : le nom du réseau, une phrase sans chiffre, et la
- *    liste des pages publiques de liste fermée ; jamais une page privée, une adresse mail ni un numéro [R431].
+ *    liste des pages publiques de liste fermée, sans chiffre hors la référence d'un bien ; jamais une page privée, une
+ *    adresse mail ni un numéro [R429, R431].
  * 3. Le moteur d'IA par lequel un contact est arrivé, lu sur la page d'où il vient ou sur le paramètre `utm_source` que
  *    ces moteurs ajoutent à leurs liens, en liste fermée ; deux moteurs différents, c'est un doute : rien n'est rangé.
  *    Seuls le moteur et la façon de le lire sont gardés [R430, R156]. La mesure du mois, comptée comme celle de AT05,
@@ -272,7 +273,7 @@ export interface LlmsEntry {
   title: string;
 }
 
-export type LlmsRejection = 'sorte' | 'chemin' | 'titre' | 'donnee_personnelle';
+export type LlmsRejection = 'sorte' | 'chemin' | 'titre' | 'chiffre' | 'donnee_personnelle';
 
 export type LlmsResult =
   | { ok: true; text: string; excluded: { path: string; reason: LlmsRejection }[] }
@@ -306,6 +307,8 @@ export function llmsPathFits(kind: LlmsEntryKind, path: string): boolean {
   }
 }
 
+/** Une référence de bien du réseau, telle qu'elle est publiée. */
+const PROPERTY_REF = /\b[A-Z]{2,}(?:-[A-Z0-9]+)+\b/g;
 const MAIL = /[^\s@]+@[^\s@]+/;
 const PHONE = /(?:\+|\b0)\d(?:[\s.-]?\d){7,}/;
 
@@ -331,7 +334,7 @@ export function llmsTxt(site: { name: unknown; baseUrl: unknown; summary: unknow
   if (!base || new URL(base).pathname !== '/') return { ok: false, code: 'bad_site' };
   const origin = new URL(base).origin;
   const name = cleanLine(site.name, 80);
-  if (!name || looksPersonal(name)) return { ok: false, code: 'bad_name' };
+  if (!name || looksPersonal(name) || numbersIn(name).length > 0) return { ok: false, code: 'bad_name' };
   const summary = cleanLine(site.summary, 300);
   if (!summary || looksPersonal(summary) || numbersIn(summary).length > 0) return { ok: false, code: 'bad_summary' };
   const excluded: { path: string; reason: LlmsRejection }[] = [];
@@ -354,6 +357,11 @@ export function llmsTxt(site: { name: unknown; baseUrl: unknown; summary: unknow
     const title = cleanLine(e.title, 120);
     if (!title) {
       excluded.push({ path, reason: 'titre' });
+      continue;
+    }
+    // Aucun chiffre dans un titre, hors la référence d'un bien (« REF-1 »), qui n'est pas un chiffre publié [R429].
+    if (numbersIn(e.kind === 'bien' ? title.replace(PROPERTY_REF, '') : title).length > 0) {
+      excluded.push({ path, reason: 'chiffre' });
       continue;
     }
     if (seen.has(path)) continue;
@@ -421,6 +429,13 @@ export interface AiEngineSignals {
   referrer?: unknown;
 }
 
+/** Le moteur d'une liste, seulement s'il y est écrit : jamais une propriété héritée (`constructor`, `__proto__`) [R430]. */
+function ownEngine(map: Readonly<Record<string, AiEngine>>, key: string): AiEngine | null {
+  if (!Object.hasOwn(map, key)) return null;
+  const engine = map[key];
+  return typeof engine === 'string' && (AI_ENGINES as readonly string[]).includes(engine) ? engine : null;
+}
+
 function httpsUrl(value: unknown): URL | null {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2000) return null;
   try {
@@ -441,7 +456,7 @@ export function aiEngineOf(signals: AiEngineSignals): { engine: AiEngine; method
   const found: { engine: AiEngine; method: AiEngineMethod }[] = [];
   const ref = httpsUrl(signals.referrer);
   if (ref) {
-    const engine = ENGINE_HOSTS[ref.hostname.toLowerCase()];
+    const engine = ownEngine(ENGINE_HOSTS, ref.hostname.toLowerCase());
     if (engine) found.push({ engine, method: 'referent' });
   }
   for (const value of [signals.link, signals.landingPage]) {
@@ -450,7 +465,7 @@ export function aiEngineOf(signals: AiEngineSignals): { engine: AiEngine; method
     const sources = url.searchParams.getAll('utm_source');
     if (sources.length > 1) return null;
     if (sources.length === 0) continue;
-    const engine = ENGINE_UTM[sources[0]!.trim().toLowerCase()];
+    const engine = ownEngine(ENGINE_UTM, sources[0]!.trim().toLowerCase());
     if (engine) found.push({ engine, method: 'utm' });
   }
   if (found.length === 0) return null;
