@@ -251,6 +251,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 
 ### HX29 · Points d'intérêt et trajets autour du bien
 - Statut : en cours (voie 2)
+- Qui : Claude · Relecture : normale · Dépend de : HX28
 - Objectif : comme Apimo : écoles, commerces, transports autour du bien. Jamais vu : les temps de trajet à pied, en transport et en voiture vers ce qui compte pour cet acquéreur, avec la source et la date de chaque donnée, sans jamais révéler l'adresse exacte du bien.
 - Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
 
