@@ -508,8 +508,11 @@ export class Notifications {
   }
 
   private inQuiet(at: Date, s: NotificationSettings): boolean {
+    const local = localTime(at, this.timeZone);
+    // Le dimanche entier est calme, quels que soient les réglages [R413].
+    if (local.weekday === 7) return true;
     if (s.quietStart === s.quietEnd) return false;
-    const m = localTime(at, this.timeZone).minutes;
+    const m = local.minutes;
     return s.quietStart < s.quietEnd ? m >= s.quietStart && m < s.quietEnd : m >= s.quietStart || m < s.quietEnd;
   }
 

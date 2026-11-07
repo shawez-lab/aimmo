@@ -398,4 +398,19 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(await t.notifications.flush()).toEqual([]);
     expect(t.sent.map((x) => x.payload.body)).toEqual(['Un contact chaud à rappeler maintenant']);
   });
+  it('[R413] le dimanche entier est calme : seule passe une personne qui vient d’écrire', async () => {
+    const t = await setup();
+    expect(await t.notifications.setSettings(t.asAgent(t.alex.id), { quietStart: 0, quietEnd: 0 })).toMatchObject({ ok: true });
+    const noa = await t.person('Noa');
+    const sacha = await t.person('Sacha');
+    // Dimanche 17 octobre 2027, 10 h à Paris.
+    t.setClock(Date.parse('2027-10-17T08:00:00.000Z'));
+    await t.notifications.notify({ agentId: t.alex.id, personId: sacha, kind: 'tache', sourceKey: 'tache:1' });
+    await t.notifications.inbound(await t.message(noa));
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([['haute', 1]]);
+    expect(t.sent.map((x) => x.payload.body)).toEqual(['Un message de client']);
+    // Lundi matin, la tâche part.
+    t.setClock(Date.parse('2027-10-18T07:00:00.000Z'));
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.count])).toEqual([['normale', 1]]);
+  });
 });
