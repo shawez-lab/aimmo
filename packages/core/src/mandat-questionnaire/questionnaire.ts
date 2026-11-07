@@ -285,31 +285,6 @@ export class MandatQuestionnaire {
     if (typeof rawInputs !== 'object' || rawInputs === null || Object.keys(rawInputs).some((k) => k !== 'honoraires.montant' && k !== 'mandat.duree_mois')) return { ok: false, rule: null, code: 'bad_input' };
     const kind: DocumentKind = answers.exclusivite === 'oui' ? 'mandat_vente_exclusif' : 'mandat_vente_simple';
 
-    // Les droits, le préremplissage et le modèle sont ceux de D02 : la génération lit la fiche et le bien sous droits [R16].
-    const generated = await this.modeles.generate(viewer, { kind, personId: request.personId, propertyId: request.propertyId, inputs: { ...rawInputs, 'honoraires.charge': answers.honoraires } });
-    if (!generated.ok) return generated;
-    const doc = generated.document;
-    const meta = await this.db.first<{ agent_id: string; person_id: string; property_id: string; facts: string }>('SELECT agent_id, person_id, property_id, facts FROM documents WHERE id = ?', [doc.id]);
-    const facts = JSON.parse(meta!.facts) as { priceEur: number | null };
-
-    // Le prix comparé au dernier avis validé du bien, à sa fourchette telle que l'agent l'a validée [R441].
-    const maxGapBps = await this.maxGap(viewer.networkId);
-    const valuation = await this.db.first<{ id: string; low: number; high: number; validated_at: string }>(
-      `SELECT id, COALESCE(agent_low, computed_low) AS low, COALESCE(agent_high, computed_high) AS high, validated_at FROM valuation_reports
-       WHERE network_id = ? AND property_id = ? AND status = 'validated' ORDER BY validated_at DESC, rowid DESC LIMIT 1`,
-      [viewer.networkId, meta!.property_id],
-    );
-    const priceEur = facts.priceEur;
-    let price: PreparedMandate['price'];
-    if (priceEur === null) price = { priceEur: null, low: null, high: null, gapBps: null, maxGapBps, check: 'sans_prix', valuationId: null };
-    else if (!valuation) price = { priceEur, low: null, high: null, gapBps: null, maxGapBps, check: 'sans_avis', valuationId: null };
-    else {
-      const low = Number(valuation.low);
-      const high = Number(valuation.high);
-      const gapBps = priceGapBps(priceEur, low, high);
-      price = { priceEur, low, high, gapBps, maxGapBps, check: gapBps > maxGapBps ? 'ecart' : 'dans_fourchette', valuationId: valuation.id };
-    }
-
     // Les clauses retenues, chacune avec sa réponse, son texte de loi et la version de son texte [R440].
     const clauses: (RetainedClause & { body: string | null })[] = [];
     for (const hit of clausesFor(answers)) {
@@ -325,33 +300,63 @@ export class MandatQuestionnaire {
         body: row?.body ?? null,
       });
     }
-    const missing = [...doc.missing.map((f) => `champ:${f}`), ...clauses.filter((c) => c.status === 'manquante').map((c) => `clause:${c.code}`)];
-    // Un vrai mandat : le modèle et chaque clause validés par la conformité, et rien qui manque [R442, R40].
-    const mode: 'essai' | 'reel' = doc.mode === 'reel' && clauses.every((c) => c.status === 'valide') && missing.length === 0 ? 'reel' : 'essai';
+    const maxGapBps = await this.maxGap(viewer.networkId);
 
-    const trialBanner = '<p class="essai">DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.</p>\n';
-    let base = doc.content;
-    // Le modèle validé mais une clause d'essai : le mandat entier devient d'essai, bandeau compris.
-    if (mode === 'essai' && !base.includes(trialBanner)) base = base.replace('<body>\n', `<body>\n${trialBanner}`);
-    const section = [renderClauses(clauses), renderPriceCheck(price, valuation?.validated_at ?? null)].filter((s) => s !== '').join('\n');
-    // Le style du questionnaire s'ajoute à la feuille du document, dans les jetons du système de design [R201].
-    const style = '.pourquoi{font-size:.85em;color:var(--doux);margin-top:-.4em}.titre-clauses{margin-top:1.4em}';
-    const content = base.replace('</style>', `${style}</style>`).replace('\n</body>', `\n${section}\n</body>`);
-    const contentHash = await sha256(content);
+    // Les droits, le préremplissage et le modèle sont ceux de D02 : la génération lit la fiche et le bien sous droits
+    // [R16]. Les clauses et le relevé du prix entrent dans le document même : c'est lui qui passe les contrôles et se
+    // signe, et une clause d'essai ou sans texte le rend d'essai ou incomplet [R442].
+    let price: PreparedMandate['price'] | null = null;
+    const generated = await this.modeles.generate(
+      viewer,
+      { kind, personId: request.personId, propertyId: request.propertyId, inputs: { ...rawInputs, 'honoraires.charge': answers.honoraires } },
+      async ({ priceEur }) => {
+        // Le prix lu dans la base, comparé au dernier avis validé du bien, à sa fourchette telle que l'agent l'a validée [R441].
+        const valuation = await this.db.first<{ id: string; low: number; high: number; validated_at: string }>(
+          `SELECT id, COALESCE(agent_low, computed_low) AS low, COALESCE(agent_high, computed_high) AS high, validated_at FROM valuation_reports
+           WHERE network_id = ? AND property_id = ? AND status = 'validated' ORDER BY validated_at DESC, rowid DESC LIMIT 1`,
+          [viewer.networkId, request.propertyId],
+        );
+        if (priceEur === null) price = { priceEur: null, low: null, high: null, gapBps: null, maxGapBps, check: 'sans_prix', valuationId: null };
+        else if (!valuation) price = { priceEur, low: null, high: null, gapBps: null, maxGapBps, check: 'sans_avis', valuationId: null };
+        else {
+          const low = Number(valuation.low);
+          const high = Number(valuation.high);
+          const gapBps = priceGapBps(priceEur, low, high);
+          price = { priceEur, low, high, gapBps, maxGapBps, check: gapBps > maxGapBps ? 'ecart' : 'dans_fourchette', valuationId: valuation.id };
+        }
+        const html = [renderClauses(clauses), renderPriceCheck(price, valuation?.validated_at ?? null)].filter((x) => x !== '').join('\n');
+        return {
+          html,
+          // Le style du questionnaire s'ajoute à la feuille du document, dans les jetons du système de design [R201].
+          css: '.pourquoi{font-size:.85em;color:var(--doux);margin-top:-.4em}.titre-clauses{margin-top:1.4em}',
+          missing: clauses.filter((c) => c.status === 'manquante').map((c) => `clause:${c.code}`),
+          trial: clauses.some((c) => c.status !== 'valide'),
+        };
+      },
+    );
+    if (!generated.ok) return generated;
+    const doc = generated.document;
+    const meta = (await this.db.first<{ agent_id: string; person_id: string; property_id: string }>('SELECT agent_id, person_id, property_id FROM documents WHERE id = ?', [doc.id]))!;
+    const finalPrice = price as PreparedMandate['price'] | null;
+    if (!finalPrice) throw new Error('questionnaire_annex_not_called');
+    const missing = doc.missing.map((f) => (f.startsWith('clause:') ? f : `champ:${f}`));
+    const mode = doc.mode;
+    const content = doc.content;
+    const contentHash = doc.contentHash;
     const id = this.newId();
     const at = this.now().toISOString();
     const stored = clauses.map(({ body: _body, ...c }) => c);
     await this.db.run(
       `INSERT INTO mandate_questionnaires (id, network_id, agent_id, person_id, property_id, document_id, valuation_id, answers, clauses, price_eur, range_low, range_high, gap_bps, max_gap_bps, price_check, mode, missing, content, content_hash, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, meta!.agent_id, meta!.person_id, meta!.property_id, doc.id, price.valuationId, JSON.stringify(answers), JSON.stringify(stored), price.priceEur, price.low, price.high, price.gapBps, maxGapBps, price.check, mode, JSON.stringify(missing), content, contentHash, this.actor(viewer), at],
+      [id, viewer.networkId, meta.agent_id, meta.person_id, meta.property_id, doc.id, finalPrice.valuationId, JSON.stringify(answers), JSON.stringify(stored), finalPrice.priceEur, finalPrice.low, finalPrice.high, finalPrice.gapBps, maxGapBps, finalPrice.check, mode, JSON.stringify(missing), content, contentHash, this.actor(viewer), at],
     );
     await appendEvent(
       this.journal,
-      { type: 'mandat_questionnaire.prepare', actor: this.actor(viewer), subject: `person:${meta!.person_id}`, data: { questionnaire: id, document: doc.id, mode, check: price.check, clauses: stored.length, missing: missing.length } },
+      { type: 'mandat_questionnaire.prepare', actor: this.actor(viewer), subject: `person:${meta.person_id}`, data: { questionnaire: id, document: doc.id, mode, check: finalPrice.check, clauses: stored.length, missing: missing.length } },
       this.now,
     );
-    return { ok: true, mandate: { id, documentId: doc.id, kind, mode, missing, clauses: stored, price, content, contentHash, createdAt: at } };
+    return { ok: true, mandate: { id, documentId: doc.id, kind, mode, missing, clauses: stored, price: finalPrice, content, contentHash, createdAt: at } };
   }
 
   /** L'agent du bien dit avoir montré l'écart de prix au vendeur ; une seule fois [R441]. */

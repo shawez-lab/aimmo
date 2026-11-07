@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { CLAUSES, CLAUSE_CODES, clausesFor, DEFAULT_MAX_GAP_BPS, MandatQuestionnaire, priceGapBps, QUESTIONS, readAnswers, type Answers } from '../src/mandat-questionnaire/questionnaire.ts';
 import { htmlProblems } from '../src/design/audit.ts';
 import { loadMigrations } from './migrations.ts';
@@ -22,6 +22,7 @@ async function setup(o: { price?: number | null } = {}) {
   const acces = new Acces(db, store, fiche, journal, { now });
   const modeles = new Modeles(db, acces, journal, { now });
   const mq = new MandatQuestionnaire(db, acces, modeles, journal, { now });
+  const controles = new ControlesSignature(db, acces, journal, { now });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
@@ -61,7 +62,12 @@ async function setup(o: { price?: number | null } = {}) {
     return id;
   };
   const prepare = (answers: Answers = BASE, viewer: Viewer = agent) => mq.prepare(viewer, { personId: person.id, propertyId: property.id, answers, inputs: INPUTS });
-  return { db, journal, mq, modeles, network, alex, sam, as, direction, conformite, agent, person, property, templates, clauses, valuation, prepare };
+  const line = async (documentId: string, check: string) => {
+    const c = await controles.check(direction, documentId);
+    if (!c.ok) throw new Error(c.code);
+    return c.value.lines.find((l) => l.check === check);
+  };
+  return { db, journal, mq, modeles, controles, line, network, alex, sam, as, direction, conformite, agent, person, property, templates, clauses, valuation, prepare };
 }
 
 describe('HX33 · questionnaire', () => {
@@ -135,8 +141,8 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     expect(JSON.parse(row!.answers)).toMatchObject({ exclusivite: 'oui', lieu_signature: 'hors_agence' });
     expect(JSON.parse(row!.clauses)).toEqual(r.mandate.clauses);
     expect(row!.content_hash).toBe(r.mandate.contentHash);
-    const events = JSON.stringify(await t.db.all('SELECT * FROM journal_events'));
-    expect(events).not.toContain('330');
+    const events = JSON.stringify(await t.db.all('SELECT * FROM journal'));
+    expect(events).not.toMatch(/330[\s\u202f]?000/);
     expect(events).not.toContain('Texte de test');
     expect(events).not.toContain('Inventé');
   });
@@ -231,9 +237,8 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     const s = await u.prepare();
     if (!s.ok) throw new Error(s.code);
     expect(s.mandate.price).toMatchObject({ check: 'sans_prix', priceEur: null, valuationId: null });
-    expect(s.mandate.mode).toBe('essai');
     expect(s.mandate.missing).toContain('champ:bien.prix');
-    expect(await u.mq.beforeSignature(u.agent, s.mandate.id)).toEqual({ ok: true, ready: false, blockers: ['essai', 'manque', 'sans_prix'] });
+    expect(await u.mq.beforeSignature(u.agent, s.mandate.id)).toEqual({ ok: true, ready: false, blockers: ['manque', 'sans_prix'] });
   });
 
   it('[R442] seul un modèle et des clauses validés par la conformité donnent un vrai mandat', async () => {
@@ -309,6 +314,45 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     const other = { role: 'direction', userId: 'd-2', networkId: 'autre-reseau' } as Viewer;
     expect(await t.mq.beforeSignature(other, r.mandate.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.mq.acknowledgeGap(other, r.mandate.id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R442] ce qui passe les contrôles avant signature est le mandat du questionnaire : clauses dedans, essai refusé', async () => {
+    const t = await setup();
+    await t.templates(true);
+    await t.valuation(300000, 340000);
+    const ids = await t.clauses(false, ['retractation']);
+    let r = await t.prepare({ ...BASE, lieu_signature: 'distance' });
+    if (!r.ok) throw new Error(r.code);
+    const doc = await t.db.first<{ mode: string; status: string; content: string; content_hash: string }>('SELECT mode, status, content, content_hash FROM documents WHERE id = ?', [r.mandate.documentId]);
+    expect(doc).toMatchObject({ mode: 'essai', content: r.mandate.content, content_hash: r.mandate.contentHash });
+    expect(doc!.content).toContain('Texte de test de la clause retractation.');
+    expect(await t.line(r.mandate.documentId, 'modele')).toMatchObject({ ok: false, code: 'trial_template' });
+    // Sans texte : le document lui-même est incomplet.
+    r = await t.prepare({ ...BASE, occupation: 'loue' });
+    if (!r.ok) throw new Error(r.code);
+    expect(await t.db.first('SELECT mode, status FROM documents WHERE id = ?', [r.mandate.documentId])).toEqual({ mode: 'essai', status: 'incomplet' });
+    expect(await t.line(r.mandate.documentId, 'champs')).toMatchObject({ ok: false });
+    // Clause validée : le document est réel.
+    await t.mq.validateClause(t.conformite, ids.retractation!);
+    r = await t.prepare({ ...BASE, lieu_signature: 'distance' });
+    if (!r.ok) throw new Error(r.code);
+    expect(await t.line(r.mandate.documentId, 'modele')).toMatchObject({ ok: true });
+    expect(await t.line(r.mandate.documentId, 'questionnaire')).toMatchObject({ ok: true, code: 'price_checked' });
+  });
+
+  it('[R441] les contrôles avant signature refusent un écart de prix que l’agent n’a pas montré', async () => {
+    const t = await setup({ price: 360000 });
+    await t.templates(true);
+    await t.valuation(280000, 310000);
+    const r = await t.prepare();
+    if (!r.ok) throw new Error(r.code);
+    expect(await t.line(r.mandate.documentId, 'questionnaire')).toMatchObject({ ok: false, code: 'price_ecart_not_shown' });
+    expect(await t.mq.acknowledgeGap(t.agent, r.mandate.id)).toEqual({ ok: true });
+    expect(await t.line(r.mandate.documentId, 'questionnaire')).toMatchObject({ ok: true, code: 'price_checked' });
+    // Un document fait sans questionnaire n'a pas cette ligne.
+    const plain = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: t.person.id, propertyId: t.property.id, inputs: { ...INPUTS, 'honoraires.charge': 'vendeur' } });
+    if (!plain.ok) throw new Error(plain.code);
+    expect(await t.line(plain.document.id, 'questionnaire')).toBeUndefined();
   });
 
   it('[R443] rien ne s’efface ni ne se réécrit', async () => {

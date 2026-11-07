@@ -66,8 +66,7 @@ CREATE TABLE IF NOT EXISTS mandate_questionnaires (
   CHECK ((price_check = 'sans_prix') = (price_eur IS NULL)),
   CHECK (price_check NOT IN ('dans_fourchette', 'ecart') OR (range_low IS NOT NULL AND gap_bps IS NOT NULL AND price_eur IS NOT NULL)),
   CHECK (price_check <> 'dans_fourchette' OR gap_bps <= max_gap_bps),
-  CHECK (price_check <> 'ecart' OR gap_bps > max_gap_bps),
-  CHECK (mode = 'essai' OR missing = '[]')
+  CHECK (price_check <> 'ecart' OR gap_bps > max_gap_bps)
 );
 CREATE INDEX IF NOT EXISTS mandate_questionnaires_property ON mandate_questionnaires (network_id, property_id, created_at);
 CREATE TRIGGER IF NOT EXISTS mandate_questionnaires_garde BEFORE DELETE ON mandate_questionnaires BEGIN SELECT RAISE(ABORT, 'mandate_questionnaires : rien ne s''efface'); END;
