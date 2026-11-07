@@ -292,7 +292,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R440 à R459 et migrations à par
 - Critères : chaque clause renvoie à sa réponse et à son texte (test) ; un écart de prix au-delà du réglage est signalé avant signature (test) ; seul un modèle validé par une personne désignée sert à un vrai mandat (test).
 
 ### HX34 · État des risques et déclaration d'intention d'aliéner préparés
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#404), migration `2101`, R444 à R447. Décidé, lecture prudente : état rempli depuis la collecte de E03 (adresse, parcelle, risques de Géorisques), chaque rubrique avec sa source et son jour à Paris, date de l'état = donnée la plus ancienne ; sinistres indemnisés laissés au vendeur ; le dernier état complet se range comme pièce `etat_risques` et entre ainsi dans le chemin critique de N07 ; déclaration d'intention d'aliéner recalculée, chaque champ avec son origine, noms des parties et honoraires laissés au notaire. Codex 1 P1 et 1 P2 corrigés. Restent : routes, écran, rendu PDF et branchement à la collecte dans le Worker (voie 1, `app.ts`).
 - Objectif : comme Modelo et Hektor : commander ou produire l'état des risques depuis le dossier, préparer la déclaration d'intention d'aliéner. Jamais vu : l'état des risques est rempli depuis les données de Géorisques déjà collectées par E03, daté, et sa fin de validité à 6 mois entre dans le chemin critique de N07 ; la déclaration est préparée pour le notaire, champs repris du dossier.
 - Critères : chaque rubrique de l'état cite sa source et sa date (test) ; un état de plus de 6 mois à la date de l'acte est signalé (test) ; aucun champ de la déclaration n'est rempli sans donnée du dossier (test).
 
