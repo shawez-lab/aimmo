@@ -176,6 +176,39 @@ export class StatistiquesSite {
     return stats;
   }
 
+  /**
+   * Les communes qui ont déjà la page de cette sorte, lues dans les sources mêmes des pages : la dernière version complète
+   * des prix regroupés (une case publiée de la commune, ni la commune ni le quartier retirés) ou une page de quartier
+   * validée ; et, par prudence, tout contenu déjà connu de AT05 [R287].
+   */
+  private async coveredCommunes(networkId: string, kind: WrittenKind): Promise<Set<string>> {
+    const slugs = new Set<string>();
+    const known = await this.db.all<{ ref: string }>('SELECT ref FROM public_contents WHERE network_id = ? AND kind = ?', [networkId, kind]);
+    for (const k of known) slugs.add(k.ref.split('/')[0]!);
+    if (kind === 'prix') {
+      const version = await this.db.first<{ id: string }>("SELECT id FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, rowid DESC LIMIT 1", [networkId]);
+      if (version) {
+        const rows = await this.db.all<{ slug: string }>(
+          `SELECT DISTINCT coalesce(p.slug, z.slug) AS slug FROM price_cells c JOIN price_zones z ON z.id = c.area_id LEFT JOIN price_zones p ON p.id = z.parent_id
+            WHERE c.version_id = ? AND c.status IN ('publiee', 'reprise')
+              AND z.id NOT IN (SELECT area_id FROM price_zone_retirements)
+              AND (z.parent_id IS NULL OR z.parent_id NOT IN (SELECT area_id FROM price_zone_retirements))`,
+          [version.id],
+        );
+        for (const r of rows) slugs.add(r.slug);
+      }
+    } else {
+      const rows = await this.db.all<{ slug: string }>(
+        `SELECT DISTINCT coalesce(p.slug, z.slug) AS slug FROM neighbourhood_drafts d JOIN neighbourhood_validations v ON v.draft_id = d.id
+           JOIN price_zones z ON z.id = d.zone_id LEFT JOIN price_zones p ON p.id = z.parent_id
+          WHERE d.network_id = ? AND d.kind = 'page'`,
+        [networkId],
+      );
+      for (const r of rows) slugs.add(r.slug);
+    }
+    return slugs;
+  }
+
   /** Les contenus que l'agent voit : sa page et ses biens. */
   private async ownContents(viewer: Viewer): Promise<Set<string>> {
     const rows = await this.db.all<{ id: string }>(
@@ -229,8 +262,7 @@ export class StatistiquesSite {
         : 'SELECT DISTINCT commune FROM agent_zones WHERE network_id = ? AND ended_at IS NULL',
       viewer.role === 'agent' ? [viewer.networkId, viewer.userId] : [viewer.networkId],
     );
-    const existing = await this.db.all<{ ref: string }>('SELECT ref FROM public_contents WHERE network_id = ? AND kind = ?', [viewer.networkId, best.kind]);
-    const covered = new Set(existing.map((e) => e.ref.split('/')[0]!));
+    const covered = await this.coveredCommunes(viewer.networkId, best.kind);
     // Les vendeurs déjà arrivés par commune : une page de prix ou de quartier par le début de son chemin, un bien par sa commune.
     const sellersBySlug = new Map<string, number>();
     for (const s of stats) {

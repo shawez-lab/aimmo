@@ -220,6 +220,43 @@ describeWithSqlite('HX15 · statistiques du site', () => {
     expect(await t.stats.nextPage(t.direction)).toEqual({ ok: true, suggestion: null, reason: 'toutes_les_communes_ont_leur_page' });
   });
 
+  it('[R287] une commune qui a déjà sa page, publiée sans code de suivi, n’est jamais proposée', async () => {
+    const t = await setup();
+    await t.zone(t.alex.id, 'Dijon-Test');
+    await t.zone(t.alex.id, 'Quetigny-Test');
+    await t.zone(t.alex.id, 'Talant-Test');
+    const net = t.network.id;
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    const zone = (id: string, level: string, parent: string | null, slug: string) =>
+      t.db.run("INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'test', 'x', 'x')", [id, net, level, parent, slug, slug, level === 'commune' ? '99001' : null]);
+    await zone('zq', 'commune', null, 'quetigny-test');
+    await zone('zq1', 'quartier', 'zq', 'centre');
+    await zone('zd', 'commune', null, 'dijon-test');
+    // Une page de quartier validée à Quetigny-Test, une case de prix publiée à Dijon-Test : aucune n'a de code de suivi.
+    await t.db.run("INSERT INTO neighbourhood_drafts (id, network_id, zone_id, kind, topic, title, body, origin, data_digest, created_by, created_at) VALUES ('nd1', ?, 'zq1', 'page', 'quartier', 'Le centre', 'Texte', 'redaction', ?, 'x', 'x')", [net, 'c'.repeat(64)]);
+    await t.db.run("INSERT INTO neighbourhood_validations (draft_id, text_sha256, data_digest, validated_by, validated_at) VALUES ('nd1', ?, ?, 'x', 'x')", ['d'.repeat(64), 'c'.repeat(64)]);
+    await t.db.run(
+      "INSERT INTO price_versions (id, network_id, source, dvf_last_sale, window_from, window_to, areas_digest, sales_digest, min_sales, round_to, status, computed_at, completed_at) VALUES ('v1', ?, 'DVF', '2026-06-30', '2024-07-01', '2026-06-30', ?, ?, 5, 10, 'en_cours', 'x', NULL)",
+      [net, 'a'.repeat(64), 'b'.repeat(64)],
+    );
+    const cols = (await t.db.all<{ name: string }>("SELECT name FROM pragma_table_info('price_cells')")).map((c) => c.name);
+    const values: Record<string, string | null> = { version_id: 'v1', area_id: 'zd', kind: 'apartment', status: 'publiee', hold_code: null };
+    const names = cols.filter((c) => c in values);
+    await t.db.run(`INSERT INTO price_cells (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`, names.map((c) => values[c]!));
+    await t.db.run("UPDATE price_versions SET status = 'complet', completed_at = '2026-10-20T08:00:00.000Z' WHERE id = 'v1'");
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    // Des vendeurs par une page de quartier et par une page de prix d'une autre commune.
+    const quartier = await t.content('quartier', 'autre-test/centre');
+    await t.views(quartier, 10);
+    await t.demande(quartier, { project: 'sell' });
+    expect(await t.stats.nextPage(t.direction)).toMatchObject({ ok: true, suggestion: { kind: 'quartier', commune: 'Dijon-Test' } });
+    const prix = await t.content('prix', 'autre-test');
+    await t.views(prix, 1);
+    await t.demande(prix, { project: 'sell' });
+    await t.demande(prix, { project: 'sell' });
+    expect(await t.stats.nextPage(t.direction)).toMatchObject({ ok: true, suggestion: { kind: 'prix', commune: 'Quetigny-Test', path: '/prix/quetigny-test' } });
+  });
+
   it('[R287] à égalité de vendeurs par vue, la sorte qui en amène le plus passe d’abord ; le même jeu donne la même proposition', async () => {
     const t = await setup();
     await t.zone(t.alex.id, 'Dijon-Test');
