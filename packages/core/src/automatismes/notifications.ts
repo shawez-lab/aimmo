@@ -427,14 +427,18 @@ export class Notifications {
     );
     if (reserved.changes !== 1) return null;
     const { changes } = await this.db.run(
-      `UPDATE agent_notifications SET status = 'en_envoi', push_id = ? WHERE status = 'a_envoyer' AND id IN (${placeholders(due.length)})`,
-      [pushId, ...due.map((n) => n.id)],
+      `UPDATE agent_notifications SET status = 'en_envoi', push_id = ? WHERE status = 'a_envoyer' AND id IN (${placeholders(due.length)})
+       AND EXISTS (SELECT 1 FROM agent_pushes WHERE id = ? AND status = 'reservee')`,
+      [pushId, ...due.map((n) => n.id), pushId],
     );
     if (changes !== due.length) {
       // Le texte ne dirait pas le bon nombre : rien ne part [R18].
       await this.finish(pushId, 'abandonnee', at.toISOString());
       return null;
     }
+    // Une réservation reprise entre-temps par un autre passage n'envoie rien : ses notifications sont déjà rendues [R18].
+    const live = await this.db.first<{ status: string }>('SELECT status FROM agent_pushes WHERE id = ?', [pushId]);
+    if (live?.status !== 'reservee') return null;
     let outcome: 'ok' | 'aucun_appareil' | 'echec';
     try {
       outcome = await this.gate.sendToAgent({ networkId: agent.network_id, agentId, payload: { pushId, urgency, title: text.title, body: text.body, url: `/notifications/${pushId}` } });

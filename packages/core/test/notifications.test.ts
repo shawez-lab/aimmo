@@ -349,4 +349,22 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(t.sent).toHaveLength(0);
     expect(await t.db.first("SELECT status FROM agent_notifications WHERE kind = 'tache'")).toEqual({ status: 'a_envoyer' });
   });
+  it('[R18] une réservation reprise par un autre passage avant la prise de ses notifications n’envoie rien', async () => {
+    const t = await setup();
+    const noa = await t.person('Noa');
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: 'tache:1' });
+    const run = t.db.run.bind(t.db);
+    // Juste après la réservation, un autre passage la déclare incertaine (pause de plus de deux minutes).
+    (t.db as { run: typeof t.db.run }).run = (async (sql: string, params?: readonly (string | number | null)[]) => {
+      const r = await run(sql, params);
+      if (sql.includes('INSERT INTO agent_pushes')) await run("UPDATE agent_pushes SET status = 'incertaine' WHERE status = 'reservee'");
+      return r;
+    }) as typeof t.db.run;
+    expect(await t.notifications.flush()).toEqual([]);
+    expect(t.sent).toHaveLength(0);
+    expect(await t.db.first("SELECT status, push_id FROM agent_notifications WHERE kind = 'tache'")).toEqual({ status: 'a_envoyer', push_id: null });
+    (t.db as { run: typeof t.db.run }).run = run;
+    expect((await t.notifications.flush()).map((p) => [p.urgency, p.status])).toEqual([['normale', 'partie']]);
+    expect(t.sent).toHaveLength(1);
+  });
 });
