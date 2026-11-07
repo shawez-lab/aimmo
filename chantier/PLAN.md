@@ -241,7 +241,8 @@ Voie : 2
 Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à partir de `2000` réservées à ce groupe. Le code vit dans `packages/core/src/recherche/` ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
 
 ### HX28 · Recherche de biens en langage courant
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-07)
+- Reste : fusionnée (#396), migration `2000`, R420 à R424. Décidé, lecture prudente : lecture de la phrase par le code seul, sans IA ; un critère est indispensable sauf si sa partie de phrase dit une préférence, reprise par « et » ; négations et mots de R50 écartés et dits ; surfaces et sommes lues en entier (milliers, décimales), surface arrondie au mètre au-dessus ; communes voisines en réglage de la direction (défaut prudent, à vérifier) ; un refus ne vaut que pour un bien montrable ou déjà mis en vente (IN11) ; un refus qui vide les communes ou les types ne range rien (`a_preciser`) ; accord `buyer_search` exigé pour ranger, la phrase jamais gardée. Relecture forte 1 P0 et 1 P1 ; Codex 7 P0 corrigés en 7 tours, dernière version sans remarque. Restent : routes, écran public et écran de l'agent, prise de l'accord `buyer_search` à l'écran (voie 1, `app.ts`).
 - Qui : Claude · Relecture : forte · Dépend de : T01
 - Objectif : comme Hektor, Zefir et Kleio : l'acquéreur décrit ce qu'il cherche avec ses mots. Jamais vu : la phrase devient une fiche acquéreur de T01, avec ses critères indispensables et ses préférences, les communes voisines proposées et marquées comme telles, et les critères ajustés après chaque refus ; chaque résultat dit pourquoi il correspond.
 - Critères : chaque critère renvoie aux mots de la phrase (test) ; seuls des biens diffusables sont montrés (test) ; une fiche acquéreur n'est créée qu'avec l'accord de la personne (test).
