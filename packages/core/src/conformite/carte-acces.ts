@@ -235,6 +235,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   listing: 'journal',
   listing_translation: 'journal',
   discount: { excluded: 'sans_client', why: 'Remise négociée du réseau, sans donnée d\'un client.' },
+  news: { excluded: 'sans_client', why: 'Actualité du réseau, de source publique, sans donnée d\'un client.' },
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
   voice_note: 'journal',
@@ -533,6 +534,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   network_discounts: out('sans_client', 'Remise négociée par la direction auprès d\'un fournisseur.'),
   network_discount_withdrawals: out('sans_client', 'Retrait d\'une remise par la direction.'),
   network_discount_dismissals: out('agent', 'Remise écartée par l\'agent pour un bien.'),
+  // HX09 : les actualités du réseau, sans donnée d'un client.
+  network_news: out('sans_client', 'Actualité juridique ou de marché rangée par la direction, avec sa source publique.'),
+  network_news_withdrawals: out('sans_client', 'Retrait d\'une actualité par la direction.'),
+  network_news_deliveries: out('agent', 'Actualité montrée une fois à un agent.'),
   voice_assistant_lines: out('agent', 'Ligne de l\'assistant vocal : le numéro de l\'agent, rien d\'un client.'),
   agent_legal_mentions: out('agent', 'Mentions légales de l\'agent : statut et immatriculation.'),
   agent_review_links: out('agent', 'Lien d\'avis de l\'agent.'),

@@ -223,6 +223,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       network_discounts: ['beneficiary', 'set_by'],
       network_discount_withdrawals: ['reason', 'withdrawn_by'],
       network_discount_dismissals: ['agent_id'],
+      // HX09 : les actualités du réseau ; seul l'agent à qui une actualité a été montrée est nommé.
+      // Thème, éditeur et adresse de la source : publics, inscrits par prudence (leur nom ressemble à une donnée personnelle).
+      network_news: ['topic', 'source_name', 'source_url', 'set_by'],
+      network_news_withdrawals: ['reason', 'withdrawn_by'],
+      network_news_deliveries: ['agent_id'],
     },
   },
   {
@@ -927,6 +932,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   network_discounts: ['id', 'network_id', 'category', 'supplier', 'partner_id', 'title', 'terms', 'source', 'moment', 'valid_from', 'valid_until', 'set_at'],
   network_discount_withdrawals: ['discount_id', 'withdrawn_at'],
   network_discount_dismissals: ['discount_id', 'property_id', 'network_id', 'dismissed_at'],
+  network_news: ['id', 'network_id', 'title', 'impact', 'source_date', 'target', 'published_on', 'set_at'],
+  network_news_withdrawals: ['news_id', 'withdrawn_at'],
+  network_news_deliveries: ['news_id', 'network_id', 'concerned', 'shown_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
