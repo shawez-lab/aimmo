@@ -174,7 +174,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucun nom ni coordonnée de propriétaire rangé (test) ; un diagnostic déjà vu ne remonte jamais deux fois (test) ; l'alerte ne contient que les communes de la zone de l'agent (test).
 
 ### HX17 · Score de vente par adresse
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Maline, Keyzia et Modelo : croiser ventes DVF, diagnostics, cadastre et durée de détention pour donner à chaque adresse une probabilité de vente et mettre en avant les signaux forts. Jamais vu : chaque point du score cite sa donnée publique, sa source et sa date, et l'écran montre en face le taux de mandats réellement signés par tranche de score, lu dans G10, pour qu'on sache si le score marche.
 - Critères : chaque point du score renvoie à sa source et à sa date (test) ; le même jeu de données donne le même score (test) ; aucune donnée personnelle dans le calcul ni dans le résultat (test).
 
