@@ -250,7 +250,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 - Critères : chaque critère renvoie aux mots de la phrase (test) ; seuls des biens diffusables sont montrés (test) ; une fiche acquéreur n'est créée qu'avec l'accord de la personne (test).
 
 ### HX29 · Points d'intérêt et trajets autour du bien
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Apimo : écoles, commerces, transports autour du bien. Jamais vu : les temps de trajet à pied, en transport et en voiture vers ce qui compte pour cet acquéreur, avec la source et la date de chaque donnée, sans jamais révéler l'adresse exacte du bien.
 - Critères : chaque point d'intérêt cite sa source et sa date (test) ; l'adresse exacte n'apparaît nulle part dans la page publique (test).
 
