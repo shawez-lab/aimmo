@@ -153,7 +153,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : aucune donnée confidentielle (vendeur, honoraires, notes) visible en mode présentation (test).
 
 ### HX14 · Stock de panneaux
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor (gestion des panneaux) : combien de panneaux, où ils sont posés, lesquels récupérer. Jamais vu : à la vente ou à la fin du mandat, la tâche « récupérer le panneau » est créée toute seule, avec l'adresse dans la tournée.
 - Critères : un panneau posé est rattaché à un bien (test) ; tâche créée à la fin du mandat (test).
 
