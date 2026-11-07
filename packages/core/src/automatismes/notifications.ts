@@ -414,10 +414,18 @@ export class Notifications {
     const text = lockText(urgency, due.map((n) => n.kind));
     const pushId = this.newId();
     // Réservation et prise des notifications, tout ou rien : un autre passage qui en a pris une fait tout annuler [R18].
-    await this.db.run(
-      "INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'reservee', ?, NULL)",
-      [pushId, agent.network_id, agentId, urgency, due.length, text.title, text.body, at.toISOString()],
+    // La période se vérifie dans l'écriture même : deux passages qui se croisent ne réservent jamais deux envois de la
+    // même urgence dans une période [R414].
+    const periodStart = urgency === 'immediate' ? at.toISOString() : new Date(at.getTime() - GROUP_PERIOD_MS[urgency] + 1).toISOString();
+    const reserved = await this.db.run(
+      `INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, 'reservee', ?, NULL
+       WHERE ? = 'immediate' OR NOT EXISTS (
+         SELECT 1 FROM agent_pushes WHERE agent_id = ? AND urgency = ? AND status IN ('reservee', 'partie', 'aucun_appareil') AND reserved_at >= ?
+       )`,
+      [pushId, agent.network_id, agentId, urgency, due.length, text.title, text.body, at.toISOString(), urgency, agentId, urgency, periodStart],
     );
+    if (reserved.changes !== 1) return null;
     const { changes } = await this.db.run(
       `UPDATE agent_notifications SET status = 'en_envoi', push_id = ? WHERE status = 'a_envoyer' AND id IN (${placeholders(due.length)})`,
       [pushId, ...due.map((n) => n.id)],

@@ -329,4 +329,24 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     ]);
     expect(t.sent).toHaveLength(1);
   });
+  it('[R414] deux passages qui se croisent ne réservent jamais deux envois de la même urgence dans une période', async () => {
+    const t = await setup();
+    const noa = await t.person('Noa');
+    await t.notifications.notify({ agentId: t.alex.id, personId: noa, kind: 'tache', sourceKey: 'tache:1' });
+    // Un autre passage a réservé un envoi « normale » juste après que celui-ci a lu la période.
+    const at = new Date(t.clock()).toISOString();
+    await t.db.run("INSERT INTO agent_pushes (id, network_id, agent_id, urgency, count, lock_title, lock_line, status, reserved_at, done_at) VALUES ('autre', ?, ?, 'normale', 1, 'AIMMO', 'Une tâche à faire', 'partie', ?, ?)", [t.network.id, t.alex.id, at, at]);
+    const pushGroup = (t.notifications as unknown as { pushGroup: (a: string, u: string) => Promise<unknown> }).pushGroup.bind(t.notifications);
+    const settings = t.db.first.bind(t.db);
+    // La lecture de la période ne voit pas l'autre envoi : seule l'écriture le voit.
+    let skipped = false;
+    (t.db as { first: typeof t.db.first }).first = (async (sql: string, params?: readonly (string | number | null)[]) => {
+      if (!skipped && sql.includes('SELECT reserved_at FROM agent_pushes')) return (skipped = true), null;
+      return settings(sql, params);
+    }) as typeof t.db.first;
+    expect(await pushGroup(t.alex.id, 'normale')).toBeNull();
+    expect(skipped).toBe(true);
+    expect(t.sent).toHaveLength(0);
+    expect(await t.db.first("SELECT status FROM agent_notifications WHERE kind = 'tache'")).toEqual({ status: 'a_envoyer' });
+  });
 });
