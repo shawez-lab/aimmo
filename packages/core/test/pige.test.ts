@@ -181,6 +181,42 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(q.ok && q.value).toEqual([]);
   });
 
+  it('[R273] une annonce corrigée et marquée « pas d’agence » d’un coup ferme le bien de sa surface d’avant', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    const old = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    const p = await s.pige.prepare(s.agentAlex, old);
+    if (!p.ok) throw new Error('prepare');
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95, noAgency: true }]);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R273' });
+    // Revue plus tard à 90 m² sans la mention, la même annonce reste dehors.
+    expect((await s.pige.ingest(s.network.id, [{ ...a, priceEur: 260_000 }])).added).toBe(0);
+  });
+
+  it('[R04] un non suit le bien de proche en proche, d’un site et d’une correction à l’autre', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [a]);
+    const first = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    const p = await s.pige.prepare(s.agentAlex, first);
+    if (!p.ok) throw new Error('prepare');
+    s.at(MONDAY_10H + DAY);
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 95 }]);
+    const b = s.ad({ source: 'Site B', surfaceM2: 95 });
+    await s.pige.ingest(s.network.id, [b]);
+    s.at(MONDAY_10H + 2 * DAY);
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 100 }]);
+    const last = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE surface_m2 = 100'))!.id;
+    expect(await s.pige.oppose(s.agentAlex, last)).toEqual({ ok: true });
+    expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();

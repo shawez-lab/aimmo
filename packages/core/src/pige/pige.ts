@@ -152,7 +152,7 @@ const intIn = (v: unknown, min: number, max: number): number | null =>
  * Ce qui suffit à reconnaître le bien d'une annonce qui dit « pas d'agence » : sorte, code postal, commune et surface.
  * Lu avant tout le reste, pour qu'un prix ou une date manquants n'empêchent jamais de fermer le bien [R273].
  */
-export function noAgencyKey(raw: RawAd): Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> | null {
+export function noAgencyKey(raw: RawAd): (Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> & { ref: { source: string; sourceRef: string } | null }) | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const says = raw.noAgency === true || (typeof raw.text === 'string' && saysNoAgency(raw.text));
   if (!says) return null;
@@ -162,7 +162,8 @@ export function noAgencyKey(raw: RawAd): Pick<CleanAd, 'kind' | 'postalCode' | '
   if (typeof postalCode !== 'string' || !POSTAL.test(postalCode)) return null;
   const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
   if (surfaceM2 === null) return null;
-  return { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 };
+  const ref = typeof raw.source === 'string' && SOURCE.test(raw.source.trim()) && typeof raw.sourceRef === 'string' && SOURCE_REF.test(raw.sourceRef) ? { source: raw.source.trim(), sourceRef: raw.sourceRef } : null;
+  return { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2, ref };
 }
 
 /** Lit une annonce reçue ; rend null quand elle n'est pas utilisable. */
@@ -264,9 +265,13 @@ interface AdRow {
   sites: number;
 }
 
-/** Les empreintes liées à celle de la ligne `a` : celles de toutes les annonces où elle a été vue. */
-const RELATED = `SELECT b.fingerprint FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
-  WHERE x.network_id = a.network_id AND x.fingerprint = a.fingerprint`;
+/** La clé d'une annonce sur son site, rangée parmi les empreintes fermées : elle ferme l'annonce quelle que soit sa surface. */
+export function refKey(source: string, sourceRef: string): Promise<string> {
+  return sha256(['pige-ref', source, sourceRef].join('|'));
+}
+
+/** Au plus tant d'annonces suivies pour relier un bien d'un site et d'une correction à l'autre. */
+const MAX_LINKED_ADS = 400;
 
 export class Pige {
   private readonly now: () => Date;
@@ -330,7 +335,10 @@ export class Pige {
           outside += 1;
           continue;
         }
-        for (const f of await nearFingerprints(closing)) {
+        // Le bien dit, et l'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée avant.
+        const keys = await nearFingerprints(closing);
+        if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
+        for (const f of keys) {
           await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
         }
         noAgency += 1;
@@ -351,6 +359,11 @@ export class Pige {
         continue;
       }
       const fingerprint = await adFingerprint(ad);
+      const ref = await refKey(ad.source, ad.sourceRef);
+      if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, ref])) {
+        noAgency += 1;
+        continue;
+      }
       const r = await this.db.run(
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -410,8 +423,8 @@ export class Pige {
          FROM current a
         WHERE a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
           AND a.id = (SELECT c.id FROM current c WHERE c.fingerprint = a.fingerprint AND c.published_at >= ? ORDER BY c.published_at, c.id LIMIT 1)
-          AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint IN (${RELATED}))
-          AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint IN (${RELATED}))
+          AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.fingerprint)
+          AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.fingerprint)
         ORDER BY a.published_at DESC, a.id`,
       [networkId, ...communes, since, since],
     );
@@ -440,6 +453,8 @@ export class Pige {
     const rows = await this.openAds(viewer.networkId, [...new Set(zones.values())]);
     const out: PigeEntry[] = [];
     for (const r of rows) {
+      // Un bien fermé par une de ses annonces liées, d'un site ou d'une correction à l'autre, ne se montre pas.
+      if (await this.closedReason(viewer.networkId, r.fingerprint)) continue;
       // Jamais un prix inventé : sans relève en cours, le bien ne se montre pas.
       const priceEur = await this.latestPrice(viewer.networkId, r.fingerprint);
       if (priceEur === null) continue;
@@ -484,24 +499,49 @@ export class Pige {
   }
 
   /**
-   * Les empreintes liées à celle-ci : toutes celles qu'ont portées les annonces où elle a été vue, avant ou après une
-   * surface corrigée. Un « pas d'agence », un non ou un message sur l'une vaut pour toutes [R273, R04, R05].
+   * Tout ce qui est relié à cette empreinte, de proche en proche : les annonces qui l'ont portée, toutes les empreintes
+   * qu'elles ont portées avant ou après une surface corrigée, celles à 1 m² près, et ainsi de suite. Rend ces empreintes,
+   * leurs voisines et la clé de chaque annonce : un « pas d'agence », un non ou un message sur l'une vaut pour toutes
+   * [R273, R04, R05].
    */
-  private async relatedFingerprints(networkId: string, fingerprint: string): Promise<string[]> {
-    const rows = await this.db.all<{ fingerprint: string }>(
-      `SELECT DISTINCT b.fingerprint FROM pige_ads x
-         JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
-        WHERE x.network_id = ? AND x.fingerprint = ?`,
-      [networkId, fingerprint],
-    );
-    return [...new Set([fingerprint, ...rows.map((r) => r.fingerprint)])];
+  private async linkedKeys(networkId: string, fingerprint: string): Promise<string[]> {
+    const fps = new Set<string>([fingerprint]);
+    const refs = new Set<string>();
+    const keys = new Set<string>([fingerprint]);
+    let frontier = [fingerprint];
+    while (frontier.length > 0 && refs.size < MAX_LINKED_ADS) {
+      const marks = frontier.map(() => '?').join(', ');
+      const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
+        `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2
+           FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
+          WHERE x.network_id = ? AND x.fingerprint IN (${marks})`,
+        [networkId, ...frontier],
+      );
+      const next: string[] = [];
+      for (const r of rows) {
+        const ref = `${r.source}\u0000${r.source_ref}`;
+        if (!refs.has(ref)) {
+          refs.add(ref);
+          keys.add(await refKey(r.source, r.source_ref));
+        }
+        for (const f of [r.fingerprint, ...(await nearFingerprints({ kind: r.kind, postalCode: r.postal_code, commune: r.commune, surfaceM2: r.surface_m2 }))]) {
+          keys.add(f);
+          if (!fps.has(f)) {
+            fps.add(f);
+            next.push(f);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return [...keys];
   }
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
-    const related = await this.relatedFingerprints(networkId, fingerprint);
-    const marks = related.map(() => '?').join(', ');
-    if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...related])) return { ok: false, rule: 'R273', code: 'pas_agence' };
-    if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...related])) return { ok: false, rule: 'R04', code: 'opposition' };
+    const keys = await this.linkedKeys(networkId, fingerprint);
+    const marks = keys.map(() => '?').join(', ');
+    if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...keys])) return { ok: false, rule: 'R273', code: 'pas_agence' };
+    if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...keys])) return { ok: false, rule: 'R04', code: 'opposition' };
     return null;
   }
 
@@ -514,12 +554,7 @@ export class Pige {
     if (g) return g;
     const ad = await this.openAdFor(viewer, adId);
     if ('ok' in ad) return ad;
-    const near = [
-      ...new Set([
-        ...(await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 })),
-        ...(await this.relatedFingerprints(viewer.networkId, ad.fingerprint)),
-      ]),
-    ];
+    const near = await this.linkedKeys(viewer.networkId, ad.fingerprint);
     const nearIn = near.map(() => '?').join(', ');
     if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn})`, [viewer.networkId, ...near])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };
@@ -604,14 +639,14 @@ export class Pige {
     const g = await this.gate(viewer, `pige_ad:${String(adId)}`, false);
     if (g) return g;
     if (typeof adId !== 'string') return { ok: false, rule: null, code: 'unknown_ad' };
-    const ad = await this.db.first<{ kind: PigeKind; postal_code: string; surface_m2: number; commune: string }>(
-      'SELECT kind, postal_code, surface_m2, commune FROM pige_ads WHERE id = ? AND network_id = ?',
+    const ad = await this.db.first<{ fingerprint: string; commune: string }>(
+      'SELECT fingerprint, commune FROM pige_ads WHERE id = ? AND network_id = ?',
       [adId, viewer.networkId],
     );
     if (!ad) return { ok: false, rule: null, code: 'unknown_ad' };
     if (viewer.role === 'agent' && !(await this.zoneCommunes(viewer.networkId, viewer.userId)).has(communeSlug(ad.commune))) return { ok: false, rule: null, code: 'hors_zone' };
-    // Le même bien à la surface près, sur tous ses sites, est fermé avec lui [R04].
-    for (const f of await nearFingerprints({ kind: ad.kind, postalCode: ad.postal_code, commune: ad.commune, surfaceM2: ad.surface_m2 })) {
+    // Le même bien, sur tous ses sites, avant et après chaque correction, et chacune de ses annonces : fermés avec lui [R04].
+    for (const f of await this.linkedKeys(viewer.networkId, ad.fingerprint)) {
       await this.db.run('INSERT OR IGNORE INTO pige_oppositions (network_id, fingerprint, noted_by, noted_at) VALUES (?, ?, ?, ?)', [viewer.networkId, f, this.actor(viewer), this.now().toISOString()]);
     }
     await appendEvent(this.journal, { type: 'pige.opposition', actor: this.actor(viewer), subject: `pige_ad:${adId}`, data: { rule: 'R04' } }, this.now);
