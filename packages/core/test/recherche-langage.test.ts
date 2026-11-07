@@ -159,6 +159,15 @@ describe('HX28 · refus', () => {
     features: over.features ?? (['garden'] as BuyerFeature[]),
   });
 
+  it('chaque raison cite les mots du critère qui a servi, préférences comprises [R420]', () => {
+    const talant = judge(base('maison, idéalement à Dijon ou Talant'), prop({ city: 'Talant' }))!;
+    expect(talant.reasons.find((r) => r.text.includes('Commune'))).toEqual({ text: 'Préférence remplie. Commune cherchée : Talant.', from: '« Talant »' });
+    const dijon = judge(base('maison à Dijon ou Talant'), prop({ city: 'Dijon' }))!;
+    expect(dijon.reasons.find((r) => r.text.includes('Commune'))!.from).toBe('« Dijon »');
+    const two = judge(base('maison à Dijon, 60 m², ou plutôt 80 m²'), prop({ surfaceM2: 90 }))!;
+    expect(two.reasons.find((r) => r.text.startsWith('Surface'))).toEqual({ text: 'Surface 90 m² pour 80 m² au moins.', from: '« 80 m² »' });
+  });
+
   it('trop cher : le budget passe sous ce prix, tolérance comprise, et le bien ne revient plus [R424]', () => {
     const s = base('maison à Dijon, budget 350 000 €');
     const refused = prop({ priceEur: 340_000 });

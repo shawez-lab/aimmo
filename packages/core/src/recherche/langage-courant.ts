@@ -542,17 +542,15 @@ export function judge(
   const m = matchBuyer(property, must, tolerances);
   if (hasMustBase && m.status === 'miss') return null;
   const reasons: Reason[] = [];
-  for (const check of m.checks) {
-    const field = CRITERION_FIELD[check.criterion]!;
-    const candidates = search.criteria.filter((c) => c.field === field && c.strength === 'must');
-    const exact =
-      field === 'communes'
-        ? candidates.find((c) => property.city !== null && key(String(c.value)) === key(property.city))
-        : field === 'propertyKinds'
-          ? candidates.find((c) => kinds.includes(c.value as BuyerPropertyKind))
-          : undefined;
-    reasons.push({ text: check.reason, from: fromOf(exact ?? candidates[0]) });
-  }
+  // Le critère qui a servi : la commune du bien, son type, ou le nombre retenu dans la recherche passée au rapprochement.
+  const sourceOf = (criterion: string, strength: Strength, used: BuyerSearch): PhraseCriterion | undefined => {
+    const field = CRITERION_FIELD[criterion]!;
+    const candidates = search.criteria.filter((c) => c.field === field && c.strength === strength);
+    if (field === 'communes') return candidates.find((c) => property.city !== null && key(String(c.value)) === key(property.city));
+    if (field === 'propertyKinds') return candidates.find((c) => kinds.includes(c.value as BuyerPropertyKind) && used.propertyKinds.includes(c.value as BuyerPropertyKind)) ?? candidates[0];
+    return candidates.find((c) => c.value === used[field]) ?? candidates[0];
+  };
+  for (const check of m.checks) reasons.push({ text: check.reason, from: fromOf(sourceOf(check.criterion, 'must', must)) });
   for (const feature of must.features) {
     if (!property.features.includes(feature)) return null;
     reasons.push({ text: `Demandé : ${FEATURE_LABEL[feature]}, présent.`, from: fromOf(search.criteria.find((c) => c.field === 'features' && c.value === feature)) });
@@ -562,8 +560,7 @@ export function judge(
   for (const check of niceMatch.checks) {
     if (check.state !== 'met') continue;
     preferencesMet += 1;
-    const field = CRITERION_FIELD[check.criterion]!;
-    reasons.push({ text: `Préférence remplie. ${check.reason}`, from: fromOf(search.criteria.find((c) => c.field === field && c.strength === 'nice')) });
+    reasons.push({ text: `Préférence remplie. ${check.reason}`, from: fromOf(sourceOf(check.criterion, 'nice', nice)) });
   }
   for (const feature of nice.features) {
     if (!property.features.includes(feature)) continue;
