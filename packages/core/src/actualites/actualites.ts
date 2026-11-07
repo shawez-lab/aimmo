@@ -16,6 +16,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -244,10 +245,10 @@ export class Actualites {
     return { ok: false, rule: 'R16', code };
   }
 
+  /** Un agent en activité ce jour-là : parti dès minuit à Paris le jour de son départ, même avant le passage [R86]. */
   private async activeAgent(viewer: Viewer): Promise<boolean> {
     if (viewer.role !== 'agent') return false;
-    const a = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
-    return a?.status === 'active';
+    return (await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'actif';
   }
 
   /** Une actualité, avec sa source et sa ligne d'effet : la direction seule [R268]. */
@@ -398,7 +399,13 @@ export class Actualites {
         if (concerned.length === 0) continue;
       }
       // Réservée avant d'être rendue : deux fils demandés en même temps ne la montrent qu'une fois.
-      const res = await this.db.run('INSERT INTO network_news_deliveries (news_id, agent_id, network_id, concerned, shown_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (news_id, agent_id) DO NOTHING', [v.id, viewer.userId, viewer.networkId, concerned.length, this.now().toISOString()]);
+      // Retirée entre-temps : la réservation relit le retrait dans la même instruction, et rien n'est montré.
+      const res = await this.db.run(
+        `INSERT INTO network_news_deliveries (news_id, agent_id, network_id, concerned, shown_at)
+         SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM network_news_withdrawals w WHERE w.news_id = ?)
+         ON CONFLICT (news_id, agent_id) DO NOTHING`,
+        [v.id, viewer.userId, viewer.networkId, concerned.length, this.now().toISOString(), v.id],
+      );
       if (res.changes === 0) continue;
       items.push({ ...v, concerned });
     }

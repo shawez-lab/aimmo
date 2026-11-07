@@ -187,6 +187,41 @@ describeWithSqlite('HX09 · actualités utiles', () => {
     expect(cat.value.find((c) => c.id === gone)!.withdrawn).toBe(true);
   });
 
+  it('[R269] retirée pendant que le fil se prépare : elle n’est pas montrée', async () => {
+    const t = await setup();
+    const id = await t.add();
+    // Le retrait arrive pendant la lecture des dossiers de l'agent, entre la liste et la réservation.
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver);
+        if (key !== 'all') return typeof v === 'function' ? v.bind(target) : v;
+        return async (sql: string, params?: unknown[]) => {
+          if (sql.includes('FROM properties p')) await t.actu.withdraw(t.direction, id, 'Texte abrogé');
+          return target.all(sql, params as never);
+        };
+      },
+    });
+    const racing = new Actualites(db, t.acces, t.journal, { now: t.now });
+    const r = await racing.feed(t.agent);
+    expect(r).toEqual({ ok: true, value: [] });
+    const shown = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM network_news_deliveries');
+    expect(Number(shown!.n)).toBe(0);
+  });
+
+  it('[R86] le jour de son départ, dès minuit à Paris, l’agent n’a plus de fil, même avant le passage', async () => {
+    const t = await setup();
+    await t.add();
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, '2027-01-12', '2027-02-13', 'demission_agent', 1, 'direction:direction-1', '2027-01-12T10:00:00.000Z')",
+      [t.network.id, t.alexId],
+    );
+    // Le 13 février à 0 h 30 à Paris : statut encore « active », mais parti.
+    t.setClock(new Date('2027-02-12T23:30:00.000Z'));
+    expect(await t.actu.feed(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    const shown = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM network_news_deliveries');
+    expect(Number(shown!.n)).toBe(0);
+  });
+
   it('[R13] le journal ne garde que des identifiants et des nombres ; un agent inactif n’a pas de fil', async () => {
     const t = await setup();
     await t.property('REF-G-1', 'G');
