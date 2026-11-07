@@ -153,19 +153,38 @@ const intIn = (v: unknown, min: number, max: number): number | null =>
  * dès que la source et la référence se lisent, et le bien (sorte, code postal, commune, surface) quand il se lit. Un
  * prix, une date ou une surface manquants n'empêchent jamais de fermer ce qui se reconnaît [R273].
  */
-export function noAgencyKey(raw: RawAd): { key: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> | null; ref: { source: string; sourceRef: string } | null } | null {
+export function noAgencyKey(raw: RawAd): { key: PropertyKey | null; ref: AdRef | null } | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const says = raw.noAgency === true || (typeof raw.text === 'string' && saysNoAgency(raw.text));
   if (!says) return null;
-  const ref = typeof raw.source === 'string' && SOURCE.test(raw.source.trim()) && typeof raw.sourceRef === 'string' && SOURCE_REF.test(raw.sourceRef) ? { source: raw.source.trim(), sourceRef: raw.sourceRef } : null;
-  const { kind, commune, postalCode } = raw;
-  const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
-  const key =
-    typeof kind === 'string' && (PIGE_KINDS as readonly string[]).includes(kind) && typeof commune === 'string' && COMMUNE.test(commune.trim()) && typeof postalCode === 'string' && POSTAL.test(postalCode) && surfaceM2 !== null
-      ? { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 }
-      : null;
+  const ref = readRef(raw);
+  const key = readPropertyKey(raw);
   if (!key && !ref) return null;
   return { key, ref };
+}
+
+export type PropertyKey = Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>;
+export interface AdRef {
+  source: string;
+  sourceRef: string;
+}
+
+/** La source et la référence d'une annonce, quand elles se lisent. */
+export function readRef(raw: RawAd): AdRef | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  return typeof raw.source === 'string' && SOURCE.test(raw.source.trim()) && typeof raw.sourceRef === 'string' && SOURCE_REF.test(raw.sourceRef)
+    ? { source: raw.source.trim(), sourceRef: raw.sourceRef }
+    : null;
+}
+
+/** Sorte, code postal, commune et surface, quand ils se lisent, même sans prix ni date. */
+export function readPropertyKey(raw: RawAd): PropertyKey | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { kind, commune, postalCode } = raw;
+  const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
+  return typeof kind === 'string' && (PIGE_KINDS as readonly string[]).includes(kind) && typeof commune === 'string' && COMMUNE.test(commune.trim()) && typeof postalCode === 'string' && POSTAL.test(postalCode) && surfaceM2 !== null
+    ? { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 }
+    : null;
 }
 
 /** Lit une annonce reçue ; rend null quand elle n'est pas utilisable. */
@@ -349,6 +368,19 @@ export class Pige {
         noAgency += 1;
         continue;
       }
+      // Une annonce déjà fermée par sa clé : son bien, dès qu'il se lit, même sans prix ni date, est fermé avec elle sur
+      // tous les sites, à 1 m² près ; rien d'autre n'est gardé d'elle [R273].
+      const ref0 = readRef(raw);
+      if (ref0 && (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, await refKey(ref0.source, ref0.sourceRef)]))) {
+        const key0 = readPropertyKey(raw);
+        if (key0) {
+          for (const f of await nearFingerprints(key0)) {
+            await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
+          }
+        }
+        noAgency += 1;
+        continue;
+      }
       const ad = cleanAd(raw, now);
       if (!ad) {
         unreadable += 1;
@@ -365,14 +397,6 @@ export class Pige {
       }
       const fingerprint = await adFingerprint(ad);
       const ref = await refKey(ad.source, ad.sourceRef);
-      if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, ref])) {
-        // L'annonce fermée se lit enfin en entier : son bien, à 1 m² près, est fermé avec elle sur tous les sites [R273].
-        for (const f of await nearFingerprints(ad)) {
-          await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
-        }
-        noAgency += 1;
-        continue;
-      }
       // Le bien est déjà fermé « pas d'agence » : cette annonce l'est aussi, par sa clé, pour qu'une correction de sa
       // surface ne le rouvre pas ; rien d'autre n'est gardé d'elle [R273].
       if (await this.db.first('SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?', [networkId, fingerprint])) {
@@ -437,12 +461,12 @@ export class Pige {
        SELECT a.id, a.source, a.fingerprint, a.kind, a.commune, a.postal_code, a.surface_m2, a.rooms, a.price_eur, a.published_at,
               (SELECT count(DISTINCT c.source) FROM current c WHERE c.fingerprint = a.fingerprint) AS sites
          FROM current a
-        WHERE a.commune IN (${communes.map(() => '?').join(', ')}) AND a.published_at >= ?
+        WHERE a.commune IN (SELECT value FROM json_each(?)) AND a.published_at >= ?
           AND a.id = (SELECT c.id FROM current c WHERE c.fingerprint = a.fingerprint AND c.published_at >= ? ORDER BY c.published_at, c.id LIMIT 1)
           AND NOT EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.fingerprint)
           AND NOT EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.fingerprint)
         ORDER BY a.published_at DESC, a.id`,
-      [networkId, ...communes, since, since],
+      [networkId, JSON.stringify(communes), since, since],
     );
   }
 
@@ -526,12 +550,11 @@ export class Pige {
     const keys = new Set<string>([fingerprint]);
     let frontier = [fingerprint];
     while (frontier.length > 0 && refs.size < MAX_LINKED_ADS) {
-      const marks = frontier.map(() => '?').join(', ');
       const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
         `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2
            FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
-          WHERE x.network_id = ? AND x.fingerprint IN (${marks})`,
-        [networkId, ...frontier],
+          WHERE x.network_id = ? AND x.fingerprint IN (SELECT value FROM json_each(?))`,
+        [networkId, JSON.stringify(frontier)],
       );
       const next: string[] = [];
       for (const r of rows) {
@@ -555,9 +578,9 @@ export class Pige {
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
     const keys = await this.linkedKeys(networkId, fingerprint);
-    const marks = keys.map(() => '?').join(', ');
-    if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...keys])) return { ok: false, rule: 'R273', code: 'pas_agence' };
-    if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${marks})`, [networkId, ...keys])) return { ok: false, rule: 'R04', code: 'opposition' };
+    const marks = JSON.stringify(keys);
+    if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R273', code: 'pas_agence' };
+    if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R04', code: 'opposition' };
     return null;
   }
 
@@ -571,8 +594,7 @@ export class Pige {
     const ad = await this.openAdFor(viewer, adId);
     if ('ok' in ad) return ad;
     const near = await this.linkedKeys(viewer.networkId, ad.fingerprint);
-    const nearIn = near.map(() => '?').join(', ');
-    if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn})`, [viewer.networkId, ...near])) {
+    if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [viewer.networkId, JSON.stringify(near)])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };
     }
     const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ?', [viewer.userId]);
@@ -586,12 +608,12 @@ export class Pige {
     const r = await this.db.run(
       `INSERT INTO pige_drafts (id, network_id, fingerprint, ad_id, agent_id, body, gap_pct, market_source, market_last_sale, created_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        WHERE NOT EXISTS (SELECT 1 FROM pige_drafts WHERE network_id = ? AND fingerprint IN (${nearIn}))
+        WHERE NOT EXISTS (SELECT 1 FROM pige_drafts WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?)))
           AND NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
           AND NOT EXISTS (SELECT 1 FROM pige_oppositions WHERE network_id = ? AND fingerprint = ?)`,
       [
         id, viewer.networkId, ad.fingerprint, ad.id, viewer.userId, body, market?.gapPct ?? null, market?.source ?? null, market?.dvfLastSale ?? null, this.now().toISOString(),
-        viewer.networkId, ...near, viewer.networkId, ad.fingerprint, viewer.networkId, ad.fingerprint,
+        viewer.networkId, JSON.stringify(near), viewer.networkId, ad.fingerprint, viewer.networkId, ad.fingerprint,
       ],
     );
     if (r.changes !== 1) return (await this.closedReason(viewer.networkId, ad.fingerprint)) ?? { ok: false, rule: 'R05', code: 'deja_prepare' };
@@ -634,8 +656,8 @@ export class Pige {
     const linked = await this.linkedKeys(viewer.networkId, d.fingerprint);
     const handed = await this.db.first(
       `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
-        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')})`,
-      [viewer.networkId, d.id, ...linked],
+        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (SELECT value FROM json_each(?))`,
+      [viewer.networkId, d.id, JSON.stringify(linked)],
     );
     if (handed) return this.refused(viewer, d.id, { ok: false, rule: 'R05', code: 'bien_deja_contacte' });
     const local = localTime(at, DEFAULT_SEND_SETTINGS.timeZone);
@@ -649,10 +671,10 @@ export class Pige {
       `INSERT INTO pige_handovers (draft_id, agent_id, channel, handed_at) SELECT ?, ?, 'annonce', ?
         WHERE NOT EXISTS (SELECT 1 FROM pige_handovers WHERE draft_id = ?)
           AND NOT EXISTS (SELECT 1 FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
-                           WHERE o.network_id = ? AND o.fingerprint IN (${linked.map(() => '?').join(', ')}))
-          AND NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (${linked.map(() => '?').join(', ')}))
-          AND NOT EXISTS (SELECT 1 FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (${linked.map(() => '?').join(', ')}))`,
-      [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, ...linked, viewer.networkId, ...linked, viewer.networkId, ...linked],
+                           WHERE o.network_id = ? AND o.fingerprint IN (SELECT value FROM json_each(?)))
+          AND NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?)))
+          AND NOT EXISTS (SELECT 1 FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?)))`,
+      [d.id, viewer.userId, at.toISOString(), d.id, viewer.networkId, JSON.stringify(linked), viewer.networkId, JSON.stringify(linked), viewer.networkId, JSON.stringify(linked)],
     );
     if (r.changes !== 1) return this.refused(viewer, d.id, (await this.closedReason(viewer.networkId, d.fingerprint)) ?? { ok: false, rule: 'R05', code: 'deja_remis' });
     // La remise est réservée ; le texte n'est rendu que si, relu après l'écriture, rien ne la ferme : une correction qui a
@@ -662,8 +684,8 @@ export class Pige {
     const relinked = await this.linkedKeys(viewer.networkId, d.fingerprint);
     const twice = await this.db.first(
       `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
-        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (${relinked.map(() => '?').join(', ')})`,
-      [viewer.networkId, d.id, ...relinked],
+        WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (SELECT value FROM json_each(?))`,
+      [viewer.networkId, d.id, JSON.stringify(relinked)],
     );
     if (after || twice) return this.refused(viewer, d.id, after ?? { ok: false, rule: 'R05', code: 'bien_deja_contacte' });
     await appendEvent(this.journal, { type: 'pige.remise', actor: this.actor(viewer), subject: `pige_draft:${d.id}`, data: { rule: 'R275', channel: 'annonce' } }, this.now);

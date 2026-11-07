@@ -332,6 +332,30 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).toMatchObject({ ok: false, rule: 'R04' });
   });
 
+  it('[R273] une annonce fermée par sa clé, revue avec sa surface mais sans prix, ferme son bien sur les autres sites', async () => {
+    const s = await setup();
+    const a = s.ad();
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: undefined, noAgency: true }]);
+    await s.pige.ingest(s.network.id, [{ ...a, priceEur: undefined }]);
+    expect((await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B' })])).added).toBe(0);
+  });
+
+  it('un bien vu sur 40 sites se prépare et se remet sans dépasser les paramètres de la base', async () => {
+    const s = await setup();
+    await s.pige.ingest(s.network.id, Array.from({ length: 40 }, (_, i) => s.ad({ source: `Site ${i + 1}` })));
+    const id = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site 1'"))!.id;
+    const all = s.db.all.bind(s.db);
+    const first = s.db.first.bind(s.db);
+    const run = s.db.run.bind(s.db);
+    const guard = (params?: readonly unknown[]) => expect((params ?? []).length).toBeLessThanOrEqual(100);
+    s.db.all = async (sql, params) => (guard(params), all(sql, params));
+    s.db.first = async (sql, params) => (guard(params), first(sql, params));
+    s.db.run = async (sql, params) => (guard(params), run(sql, params));
+    const p = await s.pige.prepare(s.agentAlex, id);
+    if (!p.ok) throw new Error('prepare');
+    expect((await s.pige.validate(s.agentAlex, p.draftId, 'annonce')).ok).toBe(true);
+  });
+
   it('une surface corrigée seule, même prix et même date, est relevée', async () => {
     const s = await setup();
     const a = s.ad();
