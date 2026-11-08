@@ -189,7 +189,9 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     expect(await t.filigrane.exportPhoto(alex, t.p.id, { ref: ref(t.p.id, 1), width: 4032.5, height: 3024 })).toEqual({ ok: false, rule: 'R10', code: 'dimensions_invalides' });
     expect(await t.filigrane.exportPhoto(t.as('assistant', 'as-1'), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.filigrane.exportPhoto(t.as('agent', t.sam.id), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toMatchObject({ ok: false, rule: 'R16' });
-    // Un bien sans agent : le filigrane n'aurait personne à qui ramener.
+    // Un agent parti, ou un bien sans agent : le filigrane n'aurait personne à qui ramener.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.filigrane.exportPhoto(t.as('direction', 'dir-1'), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toEqual({ ok: false, rule: 'R491', code: 'sans_agent' });
     await t.db.run('UPDATE properties SET agent_id = NULL WHERE id = ?', [t.p.id]);
     expect(await t.filigrane.exportPhoto(t.as('direction', 'dir-1'), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toEqual({ ok: false, rule: 'R491', code: 'sans_agent' });
     expect(await t.db.all('SELECT id FROM photo_exports')).toEqual([]);

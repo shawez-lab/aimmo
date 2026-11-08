@@ -124,9 +124,9 @@ export class FiligranePhotos {
     const check = await this.certificats.checkPublishable(propertyId, input.ref);
     if (!check.ok) return bad(check.rule, check.code);
     const photo: CertifiedPhoto = check.value;
-    // Le filigrane porte l'agent du bien : un bien sans agent ne s'exporte pas.
+    // Le filigrane porte l'agent du bien, en activité : un bien sans agent, ou dont l'agent est parti, ne s'exporte pas.
     const agent = await this.db.first<{ first_name: string; last_name: string }>(
-      'SELECT a.first_name, a.last_name FROM properties p JOIN agents a ON a.id = p.agent_id AND a.network_id = p.network_id WHERE p.id = ? AND p.network_id = ?',
+      `SELECT a.first_name, a.last_name FROM properties p JOIN agents a ON a.id = p.agent_id AND a.network_id = p.network_id AND a.status = 'active' WHERE p.id = ? AND p.network_id = ?`,
       [propertyId, networkId],
     );
     const name = agent ? watermarkName(agent.first_name, agent.last_name) : null;
