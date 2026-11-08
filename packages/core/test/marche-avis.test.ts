@@ -151,6 +151,16 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(html).toContain('le 3 novembre 2026, de 300 000 € à 290 000 € ; le 5 novembre 2026, de 290 000 € à 276 000 € (−8 % depuis 300 000 €)');
   });
 
+  it('[R303] toute la commune compte, quel que soit le code postal de l’annonce', async () => {
+    const t = await setup();
+    await t.pige.ingest(t.net.id, [t.ad({ sourceRef: 'autre-code', postalCode: '21241', surfaceM2: 91 })]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.competitors).toHaveLength(1);
+    expect(got.value.market.ads).toBe(1);
+  });
+
   it('[R303] une annonce corrigée vers une autre sorte sort du relevé, même revue en ligne depuis', async () => {
     const t = await setup();
     const a = t.ad({ sourceRef: 'corrigee', surfaceM2: 90 });
