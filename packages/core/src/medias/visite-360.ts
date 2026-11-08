@@ -19,6 +19,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { PublishedMedia } from '../annonces/medias.ts';
 import { NEVER_FILM } from '../annonces/medias.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { normalizeEmail, normalizePhone } from '../fiche/normalize.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { IngestResult } from '../reception/reception.ts';
@@ -168,7 +169,7 @@ interface TourRow {
 }
 
 const SUBMISSION = /^[A-Za-z0-9_-]{8,100}$/;
-const CONTACT_KEYS = new Set(['tourRef', 'viewRef', 'submissionId', 'firstName', 'email', 'phone', 'message', 'submittedAt']);
+const CONTACT_KEYS = new Set(['tourRef', 'tourVersion', 'viewRef', 'submissionId', 'firstName', 'email', 'phone', 'message', 'submittedAt']);
 const MAX_MESSAGE = 2000;
 
 export interface VisitesVirtuellesOptions {
@@ -260,7 +261,8 @@ export class VisitesVirtuelles {
   /**
    * Un visiteur écrit depuis une vue de la visite publiée : le message entre dans la réception unifiée (C01) comme un
    * formulaire du site, rattaché au bien par sa référence, rangé une seule fois même envoyé deux fois (R18) ; son
-   * origine, la visite, sa version et la vue, est rangée à côté [R501]. Un e-mail ou un téléphone est exigé.
+   * origine, la visite, la version que le visiteur a vue et la vue, est rangée à côté [R501]. Un e-mail ou un
+   * téléphone lisible est exigé : contrôlé avant de ranger quoi que ce soit.
    */
   async contact(propertyId: string, input: unknown): Promise<TourResult<{ inboundId: string; duplicate: boolean }>> {
     const refuse = async (rule: 'R10' | 'R499' | 'R501', code: string): Promise<TourResult<{ inboundId: string; duplicate: boolean }>> => {
@@ -269,24 +271,34 @@ export class VisitesVirtuelles {
     };
     if (!isRecord(input) || Object.keys(input).some((k) => !CONTACT_KEYS.has(k))) return refuse('R10', 'contact_invalide');
     if (typeof input.tourRef !== 'string' || typeof input.viewRef !== 'string') return refuse('R10', 'contact_invalide');
+    if (typeof input.tourVersion !== 'number' || !Number.isInteger(input.tourVersion) || input.tourVersion < 1) return refuse('R10', 'contact_invalide');
     if (typeof input.submissionId !== 'string' || !SUBMISSION.test(input.submissionId)) return refuse('R10', 'contact_invalide');
     for (const k of ['firstName', 'email', 'phone', 'message', 'submittedAt'] as const) {
       if (input[k] !== undefined && input[k] !== null && typeof input[k] !== 'string') return refuse('R10', 'contact_invalide');
     }
     if (typeof input.message === 'string' && input.message.length > MAX_MESSAGE) return refuse('R10', 'message_trop_long');
-    const filled = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
-    if (!filled(input.email) && !filled(input.phone)) return refuse('R501', 'sans_coordonnees');
+    // Les coordonnées lues comme la réception les lira : une adresse ou un numéro illisible ne compte pas.
+    const email = typeof input.email === 'string' ? normalizeEmail(input.email) : null;
+    const phone = typeof input.phone === 'string' ? normalizePhone(input.phone) : null;
+    if (email === null && phone === null) return refuse('R501', 'sans_coordonnees');
     const found = await this.publishedTour(propertyId, input.tourRef);
     if (!found) return refuse('R499', 'visite_non_publiee');
-    // Le contact part d'une vue publiée de cette visite, jamais d'une vue retirée ou d'une autre visite [R499].
+    // Le contact part d'une vue de la version que le visiteur a vue : rattachée à sa pièce dans cette version, et
+    // encore publiée dans la visite du moment ; jamais d'une vue retirée ou d'une autre visite [R499].
     if (!found.views.some((v) => v.viewRef === input.viewRef)) return refuse('R499', 'vue_non_publiee');
+    const seen = input.tourVersion === found.tour.version ? found.tour : await this.db.first<TourRow>(
+      'SELECT id, network_id, property_id, tour_ref, version, plan_version, views, created_at FROM virtual_tours WHERE property_id = ? AND tour_ref = ? AND version = ?',
+      [propertyId, input.tourRef, input.tourVersion],
+    );
+    if (!seen) return refuse('R10', 'version_inconnue');
+    if (!(JSON.parse(seen.views) as TourView[]).some((v) => v.viewRef === input.viewRef && v.roomIndex !== null)) return refuse('R499', 'vue_non_publiee');
     const property = await this.db.first<{ network_id: string; reference: string }>('SELECT network_id, reference FROM properties WHERE id = ?', [propertyId]);
     if (!property) return refuse('R10', 'bien_inconnu');
     const result = await this.reception.ingest(property.network_id, 'site_form', {
       submissionId: `visite360-${input.submissionId}`,
       firstName: input.firstName ?? null,
-      email: input.email ?? null,
-      phone: input.phone ?? null,
+      email,
+      phone,
       message: input.message ?? '',
       propertyRef: property.reference,
       submittedAt: input.submittedAt ?? this.now().toISOString(),
@@ -295,11 +307,11 @@ export class VisitesVirtuelles {
     if (!received || received.outcome === 'unreadable') return refuse('R501', 'contact_illisible');
     await this.db.run(
       'INSERT INTO virtual_tour_contacts (inbound_id, network_id, property_id, tour_id, view_ref, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-      [received.inboundId, property.network_id, propertyId, found.tour.id, input.viewRef, this.now().toISOString()],
+      [received.inboundId, property.network_id, propertyId, seen.id, input.viewRef, this.now().toISOString()],
     );
     await appendEvent(
       this.journal,
-      { type: 'medias.visite360.contact', actor: 'visiteur', subject: `property:${propertyId}`, data: { rule: 'R501', outcome: received.outcome, version: found.tour.version } },
+      { type: 'medias.visite360.contact', actor: 'visiteur', subject: `property:${propertyId}`, data: { rule: 'R501', outcome: received.outcome, version: seen.version } },
       this.now,
     );
     return { ok: true, value: { inboundId: received.inboundId, duplicate: received.outcome === 'duplicate' } };

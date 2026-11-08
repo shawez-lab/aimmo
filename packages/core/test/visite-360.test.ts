@@ -102,13 +102,17 @@ describeWithSqlite('HX43 · visite à 360 degrés avec contact', () => {
     const t = await setup();
     await t.plans.save(t.alexV, t.p.id, { rooms: ROOMS });
     await t.visites.save(t.alexV, t.p.id, { tourRef: t.tour, views: [view(t.p.id, 1, 0), view(t.p.id, 2, null)] });
-    const form = { tourRef: t.tour, viewRef: view(t.p.id, 1, 0).viewRef, submissionId: 'envoi-0001', firstName: 'Lucille', email: 'lucille@exemple.test', message: 'Je voudrais visiter samedi.' };
+    const form = { tourRef: t.tour, tourVersion: 1, viewRef: view(t.p.id, 1, 0).viewRef, submissionId: 'envoi-0001', firstName: 'Lucille', email: 'lucille@exemple.test', message: 'Je voudrais visiter samedi.' };
     // Visite pas encore publiée : refusé.
     expect(await t.visites.contact(t.p.id, form)).toMatchObject({ ok: false, rule: 'R499', code: 'visite_non_publiee' });
     t.published.set(t.p.id, [{ ref: t.tour, kind: 'visite_virtuelle', overlay: null }]);
     // Depuis une vue non publiée, sans coordonnées, ou avec un champ inconnu : refusé.
     expect(await t.visites.contact(t.p.id, { ...form, viewRef: view(t.p.id, 2, null).viewRef })).toMatchObject({ ok: false, code: 'vue_non_publiee' });
     expect(await t.visites.contact(t.p.id, { ...form, email: undefined })).toMatchObject({ ok: false, rule: 'R501', code: 'sans_coordonnees' });
+    // Une adresse illisible ne compte pas comme coordonnée, et rien n'est rangé.
+    expect(await t.visites.contact(t.p.id, { ...form, email: 'pas-une-adresse', phone: 'abc' })).toMatchObject({ ok: false, rule: 'R501', code: 'sans_coordonnees' });
+    expect(await t.visites.contact(t.p.id, { ...form, tourVersion: 7 })).toMatchObject({ ok: false, code: 'version_inconnue' });
+    expect(await t.db.all('SELECT id FROM inbound_messages')).toEqual([]);
     expect(await t.visites.contact(t.p.id, { ...form, iban: 'x' })).toMatchObject({ ok: false, code: 'contact_invalide' });
 
     const first = await t.visites.contact(t.p.id, form);
@@ -124,9 +128,18 @@ describeWithSqlite('HX43 · visite à 360 degrés avec contact', () => {
     // Son origine : la visite, sa version, la vue et sa pièce ; lue par l'agent du bien seulement.
     expect(await t.visites.origin(t.alexV, first.value.inboundId)).toMatchObject({ ok: true, value: { origin: 'visite_360', propertyId: t.p.id, tourRef: t.tour, tourVersion: 1, viewRef: form.viewRef, room: 'Séjour' } });
     expect(await t.visites.origin(t.samV, first.value.inboundId)).toMatchObject({ ok: false, rule: 'R16' });
+    // Le visiteur a vu la version 1 ; l'agent range une version 2 où cette vue change de pièce : l'origine reste
+    // celle que le visiteur a vue.
+    await t.visites.save(t.alexV, t.p.id, { tourRef: t.tour, views: [view(t.p.id, 1, 2)] });
+    const late = await t.visites.contact(t.p.id, { ...form, submissionId: 'envoi-0002' });
+    if (!late.ok) throw new Error('contact tardif');
+    expect(await t.visites.origin(t.alexV, late.value.inboundId)).toMatchObject({ ok: true, value: { tourVersion: 1, room: 'Séjour' } });
+    const now2 = await t.visites.contact(t.p.id, { ...form, tourVersion: 2, submissionId: 'envoi-0003' });
+    if (!now2.ok) throw new Error('contact v2');
+    expect(await t.visites.origin(t.alexV, now2.value.inboundId)).toMatchObject({ ok: true, value: { tourVersion: 2, room: 'Chambre 2' } });
     // Le journal ne garde rien du visiteur.
     const events = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type LIKE 'medias.visite360.%'");
-    expect(events.filter((e) => e.type === 'medias.visite360.contact')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'medias.visite360.contact')).toHaveLength(4);
     expect(JSON.stringify(events)).not.toMatch(/lucille|exemple\.test|samedi/i);
   });
 });
