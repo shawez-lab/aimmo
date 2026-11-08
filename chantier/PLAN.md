@@ -4216,7 +4216,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51.
 
 ### SV15 · Les notifications aux agents passent par le contrôle central
-- Statut : en cours
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#435, 9b306ebb), migration `1775`, R225 en service. Décidé, lecture prudente : le service de notification est `AgentPushService.pushToDevices`, appelé par `ControleEnvois.sendToAgent` seul ; `Notifications` ne prend que cette porte (`Pick<ControleEnvois, 'sendToAgent'>`), l'ancienne boîte d'essai de HX27 est retirée ; envoi réservé par son `pushId` (`agent_push_sends`), décisions dans `agent_push_log` ; seule `AgentPushTrialBox` elle-même est admise, jamais une classe qui en hérite ; un refus R26 ou R415 rend `echec` (les notifications restent à envoyer), un agent parti rend `aucun_appareil`. Relecture forte 2 P1 corrigés ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (4977 tests). Reste : construire `ControleEnvois` avec `AgentPushTrialBox` au branchement de HX27 dans `app.ts` ; vrai service avec H57.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX27
 - Cahier : Architecture technique (contrôle central des envois) ; demande de HX27.
 - Trouvé par HX27 (voie 2, qui ne touche pas au socle) : `Notifications` n'envoie que par `AgentPushGate.sendToAgent`.
