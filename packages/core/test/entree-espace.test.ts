@@ -3,6 +3,7 @@ import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, crea
 import { CLIENT_SPACE_PURPOSE, EntreeEspace, LINK_REQUEST_ANSWER, type ClientSide } from '../src/espaces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { enClair, tablesContenant } from './boite-essai.ts';
 
 // Un mardi à 10 h, heure de Paris : dans les heures d'envoi [R01].
 const TUESDAY_10H = Date.parse('2027-06-08T08:00:00.000Z');
@@ -35,9 +36,11 @@ async function setup() {
   };
   /** Les jetons rangés dans la boîte d'essai pour cette personne, du plus récent au plus ancien. */
   const tokens = async (personId: string): Promise<string[]> => {
-    const rows = await db.all<{ body: string }>(
-      `SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%lien de votre espace%' ORDER BY m.occurred_at DESC, m.rowid DESC`,
-      [personId],
+    const rows = await enClair(
+      db.all<{ id: string; body: string }>(
+        `SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%lien de votre espace%' ORDER BY m.occurred_at DESC, m.rowid DESC`,
+        [personId],
+      ),
     );
     return rows.map((r) => /espace\/([a-z]{40})/.exec(r.body)?.[1] ?? '').filter((t) => t !== '');
   };
@@ -71,6 +74,8 @@ describeWithSqlite('EC01 · entrée du client dans son espace', () => {
     expect(await t.db.all('SELECT proof FROM consents WHERE person_id = ? AND purpose = ?', [c.id, CLIENT_SPACE_PURPOSE])).toEqual([{ proof: CONSENT.consentProof }]);
     const [token] = await t.tokens(c.id);
     expect(token).toMatch(/^[a-z]{40}$/);
+    // Ni les messages, ni la boîte d'essai, ni le journal, ni aucune table ne gardent le jeton du lien [HX61].
+    expect(await tablesContenant(t.db, token!)).toEqual([]);
     // Rien ne part hors de la boîte d'essai ; le jeton n'est rangé nulle part en clair.
     expect(await t.db.all("SELECT 1 FROM messages m WHERE m.body LIKE '%lien de votre espace%' AND m.id NOT IN (SELECT message_id FROM trial_outbox)")).toHaveLength(0);
     expect(JSON.stringify(await t.db.all('SELECT * FROM client_space_links'))).not.toContain(token);

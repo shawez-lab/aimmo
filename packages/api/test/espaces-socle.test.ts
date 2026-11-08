@@ -5,6 +5,7 @@ import { espaceBase, releveKeys } from '../src/app.ts';
 import { ESPACE_PATH, SESSION_COOKIE } from '../src/espaces.ts';
 import { setupDossier } from '../../core/test/dossiers-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Tout est inventé : réseau, agents, vendeur, acquéreur, bien, clés et adresses.
 const ORIGIN = 'https://aimmo-api.example.test';
@@ -40,7 +41,7 @@ async function setup(espaces: ApiConfig['espaces'] | null = { baseUrl: BASE, rel
     return { status: r.status, headers: r.headers, text: await r.text() };
   };
   const lastToken = async (personId: string): Promise<string> => {
-    const rows = await t.db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at DESC, m.rowid DESC', [personId]);
+    const rows = await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at DESC, m.rowid DESC', [personId]));
     const m = /espace\/([a-z]{40})/.exec(rows[0]?.body ?? '');
     if (!m) throw new Error('jeton');
     return m[1]!;

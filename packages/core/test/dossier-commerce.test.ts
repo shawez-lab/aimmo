@@ -15,6 +15,7 @@ import {
 } from '../src/commerces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { enClair } from './boite-essai.ts';
 
 const TUESDAY_10H = Date.parse('2027-09-07T08:00:00.000Z');
 const NDA_BODY =
@@ -90,9 +91,11 @@ async function setup(options: { maxOpens?: number } = {}) {
   };
   /** Le jeton du dernier lien rangé dans la boîte d'essai pour cette personne. */
   const tokenFor = async (personId: string): Promise<string> => {
-    const rows = await db.all<{ body: string }>(
-      `SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%dossier confidentiel%' ORDER BY m.occurred_at DESC, m.rowid DESC`,
-      [personId],
+    const rows = await enClair(
+      db.all<{ id: string; body: string }>(
+        `SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%dossier confidentiel%' ORDER BY m.occurred_at DESC, m.rowid DESC`,
+        [personId],
+      ),
     );
     const m = /dossier\/([a-z]{40})/.exec(rows[0]?.body ?? '');
     if (!m) throw new Error('jeton');

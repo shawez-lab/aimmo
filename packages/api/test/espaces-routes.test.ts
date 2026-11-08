@@ -5,6 +5,7 @@ import type { ClientSide, GestesAcquereur, SourcesAcquereur, SourcesProprietaire
 import { ESPACE_PATH, SESSION_COOKIE, espacesRoutes, frenchDate, handleEspacePublic, type EspacesServices } from '../src/espaces.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Tout est inventé : réseau, agents, clients, biens, visiteurs. Le 8 juin 2027 est un mardi.
 const START = Date.parse('2027-06-08T08:00:00.000Z');
@@ -103,7 +104,7 @@ async function setup(options: { keys?: boolean } = {}) {
     return { id: p.id, email, ref: refs.get(p.id)!, token: await lastToken(p.id) };
   };
   const lastToken = async (personId: string): Promise<string> => {
-    const rows = await db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at DESC, m.rowid DESC`, [personId]);
+    const rows = await enClair(db.all<{ id: string; body: string }>(`SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at DESC, m.rowid DESC`, [personId]));
     const m = /espace\/([a-z]{40})/.exec(rows[0]?.body ?? '');
     if (!m) throw new Error('jeton');
     return m[1]!;

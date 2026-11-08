@@ -5,6 +5,7 @@ import { locationRoutes, type LocationServices } from '../src/location.ts';
 import type { Viewer as V } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Réseau, agents, propriétaires, candidats, logements, communes et adresses inventés. Le 12 juillet 2027 est un lundi.
 let clock = Date.parse('2027-07-12T08:00:00.000Z'); // 10 h à Paris
@@ -83,7 +84,7 @@ async function setup() {
   };
   /** Les codes de signature du bail rangés dans la boîte d'essai, dans l'ordre. */
   const lastCode = async (): Promise<string> =>
-    (await db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature du bail%' ORDER BY m.occurred_at, m.created_at`))
+    (await enClair(db.all<{ id: string; body: string }>(`SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature du bail%' ORDER BY m.occurred_at, m.created_at`)))
       .map((r) => /(\d{6})/.exec(r.body)![1]!)
       .at(-1)!;
   let names = 0;

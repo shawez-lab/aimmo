@@ -349,6 +349,7 @@ export class ConfidentialiteCommerce {
         `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre code de signature de l’engagement de confidentialité : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.`,
       ],
       figures: [code, CODE_TTL_MINUTES],
+      secrets: [{ kind: 'code', value: code }],
     });
     // Refusé (heure, exclusion, arrêt, pas de mail…) : la session reste sans code utilisable et expire.
     if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };

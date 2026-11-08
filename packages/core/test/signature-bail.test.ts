@@ -16,6 +16,7 @@ import {
 } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { enClair } from './boite-essai.ts';
 
 // Réseau, agents, propriétaire, candidats, logement, adresses et mails inventés. Le 12 juillet 2027 est un lundi.
 const T0 = Date.parse('2027-07-12T08:00:00.000Z'); // 10 h à Paris
@@ -119,7 +120,7 @@ async function setup() {
   };
   /** Les codes de signature du bail rangés dans la boîte d'essai, dans l'ordre. */
   const codes = async (): Promise<string[]> =>
-    (await db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature du bail%' ORDER BY m.occurred_at, m.created_at`)).map(
+    (await enClair(db.all<{ id: string; body: string }>(`SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature du bail%' ORDER BY m.occurred_at, m.created_at`))).map(
       (r) => /(\d{6})/.exec(r.body)![1]!,
     );
   const lastCode = async () => (await codes()).at(-1)!;

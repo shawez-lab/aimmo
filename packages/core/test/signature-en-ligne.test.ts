@@ -18,6 +18,7 @@ import {
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { enClair, tablesContenant } from './boite-essai.ts';
 
 // Modèle et personnes inventés.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
@@ -55,11 +56,24 @@ async function setup() {
   const online = new SignatureEnLigne(db, acces, journal, { now });
   /** Les codes rangés dans la boîte d'essai, dans l'ordre. */
   const codes = async (): Promise<string[]> =>
-    (await db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature%' ORDER BY m.occurred_at, m.created_at`)).map((r) => /(\d{6})/.exec(r.body)![1]!);
+    (await enClair(db.all<{ id: string; body: string }>(`SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature%' ORDER BY m.occurred_at, m.created_at`))).map((r) => /(\d{6})/.exec(r.body)![1]!);
   return { raw, db, journal, online, agent, direction, sam, network, documentId: d.document.id, codes, at: (ms: number) => (clock = T0 + ms) };
 }
 
 describeWithSqlite('D08 · signature en ligne AIMMO, en mode essai', () => {
+  it('[HX61] le code de signature part entier à la boîte d’essai, mais n’est rangé en clair ni dans les messages, ni dans la boîte, ni au journal', async () => {
+    const t = await setup();
+    const s = await t.online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    const [code] = await t.codes();
+    const stored = await t.db.all<{ body: string }>(`SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.body LIKE '%code de signature%'`);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.body).toContain('[code masqué]');
+    expect(await tablesContenant(t.db, code!, ['messages', 'trial_outbox', 'journal', 'send_log', 'send_reservations'])).toEqual([]);
+    // Le code, lu dans le mail par le signataire, signe.
+    expect((await t.online.sign(t.agent, s.value.sessionId, { code: code! })).ok).toBe(true);
+  });
+
   it('un code ne sert qu’une fois ; la preuve garde l’empreinte, l’horodatage et la méthode ; jamais une signature réelle', async () => {
     const t = await setup();
     const s = await t.online.start(t.agent, t.documentId, CONSENT);

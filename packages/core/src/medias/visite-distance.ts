@@ -521,6 +521,7 @@ export class VisiteDistance {
       subject: `bon-distance:${id}:lien`,
       fallbackTexts: [`${hello}Merci pour votre visite à distance. Votre bon de visite vous attend ici, à lire puis à signer avec le code reçu dans un autre message : ${link}`],
       figures: link.match(/\d+/g) ?? [],
+      secrets: [{ kind: 'lien', value: link }],
     });
     if (sentLink.status !== 'sent') return { ok: false, rule: sentLink.rule, code: 'send_refused', reason: sentLink.reason };
     const sentCode = await this.envois.send({
@@ -528,6 +529,7 @@ export class VisiteDistance {
       subject: `bon-distance:${id}:code`,
       fallbackTexts: [`${hello}Votre code pour signer votre bon de visite : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.`],
       figures: [code, CODE_TTL_MINUTES],
+      secrets: [{ kind: 'code', value: code }],
     });
     if (sentCode.status !== 'sent') return { ok: false, rule: sentCode.rule, code: 'send_refused', reason: sentCode.reason };
     await appendEvent(this.journal, { type: 'bon_distance.ouvert', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { rule: 'R504', session: id, mode: 'essai' } }, this.now);

@@ -422,6 +422,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 
 ### HX61 · Le contrôle central range un message à secret masqué
 - Statut : en cours
+- Reste : décidé, lecture prudente : `SendOrder.secrets` (code ou lien, 4 caractères au moins, sujet exigé) ; le canal reçoit le texte entier, `messages.body` et le `body` rendu à l'appelant portent « [code masqué] » ou « [lien masqué] » ; un texte à secret n'a pas de clé `texte:` dans `send_reservations` (elle gardait le secret en clair, et son empreinte se retrouverait par essais) : son sujet, propre à la session, garde l'anti-doublon. Déclarés : D08, W12, T05, HX44 (lien et code du bon), engagement et dossier des commerces (code et lien), lien de l'espace client (EC01, trouvé par la relecture forte). En essai, le code n'est plus lisible nulle part : les tests le lisent dans ce que reçoit la boîte d'essai (`test/boite-essai.ts`). Restent, jetons personnels sans acte à signer, non masqués : dossier publié avant la visite (HX44), lien de rendez-vous, lien de satisfaction.
 - Qui : Claude, voie 1 (touche `envoi/controle.ts`, socle), relecture forte
 - Dépendances : HX44
 - Partie du cahier : M06 (signature en ligne), M08 (visites).

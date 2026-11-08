@@ -5,6 +5,7 @@ import { BUDGETS, budgetProblems, htmlProblems } from '../src/design/audit.ts';
 import { dossierProblems, publishedVersionOf, renderDossier, VisiteDistance } from '../src/medias/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { enClair, tablesContenant } from './boite-essai.ts';
 
 // Réseau, agents, vendeurs, visiteurs et biens inventés.
 const MONDAY_9H = Date.parse('2026-12-07T08:00:00.000Z');
@@ -110,7 +111,7 @@ async function setup() {
     if (!r.ok) throw new Error(r.code);
     return { id: r.visit.appointment.id, start: Date.parse(r.visit.appointment.start_at), end: Date.parse(r.visit.appointment.end_at), buyer, project };
   };
-  const outbox = (personId: string) => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.created_at', [personId]);
+  const outbox = (personId: string) => enClair(db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.created_at', [personId]));
   let offers = 0;
   const offer = async (buyerId: string) => {
     offers += 1;
@@ -339,6 +340,12 @@ describeWithSqlite('HX44 · visite à distance et bon signé en ligne', () => {
     const s = await t.db.first<Record<string, unknown>>('SELECT * FROM remote_slip_signatures');
     expect(JSON.stringify(s)).not.toContain('123456');
     expect(JSON.stringify(s)).not.toContain(t.issued.at(-1));
+    // Les messages rangés, la boîte d'essai et le journal ne gardent ni le jeton ni le code : l'agent qui lit la fiche
+    // ne peut pas signer à la place du visiteur [HX61].
+    const stored = await t.db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.created_at', [v.buyer.id]);
+    expect(stored.map((m) => m.body.includes('[lien masqué]') || m.body.includes('[code masqué]'))).toEqual([true, true]);
+    expect(await tablesContenant(t.db, t.issued.at(-1)!)).toEqual([]);
+    expect(await tablesContenant(t.db, '123456', ['messages', 'trial_outbox', 'journal', 'send_log', 'send_reservations'])).toEqual([]);
   });
 
   it('[R504] le code ne sert qu’une fois, expire, et cinq essais faux bloquent', async () => {
