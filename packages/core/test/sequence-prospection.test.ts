@@ -495,6 +495,23 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect((await t.steps(id))[0]).toMatchObject({ outcome: 'sent', message_id: expect.any(String) });
   });
 
+  it('[R300] [R05] un texte déjà envoyé est sauté pour de bon, la séquence continue', async () => {
+    const t = await setup();
+    const text = 'Bonjour Léa, je suis Alex, agent du quartier.';
+    const id = await t.startOk([
+      { channel: 'email', afterDays: 0, text },
+      { channel: 'email', afterDays: 1, text },
+      { channel: 'letter', afterDays: 2 },
+    ]);
+    await t.sequences.run();
+    t.setClock(START + DAY);
+    expect(await t.sequences.run()).toMatchObject({ sent: 0, skipped: 1, waiting: 0 });
+    expect((await t.steps(id)).map((s) => [s.outcome, s.rule])).toEqual([['sent', null], ['skipped', 'R05'], [null, null]]);
+    t.setClock(START + 2 * DAY);
+    const today = await t.sequences.today(t.alex);
+    expect(today.ok && today.value.steps).toMatchObject([{ action: 'letter', proposed: true }]);
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);

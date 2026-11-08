@@ -472,13 +472,20 @@ export class SequencesProspection {
           // Un envoi encore en route peut échouer : elle attend. Passé ce délai, sans échec noté, elle est rangée
           // « partie » avec ce message (un passage coupé après l'envoi) [R300, R05].
           const ids = (await this.fiche.view(seq.person_id)).members.map((m) => m.id);
-          const done = await this.db.first<{ message_id: string }>(
-            `SELECT s.message_id FROM message_subjects s JOIN send_log l ON l.message_id = s.message_id AND l.outcome = 'sent'
-             WHERE s.subject = ? AND s.person_id IN (${placeholders(ids.length)}) AND s.created_at <= ?
-               AND NOT EXISTS (SELECT 1 FROM send_log f WHERE f.message_id = s.message_id AND f.outcome = 'failed') LIMIT 1`,
-            [`sequence:${seq.id}:${step.position}`, ...ids, new Date(this.now().getTime() - IN_FLIGHT_MS).toISOString()],
+          const reserved = await this.db.first<{ message_id: string; created_at: string }>(
+            `SELECT s.message_id, s.created_at FROM message_subjects s JOIN send_log l ON l.message_id = s.message_id AND l.outcome = 'sent'
+             WHERE s.subject = ? AND s.person_id IN (${placeholders(ids.length)})
+               AND NOT EXISTS (SELECT 1 FROM send_log f WHERE f.message_id = s.message_id AND f.outcome = 'failed')
+             ORDER BY s.created_at LIMIT 1`,
+            [`sequence:${seq.id}:${step.position}`, ...ids],
           );
-          if (done && (await this.settle(seq, step, 'sent', null, done.message_id, 'system'))) {
+          if (!reserved) {
+            // Le sujet de l'étape n'est pas pris : c'est son texte qui a déjà été envoyé. Refus définitif, l'étape est sautée.
+            await this.settle(seq, step, 'skipped', 'R05', null, 'system');
+            counts.skipped += 1;
+            continue;
+          }
+          if (Date.parse(reserved.created_at) <= this.now().getTime() - IN_FLIGHT_MS && (await this.settle(seq, step, 'sent', null, reserved.message_id, 'system'))) {
             counts.sent += 1;
             continue;
           }
