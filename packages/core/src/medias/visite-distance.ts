@@ -12,7 +12,8 @@
  *   montre plus rien dès qu'une autre version est publiée ou que le bien ne peut plus être diffusé ;
  * - le bon d'une visite faite à distance se signe en ligne juste après, comme D08 : à la fin de la visite, un lien et un
  *   code à usage unique partent au visiteur par le contrôle central ; le code expire, ne sert qu'une fois, et cinq
- *   essais faux bloquent la signature ; seules les empreintes sont gardées [R504] ;
+ *   essais faux bloquent la signature ; la signature n'en garde que les empreintes [R504] (le texte des messages reste
+ *   rangé par le contrôle central, comme pour D08 : son masquage, au socle, est confié à HX61, voie 1) ;
  * - aucune offre de ce visiteur sur ce bien n'entre au registre tant que ce bon n'est pas signé, gardé par la base
  *   elle-même [R505].
  *
