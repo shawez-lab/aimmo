@@ -207,6 +207,35 @@ interface ConsentRow {
   revoked_at: string | null;
 }
 
+export type Diffusability = { ok: true } | { ok: false; code: 'inconnue' | 'accord_retire' | 'accord_hors_agent_du_bien' | 'photos_changees' };
+
+/**
+ * Une vidéo générée peut-elle être diffusée maintenant ? Seulement si elle suit encore le plan des photos du moment,
+ * et si l'accord de voix ou d'avatar qu'elle utilise n'a pas été retiré et vient toujours de l'agent du bien en
+ * activité [R495, R493]. Relu au moment d'envoyer, par le Studio et par chaque annonce [R498].
+ */
+export async function generatedVideoDiffusable(db: SqlDatabase, photos: PublishablePhotos, propertyId: string, videoRef: string): Promise<Diffusability> {
+  const row = await db.first<{ plan_sha256: string; voice_consent_id: string | null; avatar_consent_id: string | null }>(
+    'SELECT plan_sha256, voice_consent_id, avatar_consent_id FROM generated_videos WHERE property_id = ? AND video_ref = ?',
+    [propertyId, videoRef],
+  );
+  if (!row) return { ok: false, code: 'inconnue' };
+  for (const id of [row.voice_consent_id, row.avatar_consent_id]) {
+    if (id === null) continue;
+    if (await db.first('SELECT consent_id FROM agent_likeness_revocations WHERE consent_id = ?', [id])) return { ok: false, code: 'accord_retire' };
+    // L'accord ne vaut que pour les biens de l'agent qui l'a donné, tant qu'il en est l'agent en activité : un bien
+    // repris par un autre, ou un agent parti, et la vidéo ne part plus [R495].
+    const owner = await db.first<{ id: string }>(
+      `SELECT c.id FROM agent_likeness_consents c JOIN properties p ON p.id = ? AND p.agent_id = c.agent_id AND p.network_id = c.network_id
+       JOIN agents a ON a.id = c.agent_id AND a.network_id = c.network_id AND a.status = 'active' WHERE c.id = ?`,
+      [propertyId, id],
+    );
+    if (!owner) return { ok: false, code: 'accord_hors_agent_du_bien' };
+  }
+  if ((await planSha256(generatedVideoPlan(await photos.publishable(propertyId)))) !== row.plan_sha256) return { ok: false, code: 'photos_changees' };
+  return { ok: true };
+}
+
 export interface VideosGenereesOptions {
   now?: () => Date;
   newId?: () => string;
@@ -418,26 +447,8 @@ export class VideosGenerees {
    * et si l'accord de voix ou d'avatar qu'elle utilise n'a pas été retiré et vient toujours de l'agent du bien en
    * activité [R495, R493]. Relu au moment d'envoyer.
    */
-  async diffusable(propertyId: string, videoRef: string): Promise<{ ok: true } | { ok: false; code: 'inconnue' | 'accord_retire' | 'accord_hors_agent_du_bien' | 'photos_changees' }> {
-    const row = await this.db.first<{ plan_sha256: string; voice_consent_id: string | null; avatar_consent_id: string | null }>(
-      'SELECT plan_sha256, voice_consent_id, avatar_consent_id FROM generated_videos WHERE property_id = ? AND video_ref = ?',
-      [propertyId, videoRef],
-    );
-    if (!row) return { ok: false, code: 'inconnue' };
-    for (const id of [row.voice_consent_id, row.avatar_consent_id]) {
-      if (id === null) continue;
-      if (await this.db.first('SELECT consent_id FROM agent_likeness_revocations WHERE consent_id = ?', [id])) return { ok: false, code: 'accord_retire' };
-      // L'accord ne vaut que pour les biens de l'agent qui l'a donné, tant qu'il en est l'agent en activité : un bien
-      // repris par un autre, ou un agent parti, et la vidéo ne part plus [R495].
-      const owner = await this.db.first<{ id: string }>(
-        `SELECT c.id FROM agent_likeness_consents c JOIN properties p ON p.id = ? AND p.agent_id = c.agent_id AND p.network_id = c.network_id
-         JOIN agents a ON a.id = c.agent_id AND a.network_id = c.network_id AND a.status = 'active' WHERE c.id = ?`,
-        [propertyId, id],
-      );
-      if (!owner) return { ok: false, code: 'accord_hors_agent_du_bien' };
-    }
-    if ((await planSha256(generatedVideoPlan(await this.photos.publishable(propertyId)))) !== row.plan_sha256) return { ok: false, code: 'photos_changees' };
-    return { ok: true };
+  async diffusable(propertyId: string, videoRef: string): Promise<Diffusability> {
+    return generatedVideoDiffusable(this.db, this.photos, propertyId, videoRef);
   }
 
   private async activeConsent(agentId: string, kind: LikenessKind): Promise<{ id: string; sample_sha256: string } | null> {

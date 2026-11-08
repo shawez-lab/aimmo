@@ -14,6 +14,7 @@
  * de 15 minutes. Un bien loué ou retiré de la vente est retiré ; un bien vendu reste montré « vendu » tant que son
  * mandat le permet.
  */
+import type { PublishablePhotos } from '../medias/video-generee.ts';
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -106,7 +107,7 @@ export class Publication {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string; channels?: readonly ListingChannel[] } = {},
+    options: { now?: () => Date; newId?: () => string; channels?: readonly ListingChannel[]; generatedVideoPhotos?: PublishablePhotos } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -119,7 +120,8 @@ export class Publication {
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
     this.annonces = new Annonces(db, acces, journal, { now: this.now });
     this.mentions = new MentionsAnnonce(db, acces, journal, { now: this.now });
-    this.medias = new MediasBien(db, acces, journal, { now: this.now });
+    // Une vidéo générée n'est relue qu'avec les photos certifiées ; sans elles, elle ne part pas [R498].
+    this.medias = new MediasBien(db, acces, journal, { now: this.now, ...(options.generatedVideoPhotos ? { generatedVideoPhotos: options.generatedVideoPhotos } : {}) });
   }
 
   private async latest(propertyId: string): Promise<VersionRow | null> {

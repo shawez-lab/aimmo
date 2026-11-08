@@ -10,6 +10,10 @@
  *   tournage, qui dit ce qu'il ne faut jamais filmer.
  * - Le plan de tournage est tiré de la fiche seule : il ne demande de filmer que ce que la fiche dit exister.
  *
+ * - Une vidéo générée depuis les photos (HX42) est relue au moment de chaque envoi : accord de voix ou d'avatar
+ *   retiré, agent du bien changé ou parti, photos du plan changées, et elle ne part pas, même si un contrôle de texte
+ *   ou un montage existe sous la même référence [R498]. Sans les photos certifiées pour la relire, elle ne part pas.
+ *
  * Le montage de la vidéo vient avec M19 Studio.
  */
 import type { Acces } from '../acces/acces.ts';
@@ -22,6 +26,7 @@ import { publicTextProblems, sentences, type SentenceProblem } from './annonce-s
 import { parisDay } from '../studio/bibliotheque.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 import { orderGallery } from '../medias/amenagement.ts';
+import { generatedVideoDiffusable, type PublishablePhotos } from '../medias/video-generee.ts';
 
 export const VIRTUAL_STAGING_LABEL = 'Aménagement virtuel';
 
@@ -71,18 +76,27 @@ type Problem =
 
 const MAX_TEXT = 20_000;
 
+export interface MediasBienOptions {
+  now?: () => Date;
+  newId?: () => string;
+  /** Les photos certifiées du Studio (X02), pour relire une vidéo générée au moment d'envoyer [R498]. */
+  generatedVideoPhotos?: PublishablePhotos;
+}
+
 export class MediasBien {
   private readonly now: () => Date;
   private readonly newId: () => string;
+  private readonly generatedVideoPhotos: PublishablePhotos | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string } = {},
+    options: MediasBienOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.generatedVideoPhotos = options.generatedVideoPhotos ?? null;
   }
 
   /**
@@ -137,10 +151,7 @@ export class MediasBien {
       }
       const last = await this.db.first<{ outcome: string }>('SELECT outcome FROM video_text_checks WHERE property_id = ? AND media_ref = ? ORDER BY checked_at DESC, rowid DESC LIMIT 1', [propertyId, m.ref]);
       if (last?.outcome !== 'ok') continue;
-      // Une vidéo ne part qu'une fois son montage rangé par le Studio (M19, X03) : sa musique y a été contrôlée contre
-      // la bibliothèque sous licence [R133]. Une vidéo venue d'ailleurs, à la musique inconnue, ne part pas.
-      // Sa musique est relue au moment de publier : une licence retirée ou expirée depuis le montage retire la vidéo.
-      if (m.kind === 'video' && !(await this.montageStillLicensed(propertyId, m.ref))) continue;
+      if (m.kind === 'video' && !(await this.videoMayGo(propertyId, m.ref))) continue;
       out.push({ ref: m.ref, kind: m.kind, overlay: null });
     }
     return this.withTwins(propertyId, out);
@@ -163,6 +174,25 @@ export class MediasBien {
       else if (i < ordered.length) out.push(ordered[i++]!);
     }
     return out;
+  }
+
+  /**
+   * Une vidéo part-elle maintenant ? Chaque règle qui la concerne s'applique, la plus stricte l'emporte :
+   * - vidéo générée (HX42) : relue à l'instant, accord, agent du bien et photos du plan [R498] ; sans les photos
+   *   certifiées pour la relire, elle ne part pas ; elle n'a pas de musique, mais si un montage existe aussi sous sa
+   *   référence, sa licence est relue en plus ;
+   * - toute autre vidéo : son montage rangé par le Studio (M19, X03), dont la musique a été contrôlée contre la
+   *   bibliothèque sous licence et est relue au moment de publier [R133]. Une vidéo venue d'ailleurs ne part pas.
+   */
+  private async videoMayGo(propertyId: string, videoRef: string): Promise<boolean> {
+    const generated = await this.db.first('SELECT id FROM generated_videos WHERE property_id = ? AND video_ref = ?', [propertyId, videoRef]);
+    if (generated) {
+      if (this.generatedVideoPhotos === null) return false;
+      if (!(await generatedVideoDiffusable(this.db, this.generatedVideoPhotos, propertyId, videoRef)).ok) return false;
+      const montage = await this.db.first('SELECT id FROM video_montages WHERE property_id = ? AND video_ref = ? LIMIT 1', [propertyId, videoRef]);
+      return montage === null || (await this.montageStillLicensed(propertyId, videoRef));
+    }
+    return this.montageStillLicensed(propertyId, videoRef);
   }
 
   /** Le montage de la vidéo existe, et sa musique, s'il en a une, a encore sa licence à cet instant [R133]. */
