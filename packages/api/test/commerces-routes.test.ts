@@ -3,6 +3,7 @@ import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSql
 import { commercesRoutes, dossierReaderRoutes, type CommercesServices } from '../src/commerces.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Réseau, agents, commerces, repreneurs, enseignes et chiffres inventés. Le 7 septembre 2027 est un mardi.
 let n = 0;
@@ -104,9 +105,11 @@ async function setup(writer?: CommercesServices['presentationWriter']) {
     return { id: p.id, email: `repreneur.${letter.toLowerCase()}@exemple.test` };
   };
   const tokenFor = async (personId: string): Promise<string | null> => {
-    const row = await db.first<{ body: string }>(
-      `SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%dossier confidentiel du commerce%' ORDER BY m.rowid DESC LIMIT 1`,
-      [personId],
+    const [row] = await enClair(
+      db.all<{ id: string; body: string }>(
+        `SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? AND m.body LIKE '%dossier confidentiel du commerce%' ORDER BY m.rowid DESC LIMIT 1`,
+        [personId],
+      ),
     );
     return /dossier\/([a-z]{40})/.exec(row?.body ?? '')?.[1] ?? null;
   };
@@ -486,8 +489,10 @@ describeWithSqlite('CE14 · les lectures de l’écran des engagements', () => {
     const open = await t.ok(t.alex, 'POST', `/commerces/engagements/${ndaId}/signature`, CONSENT);
     expect(open.mode).toBe('essai');
     const code = t.lastCode();
-    const boxed = await t.db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [r.id]);
-    expect(boxed.filter((m) => m.body.includes(code))).toHaveLength(1);
+    // Le code part au canal une fois, et n'est rangé nulle part en clair [HX61].
+    const boxed = await t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [r.id]);
+    expect(boxed.filter((m) => m.body.includes(code))).toHaveLength(0);
+    expect((await enClair(boxed)).filter((m) => m.body.includes(code))).toHaveLength(1);
     expect(JSON.stringify(open)).not.toContain(code);
     expect(JSON.stringify(await t.journal.all())).not.toContain(code);
   });

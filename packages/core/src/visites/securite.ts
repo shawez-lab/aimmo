@@ -155,6 +155,7 @@ export class VisiteSecurisee {
         `${first ? `Bonjour ${first}, v` : 'V'}otre code pour confirmer la visite : ${code}. Il est valable ${VISIT_CODE_TTL_MINUTES} minutes. Donnez-le seulement à votre agent immobilier, au moment de la visite.`,
       ],
       figures: [code, VISIT_CODE_TTL_MINUTES],
+      secrets: [{ kind: 'code', value: code }],
     });
     if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
     // Le code n'est rangé qu'une fois envoyé : un code jamais parti ne peut pas servir.

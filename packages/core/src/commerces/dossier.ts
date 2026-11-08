@@ -397,6 +397,7 @@ export class DossierCommerce {
         `${first ? `Bonjour ${first},\n\n` : 'Bonjour,\n\n'}Votre agent immobilier vous ouvre le dossier confidentiel du commerce : ${this.baseUrl}${token}. Ce lien vous est personnel, il est valable ${this.linkDays} jours et s’ouvre ${this.maxOpens} fois au plus.`,
       ],
       figures: [this.linkDays, this.maxOpens],
+      secrets: [{ kind: 'lien', value: `${this.baseUrl}${token}` }],
     });
     if (sent.status !== 'sent') {
       // Le lien reste, mais sans avoir été remis : il est révoqué aussitôt.
@@ -467,6 +468,7 @@ export class DossierCommerce {
       subject: `dossier_commerce:${id}`,
       fallbackTexts: [`Bonjour,\n\nVotre code pour ouvrir le dossier confidentiel : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne.`],
       figures: [code, CODE_TTL_MINUTES],
+      secrets: [{ kind: 'code', value: code }],
     });
     if (sent.status !== 'sent') {
       // Un code qui n'est pas parti ne sert jamais.

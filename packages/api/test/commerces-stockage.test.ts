@@ -7,6 +7,7 @@ import { fromD1 } from '../src/d1.ts';
 import { sha256Hex } from '../src/index.ts';
 import worker, { type Env } from '../src/worker.ts';
 import { fakeD1 } from './fake-d1.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Réseau, agent, commerce, documents et clé inventés.
 const BASE = 'https://aimmo-api.example.workers.dev';
@@ -105,7 +106,7 @@ describeWithSqlite('CE22 · le dépôt des documents du dossier sur le stockage 
       return done.body.data;
     };
     /** Le dernier code envoyé à la personne : l'envoi reste dans la boîte d'essai. */
-    const code = async (like: string): Promise<string> => /(\d{6})/.exec((await t.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ? ORDER BY m.rowid DESC LIMIT 1', [who, like]))!.body)![1]!;
+    const code = async (like: string): Promise<string> => /(\d{6})/.exec((await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ? ORDER BY m.rowid DESC LIMIT 1', [who, like])))[0]!.body)![1]!;
     await ok(t.send(DIRECTION, 'POST', '/commerces/baremes', { activity: 'restaurant', method: 'revenue_pct', low: 5000, high: 8000, source: 'Barème inventé', sourceDate: new Date().toISOString().slice(0, 10) }));
     await ok(t.send(DIRECTION, 'POST', '/commerces/engagements/modeles', { body: NDA }));
     await ok(t.call('POST', `/commerces/${t.shop}/fiche`, { activity: 'restaurant', signName: 'Le Comptoir Inventé', fiscalYears: [{ year: 2025, revenueCents: 50_000_000, resultCents: 2_000_000 }] }));
@@ -118,7 +119,7 @@ describeWithSqlite('CE22 · le dépôt des documents du dossier sur le stockage 
     const { sessionId } = await ok(t.call('POST', `/commerces/engagements/${ndaId}/signature`, { consentProof: 'accord donné au rendez-vous' }));
     await ok(t.call('POST', `/commerces/signatures/${sessionId}`, { code: await code('%engagement de confidentialité%') }));
     await ok(t.call('POST', `/commerces/${t.shop}/dossiers`, { personId: who, consentProof: 'accord donné au rendez-vous' }));
-    const sent = await t.db.first<{ body: string }>('SELECT body FROM messages WHERE person_id = ? AND body LIKE ?', [who, '%dossier confidentiel du commerce%']);
+    const [sent] = await enClair(t.db.all<{ id: string; body: string }>('SELECT id, body FROM messages WHERE person_id = ? AND body LIKE ?', [who, '%dossier confidentiel du commerce%']));
     const token = /dossier\/([a-z]{40})/.exec(sent!.body)![1]!;
     await t.send(null, 'POST', `/dossier/${token}/code`, { email: reader });
     const opened = await ok(t.send(null, 'POST', `/dossier/${token}`, { email: reader, code: await code('%code pour ouvrir%') }));

@@ -4,6 +4,7 @@ import { handleRequest } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Tout est inventé : réseau, bien, vendeur, acquéreur et clés de test.
 const BASE = 'https://aimmo-api.example.test';
@@ -41,7 +42,7 @@ async function setup() {
   const project = await store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: buyer.id, kind: 'buy' });
   await new RendezVous(db, journal, { now: t.now }).setAvailability(ids.alex as never, WEEK);
   const sms = async () => {
-    const m = await db.first<{ body: string }>("SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1");
+    const [m] = await enClair(db.all<{ id: string; body: string }>("SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1"));
     return /(\d{6})/.exec(m!.body)![1]!;
   };
   const toSeller = () => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [t.personId]);

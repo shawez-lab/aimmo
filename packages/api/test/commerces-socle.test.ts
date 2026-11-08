@@ -6,6 +6,7 @@ import { runScheduler } from '../src/planificateur.ts';
 import { dossierLinkBase } from '../src/worker.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 
 // Réseau, agent, commerce, repreneur et clés inventés. Le 7 septembre 2027 est un mardi ; été : Paris = UTC + 2.
 const BASE = 'https://aimmo-api.example.test';
@@ -86,14 +87,14 @@ describeWithSqlite('CE10 · M16 branché dans le socle', () => {
       [t.network, ready, 'c'.repeat(64), `agent:${t.alex}`],
     );
     const lastCode = async (like: string): Promise<string> => {
-      const row = await t.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ? ORDER BY m.rowid DESC LIMIT 1', [ready, like]);
+      const [row] = await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ? ORDER BY m.rowid DESC LIMIT 1', [ready, like]));
       return /(\d{6})/.exec(row?.body ?? '')?.[1] ?? '';
     };
     const nda = (await t.call('alex', 'POST', `/commerces/${t.shop}/demandes`, { personId: ready })).body.data.ndaId as string;
     const session = (await t.call('alex', 'POST', `/commerces/engagements/${nda}/signature`, { consentProof: 'accord au rendez-vous' })).body.data.sessionId as string;
     expect((await t.call('alex', 'POST', `/commerces/signatures/${session}`, { code: await lastCode('%engagement de confidentialité%') })).status).toBe(200);
     expect((await t.call('alex', 'POST', `/commerces/${t.shop}/dossiers`, { personId: ready, consentProof: 'accord au rendez-vous' })).status).toBe(200);
-    const link = await t.db.first<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ?', [ready, '%dossier confidentiel du commerce%']);
+    const [link] = await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? AND m.body LIKE ?', [ready, '%dossier confidentiel du commerce%']));
     const token = /dossier\/([a-z]{40})/.exec(link?.body ?? '')?.[1] ?? '';
     expect(link?.body).toContain('https://app.example.test/dossier/');
     expect((await t.anonymous('POST', `/dossier/${token}/code`, { email: 'dominique.exemple@example.test' })).status).toBe(200);

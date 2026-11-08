@@ -17,6 +17,7 @@ import {
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { enClair } from './boite-essai.ts';
 
 const TUESDAY_10H = Date.parse('2026-12-08T09:00:00.000Z');
 const WEDNESDAY_10H = new Date('2026-12-09T09:00:00.000Z');
@@ -51,7 +52,7 @@ async function setup(notifier?: DirectionNotifier) {
   const appointmentId = visit.visit.appointment.id;
   /** Le code rangé dans la boîte d'essai, lu dans le dernier SMS. */
   const lastCode = async () => {
-    const m = await db.first<{ body: string }>("SELECT m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1");
+    const [m] = await enClair(db.all<{ id: string; body: string }>("SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.channel = 'sms' ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT 1"));
     return /(\d{6})/.exec(m!.body)![1]!;
   };
   return { db, journal, store, securite, visites, rdv, network, alex, sam, as, person, appointmentId, lastCode, setClock: (t: number) => (clock = t), clock: () => clock };

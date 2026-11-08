@@ -48,6 +48,25 @@ export interface AiBudget {
   allows(networkId: string, at: Date): Promise<boolean>;
 }
 
+/**
+ * Un secret porté par le message : code à usage unique ou lien personnel de signature ou d'ouverture (D08, W12, T05,
+ * HX44). Il est remis au canal tel quel, mais rangé masqué : l'agent qui lit la fiche ne peut pas agir à la place du
+ * client [R16, HX61].
+ */
+export interface SendSecret {
+  kind: 'code' | 'lien';
+  value: string;
+}
+
+export const MASKED_SECRET: Record<SendSecret['kind'], string> = { code: '[code masqué]', lien: '[lien masqué]' };
+
+/** Le texte à ranger : chaque secret remplacé, partout où il paraît, les plus longs d'abord. */
+export function maskSecrets(body: string, secrets: readonly SendSecret[]): string {
+  let out = body;
+  for (const s of [...secrets].sort((a, b) => b.value.length - a.value.length)) out = out.split(s.value).join(MASKED_SECRET[s.kind]);
+  return out;
+}
+
 export interface SendOrder {
   networkId: string;
   agentId?: string | null;
@@ -98,6 +117,8 @@ export interface SendOrder {
   sellerNames?: readonly string[];
   /** Nombre de questions permis dans le texte. */
   maxQuestions?: number;
+  /** Les secrets du texte : remis au canal, jamais rangés en clair, ni dans les messages, ni dans le résultat [HX61]. */
+  secrets?: readonly SendSecret[];
   /**
    * La coordonnée à viser, normalisée, quand la personne l'a choisie (réservation en ligne, V09) : elle doit être une
    * coordonnée de la fiche pour ce canal, fiches réunies comprises ; sinon l'envoi est refusé. Absente : la première.
@@ -237,6 +258,13 @@ export class ControleEnvois {
     if (order.kind !== 'reply' && subjects.length === 0) {
       throw new Error('Un envoi d’initiative cite son sujet ou ses biens [R05].');
     }
+    const secrets = order.secrets ?? [];
+    // Un secret trop court masquerait n'importe quoi : c'est une erreur de l'appelant.
+    if (secrets.some((x) => typeof x.value !== 'string' || x.value.trim().length < 4 || !(x.kind in MASKED_SECRET))) {
+      throw new Error('Un secret à masquer a au moins 4 caractères [HX61].');
+    }
+    // Sans clé de texte, le sujet seul garde l'anti-doublon d'un message à secret : il en faut un [R05].
+    if (secrets.length > 0 && subjects.length === 0) throw new Error('Un message à secret cite son sujet [R05, HX61].');
     let agentId = order.agentId ?? null;
     const log = async (
       outcome: SendStatus,
@@ -469,6 +497,8 @@ export class ControleEnvois {
       }
     }
     const body = asWritten ? chosen.text : withMentionText(chosen.text);
+    // Remis au canal tel quel ; rangé, rendu et relu avec chaque secret masqué [HX61].
+    const stored = maskSecrets(body, secrets);
 
     // La rédaction a pu durer : un arrêt ou une exclusion arrivés entre-temps l'emportent [R02, R04].
     const last = await decide(this.now());
@@ -484,7 +514,9 @@ export class ControleEnvois {
     const keys = [
       ...new Set([
         ...subjects.map((k) => `sujet:${k}`),
-        `texte:${sameText(chosen.core)}`,
+        // Un texte à secret n'a pas de clé de texte : elle garderait le secret en clair, et son empreinte se
+        // retrouverait en essayant chaque code. Son sujet, propre à la session, garde l'anti-doublon [R05, HX61].
+        ...(secrets.length === 0 ? [`texte:${sameText(chosen.core)}`] : []),
         ...(withMention ? [`mention:${conversationKey}`] : []),
       ]),
     ];
@@ -563,7 +595,7 @@ export class ControleEnvois {
         conversationId: threadId,
         channel: order.channel,
         authorKind: order.byAgent ? 'agent' : chosen.ai ? 'ai' : 'system',
-        body,
+        body: stored,
         occurredAt: at,
       },
       order.kind,
@@ -579,7 +611,7 @@ export class ControleEnvois {
       ]);
     }
     await this.db.run('UPDATE send_reservations SET message_id = ? WHERE reservation_id = ?', [message.id, reservationId]);
-    const flags = { messageId: message.id, body, aiText: chosen.ai, fallbackText: !chosen.ai, withMention, ...(asWritten ? { mentionMissing } : {}) };
+    const flags = { messageId: message.id, body: stored, aiText: chosen.ai, fallbackText: !chosen.ai, withMention, ...(asWritten ? { mentionMissing } : {}) };
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     let receipt: { externalId: string | null };
     try {
