@@ -25,7 +25,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { Encaissements } from '../pilotage/encaissements.ts';
-import { actorOf, directionRefusal, parisMidnight, sha256, todayInParis, validDay, type Refusal } from './commun.ts';
+import { LABEL_SQL, actorOf, directionRefusal, parisMidnight, sha256, todayInParis, validDay, type Refusal } from './commun.ts';
 
 export const MAX_STATEMENT_LINES = 5000;
 /** Un numéro de facture d'honoraires du réseau, tel que K02 les écrit. */
@@ -170,7 +170,7 @@ export class Rapprochements {
     const pairs = await this.db.all<{ line_id: string; invoice_id: string; file_id: string }>(
       `SELECT l.id AS line_id, i.id AS invoice_id, i.file_id FROM bank_lines l JOIN invoices i
          ON i.network_id = l.network_id AND i.amount_cents = l.amount_cents AND l.day >= i.issued_on
-         AND EXISTS (SELECT 1 FROM json_each(l.invoice_refs) j WHERE j.value = json_extract(i.content, '$.label'))
+         AND EXISTS (SELECT 1 FROM json_each(l.invoice_refs) j WHERE j.value = ${LABEL_SQL('i')})
        WHERE l.network_id = ? AND l.amount_cents > 0 AND ${FREE_LINE} AND ${FREE_INVOICE}
        ORDER BY l.day, l.id`,
       [networkId],
@@ -202,7 +202,7 @@ export class Rapprochements {
     const value: Proposal[] = [];
     for (const l of lines) {
       const candidates = await this.db.all<{ id: string; label: string }>(
-        `SELECT i.id, json_extract(i.content, '$.label') AS label FROM invoices i WHERE i.network_id = ? AND i.amount_cents = ? AND i.issued_on <= ? AND ${FREE_INVOICE} ORDER BY i.issued_on, i.number`,
+        `SELECT i.id, ${LABEL_SQL('i')} AS label FROM invoices i WHERE i.network_id = ? AND i.amount_cents = ? AND i.issued_on <= ? AND ${FREE_INVOICE} ORDER BY i.issued_on, i.number`,
         [viewer.networkId, l.amount_cents, l.day],
       );
       value.push({ lineId: l.id, day: l.day, amountCents: l.amount_cents, cited: JSON.parse(l.invoice_refs) as string[], candidates: candidates.map((c) => ({ invoiceId: c.id, label: c.label })) });
@@ -217,7 +217,7 @@ export class Rapprochements {
     const line = await this.db.first<{ day: string; amount_cents: number }>('SELECT day, amount_cents FROM bank_lines WHERE id = ? AND network_id = ?', [lineId, viewer.networkId]);
     if (!line) return { ok: false, rule: null, code: 'unknown_line' };
     const invoice = await this.db.first<{ kind: string; amount_cents: number; issued_on: string; file_id: string; label: string }>(
-      "SELECT kind, amount_cents, issued_on, file_id, json_extract(content, '$.label') AS label FROM invoices WHERE id = ? AND network_id = ?",
+      `SELECT kind, amount_cents, issued_on, file_id, ${LABEL_SQL()} AS label FROM invoices WHERE id = ? AND network_id = ?`,
       [invoiceId, viewer.networkId],
     );
     if (!invoice || invoice.kind !== 'honoraires') return { ok: false, rule: null, code: 'unknown_invoice' };
@@ -235,7 +235,7 @@ export class Rapprochements {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_reconciliations');
     if (refusal) return refusal;
     const rows = await this.db.all<{ line_id: string; invoice_id: string; label: string; day: string; amount_cents: number; mode: 'auto' | 'direction' }>(
-      `SELECT r.line_id, r.invoice_id, json_extract(i.content, '$.label') AS label, l.day, l.amount_cents, r.mode FROM bank_reconciliations r
+      `SELECT r.line_id, r.invoice_id, ${LABEL_SQL('i')} AS label, l.day, l.amount_cents, r.mode FROM bank_reconciliations r
          JOIN bank_lines l ON l.id = r.line_id JOIN invoices i ON i.id = r.invoice_id WHERE r.network_id = ? ORDER BY l.day, i.number`,
       [viewer.networkId],
     );

@@ -9,6 +9,15 @@ export const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export type Refusal = { ok: false; rule: 'R16'; code: string };
 
+/**
+ * Le numéro d'une facture d'honoraires du réseau, comme K02 l'écrit (`F-2027-00001`) : il n'est pas dans le contenu
+ * figé, il se lit dans la ligne (année et numéro). Seules les factures d'honoraires du réseau sont rapprochées.
+ */
+export const LABEL_SQL = (alias = ''): string => {
+  const a = alias ? `${alias}.` : '';
+  return `('F-' || ${a}year || '-' || substr('00000' || ${a}number, -5))`;
+};
+
 export const actorOf = (viewer: Viewer): string => `${String(viewer.role)}:${viewer.userId}`;
 
 /** La direction seule lit et range les chiffres du réseau : factures, banque, relances [R16]. */

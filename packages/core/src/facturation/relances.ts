@@ -24,13 +24,12 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { fundsInOutgoing } from '../dossiers/bouclier.ts';
-import { numbersIn } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { SELLER_UPDATE_PURPOSE } from '../visites/compte-rendu.ts';
-import { actorOf, addDays, directionRefusal, euros, frenchDay, todayInParis, type Refusal } from './commun.ts';
+import { LABEL_SQL, actorOf, addDays, directionRefusal, euros, frenchDay, todayInParis, type Refusal } from './commun.ts';
 
 export const DEFAULT_PAYMENT_DAYS = 30;
 export const DEFAULT_REMINDER_GAP_DAYS = 15;
@@ -72,7 +71,8 @@ export function unpaidReminderText(f: ReminderFacts): string {
 
 /** Les chiffres permis dans le texte : ceux de la facture, tels que le texte les écrit [R10]. */
 function figuresOf(f: ReminderFacts): string[] {
-  return [f.label, `${euros(f.amountCents)} €`, frenchDay(f.issuedOn), frenchDay(f.dueOn)].flatMap(numbersIn);
+  // Passés tels que le texte les écrit : le contrôle en tire lui-même les nombres (« 10 000,00 » reste 10000.00).
+  return [f.label, `${euros(f.amountCents)} €`, frenchDay(f.issuedOn), frenchDay(f.dueOn)];
 }
 
 type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' };
@@ -126,7 +126,7 @@ export class RelancesImpayes {
     const today = todayInParis(this.now());
     const latestIssue = addDays(today, -this.paymentDays - 1);
     const invoices = await this.db.all<{ id: string; file_id: string; amount_cents: number; issued_on: string; label: string; person_id: string | null }>(
-      `SELECT i.id, i.file_id, i.amount_cents, i.issued_on, json_extract(i.content, '$.label') AS label, d.recipient_person_id AS person_id
+      `SELECT i.id, i.file_id, i.amount_cents, i.issued_on, ${LABEL_SQL('i')} AS label, d.recipient_person_id AS person_id
        FROM invoices i JOIN invoice_drafts d ON d.id = i.draft_id
        WHERE i.network_id = ? AND i.kind = 'honoraires' AND i.issued_on <= ?
          AND NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = i.id)
@@ -172,7 +172,7 @@ export class RelancesImpayes {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'invoice_reminders');
     if (refusal) return refusal;
     const rows = await this.db.all<{ id: string; invoice_id: string; label: string; rank: number; text: string; status: ReminderStatus; rule: string | null; prepared_at: string; validated_by: string | null }>(
-      `SELECT r.id, r.invoice_id, json_extract(i.content, '$.label') AS label, r.rank, r.text, r.status, r.rule, r.prepared_at, r.validated_by
+      `SELECT r.id, r.invoice_id, ${LABEL_SQL('i')} AS label, r.rank, r.text, r.status, r.rule, r.prepared_at, r.validated_by
        FROM invoice_reminders r JOIN invoices i ON i.id = r.invoice_id WHERE r.network_id = ? ORDER BY r.prepared_at, i.number, r.rank`,
       [viewer.networkId],
     );
@@ -211,7 +211,7 @@ export class RelancesImpayes {
     );
     let sent = 0;
     for (const r of rows) {
-      const inv = await this.db.first<{ amount_cents: number; issued_on: string; label: string }>("SELECT amount_cents, issued_on, json_extract(content, '$.label') AS label FROM invoices WHERE id = ?", [r.invoice_id]);
+      const inv = await this.db.first<{ amount_cents: number; issued_on: string; label: string }>(`SELECT amount_cents, issued_on, ${LABEL_SQL()} AS label FROM invoices WHERE id = ?`, [r.invoice_id]);
       if (!inv) continue;
       const facts: ReminderFacts = { firstName: null, label: inv.label, amountCents: inv.amount_cents, issuedOn: inv.issued_on, dueOn: addDays(inv.issued_on, this.paymentDays) };
       const result = await this.controle.send({
