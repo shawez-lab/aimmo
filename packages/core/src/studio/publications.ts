@@ -104,7 +104,7 @@ function stagingProblems(refs: readonly string[], certified: readonly CertifiedP
   return galleryProblems(refs.map((r) => ({ ref: r, overlay: byRef.get(r)?.overlay ?? null })), twins);
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R493'; code: string };
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
@@ -317,9 +317,10 @@ export class Publications {
   /**
    * En un geste, l'agent du bien envoie la publication validée vers les réseaux et les comptes choisis, en mode essai.
    * Juste avant : la porte de D05 et les certificats des visuels sont relus [R42, R130]. Un envoi réussi ne se refait
-   * jamais ; un échec se retente au geste suivant.
+   * jamais ; un échec se retente au geste suivant. Avec `requireLink` (le calendrier de HX52), rien ne part sans le
+   * lien marqué vers la page du bien, lu ici même juste avant l'envoi [R582, R156].
    */
-  async publish(viewer: Viewer, postId: string, targets: unknown): Promise<PostResult<SocialPost>> {
+  async publish(viewer: Viewer, postId: string, targets: unknown, options: { requireLink?: boolean } = {}): Promise<PostResult<SocialPost>> {
     const post = await this.agentPost(viewer, postId);
     if (!post.ok) return post;
     const actor = `agent:${viewer.userId}`;
@@ -379,6 +380,7 @@ export class Publications {
         await originDown('lien', error);
       }
     }
+    if (options.requireLink && !tracked?.link) return this.bad(actor, subject, 'R156', 'sans_lien');
     for (const w of wanted) {
       const attempt = await this.claim(postId, w, actor);
       if (attempt === null) continue;
@@ -527,7 +529,7 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R493', code: string): Promise<PostResult<T>> {
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }
