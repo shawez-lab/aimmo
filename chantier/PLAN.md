@@ -444,8 +444,14 @@ Réservé le 2026-11-08 par la voie 2. Règles R510 à R519 et migrations à par
 
 ## Après-vente et avis
 
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R520 à R529 et migrations à partir de `2500` réservées à ce groupe. Le code vit dans `packages/core/src/avis/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts`, `packages/core/src/apres-vente/` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX46 · Avis clients vérifiables, publiés partout
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M11 (avis), M07 (annonces).
 - Objectif : comme Opinion System, Immodvisor et Hektor : avis vérifiés, étoiles sur les annonces, diffusion sur Google, le site, les portails et les réseaux. Jamais vu : chaque avis porte une preuve qu'il vient d'un dossier réellement clos, vérifiable par n'importe qui sans donnée personnelle, et tous les avis sont montrés, jamais triés par la note.
 - Critères : un avis sans dossier clos est refusé (test) ; aucun avis masqué selon sa note (test) ; la vérification publique ne révèle aucune donnée personnelle (test).
 
