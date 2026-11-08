@@ -123,6 +123,8 @@ export type MarketRefusal = { ok: false; rule: 'R30' | 'R306'; code: 'unknown' |
 
 const DAY = 86_400_000;
 const INSEE = /^(?:\d{5}|2[AB]\d{3})$/;
+/** Le département d'un code postal : deux premiers chiffres, Corse comprise (20). */
+const departmentOf = (postalCode: string): string => postalCode.slice(0, 2);
 const parisDay = (d: Date): string => localTime(d, 'Europe/Paris').date;
 const dayNumber = (day: string): number => Math.round(Date.parse(`${day}T00:00:00.000Z`) / DAY);
 
@@ -170,7 +172,7 @@ export class MarcheAvis {
 
   /**
    * L'agent actif qui suit le bien joint le relevé du marché à son brouillon [R306]. La sorte, la surface et le code de
-   * commune sont ceux de l'avis (E09) ; la commune vient du bien, tous ses codes postaux compris.
+   * commune sont ceux de l'avis (E09) ; la commune vient du bien, tous ses codes postaux compris, dans son département.
    */
   async attach(viewer: Viewer, reportId: unknown): Promise<{ ok: true; value: MarketSection } | MarketRefusal> {
     if (typeof reportId !== 'string') return { ok: false, rule: null, code: 'invalid' };
@@ -179,8 +181,8 @@ export class MarcheAvis {
       [reportId],
     );
     if (!report || report.network_id !== viewer.networkId) return { ok: false, rule: 'R30', code: 'unknown' };
-    const property = await this.db.first<{ agent_id: string | null; city: string | null }>(
-      'SELECT agent_id, city FROM properties WHERE id = ? AND network_id = ?',
+    const property = await this.db.first<{ agent_id: string | null; city: string | null; postal_code: string | null }>(
+      'SELECT agent_id, city, postal_code FROM properties WHERE id = ? AND network_id = ?',
       [report.property_id, report.network_id],
     );
     const agent = viewer.role === 'agent' ? await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]) : null;
@@ -196,12 +198,13 @@ export class MarcheAvis {
     const computed = JSON.parse(report.computed) as { kind?: unknown; surface?: unknown; inseeCode?: unknown; medianPerM2?: unknown };
     if (computed.kind !== 'apartment' && computed.kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
     if (typeof computed.surface !== 'number' || !(computed.surface > 0)) return { ok: false, rule: null, code: 'no_surface' };
-    if (!property.city) return { ok: false, rule: null, code: 'no_commune' };
+    if (!property.city || !property.postal_code || !/^\d{5}$/.test(property.postal_code)) return { ok: false, rule: null, code: 'no_commune' };
     const section = await this.compose(viewer.networkId, {
       kind: computed.kind,
       // Sans code de commune collecté, le loyer est « inconnu » [R304].
       inseeCode: typeof computed.inseeCode === 'string' && INSEE.test(computed.inseeCode) ? computed.inseeCode : null,
       commune: property.city,
+      department: departmentOf(property.postal_code),
       surfaceM2: computed.surface,
       soldMedianPerM2: typeof computed.medianPerM2 === 'number' ? computed.medianPerM2 : null,
     });
@@ -255,11 +258,11 @@ export class MarcheAvis {
   /** Le relevé lui-même, calculé par le code depuis la pige et les loyers de marché. */
   async compose(
     networkId: string,
-    q: { kind: 'apartment' | 'house'; inseeCode: string | null; commune: string; surfaceM2: number; soldMedianPerM2: number | null },
+    q: { kind: 'apartment' | 'house'; inseeCode: string | null; commune: string; department: string; surfaceM2: number; soldMedianPerM2: number | null },
   ): Promise<MarketSection> {
     const now = this.now();
     const takenOn = parisDay(now);
-    const online = await this.onlineAds(networkId, q.kind, q.commune, takenOn);
+    const online = await this.onlineAds(networkId, q.kind, q.commune, q.department, takenOn);
     const all = online.map((f) => this.competitor(f));
     const tolerance = (q.surfaceM2 * this.settings.surfaceTolerancePct) / 100;
     const competitors = all
@@ -301,7 +304,7 @@ export class MarcheAvis {
   }
 
   /** Les annonces de la sorte et de la commune vues en ligne ces derniers jours, sans les biens fermés [R303, R305]. */
-  private async onlineAds(networkId: string, kind: string, commune: string, today: string): Promise<Followed[]> {
+  private async onlineAds(networkId: string, kind: string, commune: string, department: string, today: string): Promise<Followed[]> {
     // Toutes les relèves de chaque annonce passée un jour par la commune du bien, tous codes postaux et toutes sortes
     // confondus : c'est la dernière qui dit si l'annonce est de la sorte et de la commune du bien, jamais une relève
     // corrigée depuis [R303].
@@ -329,7 +332,8 @@ export class MarcheAvis {
     const bySite = new Map<string, AdRow[]>();
     for (const [k, list] of all) {
       const last = list[list.length - 1]!;
-      if (last.kind !== kind || communeSlug(last.commune) !== slug) continue;
+      // Même nom et même département : deux communes homonymes de départements différents ne se mêlent jamais.
+      if (last.kind !== kind || communeSlug(last.commune) !== slug || departmentOf(last.postal_code) !== department) continue;
       // L'historique des prix : les relèves du même bien que la dernière (même empreinte), dans l'ordre.
       bySite.set(k, list.filter((r) => r.fingerprint === last.fingerprint));
     }

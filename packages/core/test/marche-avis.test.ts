@@ -161,6 +161,16 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(got.value.market.ads).toBe(1);
   });
 
+  it('[R303] une commune homonyme d’un autre département ne se mêle jamais au relevé', async () => {
+    const t = await setup();
+    await t.pige.ingest(t.net.id, [t.ad({ sourceRef: 'homonyme', postalCode: '71240', surfaceM2: 91 })]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.competitors).toEqual([]);
+    expect(got.value.market.ads).toBe(0);
+  });
+
   it('[R303] une annonce corrigée vers une autre sorte sort du relevé, même revue en ligne depuis', async () => {
     const t = await setup();
     const a = t.ad({ sourceRef: 'corrigee', surfaceM2: 90 });
