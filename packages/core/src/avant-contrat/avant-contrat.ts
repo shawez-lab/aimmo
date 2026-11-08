@@ -191,7 +191,7 @@ function parseCondition(v: unknown, paged: boolean): OfferCondition | (OfferCond
     return { kind: 'pret', amountEur: v.amountEur, durationMonths: v.durationMonths, ...page };
   }
   if (!onlyKeys(v, ['kind', ...extra])) return null;
-  return { kind: v.kind as Exclude<ConditionKind, 'pret'>, ...page };
+  return { kind: v.kind, ...page } as OfferCondition;
 }
 
 /** Lit les termes du projet saisis par l'agent ; rend le champ fautif. */
