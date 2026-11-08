@@ -389,7 +389,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Ce qu'elle attend d'un humain : rien.
 
 ### HX42 · Vidéo depuis les photos, voix off et avatar
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Hektor, Talqor et Kappn : vidéo animée à partir des photos, mobilier qui apparaît, voix off, sous-titres, avatar de l'agent. Jamais vu : la voix et l'avatar ne viennent que de l'agent lui-même, avec son accord écrit, et la vidéo porte la mention « vidéo générée » ; les sous-titres sortent dans les langues de HX05 ; l'adresse exacte est refusée comme en P06.
 - Critères : aucune voix ni avatar sans accord écrit de l'agent (test) ; la mention est présente sur chaque vidéo générée (test) ; une adresse exacte dans le texte est refusée (test).
 
