@@ -237,38 +237,39 @@ export async function checkPayslips(slips: readonly PayslipRead[], registry: Com
   const pairs = new Set(slips.map((_, i) => `${sirets[i] ?? '?'}|${months[i]}`));
   const consecutive = all && distinct.length === 3 && pairs.size === slips.length && nextMonth(distinct[0]!) === distinct[1] && nextMonth(distinct[1]!) === distinct[2];
   findings.push({ control: 'bulletins_mois', outcome: !all || slips.length === 0 ? 'non_verifiable' : consecutive ? 'conforme' : 'ecart' });
+  // Un bulletin au mois illisible garde ses contrôles sans date (net payé, prélèvement, SIRET) ; il est rangé après les
+  // autres, et désigné par son rang.
   const ordered = slips
-    .map((s, i) => ({ s, m: months[i], siret: sirets[i] ?? null, slip: i + 1 }))
-    .filter((x): x is { s: PayslipRead; m: string; siret: string | null; slip: number } => x.m !== null)
-    .sort((a, b) => (a.m < b.m ? -1 : a.m > b.m ? 1 : (a.siret ?? '') < (b.siret ?? '') ? -1 : 1));
+    .map((s, i) => ({ s, m: months[i] ?? null, siret: sirets[i] ?? null, slip: i + 1 }))
+    .sort((a, b) => (a.m === b.m ? ((a.siret ?? '') < (b.siret ?? '') ? -1 : 1) : a.m === null ? 1 : b.m === null ? -1 : a.m < b.m ? -1 : 1));
   // Le cumul se suit employeur par employeur : seul un bulletin du même SIRET, le mois d'avant, sert de point de départ.
-  const bySiretMonth = new Map(ordered.filter((x) => x.siret !== null).map((x) => [`${x.siret}|${x.m}`, x.s]));
-  const firstMonth = new Map<string, { m: string; slip: number }>();
+  const bySiretMonth = new Map(ordered.filter((x) => x.siret !== null && x.m !== null).map((x) => [`${x.siret}|${x.m}`, x.s]));
+  const firstMonth = new Map<string, { m: string | null; slip: number }>();
   for (const { s, m, siret, slip } of ordered) {
+    const at = m === null ? { slip } : { month: m, slip };
     const net = s.netBeforeTaxCents;
     const tax = s.taxWithheldCents;
     const paid = s.netPaidCents;
-    findings.push({ control: 'bulletin_net_paye', month: m, slip, outcome: isCents(net) && isCents(tax) && isCents(paid) ? (close(paid, net - tax) ? 'conforme' : 'ecart') : 'non_verifiable' });
+    findings.push({ control: 'bulletin_net_paye', ...at, outcome: isCents(net) && isCents(tax) && isCents(paid) ? (close(paid, net - tax) ? 'conforme' : 'ecart') : 'non_verifiable' });
     const rate = s.ratePercent;
     const taxable = s.taxableNetCents;
     const rateOk = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100;
     findings.push({
       control: 'bulletin_prelevement',
-      month: m,
-      slip,
+      ...at,
       outcome: rateOk && isCents(taxable) && isCents(tax) ? (close(tax, Math.round((taxable * Math.round(rate * 100)) / 10_000)) ? 'conforme' : 'ecart') : 'non_verifiable',
     });
     // Le cumul de janvier est le brut du mois ; sinon, le cumul du même employeur le mois d'avant plus le brut du mois.
     const gross = s.grossCents;
     const cumul = s.cumulativeGrossCents;
-    const january = m.endsWith('-01');
-    const previous = january || siret === null ? null : bySiretMonth.get(`${siret}|${m.slice(0, 4)}-${String(Number(m.slice(5, 7)) - 1).padStart(2, '0')}`);
-    const expected = !isCents(gross) ? null : january ? gross : previous && isCents(previous.cumulativeGrossCents) ? previous.cumulativeGrossCents + gross : null;
-    findings.push({ control: 'bulletin_cumul', month: m, slip, outcome: expected !== null && isCents(cumul) ? (close(cumul, expected) ? 'conforme' : 'ecart') : 'non_verifiable' });
+    const january = m !== null && m.endsWith('-01');
+    const previous = m === null || january || siret === null ? null : bySiretMonth.get(`${siret}|${m.slice(0, 4)}-${String(Number(m.slice(5, 7)) - 1).padStart(2, '0')}`);
+    const expected = m === null || !isCents(gross) ? null : january ? gross : previous && isCents(previous.cumulativeGrossCents) ? previous.cumulativeGrossCents + gross : null;
+    findings.push({ control: 'bulletin_cumul', ...at, outcome: expected !== null && isCents(cumul) ? (close(cumul, expected) ? 'conforme' : 'ecart') : 'non_verifiable' });
     if (siret !== null && !firstMonth.has(siret)) firstMonth.set(siret, { m, slip });
   }
   if (firstMonth.size === 0) findings.push(...(await checkEmployerFindings(registry, null, null)));
-  // Chaque employeur, une fois, à la date de son premier bulletin.
-  for (const [siret, { m, slip }] of firstMonth) findings.push(...(await checkEmployerFindings(registry, siret, `${m}-01`, m, slip)));
+  // Chaque employeur, une fois, à la date de son premier bulletin daté ; sans mois lu, un établissement fermé ne dit rien.
+  for (const [siret, { m, slip }] of firstMonth) findings.push(...(await (m === null ? checkEmployerFindings(registry, siret, null, undefined, slip) : checkEmployerFindings(registry, siret, `${m}-01`, m, slip))));
   return findings;
 }

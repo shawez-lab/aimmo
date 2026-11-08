@@ -278,6 +278,12 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     expect(outcome(await checkPayslips([slip('2027-05', 0), slip('2027-06', 0)], REGISTRY), 'bulletins_mois')).toBe('ecart');
     expect(outcome(await checkPayslips([slip('2026-11', 0), slip('2026-12', 0), slip('2027-01', 0)], REGISTRY), 'bulletins_mois')).toBe('conforme');
     expect(outcome(await checkPayslips([slip('2027-05', 0), { ...slip('2027-06', 0), month: 'juin' }], REGISTRY), 'bulletins_mois')).toBe('non_verifiable');
+    // Un mois illisible : les contrôles sans date se font quand même, désignés par le rang du bulletin.
+    const undated = await checkPayslips([{ ...slip('2027-06', 0), month: undefined, netPaidCents: 99_000 }], REGISTRY);
+    expect(undated.find((f) => f.control === 'bulletin_net_paye')).toEqual({ control: 'bulletin_net_paye', outcome: 'ecart', slip: 1 });
+    expect(undated.find((f) => f.control === 'bulletin_prelevement')?.outcome).toBe('conforme');
+    expect(undated.find((f) => f.control === 'bulletin_cumul')?.outcome).toBe('non_verifiable');
+    expect(undated.filter((f) => f.control.startsWith('employeur_')).map((f) => f.outcome)).toEqual(['conforme', 'conforme']);
     const missing = await checkPayslips([slip('2027-04', 1_200_000, { netBeforeTaxCents: undefined, ratePercent: undefined, grossCents: -5 })], REGISTRY);
     expect(outcome(missing, 'bulletin_net_paye', '2027-04')).toBe('non_verifiable');
     expect(outcome(missing, 'bulletin_prelevement', '2027-04')).toBe('non_verifiable');
