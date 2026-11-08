@@ -188,7 +188,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque adresse proposée montre sa confiance et ses sources (test) ; la fiche du bien reprend tous les champs de l'annonce, source « pige » (test) ; une annonce « pas d'agence » n'est jamais convertie (test).
 
 ### HX19 · Carte des opportunités et tournée de prospection
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor, Modelo, Keyzia et Maline : une carte des opportunités du secteur, la vue des rues, et un itinéraire optimisé de porte-à-porte. Jamais vu : une seule tournée mêle les visites du jour, les panneaux à récupérer de HX14, les lettres de G06 et les nouveaux diagnostics de HX16, calée dans les créneaux libres de V01 avec les temps de trajet.
 - Critères : la tournée tient dans les créneaux libres de l'agent (test) ; aucune adresse hors de la zone de l'agent (test) ; le lien vers la vue des rues ne porte aucune clé ni donnée de client (test).
 
