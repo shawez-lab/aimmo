@@ -214,8 +214,11 @@ export class MarcheAvis {
         JSON.stringify(section),
         at,
       ]);
-    } catch {
-      return { ok: false, rule: 'R306', code: 'already_validated' };
+    } catch (error) {
+      // Seul le refus de la base pour un avis validé entre-temps se dit « déjà validé » ; toute autre panne remonte.
+      const still = await this.db.first<{ status: string }>('SELECT status FROM valuation_reports WHERE id = ?', [report.id]);
+      if (still?.status === 'validated' && /avis validé/.test(String(error))) return { ok: false, rule: 'R306', code: 'already_validated' };
+      throw error;
     }
     await this.log('avis.marche', `agent:${viewer.userId}`, report.property_id, {
       report: report.id,

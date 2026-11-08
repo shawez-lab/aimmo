@@ -319,6 +319,13 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     await expect(t.db.run('DELETE FROM pige_ad_sightings')).rejects.toThrow(/rien ne s'efface/);
   });
 
+  it('[R306] une autre panne de la base à l’enregistrement remonte, jamais dite « déjà validé »', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    await t.db.run("CREATE TRIGGER panne_essai BEFORE INSERT ON valuation_market_snapshots BEGIN SELECT RAISE(ABORT, 'panne d''essai'); END");
+    await expect(t.marche.attach(t.as('agent', t.alex.id), r.id)).rejects.toThrow(/panne d'essai/);
+  });
+
   it('[R13] le journal du relevé ne porte que des comptes', async () => {
     const t = await setup();
     await t.pige.ingest(t.net.id, [t.ad()]);
