@@ -179,9 +179,12 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     expect((await t.call(t.agent, 'lire_bien', {})).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     expect((await t.call(t.agent, 'lire_bien', { bien: "x' OR 1=1" })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     expect((await t.call(t.agent, 'brouillon_prix', { bien: 'bien-alex', prix_eur: 10.5 })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
+    for (const params of [undefined, null, [1], 'x']) {
+      expect((await t.serveur.handle(t.agent, { jsonrpc: '2.0', id: 8, method: 'tools/call', params }))!.error).toMatchObject({ code: -32602 });
+    }
     const unknown = await t.serveur.handle(t.agent, { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'valider_brouillon', arguments: { brouillon: 'x' } } });
     expect(unknown!.error).toMatchObject({ code: -32602 });
-    expect((await t.lines('mcp.refus')).map((l) => (l.data as { code: string }).code)).toEqual(['bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'unknown_tool']);
+    expect((await t.lines('mcp.refus')).map((l) => (l.data as { code: string }).code)).toEqual(['bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_params', 'bad_params', 'bad_params', 'bad_params', 'unknown_tool']);
     expect(await t.lines('bien.lu')).toEqual([]);
   });
 
@@ -258,6 +261,9 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     await expect(t.call(t.agent, 'mes_biens')).rejects.toThrow(/journal/);
     await expect(t.call(t.agent, 'brouillon_note', { fiche: t.clientAlex.id, texte: 'Note.' })).rejects.toThrow(/journal/);
     await expect(t.call({ kind: 'public', networkId: t.network.id }, 'biens_diffusables')).rejects.toThrow(/journal/);
+    for (const params of [undefined, null, [1], 'x']) {
+      await expect(t.serveur.handle(t.agent, { jsonrpc: '2.0', id: 1, method: 'tools/call', params })).rejects.toThrow(/journal/);
+    }
     expect(await t.drafts()).toEqual([]);
   });
 

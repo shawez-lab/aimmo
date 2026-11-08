@@ -177,7 +177,10 @@ export class ServeurMcp {
   }
 
   private async call(caller: McpCaller, id: string | number, params: unknown): Promise<JsonRpcResponse> {
-    if (typeof params !== 'object' || params === null || Array.isArray(params)) return rpcError(id, -32602, 'Paramètres invalides.');
+    if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+      await this.log(caller, 'mcp.refus', { rule: 'R590', code: 'bad_params' });
+      return rpcError(id, -32602, 'Paramètres invalides.');
+    }
     const p = params as { name?: unknown; arguments?: unknown };
     const args = p.arguments === undefined ? {} : p.arguments;
     const tool = this.toolsFor(caller).find((t) => t.name === p.name);
