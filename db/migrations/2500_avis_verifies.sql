@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS verified_reviews (
   published_on TEXT NOT NULL CHECK (published_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
   file_salt TEXT NOT NULL CHECK (length(file_salt) = 64),
   file_commitment TEXT NOT NULL CHECK (length(file_commitment) = 64),
+  -- L'empreinte porte sur celle du texte : une procédure d'effacement de la conformité pourra caviarder le texte sans
+  -- casser la chaîne [R17].
+  text_hash TEXT NOT NULL CHECK (length(text_hash) = 64),
   prev_hash TEXT NOT NULL CHECK (length(prev_hash) = 64),
   hash TEXT NOT NULL UNIQUE CHECK (length(hash) = 64),
   published_at TEXT NOT NULL,

@@ -13,8 +13,10 @@
  *
  * « Jamais vu » : chaque avis porte une preuve publique qu'il vient d'un dossier réellement clos, vérifiable par
  * n'importe qui sans donnée personnelle. La preuve est un engagement (SHA-256) sur le dossier, le jour de l'acte et un
- * sel gardé par AIMMO : le public voit l'engagement et l'empreinte de l'avis, qu'il peut recalculer lui-même avec
- * `verifyChain` ; un contrôleur à qui la conformité remet le dossier et le sel (`auditProof`) retrouve l'engagement.
+ * sel gardé par AIMMO : n'importe qui recalcule l'empreinte de chaque avis et l'intégrité de toute la liste d'un agent
+ * avec `verifyChain` ; l'auteur reçoit à la publication un reçu (dossier, jour de l'acte, sel) avec lequel il vérifie
+ * lui-même que l'engagement désigne son dossier ; un contrôleur à qui la conformité remet le même reçu (`auditProof`)
+ * fait de même. La couverture publique de l'agent (clients de ses dossiers clos, invités, avis) montre tout tri.
  * La vérification publique ne rend ni nom, ni personne, ni dossier, ni bien, ni commune, ni jour de l'acte [R522].
  *
  * Le texte du client est contrôlé à l'entrée, quelle que soit sa note : ni adresse mail, ni numéro de téléphone, ni
@@ -77,10 +79,21 @@ export interface PublicReview {
   hash: string;
 }
 
-/** L'empreinte d'un avis, recalculable par n'importe qui depuis ce qui est publié. */
-export function reviewHash(r: Omit<PublicReview, 'hash'>): Promise<string> {
-  return sha256(JSON.stringify(['aimmo-avis-1', r.code, r.agentId, r.seq, r.side, r.score, r.text, r.publishedOn, r.fileCommitment, r.prevHash]));
+/** L'empreinte du texte d'un avis. */
+export function textHash(text: string): Promise<string> {
+  return sha256(`aimmo-avis-texte-1|${text}`);
 }
+
+/**
+ * L'empreinte d'un avis, recalculable par n'importe qui depuis ce qui est publié. Elle porte sur l'empreinte du texte,
+ * pour qu'un texte caviardé par la procédure d'effacement laisse la chaîne vérifiable [R17].
+ */
+export async function reviewHash(r: Omit<PublicReview, 'hash'>): Promise<string> {
+  return sha256(JSON.stringify(['aimmo-avis-1', r.code, r.agentId, r.seq, r.side, r.score, await textHash(r.text), r.publishedOn, r.fileCommitment, r.prevHash]));
+}
+
+/** Le jour, à Paris. */
+const parisDay = (at: Date): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
 
 export type ChainCheck = { ok: true; count: number } | { ok: false; seq: number; reason: 'hash' | 'link' | 'gap' | 'agent' };
 
@@ -123,6 +136,13 @@ export function reviewTextProblem(text: string, forbiddenNames: readonly string[
   return null;
 }
 
+/** Ce que l'auteur garde de son avis : son dossier, le jour de l'acte et le sel de l'engagement public [R522]. */
+export interface AuthorReceipt {
+  fileId: string;
+  closedOn: string;
+  salt: string;
+}
+
 export type ReviewRefusal = { ok: false; rule: 'R16' | 'R520' | null; code: string };
 
 export interface ReviewSummary {
@@ -131,6 +151,16 @@ export interface ReviewSummary {
   average: number | null;
   /** Nombre d'avis par note, de 1 à 5 : tous comptés. */
   byScore: Record<1 | 2 | 3 | 4 | 5, number>;
+}
+
+/**
+ * La couverture d'un agent, publique et sans donnée personnelle : clients de ses dossiers clos, clients invités,
+ * avis reçus. Un agent qui n'inviterait que ses clients contents se verrait [R64, R521].
+ */
+export interface ReviewCoverage {
+  clients: number;
+  invited: number;
+  reviews: number;
 }
 
 interface ReviewRow {
@@ -213,7 +243,7 @@ export class AvisVerifies {
       'INSERT INTO verified_review_invites (token_hash, network_id, file_id, person_id, agent_id, side, closed_on, created_by, created_at, expires_at, used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
       [await sha256(token), viewer.networkId, fileId, client.personId, sale.agentId, client.side, sale.closedOn, `${String(viewer.role)}:${viewer.userId}`, at.toISOString(), new Date(at.getTime() + REVIEW_INVITE_DAYS * 86_400_000).toISOString()],
     );
-    await appendEvent(this.journal, { type: 'avis.invitation', actor: `${String(viewer.role)}:${viewer.userId}`, subject, data: { side: client.side } }, this.now);
+    await appendEvent(this.journal, { type: 'avis.invitation', actor: `${String(viewer.role)}:${viewer.userId}`, subject, data: { side: client.side, client: `person:${client.personId}` } }, this.now);
     return { ok: true, link: `${this.base}${token}` };
   }
 
@@ -232,7 +262,7 @@ export class AvisVerifies {
    * L'avis du client, par son invitation : une seule fois, avant l'expiration, et seulement si le dossier est encore
    * clos [R520]. Publié aussitôt, en bout de chaîne, quelle que soit la note [R521].
    */
-  async submit(token: string, input: { score: number; text: string }): Promise<{ ok: true; code: string } | { ok: false; rule: 'R520' | 'R523' | null; code: string }> {
+  async submit(token: string, input: { score: number; text: string }): Promise<{ ok: true; code: string; receipt: AuthorReceipt } | { ok: false; rule: 'R520' | 'R523' | null; code: string }> {
     if (typeof token !== 'string' || !/^[a-z]{32}$/.test(token)) return { ok: false, rule: null, code: 'unknown' };
     const inv = await this.db.first<{ token_hash: string; network_id: string; file_id: string; person_id: string; agent_id: string; side: 'vendeur' | 'acquereur'; closed_on: string; expires_at: string; used_at: string | null }>(
       'SELECT token_hash, network_id, file_id, person_id, agent_id, side, closed_on, expires_at, used_at FROM verified_review_invites WHERE token_hash = ?',
@@ -257,15 +287,16 @@ export class AvisVerifies {
     if (taken.changes !== 1) return { ok: false, rule: null, code: 'used' };
     const salt = randomHex(32);
     const commitment = await fileCommitment(inv.file_id, inv.closed_on, salt);
-    const publishedOn = at.toISOString().slice(0, 10);
+    const publishedOn = parisDay(at);
+    const tHash = await textHash(text);
     for (let attempt = 0; attempt < 3; attempt++) {
       const last = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM verified_reviews WHERE agent_id = ? ORDER BY seq DESC LIMIT 1', [inv.agent_id]);
       const draft = { code: newCode(), agentId: inv.agent_id, seq: (last?.seq ?? 0) + 1, side: inv.side, score: input.score, text, publishedOn, fileCommitment: commitment, prevHash: last?.hash ?? GENESIS_HASH };
       const hash = await reviewHash(draft);
       try {
         await this.db.run(
-          'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, prev_hash, hash, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [draft.code, inv.network_id, inv.agent_id, draft.seq, inv.file_id, inv.person_id, inv.side, input.score, text, publishedOn, salt, commitment, draft.prevHash, hash, at.toISOString()],
+          'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, text_hash, prev_hash, hash, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [draft.code, inv.network_id, inv.agent_id, draft.seq, inv.file_id, inv.person_id, inv.side, input.score, text, publishedOn, salt, commitment, tHash, draft.prevHash, hash, at.toISOString()],
         );
       } catch (e) {
         // Un autre avis du même agent est arrivé en même temps : on reprend en bout de chaîne.
@@ -279,7 +310,8 @@ export class AvisVerifies {
       }
       // Au journal : l'agent, le code public, le côté et la note ; jamais le texte ni la personne [R13].
       await appendEvent(this.journal, { type: 'avis.publie', actor: 'client:lien', subject: `agent:${inv.agent_id}`, data: { code: draft.code, side: inv.side, score: input.score } }, this.now);
-      return { ok: true, code: draft.code };
+      // Le reçu de l'auteur : avec lui, il vérifie lui-même que son avis est rattaché à son dossier clos [R522].
+      return { ok: true, code: draft.code, receipt: { fileId: inv.file_id, closedOn: inv.closed_on, salt } };
     }
     return { ok: false, rule: null, code: 'used' };
   }
@@ -288,10 +320,13 @@ export class AvisVerifies {
    * Tous les avis publiés d'un agent, dans l'ordre d'arrivée, et leur résumé : aucun n'est écarté ni rangé selon sa
    * note [R521]. Lecture publique : rien de personnel [R522].
    */
-  async publicList(networkId: string, agentId: string): Promise<{ reviews: PublicReview[]; summary: ReviewSummary }> {
+  async publicList(networkId: string, agentId: string): Promise<{ reviews: PublicReview[]; summary: ReviewSummary; coverage: ReviewCoverage }> {
     const rows = await this.db.all<ReviewRow>(`SELECT ${PUBLIC_COLUMNS} FROM verified_reviews WHERE network_id = ? AND agent_id = ? ORDER BY seq`, [networkId, agentId]);
     const reviews = rows.map(toPublic);
-    return { reviews, summary: summarize(reviews) };
+    const sales = (await this.dossiers.closedBetween(networkId, '2000-01-01', parisDay(this.now()))).filter((s) => s.agentId === agentId);
+    const clients = sales.reduce((n, s) => n + s.clients.length, 0);
+    const invited = (await this.db.first<{ n: number }>('SELECT count(*) AS n FROM (SELECT DISTINCT file_id, person_id FROM verified_review_invites WHERE network_id = ? AND agent_id = ?)', [networkId, agentId]))!.n;
+    return { reviews, summary: summarize(reviews), coverage: { clients, invited, reviews: reviews.length } };
   }
 
   /** La vérification publique d'un avis par son code : l'avis tel que publié et si sa place dans la chaîne tient [R522]. */
@@ -312,7 +347,7 @@ export class AvisVerifies {
    * au journal [R16].
    */
   async auditProof(viewer: Viewer, code: string): Promise<{ ok: true; value: { fileId: string; closedOn: string; salt: string } } | ReviewRefusal> {
-    const subject = `avis:${code}`;
+    const subject = `avis_verifie:${code}`;
     const inactive = await viewerRefusal(this.db, viewer);
     if (inactive) return this.refuse(viewer, subject, 'avis_preuve', inactive);
     if (viewer.role !== 'compliance') return this.refuse(viewer, subject, 'avis_preuve', 'role');
@@ -320,7 +355,7 @@ export class AvisVerifies {
     if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
     const inv = await this.db.first<{ closed_on: string }>('SELECT closed_on FROM verified_review_invites WHERE file_id = ? AND person_id = ? AND used_at IS NOT NULL ORDER BY used_at LIMIT 1', [row.file_id, row.person_id]);
     if (!inv) return { ok: false, rule: null, code: 'unknown' };
-    await appendEvent(this.journal, { type: 'avis.preuve', actor: `${String(viewer.role)}:${viewer.userId}`, subject, data: {} }, this.now);
+    await appendEvent(this.journal, { type: 'avis.preuve', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `avis_verifie:${code}`, data: {} }, this.now);
     return { ok: true, value: { fileId: row.file_id, closedOn: inv.closed_on, salt: row.file_salt } };
   }
 }

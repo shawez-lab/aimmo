@@ -64,8 +64,8 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     // Rangé à la main, sans invitation consommée, la base le refuse.
     await expect(
       t.db.run(
-        'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, prev_hash, hash, published_at) VALUES (?, ?, ?, 1, ?, ?, ?, 5, ?, ?, ?, ?, ?, ?, ?)',
-        ['abcdefghjkmn', t.network.id, t.alexId, 'f-ouvert', a, 'vendeur', GOOD, '2027-03-10', 'a'.repeat(64), 'b'.repeat(64), GENESIS_HASH, 'c'.repeat(64), '2027-03-10T09:00:00.000Z'],
+        'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, text_hash, prev_hash, hash, published_at) VALUES (?, ?, ?, 1, ?, ?, ?, 5, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ['abcdefghjkmn', t.network.id, t.alexId, 'f-ouvert', a, 'vendeur', GOOD, '2027-03-10', 'a'.repeat(64), 'b'.repeat(64), 'd'.repeat(64), GENESIS_HASH, 'c'.repeat(64), '2027-03-10T09:00:00.000Z'],
       ),
     ).rejects.toThrow(/R520/);
     // Un dossier dont l'acte disparaît (ou change de jour) entre l'invitation et l'avis : refusé.
@@ -90,7 +90,7 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     const r = await t.avis.submit(d.ok ? d.link.slice(BASE.length) : '', { score: 4, text: GOOD });
     if (!r.ok) throw new Error(r.code);
     expect(await t.avis.auditProof(t.direction, r.code)).toMatchObject({ ok: false, rule: 'R16' });
-    const refus = (await t.journal.bySubject(`avis:${r.code}`)).filter((e) => e.type === 'acces.refuse');
+    const refus = (await t.journal.bySubject(`avis_verifie:${r.code}`)).filter((e) => e.type === 'acces.refuse');
     expect(refus).toHaveLength(1);
   });
 
@@ -134,13 +134,21 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     expect(await verifyChain(renumbered)).toMatchObject({ ok: false });
     const edited = list.reviews.map((r) => (r.score === 1 ? { ...r, score: 4 } : r));
     expect(await verifyChain(edited)).toEqual({ ok: false, seq: 2, reason: 'hash' });
-    // Un avis rangé à la main hors de la chaîne est refusé par la base.
-    await expect(
+    // Un avis rangé à la main hors de la chaîne est refusé par la base : numéro qui saute, ou empreinte du précédent fausse.
+    const d = await t.client('Dan');
+    t.close('f3', '2027-03-09', [{ personId: d, side: 'acquereur' }]);
+    await t.invite('f3', d);
+    await t.db.run('UPDATE verified_review_invites SET used_at = ? WHERE file_id = ?', ['2027-03-10T12:00:00.000Z', 'f3']);
+    const forge = (seq: number, prev: string) =>
       t.db.run(
-        'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, prev_hash, hash, published_at) VALUES (?, ?, ?, 2, ?, ?, ?, 5, ?, ?, ?, ?, ?, ?, ?)',
-        ['abcdefghjkmn', t.network.id, t.alexId, 'f1', a, 'vendeur', GOOD, '2027-03-10', 'a'.repeat(64), 'b'.repeat(64), GENESIS_HASH, 'c'.repeat(64), '2027-03-10T09:00:00.000Z'],
-      ),
-    ).rejects.toThrow();
+        'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, text_hash, prev_hash, hash, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, 5, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ['abcdefghjkmn', t.network.id, t.alexId, seq, 'f3', d, 'acquereur', GOOD, '2027-03-10', 'a'.repeat(64), 'b'.repeat(64), 'd'.repeat(64), prev, 'c'.repeat(64), '2027-03-10T12:00:00.000Z'],
+      );
+    await expect(forge(5, list.reviews[2]!.hash)).rejects.toThrow(/R521/);
+    await expect(forge(4, list.reviews[1]!.hash)).rejects.toThrow(/R521/);
+    await expect(forge(4, 'e'.repeat(64))).rejects.toThrow(/R521/);
+    // La couverture publique montre les clients des dossiers clos, les invités et les avis : un tri se verrait.
+    expect((await t.avis.publicList(t.network.id, t.alexId)).coverage).toEqual({ clients: 4, invited: 4, reviews: 3 });
   });
 
   it('[R522] la vérification publique ne révèle aucune donnée personnelle, et le contrôleur retrouve le dossier par le sel', async () => {
@@ -149,6 +157,8 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     t.close('f-secret-1', '2027-03-08', [{ personId: a, side: 'vendeur' }]);
     const r = await t.avis.submit(await t.invite('f-secret-1', a), { score: 2, text: BAD });
     if (!r.ok) throw new Error(r.code);
+    // L'auteur vérifie lui-même, avec son reçu, que l'engagement public désigne son dossier clos.
+    expect(r.receipt).toMatchObject({ fileId: 'f-secret-1', closedOn: '2027-03-08' });
     const v = await t.avis.verify(r.code);
     expect(v).toMatchObject({ found: true, valid: true, review: { code: r.code, score: 2, side: 'vendeur', text: BAD, seq: 1, prevHash: GENESIS_HASH } });
     const list = await t.avis.publicList(t.network.id, t.alexId);
@@ -164,10 +174,19 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     if (!proof.ok) throw new Error(proof.code);
     expect(proof.value).toMatchObject({ fileId: 'f-secret-1', closedOn: '2027-03-08' });
     expect(await fileCommitment(proof.value.fileId, proof.value.closedOn, proof.value.salt)).toBe(v.review.fileCommitment);
+    expect(await fileCommitment(r.receipt.fileId, r.receipt.closedOn, r.receipt.salt)).toBe(v.review.fileCommitment);
     expect(await fileCommitment('f-autre', '2027-03-08', proof.value.salt)).not.toBe(v.review.fileCommitment);
     // Un code inconnu ou mal formé ne rend rien.
     expect(await t.avis.verify('zzzzzzzzzzzz')).toEqual({ found: false });
     expect(await t.avis.verify("x' OR 1=1")).toEqual({ found: false });
+    // Le jour de publication est celui de Paris : à 0 h 30 à Paris, c'est déjà le lendemain.
+    const late = await t.client('Eve');
+    t.close('f-nuit', '2027-03-08', [{ personId: late, side: 'acquereur' }]);
+    const tok = await t.invite('f-nuit', late);
+    t.setClock(new Date('2027-03-10T23:30:00.000Z'));
+    const night = await t.avis.submit(tok, { score: 4, text: GOOD });
+    if (!night.ok) throw new Error(night.code);
+    expect((await t.avis.verify(night.code)).found && (await t.avis.verify(night.code))).toMatchObject({ review: { publishedOn: '2027-03-11' } });
     // Au journal : ni le texte, ni la personne, ni le jeton.
     const events = JSON.stringify(await t.journal.bySubject(`agent:${t.alexId}`));
     expect(events).toContain('avis.publie');
