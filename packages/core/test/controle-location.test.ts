@@ -299,6 +299,10 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     // Sans SIRET, le cumul ne se suit pas d'un bulletin à l'autre.
     expect(outcome(await checkPayslips([slip('2027-05', 1_500_000, { siret: undefined }), slip('2027-06', 1_800_000, { siret: undefined })], REGISTRY), 'bulletin_cumul', '2027-06')).toBe('non_verifiable');
     const two = await checkPayslips([slip('2027-04', 1_200_000), slip('2027-05', 1_500_000, { siret: OTHER_EMPLOYER }), slip('2027-06', 1_800_000, { siret: CLOSED_EMPLOYER })], REGISTRY);
+    // Fermé pendant le mois du bulletin : rien ne dit si c'était avant ou après lui.
+    const during = await checkPayslips([slip('2027-03', 0, { siret: CLOSED_EMPLOYER })], REGISTRY);
+    expect(outcome(during, 'employeur_registre', '2027-03')).toBe('non_verifiable');
+    expect(outcome(await checkPayslips([slip('2027-02', 0, { siret: CLOSED_EMPLOYER })], REGISTRY), 'employeur_registre', '2027-02')).toBe('conforme');
     expect(two.filter((f) => f.control === 'employeur_registre')).toEqual([
       { control: 'employeur_registre', outcome: 'conforme', month: '2027-04' },
       { control: 'employeur_registre', outcome: 'conforme', month: '2027-05' },
@@ -406,6 +410,11 @@ describeWithSqlite('HX47 · le constat rangé, pour l’agent du logement seul',
     const a = await t.candidate(1);
     expect(await t.controle.check(t.other, a.piece.contrat_travail, { siret: EMPLOYER })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.controle.read(t.other, a.applicationId)).toMatchObject({ ok: false, rule: 'R16' });
+    // Ni la direction : le constat est à l'agent du logement seul, et le refus est au journal.
+    const dir = { role: 'direction' as const, userId: 'dir-1', networkId: t.agent.networkId };
+    expect(await t.controle.check(dir, a.piece.contrat_travail, { siret: EMPLOYER })).toEqual({ ok: false, rule: 'R16', code: 'agent_only' });
+    expect(await t.controle.read(dir, a.applicationId)).toEqual({ ok: false, rule: 'R16', code: 'agent_only' });
+    expect(await t.db.all("SELECT 1 FROM journal WHERE type = 'acces.refuse' AND data LIKE '%agent_only%'")).toHaveLength(2);
     expect(await t.controle.check(t.agent, 'inconnue', { siret: EMPLOYER })).toMatchObject({ ok: false });
     expect(await t.controle.check(t.agent, a.piece.quittances_loyer, {})).toEqual({ ok: false, rule: null, code: 'not_checkable' });
     expect(await t.controle.check(t.agent, a.piece.contrat_travail, 'texte')).toEqual({ ok: false, rule: null, code: 'bad_read' });

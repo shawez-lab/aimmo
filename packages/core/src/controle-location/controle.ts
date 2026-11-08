@@ -74,8 +74,17 @@ export class ControleDossiers {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
+  /** Le constat est à l'agent du logement seul : ni la direction ni un autre rôle ne le fait ni ne le lit [R530]. */
+  private async agentOnly(viewer: Viewer, subject: string): Promise<CheckRefusal | null> {
+    if (viewer.role === 'agent') return null;
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'piece_findings', code: 'agent_only' } }, this.now);
+    return { ok: false, rule: 'R16', code: 'agent_only' };
+  }
+
   /** La pièce et son logement, sous les droits d'écriture de l'agent du logement [R16]. */
   private async piece(viewer: Viewer, pieceId: unknown): Promise<CheckRefusal | PieceRow> {
+    const refused = await this.agentOnly(viewer, `piece:${String(pieceId).slice(0, 100)}`);
+    if (refused) return refused;
     const row =
       typeof pieceId === 'string' && pieceId.length <= 100
         ? await this.db.first<PieceRow>(
@@ -151,6 +160,8 @@ export class ControleDossiers {
 
   /** Le dernier constat de chaque pièce contrôlée d'une candidature, pour l'agent du logement seul [R16, R530]. */
   async read(viewer: Viewer, applicationId: unknown): Promise<CheckResult<PieceCheck[]>> {
+    const refused = await this.agentOnly(viewer, `rental_application:${String(applicationId).slice(0, 100)}`);
+    if (refused) return refused;
     const app =
       typeof applicationId === 'string' && applicationId.length <= 100
         ? await this.db.first<{ listing_id: string }>('SELECT listing_id FROM rental_applications WHERE id = ? AND network_id = ?', [applicationId, viewer.networkId])

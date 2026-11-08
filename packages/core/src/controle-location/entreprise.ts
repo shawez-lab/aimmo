@@ -51,9 +51,10 @@ export type EmployerOutcome = 'open' | 'closed_before' | 'unknown' | 'unavailabl
 
 /**
  * L'établissement à la date de la pièce : ouvert, ou fermé ce jour-là ou après, c'est conforme ; fermé avant, inconnu ou
- * clé fausse, c'est un écart ; registre injoignable, ou fermé sans date de pièce connue, non vérifiable. Ne lève jamais.
+ * clé fausse, c'est un écart ; registre injoignable, fermé sans date de pièce connue ou pendant le mois d'une pièce datée
+ * du mois seulement, non vérifiable. Ne lève jamais.
  */
-export async function checkEmployer(registry: CompanyRegistry, rawSiret: unknown, onDate: string | null): Promise<EmployerOutcome> {
+export async function checkEmployer(registry: CompanyRegistry, rawSiret: unknown, onDate: string | null, until?: string): Promise<EmployerOutcome> {
   if (!siretKeyValid(rawSiret)) return 'bad_key';
   const siret = (rawSiret as string).replace(/\s+/g, '');
   let answer: RegistryAnswer;
@@ -66,7 +67,10 @@ export async function checkEmployer(registry: CompanyRegistry, rawSiret: unknown
   if (answer.status === 'closed') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(answer.closedOn)) return 'unavailable';
     if (onDate === null) return 'unavailable';
-    return answer.closedOn < onDate ? 'closed_before' : 'open';
+    if (answer.closedOn < onDate) return 'closed_before';
+    // Une pièce datée d'un mois seulement (`until` : le premier jour du mois suivant) : fermé pendant ce mois, rien ne dit
+    // si c'était avant ou après la pièce.
+    return until !== undefined && answer.closedOn < until ? 'unavailable' : 'open';
   }
   return answer.status === 'unknown' ? 'unknown' : 'unavailable';
 }

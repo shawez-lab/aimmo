@@ -178,6 +178,7 @@ export async function checkTaxNotice(read: TaxNoticeRead, trust: TrustList, toda
 // ——— Employeur ———
 
 export async function checkEmployerFindings(registry: CompanyRegistry, siret: unknown, onDate: string | null, month?: string): Promise<Finding[]> {
+  const until = month ? `${nextMonth(month)}-01` : undefined;
   const at = month ? { month } : {};
   if (siret === undefined || siret === null || siret === '') {
     return [
@@ -185,7 +186,7 @@ export async function checkEmployerFindings(registry: CompanyRegistry, siret: un
       { control: 'employeur_registre', outcome: 'non_verifiable', ...at },
     ];
   }
-  const r = await checkEmployer(registry, siret, onDate);
+  const r = await checkEmployer(registry, siret, onDate, until);
   if (r === 'bad_key') {
     return [
       { control: 'employeur_siret', outcome: 'ecart', ...at },
