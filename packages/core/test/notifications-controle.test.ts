@@ -39,6 +39,8 @@ describe('SV15 · une seule porte vers le service de notification', () => {
     expect(files.some((f) => f.endsWith('/automatismes/notifications.ts'))).toBe(true);
     const callers = files.filter((f) => /\.pushToDevices\s*\(|\[\s*['"`]pushToDevices['"`]\s*\]/.test(readFileSync(f, 'utf8')));
     expect(callers.map((f) => f.slice(src.length).replace(/^\/+/, ''))).toEqual(['core/src/envoi/controle.ts']);
+    // Aucune classe n'hérite de la boîte d'essai : elle seule est admise par le contrôle [R26].
+    expect(files.filter((f) => /extends\s+AgentPushTrialBox\b/.test(readFileSync(f, 'utf8')))).toEqual([]);
     // Les notifications de HX27 ne parlent qu'au contrôle central.
     const notif = readFileSync(`${src}/core/src/automatismes/notifications.ts`, 'utf8');
     expect(notif).toMatch(/Pick<ControleEnvois, 'sendToAgent'>/);
@@ -73,17 +75,16 @@ async function setup(options: { box?: AgentPushTrialBox | null } = {}) {
   return { raw, db, journal, store, network, other, alex, lea, box, controle, order, outbox, log, now, setClock: (t: number) => (clock = t) };
 }
 
-/** Une boîte d'essai qui compte ses appels et peut répondre autre chose, pour les tests. */
-class CountingBox extends AgentPushTrialBox {
-  calls = 0;
-  answer: AgentPushOutcome | 'panne' = 'ok';
-  override async pushToDevices(order: AgentPushOrder): Promise<'ok'> {
-    this.calls++;
+/** La boîte d'essai elle-même, avec la réponse imitée du service : elle compte ses appels, pour les tests. */
+function countingBox(t: { db: SqlDatabase; journal: SqlJournalStore; now: () => Date }) {
+  const state = { calls: 0, answer: 'ok' as AgentPushOutcome | 'panne' };
+  const box = new AgentPushTrialBox(t.db, t.journal, t.now, async () => {
+    state.calls++;
     await new Promise((r) => setTimeout(r, 5));
-    if (this.answer === 'panne') throw new Error('service en panne');
-    if (this.answer !== 'ok') return this.answer as 'ok';
-    return super.pushToDevices(order);
-  }
+    if (state.answer === 'panne') throw new Error('service en panne');
+    return state.answer;
+  });
+  return Object.assign(state, { box });
 }
 
 describeWithSqlite('SV15 · les notifications aux agents passent par le contrôle central', () => {
@@ -100,7 +101,8 @@ describeWithSqlite('SV15 · les notifications aux agents passent par le contrôl
   it('[R26] aucun autre service que la boîte d’essai n’est admis : sans elle, rien ne part', async () => {
     const t = await setup({ box: null });
     const o = t.order();
-    expect(await t.controle.sendToAgent(o)).toBe('aucun_appareil');
+    // Refusé, l'envoi n'est pas dit fini : ses notifications restent à envoyer [R18].
+    expect(await t.controle.sendToAgent(o)).toBe('echec');
     expect(await t.log(o.payload.pushId)).toMatchObject([{ outcome: 'refuse', rule: 'R26' }]);
     expect(await t.db.first('SELECT * FROM agent_push_sends')).toBeNull();
     // Un vrai service glissé à la place de la boîte d'essai n'est jamais appelé.
@@ -112,15 +114,37 @@ describeWithSqlite('SV15 · les notifications aux agents passent par le contrôl
       journal: new SqlSendJournal(t.db),
       agentPush: real as unknown as AgentPushTrialBox,
     });
-    expect(await c.sendToAgent(t.order())).toBe('aucun_appareil');
+    expect(await c.sendToAgent(t.order())).toBe('echec');
     expect(called).toBe(0);
+    // Une classe qui hériterait de la boîte d'essai n'est pas la boîte d'essai : jamais appelée.
+    class Heritiere extends AgentPushTrialBox {
+      override async pushToDevices(): Promise<'ok'> {
+        called++;
+        return 'ok';
+      }
+    }
+    const h = new ControleEnvois(t.db, fiche, new DecisionEnvoi(t.db, t.store, fiche), { channels: [], journal: new SqlSendJournal(t.db), agentPush: new Heritiere(t.db, t.journal) });
+    expect(await h.sendToAgent(t.order())).toBe('echec');
+    expect(called).toBe(0);
+    expect(await t.db.first('SELECT * FROM agent_push_sends')).toBeNull();
+  });
+
+  it('[R225] [R18] HX27 avec un contrôle sans boîte d’essai : rien n’est dit parti ni sans appareil, tout reste à envoyer', async () => {
+    const t = await setup({ box: null });
+    const notifications = new Notifications(t.db, t.journal, t.controle, { now: t.now });
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Noa' });
+    await notifications.notify({ agentId: t.alex.id, personId: p.id, kind: 'piece_recue', sourceKey: 'piece:1' });
+    await notifications.flush();
+    const rows = await t.db.all<{ status: string; sent_at: string | null }>('SELECT status, sent_at FROM agent_notifications');
+    expect(rows).toEqual([{ status: 'a_envoyer', sent_at: null }]);
+    expect(await t.db.all("SELECT id FROM agent_pushes WHERE status IN ('partie', 'aucun_appareil')")).toEqual([]);
   });
 
   it('[R225] [R05] un même envoi ne part jamais deux fois, rejoué ou demandé deux fois en même temps', async () => {
     const t0 = await setup();
-    const counting = new CountingBox(t0.db, t0.journal, t0.now);
+    const counting = countingBox(t0);
     const fiche = new FicheUnique(t0.db, t0.store);
-    const c = new ControleEnvois(t0.db, fiche, new DecisionEnvoi(t0.db, t0.store, fiche), { channels: [], journal: new SqlSendJournal(t0.db), now: t0.now, agentPush: counting });
+    const c = new ControleEnvois(t0.db, fiche, new DecisionEnvoi(t0.db, t0.store, fiche), { channels: [], journal: new SqlSendJournal(t0.db), now: t0.now, agentPush: counting.box });
     const o = t0.order();
     expect(await c.sendToAgent(o)).toBe('ok');
     // Rejoué : rien ne repart, la réponse du premier envoi est rendue.
@@ -141,9 +165,9 @@ describeWithSqlite('SV15 · les notifications aux agents passent par le contrôl
 
   it('[R225] un refus ou une panne du service est rangé une fois ; le même envoi ne repart pas, la réponse ne change plus', async () => {
     const t = await setup();
-    const counting = new CountingBox(t.db, t.journal, t.now);
+    const counting = countingBox(t);
     const fiche = new FicheUnique(t.db, t.store);
-    const c = new ControleEnvois(t.db, fiche, new DecisionEnvoi(t.db, t.store, fiche), { channels: [], journal: new SqlSendJournal(t.db), now: t.now, agentPush: counting });
+    const c = new ControleEnvois(t.db, fiche, new DecisionEnvoi(t.db, t.store, fiche), { channels: [], journal: new SqlSendJournal(t.db), now: t.now, agentPush: counting.box });
     counting.answer = 'panne';
     const o = t.order();
     expect(await c.sendToAgent(o)).toBe('echec');
@@ -178,7 +202,7 @@ describeWithSqlite('SV15 · les notifications aux agents passent par le contrôl
   it('[R225] [R415] [R13] le lien ne mène qu’au détail de l’envoi, et le journal ne garde ni texte ni donnée', async () => {
     const t = await setup();
     const o = t.order();
-    expect(await t.controle.sendToAgent({ ...o, payload: { ...o.payload, url: 'https://exemple.test/fiche/noa' } })).toBe('aucun_appareil');
+    expect(await t.controle.sendToAgent({ ...o, payload: { ...o.payload, url: 'https://exemple.test/fiche/noa' } })).toBe('echec');
     expect(await t.log(o.payload.pushId)).toMatchObject([{ outcome: 'refuse', rule: 'R415' }]);
     const p = t.order();
     await t.controle.sendToAgent(p);

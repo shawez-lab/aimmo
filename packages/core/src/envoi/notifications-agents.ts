@@ -50,9 +50,16 @@ export class AgentPushTrialBox implements AgentPushService {
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly now: () => Date = () => new Date(),
+    /**
+     * Pour les tests seulement : la réponse du service imité (refus, aucun appareil, panne). Il ne reçoit rien de
+     * l'envoi : il ne peut rien faire partir.
+     */
+    private readonly simulate?: () => Promise<AgentPushOutcome | undefined>,
   ) {}
 
-  async pushToDevices(order: AgentPushOrder): Promise<'ok'> {
+  async pushToDevices(order: AgentPushOrder): Promise<AgentPushOutcome> {
+    const simulated = this.simulate ? await this.simulate() : undefined;
+    if (simulated !== undefined && simulated !== 'ok') return simulated;
     await this.db.run('INSERT INTO agent_push_trial_outbox (push_id, created_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [order.payload.pushId, this.now().toISOString()]);
     await appendEvent(
       this.journal,

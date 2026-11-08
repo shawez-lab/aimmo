@@ -843,13 +843,15 @@ export class ControleEnvois {
     if (typeof pushId !== 'string' || pushId === '') throw new Error('Une notification porte son identifiant [R05].');
     const box = this.options.agentPush;
     // Mode essai : aucun vrai service n'est admis tant que le plan ne l'a pas mis en service (H57).
-    if (!(box instanceof AgentPushTrialBox)) {
+    // La boîte d'essai elle-même, jamais une classe qui en hériterait : une sous-classe pourrait envoyer vraiment.
+    // Refusé, l'envoi n'est pas dit fini : ses notifications restent à envoyer et à lire dans l'application [R18].
+    if (box === undefined || Object.getPrototypeOf(box) !== AgentPushTrialBox.prototype) {
       await log('refuse', 'R26', 'Aucune boîte d’essai des notifications : rien ne part vers un téléphone.');
-      return 'aucun_appareil';
+      return 'echec';
     }
     if (order.payload.url !== agentPushUrl(pushId)) {
       await log('refuse', 'R415', 'Le lien d’une notification ne mène qu’au détail de son envoi.');
-      return 'aucun_appareil';
+      return 'echec';
     }
     if (await agentGone(this.db, order.networkId, order.agentId, at)) {
       await log('refuse', 'R86', 'L’agent n’est plus en activité dans ce réseau.');
