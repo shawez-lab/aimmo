@@ -19,6 +19,8 @@ it('[R523] le texte refuse coordonnées, liens, adresses et noms des clients, qu
   expect(reviewTextProblem(`${GOOD} appelez le +33 6 12 34 56 78`, names)).toBe('phone');
   expect(reviewTextProblem(`${GOOD} voir https://exemple.test/page`, names)).toBe('link');
   expect(reviewTextProblem(`${GOOD} pour notre maison du 12 rue des Lilas`, names)).toBe('address');
+  for (const street of ['12 passage des Lilas', '4 lotissement les Prés', '7 bis faubourg Raines', '3 hameau du Val', '9 clos des Vignes'])
+    expect(reviewTextProblem(`${GOOD} Pour notre logement au ${street}.`, names)).toBe('address');
   expect(reviewTextProblem(`${GOOD} Signé : Madame DURAND`, names)).toBe('name');
   expect(reviewTextProblem(`${GOOD} Ána`, names)).toBe('name');
   // Les noms dans toutes les écritures, et les numéros internationaux.

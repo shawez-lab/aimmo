@@ -144,7 +144,8 @@ export function reviewTextProblem(text: string, forbiddenNames: readonly string[
   // Un numéro français, ou tout numéro international : « + » ou « 00 » suivi d'au moins huit chiffres.
   if (/(?:\+\s*33|\b0)\s*[1-9](?:[\s.\-]*\d){8}/.test(text) || /(?:\+|\b00)\s*\(?\d(?:[\s.\-()]*\d){7,}/.test(text)) return 'phone';
   if (/https?:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:fr|com|net|org|eu|io)\b/i.test(text)) return 'link';
-  if (/\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|av\.|boulevard|bd|place|chemin|impasse|all[ée]e|route|quai|cours|square|r[ée]sidence)\b/i.test(text)) return 'address';
+  // Les sortes de voie de la garde d'adresse de la fiche Google, et quelques autres.
+  if (/\b\d{1,4}\s*(?:bis|ter|quater)?\s*,?\s*(?:rue|ruelle|avenue|av\.|boulevard|bd|chemin|all[ée]e|impasse|place|quai|route|square|cours|passage|faubourg|lotissement|r[ée]sidence|hameau|lieu-dit|cit[ée]|voie|sentier|parvis|esplanade|promenade|rond-point|villa|domaine|clos|traverse|mont[ée]e|chauss[ée]e|venelle)(?![\p{L}])/iu.test(text)) return 'address';
   const said = words(text);
   const saidSet = new Set(said);
   const folded = fold(text);
