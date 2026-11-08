@@ -205,6 +205,37 @@ describeWithSqlite('HX19 · carte des opportunités et tournée de prospection',
     expect(await w.tournee.map(w.asPaul, 'demain')).toEqual({ ok: false, rule: 'R298', code: 'bad_date' });
   });
 
+  it('[R298] depuis l’agence, la route vers le premier arrêt se compte depuis maintenant, jamais avant', async () => {
+    const w = await world();
+    // L'agence à une heure et plus de route : à 9 h, rien ne peut commencer avant 9 h plus ce trajet.
+    const base: Place = { lat: 47.9, lon: 5.0 };
+    // Sans la visite de 10 h, le premier arrêt ne peut partir que de l'agence.
+    await w.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?", [NOW.toISOString()]);
+    const late = new TourneeProspection(w.db, w.journal, { now: () => at(DAY, '09:00') });
+    const tour = await late.plan(w.asPaul, DAY, base);
+    if (!tour.ok) throw new Error('tournée refusée');
+    const placeOf = (s: TourStop): Place => (s.kind === 'panneau' ? SIGN_PLACE : s.kind === 'lettres' ? CENTER : DPE_PLACE);
+    const first = prospectStops(tour)[0]!;
+    expect(tour.stops.some((x) => x.kind === 'rendez-vous')).toBe(false);
+    expect(first.travelMinutes).toBe(roadEstimate(base, placeOf(first)));
+    const needed = roadEstimate(base, placeOf(first));
+    expect(needed).toBeGreaterThan(60);
+    // Sans cette règle, le premier arrêt tomberait à 9 h avec plus d'une heure de route à faire avant.
+    expect(first.start.getTime()).toBeGreaterThanOrEqual(at(DAY, '09:00').getTime() + needed * MIN);
+  });
+
+  it('[R298] le total de route compte chaque trajet de la journée, jusqu’au rendez-vous fixe compris', async () => {
+    const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:15' }, { from: '09:00', to: '12:00' }] }] } });
+    const tour = await w.tournee.plan(w.asPaul, DAY);
+    if (!tour.ok) throw new Error('tournée refusée');
+    const placeOf = (s: TourStop): Place =>
+      s.kind === 'rendez-vous' ? VISIT_PLACE : s.kind === 'panneau' ? SIGN_PLACE : s.kind === 'lettres' ? CENTER : DPE_PLACE;
+    let expected = 0;
+    for (let i = 1; i < tour.stops.length; i++) expected += roadEstimate(placeOf(tour.stops[i - 1]!), placeOf(tour.stops[i]!));
+    expect(tour.stops.some((s) => s.kind === 'rendez-vous')).toBe(true);
+    expect(tour.travelMinutes).toBe(expected);
+  });
+
   it('[R297] aucune adresse hors des zones de l’agent : comptée, jamais montrée ; une zone fermée retire ses opportunités', async () => {
     const w = await world();
     const map = await w.tournee.map(w.asPaul, DAY);

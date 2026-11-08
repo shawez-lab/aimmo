@@ -116,7 +116,7 @@ export interface Tour {
   stops: TourStop[];
   left: LeftOut[];
   outsideZone: number;
-  /** Minutes de route estimées entre les arrêts de prospection et leurs voisins. */
+  /** Minutes de route estimées de la journée : chaque trajet entre deux arrêts sur place voisins aux lieux connus, départ de l'agence compris. */
   travelMinutes: number;
 }
 
@@ -408,6 +408,7 @@ export class TourneeProspection {
     };
     const following = (end: number): Fixed | null => onSite.filter((f) => f.start.getTime() >= end).sort((a, b) => a.start.getTime() - b.start.getTime())[0] ?? null;
 
+    const earliest = Math.max(dayStart.getTime(), this.now().getTime());
     /** Le trajet d'avant, en minutes, si l'arrêt peut commencer à `start` ; `null` sinon. */
     const fits = (o: Opportunity, start: number): number | null => {
       const end = start + o.minutes * MINUTE;
@@ -424,7 +425,8 @@ export class TourneeProspection {
       // Un estimateur qui ne rend pas un nombre ne fait jamais sauter la route : le trajet minimal vaut.
       let before = Number.isFinite(raw) && raw >= 0 ? raw : floor;
       if (prev?.booked) before = Math.max(before, floor);
-      if (prev && start < prev.end.getTime() + before * MINUTE) return null;
+      // On ne part pas avant maintenant : la route compte depuis la fin de l'arrêt d'avant, ou depuis maintenant [R298].
+      if (start < Math.max(prev ? prev.end.getTime() : earliest, earliest) + before * MINUTE) return null;
       const next = following(end);
       if (next) {
         const est = next.place ? this.estimate(o.place!, next.place) : floor;
@@ -435,7 +437,6 @@ export class TourneeProspection {
     };
 
     // Au plus tôt : la tournée ne commence pas avant maintenant, alignée sur une tranche.
-    const earliest = Math.max(dayStart.getTime(), this.now().getTime());
     let cursor = dayStart.getTime() + Math.ceil((earliest - dayStart.getTime()) / step) * step;
     const remaining = [...candidates];
     const rank = (k: ProspectKind): number => PROSPECT_KINDS.indexOf(k);
@@ -486,7 +487,18 @@ export class TourneeProspection {
       ),
     ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    const travelMinutes = chosen.reduce((sum, c) => sum + c.travel, 0);
+    // Chaque trajet de la journée une fois : entre arrêts sur place voisins dont les deux lieux sont connus.
+    const legs = [
+      ...onSite.filter((f) => localTime(f.start, AGENDA_TIME_ZONE).date === date).map((f) => ({ start: f.start, place: f.place })),
+      ...chosen.map((c) => ({ start: c.start, place: c.o.place })),
+    ].sort((a, b) => a.start.getTime() - b.start.getTime());
+    const home = base && validPlace(base) ? base : null;
+    let travelMinutes = 0;
+    for (const [i, l] of legs.entries()) {
+      const from = i === 0 ? home : legs[i - 1]!.place;
+      const leg = from && l.place ? this.estimate(from, l.place) : 0;
+      travelMinutes += Number.isFinite(leg) && leg > 0 ? leg : 0;
+    }
     await appendEvent(
       this.journal,
       {
