@@ -283,15 +283,18 @@ export class Viager {
   }
 
   /**
-   * Un agent existe dans le réseau et est en activité, même pour un calcul rattaché à rien : son départ coupe tout
-   * accès, comme le contrôle central [R86, R16].
+   * Un agent existe dans le réseau, est en activité et son dossier d'agent est complet, même pour un calcul rattaché à
+   * rien : son départ coupe tout accès, comme le contrôle central [R86, R82, R16].
    */
   private async activeOrRefuse(viewer: Viewer): Promise<ViagerRefusal | null> {
     if (viewer.role === 'direction') return null;
     if (viewer.role !== 'agent') return this.refuse(viewer, 'R16', 'role');
     const agent = await this.db.first<{ status: string; network_id: string }>('SELECT status, network_id FROM agents WHERE id = ?', [viewer.userId]);
     if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return this.refuse(viewer, 'R16', 'agent_inactive');
-    if ((await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'parti') return this.refuse(viewer, 'R16', 'agent_inactive');
+    const state = await agentState(this.db, viewer.networkId, viewer.userId, this.now());
+    if (state === 'parti') return this.refuse(viewer, 'R16', 'agent_inactive');
+    // Un dossier d'agent incomplet ne voit aucune donnée d'un client, même d'un calcul qu'il a fait [R82].
+    if (state === 'dossier_incomplet') return this.refuse(viewer, 'R16', 'agent_file_incomplete');
     return null;
   }
 

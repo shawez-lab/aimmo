@@ -11,6 +11,7 @@
  *   son hypothèse ; sans barème, aucun chiffre [R534].
  */
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -245,6 +246,8 @@ export class ProgrammesNeufs {
     if (viewer.role !== 'agent' || viewer.userId !== program.agent_id) return this.refuse(viewer, 'R16', 'not_assigned');
     const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
     if (!agent || agent.status !== 'active') return this.refuse(viewer, 'R16', 'agent_left');
+    // Le départ prend effet dès son jour, à Paris, avant le passage du planificateur [R86].
+    if ((await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'parti') return this.refuse(viewer, 'R16', 'agent_left');
     return program;
   }
 

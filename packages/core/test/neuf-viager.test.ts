@@ -242,6 +242,19 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     const shared = await t.acces.readProperty(t.other, prop.id);
     expect(shared).toMatchObject({ ok: true, view: 'shared' });
     expect(await t.viager.read(t.acces, t.other, onProp.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    // Un dossier d'agent incomplet (une pièce échue) : plus aucune lecture de son propre calcul, ni de calcul neuf [R82].
+    await t.db.run(
+      "INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES ('pc-1', ?, ?, 'assurance_rcp', 1, 'ref-pc-1', '2026-01-01', '2026-12-31', 0, 'direction:direction-1', '2027-01-01T00:00:00.000Z')",
+      [t.network.id, t.other.userId],
+    );
+    expect(await t.viager.read(t.acces, t.other, own.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'agent_file_incomplete' });
+    expect(await t.viager.compute(t.acces, t.other, { inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_file_incomplete' });
+    // Un départ dont le jour est venu, avant même le passage du planificateur : plus rien.
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, '2027-01-01', '2027-03-01', 'demission_agent', 2, 'direction:direction-1', '2027-01-01T00:00:00.000Z')",
+      [t.network.id, t.alex.id],
+    );
+    expect(await t.viager.compute(t.acces, t.agent, { inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
     // Un agent parti : plus de calcul ni de lecture, même rattachés à rien.
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
     expect(await t.viager.compute(t.acces, t.agent, { inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
@@ -298,6 +311,13 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     // Aucune donnée personnelle dans la grille publiée.
     const text = JSON.stringify(grid);
     for (const s of [t.alex.id, 'Alex', 'agent:', 'direction']) expect(text).not.toContain(s);
+    // Le jour de son départ, même avant le planificateur, l'agent du programme ne tient plus la grille [R86].
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-2', ?, ?, '2027-01-01', '2027-03-16', 'demission_agent', 2, 'direction:direction-1', '2027-01-01T00:00:00.000Z')",
+      [t.network.id, t.alex.id],
+    );
+    expect(await lot('B04', 'disponible', '2027-03-16')).toMatchObject({ ok: false, rule: 'R16', code: 'agent_left' });
+    expect(await t.neuf.agentGrid(t.agent, programId)).toMatchObject({ ok: false, rule: 'R16', code: 'agent_left' });
     // Un autre agent ne tient pas la grille.
     expect(await t.neuf.recordLot(t.other, programId, { lotRef: 'B09', typology: 't2', livingAreaHundredths: 4500, floor: 1, priceCents: 18_000_000, status: 'disponible', confirmedOn: '2027-03-16' })).toMatchObject({
       ok: false,
