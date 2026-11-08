@@ -299,7 +299,30 @@ describeWithSqlite('HX38 · diffusion surveillée portail par portail', () => {
     await t.d.verify(t.network.id, t.propertyId, 'seloger', slow);
     const tasks = await t.d.tasks(t.agent);
     expect(tasks.ok && tasks.tasks.map((x) => x.kind)).toEqual(['ecart']);
+    // L'agent voit toujours ce qui diffère : l'ancien prix en ligne, pas la relecture conforme périmée.
+    expect(tasks.ok && tasks.tasks[0]?.gaps.map((g) => g.field)).toEqual(['prix', 'mention']);
     expect(await t.d.sellerLinks(t.network.id, t.propertyId)).toEqual([]);
+  });
+
+  it('[R473] un retrait rangé pendant une relecture rend son résultat périmé : il ne ferme pas l’écart « toujours en ligne »', async () => {
+    const t = await setup();
+    await t.d.choose(t.agent, t.propertyId, 'seloger', true);
+    const { seq } = await t.version();
+    await t.d.recordFeedback(t.network.id, { portal: 'seloger', propertyId: t.propertyId, seq, outcome: 'acceptee', onlineUrl: URL_SL });
+    const page = await t.online();
+    t.reader.pages.set(URL_SL, page);
+    // Pendant la lecture, le bien est retiré du portail, et une autre relecture le trouve encore en ligne.
+    const slow: OnlineListingReader = {
+      read: async () => {
+        await t.d.suspend(t.agent, { propertyId: t.propertyId, portal: 'seloger', reason: 'correction' });
+        const r = await t.d.verify(t.network.id, t.propertyId, 'seloger', t.reader);
+        expect(r.ok && r.outcome).toBe('toujours_en_ligne');
+        return page;
+      },
+    };
+    await t.d.verify(t.network.id, t.propertyId, 'seloger', slow);
+    const tasks = await t.d.tasks(t.agent);
+    expect(tasks.ok && tasks.tasks.map((x) => [x.kind, x.gaps.map((g) => g.field)])).toEqual([['ecart', ['retrait']]]);
   });
 
   it('[R473] une annonce absente, illisible, ou retirée mais encore en ligne est dite', async () => {
