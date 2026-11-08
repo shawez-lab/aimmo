@@ -7,7 +7,7 @@
  * décider (voir `serveur.ts`).
  *
  * Un brouillon validé est la décision de l'agent, rangée et datée. Décidé, lecture prudente : il ne change pas encore
- * la fiche ni le bien. Un prix ne change pas sans avenant au mandat [R63], une note se range dans la fiche par son
+ * la fiche ni le bien. Un prix publié ne change pas sans avenant signé au mandat [R44], une note se range dans la fiche par son
  * module : ce branchement est une tâche à part.
  */
 import type { Acces } from '../acces/acces.ts';

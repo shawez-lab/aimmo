@@ -335,4 +335,7 @@ export const RULE_CATALOG: ReadonlyMap<string, string> = new Map([
   ["R561", "Export complet de l'agent, avec son empreinte"],
   ["R570", "Quiz tiré des règles et des modules, sans note"],
   ["R571", "Attestation vérifiable par son empreinte"],
+  ["R590", "Assistant de l'agent sous ses droits"],
+  ["R591", "Brouillons seulement, validés par l'agent"],
+  ["R592", "Lecture publique des biens diffusables"],
 ]);

@@ -548,6 +548,10 @@ Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à par
 
 ## Intégrations
 
+Voie : 1
+
+Réservé le 2026-11-08 par la voie 1. Règles R590 à R599 et migrations à partir de `3200` réservées à ce groupe. Le code vit dans `packages/core/src/mcp/` (fichiers neufs).
+
 ### HX55 · Serveur MCP et API ouverte
 - Statut : en cours
 - Qui : Claude, voie 1, relecture forte
