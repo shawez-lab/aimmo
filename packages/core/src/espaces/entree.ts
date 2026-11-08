@@ -309,6 +309,8 @@ export class EntreeEspace {
         `${person?.first_name ? `Bonjour ${person.first_name},\n\n` : 'Bonjour,\n\n'}Voici le lien de votre espace, pour suivre votre dossier : ${this.baseUrl}${token}\n\nCe lien vous est personnel. Il est valable ${minutes} minutes et ne sert qu’une fois. Si vous n’avez rien demandé, ne faites rien.`,
       ],
       figures: [minutes],
+      // Le lien ouvre l'espace au nom du client : remis entier, rangé masqué [R160, HX61].
+      secrets: [{ kind: 'lien', value: `${this.baseUrl}${token}` }],
       to,
     });
     if (sent.status !== 'sent') {
