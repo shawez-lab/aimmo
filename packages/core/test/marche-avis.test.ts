@@ -326,6 +326,24 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     await expect(t.marche.attach(t.as('agent', t.alex.id), r.id)).rejects.toThrow(/panne d'essai/);
   });
 
+  it('[R306] un relevé joint après la lecture change la version : la validation sur la version lue est refusée', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    expect((await t.marche.attach(t.as('agent', t.alex.id), r.id)).ok).toBe(true);
+    const read = (await t.avis.get(r.id))!.updated_at;
+    expect((await t.marche.attach(t.as('agent', t.alex.id), r.id)).ok).toBe(true);
+    expect(await t.avis.validate(t.as('agent', t.alex.id), r.id, read)).toEqual({ ok: false, rule: 'R30', code: 'changed_meanwhile' });
+    const fresh = (await t.avis.get(r.id))!.updated_at;
+    expect((await t.avis.validate(t.as('agent', t.alex.id), r.id, fresh)).ok).toBe(true);
+  });
+
+  it('[R306] un agent parti le jour même, avant le passage du départ, ne joint rien', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    await t.db.run("INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, '2026-10-01', '2026-11-02', 'demission_agent', 1, 'd1', '2026-10-01T08:00:00.000Z')", [t.net.id, t.alex.id]);
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
+  });
+
   it('[R13] le journal du relevé ne porte que des comptes', async () => {
     const t = await setup();
     await t.pige.ingest(t.net.id, [t.ad()]);

@@ -21,8 +21,9 @@
  * que des comptes [R13].
  */
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import { communeSlug } from '../attirer/liste-biens.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { localTime } from '../envoi/horaires.ts';
 import type { MarketRent, MarketRentKind } from '../investir/loyers.ts';
@@ -173,8 +174,8 @@ export class MarcheAvis {
    */
   async attach(viewer: Viewer, reportId: unknown): Promise<{ ok: true; value: MarketSection } | MarketRefusal> {
     if (typeof reportId !== 'string') return { ok: false, rule: null, code: 'invalid' };
-    const report = await this.db.first<{ id: string; network_id: string; property_id: string; status: string; computed: string }>(
-      'SELECT id, network_id, property_id, status, computed FROM valuation_reports WHERE id = ?',
+    const report = await this.db.first<{ id: string; network_id: string; property_id: string; status: string; computed: string; updated_at: string }>(
+      'SELECT id, network_id, property_id, status, computed, updated_at FROM valuation_reports WHERE id = ?',
       [reportId],
     );
     if (!report || report.network_id !== viewer.networkId) return { ok: false, rule: 'R30', code: 'unknown' };
@@ -183,7 +184,9 @@ export class MarcheAvis {
       [report.property_id, report.network_id],
     );
     const agent = viewer.role === 'agent' ? await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]) : null;
-    if (viewer.role !== 'agent' || !property || property.agent_id !== viewer.userId || agent?.status !== 'active') {
+    // L'état réel de l'agent, départ du jour compris, pas seulement la colonne [R86, R16].
+    const effective = agent ? await agentState(this.db, viewer.networkId, viewer.userId, this.now()) : null;
+    if (viewer.role !== 'agent' || !property || property.agent_id !== viewer.userId || agent?.status !== 'active' || effective !== 'actif') {
       await this.log('avis.marche_refuse', `${String(viewer.role)}:${viewer.userId}`, report.property_id, { report: report.id, code: 'not_following_agent' });
       return { ok: false, rule: 'R30', code: 'not_following_agent' };
     }
@@ -203,16 +206,19 @@ export class MarcheAvis {
       surfaceM2: computed.surface,
       soldMedianPerM2: typeof computed.medianPerM2 === 'number' ? computed.medianPerM2 : null,
     });
-    const at = this.now().toISOString();
+    // Le relevé change la version de l'avis, dans le même lot : une validation faite sur la version lue avant ce relevé
+    // est refusée, et ce qui part est toujours ce que l'agent a vu en validant [R306, R30].
+    const nowMs = this.now().getTime();
+    const before = Date.parse(report.updated_at);
+    const at = new Date(Number.isFinite(before) && nowMs <= before ? before + 1 : nowMs).toISOString();
     // La base refuse aussi un avis validé entre-temps [R306].
     try {
-      await this.db.run('INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
-        this.newId(),
-        viewer.networkId,
-        report.id,
-        viewer.userId,
-        JSON.stringify(section),
-        at,
+      await runBatch(this.db, [
+        { sql: "UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft'", params: [at, report.id] },
+        {
+          sql: 'INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          params: [this.newId(), viewer.networkId, report.id, viewer.userId, JSON.stringify(section), at],
+        },
       ]);
     } catch (error) {
       // Seul le refus de la base pour un avis validé entre-temps se dit « déjà validé » ; toute autre panne remonte.
