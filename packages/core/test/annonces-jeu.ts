@@ -85,7 +85,9 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean } =
     ],
   });
   // La photo aménagée a sa jumelle réelle déclarée, tirée du même cliché (HX41) : elle part juste après elle [R494].
-  if (options.twin !== false) {
+  // Un test qui s'arrête à une migration plus ancienne n'a pas encore les jumelles : il s'en passe.
+  const hasTwins = (await db.first<{ n: number }>("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'virtual_stagings'"))!.n === 1;
+  if (options.twin !== false && hasTwins) {
     const real = `biens/${b.id}/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg`;
     const staged = `biens/${b.id}/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg`;
     const original = `biens/${b.id}/originaux/0b6f1d2e-1111-4a2b-8c3d-00000000000a.jpg`;
