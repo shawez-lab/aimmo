@@ -496,14 +496,20 @@ Réservé le 2026-11-08 par la voie 1. Règles R550 à R559 et migrations à par
 
 ## Pilotage
 
-### HX50 · Rapports sur mesure et export complet
-- Statut : à faire
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R560 à R569 et migrations à partir de `2900` réservées à ce groupe. Le code vit dans `packages/core/src/rapports/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1. Les ids HX50 et HX51 de ce groupe et du suivant étaient déjà pris par « Photo, vidéo et visite » : renommés HX62 et HX63.
+
+### HX62 · Rapports sur mesure et export complet
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M13 (pilotage et finances).
 - Objectif : comme Immofacile et Modelo : rapports personnalisables et export intégral des données. Jamais vu : chaque agent emporte à tout moment l'export complet de ses propres données, avec son empreinte, et chaque chiffre d'un rapport s'ouvre sur ses lignes comme en K04.
 - Critères : l'export d'un agent ne contient que ses données (test) ; aucun rapport ne compare deux agents entre eux, règle R14 (test) ; chaque chiffre renvoie à ses lignes (test).
 
 ## Formation
 
-### HX51 · Quiz et attestations de formation
+### HX63 · Quiz et attestations de formation
 - Statut : à faire
 - Objectif : comme Immofacile et l'Akadémie de Hektor : quiz d'auto-formation et attestations conservées. Jamais vu : les questions sont tirées des vraies règles du réseau et des modules de l'académie, chaque erreur renvoie au module à revoir, et l'attestation se vérifie par son empreinte.
 - Critères : chaque question renvoie à sa règle ou à son module (test) ; une attestation modifiée échoue à la vérification (test).
