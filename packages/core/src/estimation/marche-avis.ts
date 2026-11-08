@@ -354,15 +354,27 @@ export class MarcheAvis {
     }
     // Le même bien sur plusieurs sites ne compte qu'une fois : l'annonce la plus ancienne le porte. Deux annonces d'un
     // même site sont deux biens, même de même empreinte : un groupe ne prend qu'une annonce par site, la n-ième de chaque.
+    // Deux annonces de sites différents sont le même bien si elles ont porté un jour la même empreinte, même corrigée
+    // depuis : les liens se suivent de proche en proche (union des empreintes de tout leur historique).
     const groups: Followed[][] = [];
-    const byProperty = new Map<string, Map<string, Followed[]>>();
-    for (const f of out) {
-      const fp = f.rows[f.rows.length - 1]!.fingerprint;
-      const sites = byProperty.get(fp) ?? new Map<string, Followed[]>();
-      byProperty.set(fp, sites);
+    const parent = out.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+    const owner = new Map<string, number>();
+    out.forEach((f, i) => {
+      for (const r of f.rows) {
+        const j = owner.get(r.fingerprint);
+        if (j === undefined) owner.set(r.fingerprint, i);
+        else parent[find(i)] = find(j);
+      }
+    });
+    const byProperty = new Map<number, Map<string, Followed[]>>();
+    out.forEach((f, i) => {
+      const root = find(i);
+      const sites = byProperty.get(root) ?? new Map<string, Followed[]>();
+      byProperty.set(root, sites);
       const src = f.rows[0]!.source;
       sites.set(src, [...(sites.get(src) ?? []), f]);
-    }
+    });
     for (const sites of byProperty.values()) {
       const lists = [...sites.values()].map((l) => [...l].sort((a, b) => a.rows[0]!.published_at.localeCompare(b.rows[0]!.published_at) || a.rows[0]!.source_ref.localeCompare(b.rows[0]!.source_ref)));
       const size = Math.max(...lists.map((l) => l.length));

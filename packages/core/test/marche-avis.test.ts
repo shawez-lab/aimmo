@@ -184,6 +184,21 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(got.value.market.withDrops).toBe(1);
   });
 
+  it('[R303] un même bien sur deux sites compte une fois, même après la surface corrigée sur l’un d’eux', async () => {
+    const t = await setup();
+    const a = t.ad({ source: 'Site A', sourceRef: 'pa', surfaceM2: 90 });
+    const b = t.ad({ source: 'Site B', sourceRef: 'pb', surfaceM2: 90 });
+    await t.pige.ingest(t.net.id, [a, b]);
+    t.at(START + DAY);
+    await t.pige.ingest(t.net.id, [{ ...a, surfaceM2: 91 }, b]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.market.ads).toBe(1);
+    expect(got.value.competitors).toHaveLength(1);
+    expect(got.value.competitors[0]!.sites).toBe(2);
+  });
+
   it('[R303] une annonce corrigée vers une autre sorte sort du relevé, même revue en ligne depuis', async () => {
     const t = await setup();
     const a = t.ad({ sourceRef: 'corrigee', surfaceM2: 90 });
