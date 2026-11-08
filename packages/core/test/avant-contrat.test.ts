@@ -203,6 +203,64 @@ describeWithSqlite('HX45 · avant-contrat préparé, et projet du notaire compar
     ]);
   });
 
+  it('[R511] une note plus récente que le projet : les différences sont recalculées contre elle, jamais montrées dépassées', async () => {
+    const t = await setup();
+    await t.brief();
+    const r = await t.ac.recordDraft(t.agent, t.fileId, t.same({ deedBy: { value: '2027-06-30', page: 7 } }));
+    expect(r).toMatchObject({ ok: true, value: { differences: [{ field: 'acte_prevu' }] } });
+    // La note suit le projet : plus rien à signaler.
+    await t.brief({ deedBy: '2027-06-30' });
+    expect(await t.ac.state(t.agent, t.fileId)).toMatchObject({ ok: true, value: { differences: [], comparedToEarlierBrief: true, blocked: false } });
+    // Une note qui s'écarte du projet : la différence apparaît.
+    await t.brief({ deedBy: '2027-07-15' });
+    const s = await t.ac.state(t.agent, t.fileId);
+    expect(s).toMatchObject({ ok: true, value: { differences: [{ field: 'acte_prevu', expected: '15/07/2027', found: '30/06/2027', page: 7 }], comparedToEarlierBrief: true } });
+  });
+
+  it('[R512] un projet qui confie le dépôt à un autre que le notaire bloque le report de ses dates jusqu’à sa correction', async () => {
+    const t = await setup();
+    await t.brief();
+    await t.ac.recordDraft(t.agent, t.fileId, t.same({ deposit: { eur: 10000, holder: 'vendeur', page: 5 } }));
+    expect(await t.ac.state(t.agent, t.fileId)).toMatchObject({ ok: true, value: { blocked: true } });
+    const signed = await t.echeancier.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    if (!signed.ok) throw new Error(signed.code);
+    expect(await t.ac.reportDates(t.agent, t.fileId)).toEqual({ ok: false, rule: 'R512', code: 'blocking_difference' });
+    expect(await t.ac.run(t.network.id)).toBe(0);
+    expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM sale_file_dates WHERE file_id = ? AND kind IN ('date_limite_pret', 'acte_prevu')", [t.fileId])).toEqual({ n: 0 });
+    expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).some((e) => e.type === 'avant_contrat.dates_bloquees')).toBe(true);
+    // Le projet corrigé : ses dates passent aussitôt.
+    expect(await t.ac.recordDraft(t.agent, t.fileId, t.same())).toMatchObject({ ok: true, value: { differences: [], dates: { date_limite_pret: 'ecrite', acte_prevu: 'ecrite' } } });
+  });
+
+  it('[R513] la signature saisie après le projet : le passage du système remplit l’échéancier, sans geste ni ressaisie', async () => {
+    const t = await setup();
+    await t.brief();
+    const d = await t.ac.recordDraft(t.agent, t.fileId, t.same());
+    if (!d.ok) throw new Error(d.code);
+    expect(await t.ac.run(t.network.id)).toBe(0);
+    const signed = await t.echeancier.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    if (!signed.ok) throw new Error(signed.code);
+    expect(await t.ac.run(t.network.id)).toBe(2);
+    expect(await t.db.all("SELECT kind, day, proof_ref, by FROM sale_file_dates WHERE file_id = ? AND kind IN ('date_limite_pret', 'acte_prevu') ORDER BY kind", [t.fileId])).toEqual([
+      { kind: 'acte_prevu', day: '2027-06-15', proof_ref: d.value.draft.documentRef, by: 'system:avant-contrat' },
+      { kind: 'date_limite_pret', day: '2027-04-30', proof_ref: d.value.draft.documentRef, by: 'system:avant-contrat' },
+    ]);
+    // Le passage suivant n'ajoute rien ; aucune date « à saisir » ne reste pour ces deux échéances.
+    expect(await t.ac.run(t.network.id)).toBe(0);
+    const s = await t.echeancier.schedule(t.agent, t.fileId);
+    if (!s.ok) throw new Error(s.code);
+    for (const k of ['date_limite_pret', 'acte']) expect(s.value.lines.find((l) => l.deadline === k)?.status).toBe('datee');
+    // Une date hors de l'ordre du compromis n'est pas écrite.
+    const late = await setup();
+    await late.brief();
+    await late.ac.recordDraft(late.agent, late.fileId, late.same({ deedBy: { value: '2027-03-01', page: 7 } }));
+    const sig = await late.echeancier.record(late.agent, late.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    if (!sig.ok) throw new Error(sig.code);
+    expect(await late.ac.run(late.network.id)).toBe(1);
+    expect(await late.db.all("SELECT kind FROM sale_file_dates WHERE file_id = ? AND kind IN ('date_limite_pret', 'acte_prevu')", [late.fileId])).toEqual([{ kind: 'date_limite_pret' }]);
+    expect((await late.journal.bySubject(`sale_file:${late.fileId}`)).filter((e) => e.type === 'avant_contrat.dates').at(-1)?.data).toEqual({ rule: 'R513', version: 1, report: { date_limite_pret: 'ecrite', acte_prevu: 'before_compromis' } });
+  });
+
   it('[R16] seul l’agent du bien prépare et range ; direction et conformité lisent ; un autre agent ne voit rien', async () => {
     const t = await setup();
     await t.brief();

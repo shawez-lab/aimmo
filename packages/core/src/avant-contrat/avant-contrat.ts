@@ -24,8 +24,8 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
-import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from '../dossiers/acces-dossier.ts';
-import { Echeancier, type DateKind } from '../dossiers/echeancier.ts';
+import { actorOf, gateSaleFile, openFile, type FileRefusal, type FileUnknown } from '../dossiers/acces-dossier.ts';
+import { Echeancier, orderProblem, type DateKind } from '../dossiers/echeancier.ts';
 import { fundsInOutgoing } from '../envoi/texte.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -87,13 +87,14 @@ export interface Difference {
   /** Ce que porte le projet, ou null s'il n'y a rien. */
   found: string | null;
   page: number | null;
-  /** Une différence qui empêche de continuer tant que le projet n'est pas corrigé : le dépôt confié à un autre que le notaire. */
+  /** Le dépôt confié à un autre que le notaire : les dates du projet ne passent pas dans l'échéancier tant qu'il n'est pas corrigé. */
   blocking: boolean;
 }
 
 export type DatesReport = Partial<Record<'date_limite_pret' | 'acte_prevu', 'ecrite' | 'deja_la' | string>>;
 
-type Problem = { ok: false; rule: null; code: string } | { ok: false; rule: 'R58'; code: 'compromis_not_started' } | { ok: false; rule: 'R512'; code: 'notary_only' } | { ok: false; rule: 'R513'; code: 'compromis_not_signed' };
+type Blocked = { ok: false; rule: 'R512'; code: 'blocking_difference' };
+type Problem = Blocked | { ok: false; rule: null; code: string } | { ok: false; rule: 'R58'; code: 'compromis_not_started' } | { ok: false; rule: 'R512'; code: 'notary_only' } | { ok: false; rule: 'R513'; code: 'compromis_not_signed' };
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -372,11 +373,32 @@ export class AvantContrat {
     await appendEvent(this.journal, { type: 'avant_contrat.projet', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R511', version, differences: differences.map((d) => d.field), blocking: differences.some((d) => d.blocking) } }, this.now);
     const draft = (await this.lastDraft(fileId))!;
     const signed = await this.db.first("SELECT 1 FROM sale_file_dates WHERE file_id = ? AND kind = 'compromis_signe'", [fileId]);
-    const dates = signed ? await this.fill(viewer, draft) : null;
-    return { ok: true, value: { draft, differences, dates } };
+    const filled = signed ? await this.fill(viewer, draft) : null;
+    return { ok: true, value: { draft, differences, dates: filled && 'report' in filled ? filled.report : null } };
   }
 
-  private async fill(viewer: Viewer, draft: Draft): Promise<DatesReport> {
+  /**
+   * Les différences du dernier projet avec la dernière note : celles rangées avec le projet s'il a été comparé à cette
+   * note, sinon recalculées contre la note plus récente, pour ne jamais montrer une comparaison dépassée [R511].
+   */
+  private async current(fileId: string): Promise<{ brief: Brief | null; draft: Draft | null; differences: Difference[]; stale: boolean }> {
+    const brief = await this.lastBrief(fileId);
+    const draft = await this.lastDraft(fileId);
+    if (!draft || !brief) return { brief, draft, differences: [], stale: false };
+    if (draft.briefId === brief.id) return { brief, draft, differences: await this.differencesOf(draft.id), stale: false };
+    return { brief, draft, differences: compareDraft(brief.terms, draft.terms), stale: true };
+  }
+
+  /** Les dates d'un projet qui confie le dépôt à un autre que le notaire ne passent pas : à faire corriger d'abord [R512]. */
+  private async blocked(viewer: Viewer | null, fileId: string): Promise<boolean> {
+    const c = await this.current(fileId);
+    if (!c.differences.some((d) => d.blocking)) return false;
+    await appendEvent(this.journal, { type: 'avant_contrat.dates_bloquees', actor: viewer ? actorOf(viewer) : 'system:avant-contrat', subject: `sale_file:${fileId}`, data: { rule: 'R512', code: 'blocking_difference' } }, this.now);
+    return true;
+  }
+
+  private async fill(viewer: Viewer, draft: Draft): Promise<{ report: DatesReport } | Blocked> {
+    if (await this.blocked(viewer, draft.fileId)) return { ok: false, rule: 'R512', code: 'blocking_difference' };
     const report: DatesReport = {};
     const current = await this.echeancier.schedule(viewer, draft.fileId);
     const dates = current.ok ? current.value.dates : {};
@@ -394,7 +416,60 @@ export class AvantContrat {
       report[kind] = r.ok ? 'ecrite' : r.code;
     }
     await appendEvent(this.journal, { type: 'avant_contrat.dates', actor: actorOf(viewer), subject: `sale_file:${draft.fileId}`, data: { rule: 'R513', version: draft.version, report } }, this.now);
-    return report;
+    return { report };
+  }
+
+  /**
+   * Le passage du système : pour chaque dossier ouvert dont le compromis est signé, les dates du dernier projet passent
+   * dans l'échéancier, avec le projet pour preuve, sans que l'agent ressaisisse rien, même si la signature a été saisie
+   * après le projet [R513]. Mêmes contrôles que N02 : ordre des dates, preuve rangée, dossier ni clos ni arrêté ; un
+   * projet bloquant ne passe pas [R512]. Rend le nombre de dates écrites.
+   */
+  async run(networkId: string): Promise<number> {
+    const files = await this.db.all<{ id: string }>(
+      `SELECT f.id FROM sale_files f WHERE f.network_id = ?
+       AND EXISTS (SELECT 1 FROM sale_file_dates d WHERE d.file_id = f.id AND d.kind = 'compromis_signe')
+       AND EXISTS (SELECT 1 FROM notary_drafts n WHERE n.file_id = f.id)
+       AND NOT EXISTS (SELECT 1 FROM sale_file_closings c WHERE c.file_id = f.id) AND ${openFile('f')} ORDER BY f.opened_at, f.id`,
+      [networkId],
+    );
+    let written = 0;
+    for (const f of files) {
+      const draft = (await this.lastDraft(f.id))!;
+      if (await this.blocked(null, f.id)) continue;
+      if (!(await this.storage.has(draft.documentRef))) continue;
+      const rows = await this.db.all<{ kind: DateKind; day: string; version: number }>(
+        `SELECT kind, day, version FROM sale_file_dates d WHERE file_id = ?
+         AND version = (SELECT MAX(version) FROM sale_file_dates e WHERE e.file_id = d.file_id AND e.kind = d.kind)`,
+        [f.id],
+      );
+      const dates = Object.fromEntries(rows.map((r) => [r.kind, { day: r.day, version: Number(r.version) }])) as Partial<Record<DateKind, { day: string; version: number }>>;
+      const report: DatesReport = {};
+      for (const [kind, value] of [['date_limite_pret', draft.terms.loanDeadline], ['acte_prevu', draft.terms.deedBy]] as const) {
+        if (!value || dates[kind]?.day === value.value) continue;
+        const proposed = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v!.day])) as Partial<Record<DateKind, string>>;
+        proposed[kind] = value.value;
+        const problem = orderProblem(proposed);
+        if (problem) {
+          report[kind] = problem;
+          continue;
+        }
+        try {
+          await this.db.run(
+            'INSERT INTO sale_file_dates (file_id, network_id, kind, version, day, proof_ref, at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [f.id, networkId, kind, (dates[kind]?.version ?? 0) + 1, value.value, draft.documentRef, this.now().toISOString(), 'system:avant-contrat'],
+          );
+        } catch (error) {
+          if (/UNIQUE/i.test(String(error))) continue;
+          throw error;
+        }
+        dates[kind] = { day: value.value, version: (dates[kind]?.version ?? 0) + 1 };
+        report[kind] = 'ecrite';
+        written += 1;
+      }
+      if (Object.keys(report).length) await appendEvent(this.journal, { type: 'avant_contrat.dates', actor: 'system:avant-contrat', subject: `sale_file:${f.id}`, data: { rule: 'R513', version: draft.version, report } }, this.now);
+    }
+    return written;
   }
 
   /** Après la signature du compromis, l'agent reporte d'un geste les dates du dernier projet dans l'échéancier [R513]. */
@@ -404,7 +479,8 @@ export class AvantContrat {
     const draft = await this.lastDraft(fileId);
     if (!draft) return { ok: false, rule: null, code: 'no_draft' };
     if (!(await this.db.first("SELECT 1 FROM sale_file_dates WHERE file_id = ? AND kind = 'compromis_signe'", [fileId]))) return { ok: false, rule: 'R513', code: 'compromis_not_signed' };
-    return { ok: true, value: await this.fill(viewer, draft) };
+    const filled = await this.fill(viewer, draft);
+    return 'report' in filled ? { ok: true, value: filled.report } : filled;
   }
 
   /** Le dépôt de garantie, reçu par le notaire et par personne d'autre, avec l'attestation du notaire [R512]. */
@@ -449,10 +525,8 @@ export class AvantContrat {
   async state(viewer: Viewer, fileId: string): Promise<{ ok: true; value: PreContractState } | FileRefusal | FileUnknown> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    const brief = await this.lastBrief(fileId);
-    const draft = await this.lastDraft(fileId);
-    const differences = draft ? await this.differencesOf(draft.id) : [];
-    return { ok: true, value: { brief, draft, differences, texts: differences.map(differenceText), deposit: await this.depositOf(fileId) } };
+    const { brief, draft, differences, stale } = await this.current(fileId);
+    return { ok: true, value: { brief, draft, differences, texts: differences.map(differenceText), comparedToEarlierBrief: stale, blocked: differences.some((d) => d.blocking), deposit: await this.depositOf(fileId) } };
   }
 }
 
@@ -470,5 +544,9 @@ export interface PreContractState {
   draft: Draft | null;
   differences: Difference[];
   texts: string[];
+  /** Le dernier projet avait été rangé contre une note plus ancienne : ses différences sont recalculées contre la dernière. */
+  comparedToEarlierBrief: boolean;
+  /** Une différence bloquante : les dates du projet ne passent pas dans l'échéancier tant qu'il n'est pas corrigé [R512]. */
+  blocked: boolean;
   deposit: DepositStatus;
 }

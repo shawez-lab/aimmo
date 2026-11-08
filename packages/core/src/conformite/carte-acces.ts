@@ -177,6 +177,7 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'avant_contrat.note': 'partage',
   'avant_contrat.projet': 'partage',
   'avant_contrat.dates': 'partage',
+  'avant_contrat.dates_bloquees': 'partage',
   'avant_contrat.depot': 'partage',
   'avant_contrat.depot_refuse': 'partage',
   'dossier.recommande_prepare': 'partage',
