@@ -218,11 +218,10 @@ export class SequencesProspection {
    * Pourquoi la séquence doit s'arrêter maintenant, ou null [R301]. Tout ce qui s'est passé depuis le départ compte,
    * sur toutes les fiches réunies ; une exclusion en cours compte d'où qu'elle vienne.
    */
-  private async stopReason(seq: SequenceRow, at: Date): Promise<{ reason: EndReason; rule: string } | null> {
-    if ((await agentState(this.db, seq.network_id, seq.agent_id, at)) === 'parti') return { reason: 'agent_gone', rule: 'R86' };
+  private async stopReason(seq: SequenceRow, at: Date, options: { list?: boolean } = {}): Promise<{ reason: EndReason; rule: string } | null> {
     // La liste d'opposition au démarchage vaut pour toute la séquence, pas seulement pour ses appels [R301, R302].
     // Regardée d'abord : le service peut être lent, la fiche est lue après lui, réponses comprises.
-    if (this.opposition) {
+    if (this.opposition && options.list !== false) {
       // Tous les numéros de la fiche, fiches réunies comprises : le contrôle peut viser n'importe lequel.
       const numbers = new Set(
         (await this.fiche.view(seq.person_id)).identifiers
@@ -240,9 +239,10 @@ export class SequencesProspection {
         if (listed === 'listed') return { reason: 'opposition_list', rule: 'R302' };
       }
     }
-    const view = await this.fiche.view(seq.person_id);
     // L'heure est relue après le service : ce qui a été noté pendant qu'il répondait compte aussi.
     const stamp = Math.max(at.getTime(), this.now().getTime());
+    if ((await agentState(this.db, seq.network_id, seq.agent_id, new Date(stamp))) === 'parti') return { reason: 'agent_gone', rule: 'R86' };
+    const view = await this.fiche.view(seq.person_id);
     const since = Date.parse(seq.started_at);
     // Une exclusion en cours, ou qui a couru pendant la séquence même si elle est levée depuis : la levée ne relance rien.
     const exclusion = view.exclusions.find((e) => Date.parse(e.noted_at) <= stamp && (e.lifted_at === null || Date.parse(e.lifted_at) > Math.min(stamp, since)));
@@ -443,7 +443,9 @@ export class SequencesProspection {
           fallbackTexts: [step.body as string],
           // Revérifié juste avant l'enregistrement : une réponse ou une opposition arrivée entre-temps retient l'envoi [R301].
           stillAllowed: async () => {
-            const stop = await this.stopReason(seq, this.now());
+            // Sans service extérieur ici : il a été interrogé juste avant le contrôle, dont la décision (heures,
+            // agent, exclusions) vient après lui ; ce dernier regard ne lit que la base, sans attente.
+            const stop = await this.stopReason(seq, this.now(), { list: false });
             return stop ? { allowed: false, rule: stop.rule, reason: `sequence_${stop.reason}` } : { allowed: true, rule: 'R301', reason: 'en cours' };
           },
         });

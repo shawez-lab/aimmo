@@ -374,8 +374,8 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     let calls = 0;
     slow.check = async () => {
       calls += 1;
-      // Au deuxième regard (celui du contrôle, juste avant l'enregistrement), la réponse est déjà là.
-      if (calls === 2) await t.store.recordMessage({ networkId: t.network.id, personId: t.person.id, channel: 'email', direction: 'in', authorKind: 'person', body: 'Non merci.', occurredAt: new Date(START) });
+      // Pendant que la liste répond, juste avant l'envoi, la réponse arrive.
+      if (calls === 1) await t.store.recordMessage({ networkId: t.network.id, personId: t.person.id, channel: 'email', direction: 'in', authorKind: 'person', body: 'Non merci.', occurredAt: new Date(START) });
       return 'not_listed';
     };
     await t.sequences.run();
@@ -412,7 +412,7 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     let calls = 0;
     slow.check = async () => {
       calls += 1;
-      if (calls === 2) {
+      if (calls === 1) {
         t.setClock(START + 1000);
         await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(START + 1000) });
       }
@@ -437,6 +437,21 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await c.sequences.markDone(c.alex, stepId, { callOutcome: 'called' })).toMatchObject({ ok: false, code: 'stopped' });
     expect(await c.sequence(cid)).toMatchObject({ status: 'stopped', end_reason: 'reply' });
     expect(await c.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM call_notes')).toEqual({ n: 0 });
+  });
+
+  it('[R300] [R01] la liste interrogée avant le contrôle : une fenêtre d’envoi fermée pendant son attente retient le mail', async () => {
+    const slow = new FakeOpposition();
+    const t = await setup({ opposition: slow });
+    // Mardi 19 h 59 à Paris ; la liste répond à 20 h 01.
+    t.setClock(START + 9 * HOUR - 60_000);
+    const id = await t.startOk(FULL.slice(0, 1));
+    slow.check = async () => {
+      t.setClock(START + 9 * HOUR + 60_000);
+      return 'not_listed';
+    };
+    expect(await t.sequences.run()).toMatchObject({ sent: 0, waiting: 1 });
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'active' });
   });
 
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
