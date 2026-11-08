@@ -220,7 +220,13 @@ export class MarcheAvis {
       // qu'aucun autre relevé ne la porte déjà. Deux relevés croisés ne partagent jamais une
       // version : le second n'entre pas, et c'est dit [R306].
       const done = await runBatch(this.db, [
-        { sql: "UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft' AND updated_at = ?", params: [at, report.id, report.updated_at] },
+        {
+          // Et toujours suivi par cet agent, actif, au moment d'écrire : une réattribution pendant le calcul l'arrête.
+          sql: `UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft' AND updated_at = ?
+                  AND EXISTS (SELECT 1 FROM properties p JOIN agents a ON a.id = p.agent_id AND a.network_id = p.network_id
+                               WHERE p.id = ? AND p.network_id = ? AND p.agent_id = ? AND a.status = 'active')`,
+          params: [at, report.id, report.updated_at, report.property_id, viewer.networkId, viewer.userId],
+        },
         {
           sql: `INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at)
                 SELECT ?, ?, ?, ?, ?, ?
@@ -232,6 +238,14 @@ export class MarcheAvis {
       ]);
       if (done[1]?.changes !== 1) {
         const still = await this.db.first<{ status: string }>('SELECT status FROM valuation_reports WHERE id = ?', [report.id]);
+        const follower = await this.db.first<{ x: number }>(
+          "SELECT 1 AS x FROM properties p JOIN agents a ON a.id = p.agent_id AND a.network_id = p.network_id WHERE p.id = ? AND p.network_id = ? AND p.agent_id = ? AND a.status = 'active'",
+          [report.property_id, viewer.networkId, viewer.userId],
+        );
+        if (!follower) {
+          await this.log('avis.marche_refuse', `agent:${viewer.userId}`, report.property_id, { report: report.id, code: 'not_following_agent' });
+          return { ok: false, rule: 'R30', code: 'not_following_agent' };
+        }
         return still?.status === 'validated' ? { ok: false, rule: 'R306', code: 'already_validated' } : { ok: false, rule: 'R306', code: 'changed_meanwhile' };
       }
     } catch (error) {

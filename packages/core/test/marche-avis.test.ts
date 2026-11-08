@@ -430,6 +430,16 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(await t.avis.validate(t.as('agent', t.alex.id), r.id, r.updated_at)).toEqual({ ok: false, rule: 'R30', code: 'changed_meanwhile' });
   });
 
+  it('[R306] un bien réattribué pendant le calcul : le relevé n’entre pas', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    t.hook.during = async () => {
+      await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, t.property.id]);
+    };
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
+    expect(await t.db.all('SELECT id FROM valuation_market_snapshots')).toHaveLength(0);
+  });
+
   it('[R306] un agent parti le jour même, avant le passage du départ, ne joint rien', async () => {
     const t = await setup();
     const r = await t.draft();
