@@ -135,6 +135,8 @@ export interface TourneeProspectionOptions {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MINUTE = 60_000;
+/** Les rendez-vous voisins sont lus jusqu'à un jour avant et après : aucun trajet de la tournée n'est plus long. */
+const NEIGHBOUR_MS = 24 * 60 * MINUTE;
 
 const validDate = (date: unknown): date is string => {
   if (typeof date !== 'string' || !DATE.test(date)) return false;
@@ -361,13 +363,14 @@ export class TourneeProspection {
     const row = await this.db.first<{ availability: string }>('SELECT availability FROM agent_availabilities WHERE agent_id = ?', [viewer.userId]);
     const availability = row ? (JSON.parse(row.availability) as Availability) : null;
 
-    // Les rendez-vous déjà pris de l'agent, autour du jour : fixes ; seuls ceux du jour sont montrés.
+    // Les rendez-vous déjà pris de l'agent, de la veille au lendemain : fixes, et voisins pour la route même au-delà de
+    // minuit ; seuls ceux du jour sont montrés.
     const travel = this.settings.travelMinutes * MINUTE;
     const around = await this.db.all<{ kind: AppointmentKind; start_at: string; end_at: string; property_id: string | null; city: string | null }>(
       `SELECT a.kind, a.start_at, a.end_at, a.property_id, p.city FROM appointments a LEFT JOIN properties p ON p.id = a.property_id AND p.network_id = a.network_id
        WHERE a.agent_id = ? AND a.network_id = ? AND a.status = 'booked' AND a.start_at < ? AND a.end_at > ?
        ORDER BY a.start_at, a.id`,
-      [viewer.userId, viewer.networkId, new Date(dayEnd.getTime() + travel).toISOString(), new Date(dayStart.getTime() - travel).toISOString()],
+      [viewer.userId, viewer.networkId, new Date(dayEnd.getTime() + NEIGHBOUR_MS).toISOString(), new Date(dayStart.getTime() - NEIGHBOUR_MS).toISOString()],
     );
     const fixed: Fixed[] = [];
     for (const r of around) {
