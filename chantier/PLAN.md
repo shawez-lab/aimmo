@@ -470,12 +470,14 @@ Voie : 1
 
 Voie : 2
 
-Réservé le 2026-11-08 par la voie 2. Règles R530 à R539 et migrations à partir de `2600` réservées à ce groupe. Le code vit dans `packages/core/src/neuf-viager/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+Réservé le 2026-11-08 par la voie 2. Règles R540 à R549 et migrations à partir de `2610` réservées à ce groupe. Le code vit dans `packages/core/src/neuf-viager/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
 
 ### HX48 · Programmes neufs et viager
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#432, 31181c0d). Relecture forte : 1 P0 et 1 P1 corrigés ; Codex : 5 P0 corrigés en 3 tours (lecture en partage, agent parti ou au dossier incomplet, départ du jour sur la grille, calcul retrouvé par le seul bien possédé), puis rien à signaler ; GitHub Actions bloqué par la facturation, vérification locale verte (4958 tests). Migration et règles renumérotées (`2610`, R540 à R544) parce que HX47 a pris `2600` et R530 à R534. Restent (voie 1) : routes, écrans, branchement au Worker, grille du neuf sur le site et les annonces ; vraie table INSEE à importer par la direction.
 - Qui : Claude, voie 2, relecture forte
 - Partie du cahier : M16 (commerces), M17 (investir), M18 (partenaires).
+- Décidé, lecture prudente : module `packages/core/src/neuf-viager/`, migration `2610`, R540 à R544. Viager : bouquet et rente par le code seul, en entiers (droit d'usage par le barème de l'usufruit, CGI art. 669, × 60 %, art. 762 bis ; rente constante sur la plus longue espérance des têtes au taux technique), chaque chiffre sourcé, rangé, figé, rejoué à l'identique ; espérance de vie lue dans la table importée par la direction (ensemble des deux sexes, aucune colonne de sexe), jamais saisie ; mention « ni offre ni conseil », bouquet borné par la valeur occupée, expert du viager proposé par la mise en relation de M18. Neuf : programme d'un promoteur partenaire confié à un agent, lots par versions, vendu sans retour (code et base), grille publiée des seuls lots disponibles confirmés depuis 14 jours au plus, sans donnée personnelle ; frais du neuf, de l'ancien et écart calculés depuis le barème de la direction, sans barème aucun chiffre.
 - Objectif : comme Hektor et Apimo : vendre des lots de programmes neufs et des biens en viager. Jamais vu : pour le viager, bouquet et rente calculés par le code, chaque chiffre avec sa source et son hypothèse comme Y03, rejouable, avec mise en relation de l'expert viager de M18 ; pour le neuf, la grille des lots tenue à jour et les frais réduits calculés.
 - Critères : un calcul de viager se rejoue à l'identique (test) ; chaque chiffre cite sa source et son hypothèse (test) ; un lot vendu disparaît de la grille publiée (test).
 
@@ -494,14 +496,20 @@ Réservé le 2026-11-08 par la voie 1. Règles R550 à R559 et migrations à par
 
 ## Pilotage
 
-### HX50 · Rapports sur mesure et export complet
-- Statut : à faire
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R560 à R569 et migrations à partir de `2900` réservées à ce groupe. Le code vit dans `packages/core/src/rapports/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1. Les ids HX50 et HX51 de ce groupe et du suivant étaient déjà pris par « Photo, vidéo et visite » : renommés HX62 et HX63.
+
+### HX62 · Rapports sur mesure et export complet
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M13 (pilotage et finances).
 - Objectif : comme Immofacile et Modelo : rapports personnalisables et export intégral des données. Jamais vu : chaque agent emporte à tout moment l'export complet de ses propres données, avec son empreinte, et chaque chiffre d'un rapport s'ouvre sur ses lignes comme en K04.
 - Critères : l'export d'un agent ne contient que ses données (test) ; aucun rapport ne compare deux agents entre eux, règle R14 (test) ; chaque chiffre renvoie à ses lignes (test).
 
 ## Formation
 
-### HX51 · Quiz et attestations de formation
+### HX63 · Quiz et attestations de formation
 - Statut : à faire
 - Objectif : comme Immofacile et l'Akadémie de Hektor : quiz d'auto-formation et attestations conservées. Jamais vu : les questions sont tirées des vraies règles du réseau et des modules de l'académie, chaque erreur renvoie au module à revoir, et l'attestation se vérifie par son empreinte.
 - Critères : chaque question renvoie à sa règle ou à son module (test) ; une attestation modifiée échoue à la vérification (test).
