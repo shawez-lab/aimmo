@@ -65,6 +65,7 @@ export * as statistiquesSite from './statistiques-site/index.ts';
 export * as veilleDpe from './veille-dpe/index.ts';
 export * as scoreAdresse from './score-adresse/index.ts';
 export * as adressePige from './adresse-pige/index.ts';
+export * as tourneeProspection from './tournee-prospection/index.ts';
 export { hashEntry } from './journal/hash.ts';
 export { appendEvent, verifyChain } from './journal/journal.ts';
 export { MemoryJournalStore } from './journal/memory-store.ts';
