@@ -524,8 +524,14 @@ Réservé le 2026-11-08 par la voie 1. Règles R570 à R579 et migrations à par
 
 ## Marketing et réseaux sociaux
 
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à partir de `3100` réservées à ce groupe. Le code vit dans `packages/core/src/marketing/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX52 · Calendrier de publication sur tous les réseaux
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M07 (commercialiser) et M19 (studio).
 - Objectif : comme Hektor : publications automatiques avec calendrier, connexion à Facebook, Instagram, LinkedIn, TikTok, YouTube et la fiche Google, contenus prêts chaque semaine. Jamais vu : le calendrier suit les règles réglées par l'agent, par exemple un bien nouveau chaque jour, jamais un bien repris tant qu'un autre n'est pas sorti, le nombre de publications par réseau, et chaque publication porte son lien marqué de AT20.
 - Critères : aucun bien repris tant qu'un bien n'est jamais sorti (test) ; le nombre réglé par réseau et par jour est tenu (test) ; tout passe par le contrôle central (test).
 
