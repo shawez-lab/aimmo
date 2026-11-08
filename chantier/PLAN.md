@@ -4215,7 +4215,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51.
 
 ### SV15 · Les notifications aux agents passent par le contrôle central
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX27
 - Cahier : Architecture technique (contrôle central des envois) ; demande de HX27.
 - Trouvé par HX27 (voie 2, qui ne touche pas au socle) : `Notifications` n'envoie que par `AgentPushGate.sendToAgent`.
