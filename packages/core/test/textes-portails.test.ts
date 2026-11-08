@@ -34,6 +34,9 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
     expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Dijon : 62 m² en 3 pièces' }, FACTS).title).toEqual(['chiffres_differents']);
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('2 chambres', 'deux chambres') }, FACTS).body).toEqual(expect.arrayContaining(['chiffres_differents', 'nombre_en_lettres']));
     expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Dijon : ٣ pièces de 62 m²' }, FACTS).title).toEqual(['chiffres_differents']);
+    // Un signe ajouté change la valeur : refusé.
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('au 3e étage', 'au -3e étage') }, FACTS).body).toContain('chiffres_differents');
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('au 3e étage', 'au −3e étage') }, FACTS).body).toContain('chiffres_differents');
   });
 
   it('[R476] aucun prix dans le texte d’un portail : le prix vient de la version publiée seule', () => {

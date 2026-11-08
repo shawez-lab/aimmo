@@ -50,7 +50,8 @@ export type PortalTextProblem =
 const MAX_TITLE = 160;
 const MAX_BODY = 4000;
 /** Un nombre écrit à la française : milliers séparés par une espace (ordinaire, fine ou insécable), ou décimale. */
-const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?![\d])|\d+(?:[.,]\d+)?/g;
+/** Le signe collé devant compte avec le nombre : « -3e étage » n'est jamais « 3e étage ». */
+const NUMBER = /(?:(?<![\p{L}\p{N}])[-−+])?(?:\d{1,3}(?:[ \u202F\u00A0]\d{3})+(?![\d])|\d+(?:[.,]\d+)?)/gu;
 const UNIT_AFTER = /^[   ]?(m²|m2|€|%)/;
 /** Une lettre de classe seule, majuscule ou minuscule ; « a » minuscule seulement après un mot du diagnostic (« il a » est un verbe). */
 const CLASS_LETTER = /(?<![\p{L}\p{N}])[A-G](?![\p{L}\p{N}])/giu;
