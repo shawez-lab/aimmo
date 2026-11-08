@@ -413,9 +413,19 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : un contact de la visite est rattaché au bien et à son origine (test) ; une vue sans pièce rattachée n'est pas publiée (test).
 
 ### HX44 · Avant et après la visite : dossier envoyé, visite à distance et son bon
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#425, 5cbaa414), migration `2304`, R502 à R505. Décidé, lecture prudente : dossier rendu par le code depuis la dernière version publiée (titre, prix, photos publiables, texte, mentions légales, gardées comme en HX13 car la loi les veut), relu avant envoi (noms et coordonnées des mandants, numéros de mandat cherchés entiers, notes des projets et de la visite, tout chiffre hors de l'annonce), envoyé par le contrôle central sur l'accord du visiteur, figé ; son lien ne montre rien si une autre version est publiée, le bien non diffusable ou le lien expiré. Visite à distance commencée seulement si son bon pourra se signer (bon complet, mail, accord) ; à la fin, lien et code au visiteur, chacun dans son message, comme D08 ; aucune offre de ce visiteur sur ce bien avant la signature, gardé par un déclencheur sur `offer_register` qui remonte toute la suite des réunions de fiches. Relecture forte 4 P1 corrigés ; Codex 2 P0 corrigés, 1 P0 (texte des messages rangé en clair par le contrôle central) confié à HX61, puis rien à signaler ; GitHub Actions bloqué par la facturation, vérification locale verte (4869 tests). Restent (voie 1) : routes, écrans, appel vidéo ; `offres/registre-offres.ts` appelle `VisiteDistance.bonDistanceManquant` pour un refus propre.
 - Objectif : comme Talqor et Live Visit de Hektor : envoyer le dossier du bien avant la visite, faire visiter à distance, éditer le bon de visite ensuite. Jamais vu : le dossier envoyé est celui de la version publiée du jour, sans donnée confidentielle, et le bon de visite d'une visite à distance se signe en ligne par D08 juste après.
 - Critères : aucun nom de vendeur, honoraire ni note interne dans le dossier envoyé (test) ; un bon de visite à distance est signé avant toute offre (test) ; l'envoi passe par le contrôle central (test).
+
+### HX61 · Le contrôle central range un message à secret masqué
+- Statut : à faire
+- Qui : Claude, voie 1 (touche `envoi/controle.ts`, socle), relecture forte
+- Dépendances : HX44
+- Partie du cahier : M06 (signature en ligne), M08 (visites).
+- Objectif : remarque P0 de Codex sur #425. Un message qui porte un code à usage unique ou un lien de signature (D08, W12, T05, HX44) est remis au canal tel quel, mais rangé dans `messages.body` avec le secret remplacé par « [code masqué] » ou « [lien masqué] » ; l'agent qui lit la fiche ne peut plus signer à la place du client.
+- Critères : après l'envoi d'un code de signature ou de visite, aucun code ni jeton en clair dans `messages`, `trial_outbox` ni le journal (test) ; le canal reçoit bien le texte entier (test) ; l'anti-doublon du texte ne bloque pas deux codes différents (test).
+- Ce qu'elle attend d'un humain : rien.
 
 ## Offre, avant-contrat et notaire
 
