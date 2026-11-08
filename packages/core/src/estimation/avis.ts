@@ -324,7 +324,11 @@ export class AvisDeValeur {
       // En un seul passage : une borne déjà remplacée n'est jamais remplacée une seconde fois.
       text = r.text.replace(pattern, (m) => swap.get(m) ?? m);
     }
-    const at = this.now().toISOString();
+    // Une version toujours plus récente que la version lue, même horloge arrêtée ou en retard sur un relevé joint
+    // (HX32) : une version déjà lue ne revient jamais [R30, R306].
+    const nowMs = this.now().getTime();
+    const readMs = Date.parse(r.updated_at);
+    const at = new Date(Number.isFinite(readMs) && nowMs <= readMs ? readMs + 1 : nowMs).toISOString();
     // Sur la version lue seulement : validée ou modifiée entre-temps, l'ajustement n'est pas fait, et c'est dit.
     const done = await this.db.run(
       `UPDATE valuation_reports SET agent_low = ?, agent_high = ?, text = ?, text_by = ?, updated_at = ?

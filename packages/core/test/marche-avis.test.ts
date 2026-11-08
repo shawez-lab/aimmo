@@ -372,6 +372,16 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(await t.db.all('SELECT id FROM valuation_market_snapshots')).toHaveLength(0);
   });
 
+  it('[R306] une modification après un relevé, horloge arrêtée, ne rend jamais une version déjà lue', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    expect((await t.marche.attach(t.as('agent', t.alex.id), r.id)).ok).toBe(true);
+    const adjusted = await t.avis.adjust(t.as('agent', t.alex.id), r.id, { text: 'Pour votre maison, nous estimons la valeur entre 233 000 € et 258 000 €.' });
+    if (!adjusted.ok) throw new Error(adjusted.code);
+    expect(adjusted.value.updated_at > r.updated_at).toBe(true);
+    expect(await t.avis.validate(t.as('agent', t.alex.id), r.id, r.updated_at)).toEqual({ ok: false, rule: 'R30', code: 'changed_meanwhile' });
+  });
+
   it('[R306] un agent parti le jour même, avant le passage du départ, ne joint rien', async () => {
     const t = await setup();
     const r = await t.draft();
