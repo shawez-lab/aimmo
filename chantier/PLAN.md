@@ -538,7 +538,9 @@ Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à par
 - Critères : aucun bien repris tant qu'un bien n'est jamais sorti (test) ; le nombre réglé par réseau et par jour est tenu (test) ; tout passe par le contrôle central (test).
 
 ### HX53 · Lettre d'information et magazine des biens
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M07 (commercialiser), M08 (acquéreurs) et M12 (conformité, consentements).
 - Objectif : comme Artur'in et Netty : newsletters et magazine immobilier. Jamais vu : chaque lettre est faite pour sa personne, biens qui lui correspondent, valeur suivie de son bien si elle l'a demandée, prix de son quartier de AT01, et le magazine imprimable sort de la même base.
 - Critères : aucune lettre sans accord rangé (test) ; lien de désinscription dans chaque lettre (test) ; aucun prix qui ne vienne de la base (test).
 
