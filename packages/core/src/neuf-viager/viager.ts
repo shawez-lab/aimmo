@@ -1,12 +1,12 @@
 /**
  * Le calcul du viager (HX48, M17) : bouquet et rente calculés par le code seul, par des formules écrites ici, en
- * centimes et en entiers, sans IA [R530]. Chaque entrée et chaque ligne du résultat porte sa valeur, sa source, sa date
+ * centimes et en entiers, sans IA [R540]. Chaque entrée et chaque ligne du résultat porte sa valeur, sa source, sa date
  * et l'hypothèse qui l'a faite ; une entrée manquante rend « incomplet » avec la liste de ce qui manque, jamais un
  * chiffre [R10]. Chaque calcul est rangé avec ses entrées et se rejoue à l'identique.
  *
  * L'espérance de vie n'est jamais saisie ni écrite dans le code : elle est lue dans une table importée par la direction,
- * avec sa source et son millésime, pour l'ensemble des deux sexes [R531]. Le calcul n'est ni une offre ni un conseil :
- * il le dit, et l'expert du viager de M18 est proposé par la mise en relation de M18, sur l'accord du client [R532].
+ * avec sa source et son millésime, pour l'ensemble des deux sexes [R541]. Le calcul n'est ni une offre ni un conseil :
+ * il le dit, et l'expert du viager de M18 est proposé par la mise en relation de M18, sur l'accord du client [R542].
  *
  * Formules, version 1 (montants en centimes ; divisions arrondies au plus proche, la moitié vers le haut) :
  * - espérance retenue = la plus longue des espérances des têtes (rente réversible), lue dans la table ;
@@ -28,7 +28,7 @@ import type { JournalStore } from '../journal/types.ts';
 
 export const VIAGER_FORMULA_VERSION = 1;
 
-/** Ce que chaque calcul de viager dit, toujours [R532]. */
+/** Ce que chaque calcul de viager dit, toujours [R542]. */
 export const VIAGER_NOTICE =
   'Estimation calculée par AIMMO, ni offre ni conseil : le bouquet et la rente se fixent avec l’expert du viager et le notaire.';
 
@@ -50,12 +50,12 @@ export interface ViagerInputs {
   bouquet: Sourced<number> | null;
   /** Taux technique annuel, en points de base. */
   annualRateBp: Sourced<number> | null;
-  /** Espérance de vie de chaque tête, en dixièmes d'année, lue dans la table de la direction : jamais saisie [R531]. */
+  /** Espérance de vie de chaque tête, en dixièmes d'année, lue dans la table de la direction : jamais saisie [R541]. */
   expectancies: Sourced<number[]> | null;
 }
 export type ViagerInputKey = keyof ViagerInputs;
 export const VIAGER_INPUT_KEYS: readonly ViagerInputKey[] = ['marketValue', 'occupied', 'headAges', 'bouquet', 'annualRateBp', 'expectancies'];
-/** Ce que l'agent peut saisir ; l'espérance de vie n'en fait pas partie [R531]. */
+/** Ce que l'agent peut saisir ; l'espérance de vie n'en fait pas partie [R541]. */
 const TYPED_KEYS: readonly ViagerInputKey[] = ['marketValue', 'occupied', 'headAges', 'bouquet', 'annualRateBp'];
 
 export interface ViagerLine {
@@ -111,7 +111,7 @@ export function usageRightOf(valueCents: number, occupied: boolean, ages: readon
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
-/** Le calcul lui-même, sans base ni IA : les mêmes entrées donnent le même résultat, au caractère près [R530]. */
+/** Le calcul lui-même, sans base ni IA : les mêmes entrées donnent le même résultat, au caractère près [R540]. */
 export function computeViager(inputs: ViagerInputs, at: string): ViagerResult {
   const asOf = at.slice(0, 10);
   const missing = VIAGER_INPUT_KEYS.filter((k) => inputs[k] === null);
@@ -174,7 +174,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const sourced = (v: unknown): v is { value: unknown; source: unknown; asOf: unknown; hypothesis: unknown } =>
   typeof v === 'object' && v !== null && 'value' in v;
 
-/** Contrôle ce que l'agent saisit : listes fermées et nombres bornés ; l'espérance de vie saisie est refusée [R531]. */
+/** Contrôle ce que l'agent saisit : listes fermées et nombres bornés ; l'espérance de vie saisie est refusée [R541]. */
 export function checkViagerInputs(raw: unknown): Check {
   if (typeof raw !== 'object' || raw === null) return { ok: false, code: 'valeur', field: 'marketValue' };
   const r = raw as Record<string, unknown>;
@@ -216,10 +216,10 @@ export interface StoredViager {
   createdAt: string;
 }
 
-export type ViagerRefusal = { ok: false; rule: 'R16' | 'R530' | 'R531' | 'R532'; code: string; field?: ViagerInputKey };
+export type ViagerRefusal = { ok: false; rule: 'R16' | 'R540' | 'R541' | 'R542'; code: string; field?: ViagerInputKey };
 export type ViagerOutcome<T> = { ok: true; value: T } | ViagerRefusal;
 
-/** La mise en relation de M18, telle que le viager s'en sert : l'expert du viager, sur l'accord du client [R532]. */
+/** La mise en relation de M18, telle que le viager s'en sert : l'expert du viager, sur l'accord du client [R542]. */
 export interface ExpertViagerRelation {
   propose(
     viewer: Viewer,
@@ -300,26 +300,26 @@ export class Viager {
 
   /**
    * La direction importe une table d'espérance de vie, avec sa source et son millésime, pour l'ensemble des deux
-   * sexes : une ligne par âge, sans colonne de sexe. Elle ne change plus [R531].
+   * sexes : une ligne par âge, sans colonne de sexe. Elle ne change plus [R541].
    */
   async importLifeTable(viewer: Viewer, input: { vintage: unknown; source: unknown; rows: unknown }): Promise<ViagerOutcome<{ tableId: string }>> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
     const { vintage, source, rows } = input;
-    if (typeof vintage !== 'string' || !/^[0-9]{4}(?:-[0-9]{4})?$/.test(vintage)) return this.refuse(viewer, 'R531', 'millesime');
-    if (typeof source !== 'string' || source.trim().length < 5 || source.length > 300) return this.refuse(viewer, 'R531', 'source');
-    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 121) return this.refuse(viewer, 'R531', 'lignes');
+    if (typeof vintage !== 'string' || !/^[0-9]{4}(?:-[0-9]{4})?$/.test(vintage)) return this.refuse(viewer, 'R541', 'millesime');
+    if (typeof source !== 'string' || source.trim().length < 5 || source.length > 300) return this.refuse(viewer, 'R541', 'source');
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 121) return this.refuse(viewer, 'R541', 'lignes');
     const seen = new Set<number>();
     for (const row of rows as unknown[]) {
-      if (typeof row !== 'object' || row === null) return this.refuse(viewer, 'R531', 'lignes');
+      if (typeof row !== 'object' || row === null) return this.refuse(viewer, 'R541', 'lignes');
       const keys = Object.keys(row).sort().join(',');
-      // Aucune autre colonne que l'âge et l'espérance : ni sexe, ni rien d'autre [R531].
-      if (keys !== 'age,expectancyTenths') return this.refuse(viewer, 'R531', 'colonnes');
+      // Aucune autre colonne que l'âge et l'espérance : ni sexe, ni rien d'autre [R541].
+      if (keys !== 'age,expectancyTenths') return this.refuse(viewer, 'R541', 'colonnes');
       const { age, expectancyTenths } = row as LifeTableRow;
-      if (!isInt(age, 0, 120) || !isInt(expectancyTenths, 1, 1200) || seen.has(age)) return this.refuse(viewer, 'R531', 'lignes');
+      if (!isInt(age, 0, 120) || !isInt(expectancyTenths, 1, 1200) || seen.has(age)) return this.refuse(viewer, 'R541', 'lignes');
       seen.add(age);
     }
     const exists = await this.db.first<{ id: string }>('SELECT id FROM life_tables WHERE network_id = ? AND vintage = ?', [viewer.networkId, vintage]);
-    if (exists) return this.refuse(viewer, 'R531', 'deja_importee');
+    if (exists) return this.refuse(viewer, 'R541', 'deja_importee');
     const id = this.newId();
     const at = this.now().toISOString();
     const statements = [
@@ -365,8 +365,8 @@ export class Viager {
 
   /**
    * L'agent ou la direction calcule un viager pour un bien qu'il voit, ou un projet de sa fiche, ou sans rien rattacher.
-   * Ce qu'il saisit porte son nom comme source ; l'espérance de vie vient de la table [R531]. Le calcul est rangé,
-   * complet ou incomplet ; un bouquet plus grand que la valeur occupée est refusé [R532].
+   * Ce qu'il saisit porte son nom comme source ; l'espérance de vie vient de la table [R541]. Le calcul est rangé,
+   * complet ou incomplet ; un bouquet plus grand que la valeur occupée est refusé [R542].
    */
   async compute(acces: Acces, viewer: Viewer, input: { propertyId?: unknown; projectId?: unknown; inputs: unknown }): Promise<ViagerOutcome<StoredViager>> {
     const inactive = await this.activeOrRefuse(viewer);
@@ -397,7 +397,7 @@ export class Viager {
       }
     }
     const checked = checkViagerInputs(input.inputs);
-    if (!checked.ok) return this.refuse(viewer, checked.code === 'esperance_saisie' ? 'R531' : 'R530', checked.code, checked.field);
+    if (!checked.ok) return this.refuse(viewer, checked.code === 'esperance_saisie' ? 'R541' : 'R540', checked.code, checked.field);
     const createdAt = this.now().toISOString();
     const inputs: ViagerInputs = { ...checked.value };
     for (const k of TYPED_KEYS) {
@@ -405,13 +405,13 @@ export class Viager {
       if (v !== null) (inputs as unknown as Record<string, unknown>)[k] = { ...v, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     }
     // Le bouquet ne dépasse jamais la valeur occupée, calcul complet ou non : dès qu'on la connaît, ou à défaut la
-    // valeur libre [R532].
+    // valeur libre [R542].
     if (inputs.bouquet !== null && inputs.marketValue !== null) {
       const ceiling =
         inputs.occupied !== null && inputs.headAges !== null
           ? inputs.marketValue.value - usageRightOf(inputs.marketValue.value, inputs.occupied.value, inputs.headAges.value)
           : inputs.marketValue.value;
-      if (inputs.bouquet.value > ceiling) return this.refuse(viewer, 'R532', 'bouquet_trop_haut', 'bouquet');
+      if (inputs.bouquet.value > ceiling) return this.refuse(viewer, 'R542', 'bouquet_trop_haut', 'bouquet');
     }
     if (inputs.headAges !== null) inputs.expectancies = await this.expectancies(viewer.networkId, inputs.headAges.value);
     const result = computeViager(inputs, createdAt);
@@ -459,7 +459,7 @@ export class Viager {
 
   /**
    * Rejoue un calcul rangé depuis ses entrées, et relit la table d'espérance citée : le résultat doit être identique au
-   * caractère près, et la table la même [R530, R531].
+   * caractère près, et la table la même [R540, R541].
    */
   async replay(networkId: string, id: string): Promise<{ same: boolean; result: ViagerResult } | null> {
     const row = await this.db.first<ViagerRow>('SELECT * FROM viager_calculations WHERE id = ? AND network_id = ?', [id, networkId]);
@@ -479,20 +479,20 @@ export class Viager {
 
   /**
    * Propose l'expert du viager de M18 pour le projet du calcul, par la mise en relation de M18 : le client choisit, son
-   * accord est rangé là, rien ne part d'ici [R532].
+   * accord est rangé là, rien ne part d'ici [R542].
    */
   async proposeExpert(acces: Acces, viewer: Viewer, id: unknown, postcode?: unknown): Promise<ViagerOutcome<{ referralId: string }>> {
     const calc = await this.read(acces, viewer, id);
     if (!calc.ok) return calc;
-    if (!this.relation) return this.refuse(viewer, 'R532', 'relation_absente');
-    if (calc.value.projectId === null) return this.refuse(viewer, 'R532', 'sans_projet');
+    if (!this.relation) return this.refuse(viewer, 'R542', 'relation_absente');
+    if (calc.value.projectId === null) return this.refuse(viewer, 'R542', 'sans_projet');
     const r = await this.relation.propose(viewer, {
       projectId: calc.value.projectId,
       trade: 'expert_viager',
       ...(calc.value.propertyId ? { propertyId: calc.value.propertyId } : {}),
       ...(postcode !== undefined ? { postcode } : {}),
     });
-    if (!r.ok) return this.refuse(viewer, 'R532', r.code);
+    if (!r.ok) return this.refuse(viewer, 'R542', r.code);
     return { ok: true, value: { referralId: r.value.referralId } };
   }
 }

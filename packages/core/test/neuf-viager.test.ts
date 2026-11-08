@@ -26,7 +26,7 @@ const FULL: ViagerInputs = {
   expectancies: src([128], 'table inventée'),
 };
 
-it('[R530] la rente se calcule en entiers et suit la formule écrite', () => {
+it('[R540] la rente se calcule en entiers et suit la formule écrite', () => {
   // À taux nul : capital / n.
   expect(monthlyRent(10_000_000, 120, 0)).toBe(83_333);
   // À 3 % par an, 120 mois : c × t / (1 − (1 + t)^−n), au centime près de la formule en flottants.
@@ -38,7 +38,7 @@ it('[R530] la rente se calcule en entiers et suit la formule écrite', () => {
   expect([20, 21, 45, 60, 61, 75, 85, 90, 91, 100].map(usufructPercent)).toEqual([90, 80, 60, 50, 40, 30, 20, 20, 10, 10]);
 });
 
-it('[R530] un calcul de viager se rejoue à l’identique, et chaque chiffre porte sa source, sa date et son hypothèse', () => {
+it('[R540] un calcul de viager se rejoue à l’identique, et chaque chiffre porte sa source, sa date et son hypothèse', () => {
   const a = computeViager(FULL, '2027-03-01T10:00:00.000Z');
   const b = computeViager(JSON.parse(JSON.stringify(FULL)) as ViagerInputs, '2027-03-01T10:00:00.000Z');
   expect(JSON.stringify(a)).toBe(JSON.stringify(b));
@@ -71,7 +71,7 @@ it('[R530] un calcul de viager se rejoue à l’identique, et chaque chiffre por
   expect(inc).toEqual({ status: 'incomplet', formulaVersion: 1, missing: ['expectancies'], notice: VIAGER_NOTICE });
 });
 
-it('[R534] les frais d’un lot se calculent en centimes, arrondis au plus proche', () => {
+it('[R544] les frais d’un lot se calculent en centimes, arrondis au plus proche', () => {
   expect(feesOf(25_000_000, 250)).toBe(625_000);
   expect(feesOf(19_999_999, 250)).toBe(500_000);
 });
@@ -150,7 +150,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     };
   }
 
-  it('[R530] le calcul rangé se rejoue à l’identique, et ne change plus', async () => {
+  it('[R540] le calcul rangé se rejoue à l’identique, et ne change plus', async () => {
     const t = await setup();
     await t.table();
     const r = await t.viager.compute(t.acces, t.agent, { projectId: t.project.id, inputs: t.typed });
@@ -159,7 +159,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     // Ce que l'agent saisit porte son nom comme source, quoi qu'il écrive.
     expect(r.value.inputs.bouquet!.source).toBe(`saisi:agent:${t.alex.id}`);
     expect(await t.viager.replay(t.network.id, r.value.id)).toEqual({ same: true, result: r.value.result });
-    await expect(t.db.run("UPDATE viager_calculations SET result = '{}' WHERE id = ?", [r.value.id])).rejects.toThrow(/R530/);
+    await expect(t.db.run("UPDATE viager_calculations SET result = '{}' WHERE id = ?", [r.value.id])).rejects.toThrow(/R540/);
     await expect(t.db.run('DELETE FROM viager_calculations WHERE id = ?', [r.value.id])).rejects.toThrow(/efface/);
     // Le journal ne garde ni montant ni âge.
     const events = await t.journal.all();
@@ -167,7 +167,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect(JSON.stringify(events)).not.toMatch(/20000000|3000000|"75"|\b75\b/);
   });
 
-  it('[R531] l’espérance de vie vient de la table de la direction, jamais saisie, sans colonne de sexe, et ne change plus', async () => {
+  it('[R541] l’espérance de vie vient de la table de la direction, jamais saisie, sans colonne de sexe, et ne change plus', async () => {
     const t = await setup();
     // Sans table : incomplet, jamais une espérance inventée.
     const none = await t.viager.compute(t.acces, t.agent, { inputs: t.typed });
@@ -176,22 +176,22 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     // Saisie par l'agent : refusée.
     expect(await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, expectancies: { value: [300], hypothesis: 'je pense' } } })).toEqual({
       ok: false,
-      rule: 'R531',
+      rule: 'R541',
       code: 'esperance_saisie',
       field: 'expectancies',
     });
     // Une table par sexe : refusée ; un agent ne l'importe pas.
     expect(
       await t.viager.importLifeTable(t.direction, { vintage: '2024', source: 'Table inventée pour les tests', rows: [{ age: 75, expectancyTenths: 128, sex: 'f' }] }),
-    ).toEqual({ ok: false, rule: 'R531', code: 'colonnes' });
+    ).toEqual({ ok: false, rule: 'R541', code: 'colonnes' });
     expect(await t.viager.importLifeTable(t.agent, { vintage: '2024', source: 'Table inventée', rows: [{ age: 75, expectancyTenths: 128 }] })).toMatchObject({
       ok: false,
       rule: 'R16',
     });
     const tableId = await t.table();
-    await expect(t.db.run('UPDATE life_table_rows SET expectancy_tenths = 500 WHERE table_id = ?', [tableId])).rejects.toThrow(/R531/);
+    await expect(t.db.run('UPDATE life_table_rows SET expectancy_tenths = 500 WHERE table_id = ?', [tableId])).rejects.toThrow(/R541/);
     // Aucune ligne ne s'ajoute à une table importée.
-    await expect(t.db.run('INSERT INTO life_table_rows (table_id, age, expectancy_tenths) VALUES (?, 90, 60)', [tableId])).rejects.toThrow(/R531/);
+    await expect(t.db.run('INSERT INTO life_table_rows (table_id, age, expectancy_tenths) VALUES (?, 90, 60)', [tableId])).rejects.toThrow(/R541/);
     const r = await t.viager.compute(t.acces, t.agent, { inputs: t.typed });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.inputs.expectancies).toMatchObject({ value: [128] });
@@ -203,9 +203,9 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect(absent.value.result.status).toBe('incomplet');
   });
 
-  it('[R532] ni offre ni conseil : la mention toujours, le bouquet borné, l’expert du viager proposé par M18', async () => {
+  it('[R542] ni offre ni conseil : la mention toujours, le bouquet borné, l’expert du viager proposé par M18', async () => {
     const t = await setup();
-    const refused = { ok: false, rule: 'R532', code: 'bouquet_trop_haut', field: 'bouquet' };
+    const refused = { ok: false, rule: 'R542', code: 'bouquet_trop_haut', field: 'bouquet' };
     // Sans table (calcul incomplet), le bouquet reste borné par la valeur occupée, ou par la valeur libre.
     expect(await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, bouquet: { value: 17_000_000, hypothesis: 'convenu' } } })).toEqual(refused);
     const { occupied: _o, ...noOccupied } = t.typed;
@@ -227,7 +227,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect(t.calls).toHaveLength(1);
   });
 
-  it('[R532] le calcul d’un autre sur un bien vu en partage ne se lit pas, et un agent parti ne calcule ni ne lit plus', async () => {
+  it('[R542] le calcul d’un autre sur un bien vu en partage ne se lit pas, et un agent parti ne calcule ni ne lit plus', async () => {
     const t = await setup();
     await t.table();
     const own = await t.viager.compute(t.acces, t.other, { inputs: t.typed });
@@ -262,7 +262,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect(await t.viager.read(t.acces, t.agent, onProp.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
   });
 
-  it('[R532] la réponse d’accès du vendeur porte ses calculs de viager, jamais celle de l’acquéreur intéressé', async () => {
+  it('[R542] la réponse d’accès du vendeur porte ses calculs de viager, jamais celle de l’acquéreur intéressé', async () => {
     const t = await setup();
     await t.table();
     const prop = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'REF-V-2', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
@@ -291,7 +291,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     return { programId: p.value.programId, lot };
   }
 
-  it('[R533] un lot vendu disparaît de la grille publiée et ne revient jamais', async () => {
+  it('[R543] un lot vendu disparaît de la grille publiée et ne revient jamais', async () => {
     const t = await setup();
     const { programId, lot } = await program(t);
     for (const ref of ['A01', 'A02', 'A03', 'A04']) expect((await lot(ref, 'disponible')).ok).toBe(true);
@@ -302,18 +302,18 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect((await t.neuf.publishedGrid(t.network.id, programId))!.lots.map((l) => l.lotRef)).toEqual(['A04']);
     // Un désistement rend le lot réservé disponible ; un lot vendu ne revient pas, ni par le code ni par la base.
     await lot('A02', 'disponible');
-    expect(await lot('A01', 'disponible')).toEqual({ ok: false, rule: 'R533', code: 'vendu' });
+    expect(await lot('A01', 'disponible')).toEqual({ ok: false, rule: 'R543', code: 'vendu' });
     await expect(
       t.db.run(
         "INSERT INTO new_program_lot_versions (program_id, lot_ref, version, typology, living_area_hundredths, floor, price_cents, status, confirmed_on, created_by, created_at) VALUES (?, 'A01', 3, 't3', 6500, 2, 25000000, 'disponible', '2027-03-01', 'x', 'x')",
         [programId],
       ),
-    ).rejects.toThrow(/R533/);
+    ).rejects.toThrow(/R543/);
     await expect(t.db.run("UPDATE new_program_lot_versions SET status = 'disponible' WHERE lot_ref = 'A01'")).rejects.toThrow(/ne change plus/);
     expect((await t.neuf.publishedGrid(t.network.id, programId))!.lots.map((l) => l.lotRef)).toEqual(['A02', 'A04']);
   });
 
-  it('[R533] un lot non reconfirmé depuis 14 jours sort de la grille publiée, la grille ne dit rien de personne', async () => {
+  it('[R543] un lot non reconfirmé depuis 14 jours sort de la grille publiée, la grille ne dit rien de personne', async () => {
     const t = await setup();
     const { programId, lot } = await program(t);
     await lot('B01', 'disponible', '2027-03-01');
@@ -346,7 +346,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     });
   });
 
-  it('[R534] les frais réduits du neuf viennent du barème de la direction, sourcés ; sans barème, aucun chiffre', async () => {
+  it('[R544] les frais réduits du neuf viennent du barème de la direction, sourcés ; sans barème, aucun chiffre', async () => {
     const t = await setup();
     const { programId, lot } = await program(t);
     await lot('C01', 'disponible');

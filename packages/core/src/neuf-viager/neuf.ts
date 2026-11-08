@@ -5,10 +5,10 @@
  * - Chaque lot change par versions qui s'ajoutent ; un lot vendu ne revient jamais, gardé par le code et la base ; la
  *   grille publiée ne montre que les lots disponibles dont la disponibilité a été confirmée depuis 14 jours au plus :
  *   un lot vendu, réservé, sous option ou dont on ne sait plus s'il est libre n'y figure pas. Elle ne porte aucune
- *   donnée personnelle [R533].
+ *   donnée personnelle [R543].
  * - Les frais d'acquisition du neuf et de l'ancien viennent du barème rangé par la direction, avec sa source et son
  *   premier jour ; le code calcule les frais du lot et l'écart avec l'ancien, chaque chiffre avec sa source, sa date et
- *   son hypothèse ; sans barème, aucun chiffre [R534].
+ *   son hypothèse ; sans barème, aucun chiffre [R544].
  */
 import type { Viewer } from '../acces/droits.ts';
 import { agentState } from '../acces/etat-agent.ts';
@@ -56,7 +56,7 @@ export interface PublishedLot {
   floor: number;
   priceCents: number;
   confirmedOn: string;
-  /** `null` quand le barème manque : jamais un chiffre inventé [R534]. */
+  /** `null` quand le barème manque : jamais un chiffre inventé [R544]. */
   fees: LotFees | null;
 }
 
@@ -76,7 +76,7 @@ export interface AgentGrid extends PublishedGrid {
   toConfirm: string[];
 }
 
-export type NeufRefusal = { ok: false; rule: 'R16' | 'R533' | 'R534' | null; code: string };
+export type NeufRefusal = { ok: false; rule: 'R16' | 'R543' | 'R544' | null; code: string };
 export type NeufOutcome<T> = { ok: true; value: T } | NeufRefusal;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -154,13 +154,13 @@ export class ProgrammesNeufs {
     return { ok: false, rule, code };
   }
 
-  /** La direction range un barème des frais d'acquisition, neuf ou ancien, avec sa source et son premier jour [R534]. */
+  /** La direction range un barème des frais d'acquisition, neuf ou ancien, avec sa source et son premier jour [R544]. */
   async setFeeScale(viewer: Viewer, input: { kind: unknown; rateBp: unknown; source: unknown; validFrom: unknown }): Promise<NeufOutcome<{ id: string }>> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
-    if (input.kind !== 'neuf' && input.kind !== 'ancien') return this.refuse(viewer, 'R534', 'kind');
-    if (!isInt(input.rateBp, 1, 2000)) return this.refuse(viewer, 'R534', 'rate');
-    if (typeof input.source !== 'string' || input.source.trim().length < 5 || input.source.length > 300) return this.refuse(viewer, 'R534', 'source');
-    if (!validDay(input.validFrom)) return this.refuse(viewer, 'R534', 'valid_from');
+    if (input.kind !== 'neuf' && input.kind !== 'ancien') return this.refuse(viewer, 'R544', 'kind');
+    if (!isInt(input.rateBp, 1, 2000)) return this.refuse(viewer, 'R544', 'rate');
+    if (typeof input.source !== 'string' || input.source.trim().length < 5 || input.source.length > 300) return this.refuse(viewer, 'R544', 'source');
+    if (!validDay(input.validFrom)) return this.refuse(viewer, 'R544', 'valid_from');
     const id = this.newId();
     await this.db.run(
       'INSERT INTO acquisition_fee_scales (id, network_id, kind, rate_bp, source, valid_from, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -182,7 +182,7 @@ export class ProgrammesNeufs {
     );
   }
 
-  /** Frais du neuf, frais de l'ancien au même prix, et l'écart : calculés par le code, chacun sourcé [R534]. */
+  /** Frais du neuf, frais de l'ancien au même prix, et l'écart : calculés par le code, chacun sourcé [R544]. */
   async feesFor(networkId: string, priceCents: number, day: string): Promise<LotFees | null> {
     const neuf = await this.scaleOn(networkId, 'neuf', day);
     const ancien = await this.scaleOn(networkId, 'ancien', day);
@@ -273,7 +273,7 @@ export class ProgrammesNeufs {
 
   /**
    * L'agent du programme ou la direction range l'état d'un lot tel que le promoteur l'a confirmé, en nouvelle version.
-   * Un lot vendu ne revient jamais [R533].
+   * Un lot vendu ne revient jamais [R543].
    */
   async recordLot(
     viewer: Viewer,
@@ -292,7 +292,7 @@ export class ProgrammesNeufs {
     const today = parisDay(this.now());
     if (!validDay(confirmedOn) || confirmedOn > today) return this.refuse(viewer, null, 'confirmed_on');
     const previous = (await this.latestLots(program.id)).find((l) => l.lotRef === lotRef);
-    if (previous?.status === 'vendu') return this.refuse(viewer, 'R533', 'vendu');
+    if (previous?.status === 'vendu') return this.refuse(viewer, 'R543', 'vendu');
     if (previous && confirmedOn < previous.confirmedOn) return this.refuse(viewer, null, 'confirmed_on');
     const version = (previous?.version ?? 0) + 1;
     await this.db.run(
@@ -331,7 +331,7 @@ export class ProgrammesNeufs {
 
   /**
    * La grille publiée d'un programme, pour le site et les annonces : les seuls lots disponibles confirmés depuis 14
-   * jours au plus, sans aucune donnée personnelle (ni agent, ni client, ni auteur des versions) [R533].
+   * jours au plus, sans aucune donnée personnelle (ni agent, ni client, ni auteur des versions) [R543].
    */
   async publishedGrid(networkId: string, programId: unknown): Promise<PublishedGrid | null> {
     const program = await this.program(networkId, programId);
