@@ -95,6 +95,7 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     return {
       db,
       journal,
+      store,
       network,
       alex,
       sam,
@@ -189,12 +190,17 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     const t = await setup();
     await t.rapports.save(t.agent, { name: 'Contacts', definition: { measures: ['contacts'], grouping: 'total' } });
     await t.rapports.save(t.other, { name: 'Contacts de Sam', definition: { measures: ['contacts'], grouping: 'total' } });
+    // Une fiche reprise, suivie par Alex sans aucune attribution.
+    const repris = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Repris' });
     const e = await t.exports.make(t.agent);
     if (!e.ok) throw new Error(e.code);
     const { document, fingerprint } = e.value;
     expect(document.agentId).toBe(t.alex.id);
     expect(document.tables.agent.map((r) => r.id)).toEqual([t.alex.id]);
     expect(document.tables.attributions.map((r) => r.id)).toEqual(['att-1', 'att-2', 'att-3']);
+    expect(document.tables.contacts.map((r) => r.id)).toContain(repris.id);
+    expect(document.tables.contacts).toHaveLength(4);
+    expect(Object.keys(document.tables.contacts[0]!).sort()).toEqual(['created_at', 'id']);
     expect(document.tables.appointments).toHaveLength(2);
     expect(document.tables.mandates).toHaveLength(1);
     expect(document.tables.customReports.map((r) => r.name)).toEqual(['Contacts']);
@@ -210,7 +216,7 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(text).not.toContain(t.far.id);
     expect(text).not.toContain('Sam');
     // Les clients par leurs identifiants seulement : aucun prénom de fiche.
-    expect(text).not.toMatch(/Client\d/);
+    expect(text).not.toMatch(/Client\d|Repris/);
     // L'empreinte : recalculée, et rangée par AIMMO.
     expect(fingerprint).toBe(await fingerprintOf(document));
     expect(await t.exports.verify(JSON.parse(text))).toEqual({ verified: true, fingerprint });

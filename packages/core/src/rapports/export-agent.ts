@@ -1,8 +1,8 @@
 /**
  * Export complet des données d'un agent, avec son empreinte (M13, HX62, « Jamais vu ») [R13, R16, R561].
  *
- * À tout moment, un agent actif emporte en un fichier tout ce que le réseau range à son nom : sa fiche, les contacts
- * qui lui ont été attribués, ses rendez-vous, ses mandats, ses biens, ses ventes, ses parts de commission et ses
+ * À tout moment, un agent actif emporte en un fichier tout ce que le réseau range à son nom : sa fiche, les fiches
+ * qu'il suit et les contacts qui lui ont été attribués, ses rendez-vous, ses mandats, ses biens, ses ventes, ses parts de commission et ses
  * rapports enregistrés. Rien d'un autre agent n'y entre, pas même un identifiant (parrain, attribution remplacée). Les clients n'y figurent que par leurs identifiants : leurs
  * fiches sont à eux et au réseau, et se demandent par les droits de la personne (M12).
  *
@@ -27,6 +27,8 @@ export interface AgentExport {
   madeAt: string;
   tables: {
     agent: Row[];
+    /** Les fiches qu'il suit, par leur identifiant seul, même sans attribution (une reprise, par exemple). */
+    contacts: Row[];
     attributions: Row[];
     appointments: Row[];
     mandates: Row[];
@@ -87,6 +89,7 @@ export class ExportAgent {
 
     const tables: AgentExport['tables'] = {
       agent: await q('SELECT id, first_name, last_name, zone, status, created_at, updated_at FROM agents WHERE network_id = ? AND id = ?'),
+      contacts: await q('SELECT id, created_at FROM persons WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id'),
       attributions: await q('SELECT id, person_id, reason, callback_hours, created_at FROM attributions WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id'),
       appointments: await q('SELECT id, person_id, property_id, kind, start_at, end_at, status, source, created_at FROM appointments WHERE network_id = ? AND agent_id = ? ORDER BY start_at, id'),
       mandates: await q('SELECT id, person_id, project_id, property_id, signed_at, source_kind, created_at FROM mandates WHERE network_id = ? AND agent_id = ? ORDER BY signed_at, id'),
