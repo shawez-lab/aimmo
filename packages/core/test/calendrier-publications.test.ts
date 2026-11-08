@@ -357,6 +357,24 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
     expect(JSON.parse(ev[0]!.data)).toEqual({ channel: 'instagram', rule: 'R582', error: 'Error' });
   });
 
+  it('[R580] une publication d’un créneau manqué n’empêche pas de réserver les suivants', async () => {
+    const t = await setup();
+    const a = await t.property(2);
+    const b = await t.property(1);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    // Lundi seulement : B (le plus récent). Le créneau est manqué.
+    const first = await t.cal.planWeek(t.alexV, '2027-10-11');
+    if (!first.ok) throw new Error(first.code);
+    expect(first.value.map((s) => s.propertyId)).toEqual([b, a, a]);
+    t.setClock('2027-10-12T12:00:00.000Z');
+    // Après le créneau manqué de B lundi, un bien C arrive avec deux publications.
+    const c = await t.property(2);
+    const again = await t.cal.planWeek(t.alexV, '2027-10-12');
+    if (!again.ok) throw new Error(again.code);
+    // La publication de B, déjà réservée sous cette version, n'est plus proposée : jeudi et vendredi sont à C.
+    expect(again.value.filter((s) => s.day === '2027-10-14' || s.day === '2027-10-15').map((s) => s.propertyId)).toEqual([c, c]);
+  });
+
   it('les heures de Paris, en hiver comme en été', () => {
     expect(parisInstant('2027-01-15', '09:00').toISOString()).toBe('2027-01-15T08:00:00.000Z');
     expect(parisInstant('2027-07-15', '09:00').toISOString()).toBe('2027-07-15T07:00:00.000Z');

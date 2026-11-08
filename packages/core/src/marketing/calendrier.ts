@@ -232,7 +232,7 @@ export class CalendrierPublications {
         if (due.getTime() <= this.now().getTime()) continue;
         const taken = await this.db.first<{ id: string }>('SELECT id FROM social_calendar_slots WHERE rules_id = ? AND day = ? AND channel = ? AND rank = ?', [rules.id, day, channel, rank]);
         if (taken) continue;
-        const pick = await this.pick(viewer, channel, day);
+        const pick = await this.pick(viewer, channel, rules.id);
         if (!pick) break;
         await this.db.run(
           `INSERT INTO social_calendar_slots (id, network_id, agent_id, rules_id, day, channel, rank, post_id, property_id, due_at, booked_at)
@@ -250,8 +250,8 @@ export class CalendrierPublications {
    * sont le moins sortis ; à égalité, celui qui est sorti le plus tôt, et parmi les jamais sortis le plus récent
    * [R580].
    */
-  private async pick(viewer: Viewer, channel: SocialChannelName, day: string): Promise<{ postId: string; propertyId: string } | null> {
-    const ready = await this.readyPosts(viewer, channel);
+  private async pick(viewer: Viewer, channel: SocialChannelName, rulesId: string): Promise<{ postId: string; propertyId: string } | null> {
+    const ready = await this.readyPosts(viewer, channel, rulesId);
     if (ready.length === 0) return null;
     const out = await this.outings(viewer.userId, channel);
     const byProperty = new Map<string, { postId: string; createdAt: string }>();
@@ -277,9 +277,10 @@ export class CalendrierPublications {
 
   /**
    * Les publications prêtes d'un réseau : validées, d'un bien encore à l'agent dans l'état que l'événement exige,
-   * jamais parties sur ce réseau depuis le compte de l'agent, ni réservées sur un créneau en attente.
+   * jamais parties sur ce réseau depuis le compte de l'agent, ni réservées sur un créneau en attente, ni déjà réservées
+   * sous la version en vigueur.
    */
-  private async readyPosts(viewer: Viewer, channel: SocialChannelName): Promise<{ post_id: string; property_id: string; property_created_at: string }[]> {
+  private async readyPosts(viewer: Viewer, channel: SocialChannelName, rulesId: string): Promise<{ post_id: string; property_id: string; property_created_at: string }[]> {
     const rows = await this.db.all<{ post_id: string; property_id: string; property_created_at: string; event: SocialEvent; status: PropertyStatus }>(
       `SELECT s.id AS post_id, s.property_id, p.created_at AS property_created_at, s.event, p.status
        FROM social_posts s
@@ -288,8 +289,10 @@ export class CalendrierPublications {
        WHERE s.network_id = ? AND p.agent_id = ?
          AND NOT EXISTS (SELECT 1 FROM social_post_attempts a JOIN social_post_sends d ON d.attempt_id = a.id
                          WHERE a.post_id = s.id AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye')
+         -- Déjà réservée sous cette version sur ce réseau (même passée, manquée ou en échec) : la base ne la reprendrait pas.
+         AND NOT EXISTS (SELECT 1 FROM social_calendar_slots k WHERE k.rules_id = ? AND k.post_id = s.id AND k.channel = ?)
        ORDER BY v.validated_at DESC, s.id`,
-      [viewer.networkId, viewer.userId, channel],
+      [viewer.networkId, viewer.userId, channel, rulesId, channel],
     );
     const pending = new Set((await this.pendingSlots(viewer.userId, channel)).map((s) => s.post_id));
     return rows.filter((r) => EVENT_STATUSES[r.event].includes(r.status) && !pending.has(r.post_id));
