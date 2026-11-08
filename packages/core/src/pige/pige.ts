@@ -219,8 +219,8 @@ export function cleanAd(raw: RawAd, now: Date): CleanAd | null {
   const energyClass = (PIGE_ENERGY_CLASSES as readonly string[]).includes(ec) ? (ec as PigeEnergyClass) : null;
   const dd = typeof raw.diagnosedOn === 'string' ? raw.diagnosedOn.trim().slice(0, 10) : '';
   const ddAt = /^\d{4}-\d{2}-\d{2}$/.test(dd) ? Date.parse(`${dd}T12:00:00.000Z`) : Number.NaN;
-  // Une date de diagnostic n'existe qu'avec une classe, et jamais après l'annonce.
-  const diagnosedOn = energyClass && Number.isFinite(ddAt) && new Date(ddAt).toISOString().slice(0, 10) === dd && ddAt <= at + DAY ? dd : null;
+  // Une date de diagnostic se garde même sans classe, jamais après l'annonce.
+  const diagnosedOn = Number.isFinite(ddAt) && new Date(ddAt).toISOString().slice(0, 10) === dd && ddAt <= at + DAY ? dd : null;
   return {
     source: source.trim(),
     sourceRef,
@@ -384,6 +384,14 @@ export class Pige {
         if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
         // Le bien dit, à 1 m² près, dans une commune du réseau.
         if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
+        // Et le bien que cette annonce a déjà porté sur son site, à 1 m² près : la base le voit fermé sans calculer de clé (HX18).
+        if (closing.ref) {
+          const before = await this.db.all<{ kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
+            'SELECT DISTINCT kind, postal_code, commune, surface_m2 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?',
+            [networkId, closing.ref.source, closing.ref.sourceRef],
+          );
+          for (const b of before) keys.push(...(await nearFingerprints({ kind: b.kind, postalCode: b.postal_code, commune: b.commune, surfaceM2: b.surface_m2 })));
+        }
         if (keys.length === 0) {
           outside += 1;
           continue;
@@ -424,16 +432,16 @@ export class Pige {
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
               OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
               -- Une classe ou une date de diagnostic changée est aussi une nouvelle relève (HX18).
-              OR coalesce((SELECT e.energy_class || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '') <> ?)`,
+              OR coalesce((SELECT coalesce(e.energy_class, '') || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '|') <> ?)`,
         [
           adId, networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
           networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, `${ad.publishedAt}|${fingerprint}|${ad.rooms ?? ''}`,
-          networkId, ad.source, ad.sourceRef, ad.energyClass ? `${ad.energyClass}|${ad.diagnosedOn ?? ''}` : '',
+          networkId, ad.source, ad.sourceRef, `${ad.energyClass ?? ''}|${ad.diagnosedOn ?? ''}`,
         ],
       );
       added += r.changes;
       // Ce que l'annonce dit du diagnostic, rangé à part avec elle, pour proposer son adresse (HX18).
-      if (r.changes === 1 && ad.energyClass) {
+      if (r.changes === 1 && (ad.energyClass || ad.diagnosedOn)) {
         await this.db.run('INSERT INTO pige_ad_energy (ad_id, network_id, energy_class, diagnosed_on) VALUES (?, ?, ?, ?)', [adId, networkId, ad.energyClass, ad.diagnosedOn]);
       }
     }

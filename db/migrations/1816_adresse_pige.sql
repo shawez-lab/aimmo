@@ -6,8 +6,9 @@
 CREATE TABLE IF NOT EXISTS pige_ad_energy (
   ad_id TEXT PRIMARY KEY REFERENCES pige_ads (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  energy_class TEXT NOT NULL CHECK (energy_class IN ('A', 'B', 'C', 'D', 'E', 'F', 'G')),
-  diagnosed_on TEXT CHECK (diagnosed_on IS NULL OR length(diagnosed_on) = 10)
+  energy_class TEXT CHECK (energy_class IS NULL OR energy_class IN ('A', 'B', 'C', 'D', 'E', 'F', 'G')),
+  diagnosed_on TEXT CHECK (diagnosed_on IS NULL OR length(diagnosed_on) = 10),
+  CHECK (energy_class IS NOT NULL OR diagnosed_on IS NOT NULL)
 );
 CREATE TRIGGER IF NOT EXISTS pige_ad_energy_fige BEFORE UPDATE ON pige_ad_energy BEGIN SELECT RAISE(ABORT, 'pige_ad_energy : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS pige_ad_energy_garde BEFORE DELETE ON pige_ad_energy BEGIN SELECT RAISE(ABORT, 'pige_ad_energy : rien ne s''efface'); END;
@@ -63,6 +64,11 @@ BEFORE INSERT ON pige_properties
 WHEN NOT EXISTS (SELECT 1 FROM pige_ads a WHERE a.id = NEW.ad_id AND a.network_id = NEW.network_id AND a.fingerprint = NEW.fingerprint)
   OR EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = NEW.network_id AND n.fingerprint = NEW.fingerprint)
   OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = NEW.network_id AND o.fingerprint = NEW.fingerprint)
+  -- Toute empreinte que cette annonce a portée sur son site, avant ou après une correction.
+  OR EXISTS (SELECT 1 FROM pige_ads a JOIN pige_ads b ON b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref
+              JOIN pige_no_agency n ON n.network_id = b.network_id AND n.fingerprint = b.fingerprint WHERE a.id = NEW.ad_id)
+  OR EXISTS (SELECT 1 FROM pige_ads a JOIN pige_ads b ON b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref
+              JOIN pige_oppositions o ON o.network_id = b.network_id AND o.fingerprint = b.fingerprint WHERE a.id = NEW.ad_id)
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé');
 END;

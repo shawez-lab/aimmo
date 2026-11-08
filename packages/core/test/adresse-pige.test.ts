@@ -109,7 +109,7 @@ it('l’annonce dit sa classe et sa date ; une valeur illisible est tue, jamais 
   const now = new Date(MONDAY_10H);
   const base = { source: 'Site A', sourceRef: 'x1', kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 90, priceEur: 200_000, publishedAt: '2026-12-01T00:00:00.000Z' };
   expect(cleanAd({ ...base, energyClass: 'f', diagnosedOn: '2026-09-15' }, now)).toMatchObject({ energyClass: 'F', diagnosedOn: '2026-09-15' });
-  expect(cleanAd({ ...base, energyClass: 'H', diagnosedOn: '2026-09-15' }, now)).toMatchObject({ energyClass: null, diagnosedOn: null });
+  expect(cleanAd({ ...base, energyClass: 'H', diagnosedOn: '2026-09-15' }, now)).toMatchObject({ energyClass: null, diagnosedOn: '2026-09-15' });
   expect(cleanAd({ ...base, energyClass: 'F', diagnosedOn: '2026-02-30' }, now)).toMatchObject({ energyClass: 'F', diagnosedOn: null });
   expect(cleanAd({ ...base, energyClass: 'F', diagnosedOn: '2027-01-01' }, now)).toMatchObject({ diagnosedOn: null });
 });
@@ -160,6 +160,27 @@ async function setup(over: { search?: DiagnosisSearch | 'down'; cadastre?: Cadas
 }
 
 describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien créé sans ressaisie', () => {
+  it('[R295] [R273] une annonce revenue « pas d’agence » par sa seule référence est refusée aussi par la base', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const first = s.ad();
+    await s.pige.ingest(s.network.id, [first]);
+    const adId = await s.firstAd();
+    await s.pige.ingest(s.network.id, [{ source: first.source, sourceRef: first.sourceRef, noAgency: true } as RawAd]);
+    expect(await s.adresses.convert(s.agentAlex, { adId })).toMatchObject({ ok: false, rule: 'R273' });
+    const ad = (await s.db.first<{ fingerprint: string }>('SELECT fingerprint FROM pige_ads WHERE id = ?', [adId]))!;
+    const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'BY', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
+    await expect(
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, adId, ad.fingerprint, s.alex.id]),
+    ).rejects.toThrow(/bien fermé/);
+  });
+
+  it('[R295] une date de diagnostic dite sans classe est gardée et reprise', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    await s.pige.ingest(s.network.id, [s.ad({ energyClass: undefined, diagnosedOn: '2026-09-15' })]);
+    const r = await s.adresses.convert(s.agentAlex, { adId: await s.firstAd() });
+    expect(r.ok && [r.value.energyClass, r.value.diagnosedOn]).toEqual([null, '2026-09-15']);
+  });
+
   it('[R294] [R295] une classe ou une date de diagnostic corrigée par l’annonce remplace l’ancienne ; rejouée telle quelle, rien n’est ajouté', async () => {
     const s = await setup({ search: { matching: async () => [] } });
     const first = s.ad();
