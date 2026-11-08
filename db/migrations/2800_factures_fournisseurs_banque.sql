@@ -35,12 +35,14 @@ CREATE TABLE IF NOT EXISTS supplier_invoices (
   UNIQUE (network_id, supplier, number),
   CHECK (ht_cents + vat_cents = ttc_cents)
 );
--- La base recompte aussi : les bases des lignes font le hors taxe, les taxes des lignes font la TVA [R550].
+-- La base recompte aussi : chaque taxe à un centime près de base × taux, les bases des lignes font le hors taxe, les
+-- taxes des lignes font la TVA [R550].
 CREATE TRIGGER IF NOT EXISTS supplier_invoices_recompte
 BEFORE INSERT ON supplier_invoices
 WHEN (SELECT COALESCE(SUM(json_extract(value, '$.baseCents')), -1) FROM json_each(NEW.vat_lines)) <> NEW.ht_cents
   OR (SELECT COALESCE(SUM(json_extract(value, '$.vatCents')), -1) FROM json_each(NEW.vat_lines)) <> NEW.vat_cents
   OR EXISTS (SELECT 1 FROM json_each(NEW.vat_lines) WHERE json_extract(value, '$.rateBp') NOT IN (0, 210, 550, 1000, 2000))
+  OR EXISTS (SELECT 1 FROM json_each(NEW.vat_lines) WHERE abs(json_extract(value, '$.vatCents') * 10000 - json_extract(value, '$.baseCents') * json_extract(value, '$.rateBp')) > 10000)
 BEGIN SELECT RAISE(ABORT, 'supplier_invoices : la facture ne se recompte pas'); END;
 
 -- Une ligne de relevé de la banque du réseau, déposée par la direction. L'identifiant est l'empreinte de la ligne :
@@ -92,6 +94,8 @@ CREATE TABLE IF NOT EXISTS invoice_reminders (
   status TEXT NOT NULL CHECK (status IN ('a_valider', 'validee', 'envoyee', 'refusee', 'close')),
   rule TEXT,
   message_id TEXT,
+  -- L'envoi en cours : posé d'une seule écriture avant le contrôle central, pour qu'un seul passage envoie la relance.
+  sending_at TEXT,
   prepared_at TEXT NOT NULL,
   validated_by TEXT,
   validated_at TEXT,

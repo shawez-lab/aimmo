@@ -156,6 +156,13 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect(await ff.record(t.agent, again.value.id)).toMatchObject({ ok: false, rule: 'R16' });
     const list = await ff.list(t.direction);
     expect(list.ok && list.value).toHaveLength(1);
+    // La base recompte chaque ligne aussi : une taxe fausse, même avec des totaux qui se tiennent, est refusée.
+    await expect(
+      t.db.run(
+        "INSERT INTO supplier_invoices (id, network_id, read_id, supplier, number, issued_on, ht_cents, vat_cents, ttc_cents, vat_lines, corrected, recorded_by, created_at) VALUES ('y', ?, ?, 'Autre', 'N2', '2027-06-01', 10000, 1, 10001, '[{\"baseCents\":10000,\"rateBp\":2000,\"vatCents\":1}]', '[]', 'direction:d', '2027-06-11')",
+        [t.network.id, again.value.id],
+      ),
+    ).rejects.toThrow();
     // La base recompte aussi : une facture qui ne se recompte pas est refusée même écrite à la main.
     await expect(
       t.db.run(
@@ -286,7 +293,11 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect(await relances.validate(t.direction, list.value[0]!.id)).toMatchObject({ ok: false, rule: 'R553', code: 'not_pending' });
     await expect(t.db.run("UPDATE invoice_reminders SET text = 'autre' WHERE id = ?", [list.value[0]!.id])).rejects.toThrow();
     // Validée : elle passe par le contrôle central, dans la boîte d'essai, avec le texte validé.
-    expect(await relances.send(t.network.id)).toBe(1);
+    // Deux passages d'envoi en même temps : un seul envoi, et la relance reste « envoyée ».
+    const both = await Promise.all([relances.send(t.network.id), relances.send(t.network.id)]);
+    expect(both.sort()).toEqual([0, 1]);
+    const once = await relances.list(t.direction);
+    expect(once.ok && once.value[0]!.status).toBe('envoyee');
     const sent = await outbox();
     expect(sent).toHaveLength(1);
     expect(sent[0]!.body).toContain(list.value[0]!.text.split('\n')[2]!);

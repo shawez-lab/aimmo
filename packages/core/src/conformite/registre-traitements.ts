@@ -1207,7 +1207,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   supplier_invoices: ['id', 'network_id', 'read_id', 'supplier', 'number', 'issued_on', 'ht_cents', 'vat_cents', 'ttc_cents', 'corrected', 'created_at'],
   bank_lines: ['id', 'network_id', 'day', 'invoice_refs', 'created_at'],
   bank_reconciliations: ['line_id', 'invoice_id', 'network_id', 'mode', 'created_at'],
-  invoice_reminders: ['id', 'network_id', 'invoice_id', 'rank', 'status', 'rule', 'message_id', 'prepared_at', 'validated_at', 'updated_at'],
+  invoice_reminders: ['id', 'network_id', 'invoice_id', 'rank', 'status', 'rule', 'message_id', 'sending_at', 'prepared_at', 'validated_at', 'updated_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],

@@ -233,6 +233,11 @@ export class RelancesImpayes {
     );
     let sent = 0;
     for (const r of rows) {
+      // Réservée d'une seule écriture : deux passages qui se chevauchent n'envoient et ne rangent la relance qu'une fois.
+      // Une réservation de plus de 10 minutes est celle d'un passage coupé : elle se reprend.
+      const stale = new Date(this.now().getTime() - 10 * 60_000).toISOString();
+      const claim = await this.db.run("UPDATE invoice_reminders SET sending_at = ? WHERE id = ? AND status = 'validee' AND (sending_at IS NULL OR sending_at < ?)", [this.now().toISOString(), r.id, stale]);
+      if (claim.changes !== 1) continue;
       const inv = await this.db.first<{ amount_cents: number; issued_on: string; label: string }>(`SELECT amount_cents, issued_on, ${LABEL_SQL()} AS label FROM invoices WHERE id = ?`, [r.invoice_id]);
       if (!inv) continue;
       const facts: ReminderFacts = { firstName: null, label: inv.label, amountCents: inv.amount_cents, issuedOn: inv.issued_on, dueOn: addDays(inv.issued_on, this.paymentDays) };
@@ -257,7 +262,7 @@ export class RelancesImpayes {
       const status: ReminderStatus = result.status === 'sent' ? 'envoyee' : closed ? 'close' : result.status === 'failed' || result.rule === 'R01' ? 'validee' : 'refusee';
       const rule = result.status === 'sent' ? null : closed ? ((await this.settled(r.invoice_id)) ?? 'R553') : result.rule;
       await this.db.run(
-        "UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE id = ? AND status = 'validee'",
+        "UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'validee'",
         [status, rule, result.messageId, this.now().toISOString(), r.id],
       );
       await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${r.file_id}`, data: { rule: rule ?? 'R553', client: `person:${r.person_id}`, invoice: r.invoice_id, rank: r.rank, status, mode: 'essai' } }, this.now);
