@@ -355,8 +355,13 @@ Réservé le 2026-11-07 par la voie 2. Règles R470 à R489 et migrations à par
 
 ## Photo, vidéo et visite
 
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à partir de `2300` réservées à ce groupe. Le code vit dans `packages/core/src/medias/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX40 · Retouches déclarées et filigrane
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, relecture normale
 - Décidé (2026-11-06) par Shawez : retouches locales autorisées (ciel, reflets, objets retirés), chaque photo retouchée porte la mention « photo retouchée » ; X02 est assoupli en conséquence, avec test
 - Objectif : comme Hektor, HOQI et Apimo : remplacer le ciel, enlever les reflets, effacer un objet, poser un filigrane. Jamais vu : chaque retouche locale est inscrite au certificat de X02 et l'image porte la mention « aménagement virtuel » de R48 ; chaque photo exportée porte le filigrane de l'agent et l'identifiant de contenu de AT05, pour qu'une photo reprise par d'autres ramène à lui.
 - Critères : une retouche locale sans mention est refusée (test) ; le certificat liste chaque retouche (test) ; chaque photo exportée porte le filigrane (test).
