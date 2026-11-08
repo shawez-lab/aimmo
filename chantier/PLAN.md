@@ -196,7 +196,7 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : la tournée tient dans les créneaux libres de l'agent (test) ; aucune adresse hors de la zone de l'agent (test) ; le lien vers la vue des rues ne porte aucune clé ni donnée de client (test).
 
 ### HX20 · Séquence de prospection sur plusieurs canaux
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Maline et SIANA : une séquence par prospect sur mail, SMS, appel, courrier et porte-à-porte, et un plan de prospection chaque matin. Jamais vu : chaque étape est vérifiée avant de partir contre les accords, la liste d'opposition au démarchage et les horaires des appels de AC06, et la séquence s'arrête d'elle-même sur tous les canaux à la première réponse ou opposition ; les étapes du jour entrent dans le plan du jour de G01.
 - Critères : aucun envoi hors du contrôle central (test) ; une opposition arrête la séquence sur tous les canaux (test) ; un appel n'est proposé que dans les horaires permis (test).
 
