@@ -25,7 +25,7 @@ async function setup() {
     { ref: `biens/${p.id}/00000009-0000-4000-8000-000000000000.mp4`, kind: 'video', edit: 'aucune' },
   ];
   await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('s-1', ?, ?, 1, ?, 'agent:a', '2027-10-01')", [p.id, network.id, JSON.stringify({ media })]);
-  const certified: CertifiedPhoto[] = [{ ref: ref(p.id, 2), overlay: 'Aménagement virtuel', certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` }];
+  const certified: CertifiedPhoto[] = [{ ref: ref(p.id, 2), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` }];
   const atelier = new AtelierStudio(db, acces, journal, { publishable: async () => certified }, { now });
   const post = async (id: string, at: string, validated: boolean) => {
     await db.run("INSERT INTO social_posts (id, property_id, network_id, event, text, origin, visuals, created_by, created_at) VALUES (?, ?, ?, 'nouveau_bien', 'Texte de la publication.', 'secours', '[]', 'agent:a', ?)", [id, p.id, network.id, at]);

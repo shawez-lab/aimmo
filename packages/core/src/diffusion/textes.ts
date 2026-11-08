@@ -34,6 +34,7 @@ import { unmaskFigures } from '../annonces/traductions.ts';
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { LOCAL_EDIT_LABELS, type LocalEditKind } from '../studio/certificats.ts';
 import { DiffusionSurveillee } from './surveillance.ts';
 
 // ——— Contrôle du texte d'un portail [R476] ———
@@ -234,12 +235,15 @@ function subjectText(subject: PhotoSubject, f: ListingFacts): string {
  * La légende d'une photo [R478] : sa place parmi les photos, ce qu'elle montre seulement si l'agent l'a dit et que la
  * fiche le porte, l'aménagement virtuel ou la retouche dits. Rien d'autre : ni couleur, ni lumière, ni qualité.
  */
-export function photoCaption(input: { index: number; total: number; subject: PhotoSubject | null; facts: ListingFacts; edit: MediaEdit | null; overlay: string | null }): string {
+export function photoCaption(input: { index: number; total: number; subject: PhotoSubject | null; facts: ListingFacts; edit: MediaEdit | null; overlay: string | null; retouches?: readonly LocalEditKind[] }): string {
   const place = `Photo ${input.index} sur ${input.total}`;
   const subject = input.subject !== null && subjectInSheet(input.subject, input.facts) ? subjectText(input.subject, input.facts) : null;
   const parts = [subject === null ? `${place} du bien.` : `${place} : ${subject}.`];
   if (input.overlay !== null || input.edit === 'amenagement_virtuel') parts.push('Aménagement virtuel : le mobilier et la décoration montrés sont ajoutés à l’image, ils ne sont pas dans le bien.');
   else if (input.edit === 'lumiere_cadrage') parts.push('Lumière et cadrage retouchés.');
+  // Les retouches locales déclarées au certificat (HX40), dites telles quelles [R490].
+  const retouches = input.retouches ?? [];
+  if (retouches.length > 0) parts.push(`Photo retouchée : ${[...new Set(retouches)].map((k) => LOCAL_EDIT_LABELS[k].toLowerCase()).join(', ')}.`);
   return parts.join(' ');
 }
 
@@ -543,6 +547,9 @@ export class TextesPortails {
       [propertyId],
     );
     const subjects = new Map(rows.filter((r) => r.subject !== 'aucun').map((r) => [r.media_ref, r.subject as PhotoSubject] as const));
+    // Les retouches locales déclarées au certificat de chaque photo [R490].
+    const certs = await this.db.all<{ result_ref: string; local_edits: string }>('SELECT result_ref, local_edits FROM photo_certificates WHERE property_id = ?', [propertyId]);
+    const retouchesOf = new Map(certs.map((c) => [c.result_ref, (JSON.parse(c.local_edits) as { kind: LocalEditKind }[]).map((e) => e.kind)] as const));
     const total = media.filter((m) => m.kind === 'photo').length;
     let index = 0;
     return media.map((m) => {
@@ -551,7 +558,7 @@ export class TextesPortails {
       // Le sujet doit tenir dans la fiche du moment ; la légende l'écrit avec la fiche publiée, qui le vérifie aussi.
       const said = subjects.get(m.ref) ?? null;
       const subject = said !== null && subjectInSheet(said, facts.current) ? said : null;
-      return { ...m, caption: photoCaption({ index, total, subject, facts: facts.published, edit: edits.get(m.ref) ?? null, overlay: m.overlay }) };
+      return { ...m, caption: photoCaption({ index, total, subject, facts: facts.published, edit: edits.get(m.ref) ?? null, overlay: m.overlay, retouches: retouchesOf.get(m.ref) ?? [] }) };
     });
   }
 

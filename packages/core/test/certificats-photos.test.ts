@@ -119,7 +119,7 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     // Au journal : les sortes de corrections, rien d'autre.
     const ev = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'studio.photo.certifiee'");
     expect(ev).toHaveLength(1);
-    expect(JSON.parse(ev[0]!.data)).toEqual({ operations: GOOD_OPS.map((o) => o.op) });
+    expect(JSON.parse(ev[0]!.data)).toEqual({ operations: GOOD_OPS.map((o) => o.op), retouches: [] });
   });
 
   it('[R46] [R13] le certificat ne porte ni adresse, ni bien, ni agent, ni nom', async () => {
@@ -166,7 +166,7 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     if (!ok.ok) throw new Error(ok.code);
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 1))).toEqual({
       ok: true,
-      value: { ref: ref(t.p.id, 1), overlay: null, certificateToken: ok.value.token, certificatePath: ok.value.path },
+      value: { ref: ref(t.p.id, 1), overlay: null, retouchMention: null, retouches: [], certificateToken: ok.value.token, certificatePath: ok.value.path },
     });
     // Une photo qui n'est pas dans la fiche n'est jamais publiable.
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 9))).toEqual({ ok: false, rule: 'R10', code: 'photo_inconnue' });
@@ -215,7 +215,7 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     expect(r.value.statement).toMatch(/Autres corrections, d’ensemble : exposition\./);
     // Le certificat d'une image aménagée ne dit jamais « que des corrections d'ensemble » ni « rien ajouté ».
     expect(r.value.statement).not.toMatch(/que des corrections d’ensemble|ajouté par endroit|Aucune retouche locale/);
-    expect(await t.certs.publishable(t.p.id)).toEqual([{ ref: ref(t.p.id, 3), overlay: 'Aménagement virtuel', certificateToken: r.value.token, certificatePath: r.value.path }]);
+    expect(await t.certs.publishable(t.p.id)).toEqual([{ ref: ref(t.p.id, 3), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: r.value.token, certificatePath: r.value.path }]);
     // La fiche ne dit plus « aménagement virtuel » : la mention reste, par prudence.
     await t.sheet(2, t.media.map((m) => ({ ...m, edit: m.edit === 'amenagement_virtuel' ? 'lumiere_cadrage' : m.edit })));
     expect((await t.certs.publishable(t.p.id))[0]!.overlay).toBe('Aménagement virtuel');

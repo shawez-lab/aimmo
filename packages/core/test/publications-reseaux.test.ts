@@ -54,8 +54,8 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; o
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Samuel', lastName: 'Inventé' });
   const p = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'PUB-5', kind: 'home', city: 'Villebrune', priceEur: 230_000, surfaceM2: 72, rooms: 3, status: 'available' });
   const certified: CertifiedPhoto[] = [
-    { ref: photo(p.id, 1), overlay: null, certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
-    { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
+    { ref: photo(p.id, 1), overlay: null, retouchMention: null, retouches: [], certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
+    { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
   ];
   const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), consentsDown: false, facts: structuredClone(FACTS), mentions: { complete: true, text: MENTIONS, publishedPriceEur: 230_000 } as { complete: boolean; text: string; publishedPriceEur: number | null } };
   const received: (SocialPayload & { channel: string })[] = [];

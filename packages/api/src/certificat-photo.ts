@@ -55,11 +55,19 @@ export function renderCertificate(cert: studio.PhotoCertificate): string {
       : `<h2>Corrections faites sur toute l’image</h2><ul>${cert.corrections.map((c) => `<li>${escape(c.detail)}</li>`).join('')}</ul>`;
   const staging = cert.virtualStaging
     ? `<p><strong>Aménagement virtuel.</strong> Du mobilier ou des travaux ont été ajoutés à l’image ; la mention « ${escape(cert.mention ?? 'Aménagement virtuel')} » est posée sur la photo partout où elle paraît.</p>`
-    : '<p>Aucune retouche à un endroit précis : rien n’a été effacé, ajouté ni déplacé.</p>';
+    : cert.retouches.length > 0
+      ? ''
+      : '<p>Aucune retouche à un endroit précis : rien n’a été effacé, ajouté ni déplacé.</p>';
+  // Les retouches locales déclarées (HX40), chacune dite, avec la mention posée sur l'image [R490].
+  const retouches =
+    cert.retouches.length === 0
+      ? ''
+      : `<h2>Retouches à un endroit précis</h2><ul>${cert.retouches.map((r) => `<li>${escape(r.detail)}</li>`).join('')}</ul><p>La mention « ${escape(cert.retouchMention ?? 'Photo retouchée')} » est posée sur la photo partout où elle paraît. Aucun défaut du bien n’a été effacé ni caché.</p>`;
   return [
     `<p>${escape(cert.statement)}</p>`,
     corrections,
     staging,
+    retouches,
     '<h2>Empreintes</h2>',
     '<p class="doux">L’original est gardé. Chaque fichier a son empreinte : la moindre modification la changerait.</p>',
     `<ul class="liste"><li>Photo publiée : <code>${escape(cert.resultSha256)}</code></li><li>Original : <code>${escape(cert.originalSha256)}</code></li></ul>`,
