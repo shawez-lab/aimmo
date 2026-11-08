@@ -111,6 +111,18 @@ it('[R294] la recherche à l’ADEME n’envoie que le code postal, la sorte, la
   expect(q).not.toMatch(/nom_proprietaire|telephone|mail/);
 });
 
+it('[R294] la recherche à l’ADEME suit ses pages suivantes, jamais ailleurs', async () => {
+  const urls: string[] = [];
+  const base = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines';
+  const search = new AdemeDiagnosisSearch(async (url: string) => {
+    urls.push(url);
+    const body = urls.length === 1 ? { results: [{ a: 1 }], next: `${base}?after=1` } : urls.length === 2 ? { results: [{ a: 2 }], next: 'https://ailleurs.example/x' } : { results: [{ a: 3 }] };
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  expect(await search.matching({ postcode: '21240', kind: 'house', surfaceMin: 89, surfaceMax: 91, energyClass: null })).toEqual([{ a: 1 }, { a: 2 }]);
+  expect(urls).toHaveLength(2);
+});
+
 it('l’annonce dit sa classe et sa date ; une valeur illisible est tue, jamais devinée', () => {
   const now = new Date(MONDAY_10H);
   const base = { source: 'Site A', sourceRef: 'x1', kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 90, priceEur: 200_000, publishedAt: '2026-12-01T00:00:00.000Z' };
@@ -232,6 +244,16 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const events = JSON.stringify(await s.journal.bySubject(`pige_ad:${adId}`));
     expect(events).toContain('pige.adresses_proposees');
     expect(events).not.toMatch(/Essais|Talant/);
+  });
+
+  it('[R294] le cadastre est lu pour toutes les adresses possibles avant la limite des cinq montrées', async () => {
+    const lines = Array.from({ length: 6 }, (_, i) => ({ numero_dpe: `2621E000010${i}T`, date_etablissement_dpe: '2026-09-15', date_reception_dpe: '2026-09-16', etiquette_dpe: 'F', type_batiment: 'maison', surface_habitable_logement: 90, numero_voie_ban: String(i + 1), nom_rue_ban: 'Rue des Essais', code_postal_ban: '21240', nom_commune_ban: 'Talant', _geopoint: `47.3${i},5.01` }));
+    // Seule la dernière adresse a une parcelle : elle doit sortir en tête.
+    const s = await setup({ search: { matching: async () => lines }, cadastre: { parcelAt: async (lat) => (lat === 47.35 ? { id: '21617000AB0099', section: 'AB', number: '0099', area: 500 } : null) } });
+    await s.pige.ingest(s.network.id, [s.ad()]);
+    const r = await s.adresses.propose(s.agentAlex, await s.firstAd());
+    expect(r.ok && r.candidates).toHaveLength(5);
+    expect(r.ok && r.candidates[0]!.streetNumber).toBe('6');
   });
 
   it('[R294] une source en panne se dit avec sa raison, et la veille déjà rangée sert encore', async () => {

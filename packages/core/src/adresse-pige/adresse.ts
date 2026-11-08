@@ -91,7 +91,7 @@ const shiftYears = (day: string, years: number): string => `${String(Number(day.
  * l'annonce tait ne donne aucun point et le dit ; un critère qu'elle dit et que le diagnostic contredit écarte
  * l'adresse [R294].
  */
-export function proposeAddresses(ad: AdFacts, diagnoses: readonly Diagnosis[], parcels: ParcelFacts): AddressCandidate[] {
+export function proposeAddresses(ad: AdFacts, diagnoses: readonly Diagnosis[], parcels: ParcelFacts, limit: number = MAX_CANDIDATES): AddressCandidate[] {
   const slug = communeSlug(ad.commune);
   const oldest = shiftYears(ad.publishedOn, -DIAGNOSIS_VALIDITY_YEARS);
   const seen = new Set<string>();
@@ -149,7 +149,7 @@ export function proposeAddresses(ad: AdFacts, diagnoses: readonly Diagnosis[], p
     return { diagnosisNumber: d.number, streetNumber: d.streetNumber, street: d.street, postcode: d.postcode, commune: d.commune, confidence, level: levelOf(confidence), points: all };
   });
   out.sort((a, b) => b.confidence - a.confidence || (a.diagnosisNumber < b.diagnosisNumber ? -1 : 1));
-  return out.slice(0, MAX_CANDIDATES);
+  return out.slice(0, limit);
 }
 
 /** La recherche des diagnostics publiés qui ressemblent à une annonce : les lignes brutes, lues ensuite champ par champ. */
@@ -157,6 +157,9 @@ export interface DiagnosisSearch {
   matching(query: { postcode: string; kind: PigeKind; surfaceMin: number; surfaceMax: number; energyClass: PigeEnergyClass | null }): Promise<readonly unknown[]>;
 }
 
+export const ADEME_SEARCH_MAX_PAGES = 10;
+/** Au plus tant de parcelles lues pour une annonce ; au-delà, la source le dit. */
+export const MAX_PARCEL_READS = 50;
 export const ADEME_SEARCH_URL = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines';
 const ADEME_KIND: Record<PigeKind, string> = { apartment: 'appartement', house: 'maison' };
 
@@ -171,11 +174,18 @@ export class AdemeDiagnosisSearch implements DiagnosisSearch {
     if (!/^\d{5}$/.test(q.postcode) || !Number.isFinite(q.surfaceMin) || !Number.isFinite(q.surfaceMax)) return [];
     const parts = [`code_postal_ban:"${q.postcode}"`, `type_batiment:"${ADEME_KIND[q.kind]}"`, `surface_habitable_logement:[${q.surfaceMin} TO ${q.surfaceMax}]`];
     if (q.energyClass) parts.push(`etiquette_dpe:"${q.energyClass}"`);
-    const url = `${this.base}?qs=${encodeURIComponent(parts.join(' AND '))}&size=100&select=${ADEME_FIELDS.join(',')}`;
-    const res = await this.fetcher(url, { headers: { accept: 'application/json' } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as Record<string, unknown> | null;
-    return body && Array.isArray(body['results']) ? body['results'] : [];
+    let url: string | null = `${this.base}?qs=${encodeURIComponent(parts.join(' AND '))}&size=100&select=${ADEME_FIELDS.join(',')}`;
+    const out: unknown[] = [];
+    for (let page = 0; url && page < ADEME_SEARCH_MAX_PAGES; page += 1) {
+      const res = await this.fetcher(url, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as Record<string, unknown> | null;
+      if (body && Array.isArray(body['results'])) out.push(...body['results']);
+      const next = body ? body['next'] : null;
+      // La page suivante n'est suivie que sur la même adresse de base : jamais ailleurs.
+      url = typeof next === 'string' && next.startsWith(`${this.base}?`) ? next : null;
+    }
+    return out;
   }
 }
 
@@ -359,16 +369,19 @@ export class AdressePige {
       missing.push({ source: ENERGY_SOURCE, reason: 'base de l’ADEME non branchée : seuls les diagnostics de la veille ont servi' });
     }
     // Le cadastre, seulement pour les diagnostics qui peuvent encore répondre.
-    const first = proposeAddresses(facts, diagnoses, { byDiagnosis: {}, readOn: today });
+    // Toutes les adresses possibles, avant toute limite : chacune peut recevoir ses points du cadastre.
+    const first = proposeAddresses(facts, diagnoses, { byDiagnosis: {}, readOn: today }, Number.POSITIVE_INFINITY);
+    let reads = 0;
     const byDiagnosis: Record<string, { id: string; areaM2: number | null } | null> = {};
     let cadastreDown = false;
     for (const c of first) {
       const d = diagnoses.find((x) => x.number === c.diagnosisNumber);
-      if (!d || d.lat === null || d.lon === null || !this.services.cadastre || cadastreDown) {
+      if (!d || d.lat === null || d.lon === null || !this.services.cadastre || cadastreDown || reads >= MAX_PARCEL_READS) {
         byDiagnosis[c.diagnosisNumber] = null;
         continue;
       }
       try {
+        reads += 1;
         const p = await this.services.cadastre.parcelAt(d.lat, d.lon);
         byDiagnosis[c.diagnosisNumber] = p ? { id: p.id, areaM2: p.area } : null;
       } catch {
@@ -378,6 +391,7 @@ export class AdressePige {
     }
     if (!this.services.cadastre) missing.push({ source: CADASTRE_SOURCE, reason: 'cadastre non branché' });
     else if (cadastreDown) missing.push({ source: CADASTRE_SOURCE, reason: 'cadastre injoignable' });
+    else if (first.length > MAX_PARCEL_READS) missing.push({ source: CADASTRE_SOURCE, reason: `plus de ${MAX_PARCEL_READS} adresses possibles : le cadastre n’a été lu que pour les premières` });
     return { candidates: proposeAddresses(facts, diagnoses, { byDiagnosis, readOn: today }), missing };
   }
 
