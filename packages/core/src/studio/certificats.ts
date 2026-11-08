@@ -229,6 +229,8 @@ export interface CertifiedPhoto {
   retouches: LocalEditKind[];
   certificateToken: string;
   certificatePath: string;
+  /** Pour une image aménagée : la référence de sa photo réelle jumelle, qui doit partir juste avant elle (HX41) [R493]. */
+  twin?: string;
 }
 
 export type CertResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R130'; code: string };
@@ -448,7 +450,8 @@ export class CertificatsPhotos {
     const tokens = new Map(out.map((p) => [p.ref, p.certificateToken] as const));
     // Une déclaration vaut pour l'image certifiée qu'elle a vue, pas pour une autre rangée sous la même référence.
     const valid = twins.filter((t) => tokens.get(t.staged_ref) === t.staged_token);
-    return orderGallery(out, new Map(valid.map((t) => [t.staged_ref, t.real_ref] as const))).photos;
+    const twinOf = new Map(valid.map((t) => [t.staged_ref, t.real_ref] as const));
+    return orderGallery(out, twinOf).photos.map((p) => (twinOf.has(p.ref) ? { ...p, twin: twinOf.get(p.ref)! } : p));
   }
 
   /** Une photo peut-elle partir ? Seulement de la fiche et avec son certificat [R130]. */

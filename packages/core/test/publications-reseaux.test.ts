@@ -55,7 +55,7 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; o
   const p = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'PUB-5', kind: 'home', city: 'Villebrune', priceEur: 230_000, surfaceM2: 72, rooms: 3, status: 'available' });
   const certified: CertifiedPhoto[] = [
     { ref: photo(p.id, 1), overlay: null, retouchMention: null, retouches: [], certificateToken: 'a'.repeat(32), certificatePath: `/certificat-photo/${'a'.repeat(32)}` },
-    { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}` },
+    { ref: photo(p.id, 2), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: 'b'.repeat(32), certificatePath: `/certificat-photo/${'b'.repeat(32)}`, twin: photo(p.id, 1) },
   ];
   const state = { diffusable: true, certified, consents: new Set([consent(p.id, 1)]), consentsDown: false, facts: structuredClone(FACTS), mentions: { complete: true, text: MENTIONS, publishedPriceEur: 230_000 } as { complete: boolean; text: string; publishedPriceEur: number | null } };
   const received: (SocialPayload & { channel: string })[] = [];
@@ -107,14 +107,20 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
   it('une publication préparée : accroche de l’événement, corps de l’IA contrôlé, photos certifiées avec leur mention', async () => {
     const writer: SocialWriter = { write: async ({ facts }) => ({ body: fallbackListing(facts).body }) };
     const t = await setup({ writer });
-    const r = await t.pubs.prepare(t.alexV, t.p.id, { event: 'visite', visuals: [photo(t.p.id, 2)] });
+    // Une image aménagée seule, ou avant sa photo réelle jumelle, ne part pas (HX41) [R493].
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'visite', visuals: [photo(t.p.id, 2)] })).toEqual({ ok: false, rule: 'R493', code: 'amenagement_sans_jumelle' });
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'visite', visuals: [photo(t.p.id, 2), photo(t.p.id, 1)] })).toEqual({ ok: false, rule: 'R493', code: 'amenagement_sans_jumelle' });
+    const r = await t.pubs.prepare(t.alexV, t.p.id, { event: 'visite', visuals: [photo(t.p.id, 1), photo(t.p.id, 2)] });
     expect(r).toMatchObject({ ok: true, value: { event: 'visite', origin: 'ia', validated: null, sends: [] } });
     if (!r.ok) return;
     expect(r.value.text.startsWith('Visites en cours pour ce bien.\n\n')).toBe(true);
-    expect(r.value.visuals).toEqual([{ ref: photo(t.p.id, 2), overlay: 'Aménagement virtuel', certificatePath: `/certificat-photo/${'b'.repeat(32)}`, check: null }]);
+    expect(r.value.visuals).toEqual([
+      { ref: photo(t.p.id, 1), overlay: null, certificatePath: `/certificat-photo/${'a'.repeat(32)}`, check: null },
+      { ref: photo(t.p.id, 2), overlay: 'Aménagement virtuel', certificatePath: `/certificat-photo/${'b'.repeat(32)}`, check: null },
+    ]);
     // Au journal : l'événement et l'origine, jamais le texte.
     const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.publication.preparee'");
-    expect(JSON.parse(ev[0]!.data)).toEqual({ post: r.value.id, event: 'visite', origin: 'ia', visuals: 1 });
+    expect(JSON.parse(ev[0]!.data)).toEqual({ post: r.value.id, event: 'visite', origin: 'ia', visuals: 2 });
   });
 
   it('[R46] [R47] un texte de l’IA qui situe le bien, invente un nombre, ou une IA en panne ou lente : texte de secours', async () => {
@@ -220,7 +226,11 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     await t.db.run("UPDATE properties SET status = 'under_offer' WHERE id = ?", [t.p.id]);
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R10', code: 'evenement_sans_fondement' });
     await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [t.p.id]);
-    t.state.certified = t.state.certified.slice(0, 1);
+    // [R493] La déclaration de la jumelle n'est plus là : l'image aménagée ne part plus, même certifiée.
+    const before = t.state.certified;
+    t.state.certified = before.map(({ twin: _twin, ...c }) => c);
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R493', code: 'amenagement_sans_jumelle' });
+    t.state.certified = before.slice(0, 1);
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R130', code: 'visuel_sans_certificat' });
     expect(t.received).toEqual([]);
   });
