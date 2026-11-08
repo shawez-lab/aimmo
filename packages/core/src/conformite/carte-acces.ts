@@ -242,6 +242,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  report: { excluded: 'sans_client', why: 'Un rapport sur mesure enregistré (HX62) : des mesures et un regroupement, sans donnée d\'un client.' },
   new_program: { excluded: 'sans_client', why: 'Un programme neuf d\'un promoteur partenaire (HX48) : sa création et les versions de ses lots, sans donnée d\'un client.' },
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),

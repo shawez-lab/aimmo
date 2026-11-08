@@ -475,7 +475,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       service_commitments: ['set_by'],
       pilotage_alerts: ['data'],
       // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
-      custom_reports: ['owner_id', 'name'],
+      custom_reports: ['owner_id', 'owner_role', 'name'],
       agent_exports: ['agent_id'],
     },
   },
@@ -1201,7 +1201,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_grids: ['id', 'network_id', 'version', 'valid_from', 'default_rate_bp', 'created_at'],
   commissions: ['file_id', 'network_id', 'mandate_id', 'compromis_on', 'grid_id', 'created_at'],
   commission_shares: ['file_id', 'seq', 'kind'],
-  custom_reports: ['id', 'network_id', 'owner_role', 'definition', 'created_at'],
+  custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
   commission_steps: ['file_id', 'status', 'at'],
   invoice_drafts: ['id', 'network_id', 'file_id', 'kind', 'vat_bp', 'round', 'created_at'],
