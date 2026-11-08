@@ -481,8 +481,14 @@ Réservé le 2026-11-08 par la voie 2. Règles R530 à R539 et migrations à par
 
 ## Facturation
 
+Voie : 1
+
+Réservé le 2026-11-08 par la voie 1. Règles R550 à R559 et migrations à partir de `2800` réservées à ce groupe. Le code vit dans `packages/core/src/facturation/` (fichiers neufs).
+
 ### HX49 · Factures fournisseurs et rapprochement bancaire
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
+- Partie du cahier : M13 (pilotage et finances).
 - Objectif : comme Ma Boîte Immo : factures fournisseurs lues par l'IA, rapprochement bancaire automatique, relance des impayés. Jamais vu : chaque encaissement est relié à sa facture et à la ligne de banque qui le prouve, et une facture d'honoraires non payée à son échéance prépare une relance validée par la direction.
 - Critères : un encaissement n'est rapproché qu'à une seule facture (test) ; un montant lu sur une facture fournisseur est vérifié contre son total et sa TVA (test) ; aucune relance sans validation (test).
 
