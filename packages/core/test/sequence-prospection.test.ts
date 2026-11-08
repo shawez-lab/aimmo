@@ -512,6 +512,26 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(today.ok && today.value.steps).toMatchObject([{ action: 'letter', proposed: true }]);
   });
 
+  it('[R301] deux passages croisés : une séquence arrêtée par l’un pendant que l’autre attendait la liste ne part plus', async () => {
+    const slow = new FakeOpposition();
+    const t = await setup({ opposition: slow });
+    const id = await t.startOk(FULL.slice(0, 1));
+    let release: (v: 'unavailable') => void = () => {};
+    let n = 0;
+    slow.check = async () => {
+      n += 1;
+      if (n === 1) return new Promise((r) => (release = r));
+      return 'listed';
+    };
+    const first = t.sequences.run();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(await t.sequences.run()).toMatchObject({ stopped: 1 });
+    release('unavailable');
+    await first;
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'opposition_list' });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);

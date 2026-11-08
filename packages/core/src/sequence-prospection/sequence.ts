@@ -285,15 +285,22 @@ export class SequencesProspection {
     await appendEvent(this.journal, { type: reason === 'done' ? 'sequence.finie' : 'sequence.arretee', actor, subject: `prospecting_sequence:${seq.id}`, data: { rule, reason } }, this.now);
   }
 
+  /** L'état rangé : un autre passage a pu arrêter ou finir la séquence pendant que celui-ci attendait [R301]. */
+  private async stillActive(seq: SequenceRow): Promise<boolean> {
+    const row = await this.db.first<{ status: SequenceRow['status'] }>('SELECT status FROM prospecting_sequences WHERE id = ?', [seq.id]);
+    if (row) seq.status = row.status;
+    return seq.status === 'active';
+  }
+
   /** Relit la séquence et l'arrête si elle doit l'être. Rend vrai si elle est encore en cours. */
   private async refresh(seq: SequenceRow, actor: string): Promise<boolean> {
-    if (seq.status !== 'active') return false;
+    if (!(await this.stillActive(seq))) return false;
     const stop = await this.stopReason(seq, this.now());
     if (stop) {
       await this.end(seq, stop.reason, stop.rule, actor);
       return false;
     }
-    return true;
+    return this.stillActive(seq);
   }
 
   /** L'étape à faire : la première sans issue, si son jour est venu. */
@@ -447,6 +454,7 @@ export class SequencesProspection {
           stillAllowed: async () => {
             // Sans service extérieur ici : il a été interrogé juste avant le contrôle, dont la décision (heures,
             // agent, exclusions) vient après lui ; ce dernier regard ne lit que la base, sans attente.
+            if (!(await this.stillActive(seq))) return { allowed: false, rule: 'R301', reason: 'sequence_arretee' };
             const stop = await this.stopReason(seq, this.now(), { list: false });
             return stop ? { allowed: false, rule: stop.rule, reason: `sequence_${stop.reason}` } : { allowed: true, rule: 'R301', reason: 'en cours' };
           },
