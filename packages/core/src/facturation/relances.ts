@@ -161,7 +161,7 @@ export class RelancesImpayes {
         [this.newId(), networkId, inv.id, rank, inv.person_id, text, refused ? 'refusee' : 'a_valider', refused ? 'R62' : null, at, at],
       );
       if (changes !== 1) continue;
-      await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${inv.file_id}`, data: { rule: refused ? 'R62' : 'R553', invoice: inv.id, rank, status: refused ? 'refusee' : 'a_valider' } }, this.now);
+      await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${inv.file_id}`, data: { rule: refused ? 'R62' : 'R553', client: `person:${inv.person_id}`, invoice: inv.id, rank, status: refused ? 'refusee' : 'a_valider' } }, this.now);
       if (!refused) made += 1;
     }
     return made;
@@ -184,7 +184,7 @@ export class RelancesImpayes {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'invoice_reminder');
     if (refusal) return refusal;
     await this.closeSettled(viewer.networkId);
-    const row = await this.db.first<{ network_id: string; invoice_id: string }>('SELECT network_id, invoice_id FROM invoice_reminders WHERE id = ?', [reminderId]);
+    const row = await this.db.first<{ network_id: string; invoice_id: string; person_id: string }>('SELECT network_id, invoice_id, person_id FROM invoice_reminders WHERE id = ?', [reminderId]);
     if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
@@ -193,7 +193,7 @@ export class RelancesImpayes {
     );
     if (changes !== 1) return { ok: false, rule: 'R553', code: 'not_pending' };
     const file = await this.db.first<{ file_id: string }>('SELECT file_id FROM invoices WHERE id = ?', [row.invoice_id]);
-    await appendEvent(this.journal, { type: 'facture.relance', actor: actorOf(viewer), subject: `sale_file:${file?.file_id ?? ''}`, data: { rule: 'R553', invoice: row.invoice_id, status: 'validee' } }, this.now);
+    await appendEvent(this.journal, { type: 'facture.relance', actor: actorOf(viewer), subject: `sale_file:${file?.file_id ?? ''}`, data: { rule: 'R553', client: `person:${row.person_id}`, invoice: row.invoice_id, status: 'validee' } }, this.now);
     return { ok: true };
   }
 
@@ -231,7 +231,7 @@ export class RelancesImpayes {
         "UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE id = ? AND status = 'validee'",
         [status, rule, result.messageId, this.now().toISOString(), r.id],
       );
-      await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${r.file_id}`, data: { rule: rule ?? 'R553', invoice: r.invoice_id, rank: r.rank, status, mode: 'essai' } }, this.now);
+      await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${r.file_id}`, data: { rule: rule ?? 'R553', client: `person:${r.person_id}`, invoice: r.invoice_id, rank: r.rank, status, mode: 'essai' } }, this.now);
       if (status === 'envoyee') sent += 1;
     }
     return sent;

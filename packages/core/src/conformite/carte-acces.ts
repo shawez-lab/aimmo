@@ -222,6 +222,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.ecart': INTERNE('Rémunération de l\'agent.'),
   'commission.etape': INTERNE('Rémunération de l\'agent.'),
   'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
+  // HX49 : rapprochement d'une facture et d'une ligne de banque (des identifiants) ; relance d'une facture impayée, qui porte la fiche du client.
+  'banque.rapprochement': INTERNE('Rapprochement d\'une facture et d\'une ligne de banque du réseau : des identifiants, sans donnée d\'un client.'),
+  'facture.relance': 'client',
   'commission.reversement': INTERNE('Reversement à l\'agent.'),
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
   'acces.refuse': INTERNE('Accès refusé à un membre du réseau.'),
@@ -307,6 +310,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   point_semaine: ENVOI('point de la semaine'),
   relance_avis: ENVOI('relance d\'un avis de valeur'),
   relance_piece: ENVOI('relance d\'une pièce'),
+  relance_facture: ENVOI('relance d\'une facture d\'honoraires impayée'),
   rdv_confirmation: ENVOI('confirmation de rendez-vous'),
   tournee: ENVOI('tournée de visites'),
   agent: { excluded: 'agent', why: 'Un agent du réseau.' },
@@ -582,6 +586,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   invoice_facturx: { locate: [via('invoice_id', 'invoices')] },
   invoice_transmission_claims: { locate: [via('invoice_id', 'invoices')] },
   commission_receipts: out('agent', 'Encaissement des honoraires par le réseau.'),
+  // HX49 : les factures fournisseurs et le relevé de la banque du réseau ne portent aucune donnée d'un client (le
+  // libellé du relevé n'est pas gardé) ; le rapprochement suit la facture du client, la relance est à son destinataire.
+  supplier_invoice_reads: out('sans_client', 'Lecture d\'une facture d\'un fournisseur du réseau.'),
+  supplier_invoices: out('sans_client', 'Facture d\'un fournisseur du réseau.'),
+  bank_lines: out('non_rattachable', 'Ligne du relevé de banque du réseau : un jour, un montant, une empreinte, sans libellé.'),
+  bank_reconciliations: { locate: [via('invoice_id', 'invoices')] },
+  invoice_reminders: { locate: by('person_id') },
   commission_payouts: out('agent', 'Reversement à l\'agent.'),
   commission_payout_alerts: out('agent', 'Alerte de reversement à l\'agent.'),
   // pilotage
