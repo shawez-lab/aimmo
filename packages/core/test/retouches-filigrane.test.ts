@@ -148,7 +148,7 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     if (!r.ok) return;
     expect(r.value).toMatchObject({ localEdits: 'retouches_declarees', retouchMention: 'Photo retouchée', virtualStaging: false, mention: null, originalKept: true });
     expect(r.value.retouches).toEqual([
-      { kind: 'ciel', label: 'Ciel remplacé', detail: 'Ciel remplacé : seul le ciel a changé, le reste de l’image est tel qu’il a été pris' },
+      { kind: 'ciel', label: 'Ciel remplacé', detail: 'Ciel remplacé par un autre ciel' },
       { kind: 'reflets', label: 'Reflets atténués', detail: 'Reflets atténués sur les vitres ou les miroirs' },
       { kind: 'objet_retire', label: 'Objet retiré', detail: 'Objet retiré : une poubelle mobile, qui ne fait pas partie du bien' },
     ]);

@@ -134,7 +134,7 @@ export function checkLocalEdits(input: unknown): LocalEditsCheck {
 export function describeLocalEdit(e: LocalEdit): string {
   switch (e.kind) {
     case 'ciel':
-      return 'Ciel remplacé : seul le ciel a changé, le reste de l’image est tel qu’il a été pris';
+      return 'Ciel remplacé par un autre ciel';
     case 'reflets':
       return 'Reflets atténués sur les vitres ou les miroirs';
     case 'objet_retire':

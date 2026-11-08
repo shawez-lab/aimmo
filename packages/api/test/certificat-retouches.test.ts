@@ -9,7 +9,7 @@ const cert = {
   originalKept: true as const,
   localEdits: 'retouches_declarees' as const,
   retouches: [
-    { kind: 'ciel' as const, label: 'Ciel remplacé', detail: 'Ciel remplacé : seul le ciel a changé, le reste de l’image est tel qu’il a été pris' },
+    { kind: 'ciel' as const, label: 'Ciel remplacé', detail: 'Ciel remplacé par un autre ciel' },
     { kind: 'objet_retire' as const, label: 'Objet retiré', detail: 'Objet retiré : du linge, qui ne fait pas partie du bien' },
   ],
   retouchMention: 'Photo retouchée' as const,
@@ -23,7 +23,7 @@ const cert = {
 it('[R490] la page du certificat dit chaque retouche locale et la mention, jamais « aucune retouche »', () => {
   const html = renderCertificatePage(cert);
   expect(html).toContain('Retouches à un endroit précis');
-  expect(html).toContain('Ciel remplacé : seul le ciel a changé');
+  expect(html).toContain('Ciel remplacé par un autre ciel');
   expect(html).toContain('Objet retiré : du linge');
   expect(html).toContain('« Photo retouchée »');
   expect(html).not.toContain('Aucune retouche à un endroit précis');
