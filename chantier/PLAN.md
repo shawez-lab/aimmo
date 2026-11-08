@@ -383,7 +383,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : mention « aménagement virtuel » sur l'image (test) ; l'original est toujours publié à côté (test) ; une image transformée ne peut pas être la seule photo d'une pièce (test).
 
 ### HX50 · Les annonces publient l'image aménagée avec sa jumelle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (touche `annonces/medias.ts` et le jeu de test commun `annonces-jeu.ts`), relecture normale
 - Dépendances : HX41
 - Partie du cahier : M19, M07 (photos et vidéos).
