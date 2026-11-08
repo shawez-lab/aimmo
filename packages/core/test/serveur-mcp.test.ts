@@ -254,6 +254,12 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand', 'x', '2027-01-01T00:00:00.000Z')", [t.alex.id, t.network.id]);
     await t.db.run('PRAGMA foreign_keys = ON');
     expect(await t.brouillons.listOwn(t.viewer)).toEqual({ ok: true, value: [] });
+    // Refuser ce brouillon reste possible, mais son contenu ne revient pas.
+    const pending = (await t.drafts()).find((r) => r.kind === 'note')!;
+    const refused = await t.brouillons.decide(t.viewer, pending.id, 'refuse');
+    expect(refused).toMatchObject({ ok: true, value: { status: 'refuse' } });
+    expect(JSON.stringify(refused)).not.toContain('matin');
+    expect(Object.keys((refused as { value: object }).value).sort()).toEqual(['decidedAt', 'id', 'kind', 'status', 'subject']);
     expect(JSON.stringify((await t.call(t.agent, 'mes_brouillons')).structuredContent)).toBe('{"brouillons":[]}');
 
     // Texte vide, trop long ou avec caractère de contrôle ; prix hors bornes : rien n'est rangé.

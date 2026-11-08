@@ -32,6 +32,15 @@ export interface Draft {
   decidedAt: string | null;
 }
 
+/** Une décision rendue : jamais le contenu du brouillon, que l'agent ne peut plus forcément lire [R16, R82]. */
+export interface DraftDecision {
+  id: string;
+  kind: DraftKind;
+  subject: string;
+  status: 'valide' | 'refuse';
+  decidedAt: string;
+}
+
 export type DraftRefusal = { ok: false; rule: 'R16' | 'R591'; code: string };
 export type DraftResult<T> = { ok: true; value: T } | DraftRefusal;
 
@@ -129,9 +138,10 @@ export class Brouillons {
 
   /**
    * L'agent valide ou refuse son brouillon, depuis l'application. Ses droits sont revérifiés sur le sujet à cet
-   * instant : la décision n'est prise que s'il le suit encore [R16, R591]. Une décision ne change plus.
+   * instant : une validation n'est prise que s'il le suit encore [R16, R591]. Un refus reste possible pour vider sa
+   * liste, mais aucune décision ne rend le contenu du brouillon. Une décision ne change plus.
    */
-  async decide(viewer: Viewer, draftId: unknown, decision: unknown): Promise<DraftResult<Draft>> {
+  async decide(viewer: Viewer, draftId: unknown, decision: unknown): Promise<DraftResult<DraftDecision>> {
     if (viewer.role !== 'agent') return this.refused(viewer, 'R16', 'role', null);
     if (typeof draftId !== 'string' || !ID.test(draftId)) return this.refused(viewer, 'R591', 'bad_input', null);
     if (decision !== 'valide' && decision !== 'refuse') return this.refused(viewer, 'R591', 'bad_input', `mcp_draft:${draftId}`);
@@ -153,7 +163,7 @@ export class Brouillons {
     );
     // Une autre décision est passée entre la lecture et l'écriture : la première l'emporte.
     if (done.changes !== 1) return this.refused(viewer, 'R591', 'already_decided', subject);
-    return { ok: true, value: toDraft({ ...row, status: decision, decided_at: at }) };
+    return { ok: true, value: { id: row.id, kind: row.kind, subject: row.subject, status: decision, decidedAt: at } };
   }
 
   private async stillHolds(viewer: Viewer, row: DraftRow): Promise<boolean> {
