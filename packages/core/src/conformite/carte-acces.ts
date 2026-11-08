@@ -887,6 +887,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
   social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
   social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
+  social_calendar_rules: out('agent', 'Réglages du calendrier de publication d\'un agent (HX52) : nombres par réseau et heures, aucune personne.'),
+  social_calendar_slots: out('sans_client', 'Créneaux du calendrier de publication (HX52) : un bien, une publication, un réseau, une heure ; aucune personne.'),
+  social_calendar_runs: out('sans_client', 'Passages des créneaux du calendrier (HX52) : aucune personne.'),
+  social_calendar_outcomes: out('sans_client', 'Issues des passages du calendrier (HX52) : aucune personne.'),
   // L'option demandée suit la mise en relation, donc le projet et son client.
   studio_option_requests: { locate: [via('referral_id', 'partner_referrals')] },
   // M17 · Investir.
