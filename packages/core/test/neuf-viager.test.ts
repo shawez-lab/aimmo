@@ -130,6 +130,7 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
       db,
       journal,
       acces,
+      store,
       network,
       alex,
       agent,
@@ -223,6 +224,28 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     expect(await t.viager.read(t.acces, t.other, r.value.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.viager.proposeExpert(t.acces, t.other, r.value.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(t.calls).toHaveLength(1);
+  });
+
+  it('[R532] le calcul d’un autre sur un bien vu en partage ne se lit pas, et un agent parti ne calcule ni ne lit plus', async () => {
+    const t = await setup();
+    await t.table();
+    const own = await t.viager.compute(t.acces, t.other, { inputs: t.typed });
+    if (!own.ok) throw new Error(own.code);
+    expect((await t.viager.read(t.acces, t.other, own.value.id)).ok).toBe(true);
+    // Le calcul d'un autre, rattaché à rien : refusé.
+    expect(await t.viager.read(t.acces, t.agent, own.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    // Rattaché à un bien du fichier commun (vu en partage) : seul celui qui voit le bien en entier, ou son auteur, le lit.
+    const prop = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'REF-V-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000, status: 'available' });
+    const onProp = await t.viager.compute(t.acces, t.agent, { propertyId: prop.id, inputs: t.typed });
+    if (!onProp.ok) throw new Error(onProp.code);
+    expect((await t.viager.read(t.acces, t.agent, onProp.value.id)).ok).toBe(true);
+    const shared = await t.acces.readProperty(t.other, prop.id);
+    expect(shared).toMatchObject({ ok: true, view: 'shared' });
+    expect(await t.viager.read(t.acces, t.other, onProp.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    // Un agent parti : plus de calcul ni de lecture, même rattachés à rien.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.viager.compute(t.acces, t.agent, { inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await t.viager.read(t.acces, t.agent, onProp.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
   });
 
   async function program(t: Awaited<ReturnType<typeof setup>>) {

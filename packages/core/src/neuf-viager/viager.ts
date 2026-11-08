@@ -21,6 +21,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -282,6 +283,19 @@ export class Viager {
   }
 
   /**
+   * Un agent existe dans le réseau et est en activité, même pour un calcul rattaché à rien : son départ coupe tout
+   * accès, comme le contrôle central [R86, R16].
+   */
+  private async activeOrRefuse(viewer: Viewer): Promise<ViagerRefusal | null> {
+    if (viewer.role === 'direction') return null;
+    if (viewer.role !== 'agent') return this.refuse(viewer, 'R16', 'role');
+    const agent = await this.db.first<{ status: string; network_id: string }>('SELECT status, network_id FROM agents WHERE id = ?', [viewer.userId]);
+    if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return this.refuse(viewer, 'R16', 'agent_inactive');
+    if ((await agentState(this.db, viewer.networkId, viewer.userId, this.now())) === 'parti') return this.refuse(viewer, 'R16', 'agent_inactive');
+    return null;
+  }
+
+  /**
    * La direction importe une table d'espérance de vie, avec sa source et son millésime, pour l'ensemble des deux
    * sexes : une ligne par âge, sans colonne de sexe. Elle ne change plus [R531].
    */
@@ -352,7 +366,8 @@ export class Viager {
    * complet ou incomplet ; un bouquet plus grand que la valeur occupée est refusé [R532].
    */
   async compute(acces: Acces, viewer: Viewer, input: { propertyId?: unknown; projectId?: unknown; inputs: unknown }): Promise<ViagerOutcome<StoredViager>> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
+    const inactive = await this.activeOrRefuse(viewer);
+    if (inactive) return inactive;
     const actor = `${String(viewer.role)}:${viewer.userId}`;
     const propertyId = input.propertyId ?? null;
     const projectId = input.projectId ?? null;
@@ -406,7 +421,8 @@ export class Viager {
 
   /** Un calcul rangé, relu sous les mêmes droits que son rangement [R16]. */
   async read(acces: Acces, viewer: Viewer, id: unknown): Promise<ViagerOutcome<StoredViager>> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
+    const inactive = await this.activeOrRefuse(viewer);
+    if (inactive) return inactive;
     if (typeof id !== 'string') return this.refuse(viewer, 'R16', 'unknown');
     const row = await this.db.first<ViagerRow>('SELECT * FROM viager_calculations WHERE id = ? AND network_id = ?', [id, viewer.networkId]);
     if (!row) return this.refuse(viewer, 'R16', 'unknown');
@@ -418,13 +434,15 @@ export class Viager {
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
       if (read.view !== 'full') return this.refuse(viewer, 'R16', 'not_assigned');
     }
+    const own = viewer.role === 'direction' || calc.createdBy === `${String(viewer.role)}:${viewer.userId}`;
     if (calc.propertyId !== null) {
       const read = await acces.readProperty(viewer, calc.propertyId);
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      // Un bien du fichier commun se voit en partage, sans donnée du vendeur : le calcul d'un autre (âges, valeur,
+      // bouquet) ne se lit que par qui voit le bien en entier [R16].
+      if (read.view !== 'full' && !own) return this.refuse(viewer, 'R16', 'not_assigned');
     }
-    if (calc.projectId === null && calc.propertyId === null && viewer.role !== 'direction' && calc.createdBy !== `${String(viewer.role)}:${viewer.userId}`) {
-      return this.refuse(viewer, 'R16', 'not_assigned');
-    }
+    if (calc.projectId === null && calc.propertyId === null && !own) return this.refuse(viewer, 'R16', 'not_assigned');
     return { ok: true, value: calc };
   }
 
