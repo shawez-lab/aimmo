@@ -503,6 +503,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R560 à R569 et migrations à par
 
 ### HX62 · Rapports sur mesure et export complet
 - Statut : en cours (voie 2)
+- Reste : proposition #434 prête, non fusionnée (fusion refusée par la permission de la séance du 2026-11-08 18:00 ; la prochaine séance la fusionne). Décidé, lecture prudente : module `packages/core/src/rapports/`, migration `2900`, R560 et R561. Rapports : catalogue fermé (contacts attribués, rendez-vous tenus, mandats signés, ventes conclues ; total ou mois de Paris), un an au plus, pour un seul agent ou le total du réseau (direction seule), jamais deux agents côte à côte (code et base) ; chaque chiffre = ses lignes (identifiant et date) ; un rapport enregistré ne change plus et ne se lit que par son auteur. Export (Jamais vu) : l'agent actif seul ; sa fiche, les fiches qu'il suit, attributions, rendez-vous, mandats, biens, ventes, ses parts de commission, ses rapports ; clients par identifiant seul ; aucun identifiant d'un autre agent (parrain, attribution remplacée) ; empreinte SHA-256 de l'écriture canonique rangée dans `agent_exports`, jamais le contenu ; `verify` échoue au moindre octet changé. Relecture forte : 2 P1 et 1 point corrigés ; Codex : 1 P0 (fiches reprises sans attribution) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte sur la fusion avec main (4976 tests). Restent (voie 1) : routes, écran, téléchargement de l'export, branchement au Worker.
 - Qui : Claude, voie 2, relecture forte
 - Partie du cahier : M13 (pilotage et finances).
 - Objectif : comme Immofacile et Modelo : rapports personnalisables et export intégral des données. Jamais vu : chaque agent emporte à tout moment l'export complet de ses propres données, avec son empreinte, et chaque chiffre d'un rapport s'ouvre sur ses lignes comme en K04.
@@ -4215,7 +4216,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : H51.
 
 ### SV15 · Les notifications aux agents passent par le contrôle central
-- Statut : en cours
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#435, 9b306ebb), migration `1775`, R225 en service. Décidé, lecture prudente : le service de notification est `AgentPushService.pushToDevices`, appelé par `ControleEnvois.sendToAgent` seul ; `Notifications` ne prend que cette porte (`Pick<ControleEnvois, 'sendToAgent'>`), l'ancienne boîte d'essai de HX27 est retirée ; envoi réservé par son `pushId` (`agent_push_sends`), décisions dans `agent_push_log` ; seule `AgentPushTrialBox` elle-même est admise, jamais une classe qui en hérite ; un refus R26 ou R415 rend `echec` (les notifications restent à envoyer), un agent parti rend `aucun_appareil`. Relecture forte 2 P1 corrigés ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (4977 tests). Reste : construire `ControleEnvois` avec `AgentPushTrialBox` au branchement de HX27 dans `app.ts` ; vrai service avec H57.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX27
 - Cahier : Architecture technique (contrôle central des envois) ; demande de HX27.
 - Trouvé par HX27 (voie 2, qui ne touche pas au socle) : `Notifications` n'envoie que par `AgentPushGate.sendToAgent`.
