@@ -83,8 +83,6 @@ export class ControleDossiers {
 
   /** La pièce et son logement, sous les droits d'écriture de l'agent du logement [R16]. */
   private async piece(viewer: Viewer, pieceId: unknown): Promise<CheckRefusal | PieceRow> {
-    const refused = await this.agentOnly(viewer, `piece:${String(pieceId).slice(0, 100)}`);
-    if (refused) return refused;
     const row =
       typeof pieceId === 'string' && pieceId.length <= 100
         ? await this.db.first<PieceRow>(
@@ -94,6 +92,9 @@ export class ControleDossiers {
             [pieceId, viewer.networkId],
           )
         : null;
+    // Le refus d'un autre rôle est écrit sous la candidature de la pièce, comme toute lecture d'elle.
+    const refused = await this.agentOnly(viewer, `rental_application:${row?.application_id ?? 'inconnue'}`);
+    if (refused) return refused;
     const listing = await this.listings.listing(viewer, row?.listing_id ?? `piece:${String(pieceId).slice(0, 100)}`, true);
     if ('ok' in listing) return listing;
     return row!;
