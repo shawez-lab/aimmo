@@ -13,6 +13,7 @@ import {
   fromSyncSqlite,
   renderMarketSection,
   type MarketSection,
+  type PublicFacts,
   type RangeResult,
   type Sale,
   type Viewer,
@@ -82,7 +83,18 @@ async function setup(rent: MarketRent = RENT) {
     if (!r.ok) throw new Error(r.reason);
     return r;
   };
-  const draft = async () => avis.draft({ networkId: net.id, propertyId: property.id, kind: 'house', surface: 90, range: await range() });
+  const off = { ok: false as const, source: 'test', collectedAt: '2026-11-02T09:00:00.000Z', reason: 'panne' as const };
+  const facts = (inseeCode: string | null): PublicFacts => ({
+    address: inseeCode
+      ? { ok: true, value: { label: 'Talant', lat: 47.33, lon: 4.99, postalCode: '21240', inseeCode, town: 'Talant', banId: null, score: 0.9 }, source: 'test', collectedAt: '2026-11-02T09:00:00.000Z' }
+      : off,
+    parcel: off,
+    energy: off,
+    risks: off,
+    missing: ['parcel', 'energy', 'risks'],
+  });
+  const draft = async (over: { kind?: 'apartment' | 'house'; inseeCode?: string | null } = {}) =>
+    avis.draft({ networkId: net.id, propertyId: property.id, kind: over.kind ?? 'house', surface: 90, range: await range(), facts: facts(over.inseeCode === undefined ? '21617' : over.inseeCode) });
   let n = 0;
   const ad = (over: Partial<RawAd> = {}): RawAd => {
     n += 1;
@@ -102,7 +114,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     // Revue au même prix : aucune nouvelle relève, mais le jour vu en ligne avance.
     await t.pige.ingest(t.net.id, [{ ...first, priceEur: 285_000 }]);
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(got.value.competitors).toHaveLength(1);
     const c = got.value.competitors[0]!;
@@ -130,7 +142,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
       t.ad({ source: 'Site B', sourceRef: 'double-b', surfaceM2: 88, publishedAt: '2026-10-25T08:00:00.000Z' }),
     ]);
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(got.value.competitors).toHaveLength(1);
     expect(got.value.competitors[0]).toMatchObject({ source: 'Site A', sites: 2, surfaceM2: 88, publishedOn: '2026-10-20' });
@@ -144,7 +156,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     await t.pige.ingest(t.net.id, [open, later]);
     await t.pige.ingest(t.net.id, [{ ...later, source: 'Site B', sourceRef: 'autre', text: 'Pas d’agence merci' }]);
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(got.value.competitors.map((c) => c.surfaceM2)).toEqual([95]);
   });
@@ -152,7 +164,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
   it('[R304] le loyer possible dit sa source telle quelle, son millésime, sa date et sa fiabilité', async () => {
     const t = await setup();
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(t.asked).toEqual(['21617:house']);
     expect(got.value.rent).toMatchObject({ status: 'connu', monthlyEur: 950, lowEur: 810, highEur: 1100, citation: RENT.citation, vintage: 2025, asOf: '2026-10-20', reliability: 'peu_observations', observations: 18 });
@@ -162,10 +174,35 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(html).toContain("Fiabilité : peu d'observations (18 observations)");
   });
 
+  it('[R304] la sorte, la surface et la commune du relevé sont celles de l’avis, jamais un autre bien ; sans commune collectée, loyer « inconnu »', async () => {
+    const t = await setup();
+    await t.pige.ingest(t.net.id, [t.ad({ kind: 'house', surfaceM2: 90 }), t.ad({ kind: 'apartment', surfaceM2: 90 })]);
+    const flat = await t.draft({ kind: 'apartment', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), flat.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(t.asked).toEqual(['21617:apartment']);
+    expect(got.value).toMatchObject({ kind: 'apartment', surfaceM2: 90, market: { ads: 1 } });
+    const noTown = await t.draft({ inseeCode: null });
+    const blind = await t.marche.attach(t.as('agent', t.alex.id), noTown.id);
+    if (!blind.ok) throw new Error(blind.code);
+    expect(blind.value.rent).toEqual({ status: 'inconnu' });
+    expect(t.asked).toHaveLength(1);
+  });
+
+  it('[R303] deux annonces de même surface sur un même site sont deux biens', async () => {
+    const t = await setup();
+    await t.pige.ingest(t.net.id, [t.ad({ sourceRef: 'un', surfaceM2: 90, priceEur: 270_000 }), t.ad({ sourceRef: 'deux', surfaceM2: 90, priceEur: 290_000 }), t.ad({ source: 'Site B', sourceRef: 'b', surfaceM2: 90, priceEur: 270_000, publishedAt: new Date(START - 10 * DAY).toISOString() })]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.market.ads).toBe(2);
+    expect(got.value.competitors.map((c) => c.sites).sort()).toEqual([1, 2]);
+  });
+
   it('[R304] sans loyer connu, l’avis dit « inconnu », jamais un chiffre', async () => {
     const t = await setup({ status: 'inconnu', inseeCode: '21617', kind: 'house' });
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(got.value.rent).toEqual({ status: 'inconnu' });
     const html = renderMarketSection(got.value);
@@ -179,7 +216,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
       { ...t.ad({ sourceRef: 'ref-secret-x', text: 'Maison de Jean Vendeur, 12 rue des Lilas, appelez le 06 00 00 00 00' }), name: 'Jean Vendeur', address: '12 rue des Lilas', phone: '0600000000' } as RawAd,
     ]);
     const r = await t.draft();
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     for (const c of got.value.competitors) expect(Object.keys(c).sort()).toEqual([...COMPETITOR_FIELDS].sort());
     const ok = await t.avis.validate(t.as('agent', t.alex.id), r.id);
@@ -211,7 +248,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     await t.pige.ingest(t.net.id, [t.ad({ surfaceM2: 100, priceEur: 330_000 }), t.ad({ surfaceM2: 150, priceEur: 420_000 })]);
     const r = await t.draft();
     const sold = (JSON.parse(r.computed) as { medianPerM2: number }).medianPerM2;
-    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
     if (!got.ok) throw new Error(got.code);
     expect(got.value.market).toMatchObject({ ads: 2, medianAskedPerM2: Math.round((3300 + 2800) / 2), soldMedianPerM2: sold, gapPct: Math.round(((3050 - sold) / sold) * 100) });
     expect(got.value.competitors).toHaveLength(1);
@@ -221,17 +258,16 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
   it('[R306] seul l’agent actif qui suit le bien joint un relevé, et seulement à un brouillon ; la base refuse aussi', async () => {
     const t = await setup();
     const r = await t.draft();
-    expect(await t.marche.attach(t.as('agent', t.sam.id), r.id, { kind: 'house', inseeCode: '21617' })).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
-    expect(await t.marche.attach(t.as('direction', 'd1'), r.id, { kind: 'house', inseeCode: '21617' })).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
+    expect(await t.marche.attach(t.as('agent', t.sam.id), r.id)).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
+    expect(await t.marche.attach(t.as('direction', 'd1'), r.id)).toEqual({ ok: false, rule: 'R30', code: 'not_following_agent' });
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
-    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' })).toMatchObject({ ok: false, code: 'not_following_agent' });
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toMatchObject({ ok: false, code: 'not_following_agent' });
     await t.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [t.alex.id]);
-    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'studio', inseeCode: '21617' })).toEqual({ ok: false, rule: null, code: 'invalid' });
-    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: 'Talant' })).toEqual({ ok: false, rule: null, code: 'invalid' });
-    expect((await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' })).ok).toBe(true);
+    expect(await t.marche.attach(t.as('agent', t.alex.id), 42)).toEqual({ ok: false, rule: null, code: 'invalid' });
+    expect((await t.marche.attach(t.as('agent', t.alex.id), r.id)).ok).toBe(true);
     const ok = await t.avis.validate(t.as('agent', t.alex.id), r.id);
     if (!ok.ok) throw new Error(ok.code);
-    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' })).toEqual({ ok: false, rule: 'R306', code: 'already_validated' });
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toEqual({ ok: false, rule: 'R306', code: 'already_validated' });
     await expect(
       t.db.run("INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at) VALUES ('x', ?, ?, ?, '{}', '2026-11-02T00:00:00.000Z')", [t.net.id, r.id, t.alex.id]),
     ).rejects.toThrow(/avis validé/);
@@ -240,10 +276,10 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
   it('[R306] la page imprimée lit la dernière relève faite avant la validation ; rien ne change ni ne s’efface', async () => {
     const t = await setup();
     const r = await t.draft();
-    await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    await t.marche.attach(t.as('agent', t.alex.id), r.id);
     t.at(START + DAY);
     await t.pige.ingest(t.net.id, [t.ad({ surfaceM2: 90, priceEur: 260_000 })]);
-    await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    await t.marche.attach(t.as('agent', t.alex.id), r.id);
     expect((await t.marche.latest(r.id))?.competitors).toHaveLength(1);
     const ok = await t.avis.validate(t.as('agent', t.alex.id), r.id);
     if (!ok.ok) throw new Error(ok.code);
@@ -259,7 +295,7 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     const t = await setup();
     await t.pige.ingest(t.net.id, [t.ad()]);
     const r = await t.draft();
-    await t.marche.attach(t.as('agent', t.alex.id), r.id, { kind: 'house', inseeCode: '21617' });
+    await t.marche.attach(t.as('agent', t.alex.id), r.id);
     const rows = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'avis.marche'");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.data).not.toMatch(/Site A|280|Talant|21617|ANIL/);

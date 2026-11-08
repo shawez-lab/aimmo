@@ -168,20 +168,18 @@ export class MarcheAvis {
   }
 
   /**
-   * L'agent actif qui suit le bien joint le relevé du marché à son brouillon [R306]. La sorte et le code de commune
-   * sont ceux que l'écran de l'avis a déjà (E09) ; la commune, le code postal et la surface viennent du bien.
+   * L'agent actif qui suit le bien joint le relevé du marché à son brouillon [R306]. La sorte, la surface et le code de
+   * commune sont ceux de l'avis (E09) ; la commune et le code postal viennent du bien.
    */
-  async attach(viewer: Viewer, reportId: unknown, input: { kind: unknown; inseeCode: unknown }): Promise<{ ok: true; value: MarketSection } | MarketRefusal> {
-    if (typeof reportId !== 'string' || (input.kind !== 'apartment' && input.kind !== 'house') || typeof input.inseeCode !== 'string' || !INSEE.test(input.inseeCode)) {
-      return { ok: false, rule: null, code: 'invalid' };
-    }
+  async attach(viewer: Viewer, reportId: unknown): Promise<{ ok: true; value: MarketSection } | MarketRefusal> {
+    if (typeof reportId !== 'string') return { ok: false, rule: null, code: 'invalid' };
     const report = await this.db.first<{ id: string; network_id: string; property_id: string; status: string; computed: string }>(
       'SELECT id, network_id, property_id, status, computed FROM valuation_reports WHERE id = ?',
       [reportId],
     );
     if (!report || report.network_id !== viewer.networkId) return { ok: false, rule: 'R30', code: 'unknown' };
-    const property = await this.db.first<{ agent_id: string | null; city: string | null; postal_code: string | null; surface_m2: number | null }>(
-      'SELECT agent_id, city, postal_code, surface_m2 FROM properties WHERE id = ? AND network_id = ?',
+    const property = await this.db.first<{ agent_id: string | null; city: string | null; postal_code: string | null }>(
+      'SELECT agent_id, city, postal_code FROM properties WHERE id = ? AND network_id = ?',
       [report.property_id, report.network_id],
     );
     const agent = viewer.role === 'agent' ? await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]) : null;
@@ -190,15 +188,19 @@ export class MarcheAvis {
       return { ok: false, rule: 'R30', code: 'not_following_agent' };
     }
     if (report.status !== 'draft') return { ok: false, rule: 'R306', code: 'already_validated' };
-    if (property.surface_m2 === null || !(property.surface_m2 > 0)) return { ok: false, rule: null, code: 'no_surface' };
+    // La sorte, la surface et la commune sont celles du bien estimé, lues dans l'avis même, jamais données par l'écran :
+    // le relevé ne peut porter sur un autre bien [R303, R304, R10].
+    const computed = JSON.parse(report.computed) as { kind?: unknown; surface?: unknown; inseeCode?: unknown; medianPerM2?: unknown };
+    if (computed.kind !== 'apartment' && computed.kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
+    if (typeof computed.surface !== 'number' || !(computed.surface > 0)) return { ok: false, rule: null, code: 'no_surface' };
     if (!property.city || !property.postal_code) return { ok: false, rule: null, code: 'no_commune' };
-    const computed = JSON.parse(report.computed) as { medianPerM2?: unknown };
     const section = await this.compose(viewer.networkId, {
-      kind: input.kind,
-      inseeCode: input.inseeCode,
+      kind: computed.kind,
+      // Sans code de commune collecté, le loyer est « inconnu » [R304].
+      inseeCode: typeof computed.inseeCode === 'string' && INSEE.test(computed.inseeCode) ? computed.inseeCode : null,
       commune: property.city,
       postalCode: property.postal_code,
-      surfaceM2: property.surface_m2,
+      surfaceM2: computed.surface,
       soldMedianPerM2: typeof computed.medianPerM2 === 'number' ? computed.medianPerM2 : null,
     });
     const at = this.now().toISOString();
@@ -233,7 +235,7 @@ export class MarcheAvis {
   /** Le relevé lui-même, calculé par le code depuis la pige et les loyers de marché. */
   async compose(
     networkId: string,
-    q: { kind: 'apartment' | 'house'; inseeCode: string; commune: string; postalCode: string; surfaceM2: number; soldMedianPerM2: number | null },
+    q: { kind: 'apartment' | 'house'; inseeCode: string | null; commune: string; postalCode: string; surfaceM2: number; soldMedianPerM2: number | null },
   ): Promise<MarketSection> {
     const now = this.now();
     const takenOn = parisDay(now);
@@ -257,7 +259,8 @@ export class MarcheAvis {
   }
 
   /** Le loyer possible, rapporté à la surface, avec sa source et sa fiabilité ; « inconnu » sans donnée [R304]. */
-  private async rent(networkId: string, inseeCode: string, kind: 'apartment' | 'house', surface: number): Promise<RentPart> {
+  private async rent(networkId: string, inseeCode: string | null, kind: 'apartment' | 'house', surface: number): Promise<RentPart> {
+    if (inseeCode === null) return { status: 'inconnu' };
     const r = await this.rents.marketRent(networkId, inseeCode, kind);
     if (r.status !== 'connu' || !(r.rentM2Cents > 0) || !r.citation) return { status: 'inconnu' };
     const monthly = (cents: number) => Math.round((cents * surface) / 100 / 10) * 10;
@@ -305,13 +308,23 @@ export class MarcheAvis {
       if (closed.get(last.fingerprint)) continue;
       out.push({ rows: list, seenOn });
     }
-    // Le même bien sur plusieurs sites ne compte qu'une fois : l'annonce la plus ancienne le porte.
-    const byProperty = new Map<string, Followed[]>();
+    // Le même bien sur plusieurs sites ne compte qu'une fois : l'annonce la plus ancienne le porte. Deux annonces d'un
+    // même site sont deux biens, même de même empreinte : un groupe ne prend qu'une annonce par site, la n-ième de chaque.
+    const groups: Followed[][] = [];
+    const byProperty = new Map<string, Map<string, Followed[]>>();
     for (const f of out) {
       const fp = f.rows[f.rows.length - 1]!.fingerprint;
-      byProperty.set(fp, [...(byProperty.get(fp) ?? []), f]);
+      const sites = byProperty.get(fp) ?? new Map<string, Followed[]>();
+      byProperty.set(fp, sites);
+      const src = f.rows[0]!.source;
+      sites.set(src, [...(sites.get(src) ?? []), f]);
     }
-    return [...byProperty.values()].map((group) => {
+    for (const sites of byProperty.values()) {
+      const lists = [...sites.values()].map((l) => [...l].sort((a, b) => a.rows[0]!.published_at.localeCompare(b.rows[0]!.published_at) || a.rows[0]!.source_ref.localeCompare(b.rows[0]!.source_ref)));
+      const size = Math.max(...lists.map((l) => l.length));
+      for (let i = 0; i < size; i += 1) groups.push(lists.flatMap((l) => (l[i] ? [l[i]!] : [])));
+    }
+    return groups.map((group) => {
       const sorted = [...group].sort((a, b) => a.rows[0]!.published_at.localeCompare(b.rows[0]!.published_at) || a.rows[0]!.source.localeCompare(b.rows[0]!.source));
       return Object.assign(sorted[0]!, { sites: new Set(group.map((g) => g.rows[0]!.source)).size });
     });

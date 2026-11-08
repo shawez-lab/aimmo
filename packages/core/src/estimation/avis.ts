@@ -222,6 +222,10 @@ export class AvisDeValeur {
       return { month: c.month, surface: c.surface, pricePerM2: c.pricePerM2, distance: Math.round(c.distance / 10) * 10, ...(d ? { street: d.street, town: d.town } : {}) };
     });
     const computed = {
+      // Le bien estimé, pour que tout ce qui s'ajoute à l'avis porte sur lui seul (HX32) : sorte, surface, commune.
+      kind: input.kind,
+      surface: input.surface,
+      inseeCode: input.facts?.address.ok ? input.facts.address.value.inseeCode : null,
       low: input.range.low,
       high: input.range.high,
       pricePerM2: input.range.pricePerM2,
