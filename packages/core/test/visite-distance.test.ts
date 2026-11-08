@@ -151,6 +151,13 @@ describe('HX44 · le dossier du bien, rendu par le code', () => {
     expect(dossierProblems(renderDossier(leaky), leaky, [{ names: ['Vendeur'], values: [] }])).toEqual(['vendeur']);
     // Un chiffre glissé dans la page sans venir de l'annonce : des honoraires de 11 250 €.
     expect(dossierProblems(html.replace('</main>', '<p>Honoraires 11 250 €</p></main>'), v, [])).toEqual(['chiffre:11250']);
+    // Un numéro de mandat court, même publié dans le texte, est trouvé entier : « 12 », « MAND-0012 ».
+    const short = publishedVersionOf({ ...row, payload: JSON.stringify({ ...JSON.parse(row.payload), body: `${BODY} Mandat 12 pour cette maison.` }) }, 'B1')!;
+    expect(dossierProblems(renderDossier(short), short, [{ names: [], values: [], exact: ['12'] }])).toEqual(['mandat:12']);
+    expect(dossierProblems(renderDossier(short), short, [{ names: [], values: [], exact: ['MAND-0012'] }])).toEqual(['mandat:12']);
+    // Un nombre qui en contient un autre ne le trahit pas : 120 n'est pas 12.
+    const other = publishedVersionOf({ ...row, payload: JSON.stringify({ ...JSON.parse(row.payload), body: `${BODY} Jardin de 120 m².` }) }, 'B1')!;
+    expect(dossierProblems(renderDossier(other), other, [{ names: [], values: [], exact: ['12'] }])).toEqual([]);
   });
 });
 
@@ -299,6 +306,20 @@ describeWithSqlite('HX44 · visite à distance et bon signé en ligne', () => {
     ]);
     await expect(t.offer(twin.id)).rejects.toThrow(/bon de la visite à distance non signé/);
     expect(await t.dist.bonDistanceManquant(t.network.id, t.property.id, twin.id)).toEqual({ missing: true, appointmentId: v.id });
+    // Une suite de six réunions, la fiche de tête comme la fiche du milieu : l'offre reste refusée.
+    let head = twin.id;
+    const chain = [twin.id];
+    for (let i = 0; i < 6; i++) {
+      const next = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durand' });
+      await t.db.run('INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        `pm-${i}`, t.network.id, t.alex.id, next.id, head, 'doublon', new Date(MONDAY_9H).toISOString(), new Date(MONDAY_9H).toISOString(),
+      ]);
+      head = next.id;
+      chain.push(next.id);
+    }
+    await expect(t.offer(head)).rejects.toThrow(/non signé/);
+    await expect(t.offer(chain[3]!)).rejects.toThrow(/non signé/);
+    expect(await t.dist.bonDistanceManquant(t.network.id, t.property.id, head)).toEqual({ missing: true, appointmentId: v.id });
   });
 
   it('[R504] le lien et le code partent juste après, par le contrôle central, chacun dans son message', async () => {

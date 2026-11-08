@@ -35,7 +35,8 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { DiffusionGate } from '../acquereurs/rapprochement.ts';
 import { euros } from '../annonces/mentions.ts';
-import { unsourcedFigures, visibleText } from '../boutique/supports.ts';
+import { figuresIn, unsourcedFigures, visibleText } from '../boutique/supports.ts';
+import { plain } from '../envoi/texte.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -153,9 +154,25 @@ export function dossierSources(v: PublishedVersion): string[] {
  * La relecture du dossier avant tout envoi : ce qu'il trahirait (noms, coordonnées, numéros de mandat, notes) et ses
  * chiffres sans source. Vide si le dossier peut partir [R502].
  */
-export function dossierProblems(html: string, v: PublishedVersion, secrets: readonly { names: readonly string[]; values: readonly string[] }[]): string[] {
+export function dossierProblems(html: string, v: PublishedVersion, secrets: readonly { names: readonly string[]; values: readonly string[]; exact?: readonly string[] }[]): string[] {
   const found = secrets.flatMap((s) => confidentialIn(html, s));
-  const figures = unsourcedFigures(visibleText(html.replace(/<style>[\s\S]*?<\/style>/g, ' ')), dossierSources(v));
+  const text = visibleText(html.replace(/<style>[\s\S]*?<\/style>/g, ' '));
+  // Un numéro de mandat se cherche entier, quelle que soit sa longueur (« 12 » comme « MAND-0012 »), dans ce que
+  // l'agent a écrit (titre et texte) : la relecture générale ne lit pas les valeurs courtes, et un numéro publié dans le
+  // texte serait pris pour un chiffre sourcé. Le prix, les mentions et la date sont écrits par le code.
+  const written = `${v.title}\n${v.body}`;
+  const words = plain(written);
+  for (const s of secrets) {
+    for (const raw of s.exact ?? []) {
+      const x = plain(raw).trim();
+      if (x === '') continue;
+      const esc = x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`(^|[^\\p{L}\\d])${esc}($|[^\\p{L}\\d])`, 'u').test(words)) found.push(`mandat:${x}`);
+      const digits = x.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+      if (digits !== '' && digits !== x && figuresIn(written).some((f) => f.replace(/^0+(?=\d)/, '') === digits)) found.push(`mandat:${digits}`);
+    }
+  }
+  const figures = unsourcedFigures(text, dossierSources(v));
   return [...new Set([...found, ...figures.map((f) => `chiffre:${f}`)])];
 }
 
@@ -285,7 +302,7 @@ export class VisiteDistance {
   }
 
   /** Les noms des mandants du bien, fiches réunies comprises : interdits dans tout message [R19]. */
-  private async sellerSecrets(networkId: string, propertyId: string): Promise<{ names: string[]; values: string[] }> {
+  private async sellerSecrets(networkId: string, propertyId: string): Promise<{ names: string[]; values: string[]; exact: string[] }> {
     const owners = await this.db.all<{ person_id: string }>(
       `SELECT person_id FROM mandates WHERE network_id = ? AND property_id = ?
        UNION SELECT pp.person_id FROM project_properties x JOIN projects pp ON pp.id = x.project_id WHERE x.network_id = ? AND x.property_id = ? AND x.role = 'owned'`,
@@ -305,8 +322,12 @@ export class VisiteDistance {
       [networkId, propertyId, networkId, propertyId],
     );
     for (const n of notes) if (typeof n.note === 'string' && n.note.trim() !== '') values.push(n.note);
-    for (const r of await this.db.all<{ number: string }>('SELECT number FROM mandate_register WHERE network_id = ? AND property_id = ?', [networkId, propertyId])) values.push(r.number);
-    return { names, values };
+    const exact: string[] = [];
+    for (const r of await this.db.all<{ number: string }>('SELECT number FROM mandate_register WHERE network_id = ? AND property_id = ?', [networkId, propertyId])) {
+      values.push(r.number);
+      exact.push(r.number);
+    }
+    return { names, values, exact };
   }
 
   /** Les notes de l'agent sur la visite et sur le projet du visiteur : jamais dans le dossier [R502]. */
