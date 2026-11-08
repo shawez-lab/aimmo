@@ -365,6 +365,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   send_reservations: { locate: by('person_id') },
   inbound_messages: { locate: by('person_id') },
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
+  virtual_tour_contacts: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
@@ -828,6 +829,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_likeness_consents: out('agent', 'Accord écrit de l\'agent pour sa voix ou son avatar de synthèse.'),
   agent_likeness_revocations: out('agent', 'Retrait par l\'agent de son accord pour sa voix ou son avatar.'),
   generated_videos: out('sans_client', 'Description d\'une vidéo générée depuis les photos d\'un bien : aucune personne.'),
+  virtual_tours: out('sans_client', 'Vues d\'une visite à 360 degrés d\'un bien, reliées aux pièces du plan : aucune personne.'),
   video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
   licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),
   licensed_asset_withdrawals: out('sans_client', 'Retraits d\'entrées de la bibliothèque sous licence : aucune personne.'),
