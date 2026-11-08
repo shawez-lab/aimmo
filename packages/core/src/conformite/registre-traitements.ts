@@ -214,7 +214,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX45 : le projet du notaire et l'attestation du dépôt nomment les parties ; la note et les différences n'en portent rien.
       pre_contract_briefs: ['prepared_by'],
       notary_drafts: ['document_ref', 'recorded_by'],
-      pre_contract_deposits: ['proof_ref', 'recorded_by'],
+      notary_draft_differences: ['draft_id'],
+      pre_contract_deposits: ['amount_eur', 'received_by', 'proof_ref', 'recorded_by'],
       // HX37 : le circuit de signature range un document et des annexes du dossier, ses signataires, leurs lectures, signatures et rappels.
       signature_circuits: ['document_ref', 'prepared_by'],
       signature_circuit_annexes: ['ref'],
@@ -1027,8 +1028,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   registered_letter_events: ['letter_id', 'network_id', 'file_id', 'seq', 'kind', 'occurred_at', 'day', 'trial', 'rule', 'recorded_at'],
   pre_contract_briefs: ['id', 'network_id', 'file_id', 'version', 'terms', 'hash', 'prepared_at'],
   notary_drafts: ['id', 'network_id', 'file_id', 'version', 'terms', 'brief_id', 'recorded_at'],
-  notary_draft_differences: ['draft_id', 'network_id', 'file_id', 'seq', 'field', 'expected', 'found', 'page', 'blocking'],
-  pre_contract_deposits: ['file_id', 'network_id', 'version', 'amount_eur', 'received_by', 'received_on', 'recorded_at'],
+  notary_draft_differences: ['network_id', 'file_id', 'seq', 'field', 'expected', 'found', 'page', 'blocking'],
+  pre_contract_deposits: ['file_id', 'network_id', 'version', 'received_on', 'recorded_at'],
   signature_circuits: ['id', 'network_id', 'file_id', 'document_hash', 'envelope_hash', 'prepared_at'],
   signature_circuit_annexes: ['circuit_id', 'network_id', 'file_id', 'position', 'kind', 'hash'],
   signature_circuit_signers: ['circuit_id', 'network_id', 'file_id', 'role', 'grp'],
