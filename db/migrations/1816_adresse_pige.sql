@@ -56,10 +56,12 @@ CREATE TABLE IF NOT EXISTS pige_properties (
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS pige_properties_agent ON pige_properties (network_id, agent_id);
--- Un bien « pas d'agence » ou fermé par un non n'est jamais converti [R295, R273, R04].
+-- Un bien « pas d'agence » ou fermé par un non n'est jamais converti [R295, R273, R04]. L'empreinte est celle de
+-- l'annonce elle-même, jamais une autre donnée par l'appelant.
 CREATE TRIGGER IF NOT EXISTS pige_properties_ferme
 BEFORE INSERT ON pige_properties
-WHEN EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = NEW.network_id AND n.fingerprint = NEW.fingerprint)
+WHEN NOT EXISTS (SELECT 1 FROM pige_ads a WHERE a.id = NEW.ad_id AND a.network_id = NEW.network_id AND a.fingerprint = NEW.fingerprint)
+  OR EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = NEW.network_id AND n.fingerprint = NEW.fingerprint)
   OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = NEW.network_id AND o.fingerprint = NEW.fingerprint)
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé');

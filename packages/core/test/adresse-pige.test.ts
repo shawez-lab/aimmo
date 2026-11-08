@@ -160,6 +160,19 @@ async function setup(over: { search?: DiagnosisSearch | 'down'; cadastre?: Cadas
 }
 
 describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien créé sans ressaisie', () => {
+  it('[R294] [R295] une classe ou une date de diagnostic corrigée par l’annonce remplace l’ancienne ; rejouée telle quelle, rien n’est ajouté', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const first = s.ad();
+    await s.pige.ingest(s.network.id, [first]);
+    await s.pige.ingest(s.network.id, [first]);
+    expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_ads'))!.n).toBe(1);
+    await s.pige.ingest(s.network.id, [{ ...first, energyClass: 'D', diagnosedOn: '2026-10-01' }]);
+    expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_ads'))!.n).toBe(2);
+    const adId = await s.firstAd();
+    const r = await s.adresses.convert(s.agentAlex, { adId });
+    expect(r.ok && [r.value.energyClass, r.value.diagnosedOn]).toEqual(['D', '2026-10-01']);
+  });
+
   it('[R294] l’agent de la zone reçoit les adresses probables, avec confiance et sources ; rien du particulier n’est cherché', async () => {
     const s = await setup();
     await s.pige.ingest(s.network.id, [s.ad()]);
@@ -254,8 +267,15 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await expect(
       s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, fp, s.alex.id]),
     ).rejects.toThrow(/bien fermé/);
+    // Une empreinte libre qui n'est pas celle de l'annonce fermée : refusée aussi.
     const free = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 300 });
-    await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, free, s.alex.id]);
+    await expect(
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, free, s.alex.id]),
+    ).rejects.toThrow(/bien fermé/);
+    // Une annonce ouverte, rangée en base : une clé reliée mais fermée ne s'y attache pas.
+    await s.pige.ingest(s.network.id, [s.ad({ surfaceM2: 300, rooms: 9 })]);
+    const open = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE fingerprint = ?', [free]))!.id;
+    await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, open, free, s.alex.id]);
     const near = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 92 });
     await expect(s.db.run('INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', [s.network.id, near, prop.id])).rejects.toThrow(/bien fermé/);
   });

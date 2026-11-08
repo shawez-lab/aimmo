@@ -261,8 +261,16 @@ export class AdressePige {
     return null;
   }
 
+  /** Ce que dit du diagnostic la dernière relève de cette annonce sur son site : une correction remplace l'ancienne. */
   private async energyOf(adId: string): Promise<{ energy_class: PigeEnergyClass; diagnosed_on: string | null } | null> {
-    return this.db.first('SELECT energy_class, diagnosed_on FROM pige_ad_energy WHERE ad_id = ?', [adId]);
+    const r = await this.db.first<{ energy_class: PigeEnergyClass | null; diagnosed_on: string | null }>(
+      `SELECT e.energy_class, e.diagnosed_on FROM pige_ads a
+         JOIN pige_ads b ON b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref
+         LEFT JOIN pige_ad_energy e ON e.ad_id = b.id
+        WHERE a.id = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1`,
+      [adId],
+    );
+    return r && r.energy_class ? { energy_class: r.energy_class, diagnosed_on: r.diagnosed_on } : null;
   }
 
   /** Une annonce ouverte de la zone de cet agent, ou la raison du refus : « pas d'agence » et non ferment tout. */

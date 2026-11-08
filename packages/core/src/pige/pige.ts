@@ -422,10 +422,13 @@ export class Pige {
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
-              OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?)`,
+              OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
+              -- Une classe ou une date de diagnostic changée est aussi une nouvelle relève (HX18).
+              OR coalesce((SELECT e.energy_class || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '') <> ?)`,
         [
           adId, networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
           networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, `${ad.publishedAt}|${fingerprint}|${ad.rooms ?? ''}`,
+          networkId, ad.source, ad.sourceRef, ad.energyClass ? `${ad.energyClass}|${ad.diagnosedOn ?? ''}` : '',
         ],
       );
       added += r.changes;
