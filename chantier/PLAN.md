@@ -362,14 +362,16 @@ Voie : 2
 Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à partir de `2300` réservées à ce groupe. Le code vit dans `packages/core/src/medias/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
 
 ### HX40 · Retouches déclarées et filigrane
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#419), migration `2300`, R490 et R491. Décidé, lecture prudente : trois retouches locales en liste fermée (ciel remplacé, reflets atténués, objet mobile retiré, lui-même d'une liste fermée : jamais un défaut ni ce qui tient au bien ou à sa vue), déclarées à part des corrections d'ensemble et inscrites au certificat de X02 une par une ; mention « Photo retouchée » posée sur l'appareil et déclarée, sinon refusé ; le certificat et sa page publique les disent, la légende de HX39 aussi ; filigrane = calque SVG dessiné par le code, deux lignes (nom de l'agent du bien en activité ; « AIMMO · <code de contenu du bien> » de AT05), tenu entier dans l'image, sinon export refusé ; chaque export rangé (`photo_exports`) ; lien marqué de la page du bien pour les métadonnées quand elle est en ligne. Codex 1 P0 et 2 P2 corrigés, dernière version sans remarque. Restent : routes, écran d'export et assemblage du calque sur l'appareil (voie 1, `app.ts`).
 - Qui : Claude, relecture normale
 - Décidé (2026-11-06) par Shawez : retouches locales autorisées (ciel, reflets, objets retirés), chaque photo retouchée porte la mention « photo retouchée » ; X02 est assoupli en conséquence, avec test
 - Objectif : comme Hektor, HOQI et Apimo : remplacer le ciel, enlever les reflets, effacer un objet, poser un filigrane. Jamais vu : chaque retouche locale est inscrite au certificat de X02 et l'image porte la mention « aménagement virtuel » de R48 ; chaque photo exportée porte le filigrane de l'agent et l'identifiant de contenu de AT05, pour qu'une photo reprise par d'autres ramène à lui.
 - Critères : une retouche locale sans mention est refusée (test) ; le certificat liste chaque retouche (test) ; chaque photo exportée porte le filigrane (test).
 
 ### HX41 · Aménagement virtuel des pièces
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, relecture normale
 - Objectif : comme Hektor, Apimo, HOQI et Talqor : meubler une pièce vide, redécorer en plusieurs styles, rénover sols et murs, désencombrer, transformer un objet. Jamais vu : chaque image transformée est toujours publiée à côté de la photo réelle, jamais en couverture seule, et le certificat dit exactement ce qui a changé.
 - Critères : mention « aménagement virtuel » sur l'image (test) ; l'original est toujours publié à côté (test) ; une image transformée ne peut pas être la seule photo d'une pièce (test).
 
