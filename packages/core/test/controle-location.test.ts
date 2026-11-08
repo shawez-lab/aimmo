@@ -304,6 +304,10 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     expect(both.filter((f) => f.control === 'bulletin_net_paye' && f.month === '2027-05').map((f) => f.slip).sort()).toEqual([2, 5]);
     // Deux bulletins du même employeur le même mois : écart sur les mois.
     expect(outcome(await checkPayslips([slip('2027-04', 0), slip('2027-04', 0), slip('2027-05', 0), slip('2027-06', 0)], REGISTRY), 'bulletins_mois')).toBe('ecart');
+    // Deux bulletins le même mois sans SIRET lu : rien ne prouve un doublon.
+    const noSiret = { siret: undefined };
+    expect(outcome(await checkPayslips([slip('2027-04', 0, noSiret), slip('2027-04', 0, noSiret), slip('2027-05', 0, noSiret), slip('2027-05', 0, noSiret), slip('2027-06', 0, noSiret), slip('2027-06', 0, noSiret)], REGISTRY), 'bulletins_mois')).toBe('non_verifiable');
+    expect(outcome(await checkPayslips([slip('2027-04', 0, noSiret), slip('2027-05', 0, noSiret), slip('2027-06', 0, noSiret)], REGISTRY), 'bulletins_mois')).toBe('conforme');
     // Sans SIRET, le cumul ne se suit pas d'un bulletin à l'autre.
     expect(outcome(await checkPayslips([slip('2027-05', 1_500_000, { siret: undefined }), slip('2027-06', 1_800_000, { siret: undefined })], REGISTRY), 'bulletin_cumul', '2027-06')).toBe('non_verifiable');
     const two = await checkPayslips([slip('2027-04', 1_200_000), slip('2027-05', 1_500_000, { siret: OTHER_EMPLOYER }), slip('2027-06', 1_800_000, { siret: CLOSED_EMPLOYER })], REGISTRY);

@@ -234,9 +234,13 @@ export async function checkPayslips(slips: readonly PayslipRead[], registry: Com
   // Trois mois différents qui se suivent ; un candidat à deux employeurs a deux bulletins le même mois, jamais deux
   // bulletins du même employeur le même mois.
   const distinct = all ? [...new Set(months as string[])].sort() : [];
-  const pairs = new Set(slips.map((_, i) => `${sirets[i] ?? '?'}|${months[i]}`));
-  const consecutive = all && distinct.length === 3 && pairs.size === slips.length && nextMonth(distinct[0]!) === distinct[1] && nextMonth(distinct[1]!) === distinct[2];
-  findings.push({ control: 'bulletins_mois', outcome: !all || slips.length === 0 ? 'non_verifiable' : consecutive ? 'conforme' : 'ecart' });
+  // Un doublon n'est prouvé qu'entre deux SIRET lus et égaux ; deux bulletins du même mois dont un SIRET manque ne
+  // prouvent rien : non vérifiable.
+  const known = slips.map((_, i) => (sirets[i] ? `${sirets[i]}|${months[i]}` : null)).filter((k): k is string => k !== null);
+  const duplicate = new Set(known).size !== known.length;
+  const unsure = slips.some((_, i) => sirets[i] === null && months.filter((m) => m === months[i]).length > 1);
+  const span = all && distinct.length === 3 && nextMonth(distinct[0]!) === distinct[1] && nextMonth(distinct[1]!) === distinct[2];
+  findings.push({ control: 'bulletins_mois', outcome: !all || slips.length === 0 ? 'non_verifiable' : !span || duplicate ? 'ecart' : unsure ? 'non_verifiable' : 'conforme' });
   // Un bulletin au mois illisible garde ses contrôles sans date (net payé, prélèvement, SIRET) ; il est rangé après les
   // autres, et désigné par son rang.
   const ordered = slips
