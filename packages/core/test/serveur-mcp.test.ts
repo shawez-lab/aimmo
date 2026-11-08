@@ -246,13 +246,23 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, 'bien-alex']);
     expect(await t.brouillons.decide(t.viewer, row!.id, 'valide')).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect((await t.drafts())[0]!.status).toBe('a_valider');
+    // Le brouillon d'un bien qui n'est plus à l'agent ne se lit plus.
+    await t.call(t.agent, 'brouillon_note', { fiche: t.clientAlex.id, texte: 'Préfère le matin.' });
+    expect((await t.brouillons.listOwn(t.viewer)) as { ok: true; value: { kind: string }[] }).toMatchObject({ ok: true, value: [{ kind: 'note' }] });
+    // Un dossier d'agent devenu incomplet : la note sur la fiche du client ne se lit plus [R82].
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand', 'x', '2027-01-01T00:00:00.000Z')", [t.alex.id, t.network.id]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    expect(await t.brouillons.listOwn(t.viewer)).toEqual({ ok: true, value: [] });
+    expect(JSON.stringify((await t.call(t.agent, 'mes_brouillons')).structuredContent)).toBe('{"brouillons":[]}');
+
     // Texte vide, trop long ou avec caractère de contrôle ; prix hors bornes : rien n'est rangé.
     for (const texte of ['   ', 'x'.repeat(2001), 'a\u0000b']) {
       expect((await t.call(t.agent, 'brouillon_note', { fiche: t.clientAlex.id, texte })).structuredContent).toEqual({ refus: { regle: 'R591', code: 'bad_input' } });
     }
     expect((await t.call(t.agent, 'brouillon_prix', { bien: 'bien-alex-brouillon', prix_eur: 0 })).structuredContent).toEqual({ refus: { regle: 'R591', code: 'bad_input' } });
     expect((await t.call(t.agent, 'brouillon_prix', { bien: 'bien-alex-brouillon', prix_eur: 100_000_001 })).structuredContent).toEqual({ refus: { regle: 'R591', code: 'bad_input' } });
-    expect(await t.drafts()).toHaveLength(1);
+    expect(await t.drafts()).toHaveLength(2);
   });
 
   it('[R590] [R13] journal en panne : rien n’est rendu ni rangé', async () => {

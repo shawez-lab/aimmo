@@ -119,8 +119,12 @@ export class Brouillons {
       'SELECT * FROM mcp_drafts WHERE network_id = ? AND agent_id = ? ORDER BY created_at DESC, id DESC LIMIT 50',
       [viewer.networkId, viewer.userId],
     );
-    await this.write(viewer, 'mcp.brouillons.lus', null, { rule: 'R16', count: rows.length });
-    return { ok: true, value: rows.map(toDraft) };
+    // Chaque brouillon repasse par les droits sur son sujet à cet instant : une fiche que l'agent ne suit plus, ou un
+    // dossier d'agent devenu incomplet, cache le brouillon et son contenu [R16, R82].
+    const visible: DraftRow[] = [];
+    for (const row of rows) if (await this.stillHolds(viewer, row)) visible.push(row);
+    await this.write(viewer, 'mcp.brouillons.lus', null, { rule: 'R16', count: visible.length });
+    return { ok: true, value: visible.map(toDraft) };
   }
 
   /**
