@@ -49,7 +49,7 @@ export interface StepInput {
   text?: string;
 }
 
-/** La liste d'opposition au démarchage téléphonique (Bloctel), en port : le vrai service attend un humain (H76). */
+/** La liste d'opposition au démarchage téléphonique (Bloctel), en port : le vrai service attend un humain (H61). */
 export interface OppositionList {
   check(phone: string, at: Date): Promise<'listed' | 'not_listed' | 'unavailable'>;
 }
