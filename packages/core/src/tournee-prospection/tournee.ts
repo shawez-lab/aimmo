@@ -482,7 +482,8 @@ export class TourneeProspection {
       const start = new Date(best.start);
       const end = new Date(best.start + o.minutes * MINUTE);
       chosen.push({ o, start, end, travel: best.travel });
-      cursor = end.getTime();
+      // Le curseur reste sur la grille des tranches, même après un arrêt d'une durée qui n'en est pas un multiple.
+      cursor = dayStart.getTime() + Math.ceil((end.getTime() - dayStart.getTime()) / step) * step;
     }
     for (const o of remaining) left.push({ opportunityId: o.id, kind: o.kind, reason: 'pas_de_place' });
 

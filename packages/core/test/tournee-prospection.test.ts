@@ -262,6 +262,15 @@ describeWithSqlite('HX19 · carte des opportunités et tournée de prospection',
     expect(first.start).toEqual(at(DAY, '08:00'));
   });
 
+  it('[R298] après un lot de six minutes, la recherche reste sur la grille et trouve 9 h', async () => {
+    const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:10' }, { from: '09:00', to: '09:10' }] }] } });
+    const tour = await w.tournee.plan(w.asPaul, DAY);
+    if (!tour.ok) throw new Error('tournée refusée');
+    const stops = prospectStops(tour);
+    expect(stops[0]).toMatchObject({ kind: 'lettres', start: at(DAY, '08:00') });
+    expect(stops[1]?.start).toEqual(at(DAY, '09:00'));
+  });
+
   it('[R298] le total de route compte chaque trajet de la journée, jusqu’au rendez-vous fixe compris', async () => {
     const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:15' }, { from: '09:00', to: '12:00' }] }] } });
     const tour = await w.tournee.plan(w.asPaul, DAY);
