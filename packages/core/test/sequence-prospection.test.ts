@@ -256,9 +256,9 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await refused.sequence(b)).toMatchObject({ status: 'stopped', end_reason: 'call_refused' });
 
     const listed = await setup();
-    listed.opposition!.listed.add('+33600000001');
     const c = await listed.startOk(FULL);
     await listed.sequences.run();
+    listed.opposition!.listed.add('+33600000001');
     listed.setClock(START + 2 * DAY);
     const today = await listed.sequences.today(listed.alex);
     expect(today.ok && today.value.steps).toEqual([]);
@@ -312,6 +312,45 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await t.sequence(second)).toMatchObject({ status: 'stopped', end_reason: 'merged' });
   });
 
+  it('[R301] un numéro sur la liste d’opposition arrête aussi une séquence sans appel, avant le premier mail', async () => {
+    const t = await setup();
+    const id = await t.startOk(FULL.slice(0, 1));
+    t.opposition!.listed.add('+33600000001');
+    await t.sequences.run();
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'opposition_list' });
+  });
+
+  it('[R301] une demande d’arrêt notée puis levée entre deux passages arrête quand même la séquence', async () => {
+    const t = await setup();
+    const id = await t.startOk([
+      { channel: 'letter', afterDays: 1 },
+      { channel: 'email', afterDays: 2, text: 'Bonjour Léa, je suis Alex, agent du quartier.' },
+    ]);
+    const ex = await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(START + HOUR) });
+    await t.store.liftExclusion(ex.id, new Date(START + 2 * HOUR));
+    t.setClock(START + 2 * DAY);
+    await t.sequences.run();
+    const today = await t.sequences.today(t.alex);
+    expect(today.ok && today.value.steps).toEqual([]);
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'excluded', end_rule: 'R04' });
+  });
+
+  it('[R300] fiches réunies : la plus ancienne finie pendant le passage n’ouvre pas la voie à la plus récente', async () => {
+    const t = await setup();
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Léa', lastName: 'Inventée' });
+    const first = await t.startOk(FULL.slice(0, 1));
+    t.setClock(START + 60_000);
+    const second = await t.startOk([{ channel: 'email', afterDays: 0, text: 'Bonjour Léa, Alex de nouveau, agent du quartier.' }], twin.id);
+    await t.unique.merge({ survivorId: t.person.id, mergedId: twin.id, reason: 'même personne', agentId: t.alexAgent.id });
+    t.setClock(START + HOUR);
+    await t.sequences.run();
+    expect(t.sent('email')).toHaveLength(1);
+    expect((await t.sequence(first))?.status).toBe('finished');
+    expect(await t.sequence(second)).toMatchObject({ status: 'stopped', end_reason: 'merged' });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);
@@ -319,6 +358,10 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Noé', lastName: 'Inventé' });
     await t.store.addExclusion({ networkId: t.network.id, personId: other.id, reason: 'network_list', notedAt: new Date(START - DAY) });
     expect(await t.sequences.start(t.alex, { personId: other.id, steps: FULL })).toMatchObject({ ok: false, rule: 'R02' });
+    const listed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Ana', lastName: 'Inventée' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: listed.id, kind: 'phone', value: '06 00 00 00 09' });
+    t.opposition!.listed.add('+33600000009');
+    expect(await t.sequences.start(t.alex, { personId: listed.id, steps: FULL.slice(0, 1) })).toMatchObject({ ok: false, rule: 'R302', code: 'opposition_opposition_list' });
   });
 
   it('[R302] un appel n’est proposé que dans les heures permises, et vérifié hors de la liste d’opposition', async () => {

@@ -210,7 +210,8 @@ export class SequencesProspection {
     const view = await this.fiche.view(seq.person_id);
     const stamp = at.getTime();
     const since = Date.parse(seq.started_at);
-    const exclusion = view.exclusions.find((e) => Date.parse(e.noted_at) <= stamp && (e.lifted_at === null || Date.parse(e.lifted_at) > stamp));
+    // Une exclusion en cours, ou qui a couru pendant la séquence même si elle est levée depuis : la levée ne relance rien.
+    const exclusion = view.exclusions.find((e) => Date.parse(e.noted_at) <= stamp && (e.lifted_at === null || Date.parse(e.lifted_at) > Math.min(stamp, since)));
     if (exclusion) return { reason: 'excluded', rule: exclusion.reason === 'stop' ? 'R04' : 'R02' };
     if (view.consents.some((c) => c.withdrawn_at !== null && Date.parse(c.withdrawn_at) >= since)) return { reason: 'withdrawn', rule: 'R03' };
     if (view.messages.some((m) => m.direction === 'in' && Date.parse(m.occurred_at) >= since)) return { reason: 'reply', rule: 'R301' };
@@ -224,11 +225,26 @@ export class SequencesProspection {
     // Deux fiches réunies qui avaient chacune leur séquence : seule la plus ancienne continue, une seule par personne [R300].
     if (seq.id !== '') {
       const older = await this.db.first<{ id: string }>(
-        `SELECT id FROM prospecting_sequences WHERE status = 'active' AND id <> ? AND person_id IN (${placeholders(ids.length)})
-         AND (started_at < ? OR (started_at = ? AND id < ?)) LIMIT 1`,
-        [seq.id, ...ids, seq.started_at, seq.started_at, seq.id],
+        `SELECT id FROM prospecting_sequences WHERE id <> ? AND person_id IN (${placeholders(ids.length)})
+         AND (started_at < ? OR (started_at = ? AND id < ?)) AND (ended_at IS NULL OR ended_at >= ?) LIMIT 1`,
+        [seq.id, ...ids, seq.started_at, seq.started_at, seq.id, seq.started_at],
       );
+      // Une plus ancienne qui courait encore au départ de celle-ci, finie ou non depuis : celle-ci n'aurait pas dû courir.
       if (older) return { reason: 'merged', rule: 'R300' };
+    }
+    // La liste d'opposition au démarchage vaut pour toute la séquence, pas seulement pour ses appels [R301, R302].
+    if (this.opposition) {
+      const phone = view.identifiers.filter((i) => i.kind === 'phone').sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
+      const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
+      if (/^\+?\d{6,15}$/.test(digits)) {
+        let listed: 'listed' | 'not_listed' | 'unavailable' = 'unavailable';
+        try {
+          listed = await this.opposition.check(digits, at);
+        } catch {
+          listed = 'unavailable';
+        }
+        if (listed === 'listed') return { reason: 'opposition_list', rule: 'R302' };
+      }
     }
     return null;
   }
