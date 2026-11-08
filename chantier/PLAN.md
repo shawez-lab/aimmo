@@ -294,7 +294,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 ## Estimation
 
 ### HX32 · Avis de valeur enrichi : concurrence, loyer possible et quartier
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor, Modelo et Immofacile : les biens concurrents en ligne, l'estimation locative et les données du quartier dans l'avis de valeur. Jamais vu : pour chaque concurrent, le nombre de jours en ligne et ses baisses de prix, lus dans la pige de HX11, et le loyer possible tiré de Y02 avec sa fiabilité, pour que le vendeur voie le marché réel.
 - Critères : chaque concurrent cite sa source et sa date de relevé (test) ; le loyer affiché dit sa source et sa fiabilité (test) ; aucun nom ni adresse exacte de concurrent dans l'avis imprimé (test).
 
