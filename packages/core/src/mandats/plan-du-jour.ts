@@ -99,6 +99,28 @@ export interface DailyPlan {
   removed: { excluded: number; withdrawn: number; noBasis: number };
   /** Les lettres de quartier à déposer, à part des lignes de personnes, dans l'ordre des campagnes [R35, R140]. */
   letters?: PlanLetters[];
+  /** Les étapes du jour des séquences de prospection (HX20), chacune revérifiée à la lecture [R301, R302]. */
+  sequenceSteps?: PlanSequenceStep[];
+}
+
+/** Une étape du jour d'une séquence de prospection (HX20), telle que le module des séquences la rend. */
+export interface PlanSequenceStep {
+  sequenceId: string;
+  stepId: string;
+  position: number;
+  channel: string;
+  personId: string;
+  firstName: string | null;
+  action: string;
+  proposed: boolean;
+  reason: string | null;
+  call: string | null;
+  callClosesAt: string | null;
+}
+
+/** La source des étapes du jour (HX20) : branchée par le Worker, absente des plans qui n'en ont pas. */
+export interface PlanSequenceSource {
+  today(viewer: Viewer): Promise<{ ok: true; value: { steps: PlanSequenceStep[] } } | { ok: false }>;
 }
 
 /** Ce qu'une ligne dit d'elle-même pour que sa base légale soit relue : sa raison et ce qu'elle désigne. */
@@ -110,6 +132,8 @@ export interface PlanOptions {
   now?: () => Date;
   settings?: PlanSettings;
   timeZone?: string;
+  /** Les séquences de prospection de l'agent (HX20). */
+  sequences?: PlanSequenceSource;
 }
 
 const DAY = 86_400_000;
@@ -193,6 +217,7 @@ export class PlanDuJour {
   private readonly now: () => Date;
   private readonly settings: PlanSettings;
   private readonly timeZone: string;
+  private readonly sequences: PlanSequenceSource | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -202,6 +227,7 @@ export class PlanDuJour {
     this.now = options.now ?? (() => new Date());
     this.settings = options.settings ?? DEFAULT_PLAN_SETTINGS;
     this.timeZone = options.timeZone ?? 'Europe/Paris';
+    this.sequences = options.sequences ?? null;
   }
 
   /** Le plan du jour d'un agent, calculé maintenant, sur ses seuls clients [R16]. */
@@ -244,6 +270,7 @@ export class PlanDuJour {
       items.push({ ...best, firstName });
     }
     items.sort(comparePlanCandidates);
+    const sequenceRead = this.sequences ? await this.sequences.today(viewer) : null;
     return {
       ok: true,
       value: {
@@ -252,6 +279,7 @@ export class PlanDuJour {
         computedAt: stamp,
         removed,
         letters: await this.lettersOf(viewer),
+        ...(sequenceRead?.ok ? { sequenceSteps: sequenceRead.value.steps } : {}),
         items: items.map((c, i) => ({
           rank: i + 1,
           personId: c.personId,

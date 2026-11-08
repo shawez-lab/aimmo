@@ -37,6 +37,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       missed_promise_tasks: ['person_id', 'agent_id', 'done_by', 'outcome'],
       // AC09 : les appels notés, pour la fréquence de la prospection.
       call_notes: ['person_id', 'noted_by'],
+      // HX20 : la séquence de prospection d'une personne et le texte de chaque étape écrite.
+      prospecting_sequences: ['agent_id', 'person_id', 'end_reason'],
+      prospecting_sequence_steps: ['body'],
       agent_import_contacts: ['agent_id', 'person_id'],
       agent_import_referrals: ['importing_agent_id', 'person_id', 'resolved_by'],
       // I05 : les exports de H15 déposés par la direction, gardés pour relancer la reprise.
@@ -949,6 +952,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   conversation_handovers: ['id', 'network_id', 'handed_at', 'created_at'],
   agent_alerts: ['id', 'network_id', 'created_at', 'seen_at'],
   call_notes: ['id', 'network_id', 'outcome', 'basis', 'noted_at', 'undone_merge_id'],
+  prospecting_sequences: ['id', 'network_id', 'started_at', 'start_day', 'status', 'ended_at', 'end_rule'],
+  prospecting_sequence_steps: ['id', 'sequence_id', 'network_id', 'position', 'channel', 'after_days', 'outcome', 'rule', 'message_id', 'ended_at'],
   human_replies: ['dedup_key', 'network_id', 'message_id', 'created_at'],
   outbound_refs: ['network_id', 'channel', 'message_id', 'created_at'],
   trial_outbox: ['message_id', 'channel', 'created_at'],

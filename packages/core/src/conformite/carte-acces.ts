@@ -272,6 +272,9 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   inbound: 'journal',
   voice_note: 'journal',
   call: 'journal',
+  prospecting_sequence: 'journal',
+  prospecting_sequence_step: { excluded: 'pas_un_sujet', why: 'Refus d\'accès à une étape de séquence inconnue ou d\'un autre agent : la ligne ne porte que l\'identifiant demandé.' },
+  sequence: ENVOI('étape d\'une séquence de prospection, HX20'),
   message: 'journal',
   task: 'journal',
   alert: 'journal',
@@ -370,6 +373,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
   calls: { locate: by('person_id') },
+  // HX20 : les séquences de prospection d'une personne, et le texte écrit pour elle à chaque étape.
+  prospecting_sequences: { locate: by('person_id') },
+  prospecting_sequence_steps: { locate: [via('sequence_id', 'prospecting_sequences')] },
   call_journal: { locate: [via('call_id', 'calls')] },
   // HX22 : le passage de main de l'assistant vocal se retrouve par l'appel rangé.
   voice_assistant_calls: { locate: [via('call_row_id', 'calls')] },
@@ -751,6 +757,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'inbound_messages', 'id', { prefix: 'inbound:' }),
       via('subject', 'voice_notes', 'id', { prefix: 'voice_note:' }),
       via('subject', 'calls', 'id', { prefix: 'call:' }),
+      via('subject', 'prospecting_sequences', 'id', { prefix: 'prospecting_sequence:' }),
       via('subject', 'messages', 'id', { prefix: 'message:' }),
       via('subject', 'appointment_tasks', 'id', { prefix: 'task:' }),
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),

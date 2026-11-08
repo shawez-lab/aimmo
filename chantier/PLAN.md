@@ -196,7 +196,9 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : la tournée tient dans les créneaux libres de l'agent (test) ; aucune adresse hors de la zone de l'agent (test) ; le lien vers la vue des rues ne porte aucune clé ni donnée de client (test).
 
 ### HX20 · Séquence de prospection sur plusieurs canaux
-- Statut : en cours
+- Statut : fait (2026-11-08)
+- Décidé (2026-11-08), lecture prudente : module `packages/core/src/sequence-prospection/`, migration `1817`, règles R300 à R302. Une séquence a au plus 8 étapes, sur mail, SMS, appel, courrier ou porte-à-porte, de J0 à J90 ; elle est préparée par l'agent de la fiche, une seule en cours par personne ; le texte d'un mail ou d'un SMS est écrit par l'agent. Les mails et les SMS partent seulement par le contrôle central, avec la finalité « prospecting » et le sujet `sequence:<id>:<n>`. Les heures (R01) et le plafond (R11) font attendre ; un doublon de texte (R05) saute l'étape ; un sujet déjà en route attend, puis compte comme parti. Appel, courrier et porte-à-porte : proposés à l'agent dans le plan du jour (option `sequences` de `PlanDuJour`). L'appel fait se note dans `call_notes` et compte dans la fréquence ; un refus arrête la séquence. Bloctel est vérifié pour tous les canaux, sur tous les numéros de la fiche, avant le contrôle et jamais pendant. Un appel de prospection seule n'est proposé que si Bloctel répond « absent » (H61). Arrêt pour de bon sur tous les canaux dans chacun de ces cas : une réponse, une exclusion (même levée depuis), un accord retiré, un refus d'appel, Bloctel, un changement d'agent, le départ de l'agent, deux fiches réunies (seule la plus ancienne séquence continue). Une opposition antérieure empêche le départ. Jamais vu : chaque étape est revérifiée juste avant de partir, et la séquence s'arrête d'elle-même partout.
+- Reste : fusionnée (#422). Relecture forte : 2 P1 corrigés. Codex : 11 P0 corrigés en sept tours, puis rien à signaler. GitHub Actions bloqué par la facturation ; vérification locale verte (4 845 tests). Restent : écran et routes, branchement au Worker (`app.ts`) et inscription de `run()` au planificateur ; Bloctel réel (H61).
 - Objectif : comme Maline et SIANA : une séquence par prospect sur mail, SMS, appel, courrier et porte-à-porte, et un plan de prospection chaque matin. Jamais vu : chaque étape est vérifiée avant de partir contre les accords, la liste d'opposition au démarchage et les horaires des appels de AC06, et la séquence s'arrête d'elle-même sur tous les canaux à la première réponse ou opposition ; les étapes du jour entrent dans le plan du jour de G01.
 - Critères : aucun envoi hors du contrôle central (test) ; une opposition arrête la séquence sur tous les canaux (test) ; un appel n'est proposé que dans les horaires permis (test).
 
@@ -292,7 +294,7 @@ Réservé le 2026-11-07 par la voie 2. Règles R420 à R439 et migrations à par
 ## Estimation
 
 ### HX32 · Avis de valeur enrichi : concurrence, loyer possible et quartier
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme Hektor, Modelo et Immofacile : les biens concurrents en ligne, l'estimation locative et les données du quartier dans l'avis de valeur. Jamais vu : pour chaque concurrent, le nombre de jours en ligne et ses baisses de prix, lus dans la pige de HX11, et le loyer possible tiré de Y02 avec sa fiabilité, pour que le vendeur voie le marché réel.
 - Critères : chaque concurrent cite sa source et sa date de relevé (test) ; le loyer affiché dit sa source et sa fiabilité (test) ; aucun nom ni adresse exacte de concurrent dans l'avis imprimé (test).
 
@@ -398,13 +400,13 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Ce qu'elle attend d'un humain : rien.
 
 ### HX42 · Vidéo depuis les photos, voix off et avatar
-- Statut : en cours (voie 2), proposition #421 prête à fusionner
-- Reste : #421 (migration `2302`, R495 à R497) : Codex sans remarque sur `68223447` (2 P0 et 1 P2 corrigés, 1 P0 confié à HX51), vérification locale verte (4820 tests) ; GitHub Actions bloqué par la facturation ; la fusion a été refusée par la permission de la séance du 2026-11-08 vers 07:00 : la séance suivante la fusionne (section 3, étape 3, et section 11). Décidé, lecture prudente : plan tiré par le code des photos publiables du Studio (zoom ou panoramique en liste fermée, mobilier qui apparaît en fondu depuis la jumelle réelle, fin à la marque, 12 plans au plus), vidéo faite sur l'appareil ; voix et avatar de l'agent du bien lui-même seulement, accord écrit (texte nommé et versionné recopié à l'identique, jamais par la direction) pour l'empreinte de son propre enregistrement, retirable ; « Vidéo générée » et mention de la voix ou de l'avatar de synthèse sur chaque plan, exigées par la base ; sous-titres en français et dans les langues ouvertes du bien (HX05), contrôlés ligne par ligne et à la suite ; adresse refusée comme en P06. Restent : routes, écran et assemblage sur l'appareil (voie 1, `app.ts`) ; diffusion relue (HX51).
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#421, cd86f21a), migration `2302`, R495 à R497) : Codex sans remarque sur `68223447` (2 P0 et 1 P2 corrigés, 1 P0 confié à HX51), vérification locale verte (4820 tests) ; GitHub Actions bloqué par la facturation ; la fusion a été refusée par la permission de la séance du 2026-11-08 vers 07:00 : la séance suivante la fusionne (section 3, étape 3, et section 11). Décidé, lecture prudente : plan tiré par le code des photos publiables du Studio (zoom ou panoramique en liste fermée, mobilier qui apparaît en fondu depuis la jumelle réelle, fin à la marque, 12 plans au plus), vidéo faite sur l'appareil ; voix et avatar de l'agent du bien lui-même seulement, accord écrit (texte nommé et versionné recopié à l'identique, jamais par la direction) pour l'empreinte de son propre enregistrement, retirable ; « Vidéo générée » et mention de la voix ou de l'avatar de synthèse sur chaque plan, exigées par la base ; sous-titres en français et dans les langues ouvertes du bien (HX05), contrôlés ligne par ligne et à la suite ; adresse refusée comme en P06. Restent : routes, écran et assemblage sur l'appareil (voie 1, `app.ts`) ; diffusion relue (HX51).
 - Objectif : comme Hektor, Talqor et Kappn : vidéo animée à partir des photos, mobilier qui apparaît, voix off, sous-titres, avatar de l'agent. Jamais vu : la voix et l'avatar ne viennent que de l'agent lui-même, avec son accord écrit, et la vidéo porte la mention « vidéo générée » ; les sous-titres sortent dans les langues de HX05 ; l'adresse exacte est refusée comme en P06.
 - Critères : aucune voix ni avatar sans accord écrit de l'agent (test) ; la mention est présente sur chaque vidéo générée (test) ; une adresse exacte dans le texte est refusée (test).
 
 ### HX43 · Visite à 360 degrés avec contact
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Hektor, Immofacile, Apimo et Optimhome : une visite 360 ou 3D faite au téléphone, avec un formulaire de contact dedans. Jamais vu : chaque vue est reliée à sa pièce du plan de X04, aucune vue ne montre la rue ni le numéro, et le contact pris dans la visite arrive dans C01 avec son origine.
 - Critères : un contact de la visite est rattaché au bien et à son origine (test) ; une vue sans pièce rattachée n'est pas publiée (test).
 
