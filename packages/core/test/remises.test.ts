@@ -19,7 +19,7 @@ class Proofs {
 }
 
 async function setup() {
-  const t = await setupAnnonce();
+  const t = await setupAnnonce({ twin: false }) // photos non certifiées : le photographe se propose;
   // Le 2027-02-12 à Paris : le mandat est signé et inscrit, l'annonce pas encore en vente.
   t.setClock(new Date('2027-02-12T10:00:00.000Z'));
   const proofs = new Proofs();

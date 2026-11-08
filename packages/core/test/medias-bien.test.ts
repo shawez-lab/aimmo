@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MediasBien, NEVER_FILM, parseSheet, shootingPlan, VIRTUAL_STAGING_LABEL } from '../src/annonces/index.ts';
+import { AmenagementsVirtuels, galleryProblems } from '../src/medias/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -103,5 +104,57 @@ describeWithSqlite('P06 · publication des photos et vidéos', () => {
     expect(await medias.checkVideoText(t.agent, t.propertyId, video, { subtitles: 'pas une liste', caption: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_text' });
     expect(await medias.checkVideoText(t.direction, t.propertyId, video, text)).toEqual({ ok: true });
     await expect(t.db.run('DELETE FROM video_text_checks')).rejects.toThrow(/rien ne s'efface/);
+  });
+});
+
+describeWithSqlite('HX50 · les annonces publient l’image aménagée avec sa jumelle', () => {
+  const publish = async (t: Awaited<ReturnType<typeof setupAnnonce>>) => {
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+  };
+  const STAGED = '/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg';
+
+  it('[R494] chaque annonce publiée a une couverture réelle et l’image aménagée juste après sa jumelle : galleryProblems est vide', async () => {
+    const t = await setupAnnonce();
+    await publish(t);
+    const twins = await new AmenagementsVirtuels(t.db, t.acces, t.journal).twins(t.propertyId);
+    expect(twins.size).toBe(1);
+    for (const c of t.channels) {
+      const photos = c.received.at(-1)!.media.filter((m) => m.kind === 'photo');
+      expect(photos[0]!.overlay).toBeNull();
+      expect(photos.some((p) => p.ref.endsWith(STAGED))).toBe(true);
+      expect(galleryProblems(photos, twins)).toEqual([]);
+    }
+  });
+
+  it('[R494] une image aménagée sans jumelle déclarée n’est dans aucune annonce', async () => {
+    const t = await setupAnnonce({ twin: false });
+    await publish(t);
+    for (const c of t.channels) {
+      const media = c.received.at(-1)!.media;
+      expect(media.some((m) => m.ref.endsWith(STAGED))).toBe(false);
+      expect(media.filter((m) => m.kind === 'photo').map((p) => p.overlay)).toEqual([null]);
+    }
+  });
+
+  it('[R494] une fiche qui met l’image aménagée en tête : elle passe juste après sa jumelle, jamais en couverture', async () => {
+    const t = await setupAnnonce();
+    const sheet = await t.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const data = JSON.parse(sheet!.data) as { media: { ref: string; kind: string; edit: string }[] };
+    const [real, staged, video] = data.media;
+    const reordered = { ...data, media: [video, staged, real] };
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('hx50-s', ?, ?, 99, ?, 'agent:a', '2027-03-01')", [t.propertyId, t.network.id, JSON.stringify(reordered)]);
+    const medias = new MediasBien(t.db, t.acces, t.journal, { now: t.now });
+    const photos = (await medias.publishable(t.propertyId, 99)).filter((m) => m.kind === 'photo');
+    expect(photos.map((p) => [p.ref, p.overlay])).toEqual([
+      [real!.ref, null],
+      [staged!.ref, VIRTUAL_STAGING_LABEL],
+    ]);
+    expect(galleryProblems(photos, await new AmenagementsVirtuels(t.db, t.acces, t.journal).twins(t.propertyId))).toEqual([]);
+    // Une fiche où la jumelle n'est plus : l'image aménagée ne part pas seule.
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('hx50-t', ?, ?, 100, ?, 'agent:a', '2027-03-01')", [t.propertyId, t.network.id, JSON.stringify({ ...data, media: [staged, video] })]);
+    expect((await medias.publishable(t.propertyId, 100)).filter((m) => m.kind === 'photo')).toEqual([]);
   });
 });
