@@ -225,6 +225,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.reversement': INTERNE('Reversement à l\'agent.'),
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
   'acces.refuse': INTERNE('Accès refusé à un membre du réseau.'),
+  // HX46 : invitation d'un client à donner un avis vérifié (porte sa fiche) ; refus d'invitation, sans donnée d'un client.
+  'avis.invitation': 'client',
+  'avis.refuse': INTERNE('Invitation à un avis refusée : dossier non clos ou personne hors du dossier, sans donnée d\'un client.'),
   'apres_vente.lien_avis_manquant': INTERNE('Lien d\'avis manquant de l\'agent.'),
   'apres_vente.lien_avis': INTERNE('Lien d\'avis réglé pour l\'agent.'),
   // Le signalement au responsable d'un dossier de vente : jamais dans la réponse (lutte contre le blanchiment).
@@ -245,6 +248,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   circuit: ENVOI('rappel de signature d\'un circuit, HX37'),
   vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
+  avis_verifie: { excluded: 'sans_client', why: 'Un avis vérifié publié (HX46) : la remise de sa preuve à la conformité, ou un refus d\'accès, sans donnée d\'un client.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
   mandate: 'journal',
@@ -560,6 +564,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   after_sale_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
   satisfaction_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
   satisfaction_answers: { locate: by('person_id') },
+  verified_review_invites: { locate: by('person_id'), secrets: ['token_hash'] },
+  verified_reviews: { locate: by('person_id') },
   thank_you_tasks: { locate: by('person_id') },
   owner_booklets: { locate: by('person_id') },
   owner_booklet_links: { locate: by('person_id'), secrets: ['token_hash'] },
