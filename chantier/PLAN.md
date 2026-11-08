@@ -549,7 +549,9 @@ Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à par
 ## Intégrations
 
 ### HX55 · Serveur MCP et API ouverte
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
+- Partie du cahier : Architecture technique (API) et M14 ; droits de S08.
 - Objectif : comme Neo, Apimo et Maline : piloter le logiciel depuis ChatGPT ou Claude et ouvrir une API aux partenaires. Jamais vu : chaque outil agit sous les droits de l'agent de S08, n'écrit que des brouillons à valider et passe au journal ; une lecture publique des biens diffusables répond aussi aux assistants d'achat comme AQQI.
 - Critères : aucun appel hors des droits de l'agent (test) ; aucune écriture définitive sans validation (test) ; la lecture publique ne rend que des biens diffusables, sans donnée personnelle (test).
 
