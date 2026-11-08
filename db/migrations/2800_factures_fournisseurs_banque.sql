@@ -75,7 +75,10 @@ WHEN (SELECT amount_cents FROM bank_lines WHERE id = NEW.line_id) <> (SELECT amo
   OR (SELECT kind FROM invoices WHERE id = NEW.invoice_id) <> 'honoraires'
   OR (SELECT network_id FROM bank_lines WHERE id = NEW.line_id) <> NEW.network_id
   OR (SELECT network_id FROM invoices WHERE id = NEW.invoice_id) <> NEW.network_id
-BEGIN SELECT RAISE(ABORT, 'bank_reconciliations : montant, sorte ou réseau différent'); END;
+  OR (SELECT amount_cents FROM bank_lines WHERE id = NEW.line_id) <= 0
+  OR (SELECT day FROM bank_lines WHERE id = NEW.line_id) < (SELECT issued_on FROM invoices WHERE id = NEW.invoice_id)
+  OR EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = NEW.invoice_id)
+BEGIN SELECT RAISE(ABORT, 'bank_reconciliations : montant, sorte, jour, avoir ou réseau différent'); END;
 
 -- La relance d'une facture d'honoraires échue et non rapprochée, préparée par le code, validée par la direction [R553].
 CREATE TABLE IF NOT EXISTS invoice_reminders (
@@ -94,16 +97,31 @@ CREATE TABLE IF NOT EXISTS invoice_reminders (
   validated_at TEXT,
   updated_at TEXT NOT NULL,
   UNIQUE (invoice_id, rank),
-  CHECK (status IN ('a_valider', 'close') OR validated_by IS NOT NULL OR status = 'refusee')
+  CHECK ((validated_by IS NULL) = (validated_at IS NULL)),
+  CHECK (status IN ('a_valider', 'close', 'refusee') OR validated_by IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS invoice_reminders_network ON invoice_reminders (network_id, status);
--- Aucune relance ne part sans validation : la base refuse de la marquer envoyée sans validation rangée [R553].
+-- Aucune relance ne part sans validation [R553] : elle naît à valider (ou refusée par R62), jamais validée ni envoyée ;
+-- elle n'est validée que depuis « à valider », envoyée que depuis « validée », et une relance close ou envoyée ne se
+-- rouvre pas.
+CREATE TRIGGER IF NOT EXISTS invoice_reminders_naissance
+BEFORE INSERT ON invoice_reminders
+WHEN NEW.status NOT IN ('a_valider', 'refusee') OR NEW.validated_by IS NOT NULL OR NEW.validated_at IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'invoice_reminders : une relance naît à valider'); END;
 CREATE TRIGGER IF NOT EXISTS invoice_reminders_validation
 BEFORE UPDATE OF status ON invoice_reminders
-WHEN NEW.status = 'envoyee' AND (OLD.status <> 'validee' OR NEW.validated_by IS NULL)
+WHEN (NEW.status = 'validee' AND OLD.status NOT IN ('a_valider', 'validee'))
+  OR (NEW.status = 'envoyee' AND (OLD.status <> 'validee' OR NEW.validated_by IS NULL))
+  OR (NEW.status = 'refusee' AND OLD.status NOT IN ('validee', 'refusee'))
+  OR (NEW.status = 'a_valider' AND OLD.status <> 'a_valider')
+  OR (OLD.status IN ('envoyee', 'close', 'refusee') AND NEW.status <> OLD.status)
 BEGIN SELECT RAISE(ABORT, 'invoice_reminders : aucune relance sans validation'); END;
+CREATE TRIGGER IF NOT EXISTS invoice_reminders_validation_figee
+BEFORE UPDATE OF validated_by, validated_at ON invoice_reminders
+WHEN OLD.validated_by IS NOT NULL AND (NEW.validated_by IS NOT OLD.validated_by OR NEW.validated_at IS NOT OLD.validated_at)
+BEGIN SELECT RAISE(ABORT, 'invoice_reminders : la validation ne change pas'); END;
 CREATE TRIGGER IF NOT EXISTS invoice_reminders_texte_fige
-BEFORE UPDATE OF text, invoice_id, person_id, rank ON invoice_reminders
+BEFORE UPDATE OF text, invoice_id, person_id, rank, network_id, prepared_at ON invoice_reminders
 BEGIN SELECT RAISE(ABORT, 'invoice_reminders : le texte validé ne change pas'); END;
 
 CREATE TRIGGER IF NOT EXISTS supplier_invoice_reads_fige BEFORE UPDATE ON supplier_invoice_reads BEGIN SELECT RAISE(ABORT, 'supplier_invoice_reads : rien ne change'); END;

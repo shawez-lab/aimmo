@@ -239,6 +239,15 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect(await other.banque.run(other.network.id)).toBe(0);
     const p = await other.banque.proposals(other.direction);
     expect(p.ok && p.value[0]!.candidates).toEqual([]);
+    // La base aussi refuse une facture corrigée, une ligne d'avant la facture ou une ligne de débit [R551].
+    const raw = (lineId: string, invoiceId: string, net: string) => other.db.run("INSERT INTO bank_reconciliations (line_id, invoice_id, network_id, mode, by, created_at) VALUES (?, ?, ?, 'direction', 'x', 'y')", [lineId, invoiceId, net]);
+    await expect(raw(p.ok ? p.value[0]!.lineId : '', other.invoice.id, other.network.id)).rejects.toThrow();
+    expect(await other.banque.confirm(other.direction, p.ok ? p.value[0]!.lineId : '', other.invoice.id)).toMatchObject({ ok: false, rule: 'R551', code: 'credited' });
+    const early = await invoiced();
+    early.setClock(at9('2027-07-15'));
+    await early.banque.importStatement(early.direction, '2027-06-01;VIR F-2027-00001;10 000,00\n2027-07-14;PRLV;-10 000,00\n');
+    const lines = await early.db.all<{ id: string; amount_cents: number }>('SELECT id, amount_cents FROM bank_lines');
+    for (const l of lines) await expect(raw(l.id, early.invoice.id, early.network.id)).rejects.toThrow();
   });
 
   it('[R553] aucune relance sans validation ; validée, elle passe par le contrôle central en essai ; une facture rapprochée ferme sa relance', async () => {
@@ -260,8 +269,16 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     if (!list.ok) throw new Error('list');
     expect(list.value).toEqual([expect.objectContaining({ label: 'F-2027-00001', rank: 1, status: 'a_valider', validatedBy: null })]);
     expect(list.value[0]!.text).toContain('la facture F-2027-00001 de 10 000,00 €, émise le 11 juin 2027, arrivait à échéance le 11 juillet 2027.');
-    // La base refuse de la marquer envoyée sans validation.
+    // La base refuse de la marquer envoyée sans validation, et une relance qui naîtrait déjà validée ou envoyée.
     await expect(t.db.run("UPDATE invoice_reminders SET status = 'envoyee' WHERE id = ?", [list.value[0]!.id])).rejects.toThrow();
+    for (const status of ['validee', 'envoyee']) {
+      await expect(
+        t.db.run(
+          "INSERT INTO invoice_reminders (id, network_id, invoice_id, rank, person_id, text, status, rule, message_id, prepared_at, validated_by, validated_at, updated_at) VALUES (?, ?, ?, 3, ?, 'x', ?, NULL, NULL, 'a', 'direction:x', 'a', 'a')",
+          [`faux-${status}`, t.network.id, t.invoice.id, t.buyerId, status],
+        ),
+      ).rejects.toThrow();
+    }
     // Un agent ne valide rien [R16] ; un texte validé ne change pas.
     expect(await relances.validate(t.agent, list.value[0]!.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await relances.list(t.agent)).toMatchObject({ ok: false, rule: 'R16' });
@@ -292,5 +309,41 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     const events = JSON.stringify(await t.journal.bySubject(`sale_file:${t.fileId}`));
     expect(events).not.toContain('apparaît');
     expect(events).not.toContain('1000000');
+  });
+
+  it('[R553] une facture rapprochée pendant le passage d’envoi ne reçoit pas sa relance ; une facture encaissée n’en reçoit aucune', async () => {
+    const t = await invoiced();
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.buyerId, kind: 'email', value: 'acheteur@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.buyerId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    t.setClock(at9('2027-07-12'));
+    const relances = new RelancesImpayes(t.db, t.journal, { now: t.now });
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const list = await relances.list(t.direction);
+    await relances.validate(t.direction, list.ok ? list.value[0]!.id : '');
+    await t.banque.importStatement(t.direction, '2027-07-12;VIR F-2027-00001;10 000,00\n');
+    // Le rapprochement arrive entre la lecture des relances validées et l'enregistrement de l'envoi.
+    const run = t.banque.run.bind(t.banque);
+    const original = t.db.all.bind(t.db);
+    let once = false;
+    t.db.all = (async (sql: string, params?: readonly (string | number | null)[]) => {
+      const rows = await original(sql, params);
+      if (!once && sql.includes("r.status = 'validee'")) {
+        once = true;
+        await run(t.network.id);
+      }
+      return rows;
+    }) as typeof t.db.all;
+    expect(await relances.send(t.network.id)).toBe(0);
+    t.db.all = original;
+    const after = await relances.list(t.direction);
+    expect(after.ok && after.value.map((r) => [r.status, r.rule])).toEqual([['close', 'rapprochee']]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM trial_outbox'))?.n).toBe(0);
+    // Une autre vente encaissée par K03, sans ligne de banque : aucune relance.
+    const other = await invoiced();
+    other.setClock(at9('2027-06-12'));
+    const r = await new Encaissements(other.db, other.acces, other.journal, { now: other.now }).recordReceipt(other.direction, other.fileId, { receivedAt: '2027-06-12T06:00:00.000Z', proofRef: 'preuves/releve-notaire.pdf' });
+    expect(r.ok).toBe(true);
+    other.setClock(at9('2027-07-20'));
+    expect(await new RelancesImpayes(other.db, other.journal, { now: other.now }).prepare(other.network.id)).toBe(0);
   });
 });

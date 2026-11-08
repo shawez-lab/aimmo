@@ -118,6 +118,20 @@ export class RelancesImpayes {
          AND EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = invoice_reminders.invoice_id)`,
       [at, networkId],
     );
+    // Un encaissement rangé par K03, même sans ligne de banque : la facture n'est plus impayée.
+    await this.db.run(
+      `UPDATE invoice_reminders SET status = 'close', rule = 'encaissee', updated_at = ? WHERE network_id = ? AND status IN ('a_valider', 'validee')
+         AND EXISTS (SELECT 1 FROM invoices i JOIN commission_receipts cr ON cr.file_id = i.file_id WHERE i.id = invoice_reminders.invoice_id)`,
+      [at, networkId],
+    );
+  }
+
+  /** Pourquoi une facture n'est plus impayée : rapprochée, corrigée par un avoir, encaissée ; `null` si elle l'est encore. */
+  private async settled(invoiceId: string): Promise<'rapprochee' | 'avoir' | 'encaissee' | null> {
+    if (await this.db.first('SELECT 1 FROM bank_reconciliations WHERE invoice_id = ?', [invoiceId])) return 'rapprochee';
+    if (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId])) return 'avoir';
+    if (await this.db.first('SELECT 1 FROM invoices i JOIN commission_receipts cr ON cr.file_id = i.file_id WHERE i.id = ?', [invoiceId])) return 'encaissee';
+    return null;
   }
 
   /** Le passage : prépare les relances dues, à valider par la direction. Rend le nombre de relances préparées. */
@@ -131,6 +145,7 @@ export class RelancesImpayes {
        WHERE i.network_id = ? AND i.kind = 'honoraires' AND i.issued_on <= ?
          AND NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = i.id)
          AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = i.id)
+         AND NOT EXISTS (SELECT 1 FROM commission_receipts cr WHERE cr.file_id = i.file_id)
        ORDER BY i.issued_on, i.number`,
       [networkId, latestIssue],
     );
@@ -224,9 +239,16 @@ export class RelancesImpayes {
         subject: `relance_facture:${r.invoice_id}:${r.rank}`,
         fallbackTexts: [r.text],
         figures: figuresOf(facts),
+        // Revérifié juste avant l'enregistrement : une facture rapprochée, corrigée ou encaissée pendant le passage
+        // ne reçoit pas sa relance [R553].
+        stillAllowed: async () => {
+          const settled = await this.settled(r.invoice_id);
+          return settled ? { allowed: false, rule: 'R553', reason: 'La facture n’est plus impayée.' } : { allowed: true, rule: 'R553', reason: '' };
+        },
       });
-      const status: ReminderStatus = result.status === 'sent' ? 'envoyee' : result.status === 'failed' || result.rule === 'R01' ? 'validee' : 'refusee';
-      const rule = result.status === 'sent' ? null : result.rule;
+      const closed = result.status !== 'sent' && result.rule === 'R553';
+      const status: ReminderStatus = result.status === 'sent' ? 'envoyee' : closed ? 'close' : result.status === 'failed' || result.rule === 'R01' ? 'validee' : 'refusee';
+      const rule = result.status === 'sent' ? null : closed ? ((await this.settled(r.invoice_id)) ?? 'R553') : result.rule;
       await this.db.run(
         "UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE id = ? AND status = 'validee'",
         [status, rule, result.messageId, this.now().toISOString(), r.id],

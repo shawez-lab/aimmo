@@ -159,9 +159,12 @@ export class Rapprochements {
         [lineId, invoiceId, networkId, mode, by, this.now().toISOString()],
       );
       return changes === 1;
-    } catch {
-      // La base refuse : l'autre côté vient d'être rapproché, ou le montant a changé de main.
-      return false;
+    } catch (error) {
+      // La base refuse ce rapprochement (un avoir vient d'être émis, par exemple) : rien n'est rapproché.
+      if (error instanceof Error && error.message.includes('bank_reconciliations :')) return false;
+      // Toute autre panne va au journal, sans montant, puis remonte [R13].
+      await appendEvent(this.journal, { type: 'banque.erreur', actor: 'system:rapprochement', subject: `network:${networkId}`, data: { rule: 'R551', error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      throw error;
     }
   }
 
