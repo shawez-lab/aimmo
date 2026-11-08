@@ -15,7 +15,7 @@ import {
 import { PrixRegroupes, type LatLon } from '../src/attirer/index.ts';
 import type { EstimatedKind, Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
-import { LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
+import { MAGAZINE_TITLE, euros, LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
 import type { PublicCell } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -74,7 +74,21 @@ async function setup() {
   await prix.defineZone(direction, { level: 'quartier', parentId: c.id, slug: 'est', name: 'Est', ring: EAST, ringSource: 'Contour inventé' });
   expect(await prix.recompute(network.id)).toMatchObject({ ran: true });
 
-  const lettre = new LettreInformation(db, journal, { now, diffusion, unsubscribeBase: BASE });
+  // Les mentions de M07, comme le Worker les branche : complètes par défaut, calculées depuis le prix de la fiche.
+  const incomplete = new Set<string>();
+  const mentions = {
+    checklist: async (_n: string, id: string) => {
+      const row = await db.first<{ price_eur: number }>('SELECT price_eur FROM properties WHERE id = ?', [id]);
+      if (!row) return null;
+      const price = Number(row.price_eur);
+      return {
+        complete: !incomplete.has(id),
+        text: `Prix : ${euros(price)} honoraires inclus, soit ${euros(price - 10_000)} hors honoraires, à la charge de l’acquéreur.\nClasse énergie D, classe climat C.\nCarte professionnelle n° CPI 0000.`,
+        publishedPriceEur: price,
+      };
+    },
+  };
+  const lettre = new LettreInformation(db, journal, { now, diffusion, unsubscribeBase: BASE, mentions });
   let n = 0;
   /** Une personne inventée, avec son mail, sa recherche et, s'il le faut, son accord pour la lettre. */
   const person = async (firstName: string, opts: { letter?: boolean; search?: Partial<BuyerSearch> } = {}) => {
@@ -101,7 +115,7 @@ async function setup() {
     if (!e.ok) throw new Error(e.code);
     return e.id;
   };
-  return { db, store, journal, lettre, prix, network, alex, direction, person, property, sent, edition, blocked, diffusion, now, setClock: (t: number) => (clock = t) };
+  return { db, store, journal, lettre, prix, incomplete, mentions, network, alex, direction, person, property, sent, edition, blocked, diffusion, now, setClock: (t: number) => (clock = t) };
 }
 
 const SEARCH = { propertyKinds: ['house' as const], communes: ['Talant'], budgetMaxEur: 300_000 };
@@ -369,7 +383,7 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     const p = await t.person('Inès', { search: SEARCH });
     t.blocked.add(b2.id);
     expect((await t.lettre.contentFor(t.network.id, p.id)).properties.map((x) => x.id)).toEqual([b1.id]);
-    const m = await t.lettre.magazine(t.direction, 'Le magazine de décembre');
+    const m = await t.lettre.magazine(t.direction);
     expect(m.ok).toBe(true);
     if (!m.ok) return;
     expect(m.properties).toBe(1);
@@ -381,12 +395,15 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     const t = await setup();
     await t.property('B1', MAISON);
     const p = await t.person('Inès', { search: SEARCH });
-    const m = await t.lettre.magazine({ role: 'agent', userId: t.alex.id, networkId: t.network.id }, 'Le magazine de décembre');
+    const m = await t.lettre.magazine({ role: 'agent', userId: t.alex.id, networkId: t.network.id });
     expect(m.ok).toBe(true);
     if (!m.ok) return;
     expect(m.html).toMatch(/^<!doctype html>/);
     expect(m.html).toContain('@page{size:A4');
-    expect(m.html).toContain('<h1>Le magazine de décembre</h1>');
+    expect(m.html).toContain(`<h1>${MAGAZINE_TITLE}</h1>`);
+    // Chaque bien porte ses mentions obligatoires, sous lui [R43].
+    expect(m.html).toContain('honoraires inclus, soit 270 000 € hors honoraires');
+    expect(m.html).toContain('Classe énergie D, classe climat C.');
     expect(m.html).toContain('280 000 €');
     expect(m.html).toContain('Talant, maison : 2 600 €/m² au milieu');
     expect(m.html).not.toContain('Inès');
@@ -394,21 +411,40 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     // Les mêmes prix que la lettre de la personne.
     const content = await t.lettre.contentFor(t.network.id, p.id);
     const fromLetter = euroAmounts(letterText(content)).amounts.sort();
-    const fromMagazine = euroAmounts(m.html.replace(/<[^>]+>/g, '\n')).amounts.sort();
-    expect(fromMagazine).toEqual(fromLetter);
-    // Le titre est échappé ; sans chiffre ; un client ne tire pas le magazine.
-    const x = await t.lettre.magazine(t.direction, '<b>Lettre</b>');
-    expect(x.ok && x.html.includes('&lt;b&gt;')).toBe(true);
-    expect(await t.lettre.magazine(t.direction, 'Lettre 12')).toEqual({ ok: false, rule: 'R585', code: 'titre' });
-    // Un titre public au vocabulaire interdit ne sort pas [R07].
-    expect(await t.lettre.magazine(t.direction, 'Les estimations gratuites des mandataires')).toMatchObject({ ok: false, rule: 'R07' });
-    // Ni le nom d'une personne du réseau [R09].
+    const fromMagazine = euroAmounts(m.html.replace(/<[^>]+>/g, '\n')).amounts;
+    for (const a of fromLetter) expect(fromMagazine).toContain(a);
+    expect([...new Set(fromMagazine)].sort()).toEqual([...new Set([...fromLetter, 270_000])].sort());
+    // Le titre est écrit par le code : aucun texte libre, ni nom, ni mail, ni mot interdit n'y entre ; un client ne
+    // tire pas le magazine.
+    expect(await t.lettre.magazine({ role: 'client' as never, userId: 'c', networkId: t.network.id })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+  });
+
+  it('[R43] un bien sans toutes ses mentions obligatoires n’entre pas dans le magazine ; sans les mentions de M07, aucun magazine', async () => {
+    const t = await setup();
+    const b1 = await t.property('B1', MAISON);
+    const b2 = await t.property('B2', { ...MAISON, price: 250_000 });
+    t.incomplete.add(b2.id);
+    const m = await t.lettre.magazine(t.direction);
+    expect(m.ok && m.properties).toBe(1);
+    if (!m.ok) return;
+    expect(m.html).toContain('280 000 €');
+    expect(m.html).not.toContain('250 000 €');
+    // Une mention dont le prix n'est plus celui de la fiche publiée n'y entre pas non plus.
+    const stale = new LettreInformation(t.db, t.journal, { now: t.now, diffusion: t.diffusion, mentions: { checklist: async (n, id) => ({ ...(await t.mentions.checklist(n, id))!, publishedPriceEur: 1 }) } });
+    expect(await stale.magazine(t.direction)).toMatchObject({ ok: true, properties: 0 });
+    expect(b1.id).toBeTruthy();
+    const sans = new LettreInformation(t.db, t.journal, { now: t.now, diffusion: t.diffusion });
+    expect(await sans.magazine(t.direction)).toEqual({ ok: false, rule: 'R43', code: 'mentions_absentes' });
+  });
+
+  it('[R09] [R15] aucun nom ni mail de personne du réseau dans le magazine, tiré avec des personnes en base', async () => {
+    const t = await setup();
+    await t.property('B1', MAISON);
     await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Mila', lastName: 'Dupontel' });
-    expect(await t.lettre.magazine(t.direction, 'Les biens de Mila Dupontel')).toMatchObject({ ok: false, rule: 'R09' });
-    expect(await t.lettre.magazine(t.direction, 'Les biens chez Dupontel')).toMatchObject({ ok: false, rule: 'R09' });
-    // Ni une mention de l'IA [R06].
-    expect(await t.lettre.magazine(t.direction, 'Notre assistant IA immobilier')).toMatchObject({ ok: false, rule: 'R06' });
-    expect(await t.lettre.magazine({ role: 'client' as never, userId: 'c', networkId: t.network.id }, 'Le magazine')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const ok = await t.lettre.magazine(t.direction);
+    expect(ok.ok).toBe(true);
+    expect(ok.ok && ok.html.includes('Dupontel')).toBe(false);
+    expect(ok.ok && ok.html.split('<body>')[1]!.includes('@')).toBe(false);
   });
 
   it('[R586] seule la direction ouvre une édition ; le journal porte l’issue et sa règle, jamais le texte ni le mail', async () => {

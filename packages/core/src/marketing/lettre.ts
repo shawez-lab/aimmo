@@ -83,8 +83,20 @@ export interface LettreOptions {
   /** Les canaux ; absents : ceux du mode essai, rien ne part [R26]. */
   channels?: readonly OutboundChannel[];
   unsubscribeBase?: string | null;
+  /**
+   * Les mentions obligatoires d'une annonce, calculées par le code de M07 depuis le mandat, la fiche et la carte du
+   * réseau [R43] : le Worker les branche comme pour le studio. Absentes : aucun magazine ne sort.
+   */
+  mentions?: ListingMentions;
   now?: () => Date;
 }
+
+export interface ListingMentions {
+  checklist(networkId: string, propertyId: string): Promise<{ complete: boolean; text: string; publishedPriceEur: number | null } | null>;
+}
+
+/** Le titre du magazine, écrit par le code : aucun texte libre n'entre dans un contenu imprimé public [R09, R15]. */
+export const MAGAZINE_TITLE = 'Nos biens et les prix de nos quartiers';
 
 /** Un bien de la lettre ou du magazine, avec son prix lu dans la base. */
 export interface LetterProperty {
@@ -217,6 +229,7 @@ export class LettreInformation {
   private readonly rapprochement: Rapprochement;
   private readonly prices: CommunePriceReader;
   private readonly unsubscribeBase: string | null;
+  private readonly mentionsReader: ListingMentions | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -236,6 +249,7 @@ export class LettreInformation {
     this.rapprochement = new Rapprochement(db, this.fiche, this.gate, journal, { now: this.now });
     this.prices = options.prices ?? new PrixRegroupes(db, journal, NO_SALES, { now: this.now });
     this.unsubscribeBase = checkUnsubscribeBase(options.unsubscribeBase ?? null);
+    this.mentionsReader = options.mentions ?? null;
   }
 
   /** La direction ouvre une édition ; un titre en lettres seules, sans chiffre [R10, R16]. */
@@ -447,10 +461,19 @@ export class LettreInformation {
    * sans nom, adresse ni coordonnée [R15] ; la direction ou un agent du réseau le tire [R16]. Un seul prix inconnu de la
    * base, et rien ne sort [R585].
    */
-  async magazine(viewer: Viewer, title: unknown): Promise<MagazineResult> {
+  async magazine(viewer: Viewer): Promise<MagazineResult> {
     if (viewer.role !== 'direction' && viewer.role !== 'agent') return { ok: false, rule: 'R16', code: 'role' };
-    if (typeof title !== 'string' || title.trim().length < 3 || title.trim().length > 80 || /\d/.test(title)) return { ok: false, rule: 'R585', code: 'titre' };
-    const properties = await this.diffusable(viewer.networkId);
+    if (!this.mentionsReader) return { ok: false, rule: 'R43', code: 'mentions_absentes' };
+    const title = MAGAZINE_TITLE;
+    const properties: LetterProperty[] = [];
+    const mentions = new Map<string, string>();
+    // Chaque bien du magazine porte toutes ses mentions obligatoires, sous lui ; une seule manque et il n'y entre pas [R43].
+    for (const p of await this.diffusable(viewer.networkId)) {
+      const m = await this.mentionsReader.checklist(viewer.networkId, p.id);
+      if (!m || !m.complete || m.text.trim() === '' || m.publishedPriceEur !== p.priceEur) continue;
+      properties.push(p);
+      mentions.set(p.id, m.text);
+    }
     const prices: LetterPrices[] = [];
     const seen = new Set<string>();
     for (const p of properties) {
@@ -462,12 +485,19 @@ export class LettreInformation {
     const content: LetterContent = { firstName: null, properties, valueTracking: null, prices };
     const sections = [
       `<h1>${escapeHtml(title.trim())}</h1>`,
-      `<section><h2>Nos biens</h2><ul>${properties.map((p) => `<li>${escapeHtml(propertyLine(p).slice(2))}</li>`).join('')}</ul></section>`,
+      `<section><h2>Nos biens</h2><ul>${properties.map((p) => `<li>${escapeHtml(propertyLine(p).slice(2))}<p>${escapeHtml(mentions.get(p.id)!).replace(/\n/g, '<br>')}</p></li>`).join('')}</ul></section>`,
       ...prices.map((p) => `<section><h2>Les prix au m² de ${escapeHtml(p.commune)}</h2><ul>${p.cells.map((c) => `<li>${escapeHtml(cellLine(c))}</li>`).join('')}</ul></section>`),
     ];
     const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title.trim())}</title><style>@page{size:A4;margin:18mm}body{font:11pt/1.5 Georgia,serif;color:#1d1d1b}h1{font-size:24pt;margin:0 0 8mm}h2{font-size:14pt;margin:8mm 0 3mm}li{margin:0 0 2mm}section{break-inside:avoid}</style></head><body>${sections.join('')}</body></html>`;
     const visible = sections.join('').replace(/<[^>]+>/g, '\n').replace(/&[a-z]+;/g, ' ');
-    if (!pricesFromBase(visible, content)) return { ok: false, rule: 'R585', code: 'prix_inconnu' };
+    // Les montants des mentions sont calculés par M07 depuis le mandat : ils viennent de la base, eux aussi.
+    const mentionTexts = [...mentions.values()];
+    const extra = new Set(mentionTexts.flatMap((t) => euroAmounts(t).amounts));
+    const withoutMentions = mentionTexts.reduce((v, t) => v.split(t).join('\n'), sections.join('').replace(/<br>/g, '\n').replace(/<[^>]+>/g, '\n').replace(/&[a-z]+;/g, ' '));
+    if (!pricesFromBase(withoutMentions, content) || ![...euroAmounts(visible).amounts].every((a) => extra.has(a) || euroAmounts(withoutMentions).amounts.includes(a)))
+      return { ok: false, rule: 'R585', code: 'prix_inconnu' };
+    // Aucune coordonnée dans un contenu public [R09, R15].
+    if (/@|\bhttps?:|\bwww\./i.test(withoutMentions)) return { ok: false, rule: 'R09', code: 'coordonnee' };
     // Un contenu public : vocabulaire, adresse, chiffres de la base, aucune mention de l'IA [R07, R09, R10]. Le
     // magazine s'imprime : sa longueur n'est pas celle d'une page.
     // La liste des mots de l'IA n'est lue que pour un client : on la passe aussi, sans les exigences d'une conversation.
@@ -475,8 +505,8 @@ export class LettreInformation {
     const people = await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE network_id = ?', [viewer.networkId]);
     const clientNames = people.flatMap((x) => [x.first_name, x.last_name, x.first_name && x.last_name ? `${x.first_name} ${x.last_name}` : null]).filter((x): x is string => typeof x === 'string' && x.trim().length > 1);
     const problem =
-      checkText(visible, { audience: 'public', figures: figuresOf(content), clientNames }).find((p) => p.rule !== 'length') ??
-      checkText(visible, { audience: 'client', channel: 'email' }).find((p) => p.rule === 'R06');
+      checkText(withoutMentions, { audience: 'public', figures: figuresOf(content), clientNames }).find((p) => p.rule !== 'length') ??
+      checkText(withoutMentions, { audience: 'client', channel: 'email' }).find((p) => p.rule === 'R06');
     if (problem) return { ok: false, rule: problem.rule, code: 'texte' };
     await appendEvent(this.journal, { type: 'lettre.magazine', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { properties: properties.length, communes: prices.length } }, this.now);
     return { ok: true, html, properties: properties.length };
