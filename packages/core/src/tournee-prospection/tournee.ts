@@ -386,7 +386,7 @@ export class TourneeProspection {
       fixed.push({ appointmentKind: r.kind, start: new Date(r.start_at), end: new Date(r.end_at), town: r.city?.trim() || null, place });
     }
     const booked: BookedInterval[] = fixed.map((f) => ({ kind: f.appointmentKind, start: f.start, end: f.end }));
-    const busy: Interval[] = this.options.agenda ? await this.options.agenda.busy(viewer.userId, new Date(dayStart.getTime() - travel), new Date(dayEnd.getTime() + travel)) : [];
+    const busy: Interval[] = this.options.agenda ? await this.options.agenda.busy(viewer.userId, new Date(dayStart.getTime() - NEIGHBOUR_MS), new Date(dayEnd.getTime() + NEIGHBOUR_MS)) : [];
     const onSite = fixed.filter((f) => isOnSite(f.appointmentKind));
 
     const left: LeftOut[] = [];
