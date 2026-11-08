@@ -457,8 +457,10 @@ Réservé le 2026-11-08 par la voie 2. Règles R520 à R529 et migrations à par
 
 ## Mise en location
 
+Voie : 1
+
 ### HX47 · Dossiers de location contrôlés contre la fraude
-- Statut : à faire
+- Statut : en cours
 - Objectif : comme MonsieurHugo : repérer les faux bulletins de salaire et faux avis d'imposition. Jamais vu : le code vérifie ce qui est vérifiable, code 2D-Doc de l'avis d'imposition, existence de l'employeur dans la base Sirene, calculs du bulletin, et rend un constat ligne par ligne à l'agent, jamais une note de la personne.
 - Critères : un avis d'imposition au code 2D-Doc faux est signalé (test) ; le résultat est un constat, sans note ni classement (test) ; aucune pièce hors de la liste officielle n'est demandée (test).
 
