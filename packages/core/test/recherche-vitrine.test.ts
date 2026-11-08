@@ -12,6 +12,24 @@ import { describeWithSqlite } from './sqlite.ts';
 // Réseau, agents, biens, écrans et messages inventés.
 const qrsIn = (html: string): string[] => [...html.matchAll(/<svg[\s\S]*?<\/svg>/g)].map((m) => readQr(modulesFromSvg(m[0])));
 const SCREEN = 'abcdefghijk2';
+// Des identifiants au hasard, mais toujours les mêmes : le poids compressé de la page ne varie plus d'un essai à l'autre.
+function seededUuids(seed: number): () => string {
+  let a = seed >>> 0;
+  const byte = (): number => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) & 0xff;
+  };
+  return () => {
+    const h = Array.from({ length: 16 }, byte);
+    h[6] = (h[6]! & 0x0f) | 0x40;
+    h[8] = (h[8]! & 0x3f) | 0x80;
+    const x = h.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+  };
+}
 const OTHER = 'abcdefghijk3';
 
 describe('HX31 · lien de vitrine', () => {
@@ -33,15 +51,16 @@ describe('HX31 · poids de la page', () => {
     const N = '\u00a0';
     const S = '\u202f';
     const slides: string[] = [];
+    const uuid = seededUuids(20270301);
     for (let i = 0; i < VITRINE_MAX_SLIDES; i++) {
-      const id = crypto.randomUUID();
+      const id = uuid();
       const one = renderSlide(
         {
           listing: {
             title: `Maison de 5 pièces avec jardin et garage à Fontaine-lès-Dijon, proche des écoles ${i}`,
             priceEur: 345000 + i,
             mentions: `Prix : 345${S}00${i}${N}€ honoraires inclus, soit 330${S}000${N}€ hors honoraires et 4,55${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.\nClasse énergie D, classe climat C. Montant estimé des dépenses annuelles d'énergie entre 1${S}100${N}€ et 1${S}550${N}€.\nCarte professionnelle n° CPI 2101 2027 000 000 001.`,
-            photo: { ref: `biens/${id}/${crypto.randomUUID()}.jpg`, overlay: i % 2 ? 'Aménagement virtuel' : null },
+            photo: { ref: `biens/${id}/${uuid()}.jpg`, overlay: i % 2 ? 'Aménagement virtuel' : null },
           },
           reference: `REF-2027-${1000 + i}`,
           link: `https://www.reseau-immobilier-exemple.test/biens/${id}?o=abcdefghijkl&vitrine=${SCREEN}`,

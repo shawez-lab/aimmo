@@ -18,6 +18,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     destinataires: ['L\'agent attribué', 'La direction du réseau, en lecture', 'Le responsable de la conformité'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
     tables: {
+      // HX55 : notes préparées par l'assistant de l'agent, à valider par lui ; la fiche, l'agent et le texte.
+      mcp_drafts: ['agent_id', 'person_id', 'subject', 'payload', 'decided_by'],
       persons: ['agent_id', 'first_name', 'last_name'],
       person_name_corrections: ['person_id', 'old_first_name', 'old_last_name', 'new_first_name', 'new_last_name', 'reason', 'actor'],
       person_identifiers: ['agent_id', 'person_id', 'value'],
@@ -1220,6 +1222,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
+  mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],
   commission_steps: ['file_id', 'status', 'at'],
   invoice_drafts: ['id', 'network_id', 'file_id', 'kind', 'vat_bp', 'round', 'created_at'],
   invoices: ['id', 'network_id', 'year', 'number', 'kind', 'file_id', 'corrects_invoice_id', 'issued_on', 'created_at'],
