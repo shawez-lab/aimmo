@@ -21,6 +21,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { publicTextProblems, sentences, type SentenceProblem } from './annonce-sourcee.ts';
 import { parisDay } from '../studio/bibliotheque.ts';
 import type { PropertySheet } from './fiche-bien.ts';
+import { orderGallery } from '../medias/amenagement.ts';
 
 export const VIRTUAL_STAGING_LABEL = 'Aménagement virtuel';
 
@@ -141,6 +142,25 @@ export class MediasBien {
       // Sa musique est relue au moment de publier : une licence retirée ou expirée depuis le montage retire la vidéo.
       if (m.kind === 'video' && !(await this.montageStillLicensed(propertyId, m.ref))) continue;
       out.push({ ref: m.ref, kind: m.kind, overlay: null });
+    }
+    return this.withTwins(propertyId, out);
+  }
+
+  /**
+   * L'original à côté, dans les annonces [R494] : les photos suivent l'ordre de R493 (HX41). Une image aménagée part
+   * juste après sa jumelle réelle déclarée, jamais en couverture ; sans jumelle déclarée et publiée, elle ne part pas.
+   * Les vidéos et visites gardent leur place ; les photos remplissent, dans le nouvel ordre, les places des photos.
+   */
+  private async withTwins(propertyId: string, media: PublishedMedia[]): Promise<PublishedMedia[]> {
+    const photos = media.filter((m) => m.kind === 'photo');
+    if (!photos.some((m) => m.overlay !== null)) return media;
+    const rows = await this.db.all<{ staged_ref: string; real_ref: string }>('SELECT staged_ref, real_ref FROM virtual_stagings WHERE property_id = ?', [propertyId]);
+    const ordered = orderGallery(photos, new Map(rows.map((r) => [r.staged_ref, r.real_ref] as const))).photos;
+    const out: PublishedMedia[] = [];
+    let i = 0;
+    for (const m of media) {
+      if (m.kind !== 'photo') out.push(m);
+      else if (i < ordered.length) out.push(ordered[i++]!);
     }
     return out;
   }

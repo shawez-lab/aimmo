@@ -18,6 +18,8 @@ import { Annonces, CHANNELS, FicheBien, MentionsAnnonce, Publication, type Chann
 import { loadMigrations } from './migrations.ts';
 import { openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { AmenagementsVirtuels } from '../src/medias/index.ts';
+import { CertificatsPhotos } from '../src/studio/index.ts';
 
 // Réseau, bien, vendeur et mandat inventés.
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
@@ -43,7 +45,7 @@ export class FakeChannel implements ListingChannel {
   }
 }
 
-export async function setupAnnonce(options: { card?: boolean } = {}) {
+export async function setupAnnonce(options: { card?: boolean; twin?: boolean } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = new Date('2027-02-10T10:00:00.000Z');
@@ -82,6 +84,21 @@ export async function setupAnnonce(options: { card?: boolean } = {}) {
       { ref: `biens/${b.id}/0b6f1d2e-3333-4a2b-8c3d-000000000003.mp4`, kind: 'video', edit: 'aucune' },
     ],
   });
+  // La photo aménagée a sa jumelle réelle déclarée, tirée du même cliché (HX41) : elle part juste après elle [R494].
+  if (options.twin !== false) {
+    const real = `biens/${b.id}/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg`;
+    const staged = `biens/${b.id}/0b6f1d2e-2222-4a2b-8c3d-000000000002.jpg`;
+    const original = `biens/${b.id}/originaux/0b6f1d2e-1111-4a2b-8c3d-00000000000a.jpg`;
+    const stored = new Set([real, staged, original]);
+    let t = 0;
+    const certs = new CertificatsPhotos(db, acces, journal, { has: async (r: string) => stored.has(r) }, { now, newToken: () => (++t).toString(16).padStart(32, 'e') });
+    for (const [resultRef, c] of [[real, 'a'], [staged, 'c']] as const) {
+      const r = await certs.record(agent, b.id, { resultRef, resultSha256: c.repeat(64), originalRef: original, originalSha256: 'a'.repeat(64), operations: [], processedOn: 'appareil' });
+      if (!r.ok) throw new Error(`certificat ${r.code}`);
+    }
+    const d = await new AmenagementsVirtuels(db, acces, journal, { now }).declare(agent, b.id, { stagedRef: staged, realRef: real, changes: [{ kind: 'meubler', style: 'scandinave' }] });
+    if (!d.ok) throw new Error(`jumelle ${d.code}`);
+  }
   if (options.card !== false) await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
