@@ -405,6 +405,40 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(today.ok && today.value.steps[0]).toMatchObject({ proposed: false, reason: 'outside_hours' });
   });
 
+  it('[R301] une demande d’arrêt notée pendant la vérification de la liste retient le mail ; une réponse pendant l’appel l’empêche d’être noté', async () => {
+    const slow = new FakeOpposition();
+    const t = await setup({ opposition: slow });
+    const id = await t.startOk(FULL.slice(0, 1));
+    let calls = 0;
+    slow.check = async () => {
+      calls += 1;
+      if (calls === 2) {
+        t.setClock(START + 1000);
+        await t.store.addExclusion({ networkId: t.network.id, personId: t.person.id, reason: 'stop', notedAt: new Date(START + 1000) });
+      }
+      return 'not_listed';
+    };
+    await t.sequences.run();
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'excluded' });
+
+    const slow2 = new FakeOpposition();
+    const c = await setup({ opposition: slow2 });
+    const cid = await c.startOk([{ channel: 'phone', afterDays: 0 }]);
+    const today = await c.sequences.today(c.alex);
+    const stepId = today.ok ? today.value.steps[0]!.stepId : '';
+    let n = 0;
+    slow2.check = async () => {
+      n += 1;
+      // Le deuxième regard est celui de l'appel : la réponse arrive à ce moment-là.
+      if (n === 2) await c.store.recordMessage({ networkId: c.network.id, personId: c.person.id, channel: 'sms', direction: 'in', authorKind: 'person', body: 'Rappelez-moi plus tard.', occurredAt: new Date(START) });
+      return 'not_listed';
+    };
+    expect(await c.sequences.markDone(c.alex, stepId, { callOutcome: 'called' })).toMatchObject({ ok: false, code: 'stopped' });
+    expect(await c.sequence(cid)).toMatchObject({ status: 'stopped', end_reason: 'reply' });
+    expect(await c.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM call_notes')).toEqual({ n: 0 });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);

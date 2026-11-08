@@ -241,7 +241,8 @@ export class SequencesProspection {
       }
     }
     const view = await this.fiche.view(seq.person_id);
-    const stamp = at.getTime();
+    // L'heure est relue après le service : ce qui a été noté pendant qu'il répondait compte aussi.
+    const stamp = Math.max(at.getTime(), this.now().getTime());
     const since = Date.parse(seq.started_at);
     // Une exclusion en cours, ou qui a couru pendant la séquence même si elle est levée depuis : la levée ne relance rien.
     const exclusion = view.exclusions.find((e) => Date.parse(e.noted_at) <= stamp && (e.lifted_at === null || Date.parse(e.lifted_at) > Math.min(stamp, since)));
@@ -367,6 +368,7 @@ export class SequencesProspection {
           await this.end(seq, 'opposition_list', 'R302', this.actor(viewer));
           continue;
         }
+        if (c.proposed && !(await this.refresh(seq, this.actor(viewer)))) continue;
         out.push(c.proposed ? { ...base, action: 'call', proposed: true, reason: null, call: c.call, callClosesAt: c.closesAt } : { ...base, action: 'call', proposed: false, reason: c.reason });
       } else {
         out.push({ ...base, action: step.channel, proposed: true, reason: null });
@@ -401,6 +403,8 @@ export class SequencesProspection {
         if (c.stop) await this.end(seq, 'opposition_list', 'R302', this.actor(viewer));
         return this.refuse(viewer, subject, 'R302', c.reason);
       }
+      // La liste a pu prendre du temps : une réponse ou une opposition arrivée pendant ce temps l'emporte [R301].
+      if (!(await this.refresh(seq, this.actor(viewer)))) return this.refuse(viewer, subject, 'R301', 'stopped');
       const noted = await this.appels.note(viewer, seq.person_id, { outcome: input.callOutcome });
       if (!noted.ok) return this.refuse(viewer, subject, noted.rule ?? 'R204', noted.code);
       if (input.callOutcome === 'refused') {
