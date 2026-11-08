@@ -394,6 +394,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 
 ### HX51 · La publication relit chaque vidéo générée
 - Statut : en cours
+- Reste : décidé, lecture prudente : `MediasBien.publishable()` relit une vidéo rangée dans `generated_videos` par `generatedVideoDiffusable` (même relecture que `VideosGenerees.diffusable`) au moment d'envoyer ; elle n'a pas de musique et part sans montage, mais si un montage existe sous la même référence, sa licence est relue en plus (la plus stricte l'emporte) ; sans les photos certifiées (`generatedVideoPhotos`), elle ne part pas. Portails : par `Publication` ; vitrine et réseaux ne prennent que des photos. Reste : brancher `generatedVideoPhotos` (CertificatsPhotos) dans les routes de `api/src/annonces.ts` avec les routes de HX42 (voie 1) ; d'ici là, une vidéo générée ne part dans aucune annonce.
 - Qui : Claude, voie 1 (touche `annonces/medias.ts`), relecture normale
 - Dépendances : HX42
 - Partie du cahier : M19, M07 (photos et vidéos).
