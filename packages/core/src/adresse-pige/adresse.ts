@@ -132,7 +132,13 @@ export function proposeAddresses(ad: AdFacts, diagnoses: readonly Diagnosis[], p
         ? { criterion: 'cadastre', points: 15, fact: `Parcelle cadastrale ${parcel.id} à cette adresse.`, source: CADASTRE_SOURCE, date: parcels.readOn }
         : { criterion: 'cadastre', points: 0, fact: 'Aucune parcelle cadastrale lue à cette adresse.', source: CADASTRE_SOURCE, date: parcels.readOn },
     );
-    kept.push({ d, points, base: Math.min(100, points.reduce((n, p) => n + p.points, 0)) });
+    // Une même adresse ne compte qu'une fois : plusieurs diagnostics d'un même logement n'en font pas des adresses
+    // concurrentes ; le plus récent la représente.
+    const where = [d.streetNumber ?? '', communeSlug(d.street), d.postcode, slug].join('|');
+    const twin = kept.findIndex((k) => [k.d.streetNumber ?? '', communeSlug(k.d.street), k.d.postcode, slug].join('|') === where);
+    const entry = { d, points, base: Math.min(100, points.reduce((n, p) => n + p.points, 0)) };
+    if (twin === -1) kept.push(entry);
+    else if (d.diagnosedOn > kept[twin]!.d.diagnosedOn) kept[twin] = entry;
   }
   const total = kept.reduce((n, k) => n + k.base, 0);
   const out = kept.map(({ d, points, base }): AddressCandidate => {
@@ -273,6 +279,22 @@ export class AdressePige {
     return r && (r.energy_class || r.diagnosed_on) ? { energy_class: r.energy_class, diagnosed_on: r.diagnosed_on } : null;
   }
 
+  /**
+   * La dernière relève, sur son site, de l'annonce demandée, ouverte et de la zone de cet agent : rien ne mélange deux
+   * relèves [R295]. `askedId` est l'identifiant demandé.
+   */
+  private async current(viewer: Viewer, adId: unknown): Promise<(OpenAd & { askedId: string }) | Problem> {
+    const asked = await this.open(viewer, adId);
+    if ('ok' in asked) return asked;
+    const latest = await this.db.first<{ id: string }>(
+      `SELECT b.id FROM pige_ads a JOIN pige_ads b ON b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref
+        WHERE a.id = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1`,
+      [asked.id],
+    );
+    const ad = latest && latest.id !== asked.id ? await this.open(viewer, latest.id) : asked;
+    return 'ok' in ad ? ad : { ...ad, askedId: asked.id };
+  }
+
   /** Une annonce ouverte de la zone de cet agent, ou la raison du refus : « pas d'agence » et non ferment tout. */
   private async open(viewer: Viewer, adId: unknown): Promise<OpenAd | Problem> {
     const ad = await this.pige.openAd(viewer, adId);
@@ -283,7 +305,7 @@ export class AdressePige {
   async propose(viewer: Viewer, adId: unknown): Promise<({ ok: true } & Proposal) | Refusal | Problem> {
     const g = await this.gate(viewer, `pige_ad:${String(adId)}`, true);
     if (g) return g;
-    const ad = await this.open(viewer, adId);
+    const ad = await this.current(viewer, adId);
     if ('ok' in ad) return ad;
     const { candidates, missing } = await this.compute(viewer, ad);
     const id = this.newId();
@@ -366,7 +388,7 @@ export class AdressePige {
   async convert(viewer: Viewer, input: { adId: unknown; proposalId?: unknown; diagnosisNumber?: unknown }): Promise<{ ok: true; value: PigeProperty } | Refusal | Problem> {
     const g = await this.gate(viewer, `pige_ad:${String(input.adId)}`, true);
     if (g) return g;
-    const ad = await this.open(viewer, input.adId);
+    const ad = await this.current(viewer, input.adId);
     if ('ok' in ad) return ad;
     const linked = await this.pige.linkedOf(viewer.networkId, ad.fingerprint);
     if (!linked.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
@@ -378,7 +400,7 @@ export class AdressePige {
     let proposalId: string | null = null;
     if (input.diagnosisNumber !== undefined && input.diagnosisNumber !== null) {
       if (typeof input.proposalId !== 'string' || typeof input.diagnosisNumber !== 'string') return { ok: false, rule: 'R294', code: 'adresse_inconnue' };
-      const p = await this.db.first<{ id: string; candidates: string }>('SELECT id, candidates FROM pige_address_proposals WHERE id = ? AND network_id = ? AND ad_id = ? AND agent_id = ?', [input.proposalId, viewer.networkId, ad.id, viewer.userId]);
+      const p = await this.db.first<{ id: string; candidates: string }>('SELECT id, candidates FROM pige_address_proposals WHERE id = ? AND network_id = ? AND ad_id IN (?, ?) AND agent_id = ?', [input.proposalId, viewer.networkId, ad.id, ad.askedId, viewer.userId]);
       const proposed = p ? (JSON.parse(p.candidates) as { diagnosisNumber: string }[]).some((c) => c.diagnosisNumber === input.diagnosisNumber) : false;
       // Seule une adresse proposée se retient, jamais une adresse tapée ; relue aux sources, avec sa confiance du moment.
       const found = proposed ? (await this.compute(viewer, ad)).candidates.find((c) => c.diagnosisNumber === input.diagnosisNumber) : undefined;

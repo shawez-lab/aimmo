@@ -84,6 +84,12 @@ it('[R294] un critère tu par l’annonce ne donne aucun point et le dit ; un cr
   expect(proposeAddresses(facts({ energyClass: null, diagnosedOn: null }), [...two].reverse(), { byDiagnosis: {}, readOn: '2026-12-07' })).toEqual(silent);
 });
 
+it('[R294] plusieurs diagnostics d’un même logement font une seule adresse, représentée par le plus récent', () => {
+  const r = proposeAddresses(facts({ diagnosedOn: null }), [diag({ number: '2621E0000005T', diagnosedOn: '2025-03-01' }), diag(), diag({ number: '2621E0000006T', street: 'rue des essais' })], { byDiagnosis: {}, readOn: '2026-12-07' });
+  expect(r).toHaveLength(1);
+  expect(r[0]).toMatchObject({ diagnosisNumber: '2621E0000001T', confidence: 60 });
+});
+
 it('[R294] une adresse qui porte une civilité ou un nom est écartée ; le titre d’une voie ne l’est pas ; aucun nom dans le résultat', () => {
   const r = proposeAddresses(facts(), [diag({ street: 'Chez Mme Essai' }), diag({ number: '2621E0000003T', street: 'Rue du Docteur Chaussier' })], { byDiagnosis: {}, readOn: '2026-12-07' });
   expect(r.map((c) => c.street)).toEqual(['Rue du Docteur Chaussier']);
@@ -172,6 +178,16 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await expect(
       s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, adId, ad.fingerprint, s.alex.id]),
     ).rejects.toThrow(/bien fermé/);
+  });
+
+  it('[R295] une annonce corrigée entre la file et la conversion : la fiche prend sa dernière relève entière', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const first = s.ad({ rooms: 4, priceEur: 200_000 });
+    await s.pige.ingest(s.network.id, [first]);
+    const adId = await s.firstAd();
+    await s.pige.ingest(s.network.id, [{ ...first, rooms: 5, priceEur: 210_000 }]);
+    const r = await s.adresses.convert(s.agentAlex, { adId });
+    expect(r.ok && [r.value.rooms, r.value.priceEur]).toEqual([5, 210_000]);
   });
 
   it('[R295] une date de diagnostic dite sans classe est gardée et reprise', async () => {
