@@ -188,6 +188,8 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     });
     const tableId = await t.table();
     await expect(t.db.run('UPDATE life_table_rows SET expectancy_tenths = 500 WHERE table_id = ?', [tableId])).rejects.toThrow(/R531/);
+    // Aucune ligne ne s'ajoute à une table importée.
+    await expect(t.db.run('INSERT INTO life_table_rows (table_id, age, expectancy_tenths) VALUES (?, 90, 60)', [tableId])).rejects.toThrow(/R531/);
     const r = await t.viager.compute(t.acces, t.agent, { inputs: t.typed });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.inputs.expectancies).toMatchObject({ value: [128] });
@@ -201,9 +203,17 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
 
   it('[R532] ni offre ni conseil : la mention toujours, le bouquet borné, l’expert du viager proposé par M18', async () => {
     const t = await setup();
+    const refused = { ok: false, rule: 'R532', code: 'bouquet_trop_haut', field: 'bouquet' };
+    // Sans table (calcul incomplet), le bouquet reste borné par la valeur occupée, ou par la valeur libre.
+    expect(await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, bouquet: { value: 17_000_000, hypothesis: 'convenu' } } })).toEqual(refused);
+    const { occupied: _o, ...noOccupied } = t.typed;
+    expect(await t.viager.compute(t.acces, t.agent, { inputs: { ...noOccupied, bouquet: { value: 50_000_000, hypothesis: 'convenu' } } })).toEqual(refused);
+    expect(await t.db.first<{ n: number }>('SELECT count(*) AS n FROM viager_calculations')).toEqual({ n: 0 });
     await t.table();
-    const tooHigh = await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, bouquet: { value: 17_000_000, hypothesis: 'convenu' } } });
-    expect(tooHigh).toEqual({ ok: false, rule: 'R532', code: 'bouquet_trop_haut', field: 'bouquet' });
+    // Le bouquet égal à la valeur occupée passe : rente nulle.
+    const edge = await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, bouquet: { value: 16_400_000, hypothesis: 'convenu' } } });
+    expect(edge.ok && edge.value.result.status === 'complet' && edge.value.result.monthlyRentCents).toBe(0);
+    expect(await t.viager.compute(t.acces, t.agent, { inputs: { ...t.typed, bouquet: { value: 16_400_001, hypothesis: 'convenu' } } })).toEqual(refused);
     const r = await t.viager.compute(t.acces, t.agent, { projectId: t.project.id, inputs: t.typed });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.result.notice).toBe(VIAGER_NOTICE);

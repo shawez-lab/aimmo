@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS life_tables (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   vintage TEXT NOT NULL CHECK (length(vintage) BETWEEN 4 AND 20),
   source TEXT NOT NULL CHECK (length(source) BETWEEN 5 AND 300),
+  -- Nombre de lignes de la table, rangé à l'import : aucune ligne ne s'ajoute ensuite [R531].
+  row_count INTEGER NOT NULL CHECK (row_count BETWEEN 1 AND 121),
   imported_by TEXT NOT NULL,
   imported_at TEXT NOT NULL,
   UNIQUE (network_id, vintage)
@@ -22,6 +24,9 @@ CREATE TABLE IF NOT EXISTS life_table_rows (
   PRIMARY KEY (table_id, age)
 );
 CREATE TRIGGER IF NOT EXISTS life_table_rows_garde BEFORE DELETE ON life_table_rows BEGIN SELECT RAISE(ABORT, 'life_table_rows : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS life_table_rows_complete BEFORE INSERT ON life_table_rows
+  WHEN (SELECT count(*) FROM life_table_rows r WHERE r.table_id = NEW.table_id) >= (SELECT t.row_count FROM life_tables t WHERE t.id = NEW.table_id)
+BEGIN SELECT RAISE(ABORT, 'life_table_rows : une table ne change plus [R531]'); END;
 CREATE TRIGGER IF NOT EXISTS life_table_rows_fige BEFORE UPDATE ON life_table_rows BEGIN SELECT RAISE(ABORT, 'life_table_rows : une table ne change plus [R531]'); END;
 
 -- Calculs de viager rangés avec leurs entrées, pour être rejoués à l'identique [R530].

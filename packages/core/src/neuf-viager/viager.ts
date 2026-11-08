@@ -103,6 +103,11 @@ export function monthlyRent(capitalCents: number, months: number, annualRateBp: 
   return Number(divRound(c * t * p, (p - SCALE) * SCALE));
 }
 
+/** Droit d'usage et d'habitation, en centimes : usufruit à l'âge de la tête la plus jeune × 60 %, ou 0 en viager libre. */
+export function usageRightOf(valueCents: number, occupied: boolean, ages: readonly number[]): number {
+  return occupied ? Number(divRound(big(valueCents) * big(usufructPercent(Math.min(...ages))) * 60n, 10_000n)) : 0;
+}
+
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
 /** Le calcul lui-même, sans base ni IA : les mêmes entrées donnent le même résultat, au caractère près [R530]. */
@@ -137,7 +142,7 @@ export function computeViager(inputs: ViagerInputs, at: string): ViagerResult {
   const longest = Math.max(...exp);
   lines.push(line('expectancyRetained', longest, 'dixiemes_annee', 'rente réversible : la plus longue des espérances des têtes, approchée ; l’expert du viager l’affine'));
   const youngest = Math.min(...ages);
-  const usageRight = occupied ? Number(divRound(big(value) * big(usufructPercent(youngest)) * 60n, 10_000n)) : 0;
+  const usageRight = usageRightOf(value, occupied, ages);
   lines.push(
     line(
       'usageRight',
@@ -302,8 +307,8 @@ export class Viager {
     const at = this.now().toISOString();
     const statements = [
       {
-        sql: 'INSERT INTO life_tables (id, network_id, vintage, source, imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?)',
-        params: [id, viewer.networkId, vintage, source.trim(), `direction:${viewer.userId}`, at],
+        sql: 'INSERT INTO life_tables (id, network_id, vintage, source, row_count, imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        params: [id, viewer.networkId, vintage, source.trim(), rows.length, `direction:${viewer.userId}`, at],
       },
       ...(rows as LifeTableRow[]).map((r) => ({
         sql: 'INSERT INTO life_table_rows (table_id, age, expectancy_tenths) VALUES (?, ?, ?)',
@@ -373,9 +378,17 @@ export class Viager {
       const v = inputs[k];
       if (v !== null) (inputs as unknown as Record<string, unknown>)[k] = { ...v, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     }
+    // Le bouquet ne dépasse jamais la valeur occupée, calcul complet ou non : dès qu'on la connaît, ou à défaut la
+    // valeur libre [R532].
+    if (inputs.bouquet !== null && inputs.marketValue !== null) {
+      const ceiling =
+        inputs.occupied !== null && inputs.headAges !== null
+          ? inputs.marketValue.value - usageRightOf(inputs.marketValue.value, inputs.occupied.value, inputs.headAges.value)
+          : inputs.marketValue.value;
+      if (inputs.bouquet.value > ceiling) return this.refuse(viewer, 'R532', 'bouquet_trop_haut', 'bouquet');
+    }
     if (inputs.headAges !== null) inputs.expectancies = await this.expectancies(viewer.networkId, inputs.headAges.value);
     const result = computeViager(inputs, createdAt);
-    if (result.status === 'complet' && result.lines.find((l) => l.key === 'capital')!.value < 0) return this.refuse(viewer, 'R532', 'bouquet_trop_haut', 'bouquet');
     const id = this.newId();
     await this.db.run(
       `INSERT INTO viager_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
