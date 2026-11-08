@@ -467,8 +467,14 @@ Voie : 1
 
 ## Commerces, neuf et viager
 
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R530 à R539 et migrations à partir de `2600` réservées à ce groupe. Le code vit dans `packages/core/src/neuf-viager/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX48 · Programmes neufs et viager
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte
+- Partie du cahier : M16 (commerces), M17 (investir), M18 (partenaires).
 - Objectif : comme Hektor et Apimo : vendre des lots de programmes neufs et des biens en viager. Jamais vu : pour le viager, bouquet et rente calculés par le code, chaque chiffre avec sa source et son hypothèse comme Y03, rejouable, avec mise en relation de l'expert viager de M18 ; pour le neuf, la grille des lots tenue à jour et les frais réduits calculés.
 - Critères : un calcul de viager se rejoue à l'identique (test) ; chaque chiffre cite sa source et son hypothèse (test) ; un lot vendu disparaît de la grille publiée (test).
 
