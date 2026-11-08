@@ -189,6 +189,8 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 
 ### HX19 · Carte des opportunités et tournée de prospection
 - Statut : en cours
+- Qui : Claude, relecture forte
+- Décidé (2026-11-08), lecture prudente : module `packages/core/src/tournee-prospection/`, sans migration (rien n'est rangé : la tournée est une proposition), règles R297 à R299. Opportunités : panneaux dont la tâche de HX14 est due et pas récupérés (adresse géocodée par la Base adresse nationale, sinon lieu inconnu), lettres de G06 pas déposées (un lot par campagne, au centre de la campagne, 2 min par lettre), diagnostics de HX16 remontés depuis 14 jours dans les secteurs suivis. Hors zone : compté, jamais montré ni géocodé. Tournée gloutonne au plus tôt fini, sur des tranches de 5 min, route estimée à vol d'oiseau majoré (HX02). Lien de la vue des rues : la seule position arrondie. Réservé à l'agent lui-même, la direction n'a pas de tournée.
 - Objectif : comme Hektor, Modelo, Keyzia et Maline : une carte des opportunités du secteur, la vue des rues, et un itinéraire optimisé de porte-à-porte. Jamais vu : une seule tournée mêle les visites du jour, les panneaux à récupérer de HX14, les lettres de G06 et les nouveaux diagnostics de HX16, calée dans les créneaux libres de V01 avec les temps de trajet.
 - Critères : la tournée tient dans les créneaux libres de l'agent (test) ; aucune adresse hors de la zone de l'agent (test) ; le lien vers la vue des rues ne porte aucune clé ni donnée de client (test).
 
