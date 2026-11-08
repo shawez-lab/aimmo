@@ -168,7 +168,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       visit_reports: ['dictation', 'report', 'validated_by', 'created_by'],
       visit_tasks: ['agent_id'],
       // HX44 : le dossier du bien envoyé avant la visite, la visite à distance et la signature en ligne de son bon.
-      visit_dossiers: ['person_id', 'content', 'content_hash', 'created_by'],
+      visit_dossiers: ['person_id', 'payload_hash', 'content', 'content_hash', 'created_by'],
       remote_visits: ['person_id', 'started_by'],
       remote_slip_signatures: ['drawing_hash', 'proof', 'created_by'],
     },
@@ -1112,7 +1112,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   safety_alerts: ['id', 'network_id', 'appointment_id', 'raised_at', 'visit_start_at', 'notified_at', 'attempts', 'claimed_until'],
   visit_reports: ['appointment_id', 'network_id', 'source', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],
   visit_tasks: ['appointment_id', 'kind', 'network_id', 'project_id', 'due_at', 'created_at', 'done_at'],
-  visit_dossiers: ['id', 'network_id', 'appointment_id', 'property_id', 'version_id', 'payload_hash', 'token_hash', 'expires_at', 'status', 'message_id', 'created_at'],
+  visit_dossiers: ['id', 'network_id', 'appointment_id', 'property_id', 'version_id', 'token_hash', 'expires_at', 'status', 'message_id', 'created_at'],
   remote_visits: ['appointment_id', 'network_id', 'property_id', 'started_at', 'ended_at'],
   remote_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
   weekly_points: ['mandate_id', 'week', 'network_id', 'property_id', 'next_actions', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],

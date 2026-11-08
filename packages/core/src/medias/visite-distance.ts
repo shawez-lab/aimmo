@@ -120,6 +120,9 @@ const DOSSIER_CSS =
   '.prix{font:700 var(--t-xl)/1 var(--police-titre);color:var(--accent);margin:0}' +
   '.mentions{margin:0;padding:var(--e-2) var(--e-3);border-left:3px solid var(--moutarde);font-size:var(--t-s);white-space:pre-line}' +
   '.texte{white-space:pre-line;margin:0}.ref{color:var(--doux);font-size:var(--t-s);letter-spacing:.08em;margin:0}';
+const CSS = DESIGN_CSS + DOSSIER_CSS;
+/** La feuille de style de la page, retirée avant la relecture. */
+const STYLE_SHEET = new RegExp(`<${'style'}>[\\s\\S]*?</${'style'}>`, 'g');
 
 /**
  * Le dossier du bien : la version publiée, et elle seule, au caractère près. Aucun autre champ n'existe dans ce que la
@@ -136,7 +139,7 @@ export function renderDossier(v: PublishedVersion): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="${THEME_COLOR}">` +
-    `<title>Le bien avant votre visite</title><style>${DESIGN_CSS}${DOSSIER_CSS}</style></head>` +
+    `<title>Le bien avant votre visite</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div><main>` +
     `<h1>${escapeHtml(v.title)}</h1><p class="prix">${escapeHtml(euros(v.priceEur))}</p>` +
     `${photos ? `<section class="photos" aria-label="Photos du bien">${photos}</section>` : ''}` +
@@ -157,7 +160,7 @@ export function dossierSources(v: PublishedVersion): string[] {
  */
 export function dossierProblems(html: string, v: PublishedVersion, secrets: readonly { names: readonly string[]; values: readonly string[]; exact?: readonly string[] }[]): string[] {
   const found = secrets.flatMap((s) => confidentialIn(html, s));
-  const text = visibleText(html.replace(/<style>[\s\S]*?<\/style>/g, ' '));
+  const text = visibleText(html.replace(STYLE_SHEET, ' '));
   // Un numéro de mandat se cherche entier, quelle que soit sa longueur (« 12 » comme « MAND-0012 »), dans ce que
   // l'agent a écrit (titre et texte) : la relecture générale ne lit pas les valeurs courtes, et un numéro publié dans le
   // texte serait pris pour un chiffre sourcé. Le prix, les mentions et la date sont écrits par le code.
