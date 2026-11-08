@@ -347,8 +347,9 @@ Réservé le 2026-11-07 par la voie 2. Règles R470 à R489 et migrations à par
 - Critères : un rejet crée une seule tâche de correction (test) ; un écart de prix entre portail et version publiée est signalé (test) ; le classement des portails se fait sur les contacts et mandats réels (test).
 
 ### HX39 · Texte par portail et légendes des photos
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
 - Qui : Claude, relecture normale
+- Reste : fusionnée (#417), migration `2201`, R476 à R478. Décidé, lecture prudente : texte d'un portail écrit par l'agent du bien ou proposé par l'IA (repères à la place des chiffres et des classes, minuscules comprises), validé par l'agent seul pour la version publiée du moment, caduc à la version suivante ; contrôle : chaque nombre avec son signe, ses lettres collées, ce qu'il compte et ce que mesure sa phrase, chaque lettre de classe avec son champ, aucun nombre en lettres ni lien, chaque phrase sourcée par la fiche du moment et par celle de la version publiée (aucun prix, aucune adresse) ; refait à chaque rendu ; prix, mentions et photos de la version publiée intacts ; légende de chaque photo écrite par le code (place, sujet d'une liste fermée dit par l'agent et porté par la fiche, étage, retouche ou aménagement virtuel de la fiche publiée). Codex 9 P0 corrigés, dernière version sans remarque. Restent : IA réelle ; routes, écran et branchement du flux au Worker (voie 1, `app.ts`).
 - Objectif : comme Apimo et Hektor : un texte différent par portail et des titres de photos générés. Jamais vu : seul le texte change, prix et mentions restent identiques partout, et chaque photo reçoit une légende utile aussi aux personnes malvoyantes, sans rien affirmer que la photo ne montre pas.
 - Critères : prix et mentions identiques dans tous les textes (test) ; aucune légende ne cite un élément absent de la fiche (test).
 
