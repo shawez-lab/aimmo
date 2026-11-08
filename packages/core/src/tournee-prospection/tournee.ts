@@ -410,6 +410,9 @@ export class TourneeProspection {
 
     const earliest = Math.max(dayStart.getTime(), this.now().getTime());
     /** Le trajet d'avant, en minutes, si l'arrêt peut commencer à `start` ; `null` sinon. */
+    /** Rien n'occupe l'agent entre deux instants : ni événement occupé, ni rendez-vous, ni arrêt choisi. La route se fait là. */
+    const clear = (from: number, to: number): boolean =>
+      ![...busy, ...booked, ...chosen].some((b) => b.start.getTime() < to && from < b.end.getTime());
     const fits = (o: Opportunity, start: number): number | null => {
       const end = start + o.minutes * MINUTE;
       if (end > dayEnd.getTime()) return null;
@@ -427,11 +430,14 @@ export class TourneeProspection {
       if (prev?.booked) before = Math.max(before, floor);
       // On ne part pas avant maintenant : la route compte depuis la fin de l'arrêt d'avant, ou depuis maintenant [R298].
       if (start < Math.max(prev ? prev.end.getTime() : earliest, earliest) + before * MINUTE) return null;
+      // La route elle-même se fait dans du temps libre : jamais pendant un événement occupé ni un autre rendez-vous [R298, R33].
+      if (!clear(start - before * MINUTE, start)) return null;
       const next = following(end);
       if (next) {
         const est = next.place ? this.estimate(o.place!, next.place) : floor;
         const after = Math.max(floor, Number.isFinite(est) ? est : floor);
         if (next.start.getTime() < end + after * MINUTE) return null;
+        if (!clear(end, end + after * MINUTE)) return null;
       }
       return before;
     };

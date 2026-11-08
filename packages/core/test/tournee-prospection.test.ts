@@ -224,6 +224,27 @@ describeWithSqlite('HX19 · carte des opportunités et tournée de prospection',
     expect(first.start.getTime()).toBeGreaterThanOrEqual(at(DAY, '09:00').getTime() + needed * MIN);
   });
 
+  it('[R298] la route se fait dans le temps libre : jamais pendant un événement occupé', async () => {
+    // Maintenant 9 h, occupé de 9 h à 11 h, aucune visite, agence à plus d'une heure : rien n'arrive avant 11 h plus la route.
+    const w = await world({ busy: [{ start: at(DAY, '09:00'), end: at(DAY, '11:00') }] });
+    await w.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?", [NOW.toISOString()]);
+    const base: Place = { lat: 47.9, lon: 5.0 };
+    const late = new TourneeProspection(w.db, w.journal, { now: () => at(DAY, '09:00'), agenda: { busy: async () => [{ start: at(DAY, '09:00'), end: at(DAY, '11:00') }] } });
+    const tour = await late.plan(w.asPaul, DAY, base);
+    if (!tour.ok) throw new Error('tournée refusée');
+    const placeOf = (s: TourStop): Place => (s.kind === 'panneau' ? SIGN_PLACE : s.kind === 'lettres' ? CENTER : DPE_PLACE);
+    const first = prospectStops(tour)[0]!;
+    expect(first.start.getTime()).toBeGreaterThanOrEqual(at(DAY, '11:00').getTime() + roadEstimate(base, placeOf(first)) * MIN);
+    // Et la route vers une visite fixe ne traverse pas un événement occupé.
+    const v = await world({ busy: [{ start: at(DAY, '09:20'), end: at(DAY, '09:25') }] });
+    const t2 = await v.tournee.plan(v.asPaul, DAY);
+    if (!t2.ok) throw new Error('tournée refusée');
+    for (const s of prospectStops(t2)) {
+      const visit = at(DAY, '10:00').getTime();
+      if (s.end.getTime() <= visit) expect(s.end.getTime() >= at(DAY, '09:25').getTime() || s.end.getTime() + 30 * MIN <= at(DAY, '09:20').getTime()).toBe(true);
+    }
+  });
+
   it('[R298] le total de route compte chaque trajet de la journée, jusqu’au rendez-vous fixe compris', async () => {
     const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:15' }, { from: '09:00', to: '12:00' }] }] } });
     const tour = await w.tournee.plan(w.asPaul, DAY);
