@@ -384,6 +384,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 
 ### HX50 · Les annonces publient l'image aménagée avec sa jumelle
 - Statut : en cours
+- Reste : proposition #426 prête (f6b9894f), non fusionnée : Codex sans remarque, vérification locale verte (4883 tests), GitHub Actions bloqué par la facturation ; la fusion a été refusée par la permission de la séance du 2026-11-08 vers 11:55 : la séance suivante la fusionne (section 3, étape 3, et section 11). Décidé : `MediasBien.publishable()` range les photos par `orderGallery` avec `virtual_stagings`, vidéos et visites à leur place ; le jeu `annonces-jeu.ts` certifie les deux photos du même cliché et déclare la jumelle (option `twin: false`, et rien avant la migration `2301`) ; le jeu des remises s'en passe (photos non certifiées). R494 passe à « oui » avec la fusion.
 - Qui : Claude, voie 1 (touche `annonces/medias.ts` et le jeu de test commun `annonces-jeu.ts`), relecture normale
 - Dépendances : HX41
 - Partie du cahier : M19, M07 (photos et vidéos).
