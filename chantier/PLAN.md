@@ -370,10 +370,20 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : une retouche locale sans mention est refusée (test) ; le certificat liste chaque retouche (test) ; chaque photo exportée porte le filigrane (test).
 
 ### HX41 · Aménagement virtuel des pièces
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#420), migration `2301`, R492 et R493. Décidé, lecture prudente : ce qui a changé déclaré par l'agent du bien en liste fermée (pièce meublée, décoration, sols, murs, désencombrée, objet transformé, chacun avec son option), rangé une fois, lu ligne par ligne sur le certificat public ; jumelle réelle prouvée par le code (photo de la fiche certifiée sans aménagement, même empreinte d'original) ; dans le Studio (photos publiables, publications sur les réseaux relues à l'envoi, exports), une image aménagée suit sa jumelle, jamais en premier ni seule, et s'exporte avec elle. Codex 3 P0 : deux corrigés, le troisième (annonces) confié à HX50 avec R494 « en service : non ». GitHub Actions bloqué par la facturation : vérification locale verte (4800 tests). Restent : écran de déclaration ; annonces (HX50, voie 1).
 - Qui : Claude, relecture normale
 - Objectif : comme Hektor, Apimo, HOQI et Talqor : meubler une pièce vide, redécorer en plusieurs styles, rénover sols et murs, désencombrer, transformer un objet. Jamais vu : chaque image transformée est toujours publiée à côté de la photo réelle, jamais en couverture seule, et le certificat dit exactement ce qui a changé.
 - Critères : mention « aménagement virtuel » sur l'image (test) ; l'original est toujours publié à côté (test) ; une image transformée ne peut pas être la seule photo d'une pièce (test).
+
+### HX50 · Les annonces publient l'image aménagée avec sa jumelle
+- Statut : à faire
+- Qui : Claude, voie 1 (touche `annonces/medias.ts` et le jeu de test commun `annonces-jeu.ts`), relecture normale
+- Dépendances : HX41
+- Partie du cahier : M19, M07 (photos et vidéos).
+- Objectif : R494. `MediasBien.publishable()` (P06) ordonne les photos par `orderGallery` de `medias/amenagement.ts` avec les jumelles déclarées (`AmenagementsVirtuels.twins`) : une image aménagée suit sa photo réelle, jamais en couverture, retirée sans jumelle. Le jeu `annonces-jeu.ts` déclare la jumelle de sa photo aménagée. Remarque P0 de Codex sur #420.
+- Critères : aucune annonce publiée n'a une image aménagée en couverture (test) ; une image aménagée sans jumelle déclarée n'est dans aucune annonce (test) ; `galleryProblems` est vide sur chaque annonce publiée (test).
+- Ce qu'elle attend d'un humain : rien.
 
 ### HX42 · Vidéo depuis les photos, voix off et avatar
 - Statut : à faire
