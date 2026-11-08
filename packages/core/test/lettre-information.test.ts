@@ -15,7 +15,8 @@ import {
 import { PrixRegroupes, type LatLon } from '../src/attirer/index.ts';
 import type { EstimatedKind, Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
-import { LETTER_PURPOSE, LettreInformation, euroAmounts, letterText, pricesFromBase } from '../src/marketing/index.ts';
+import { LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
+import type { PublicCell } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -135,9 +136,30 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     await Promise.all([t.lettre.sendEdition(id), t.lettre.sendEdition(id)]);
     expect(await t.lettre.sendOne(t.network.id, id, p.id)).toEqual({ personId: p.id, status: 'done', rule: null });
     expect(await t.sent()).toHaveLength(1);
-    // Une nouvelle édition repart.
+    // Une nouvelle édition repart, sans le bien déjà envoyé : jamais deux fois le même bien à la même personne.
     await t.lettre.sendEdition(await t.edition());
-    expect(await t.sent()).toHaveLength(2);
+    const both = await t.sent();
+    expect(both).toHaveLength(2);
+    expect(both[0]!.body).toContain('280 000 €');
+    expect(both[1]!.body).not.toContain('280 000 €');
+    expect(both[1]!.body).toContain('Talant, maison : 2 600 €/m²');
+  });
+
+  it('[R05] un bien déjà parti en alerte à la personne n’entre pas dans sa lettre', async () => {
+    const t = await setup();
+    const b1 = await t.property('B1', MAISON);
+    const b2 = await t.property('B2', { ...MAISON, price: 260_000 });
+    const p = await t.person('Inès', { search: SEARCH });
+    const id = await t.edition();
+    await t.lettre.sendOne(t.network.id, id, p.id);
+    const first = (await t.sent(p.id))[0]!.body;
+    expect(first).toContain('280 000 €');
+    expect(first).toContain('260 000 €');
+    const subjects = await t.db.all<{ subject: string }>('SELECT subject FROM message_subjects WHERE person_id = ? ORDER BY subject', [p.id]);
+    expect(subjects.map((x) => x.subject)).toEqual([`bien:${b1.id}`, `bien:${b2.id}`, `lettre:${id}`].sort());
+    const b3 = await t.property('B3', { ...MAISON, price: 250_000 });
+    const content = await t.lettre.contentFor(t.network.id, p.id);
+    expect(content.properties.map((x) => x.id)).toEqual([b3.id]);
   });
 
   it('[R584] chaque lettre finit par son lien de désinscription, qui retire l’accord de la lettre seul', async () => {
@@ -145,6 +167,7 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     await t.property('B1', MAISON);
     const a = await t.person('Inès', { search: SEARCH });
     await t.store.addConsent({ networkId: t.network.id, personId: a.id, purpose: ALERT_PURPOSE, channel: 'email', proof: 'test', givenAt: new Date(TUESDAY_10H - DAY) });
+    await t.store.addConsent({ networkId: t.network.id, personId: a.id, purpose: VALUE_TRACKING_PURPOSE, channel: 'email', proof: 'test', givenAt: new Date(TUESDAY_10H - DAY) });
     const b = await t.person('Léo', { search: SEARCH });
     await t.lettre.sendEdition(await t.edition());
     const messages = await t.sent();
@@ -156,12 +179,80 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(await t.lettre.unsubscribe('inconnu')).toBe(false);
     const consents = await t.store.listConsents(a.id);
     expect(consents.filter((c) => c.purpose === LETTER_PURPOSE).every((c) => c.withdrawn_at !== null)).toBe(true);
-    // L'accord des alertes reste.
+    // L'accord des alertes et celui du suivi de valeur restent.
     expect(consents.filter((c) => c.purpose === ALERT_PURPOSE).every((c) => c.withdrawn_at === null)).toBe(true);
+    expect(consents.filter((c) => c.purpose === VALUE_TRACKING_PURPOSE)).toHaveLength(1);
+    expect(consents.filter((c) => c.purpose === VALUE_TRACKING_PURPOSE).every((c) => c.withdrawn_at === null)).toBe(true);
     // Le jeton n'est rangé que par son empreinte.
     expect(await t.db.first('SELECT 1 FROM newsletter_unsubscribe_tokens WHERE token_hash = ?', [token])).toBeFalsy();
     const outcomes = await t.lettre.sendEdition(await t.edition());
     expect(outcomes).toEqual([{ personId: b.id, status: 'sent', rule: null }]);
+  });
+
+  it('[R583] fiches réunies : l’accord rangé sur une fiche vaut pour la fiche réunie, une seule lettre, à la fiche gardée', async () => {
+    const t = await setup();
+    await t.property('B1', MAISON);
+    const kept = await t.person('Inès', { letter: false, search: SEARCH });
+    const merged = await t.person('Inès', { search: SEARCH });
+    const fiche = new FicheUnique(t.db, t.store, { now: t.now });
+    await fiche.merge({ survivorId: kept.id, mergedId: merged.id, reason: 'même personne, test' });
+    const id = await t.edition();
+    expect(await t.lettre.sendEdition(id)).toEqual([{ personId: kept.id, status: 'sent', rule: null }]);
+    expect(await t.lettre.sendOne(t.network.id, id, merged.id)).toEqual({ personId: kept.id, status: 'done', rule: null });
+    expect(await t.sent()).toHaveLength(1);
+  });
+
+  it('[R585] un prix changé dans la base avant l’envoi retient la lettre, qui repart ensuite avec le nouveau prix', async () => {
+    const t = await setup();
+    const b1 = await t.property('B1', MAISON);
+    const p = await t.person('Inès', { search: SEARCH });
+    let change = true;
+    class Changeante extends LettreInformation {
+      override async contentFor(networkId: string, personId: string): Promise<LetterContent> {
+        const c = await super.contentFor(networkId, personId);
+        if (change) await t.db.run('UPDATE properties SET price_eur = 275000 WHERE id = ?', [b1.id]);
+        change = false;
+        return c;
+      }
+    }
+    const lettre = new Changeante(t.db, t.journal, { now: t.now, diffusion: t.diffusion, unsubscribeBase: BASE });
+    const id = await t.edition();
+    expect(await lettre.sendOne(t.network.id, id, p.id)).toEqual({ personId: p.id, status: 'waiting', rule: 'R585' });
+    expect(await t.sent()).toHaveLength(0);
+    expect(await lettre.sendOne(t.network.id, id, p.id)).toEqual({ personId: p.id, status: 'sent', rule: null });
+    const body = (await t.sent(p.id))[0]!.body;
+    expect(body).toContain('275 000 €');
+    expect(body).not.toContain('280 000 €');
+  });
+
+  it('[R585] une lettre se tient dans la longueur d’un mail : les quartiers partent d’abord, la commune et le suivi restent', () => {
+    const cell = (name: string, level: 'commune' | 'quartier', median: number): PublicCell => ({
+      zone: { slug: name.toLowerCase(), name, level },
+      kind: 'house',
+      status: 'publiee',
+      sales: 12,
+      median,
+      q1: median - 200,
+      q3: median + 200,
+      source: 'DVF, jeu inventé',
+      dvfLastSale: '2026-06-30',
+      period: { from: '2024-07', to: '2026-06' },
+    });
+    const quarters = Array.from({ length: 30 }, (_, i) => cell(`Quartier ${String.fromCharCode(65 + (i % 26))}${i >= 26 ? 'x' : ''}`, 'quartier', 2000 + i * 10));
+    const content: LetterContent = {
+      firstName: 'Inès',
+      properties: Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, kind: 'home', city: 'Talant', priceEur: 200_000 + i * 1000, surfaceM2: 90, rooms: 4 })),
+      valueTracking: { town: 'Talant', kind: 'house', cell: cell('Talant', 'commune', 2600) },
+      prices: [{ commune: 'Talant', cells: [cell('Talant', 'commune', 2600), ...quarters] }, { commune: 'Dijon', cells: [cell('Dijon', 'commune', 2900), ...quarters] }],
+    };
+    expect(letterText(content).length).toBeGreaterThan(LETTER_MAX_LENGTH);
+    const fitted = fitLetter(content);
+    const text = letterText(fitted);
+    expect(text.length).toBeLessThanOrEqual(LETTER_MAX_LENGTH - 160);
+    expect(fitted.valueTracking).not.toBeNull();
+    expect(fitted.properties).toHaveLength(5);
+    expect(fitted.prices[0]!.cells[0]!.zone.level).toBe('commune');
+    expect(pricesFromBase(text, fitted)).toBe(true);
   });
 
   it('[R584] sans lien de désinscription réglé, aucune lettre ne part', async () => {

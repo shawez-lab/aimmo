@@ -44,6 +44,28 @@ import { VALUE_TRACKING_PURPOSE } from '../mandats/suivi-valeur.ts';
 export const LETTER_PURPOSE = 'lettre_information';
 /** Cinq biens au plus par lettre. */
 export const LETTER_MAX_PROPERTIES = 5;
+/** La longueur permise d'une lettre, lien de désinscription compris : celle d'un mail au contrôle central. */
+export const LETTER_MAX_LENGTH = 4000;
+/** La place gardée pour le lien de désinscription. */
+const UNSUBSCRIBE_ROOM = 160;
+
+/**
+ * La lettre tenue dans la longueur d'un mail : on retire d'abord les quartiers les plus loin dans la liste, puis les
+ * communes, puis les biens les plus anciens ; la case de la commune et le suivi de valeur restent les derniers.
+ */
+export function fitLetter(content: LetterContent, max = LETTER_MAX_LENGTH - UNSUBSCRIBE_ROOM): LetterContent {
+  const c: LetterContent = { ...content, properties: [...content.properties], prices: content.prices.map((p) => ({ ...p, cells: [...p.cells] })) };
+  while (letterText(c).length > max) {
+    const withQuarter = [...c.prices].reverse().find((p) => p.cells.some((x) => x.zone.level === 'quartier'));
+    if (withQuarter) {
+      const at = withQuarter.cells.map((x) => x.zone.level).lastIndexOf('quartier');
+      withQuarter.cells.splice(at, 1);
+    } else if (c.prices.length > 0) c.prices.pop();
+    else if (c.properties.length > 0) c.properties.pop();
+    else break;
+  }
+  return c;
+}
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
@@ -254,10 +276,16 @@ export class LettreInformation {
     const root = await this.fiche.rootOf(personId);
     const ids = await this.fiche.membersOf(root);
     const properties: LetterProperty[] = [];
+    // Les communes où des biens correspondent à sa recherche, même déjà envoyés : leurs prix restent dans la lettre.
+    const searchTowns: string[] = [];
     for (const p of await this.diffusable(networkId)) {
       if (properties.length >= LETTER_MAX_PROPERTIES) break;
       const matches = await this.rapprochement.systemMatches(networkId, p.id);
-      if (matches.some((m) => m.status === 'match' && ids.includes(m.personId))) properties.push(p);
+      if (!matches.some((m) => m.status === 'match' && ids.includes(m.personId))) continue;
+      if (p.city) searchTowns.push(p.city);
+      // Jamais deux fois le même bien à la même personne, alertes comprises [R05].
+      if (await this.alreadySent(ids, p.id)) continue;
+      properties.push(p);
     }
 
     // Le suivi de valeur, seulement s'il est demandé et que son accord est en cours [R03, R31].
@@ -280,13 +308,23 @@ export class LettreInformation {
         towns.push(tracking.town);
       }
     }
-    for (const p of properties) if (p.city && !towns.some((t) => communeSlug(t) === communeSlug(p.city!))) towns.push(p.city);
+    for (const city of searchTowns) if (!towns.some((t) => communeSlug(t) === communeSlug(city))) towns.push(city);
     const prices: LetterPrices[] = [];
     for (const t of towns) {
       const c = await this.communeCells(networkId, t);
       if (c) prices.push(c);
     }
     return { firstName: await ficheFirstName(this.db, ids), properties, valueTracking, prices };
+  }
+
+  /** Le bien est déjà parti à la personne, fiches réunies comprises, par un envoi qui n'a pas échoué [R05]. */
+  private async alreadySent(ids: readonly string[], propertyId: string): Promise<boolean> {
+    const row = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM message_subjects s WHERE s.person_id IN (${placeholders(ids.length)}) AND s.subject = ?
+         AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')`,
+      [...ids, `bien:${propertyId}`],
+    );
+    return Number(row?.n ?? 0) > 0;
   }
 
   /** Les personnes du réseau dont l'accord de la lettre est en cours, une par fiche réunie. */
@@ -331,7 +369,7 @@ export class LettreInformation {
     const inForce = await this.fiche.channelsInForce(root, LETTER_PURPOSE);
     if (!inForce.includes('email')) return { personId: root, status: 'no_consent', rule: 'R583' };
 
-    const content = await this.contentFor(networkId, root);
+    const content = fitLetter(await this.contentFor(networkId, root));
     if (content.properties.length === 0 && content.valueTracking === null && content.prices.length === 0) return { personId: root, status: 'empty', rule: null };
     const body = letterText(content);
     if (!pricesFromBase(body, content)) return { personId: root, status: 'refused', rule: 'R585' };
@@ -361,6 +399,7 @@ export class LettreInformation {
         purpose: LETTER_PURPOSE,
         consentOnEveryChannel: true,
         subject: `lettre:${editionId}`,
+        propertyIds: content.properties.map((p) => p.id),
         // Au moment d'envoyer : chaque bien encore diffusable, chaque prix encore celui de la base [R42, R585].
         stillAllowed: async () => {
           for (const p of content.properties) {
@@ -376,7 +415,9 @@ export class LettreInformation {
       });
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;
-      status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' || result.rule === 'R585' ? 'waiting' : 'refused';
+      // Un bien parti entre-temps par une alerte : la lettre attend, et se refait sans lui au passage suivant [R05].
+      const propertyAlreadySent = result.rule === 'R05' && result.reason.startsWith('Ce bien');
+      status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' || result.rule === 'R585' || propertyAlreadySent ? 'waiting' : 'refused';
     } catch (error) {
       await this.db.run("UPDATE newsletter_letters SET status = 'failed', updated_at = ? WHERE edition_id = ? AND person_id = ? AND status = 'pending'", [this.now().toISOString(), editionId, root]);
       throw error;
