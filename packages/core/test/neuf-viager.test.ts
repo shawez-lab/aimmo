@@ -11,6 +11,7 @@ import {
   type ExpertViagerRelation,
   type ViagerInputs,
 } from '../src/neuf-viager/index.ts';
+import { assembleAccess } from '../src/conformite/demandes-personnes.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -259,6 +260,26 @@ describeWithSqlite('HX48 · programmes neufs et viager', () => {
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
     expect(await t.viager.compute(t.acces, t.agent, { inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
     expect(await t.viager.read(t.acces, t.agent, onProp.value.id)).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
+  });
+
+  it('[R532] la réponse d’accès du vendeur porte ses calculs de viager, jamais celle de l’acquéreur intéressé', async () => {
+    const t = await setup();
+    await t.table();
+    const prop = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'REF-V-2', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
+    const seller = (await t.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ?', [t.project.id]))!.person_id;
+    await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.alex.id, projectId: t.project.id, propertyId: prop.id, role: 'owned' });
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Bob', lastName: 'Exemple' });
+    const buy = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: buyer.id, kind: 'buy' });
+    await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.alex.id, projectId: buy.id, propertyId: prop.id, role: 'interested' });
+    // Un calcul sur le bien et le projet d'un autre que son propriétaire : refusé.
+    expect(await t.viager.compute(t.acces, t.agent, { propertyId: prop.id, projectId: buy.id, inputs: t.typed })).toMatchObject({ ok: false, rule: 'R16', code: 'not_owner' });
+    const onProp = await t.viager.compute(t.acces, t.agent, { propertyId: prop.id, inputs: t.typed });
+    const both = await t.viager.compute(t.acces, t.agent, { propertyId: prop.id, projectId: t.project.id, inputs: t.typed });
+    if (!onProp.ok || !both.ok) throw new Error('calcul');
+    const rows = async (personId: string) =>
+      ((await assembleAccess(t.db, [personId])).sections.find((x) => x.table === 'viager_calculations')?.rows ?? []).map((r) => (r as { id: string }).id).sort();
+    expect(await rows(seller)).toEqual([onProp.value.id, both.value.id].sort());
+    expect(await rows(buyer.id)).toEqual([]);
   });
 
   async function program(t: Awaited<ReturnType<typeof setup>>) {

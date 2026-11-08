@@ -387,6 +387,14 @@ export class Viager {
       const read = await acces.readFiche(viewer, project.person_id);
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
       if (read.view !== 'full') return this.refuse(viewer, 'R16', 'not_assigned');
+      // Un calcul sur un bien et un projet : le projet possède ce bien, pour que le calcul reste celui du crédirentier.
+      if (propertyId !== null) {
+        const owned = await this.db.first<{ n: number }>(
+          "SELECT count(*) AS n FROM project_properties WHERE project_id = ? AND property_id = ? AND network_id = ? AND role = 'owned'",
+          [projectId, propertyId, viewer.networkId],
+        );
+        if (Number(owned?.n ?? 0) === 0) return this.refuse(viewer, 'R16', 'not_owner');
+      }
     }
     const checked = checkViagerInputs(input.inputs);
     if (!checked.ok) return this.refuse(viewer, checked.code === 'esperance_saisie' ? 'R531' : 'R530', checked.code, checked.field);

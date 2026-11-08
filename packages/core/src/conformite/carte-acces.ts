@@ -901,8 +901,16 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
-  // Un calcul de viager rattaché au projet de la personne, ou au bien qu'elle possède (calcul sans projet).
-  viager_calculations: { locate: [via('project_id', 'projects'), via('property_id', 'properties')] },
+  // Un calcul de viager porte sur le crédirentier : rattaché au projet de la personne, ou au bien qu'elle a mis en vente
+  // ou qu'elle possède ; jamais par un bien qui l'intéresse seulement. Un calcul à la fois sur un bien et un projet exige
+  // que ce projet possède ce bien (HX48) : un calcul trouvé par le bien n'est jamais celui d'une autre personne.
+  viager_calculations: {
+    locate: [
+      via('project_id', 'projects'),
+      via('property_id', 'mandates', 'property_id'),
+      via('property_id', 'project_properties', 'property_id', { parentWhere: { role: 'owned' } }),
+    ],
+  },
   life_tables: out('sans_client', 'Tables d\'espérance de vie importées par la direction (HX48) : aucune personne, l\'auteur de l\'import seulement.'),
   life_table_rows: out('sans_client', 'Lignes d\'une table d\'espérance de vie, par âge, pour l\'ensemble des deux sexes : aucune personne.'),
   acquisition_fee_scales: out('sans_client', 'Barème des frais d\'acquisition rangé par la direction (HX48) : aucune personne.'),
