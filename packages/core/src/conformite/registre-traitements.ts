@@ -286,6 +286,12 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       pige_oppositions: ['noted_by'],
       pige_drafts: ['agent_id', 'body'],
       pige_handovers: ['draft_id', 'agent_id'],
+      // HX18 : l'adresse probable d'une annonce de pige, tirée des diagnostics publiés, jamais du particulier. L'adresse
+      // proposée ou retenue et l'agent qui la demande ; la classe énergie et la confiance sont inscrites par prudence.
+      pige_ad_energy: [],
+      pige_address_proposals: ['agent_id', 'candidates'],
+      pige_property_keys: ['property_id'],
+      pige_properties: ['property_id', 'agent_id', 'street_number', 'street', 'diagnosis_number', 'confidence'],
       // HX31 : l'écran de vitrine ; seul l'agent dont l'écran montre les biens, ou qui l'a réglé, est nommé.
       vitrine_screens: ['agent_id', 'created_by'],
       vitrine_screen_switches: ['by_actor'],
@@ -1063,6 +1069,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   pige_oppositions: ['network_id', 'fingerprint', 'noted_at'],
   pige_drafts: ['id', 'network_id', 'fingerprint', 'ad_id', 'gap_pct', 'market_source', 'market_last_sale', 'created_at'],
   pige_handovers: ['channel', 'handed_at'],
+  pige_ad_energy: ['ad_id', 'network_id', 'energy_class', 'diagnosed_on'],
+  pige_address_proposals: ['id', 'network_id', 'ad_id', 'missing', 'created_at'],
+  pige_property_keys: ['network_id', 'key'],
+  pige_properties: ['network_id', 'source', 'ad_id', 'fingerprint', 'ad_site', 'ad_kind', 'energy_class', 'diagnosed_on', 'published_at', 'proposal_id', 'created_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],

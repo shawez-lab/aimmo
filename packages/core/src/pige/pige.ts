@@ -85,7 +85,14 @@ export interface RawAd {
   noAgency?: unknown;
   /** Le texte de l'annonce, lu seulement pour la mention « pas d'agence ». */
   text?: unknown;
+  /** La classe énergie affichée par l'annonce, quand elle la dit (HX18). */
+  energyClass?: unknown;
+  /** La date du diagnostic affichée par l'annonce, `AAAA-MM-JJ`, quand elle la dit (HX18). */
+  diagnosedOn?: unknown;
 }
+
+export const PIGE_ENERGY_CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
+export type PigeEnergyClass = (typeof PIGE_ENERGY_CLASSES)[number];
 
 /** La source de pige : un fournisseur, branché plus tard. */
 export interface PigeSource {
@@ -143,6 +150,9 @@ interface CleanAd {
   priceEur: number;
   publishedAt: string;
   noAgency: boolean;
+  /** Classe énergie et date du diagnostic dites par l'annonce ; une valeur illisible est tue, jamais devinée (HX18). */
+  energyClass: PigeEnergyClass | null;
+  diagnosedOn: string | null;
 }
 
 const intIn = (v: unknown, min: number, max: number): number | null =>
@@ -205,6 +215,12 @@ export function cleanAd(raw: RawAd, now: Date): CleanAd | null {
   const at = Date.parse(publishedAt);
   if (Number.isNaN(at) || at > now.getTime()) return null;
   const noAgency = raw.noAgency === true || (typeof raw.text === 'string' && saysNoAgency(raw.text));
+  const ec = typeof raw.energyClass === 'string' ? raw.energyClass.trim().toUpperCase() : '';
+  const energyClass = (PIGE_ENERGY_CLASSES as readonly string[]).includes(ec) ? (ec as PigeEnergyClass) : null;
+  const dd = typeof raw.diagnosedOn === 'string' ? raw.diagnosedOn.trim().slice(0, 10) : '';
+  const ddAt = /^\d{4}-\d{2}-\d{2}$/.test(dd) ? Date.parse(`${dd}T12:00:00.000Z`) : Number.NaN;
+  // Une date de diagnostic se garde même sans classe, jamais après l'annonce.
+  const diagnosedOn = Number.isFinite(ddAt) && new Date(ddAt).toISOString().slice(0, 10) === dd && ddAt <= at + DAY ? dd : null;
   return {
     source: source.trim(),
     sourceRef,
@@ -216,6 +232,8 @@ export function cleanAd(raw: RawAd, now: Date): CleanAd | null {
     priceEur,
     publishedAt: new Date(at).toISOString(),
     noAgency,
+    energyClass,
+    diagnosedOn,
   };
 }
 
@@ -273,6 +291,10 @@ export interface PigeOptions {
   /** Réglage : au plus tant d'annonces suivies pour un bien ; au-delà, tout se ferme. */
   maxLinkedAds?: number;
 }
+
+/** Une annonce ouverte, telle que la base la garde. */
+export type OpenAd = AdRow & { network_id: string };
+export type PigeProblem = Problem;
 
 interface AdRow {
   id: string;
@@ -362,6 +384,14 @@ export class Pige {
         if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
         // Le bien dit, à 1 m² près, dans une commune du réseau.
         if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
+        // Et le bien que cette annonce a déjà porté sur son site, à 1 m² près : la base le voit fermé sans calculer de clé (HX18).
+        if (closing.ref) {
+          const before = await this.db.all<{ kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
+            'SELECT DISTINCT kind, postal_code, commune, surface_m2 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?',
+            [networkId, closing.ref.source, closing.ref.sourceRef],
+          );
+          for (const b of before) keys.push(...(await nearFingerprints({ kind: b.kind, postalCode: b.postal_code, commune: b.commune, surfaceM2: b.surface_m2 })));
+        }
         if (keys.length === 0) {
           outside += 1;
           continue;
@@ -394,18 +424,26 @@ export class Pige {
         continue;
       }
       const fingerprint = await adFingerprint(ad);
+      const adId = this.newId();
       const r = await this.db.run(
         `INSERT INTO pige_ads (id, network_id, source, source_ref, fingerprint, kind, commune, postal_code, surface_m2, rooms, price_eur, published_at, collected_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (SELECT 1 FROM pige_no_agency WHERE network_id = ? AND fingerprint = ?)
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
-              OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?)`,
+              OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
+              -- Une classe ou une date de diagnostic changée est aussi une nouvelle relève (HX18).
+              OR coalesce((SELECT coalesce(e.energy_class, '') || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '|') <> ?)`,
         [
-          this.newId(), networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
+          adId, networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
           networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, `${ad.publishedAt}|${fingerprint}|${ad.rooms ?? ''}`,
+          networkId, ad.source, ad.sourceRef, `${ad.energyClass ?? ''}|${ad.diagnosedOn ?? ''}`,
         ],
       );
       added += r.changes;
+      // Ce que l'annonce dit du diagnostic, rangé à part avec elle, pour proposer son adresse (HX18).
+      if (r.changes === 1 && (ad.energyClass || ad.diagnosedOn)) {
+        await this.db.run('INSERT INTO pige_ad_energy (ad_id, network_id, energy_class, diagnosed_on) VALUES (?, ?, ?, ?)', [adId, networkId, ad.energyClass, ad.diagnosedOn]);
+      }
     }
     await appendEvent(this.journal, { type: 'pige.collectee', actor: 'system:pige', subject: `network:${networkId}`, data: { rule: 'R273', added, noAgency, outside, unreadable } }, this.now);
     return { added, noAgency, outside, unreadable };
@@ -520,6 +558,26 @@ export class Pige {
       [networkId, fingerprint],
     );
     return r?.price_eur ?? null;
+  }
+
+  /** Une annonce ouverte d'une commune de cet agent, ou la raison de la refuser (HX18). */
+  async openAd(viewer: Viewer, adId: unknown): Promise<OpenAd | Problem> {
+    return this.openAdFor(viewer, adId);
+  }
+
+  /** La raison qui ferme ce bien (« pas d'agence », non, trop relié), ou null (HX18). */
+  async closure(networkId: string, fingerprint: string): Promise<Problem | null> {
+    return this.closedReason(networkId, fingerprint);
+  }
+
+  /** Toutes les empreintes et clés reliées à ce bien, et si le parcours est complet (HX18). */
+  async linkedOf(networkId: string, fingerprint: string): Promise<{ keys: string[]; complete: boolean }> {
+    return this.linked(networkId, fingerprint);
+  }
+
+  /** Le prix du moment de ce bien, ou null (HX18). */
+  async currentPrice(networkId: string, fingerprint: string): Promise<number | null> {
+    return this.latestPrice(networkId, fingerprint);
   }
 
   /** La file de pige : l'agent voit les biens de ses communes ; la direction, ceux du réseau. */
