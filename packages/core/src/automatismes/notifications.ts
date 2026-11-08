@@ -11,15 +11,17 @@
  *
  * Chaque envoi est réservé en base avant l'appel au service de notification : deux passages n'envoient jamais le même
  * groupe, et un passage coupé avant la réponse rend ses notifications au passage suivant [R18]. Rien ne s'efface [R17].
- * Rien ne part que par la porte du contrôle central (`AgentPushGate`), en mode essai tant que la voie 1 n'a pas ajouté
- * `sendToAgent` au contrôle central et que le vrai service (Web Push, H57) n'est pas là. Le branchement au planificateur, aux routes et à l'écran des réglages est
- * une tâche de la voie 1 (`app.ts`).
+ * Rien ne part que par le contrôle central des envois (`ControleEnvois.sendToAgent`, SV15), seule porte branchée, en
+ * mode essai tant que le vrai service (Web Push, H57) n'est pas là [R26, R225]. Le branchement au planificateur, aux
+ * routes et à l'écran des réglages est une tâche de la voie 1 (`app.ts`).
  */
 import { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
+import type { ControleEnvois } from '../envoi/controle.ts';
 import { localTime } from '../envoi/horaires.ts';
+import type { AgentPushPayload } from '../envoi/notifications-agents.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -108,31 +110,13 @@ export function lockText(urgency: Urgency, kinds: readonly NotificationKind[]): 
 }
 
 /** Ce que reçoit le téléphone : le texte écran verrouillé et le lien vers le détail, dans l'application [R415]. */
-export interface PushPayload {
-  pushId: string;
-  urgency: Urgency;
-  title: string;
-  body: string;
-  url: string;
-}
+export type PushPayload = AgentPushPayload;
 
 /**
- * La porte de sortie des notifications aux agents : le contrôle central des envois, et lui seul [R26]. Sa méthode
- * `sendToAgent` sur `ControleEnvois` (fichier du socle) est une tâche de la voie 1, avec le vrai service Web Push (H57) ;
- * d'ici là, la seule porte du code est `BoiteEssaiNotifications`, qui garde l'envoi et n'envoie rien.
+ * La porte de sortie des notifications aux agents : le contrôle central des envois, et lui seul [R26, R225]. Il réserve
+ * chaque envoi par son identifiant [R05], vérifie l'agent [R86] et, en mode essai, ne remet rien à un téléphone.
  */
-export interface AgentPushGate {
-  sendToAgent(order: { networkId: string; agentId: string; payload: PushPayload }): Promise<'ok' | 'aucun_appareil' | 'echec'>;
-}
-
-/** Le mode essai des notifications : chaque envoi est gardé ici, rien ne part vers un téléphone [R26]. */
-export class BoiteEssaiNotifications implements AgentPushGate {
-  readonly kept: { networkId: string; agentId: string; payload: PushPayload }[] = [];
-  async sendToAgent(order: { networkId: string; agentId: string; payload: PushPayload }): Promise<'ok'> {
-    this.kept.push(order);
-    return 'ok';
-  }
-}
+export type AgentPushGate = Pick<ControleEnvois, 'sendToAgent'>;
 
 export interface NotificationSettings {
   quietStart: number;
@@ -190,7 +174,7 @@ export class Notifications {
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    private readonly gate: AgentPushGate = new BoiteEssaiNotifications(),
+    private readonly gate: AgentPushGate,
     options: NotificationsOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());

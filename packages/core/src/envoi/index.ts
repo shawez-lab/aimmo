@@ -6,3 +6,4 @@ export * from './canaux.ts';
 export * from './journal-envois.ts';
 export * from './controle.ts';
 export * from './professionnels.ts';
+export * from './notifications-agents.ts';
