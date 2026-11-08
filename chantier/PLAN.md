@@ -388,8 +388,18 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : aucune annonce publiée n'a une image aménagée en couverture (test) ; une image aménagée sans jumelle déclarée n'est dans aucune annonce (test) ; `galleryProblems` est vide sur chaque annonce publiée (test).
 - Ce qu'elle attend d'un humain : rien.
 
+### HX51 · La publication relit chaque vidéo générée
+- Statut : à faire
+- Qui : Claude, voie 1 (touche `annonces/medias.ts`), relecture normale
+- Dépendances : HX42
+- Partie du cahier : M19, M07 (photos et vidéos).
+- Objectif : R498. `MediasBien.publishable()` (P06) et tout envoi d'une vidéo (portails, vitrine, réseaux) passent chaque vidéo rangée dans `generated_videos` par `VideosGenerees.diffusable` au moment d'envoyer : accord de voix ou d'avatar retiré, agent du bien changé ou parti, ou photos du plan changées, et elle ne part pas, même si un montage ou un contrôle de texte existe sous la même référence. Remarque P0 de Codex sur #421.
+- Critères : après retrait de l'accord, la vidéo n'est dans aucune annonce publiée (test) ; une même référence portant un montage et une vidéo générée suit la règle la plus stricte (test) ; photos changées, la vidéo ne part plus (test).
+- Ce qu'elle attend d'un humain : rien.
+
 ### HX42 · Vidéo depuis les photos, voix off et avatar
-- Statut : en cours (voie 2)
+- Statut : en cours (voie 2), proposition #421 prête à fusionner
+- Reste : #421 (migration `2302`, R495 à R497) : Codex sans remarque sur `68223447` (2 P0 et 1 P2 corrigés, 1 P0 confié à HX51), vérification locale verte (4820 tests) ; GitHub Actions bloqué par la facturation ; la fusion a été refusée par la permission de la séance du 2026-11-08 06:5x : la séance suivante la fusionne (section 3, étape 3, et section 11). Décidé, lecture prudente : plan tiré par le code des photos publiables du Studio (zoom ou panoramique en liste fermée, mobilier qui apparaît en fondu depuis la jumelle réelle, fin à la marque, 12 plans au plus), vidéo faite sur l'appareil ; voix et avatar de l'agent du bien lui-même seulement, accord écrit (texte nommé et versionné recopié à l'identique, jamais par la direction) pour l'empreinte de son propre enregistrement, retirable ; « Vidéo générée » et mention de la voix ou de l'avatar de synthèse sur chaque plan, exigées par la base ; sous-titres en français et dans les langues ouvertes du bien (HX05), contrôlés ligne par ligne et à la suite ; adresse refusée comme en P06. Restent : routes, écran et assemblage sur l'appareil (voie 1, `app.ts`) ; diffusion relue (HX51).
 - Objectif : comme Hektor, Talqor et Kappn : vidéo animée à partir des photos, mobilier qui apparaît, voix off, sous-titres, avatar de l'agent. Jamais vu : la voix et l'avatar ne viennent que de l'agent lui-même, avec son accord écrit, et la vidéo porte la mention « vidéo générée » ; les sous-titres sortent dans les langues de HX05 ; l'adresse exacte est refusée comme en P06.
 - Critères : aucune voix ni avatar sans accord écrit de l'agent (test) ; la mention est présente sur chaque vidéo générée (test) ; une adresse exacte dans le texte est refusée (test).
 
