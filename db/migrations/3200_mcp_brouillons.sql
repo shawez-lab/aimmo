@@ -23,9 +23,11 @@ CREATE TABLE IF NOT EXISTS mcp_drafts (
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS mcp_drafts_agent ON mcp_drafts (network_id, agent_id, created_at);
--- Un brouillon naît « à valider » : rien de définitif ne s'écrit d'un coup [R591].
-CREATE TRIGGER IF NOT EXISTS mcp_drafts_naissance BEFORE INSERT ON mcp_drafts WHEN NEW.status <> 'a_valider'
-BEGIN SELECT RAISE(ABORT, 'mcp_drafts : un brouillon naît à valider [R591]'); END;
+-- Un brouillon naît « à valider » : rien de définitif ne s'écrit d'un coup [R591]. Un identifiant déjà pris est refusé :
+-- `INSERT OR REPLACE` effacerait la ligne sans passer par la garde ci-dessous.
+CREATE TRIGGER IF NOT EXISTS mcp_drafts_naissance BEFORE INSERT ON mcp_drafts
+WHEN NEW.status <> 'a_valider' OR EXISTS (SELECT 1 FROM mcp_drafts WHERE id = NEW.id)
+BEGIN SELECT RAISE(ABORT, 'mcp_drafts : un brouillon naît à valider, une seule fois [R591]'); END;
 CREATE TRIGGER IF NOT EXISTS mcp_drafts_garde BEFORE DELETE ON mcp_drafts
 BEGIN SELECT RAISE(ABORT, 'mcp_drafts : rien ne s''efface'); END;
 -- Seule la décision change, une fois : ni le contenu, ni l'agent, ni le sujet.

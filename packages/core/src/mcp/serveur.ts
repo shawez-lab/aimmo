@@ -283,8 +283,8 @@ export class ServeurMcp {
 /** Les arguments ne portent que les clés de l'outil, toutes celles requises, chacune du bon type. */
 function argsMatch(tool: ToolDef, args: Record<string, unknown>): boolean {
   const keys = Object.keys(args);
-  if (keys.some((k) => !(k in tool.inputSchema.properties))) return false;
-  if (tool.inputSchema.required.some((k) => !(k in args))) return false;
+  if (keys.some((k) => !Object.hasOwn(tool.inputSchema.properties, k))) return false;
+  if (tool.inputSchema.required.some((k) => !Object.hasOwn(args, k))) return false;
   for (const k of keys) {
     const schema = tool.inputSchema.properties[k] as { type: string };
     const v = args[k];

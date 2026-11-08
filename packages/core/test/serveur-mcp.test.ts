@@ -174,12 +174,14 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
   it('[R590] arguments en dehors du schéma et outil inconnu : refusés et écrits au journal', async () => {
     const t = await setup();
     expect((await t.call(t.agent, 'lire_bien', { bien: 'bien-alex', extra: 1 })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
+    expect((await t.call(t.agent, 'lire_bien', { bien: 'bien-alex', toString: 'x', constructor: 1 })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
+    expect((await t.call(t.agent, 'lire_bien', JSON.parse('{"bien":"bien-alex","__proto__":{"x":1}}') as Record<string, unknown>)).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     expect((await t.call(t.agent, 'lire_bien', {})).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     expect((await t.call(t.agent, 'lire_bien', { bien: "x' OR 1=1" })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     expect((await t.call(t.agent, 'brouillon_prix', { bien: 'bien-alex', prix_eur: 10.5 })).structuredContent).toEqual({ refus: { regle: 'R590', code: 'bad_input' } });
     const unknown = await t.serveur.handle(t.agent, { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'valider_brouillon', arguments: { brouillon: 'x' } } });
     expect(unknown!.error).toMatchObject({ code: -32602 });
-    expect((await t.lines('mcp.refus')).map((l) => (l.data as { code: string }).code)).toEqual(['bad_input', 'bad_input', 'bad_input', 'bad_input', 'unknown_tool']);
+    expect((await t.lines('mcp.refus')).map((l) => (l.data as { code: string }).code)).toEqual(['bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'bad_input', 'unknown_tool']);
     expect(await t.lines('bien.lu')).toEqual([]);
   });
 
@@ -219,6 +221,11 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     await expect(t.db.run("UPDATE mcp_drafts SET payload = '{}' WHERE id = ?", [noteId])).rejects.toThrow(/ne change plus/);
     await expect(t.db.run("UPDATE mcp_drafts SET status = 'a_valider', decided_at = NULL, decided_by = NULL WHERE id = ?", [noteId])).rejects.toThrow();
     await expect(t.db.run('DELETE FROM mcp_drafts WHERE id = ?', [noteId])).rejects.toThrow(/efface/);
+    // Remplacer la ligne d'un brouillon décidé : refusé, la décision reste.
+    await expect(
+      t.db.run("INSERT OR REPLACE INTO mcp_drafts (id, network_id, agent_id, kind, subject, payload, status, created_at) VALUES (?, ?, ?, 'prix', 'property:bien-alex', '{\"priceEur\":1}', 'a_valider', 'x')", [priceId, t.network.id, t.alex.id]),
+    ).rejects.toThrow(/une seule fois/);
+    expect((await t.drafts()).find((r) => r.id === priceId)).toMatchObject({ status: 'refuse', payload: '{"priceEur":239000}' });
     // Un brouillon ne naît jamais validé.
     await expect(
       t.db.run("INSERT INTO mcp_drafts (id, network_id, agent_id, kind, subject, payload, status, created_at, decided_at, decided_by) VALUES ('d-x', ?, ?, 'note', 'person:p', '{}', 'valide', 'x', 'x', ?)", [t.network.id, t.alex.id, t.alex.id]),
