@@ -52,7 +52,6 @@ const MAX_BODY = 4000;
 /** Un nombre écrit à la française : milliers séparés par une espace (ordinaire, fine ou insécable), ou décimale. */
 /** Le signe collé devant compte avec le nombre : « -3e étage » n'est jamais « 3e étage ». */
 const NUMBER = /(?:(?<![\p{L}\p{N}])[-−+])?(?:\d{1,3}(?:[ \u202F\u00A0]\d{3})+(?![\d])|\d+(?:[.,]\d+)?)/gu;
-const UNIT_AFTER = /^[   ]?(m²|m2|€|%)/;
 /** Une lettre de classe seule, majuscule ou minuscule ; « a » minuscule seulement après un mot du diagnostic (« il a » est un verbe). */
 const CLASS_LETTER = /(?<![\p{L}\p{N}])[A-G](?![\p{L}\p{N}])/giu;
 const ANY_DIGIT = /\p{Nd}/u;
@@ -83,10 +82,28 @@ function hasNumberWord(text: string): boolean {
   return /(?<!\p{L})(?:dix|vingt|trente|quarante|cinquante|soixante)-\p{L}+/u.test(plain);
 }
 
+/** Ce qu'un nombre compte, quand le mot qui le suit le dit : « 3 pièces », « 62 m² », « 3e étage ». */
+const COUNTED_AFTER = /^[ \u202F\u00A0]*(pieces?|chambres?|etages?|niveaux?|places?|m²|m2|metres?|ans?|salles?|lots?|euros?|€|%)(?![\p{L}\p{N}])/u;
+/** Ce que mesure un nombre, quand sa phrase le dit avant lui : « Logement de 62 m² » n'est jamais « Terrain de 62 m² ». */
+const MEASURED = /(?<!\p{L})(logement|appartement|maison|studio|immeuble|local|terrain|parcelle|jardin|surface)(?!\p{L})/gu;
+
+/**
+ * Chaque nombre avec ce qui le rattache à son champ, dans l'ordre : sa valeur et son signe ; les lettres collées
+ * (« 3e ») ; ce qu'il compte (le mot qui le suit, d'une liste fermée) ; ce que mesure sa phrase avant lui (le dernier
+ * nom d'une liste fermée). « Au 3e étage sur 5 » n'est jamais « 3 étages, au 5e étage », ni la surface du logement
+ * celle du terrain [R476].
+ */
 const numbersOf = (s: string): string[] =>
   [...s.matchAll(NUMBER)].map((m) => {
-    const unit = UNIT_AFTER.exec(s.slice((m.index ?? 0) + m[0].length))?.[1] ?? '';
-    return `${m[0].replace(/[  ]/g, ' ')}${unit === '' ? '' : ` ${unit === 'm2' ? 'm²' : unit}`}`;
+    const at = m.index ?? 0;
+    const after = unaccent(s.slice(at + m[0].length));
+    const glued = /^\p{L}*/u.exec(after)?.[0] ?? '';
+    const counted = glued === '' ? (COUNTED_AFTER.exec(after)?.[1] ?? '') : (COUNTED_AFTER.exec(after.slice(glued.length))?.[1] ?? '');
+    const before = unaccent(s.slice(0, at));
+    const sentence = before.slice(Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n'), before.lastIndexOf(';')) + 1);
+    const measured = [...sentence.matchAll(MEASURED)].pop()?.[1] ?? '';
+    const unit = counted.replace(/s$/, '').replace(/^m2$/, 'm²').replace(/^euro$/, '€');
+    return `${m[0].replace(/[\u202F\u00A0]/g, ' ').replace('−', '-')}|${glued}|${unit}|${measured}`;
   });
 const DIAGNOSTIC_BEFORE = /(?:classe|énergie|energie|climat|dpe|ges|étiquette|etiquette)\s*:?\s*$/iu;
 /** Les lettres de classe d'un texte, avec leur place : « a » minuscule seulement juste après un mot du diagnostic. */

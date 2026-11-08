@@ -15,12 +15,12 @@ const SOURCE = {
   body: 'Logement de 62 m² à Dijon, 3 pièces dont 2 chambres. Au 3e étage sur 5, avec ascenseur. Construit en 1965. Balcon. 1 place de stationnement. Chauffage collectif. Classe énergie D.',
 };
 const SELOGER = {
-  title: 'Dijon : 3 pièces de 62 m²',
-  body: 'À Dijon, un logement de 62 m² en 3 pièces, dont 2 chambres, au 3e étage sur 5 avec ascenseur. Construit en 1965. Balcon et 1 place de stationnement. Chauffage collectif. Classe énergie D.',
+  title: 'Logement à Dijon : 3 pièces, 62 m²',
+  body: 'À Dijon, un logement de 62 m² en 3 pièces, dont 2 chambres. Il est au 3e étage sur 5 avec ascenseur. Construit en 1965. Balcon. 1 place de stationnement. Chauffage collectif. Classe énergie D.',
 };
 const LEBONCOIN = {
-  title: 'Appartement 3 pièces 62 m² à Dijon',
-  body: 'Logement de 62 m² à Dijon : 3 pièces, 2 chambres. Il se trouve au 3e étage sur 5, avec ascenseur, dans un immeuble construit en 1965. Un balcon. 1 place de stationnement. Chauffage collectif. Classe énergie D.',
+  title: 'Logement 3 pièces, 62 m² à Dijon',
+  body: 'Logement de 62 m² à Dijon : 3 pièces, 2 chambres. Il se trouve au 3e étage sur 5, avec ascenseur. Construit en 1965. Un balcon. 1 place de stationnement. Chauffage collectif. Classe énergie D.',
 };
 
 describe('HX39 · contrôle du texte d’un portail, sans base', () => {
@@ -30,10 +30,16 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
   });
 
   it('[R476] un nombre changé, ajouté, interverti ou écrit en lettres est refusé', () => {
-    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Dijon : 3 pièces de 65 m²' }, FACTS).title).toEqual(['chiffres_differents']);
-    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Dijon : 62 m² en 3 pièces' }, FACTS).title).toEqual(['chiffres_differents']);
+    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Logement à Dijon : 3 pièces, 65 m²' }, FACTS).title).toEqual(['chiffres_differents']);
+    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Logement à Dijon : 62 m², 3 pièces' }, FACTS).title).toEqual(['chiffres_differents']);
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('2 chambres', 'deux chambres') }, FACTS).body).toEqual(expect.arrayContaining(['chiffres_differents', 'nombre_en_lettres']));
-    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Dijon : ٣ pièces de 62 m²' }, FACTS).title).toEqual(['chiffres_differents']);
+    expect(controlPortalText(SOURCE, { ...SELOGER, title: 'Logement à Dijon : ٣ pièces, 62 m²' }, FACTS).title).toEqual(['chiffres_differents']);
+    // Chaque nombre garde son champ : les étages échangés, ou la surface du logement donnée au terrain, sont refusés.
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Il est au 3e étage sur 5 avec ascenseur.', 'Immeuble de 3 étages, logement au 5e étage, avec ascenseur.') }, FACTS).body).toContain('chiffres_differents');
+    const land: ListingFacts = { ...FACTS, kind: 'home', landM2: 450 };
+    const src = { title: SOURCE.title, body: 'Logement de 62 m². Terrain de 450 m².' };
+    expect(controlPortalText(src, { title: SOURCE.title, body: 'Un logement de 62 m². Un terrain de 450 m².' }, land).ok).toBe(true);
+    expect(controlPortalText(src, { title: SOURCE.title, body: 'Terrain de 62 m². Logement de 450 m².' }, land).body).toContain('chiffres_differents');
     // Un signe ajouté change la valeur : refusé.
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('au 3e étage', 'au -3e étage') }, FACTS).body).toContain('chiffres_differents');
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('au 3e étage', 'au −3e étage') }, FACTS).body).toContain('chiffres_differents');
@@ -50,7 +56,7 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
   it('[R476] une classe changée, un lien, un fait que la fiche ne porte pas ou une adresse sont refusés', () => {
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D', 'Classe énergie B') }, FACTS).body).toEqual(['classes_differentes']);
     expect(controlPortalText(SOURCE, { ...SELOGER, body: `${SELOGER.body} Voir www.exemple.test.` }, FACTS).body).toContain('lien_ou_mail');
-    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon et', 'Piscine, balcon et') }, FACTS).body).toEqual(['phrase_sans_source']);
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon.', 'Piscine, balcon.') }, FACTS).body).toEqual(['phrase_sans_source']);
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('À Dijon,', 'Rue des Essais à Dijon,') }, FACTS).body).toEqual(['phrase_sans_source']);
     expect(controlPortalText(SOURCE, { title: ' ', body: SELOGER.body }, FACTS).title).toEqual(['texte_vide']);
   });
@@ -58,7 +64,7 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
     const src = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie d.') };
     expect(controlPortalText(src, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie c.') }, FACTS).body).toEqual(['classes_differentes']);
     expect(controlPortalText(src, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie d.') }, FACTS).ok).toBe(true);
-    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon et', 'Il a un balcon et') }, FACTS).body).not.toContain('classes_differentes');
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon.', 'Il a un balcon.') }, FACTS).body).not.toContain('classes_differentes');
     const f6: ListingFacts = { ...FACTS, energyClass: 'A', climateClass: 'C' };
     const srcA = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie A.') };
     expect(controlPortalText(srcA, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie a.') }, f6).ok).toBe(true);
@@ -85,7 +91,7 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
     for (const extra of ['Au sixième étage.', 'Au sixieme étage.', 'Vingt-deux lots.', 'Une seconde chambre.', 'Un étage.', 'Neuf pièces.']) {
       expect(controlPortalText(SOURCE, { ...SELOGER, body: `${SELOGER.body} ${extra}` }, f6).body).toContain('nombre_en_lettres');
     }
-    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon et', 'Un balcon et') }, FACTS).body).not.toContain('nombre_en_lettres');
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon.', 'Un balcon.') }, FACTS).body).not.toContain('nombre_en_lettres');
   });
 
 });
