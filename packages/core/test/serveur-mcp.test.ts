@@ -226,12 +226,12 @@ describeWithSqlite('HX55 · serveur MCP et API ouverte', () => {
     await expect(t.db.run('DELETE FROM mcp_drafts WHERE id = ?', [noteId])).rejects.toThrow(/efface/);
     // Remplacer la ligne d'un brouillon décidé : refusé, la décision reste.
     await expect(
-      t.db.run("INSERT OR REPLACE INTO mcp_drafts (id, network_id, agent_id, kind, subject, payload, status, created_at) VALUES (?, ?, ?, 'prix', 'property:bien-alex', '{\"priceEur\":1}', 'a_valider', 'x')", [priceId, t.network.id, t.alex.id]),
+      t.db.run("INSERT OR REPLACE INTO mcp_drafts (id, network_id, agent_id, kind, property_id, subject, payload, status, created_at) VALUES (?, ?, ?, 'prix', 'bien-alex', 'property:bien-alex', '{\"priceEur\":1}', 'a_valider', 'x')", [priceId, t.network.id, t.alex.id]),
     ).rejects.toThrow(/une seule fois/);
     expect((await t.drafts()).find((r) => r.id === priceId)).toMatchObject({ status: 'refuse', payload: '{"priceEur":239000}' });
     // Un brouillon ne naît jamais validé.
     await expect(
-      t.db.run("INSERT INTO mcp_drafts (id, network_id, agent_id, kind, subject, payload, status, created_at, decided_at, decided_by) VALUES ('d-x', ?, ?, 'note', 'person:p', '{}', 'valide', 'x', 'x', ?)", [t.network.id, t.alex.id, t.alex.id]),
+      t.db.run("INSERT INTO mcp_drafts (id, network_id, agent_id, kind, person_id, subject, payload, status, created_at, decided_at, decided_by) VALUES ('d-x', ?, ?, 'note', 'p', 'person:p', '{}', 'valide', 'x', 'x', ?)", [t.network.id, t.alex.id, t.alex.id]),
     ).rejects.toThrow();
     expect((await t.lines('mcp.brouillon.valide')).map((l) => l.subject)).toEqual([`mcp_draft:${noteId}`]);
     expect((await t.lines('mcp.brouillon.refuse')).map((l) => l.subject)).toEqual([`mcp_draft:${priceId}`]);

@@ -245,6 +245,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  mcp_draft: { excluded: 'agent', why: 'Un brouillon de l\'assistant de l\'agent (HX55) : son rangement et sa décision ; une note, et sa fiche, se lisent dans mcp_drafts par person_id.' },
   report: { excluded: 'sans_client', why: 'Un rapport sur mesure enregistré (HX62) : des mesures et un regroupement, sans donnée d\'un client.' },
   new_program: { excluded: 'sans_client', why: 'Un programme neuf d\'un promoteur partenaire (HX48) : sa création et les versions de ses lots, sans donnée d\'un client.' },
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
@@ -588,6 +589,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
   custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
+  mcp_drafts: { locate: by('person_id') },
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },

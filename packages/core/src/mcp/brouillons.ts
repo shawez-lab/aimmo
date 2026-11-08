@@ -189,8 +189,8 @@ export class Brouillons {
     // Le journal d'abord : sans lui, rien n'est rangé [R13].
     await this.write(viewer, 'mcp.brouillon.range', `mcp_draft:${id}`, { rule: 'R591', kind, about: subject });
     await this.db.run(
-      "INSERT INTO mcp_drafts (id, network_id, agent_id, kind, subject, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'a_valider', ?)",
-      [id, viewer.networkId, viewer.userId, kind, subject, JSON.stringify(content), at],
+      "INSERT INTO mcp_drafts (id, network_id, agent_id, kind, person_id, property_id, subject, payload, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'a_valider', ?)",
+      [id, viewer.networkId, viewer.userId, kind, kind === 'note' ? subject.slice('person:'.length) : null, kind === 'prix' ? subject.slice('property:'.length) : null, subject, JSON.stringify(content), at],
     );
     return { ok: true, value: { id, kind, subject, content, status: 'a_valider', createdAt: at, decidedAt: null } };
   }
