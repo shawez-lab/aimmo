@@ -351,6 +351,38 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await t.sequence(second)).toMatchObject({ status: 'stopped', end_reason: 'merged' });
   });
 
+  it('[R301] un accord retiré ou un refus d’appel d’avant le départ empêchent la séquence ; un accord redonné depuis la permet', async () => {
+    const t = await setup();
+    const consent = await t.db.first<{ id: string }>(`SELECT id FROM consents WHERE person_id = ? AND channel = 'sms'`, [t.person.id]);
+    await t.store.withdrawConsent(consent!.id, new Date(START - HOUR));
+    expect(await t.sequences.start(t.alex, { personId: t.person.id, steps: FULL.slice(0, 1) })).toMatchObject({ ok: false, rule: 'R03', code: 'opposition_withdrawn' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.person.id, purpose: 'prospecting', channel: 'sms', proof: 'nouvel accord de test', givenAt: new Date(START - 60_000) });
+    expect(await t.sequences.start(t.alex, { personId: t.person.id, steps: FULL.slice(0, 1) })).toMatchObject({ ok: true });
+
+    const r = await setup();
+    expect(await r.appels.note(r.alex, r.person.id, { outcome: 'refused' })).toMatchObject({ ok: true });
+    r.setClock(START + DAY);
+    expect(await r.sequences.start(r.alex, { personId: r.person.id, steps: FULL.slice(0, 1) })).toMatchObject({ ok: false, rule: 'R204', code: 'opposition_call_refused' });
+    r.setClock(START + 61 * DAY);
+    expect(await r.sequences.start(r.alex, { personId: r.person.id, steps: FULL.slice(0, 1) })).toMatchObject({ ok: true });
+  });
+
+  it('[R301] une réponse arrivée pendant le passage, juste avant l’envoi, retient le mail et arrête la séquence', async () => {
+    const slow = new FakeOpposition();
+    const t = await setup({ opposition: slow });
+    const id = await t.startOk(FULL.slice(0, 1));
+    let calls = 0;
+    slow.check = async () => {
+      calls += 1;
+      // Au deuxième regard (celui du contrôle, juste avant l'enregistrement), la réponse est déjà là.
+      if (calls === 2) await t.store.recordMessage({ networkId: t.network.id, personId: t.person.id, channel: 'email', direction: 'in', authorKind: 'person', body: 'Non merci.', occurredAt: new Date(START) });
+      return 'not_listed';
+    };
+    await t.sequences.run();
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'reply' });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);

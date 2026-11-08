@@ -24,7 +24,7 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { agentState } from '../acces/etat-agent.ts';
 import type { AppelsFiche } from '../acces/appels.ts';
-import type { FicheAgent } from '../acces/fiche-agent.ts';
+import { CALL_FREQUENCY, type FicheAgent } from '../acces/fiche-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { ControleEnvois, SendResult } from '../envoi/controle.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -175,6 +175,19 @@ export class SequencesProspection {
     const stop = await this.stopReason({ id: '', network_id: viewer.networkId, agent_id: viewer.userId, person_id: root, started_at: at.toISOString(), start_day: '', status: 'active' }, at);
     if (stop) return this.refuse(viewer, `person:${root}`, stop.rule, `opposition_${stop.reason}`);
     const ids = fiche.members.map((m) => m.id);
+    // Une opposition d'avant le départ compte aussi : un accord retiré sans accord redonné depuis sur ce canal et pour
+    // cette finalité, ou un refus noté au téléphone dans la période de R204 [R301].
+    const withdrawn = fiche.consents.some(
+      (c) =>
+        c.withdrawn_at !== null &&
+        !fiche.consents.some((n) => n.channel === c.channel && n.purpose === c.purpose && n.withdrawn_at === null && Date.parse(n.given_at) > Date.parse(c.withdrawn_at as string)),
+    );
+    if (withdrawn) return this.refuse(viewer, `person:${root}`, 'R03', 'opposition_withdrawn');
+    const refusedCall = await this.db.first<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM call_notes WHERE outcome = 'refused' AND noted_at > ? AND person_id IN (${placeholders(ids.length)})`,
+      [new Date(at.getTime() - CALL_FREQUENCY.refusalDays * DAY_MS).toISOString(), ...ids],
+    );
+    if (Number(refusedCall?.n ?? 0) > 0) return this.refuse(viewer, `person:${root}`, 'R204', 'opposition_call_refused');
     const running = await this.db.first<{ id: string }>(`SELECT id FROM prospecting_sequences WHERE status = 'active' AND person_id IN (${placeholders(ids.length)})`, ids);
     if (running) return this.refuse(viewer, `person:${root}`, 'HX20', 'already_active');
 
@@ -207,6 +220,21 @@ export class SequencesProspection {
    */
   private async stopReason(seq: SequenceRow, at: Date): Promise<{ reason: EndReason; rule: string } | null> {
     if ((await agentState(this.db, seq.network_id, seq.agent_id, at)) === 'parti') return { reason: 'agent_gone', rule: 'R86' };
+    // La liste d'opposition au démarchage vaut pour toute la séquence, pas seulement pour ses appels [R301, R302].
+    // Regardée d'abord : le service peut être lent, la fiche est lue après lui, réponses comprises.
+    if (this.opposition) {
+      const phone = (await this.fiche.view(seq.person_id)).identifiers.filter((i) => i.kind === 'phone').sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
+      const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
+      if (/^\+?\d{6,15}$/.test(digits)) {
+        let listed: 'listed' | 'not_listed' | 'unavailable' = 'unavailable';
+        try {
+          listed = await this.opposition.check(digits, at);
+        } catch {
+          listed = 'unavailable';
+        }
+        if (listed === 'listed') return { reason: 'opposition_list', rule: 'R302' };
+      }
+    }
     const view = await this.fiche.view(seq.person_id);
     const stamp = at.getTime();
     const since = Date.parse(seq.started_at);
@@ -231,20 +259,6 @@ export class SequencesProspection {
       );
       // Une plus ancienne qui courait encore au départ de celle-ci, finie ou non depuis : celle-ci n'aurait pas dû courir.
       if (older) return { reason: 'merged', rule: 'R300' };
-    }
-    // La liste d'opposition au démarchage vaut pour toute la séquence, pas seulement pour ses appels [R301, R302].
-    if (this.opposition) {
-      const phone = view.identifiers.filter((i) => i.kind === 'phone').sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
-      const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
-      if (/^\+?\d{6,15}$/.test(digits)) {
-        let listed: 'listed' | 'not_listed' | 'unavailable' = 'unavailable';
-        try {
-          listed = await this.opposition.check(digits, at);
-        } catch {
-          listed = 'unavailable';
-        }
-        if (listed === 'listed') return { reason: 'opposition_list', rule: 'R302' };
-      }
     }
     return null;
   }
@@ -413,6 +427,11 @@ export class SequencesProspection {
           purpose: 'prospecting',
           subject: `sequence:${seq.id}:${step.position}`,
           fallbackTexts: [step.body as string],
+          // Revérifié juste avant l'enregistrement : une réponse ou une opposition arrivée entre-temps retient l'envoi [R301].
+          stillAllowed: async () => {
+            const stop = await this.stopReason(seq, this.now());
+            return stop ? { allowed: false, rule: stop.rule, reason: `sequence_${stop.reason}` } : { allowed: true, rule: 'R301', reason: 'en cours' };
+          },
         });
         if (r.status === 'sent' && r.messageId && !r.trial) {
           await this.settle(seq, step, 'sent', null, r.messageId, 'system');
@@ -424,6 +443,11 @@ export class SequencesProspection {
           await this.settle(seq, step, 'skipped', 'R26', null, 'system');
           counts.skipped += 1;
           continue;
+        }
+        // Un refus peut venir d'un arrêt dû entre-temps : relu avant tout le reste [R301].
+        if (!(await this.refresh(seq, 'system'))) {
+          counts.stopped += 1;
+          break;
         }
         if (r.status === 'failed' || (r.rule !== null && WAIT_RULES.includes(r.rule))) {
           counts.waiting += 1;
