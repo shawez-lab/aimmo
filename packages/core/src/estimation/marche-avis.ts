@@ -282,17 +282,28 @@ export class MarcheAvis {
 
   /** Les annonces de la sorte et de la commune vues en ligne ces derniers jours, sans les biens fermés [R303, R305]. */
   private async onlineAds(networkId: string, kind: string, commune: string, postalCode: string, today: string): Promise<Followed[]> {
-    const rows = await this.db.all<AdRow>(
-      `SELECT source, source_ref, fingerprint, commune, surface_m2, rooms, price_eur, published_at, collected_at
-         FROM pige_ads WHERE network_id = ? AND kind = ? AND postal_code = ? ORDER BY collected_at, rowid`,
-      [networkId, kind, postalCode],
+    // Toutes les relèves de chaque annonce passée un jour par ce code postal, quelle que soit la sorte : c'est la dernière
+    // qui dit si l'annonce est de la sorte et de la commune du bien, jamais une relève corrigée depuis [R303].
+    const rows = await this.db.all<AdRow & { kind: string; postal_code: string }>(
+      `SELECT a.source, a.source_ref, a.fingerprint, a.kind, a.postal_code, a.commune, a.surface_m2, a.rooms, a.price_eur, a.published_at, a.collected_at
+         FROM pige_ads a
+        WHERE a.network_id = ?
+          AND EXISTS (SELECT 1 FROM pige_ads b WHERE b.network_id = a.network_id AND b.source = a.source AND b.source_ref = a.source_ref AND b.postal_code = ?)
+        ORDER BY a.collected_at, a.rowid`,
+      [networkId, postalCode],
     );
     const slug = communeSlug(commune);
-    const bySite = new Map<string, AdRow[]>();
+    const all = new Map<string, (AdRow & { kind: string; postal_code: string })[]>();
     for (const r of rows) {
-      if (communeSlug(r.commune) !== slug) continue;
       const k = `${r.source}\u0000${r.source_ref}`;
-      bySite.set(k, [...(bySite.get(k) ?? []), r]);
+      all.set(k, [...(all.get(k) ?? []), r]);
+    }
+    const bySite = new Map<string, AdRow[]>();
+    for (const [k, list] of all) {
+      const last = list[list.length - 1]!;
+      if (last.kind !== kind || last.postal_code !== postalCode || communeSlug(last.commune) !== slug) continue;
+      // L'historique des prix : les relèves du même bien que la dernière (même empreinte), dans l'ordre.
+      bySite.set(k, list.filter((r) => r.fingerprint === last.fingerprint));
     }
     const firstOnline = dayNumber(today) - this.settings.onlineDays;
     const out: Followed[] = [];
@@ -365,12 +376,13 @@ const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet'
 const dayLabel = (day: string): string => `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1] ?? ''} ${day.slice(0, 4)}`;
 const pct = (n: number): string => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} %`;
 
-/** Les baisses d'un concurrent, en mots : combien, de combien en tout, et la dernière date. */
+/** Les baisses d'un concurrent, en mots : chacune avec son jour et ses prix, puis l'écart total. */
 function dropsLabel(c: Competitor): string {
   if (c.drops.length === 0) return 'aucune';
+  // Chaque baisse, avec son jour et ses prix [R303], puis l'écart depuis le premier prix vu.
+  const each = c.drops.map((d) => `le ${dayLabel(d.on)}, de ${euros(d.fromEur)} à ${euros(d.toEur)}`).join(' ; ');
   const total = Math.round(((c.firstPriceEur - c.priceEur) / c.firstPriceEur) * 100);
-  const lastOn = c.drops[c.drops.length - 1]!.on;
-  return `${c.drops.length === 1 ? '1 baisse' : `${c.drops.length} baisses`}, ${pct(-total)} depuis ${euros(c.firstPriceEur)}, la dernière le ${dayLabel(lastOn)}`;
+  return `${each} (${pct(-total)} depuis ${euros(c.firstPriceEur)})`;
 }
 
 /**

@@ -124,7 +124,35 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(html).toContain('Site A');
     expect(html).toContain('7 novembre 2026');
     expect(html).toContain('35 j');
-    expect(html).toMatch(/1 baisse, −5 % depuis 300 000 €, la dernière le 4 novembre 2026/);
+    expect(html).toContain('le 4 novembre 2026, de 300 000 € à 285 000 € (−5 % depuis 300 000 €)');
+  });
+
+  it('[R303] chaque baisse est imprimée avec son jour et ses prix, pas seulement la dernière', async () => {
+    const t = await setup();
+    const a = t.ad({ sourceRef: 'deux-baisses', priceEur: 300_000 });
+    await t.pige.ingest(t.net.id, [a]);
+    t.at(START + DAY);
+    await t.pige.ingest(t.net.id, [{ ...a, priceEur: 290_000 }]);
+    t.at(START + 3 * DAY);
+    await t.pige.ingest(t.net.id, [{ ...a, priceEur: 276_000 }]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    const html = renderMarketSection(got.value);
+    expect(html).toContain('le 3 novembre 2026, de 300 000 € à 290 000 € ; le 5 novembre 2026, de 290 000 € à 276 000 € (−8 % depuis 300 000 €)');
+  });
+
+  it('[R303] une annonce corrigée vers une autre sorte sort du relevé, même revue en ligne depuis', async () => {
+    const t = await setup();
+    const a = t.ad({ sourceRef: 'corrigee', surfaceM2: 90 });
+    await t.pige.ingest(t.net.id, [a]);
+    t.at(START + DAY);
+    await t.pige.ingest(t.net.id, [{ ...a, kind: 'apartment' }]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.competitors).toEqual([]);
+    expect(got.value.market.ads).toBe(0);
   });
 
   it('[R303] seules comptent les annonces encore vues en ligne, de la sorte, de la commune et de surface proche ; un bien sur deux sites compte une fois', async () => {
