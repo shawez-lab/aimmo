@@ -42,7 +42,7 @@ async function setup() {
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alexandrine', lastName: 'Fictive' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Samuel', lastName: 'Inventé' });
-  const state = { closed: new Set<string>(), offline: new Set<string>(), linksDown: false };
+  const state = { closed: new Set<string>(), offline: new Set<string>(), linksDown: false, onPublish: null as (() => void) | null };
   const links = {
     studioLink: async (_n: string, _k: 'publication', ref: string, propertyId: string) => {
       if (state.linksDown) throw new Error('panne');
@@ -77,6 +77,7 @@ async function setup() {
   const gate: PublicationGate = {
     publish: async (viewer, postId, targets, options) => {
       calls.push({ postId, targets });
+      state.onPublish?.();
       return pubs.publish(viewer, postId, targets, options);
     },
   };
@@ -310,6 +311,50 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
     t.state.offline.delete(a);
     expect(await t.pubs.publish(t.alexV, post, [{ channel: 'instagram', account: 'agent' }], { requireLink: true })).toEqual({ ok: false, rule: 'R156', code: 'sans_lien' });
     expect(t.received).toEqual([]);
+  });
+
+  it('[R582] l’heure est relue à chaque créneau : un passage lent ne fait partir aucun créneau devenu manqué', async () => {
+    const t = await setup();
+    await t.property(1);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1, facebook: 1 }, hours: ['09:00'] });
+    await t.cal.planWeek(t.alexV, '2027-10-11');
+    t.setClock('2027-10-11T08:59:00.000Z');
+    // Le premier envoi dure : quand il finit, l'autre créneau a passé ses deux heures.
+    t.state.onPublish = () => {
+      t.setClock('2027-10-11T09:05:00.000Z');
+    };
+    expect(await t.cal.runDue(t.network.id)).toEqual({ passed: 1 });
+    expect(t.received).toHaveLength(1);
+    const s = await t.cal.slots(t.alexV, '2027-10-11', '2027-10-11');
+    expect(s.ok && s.value.map((x) => x.outcome).sort()).toEqual(['envoye', 'manque']);
+  });
+
+  it('[R580] après une reprise du bien, seules les sorties du nouvel agent comptent ; une panne du lien est écrite au journal', async () => {
+    const t = await setup();
+    const a = await t.property(2);
+    const b = await t.property(2);
+    const samV = t.as(t.sam.id);
+    const moved = await t.property(2, t.sam.id);
+    // Samuel a déjà publié le bien sur Instagram, puis le bien passe à Alexandrine.
+    const post = (await t.db.first<{ id: string }>('SELECT id FROM social_posts WHERE property_id = ? ORDER BY id LIMIT 1', [moved]))!.id;
+    expect(await t.pubs.publish(samV, post, [{ channel: 'instagram', account: 'agent' }])).toMatchObject({ ok: true });
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.alex.id, moved]);
+    // Alexandrine a publié A elle-même.
+    const aPost = (await t.db.first<{ id: string }>('SELECT id FROM social_posts WHERE property_id = ? ORDER BY id LIMIT 1', [a]))!.id;
+    expect(await t.pubs.publish(t.alexV, aPost, [{ channel: 'instagram', account: 'agent' }])).toMatchObject({ ok: true });
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    const w = await t.cal.planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    // Le bien repris n'est jamais sorti chez elle : il passe avec B avant toute reprise de A.
+    expect(w.value.slice(0, 2).map((s) => s.propertyId).sort()).toEqual([b, moved].sort());
+    const t2 = await setup();
+    await t2.property(1);
+    await t2.cal.setRules(t2.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    t2.state.linksDown = true;
+    expect(await t2.cal.planWeek(t2.alexV, '2027-10-11')).toEqual({ ok: true, value: [] });
+    const ev = await t2.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'marketing.calendrier.lien_indisponible'");
+    expect(ev.length).toBeGreaterThan(0);
+    expect(JSON.parse(ev[0]!.data)).toEqual({ channel: 'instagram', rule: 'R582', error: 'Error' });
   });
 
   it('les heures de Paris, en hiver comme en été', () => {

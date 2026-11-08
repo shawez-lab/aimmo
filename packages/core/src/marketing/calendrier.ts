@@ -262,7 +262,9 @@ export class CalendrierPublications {
       let link: { link: string | null } | null = null;
       try {
         link = await this.deps.links.studioLink(viewer.networkId, 'publication', v.postId, propertyId);
-      } catch {
+      } catch (error) {
+        // Une panne de l'origine n'est pas « aucun contenu prêt » : elle est écrite au journal, sans donnée.
+        await appendEvent(this.journal, { type: 'marketing.calendrier.lien_indisponible', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { channel, rule: 'R582', error: error instanceof Error ? error.name : 'inconnue' } }, this.now);
         link = null;
       }
       if (!link?.link) continue;
@@ -314,10 +316,10 @@ export class CalendrierPublications {
     const sent = await this.db.all<{ property_id: string; at: string }>(
       `SELECT s.property_id, min(d.done_at) AS at FROM social_post_attempts a
        JOIN social_post_sends d ON d.attempt_id = a.id JOIN social_posts s ON s.id = a.post_id
-       JOIN properties p ON p.id = s.property_id
-       WHERE p.agent_id = ? AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye'
+       WHERE a.claimed_by = ? AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye'
        GROUP BY s.id, s.property_id`,
-      [agentId, channel],
+      // Les sorties de cet agent-là, depuis son compte : celles d'un ancien agent du bien ne comptent pas pour lui.
+      [`agent:${agentId}`, channel],
     );
     const pending = (await this.pendingSlots(agentId, channel)).map((s) => ({ property_id: s.property_id, at: s.due_at }));
     const out = new Map<string, { count: number; lastAt: string }>();
@@ -364,12 +366,18 @@ export class CalendrierPublications {
     let passed = 0;
     for (const slot of rows) {
       if ((await this.inForce(slot.agent_id, slot.day))?.id !== slot.rules_id) continue;
+      // L'heure est relue à chaque créneau : un passage lent ne fait jamais partir un créneau devenu manqué.
+      if (this.late(slot)) continue;
       const { changes } = await this.db.run('INSERT INTO social_calendar_runs (slot_id, claimed_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [slot.id, this.now().toISOString()]);
       if (changes !== 1) continue;
       passed++;
       await this.pass(slot);
     }
     return { passed };
+  }
+
+  private late(slot: SlotRow): boolean {
+    return Date.parse(slot.due_at) <= this.now().getTime() - LATE_MS;
   }
 
   private async pass(slot: SlotRow): Promise<void> {
@@ -390,6 +398,7 @@ export class CalendrierPublications {
       link = null;
     }
     if (!link?.link) return done('refuse', 'R582', 'sans_lien');
+    if (this.late(slot)) return done('refuse', 'R582', 'manque');
     const viewer = { role: 'agent', networkId: slot.network_id, userId: slot.agent_id } as Viewer;
     let r: PostResult<SocialPost>;
     try {
