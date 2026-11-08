@@ -47,6 +47,8 @@ it('[R497] [R46] chaque sous-titre traduit garde ses nombres, et aucune voie nom
   expect(cut).toEqual([{ language: 'en', line: null, problems: expect.arrayContaining(['adresse']) }]);
   const cutStreet = checkSubtitleTranslations(['Au 12', 'Pièce lumineuse'], new Map([['en', ['At 12', 'Test Street']]]));
   expect(cutStreet.some((p) => p.problems.includes('adresse'))).toBe(true);
+  // Un « A » en tête de ligne n'est pas une lettre de classe ajoutée.
+  expect(checkSubtitleTranslations(['Séjour lumineux', 'Une cuisine équipée'], new Map([['en', ['Bright living room', 'A fitted kitchen']]]))).toEqual([]);
 });
 
 async function setup() {

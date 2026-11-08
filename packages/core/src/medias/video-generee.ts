@@ -21,7 +21,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { controlTranslation, type ListingLanguage, type TranslationProblem } from '../annonces/traductions.ts';
-import type { SentenceProblem } from '../annonces/annonce-sourcee.ts';
+import { publicTextProblems, type SentenceProblem } from '../annonces/annonce-sourcee.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -119,6 +119,9 @@ export type SubtitleLanguage = 'fr' | ListingLanguage;
 /** `line` : la ligne en cause ; -1 pour un nombre de lignes différent du français ; null pour les lignes lues à la suite. */
 export type SubtitleProblem = { language: ListingLanguage; line: number | null; problems: TranslationProblem[] };
 
+/** Ce qui se lit sur les sous-titres à la suite : ce qu'aucun texte public ne porte [R46]. */
+const CONTINUOUS_PROBLEMS = ['adresse', 'critere_discriminant', 'mot_interdit', 'lien_ou_mail'] as const;
+
 /** Le contrôle des sous-titres traduits : même nombre de lignes, chaque ligne comme une traduction d'annonce [R497]. */
 export function checkSubtitleTranslations(fr: readonly string[], translations: ReadonlyMap<ListingLanguage, readonly string[]>): SubtitleProblem[] {
   const out: SubtitleProblem[] = [];
@@ -132,10 +135,14 @@ export function checkSubtitleTranslations(fr: readonly string[], translations: R
       if (!c.ok) out.push({ language, line: i, problems: [...new Set([...c.title, ...c.body])] });
     });
     // Tous les sous-titres à la suite, aussi : une adresse coupée entre deux lignes (« At 12 », « Test Street ») est lue
-    // d'un bloc, comme le français en P06 [R46].
+    // d'un bloc, comme le français en P06 [R46]. Seuls ces contrôles-là : les nombres et les classes ont été comparés
+    // ligne par ligne, et lues à la suite, un « A » en tête de ligne passerait pour une lettre de classe.
     if (out.some((p) => p.language === language)) continue;
-    const whole = controlTranslation({ title: fr[0]!, body: fr.join(' ') }, { title: lines[0]!, body: lines.join(' ') }, language);
-    if (!whole.ok) out.push({ language, line: null, problems: [...new Set(whole.body)] });
+    const joined = lines.join(' ');
+    const whole = controlTranslation({ title: fr[0]!, body: fr.join(' ') }, { title: lines[0]!, body: joined }, language);
+    const found = new Set<TranslationProblem>(whole.body.filter((c) => (CONTINUOUS_PROBLEMS as readonly string[]).includes(c)));
+    for (const p of publicTextProblems(joined)) found.add(p.code as TranslationProblem);
+    if (found.size > 0) out.push({ language, line: null, problems: [...found] });
   }
   return out;
 }
