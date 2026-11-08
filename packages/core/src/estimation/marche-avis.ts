@@ -213,15 +213,17 @@ export class MarcheAvis {
     const at = new Date(Number.isFinite(before) && nowMs <= before ? before + 1 : nowMs).toISOString();
     // La base refuse aussi un avis validé entre-temps [R306].
     try {
-      // Comparer puis poser : la version ne change que si elle est encore celle lue, et le relevé n'entre que si sa version
-      // est la version en place et qu'aucun autre relevé ne la porte déjà. Deux relevés croisés ne partagent jamais une
+      // Comparer puis poser : la version ne change que si elle est encore celle lue, et le relevé n'entre que si cette
+      // écriture-là vient de réussir (`changes()` de l'écriture d'avant, dans le même lot), que sa version est en place et
+      // qu'aucun autre relevé ne la porte déjà. Deux relevés croisés ne partagent jamais une
       // version : le second n'entre pas, et c'est dit [R306].
       const done = await runBatch(this.db, [
         { sql: "UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft' AND updated_at = ?", params: [at, report.id, report.updated_at] },
         {
           sql: `INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at)
                 SELECT ?, ?, ?, ?, ?, ?
-                 WHERE EXISTS (SELECT 1 FROM valuation_reports WHERE id = ? AND updated_at = ?)
+                 WHERE changes() = 1
+                   AND EXISTS (SELECT 1 FROM valuation_reports WHERE id = ? AND updated_at = ?)
                    AND NOT EXISTS (SELECT 1 FROM valuation_market_snapshots WHERE report_id = ? AND created_at = ?)`,
           params: [this.newId(), viewer.networkId, report.id, viewer.userId, JSON.stringify(section), at, report.id, at, report.id, at],
         },

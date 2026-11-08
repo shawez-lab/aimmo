@@ -361,6 +361,17 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect((await t.avis.validate(t.as('agent', t.alex.id), r.id, read)).ok).toBe(true);
   });
 
+  it('[R306] une modification croisée qui pose la même version ne laisse pas entrer le relevé', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    const same = new Date(Date.parse(r.updated_at) + 1).toISOString();
+    t.hook.during = async () => {
+      await t.db.run('UPDATE valuation_reports SET updated_at = ? WHERE id = ?', [same, r.id]);
+    };
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toEqual({ ok: false, rule: 'R306', code: 'changed_meanwhile' });
+    expect(await t.db.all('SELECT id FROM valuation_market_snapshots')).toHaveLength(0);
+  });
+
   it('[R306] un agent parti le jour même, avant le passage du départ, ne joint rien', async () => {
     const t = await setup();
     const r = await t.draft();
