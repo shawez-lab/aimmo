@@ -334,8 +334,9 @@ export class MarcheAvis {
       const last = list[list.length - 1]!;
       // Même nom et même département : deux communes homonymes de départements différents ne se mêlent jamais.
       if (last.kind !== kind || communeSlug(last.commune) !== slug || departmentOf(last.postal_code) !== department) continue;
-      // L'historique des prix : les relèves du même bien que la dernière (même empreinte), dans l'ordre.
-      bySite.set(k, list.filter((r) => r.fingerprint === last.fingerprint));
+      // L'historique des prix : toutes les relèves de cette annonce de la même sorte et de la même commune, dans l'ordre ;
+      // une surface corrigée en route ne fait pas perdre les baisses d'avant [R303].
+      bySite.set(k, list.filter((r) => r.kind === last.kind && communeSlug(r.commune) === slug && departmentOf(r.postal_code) === department));
     }
     const firstOnline = dayNumber(today) - this.settings.onlineDays;
     const out: Followed[] = [];

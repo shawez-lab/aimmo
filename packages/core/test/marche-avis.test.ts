@@ -171,6 +171,19 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(got.value.market.ads).toBe(0);
   });
 
+  it('[R303] une surface corrigée en route ne fait pas perdre les baisses d’avant', async () => {
+    const t = await setup();
+    const a = t.ad({ sourceRef: 'surface-corrigee', surfaceM2: 90, priceEur: 300_000 });
+    await t.pige.ingest(t.net.id, [a]);
+    t.at(START + DAY);
+    await t.pige.ingest(t.net.id, [{ ...a, surfaceM2: 91, priceEur: 280_000 }]);
+    const r = await t.draft();
+    const got = await t.marche.attach(t.as('agent', t.alex.id), r.id);
+    if (!got.ok) throw new Error(got.code);
+    expect(got.value.competitors[0]).toMatchObject({ surfaceM2: 91, firstPriceEur: 300_000, priceEur: 280_000, drops: [{ on: '2026-11-03', fromEur: 300_000, toEur: 280_000 }] });
+    expect(got.value.market.withDrops).toBe(1);
+  });
+
   it('[R303] une annonce corrigée vers une autre sorte sort du relevé, même revue en ligne depuis', async () => {
     const t = await setup();
     const a = t.ad({ sourceRef: 'corrigee', surfaceM2: 90 });
