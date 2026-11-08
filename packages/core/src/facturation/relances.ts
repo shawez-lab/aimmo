@@ -51,11 +51,15 @@ export interface UnpaidReminder {
 
 export interface ReminderFacts {
   firstName: string | null;
+  /** Le nombre de relances déjà parties pour cette facture : chaque relance a ainsi son propre texte [R05]. */
+  alreadySent?: number;
   label: string;
   amountCents: number;
   issuedOn: string;
   dueOn: string;
 }
+
+const ORDINALS = ['premier', 'deuxième', 'troisième'];
 
 /** Le texte de la relance, écrit par le code depuis la seule facture : aucune demande de paiement [R62, R553]. */
 export function unpaidReminderText(f: ReminderFacts): string {
@@ -64,6 +68,7 @@ export function unpaidReminderText(f: ReminderFacts): string {
     hello,
     '',
     `la facture ${f.label} de ${euros(f.amountCents)} €, émise le ${frenchDay(f.issuedOn)}, arrivait à échéance le ${frenchDay(f.dueOn)}. Elle n'apparaît pas encore dans nos encaissements.`,
+    ...(f.alreadySent ? ['', `C'est notre ${ORDINALS[Math.min(f.alreadySent, ORDINALS.length - 1)]} message à ce sujet.`] : []),
     '',
     'Si elle a déjà été réglée, par vous ou par l’étude du notaire, une simple réponse à ce message nous permet de mettre nos comptes à jour.',
   ].join('\n');
@@ -159,8 +164,10 @@ export class RelancesImpayes {
         if (today < addDays(todayInParis(new Date(last.updated_at)), this.gapDays)) continue;
       }
       const rank = (last?.rank ?? 0) + 1;
+      const sentBefore = await this.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM invoice_reminders WHERE invoice_id = ? AND status = 'envoyee'", [inv.id]);
       const facts: ReminderFacts = {
         firstName: await ficheFirstName(this.db, await this.unique.membersOf(inv.person_id)),
+        alreadySent: sentBefore?.n ?? 0,
         label: inv.label,
         amountCents: inv.amount_cents,
         issuedOn: inv.issued_on,

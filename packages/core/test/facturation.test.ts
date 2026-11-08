@@ -296,15 +296,28 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect(await relances.prepare(t.network.id)).toBe(0);
     t.setClock(at9('2027-07-27'));
     expect(await relances.prepare(t.network.id)).toBe(1);
+    // La seconde a son propre texte : validée, elle part aussi, sans être prise pour un doublon [R05].
+    const second = await relances.list(t.direction);
+    const r2 = second.ok ? second.value.find((r) => r.rank === 2)! : null;
+    expect(r2!.text).toContain('C\'est notre deuxième message à ce sujet.');
+    expect(fundsInOutgoing(r2!.text)).toBe(false);
+    expect(await relances.validate(t.direction, r2!.id)).toEqual({ ok: true });
+    expect(await relances.send(t.network.id)).toBe(1);
+    expect(await outbox()).toHaveLength(2);
+    // Une troisième le 11 août, avec son texte à elle, laissée à valider.
+    t.setClock(at9('2027-08-11'));
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const third = await relances.list(t.direction);
+    expect(third.ok && third.value.find((r) => r.rank === 3)!.text).toContain('C\'est notre troisième message à ce sujet.');
     // La banque prouve le paiement : la relance en attente se ferme, rien ne part, plus rien n'est préparé.
-    await t.banque.importStatement(t.direction, '2027-07-26;VIR F-2027-00001;10 000,00\n');
+    await t.banque.importStatement(t.direction, '2027-08-10;VIR F-2027-00001;10 000,00\n');
     expect(await t.banque.run(t.network.id)).toBe(1);
     expect(await relances.send(t.network.id)).toBe(0);
     const after = await relances.list(t.direction);
-    expect(after.ok && after.value.map((r) => [r.rank, r.status])).toEqual([[1, 'envoyee'], [2, 'close']]);
-    t.setClock(at9('2027-08-20'));
+    expect(after.ok && after.value.map((r) => [r.rank, r.status])).toEqual([[1, 'envoyee'], [2, 'envoyee'], [3, 'close']]);
+    t.setClock(at9('2027-09-20'));
     expect(await relances.prepare(t.network.id)).toBe(0);
-    expect(await outbox()).toHaveLength(1);
+    expect(await outbox()).toHaveLength(2);
     // Au journal : aucun texte, aucun montant [R13].
     const events = JSON.stringify(await t.journal.bySubject(`sale_file:${t.fileId}`));
     expect(events).not.toContain('apparaît');
