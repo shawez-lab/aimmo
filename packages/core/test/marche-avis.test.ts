@@ -68,7 +68,16 @@ async function setup(rent: MarketRent = RENT) {
   const property = await store.createProperty({ networkId: net.id, agentId: alex.id, reference: 'B-1', kind: 'home', postalCode: '21240', city: 'Talant', surfaceM2: 90 });
   const pige = new Pige(db, journal, { communePrices: async () => null }, { now });
   const asked: string[] = [];
-  const rents = { marketRent: async (_n: string, insee: string, kind: string) => (asked.push(`${insee}:${kind}`), rent) };
+  const hook: { during: (() => Promise<void>) | null } = { during: null };
+  const rents = {
+    marketRent: async (_n: string, insee: string, kind: string) => {
+      asked.push(`${insee}:${kind}`);
+      const h = hook.during;
+      hook.during = null;
+      if (h) await h();
+      return rent;
+    },
+  };
   const marche = new MarcheAvis(db, journal, rents, pige, { now });
   const avis = new AvisDeValeur(db, journal, { now });
   const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
@@ -100,7 +109,7 @@ async function setup(rent: MarketRent = RENT) {
     n += 1;
     return { source: 'Site A', sourceRef: `ref-secret-${n}`, kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 92, rooms: 4, priceEur: 280_000, publishedAt: new Date(clock - 3 * DAY).toISOString(), text: 'Maison familiale.', ...over };
   };
-  return { db, journal, net, alex, sam, property, pige, marche, avis, imprime, asked, as, draft, ad, at: (t: number) => { clock = t; } };
+  return { hook, db, journal, net, alex, sam, property, pige, marche, avis, imprime, asked, as, draft, ad, at: (t: number) => { clock = t; } };
 }
 
 describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible et marché de la commune', () => {
@@ -335,6 +344,21 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     expect(await t.avis.validate(t.as('agent', t.alex.id), r.id, read)).toEqual({ ok: false, rule: 'R30', code: 'changed_meanwhile' });
     const fresh = (await t.avis.get(r.id))!.updated_at;
     expect((await t.avis.validate(t.as('agent', t.alex.id), r.id, fresh)).ok).toBe(true);
+  });
+
+  it('[R306] deux relevés croisés ne partagent jamais une version : le second n’entre pas, et c’est dit', async () => {
+    const t = await setup();
+    const r = await t.draft();
+    let read = '';
+    // Pendant le calcul du premier relevé, un second se joint en entier, et l'écran lit la version qu'il laisse.
+    t.hook.during = async () => {
+      expect((await t.marche.attach(t.as('agent', t.alex.id), r.id)).ok).toBe(true);
+      read = (await t.avis.get(r.id))!.updated_at;
+    };
+    expect(await t.marche.attach(t.as('agent', t.alex.id), r.id)).toEqual({ ok: false, rule: 'R306', code: 'changed_meanwhile' });
+    expect(await t.db.all('SELECT id FROM valuation_market_snapshots')).toHaveLength(1);
+    expect((await t.avis.get(r.id))!.updated_at).toBe(read);
+    expect((await t.avis.validate(t.as('agent', t.alex.id), r.id, read)).ok).toBe(true);
   });
 
   it('[R306] un agent parti le jour même, avant le passage du départ, ne joint rien', async () => {

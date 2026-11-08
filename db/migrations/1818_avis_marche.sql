@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS valuation_market_snapshots (
   created_at TEXT NOT NULL,
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
-CREATE INDEX IF NOT EXISTS valuation_market_snapshots_report ON valuation_market_snapshots (report_id, created_at);
+-- Un relevé par version de l'avis : deux relevés croisés ne partagent jamais une version [R306].
+CREATE UNIQUE INDEX IF NOT EXISTS valuation_market_snapshots_report ON valuation_market_snapshots (report_id, created_at);
 CREATE TRIGGER IF NOT EXISTS valuation_market_snapshots_brouillon
 BEFORE INSERT ON valuation_market_snapshots
 WHEN NOT EXISTS (SELECT 1 FROM valuation_reports r WHERE r.id = NEW.report_id AND r.network_id = NEW.network_id AND r.status = 'draft')

@@ -119,7 +119,7 @@ export interface PigeClosure {
   closure(networkId: string, fingerprint: string): Promise<unknown>;
 }
 
-export type MarketRefusal = { ok: false; rule: 'R30' | 'R306'; code: 'unknown' | 'not_following_agent' | 'already_validated' } | { ok: false; rule: null; code: 'invalid' | 'no_surface' | 'no_commune' };
+export type MarketRefusal = { ok: false; rule: 'R30' | 'R306'; code: 'unknown' | 'not_following_agent' | 'already_validated' | 'changed_meanwhile' } | { ok: false; rule: null; code: 'invalid' | 'no_surface' | 'no_commune' };
 
 const DAY = 86_400_000;
 const INSEE = /^(?:\d{5}|2[AB]\d{3})$/;
@@ -213,13 +213,23 @@ export class MarcheAvis {
     const at = new Date(Number.isFinite(before) && nowMs <= before ? before + 1 : nowMs).toISOString();
     // La base refuse aussi un avis validé entre-temps [R306].
     try {
-      await runBatch(this.db, [
-        { sql: "UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft'", params: [at, report.id] },
+      // Comparer puis poser : la version ne change que si elle est encore celle lue, et le relevé n'entre que si sa version
+      // est la version en place et qu'aucun autre relevé ne la porte déjà. Deux relevés croisés ne partagent jamais une
+      // version : le second n'entre pas, et c'est dit [R306].
+      const done = await runBatch(this.db, [
+        { sql: "UPDATE valuation_reports SET updated_at = ? WHERE id = ? AND status = 'draft' AND updated_at = ?", params: [at, report.id, report.updated_at] },
         {
-          sql: 'INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          params: [this.newId(), viewer.networkId, report.id, viewer.userId, JSON.stringify(section), at],
+          sql: `INSERT INTO valuation_market_snapshots (id, network_id, report_id, agent_id, market, created_at)
+                SELECT ?, ?, ?, ?, ?, ?
+                 WHERE EXISTS (SELECT 1 FROM valuation_reports WHERE id = ? AND updated_at = ?)
+                   AND NOT EXISTS (SELECT 1 FROM valuation_market_snapshots WHERE report_id = ? AND created_at = ?)`,
+          params: [this.newId(), viewer.networkId, report.id, viewer.userId, JSON.stringify(section), at, report.id, at, report.id, at],
         },
       ]);
+      if (done[1]?.changes !== 1) {
+        const still = await this.db.first<{ status: string }>('SELECT status FROM valuation_reports WHERE id = ?', [report.id]);
+        return still?.status === 'validated' ? { ok: false, rule: 'R306', code: 'already_validated' } : { ok: false, rule: 'R306', code: 'changed_meanwhile' };
+      }
     } catch (error) {
       // Seul le refus de la base pour un avis validé entre-temps se dit « déjà validé » ; toute autre panne remonte.
       const still = await this.db.first<{ status: string }>('SELECT status FROM valuation_reports WHERE id = ?', [report.id]);
