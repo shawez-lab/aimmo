@@ -292,17 +292,14 @@ export class LettreInformation {
 
     // Le suivi de valeur, seulement s'il est demandé et que son accord est en cours [R03, R31].
     let valueTracking: LetterContent['valueTracking'] = null;
-    const iso = this.now().toISOString();
     const tracking = await this.db.first<{ town: string; kind: 'apartment' | 'house' }>(
       `SELECT town, kind FROM value_tracking WHERE network_id = ? AND person_id IN (${placeholders(ids.length)}) LIMIT 1`,
       [networkId, ...ids],
     );
-    const trackingConsent = await this.db.first<{ n: number }>(
-      `SELECT count(*) AS n FROM consents WHERE person_id IN (${placeholders(ids.length)}) AND purpose = ? AND given_at <= ? AND (withdrawn_at IS NULL OR withdrawn_at > ?)`,
-      [...ids, VALUE_TRACKING_PURPOSE, iso, iso],
-    );
+    // L'accord en vigueur, comme le contrôle central le lit : un retrait plus récent l'emporte sur un accord plus ancien.
+    const trackingInForce = tracking ? await this.fiche.channelsInForce(root, VALUE_TRACKING_PURPOSE) : [];
     const towns: string[] = [];
-    if (tracking && Number(trackingConsent?.n ?? 0) > 0) {
+    if (tracking && trackingInForce.length > 0) {
       const prices = await this.communeCells(networkId, tracking.town);
       const cell = prices?.cells.find((c) => c.zone.level === 'commune' && c.kind === tracking.kind);
       if (prices && cell) {
@@ -474,8 +471,11 @@ export class LettreInformation {
     // Un contenu public : vocabulaire, adresse, chiffres de la base, aucune mention de l'IA [R07, R09, R10]. Le
     // magazine s'imprime : sa longueur n'est pas celle d'une page.
     // La liste des mots de l'IA n'est lue que pour un client : on la passe aussi, sans les exigences d'une conversation.
+    // Aucun nom de personne du réseau dans un contenu public [R09, R15].
+    const people = await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE network_id = ?', [viewer.networkId]);
+    const clientNames = people.flatMap((x) => [x.first_name, x.last_name, x.first_name && x.last_name ? `${x.first_name} ${x.last_name}` : null]).filter((x): x is string => typeof x === 'string' && x.trim().length > 1);
     const problem =
-      checkText(visible, { audience: 'public', figures: figuresOf(content) }).find((p) => p.rule !== 'length') ??
+      checkText(visible, { audience: 'public', figures: figuresOf(content), clientNames }).find((p) => p.rule !== 'length') ??
       checkText(visible, { audience: 'client', channel: 'email' }).find((p) => p.rule === 'R06');
     if (problem) return { ok: false, rule: problem.rule, code: 'texte' };
     await appendEvent(this.journal, { type: 'lettre.magazine', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { properties: properties.length, communes: prices.length } }, this.now);

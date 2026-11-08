@@ -340,6 +340,13 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
       [t.network.id, t.alex.id, owner.id, new Date(TUESDAY_10H - DAY).toISOString()],
     );
     expect((await t.lettre.contentFor(t.network.id, owner.id)).valueTracking).toBeNull();
+    // Un accord ancien encore ouvert ne vaut plus après un retrait plus récent du même accord.
+    await t.store.addConsent({ networkId: t.network.id, personId: owner.id, purpose: VALUE_TRACKING_PURPOSE, channel: 'email', proof: 'test', givenAt: new Date(TUESDAY_10H - 5 * DAY) });
+    expect((await t.lettre.contentFor(t.network.id, owner.id)).valueTracking).not.toBeNull();
+    const later = await t.store.addConsent({ networkId: t.network.id, personId: owner.id, purpose: VALUE_TRACKING_PURPOSE, channel: 'email', proof: 'test', givenAt: new Date(TUESDAY_10H - 3 * DAY) });
+    await t.store.withdrawConsent(later.id, new Date(TUESDAY_10H - 2 * DAY));
+    expect(await t.store.listConsents(owner.id).then((c) => c.filter((x) => x.purpose === VALUE_TRACKING_PURPOSE && x.withdrawn_at === null))).toHaveLength(1);
+    expect((await t.lettre.contentFor(t.network.id, owner.id)).valueTracking).toBeNull();
     const id = await t.edition();
     expect(await t.lettre.sendOne(t.network.id, id, owner.id)).toEqual({ personId: owner.id, status: 'empty', rule: null });
     expect(await t.sent()).toHaveLength(0);
@@ -395,6 +402,10 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(await t.lettre.magazine(t.direction, 'Lettre 12')).toEqual({ ok: false, rule: 'R585', code: 'titre' });
     // Un titre public au vocabulaire interdit ne sort pas [R07].
     expect(await t.lettre.magazine(t.direction, 'Les estimations gratuites des mandataires')).toMatchObject({ ok: false, rule: 'R07' });
+    // Ni le nom d'une personne du réseau [R09].
+    await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Mila', lastName: 'Dupontel' });
+    expect(await t.lettre.magazine(t.direction, 'Les biens de Mila Dupontel')).toMatchObject({ ok: false, rule: 'R09' });
+    expect(await t.lettre.magazine(t.direction, 'Les biens chez Dupontel')).toMatchObject({ ok: false, rule: 'R09' });
     // Ni une mention de l'IA [R06].
     expect(await t.lettre.magazine(t.direction, 'Notre assistant IA immobilier')).toMatchObject({ ok: false, rule: 'R06' });
     expect(await t.lettre.magazine({ role: 'client' as never, userId: 'c', networkId: t.network.id }, 'Le magazine')).toEqual({ ok: false, rule: 'R16', code: 'role' });
