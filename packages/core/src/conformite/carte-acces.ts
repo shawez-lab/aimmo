@@ -173,6 +173,12 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.copropriete_resumee': 'partage',
   'dossier.travaux_votes_signales': 'partage',
   // HX36 : la lettre recommandée de l'avant-contrat et ses preuves ; le journal n'en porte que des identifiants et des règles.
+  // HX45 : note au notaire, projet comparé, dépôt reçu par le notaire, dates reportées ; le journal n'en porte que des noms de termes et des règles.
+  'avant_contrat.note': 'partage',
+  'avant_contrat.projet': 'partage',
+  'avant_contrat.dates': 'partage',
+  'avant_contrat.depot': 'partage',
+  'avant_contrat.depot_refuse': 'partage',
   'dossier.recommande_prepare': 'partage',
   'dossier.recommande_envoye': 'partage',
   'dossier.recommande_essai': 'partage',
@@ -477,6 +483,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   coownership_summaries: { locate: [via('file_id', 'sale_files')] },
   registered_letters: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
   registered_letter_events: { locate: [via('file_id', 'sale_files')] },
+  pre_contract_briefs: { locate: [via('file_id', 'sale_files')] },
+  notary_drafts: { locate: [via('file_id', 'sale_files')] },
+  notary_draft_differences: { locate: [via('file_id', 'sale_files')] },
+  pre_contract_deposits: { locate: [via('file_id', 'sale_files')] },
   signature_circuits: { locate: [via('file_id', 'sale_files')] },
   signature_circuit_annexes: { locate: [via('file_id', 'sale_files')] },
   signature_circuit_signers: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
