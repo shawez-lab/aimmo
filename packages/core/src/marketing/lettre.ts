@@ -452,9 +452,10 @@ export class LettreInformation {
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;
       // Un bien parti entre-temps par une alerte : la lettre attend, et se refait sans lui au passage suivant [R05].
-      // Deux envois simultanés : le perdant peut lire « Ce sujet part déjà » ; seule la lettre déjà partie est finie.
+      // Deux envois simultanés : le perdant peut lire « Ce sujet part déjà » ; seule la lettre déjà partie est finie. La
+      // mention du premier message réservée par un autre envoi (R06) se libère : la lettre est écrite par le code, elle attend.
       const propertyAlreadySent = result.rule === 'R05' && content.properties.length > 0 && !(await this.alreadySentSubject([root], `lettre:${editionId}`));
-      status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' || result.rule === 'R585' || propertyAlreadySent ? 'waiting' : 'refused';
+      status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' || result.rule === 'R585' || result.rule === 'R06' || propertyAlreadySent ? 'waiting' : 'refused';
     } catch (error) {
       await this.db.run("UPDATE newsletter_letters SET status = 'failed', updated_at = ? WHERE edition_id = ? AND person_id = ? AND status = 'pending'", [this.now().toISOString(), editionId, root]);
       throw error;
