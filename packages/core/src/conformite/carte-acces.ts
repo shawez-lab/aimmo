@@ -242,6 +242,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  new_program: { excluded: 'sans_client', why: 'Un programme neuf d\'un promoteur partenaire (HX48) : sa création et les versions de ses lots, sans donnée d\'un client.' },
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
   mail: ENVOI('réponse validée à un mail de la boîte de l\'agent, HX26'),
   recommande: ENVOI('lettre recommandée de l\'avant-contrat, HX36'),
@@ -900,6 +901,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
   investment_calculations: { locate: [via('project_id', 'projects')] },
+  viager_calculations: { locate: [via('project_id', 'projects')] },
+  life_tables: out('sans_client', 'Tables d\'espérance de vie importées par la direction (HX48) : aucune personne, l\'auteur de l\'import seulement.'),
+  life_table_rows: out('sans_client', 'Lignes d\'une table d\'espérance de vie, par âge, pour l\'ensemble des deux sexes : aucune personne.'),
+  acquisition_fee_scales: out('sans_client', 'Barème des frais d\'acquisition rangé par la direction (HX48) : aucune personne.'),
+  new_programs: out('agent', 'Programme neuf d\'un promoteur partenaire, confié à un agent (HX48) : aucun client.'),
+  new_program_lot_versions: out('sans_client', 'Versions des lots d\'un programme neuf (HX48) : aucun client, l\'auteur de la version seulement.'),
   commune_rental_rules: out('sans_client', 'Règles de location des communes rangées par la direction : aucune personne.'),
   price_zones: out('sans_client', 'Zones des prix publics tracées par la direction : aucune personne.'),
   price_zone_retirements: out('sans_client', 'Retraits des zones des prix publics : aucune personne.'),
