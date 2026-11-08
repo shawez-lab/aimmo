@@ -75,9 +75,9 @@ async function setup() {
   );
   const calls: { postId: string; targets: unknown }[] = [];
   const gate: PublicationGate = {
-    publish: async (viewer, postId, targets) => {
+    publish: async (viewer, postId, targets, options) => {
       calls.push({ postId, targets });
-      return pubs.publish(viewer, postId, targets);
+      return pubs.publish(viewer, postId, targets, options);
     },
   };
   const cal = new CalendrierPublications(db, journal, { gate, diffusion, links }, { now });
@@ -285,6 +285,31 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
     t.setClock('2027-10-12T08:01:00.000Z');
     expect(await t.cal.runDue(t.network.id)).toEqual({ passed: 1 });
     expect(t.received.map((r) => r.channel)).toEqual(['facebook']);
+  });
+
+  it('[R580] planifier un jour lointain d’abord ne fait reprendre aucun bien : les jours se réservent toujours dans l’ordre', async () => {
+    const t = await setup();
+    const p1 = await t.property(1);
+    const p2 = await t.property(2);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    const far = await t.cal.planWeek(t.alexV, '2027-10-18');
+    const near = await t.cal.planWeek(t.alexV, '2027-10-11');
+    if (!far.ok || !near.ok) throw new Error('planification');
+    // Trois publications prêtes pour deux biens : P2, P1, P2, puis plus rien.
+    expect(near.value.map((s) => s.propertyId)).toEqual([p2, p1, p2]);
+    expect(far.value).toEqual([]);
+  });
+
+  it('[R582] le chemin de publication exige lui-même le lien marqué quand le calendrier le demande', async () => {
+    const t = await setup();
+    const a = await t.property(1);
+    const post = (await t.db.first<{ id: string }>('SELECT id FROM social_posts WHERE property_id = ?', [a]))!.id;
+    t.state.offline.add(a);
+    expect(await t.pubs.publish(t.alexV, post, [{ channel: 'instagram', account: 'agent' }], { requireLink: true })).toEqual({ ok: false, rule: 'R156', code: 'sans_lien' });
+    t.state.linksDown = true;
+    t.state.offline.delete(a);
+    expect(await t.pubs.publish(t.alexV, post, [{ channel: 'instagram', account: 'agent' }], { requireLink: true })).toEqual({ ok: false, rule: 'R156', code: 'sans_lien' });
+    expect(t.received).toEqual([]);
   });
 
   it('les heures de Paris, en hiver comme en été', () => {

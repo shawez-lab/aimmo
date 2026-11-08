@@ -59,7 +59,7 @@ export interface CalendarSlot {
 
 /** Le seul chemin de publication, celui de X05 : `Publications` le remplit [R582]. */
 export interface PublicationGate {
-  publish(viewer: Viewer, postId: string, targets: unknown): Promise<PostResult<SocialPost>>;
+  publish(viewer: Viewer, postId: string, targets: unknown, options?: { requireLink?: boolean }): Promise<PostResult<SocialPost>>;
 }
 
 export interface CalendarDeps {
@@ -214,7 +214,9 @@ export class CalendrierPublications {
     const today = this.today();
     if (from < today || from > addDays(today, MAX_DAYS_AHEAD)) return { ok: false, rule: 'R10', code: 'jour_hors_calendrier' };
     const last = [addDays(from, 6), addDays(today, MAX_DAYS_AHEAD)].sort()[0]!;
-    for (let day = from; day <= last; day = addDays(day, 1)) await this.planDay(viewer, day);
+    // Toujours dans l'ordre des jours, depuis aujourd'hui : un jour n'est jamais réservé avant un jour plus proche,
+    // pour que la rotation suive l'ordre où les biens sortiront [R580].
+    for (let day = today; day <= last; day = addDays(day, 1)) await this.planDay(viewer, day);
     return this.slots(viewer, from, last);
   }
 
@@ -251,7 +253,7 @@ export class CalendrierPublications {
   private async pick(viewer: Viewer, channel: SocialChannelName, day: string): Promise<{ postId: string; propertyId: string } | null> {
     const ready = await this.readyPosts(viewer, channel);
     if (ready.length === 0) return null;
-    const out = await this.outings(viewer.userId, channel, day);
+    const out = await this.outings(viewer.userId, channel);
     const byProperty = new Map<string, { postId: string; createdAt: string }>();
     for (const r of ready) if (!byProperty.has(r.property_id)) byProperty.set(r.property_id, { postId: r.post_id, createdAt: r.property_created_at });
     const candidates: { propertyId: string; postId: string; createdAt: string; count: number; lastAt: string }[] = [];
@@ -306,9 +308,9 @@ export class CalendrierPublications {
 
   /**
    * Les sorties de chaque bien sur un réseau, depuis le compte de l'agent : chaque publication partie, par le
-   * calendrier ou à la main, et chaque créneau en attente jusqu'au jour planifié.
+   * calendrier ou à la main, et chaque créneau en attente, quel que soit son jour.
    */
-  private async outings(agentId: string, channel: SocialChannelName, day: string): Promise<Map<string, { count: number; lastAt: string }>> {
+  private async outings(agentId: string, channel: SocialChannelName): Promise<Map<string, { count: number; lastAt: string }>> {
     const sent = await this.db.all<{ property_id: string; at: string }>(
       `SELECT s.property_id, min(d.done_at) AS at FROM social_post_attempts a
        JOIN social_post_sends d ON d.attempt_id = a.id JOIN social_posts s ON s.id = a.post_id
@@ -317,7 +319,7 @@ export class CalendrierPublications {
        GROUP BY s.id, s.property_id`,
       [agentId, channel],
     );
-    const pending = (await this.pendingSlots(agentId, channel)).filter((s) => s.day <= day).map((s) => ({ property_id: s.property_id, at: s.due_at }));
+    const pending = (await this.pendingSlots(agentId, channel)).map((s) => ({ property_id: s.property_id, at: s.due_at }));
     const out = new Map<string, { count: number; lastAt: string }>();
     for (const r of [...sent, ...pending]) {
       const cur = out.get(r.property_id) ?? { count: 0, lastAt: '' };
@@ -391,7 +393,7 @@ export class CalendrierPublications {
     const viewer = { role: 'agent', networkId: slot.network_id, userId: slot.agent_id } as Viewer;
     let r: PostResult<SocialPost>;
     try {
-      r = await this.deps.gate.publish(viewer, slot.post_id, [{ channel: slot.channel, account: 'agent' }]);
+      r = await this.deps.gate.publish(viewer, slot.post_id, [{ channel: slot.channel, account: 'agent' }], { requireLink: true });
     } catch {
       return done('echec', null, null);
     }
