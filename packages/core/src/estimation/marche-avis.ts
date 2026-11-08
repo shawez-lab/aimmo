@@ -385,11 +385,11 @@ export function renderMarketSection(m: MarketSection): string {
       : `<p>Loyer possible : inconnu. Aucune donnée de loyer pour cette commune au ${escapeHtml(dayLabel(m.takenOn))}.</p>`;
   const k = m.market;
   const items: string[] = [];
-  if (k.ads === 0) items.push(`Aucune annonce de particulier de ${what} vue en ligne.`);
+  if (k.ads === 0) items.push(`Aucune annonce de particulier vue en ligne pour des ${what}.`);
   else {
-    items.push(`${k.ads} annonce${k.ads > 1 ? 's' : ''} de particulier${k.ads > 1 ? 's' : ''} de ${what} en ligne.`);
+    items.push(`${k.ads} annonce${k.ads > 1 ? 's' : ''} de particulier${k.ads > 1 ? 's' : ''} en ligne pour des ${what}.`);
     if (k.medianDaysOnline !== null) items.push(`Durée médiane en ligne : ${k.medianDaysOnline} jour${k.medianDaysOnline > 1 ? 's' : ''}.`);
-    items.push(`${k.withDrops} ${k.withDrops > 1 ? 'ont' : 'a'} déjà baissé leur prix.`);
+    items.push(k.withDrops === 0 ? 'Aucune n’a encore baissé son prix.' : k.withDrops === 1 ? 'Une a déjà baissé son prix.' : `${k.withDrops} ont déjà baissé leur prix.`);
     if (k.medianAskedPerM2 !== null) {
       items.push(
         `Prix médian affiché : ${euros(k.medianAskedPerM2)} le m²${k.soldMedianPerM2 ? `, contre ${euros(k.soldMedianPerM2)} pour les ventes réelles retenues ci-dessus${k.gapPct !== null ? ` (écart ${pct(k.gapPct)})` : ''}` : ''}.`,
