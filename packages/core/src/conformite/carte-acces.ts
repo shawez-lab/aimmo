@@ -245,6 +245,8 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
+  lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   report: { excluded: 'sans_client', why: 'Un rapport sur mesure enregistré (HX62) : des mesures et un regroupement, sans donnée d\'un client.' },
   new_program: { excluded: 'sans_client', why: 'Un programme neuf d\'un promoteur partenaire (HX48) : sa création et les versions de ses lots, sans donnée d\'un client.' },
   date: ENVOI('message d\'anniversaire ou de fête, HX25'),
@@ -532,6 +534,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
+  newsletter_editions: out('sans_client', 'Éditions de la lettre d\'information (HX53) : un titre, la direction qui l\'ouvre ; aucune personne.'),
+  newsletter_letters: { locate: by('person_id') },
+  newsletter_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
   agent_whatsapp_alerts: { locate: by('person_id') },
   weekly_points: { locate: by('person_id') },
   // offres-dossiers-vente : l'acquéreur par son offre ; le vendeur voit son dossier de vente sans l'acquéreur.

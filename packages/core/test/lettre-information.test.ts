@@ -290,6 +290,14 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(body).toMatch(/Ne plus recevoir cette lettre : \S+[a-z]{32}$/);
   });
 
+  it('[R10] un nom de lieu de la base qui porte un chiffre ne bloque pas la lettre', async () => {
+    const t = await setup();
+    await t.property('B1', { ...MAISON, city: 'Paris 15e' });
+    const p = await t.person('Inès', { search: { propertyKinds: ['house' as const], budgetMaxEur: 300_000 } });
+    expect(await t.lettre.sendEdition(await t.edition())).toEqual([{ personId: p.id, status: 'sent', rule: null }]);
+    expect((await t.sent(p.id))[0]!.body).toContain('logement à Paris 15e');
+  });
+
   it('[R584] sans lien de désinscription réglé, aucune lettre ne part', async () => {
     const t = await setup();
     await t.property('B1', MAISON);
@@ -399,7 +407,7 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(m.ok).toBe(true);
     if (!m.ok) return;
     expect(m.html).toMatch(/^<!doctype html>/);
-    expect(m.html).toContain('@page{size:A4');
+    expect(m.html).toContain('@page{size:A4;margin:18mm}');
     expect(m.html).toContain(`<h1>${MAGAZINE_TITLE}</h1>`);
     // Chaque bien porte ses mentions obligatoires, sous lui [R43].
     expect(m.html).toContain('honoraires inclus, soit 270 000 € hors honoraires');

@@ -34,6 +34,7 @@ import type { OutboundChannel } from '../envoi/canaux.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
+import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
 import { checkText } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
@@ -94,6 +95,16 @@ export interface LettreOptions {
 export interface ListingMentions {
   checklist(networkId: string, propertyId: string): Promise<{ complete: boolean; text: string; publishedPriceEur: number | null } | null>;
 }
+
+/** La feuille du magazine imprimé : les jetons du papier du système de design, A4 [R201]. */
+const MAGAZINE_CSS =
+  PRINT_DESIGN_CSS +
+  `@page{size:A4;margin:18mm}
+body{font:11pt/1.5 var(--police-titre)}
+h1{font-size:24pt;line-height:1.15;margin:0 0 8mm;color:var(--accent)}
+h2{font-size:14pt;margin:8mm 0 3mm;border-bottom:1pt solid var(--accent);padding-bottom:2mm}
+ul{padding-left:4mm}li{margin:0 0 4mm}section{break-inside:avoid}
+.mentions{border-left:2pt solid var(--moutarde);padding:1mm 3mm;margin:2mm 0 0;font-size:9pt}`;
 
 /** Le titre du magazine, écrit par le code : aucun texte libre n'entre dans un contenu imprimé public [R09, R15]. */
 export const MAGAZINE_TITLE = 'Nos biens et les prix de nos quartiers';
@@ -207,6 +218,11 @@ export function letterText(content: LetterContent): string {
 /** Les chiffres que le contrôle central admet dans la lettre : seulement ceux de la base [R10]. */
 function figuresOf(content: LetterContent): (string | number)[] {
   const out: (string | number)[] = [];
+  // Les noms de lieux de la base, chiffres compris : « Paris 15e », un quartier numéroté.
+  for (const p of content.properties) if (p.city) out.push(p.city);
+  for (const c of [...content.prices.flatMap((p) => p.cells), ...(content.valueTracking ? [content.valueTracking.cell] : [])]) out.push(c.zone.name);
+  for (const p of content.prices) out.push(p.commune);
+  if (content.valueTracking) out.push(content.valueTracking.town);
   for (const p of content.properties) out.push(p.priceEur, euros(p.priceEur), ...(p.surfaceM2 !== null ? [p.surfaceM2, String(p.surfaceM2).replace('.', ',')] : []), ...(p.rooms !== null ? [p.rooms] : []));
   const cells = [...content.prices.flatMap((p) => p.cells), ...(content.valueTracking ? [content.valueTracking.cell] : [])];
   for (const c of cells) out.push(c.median, c.q1, c.q3, c.sales, euros(c.median), euros(c.q1), euros(c.q3), c.dvfLastSale, c.source);
@@ -332,10 +348,15 @@ export class LettreInformation {
 
   /** Le bien est déjà parti à la personne, fiches réunies comprises, par un envoi qui n'a pas échoué [R05]. */
   private async alreadySent(ids: readonly string[], propertyId: string): Promise<boolean> {
+    return this.alreadySentSubject(ids, `bien:${propertyId}`);
+  }
+
+  private async alreadySentSubject(personIds: readonly string[], subject: string): Promise<boolean> {
+    const ids = personIds.length === 1 ? await this.fiche.membersOf(personIds[0]!) : personIds;
     const row = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM message_subjects s WHERE s.person_id IN (${placeholders(ids.length)}) AND s.subject = ?
          AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')`,
-      [...ids, `bien:${propertyId}`],
+      [...ids, subject],
     );
     return Number(row?.n ?? 0) > 0;
   }
@@ -431,7 +452,8 @@ export class LettreInformation {
       messageId = result.messageId;
       rule = result.status === 'sent' ? null : result.rule;
       // Un bien parti entre-temps par une alerte : la lettre attend, et se refait sans lui au passage suivant [R05].
-      const propertyAlreadySent = result.rule === 'R05' && result.reason.startsWith('Ce bien');
+      // Deux envois simultanés : le perdant peut lire « Ce sujet part déjà » ; seule la lettre déjà partie est finie.
+      const propertyAlreadySent = result.rule === 'R05' && content.properties.length > 0 && !(await this.alreadySentSubject([root], `lettre:${editionId}`));
       status = result.status === 'sent' ? 'sent' : result.status === 'failed' ? 'failed' : result.rule === 'R01' || result.rule === 'R42' || result.rule === 'R585' || propertyAlreadySent ? 'waiting' : 'refused';
     } catch (error) {
       await this.db.run("UPDATE newsletter_letters SET status = 'failed', updated_at = ? WHERE edition_id = ? AND person_id = ? AND status = 'pending'", [this.now().toISOString(), editionId, root]);
@@ -485,10 +507,10 @@ export class LettreInformation {
     const content: LetterContent = { firstName: null, properties, valueTracking: null, prices };
     const sections = [
       `<h1>${escapeHtml(title.trim())}</h1>`,
-      `<section><h2>Nos biens</h2><ul>${properties.map((p) => `<li>${escapeHtml(propertyLine(p).slice(2))}<p>${escapeHtml(mentions.get(p.id)!).replace(/\n/g, '<br>')}</p></li>`).join('')}</ul></section>`,
+      `<section><h2>Nos biens</h2><ul>${properties.map((p) => `<li>${escapeHtml(propertyLine(p).slice(2))}<p class="mentions">${escapeHtml(mentions.get(p.id)!).replace(/\n/g, '<br>')}</p></li>`).join('')}</ul></section>`,
       ...prices.map((p) => `<section><h2>Les prix au m² de ${escapeHtml(p.commune)}</h2><ul>${p.cells.map((c) => `<li>${escapeHtml(cellLine(c))}</li>`).join('')}</ul></section>`),
     ];
-    const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title.trim())}</title><style>@page{size:A4;margin:18mm}body{font:11pt/1.5 Georgia,serif;color:#1d1d1b}h1{font-size:24pt;margin:0 0 8mm}h2{font-size:14pt;margin:8mm 0 3mm}li{margin:0 0 2mm}section{break-inside:avoid}</style></head><body>${sections.join('')}</body></html>`;
+    const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title.trim())}</title><style>${MAGAZINE_CSS}</style></head><body>${sections.join('')}</body></html>`;
     const visible = sections.join('').replace(/<[^>]+>/g, '\n').replace(/&[a-z]+;/g, ' ');
     // Les montants des mentions sont calculés par M07 depuis le mandat : ils viennent de la base, eux aussi.
     const mentionTexts = [...mentions.values()];
