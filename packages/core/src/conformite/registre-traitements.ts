@@ -463,9 +463,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     finalite: 'Donner à la direction les chiffres du réseau et ses alertes.',
     baseLegale: 'interet_legitime',
     personnes: ['Agents'],
-    donnees: ['Rapports du matin', 'Alertes de pilotage'],
+    donnees: ['Rapports du matin', 'Alertes de pilotage', 'Rapports sur mesure enregistrés par un agent ou la direction', 'Empreinte des exports complets remis à un agent, jamais leur contenu'],
     duree: '2 ans.',
-    destinataires: ['La direction du réseau'],
+    destinataires: ['La direction du réseau', 'L\'agent, pour ses propres rapports et ses exports'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)'],
     tables: {
       morning_reports: ['reader', 'content', 'text'],
@@ -474,6 +474,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       mandate_source_decisions: ['reason', 'decided_by'],
       service_commitments: ['set_by'],
       pilotage_alerts: ['data'],
+      // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
+      custom_reports: ['owner_id', 'name'],
+      agent_exports: ['agent_id'],
     },
   },
   {
@@ -1198,6 +1201,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_grids: ['id', 'network_id', 'version', 'valid_from', 'default_rate_bp', 'created_at'],
   commissions: ['file_id', 'network_id', 'mandate_id', 'compromis_on', 'grid_id', 'created_at'],
   commission_shares: ['file_id', 'seq', 'kind'],
+  custom_reports: ['id', 'network_id', 'owner_role', 'definition', 'created_at'],
+  agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
   commission_steps: ['file_id', 'status', 'at'],
   invoice_drafts: ['id', 'network_id', 'file_id', 'kind', 'vat_bp', 'round', 'created_at'],
   invoices: ['id', 'network_id', 'year', 'number', 'kind', 'file_id', 'corrects_invoice_id', 'issued_on', 'created_at'],

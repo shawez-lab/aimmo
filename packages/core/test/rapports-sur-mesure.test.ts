@@ -1,0 +1,204 @@
+import { expect, it } from 'vitest';
+import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { ExportAgent, RapportsSurMesure, canonicalJson, fingerprintOf, parseDefinition } from '../src/rapports/index.ts';
+import { loadMigrations } from './migrations.ts';
+import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+
+// Jeu de test inventé : agents, clients, dates.
+
+it('[R560] une définition se compose dans le catalogue fermé, jamais par agent', () => {
+  expect(parseDefinition({ measures: ['mandats', 'contacts'], grouping: 'mois' })).toEqual({ ok: true, value: { measures: ['contacts', 'mandats'], grouping: 'mois' } });
+  expect(parseDefinition({ measures: ['contacts'], grouping: 'agent' })).toEqual({ ok: false, rule: 'R14', code: 'compares_agents' });
+  expect(parseDefinition({ measures: ['contacts'], grouping: 'total', agents: ['a', 'b'] })).toEqual({ ok: false, rule: 'R14', code: 'compares_agents' });
+  expect(parseDefinition({ measures: ['contacts'], grouping: 'total', filtre: 'x' })).toMatchObject({ ok: false, rule: 'R560', code: 'bad_definition' });
+  expect(parseDefinition({ measures: ['chiffre_affaires'], grouping: 'total' })).toMatchObject({ ok: false, code: 'bad_measures' });
+  expect(parseDefinition({ measures: ['contacts', 'contacts'], grouping: 'total' })).toMatchObject({ ok: false, code: 'bad_measures' });
+  expect(parseDefinition({ measures: [], grouping: 'total' })).toMatchObject({ ok: false, code: 'bad_measures' });
+  expect(parseDefinition({ measures: ['contacts'], grouping: 'semaine' })).toMatchObject({ ok: false, code: 'bad_grouping' });
+});
+
+it('[R561] l’écriture canonique ne dépend pas de l’ordre des clés', async () => {
+  expect(canonicalJson({ b: 1, a: [true, null, 'x'] })).toBe('{"a":[true,null,"x"],"b":1}');
+  expect(await fingerprintOf({ a: 1, b: 2 })).toBe(await fingerprintOf({ b: 2, a: 1 }));
+  expect(await fingerprintOf({ a: 1 })).toMatch(/^[0-9a-f]{64}$/);
+});
+
+describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
+  async function setup() {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    await applyMigrations(db, loadMigrations());
+    const clock = new Date('2027-07-15T10:00:00.000Z');
+    const now = () => clock;
+    const journal = new SqlJournalStore(db);
+    const store = new FicheClient(db, { now });
+    new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
+    const network = await store.createNetwork('Réseau test');
+    const otherNetwork = await store.createNetwork('Autre réseau');
+    const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
+    const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
+    const far = await store.createAgent({ networkId: otherNetwork.id, firstName: 'Loin', lastName: 'Agent' });
+    const as = (role: string, userId: string, networkId = network.id): Viewer => ({ role, userId, networkId }) as Viewer;
+    let n = 0;
+    const attribution = async (agentId: string, at: string, net = network.id) => {
+      n += 1;
+      const p = await store.createPerson({ networkId: net, agentId, firstName: `Client${n}` });
+      await db.run("INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at) VALUES (?, ?, ?, NULL, ?, 'zone', 24, NULL, ?)", [`att-${n}`, net, p.id, agentId, at]);
+      return p.id;
+    };
+    const appointment = async (agentId: string, personId: string, at: string, status: string) => {
+      n += 1;
+      const end = new Date(Date.parse(at) + 3_600_000).toISOString();
+      await db.run("INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 'estimation', ?, ?, ?, ?, 'agent', NULL, ?, ?)", [`rdv-${n}`, network.id, agentId, personId, at, end, status, `h${n}`, at, at]);
+    };
+    const mandate = async (agentId: string, personId: string, at: string) => {
+      n += 1;
+      await db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, 'site', NULL, NULL, ?, ?)", [`man-${n}`, network.id, agentId, personId, at, agentId, at]);
+    };
+    // Mai à juillet 2027, à Paris. Le 31 mai à 23 h 59 de Paris reste en mai ; minuit le 1er juin est en juin.
+    const a1 = await attribution(alex.id, '2027-05-31T21:59:00.000Z');
+    const a2 = await attribution(alex.id, '2027-05-31T22:00:00.000Z');
+    await attribution(alex.id, '2027-07-02T08:00:00.000Z');
+    const s1 = await attribution(sam.id, '2027-06-10T08:00:00.000Z');
+    await attribution(far.id, '2027-06-10T08:00:00.000Z', otherNetwork.id);
+    await appointment(alex.id, a1, '2027-06-02T08:00:00.000Z', 'honored');
+    await appointment(alex.id, a2, '2027-06-03T08:00:00.000Z', 'absent');
+    await appointment(sam.id, s1, '2027-06-04T08:00:00.000Z', 'honored');
+    await mandate(alex.id, a1, '2027-06-20T08:00:00.000Z');
+    await mandate(sam.id, s1, '2027-07-01T08:00:00.000Z');
+    return {
+      db,
+      journal,
+      network,
+      alex,
+      sam,
+      far,
+      as,
+      agent: as('agent', alex.id),
+      other: as('agent', sam.id),
+      direction: as('direction', 'direction-1'),
+      rapports: new RapportsSurMesure(db, journal, { now }),
+      exports: new ExportAgent(db, journal, { now }),
+    };
+  }
+  const ALL = { measures: ['contacts', 'rendez_vous', 'mandats', 'ventes'], grouping: 'mois' };
+
+  it('[R560] [R69] chaque chiffre est le nombre exact de ses lignes ; mois de Paris, mois vides compris', async () => {
+    const t = await setup();
+    const r = await t.rapports.run(t.agent, { definition: ALL, from: '2027-05-01', to: '2027-07-31' });
+    if (!r.ok) throw new Error(r.code);
+    for (const c of r.value.cells) expect(c.value).toBe(c.lines.length);
+    const cell = (m: string, k: string) => r.value.cells.find((c) => c.measure === m && c.key === k)!;
+    expect(cell('contacts', '2027-05').lines.map((l) => l.id)).toEqual(['att-1']);
+    expect(cell('contacts', '2027-06').lines.map((l) => l.id)).toEqual(['att-2']);
+    expect(cell('contacts', '2027-07').value).toBe(1);
+    expect(cell('rendez_vous', '2027-06').value).toBe(1); // l'absent ne compte pas
+    expect(cell('mandats', '2027-06').value).toBe(1);
+    expect(cell('mandats', '2027-07').value).toBe(0); // celui de Sam n'est pas là
+    expect(cell('ventes', '2027-05').value).toBe(0);
+    expect(r.value.cells).toHaveLength(12);
+    expect(r.value).toMatchObject({ scope: 'agent', agentId: t.alex.id });
+    // Aucune ligne n'en dit plus que l'identifiant et la date.
+    for (const c of r.value.cells) for (const l of c.lines) expect(Object.keys(l).sort()).toEqual(['at', 'id']);
+  });
+
+  it('[R560] [R14] le total du réseau : la direction seule, sans aucun découpage par agent', async () => {
+    const t = await setup();
+    const r = await t.rapports.run(t.direction, { definition: { measures: ['contacts', 'mandats'], grouping: 'total' }, from: '2027-05-01', to: '2027-07-31', network: true });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.scope).toBe('reseau');
+    expect(r.value.agentId).toBeUndefined();
+    expect(r.value.cells.map((c) => [c.measure, c.value])).toEqual([
+      ['contacts', 4], // l'autre réseau n'y est pas
+      ['mandats', 2],
+    ]);
+    expect(JSON.stringify(r.value)).not.toContain(t.alex.id);
+    expect(JSON.stringify(r.value)).not.toContain(t.sam.id);
+    // Un agent ne lit pas le total du réseau ; personne ne lit deux agents à la fois.
+    expect(await t.rapports.run(t.agent, { definition: ALL, from: '2027-05-01', to: '2027-07-31', network: true })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.rapports.run(t.direction, { definition: ALL, from: '2027-05-01', to: '2027-07-31', network: true, agentId: t.alex.id })).toMatchObject({ ok: false, rule: 'R14' });
+    expect(await t.rapports.run(t.direction, { definition: { measures: ['contacts'], grouping: 'agent' }, from: '2027-05-01', to: '2027-07-31', network: true })).toMatchObject({ ok: false, rule: 'R14' });
+    // La base refuse aussi une définition qui parle d'agent.
+    await expect(t.db.run("INSERT INTO custom_reports (id, network_id, owner_id, owner_role, name, definition, created_at) VALUES ('x', ?, 'direction-1', 'direction', 'Par agent', '{\"grouping\":\"agent\"}', '2027-07-15')", [t.network.id])).rejects.toThrow();
+  });
+
+  it('[R16] un agent ne lit que ses chiffres ; la direction lit un agent de son réseau ; les autres rôles rien', async () => {
+    const t = await setup();
+    expect(await t.rapports.run(t.other, { definition: ALL, from: '2027-05-01', to: '2027-07-31', agentId: t.alex.id })).toMatchObject({ ok: false, rule: 'R16', code: 'not_assigned' });
+    const d = await t.rapports.run(t.direction, { definition: { measures: ['contacts'], grouping: 'total' }, from: '2027-05-01', to: '2027-07-31', agentId: t.sam.id });
+    expect(d).toMatchObject({ ok: true, value: { scope: 'agent', agentId: t.sam.id, cells: [{ value: 1 }] } });
+    expect(await t.rapports.run(t.direction, { definition: ALL, from: '2027-05-01', to: '2027-07-31', agentId: t.far.id })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.rapports.run(t.as('compliance', 'c-1'), { definition: ALL, from: '2027-05-01', to: '2027-07-31' })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.rapports.run(t.agent, { definition: ALL, from: '2027-01-01', to: '2028-01-31' })).toMatchObject({ ok: false, code: 'bad_period' });
+    expect(await t.rapports.run(t.agent, { definition: ALL, from: '2027-02-30', to: '2027-03-01' })).toMatchObject({ ok: false, code: 'bad_period' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.rapports.run(t.agent, { definition: ALL, from: '2027-05-01', to: '2027-07-31' })).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
+  });
+
+  it('[R560] un rapport enregistré ne change plus et ne se lit que par son auteur', async () => {
+    const t = await setup();
+    const saved = await t.rapports.save(t.agent, { name: 'Mes mandats du trimestre', definition: { measures: ['mandats'], grouping: 'mois' } });
+    if (!saved.ok) throw new Error(saved.code);
+    expect(await t.rapports.save(t.agent, { name: '  ', definition: ALL })).toMatchObject({ ok: false, code: 'bad_name' });
+    expect(await t.rapports.save(t.agent, { name: 'Classement', definition: { measures: ['mandats'], grouping: 'agent' } })).toMatchObject({ ok: false, rule: 'R14' });
+    const list = await t.rapports.list(t.agent);
+    expect(list).toMatchObject({ ok: true, value: [{ id: saved.value.id, name: 'Mes mandats du trimestre', definition: { measures: ['mandats'], grouping: 'mois' } }] });
+    expect(await t.rapports.list(t.other)).toEqual({ ok: true, value: [] });
+    const run = await t.rapports.runSaved(t.agent, saved.value.id, { from: '2027-06-01', to: '2027-06-30' });
+    expect(run).toMatchObject({ ok: true, value: { cells: [{ measure: 'mandats', key: '2027-06', value: 1 }] } });
+    expect(await t.rapports.runSaved(t.other, saved.value.id, { from: '2027-06-01', to: '2027-06-30' })).toMatchObject({ ok: false, code: 'unknown_report' });
+    await expect(t.db.run("UPDATE custom_reports SET name = 'autre' WHERE id = ?", [saved.value.id])).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM custom_reports WHERE id = ?', [saved.value.id])).rejects.toThrow();
+    // Au journal : la lecture, jamais un chiffre [R13].
+    const rows = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'pilotage.lecture'");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.data).not.toMatch(/"value"|att-|man-/);
+  });
+
+  it('[R561] l’export de l’agent ne contient que ses données, porte son empreinte et se vérifie', async () => {
+    const t = await setup();
+    await t.rapports.save(t.agent, { name: 'Contacts', definition: { measures: ['contacts'], grouping: 'total' } });
+    await t.rapports.save(t.other, { name: 'Contacts de Sam', definition: { measures: ['contacts'], grouping: 'total' } });
+    const e = await t.exports.make(t.agent);
+    if (!e.ok) throw new Error(e.code);
+    const { document, fingerprint } = e.value;
+    expect(document.agentId).toBe(t.alex.id);
+    expect(document.tables.agent.map((r) => r.id)).toEqual([t.alex.id]);
+    expect(document.tables.attributions.map((r) => r.id)).toEqual(['att-1', 'att-2', 'att-3']);
+    expect(document.tables.appointments).toHaveLength(2);
+    expect(document.tables.mandates).toHaveLength(1);
+    expect(document.tables.customReports.map((r) => r.name)).toEqual(['Contacts']);
+    const text = JSON.stringify(document);
+    expect(text).not.toContain(t.sam.id);
+    expect(text).not.toContain(t.far.id);
+    expect(text).not.toContain('Sam');
+    // Les clients par leurs identifiants seulement : aucun prénom de fiche.
+    expect(text).not.toMatch(/Client\d/);
+    // L'empreinte : recalculée, et rangée par AIMMO.
+    expect(fingerprint).toBe(await fingerprintOf(document));
+    expect(await t.exports.verify(JSON.parse(text))).toEqual({ verified: true, fingerprint });
+    const changed = JSON.parse(text) as typeof document;
+    changed.tables.mandates = [];
+    expect((await t.exports.verify(changed)).verified).toBe(false);
+    const other = JSON.parse(text) as typeof document;
+    other.agentId = t.sam.id;
+    expect((await t.exports.verify(other)).verified).toBe(false);
+    expect(await t.exports.verify({ format: 'autre' })).toEqual({ verified: false, fingerprint: null });
+    // Le journal garde l'empreinte, jamais le contenu.
+    const j = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'export.agent'");
+    expect(j).toHaveLength(1);
+    expect(j[0]!.data).toContain(fingerprint);
+    expect(j[0]!.data).not.toMatch(/att-|Alex/);
+    // La base garde l'empreinte, qui ne change plus.
+    await expect(t.db.run('UPDATE agent_exports SET fingerprint = ?', ['0'.repeat(64)])).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM agent_exports')).rejects.toThrow();
+  });
+
+  it('[R561] [R16] l’agent seul tire son export', async () => {
+    const t = await setup();
+    expect(await t.exports.make(t.direction)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.exports.make(t.as('compliance', 'c-1'))).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.exports.make(t.as('agent', t.alex.id, 'autre-reseau'))).toMatchObject({ ok: false, rule: 'R16' });
+    const e = await t.exports.make(t.other);
+    expect(e.ok && e.value.document.tables.attributions.map((r) => r.id)).toEqual(['att-4']);
+  });
+});

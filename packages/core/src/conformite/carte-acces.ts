@@ -576,6 +576,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   commission_grids: out('sans_client', 'Grille de rémunération des agents.'),
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
+  custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
+  agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },
   invoices: { locate: [via('draft_id', 'invoice_drafts')] },
