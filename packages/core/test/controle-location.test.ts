@@ -129,8 +129,11 @@ describe('HX47 · le code 2D-Doc d’un avis d’impôt', () => {
     // Signé par une autre clé que celle de l'émetteur : écart aussi.
     const other = await issuer();
     expect(outcome(await checkTaxNotice({ twoDDoc: await code(other.sign), printed: NOTICE }, trustOf(jwk), TODAY), 'code_2d_doc')).toBe('ecart');
-    // Signature tronquée.
-    expect(outcome(await checkTaxNotice({ twoDDoc: genuine.slice(0, -8), printed: NOTICE }, trustOf(jwk), TODAY), 'code_2d_doc')).toBe('ecart');
+    // Signature tronquée : un code mal lu, pas une preuve.
+    expect(outcome(await checkTaxNotice({ twoDDoc: genuine.slice(0, -8), printed: NOTICE }, trustOf(jwk), TODAY), 'code_2d_doc')).toBe('non_verifiable');
+    // Un avis authentique dont le lecteur du téléphone a perdu le séparateur : le code ne se découpe plus, rien n'est prouvé.
+    const lost = await checkTaxNotice({ twoDDoc: genuine.replace(GS, ''), printed: NOTICE }, trustOf(jwk), TODAY);
+    expect(lost.filter((f) => f.control !== 'avis_recent').every((f) => f.outcome === 'non_verifiable')).toBe(true);
   });
 
   it('[R531] sans preuve, pas d’écart : code absent ou illisible, émetteur inconnu, certificat révoqué, liste injoignable', async () => {
@@ -179,6 +182,10 @@ describe('HX47 · le code 2D-Doc d’un avis d’impôt', () => {
     expect(outcome(await checkTaxNotice({ printed: { incomeYear: '2025' } }, trustOf(jwk), TODAY), 'avis_recent')).toBe('conforme');
     expect(outcome(await checkTaxNotice({ printed: { incomeYear: '2027' } }, trustOf(jwk), TODAY), 'avis_recent')).toBe('ecart');
     expect(outcome(await checkTaxNotice({}, trustOf(jwk), TODAY), 'avis_recent')).toBe('non_verifiable');
+    // Avant le 1er octobre, l'avis des revenus de l'année moins 3 est encore l'avant-dernier ; en novembre, il ne l'est plus.
+    expect(outcome(await checkTaxNotice({ printed: { incomeYear: '2024' } }, trustOf(jwk), '2027-09-30'), 'avis_recent')).toBe('conforme');
+    expect(outcome(await checkTaxNotice({ printed: { incomeYear: '2024' } }, trustOf(jwk), '2027-11-08'), 'avis_recent')).toBe('ecart');
+    expect(outcome(await checkTaxNotice({ printed: { incomeYear: '2025' } }, trustOf(jwk), '2027-11-08'), 'avis_recent')).toBe('conforme');
   });
 });
 
@@ -204,6 +211,9 @@ describe('HX47 · l’employeur au répertoire Sirene', () => {
     ]);
     expect(outcome(await at(CLOSED_EMPLOYER, TODAY), 'employeur_registre')).toBe('ecart');
     expect(outcome(await at(CLOSED_EMPLOYER, '2027-02-01'), 'employeur_registre')).toBe('conforme');
+    // Fermé depuis, sans date de pièce connue : rien ne dit qu'il l'était à la signature.
+    expect(outcome(await checkEmployerFindings(REGISTRY, CLOSED_EMPLOYER, null), 'employeur_registre')).toBe('non_verifiable');
+    expect(outcome(await checkEmployerFindings(REGISTRY, EMPLOYER, null), 'employeur_registre')).toBe('conforme');
     expect(outcome(await at(siretOf('90999888', '0004'), TODAY), 'employeur_registre')).toBe('ecart');
     const bad = await at(EMPLOYER.slice(0, 13) + String((Number(EMPLOYER[13]) + 1) % 10), TODAY);
     expect(bad).toEqual([
@@ -272,6 +282,22 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     expect(outcome(missing, 'bulletin_net_paye', '2027-04')).toBe('non_verifiable');
     expect(outcome(missing, 'bulletin_prelevement', '2027-04')).toBe('non_verifiable');
     expect(outcome(missing, 'bulletin_cumul', '2027-04')).toBe('non_verifiable');
+    // Changement d'employeur en mai : le cumul repart chez le nouveau, rien n'est un écart.
+    const moved = await checkPayslips([slip('2027-04', 1_200_000), slip('2027-05', 300_000, { siret: OTHER_EMPLOYER }), slip('2027-06', 600_000, { siret: OTHER_EMPLOYER })], REGISTRY);
+    expect(moved.some((f) => f.outcome === 'ecart')).toBe(false);
+    expect(outcome(moved, 'bulletin_cumul', '2027-06')).toBe('conforme');
+    expect(outcome(moved, 'bulletins_mois')).toBe('conforme');
+    // Deux employeurs à temps partiel : six bulletins sur trois mois, chaque cumul suivi chez son employeur.
+    const both = await checkPayslips(
+      [slip('2027-04', 1_200_000), slip('2027-05', 1_500_000), slip('2027-06', 1_800_000), slip('2027-04', 400_000, { siret: OTHER_EMPLOYER }), slip('2027-05', 700_000, { siret: OTHER_EMPLOYER }), slip('2027-06', 1_000_000, { siret: OTHER_EMPLOYER })],
+      REGISTRY,
+    );
+    expect(both.some((f) => f.outcome === 'ecart')).toBe(false);
+    expect(both.filter((f) => f.control === 'bulletin_cumul' && f.outcome === 'conforme')).toHaveLength(4);
+    // Deux bulletins du même employeur le même mois : écart sur les mois.
+    expect(outcome(await checkPayslips([slip('2027-04', 0), slip('2027-04', 0), slip('2027-05', 0), slip('2027-06', 0)], REGISTRY), 'bulletins_mois')).toBe('ecart');
+    // Sans SIRET, le cumul ne se suit pas d'un bulletin à l'autre.
+    expect(outcome(await checkPayslips([slip('2027-05', 1_500_000, { siret: undefined }), slip('2027-06', 1_800_000, { siret: undefined })], REGISTRY), 'bulletin_cumul', '2027-06')).toBe('non_verifiable');
     const two = await checkPayslips([slip('2027-04', 1_200_000), slip('2027-05', 1_500_000, { siret: OTHER_EMPLOYER }), slip('2027-06', 1_800_000, { siret: CLOSED_EMPLOYER })], REGISTRY);
     expect(two.filter((f) => f.control === 'employeur_registre')).toEqual([
       { control: 'employeur_registre', outcome: 'conforme', month: '2027-04' },
@@ -385,13 +411,17 @@ describeWithSqlite('HX47 · le constat rangé, pour l’agent du logement seul',
     expect(await t.controle.check(t.agent, a.piece.contrat_travail, 'texte')).toEqual({ ok: false, rule: null, code: 'bad_read' });
     expect(await t.controle.check(t.agent, a.piece.bulletins_salaire, { payslips: [] })).toEqual({ ok: false, rule: null, code: 'bad_read' });
     expect(await t.controle.check(t.agent, a.piece.avis_imposition, { printed: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_read' });
-    const v1 = await t.controle.check(t.agent, a.piece.contrat_travail, { siret: CLOSED_EMPLOYER });
+    expect(await t.controle.check(t.agent, a.piece.contrat_travail, { siret: EMPLOYER, signedOn: '2028-01-01' })).toEqual({ ok: false, rule: null, code: 'bad_read' });
+    const v1 = await t.controle.check(t.agent, a.piece.contrat_travail, { siret: CLOSED_EMPLOYER, signedOn: '2027-04-01' });
+    expect(v1.ok && v1.value.findings.map((f) => f.outcome)).toEqual(['conforme', 'ecart']);
     const v2 = await t.controle.check(t.agent, a.piece.contrat_travail, { siret: EMPLOYER });
     expect(v1.ok && v1.value.version).toBe(1);
     expect(v2.ok && v2.value.version).toBe(2);
     const read = await t.controle.read(t.agent, a.applicationId);
     expect(read.ok && read.value.map((p) => [p.sort, p.version, p.findings.map((f) => f.outcome)])).toEqual([['contrat_travail', 2, ['conforme', 'conforme']]]);
     expect(await t.db.all('SELECT version FROM rental_piece_findings ORDER BY version')).toHaveLength(2);
+    // La lecture du constat est au journal avant d'être rendue [R16].
+    expect(await t.db.all("SELECT data FROM journal WHERE type = 'location.lue' AND subject = ?", [`rental_application:${a.applicationId}`])).toEqual([{ data: JSON.stringify({ rule: 'R16', what: 'piece_findings' }) }]);
     // Rien ne s'efface ni ne se réécrit [R17].
     await expect(t.db.run('DELETE FROM rental_piece_findings')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE rental_piece_findings SET findings = '[]'")).rejects.toThrow(/rien ne se réécrit/);

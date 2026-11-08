@@ -42,6 +42,8 @@ interface FieldSpec {
   fixed?: number;
   min?: number;
   max?: number;
+  /** La forme de la valeur : un séparateur perdu à la lecture colle deux champs, qui n'ont plus cette forme. */
+  pattern?: RegExp;
 }
 
 /**
@@ -49,15 +51,15 @@ interface FieldSpec {
  * un champ inconnu rend la lecture non vérifiable, jamais un écart).
  */
 export const TAX_NOTICE_FIELDS: Readonly<Record<string, FieldSpec>> = Object.freeze({
-  '41': { name: 'revenu_fiscal', min: 1, max: 12 },
-  '43': { name: 'parts', min: 1, max: 5 },
-  '44': { name: 'reference_avis', fixed: 13 },
-  '45': { name: 'annee_revenus', fixed: 4 },
-  '46': { name: 'declarant_1', min: 1, max: 38 },
-  '47': { name: 'numero_fiscal_1', fixed: 13 },
-  '48': { name: 'declarant_2', min: 1, max: 38 },
-  '49': { name: 'numero_fiscal_2', fixed: 13 },
-  '4A': { name: 'date_recouvrement', fixed: 8 },
+  '41': { name: 'revenu_fiscal', min: 1, max: 12, pattern: /^\d+$/ },
+  '43': { name: 'parts', min: 1, max: 5, pattern: /^\d{1,2}(\.\d{1,2})?$/ },
+  '44': { name: 'reference_avis', fixed: 13, pattern: /^[0-9A-Z]{13}$/ },
+  '45': { name: 'annee_revenus', fixed: 4, pattern: /^\d{4}$/ },
+  '46': { name: 'declarant_1', min: 1, max: 38, pattern: /^[^\u001d-\u001f]+$/ },
+  '47': { name: 'numero_fiscal_1', fixed: 13, pattern: /^\d{13}$/ },
+  '48': { name: 'declarant_2', min: 1, max: 38, pattern: /^[^\u001d-\u001f]+$/ },
+  '49': { name: 'numero_fiscal_2', fixed: 13, pattern: /^\d{13}$/ },
+  '4A': { name: 'date_recouvrement', fixed: 8, pattern: /^\d{8}$/ },
 });
 
 /** Sortes de document de l'avis d'impôt sur le revenu admises (dictionnaire de travail, comme les champs). */
@@ -121,6 +123,7 @@ function parseFields(message: string, dictionary: Readonly<Record<string, FieldS
       if (value.length < (spec.min ?? 0) || value.length > (spec.max ?? Infinity)) return null;
       i = end < message.length ? end + 1 : end;
     }
+    if (spec.pattern && !spec.pattern.test(value)) return null;
     fields[spec.name] = value;
   }
   return fields;
@@ -182,7 +185,8 @@ export async function verifyTwoDDoc(parsed: TwoDDocParsed, trust: TrustList): Pr
   const hash = curve === 'P-256' ? 'SHA-256' : curve === 'P-384' ? 'SHA-384' : curve === 'P-521' ? 'SHA-512' : null;
   const size = curve === 'P-256' ? 64 : curve === 'P-384' ? 96 : 132;
   if (hash === null || answer.publicKey.kty !== 'EC') return 'unavailable';
-  if (parsed.signature.length !== size) return 'invalid';
+  // Une signature d'une autre longueur que celle de la courbe : un code mal lu, pas une preuve.
+  if (parsed.signature.length !== size) return 'unreadable';
   try {
     // Les types du DOM ne sont pas chargés ici : la clé est passée telle quelle, au format JWK.
     const key = await crypto.subtle.importKey('jwk', answer.publicKey as never, { name: 'ECDSA', namedCurve: curve! }, false, ['verify']);

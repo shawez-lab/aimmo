@@ -52,6 +52,7 @@ interface PieceRow {
 }
 
 const MAX_PAYSLIPS = 6;
+const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -101,7 +102,11 @@ export class ControleDossiers {
       if (!Array.isArray(slips) || slips.length === 0 || slips.length > MAX_PAYSLIPS || !slips.every(isPlain)) return null;
       return checkPayslips(slips as PayslipRead[], this.registry);
     }
-    return checkEmployerFindings(this.registry, read.siret, today);
+    // La date de signature du contrat ou de l'attestation : l'établissement est jugé ce jour-là. Sans elle, un
+    // établissement fermé depuis ne dit rien de la pièce : non vérifiable [R532].
+    const signedOn = read.signedOn;
+    if (signedOn !== undefined && (typeof signedOn !== 'string' || !DAY.test(signedOn) || signedOn > today)) return null;
+    return checkEmployerFindings(this.registry, read.siret, (signedOn as string | undefined) ?? null);
   }
 
   /** Contrôle une pièce rangée et range le constat, en nouvelle version. */
@@ -159,6 +164,7 @@ export class ControleDossiers {
        ORDER BY p.added_at, p.id`,
       [app!.listing_id, applicationId as string],
     );
+    await appendEvent(this.journal, { type: 'location.lue', actor: this.actor(viewer), subject: `rental_application:${applicationId as string}`, data: { rule: 'R16', what: 'piece_findings' } }, this.now);
     const known = new Set<string>(CONTROLS);
     return {
       ok: true,

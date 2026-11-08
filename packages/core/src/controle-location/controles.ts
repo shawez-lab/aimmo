@@ -144,11 +144,17 @@ function compare<T>(printed: T | null, code: T | null): Outcome {
   return printed === code ? 'conforme' : 'ecart';
 }
 
+/** Jour (mois-jour) où tous les avis d'impôt de l'été sont réputés reçus : un réglage. */
+export const NOTICES_SENT_BY = '10-01';
+
 export async function checkTaxNotice(read: TaxNoticeRead, trust: TrustList, today: string): Promise<Finding[]> {
   const parsed = read.twoDDoc === undefined || read.twoDDoc === null ? null : parseTwoDDoc(read.twoDDoc);
   const signature = parsed ? await verifyTwoDDoc(parsed, trust) : 'unreadable';
   const findings: Finding[] = [];
-  findings.push({ control: 'code_2d_doc', outcome: signature === 'valid' ? 'conforme' : signature === 'invalid' ? 'ecart' : 'non_verifiable' });
+  // Une signature fausse n'est un écart que sur un code qui se lit en entier : un code abîmé à la lecture (séparateur
+  // perdu par le lecteur du téléphone) ne se découpe pas, et ne prouve rien [R531].
+  const forged = signature === 'invalid' && parsed !== null && parsed.fields !== null;
+  findings.push({ control: 'code_2d_doc', outcome: signature === 'valid' ? 'conforme' : forged ? 'ecart' : 'non_verifiable' });
   const trusted = signature === 'valid' && parsed !== null;
   const rightSort = trusted && TAX_NOTICE_DOC_TYPES.includes(parsed.header.docType);
   findings.push({ control: 'code_2d_doc_sorte', outcome: !trusted ? 'non_verifiable' : rightSort ? 'conforme' : 'ecart' });
@@ -159,17 +165,19 @@ export async function checkTaxNotice(read: TaxNoticeRead, trust: TrustList, toda
   findings.push({ control: 'avis_revenu_fiscal', outcome: compare(normInt(p.fiscalIncome), code ? normInt(code.revenu_fiscal) : null) });
   findings.push({ control: 'avis_annee', outcome: compare(normYear(p.incomeYear), code ? normYear(code.annee_revenus) : null) });
   findings.push({ control: 'avis_parts', outcome: compare(normParts(p.parts), code ? normParts(code.parts) : null) });
-  // L'année vaut celle du code signé s'il y en a une, sinon celle imprimée. Le dernier ou l'avant-dernier avis : au plus
-  // tôt l'avis des revenus de l'année moins 3, qui est encore l'avant-dernier avant la sortie des avis de l'été.
+  // L'année vaut celle du code signé s'il y en a une, sinon celle imprimée. Le dernier ou l'avant-dernier avis : les avis
+  // de l'été portent sur les revenus de l'année d'avant. Jusqu'à la fin de leur envoi (réglage : le 1er octobre, en
+  // lecture prudente pour le candidat), l'avis des revenus de l'année moins 3 est encore l'avant-dernier ; après, non.
   const year = (code ? normYear(code.annee_revenus) : null) ?? normYear(p.incomeYear);
   const current = Number(today.slice(0, 4));
-  findings.push({ control: 'avis_recent', outcome: year === null ? 'non_verifiable' : year >= current - 3 && year < current ? 'conforme' : 'ecart' });
+  const oldest = today.slice(5) < NOTICES_SENT_BY ? current - 3 : current - 2;
+  findings.push({ control: 'avis_recent', outcome: year === null ? 'non_verifiable' : year >= oldest && year < current ? 'conforme' : 'ecart' });
   return findings;
 }
 
 // ——— Employeur ———
 
-export async function checkEmployerFindings(registry: CompanyRegistry, siret: unknown, onDate: string, month?: string): Promise<Finding[]> {
+export async function checkEmployerFindings(registry: CompanyRegistry, siret: unknown, onDate: string | null, month?: string): Promise<Finding[]> {
   const at = month ? { month } : {};
   if (siret === undefined || siret === null || siret === '') {
     return [
@@ -218,17 +226,22 @@ function nextMonth(m: string): string {
 export async function checkPayslips(slips: readonly PayslipRead[], registry: CompanyRegistry): Promise<Finding[]> {
   const findings: Finding[] = [];
   const months = slips.map((s) => (typeof s.month === 'string' && MONTH.test(s.month) ? s.month : null));
+  const sirets = slips.map((s) => (typeof s.siret === 'string' && s.siret.replace(/\s+/g, '') !== '' ? s.siret.replace(/\s+/g, '') : null));
   const all = months.every((m): m is string => m !== null);
-  const sorted = all ? [...months].sort() : [];
-  const consecutive = all && slips.length === 3 && new Set(sorted).size === 3 && nextMonth(sorted[0]!) === sorted[1] && nextMonth(sorted[1]!) === sorted[2];
+  // Trois mois différents qui se suivent ; un candidat à deux employeurs a deux bulletins le même mois, jamais deux
+  // bulletins du même employeur le même mois.
+  const distinct = all ? [...new Set(months as string[])].sort() : [];
+  const pairs = new Set(slips.map((_, i) => `${sirets[i] ?? '?'}|${months[i]}`));
+  const consecutive = all && distinct.length === 3 && pairs.size === slips.length && nextMonth(distinct[0]!) === distinct[1] && nextMonth(distinct[1]!) === distinct[2];
   findings.push({ control: 'bulletins_mois', outcome: !all || slips.length === 0 ? 'non_verifiable' : consecutive ? 'conforme' : 'ecart' });
   const ordered = slips
-    .map((s, i) => ({ s, m: months[i] }))
-    .filter((x): x is { s: PayslipRead; m: string } => x.m !== null)
-    .sort((a, b) => (a.m < b.m ? -1 : a.m > b.m ? 1 : 0));
-  const byMonth = new Map(ordered.map((x) => [x.m, x.s]));
-  const sirets = new Map<string, string>();
-  for (const { s, m } of ordered) {
+    .map((s, i) => ({ s, m: months[i], siret: sirets[i] ?? null }))
+    .filter((x): x is { s: PayslipRead; m: string; siret: string | null } => x.m !== null)
+    .sort((a, b) => (a.m < b.m ? -1 : a.m > b.m ? 1 : (a.siret ?? '') < (b.siret ?? '') ? -1 : 1));
+  // Le cumul se suit employeur par employeur : seul un bulletin du même SIRET, le mois d'avant, sert de point de départ.
+  const bySiretMonth = new Map(ordered.filter((x) => x.siret !== null).map((x) => [`${x.siret}|${x.m}`, x.s]));
+  const firstMonth = new Map<string, string>();
+  for (const { s, m, siret } of ordered) {
     const net = s.netBeforeTaxCents;
     const tax = s.taxWithheldCents;
     const paid = s.netPaidCents;
@@ -241,18 +254,17 @@ export async function checkPayslips(slips: readonly PayslipRead[], registry: Com
       month: m,
       outcome: rateOk && isCents(taxable) && isCents(tax) ? (close(tax, Math.round((taxable * Math.round(rate * 100)) / 10_000)) ? 'conforme' : 'ecart') : 'non_verifiable',
     });
-    // Le cumul de janvier est le brut du mois ; sinon, le cumul du mois d'avant plus le brut du mois.
+    // Le cumul de janvier est le brut du mois ; sinon, le cumul du même employeur le mois d'avant plus le brut du mois.
     const gross = s.grossCents;
     const cumul = s.cumulativeGrossCents;
     const january = m.endsWith('-01');
-    const previous = january ? null : byMonth.get(`${m.slice(0, 4)}-${String(Number(m.slice(5, 7)) - 1).padStart(2, '0')}`);
+    const previous = january || siret === null ? null : bySiretMonth.get(`${siret}|${m.slice(0, 4)}-${String(Number(m.slice(5, 7)) - 1).padStart(2, '0')}`);
     const expected = !isCents(gross) ? null : january ? gross : previous && isCents(previous.cumulativeGrossCents) ? previous.cumulativeGrossCents + gross : null;
     findings.push({ control: 'bulletin_cumul', month: m, outcome: expected !== null && isCents(cumul) ? (close(cumul, expected) ? 'conforme' : 'ecart') : 'non_verifiable' });
-    const siret = typeof s.siret === 'string' ? s.siret.replace(/\s+/g, '') : s.siret;
-    if (typeof siret === 'string' && siret !== '' && !sirets.has(siret)) sirets.set(siret, m);
+    if (siret !== null && !firstMonth.has(siret)) firstMonth.set(siret, m);
   }
-  if (sirets.size === 0) findings.push(...(await checkEmployerFindings(registry, null, '')));
+  if (firstMonth.size === 0) findings.push(...(await checkEmployerFindings(registry, null, null)));
   // Chaque employeur, une fois, à la date de son premier bulletin.
-  for (const [siret, m] of sirets) findings.push(...(await checkEmployerFindings(registry, siret, `${m}-01`, m)));
+  for (const [siret, m] of firstMonth) findings.push(...(await checkEmployerFindings(registry, siret, `${m}-01`, m)));
   return findings;
 }
