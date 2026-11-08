@@ -42,6 +42,11 @@ it('[R497] [R46] chaque sous-titre traduit garde ses nombres, et aucune voie nom
   expect(bad[0]!.problems).toContain('chiffre_manquant');
   expect(bad[1]!.problems).toContain('adresse');
   expect(checkSubtitleTranslations(fr, new Map([['en', ['Bright living room of 64 m²']]]))).toEqual([{ language: 'en', line: -1, problems: ['texte_vide'] }]);
+  // Chaque ligne passe seule, mais à la suite elles disent une adresse : refusé.
+  const cut = checkSubtitleTranslations(['Au 12', 'Pièce lumineuse', 'Vue dégagée'], new Map([['en', ['At 12', 'chemin', 'des Essais']]]));
+  expect(cut).toEqual([{ language: 'en', line: null, problems: expect.arrayContaining(['adresse']) }]);
+  const cutStreet = checkSubtitleTranslations(['Au 12', 'Pièce lumineuse'], new Map([['en', ['At 12', 'Test Street']]]));
+  expect(cutStreet.some((p) => p.problems.includes('adresse'))).toBe(true);
 });
 
 async function setup() {
@@ -137,6 +142,16 @@ describeWithSqlite('HX42 · vidéo depuis les photos, voix off et avatar', () =>
     const row = await t.db.first<{ mentions: string; voice_consent_id: string }>('SELECT mentions, voice_consent_id FROM generated_videos WHERE video_ref = ?', [vid(t.p.id, 1)]);
     expect(row).toEqual({ mentions: JSON.stringify([GENERATED_VIDEO_MENTION, 'Voix de synthèse de l’agent, avec son accord écrit']), voice_consent_id: consent.value.id });
     expect(await t.videos.record(t.alexV, t.p.id, voiceInput)).toMatchObject({ ok: false, code: 'deja_rangee' });
+
+    // Le bien repris par un autre agent : la voix d'Alexandrine ne part plus avec lui ; rendu, elle repart.
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, t.p.id]);
+    expect(await t.videos.diffusable(t.p.id, vid(t.p.id, 1))).toEqual({ ok: false, code: 'accord_hors_agent_du_bien' });
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.alex.id, t.p.id]);
+    // Alexandrine partie du réseau : plus de diffusion non plus.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex.id]);
+    expect(await t.videos.diffusable(t.p.id, vid(t.p.id, 1))).toEqual({ ok: false, code: 'accord_hors_agent_du_bien' });
+    await t.db.run("UPDATE agents SET status = 'active' WHERE id = ?", [t.alex.id]);
+    expect(await t.videos.diffusable(t.p.id, vid(t.p.id, 1))).toEqual({ ok: true });
 
     // L'accord retiré : la vidéo n'est plus diffusable, et aucune nouvelle ne prend la voix.
     expect(await t.videos.revokeConsent(t.samV, consent.value.id)).toMatchObject({ ok: false, code: 'accord_inconnu' });

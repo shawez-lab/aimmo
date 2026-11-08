@@ -33,7 +33,8 @@ export const CONSENT_TEXT_VERSION = 'HX42-2026-11-08';
 export const VIDEO_ANIMATIONS = ['zoom_avant', 'panoramique_droite', 'zoom_arriere', 'panoramique_gauche'] as const;
 export type VideoAnimation = (typeof VIDEO_ANIMATIONS)[number] | 'apparition_amenagement' | 'fin_marque';
 export const MAX_GENERATED_CLIPS = 12;
-export const MAX_SUBTITLE_LINES = 40;
+/** 24 lignes de 160 signes : lues à la suite, elles tiennent dans la longueur d'un texte d'annonce (R257). */
+export const MAX_SUBTITLE_LINES = 24;
 export const MAX_SUBTITLE_CHARS = 160;
 const CLIP_SECONDS = 4;
 
@@ -115,7 +116,8 @@ async function sha256Hex(text: string): Promise<string> {
 export const planSha256 = (plan: GeneratedPlan): Promise<string> => sha256Hex(JSON.stringify(plan.clips));
 
 export type SubtitleLanguage = 'fr' | ListingLanguage;
-export type SubtitleProblem = { language: ListingLanguage; line: number; problems: TranslationProblem[] };
+/** `line` : la ligne en cause ; -1 pour un nombre de lignes différent du français ; null pour les lignes lues à la suite. */
+export type SubtitleProblem = { language: ListingLanguage; line: number | null; problems: TranslationProblem[] };
 
 /** Le contrôle des sous-titres traduits : même nombre de lignes, chaque ligne comme une traduction d'annonce [R497]. */
 export function checkSubtitleTranslations(fr: readonly string[], translations: ReadonlyMap<ListingLanguage, readonly string[]>): SubtitleProblem[] {
@@ -129,6 +131,11 @@ export function checkSubtitleTranslations(fr: readonly string[], translations: R
       const c = controlTranslation({ title: fr[i]!, body: fr[i]! }, { title: line, body: line }, language);
       if (!c.ok) out.push({ language, line: i, problems: [...new Set([...c.title, ...c.body])] });
     });
+    // Tous les sous-titres à la suite, aussi : une adresse coupée entre deux lignes (« At 12 », « Test Street ») est lue
+    // d'un bloc, comme le français en P06 [R46].
+    if (out.some((p) => p.language === language)) continue;
+    const whole = controlTranslation({ title: fr[0]!, body: fr.join(' ') }, { title: lines[0]!, body: lines.join(' ') }, language);
+    if (!whole.ok) out.push({ language, line: null, problems: [...new Set(whole.body)] });
   }
   return out;
 }
@@ -401,16 +408,26 @@ export class VideosGenerees {
 
   /**
    * Une vidéo générée peut-elle être diffusée maintenant ? Seulement si elle suit encore le plan des photos du moment,
-   * et si l'accord de voix ou d'avatar qu'elle utilise n'a pas été retiré [R495, R493]. Relu au moment d'envoyer.
+   * et si l'accord de voix ou d'avatar qu'elle utilise n'a pas été retiré et vient toujours de l'agent du bien en
+   * activité [R495, R493]. Relu au moment d'envoyer.
    */
-  async diffusable(propertyId: string, videoRef: string): Promise<{ ok: true } | { ok: false; code: 'inconnue' | 'accord_retire' | 'photos_changees' }> {
+  async diffusable(propertyId: string, videoRef: string): Promise<{ ok: true } | { ok: false; code: 'inconnue' | 'accord_retire' | 'accord_hors_agent_du_bien' | 'photos_changees' }> {
     const row = await this.db.first<{ plan_sha256: string; voice_consent_id: string | null; avatar_consent_id: string | null }>(
       'SELECT plan_sha256, voice_consent_id, avatar_consent_id FROM generated_videos WHERE property_id = ? AND video_ref = ?',
       [propertyId, videoRef],
     );
     if (!row) return { ok: false, code: 'inconnue' };
     for (const id of [row.voice_consent_id, row.avatar_consent_id]) {
-      if (id !== null && (await this.db.first('SELECT consent_id FROM agent_likeness_revocations WHERE consent_id = ?', [id]))) return { ok: false, code: 'accord_retire' };
+      if (id === null) continue;
+      if (await this.db.first('SELECT consent_id FROM agent_likeness_revocations WHERE consent_id = ?', [id])) return { ok: false, code: 'accord_retire' };
+      // L'accord ne vaut que pour les biens de l'agent qui l'a donné, tant qu'il en est l'agent en activité : un bien
+      // repris par un autre, ou un agent parti, et la vidéo ne part plus [R495].
+      const owner = await this.db.first<{ id: string }>(
+        `SELECT c.id FROM agent_likeness_consents c JOIN properties p ON p.id = ? AND p.agent_id = c.agent_id AND p.network_id = c.network_id
+         JOIN agents a ON a.id = c.agent_id AND a.network_id = c.network_id AND a.status = 'active' WHERE c.id = ?`,
+        [propertyId, id],
+      );
+      if (!owner) return { ok: false, code: 'accord_hors_agent_du_bien' };
     }
     if ((await planSha256(generatedVideoPlan(await this.photos.publishable(propertyId)))) !== row.plan_sha256) return { ok: false, code: 'photos_changees' };
     return { ok: true };
