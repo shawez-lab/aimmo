@@ -15,6 +15,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { OrigineContacts, taggedLink } from '../attirer/origine-contacts.ts';
 import { Referencement } from '../attirer/referencement.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { PALETTE, POLICES } from '../design/systeme.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CertificatsPhotos, CertifiedPhoto } from '../studio/certificats.ts';
@@ -76,8 +77,8 @@ export function watermarkSvg(text: string, width: number, height: number): strin
   const y = height - bandHeight;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(text)}">`,
-    `<rect x="${x}" y="${y}" width="${bandWidth}" height="${bandHeight}" fill="#1d1a17" fill-opacity="0.55"/>`,
-    `<text x="${width - pad}" y="${height - pad - Math.round(size * 0.2)}" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="${size}" fill="#fbf7f0" fill-opacity="0.92">${xml(text)}</text>`,
+    `<rect x="${x}" y="${y}" width="${bandWidth}" height="${bandHeight}" fill="${PALETTE.clair.encre}" fill-opacity="0.55"/>`,
+    `<text x="${width - pad}" y="${height - pad - Math.round(size * 0.2)}" text-anchor="end" font-family="${xml(POLICES.texte)}" font-size="${size}" fill="${PALETTE.clair.surface}" fill-opacity="0.92">${xml(text)}</text>`,
     '</svg>',
   ].join('');
 }
@@ -136,7 +137,7 @@ export class FiligranePhotos {
     const canonical = await this.taggedPage(networkId, propertyId, content.contentId);
     const id = this.newId();
     await this.db.run(
-      `INSERT INTO photo_exports (id, network_id, property_id, result_ref, certificate_token, content_code, watermark_text, width, height, exported_by, exported_at)
+      `INSERT INTO photo_exports (id, network_id, property_id, result_ref, certificate_token, content_id, watermark_text, width, height, exported_by, exported_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, networkId, propertyId, photo.ref, photo.certificateToken, content.contentId, text, width, height, actor, this.now().toISOString()],
     );
@@ -150,11 +151,11 @@ export class FiligranePhotos {
 
   /** Les exports rangés d'une photo, pour vérifier ce qui a été posé. */
   async exportsOf(propertyId: string, ref: string): Promise<{ watermarkText: string; contentCode: string; certificateToken: string }[]> {
-    const rows = await this.db.all<{ watermark_text: string; content_code: string; certificate_token: string }>(
-      'SELECT watermark_text, content_code, certificate_token FROM photo_exports WHERE property_id = ? AND result_ref = ? ORDER BY exported_at, rowid',
+    const rows = await this.db.all<{ watermark_text: string; content_id: string; certificate_token: string }>(
+      'SELECT watermark_text, content_id, certificate_token FROM photo_exports WHERE property_id = ? AND result_ref = ? ORDER BY exported_at, rowid',
       [propertyId, ref],
     );
-    return rows.map((r) => ({ watermarkText: r.watermark_text, contentCode: r.content_code, certificateToken: r.certificate_token }));
+    return rows.map((r) => ({ watermarkText: r.watermark_text, contentCode: r.content_id, certificateToken: r.certificate_token }));
   }
 
   /** Le lien marqué de la page de référence du bien, seulement si elle est en ligne aujourd'hui. */

@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS photo_exports (
   property_id TEXT NOT NULL,
   result_ref TEXT NOT NULL CHECK (length(result_ref) BETWEEN 1 AND 200),
   certificate_token TEXT NOT NULL REFERENCES photo_certificates (token) ON DELETE RESTRICT,
-  content_code TEXT NOT NULL CHECK (length(content_code) = 12),
+  content_id TEXT NOT NULL CHECK (length(content_id) = 12),
   watermark_text TEXT NOT NULL CHECK (length(watermark_text) BETWEEN 5 AND 120),
   width INTEGER NOT NULL CHECK (width BETWEEN 200 AND 12000),
   height INTEGER NOT NULL CHECK (height BETWEEN 200 AND 12000),

@@ -166,10 +166,10 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     expect(b).toMatchObject({ ok: true, value: { contentCode: 'abcdefgh2345', mentions: [] } });
     expect(await t.db.all("SELECT kind, ref FROM public_contents WHERE id = 'abcdefgh2345'")).toEqual([{ kind: 'bien', ref: t.p.id }]);
     // Chaque export rangé porte son filigrane : nom de l'agent et code ; ni ville, ni référence du bien [R46].
-    const rows = await t.db.all<{ watermark_text: string; content_code: string }>('SELECT watermark_text, content_code FROM photo_exports');
+    const rows = await t.db.all<{ watermark_text: string; content_id: string }>('SELECT watermark_text, content_id FROM photo_exports');
     expect(rows).toHaveLength(2);
     for (const row of rows) {
-      expect(row.watermark_text).toBe(`Alexandrine Fictive · AIMMO · ${row.content_code}`);
+      expect(row.watermark_text).toBe(`Alexandrine Fictive · AIMMO · ${row.content_id}`);
       expect(row.watermark_text).not.toMatch(/Villebrune|RET-40/);
     }
     expect(a.value.svg).not.toMatch(/Villebrune|RET-40/);
