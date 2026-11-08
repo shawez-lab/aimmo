@@ -95,14 +95,21 @@ export async function reviewHash(r: Omit<PublicReview, 'hash'>): Promise<string>
 /** Le jour, à Paris. */
 const parisDay = (at: Date): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
 
-export type ChainCheck = { ok: true; count: number } | { ok: false; seq: number; reason: 'hash' | 'link' | 'gap' | 'agent' };
+export type ChainCheck = { ok: true; count: number } | { ok: false; seq: number; reason: 'hash' | 'link' | 'gap' | 'agent' | 'head' };
+
+/** La tête de la chaîne d'un agent : nombre d'avis et empreinte du dernier, à comparer à une copie gardée ailleurs. */
+export interface ChainHead {
+  count: number;
+  hash: string;
+}
 
 /**
- * Vérifie, sans rien demander à AIMMO, que la liste publiée d'un agent est entière, intacte et dans l'ordre d'arrivée,
+ * Vérifie, sans rien demander d'autre à AIMMO que la tête attendue (gardée par le lecteur, ou lue par l'auteur d'un
+ * avis au moment où il le vérifie), que la liste publiée d'un agent est entière, intacte et dans l'ordre d'arrivée,
  * telle qu'elle est montrée : chaque empreinte se recalcule, chaque avis porte celle du précédent, aucun numéro ne
  * manque ni ne change de place [R521, R522].
  */
-export async function verifyChain(reviews: readonly PublicReview[]): Promise<ChainCheck> {
+export async function verifyChain(reviews: readonly PublicReview[], head: ChainHead): Promise<ChainCheck> {
   // La liste se vérifie dans l'ordre où elle est montrée : une liste réordonnée, par la note ou autrement, échoue.
   const list = reviews;
   let prev = GENESIS_HASH;
@@ -114,11 +121,15 @@ export async function verifyChain(reviews: readonly PublicReview[]): Promise<Cha
     if ((await reviewHash(rest)) !== hash) return { ok: false, seq: r.seq, reason: 'hash' };
     prev = hash;
   }
+  // Une liste dont on a retiré les derniers avis reste une chaîne valable : seule la tête attendue le montre.
+  if (head.count !== list.length || head.hash !== prev) return { ok: false, seq: list.length, reason: 'head' };
   return { ok: true, count: list.length };
 }
 
-const fold = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const words = (s: string): string[] => fold(s).split(/[^a-z]+/).filter((w) => w.length > 0);
+const fold = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+/** Les mots d'un texte, dans toutes les écritures. */
+const words = (s: string): string[] => fold(s).split(/[^\p{L}]+/u).filter((w) => w.length > 0);
+const latin = (w: string): boolean => /^[a-z]+$/.test(w);
 
 export type TextProblem = 'length' | 'control' | 'email' | 'phone' | 'link' | 'address' | 'name';
 
@@ -130,14 +141,18 @@ export function reviewTextProblem(text: string, forbiddenNames: readonly string[
   if (text.length < REVIEW_TEXT_MIN || text.length > REVIEW_TEXT_MAX) return 'length';
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) return 'control';
   if (/[^\s@]+\s*(?:@|\(at\)|\[at\])\s*[^\s@]+\.[a-z]{2,}/i.test(text)) return 'email';
-  if (/(?:\+\s*33|\b0)\s*[1-9](?:[\s.\-]*\d){8}/.test(text)) return 'phone';
+  // Un numéro français, ou tout numéro international : « + » ou « 00 » suivi d'au moins huit chiffres.
+  if (/(?:\+\s*33|\b0)\s*[1-9](?:[\s.\-]*\d){8}/.test(text) || /(?:\+|\b00)\s*\(?\d(?:[\s.\-()]*\d){7,}/.test(text)) return 'phone';
   if (/https?:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:fr|com|net|org|eu|io)\b/i.test(text)) return 'link';
   if (/\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|av\.|boulevard|bd|place|chemin|impasse|all[ée]e|route|quai|cours|square|r[ée]sidence)\b/i.test(text)) return 'address';
   const said = words(text);
   const saidSet = new Set(said);
+  const folded = fold(text);
   for (const name of forbiddenNames) {
     const parts = words(name);
     if (parts.length === 0) continue;
+    // Une écriture sans espaces entre les mots (chinois, japonais…) : chaque partie non latine se cherche telle quelle.
+    if (parts.some((w) => !latin(w) && folded.includes(w))) return 'name';
     // Un mot de trois lettres au moins suffit ; un nom fait seulement de mots courts (« Li », « Ng ») se cherche entier.
     if (parts.some((w) => w.length >= 3)) {
       if (parts.some((w) => w.length >= 3 && saidSet.has(w))) return 'name';
@@ -330,17 +345,18 @@ export class AvisVerifies {
    * Tous les avis publiés d'un agent, dans l'ordre d'arrivée, et leur résumé : aucun n'est écarté ni rangé selon sa
    * note [R521]. Lecture publique : rien de personnel [R522].
    */
-  async publicList(networkId: string, agentId: string): Promise<{ reviews: PublicReview[]; summary: ReviewSummary; coverage: ReviewCoverage }> {
+  async publicList(networkId: string, agentId: string): Promise<{ reviews: PublicReview[]; summary: ReviewSummary; coverage: ReviewCoverage; head: ChainHead }> {
     const rows = await this.db.all<ReviewRow>(`SELECT ${PUBLIC_COLUMNS} FROM verified_reviews WHERE network_id = ? AND agent_id = ? ORDER BY seq`, [networkId, agentId]);
     const reviews = rows.map(toPublic);
     const sales = (await this.dossiers.closedBetween(networkId, '2000-01-01', parisDay(this.now()))).filter((s) => s.agentId === agentId);
     const clients = sales.reduce((n, s) => n + s.clients.length, 0);
     const invited = (await this.db.first<{ n: number }>('SELECT count(*) AS n FROM (SELECT DISTINCT file_id, person_id FROM verified_review_invites WHERE network_id = ? AND agent_id = ?)', [networkId, agentId]))!.n;
-    return { reviews, summary: summarize(reviews), coverage: { clients, invited, reviews: reviews.length } };
+    const last = reviews[reviews.length - 1];
+    return { reviews, summary: summarize(reviews), coverage: { clients, invited, reviews: reviews.length }, head: { count: reviews.length, hash: last?.hash ?? GENESIS_HASH } };
   }
 
   /** La vérification publique d'un avis par son code : l'avis tel que publié et si sa place dans la chaîne tient [R522]. */
-  async verify(code: string): Promise<{ found: false } | { found: true; review: PublicReview; valid: boolean }> {
+  async verify(code: string): Promise<{ found: false } | { found: true; review: PublicReview; valid: boolean; head: ChainHead }> {
     if (typeof code !== 'string' || !/^[a-z]{12}$/.test(code)) return { found: false };
     const row = await this.db.first<ReviewRow & { network_id: string }>(`SELECT ${PUBLIC_COLUMNS}, network_id FROM verified_reviews WHERE code = ?`, [code]);
     if (!row) return { found: false };
@@ -349,7 +365,9 @@ export class AvisVerifies {
     let valid = (await reviewHash(rest)) === hash;
     const prev = row.seq === 1 ? { hash: GENESIS_HASH } : await this.db.first<{ hash: string }>('SELECT hash FROM verified_reviews WHERE agent_id = ? AND seq = ?', [row.agent_id, row.seq - 1]);
     if (!prev || prev.hash !== review.prevHash) valid = false;
-    return { found: true, review, valid };
+    // La tête du moment de la chaîne de l'agent : l'auteur la note, et toute liste montrée plus tard doit la contenir.
+    const top = (await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM verified_reviews WHERE agent_id = ? ORDER BY seq DESC LIMIT 1', [row.agent_id]))!;
+    return { found: true, review, valid, head: { count: top.seq, hash: top.hash } };
   }
 
   /**

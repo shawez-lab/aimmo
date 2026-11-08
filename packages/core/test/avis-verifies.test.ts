@@ -21,6 +21,14 @@ it('[R523] le texte refuse coordonnées, liens, adresses et noms des clients, qu
   expect(reviewTextProblem(`${GOOD} pour notre maison du 12 rue des Lilas`, names)).toBe('address');
   expect(reviewTextProblem(`${GOOD} Signé : Madame DURAND`, names)).toBe('name');
   expect(reviewTextProblem(`${GOOD} Ána`, names)).toBe('name');
+  // Les noms dans toutes les écritures, et les numéros internationaux.
+  expect(reviewTextProblem(`${GOOD} Signé : 王 明.`, ['王', '明'])).toBe('name');
+  expect(reviewTextProblem(`${GOOD} Signé : 王明.`, ['王明'])).toBe('name');
+  expect(reviewTextProblem(`${GOOD} Merci, Дмитрий.`, ['Дмитрий'])).toBe('name');
+  expect(reviewTextProblem(`${GOOD} Appelez +262 692 12 34 56.`, [])).toBe('phone');
+  expect(reviewTextProblem(`${GOOD} Appelez +44 20 7946 0958.`, [])).toBe('phone');
+  expect(reviewTextProblem(`${GOOD} Appelez 0044 20 7946 0958.`, [])).toBe('phone');
+  expect(reviewTextProblem(`${GOOD} Vente conclue en 2027, +5 % sur l’estimation.`, [])).toBeNull();
   // Un nom fait de mots courts se cherche entier ; un mot court d'un nom plus long ne bloque pas tout.
   expect(reviewTextProblem(`${GOOD} Signé : Li Ng.`, ['Li', 'Ng'])).toBe('name');
   expect(reviewTextProblem(`${GOOD} Merci, LI.`, ['Li'])).toBe('name');
@@ -126,7 +134,10 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     expect(list.reviews.map((r) => r.score)).toEqual([5, 1, 3]);
     expect(list.reviews.map((r) => r.code)).toEqual(codes);
     expect(list.summary).toEqual({ count: 3, average: 3, byScore: { 1: 1, 2: 0, 3: 1, 4: 0, 5: 1 } });
-    expect(await verifyChain(list.reviews)).toEqual({ ok: true, count: 3 });
+    expect(await verifyChain(list.reviews, list.head)).toEqual({ ok: true, count: 3 });
+    // Le dernier avis, ou tous, retirés : la chaîne qui reste est valable, mais la tête attendue le montre.
+    expect(await verifyChain(list.reviews.slice(0, 2), list.head)).toMatchObject({ ok: false, reason: 'head' });
+    expect(await verifyChain([], list.head)).toMatchObject({ ok: false, reason: 'head' });
     // Ni effacer, ni changer, ni cacher : la base refuse.
     await expect(t.db.run('DELETE FROM verified_reviews WHERE score = 1')).rejects.toThrow();
     await expect(t.db.run('UPDATE verified_reviews SET score = 5 WHERE score = 1')).rejects.toThrow();
@@ -134,14 +145,14 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     expect(columns.map((c) => c.name).filter((x) => /hid|mask|visib|cach|publish(?!ed)|status/i.test(x))).toEqual([]);
     // Une liste publiée dont on retire le mauvais avis, ou qu'on réordonne par note, ne se vérifie plus.
     const withoutBad = list.reviews.filter((r) => r.score !== 1);
-    expect(await verifyChain(withoutBad)).toMatchObject({ ok: false });
+    expect(await verifyChain(withoutBad, list.head)).toMatchObject({ ok: false });
     const renumbered = withoutBad.map((r, i) => ({ ...r, seq: i + 1 }));
-    expect(await verifyChain(renumbered)).toMatchObject({ ok: false });
+    expect(await verifyChain(renumbered, list.head)).toMatchObject({ ok: false });
     // Réordonnée par la note en gardant les numéros, la liste ne se vérifie plus non plus.
     const byScore = [...list.reviews].sort((x, y) => y.score - x.score);
-    expect(await verifyChain(byScore)).toMatchObject({ ok: false });
+    expect(await verifyChain(byScore, list.head)).toMatchObject({ ok: false });
     const edited = list.reviews.map((r) => (r.score === 1 ? { ...r, score: 4 } : r));
-    expect(await verifyChain(edited)).toEqual({ ok: false, seq: 2, reason: 'hash' });
+    expect(await verifyChain(edited, list.head)).toEqual({ ok: false, seq: 2, reason: 'hash' });
     // Un avis rangé à la main hors de la chaîne est refusé par la base : numéro qui saute, ou empreinte du précédent fausse.
     const d = await t.client('Dan');
     t.close('f3', '2027-03-09', [{ personId: d, side: 'acquereur' }]);
@@ -168,7 +179,7 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     // L'auteur vérifie lui-même, avec son reçu, que l'engagement public désigne son dossier clos.
     expect(r.receipt).toMatchObject({ fileId: 'f-secret-1', closedOn: '2027-03-08' });
     const v = await t.avis.verify(r.code);
-    expect(v).toMatchObject({ found: true, valid: true, review: { code: r.code, score: 2, side: 'vendeur', text: BAD, seq: 1, prevHash: GENESIS_HASH } });
+    expect(v).toMatchObject({ found: true, valid: true, head: { count: 1 }, review: { code: r.code, score: 2, side: 'vendeur', text: BAD, seq: 1, prevHash: GENESIS_HASH } });
     const list = await t.avis.publicList(t.network.id, t.alexId);
     const shown = JSON.stringify([v, list]);
     for (const secret of [a, 'f-secret-1', 'Ana', 'Durand', 'Dijon', 'REF-', '2027-03-08', t.personId, t.propertyId, '@']) expect(shown).not.toContain(secret);
@@ -239,9 +250,9 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
 });
 
 it('[R522] une chaîne vide ou intacte se vérifie', async () => {
-  expect(await verifyChain([])).toEqual({ ok: true, count: 0 });
+  expect(await verifyChain([], { count: 0, hash: GENESIS_HASH })).toEqual({ ok: true, count: 0 });
   const first: Omit<PublicReview, 'hash'> = { code: 'abcdefghjkmn', agentId: 'ag', seq: 1, side: 'acquereur', score: 1, text: BAD, publishedOn: '2027-01-01', fileCommitment: 'f'.repeat(64), prevHash: GENESIS_HASH };
   const r1 = { ...first, hash: await reviewHash(first) };
-  expect(await verifyChain([r1])).toEqual({ ok: true, count: 1 });
-  expect(await verifyChain([{ ...r1, text: GOOD }])).toEqual({ ok: false, seq: 1, reason: 'hash' });
+  expect(await verifyChain([r1], { count: 1, hash: r1.hash })).toEqual({ ok: true, count: 1 });
+  expect(await verifyChain([{ ...r1, text: GOOD }], { count: 1, hash: r1.hash })).toEqual({ ok: false, seq: 1, reason: 'hash' });
 });
