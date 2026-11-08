@@ -222,6 +222,10 @@ export class AvisDeValeur {
       return { month: c.month, surface: c.surface, pricePerM2: c.pricePerM2, distance: Math.round(c.distance / 10) * 10, ...(d ? { street: d.street, town: d.town } : {}) };
     });
     const computed = {
+      // Le bien estimé, pour que tout ce qui s'ajoute à l'avis porte sur lui seul (HX32) : sorte, surface, commune.
+      kind: input.kind,
+      surface: input.surface,
+      inseeCode: input.facts?.address.ok ? input.facts.address.value.inseeCode : null,
       low: input.range.low,
       high: input.range.high,
       pricePerM2: input.range.pricePerM2,
@@ -320,7 +324,11 @@ export class AvisDeValeur {
       // En un seul passage : une borne déjà remplacée n'est jamais remplacée une seconde fois.
       text = r.text.replace(pattern, (m) => swap.get(m) ?? m);
     }
-    const at = this.now().toISOString();
+    // Une version toujours plus récente que la version lue, même horloge arrêtée ou en retard sur un relevé joint
+    // (HX32) : une version déjà lue ne revient jamais [R30, R306].
+    const nowMs = this.now().getTime();
+    const readMs = Date.parse(r.updated_at);
+    const at = new Date(Number.isFinite(readMs) && nowMs <= readMs ? readMs + 1 : nowMs).toISOString();
     // Sur la version lue seulement : validée ou modifiée entre-temps, l'ajustement n'est pas fait, et c'est dit.
     const done = await this.db.run(
       `UPDATE valuation_reports SET agent_low = ?, agent_high = ?, text = ?, text_by = ?, updated_at = ?

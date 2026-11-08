@@ -17,6 +17,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { AvisDeValeur, euros, type CitedSale, type ValuationReport } from './avis.ts';
+import { renderMarketSection, type MarketSection } from './marche-avis.ts';
 
 /** Ce que l'avis garde du calcul et que la page montre. */
 interface PrintedFacts {
@@ -36,6 +37,8 @@ export interface ValuationPrintInput {
   text: string;
   facts: PrintedFacts;
   agent: AgentCard;
+  /** Le dernier relevé du marché joint au brouillon avant sa validation (HX32), s'il y en a un. */
+  market?: MarketSection | null;
 }
 
 export type PrintRefusal = { ok: false; rule: 'R16' | 'R30'; code: string } | { ok: false; rule: null; code: 'unknown' };
@@ -102,6 +105,7 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     agentBlock(agent) +
     adjustments +
     (sales ? `<h2>Ventes réelles comparables</h2>${sales}` : '') +
+    (input.market ? renderMarketSection(input.market) : '') +
     `</main></body></html>`
   );
 }
@@ -139,6 +143,8 @@ export class AvisImprime {
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [report.validated_by]);
     if (!agent) return { ok: false, rule: 'R30', code: 'not_following_agent' };
     const card = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [report.validated_by]);
+    // Le relevé du marché : seul un brouillon en reçoit, la base le garantit ; ce qui part est ce que l'agent a validé [R306].
+    const market = await this.db.first<{ market: string }>('SELECT market FROM valuation_market_snapshots WHERE report_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1', [report.id]);
     const html = renderValuationPrint({
       low: released.value.low,
       high: released.value.high,
@@ -146,6 +152,7 @@ export class AvisImprime {
       text: report.text,
       facts: JSON.parse(report.computed) as PrintedFacts,
       agent: { firstName: agent.first_name, lastName: agent.last_name, phone: card?.phone ?? null, email: card?.email ?? null },
+      market: market ? (JSON.parse(market.market) as MarketSection) : null,
     });
     await appendEvent(this.journal, { type: 'avis.imprime', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `property:${report.property_id}`, data: { report: report.id } }, this.now);
     return { ok: true, html };

@@ -440,6 +440,12 @@ export class Pige {
         ],
       );
       added += r.changes;
+      // Le jour où l'annonce est vue en ligne, même à prix inchangé : son relevé et sa durée en ligne (HX32) [R303].
+      await this.db.run(
+        `INSERT OR IGNORE INTO pige_ad_sightings (network_id, source, source_ref, seen_on)
+         SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?)`,
+        [networkId, ad.source, ad.sourceRef, localTime(now, 'Europe/Paris').date, networkId, ad.source, ad.sourceRef],
+      );
       // Ce que l'annonce dit du diagnostic, rangé à part avec elle, pour proposer son adresse (HX18).
       if (r.changes === 1 && (ad.energyClass || ad.diagnosedOn)) {
         await this.db.run('INSERT INTO pige_ad_energy (ad_id, network_id, energy_class, diagnosed_on) VALUES (?, ?, ?, ?)', [adId, networkId, ad.energyClass, ad.diagnosedOn]);

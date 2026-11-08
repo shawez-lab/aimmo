@@ -417,6 +417,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
     ],
   },
   valuation_follow_ups: { locate: [via('report_id', 'valuation_reports')] },
+  valuation_market_snapshots: { locate: [via('report_id', 'valuation_reports')] },
   value_tracking: { locate: by('person_id') },
   value_tracking_sends: { locate: [via('tracking_id', 'value_tracking')] },
   value_tracking_alerts: { locate: by('person_id') },
@@ -641,6 +642,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   pige_drafts: out('agent', 'Premier message de pige préparé pour l\'agent de la zone.'),
   pige_handovers: out('agent', 'Message de pige validé et remis à l\'agent, à coller lui-même.'),
   // HX18 : l'adresse probable d'une annonce de pige, tirée des diagnostics publiés ; jamais le particulier.
+  pige_ad_sightings: out('sans_client', 'Jour où une annonce de particulier est vue en ligne : son site et sa référence, jamais le particulier.'),
   pige_ad_energy: out('sans_client', 'Classe énergie et date du diagnostic dites par une annonce de particulier.'),
   pige_address_proposals: out('agent', 'Adresses probables d\'une annonce, tirées des diagnostics publiés, pour l\'agent de la zone.'),
   pige_property_keys: out('sans_client', 'Empreinte reliée à un bien créé depuis la pige : un seul bien par bien de pige.'),

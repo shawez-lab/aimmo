@@ -7,3 +7,4 @@ export * from './preparation-avis.ts';
 export * from './en-ligne.ts';
 export * from './suivi.ts';
 export * from './mesure.ts';
+export * from './marche-avis.ts';

@@ -126,6 +126,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       valuation_reports: ['agent_id', 'agent_low', 'agent_high', 'text', 'text_by', 'validated_by'],
       valuation_deliveries: ['report_id', 'person_id', 'conversation_id', 'noted_by'],
       valuation_follow_ups: ['report_id'],
+      // HX32 : le relevé du marché joint à l'avis par l'agent qui suit le bien ; ni nom ni adresse de concurrent.
+      valuation_market_snapshots: ['report_id', 'agent_id', 'market'],
       value_tracking: ['agent_id', 'person_id', 'postal_code', 'town', 'created_by'],
       value_tracking_sends: [],
       value_tracking_alerts: ['person_id'],
@@ -292,6 +294,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX18 : l'adresse probable d'une annonce de pige, tirée des diagnostics publiés, jamais du particulier. L'adresse
       // proposée ou retenue et l'agent qui la demande ; la classe énergie et la confiance sont inscrites par prudence.
       pige_ad_energy: [],
+      // HX32 : le jour où une annonce de pige est vue en ligne ; rien du particulier.
+      pige_ad_sightings: [],
       pige_address_proposals: ['agent_id', 'candidates'],
       pige_property_keys: ['property_id'],
       pige_properties: ['property_id', 'agent_id', 'street_number', 'street', 'diagnosis_number', 'confidence'],
@@ -1082,6 +1086,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   pige_drafts: ['id', 'network_id', 'fingerprint', 'ad_id', 'gap_pct', 'market_source', 'market_last_sale', 'created_at'],
   pige_handovers: ['channel', 'handed_at'],
   pige_ad_energy: ['ad_id', 'network_id', 'energy_class', 'diagnosed_on'],
+  pige_ad_sightings: ['network_id', 'source', 'source_ref', 'seen_on'],
+  valuation_market_snapshots: ['id', 'network_id', 'created_at'],
   pige_address_proposals: ['id', 'network_id', 'ad_id', 'missing', 'created_at'],
   pige_property_keys: ['network_id', 'key'],
   pige_properties: ['network_id', 'source', 'ad_id', 'fingerprint', 'ad_site', 'ad_kind', 'energy_class', 'diagnosed_on', 'published_at', 'proposal_id', 'created_at'],
