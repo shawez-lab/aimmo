@@ -41,6 +41,9 @@ CREATE TRIGGER IF NOT EXISTS supplier_invoices_recompte
 BEFORE INSERT ON supplier_invoices
 WHEN (SELECT COALESCE(SUM(json_extract(value, '$.baseCents')), -1) FROM json_each(NEW.vat_lines)) <> NEW.ht_cents
   OR (SELECT COALESCE(SUM(json_extract(value, '$.vatCents')), -1) FROM json_each(NEW.vat_lines)) <> NEW.vat_cents
+  OR EXISTS (SELECT 1 FROM json_each(NEW.vat_lines) WHERE json_type(value) IS NOT 'object'
+       OR json_type(value, '$.baseCents') IS NOT 'integer' OR json_type(value, '$.rateBp') IS NOT 'integer' OR json_type(value, '$.vatCents') IS NOT 'integer'
+       OR json_extract(value, '$.baseCents') < 0 OR json_extract(value, '$.vatCents') < 0)
   OR EXISTS (SELECT 1 FROM json_each(NEW.vat_lines) WHERE json_extract(value, '$.rateBp') NOT IN (0, 210, 550, 1000, 2000))
   OR EXISTS (SELECT 1 FROM json_each(NEW.vat_lines) WHERE abs(json_extract(value, '$.vatCents') * 10000 - json_extract(value, '$.baseCents') * json_extract(value, '$.rateBp')) > 10000)
 BEGIN SELECT RAISE(ABORT, 'supplier_invoices : la facture ne se recompte pas'); END;

@@ -163,6 +163,15 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
         [t.network.id, again.value.id],
       ),
     ).rejects.toThrow();
+    // Une ligne sans taux, au taux nul en texte, ou à une base négative : refusée par la base aussi.
+    for (const [i, line] of ['{\"baseCents\":10000,\"vatCents\":1}', '{\"baseCents\":10000,\"rateBp\":null,\"vatCents\":1}', '{\"baseCents\":10000,\"rateBp\":\"2000\",\"vatCents\":1}', '{\"baseCents\":10000,\"rateBp\":0,\"vatCents\":\"1\"}'].entries()) {
+      await expect(
+        t.db.run(
+          `INSERT INTO supplier_invoices (id, network_id, read_id, supplier, number, issued_on, ht_cents, vat_cents, ttc_cents, vat_lines, corrected, recorded_by, created_at) VALUES (?, ?, ?, 'Autre', ?, '2027-06-01', 10000, 1, 10001, '[${line}]', '[]', 'direction:d', '2027-06-11')`,
+          [`z${i}`, t.network.id, again.value.id, `N${i + 3}`],
+        ),
+      ).rejects.toThrow('ne se recompte pas');
+    }
     // La base recompte aussi : une facture qui ne se recompte pas est refusée même écrite à la main.
     await expect(
       t.db.run(
