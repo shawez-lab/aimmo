@@ -430,8 +430,12 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 
 ## Offre, avant-contrat et notaire
 
+Voie : 2
+
+Réservé le 2026-11-08 par la voie 2. Règles R510 à R519 et migrations à partir de `2400` réservées à ce groupe. Le code vit dans `packages/core/src/avant-contrat/` (fichiers neufs) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : le branchement au Worker sera une tâche de la voie 1.
+
 ### HX45 · Avant-contrat préparé, et projet du notaire comparé à l'offre
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Hektor et Modelo : avant-contrat généré depuis l'offre, suivi du dépôt de garantie, récupération du projet notarial. Jamais vu : quand le projet du notaire arrive, l'appli le compare à l'offre acceptée, prix, conditions suspensives, dates, et signale chaque différence ; le dépôt de garantie est suivi comme versé au notaire, jamais à AIMMO.
 - Critères : chaque différence entre projet et offre est signalée (test) ; aucun texte ne demande un versement à AIMMO, règle de N05 (test) ; les dates de l'avant-contrat remplissent N02 (test).
 
