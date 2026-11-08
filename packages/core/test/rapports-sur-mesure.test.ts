@@ -36,6 +36,8 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     const otherNetwork = await store.createNetwork('Autre réseau');
     const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
     const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
+    // Sam parraine Alex : son identifiant ne doit pas pour autant entrer dans l'export d'Alex.
+    await db.run('UPDATE agents SET sponsor_agent_id = ? WHERE id = ?', [sam.id, alex.id]);
     const far = await store.createAgent({ networkId: otherNetwork.id, firstName: 'Loin', lastName: 'Agent' });
     const as = (role: string, userId: string, networkId = network.id): Viewer => ({ role, userId, networkId }) as Viewer;
     let n = 0;
@@ -65,6 +67,31 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     await appointment(sam.id, s1, '2027-06-04T08:00:00.000Z', 'honored');
     await mandate(alex.id, a1, '2027-06-20T08:00:00.000Z');
     await mandate(sam.id, s1, '2027-07-01T08:00:00.000Z');
+    // Biens, ventes et parts de commission. Les dossiers de vente ne sont pas montés ici : les clés étrangères sont
+    // coupées le temps de ranger ces lignes, comme le socle les range à l'acte.
+    for (const [id, agentId, net] of [['bien-alex', alex.id, network.id], ['bien-sam', sam.id, network.id], ['bien-loin', far.id, otherNetwork.id]] as const) {
+      await db.run("INSERT INTO properties (id, network_id, agent_id, reference, kind, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'home', 'draft', ?, ?)", [id, net, agentId, `REF-${id}`, '2027-05-02T08:00:00.000Z', '2027-05-02T08:00:00.000Z']);
+    }
+    await db.run('PRAGMA foreign_keys = OFF');
+    await db.run("INSERT INTO commission_grids (id, network_id, version, valid_from, default_rate_bp, agent_rates, created_by, created_at) VALUES ('g1', ?, 1, '2027-01-01', 7000, '{}', 'direction-1', '2027-01-01')", [network.id]);
+    const sale = async (fileId: string, agentId: string, net: string, dueOn: string) => {
+      await db.run("INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, 'man-x', ?, 10000, 'vendeur', ?, 'due', ?)", [fileId, net, agentId, dueOn, `${dueOn}T10:00:00.000Z`]);
+      await db.run("INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, 'man-x', '2027-04-01', 1000000, 'vendeur', 'g1', '2027-04-01')", [fileId, net, agentId]);
+    };
+    await sale('vente-alex-1', alex.id, network.id, '2027-05-01'); // premier jour de la période
+    await sale('vente-alex-2', alex.id, network.id, '2027-07-31'); // dernier jour de la période
+    await sale('vente-alex-3', alex.id, network.id, '2027-08-01'); // hors période
+    await sale('vente-sam', sam.id, network.id, '2027-06-15');
+    await sale('vente-loin', far.id, otherNetwork.id, '2027-06-15');
+    const share = (fileId: string, seq: number, kind: string, beneficiary: string | null, reason: string | null, cents: number) =>
+      db.run('INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES (?, ?, ?, ?, ?, ?)', [fileId, seq, kind, beneficiary, reason, cents]);
+    await share('vente-alex-1', 1, 'reseau', null, null, 300000);
+    await share('vente-alex-1', 2, 'agent', alex.id, null, 600000);
+    await share('vente-alex-1', 3, 'parrainage', sam.id, null, 100000);
+    await share('vente-sam', 1, 'reseau', null, null, 300000);
+    await share('vente-sam', 2, 'agent', sam.id, null, 400000);
+    await share('vente-sam', 3, 'partage', alex.id, 'fichier_commun', 300000);
+    await db.run('PRAGMA foreign_keys = ON');
     return {
       db,
       journal,
@@ -94,7 +121,9 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(cell('rendez_vous', '2027-06').value).toBe(1); // l'absent ne compte pas
     expect(cell('mandats', '2027-06').value).toBe(1);
     expect(cell('mandats', '2027-07').value).toBe(0); // celui de Sam n'est pas là
-    expect(cell('ventes', '2027-05').value).toBe(0);
+    expect(cell('ventes', '2027-05').lines.map((l) => l.id)).toEqual(['vente-alex-1']);
+    expect(cell('ventes', '2027-06').value).toBe(0); // celle de Sam n'est pas là
+    expect(cell('ventes', '2027-07').lines).toEqual([{ id: 'vente-alex-2', at: '2027-07-31' }]); // dernier jour compris
     expect(r.value.cells).toHaveLength(12);
     expect(r.value).toMatchObject({ scope: 'agent', agentId: t.alex.id });
     // Aucune ligne n'en dit plus que l'identifiant et la date.
@@ -103,14 +132,16 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
 
   it('[R560] [R14] le total du réseau : la direction seule, sans aucun découpage par agent', async () => {
     const t = await setup();
-    const r = await t.rapports.run(t.direction, { definition: { measures: ['contacts', 'mandats'], grouping: 'total' }, from: '2027-05-01', to: '2027-07-31', network: true });
+    const r = await t.rapports.run(t.direction, { definition: { measures: ['contacts', 'mandats', 'ventes'], grouping: 'total' }, from: '2027-05-01', to: '2027-07-31', network: true });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.scope).toBe('reseau');
     expect(r.value.agentId).toBeUndefined();
     expect(r.value.cells.map((c) => [c.measure, c.value])).toEqual([
       ['contacts', 4], // l'autre réseau n'y est pas
       ['mandats', 2],
+      ['ventes', 3],
     ]);
+    expect(r.value.cells[2]!.lines.map((l) => l.id)).toEqual(['vente-alex-1', 'vente-sam', 'vente-alex-2']);
     expect(JSON.stringify(r.value)).not.toContain(t.alex.id);
     expect(JSON.stringify(r.value)).not.toContain(t.sam.id);
     // Un agent ne lit pas le total du réseau ; personne ne lit deux agents à la fois.
@@ -167,6 +198,13 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(document.tables.appointments).toHaveLength(2);
     expect(document.tables.mandates).toHaveLength(1);
     expect(document.tables.customReports.map((r) => r.name)).toEqual(['Contacts']);
+    expect(document.tables.properties.map((r) => r.id)).toEqual(['bien-alex']);
+    expect(document.tables.sales.map((r) => r.file_id)).toEqual(['vente-alex-1', 'vente-alex-2', 'vente-alex-3']);
+    // Ses parts seulement : la sienne sur sa vente, son partage sur celle de Sam ; ni la part du parrain ni celles de Sam.
+    expect(document.tables.commissionShares.map((r) => [r.file_id, r.kind, r.amount_cents])).toEqual([
+      ['vente-alex-1', 'agent', 600000],
+      ['vente-sam', 'partage', 300000],
+    ]);
     const text = JSON.stringify(document);
     expect(text).not.toContain(t.sam.id);
     expect(text).not.toContain(t.far.id);
@@ -200,5 +238,9 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(await t.exports.make(t.as('agent', t.alex.id, 'autre-reseau'))).toMatchObject({ ok: false, rule: 'R16' });
     const e = await t.exports.make(t.other);
     expect(e.ok && e.value.document.tables.attributions.map((r) => r.id)).toEqual(['att-4']);
+    expect(e.ok && e.value.document.tables.commissionShares.map((r) => [r.file_id, r.kind])).toEqual([
+      ['vente-alex-1', 'parrainage'],
+      ['vente-sam', 'agent'],
+    ]);
   });
 });

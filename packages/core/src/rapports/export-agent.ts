@@ -3,7 +3,7 @@
  *
  * À tout moment, un agent actif emporte en un fichier tout ce que le réseau range à son nom : sa fiche, les contacts
  * qui lui ont été attribués, ses rendez-vous, ses mandats, ses biens, ses ventes, ses parts de commission et ses
- * rapports enregistrés. Rien d'un autre agent n'y entre. Les clients n'y figurent que par leurs identifiants : leurs
+ * rapports enregistrés. Rien d'un autre agent n'y entre, pas même un identifiant (parrain, attribution remplacée). Les clients n'y figurent que par leurs identifiants : leurs
  * fiches sont à eux et au réseau, et se demandent par les droits de la personne (M12).
  *
  * Le fichier porte son empreinte SHA-256, calculée sur son écriture canonique ; AIMMO range l'empreinte, jamais le
@@ -86,8 +86,8 @@ export class ExportAgent {
     const q = (sql: string, args: string[] = [net, id]) => this.db.all<Row>(sql, args);
 
     const tables: AgentExport['tables'] = {
-      agent: await q('SELECT id, first_name, last_name, zone, status, sponsor_agent_id, created_at, updated_at FROM agents WHERE network_id = ? AND id = ?'),
-      attributions: await q('SELECT id, person_id, reason, callback_hours, replaces_id, created_at FROM attributions WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id'),
+      agent: await q('SELECT id, first_name, last_name, zone, status, created_at, updated_at FROM agents WHERE network_id = ? AND id = ?'),
+      attributions: await q('SELECT id, person_id, reason, callback_hours, created_at FROM attributions WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id'),
       appointments: await q('SELECT id, person_id, property_id, kind, start_at, end_at, status, source, created_at FROM appointments WHERE network_id = ? AND agent_id = ? ORDER BY start_at, id'),
       mandates: await q('SELECT id, person_id, project_id, property_id, signed_at, source_kind, created_at FROM mandates WHERE network_id = ? AND agent_id = ? ORDER BY signed_at, id'),
       properties: await q('SELECT id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status, created_at FROM properties WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id'),
