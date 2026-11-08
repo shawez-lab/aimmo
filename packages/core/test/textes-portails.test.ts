@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ListingFacts } from '../src/annonces/annonce-sourcee.ts';
 import { DiffusionSurveillee } from '../src/diffusion/surveillance.ts';
-import { controlPortalText, PHOTO_SUBJECTS, photoCaption, subjectInSheet, TextesPortails, type PortalTextWriter } from '../src/diffusion/textes.ts';
+import { controlPortalText, maskPortalText, PHOTO_SUBJECTS, photoCaption, subjectInSheet, TextesPortails, type PortalTextWriter } from '../src/diffusion/textes.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -60,6 +60,21 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
     const srcA = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie A.') };
     expect(controlPortalText(srcA, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie a.') }, f6).ok).toBe(true);
     expect(controlPortalText(srcA, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie : c.') }, f6).body).toContain('classes_differentes');
+  });
+
+  it('[R476] chaque lettre garde son champ : échanger énergie et climat est refusé', () => {
+    const src = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie D. Classe climat C.') };
+    const ok = { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie D, classe climat C.') };
+    expect(controlPortalText(src, ok, FACTS).ok).toBe(true);
+    const swapped = { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe climat D. Classe énergie C.') };
+    expect(controlPortalText(src, swapped, FACTS).body).toContain('classes_differentes');
+  });
+
+  it('[R476] l’IA ne reçoit aucune lettre de classe, même en minuscule, ni aucun chiffre', () => {
+    const values: string[] = [];
+    const masked = maskPortalText('Au 3e étage, 62 m². Classe énergie d, classe climat C. Il a un balcon.', values);
+    expect(masked).toBe('Au ⟦1⟧e étage, ⟦2⟧ m². Classe énergie ⟦3⟧, classe climat ⟦4⟧. Il a un balcon.');
+    expect(values).toEqual(['3', '62', 'd', 'C']);
   });
 
   it('[R476] tout nombre en lettres est refusé, ordinaux et mots composés compris ; « un » seulement devant une unité', () => {

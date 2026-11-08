@@ -30,7 +30,7 @@ import { Annonces } from '../annonces/annonces.ts';
 import type { MediaEdit, PropertySheet } from '../annonces/fiche-bien.ts';
 import type { PublishedMedia } from '../annonces/medias.ts';
 import type { ListingPayload } from '../annonces/publication.ts';
-import { maskFigures, unmaskFigures } from '../annonces/traductions.ts';
+import { unmaskFigures } from '../annonces/traductions.ts';
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -87,8 +87,38 @@ const numbersOf = (s: string): string[] =>
     const unit = UNIT_AFTER.exec(s.slice((m.index ?? 0) + m[0].length))?.[1] ?? '';
     return `${m[0].replace(/[  ]/g, ' ')}${unit === '' ? '' : ` ${unit === 'm2' ? 'm²' : unit}`}`;
   });
-const classesOf = (s: string): string[] =>
-  [...s.matchAll(CLASS_LETTER)].filter((m) => m[0] !== 'a' || /(?:classe|énergie|energie|climat|dpe|ges|étiquette|etiquette)\s*:?\s*$/iu.test(s.slice(0, m.index))).map((m) => m[0].toUpperCase());
+const DIAGNOSTIC_BEFORE = /(?:classe|énergie|energie|climat|dpe|ges|étiquette|etiquette)\s*:?\s*$/iu;
+/** Les lettres de classe d'un texte, avec leur place : « a » minuscule seulement juste après un mot du diagnostic. */
+const classMatches = (s: string): { at: number; letter: string }[] =>
+  [...s.matchAll(CLASS_LETTER)].filter((m) => m[0] !== 'a' || DIAGNOSTIC_BEFORE.test(s.slice(0, m.index))).map((m) => ({ at: m.index ?? 0, letter: m[0] }));
+/**
+ * Le champ d'une lettre de classe : le dernier mot du diagnostic qui la précède dans sa phrase (énergie ou climat) ;
+ * « Classe énergie D. Classe climat C. » n'est jamais « Classe climat D. Classe énergie C. ».
+ */
+function classField(s: string, at: number): 'energie' | 'climat' | '' {
+  const before = unaccent(s.slice(0, at));
+  const sentence = before.slice(Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('\n')) + 1);
+  const words = [...sentence.matchAll(/(?<!\p{L})(energie|energetique|dpe|climat|ges|gaz a effet de serre)(?!\p{L})/gu)];
+  const last = words[words.length - 1]?.[1];
+  if (last === undefined) return '';
+  return last === 'climat' || last === 'ges' || last === 'gaz a effet de serre' ? 'climat' : 'energie';
+}
+const classesOf = (s: string): string[] => classMatches(s).map((m) => `${classField(s, m.at)}:${m.letter.toUpperCase()}`);
+
+/** Le texte avec des repères à la place des nombres et des classes, minuscules comprises ; la table pour les remettre. */
+export function maskPortalText(text: string, values: string[]): string {
+  const spots = [...[...text.matchAll(NUMBER)].map((m) => ({ at: m.index ?? 0, raw: m[0] })), ...classMatches(text).map((m) => ({ at: m.at, raw: m.letter }))].sort((x, y) => x.at - y.at);
+  let out = '';
+  let from = 0;
+  for (const spot of spots) {
+    if (spot.at < from) continue;
+    out += text.slice(from, spot.at);
+    values.push(spot.raw);
+    out += `⟦${values.length}⟧`;
+    from = spot.at + spot.raw.length;
+  }
+  return out + text.slice(from);
+}
 const sameSequence = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 function fieldProblems(source: string, text: string, max: number): PortalTextProblem[] {
@@ -377,7 +407,7 @@ export class TextesPortails {
     if (!this.writer) return { ok: false, rule: 'R476', code: 'ia_refusee' };
     const titleValues: string[] = [];
     const bodyValues: string[] = [];
-    const masked = { title: maskFigures(b.source.title, titleValues), body: maskFigures(b.source.body, bodyValues) };
+    const masked = { title: maskPortalText(b.source.title, titleValues), body: maskPortalText(b.source.body, bodyValues) };
     let out: { title: string; body: string };
     try {
       out = await this.writer.write({ portal, ...masked });
