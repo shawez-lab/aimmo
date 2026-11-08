@@ -473,7 +473,10 @@ export class LettreInformation {
     if (!pricesFromBase(visible, content)) return { ok: false, rule: 'R585', code: 'prix_inconnu' };
     // Un contenu public : vocabulaire, adresse, chiffres de la base, aucune mention de l'IA [R07, R09, R10]. Le
     // magazine s'imprime : sa longueur n'est pas celle d'une page.
-    const problem = checkText(visible, { audience: 'public', figures: figuresOf(content) }).find((p) => p.rule !== 'length');
+    // La liste des mots de l'IA n'est lue que pour un client : on la passe aussi, sans les exigences d'une conversation.
+    const problem =
+      checkText(visible, { audience: 'public', figures: figuresOf(content) }).find((p) => p.rule !== 'length') ??
+      checkText(visible, { audience: 'client', channel: 'email' }).find((p) => p.rule === 'R06');
     if (problem) return { ok: false, rule: problem.rule, code: 'texte' };
     await appendEvent(this.journal, { type: 'lettre.magazine', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { properties: properties.length, communes: prices.length } }, this.now);
     return { ok: true, html, properties: properties.length };

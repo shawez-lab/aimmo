@@ -395,6 +395,8 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(await t.lettre.magazine(t.direction, 'Lettre 12')).toEqual({ ok: false, rule: 'R585', code: 'titre' });
     // Un titre public au vocabulaire interdit ne sort pas [R07].
     expect(await t.lettre.magazine(t.direction, 'Les estimations gratuites des mandataires')).toMatchObject({ ok: false, rule: 'R07' });
+    // Ni une mention de l'IA [R06].
+    expect(await t.lettre.magazine(t.direction, 'Notre assistant IA immobilier')).toMatchObject({ ok: false, rule: 'R06' });
     expect(await t.lettre.magazine({ role: 'client' as never, userId: 'c', networkId: t.network.id }, 'Le magazine')).toEqual({ ok: false, rule: 'R16', code: 'role' });
   });
 
