@@ -36,3 +36,23 @@ it('[R490] la page du certificat dit chaque retouche locale et la mention, jamai
   expect(plain).not.toContain('Retouches à un endroit précis');
   expect(plain).toContain('Aucune correction : la photo est telle qu’elle a été prise.');
 });
+
+it('[R492] la page du certificat d’une image aménagée dit ce qui a changé, ligne par ligne', () => {
+  const html = renderCertificatePage({
+    ...cert,
+    localEdits: 'amenagement_virtuel',
+    retouches: [],
+    retouchMention: null,
+    virtualStaging: true,
+    mention: 'Aménagement virtuel',
+    stagingChanges: [
+      { kind: 'meubler', label: 'Pièce meublée', detail: 'Pièce meublée virtuellement, style scandinave : ce mobilier n’est pas dans le bien' },
+      { kind: 'murs', label: 'Murs refaits', detail: 'Murs montrés en peinture neuve : travaux simulés, non faits' },
+    ],
+  });
+  expect(html).toContain('<h2>Ce qui a changé</h2>');
+  expect(html).toContain('<li>Pièce meublée virtuellement, style scandinave : ce mobilier n’est pas dans le bien</li>');
+  expect(html).toContain('<li>Murs montrés en peinture neuve : travaux simulés, non faits</li>');
+  expect(html).toContain('La photo réelle du même cliché est publiée juste avant celle-ci.');
+  expect(renderCertificatePage({ ...cert, retouches: [], retouchMention: null, localEdits: 'aucune' })).not.toContain('Ce qui a changé');
+});

@@ -32,6 +32,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { orderGallery, stagingView, type StagingChangeKind } from '../medias/amenagement.ts';
 
 export const PHOTO_OPERATIONS = ['exposition', 'balance_des_blancs', 'contraste', 'verticales', 'nettete', 'recadrage'] as const;
 export type PhotoOperationKind = (typeof PHOTO_OPERATIONS)[number];
@@ -211,6 +212,8 @@ export interface PhotoCertificate {
   virtualStaging: boolean;
   /** La mention posée sur l'image, ou null [R48]. */
   mention: 'Aménagement virtuel' | null;
+  /** Ce qui a changé sur une image aménagée, déclaré par HX41, ligne par ligne ; absent tant que rien n'est déclaré [R492]. */
+  stagingChanges?: { kind: StagingChangeKind; label: string; detail: string }[];
   statement: string;
   path: string;
 }
@@ -226,6 +229,8 @@ export interface CertifiedPhoto {
   retouches: LocalEditKind[];
   certificateToken: string;
   certificatePath: string;
+  /** Pour une image aménagée : la référence de sa photo réelle jumelle, qui doit partir juste avant elle (HX41) [R493]. */
+  twin?: string;
 }
 
 export type CertResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R130'; code: string };
@@ -264,12 +269,13 @@ function retouchSentence(edits: LocalEdit[]): string {
   return `Retouches locales déclarées : ${list}. La mention « ${RETOUCH_MENTION} » est posée sur l’image. Aucun défaut du bien n’a été effacé ni caché.`;
 }
 
-function statementOf(ops: PhotoOperation[], virtualStaging: boolean, edits: LocalEdit[] = []): string {
+function statementOf(ops: PhotoOperation[], virtualStaging: boolean, edits: LocalEdit[] = [], staging?: { detail: string }[]): string {
   const list = ops.map((o) => OPERATION_LABELS[o.op].toLowerCase()).join(', ');
   if (virtualStaging) {
     // Un aménagement virtuel ajoute du mobilier ou simule des travaux à un endroit précis : on le dit tel quel.
     return [
       'Aménagement virtuel : cette image n’est pas une photo telle quelle. Le mobilier ou les travaux montrés sont simulés, la mention est posée sur l’image.',
+      ...(staging && staging.length > 0 ? [`Ce qui a changé : ${staging.map((c) => c.detail.charAt(0).toLowerCase() + c.detail.slice(1)).join(' ; ')}.`, 'La photo réelle du même cliché est publiée juste avant elle.'] : []),
       ops.length === 0 ? 'Aucune autre correction.' : `Autres corrections, d’ensemble : ${list}.`,
       edits.length === 0 ? 'Rien n’a été effacé ni caché.' : retouchSentence(edits),
       'La photo d’origine, sans aménagement, est gardée telle qu’elle a été prise.',
@@ -409,7 +415,10 @@ export class CertificatsPhotos {
   async certificate(token: unknown): Promise<PhotoCertificate | null> {
     if (typeof token !== 'string' || !TOKEN.test(token)) return null;
     const row = await this.db.first<CertRow>('SELECT * FROM photo_certificates WHERE token = ?', [token]);
-    return row ? this.view(row) : null;
+    if (!row) return null;
+    // Une image aménagée dit ce qui a changé dès que l'agent l'a déclaré (HX41) [R492].
+    const staging = row.virtual_staging === 1 ? await this.db.first<{ changes: string }>('SELECT changes FROM virtual_stagings WHERE staged_token = ?', [token]) : null;
+    return this.view(row, staging ? stagingView(staging.changes) : undefined);
   }
 
   /**
@@ -435,7 +444,14 @@ export class CertificatsPhotos {
       const retouches = parseLocalEdits(c.local_edits);
       out.push({ ref: m.ref, overlay: c.virtual_staging === 1 ? 'Aménagement virtuel' : null, retouchMention: retouches.length > 0 ? RETOUCH_MENTION : null, retouches: retouches.map((e) => e.kind), certificateToken: c.token, certificatePath: CERTIFICATE_PATH + c.token });
     }
-    return out;
+    // Une image aménagée ne part qu'avec sa jumelle réelle déclarée (HX41), juste après elle : jamais en couverture,
+    // jamais seule photo de sa pièce [R493].
+    const twins = await this.db.all<{ staged_ref: string; real_ref: string; staged_token: string }>('SELECT staged_ref, real_ref, staged_token FROM virtual_stagings WHERE property_id = ?', [propertyId]);
+    const tokens = new Map(out.map((p) => [p.ref, p.certificateToken] as const));
+    // Une déclaration vaut pour l'image certifiée qu'elle a vue, pas pour une autre rangée sous la même référence.
+    const valid = twins.filter((t) => tokens.get(t.staged_ref) === t.staged_token);
+    const twinOf = new Map(valid.map((t) => [t.staged_ref, t.real_ref] as const));
+    return orderGallery(out, twinOf).photos.map((p) => (twinOf.has(p.ref) ? { ...p, twin: twinOf.get(p.ref)! } : p));
   }
 
   /** Une photo peut-elle partir ? Seulement de la fiche et avec son certificat [R130]. */
@@ -446,7 +462,7 @@ export class CertificatsPhotos {
     return found ? { ok: true, value: found } : { ok: false, rule: 'R130', code: 'sans_certificat' };
   }
 
-  private view(row: CertRow): PhotoCertificate {
+  private view(row: CertRow, stagingChanges?: PhotoCertificate['stagingChanges']): PhotoCertificate {
     const ops = JSON.parse(row.operations) as PhotoOperation[];
     const staged = row.virtual_staging === 1;
     const edits = parseLocalEdits(row.local_edits);
@@ -462,7 +478,8 @@ export class CertificatsPhotos {
       corrections: ops.map((o) => ({ op: o.op, label: OPERATION_LABELS[o.op], detail: describeOperation(o) })),
       virtualStaging: staged,
       mention: staged ? 'Aménagement virtuel' : null,
-      statement: statementOf(ops, staged, edits),
+      ...(stagingChanges ? { stagingChanges } : {}),
+      statement: statementOf(ops, staged, edits, stagingChanges),
       path: CERTIFICATE_PATH + row.token,
     };
   }

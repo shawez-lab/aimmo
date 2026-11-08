@@ -24,6 +24,7 @@ import type { PropertyStatus } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CertifiedPhoto } from './certificats.ts';
+import { galleryProblems } from '../medias/amenagement.ts';
 import { agentGone } from '../reseau/depart.ts';
 
 export const SOCIAL_EVENTS = ['nouveau_bien', 'visite', 'offre', 'vente'] as const;
@@ -96,7 +97,14 @@ export interface SocialPost {
   createdAt: string;
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26'; code: string };
+/** Ce qui ne va pas dans l'ordre des visuels choisis : une image aménagée en premier, sans jumelle, ou loin d'elle [R493]. */
+function stagingProblems(refs: readonly string[], certified: readonly CertifiedPhoto[]): ReturnType<typeof galleryProblems> {
+  const byRef = new Map(certified.map((c) => [c.ref, c] as const));
+  const twins = new Map(certified.flatMap((c) => (c.twin ? [[c.ref, c.twin] as const] : [])));
+  return galleryProblems(refs.map((r) => ({ ref: r, overlay: byRef.get(r)?.overlay ?? null })), twins);
+}
+
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R493'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
@@ -185,7 +193,7 @@ export class Publications {
     const seen = await this.full(viewer, propertyId);
     if (!seen.ok) return seen;
     const actor = `${viewer.role}:${viewer.userId}`;
-    const bad = (rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R130', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
+    const bad = (rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R130' | 'R493', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
     if (!(SOCIAL_EVENTS as readonly unknown[]).includes(input.event)) return bad('R10', 'evenement_inconnu');
     const event = input.event as SocialEvent;
     if (!EVENT_STATUSES[event].includes(seen.value.status)) return bad('R10', 'evenement_sans_fondement');
@@ -195,6 +203,8 @@ export class Publications {
     // Seulement des photos certifiées, avec leur mention [R130, R48].
     const certified = new Map((await this.deps.certs.publishable(propertyId)).map((c) => [c.ref, c]));
     if (refs.some((r) => !certified.has(r))) return bad('R130', 'visuel_sans_certificat');
+    // Une image aménagée suit sa photo réelle jumelle, jamais en premier ni seule (HX41) [R493].
+    if (stagingProblems(refs, [...certified.values()]).length > 0) return bad('R493', 'amenagement_sans_jumelle');
     if (!(await this.deps.diffusion.canDiffuse(seen.value.networkId, propertyId, this.now())).allowed) return bad('R42', 'bien_non_diffusable');
     const f = await this.deps.facts.factsFor(propertyId);
     if (!f) return bad('R10', 'bien_inconnu');
@@ -329,8 +339,11 @@ export class Publications {
     // L'événement est encore vrai au moment d'envoyer : une offre retirée ne s'annonce plus [R10].
     const status = await this.db.first<{ status: PropertyStatus }>('SELECT status FROM properties WHERE id = ?', [post.value.property_id]);
     if (!status || !EVENT_STATUSES[post.value.event].includes(status.status)) return this.bad(actor, subject, 'R10', 'evenement_sans_fondement');
-    const certified = new Set((await this.deps.certs.publishable(post.value.property_id)).map((c) => c.ref));
+    const publishable = await this.deps.certs.publishable(post.value.property_id);
+    const certified = new Set(publishable.map((c) => c.ref));
     if (current.visuals.some((v) => !certified.has(v.ref))) return this.bad(actor, subject, 'R130', 'visuel_sans_certificat');
+    // L'ordre est relu au moment d'envoyer : une jumelle retirée depuis retire la publication [R493].
+    if (stagingProblems(current.visuals.map((v) => v.ref), publishable).length > 0) return this.bad(actor, subject, 'R493', 'amenagement_sans_jumelle');
     // Le texte dit encore vrai : la fiche a pu être corrigée depuis la préparation. Sinon, rien ne part ; il faut
     // préparer et valider une nouvelle publication [R47, R134].
     const stale = await this.stale(post.value);
@@ -514,7 +527,7 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26', code: string): Promise<PostResult<T>> {
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R493', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }

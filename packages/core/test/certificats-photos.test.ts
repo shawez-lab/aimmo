@@ -184,7 +184,8 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     t.storage.down = false;
     const ok = await t.certs.record(alex, t.p.id, t.input(3, { operations: [] }));
     expect(ok.ok).toBe(true);
-    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([ref(t.p.id, 3)]);
+    // La photo 3, aménagée sans jumelle déclarée, ne part pas seule non plus (HX41) [R493].
+    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([]);
     // L'original disparaît du stockage, ou le stockage tombe : la photo ne part plus.
     t.storage.down = true;
     expect(await t.certs.publishable(t.p.id)).toEqual([]);
@@ -215,10 +216,11 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     expect(r.value.statement).toMatch(/Autres corrections, d’ensemble : exposition\./);
     // Le certificat d'une image aménagée ne dit jamais « que des corrections d'ensemble » ni « rien ajouté ».
     expect(r.value.statement).not.toMatch(/que des corrections d’ensemble|ajouté par endroit|Aucune retouche locale/);
-    expect(await t.certs.publishable(t.p.id)).toEqual([{ ref: ref(t.p.id, 3), overlay: 'Aménagement virtuel', retouchMention: null, retouches: [], certificateToken: r.value.token, certificatePath: r.value.path }]);
-    // La fiche ne dit plus « aménagement virtuel » : la mention reste, par prudence.
+    // Sans sa photo réelle jumelle déclarée (HX41), l'image aménagée ne part pas seule [R493].
+    expect(await t.certs.publishable(t.p.id)).toEqual([]);
+    // La fiche ne dit plus « aménagement virtuel » : la mention reste sur le certificat, par prudence.
     await t.sheet(2, t.media.map((m) => ({ ...m, edit: m.edit === 'amenagement_virtuel' ? 'lumiere_cadrage' : m.edit })));
-    expect((await t.certs.publishable(t.p.id))[0]!.overlay).toBe('Aménagement virtuel');
+    expect((await t.certs.certificate(r.value.token))!.mention).toBe('Aménagement virtuel');
   });
 
   it('[R48] [R130] une photo aménagée sans autre correction se certifie ; une photo certifiée sans aménagement que la fiche dit aménagée ne part plus', async () => {
@@ -234,7 +236,8 @@ describeWithSqlite('X02 · photos corrigées honnêtement, avec leur certificat'
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 1))).toMatchObject({ ok: true });
     await t.sheet(2, t.media.map((m, i) => (i === 0 ? { ...m, edit: 'amenagement_virtuel' } : m)));
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 1))).toEqual({ ok: false, rule: 'R130', code: 'sans_certificat' });
-    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([ref(t.p.id, 3)]);
+    // La photo 3, aménagée sans jumelle déclarée, ne part pas seule non plus (HX41) [R493].
+    expect((await t.certs.publishable(t.p.id)).map((p) => p.ref)).toEqual([]);
   });
 
   it('[R10] les empreintes et la fiche doivent dire la même chose que la description', async () => {
