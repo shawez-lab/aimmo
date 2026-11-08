@@ -188,7 +188,8 @@ Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de cli
 - Critères : chaque adresse proposée montre sa confiance et ses sources (test) ; la fiche du bien reprend tous les champs de l'annonce, source « pige » (test) ; une annonce « pas d'agence » n'est jamais convertie (test).
 
 ### HX19 · Carte des opportunités et tournée de prospection
-- Statut : en cours
+- Statut : fait (2026-11-08)
+- Reste : écran (carte et tournée) et branchement au Worker (`app.ts`) avec le géocodage BAN et la position des biens. Relecture forte sans P0 ni P1 ; Codex : 6 P0 et 1 P2 corrigés en cinq tours, puis rien à signaler (#418). GitHub Actions bloqué par la facturation : vérification locale verte.
 - Qui : Claude, relecture forte
 - Décidé (2026-11-08), lecture prudente : module `packages/core/src/tournee-prospection/`, sans migration (rien n'est rangé : la tournée est une proposition), règles R297 à R299. Opportunités : panneaux dont la tâche de HX14 est due et pas récupérés (adresse géocodée par la Base adresse nationale, sinon lieu inconnu), lettres de G06 pas déposées (un lot par campagne, au centre de la campagne, 2 min par lettre), diagnostics de HX16 remontés depuis 14 jours dans les secteurs suivis. Hors zone : compté, jamais montré ni géocodé. Tournée gloutonne au plus tôt fini, sur des tranches de 5 min, route estimée à vol d'oiseau majoré (HX02). Lien de la vue des rues : la seule position arrondie. Réservé à l'agent lui-même, la direction n'a pas de tournée.
 - Objectif : comme Hektor, Modelo, Keyzia et Maline : une carte des opportunités du secteur, la vue des rues, et un itinéraire optimisé de porte-à-porte. Jamais vu : une seule tournée mêle les visites du jour, les panneaux à récupérer de HX14, les lettres de G06 et les nouveaux diagnostics de HX16, calée dans les créneaux libres de V01 avec les temps de trajet.
