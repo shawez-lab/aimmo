@@ -412,7 +412,7 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : un contact de la visite est rattaché au bien et à son origine (test) ; une vue sans pièce rattachée n'est pas publiée (test).
 
 ### HX44 · Avant et après la visite : dossier envoyé, visite à distance et son bon
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Objectif : comme Talqor et Live Visit de Hektor : envoyer le dossier du bien avant la visite, faire visiter à distance, éditer le bon de visite ensuite. Jamais vu : le dossier envoyé est celui de la version publiée du jour, sans donnée confidentielle, et le bon de visite d'une visite à distance se signe en ligne par D08 juste après.
 - Critères : aucun nom de vendeur, honoraire ni note interne dans le dossier envoyé (test) ; un bon de visite à distance est signé avant toute offre (test) ; l'envoi passe par le contrôle central (test).
 
