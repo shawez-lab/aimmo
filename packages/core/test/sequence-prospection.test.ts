@@ -383,6 +383,28 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'reply' });
   });
 
+  it('[R301] [R302] tous les numéros de la fiche sont vérifiés, et l’appel est relu après la liste d’opposition', async () => {
+    const t = await setup();
+    const id = await t.startOk([{ channel: 'sms', afterDays: 0, text: 'Bonjour Léa, c’est Alex, agent du quartier.' }]);
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.person.id, kind: 'phone', value: '06 00 00 00 02' });
+    t.opposition!.listed.add('+33600000001');
+    await t.sequences.run();
+    expect(t.allSent()).toBe(0);
+    expect(await t.sequence(id)).toMatchObject({ status: 'stopped', end_reason: 'opposition_list' });
+
+    const slow = new FakeOpposition();
+    const c = await setup({ opposition: slow });
+    await c.startOk([{ channel: 'phone', afterDays: 0 }]);
+    // 12 h 59 à Paris ; la liste répond après 13 h, quand la pause du décret a commencé.
+    c.setClock(START + 2 * HOUR - 60_000);
+    slow.check = async () => {
+      c.setClock(START + 2 * HOUR + 60_000);
+      return 'not_listed';
+    };
+    const today = await c.sequences.today(c.alex);
+    expect(today.ok && today.value.steps[0]).toMatchObject({ proposed: false, reason: 'outside_hours' });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);

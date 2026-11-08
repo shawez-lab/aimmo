@@ -223,9 +223,14 @@ export class SequencesProspection {
     // La liste d'opposition au démarchage vaut pour toute la séquence, pas seulement pour ses appels [R301, R302].
     // Regardée d'abord : le service peut être lent, la fiche est lue après lui, réponses comprises.
     if (this.opposition) {
-      const phone = (await this.fiche.view(seq.person_id)).identifiers.filter((i) => i.kind === 'phone').sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
-      const digits = phone ? phone.value.replace(/[^+\d]/g, '') : '';
-      if (/^\+?\d{6,15}$/.test(digits)) {
+      // Tous les numéros de la fiche, fiches réunies comprises : le contrôle peut viser n'importe lequel.
+      const numbers = new Set(
+        (await this.fiche.view(seq.person_id)).identifiers
+          .filter((i) => i.kind === 'phone')
+          .map((i) => i.value.replace(/[^+\d]/g, ''))
+          .filter((d) => /^\+?\d{6,15}$/.test(d)),
+      );
+      for (const digits of numbers) {
         let listed: 'listed' | 'not_listed' | 'unavailable' = 'unavailable';
         try {
           listed = await this.opposition.check(digits, at);
@@ -329,7 +334,12 @@ export class SequencesProspection {
     }
     if (listed === 'listed') return { proposed: false, reason: 'opposition_list', stop: true };
     if (listed !== 'not_listed') return { proposed: false, reason: 'opposition_unchecked' };
-    return { proposed: true, call: f.call, closesAt: f.callClosesAt };
+    // Le service a pu prendre du temps : l'appel est relu à cet instant, heures comprises, et doit viser le même numéro.
+    const again = await this.ficheAgent.read(viewer, seq.person_id);
+    if (!again.ok) return { proposed: false, reason: again.code };
+    if (again.value.call === null) return { proposed: false, reason: again.value.callRefusal ?? 'no_consent' };
+    if (again.value.call !== f.call) return { proposed: false, reason: 'opposition_unchecked' };
+    return { proposed: true, call: again.value.call, closesAt: again.value.callClosesAt };
   }
 
   private async sequencesOf(viewer: Viewer): Promise<SequenceRow[]> {
