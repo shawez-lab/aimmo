@@ -98,11 +98,13 @@ const parisDay = (at: Date): string => new Intl.DateTimeFormat('en-CA', { timeZo
 export type ChainCheck = { ok: true; count: number } | { ok: false; seq: number; reason: 'hash' | 'link' | 'gap' | 'agent' };
 
 /**
- * Vérifie, sans rien demander à AIMMO, que la liste publiée d'un agent est entière et intacte : chaque empreinte se
- * recalcule, chaque avis porte celle du précédent, aucun numéro ne manque [R521, R522].
+ * Vérifie, sans rien demander à AIMMO, que la liste publiée d'un agent est entière, intacte et dans l'ordre d'arrivée,
+ * telle qu'elle est montrée : chaque empreinte se recalcule, chaque avis porte celle du précédent, aucun numéro ne
+ * manque ni ne change de place [R521, R522].
  */
 export async function verifyChain(reviews: readonly PublicReview[]): Promise<ChainCheck> {
-  const list = [...reviews].sort((a, b) => a.seq - b.seq);
+  // La liste se vérifie dans l'ordre où elle est montrée : une liste réordonnée, par la note ou autrement, échoue.
+  const list = reviews;
   let prev = GENESIS_HASH;
   for (const [i, r] of list.entries()) {
     if (r.agentId !== list[0]!.agentId) return { ok: false, seq: r.seq, reason: 'agent' };
@@ -131,8 +133,16 @@ export function reviewTextProblem(text: string, forbiddenNames: readonly string[
   if (/(?:\+\s*33|\b0)\s*[1-9](?:[\s.\-]*\d){8}/.test(text)) return 'phone';
   if (/https?:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:fr|com|net|org|eu|io)\b/i.test(text)) return 'link';
   if (/\b\d{1,4}\s*(?:bis|ter)?\s*,?\s*(?:rue|avenue|av\.|boulevard|bd|place|chemin|impasse|all[ée]e|route|quai|cours|square|r[ée]sidence)\b/i.test(text)) return 'address';
-  const said = new Set(words(text));
-  for (const name of forbiddenNames) for (const w of words(name)) if (w.length >= 3 && said.has(w)) return 'name';
+  const said = words(text);
+  const saidSet = new Set(said);
+  for (const name of forbiddenNames) {
+    const parts = words(name);
+    if (parts.length === 0) continue;
+    // Un mot de trois lettres au moins suffit ; un nom fait seulement de mots courts (« Li », « Ng ») se cherche entier.
+    if (parts.some((w) => w.length >= 3)) {
+      if (parts.some((w) => w.length >= 3 && saidSet.has(w))) return 'name';
+    } else if (said.some((_, i) => parts.every((w, k) => said[i + k] === w))) return 'name';
+  }
   return null;
 }
 

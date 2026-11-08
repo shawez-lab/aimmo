@@ -21,6 +21,11 @@ it('[R523] le texte refuse coordonnées, liens, adresses et noms des clients, qu
   expect(reviewTextProblem(`${GOOD} pour notre maison du 12 rue des Lilas`, names)).toBe('address');
   expect(reviewTextProblem(`${GOOD} Signé : Madame DURAND`, names)).toBe('name');
   expect(reviewTextProblem(`${GOOD} Ána`, names)).toBe('name');
+  // Un nom fait de mots courts se cherche entier ; un mot court d'un nom plus long ne bloque pas tout.
+  expect(reviewTextProblem(`${GOOD} Signé : Li Ng.`, ['Li', 'Ng'])).toBe('name');
+  expect(reviewTextProblem(`${GOOD} Merci, LI.`, ['Li'])).toBe('name');
+  expect(reviewTextProblem(`${GOOD} Le suivi était parfait.`, ['Le Gall'])).toBeNull();
+  expect(reviewTextProblem(`${GOOD} Merci M. Le Gall.`, ['Le Gall'])).toBe('name');
   // Un mot qui contient un nom sans l'être passe.
   expect(reviewTextProblem(`${GOOD} Banane.`, names)).toBeNull();
 });
@@ -132,6 +137,9 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     expect(await verifyChain(withoutBad)).toMatchObject({ ok: false });
     const renumbered = withoutBad.map((r, i) => ({ ...r, seq: i + 1 }));
     expect(await verifyChain(renumbered)).toMatchObject({ ok: false });
+    // Réordonnée par la note en gardant les numéros, la liste ne se vérifie plus non plus.
+    const byScore = [...list.reviews].sort((x, y) => y.score - x.score);
+    expect(await verifyChain(byScore)).toMatchObject({ ok: false });
     const edited = list.reviews.map((r) => (r.score === 1 ? { ...r, score: 4 } : r));
     expect(await verifyChain(edited)).toEqual({ ok: false, seq: 2, reason: 'hash' });
     // Un avis rangé à la main hors de la chaîne est refusé par la base : numéro qui saute, ou empreinte du précédent fausse.
