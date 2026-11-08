@@ -311,35 +311,44 @@ export class AvisVerifies {
     // L'invitation est consommée avec l'avis : si l'avis ne peut pas être rangé, elle est rendue.
     const taken = await this.db.run('UPDATE verified_review_invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL', [at.toISOString(), inv.token_hash]);
     if (taken.changes !== 1) return { ok: false, rule: null, code: 'used' };
+    // Toute panne après la consommation, avant que l'avis soit rangé, rend l'invitation : le client peut réessayer.
+    let reviewCode: string;
+    let salt: string;
+    try {
+      ({ code: reviewCode, salt } = await this.append(inv, input.score, text, at));
+    } catch (e) {
+      const exists = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM verified_reviews WHERE file_id = ? AND person_id = ?', [inv.file_id, inv.person_id]);
+      if (exists!.n > 0) return { ok: false, rule: null, code: 'used' };
+      await this.db.run('UPDATE verified_review_invites SET used_at = NULL WHERE token_hash = ?', [inv.token_hash]);
+      throw e;
+    }
+    // Au journal : l'agent, le code public, le côté et la note ; jamais le texte ni la personne [R13].
+    await appendEvent(this.journal, { type: 'avis.publie', actor: 'client:lien', subject: `agent:${inv.agent_id}`, data: { code: reviewCode, side: inv.side, score: input.score } }, this.now);
+    // Le reçu de l'auteur : avec lui, il vérifie lui-même que son avis est rattaché à son dossier clos [R522].
+    return { ok: true, code: reviewCode, receipt: { fileId: inv.file_id, closedOn: inv.closed_on, salt } };
+  }
+
+  /** Range l'avis en bout de chaîne ; un autre avis du même agent arrivé en même temps fait reprendre, trois fois au plus. */
+  private async append(inv: { network_id: string; file_id: string; person_id: string; agent_id: string; side: 'vendeur' | 'acquereur'; closed_on: string }, score: number, text: string, at: Date): Promise<{ code: string; salt: string }> {
     const salt = randomHex(32);
     const commitment = await fileCommitment(inv.file_id, inv.closed_on, salt);
     const publishedOn = parisDay(at);
     const tHash = await textHash(text);
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       const last = await this.db.first<{ seq: number; hash: string }>('SELECT seq, hash FROM verified_reviews WHERE agent_id = ? ORDER BY seq DESC LIMIT 1', [inv.agent_id]);
-      const draft = { code: newCode(), agentId: inv.agent_id, seq: (last?.seq ?? 0) + 1, side: inv.side, score: input.score, text, publishedOn, fileCommitment: commitment, prevHash: last?.hash ?? GENESIS_HASH };
+      const draft = { code: newCode(), agentId: inv.agent_id, seq: (last?.seq ?? 0) + 1, side: inv.side, score, text, publishedOn, fileCommitment: commitment, prevHash: last?.hash ?? GENESIS_HASH };
       const hash = await reviewHash(draft);
       try {
         await this.db.run(
           'INSERT INTO verified_reviews (code, network_id, agent_id, seq, file_id, person_id, side, score, text, published_on, file_salt, file_commitment, text_hash, prev_hash, hash, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [draft.code, inv.network_id, inv.agent_id, draft.seq, inv.file_id, inv.person_id, inv.side, input.score, text, publishedOn, salt, commitment, tHash, draft.prevHash, hash, at.toISOString()],
+          [draft.code, inv.network_id, inv.agent_id, draft.seq, inv.file_id, inv.person_id, inv.side, score, text, publishedOn, salt, commitment, tHash, draft.prevHash, hash, at.toISOString()],
         );
+        return { code: draft.code, salt };
       } catch (e) {
-        // Un autre avis du même agent est arrivé en même temps : on reprend en bout de chaîne.
         const exists = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM verified_reviews WHERE file_id = ? AND person_id = ?', [inv.file_id, inv.person_id]);
-        if (exists!.n > 0) return { ok: false, rule: null, code: 'used' };
-        if (attempt === 2) {
-          await this.db.run('UPDATE verified_review_invites SET used_at = NULL WHERE token_hash = ?', [inv.token_hash]);
-          throw e;
-        }
-        continue;
+        if (exists!.n > 0 || attempt === 2) throw e;
       }
-      // Au journal : l'agent, le code public, le côté et la note ; jamais le texte ni la personne [R13].
-      await appendEvent(this.journal, { type: 'avis.publie', actor: 'client:lien', subject: `agent:${inv.agent_id}`, data: { code: draft.code, side: inv.side, score: input.score } }, this.now);
-      // Le reçu de l'auteur : avec lui, il vérifie lui-même que son avis est rattaché à son dossier clos [R522].
-      return { ok: true, code: draft.code, receipt: { fileId: inv.file_id, closedOn: inv.closed_on, salt } };
     }
-    return { ok: false, rule: null, code: 'used' };
   }
 
   /**

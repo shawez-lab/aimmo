@@ -231,8 +231,21 @@ describeWithSqlite('HX46 · avis clients vérifiables, publiés partout', () => 
     expect((await t.avis.submit(token, { score: 5, text: GOOD })).ok).toBe(true);
     expect(await t.avis.submit(token, { score: 1, text: BAD })).toMatchObject({ ok: false, code: 'used' });
     expect(await t.avis.invite(t.agent, 'f1', a)).toMatchObject({ ok: false, code: 'already_reviewed' });
+    // Une panne de la base après la consommation de l'invitation la rend : le client réessaie.
+    const retry = await t.invite('f1', b);
+    const realFirst = t.db.first.bind(t.db);
+    let broken = true;
+    (t.db as { first: typeof t.db.first }).first = (async (sql: string, params?: unknown[]) => {
+      if (broken && sql.startsWith('SELECT seq, hash FROM verified_reviews')) throw new Error('panne passagère');
+      return realFirst(sql as never, params as never);
+    }) as typeof t.db.first;
+    await expect(t.avis.submit(retry, { score: 2, text: BAD })).rejects.toThrow('panne passagère');
+    broken = false;
+    expect((await t.avis.submit(retry, { score: 2, text: BAD })).ok).toBe(true);
     // Expiré au bout de 60 jours.
-    const late = await t.invite('f1', b);
+    const c = await t.client('Cyl');
+    t.close('f2', '2027-03-08', [{ personId: c, side: 'acquereur' }]);
+    const late = await t.invite('f2', c);
     t.setClock(new Date(t.now().getTime() + 60 * 86_400_000));
     expect(await t.avis.submit(late, { score: 3, text: GOOD })).toMatchObject({ ok: false, code: 'expired' });
     expect(await t.avis.submit('pas un jeton', { score: 3, text: GOOD })).toMatchObject({ ok: false, code: 'unknown' });
