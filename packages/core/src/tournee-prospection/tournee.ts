@@ -420,12 +420,15 @@ export class TourneeProspection {
       if (chosen.some((c) => c.start.getTime() < end && start < c.end.getTime())) return null;
       const prev = previous(start);
       const from = prev ? prev.place : base && validPlace(base) ? base : null;
-      let before = from ? this.estimate(from, o.place!) : 0;
+      const raw = from ? this.estimate(from, o.place!) : 0;
+      // Un estimateur qui ne rend pas un nombre ne fait jamais sauter la route : le trajet minimal vaut.
+      let before = Number.isFinite(raw) && raw >= 0 ? raw : floor;
       if (prev?.booked) before = Math.max(before, floor);
       if (prev && start < prev.end.getTime() + before * MINUTE) return null;
       const next = following(end);
       if (next) {
-        const after = Math.max(floor, next.place ? this.estimate(o.place!, next.place) : floor);
+        const est = next.place ? this.estimate(o.place!, next.place) : floor;
+        const after = Math.max(floor, Number.isFinite(est) ? est : floor);
         if (next.start.getTime() < end + after * MINUTE) return null;
       }
       return before;
