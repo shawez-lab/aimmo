@@ -113,6 +113,8 @@ export function addDays(day: string, n: number): string {
 const OPPOSITION_RULES: Readonly<Record<string, EndReason>> = Object.freeze({ R02: 'excluded', R04: 'excluded', R86: 'agent_gone' });
 /** Les règles qui disent « pas maintenant » : l'étape attend le passage suivant. */
 const WAIT_RULES: readonly string[] = Object.freeze(['R01', 'R11']);
+/** Au-delà, un envoi rangé sans échec noté n'est plus en route : il est parti. */
+const IN_FLIGHT_MS = 15 * 60_000;
 
 export class SequencesProspection {
   private readonly now: () => Date;
@@ -463,6 +465,24 @@ export class SequencesProspection {
         // Un refus peut venir d'un arrêt dû entre-temps : relu avant tout le reste [R301].
         if (!(await this.refresh(seq, 'system'))) {
           counts.stopped += 1;
+          break;
+        }
+        if (r.rule === 'R05') {
+          // Le sujet de l'étape est déjà rangé : un autre passage l'envoie ou l'a envoyée. Elle n'est jamais sautée.
+          // Un envoi encore en route peut échouer : elle attend. Passé ce délai, sans échec noté, elle est rangée
+          // « partie » avec ce message (un passage coupé après l'envoi) [R300, R05].
+          const ids = (await this.fiche.view(seq.person_id)).members.map((m) => m.id);
+          const done = await this.db.first<{ message_id: string }>(
+            `SELECT s.message_id FROM message_subjects s JOIN send_log l ON l.message_id = s.message_id AND l.outcome = 'sent'
+             WHERE s.subject = ? AND s.person_id IN (${placeholders(ids.length)}) AND s.created_at <= ?
+               AND NOT EXISTS (SELECT 1 FROM send_log f WHERE f.message_id = s.message_id AND f.outcome = 'failed') LIMIT 1`,
+            [`sequence:${seq.id}:${step.position}`, ...ids, new Date(this.now().getTime() - IN_FLIGHT_MS).toISOString()],
+          );
+          if (done && (await this.settle(seq, step, 'sent', null, done.message_id, 'system'))) {
+            counts.sent += 1;
+            continue;
+          }
+          counts.waiting += 1;
           break;
         }
         if (r.status === 'failed' || (r.rule !== null && WAIT_RULES.includes(r.rule))) {

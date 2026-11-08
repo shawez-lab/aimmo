@@ -86,6 +86,8 @@ async function setup(options: { consents?: { channel: Channel; purpose: string }
     return r.value.sequenceId;
   };
   return {
+    channels,
+    controle,
     db,
     store,
     unique,
@@ -452,6 +454,45 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(await t.sequences.run()).toMatchObject({ sent: 0, waiting: 1 });
     expect(t.allSent()).toBe(0);
     expect(await t.sequence(id)).toMatchObject({ status: 'active' });
+  });
+
+  it('[R300] [R05] deux passages qui se croisent : l’étape en cours d’envoi n’est jamais sautée, elle finit « partie » avec son message', async () => {
+    const t = await setup();
+    const id = await t.startOk(FULL.slice(0, 1));
+    const email = t.sent('email');
+    // Le canal mail est mis en pause pendant la remise du premier passage.
+    let release: () => void = () => {};
+    const paused = new Promise<void>((r) => (release = r));
+    const fake = t.channels.find((c) => c.channel === 'email')!;
+    const deliver = fake.deliver.bind(fake);
+    fake.deliver = async (m) => {
+      await paused;
+      return deliver(m);
+    };
+    const first = t.sequences.run();
+    await new Promise((r) => setTimeout(r, 50));
+    const second = await t.sequences.run();
+    expect(second).toMatchObject({ sent: 0, skipped: 0, waiting: 1 });
+    expect((await t.steps(id))[0]).toMatchObject({ outcome: null });
+    release();
+    expect(await first).toMatchObject({ sent: 1 });
+    expect(email).toHaveLength(1);
+    expect((await t.steps(id))[0]).toMatchObject({ outcome: 'sent', message_id: expect.any(String) });
+    expect(await t.sequence(id)).toMatchObject({ status: 'finished' });
+  });
+
+  it('[R300] [R05] un passage coupé après l’envoi : au passage d’après le délai, l’étape est rangée « partie » avec son message, rien ne repart', async () => {
+    const t = await setup();
+    const id = await t.startOk(FULL.slice(0, 1));
+    // Le passage a remis le mail au contrôle, puis s'est arrêté avant de ranger l'issue de l'étape.
+    const fake = t.channels.find((c) => c.channel === 'email')!;
+    await t.controle.send({ networkId: t.network.id, agentId: t.alexAgent.id, personId: t.person.id, channel: 'email', kind: 'prospecting', purpose: 'prospecting', subject: `sequence:${id}:1`, fallbackTexts: [FULL[0]!.text!] });
+    expect(fake.sent).toHaveLength(1);
+    expect(await t.sequences.run()).toMatchObject({ sent: 0, waiting: 1 });
+    t.setClock(START + 16 * 60_000);
+    expect(await t.sequences.run()).toMatchObject({ sent: 1 });
+    expect(fake.sent).toHaveLength(1);
+    expect((await t.steps(id))[0]).toMatchObject({ outcome: 'sent', message_id: expect.any(String) });
   });
 
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
