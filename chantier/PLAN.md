@@ -406,7 +406,8 @@ Réservé le 2026-11-08 par la voie 2. Règles R490 à R509 et migrations à par
 - Critères : aucune voix ni avatar sans accord écrit de l'agent (test) ; la mention est présente sur chaque vidéo générée (test) ; une adresse exacte dans le texte est refusée (test).
 
 ### HX43 · Visite à 360 degrés avec contact
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-08)
+- Reste : fusionnée (#423), migration `2303`, R499 à R501. Décidé, lecture prudente : vues rangées en versions figées (référence sous `biens/<bien>/360/`, empreinte, pièce, attestation), reliées au dernier plan de X04 ; seules les vues rattachées à une pièce du plan du moment se publient, nommées par le code ; seules les pièces intérieures prennent une vue (ni balcon, ni terrasse, ni garage, ni cave), avec l'attestation de l'agent vue par vue (liste de P06) ; la visite ne se montre que si la fiche publiée la porte ; le contact entre dans C01 comme formulaire du site avec la référence du bien, e-mail ou téléphone lisible exigé avant de ranger, une seule fois ; origine (visite, version vue par le visiteur, vue, pièce) rangée à côté. Codex 2 P0 corrigés, puis rien à signaler. GitHub Actions bloqué par la facturation : vérification locale verte (4853 tests). Restent : routes, écran de saisie et lecteur 360 sur l'appareil, et `PublishedMediaSource` branché sur `MediasBien.publishable` de la version publiée (voie 1, `app.ts`).
 - Objectif : comme Hektor, Immofacile, Apimo et Optimhome : une visite 360 ou 3D faite au téléphone, avec un formulaire de contact dedans. Jamais vu : chaque vue est reliée à sa pièce du plan de X04, aucune vue ne montre la rue ni le numéro, et le contact pris dans la visite arrive dans C01 avec son origine.
 - Critères : un contact de la visite est rattaché au bien et à son origine (test) ; une vue sans pièce rattachée n'est pas publiée (test).
 
