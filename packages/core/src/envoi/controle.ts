@@ -30,6 +30,7 @@ import {
   type ProSendStatus,
 } from './professionnels.ts';
 import type { SendJournal } from './journal-envois.ts';
+import { AgentPushTrialBox, agentPushUrl, type AgentPushOrder, type AgentPushOutcome, type AgentPushService } from './notifications-agents.ts';
 import { DEFAULT_TEXT_SETTINGS, checkText, plain, type TextSettings } from './texte.ts';
 import { agentGone } from '../reseau/depart.ts';
 
@@ -173,6 +174,8 @@ export interface ControleEnvoisOptions {
   staging?: ChannelStaging;
   /** La boîte d'essai des envois aux professionnels (U12) ; absente, rien ne leur part. */
   proMailbox?: ProTrialMailbox;
+  /** La boîte d'essai des notifications aux agents (SV15) ; absente, rien ne part vers un téléphone. */
+  agentPush?: AgentPushTrialBox;
 }
 
 const IDENTIFIER_FOR: Record<OutboundChannelName, readonly IdentifierKind[]> = {
@@ -813,6 +816,71 @@ export class ControleEnvois {
       return log('failed', null, 'La boîte d’essai n’a pas rangé l’envoi.');
     }
     return log('sent', null, 'Rangé dans la boîte d’essai : rien n’est parti réellement.', sendId);
+  }
+
+  /**
+   * Une notification au téléphone d'un agent (SV15) : le seul chemin vers le service de notification [R26, R225].
+   * L'agent doit être en activité dans ce réseau [R86] ; l'envoi est réservé par son identifiant avant l'appel, et ne
+   * part jamais deux fois, même rejoué ou demandé par deux passages en même temps [R05] ; le lien ne mène qu'au détail
+   * de cet envoi [R415]. Chaque décision va au journal des notifications, sans texte ni donnée [R13]. En mode essai,
+   * seule la boîte d'essai reçoit l'envoi : rien ne part vers un téléphone.
+   */
+  async sendToAgent(order: AgentPushOrder): Promise<AgentPushOutcome> {
+    const at = this.now();
+    const pushId = order.payload.pushId;
+    const log = async (outcome: AgentPushOutcome | 'refuse', rule: string | null, reason: string): Promise<void> => {
+      await this.db.run('INSERT INTO agent_push_log (network_id, agent_id, push_id, outcome, rule, reason, mode, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        order.networkId,
+        order.agentId,
+        pushId,
+        outcome,
+        rule,
+        reason,
+        'essai',
+        this.now().toISOString(),
+      ]);
+    };
+    if (typeof pushId !== 'string' || pushId === '') throw new Error('Une notification porte son identifiant [R05].');
+    const box = this.options.agentPush;
+    // Mode essai : aucun vrai service n'est admis tant que le plan ne l'a pas mis en service (H57).
+    if (!(box instanceof AgentPushTrialBox)) {
+      await log('refuse', 'R26', 'Aucune boîte d’essai des notifications : rien ne part vers un téléphone.');
+      return 'aucun_appareil';
+    }
+    if (order.payload.url !== agentPushUrl(pushId)) {
+      await log('refuse', 'R415', 'Le lien d’une notification ne mène qu’au détail de son envoi.');
+      return 'aucun_appareil';
+    }
+    if (await agentGone(this.db, order.networkId, order.agentId, at)) {
+      await log('refuse', 'R86', 'L’agent n’est plus en activité dans ce réseau.');
+      return 'aucun_appareil';
+    }
+    // Réservé dans la base avant l'appel : de deux demandes du même envoi, une seule part [R05].
+    const reserved = await this.db.run(
+      'INSERT INTO agent_push_sends (push_id, network_id, agent_id, mode, outcome, reserved_at, done_at) VALUES (?, ?, ?, ?, NULL, ?, NULL) ON CONFLICT (push_id) DO NOTHING',
+      [pushId, order.networkId, order.agentId, 'essai', at.toISOString()],
+    );
+    if (reserved.changes !== 1) {
+      const first = await this.db.first<{ outcome: AgentPushOutcome | null; network_id: string; agent_id: string }>(
+        'SELECT outcome, network_id, agent_id FROM agent_push_sends WHERE push_id = ?',
+        [pushId],
+      );
+      await log('refuse', 'R05', 'Cet envoi est déjà parti ou en cours : il ne repart pas.');
+      // La réponse du premier envoi, s'il est le même et qu'elle est connue ; sinon rien n'est dit parti.
+      const same = first !== null && first.network_id === order.networkId && first.agent_id === order.agentId;
+      return same && first.outcome !== null && first.outcome !== 'echec' ? first.outcome : 'echec';
+    }
+    const service: AgentPushService = box;
+    let outcome: AgentPushOutcome;
+    try {
+      outcome = await service.pushToDevices(order);
+    } catch {
+      outcome = 'echec';
+    }
+    if (outcome !== 'ok' && outcome !== 'aucun_appareil') outcome = 'echec';
+    await this.db.run('UPDATE agent_push_sends SET outcome = ?, done_at = ? WHERE push_id = ? AND outcome IS NULL', [outcome, this.now().toISOString(), pushId]);
+    await log(outcome, null, outcome === 'ok' ? 'Rangé dans la boîte d’essai : rien n’est parti vers un téléphone.' : outcome === 'aucun_appareil' ? 'Aucun téléphone relié.' : 'La boîte d’essai n’a pas rangé l’envoi.');
+    return outcome;
   }
 
   /** La session de l'assistant du site où répondre, si un message de la personne y est rangé. */
