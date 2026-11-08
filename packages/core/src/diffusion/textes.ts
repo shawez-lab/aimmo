@@ -52,19 +52,43 @@ const MAX_BODY = 4000;
 /** Un nombre écrit à la française : milliers séparés par une espace (ordinaire, fine ou insécable), ou décimale. */
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?![\d])|\d+(?:[.,]\d+)?/g;
 const UNIT_AFTER = /^[   ]?(m²|m2|€|%)/;
-const CLASS_LETTER = /(?<![\p{L}\p{N}])[A-G](?![\p{L}\p{N}])/gu;
+/** Une lettre de classe seule, majuscule ou minuscule ; « a » minuscule seulement après un mot du diagnostic (« il a » est un verbe). */
+const CLASS_LETTER = /(?<![\p{L}\p{N}])[A-G](?![\p{L}\p{N}])/giu;
 const ANY_DIGIT = /\p{Nd}/u;
 const ASCII_DIGIT = /[0-9]/;
 const LINK_OR_MAIL = /@|https?:|www\./i;
-/** Nombres en lettres : seuls les mots qui ne veulent rien dire d'autre (« un », « neuf » ou « cent » en ont un). */
-const NUMBER_WORDS = ['deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'vingt', 'vingts', 'trente', 'quarante', 'cinquante', 'soixante', 'mille', 'million', 'millions', 'premier', 'première', 'deuxième', 'troisième', 'quatrième', 'cinquième', 'double', 'triple'];
+/**
+ * Nombres en lettres, lus sans accents : la liste de l'annonce sourcée (P03), ordinaux compris. « un », « une » et
+ * « neuf » sont surtout des mots ordinaires : ils ne comptent que devant une unité, comme dans l'annonce.
+ */
+const NUMBER_WORDS = new Set([
+  'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'vingt', 'vingts', 'trente', 'quarante',
+  'cinquante', 'soixante', 'septante', 'octante', 'nonante', 'cent', 'cents', 'mille', 'million', 'millions', 'milliers', 'centaine', 'centaines', 'dizaine', 'dizaines', 'douzaine',
+  'premier', 'premiere', 'premiers', 'premieres', 'deuxieme', 'second', 'seconde', 'troisieme', 'quatrieme', 'cinquieme', 'sixieme', 'septieme', 'huitieme', 'neuvieme', 'dixieme',
+  'onzieme', 'douzieme', 'vingtieme', 'centieme', 'millieme', 'double', 'triple', 'quadruple', 'demi', 'demie', 'moitie', 'quart', 'tiers',
+]);
+const NUMBER_WORDS_NEED_UNIT = new Set(['un', 'une', 'neuf']);
+const WORD_UNIT_AFTER = /^\s*(?:pieces?|chambres?|etages?|niveaux?|places?|m²|m2|metres?|ans?|salles?|lots?)(?![\p{L}\p{N}])/iu;
+const unaccent = (t: string): string => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[’`]/g, "'");
+
+function hasNumberWord(text: string): boolean {
+  const plain = unaccent(text);
+  for (const m of plain.matchAll(/\p{L}+/gu)) {
+    const w = m[0];
+    if (NUMBER_WORDS.has(w)) return true;
+    if (NUMBER_WORDS_NEED_UNIT.has(w) && WORD_UNIT_AFTER.test(plain.slice((m.index ?? 0) + w.length))) return true;
+  }
+  // Les mots composés : « vingt-deux », « dix-huitième ».
+  return /(?<!\p{L})(?:dix|vingt|trente|quarante|cinquante|soixante)-\p{L}+/u.test(plain);
+}
 
 const numbersOf = (s: string): string[] =>
   [...s.matchAll(NUMBER)].map((m) => {
     const unit = UNIT_AFTER.exec(s.slice((m.index ?? 0) + m[0].length))?.[1] ?? '';
     return `${m[0].replace(/[  ]/g, ' ')}${unit === '' ? '' : ` ${unit === 'm2' ? 'm²' : unit}`}`;
   });
-const classesOf = (s: string): string[] => s.match(CLASS_LETTER) ?? [];
+const classesOf = (s: string): string[] =>
+  [...s.matchAll(CLASS_LETTER)].filter((m) => m[0] !== 'a' || /(?:classe|énergie|energie|climat|dpe|ges|étiquette|etiquette)\s*:?\s*$/iu.test(s.slice(0, m.index))).map((m) => m[0].toUpperCase());
 const sameSequence = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
 
 function fieldProblems(source: string, text: string, max: number): PortalTextProblem[] {
@@ -73,8 +97,7 @@ function fieldProblems(source: string, text: string, max: number): PortalTextPro
   if (text.length > max) out.push('trop_long');
   if ([...text].some((c) => ANY_DIGIT.test(c) && !ASCII_DIGIT.test(c)) || !sameSequence(numbersOf(source), numbersOf(text))) out.push('chiffres_differents');
   if (!sameSequence(classesOf(source), classesOf(text))) out.push('classes_differentes');
-  const words = new Set(text.toLowerCase().normalize('NFC').match(/[\p{L}\p{M}]+/gu) ?? []);
-  if (NUMBER_WORDS.some((w) => words.has(w))) out.push('nombre_en_lettres');
+  if (hasNumberWord(text)) out.push('nombre_en_lettres');
   if (LINK_OR_MAIL.test(text)) out.push('lien_ou_mail');
   return out;
 }
@@ -87,11 +110,12 @@ function fieldProblems(source: string, text: string, max: number): PortalTextPro
 export function controlPortalText(
   source: { title: string; body: string },
   text: { title: string; body: string },
-  facts: ListingFacts,
+  facts: ListingFacts | readonly ListingFacts[],
 ): { ok: boolean; title: PortalTextProblem[]; body: PortalTextProblem[] } {
   const title = fieldProblems(source.title, text.title, MAX_TITLE);
   const body = fieldProblems(source.body, text.body, MAX_BODY);
-  if (title.length === 0 && body.length === 0 && !traceListing(text.title, text.body, facts).ok) body.push('phrase_sans_source');
+  const all: readonly ListingFacts[] = Array.isArray(facts) ? facts : [facts as ListingFacts];
+  if (title.length === 0 && body.length === 0 && (all.length === 0 || !all.every((f) => traceListing(text.title, text.body, f).ok))) body.push('phrase_sans_source');
   return { ok: title.length === 0 && body.length === 0, title, body };
 }
 
@@ -260,14 +284,48 @@ export class TextesPortails {
   }
 
   /** Le texte publié, la fiche du moment, et le numéro de la version : ce contre quoi tout texte de portail est contrôlé. */
-  private async basis(networkId: string, propertyId: string): Promise<{ seq: number; source: { title: string; body: string }; facts: ListingFacts; payload: Omit<ListingPayload, 'version'> } | null> {
+  private async basis(networkId: string, propertyId: string): Promise<{ seq: number; source: { title: string; body: string }; facts: ListingFacts[]; payload: Omit<ListingPayload, 'version'> } | null> {
     const v = await this.latestVersion(networkId, propertyId);
     if (!v) return null;
     const payload = JSON.parse(v.payload) as Omit<ListingPayload, 'version'>;
     if (!payload.title || !payload.body) return null;
+    const f = await this.factsOf(propertyId, Number(v.seq));
+    if (!f) return null;
+    return { seq: Number(v.seq), source: { title: payload.title, body: payload.body }, facts: [f.current, f.published], payload };
+  }
+
+  /**
+   * Les faits de la fiche du moment, et ceux de la fiche d'où vient la version publiée (celle de son annonce validée) :
+   * un texte doit tenir pour les deux ; une légende parle des photos publiées, avec la fiche publiée [R476, R478].
+   */
+  private async factsOf(propertyId: string, seq: number): Promise<{ current: ListingFacts; published: ListingFacts; publishedSheet: PropertySheet | null } | null> {
     const f = await this.annonces.factsFor(propertyId);
     if (!f) return null;
-    return { seq: Number(v.seq), source: { title: payload.title, body: payload.body }, facts: f.facts, payload };
+    const row = await this.db.first<{ data: string }>(
+      `SELECT s.data FROM listing_versions v JOIN listing_drafts d ON d.id = v.draft_id
+       JOIN property_sheets s ON s.property_id = v.property_id AND s.version = d.sheet_version
+       WHERE v.property_id = ? AND v.seq = ?`,
+      [propertyId, seq],
+    );
+    const sheet = row ? (JSON.parse(row.data) as PropertySheet) : null;
+    const c = sheet?.characteristics;
+    const published: ListingFacts = sheet
+      ? {
+          ...f.facts,
+          bedrooms: c?.bedrooms ?? null,
+          floor: c?.floor ?? null,
+          floorsTotal: c?.floorsTotal ?? null,
+          buildYear: c?.buildYear ?? null,
+          heating: c?.heating ?? null,
+          outdoor: c?.outdoor ?? [],
+          landM2: c?.landM2 ?? null,
+          parkingSpaces: c?.parkingSpaces ?? null,
+          elevator: c?.elevator ?? null,
+          energyClass: sheet.energy?.energyClass ?? null,
+          climateClass: sheet.energy?.climateClass ?? null,
+        }
+      : { ...f.facts, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null, energyClass: null, climateClass: null };
+    return { current: f.facts, published, publishedSheet: sheet };
   }
 
   private async store(o: { propertyId: string; networkId: string }, viewer: Viewer, portal: string, seq: number, text: { title: string; body: string }, origin: 'ia' | 'agent', validated: boolean): Promise<string> {
@@ -386,7 +444,7 @@ export class TextesPortails {
   }
 
   /** Le texte validé d'un portail pour une version, relu par le contrôle contre la fiche du moment, ou null [R477]. */
-  private async validatedText(propertyId: string, portal: string, seq: number, source: { title: string; body: string }, facts: ListingFacts): Promise<{ id: string; title: string; body: string } | null> {
+  private async validatedText(propertyId: string, portal: string, seq: number, source: { title: string; body: string }, facts: readonly ListingFacts[]): Promise<{ id: string; title: string; body: string } | null> {
     const r = await this.db.first<{ id: string; title: string; body: string }>(
       `SELECT t.id, t.title, t.body FROM diffusion_portal_texts t JOIN diffusion_portal_text_validations va ON va.text_id = t.id
        WHERE t.property_id = ? AND t.portal = ? AND t.listing_seq = ? ORDER BY va.at DESC, va.rowid DESC LIMIT 1`,
@@ -408,6 +466,7 @@ export class TextesPortails {
     if (typeof input.ref !== 'string' || !sheet?.media.some((m) => m.ref === input.ref && m.kind === 'photo')) return { ok: false, rule: 'R478', code: 'photo_inconnue' };
     const f = await this.annonces.factsFor(o.propertyId);
     if (subject !== 'aucun' && (!f || !subjectInSheet(subject as PhotoSubject, f.facts))) return { ok: false, rule: 'R478', code: 'absent_de_la_fiche' };
+    // La légende se lit aussi contre la fiche publiée : un sujet qu'elle ne porte pas encore n'apparaît qu'à la publication suivante.
     await this.db.run('INSERT INTO diffusion_photo_subjects (id, network_id, property_id, media_ref, subject, by_actor, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
       this.newId(),
       o.networkId,
@@ -427,9 +486,9 @@ export class TextesPortails {
   }
 
   /** Les photos et vidéos d'une version, chaque photo avec sa légende [R478]. */
-  private async captioned(propertyId: string, media: readonly PublishedMedia[], facts: ListingFacts): Promise<CaptionedMedia[]> {
-    const sheet = await this.sheet(propertyId);
-    const edits = new Map((sheet?.media ?? []).map((m) => [m.ref, m.edit] as const));
+  private async captioned(propertyId: string, media: readonly PublishedMedia[], facts: { current: ListingFacts; published: ListingFacts; publishedSheet: PropertySheet | null }): Promise<CaptionedMedia[]> {
+    // Les retouches déclarées des photos publiées : celles de la fiche d'où vient la version, jamais d'une fiche plus récente.
+    const edits = new Map((facts.publishedSheet?.media ?? []).map((m) => [m.ref, m.edit] as const));
     const rows = await this.db.all<{ media_ref: string; subject: string }>(
       `SELECT s.media_ref, s.subject FROM diffusion_photo_subjects s
        WHERE s.property_id = ? AND s.rowid = (SELECT t.rowid FROM diffusion_photo_subjects t WHERE t.property_id = s.property_id AND t.media_ref = s.media_ref ORDER BY t.at DESC, t.rowid DESC LIMIT 1)`,
@@ -441,7 +500,10 @@ export class TextesPortails {
     return media.map((m) => {
       if (m.kind !== 'photo') return { ...m, caption: null };
       index++;
-      return { ...m, caption: photoCaption({ index, total, subject: subjects.get(m.ref) ?? null, facts, edit: edits.get(m.ref) ?? null, overlay: m.overlay }) };
+      // Le sujet doit tenir dans la fiche du moment ; la légende l'écrit avec la fiche publiée, qui le vérifie aussi.
+      const said = subjects.get(m.ref) ?? null;
+      const subject = said !== null && subjectInSheet(said, facts.current) ? said : null;
+      return { ...m, caption: photoCaption({ index, total, subject, facts: facts.published, edit: edits.get(m.ref) ?? null, overlay: m.overlay }) };
     });
   }
 
@@ -449,12 +511,11 @@ export class TextesPortails {
 
   /** Une version publiée pour un portail : son titre et son texte s'ils sont validés pour cette version, les légendes ; le reste tel quel [R476]. */
   private async forPortal(propertyId: string, portal: string, payload: ListingPayload): Promise<PortalPayload> {
-    const f = await this.annonces.factsFor(propertyId);
-    const facts = f?.facts ?? null;
+    const facts = await this.factsOf(propertyId, payload.version);
     const media = facts ? await this.captioned(propertyId, payload.media, facts) : payload.media.map((m) => ({ ...m, caption: null }));
     const base: PortalPayload = { ...payload, media, portalTextId: null };
     if (!facts || !payload.title || !payload.body) return base;
-    const t = await this.validatedText(propertyId, portal, payload.version, { title: payload.title, body: payload.body }, facts);
+    const t = await this.validatedText(propertyId, portal, payload.version, { title: payload.title, body: payload.body }, [facts.current, facts.published]);
     return t ? { ...base, title: t.title, body: t.body, portalTextId: t.id } : base;
   }
 

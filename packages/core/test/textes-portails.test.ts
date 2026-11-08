@@ -51,6 +51,25 @@ describe('HX39 · contrôle du texte d’un portail, sans base', () => {
     expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('À Dijon,', 'Rue des Essais à Dijon,') }, FACTS).body).toEqual(['phrase_sans_source']);
     expect(controlPortalText(SOURCE, { title: ' ', body: SELOGER.body }, FACTS).title).toEqual(['texte_vide']);
   });
+  it('[R476] une classe écrite en minuscule compte aussi : la changer est refusé, « il a » n’est pas une classe', () => {
+    const src = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie d.') };
+    expect(controlPortalText(src, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie c.') }, FACTS).body).toEqual(['classes_differentes']);
+    expect(controlPortalText(src, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie d.') }, FACTS).ok).toBe(true);
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon et', 'Il a un balcon et') }, FACTS).body).not.toContain('classes_differentes');
+    const f6: ListingFacts = { ...FACTS, energyClass: 'A', climateClass: 'C' };
+    const srcA = { ...SOURCE, body: SOURCE.body.replace('Classe énergie D.', 'Classe énergie A.') };
+    expect(controlPortalText(srcA, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie a.') }, f6).ok).toBe(true);
+    expect(controlPortalText(srcA, { ...SELOGER, body: SELOGER.body.replace('Classe énergie D.', 'Classe énergie : c.') }, f6).body).toContain('classes_differentes');
+  });
+
+  it('[R476] tout nombre en lettres est refusé, ordinaux et mots composés compris ; « un » seulement devant une unité', () => {
+    const f6: ListingFacts = { ...FACTS, floor: 6 };
+    for (const extra of ['Au sixième étage.', 'Au sixieme étage.', 'Vingt-deux lots.', 'Une seconde chambre.', 'Un étage.', 'Neuf pièces.']) {
+      expect(controlPortalText(SOURCE, { ...SELOGER, body: `${SELOGER.body} ${extra}` }, f6).body).toContain('nombre_en_lettres');
+    }
+    expect(controlPortalText(SOURCE, { ...SELOGER, body: SELOGER.body.replace('Balcon et', 'Un balcon et') }, FACTS).body).not.toContain('nombre_en_lettres');
+  });
+
 });
 
 describe('HX39 · légendes des photos, sans base', () => {
@@ -254,6 +273,20 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     const media = (await t.tp.portalPayload(t.network.id, t.propertyId, 'seloger'))!.media;
     expect(media[0]!.caption).toBe('Photo 1 sur 2 du bien. Lumière et cadrage retouchés.');
     expect(media.every((m) => !m.caption?.toLowerCase().includes('balcon'))).toBe(true);
+  });
+
+  it('[R478] les retouches dites viennent de la fiche publiée, pas d’une fiche plus récente pas encore publiée', async () => {
+    const t = await setup();
+    const row = await t.db.first<{ network_id: string; version: number; data: string; created_by: string }>('SELECT * FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const sheet = JSON.parse(row!.data) as { media: { ref: string; kind: string; edit: string }[] };
+    // La fiche suivante retire la première photo et déclare la deuxième sans retouche ; rien n'est encore publié.
+    sheet.media = sheet.media.slice(1).map((m) => ({ ...m, edit: 'aucune' }));
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['fiche-2', t.propertyId, row!.network_id, Number(row!.version) + 1, JSON.stringify(sheet), row!.created_by, t.now().toISOString()]);
+    const media = (await t.tp.portalPayload(t.network.id, t.propertyId, 'seloger'))!.media;
+    expect(media.map((m) => m.caption)).toEqual([
+      'Photo 1 sur 2 du bien. Lumière et cadrage retouchés.',
+      'Photo 2 sur 2 du bien. Aménagement virtuel : le mobilier et la décoration montrés sont ajoutés à l’image, ils ne sont pas dans le bien.',
+    ]);
   });
 
   it('[R17] textes, validations et sujets des photos ne s’effacent ni ne se réécrivent', async () => {
