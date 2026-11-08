@@ -145,7 +145,7 @@ export class ControleDossiers {
           type: 'location.piece_controlee',
           actor: this.actor(viewer),
           subject: `rental_application:${row.application_id}`,
-          data: { piece: row.id, sort: row.sort, version, findings: findings.map((f) => (f.month ? [f.control, f.outcome, f.month] : [f.control, f.outcome])) },
+          data: { piece: row.id, sort: row.sort, version, findings: findings.map((f) => (f.month ? [f.control, f.outcome, f.month, f.slip ?? 0] : [f.control, f.outcome])) },
         },
         this.now,
       );

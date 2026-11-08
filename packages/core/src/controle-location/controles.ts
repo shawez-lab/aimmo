@@ -33,6 +33,8 @@ export interface Finding {
   outcome: Outcome;
   /** Le mois du bulletin concerné, pour les contrôles d'un bulletin. */
   month?: string;
+  /** Le rang du bulletin dans ce que l'agent a lu (1 pour le premier) : deux employeurs ont deux bulletins le même mois. */
+  slip?: number;
 }
 
 const ASK = ' À voir avec le candidat : lui demander l’original de cette même pièce.';
@@ -177,9 +179,9 @@ export async function checkTaxNotice(read: TaxNoticeRead, trust: TrustList, toda
 
 // ——— Employeur ———
 
-export async function checkEmployerFindings(registry: CompanyRegistry, siret: unknown, onDate: string | null, month?: string): Promise<Finding[]> {
+export async function checkEmployerFindings(registry: CompanyRegistry, siret: unknown, onDate: string | null, month?: string, slip?: number): Promise<Finding[]> {
   const until = month ? `${nextMonth(month)}-01` : undefined;
-  const at = month ? { month } : {};
+  const at = { ...(month ? { month } : {}), ...(slip ? { slip } : {}) };
   if (siret === undefined || siret === null || siret === '') {
     return [
       { control: 'employeur_siret', outcome: 'non_verifiable', ...at },
@@ -236,23 +238,24 @@ export async function checkPayslips(slips: readonly PayslipRead[], registry: Com
   const consecutive = all && distinct.length === 3 && pairs.size === slips.length && nextMonth(distinct[0]!) === distinct[1] && nextMonth(distinct[1]!) === distinct[2];
   findings.push({ control: 'bulletins_mois', outcome: !all || slips.length === 0 ? 'non_verifiable' : consecutive ? 'conforme' : 'ecart' });
   const ordered = slips
-    .map((s, i) => ({ s, m: months[i], siret: sirets[i] ?? null }))
-    .filter((x): x is { s: PayslipRead; m: string; siret: string | null } => x.m !== null)
+    .map((s, i) => ({ s, m: months[i], siret: sirets[i] ?? null, slip: i + 1 }))
+    .filter((x): x is { s: PayslipRead; m: string; siret: string | null; slip: number } => x.m !== null)
     .sort((a, b) => (a.m < b.m ? -1 : a.m > b.m ? 1 : (a.siret ?? '') < (b.siret ?? '') ? -1 : 1));
   // Le cumul se suit employeur par employeur : seul un bulletin du même SIRET, le mois d'avant, sert de point de départ.
   const bySiretMonth = new Map(ordered.filter((x) => x.siret !== null).map((x) => [`${x.siret}|${x.m}`, x.s]));
-  const firstMonth = new Map<string, string>();
-  for (const { s, m, siret } of ordered) {
+  const firstMonth = new Map<string, { m: string; slip: number }>();
+  for (const { s, m, siret, slip } of ordered) {
     const net = s.netBeforeTaxCents;
     const tax = s.taxWithheldCents;
     const paid = s.netPaidCents;
-    findings.push({ control: 'bulletin_net_paye', month: m, outcome: isCents(net) && isCents(tax) && isCents(paid) ? (close(paid, net - tax) ? 'conforme' : 'ecart') : 'non_verifiable' });
+    findings.push({ control: 'bulletin_net_paye', month: m, slip, outcome: isCents(net) && isCents(tax) && isCents(paid) ? (close(paid, net - tax) ? 'conforme' : 'ecart') : 'non_verifiable' });
     const rate = s.ratePercent;
     const taxable = s.taxableNetCents;
     const rateOk = typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100;
     findings.push({
       control: 'bulletin_prelevement',
       month: m,
+      slip,
       outcome: rateOk && isCents(taxable) && isCents(tax) ? (close(tax, Math.round((taxable * Math.round(rate * 100)) / 10_000)) ? 'conforme' : 'ecart') : 'non_verifiable',
     });
     // Le cumul de janvier est le brut du mois ; sinon, le cumul du même employeur le mois d'avant plus le brut du mois.
@@ -261,11 +264,11 @@ export async function checkPayslips(slips: readonly PayslipRead[], registry: Com
     const january = m.endsWith('-01');
     const previous = january || siret === null ? null : bySiretMonth.get(`${siret}|${m.slice(0, 4)}-${String(Number(m.slice(5, 7)) - 1).padStart(2, '0')}`);
     const expected = !isCents(gross) ? null : january ? gross : previous && isCents(previous.cumulativeGrossCents) ? previous.cumulativeGrossCents + gross : null;
-    findings.push({ control: 'bulletin_cumul', month: m, outcome: expected !== null && isCents(cumul) ? (close(cumul, expected) ? 'conforme' : 'ecart') : 'non_verifiable' });
-    if (siret !== null && !firstMonth.has(siret)) firstMonth.set(siret, m);
+    findings.push({ control: 'bulletin_cumul', month: m, slip, outcome: expected !== null && isCents(cumul) ? (close(cumul, expected) ? 'conforme' : 'ecart') : 'non_verifiable' });
+    if (siret !== null && !firstMonth.has(siret)) firstMonth.set(siret, { m, slip });
   }
   if (firstMonth.size === 0) findings.push(...(await checkEmployerFindings(registry, null, null)));
   // Chaque employeur, une fois, à la date de son premier bulletin.
-  for (const [siret, m] of firstMonth) findings.push(...(await checkEmployerFindings(registry, siret, `${m}-01`, m)));
+  for (const [siret, { m, slip }] of firstMonth) findings.push(...(await checkEmployerFindings(registry, siret, `${m}-01`, m, slip)));
   return findings;
 }

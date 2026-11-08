@@ -236,7 +236,7 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
   it('[R533] trois bulletins justes : chaque ligne est conforme, mois par mois', async () => {
     const fs = await checkPayslips(GOOD_SLIPS, REGISTRY);
     // Le cumul du premier mois fourni ne se recalcule pas sans le mois d'avant, sauf en janvier.
-    expect(fs.filter((f) => f.outcome !== 'conforme')).toEqual([{ control: 'bulletin_cumul', outcome: 'non_verifiable', month: '2027-04' }]);
+    expect(fs.filter((f) => f.outcome !== 'conforme')).toEqual([{ control: 'bulletin_cumul', outcome: 'non_verifiable', month: '2027-04', slip: 1 }]);
     expect(fs.map((f) => [f.control, f.month ?? null])).toEqual([
       ['bulletins_mois', null],
       ['bulletin_net_paye', '2027-04'],
@@ -294,6 +294,8 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     );
     expect(both.some((f) => f.outcome === 'ecart')).toBe(false);
     expect(both.filter((f) => f.control === 'bulletin_cumul' && f.outcome === 'conforme')).toHaveLength(4);
+    // Deux bulletins le même mois se distinguent par leur rang dans ce que l'agent a lu, sans SIRET ni montant.
+    expect(both.filter((f) => f.control === 'bulletin_net_paye' && f.month === '2027-05').map((f) => f.slip).sort()).toEqual([2, 5]);
     // Deux bulletins du même employeur le même mois : écart sur les mois.
     expect(outcome(await checkPayslips([slip('2027-04', 0), slip('2027-04', 0), slip('2027-05', 0), slip('2027-06', 0)], REGISTRY), 'bulletins_mois')).toBe('ecart');
     // Sans SIRET, le cumul ne se suit pas d'un bulletin à l'autre.
@@ -304,9 +306,9 @@ describe('HX47 · les trois derniers bulletins recalculés', () => {
     expect(outcome(during, 'employeur_registre', '2027-03')).toBe('non_verifiable');
     expect(outcome(await checkPayslips([slip('2027-02', 0, { siret: CLOSED_EMPLOYER })], REGISTRY), 'employeur_registre', '2027-02')).toBe('conforme');
     expect(two.filter((f) => f.control === 'employeur_registre')).toEqual([
-      { control: 'employeur_registre', outcome: 'conforme', month: '2027-04' },
-      { control: 'employeur_registre', outcome: 'conforme', month: '2027-05' },
-      { control: 'employeur_registre', outcome: 'ecart', month: '2027-06' },
+      { control: 'employeur_registre', outcome: 'conforme', month: '2027-04', slip: 1 },
+      { control: 'employeur_registre', outcome: 'conforme', month: '2027-05', slip: 2 },
+      { control: 'employeur_registre', outcome: 'ecart', month: '2027-06', slip: 3 },
     ]);
   });
 });
