@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { photoCaption } from '../src/diffusion/textes.ts';
-import { FiligranePhotos, watermarkName, watermarkSvg } from '../src/medias/index.ts';
+import { FiligranePhotos, WATERMARK_MIN_FONT, watermarkFontSize, watermarkName, watermarkSvg } from '../src/medias/index.ts';
 import { CertificatsPhotos, checkLocalEdits, checkOperations, RETOUCH_MENTION } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -42,13 +42,38 @@ it('[R490] la légende d’une photo dit chaque retouche déclarée', () => {
   expect(photoCaption({ index: 1, total: 1, subject: null, facts, edit: 'lumiere_cadrage', overlay: null })).toBe('Photo 1 sur 1 du bien. Lumière et cadrage retouchés.');
 });
 
-it('[R491] le calque du filigrane porte le texte, en bas à droite, sans rien au centre', () => {
-  const svg = watermarkSvg('Alexandrine Fictive · AIMMO · abcdefgh2345', 4000, 3000);
-  expect(svg).toContain('>Alexandrine Fictive · AIMMO · abcdefgh2345</text>');
+it('[R491] le calque du filigrane porte tout le texte, en bas à droite, et chaque ligne tient dans l’image', () => {
+  const text = 'Alexandrine Fictive · AIMMO · abcdefgh2345';
+  const svg = watermarkSvg(text, 4000, 3000)!;
+  expect(svg).toContain('>Alexandrine Fictive</text>');
+  expect(svg).toContain('>AIMMO · abcdefgh2345</text>');
   expect(svg).toContain('viewBox="0 0 4000 3000"');
   const y = Number(/<rect x="\d+" y="(\d+)"/.exec(svg)?.[1]);
   expect(y).toBeGreaterThan(3000 * 0.75);
-  expect(watermarkSvg('<a> & "b"', 400, 400)).not.toMatch(/<a>|& /);
+  // Petites images et noms longs : chaque ligne tient entière dans la largeur, ou l'export est refusé.
+  const long = `${'Marie-Bérénice-Alexandrine'} ${'De La Fontaine-Saint-Évremond'} · AIMMO · abcdefgh2345`;
+  for (const [w, h] of [[200, 200], [300, 1200], [600, 400], [1080, 1350], [4032, 3024], [12000, 200]] as const) {
+    for (const t of [text, long]) {
+      const out = watermarkSvg(t, w, h);
+      if (out === null) {
+        expect(watermarkFontSize(t, w, h), `${w}x${h}`).toBeNull();
+        continue;
+      }
+      const size = watermarkFontSize(t, w, h)!;
+      expect(size).toBeGreaterThanOrEqual(WATERMARK_MIN_FONT);
+      for (const m of out.matchAll(/<text x="(\d+)" y="(\d+)"[^>]*textLength="(\d+)"[^>]*>([^<]*)<\/text>/g)) {
+        const [x, baseline, len] = [Number(m[1]), Number(m[2]), Number(m[3])];
+        expect(x - len, `${w}x${h} ${m[4]}`).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(w);
+        expect(baseline).toBeLessThanOrEqual(h);
+        // La longueur forcée n'écrase pas le texte : au moins la largeur prudente de chaque caractère.
+        expect(len).toBeGreaterThanOrEqual(Math.floor([...m[4]!.replace(/&#39;|&amp;/g, 'x')].length * size * 0.62) - 1);
+      }
+    }
+  }
+  expect(watermarkSvg(text, 200, 200)).not.toBeNull();
+  expect(watermarkSvg(long, 200, 200)).toBeNull();
+  expect(watermarkSvg('<a> & "b" · AIMMO · abcdefgh2345', 2000, 2000)).not.toMatch(/<a>|& /);
   expect(watermarkName(' Jean-Luc ', 'D’Arc <x>')).toBe('Jean-Luc D’Arc x');
   expect(watermarkName('', '')).toBeNull();
 });
@@ -159,7 +184,8 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     expect(a.ok).toBe(true);
     if (!a.ok) return;
     expect(a.value).toMatchObject({ watermarkText: 'Alexandrine Fictive · AIMMO · abcdefgh2345', contentCode: 'abcdefgh2345', mentions: ['Photo retouchée'], link: null, width: 4032, height: 3024 });
-    expect(a.value.svg).toContain('Alexandrine Fictive · AIMMO · abcdefgh2345');
+    expect(a.value.svg).toContain('>Alexandrine Fictive</text>');
+    expect(a.value.svg).toContain('>AIMMO · abcdefgh2345</text>');
     expect(a.value.certificatePath).toMatch(/^\/certificat-photo\/[0-9a-f]{32}$/);
     // Le code est celui du bien, toujours le même : une photo reprise ramène au bien et à son agent (AT05).
     const b = await t.filigrane.exportPhoto(t.as('direction', 'dir-1'), t.p.id, { ref: ref(t.p.id, 4), width: 1080, height: 1350 });
@@ -187,6 +213,9 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     await t.certs.record(alex, t.p.id, t.input(1));
     expect(await t.filigrane.exportPhoto(alex, t.p.id, { ref: ref(t.p.id, 1), width: 50, height: 3024 })).toEqual({ ok: false, rule: 'R10', code: 'dimensions_invalides' });
     expect(await t.filigrane.exportPhoto(alex, t.p.id, { ref: ref(t.p.id, 1), width: 4032.5, height: 3024 })).toEqual({ ok: false, rule: 'R10', code: 'dimensions_invalides' });
+    // Trop petite pour un filigrane lisible en entier : pas d'export.
+    await t.db.run("UPDATE agents SET first_name = 'Marie-Bérénice-Alexandrine', last_name = 'De La Fontaine-Saint-Évremond' WHERE id = ?", [t.alex.id]);
+    expect(await t.filigrane.exportPhoto(alex, t.p.id, { ref: ref(t.p.id, 1), width: 200, height: 200 })).toEqual({ ok: false, rule: 'R491', code: 'image_trop_petite' });
     expect(await t.filigrane.exportPhoto(t.as('assistant', 'as-1'), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.filigrane.exportPhoto(t.as('agent', t.sam.id), t.p.id, { ref: ref(t.p.id, 1), width: 4032, height: 3024 })).toMatchObject({ ok: false, rule: 'R16' });
     // Un agent parti, ou un bien sans agent : le filigrane n'aurait personne à qui ramener.

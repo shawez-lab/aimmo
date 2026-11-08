@@ -64,21 +64,55 @@ export function watermarkText(name: string, contentCode: string): string {
   return `${name} · ${WATERMARK_BRAND} · ${contentCode}`;
 }
 
+/** La plus petite taille de lettre du filigrane, en pixels de l'image : en dessous, il ne se lirait plus. */
+export const WATERMARK_MIN_FONT = 10;
+
+/** Largeur prudente d'un caractère, en part de la taille de lettre (police du système, majuscules comprises). */
+const CHAR_WIDTH = 0.62;
+
+/** Les deux lignes du filigrane : le nom de l'agent, puis la marque et le code. */
+export function watermarkLines(text: string): [string, string] {
+  const i = text.indexOf(` · ${WATERMARK_BRAND} · `);
+  return i < 0 ? [text, ''] : [text.slice(0, i), text.slice(i + 3)];
+}
+
 /**
- * Le calque du filigrane, aux dimensions de l'image : une bande en bas à droite, lisible sur fond clair comme sombre,
- * assez petite pour ne rien cacher du bien (au plus un quart de la hauteur, jamais au centre).
+ * La taille de lettre du filigrane pour une image : 2,8 % du petit côté, réduite pour que chaque ligne tienne entière
+ * dans la largeur ; null si elle tomberait sous le minimum lisible.
  */
-export function watermarkSvg(text: string, width: number, height: number): string {
-  const size = Math.max(12, Math.round(Math.min(width, height) * 0.028));
+export function watermarkFontSize(text: string, width: number, height: number): number | null {
+  const longest = Math.max(...watermarkLines(text).map((l) => [...l].length), 1);
+  const wanted = Math.min(width, height) * 0.028;
+  // Le texte et ses marges (une demi-taille de chaque côté) tiennent dans la largeur.
+  const fits = (width * 0.96) / (longest * CHAR_WIDTH + 1.2);
+  const size = Math.floor(Math.max(Math.min(wanted, fits), Math.min(fits, WATERMARK_MIN_FONT)));
+  return size >= WATERMARK_MIN_FONT ? size : null;
+}
+
+/**
+ * Le calque du filigrane, aux dimensions de l'image : une bande en bas à droite, deux lignes, lisible sur fond clair
+ * comme sombre, jamais au centre. Chaque ligne est tenue dans sa largeur (`textLength`) : rien ne sort de l'image,
+ * quelle que soit la police de l'appareil. Null si l'image est trop petite pour un filigrane lisible.
+ */
+export function watermarkSvg(text: string, width: number, height: number): string | null {
+  const size = watermarkFontSize(text, width, height);
+  if (size === null) return null;
+  const lines = watermarkLines(text).filter((l) => l.length > 0);
   const pad = Math.round(size * 0.6);
-  const bandHeight = size + pad * 2;
-  const bandWidth = Math.min(width, Math.round(text.length * size * 0.56) + pad * 2);
+  const lineWidths = lines.map((l) => Math.min(Math.ceil([...l].length * size * CHAR_WIDTH), width - pad * 2));
+  const bandWidth = Math.min(width, Math.max(...lineWidths) + pad * 2);
+  const lineHeight = Math.round(size * 1.25);
+  const bandHeight = lineHeight * lines.length + pad * 2;
   const x = width - bandWidth;
   const y = height - bandHeight;
+  const texts = lines.map((l, i) => {
+    const baseline = y + pad + lineHeight * (i + 1) - Math.round(size * 0.3);
+    return `<text x="${width - pad}" y="${baseline}" text-anchor="end" textLength="${lineWidths[i]}" lengthAdjust="spacingAndGlyphs" font-family="${xml(POLICES.texte)}" font-size="${size}" fill="${PALETTE.clair.surface}" fill-opacity="0.92">${xml(l)}</text>`;
+  });
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(text)}">`,
     `<rect x="${x}" y="${y}" width="${bandWidth}" height="${bandHeight}" fill="${PALETTE.clair.encre}" fill-opacity="0.55"/>`,
-    `<text x="${width - pad}" y="${height - pad - Math.round(size * 0.2)}" text-anchor="end" font-family="${xml(POLICES.texte)}" font-size="${size}" fill="${PALETTE.clair.surface}" fill-opacity="0.92">${xml(text)}</text>`,
+    ...texts,
     '</svg>',
   ].join('');
 }
@@ -134,6 +168,9 @@ export class FiligranePhotos {
     const content = await this.origine.contentFor(networkId, 'bien', propertyId);
     if (!content.ok || !CODE.test(content.contentId)) return bad('R491', 'sans_code_contenu');
     const text = watermarkText(name, content.contentId);
+    // Le filigrane entier doit se lire sur l'image : trop petite, elle ne s'exporte pas.
+    const svg = watermarkSvg(text, width, height);
+    if (svg === null) return bad('R491', 'image_trop_petite');
     const canonical = await this.taggedPage(networkId, propertyId, content.contentId);
     const id = this.newId();
     await this.db.run(
@@ -145,7 +182,7 @@ export class FiligranePhotos {
     await appendEvent(this.journal, { type: 'medias.photo.exportee', actor, subject: `property:${propertyId}`, data: { rule: 'R491', mentions } }, this.now);
     return {
       ok: true,
-      value: { exportId: id, ref: photo.ref, watermarkText: text, contentCode: content.contentId, link: canonical, mentions, certificatePath: photo.certificatePath, svg: watermarkSvg(text, width, height), width, height },
+      value: { exportId: id, ref: photo.ref, watermarkText: text, contentCode: content.contentId, link: canonical, mentions, certificatePath: photo.certificatePath, svg, width, height },
     };
   }
 

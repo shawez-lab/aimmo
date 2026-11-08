@@ -51,7 +51,9 @@ function respond(status: number, html: string): Response {
 export function renderCertificate(cert: studio.PhotoCertificate): string {
   const corrections =
     cert.corrections.length === 0
-      ? '<p>Aucune correction : la photo est telle qu’elle a été prise.</p>'
+      ? cert.virtualStaging || cert.retouches.length > 0
+        ? '<p>Aucune correction d’ensemble.</p>'
+        : '<p>Aucune correction : la photo est telle qu’elle a été prise.</p>'
       : `<h2>Corrections faites sur toute l’image</h2><ul>${cert.corrections.map((c) => `<li>${escape(c.detail)}</li>`).join('')}</ul>`;
   const staging = cert.virtualStaging
     ? `<p><strong>Aménagement virtuel.</strong> Du mobilier ou des travaux ont été ajoutés à l’image ; la mention « ${escape(cert.mention ?? 'Aménagement virtuel')} » est posée sur la photo partout où elle paraît.</p>`

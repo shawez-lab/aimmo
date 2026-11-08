@@ -27,8 +27,12 @@ it('[R490] la page du certificat dit chaque retouche locale et la mention, jamai
   expect(html).toContain('Objet retiré : du linge');
   expect(html).toContain('« Photo retouchée »');
   expect(html).not.toContain('Aucune retouche à un endroit précis');
+  // Des retouches sans correction d'ensemble : la page ne dit jamais la photo « telle qu'elle a été prise ».
+  expect(html).not.toContain('telle qu’elle a été prise.</p>');
+  expect(html).toContain('Aucune correction d’ensemble.');
   // Sans retouche, la page dit comme avant qu'il n'y en a aucune.
   const plain = renderCertificatePage({ ...cert, localEdits: 'aucune', retouches: [], retouchMention: null });
   expect(plain).toContain('Aucune retouche à un endroit précis');
   expect(plain).not.toContain('Retouches à un endroit précis');
+  expect(plain).toContain('Aucune correction : la photo est telle qu’elle a été prise.');
 });
