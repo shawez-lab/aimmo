@@ -22,9 +22,9 @@
  *   ni montant, ni barème, ni partage, n'y entre : seuls les chiffres de la version publiée y sont permis ;
  * - le dossier part avant la visite seulement, pour une visite réservée, au visiteur lui-même, sur l'accord qu'il a
  *   donné de le recevoir par mail (preuve donnée par l'agent) [R03] ; en essai, il reste dans la boîte d'essai [R26] ;
- * - une visite à distance commence au plus tôt 30 minutes avant l'heure du rendez-vous et au plus tard à sa fin ; une
- *   fois commencée, son bon doit être signé en ligne avant toute offre, même si la liaison a coupé ; seul un bon
- *   complet se signe [R40] ; tant que H24 n'est pas réglé, la signature est d'essai, sans valeur juridique, mais elle
+ * - une visite à distance commence au plus tôt 30 minutes avant l'heure du rendez-vous et au plus tard à sa fin, et
+ *   seulement si son bon pourra se signer en ligne (bon complet [R40], mail du visiteur, son accord [R03]) ; une fois
+ *   commencée, son bon doit être signé en ligne avant toute offre, même si la liaison a coupé ; tant que H24 n'est pas réglé, la signature est d'essai, sans valeur juridique, mais elle
  *   suffit à ouvrir le registre des offres, comme le bon papier d'une visite sur place ;
  * - les fiches réunies d'une même personne comptent pour une seule, dans le code et dans la base.
  *
@@ -404,7 +404,7 @@ export class VisiteDistance {
   }
 
   /** L'agent commence la visite à distance, au plus tôt 30 minutes avant l'heure, au plus tard à sa fin [R504]. */
-  async startRemote(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { startedAt: string } } | DistanceRefusal> {
+  async startRemote(viewer: Viewer, appointmentId: string, input: { consentProof?: unknown } = {}): Promise<{ ok: true; value: { startedAt: string } } | DistanceRefusal> {
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
     const v = found.v;
@@ -412,6 +412,14 @@ export class VisiteDistance {
     if (v.status !== 'booked') return { ok: false, rule: null, code: 'not_booked' };
     if (at.getTime() < Date.parse(v.start_at) - REMOTE_EARLY_MINUTES * 60_000 || at.getTime() > Date.parse(v.end_at)) return { ok: false, rule: null, code: 'outside_slot' };
     if (!(await this.diffusion.canDiffuse(v.network_id, v.property_id, at)).allowed) return { ok: false, rule: 'R42', code: 'not_diffusable' };
+    // Une visite commencée bloque les offres jusqu'à la signature de son bon : elle ne commence que si ce bon pourra se
+    // signer en ligne, bon complet, mail du visiteur et son accord de recevoir le lien et le code [R504, R505, R40, R03].
+    const slip = await this.visites.slipOf(viewer, appointmentId);
+    if (!slip.ok) return slip;
+    if (slip.slip.status !== 'complet') return { ok: false, rule: 'R40', code: 'slip_incomplete' };
+    const view = await this.fiche.view(v.person_id);
+    if (!view.identifiers.some((i) => i.kind === 'email')) return { ok: false, rule: 'R504', code: 'no_email' };
+    if (!(await this.ensureConsent(v.network_id, v.person_id, REMOTE_SLIP_PURPOSE, input.consentProof))) return { ok: false, rule: 'R03', code: 'no_consent' };
     const { changes } = await this.db.run(
       `INSERT INTO remote_visits (appointment_id, network_id, property_id, person_id, started_by, started_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (appointment_id) DO NOTHING`,
       [appointmentId, v.network_id, v.property_id, v.person_id, this.actor(viewer), at.toISOString()],
@@ -457,23 +465,29 @@ export class VisiteDistance {
     const code = this.newCode();
     const now = this.now();
     await this.db.run(`UPDATE remote_slip_signatures SET status = 'remplacee' WHERE appointment_id = ? AND status = 'ouverte'`, [appointmentId]);
-    await this.db.run(
-      `INSERT INTO remote_slip_signatures (id, network_id, appointment_id, slip_id, slip_hash, token_hash, code_hash, code_expires_at, link_expires_at, attempts, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?)`,
-      [
-        id,
-        v.network_id,
-        appointmentId,
-        slip.slip.id,
-        slip.slip.contentHash,
-        await sha256(token),
-        await sha256(`${id}:${code}`),
-        new Date(now.getTime() + CODE_TTL_MINUTES * 60_000).toISOString(),
-        new Date(now.getTime() + SIGN_LINK_HOURS * 3_600_000).toISOString(),
-        this.actor(viewer),
-        now.toISOString(),
-      ],
-    );
+    // Deux ouvertures en même temps : la base n'en garde qu'une ouverte ; l'autre est dite, sans rien envoyer.
+    try {
+      await this.db.run(
+        `INSERT INTO remote_slip_signatures (id, network_id, appointment_id, slip_id, slip_hash, token_hash, code_hash, code_expires_at, link_expires_at, attempts, status, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?)`,
+        [
+          id,
+          v.network_id,
+          appointmentId,
+          slip.slip.id,
+          slip.slip.contentHash,
+          await sha256(token),
+          await sha256(`${id}:${code}`),
+          new Date(now.getTime() + CODE_TTL_MINUTES * 60_000).toISOString(),
+          new Date(now.getTime() + SIGN_LINK_HOURS * 3_600_000).toISOString(),
+          this.actor(viewer),
+          now.toISOString(),
+        ],
+      );
+    } catch (e) {
+      if (await this.db.first(`SELECT 1 FROM remote_slip_signatures WHERE appointment_id = ? AND status IN ('ouverte', 'signee')`, [appointmentId])) return { ok: false, rule: null, code: 'already_open' };
+      throw e;
+    }
     const hello = await this.greeting(v.person_id);
     const link = this.signUrl(token);
     const base = { networkId: v.network_id, agentId: v.agent_id, personId: v.person_id, projectId: v.project_id, channel: 'email' as const, kind: 'follow_up' as const, purpose: REMOTE_SLIP_PURPOSE };

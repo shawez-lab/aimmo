@@ -101,10 +101,10 @@ async function setup() {
     newCode: () => String(123456 + codes++),
   });
   /** Un visiteur inventé d'Alex, avec son mail, et sa visite du bien demain. */
-  const visit = async (firstName = 'Inès', lastName = 'Durand') => {
+  const visit = async (firstName = 'Inès', lastName = 'Durand', email = true) => {
     n += 1;
     const buyer = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName, lastName });
-    await store.addIdentifier({ networkId: network.id, personId: buyer.id, kind: 'email', value: `visiteur${n}@example.test` });
+    if (email) await store.addIdentifier({ networkId: network.id, personId: buyer.id, kind: 'email', value: `visiteur${n}@example.test` });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: buyer.id, kind: 'buy', note: 'Budget serré, banque réticente' });
     const r = await visites.schedule(as('agent', alex.id), { propertyId: p.id, projectId: project.id, start: new Date(MONDAY_9H + 24 * HOUR + n * 90 * 60_000) });
     if (!r.ok) throw new Error(r.code);
@@ -157,7 +157,8 @@ describe('HX44 · le dossier du bien, rendu par le code', () => {
 describeWithSqlite('HX44 · dossier envoyé avant la visite', () => {
   it('[R502] aucun nom de vendeur, honoraire, numéro de mandat ni note interne dans le dossier envoyé', async () => {
     const t = await setup();
-    // Les honoraires du dossier et la note de la visite existent dans la base.
+    // Le barème d'honoraires du réseau et la note de la visite existent dans la base.
+    await t.db.run("INSERT INTO fee_schedules (id, network_id, max_rate_bp, min_eur, set_by, set_at) VALUES ('f1', ?, 650, 7350, 'direction', ?)", [t.network.id, new Date(MONDAY_9H).toISOString()]);
     const v = await t.visit();
     await t.db.run("INSERT INTO visit_field_notes (id, network_id, appointment_id, agent_id, body, written_at, received_at) VALUES ('n1', ?, ?, ?, 'Le visiteur hésite avec un autre bien', ?, ?)", [
       t.network.id,
@@ -171,7 +172,7 @@ describeWithSqlite('HX44 · dossier envoyé avant la visite', () => {
     const opened = await t.dist.openDossier(t.issued[0]);
     expect(opened.ok).toBe(true);
     const html = opened.ok ? opened.html : '';
-    for (const secret of ['Victor', 'Vendeur', 'victor@example.test', 'MAND-4701', '4701', 'divorce', 'Budget serré', 'hésite', 'Sam Agent', '11 250', '11250']) expect(html).not.toContain(secret);
+    for (const secret of ['Victor', 'Vendeur', 'victor@example.test', 'MAND-4701', '4701', 'divorce', 'Budget serré', 'hésite', 'Sam Agent', '7 350', '7350', '6,5']) expect(html).not.toContain(secret);
     expect(html).toContain(BODY);
     expect(html).toContain('annonce publiée le 07/12/2026');
   });
@@ -262,9 +263,9 @@ describeWithSqlite('HX44 · dossier envoyé avant la visite', () => {
 describeWithSqlite('HX44 · visite à distance et bon signé en ligne', () => {
   const remote = async (t: Awaited<ReturnType<typeof setup>>, v: { id: string; start: number; end: number }) => {
     t.setClock(v.start);
-    expect((await t.dist.startRemote(t.as('agent', t.alex.id), v.id)).ok).toBe(true);
+    expect((await t.dist.startRemote(t.as('agent', t.alex.id), v.id, { consentProof: 'accord donné en début d’appel' })).ok).toBe(true);
     t.setClock(v.start + 20 * 60_000);
-    return t.dist.endRemote(t.as('agent', t.alex.id), v.id, { consentProof: 'accord donné en début d’appel' });
+    return t.dist.endRemote(t.as('agent', t.alex.id), v.id);
   };
 
   it('[R505] un bon de visite à distance est signé avant toute offre, gardé par la base', async () => {
@@ -354,18 +355,52 @@ describeWithSqlite('HX44 · visite à distance et bon signé en ligne', () => {
     expect(await t.dist.startRemote(t.as('agent', t.sam.id), v.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.dist.startSignature(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R504', code: 'not_remote' });
     expect(await t.dist.endRemote(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: null, code: 'not_started' });
-    expect((await t.dist.startRemote(t.as('agent', t.alex.id), v.id)).ok).toBe(true);
+    // Sans l'accord du visiteur pour recevoir le lien et le code, la visite ne commence pas : son bon ne pourrait se signer.
+    expect(await t.dist.startRemote(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R03', code: 'no_consent' });
+    expect(await t.db.first('SELECT 1 FROM remote_visits')).toBeNull();
+    expect((await t.dist.startRemote(t.as('agent', t.alex.id), v.id, { consentProof: 'accord' })).ok).toBe(true);
     expect(await t.dist.startRemote(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: null, code: 'already_started' });
     // Commencée, la visite bloque déjà les offres, même si la liaison coupe avant la fin.
     await expect(t.offer(v.buyer.id)).rejects.toThrow(/non signé/);
     expect(await t.dist.startSignature(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: 'R504', code: 'not_ended' });
     const ended = await t.dist.endRemote(t.as('agent', t.alex.id), v.id);
-    // Sans accord du visiteur pour recevoir le lien et le code, la signature attend la preuve de l'agent.
-    expect(ended).toMatchObject({ ok: true, value: { signature: { ok: false, rule: 'R03', code: 'no_consent' } } });
+    expect(ended).toMatchObject({ ok: true, value: { signature: { ok: true } } });
     expect(await t.dist.endRemote(t.as('agent', t.alex.id), v.id)).toEqual({ ok: false, rule: null, code: 'already_ended' });
-    expect((await t.dist.startSignature(t.as('agent', t.alex.id), v.id, { consentProof: 'accord' })).ok).toBe(true);
     await expect(t.db.run('DELETE FROM remote_visits')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE remote_visits SET ended_at = '2030-01-01T00:00:00.000Z'")).rejects.toThrow(/ne change plus/);
+  });
+  it('[R504] [R40] seul un bon complet se signe : un bon incomplet, ou un visiteur sans mail, et la visite ne commence pas', async () => {
+    const t = await setup();
+    // Sans nom de famille, le bon de visite reste incomplet.
+    const nameless = await t.visit('Zoé', '');
+    const mailless = await t.visit('Luc', 'Sansmail', false);
+    t.setClock(nameless.start);
+    const slip = await t.db.first<{ id: string; status: string }>('SELECT id, status FROM visit_slips WHERE appointment_id = ?', [nameless.id]);
+    expect(slip?.status).toBe('incomplet');
+    expect(await t.dist.startRemote(t.as('agent', t.alex.id), nameless.id, { consentProof: 'accord' })).toEqual({ ok: false, rule: 'R40', code: 'slip_incomplete' });
+    expect(await t.db.first('SELECT 1 FROM remote_visits')).toBeNull();
+    // La base refuse aussi une signature sur un bon incomplet, ou sur une visite à distance pas finie.
+    const at = new Date(nameless.start).toISOString();
+    await t.db.run('INSERT INTO remote_visits (appointment_id, network_id, property_id, person_id, started_by, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [nameless.id, t.network.id, t.property.id, nameless.buyer.id, 'test', at, at]);
+    await expect(
+      t.db.run("INSERT INTO remote_slip_signatures (id, network_id, appointment_id, slip_id, slip_hash, token_hash, code_hash, code_expires_at, link_expires_at, status, created_by, created_at) VALUES ('s', ?, ?, ?, ?, ?, ?, ?, ?, 'ouverte', 'test', ?)", [
+        t.network.id, nameless.id, slip!.id, 'a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64), at, at, at,
+      ]),
+    ).rejects.toThrow(/bon complet/);
+    expect(await t.dist.startSignature(t.as('agent', t.alex.id), nameless.id, { consentProof: 'accord' })).toEqual({ ok: false, rule: 'R40', code: 'slip_incomplete' });
+    // Un visiteur sans mail : ni lien ni code ne pourraient partir.
+    t.setClock(mailless.start);
+    expect(await t.dist.startRemote(t.as('agent', t.alex.id), mailless.id, { consentProof: 'accord' })).toEqual({ ok: false, rule: 'R504', code: 'no_email' });
+  });
+
+  it('[R504] deux ouvertures en même temps : une seule signature ouverte, l’autre est dite', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    await remote(t, v);
+    const [a, b] = await Promise.all([t.dist.startSignature(t.as('agent', t.alex.id), v.id), t.dist.startSignature(t.as('agent', t.alex.id), v.id)]);
+    expect([a, b].some((r) => r.ok)).toBe(true);
+    for (const r of [a, b]) if (!r.ok) expect(r.code).toBe('already_open');
+    expect(await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM remote_slip_signatures WHERE status = 'ouverte'")).toEqual({ n: 1 });
   });
 });
 
