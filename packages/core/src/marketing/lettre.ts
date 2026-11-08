@@ -34,6 +34,7 @@ import type { OutboundChannel } from '../envoi/canaux.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
+import { checkText } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -46,14 +47,15 @@ export const LETTER_PURPOSE = 'lettre_information';
 export const LETTER_MAX_PROPERTIES = 5;
 /** La longueur permise d'une lettre, lien de désinscription compris : celle d'un mail au contrôle central. */
 export const LETTER_MAX_LENGTH = 4000;
-/** La place gardée pour le lien de désinscription. */
-const UNSUBSCRIBE_ROOM = 160;
+/** La place gardée pour le lien de désinscription et la mention légale du premier message automatique [R06]. */
+export const LETTER_FOOTER_ROOM = 160;
+export const LETTER_MENTION_ROOM = 300;
 
 /**
  * La lettre tenue dans la longueur d'un mail : on retire d'abord les quartiers les plus loin dans la liste, puis les
  * communes, puis les biens les plus anciens ; la case de la commune et le suivi de valeur restent les derniers.
  */
-export function fitLetter(content: LetterContent, max = LETTER_MAX_LENGTH - UNSUBSCRIBE_ROOM): LetterContent {
+export function fitLetter(content: LetterContent, max = LETTER_MAX_LENGTH - LETTER_FOOTER_ROOM - LETTER_MENTION_ROOM): LetterContent {
   const c: LetterContent = { ...content, properties: [...content.properties], prices: content.prices.map((p) => ({ ...p, cells: [...p.cells] })) };
   while (letterText(c).length > max) {
     const withQuarter = [...c.prices].reverse().find((p) => p.cells.some((x) => x.zone.level === 'quartier'));
@@ -117,7 +119,7 @@ export interface LetterOutcome {
 }
 
 export type EditionResult = { ok: true; id: string } | { ok: false; rule: 'R16' | 'R586'; code: string };
-export type MagazineResult = { ok: true; html: string; properties: number } | { ok: false; rule: 'R16' | 'R585'; code: string };
+export type MagazineResult = { ok: true; html: string; properties: number } | { ok: false; rule: string; code: string };
 
 /** Un fournisseur de prix qui n'a pas de ventes : la lettre ne fait que lire les versions déjà calculées. */
 const NO_SALES = {
@@ -369,7 +371,9 @@ export class LettreInformation {
     const inForce = await this.fiche.channelsInForce(root, LETTER_PURPOSE);
     if (!inForce.includes('email')) return { personId: root, status: 'no_consent', rule: 'R583' };
 
-    const content = fitLetter(await this.contentFor(networkId, root));
+    // La longueur d'un mail, lien de désinscription et mention du premier message comptés [R06, R584].
+    const footer = `\n\nNe plus recevoir cette lettre : ${this.unsubscribeBase}${'x'.repeat(32)}`.length;
+    const content = fitLetter(await this.contentFor(networkId, root), LETTER_MAX_LENGTH - Math.max(footer, LETTER_FOOTER_ROOM) - LETTER_MENTION_ROOM);
     if (content.properties.length === 0 && content.valueTracking === null && content.prices.length === 0) return { personId: root, status: 'empty', rule: null };
     const body = letterText(content);
     if (!pricesFromBase(body, content)) return { personId: root, status: 'refused', rule: 'R585' };
@@ -467,6 +471,10 @@ export class LettreInformation {
     const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(title.trim())}</title><style>@page{size:A4;margin:18mm}body{font:11pt/1.5 Georgia,serif;color:#1d1d1b}h1{font-size:24pt;margin:0 0 8mm}h2{font-size:14pt;margin:8mm 0 3mm}li{margin:0 0 2mm}section{break-inside:avoid}</style></head><body>${sections.join('')}</body></html>`;
     const visible = sections.join('').replace(/<[^>]+>/g, '\n').replace(/&[a-z]+;/g, ' ');
     if (!pricesFromBase(visible, content)) return { ok: false, rule: 'R585', code: 'prix_inconnu' };
+    // Un contenu public : vocabulaire, adresse, chiffres de la base, aucune mention de l'IA [R07, R09, R10]. Le
+    // magazine s'imprime : sa longueur n'est pas celle d'une page.
+    const problem = checkText(visible, { audience: 'public', figures: figuresOf(content) }).find((p) => p.rule !== 'length');
+    if (problem) return { ok: false, rule: problem.rule, code: 'texte' };
     await appendEvent(this.journal, { type: 'lettre.magazine', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { properties: properties.length, communes: prices.length } }, this.now);
     return { ok: true, html, properties: properties.length };
   }

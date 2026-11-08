@@ -15,7 +15,7 @@ import {
 import { PrixRegroupes, type LatLon } from '../src/attirer/index.ts';
 import type { EstimatedKind, Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
-import { LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
+import { LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
 import type { PublicCell } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -248,11 +248,32 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(letterText(content).length).toBeGreaterThan(LETTER_MAX_LENGTH);
     const fitted = fitLetter(content);
     const text = letterText(fitted);
-    expect(text.length).toBeLessThanOrEqual(LETTER_MAX_LENGTH - 160);
+    expect(text.length).toBeLessThanOrEqual(LETTER_MAX_LENGTH - LETTER_FOOTER_ROOM - LETTER_MENTION_ROOM);
     expect(fitted.valueTracking).not.toBeNull();
     expect(fitted.properties).toHaveLength(5);
     expect(fitted.prices[0]!.cells[0]!.zone.level).toBe('commune');
     expect(pricesFromBase(text, fitted)).toBe(true);
+  });
+
+  it('[R585] [R06] une très longue lettre, premier message automatique de la personne, part quand même : mention et lien comptés', async () => {
+    const t = await setup();
+    const p = await t.person('Inès');
+    const quarter = (i: number): PublicCell => ({
+      zone: { slug: `q${i}`, name: `Quartier ${String.fromCharCode(65 + (i % 26))}`, level: 'quartier' },
+      kind: 'house', status: 'publiee', sales: 12, median: 2000 + i * 10, q1: 1800, q3: 2400,
+      source: 'DVF, jeu inventé', dvfLastSale: '2026-06-30', period: { from: '2024-07', to: '2026-06' },
+    });
+    class Longue extends LettreInformation {
+      override async contentFor(): Promise<LetterContent> {
+        return { firstName: 'Inès', properties: [], valueTracking: null, prices: [{ commune: 'Talant', cells: Array.from({ length: 40 }, (_, i) => quarter(i)) }] };
+      }
+    }
+    const lettre = new Longue(t.db, t.journal, { now: t.now, diffusion: t.diffusion, unsubscribeBase: BASE });
+    expect(await lettre.sendOne(t.network.id, await t.edition(), p.id)).toEqual({ personId: p.id, status: 'sent', rule: null });
+    const body = (await t.sent(p.id))[0]!.body;
+    expect(body).toMatch(/assistant/i);
+    expect(body.length).toBeLessThanOrEqual(LETTER_MAX_LENGTH);
+    expect(body).toMatch(/Ne plus recevoir cette lettre : \S+[a-z]{32}$/);
   });
 
   it('[R584] sans lien de désinscription réglé, aucune lettre ne part', async () => {
@@ -372,6 +393,8 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     const x = await t.lettre.magazine(t.direction, '<b>Lettre</b>');
     expect(x.ok && x.html.includes('&lt;b&gt;')).toBe(true);
     expect(await t.lettre.magazine(t.direction, 'Lettre 12')).toEqual({ ok: false, rule: 'R585', code: 'titre' });
+    // Un titre public au vocabulaire interdit ne sort pas [R07].
+    expect(await t.lettre.magazine(t.direction, 'Les estimations gratuites des mandataires')).toMatchObject({ ok: false, rule: 'R07' });
     expect(await t.lettre.magazine({ role: 'client' as never, userId: 'c', networkId: t.network.id }, 'Le magazine')).toEqual({ ok: false, rule: 'R16', code: 'role' });
   });
 
