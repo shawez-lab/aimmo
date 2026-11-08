@@ -410,9 +410,23 @@ export class TourneeProspection {
 
     const earliest = Math.max(dayStart.getTime(), this.now().getTime());
     /** Le trajet d'avant, en minutes, si l'arrêt peut commencer à `start` ; `null` sinon. */
-    /** Rien n'occupe l'agent entre deux instants : ni événement occupé, ni rendez-vous, ni arrêt choisi. La route se fait là. */
-    const clear = (from: number, to: number): boolean =>
-      ![...busy, ...booked, ...chosen].some((b) => b.start.getTime() < to && from < b.end.getTime());
+    /**
+     * Entre deux instants, un temps libre d'au moins `minutes` d'un seul tenant : ni événement occupé, ni rendez-vous,
+     * ni arrêt choisi. C'est là que la route se fait ; l'agent peut attendre avant de partir [R298, R33].
+     */
+    const window = (from: number, to: number, minutes: number): boolean => {
+      if (to - from < minutes * MINUTE) return false;
+      const blockers = [...busy, ...booked, ...chosen]
+        .map((b) => [Math.max(from, b.start.getTime()), Math.min(to, b.end.getTime())] as const)
+        .filter(([a, b]) => a < b)
+        .sort((x, y) => x[0] - y[0]);
+      let free = from;
+      for (const [a, b] of blockers) {
+        if (a - free >= minutes * MINUTE) return true;
+        free = Math.max(free, b);
+      }
+      return to - free >= minutes * MINUTE;
+    };
     const fits = (o: Opportunity, start: number): number | null => {
       const end = start + o.minutes * MINUTE;
       if (end > dayEnd.getTime()) return null;
@@ -429,15 +443,13 @@ export class TourneeProspection {
       let before = Number.isFinite(raw) && raw >= 0 ? raw : floor;
       if (prev?.booked) before = Math.max(before, floor);
       // On ne part pas avant maintenant : la route compte depuis la fin de l'arrêt d'avant, ou depuis maintenant [R298].
-      if (start < Math.max(prev ? prev.end.getTime() : earliest, earliest) + before * MINUTE) return null;
       // La route elle-même se fait dans du temps libre : jamais pendant un événement occupé ni un autre rendez-vous [R298, R33].
-      if (!clear(start - before * MINUTE, start)) return null;
+      if (!window(Math.max(prev ? prev.end.getTime() : earliest, earliest), start, before)) return null;
       const next = following(end);
       if (next) {
         const est = next.place ? this.estimate(o.place!, next.place) : floor;
         const after = Math.max(floor, Number.isFinite(est) ? est : floor);
-        if (next.start.getTime() < end + after * MINUTE) return null;
-        if (!clear(end, end + after * MINUTE)) return null;
+        if (!window(end, next.start.getTime(), after)) return null;
       }
       return before;
     };

@@ -245,6 +245,23 @@ describeWithSqlite('HX19 · carte des opportunités et tournée de prospection',
     }
   });
 
+  it('[R298] l’agent peut attendre : la route vers la visite se fait après un événement occupé', async () => {
+    // Libre de 8 h à 8 h 15, occupé de 9 h à 10 h, visite à midi loin d'ici : le diagnostic se fait à 8 h, la route après 10 h.
+    const busy = [{ start: at(DAY, '09:00'), end: at(DAY, '10:00') }];
+    const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:15' }] }] }, busy });
+    await w.db.run("UPDATE appointments SET status = 'cancelled', cancelled_at = ?", [NOW.toISOString()]);
+    await w.appointment(at(DAY, '12:00'), at(DAY, '12:45'));
+    const far: Place = { lat: 47.75, lon: 5.0 };
+    const t = new TourneeProspection(w.db, w.journal, { now: () => NOW, places: { placeOf: async () => far }, agenda: { busy: async () => busy } });
+    const tour = await t.plan(w.asPaul, DAY);
+    if (!tour.ok) throw new Error('tournée refusée');
+    const first = prospectStops(tour)[0]!;
+    const leg = roadEstimate(first.kind === 'panneau' ? SIGN_PLACE : first.kind === 'lettres' ? CENTER : DPE_PLACE, far);
+    expect(leg).toBeGreaterThan(60);
+    expect(leg).toBeLessThanOrEqual(120);
+    expect(first.start).toEqual(at(DAY, '08:00'));
+  });
+
   it('[R298] le total de route compte chaque trajet de la journée, jusqu’au rendez-vous fixe compris', async () => {
     const w = await world({ availability: { ...WEEK, exceptions: [{ date: DAY, ranges: [{ from: '08:00', to: '08:15' }, { from: '09:00', to: '12:00' }] }] } });
     const tour = await w.tournee.plan(w.asPaul, DAY);
