@@ -347,7 +347,8 @@ Réservé le 2026-11-07 par la voie 2. Règles R470 à R489 et migrations à par
 - Critères : un rejet crée une seule tâche de correction (test) ; un écart de prix entre portail et version publiée est signalé (test) ; le classement des portails se fait sur les contacts et mandats réels (test).
 
 ### HX39 · Texte par portail et légendes des photos
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, relecture normale
 - Objectif : comme Apimo et Hektor : un texte différent par portail et des titres de photos générés. Jamais vu : seul le texte change, prix et mentions restent identiques partout, et chaque photo reçoit une légende utile aussi aux personnes malvoyantes, sans rien affirmer que la photo ne montre pas.
 - Critères : prix et mentions identiques dans tous les textes (test) ; aucune légende ne cite un élément absent de la fiche (test).
 
