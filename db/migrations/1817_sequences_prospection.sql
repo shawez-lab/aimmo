@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS prospecting_sequences (
   start_day TEXT NOT NULL CHECK (length(start_day) = 10),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stopped', 'finished')),
   ended_at TEXT,
-  end_reason TEXT CHECK (end_reason IS NULL OR end_reason IN ('reply', 'excluded', 'withdrawn', 'call_refused', 'opposition_list', 'reassigned', 'agent_gone', 'refused_send', 'done')),
+  end_reason TEXT CHECK (end_reason IS NULL OR end_reason IN ('reply', 'excluded', 'withdrawn', 'call_refused', 'opposition_list', 'reassigned', 'agent_gone', 'refused_send', 'merged', 'done')),
   end_rule TEXT,
   CHECK ((status = 'active') = (ended_at IS NULL)),
   CHECK ((status = 'active') = (end_reason IS NULL)),

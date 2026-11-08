@@ -54,8 +54,9 @@ async function setup(options: { consents?: { channel: Channel; purpose: string }
   const channels = (['email', 'sms', 'whatsapp', 'instagram', 'facebook', 'phone'] as Channel[]).map((c) => new FakeChannel(c));
   const controle = new ControleEnvois(db, unique, decisions, { channels, journal: new SqlSendJournal(db, undefined, now), now });
   const ficheAgent = new FicheAgent(db, acces, { now });
+  const appels = new AppelsFiche(db, acces, journal, { now });
   const opposition = options.opposition === undefined ? new FakeOpposition() : options.opposition;
-  const sequences = new SequencesProspection(db, acces, unique, controle, ficheAgent, journal, { now, ...(opposition ? { opposition } : {}) });
+  const sequences = new SequencesProspection(db, acces, unique, controle, ficheAgent, appels, journal, { now, ...(opposition ? { opposition } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const samAgent = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Essai' });
@@ -98,7 +99,7 @@ async function setup(options: { consents?: { channel: Channel; purpose: string }
     sequences,
     opposition,
     ficheAgent,
-    appels: new AppelsFiche(db, acces, journal, { now }),
+    appels,
     sent,
     allSent,
     steps,
@@ -145,7 +146,7 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     let today = await t.sequences.today(t.alex);
     const call = today.ok ? today.value.steps[0]! : null;
     expect(call).toMatchObject({ action: 'call', proposed: true });
-    expect(await t.sequences.markDone(t.alex, call!.stepId)).toMatchObject({ ok: true });
+    expect(await t.sequences.markDone(t.alex, call!.stepId, { callOutcome: 'called' })).toMatchObject({ ok: true });
     expect(await t.sequences.run()).toMatchObject({ sent: 1 });
     expect(t.sent('sms')).toHaveLength(1);
     t.setClock(START + 21 * DAY);
@@ -267,6 +268,50 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(listed.sent('sms')).toHaveLength(0);
   });
 
+  it('[R302] [R204] chaque appel de la séquence compte dans la fréquence, et un refus dit à l’appel arrête tout', async () => {
+    const t = await setup();
+    const id = await t.startOk([0, 1, 2, 3, 4].map((d) => ({ channel: 'phone' as const, afterDays: d })).concat([{ channel: 'sms' as const, afterDays: 5, text: 'Bonjour Léa, c’est Alex.' } as never]));
+    for (let d = 0; d < 4; d += 1) {
+      t.setClock(START + d * DAY);
+      const today = await t.sequences.today(t.alex);
+      const step = today.ok ? today.value.steps[0]! : null;
+      expect(step).toMatchObject({ proposed: true });
+      expect(await t.sequences.markDone(t.alex, step!.stepId, { callOutcome: 'called' })).toMatchObject({ ok: true });
+    }
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM call_notes WHERE person_id = ?', [t.person.id])).toEqual({ n: 4 });
+    // Le cinquième appel en 30 jours n'est pas proposé.
+    t.setClock(START + 4 * DAY);
+    const fifth = await t.sequences.today(t.alex);
+    expect(fifth.ok && fifth.value.steps[0]).toMatchObject({ proposed: false, reason: 'too_many_calls' });
+    expect((await t.sequence(id))?.status).toBe('active');
+
+    const r = await setup();
+    const rid = await r.startOk(FULL);
+    await r.sequences.run();
+    r.setClock(START + 2 * DAY);
+    const today = await r.sequences.today(r.alex);
+    expect(await r.sequences.markDone(r.alex, today.ok ? today.value.steps[0]!.stepId : '', { callOutcome: 'refused' })).toEqual({ ok: true, value: { finished: false, stopped: true } });
+    expect(await r.sequence(rid)).toMatchObject({ status: 'stopped', end_reason: 'call_refused', end_rule: 'R204' });
+    r.setClock(START + 7 * DAY);
+    await r.sequences.run();
+    expect(r.sent('sms')).toHaveLength(0);
+  });
+
+  it('[R300] deux fiches réunies qui avaient chacune leur séquence : un seul mail part, la plus récente s’arrête', async () => {
+    const t = await setup();
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexAgent.id, firstName: 'Léa', lastName: 'Inventée' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: twin.id, kind: 'email', value: 'lea2@exemple.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: twin.id, purpose: 'prospecting', channel: 'email', proof: 'accord de test', givenAt: new Date(START - DAY) });
+    const first = await t.startOk(FULL);
+    t.setClock(START + 60_000);
+    const second = await t.startOk(FULL, twin.id);
+    await t.unique.merge({ survivorId: t.person.id, mergedId: twin.id, reason: 'même personne', agentId: t.alexAgent.id });
+    await t.sequences.run();
+    expect(t.sent('email')).toHaveLength(1);
+    expect((await t.sequence(first))?.status).toBe('active');
+    expect(await t.sequence(second)).toMatchObject({ status: 'stopped', end_reason: 'merged' });
+  });
+
   it('[R301] une personne déjà opposée ne reçoit pas de séquence ; une seule séquence en cours par fiche', async () => {
     const t = await setup();
     await t.startOk(FULL);
@@ -287,7 +332,7 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     today = await t.sequences.today(t.alex);
     expect(today.ok && today.value.steps).toMatchObject([{ action: 'call', proposed: false, reason: 'outside_hours', call: null }]);
     const stepId = today.ok ? today.value.steps[0]!.stepId : '';
-    expect(await t.sequences.markDone(t.alex, stepId)).toMatchObject({ ok: false, rule: 'R302', code: 'outside_hours' });
+    expect(await t.sequences.markDone(t.alex, stepId, { callOutcome: 'called' })).toMatchObject({ ok: false, rule: 'R302', code: 'outside_hours' });
     // 13 h 30 : la pause du décret.
     t.setClock(START + DAY + 2.5 * HOUR);
     today = await t.sequences.today(t.alex);
@@ -303,7 +348,8 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     expect(today.ok && today.value.steps[0]).toMatchObject({ proposed: false, reason: 'outside_hours' });
     // De nouveau dans les heures : l'agent note l'appel fait, la séquence est finie.
     t.setClock(START + 6 * DAY);
-    expect(await t.sequences.markDone(t.alex, stepId)).toEqual({ ok: true, value: { finished: true } });
+    expect(await t.sequences.markDone(t.alex, stepId)).toMatchObject({ ok: false, code: 'call_outcome' });
+    expect(await t.sequences.markDone(t.alex, stepId, { callOutcome: 'called' })).toEqual({ ok: true, value: { finished: true, stopped: false } });
     expect(await t.sequence(id)).toMatchObject({ status: 'finished', end_reason: 'done' });
   });
 
@@ -339,7 +385,7 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     const stepId = r.ok ? r.value.sequenceSteps![0]!.stepId : '';
     // Seul l'agent de la fiche note l'étape faite.
     expect(await t.sequences.markDone(t.sam, stepId)).toMatchObject({ ok: false, rule: 'R16' });
-    expect(await t.sequences.markDone(t.alex, stepId)).toEqual({ ok: true, value: { finished: false } });
+    expect(await t.sequences.markDone(t.alex, stepId)).toEqual({ ok: true, value: { finished: false, stopped: false } });
     r = await plan.compute(t.acces, t.alex);
     expect(r.ok && r.value.sequenceSteps).toEqual([]);
     t.setClock(START + 3 * DAY);

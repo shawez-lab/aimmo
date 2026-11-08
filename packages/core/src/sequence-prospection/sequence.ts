@@ -23,6 +23,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { agentState } from '../acces/etat-agent.ts';
+import type { AppelsFiche } from '../acces/appels.ts';
 import type { FicheAgent } from '../acces/fiche-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { ControleEnvois, SendResult } from '../envoi/controle.ts';
@@ -38,7 +39,7 @@ export const SEQUENCE_MAX_DAYS = 90;
 const TIME_ZONE = 'Europe/Paris';
 const DAY_MS = 86_400_000;
 
-export type EndReason = 'reply' | 'excluded' | 'withdrawn' | 'call_refused' | 'opposition_list' | 'reassigned' | 'agent_gone' | 'refused_send';
+export type EndReason = 'reply' | 'excluded' | 'withdrawn' | 'call_refused' | 'opposition_list' | 'reassigned' | 'agent_gone' | 'refused_send' | 'merged';
 
 export interface StepInput {
   channel: SequenceChannel;
@@ -124,6 +125,7 @@ export class SequencesProspection {
     private readonly fiche: FicheUnique,
     private readonly controle: ControleEnvois,
     private readonly ficheAgent: FicheAgent,
+    private readonly appels: AppelsFiche,
     private readonly journal: JournalStore,
     options: SequencesOptions = {},
   ) {
@@ -219,6 +221,15 @@ export class SequencesProspection {
     );
     if (Number(refused?.n ?? 0) > 0) return { reason: 'call_refused', rule: 'R204' };
     if (seq.id !== '' && !view.members.some((m) => m.agent_id === seq.agent_id)) return { reason: 'reassigned', rule: 'R16' };
+    // Deux fiches réunies qui avaient chacune leur séquence : seule la plus ancienne continue, une seule par personne [R300].
+    if (seq.id !== '') {
+      const older = await this.db.first<{ id: string }>(
+        `SELECT id FROM prospecting_sequences WHERE status = 'active' AND id <> ? AND person_id IN (${placeholders(ids.length)})
+         AND (started_at < ? OR (started_at = ? AND id < ?)) LIMIT 1`,
+        [seq.id, ...ids, seq.started_at, seq.started_at, seq.id],
+      );
+      if (older) return { reason: 'merged', rule: 'R300' };
+    }
     return null;
   }
 
@@ -324,8 +335,12 @@ export class SequencesProspection {
     return { ok: true, value: { day, steps: out } };
   }
 
-  /** L'agent note fait un appel, un courrier ou un passage à la porte. Revérifié à cet instant [R301, R302]. */
-  async markDone(viewer: Viewer, stepId: string): Promise<Result<{ finished: boolean }>> {
+  /**
+   * L'agent note fait un appel, un courrier ou un passage à la porte. Revérifié à cet instant [R301, R302]. Un appel
+   * dit son issue (`called` ou `refused`) : il est noté dans les appels de la fiche, il compte dans la fréquence [R204],
+   * et un refus arrête la séquence sur tous les canaux [R301].
+   */
+  async markDone(viewer: Viewer, stepId: string, input: { callOutcome?: 'called' | 'refused' } = {}): Promise<Result<{ finished: boolean; stopped: boolean }>> {
     const blocked = await this.activeAgent(viewer);
     if (blocked) return blocked;
     const subject = `prospecting_sequence_step:${stepId}`;
@@ -340,14 +355,21 @@ export class SequencesProspection {
     if (!step || step.id !== stepId) return this.refuse(viewer, subject, 'HX20', 'not_due');
     if (step.channel === 'email' || step.channel === 'sms') return this.refuse(viewer, subject, 'R300', 'sent_by_control');
     if (step.channel === 'phone') {
+      if (input.callOutcome !== 'called' && input.callOutcome !== 'refused') return this.refuse(viewer, subject, 'R204', 'call_outcome');
       const c = await this.callCheck(viewer, seq);
       if (!c.proposed) {
         if (c.stop) await this.end(seq, 'opposition_list', 'R302', this.actor(viewer));
         return this.refuse(viewer, subject, 'R302', c.reason);
       }
+      const noted = await this.appels.note(viewer, seq.person_id, { outcome: input.callOutcome });
+      if (!noted.ok) return this.refuse(viewer, subject, noted.rule ?? 'R204', noted.code);
+      if (input.callOutcome === 'refused') {
+        await this.end(seq, 'call_refused', 'R204', this.actor(viewer));
+        return { ok: true, value: { finished: false, stopped: true } };
+      }
     }
     await this.settle(seq, step, 'done', null, null, this.actor(viewer));
-    return { ok: true, value: { finished: seq.status === 'finished' } };
+    return { ok: true, value: { finished: seq.status === 'finished', stopped: false } };
   }
 
   /**
