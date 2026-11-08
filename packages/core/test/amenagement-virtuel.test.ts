@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { AmenagementsVirtuels, checkStagingChanges, describeStagingChange, galleryProblems, orderGallery } from '../src/medias/index.ts';
+import { AmenagementsVirtuels, FiligranePhotos, checkStagingChanges, describeStagingChange, galleryProblems, orderGallery } from '../src/medias/index.ts';
 import { CertificatsPhotos } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -81,7 +81,8 @@ async function setup() {
   const room = await certs.record(alexV, p.id, { resultRef: ref(p.id, 3), resultSha256: sha('e'), originalRef: orig(p.id, 3), originalSha256: sha('d'), operations: [{ op: 'contraste', amount: 5 }], processedOn: 'appareil' });
   const other = await certs.record(alexV, p.id, { resultRef: ref(p.id, 4), resultSha256: sha('f'), originalRef: orig(p.id, 4), originalSha256: sha('9'), operations: [], processedOn: 'appareil' });
   if (!real.ok || !staged.ok || !room.ok || !other.ok) throw new Error('certificats');
-  return { db, certs, amenagements, network, alex, sam, p, as, alexV, staged: staged.value, other: other.value };
+  const filigrane = new FiligranePhotos(db, acces, journal, certs, { now });
+  return { db, certs, amenagements, filigrane, network, alex, sam, p, as, alexV, staged: staged.value, other: other.value };
 }
 
 describeWithSqlite('HX41 · aménagement virtuel des pièces', () => {
@@ -152,5 +153,23 @@ describeWithSqlite('HX41 · aménagement virtuel des pièces', () => {
     ]);
     expect((await t.certs.publishable(t.p.id)).map((x) => x.ref)).toEqual([ref(t.p.id, 3)]);
     expect(await t.certs.checkPublishable(t.p.id, ref(t.p.id, 2))).toEqual({ ok: false, rule: 'R130', code: 'sans_certificat' });
+  });
+
+  it('[R493] une image aménagée ne s’exporte jamais seule : sa jumelle réelle sort dans le même geste, avant elle', async () => {
+    const t = await setup();
+    const size = { width: 4032, height: 3024 };
+    // Sans jumelle déclarée : pas d'export.
+    expect(await t.filigrane.exportPhoto(t.alexV, t.p.id, { ref: ref(t.p.id, 2), ...size })).toEqual({ ok: false, rule: 'R130', code: 'sans_certificat' });
+    await t.amenagements.declare(t.alexV, t.p.id, { stagedRef: ref(t.p.id, 2), realRef: ref(t.p.id, 1), changes: CHANGES });
+    const e = await t.filigrane.exportPhoto(t.alexV, t.p.id, { ref: ref(t.p.id, 2), ...size });
+    expect(e.ok).toBe(true);
+    if (!e.ok) return;
+    expect(e.value).toMatchObject({ ref: ref(t.p.id, 2), mentions: ['Aménagement virtuel'], twinExport: { ref: ref(t.p.id, 1), mentions: [] } });
+    // Les deux exports sont rangés, la jumelle d'abord, chacun avec son filigrane.
+    const rows = await t.db.all<{ result_ref: string; watermark_text: string }>('SELECT result_ref, watermark_text FROM photo_exports ORDER BY rowid');
+    expect(rows.map((r) => r.result_ref)).toEqual([ref(t.p.id, 1), ref(t.p.id, 2)]);
+    expect(rows.every((r) => r.watermark_text.startsWith('Alexandrine Fictive · AIMMO · '))).toBe(true);
+    // Une photo réelle s'exporte seule.
+    expect(await t.filigrane.exportPhoto(t.alexV, t.p.id, { ref: ref(t.p.id, 3), ...size })).toMatchObject({ ok: true, value: { twinExport: null } });
   });
 });

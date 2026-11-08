@@ -14,7 +14,7 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { OrigineContacts, taggedLink } from '../attirer/origine-contacts.ts';
 import { Referencement } from '../attirer/referencement.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { PALETTE, POLICES } from '../design/systeme.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -37,9 +37,14 @@ export interface PhotoExport {
   svg: string;
   width: number;
   height: number;
+  /**
+   * Pour une image aménagée : l'export de sa photo réelle jumelle, fait dans le même geste, à livrer juste avant elle
+   * (HX41) [R493]. Null pour une photo réelle.
+   */
+  twinExport: Omit<PhotoExport, 'twinExport'> | null;
 }
 
-export type ExportResult = { ok: true; value: PhotoExport } | { ok: false; rule: 'R16' | 'R10' | 'R130' | 'R491'; code: string };
+export type ExportResult = { ok: true; value: PhotoExport } | { ok: false; rule: 'R16' | 'R10' | 'R130' | 'R491' | 'R493'; code: string };
 
 export interface FiligraneOptions {
   now?: () => Date;
@@ -147,7 +152,7 @@ export class FiligranePhotos {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, propertyId, 'not_assigned');
     const networkId = read.value.network_id;
-    const bad = async (rule: 'R10' | 'R130' | 'R491', code: string): Promise<ExportResult> => {
+    const bad = async (rule: 'R10' | 'R130' | 'R491' | 'R493', code: string): Promise<ExportResult> => {
       await appendEvent(this.journal, { type: 'medias.export.refuse', actor, subject: `property:${propertyId}`, data: { rule, code } }, this.now);
       return { ok: false, rule, code };
     };
@@ -171,19 +176,41 @@ export class FiligranePhotos {
     // Le filigrane entier doit se lire sur l'image : trop petite, elle ne s'exporte pas.
     const svg = watermarkSvg(text, width, height);
     if (svg === null) return bad('R491', 'image_trop_petite');
+    // Une image aménagée ne sort jamais seule : sa photo réelle jumelle (même cliché, mêmes dimensions) est exportée
+    // dans le même geste, à livrer juste avant elle [R493].
+    let twin: CertifiedPhoto | null = null;
+    if (photo.overlay !== null) {
+      const t = photo.twin ? await this.certificats.checkPublishable(propertyId, photo.twin) : null;
+      if (!t || !t.ok || t.value.overlay !== null) return bad('R493', 'amenagement_sans_jumelle');
+      twin = t.value;
+    }
     const canonical = await this.taggedPage(networkId, propertyId, content.contentId);
-    const id = this.newId();
-    await this.db.run(
-      `INSERT INTO photo_exports (id, network_id, property_id, result_ref, certificate_token, content_id, watermark_text, width, height, exported_by, exported_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, networkId, propertyId, photo.ref, photo.certificateToken, content.contentId, text, width, height, actor, this.now().toISOString()],
+    const at = this.now().toISOString();
+    const one = (p: CertifiedPhoto): Omit<PhotoExport, 'twinExport'> => ({
+      exportId: this.newId(),
+      ref: p.ref,
+      watermarkText: text,
+      contentCode: content.contentId,
+      link: canonical,
+      mentions: [p.overlay, p.retouchMention].filter((m): m is NonNullable<typeof m> => m !== null),
+      certificatePath: p.certificatePath,
+      svg,
+      width,
+      height,
+    });
+    const twinExport = twin ? one(twin) : null;
+    const main = one(photo);
+    const rows = [...(twin && twinExport ? [[twinExport, twin] as const] : []), [main, photo] as const];
+    await runBatch(
+      this.db,
+      rows.map(([e, p]) => ({
+        sql: `INSERT INTO photo_exports (id, network_id, property_id, result_ref, certificate_token, content_id, watermark_text, width, height, exported_by, exported_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [e.exportId, networkId, propertyId, p.ref, p.certificateToken, content.contentId, text, width, height, actor, at],
+      })),
     );
-    const mentions = [photo.overlay, photo.retouchMention].filter((m): m is NonNullable<typeof m> => m !== null);
-    await appendEvent(this.journal, { type: 'medias.photo.exportee', actor, subject: `property:${propertyId}`, data: { rule: 'R491', mentions } }, this.now);
-    return {
-      ok: true,
-      value: { exportId: id, ref: photo.ref, watermarkText: text, contentCode: content.contentId, link: canonical, mentions, certificatePath: photo.certificatePath, svg, width, height },
-    };
+    await appendEvent(this.journal, { type: 'medias.photo.exportee', actor, subject: `property:${propertyId}`, data: { rule: 'R491', mentions: main.mentions, twin: twin !== null } }, this.now);
+    return { ok: true, value: { ...main, twinExport } };
   }
 
   /** Les exports rangés d'une photo, pour vérifier ce qui a été posé. */
