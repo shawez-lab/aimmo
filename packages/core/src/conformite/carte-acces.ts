@@ -823,6 +823,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   photo_guide_validations: out('sans_client', 'Validation d\'un bien photographié avec le guide : aucune personne.'),
   photo_certificates: out('sans_client', 'Description des corrections d\'une photo de bien et son certificat : aucune personne.'),
   photo_exports: out('sans_client', 'Export d\'une photo de bien avec son filigrane : le nom professionnel de l\'agent et un code de contenu, aucun client.'),
+  virtual_stagings: out('sans_client', 'Ce qui a changé sur une image aménagée d\'un bien et sa photo réelle : aucune personne.'),
   floor_plans: out('sans_client', 'Pièces et cotes du plan d\'un logement : aucune personne.'),
   video_montages: out('sans_client', 'Description du montage d\'une vidéo de bien : aucune personne.'),
   licensed_assets: out('sans_client', 'Musiques et images sous licence du réseau : aucune personne.'),

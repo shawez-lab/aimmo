@@ -65,10 +65,16 @@ export function renderCertificate(cert: studio.PhotoCertificate): string {
     cert.retouches.length === 0
       ? ''
       : `<h2>Retouches à un endroit précis</h2><ul>${cert.retouches.map((r) => `<li>${escape(r.detail)}</li>`).join('')}</ul><p>La mention « ${escape(cert.retouchMention ?? 'Photo retouchée')} » est posée sur la photo partout où elle paraît. Aucun défaut du bien n’a été effacé ni caché.</p>`;
+  // Ce qui a changé sur une image aménagée, déclaré par l'agent (HX41) [R492].
+  const changes =
+    cert.stagingChanges && cert.stagingChanges.length > 0
+      ? `<h2>Ce qui a changé</h2><ul>${cert.stagingChanges.map((c) => `<li>${escape(c.detail)}</li>`).join('')}</ul><p>La photo réelle du même cliché est publiée juste avant celle-ci.</p>`
+      : '';
   return [
     `<p>${escape(cert.statement)}</p>`,
     corrections,
     staging,
+    changes,
     retouches,
     '<h2>Empreintes</h2>',
     '<p class="doux">L’original est gardé. Chaque fichier a son empreinte : la moindre modification la changerait.</p>',

@@ -168,9 +168,10 @@ describeWithSqlite('HX40 · retouches déclarées et filigrane', () => {
     const pub = await t.certs.publishable(t.p.id);
     expect(pub.map((x) => [x.ref, x.overlay, x.retouchMention, x.retouches])).toEqual([
       [ref(t.p.id, 1), null, 'Photo retouchée', ['ciel', 'reflets', 'objet_retire']],
-      [ref(t.p.id, 3), 'Aménagement virtuel', 'Photo retouchée', ['reflets']],
       [ref(t.p.id, 4), null, null, []],
     ]);
+    // L'image aménagée 3 a sa mention, mais ne part pas sans sa jumelle réelle déclarée (HX41) [R493].
+    expect((await t.certs.certificate(v.ok ? v.value.token : ''))?.retouchMention).toBe('Photo retouchée');
     const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.photo.certifiee'");
     expect(JSON.parse(ev[0]!.data)).toEqual({ operations: ['exposition'], retouches: ['ciel', 'reflets', 'objet_retire'] });
   });
