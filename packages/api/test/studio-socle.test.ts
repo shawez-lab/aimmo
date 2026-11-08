@@ -179,6 +179,8 @@ it('[R48] [R201] le certificat d’une photo aménagée le dit, dans le système
     originalSha256: '2'.repeat(64),
     originalKept: true,
     localEdits: 'amenagement_virtuel',
+    retouches: [],
+    retouchMention: null,
     corrections: [],
     virtualStaging: true,
     mention: 'Aménagement virtuel',
