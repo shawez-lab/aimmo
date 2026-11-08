@@ -62,6 +62,10 @@ describeWithSqlite('HX63 · quiz et attestations de formation', () => {
     await expect(
       w.db.run("INSERT INTO quiz_questions (id, network_id, module_id, prompt, choices, correct_index, created_by, created_at) VALUES ('q-x', ?, NULL, 'Une question ?', '[\"a\",\"b\"]', 0, 'x', 'x')", [w.network.id]),
     ).rejects.toThrow();
+    // Ni sur le module d'un autre réseau.
+    await expect(
+      w.db.run("INSERT INTO quiz_questions (id, network_id, module_id, prompt, choices, correct_index, created_by, created_at) VALUES ('q-y', ?, ?, 'Une question inventée ?', '[\"a\",\"b\"]', 0, 'x', 'x')", [w.other.id, m]),
+    ).rejects.toThrow(/autre réseau/);
   });
 
   it('[R570] le catalogue des règles ne cite que des règles en service de docs/REGLES.md, sous leur titre', () => {
@@ -247,6 +251,14 @@ describeWithSqlite('HX63 · quiz et attestations de formation', () => {
     // Le document rangé est l'écriture canonique, et la base refuse de le changer.
     expect((await w.db.first<{ document: string }>('SELECT document FROM quiz_attestations'))?.document).toBe(canonicalJson(document));
     await expect(w.db.run("UPDATE quiz_attestations SET issued_on = '2027-01-01'")).rejects.toThrow(/ne change plus/);
+    // La base refuse une attestation au nom d'un autre agent, ou sur un quiz raté.
+    const b = await w.newAgent('Hector');
+    const ins = 'INSERT INTO quiz_attestations (id, network_id, agent_id, attempt_id, issued_on, document, fingerprint, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+    await expect(w.db.run(ins, ['att-faux', w.network.id, b, s.attemptId, '2027-03-01', '{}', '0'.repeat(64), 'x'])).rejects.toThrow(/pas de quiz rendu sans faute/);
+    const s2 = await w.quiz.start(w.as(a), { moduleId: m });
+    if (!s2.ok) throw new Error(s2.code);
+    await w.quiz.submit(w.as(a), s2.attemptId, [0, 0, 0]);
+    await expect(w.db.run(ins, ['att-faux-2', w.network.id, a, s2.attemptId, '2027-03-01', '{}', '0'.repeat(64), 'x'])).rejects.toThrow(/pas de quiz rendu sans faute/);
   });
 
   it('[R17] rien ne s\'efface ; une question rangée ne change plus, retirée elle ne sort plus aux nouveaux quiz', async () => {

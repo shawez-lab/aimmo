@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
   CHECK ((retired_at IS NULL) = (retired_by IS NULL))
 );
 CREATE INDEX IF NOT EXISTS quiz_questions_module ON quiz_questions (network_id, module_id);
+-- Le module d'une question est un module du même réseau.
+CREATE TRIGGER IF NOT EXISTS quiz_questions_reseau BEFORE INSERT ON quiz_questions
+WHEN NOT EXISTS (SELECT 1 FROM academy_modules WHERE id = NEW.module_id AND network_id = NEW.network_id)
+BEGIN SELECT RAISE(ABORT, 'quiz_questions : le module est d''un autre réseau'); END;
 CREATE TRIGGER IF NOT EXISTS quiz_questions_garde BEFORE DELETE ON quiz_questions BEGIN SELECT RAISE(ABORT, 'quiz_questions : rien ne s''efface'); END;
 -- Seul le retrait, une fois, est permis ; le texte, les choix, la bonne réponse, le module et la règle ne changent plus.
 CREATE TRIGGER IF NOT EXISTS quiz_questions_fige BEFORE UPDATE ON quiz_questions
@@ -67,6 +71,10 @@ CREATE TABLE IF NOT EXISTS quiz_attestations (
   issued_at TEXT NOT NULL,
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
+-- Une attestation n'est rangée que sur un quiz du même agent et du même réseau, rendu sans faute.
+CREATE TRIGGER IF NOT EXISTS quiz_attestations_quiz BEFORE INSERT ON quiz_attestations
+WHEN NOT EXISTS (SELECT 1 FROM quiz_attempts WHERE id = NEW.attempt_id AND network_id = NEW.network_id AND agent_id = NEW.agent_id AND submitted_at IS NOT NULL AND all_right = 1)
+BEGIN SELECT RAISE(ABORT, 'quiz_attestations : pas de quiz rendu sans faute pour cet agent'); END;
 CREATE INDEX IF NOT EXISTS quiz_attestations_agent ON quiz_attestations (network_id, agent_id, issued_on);
 CREATE TRIGGER IF NOT EXISTS quiz_attestations_garde BEFORE DELETE ON quiz_attestations BEGIN SELECT RAISE(ABORT, 'quiz_attestations : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS quiz_attestations_fige BEFORE UPDATE ON quiz_attestations BEGIN SELECT RAISE(ABORT, 'quiz_attestations : une attestation ne change plus'); END;
