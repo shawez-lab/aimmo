@@ -542,6 +542,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   ad_campaign_starts: out('sans_client', 'Lancements d\'une campagne (HX54), en essai : aucune personne.'),
   ad_campaign_stops: out('sans_client', 'Arrêts d\'une campagne (HX54) : motif, dépense et nombre de contacts ; aucune personne.'),
   ad_campaign_spend: out('sans_client', 'Dépense d\'une campagne par jour, lue chez la plateforme (HX54) : aucune personne.'),
+  ad_campaign_repauses: out('sans_client', 'Pauses redemandées d\'une campagne (HX54) : aucune personne.'),
   ad_campaign_contacts: { locate: by('person_id') },
   newsletter_editions: out('sans_client', 'Éditions de la lettre d\'information (HX53) : un titre, la direction qui l\'ouvre ; aucune personne.'),
   newsletter_letters: { locate: by('person_id') },

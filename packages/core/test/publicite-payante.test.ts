@@ -212,6 +212,50 @@ describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
     expect(await t.events('publicite.refus')).toHaveLength(1);
   });
 
+  it('[R588] deux lectures de dépense du même jour en même temps : aucune n’est perdue, le seuil est tenu', async () => {
+    const t = await setup();
+    const c = await t.running();
+    await Promise.all([t.pub.recordSpend(t.network.id, c.id, '2027-10-11', 1_400), t.pub.recordSpend(t.network.id, c.id, '2027-10-11', 1_600)]);
+    expect(await t.db.all('SELECT amount_cents FROM ad_campaign_spend ORDER BY version')).toHaveLength(2);
+    // La dernière lecture fait foi ; si c'est 16 €, la campagne est arrêtée, sinon elle l'est à la prochaine lecture.
+    await t.pub.recordSpend(t.network.id, c.id, '2027-10-11', 1_600);
+    expect(await t.db.first('SELECT reason FROM ad_campaign_stops')).toEqual({ reason: 'seuil' });
+  });
+
+  it('[R588] arrêtée pendant que la plateforme lance : la pause est redemandée après le lancement', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const log: string[] = [];
+    const slow: AdPlatform = { mode: 'essai', start: async () => { await gate; log.push('start'); }, pause: async () => { log.push('pause'); } };
+    const t = await setup({ google_ads: slow, meta: trialAdPlatform() });
+    const c = await t.pub.create(t.dir, { platform: 'google_ads', name: 'Vendeurs Dijon', targeting: TARGET });
+    if (!c.ok) throw new Error(c.code);
+    await t.pub.approve(t.dir, c.value.id, BUDGET);
+    const starting = t.pub.start(t.dir, c.value.id);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await t.pub.stop(t.dir, c.value.id)).toMatchObject({ ok: true });
+    release();
+    expect(await starting).toMatchObject({ ok: false, rule: 'R588', code: 'arretee_au_lancement' });
+    expect(log).toEqual(['pause', 'start', 'pause']);
+  });
+
+  it('[R588] une pause pas encore confirmée bloque toute validation et tout lancement nouveaux', async () => {
+    let down = true;
+    const paused: string[] = [];
+    const flaky: AdPlatform = { mode: 'essai', start: async () => {}, pause: async (code) => { if (down) throw new Error('panne'); paused.push(code); } };
+    const t = await setup({ google_ads: flaky, meta: trialAdPlatform() });
+    const c = await t.running();
+    expect(await t.pub.stop(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
+    down = false;
+    await t.pub.runChecks(t.network.id);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+    // Le passage suivant ne remet plus en pause la campagne relancée.
+    await t.pub.runChecks(t.network.id);
+    expect(paused).toEqual([c.code]);
+  });
+
   it('[R588] deux contacts réunis après coup ne comptent qu’une fois, au seuil comme au compte rendu', async () => {
     const t = await setup();
     const c = await t.running();

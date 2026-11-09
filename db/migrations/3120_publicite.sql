@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS ad_campaign_starts (
 CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_validation BEFORE INSERT ON ad_campaign_starts
 WHEN NOT EXISTS (SELECT 1 FROM ad_campaign_approvals a WHERE a.id = NEW.approval_id AND a.campaign_id = NEW.campaign_id)
   OR EXISTS (SELECT 1 FROM ad_campaign_stops s WHERE s.approval_id = NEW.approval_id)
+  OR EXISTS (SELECT 1 FROM ad_campaign_stops p WHERE p.campaign_id = NEW.campaign_id AND p.paused_at IS NULL)
   OR EXISTS (SELECT 1 FROM ad_campaign_approvals b WHERE b.campaign_id = NEW.campaign_id AND b.version > (SELECT version FROM ad_campaign_approvals WHERE id = NEW.approval_id))
 BEGIN SELECT RAISE(ABORT, 'ad_campaign_starts : aucun lancement sans la dernière validation en vigueur de la direction'); END;
 CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_garde BEFORE DELETE ON ad_campaign_starts BEGIN SELECT RAISE(ABORT, 'ad_campaign_starts : rien ne s''efface'); END;
@@ -72,6 +73,17 @@ CREATE TRIGGER IF NOT EXISTS ad_campaign_stops_fige BEFORE UPDATE ON ad_campaign
 WHEN NOT (OLD.paused_at IS NULL AND NEW.paused_at IS NOT NULL AND NEW.approval_id = OLD.approval_id AND NEW.campaign_id = OLD.campaign_id AND NEW.reason = OLD.reason
   AND NEW.spend_cents = OLD.spend_cents AND NEW.contacts = OLD.contacts AND NEW.stopped_by = OLD.stopped_by AND NEW.stopped_at = OLD.stopped_at)
 BEGIN SELECT RAISE(ABORT, 'ad_campaign_stops : un arrêt ne change plus, seule sa pause se confirme'); END;
+
+-- Une pause redemandée après un lancement qui a fini après l'arrêt, et restée en échec : à confirmer encore [R588].
+CREATE TABLE IF NOT EXISTS ad_campaign_repauses (
+  approval_id TEXT PRIMARY KEY REFERENCES ad_campaign_stops (approval_id) ON DELETE RESTRICT,
+  asked_at TEXT NOT NULL,
+  paused_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS ad_campaign_repauses_garde BEFORE DELETE ON ad_campaign_repauses BEGIN SELECT RAISE(ABORT, 'ad_campaign_repauses : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS ad_campaign_repauses_fige BEFORE UPDATE ON ad_campaign_repauses
+WHEN NOT (OLD.paused_at IS NULL AND NEW.paused_at IS NOT NULL AND NEW.approval_id = OLD.approval_id AND NEW.asked_at = OLD.asked_at)
+BEGIN SELECT RAISE(ABORT, 'ad_campaign_repauses : seule la pause se confirme'); END;
 
 -- La dépense lue chez la plateforme, par jour ; une correction s'ajoute en version, la dernière fait foi.
 CREATE TABLE IF NOT EXISTS ad_campaign_spend (

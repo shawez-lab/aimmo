@@ -283,6 +283,8 @@ export class PublicitePayante {
     // Une validation en cours de dépense n'est pas remplacée sous ses pieds : elle s'arrête d'abord.
     const last = await this.lastApproval(c.id);
     if (last && (await this.running(last.id))) return { ok: false, rule: 'R587', code: 'en_cours' };
+    // Une pause pas encore confirmée par la plateforme : rien de nouveau tant qu'elle ne l'est pas [R588].
+    if (await this.pausePending(c.id)) return { ok: false, rule: 'R588', code: 'pause_en_attente' };
     const version = (last?.version ?? 0) + 1;
     const approvalId = this.newId();
     let changes = 0;
@@ -321,6 +323,16 @@ export class PublicitePayante {
     return { spendCents: Number(s?.total ?? 0), contacts: roots.size };
   }
 
+  /** Une pause demandée à la plateforme et pas encore confirmée, pour cette campagne. */
+  private async pausePending(campaignId: string): Promise<boolean> {
+    const r = await this.db.first<{ n: number }>(
+      `SELECT (SELECT count(*) FROM ad_campaign_stops WHERE campaign_id = ? AND paused_at IS NULL)
+        + (SELECT count(*) FROM ad_campaign_repauses r JOIN ad_campaign_stops s ON s.approval_id = r.approval_id WHERE s.campaign_id = ? AND r.paused_at IS NULL) AS n`,
+      [campaignId, campaignId],
+    );
+    return Number(r?.n) > 0;
+  }
+
   /** Les validations lancées et pas encore arrêtées : une seule en principe, toutes contrôlées quand même. */
   private async runningApprovals(campaignId: string): Promise<ApprovalRow[]> {
     return this.db.all<ApprovalRow>(
@@ -349,6 +361,7 @@ export class PublicitePayante {
     // Une validation déjà lancée ou arrêtée ne repart jamais : il en faut une nouvelle de la direction [R587].
     const used = await this.db.first<{ n: number }>('SELECT (SELECT count(*) FROM ad_campaign_starts WHERE approval_id = ?) + (SELECT count(*) FROM ad_campaign_stops WHERE approval_id = ?) AS n', [a.id, a.id]);
     if (Number(used?.n) > 0) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
+    if (await this.pausePending(c.id)) return this.refuse(viewer, 'ad_start', 'R588', 'pause_en_attente', { campaign: c.id });
     // Déjà au-delà du seuil ou du budget avec ce qui est dépensé : rien ne repart [R588].
     const over = this.overLimit(a, await this.totals(c.id));
     if (over) return this.refuse(viewer, 'ad_start', 'R588', over, { campaign: c.id });
@@ -372,6 +385,12 @@ export class PublicitePayante {
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
       return { ok: false, rule: 'R587', code: 'echec_lancement' };
     }
+    // Arrêtée pendant que la plateforme lançait : la pause a pu passer avant le lancement, elle est redemandée.
+    const stoppedMeanwhile = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_stops WHERE approval_id = ?', [a.id]);
+    if (Number(stoppedMeanwhile?.n) > 0) {
+      await this.pause(c, a.id, true);
+      return { ok: false, rule: 'R588', code: 'arretee_au_lancement' };
+    }
     await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: 'essai', version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
     return { ok: true, value: { approvalId: a.id } };
   }
@@ -394,13 +413,16 @@ export class PublicitePayante {
     return true;
   }
 
-  private async pause(c: CampaignRow, approvalId: string): Promise<void> {
+  private async pause(c: CampaignRow, approvalId: string, again = false): Promise<void> {
     try {
       await this.platforms[c.platform].pause(c.code);
     } catch {
       await appendEvent(this.journal, { type: 'publicite.pause_echec', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
+      // Une pause redemandée après le lancement et en échec redevient à confirmer.
+      if (again) await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [approvalId, this.now().toISOString()]);
       return;
     }
+    if (again) await this.db.run('UPDATE ad_campaign_repauses SET paused_at = ? WHERE approval_id = ? AND paused_at IS NULL', [this.now().toISOString(), approvalId]);
     await this.db.run('UPDATE ad_campaign_stops SET paused_at = ? WHERE approval_id = ? AND paused_at IS NULL', [this.now().toISOString(), approvalId]);
   }
 
@@ -427,23 +449,27 @@ export class PublicitePayante {
     if (typeof amountCents !== 'number' || !Number.isSafeInteger(amountCents) || amountCents < 0) return { ok: false, rule: null, code: 'bad_amount' };
     const started = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts WHERE campaign_id = ?', [c.id]);
     if (Number(started?.n) === 0) return this.refuse(null, 'ad_spend', 'R587', 'depense_sans_lancement', { campaign: c.id, amountCents });
-    const last = await this.db.first<{ v: number | null; a: number | null }>(
-      'SELECT max(version) AS v, (SELECT amount_cents FROM ad_campaign_spend WHERE campaign_id = ? AND day = ? ORDER BY version DESC LIMIT 1) AS a FROM ad_campaign_spend WHERE campaign_id = ? AND day = ?',
-      [c.id, day, c.id, day],
-    );
-    const previous = last?.a === null || last?.a === undefined ? null : Number(last.a);
-    // Une dépense qui monte alors qu'aucune validation n'est en cours est rangée telle que lue, et signalée [R587].
-    if ((previous === null ? amountCents > 0 : amountCents > previous) && (await this.runningApprovals(c.id)).length === 0) {
-      await this.refuse(null, 'ad_spend', 'R587', 'depense_hors_validation', { campaign: c.id, amountCents });
-    }
-    if (previous !== amountCents) {
-      await this.db.run('INSERT INTO ad_campaign_spend (campaign_id, day, version, amount_cents, reported_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
+    // Deux lectures du même jour en même temps : la version prise est réessayée, aucune lecture n'est perdue [R588].
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const last = await this.db.first<{ v: number | null; a: number | null }>(
+        'SELECT max(version) AS v, (SELECT amount_cents FROM ad_campaign_spend WHERE campaign_id = ? AND day = ? ORDER BY version DESC LIMIT 1) AS a FROM ad_campaign_spend WHERE campaign_id = ? AND day = ?',
+        [c.id, day, c.id, day],
+      );
+      const previous = last?.a === null || last?.a === undefined ? null : Number(last.a);
+      if (previous === amountCents) break;
+      const { changes } = await this.db.run('INSERT INTO ad_campaign_spend (campaign_id, day, version, amount_cents, reported_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
         c.id,
         day,
         Number(last?.v ?? 0) + 1,
         amountCents,
         this.now().toISOString(),
       ]);
+      if (changes !== 1) continue;
+      // Une dépense qui monte alors qu'aucune validation n'est en cours est rangée telle que lue, et signalée [R587].
+      if ((previous === null ? amountCents > 0 : amountCents > previous) && (await this.runningApprovals(c.id)).length === 0) {
+        await this.refuse(null, 'ad_spend', 'R587', 'depense_hors_validation', { campaign: c.id, amountCents });
+      }
+      break;
     }
     return { ok: true, value: { stopped: await this.check(c) } };
   }
@@ -468,6 +494,8 @@ export class PublicitePayante {
   private async check(c: CampaignRow): Promise<boolean> {
     const pending = await this.db.all<{ approval_id: string }>('SELECT approval_id FROM ad_campaign_stops WHERE campaign_id = ? AND paused_at IS NULL', [c.id]);
     for (const p of pending) await this.pause(c, p.approval_id);
+    const again = await this.db.all<{ approval_id: string }>('SELECT r.approval_id FROM ad_campaign_repauses r JOIN ad_campaign_stops s ON s.approval_id = r.approval_id WHERE s.campaign_id = ? AND r.paused_at IS NULL', [c.id]);
+    for (const p of again) await this.pause(c, p.approval_id, true);
     const totals = await this.totals(c.id);
     let stopped = false;
     for (const a of await this.runningApprovals(c.id)) {
