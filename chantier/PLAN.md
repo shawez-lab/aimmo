@@ -637,7 +637,7 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre : 
 - Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte).
 
 ### HX67 · Ce qui n'est pas du SQL standard, compté et qui ne grandit plus
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2, relecture normale · Dépend de : HX66
 - Partie du cahier : Architecture technique, « Pour que ce passage soit simple, le code n'utilise dès le départ que du SQL standard ».
 - Objectif : un test lit les migrations et les requêtes de `packages/core/src/` et compte, fichier par fichier, ce que PostgreSQL ne lit pas tel quel (`RAISE(ABORT…)`, `INSERT OR IGNORE`, `GLOB`, `datetime('now')`, `AUTOINCREMENT`, `PRAGMA`…) ; le compte de chaque sorte est figé : il peut baisser, jamais monter, et une forme nouvelle est refusée.
