@@ -119,19 +119,22 @@ export function requiredFor(costsCents: number, agentSharesCents: number, provis
  * Jamais vu : la plus petite part du réseau, en points de base des honoraires hors taxe, qui couvre le coût avec sa
  * marge [R625]. Quand la part du réseau monte, celle des agents baisse d'autant, et la provision avec elle : à chaque
  * part essayée, la provision et la marge sont refaites avec les mêmes arrondis. Le parrainage ne bouge pas. Nul sans
- * honoraires ; `unreachable` quand même 100 % ne suffirait pas.
+ * honoraires ; `unreachable` quand même tout ce qui reste après le parrainage ne suffirait pas.
  */
 export function breakEvenBp(input: { feesCents: number; sponsorSharesCents: number; costsCents: number; provisionBp: number; marginBp: number }): { bp: number | null; unreachable: boolean } {
   const { feesCents, sponsorSharesCents, costsCents, provisionBp, marginBp } = input;
   if (feesCents <= 0) return { bp: null, unreachable: false };
+  // Le parrainage est réservé d'abord : la part du réseau ne peut prendre que ce qui reste après lui.
+  const available = feesCents - sponsorSharesCents;
+  if (available < 0) return { bp: null, unreachable: true };
+  const maxBp = Math.floor((available * 10_000) / feesCents);
   const covers = (bp: number): boolean => {
     const network = bpOf(feesCents, bp);
-    const agents = Math.max(0, feesCents - network - sponsorSharesCents);
-    return network >= requiredFor(costsCents, agents, provisionBp, marginBp).requiredCents;
+    return network >= requiredFor(costsCents, available - network, provisionBp, marginBp).requiredCents;
   };
-  if (!covers(10_000)) return { bp: null, unreachable: true };
+  if (!covers(maxBp)) return { bp: null, unreachable: true };
   let lo = 0;
-  let hi = 10_000;
+  let hi = maxBp;
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     if (covers(mid)) hi = mid;

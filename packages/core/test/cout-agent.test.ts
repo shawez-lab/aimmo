@@ -144,6 +144,10 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(breakEvenBp({ feesCents: 0, sponsorSharesCents: 0, costsCents: 5, provisionBp: 0, marginBp: 0 })).toEqual({ bp: null, unreachable: false });
     // Même tout au réseau ne couvre pas : le seuil est nul et le dit.
     expect(breakEvenBp({ feesCents: 1000, sponsorSharesCents: 0, costsCents: 1001, provisionBp: 0, marginBp: 0 })).toEqual({ bp: null, unreachable: true });
+    // Le parrainage est réservé : sur 1 000, il reste 800 au plus pour le réseau, qui ne couvre pas 900.
+    expect(breakEvenBp({ feesCents: 1000, sponsorSharesCents: 200, costsCents: 900, provisionBp: 1000, marginBp: 0 })).toEqual({ bp: null, unreachable: true });
+    expect(breakEvenBp({ feesCents: 1000, sponsorSharesCents: 200, costsCents: 800, provisionBp: 1000, marginBp: 0 })).toEqual({ bp: 8000, unreachable: false });
+    expect(breakEvenBp({ feesCents: 1000, sponsorSharesCents: 1200, costsCents: 0, provisionBp: 0, marginBp: 0 })).toEqual({ bp: null, unreachable: true });
   });
 
   it('compare hors taxe : la TVA des honoraires n’est pas une recette du réseau [R624] [R625]', async () => {
