@@ -299,7 +299,7 @@ export class CoutAgent {
           AND NOT EXISTS (SELECT 1 FROM agent_departures d WHERE d.agent_id = a.id AND d.network_id = a.network_id AND d.cancelled_at IS NULL AND d.leaves_on < ?)`,
       [net, end, `${month}-01`],
     );
-    const ai = await this.db.first<{ c: number | null }>('SELECT SUM(cost_cents) AS c FROM messages WHERE network_id = ? AND occurred_at >= ? AND occurred_at < ?', [net, start, end]);
+    const ai = await this.db.first<{ c: number | null }>("SELECT SUM(cost_cents) AS c FROM messages WHERE network_id = ? AND author_kind = 'ai' AND occurred_at >= ? AND occurred_at < ?", [net, start, end]);
 
     const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
     const costs = Object.fromEntries(AGENT_COST_CATEGORIES.map((c) => [c, sum(invoiceLines.filter((l) => l.category === c).map((l) => l.htCents))])) as Record<AgentCostCategory, number>;

@@ -268,12 +268,13 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(text).not.toMatch(/agentId|beneficiary/);
   });
 
-  it('montre le coût de l’IA mesuré message par message, sans le compter [R624]', async () => {
+  it('montre le coût de l’IA mesuré sur les seuls messages de l’IA, sans le compter [R624]', async () => {
     const t = await setup();
     await t.settings(0, 0);
     await t.db.exec('PRAGMA foreign_keys = OFF');
     await t.db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, cost_cents, occurred_at, created_at) VALUES ('m1', ?, 'p', 'email', 'out', 'ai', 'texte', 123, '2027-02-02T10:00:00.000Z', 'x')", [t.network.id]);
     await t.db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, cost_cents, occurred_at, created_at) VALUES ('m2', ?, 'p', 'email', 'out', 'ai', 'texte', 999, '2027-03-02T10:00:00.000Z', 'x')", [t.network.id]);
+    await t.db.run("INSERT INTO messages (id, network_id, person_id, channel, direction, author_kind, body, cost_cents, occurred_at, created_at) VALUES ('m3', ?, 'p', 'sms', 'out', 'agent', 'texte', 999, '2027-02-03T10:00:00.000Z', 'x')", [t.network.id]);
     await t.db.exec('PRAGMA foreign_keys = ON');
     const r = await t.cout.month(t.dir, '2027-02');
     if (!r.ok) throw new Error(r.code);
