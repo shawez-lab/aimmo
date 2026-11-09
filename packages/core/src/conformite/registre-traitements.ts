@@ -583,6 +583,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX70 : les envois hors règles constatés hors d'AIMMO et l'inventaire des tâches planifiées, avec la référence de la preuve.
       phase1_outside_sends: ['proof_ref'],
       phase1_app_inventories: ['proof_ref'],
+      // HX71 : l'ouverture d'une phase, avec qui l'a décidée.
+      phase_openings: ['opened_by'],
     },
   },
   {
@@ -1323,6 +1325,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase1_day_readings: ['network_id', 'day', 'taken_at', 'planner_runs', 'sent', 'refused', 'without_control', 'while_excluded', 'site_gaps', 'site_failures', 'outside'],
   phase1_outside_sends: ['id', 'network_id', 'day', 'application', 'declared_at'],
   phase1_app_inventories: ['network_id', 'version', 'gohighlevel', 'manychat', 'site', 'github_actions', 'autre', 'declared_at'],
+  phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],
