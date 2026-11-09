@@ -830,12 +830,21 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR13 · Écran « Phases et régions » de la direction
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#467, `d2e53309`), `packages/api/app/phases.ts` ; Codex 1 P2 (raisons des conditions montrées en code) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5297 tests). Reste : BR14.
 - Qui : Claude, relecture normale · Dépend de : BR11, BR12
 - Partie du cahier : Feuille de route, « Cinq phases, chacune ouverte seulement si la précédente a rempli sa condition » ; phase 5.
 - Décidé (2026-11-09, voie 1) : un bloc de l'écran du réseau, script servi à part (`/app/phases.js`) chargé au premier geste, comme les engagements (G15). Les pilotes et la phase 1 (saisies de preuves) restent à une tâche suivante.
 - Objectif : la direction lit l'état des cinq phases (ouverte depuis quand, condition remplie, non remplie, inconnue, retombée) et ouvre la suivante en deux appuis ; elle lit les 18 régions, ouvre ou ferme une région avec sa raison, et vérifie la chaîne des décisions.
 - Critères : le script ne se charge qu'au premier geste, jamais gardé sur l'appareil, budget tenu [R201] (test) ; chaque condition dite en mots, jamais un code, une condition retombée dite [R648] (test) ; ouverture d'une phase en deux appuis, seulement quand elle est possible (test) ; un refus dit sa raison en mots, une réponse perdue dite incertaine (test) ; région ouverte ou fermée avec sa raison, refus R651 ou R652 dits, date de fin d'attente comprise (test) ; vérification dite intacte ou cassée avec sa version [R653] (test) ; tout texte reçu posé en texte, jamais `innerHTML` (test).
+- Attend : rien.
+
+### BR14 · Les agents pilotes et la phase 1 à l'écran
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : BR10, BR13
+- Partie du cahier : Feuille de route, « Les phases et leurs conditions ».
+- Objectif : dans le bloc « Phases et régions » (`packages/api/app/phases.ts`), la direction lit la comparaison des agents pilotes et la série de la phase 1, désigne un pilote, range ses mois d'avant avec la référence de la preuve, range un envoi constaté hors d'AIMMO et l'inventaire des tâches planifiées, par les routes de BR10.
+- Critères : chaque statut et chaque refus dits en mots, jamais un code (test) ; une saisie illisible ne part pas (test) ; réponse perdue dite incertaine (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
 ## Phase 1 : le socle
