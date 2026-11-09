@@ -840,7 +840,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR14 · Les agents pilotes et la phase 1 à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : BR10, BR13
 - Partie du cahier : Feuille de route, « Les phases et leurs conditions ».
 - Objectif : dans le bloc « Phases et régions » (`packages/api/app/phases.ts`), la direction lit la comparaison des agents pilotes et la série de la phase 1, désigne un pilote, range ses mois d'avant avec la référence de la preuve, range un envoi constaté hors d'AIMMO et l'inventaire des tâches planifiées, par les routes de BR10.
