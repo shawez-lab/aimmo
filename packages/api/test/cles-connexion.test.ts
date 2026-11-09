@@ -169,6 +169,10 @@ describeWithSqlite('BR06 · connexion par une clé d’appareil dans le socle', 
     expect((await t.call('POST', '/cles/connexion/fin', { body: await device.sign(c.body.data as Challenge), ip: '198.51.100.4' })).status).toBe(200);
     // Quatre défis émis : le réseau est plein ; une heure plus tard, tout se rouvre.
     expect(await t.begin('direction')).toMatchObject({ status: 429 });
+    // Plein, le réseau ne range plus aucun défi.
+    const challenges = await t.count('security_challenges');
+    for (let i = 0; i < 3; i += 1) expect((await t.begin('alex')).status).toBe(429);
+    expect(await t.count('security_challenges')).toBe(challenges);
     t.setClock(new Date(t.now().getTime() + 3_600_000));
     expect((await t.begin('alex', '203.0.113.7')).status).toBe(200);
     // L'adresse n'est jamais rangée en clair.

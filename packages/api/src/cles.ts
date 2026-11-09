@@ -263,6 +263,13 @@ async function ipSlot(s: ConnexionServices, request: Request, networkId: string)
   return takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${at.toISOString().slice(0, 13)}`)}`, (s.limits ?? DEFAULT_CONNEXION_LIMITS).perIp, at);
 }
 
+/** Le réseau a-t-il encore de la place cette heure ? Lu avant d'émettre, pour qu'un réseau plein ne range plus aucun défi. */
+async function networkHasRoom(s: ConnexionServices, networkId: string): Promise<boolean> {
+  const at = s.now();
+  const row = await s.db.first<{ n: number }>('SELECT count(*) AS n FROM assistant_calls WHERE network_id = ? AND scope = ? AND bucket = ?', [networkId, 'cles_connexion:reseau', at.toISOString().slice(0, 13)]);
+  return Number(row?.n ?? 0) < (s.limits ?? DEFAULT_CONNEXION_LIMITS).perNetwork;
+}
+
 /** Prend une place au réseau, pour un défi vraiment émis : un utilisateur inventé n'en prend aucune. */
 const networkSlot = (s: ConnexionServices, networkId: string): Promise<boolean> =>
   takeSlot(s.db, networkId, 'cles_connexion:reseau', (s.limits ?? DEFAULT_CONNEXION_LIMITS).perNetwork, s.now());
@@ -293,6 +300,7 @@ export async function handleConnexion(request: Request, s: ConnexionServices): P
     if (typeof networkId !== 'string' || !NETWORK_ID.test(networkId) || !(await s.db.first('SELECT 1 FROM networks WHERE id = ?', [networkId]))) return refusedLogin();
     if (!(await ipSlot(s, request, networkId))) return tooMany();
     if (typeof role !== 'string' || !ROLE_OF_DEVICE.has(role) || typeof userId !== 'string' || !USER_ID.test(userId)) return journalRefusal(s, 'bad_input');
+    if (!(await networkHasRoom(s, networkId))) return tooMany();
     const challenge = await service.beginLogin(networkId, role, userId);
     if (!challenge.ok) return refusedLogin();
     // Le défi émis compte au réseau ; plein, il n'est pas rendu et expire sans servir.
