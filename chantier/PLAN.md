@@ -818,6 +818,15 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Critères : autre rôle refusé (403), refus au journal, rien de rangé [R16] (test) ; corps illisible 400 sans rien ranger (test) ; ouverture refusée sans phase 5 ouverte, 409 avec R651 (test) ; région d'origine refusée en 409 avec R650 (test) ; seconde région avant 90 jours 409 avec R652 (test) ; ouverture acceptée après la phase 5, lue ensuite comme ouverte (test) ; vérification intacte, puis cassée après une ligne changée, avec sa version [R653] (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
+### BR13 · Écran « Phases et régions » de la direction
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR11, BR12
+- Partie du cahier : Feuille de route, « Cinq phases, chacune ouverte seulement si la précédente a rempli sa condition » ; phase 5.
+- Décidé (2026-11-09, voie 1) : un bloc de l'écran du réseau, script servi à part (`/app/phases.js`) chargé au premier geste, comme les engagements (G15). Les pilotes et la phase 1 (saisies de preuves) restent à une tâche suivante.
+- Objectif : la direction lit l'état des cinq phases (ouverte depuis quand, condition remplie, non remplie, inconnue, retombée) et ouvre la suivante en deux appuis ; elle lit les 18 régions, ouvre ou ferme une région avec sa raison, et vérifie la chaîne des décisions.
+- Critères : le script ne se charge qu'au premier geste, jamais gardé sur l'appareil, budget tenu [R201] (test) ; chaque condition dite en mots, jamais un code, une condition retombée dite [R648] (test) ; ouverture d'une phase en deux appuis, seulement quand elle est possible (test) ; un refus dit sa raison en mots, une réponse perdue dite incertaine (test) ; région ouverte ou fermée avec sa raison, refus R651 ou R652 dits, date de fin d'attente comprise (test) ; vérification dite intacte ou cassée avec sa version [R653] (test) ; tout texte reçu posé en texte, jamais `innerHTML` (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
