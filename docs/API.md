@@ -283,6 +283,16 @@ Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits d
 - `POST /cout-agent/factures/<id>/poste` (`{category: ia | clients_apportes | diffusion | accompagnement | conformite | hors_agents}`) : le poste d'une facture fournisseur, par une nouvelle version [R623]. `POST /cout-agent/reglages` (`{validFrom: AAAA-MM, provisionBp, marginBp, reason}`) : provision et marge, par versions datées.
 - `GET /cout-agent?mois=AAAA-MM` : pour un mois fini de Paris, la part du réseau, le coût complet par poste, la provision, la marge, l'agent moyen, si la part couvre le coût et le seuil qui le couvre tout juste ; un mois incomplet n'est jamais dit couvert ; mois en cours : 409 [R623, R624, R625]. Aucun montant n'entre par ces routes (`amount_refused`).
 
+## Marketing, en mode essai (BR03)
+
+Sous `/v1/marketing` : chaque route dit les rôles qu'elle admet, contrôlés avant le corps ; un refus est écrit au journal [R16]. Rien ne part ni ne se paie : la porte de publication donnée au calendrier refuse tout, la lettre n'a pas de lien de désinscription donc ne part pas, et les plateformes publicitaires sont celles du mode essai [R26, R582, R584, R587]. Un champ non prévu : 400 `unknown_field`.
+
+- L'agent, pour son propre calendrier (HX52) : `GET /calendrier/reglages` ; `POST /calendrier/reglages` (`{perDay: {instagram, facebook, linkedin, google, tiktok, youtube}, hours: ["HH:MM", …]}`), une version nouvelle valable le lendemain [R581] ; `POST /calendrier/semaine` (`{from: AAAA-MM-JJ}`) réserve les créneaux en rotation stricte, seulement avec une publication prête et son lien marqué [R580, R582] ; `GET /calendrier/creneaux?du=AAAA-MM-JJ&au=AAAA-MM-JJ`.
+- La direction (HX53) : `POST /lettre/editions` (`{title}`, lettres seules) [R586]. L'agent ou la direction : `GET /magazine`, la page imprimable des biens diffusables et des prix publiés, chaque prix lu dans la base [R585].
+- La publicité payante (HX54) : `POST /publicite/campagnes` (`{platform: google_ads | meta, name, targeting: {communes: [INSEE], rayonKm?}}`), l'agent ou la direction ; un critère interdit est nommé dans `detail` [R589]. La direction seule : `POST /publicite/campagnes/<id>/validation` (`{dailyBudgetCents, totalBudgetCents, maxCostPerContactCents}`), `POST …/lancement`, `POST …/arret`, `GET /publicite/campagnes` (dépense, contacts, mandats, ventes et leurs coûts) [R587, R588].
+
+Restent hors des routes, à des travaux planifiés : le passage des créneaux dus (`runDue`), l'envoi d'une édition avec sa page de désinscription, la lecture de la dépense et des contacts chez les plateformes et le contrôle du seuil (`recordSpend`, `recordContact`, `runChecks`).
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
