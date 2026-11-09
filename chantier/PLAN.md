@@ -703,7 +703,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : H64 pour l'usage réel (site WebAuthn).
 
 ### BR06 · Connexion par clé d'appareil dans le socle
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#455), `handleConnexion` et `sessionViewer` dans `packages/api/src/cles.ts`, authentification de `app.ts` : clés d'API d'abord, puis la séance relue à chaque demande ; aucune règle nouvelle ni migration. Décidé : un seul refus public `connexion_refusee` ; limites par adresse (30/h) puis par réseau sur les seuls défis émis (2000/h), pas de limite par utilisateur (elle servirait à bloquer un agent) ; le réseau de la séance est celui du défi ; un réseau ou un défi inconnus n'écrivent rien au journal ; sans clé d'API mais avec site WebAuthn, seules les séances ouvrent. Relecture forte : 2 P1 puis 2 P1 corrigés, puis rien ; Codex 1 P2 corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5194 tests). Restent : écran de connexion ; H64 pour l'usage réel.
 - Qui : Claude, relecture forte · Dépend de : BR05
 - Partie du cahier : Conformité (accès), HX56.
 - Objectif : `beginLogin` et `finishLogin` en routes publiques limitées en débit, et la séance (`authenticate`) acceptée par l'authentification de `app.ts` à côté des clés d'API, relue à chaque demande ; retrait de la clé ou départ de l'agent coupent la séance.
@@ -711,7 +712,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : H64 pour l'usage réel.
 
 ### BR07 · Routes du quiz et des attestations de formation
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : HX63
 - Partie du cahier : M14 (réseau et académie).
 - Objectif : routes du quiz (questions de la direction, quiz de l'agent, réponses) et des attestations, et la page publique de vérification d'une attestation.
