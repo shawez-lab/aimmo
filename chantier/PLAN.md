@@ -538,15 +538,17 @@ Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à par
 - Critères : aucun bien repris tant qu'un bien n'est jamais sorti (test) ; le nombre réglé par réseau et par jour est tenu (test) ; tout passe par le contrôle central (test).
 
 ### HX53 · Lettre d'information et magazine des biens
-- Statut : en cours (voie 2) : proposition #439 prête, vérification locale verte, fusion refusée par la permission de la séance ; la prochaine séance la fusionne
-- Reste : proposition #439, module `packages/core/src/marketing/lettre.ts`, migration `3110`, R583 à R586 ; tables au registre et à la carte d'accès, sujets `edition`, `lettre` et `bien` déclarés, feuille du magazine dans le système de design. Décidé, lecture prudente : par mail seulement ; « son quartier » = les quartiers publiés de sa commune (pas d'adresse d'acquéreur en base) ; cinq biens au plus, jamais un bien déjà parti à la personne, alertes comprises ; lettre tenue à la longueur d'un mail ; magazine au titre écrit par le code, chaque bien avec toutes ses mentions de M07 (branchées par le Worker, comme le studio), sans nom ni mail de personne. Relecture forte 4 P1 corrigés ; Codex 4 P0 et 2 P1 corrigés en cinq tours, plus 3 P2 ; reste 1 P2 : un nom de lieu proche d'un prénom en base (Saint-Pierre et Pierre) bloque le magazine, côté prudent. GitHub Actions bloqué (facturation), vérification locale verte (5036 tests). Restent (voie 1) : routes, écran de l'édition et du magazine, page de désinscription, travail planifié, branchement des mentions au Worker.
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#439), module `packages/core/src/marketing/lettre.ts`, migration `3110`, R583 à R586 ; tables au registre et à la carte d'accès, sujets `edition`, `lettre` et `bien` déclarés, feuille du magazine dans le système de design. Décidé, lecture prudente : par mail seulement ; « son quartier » = les quartiers publiés de sa commune (pas d'adresse d'acquéreur en base) ; cinq biens au plus, jamais un bien déjà parti à la personne, alertes comprises ; lettre tenue à la longueur d'un mail ; magazine au titre écrit par le code, chaque bien avec toutes ses mentions de M07 (branchées par le Worker, comme le studio), sans nom ni mail de personne. Relecture forte 4 P1 corrigés ; Codex 4 P0 et 2 P1 corrigés en cinq tours, plus 3 P2 ; reste 1 P2 : un nom de lieu proche d'un prénom en base (Saint-Pierre et Pierre) bloque le magazine, côté prudent. GitHub Actions bloqué (facturation), vérification locale verte (5036 tests). Restent (voie 1) : routes, écran de l'édition et du magazine, page de désinscription, travail planifié, branchement des mentions au Worker.
 - Qui : Claude, voie 2, relecture forte
 - Partie du cahier : M07 (commercialiser), M08 (acquéreurs) et M12 (conformité, consentements).
 - Objectif : comme Artur'in et Netty : newsletters et magazine immobilier. Jamais vu : chaque lettre est faite pour sa personne, biens qui lui correspondent, valeur suivie de son bien si elle l'a demandée, prix de son quartier de AT01, et le magazine imprimable sort de la même base.
 - Critères : aucune lettre sans accord rangé (test) ; lien de désinscription dans chaque lettre (test) ; aucun prix qui ne vienne de la base (test).
 
 ### HX54 · Publicité payante mesurée au mandat
-- Statut : à faire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : G10, HX52
+- Partie du cahier : M07 (commercialiser), M20 point 7 « Mesure » (G10), M12 (conformité). Module `packages/core/src/marketing/publicite.ts`, migration `3120`, R587 à R589.
 - Objectif : comme Hektor : campagnes Google Ads gérées, et de même sur Meta. Jamais vu : chaque campagne est jugée sur les mandats et ventes qu'elle rapporte, lus dans G10, et s'arrête seule quand le coût par contact dépasse le seuil réglé.
 - Critères : aucune dépense sans validation de la direction (test) ; arrêt automatique au seuil (test) ; aucun ciblage par un critère interdit pour le logement (test).
 
