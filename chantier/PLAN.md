@@ -799,7 +799,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR11 · Routes de la porte des phases
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#464, `06268d74`), `GET /v1/phases` et `POST /v1/phases/ouvrir` dans `packages/api/src/phases.ts` ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5272 tests). Reste : écran de la direction (phases, pilotes, phase 1).
 - Qui : Claude, relecture normale · Dépend de : HX71, BR10
 - Partie du cahier : Feuille de route, « Cinq phases, chacune ouverte seulement si la précédente a rempli sa condition ».
 - Objectif : sous `/v1/phases`, la direction lit l'état des cinq phases (HX71) et ouvre la phase suivante en un geste, par `PortesPhases`.
