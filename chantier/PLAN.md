@@ -565,8 +565,14 @@ Réservé le 2026-11-08 par la voie 1. Règles R590 à R599 et migrations à par
 
 ## Sécurité et conformité
 
+Voie : 1
+
+Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à partir de `3300` réservées à ce groupe. Le code vit dans `packages/core/src/securite/` (fichiers neufs).
+
 ### HX56 · Clé d'accès, double authentification et données en Europe
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
+- Partie du cahier : Architecture technique (hébergement, sécurité) et Conformité ; droits de S08.
 - Objectif : comme iad : connexion par empreinte ou visage et double authentification, et comme Hektor, Modelo et Talqor : hébergement en Europe. Jamais vu : une clé d'accès par appareil, retirée d'un geste par la direction, et un test de configuration qui échoue si une base ou un stockage sort de la juridiction européenne.
 - Critères : un appareil retiré ne se connecte plus (test) ; une action sensible exige un second facteur (test) ; une base hors Europe fait échouer la vérification (test).
 
