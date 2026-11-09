@@ -16,9 +16,10 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { FicheClient } from '../db/fiche-client.ts';
-import type { SqlDatabase, SqlValue } from '../db/sql.ts';
+import type { SqlDatabase } from '../db/sql.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { localTime } from '../envoi/horaires.ts';
+import { canonical, caseScopeOf, caseSnapshotOf, compareSnapshots, sha256Hex, type CaseScope, type CaseSnapshot, type FrozenCheck } from './dossier-fige.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -32,7 +33,8 @@ export const SUSPICION_DECISIONS: readonly SuspicionDecisionKind[] = ['declarati
 export const SUSPICION_AGENT_STATUS = 'transmis';
 
 /** La copie figée : pour chaque table du dossier, chaque ligne par sa clé et son empreinte. */
-export type SuspicionSnapshot = Record<string, { key: string; sha256: string }[]>;
+export type SuspicionSnapshot = CaseSnapshot;
+export type { FrozenCheck } from './dossier-fige.ts';
 
 export interface SuspicionReport {
   reportId: string;
@@ -46,82 +48,7 @@ export interface SuspicionReport {
   decision: { decision: SuspicionDecisionKind; reason: string; validatorName: string; decidedOn: string } | null;
 }
 
-export interface FrozenCheck {
-  intact: boolean;
-  /** Les lignes changées ou disparues depuis le signalement, par table et par clé. */
-  changed: { table: string; key: string }[];
-  missing: { table: string; key: string }[];
-  /** Les lignes ajoutées depuis, qui ne changent pas la copie figée. */
-  added: { table: string; key: string }[];
-}
-
 export type SuspicionRefusal = { ok: false; rule: 'R16' | 'R94' | null; code: string };
-
-async function sha256Hex(text: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
-  return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-const canonical = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical((value as Record<string, unknown>)[key])]));
-  }
-  return value;
-};
-
-/** Ce que couvre un dossier : ses mandats, ses offres, ses dossiers de vente et toutes ses parties. */
-interface CaseScope {
-  mandates: string[];
-  offers: string[];
-  saleFiles: string[];
-  persons: string[];
-  caseRefs: string[];
-}
-
-/** Une partie du dossier : la requête rend chaque ligne, sa clé est la colonne `k`. */
-interface Part {
-  table: string;
-  over: keyof CaseScope;
-  sql: (marks: string) => string;
-}
-
-const PARTS: Part[] = [
-  { table: 'mandates', over: 'mandates', sql: (q) => `SELECT id AS k, * FROM mandates WHERE id IN (${q})` },
-  { table: 'mandate_register', over: 'mandates', sql: (q) => `SELECT seq AS k, * FROM mandate_register WHERE mandate_id IN (${q})` },
-  { table: 'documents', over: 'mandates', sql: (q) => `SELECT id AS k, * FROM documents WHERE mandate_id IN (${q}) OR id IN (SELECT document_id FROM signed_documents WHERE mandate_id IN (${q}))` },
-  { table: 'signed_documents', over: 'mandates', sql: (q) => `SELECT document_id AS k, * FROM signed_documents WHERE mandate_id IN (${q})` },
-  { table: 'signed_amendments', over: 'mandates', sql: (q) => `SELECT document_id AS k, * FROM signed_amendments WHERE mandate_id IN (${q})` },
-  { table: 'mandate_withdrawals', over: 'mandates', sql: (q) => `SELECT mandate_id AS k, * FROM mandate_withdrawals WHERE mandate_id IN (${q})` },
-  { table: 'mandate_early_starts', over: 'mandates', sql: (q) => `SELECT mandate_id AS k, * FROM mandate_early_starts WHERE mandate_id IN (${q})` },
-  { table: 'offer_register', over: 'offers', sql: (q) => `SELECT id AS k, * FROM offer_register WHERE id IN (${q})` },
-  { table: 'offer_checks', over: 'offers', sql: (q) => `SELECT id AS k, * FROM offer_checks WHERE offer_id IN (${q})` },
-  { table: 'offer_transmissions', over: 'offers', sql: (q) => `SELECT offer_id || ':' || at AS k, * FROM offer_transmissions WHERE offer_id IN (${q})` },
-  { table: 'offer_responses', over: 'offers', sql: (q) => `SELECT offer_id AS k, * FROM offer_responses WHERE offer_id IN (${q})` },
-  { table: 'offer_proposals', over: 'offers', sql: (q) => `SELECT id AS k, * FROM offer_proposals WHERE offer_id IN (${q})` },
-  { table: 'sale_files', over: 'saleFiles', sql: (q) => `SELECT id AS k, * FROM sale_files WHERE id IN (${q})` },
-  { table: 'sale_file_steps', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || step || ':' || at AS k, * FROM sale_file_steps WHERE file_id IN (${q})` },
-  { table: 'sale_file_pieces', over: 'saleFiles', sql: (q) => `SELECT id AS k, * FROM sale_file_pieces WHERE file_id IN (${q})` },
-  { table: 'sale_file_dates', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || kind || ':' || version AS k, * FROM sale_file_dates WHERE file_id IN (${q})` },
-  { table: 'sale_file_financing', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || seq AS k, * FROM sale_file_financing WHERE file_id IN (${q})` },
-  { table: 'sale_file_closings', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_closings WHERE file_id IN (${q})` },
-  { table: 'sale_file_stops', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_stops WHERE file_id IN (${q})` },
-  // La conformité de chaque partie : coffre, identification, bénéficiaires effectifs, risque, vigilance.
-  { table: 'compliance_vault_pieces', over: 'persons', sql: (q) => `SELECT id AS k, * FROM compliance_vault_pieces WHERE person_id IN (${q})` },
-  { table: 'identity_checks', over: 'persons', sql: (q) => `SELECT id AS k, * FROM identity_checks WHERE person_id IN (${q})` },
-  { table: 'client_identifications', over: 'persons', sql: (q) => `SELECT id AS k, * FROM client_identifications WHERE person_id IN (${q})` },
-  {
-    table: 'beneficial_owners',
-    over: 'persons',
-    sql: (q) => `SELECT declaration_id || ':' || owner_person_id AS k, * FROM beneficial_owners WHERE declaration_id IN (SELECT id FROM client_identifications WHERE person_id IN (${q}))`,
-  },
-  { table: 'risk_sheets', over: 'persons', sql: (q) => `SELECT id AS k, * FROM risk_sheets WHERE person_id IN (${q})` },
-  { table: 'risk_validations', over: 'persons', sql: (q) => `SELECT id AS k, * FROM risk_validations WHERE sheet_id IN (SELECT id FROM risk_sheets WHERE person_id IN (${q}))` },
-  { table: 'vigilance_alerts', over: 'persons', sql: (q) => `SELECT id AS k, * FROM vigilance_alerts WHERE person_id IN (${q})` },
-  { table: 'vigilance_decisions', over: 'persons', sql: (q) => `SELECT id AS k, * FROM vigilance_decisions WHERE alert_id IN (SELECT id FROM vigilance_alerts WHERE person_id IN (${q}))` },
-];
-
-const unique = (values: (string | null | undefined)[]): string[] => [...new Set(values.filter((v): v is string => typeof v === 'string'))].sort();
 
 interface ReportRow {
   id: string;
@@ -165,72 +92,6 @@ export class SignalementSoupcon {
     return { ok: false, rule: 'R16', code };
   }
 
-  /** Le dossier et toutes ses parties : l'acquéreur, et le vendeur de chaque mandat du bien. `null` s'il est inconnu. */
-  private async scopeOf(networkId: string, kind: 'mandate' | 'offer' | 'sale_file', id: string): Promise<{ personId: string; scope: CaseScope } | null> {
-    const scope: CaseScope = { mandates: [], offers: [], saleFiles: [], persons: [], caseRefs: [] };
-    let personId: string;
-    if (kind === 'mandate') {
-      const row = await this.db.first<{ network_id: string; person_id: string }>('SELECT network_id, person_id FROM mandates WHERE id = ?', [id]);
-      if (!row || row.network_id !== networkId) return null;
-      personId = row.person_id;
-      scope.mandates = [id];
-    } else {
-      let offerId = id;
-      if (kind === 'sale_file') {
-        const file = await this.db.first<{ network_id: string; offer_id: string }>('SELECT network_id, offer_id FROM sale_files WHERE id = ?', [id]);
-        if (!file || file.network_id !== networkId) return null;
-        scope.saleFiles = [id];
-        offerId = file.offer_id;
-      }
-      const offer = await this.db.first<{ network_id: string; buyer_person_id: string; property_id: string }>('SELECT network_id, buyer_person_id, property_id FROM offer_register WHERE id = ?', [offerId]);
-      if (!offer || offer.network_id !== networkId) return null;
-      personId = offer.buyer_person_id;
-      scope.offers = [offerId];
-      const mandates = await this.db.all<{ id: string; person_id: string }>('SELECT id, person_id FROM mandates WHERE network_id = ? AND property_id = ?', [networkId, offer.property_id]);
-      scope.mandates = unique(mandates.map((m) => m.id));
-      scope.persons = unique(mandates.map((m) => m.person_id));
-    }
-    // Chaque partie avec ses fiches réunies (S04), puis les bénéficiaires effectifs d'une société, avec les leurs : leur
-    // identité fait partie de l'identification du client.
-    let persons = unique([personId, ...scope.persons]);
-    for (let round = 0; round < 10; round++) {
-      const members: string[] = [];
-      for (const p of persons) members.push(...(await this.unique.membersOf(p)));
-      const marks = members.map(() => '?').join(', ');
-      const owners = members.length === 0 ? [] : await this.db.all<{ owner_person_id: string }>(
-        `SELECT owner_person_id FROM beneficial_owners WHERE declaration_id IN (SELECT id FROM client_identifications WHERE person_id IN (${marks}))`,
-        members,
-      );
-      const next = unique([...persons, ...members, ...owners.map((o) => o.owner_person_id)]);
-      if (next.length === persons.length) break;
-      persons = next;
-    }
-    scope.persons = persons;
-    scope.caseRefs = unique([...scope.mandates.map((m) => `mandate:${m}`), ...scope.offers.map((o) => `offer:${o}`), ...scope.saleFiles.map((f) => `sale_file:${f}`)]);
-    return { personId, scope };
-  }
-
-  /** La copie du dossier, ligne par ligne, par empreinte. */
-  private async snapshotOf(scope: CaseScope): Promise<SuspicionSnapshot> {
-    const snapshot: SuspicionSnapshot = {};
-    for (const part of PARTS) {
-      const ids = scope[part.over];
-      const lines: { key: string; sha256: string }[] = [];
-      if (ids.length > 0) {
-        const sql = part.sql(ids.map(() => '?').join(', '));
-        const repeats = (sql.match(/\?/g) ?? []).length / ids.length;
-        const params: SqlValue[] = [];
-        for (let i = 0; i < repeats; i++) params.push(...ids);
-        for (const row of await this.db.all<Record<string, unknown> & { k: unknown }>(sql, params)) {
-          const { k, ...rest } = row;
-          lines.push({ key: String(k), sha256: await sha256Hex(JSON.stringify(canonical(rest))) });
-        }
-      }
-      lines.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
-      snapshot[part.table] = lines;
-    }
-    return snapshot;
-  }
 
   /**
    * Signale un dossier au responsable. L'agent du client (vue complète) ou le responsable ; tout autre est refusé.
@@ -241,13 +102,13 @@ export class SignalementSoupcon {
     const m = typeof caseRef === 'string' ? CASE_REF.exec(caseRef) : null;
     if (!m) return { ok: false, rule: null, code: 'bad_case' };
     if (typeof input.note !== 'string' || input.note.trim() === '' || input.note.length > 4000) return { ok: false, rule: null, code: 'bad_note' };
-    const found = await this.scopeOf(viewer.networkId, m[1] as 'mandate' | 'offer' | 'sale_file', m[2]!);
+    const found = await caseScopeOf(this.db, this.unique, viewer.networkId, m[1] as 'mandate' | 'offer' | 'sale_file', m[2]!);
     if (!found) return { ok: false, rule: null, code: 'unknown_case' };
     const { personId, scope } = found;
     const read = await this.acces.readFiche(viewer, personId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (viewer.role === 'agent' && read.view !== 'full') return this.refuse(viewer, 'not_assigned');
-    const snapshot = await this.snapshotOf(scope);
+    const snapshot = await caseSnapshotOf(this.db, scope);
     const text = JSON.stringify(canonical({ scope, snapshot }));
     const id = this.newId();
     await this.db.run(
@@ -315,20 +176,8 @@ export class SignalementSoupcon {
     if (!row) return { ok: false, rule: null, code: 'unknown_report' };
     // La copie se refait sur le même périmètre qu'au signalement : une partie ajoutée depuis n'y entre pas.
     const { scope, snapshot: then } = JSON.parse(row.snapshot) as { scope: CaseScope; snapshot: SuspicionSnapshot };
-    const nowSnap = await this.snapshotOf(scope);
-    const out: FrozenCheck = { intact: true, changed: [], missing: [], added: [] };
-    for (const table of Object.keys(then)) {
-      const current = new Map((nowSnap[table] ?? []).map((l) => [l.key, l.sha256]));
-      for (const line of then[table]!) {
-        const sha = current.get(line.key);
-        if (sha === undefined) out.missing.push({ table, key: line.key });
-        else if (sha !== line.sha256) out.changed.push({ table, key: line.key });
-      }
-      const before = new Set(then[table]!.map((l) => l.key));
-      for (const line of nowSnap[table] ?? []) if (!before.has(line.key)) out.added.push({ table, key: line.key });
-    }
-    out.intact = out.changed.length === 0 && out.missing.length === 0;
-    return { ok: true, value: out };
+    const nowSnap = await caseSnapshotOf(this.db, scope);
+    return { ok: true, value: compareSnapshots(then, nowSnap) };
   }
 
   /** Le responsable décide, seul et une seule fois, avec sa raison, son nom et sa date. */
