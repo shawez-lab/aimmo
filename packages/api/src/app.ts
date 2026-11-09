@@ -89,6 +89,8 @@ import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } fr
 import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
+import { financesRoutes, type FinancesRoute } from './finances.ts';
+import type { LecteurFactures } from '../../core/src/facturation/index.ts';
 import {
   handleEspacePartenaire,
   handlePartenairesPublic,
@@ -192,6 +194,8 @@ export interface ApiConfig {
    * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
    */
   attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  /** Le lecteur des factures fournisseurs (l'IA, H13, BR04) ; absent, leur lecture est fermée. */
+  lecteurFactures?: LecteurFactures | null;
   /**
    * Les espaces des clients (EC07) : le réseau de la page publique (`ESPACE_NETWORK_ID`), l'adresse de l'espace
    * (`ESPACE_BASE`, en https, sans chiffre, terminée par `/espace/`) et les clés du relevé prouvé (secret
@@ -1198,6 +1202,16 @@ function marketingRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes des finances du réseau (BR04) : chaque rôle contrôlé avant le corps [R16] ; sans lecteur, la lecture des factures est fermée. */
+function financesRoutesDef(lecteur: LecteurFactures | null): RouteDef[] {
+  return financesRoutes().map((r: FinancesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, lecteur }, viewer, params, request),
+  }));
+}
+
 /**
  * Les routes de M18 (U09) : chacune contrôle son rôle avant tout et écrit le refus au journal [R16] ; un partenaire ne
  * lit que ses mises en relation confiées, par la couche métier [R77]. Sans stockage des fichiers, elles sont fermées.
@@ -1836,7 +1850,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
   // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité, avec les réclamations et
-  // le gel des avoirs (BR01), le recrutement (BR02) et le marketing (BR03) ; puis celles de M18
+  // le gel des avoirs (BR01), le recrutement (BR02), le marketing (BR03) et les finances (BR04) ; puis celles de M18
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
   // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats ;
@@ -1859,6 +1873,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...securiteRoutesDef(),
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
+    ...financesRoutesDef(config.lecteurFactures ?? null),
     ...m18Routes(config.partenaires ?? null),
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
     ...m16Routes(config.commerces),
