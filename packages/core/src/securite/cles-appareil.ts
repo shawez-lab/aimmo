@@ -394,8 +394,19 @@ export class ClesAppareil {
     if (row.status !== 'actif') return this.refused(viewer, 'R601', 'device_revoked', subject);
     if (!(await this.userActive(viewer))) return this.refused(viewer, 'R16', 'agent_inactive', subject);
     await this.write(viewer, 'securite.second_facteur.utilise', subject, { rule: 'R601', action });
-    const done = await this.db.run('UPDATE security_step_ups SET used_at = ? WHERE id = ? AND used_at IS NULL', [at.toISOString(), stepUpId]);
-    if (done.changes !== 1) return this.refused(viewer, 'R601', 'already_used', subject);
+    // Usée en une écriture, si sa clé est encore active à cet instant même : un retrait passé entre la lecture et ici
+    // l'emporte [R600, R601].
+    const done = await this.db.run(
+      "UPDATE security_step_ups SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ? AND EXISTS (SELECT 1 FROM security_devices d WHERE d.id = security_step_ups.device_id AND d.status = 'actif')",
+      [at.toISOString(), stepUpId, at.toISOString()],
+    );
+    if (done.changes !== 1) {
+      const now = await this.db.first<{ used_at: string | null; status: DeviceStatus }>(
+        'SELECT p.used_at, d.status FROM security_step_ups p JOIN security_devices d ON d.id = p.device_id WHERE p.id = ?',
+        [stepUpId],
+      );
+      return this.refused(viewer, 'R601', now?.status !== 'actif' ? 'device_revoked' : 'already_used', subject);
+    }
     return { ok: true, value: { deviceId: row.device_id } };
   }
 
