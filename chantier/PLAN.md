@@ -754,7 +754,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 
 
 ### BR09 · L'agent crée et retire lui-même la clé de son assistant
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : BR08, BR06
 - Partie du cahier : Intelligence artificielle, HX55 ; Conformité (accès).
 - Objectif : aujourd'hui la clé de portée « mcp » se range à la main dans `API_KEYS` (H65). L'agent la crée depuis l'application, sur la preuve de sa clé d'appareil, la voit une seule fois, et la retire d'un geste ; seule l'empreinte est rangée, comme les clés d'invitation (`access_keys`).
