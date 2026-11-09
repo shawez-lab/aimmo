@@ -3,6 +3,7 @@ import { FicheClient, SqlJournalStore, applyMigrations, reseau, type SqlDatabase
 import { OPEN_WITHOUT_AGENT_FILE, handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { R2AgentPieceStore, reseauRoutes } from '../src/reseau.ts';
+import { clesRoutes } from '../src/cles.ts';
 import { fromD1 } from '../src/d1.ts';
 import worker, { type Env } from '../src/worker.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -124,7 +125,7 @@ describeWithSqlite('J13 · branchement de M14 dans le socle (API et Worker)', ()
   });
 
   it('[R82] chaque route ouverte sans dossier complet existe, et aucune ne touche un client ou un bien', () => {
-    const names = new Set(['moi', ...reseauRoutes().map((r) => r.name)]);
+    const names = new Set(['moi', ...reseauRoutes().map((r) => r.name), ...clesRoutes().map((r) => r.name)]);
     for (const name of OPEN_WITHOUT_AGENT_FILE) expect([name, names.has(name)]).toEqual([name, true]);
     for (const name of ['reseau.import', 'reseau.dossiers_couverts', 'reseau.absence', 'reseau.reprises', 'reseau.candidatures']) expect(OPEN_WITHOUT_AGENT_FILE.has(name)).toBe(false);
   });
