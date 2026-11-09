@@ -705,6 +705,17 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Critères : 18 régions, chaque département de métropole et d'outre-mer dans une seule région, département inconnu sans région [R650] (test) ; la région d'origine ouverte d'office, jamais fermée [R650] (test) ; ouverture refusée sans phase 5 ouverte, empreinte de la phase 5 rangée sinon [R651] (test) ; versions qui ne changent ni ne s'effacent, la base refuse le reste [R651, R17] (test) ; seconde région refusée moins de 90 jours après la précédente encore ouverte, acceptée après ou si la précédente a été fermée [R652] (test) ; la direction seule, refus au journal [R16] (test) ; le public ne lit que des noms, par ordre alphabétique [R653] (test) ; chaîne vérifiable, une ligne changée dite avec sa version [R653] (test).
 - Attend : rien (des décisions de la direction lues dans la base ; aucun envoi, aucun compte).
 
+### HX73 · La licence du logiciel aux agences hors réseau, à un seul tarif publié (Jamais vu)
+- Statut : en cours (voie 2)
+- Reste : proposition #466, `packages/core/src/licences/licences.ts`, migration `3810`, R654 à R657. Relecture forte 1 P1 et 1 P1 mineur corrigés ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale en cours.
+- Qui : Claude, voie 2, relecture forte · Dépend de : HX71, HX72
+- Partie du cahier : Feuille de route, phase 5, « puis licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel », « AIMMO proposé à des agences hors réseau, à l'abonnement ».
+- Décidé (2026-11-09, voie 2), lecture prudente : une licence ne se donne qu'avec la phase 5 ouverte ; l'agence (SIREN à clé juste, carte « CPI … » valable, département connu) naît comme son propre réseau et ne voit rien du réseau qui la donne ; elle peut être partout en France, la licence n'est pas une entrée dans le réseau ; un seul tarif mensuel par versions, aucune remise ; une licence active, suspendue, reprise ou terminée par la direction, avec raison ; carte échue dite, rien ne se coupe seul. Aucun prélèvement ni envoi.
+- Objectif : la direction fixe le tarif, donne, suspend ou termine une licence ; l'agence lit sa seule licence ; le public lit le tarif et ses changements datés. Jamais vu : aucune remise cachée, la base refuse toute licence à un autre prix que le tarif publié en vigueur.
+- Critères : phase 5 exigée, empreinte rangée, base qui refuse sans elle [R654] (test) ; SIREN, carte, département, une licence par SIREN [R654] (test) ; aucun champ de prix, autre prix refusé par la base, ancien tarif dit, tarif public sans agence ni nombre [R655] (test) ; états par versions, terminée figée, rien ne s'efface [R656, R17] (test) ; carte échue à minuit de Paris (test) ; l'agence ne lit que sa licence et ne donne rien, base qui refuse le sens inverse [R657] (test) ; direction seule, refus et lectures au journal [R16] (test).
+- Attend : H67 pour le prix réel et la facturation réelle (le module tourne sans).
+- Restent après : routes `/v1/licences` et écran (voie 1) ; reprise des données de l'agence à la fin de sa licence (voie 2, à découper).
+
 ## Branchements des groupes HX
 
 Voie : 1
