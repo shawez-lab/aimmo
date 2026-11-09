@@ -105,7 +105,8 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
       other: as('agent', sam.id),
       direction: as('direction', 'direction-1'),
       rapports: new RapportsSurMesure(db, journal, { now }),
-      exports: new ExportAgent(db, journal, { now }),
+      // Le second facteur se vérifie dans cles-appareil.test.ts [R601] ; ici, une porte qui laisse passer.
+      exports: new ExportAgent(db, journal, { requireSecondFactor: async () => ({ ok: true }) }, { now }),
     };
   }
   const ALL = { measures: ['contacts', 'rendez_vous', 'mandats', 'ventes'], grouping: 'mois' };
