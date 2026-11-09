@@ -744,13 +744,22 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR08 · Adresse du serveur MCP
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#458), `packages/api/src/mcp.ts` : `POST /v1/mcp` (JSON-RPC), `GET /v1/mcp/brouillons` et `POST /v1/mcp/brouillons/<id>/decision`, `POST /v1/mcp/public/<réseau>` sans clé ; portée `scope: "mcp"` des clés d'agent dans `API_KEYS` (`auth.ts`) ; aucune règle nouvelle ni migration. Décidé : seule une clé « mcp » ouvre `/v1/mcp`, et elle n'ouvre rien d'autre (`/v1/cles` compris : l'assistant ne se fabrique aucune séance) ; les brouillons se lisent et se décident par la seule séance d'une clé d'appareil ; un corps illisible est un refus au journal ; lecture publique limitée par adresse (120/h) et par réseau (5000/h). Relecture forte : 1 P1 puis 1 P1 corrigés, puis rien ; Codex 2 P0 corrigés, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5219 tests). Restent : écran des brouillons ; création de la clé « mcp » depuis l'application (BR09) ; H65 d'ici là.
 - Qui : Claude, relecture forte · Dépend de : HX55
 - Partie du cahier : Intelligence artificielle, HX55.
 - Objectif : `/v1/mcp` (JSON-RPC, clé de l'agent) et la lecture publique des biens diffusables par réseau, et les routes de décision des brouillons de l'agent.
 - Critères : droits [R16] et R82 revérifiés à chaque appel (test) ; R590 à R592 tenues par la route (tests) ; aucune donnée de client vers l'assistant (test).
 - Attend : rien.
 
+
+### BR09 · L'agent crée et retire lui-même la clé de son assistant
+- Statut : à faire
+- Qui : Claude, relecture forte · Dépend de : BR08, BR06
+- Partie du cahier : Intelligence artificielle, HX55 ; Conformité (accès).
+- Objectif : aujourd'hui la clé de portée « mcp » se range à la main dans `API_KEYS` (H65). L'agent la crée depuis l'application, sur la preuve de sa clé d'appareil, la voit une seule fois, et la retire d'un geste ; seule l'empreinte est rangée, comme les clés d'invitation (`access_keys`).
+- Critères : création seulement par la séance d'une clé d'appareil, sur une preuve « cle_assistant » [R601] (test) ; la clé créée n'ouvre que `POST /v1/mcp` (test) [R590] ; retirée, elle est refusée à l'appel suivant (test) ; seule l'empreinte est rangée (test) ; un agent parti n'en a plus aucune (test) [R82].
+- Attend : rien.
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
