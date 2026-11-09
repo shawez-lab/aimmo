@@ -761,6 +761,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_departures: out('agent', 'Départ de l\'agent.'),
   pilot_agents: out('agent', 'Désignation d\'un agent pilote par la direction (HX69).'),
   pilot_before_declarations: out('agent', 'Mandats signés par un agent pilote avant son arrivée, dits par la direction avec leur preuve (HX69).'),
+  phase1_outside_sends: out('sans_client', 'Envoi hors règles constaté hors d\'AIMMO, rangé par la direction avec sa preuve (HX70).'),
+  phase1_app_inventories: out('sans_client', 'Tâches encore planifiées dans les applications, dites par la direction avec leur preuve (HX70).'),
   agent_departure_handovers: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
   agent_departure_reassignments: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
   // conformite-lcb-ft : ses tables sont écartées toutes ensemble, depuis le registre (`LCB_FT_EXCLUSIONS`), sans être
