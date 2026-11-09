@@ -53,7 +53,7 @@ async function setup(options: { site?: ApiConfig['cles']; apiKeys?: boolean; lim
   const login = async (who: Who, device: FakeAuthenticator) => {
     const c = await begin(who);
     if (c.status !== 200) throw new Error(`début ${c.body.code}`);
-    return call('POST', '/cles/connexion/fin', { body: { networkId: ids[who].networkId, ...(await device.sign(c.body.data as Challenge)) } });
+    return call('POST', '/cles/connexion/fin', { body: { ...(await device.sign(c.body.data as Challenge)) } });
   };
   const count = async (table: string) => Number((await t.db.first<{ n: number }>(`SELECT count(*) AS n FROM ${table}`))?.n);
   return { ...t, other, ids, call, http, enroll, begin, login, count };
@@ -103,28 +103,29 @@ describeWithSqlite('BR06 · connexion par une clé d’appareil dans le socle', 
     const { device } = await t.enroll('alex', 5);
     const c = await t.begin('alex');
     const signed = await device.sign(c.body.data as Challenge);
-    const first = await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, ...signed } });
+    const first = await t.call('POST', '/cles/connexion/fin', { body: { ...signed } });
     expect(first.status).toBe(200);
-    const again = await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, ...(await device.sign(c.body.data as Challenge)) } });
+    const again = await t.call('POST', '/cles/connexion/fin', { body: { ...(await device.sign(c.body.data as Challenge)) } });
     expect(again).toMatchObject({ status: 403, body: { rule: 'R600', code: 'connexion_refusee' } });
     // Un autre appareil signe un défi neuf : refusé, et ce défi est usé, même la bonne signature ne passe plus.
     const c2 = await t.begin('alex');
     const stranger = await FakeAuthenticator.create(5);
-    expect((await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, ...(await stranger.sign(c2.body.data as Challenge)) } })).status).toBe(403);
-    expect((await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, ...(await device.sign(c2.body.data as Challenge)) } })).status).toBe(403);
+    expect((await t.call('POST', '/cles/connexion/fin', { body: { ...(await stranger.sign(c2.body.data as Challenge)) } })).status).toBe(403);
+    expect((await t.call('POST', '/cles/connexion/fin', { body: { ...(await device.sign(c2.body.data as Challenge)) } })).status).toBe(403);
     expect(await t.count('security_sessions')).toBe(1);
     // La raison de chaque refus est au journal, jamais dans la réponse.
     const codes = (await t.journal.all()).filter((e) => e.type === 'securite.refus').map((e) => (e.data as { code: string }).code);
     expect(codes).toEqual(expect.arrayContaining(['challenge_used']));
   });
 
-  it('[R600] le réseau annoncé doit être celui du défi : sinon aucun jeton n’est rendu', async () => {
+  it('[R600] le réseau de la séance est celui du défi, lu dans la base : un réseau annoncé par l’appelant est refusé comme champ de trop', async () => {
     const t = await setup();
     const { device } = await t.enroll('alex', 6);
     const c = await t.begin('alex');
-    const r = await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.other, ...(await device.sign(c.body.data as Challenge)) } });
-    expect(r).toMatchObject({ status: 403, body: { code: 'connexion_refusee' } });
-    expect(JSON.stringify(r.body)).not.toContain('token');
+    const signed = await device.sign(c.body.data as Challenge);
+    expect(await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.other, ...signed } })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
+    expect(await t.count('security_sessions')).toBe(0);
+    expect(await t.call('POST', '/cles/connexion/fin', { body: signed })).toMatchObject({ status: 200, body: { data: { viewer: { networkId: t.network.id } } } });
   });
 
   it('[R600] tout refus a la même réponse : réseau, rôle ou utilisateur inconnu, champ de trop, corps illisible', async () => {
@@ -134,29 +135,36 @@ describeWithSqlite('BR06 · connexion par une clé d’appareil dans le socle', 
     expect(await t.call('POST', '/cles/connexion/debut', { body: { networkId: t.network.id, role: 'partner', userId: 'p-1' } })).toMatchObject(refused);
     expect(await t.call('POST', '/cles/connexion/debut', { body: { networkId: t.network.id, role: 'agent', userId: 'agent-inconnu' } })).toMatchObject(refused);
     expect(await t.call('POST', '/cles/connexion/debut', { body: { networkId: t.network.id, role: 'agent', userId: t.alexId } })).toMatchObject(refused);
-    expect(await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, challengeId: 'inconnu' } })).toMatchObject(refused);
+    expect(await t.call('POST', '/cles/connexion/fin', { body: { challengeId: 'inconnu' } })).toMatchObject(refused);
+    expect(await t.call('POST', '/cles/connexion/fin', { body: { challengeId: 42 } })).toMatchObject(refused);
     expect(await t.call('POST', '/cles/connexion/debut', { body: { networkId: t.network.id, role: 'agent', userId: t.alexId, admin: true } })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
     expect(await t.call('POST', '/cles/connexion/fin', { body: 'pas un objet' })).toMatchObject({ status: 400, body: { code: 'invalid_body' } });
     expect(await t.call('GET', '/cles/connexion/debut')).toMatchObject({ status: 405 });
     expect(await t.count('security_sessions')).toBe(0);
+    // Chaque refus est au journal, avec sa raison, jamais l'identifiant demandé.
+    const codes = (await t.journal.all()).filter((e) => e.type === 'securite.refus').map((e) => (e.data as { code: string }).code);
+    expect(codes).toEqual(['unknown_network', 'bad_input', 'agent_inactive', 'no_device', 'unknown_challenge', 'unknown_challenge']);
+    expect(JSON.stringify(await t.journal.all())).not.toContain('reseau-inconnu');
   });
 
-  it('[R600] la connexion est limitée en débit : par utilisateur, par adresse et par réseau, chaque heure', async () => {
-    const t = await setup({ limits: { perUser: 2, perIp: 3, perNetwork: 5 } });
-    await t.enroll('alex', 8);
+  it('[R600] la connexion est limitée en débit, par adresse puis par réseau, chaque heure ; une adresse pleine ne prend pas la place des autres', async () => {
+    const t = await setup({ limits: { perIp: 3, perNetwork: 6 } });
+    const { device } = await t.enroll('alex', 8);
     await t.enroll('direction', 9);
-    expect((await t.begin('alex')).status).toBe(200);
-    expect((await t.begin('alex')).status).toBe(200);
-    expect(await t.begin('alex')).toMatchObject({ status: 429, body: { code: 'too_many_requests' } });
-    // Une même adresse : trois demandes, puis plus rien, même pour un autre utilisateur.
-    expect((await t.begin('direction', '203.0.113.7')).status).toBe(200);
-    expect((await t.begin('direction', '203.0.113.7')).status).toBe(200);
-    expect((await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, challengeId: 'x' }, ip: '203.0.113.7' })).status).toBe(403);
-    expect((await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, challengeId: 'x' }, ip: '203.0.113.7' })).status).toBe(429);
-    // Le réseau entier est plein ; une heure plus tard, tout se rouvre.
-    expect((await t.call('POST', '/cles/connexion/fin', { body: { networkId: t.network.id, challengeId: 'x' } })).status).toBe(429);
+    // Une même adresse : trois demandes, puis plus rien, pour personne ; ses demandes refusées ne comptent pas au réseau.
+    for (let i = 0; i < 3; i += 1) expect((await t.begin('alex', '203.0.113.7')).status).toBe(200);
+    for (let i = 0; i < 5; i += 1) expect(await t.begin('direction', '203.0.113.7')).toMatchObject({ status: 429, body: { code: 'too_many_requests' } });
+    // Ni Alex ni personne n'est privé d'entrer par une adresse saturée : d'une autre adresse, il se connecte.
+    const c = await t.begin('alex', '198.51.100.4');
+    expect(c.status).toBe(200);
+    expect((await t.call('POST', '/cles/connexion/fin', { body: await device.sign(c.body.data as Challenge), ip: '198.51.100.4' })).status).toBe(200);
+    // Un défi inconnu ne prend aucune place.
+    for (let i = 0; i < 5; i += 1) expect((await t.call('POST', '/cles/connexion/fin', { body: { challengeId: 'x' } })).status).toBe(403);
+    // Le réseau entier est plein (six demandes valables) ; une heure plus tard, tout se rouvre.
+    expect((await t.begin('direction')).status).toBe(200);
+    expect(await t.begin('direction')).toMatchObject({ status: 429 });
     t.setClock(new Date(t.now().getTime() + 3_600_000));
-    expect((await t.begin('alex')).status).toBe(200);
+    expect((await t.begin('alex', '203.0.113.7')).status).toBe(200);
     // L'adresse n'est jamais rangée en clair.
     expect(JSON.stringify(await t.db.all('SELECT scope FROM assistant_calls'))).not.toContain('203.0.113.7');
   });

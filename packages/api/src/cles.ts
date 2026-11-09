@@ -10,7 +10,7 @@
  * Sans site WebAuthn réglé (`rpId` et origines), ces routes sont fermées : 503, rien n'est rangé.
  *
  * La connexion par une clé (BR06) : `/v1/cles/connexion/debut` et `/v1/cles/connexion/fin`, publiques, limitées en
- * débit par utilisateur, par adresse et par réseau. Tout refus y a la même réponse, sans dire pourquoi ; la raison est au
+ * débit par adresse et par réseau. Tout refus y a la même réponse, sans dire pourquoi ; la raison est au
  * journal. La séance rendue s'utilise comme une clé d'API (`Authorization: Bearer <jeton>`) et se relit à chaque
  * demande : une clé retirée ou un agent parti la coupent tout de suite [R600, R82].
  *
@@ -230,16 +230,18 @@ export function readClesConfig(rpId: string | undefined, origins: string | undef
 export const CONNEXION_DEBUT_PATH = '/v1/cles/connexion/debut';
 export const CONNEXION_FIN_PATH = '/v1/cles/connexion/fin';
 
-/** Les limites d'appels de la connexion, par heure. */
+/**
+ * Les limites d'appels de la connexion, par heure. L'adresse d'abord : une demande arrêtée là ne prend aucune place du
+ * réseau. Pas de limite par utilisateur : n'importe qui pourrait la remplir au nom d'un agent et l'empêcher d'entrer ; un
+ * défi ne sert qu'une fois et ne se signe qu'avec la clé, rien ne se devine en le redemandant.
+ */
 export interface ConnexionLimits {
-  /** Défis demandés pour un même utilisateur. */
-  perUser: number;
   /** Demandes d'une même adresse (`cf-connecting-ip`), début et fin ensemble. */
   perIp: number;
-  /** Demandes vers un même réseau, début et fin ensemble. */
+  /** Demandes valables vers un même réseau, début et fin ensemble. */
   perNetwork: number;
 }
-export const DEFAULT_CONNEXION_LIMITS: ConnexionLimits = Object.freeze({ perUser: 10, perIp: 30, perNetwork: 600 });
+export const DEFAULT_CONNEXION_LIMITS: ConnexionLimits = Object.freeze({ perIp: 30, perNetwork: 2000 });
 
 export interface ConnexionServices {
   db: SqlDatabase;
@@ -253,20 +255,23 @@ const NETWORK_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const refusedLogin = (): Response => json(403, { ok: false, rule: 'R600', code: 'connexion_refusee' });
 const tooMany = (): Response => json(429, { ok: false, rule: null, code: 'too_many_requests', message: 'Trop de demandes : réessayez plus tard.' });
 
-/** Prend une place dans chaque limite ; la première pleine arrête tout. L'adresse n'est rangée qu'en empreinte d'une heure. */
-async function withinLimits(s: ConnexionServices, request: Request, networkId: string, userScope: string | null): Promise<boolean> {
+/** Prend une place à l'adresse, puis au réseau ; la première pleine arrête tout. L'adresse n'est rangée qu'en empreinte d'une heure. */
+async function withinLimits(s: ConnexionServices, request: Request, networkId: string): Promise<boolean> {
   const at = s.now();
   const limits = s.limits ?? DEFAULT_CONNEXION_LIMITS;
-  const hour = at.toISOString().slice(0, 13);
-  if (userScope !== null && !(await takeSlot(s.db, networkId, `cles_connexion_utilisateur:${await sha256Hex(`${userScope}:${hour}`)}`, limits.perUser, at))) return false;
   const ip = request.headers.get('cf-connecting-ip');
-  if (ip && !(await takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${hour}`)}`, limits.perIp, at))) return false;
+  if (ip && !(await takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${at.toISOString().slice(0, 13)}`)}`, limits.perIp, at))) return false;
   return takeSlot(s.db, networkId, 'cles_connexion:reseau', limits.perNetwork, at);
 }
 
-/** Le réseau demandé, s'il existe ; sinon `null`. */
-const existingNetwork = async (db: SqlDatabase, id: unknown): Promise<string | null> =>
-  typeof id === 'string' && NETWORK_ID.test(id) && (await db.first('SELECT 1 FROM networks WHERE id = ?', [id])) !== null ? id : null;
+/** Un refus que la couche métier n'écrit pas elle-même (réseau, rôle ou défi inconnu) : au journal, sans l'identifiant demandé [R600, R16]. */
+async function journalRefusal(s: ConnexionServices, step: 'debut' | 'fin', code: string): Promise<Response> {
+  await appendEvent(new SqlJournalStore(s.db), { type: 'securite.refus', actor: 'public:connexion', subject: null, data: { rule: 'R600', step, code } }, s.now);
+  return refusedLogin();
+}
+
+const ROLE_OF_DEVICE = new Set<string>(DEVICE_USERS);
+const USER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Les deux routes publiques de la connexion ; `null` si l'adresse n'en est pas une. */
 export async function handleConnexion(request: Request, s: ConnexionServices): Promise<Response | null> {
@@ -280,22 +285,25 @@ export async function handleConnexion(request: Request, s: ConnexionServices): P
 
   if (path === CONNEXION_DEBUT_PATH) {
     if (Object.keys(body).some((k) => !['networkId', 'role', 'userId'].includes(k))) return unknownField();
-    const { role, userId } = body;
-    const networkId = await existingNetwork(s.db, body.networkId);
-    if (networkId === null) return refusedLogin();
-    if (!(await withinLimits(s, request, networkId, `${String(role)}:${String(userId)}`))) return tooMany();
+    const { networkId, role, userId } = body;
+    if (typeof networkId !== 'string' || !NETWORK_ID.test(networkId) || !(await s.db.first('SELECT 1 FROM networks WHERE id = ?', [networkId]))) return journalRefusal(s, 'debut', 'unknown_network');
+    if (typeof role !== 'string' || !ROLE_OF_DEVICE.has(role) || typeof userId !== 'string' || !USER_ID.test(userId)) return journalRefusal(s, 'debut', 'bad_input');
+    if (!(await withinLimits(s, request, networkId))) return tooMany();
     const challenge = await service.beginLogin(networkId, role, userId);
     return challenge.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: challenge.value }) : refusedLogin();
   }
 
-  if (Object.keys(body).some((k) => !['networkId', ...ASSERTION].includes(k))) return unknownField();
-  const { networkId: announced, ...assertion } = body;
-  const networkId = await existingNetwork(s.db, announced);
-  if (networkId === null) return refusedLogin();
-  if (!(await withinLimits(s, request, networkId, null))) return tooMany();
-  const session = await service.finishLogin(assertion as unknown as AssertionPayload);
-  // Le réseau annoncé doit être celui du défi : sinon le jeton n'est jamais rendu, et il expire sans servir.
-  if (!session.ok || session.value.viewer.networkId !== networkId) return refusedLogin();
+  if (Object.keys(body).some((k) => !(ASSERTION as readonly string[]).includes(k))) return unknownField();
+  // Le réseau est celui du défi, lu dans la base : jamais celui qu'annonce l'appelant.
+  const { challengeId } = body;
+  const owner =
+    typeof challengeId === 'string' && USER_ID.test(challengeId)
+      ? await s.db.first<{ network_id: string }>("SELECT network_id FROM security_challenges WHERE id = ? AND purpose = 'login'", [challengeId])
+      : null;
+  if (!owner) return journalRefusal(s, 'fin', 'unknown_challenge');
+  if (!(await withinLimits(s, request, owner.network_id))) return tooMany();
+  const session = await service.finishLogin(body as unknown as AssertionPayload);
+  if (!session.ok) return refusedLogin();
   const { token, expiresAt, viewer, deviceId } = session.value;
   return json(200, { ok: true, mode: TRIAL_MODE, data: { token, expiresAt, viewer, deviceId } });
 }
