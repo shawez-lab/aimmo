@@ -546,7 +546,8 @@ Réservé le 2026-11-08 par la voie 2. Règles R580 à R589 et migrations à par
 - Critères : aucune lettre sans accord rangé (test) ; lien de désinscription dans chaque lettre (test) ; aucun prix qui ne vienne de la base (test).
 
 ### HX54 · Publicité payante mesurée au mandat
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#441). Migration `3120` (campagnes, validations, lancements et leurs réponses, arrêts, pauses redemandées, dépense par jour en versions, contacts), R587 à R589. Ciblage par communes INSEE et rayon de 15 à 80 km seuls ; validation de la direction en versions, une à la fois, tenue par la base ; mode essai seul ; arrêt au seuil (dépense > seuil × contacts par fiche) ou au budget, pause redemandée jusqu'à confirmation, rien de nouveau tant qu'un lancement ou une pause attend la plateforme ; compte rendu par campagne (dépense, contacts, mandats, actes au jour de l'acte). Relecture forte 2 P1 corrigés ; Codex 3 P0 puis 2 P0 corrigés, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5083 tests). Restent (voie 1) : routes, écran, travail planifié qui lit la dépense chez les plateformes et appelle `runChecks`, rattachement du code de suivi à l'arrivée d'un contact. Vraies plateformes : H63. Un lancement interrompu sans réponse de la plateforme bloque la campagne (côté prudent).
 - Qui : Claude, voie 2, relecture forte · Dépend de : G10, HX52
 - Partie du cahier : M07 (commercialiser), M20 point 7 « Mesure » (G10), M12 (conformité). Module `packages/core/src/marketing/publicite.ts`, migration `3120`, R587 à R589.
 - Objectif : comme Hektor : campagnes Google Ads gérées, et de même sur Meta. Jamais vu : chaque campagne est jugée sur les mandats et ventes qu'elle rapporte, lus dans G10, et s'arrête seule quand le coût par contact dépasse le seuil réglé.
