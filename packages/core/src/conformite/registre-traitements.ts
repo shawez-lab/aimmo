@@ -20,6 +20,12 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       // HX55 : notes préparées par l'assistant de l'agent, à valider par lui ; la fiche, l'agent et le texte.
       mcp_drafts: ['agent_id', 'person_id', 'subject', 'payload', 'decided_by'],
+      // HX58 : réclamations des clients, leur réponse, leurs alertes et la proposition du médiateur.
+      complaints: ['person_id', 'agent_id', 'conversation_id', 'summary', 'recorded_by'],
+      complaint_answers: ['complaint_id', 'note', 'answered_by'],
+      complaint_alerts: ['complaint_id'],
+      complaint_mediator_offers: ['complaint_id', 'text', 'handed_by'],
+      complaint_settings: ['mediator_name', 'set_by'],
       persons: ['agent_id', 'first_name', 'last_name'],
       person_name_corrections: ['person_id', 'old_first_name', 'old_last_name', 'new_first_name', 'new_last_name', 'reason', 'actor'],
       person_identifiers: ['agent_id', 'person_id', 'value'],
@@ -1271,6 +1277,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
   mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],
+  complaints: ['id', 'network_id', 'received_on', 'received_via', 'reply_channel', 'response_days', 'due_on', 'recorded_at'],
+  complaint_answers: ['network_id', 'outcome', 'answered_on', 'late', 'at'],
+  complaint_alerts: ['network_id', 'kind', 'created_on', 'created_at'],
+  complaint_mediator_offers: ['network_id', 'cause', 'settings_version', 'status', 'send_rule', 'created_on', 'created_at', 'handed_at'],
+  complaint_settings: ['network_id', 'version', 'response_days', 'mediator_site', 'set_at'],
   security_devices: ['id', 'network_id', 'user_role', 'alg', 'sign_count', 'status', 'created_at', 'approved_at', 'revoked_at'],
   security_challenges: ['id', 'network_id', 'user_role', 'purpose', 'challenge', 'action', 'created_at', 'expires_at', 'used_at'],
   security_sessions: ['id', 'network_id', 'user_role', 'created_at', 'expires_at'],
