@@ -350,6 +350,19 @@ Le serveur MCP de HX55, en JSON-RPC 2.0 (protocole `2025-06-18`), sur HTTP. Rien
 - `GET /v1/cles/assistant` (agent) : ses clés, sans empreinte. `POST /v1/cles/assistant/<id>/retrait` (agent pour les siennes, direction pour tout agent de son réseau) : d'un geste, sans preuve [R600] ; la clé d'un autre agent : 404. Une clé retirée ne revient jamais et ne s'efface pas [R17].
 - `POST /v1/mcp/public/<réseau>`, sans clé : le seul outil `biens_diffusables`, les biens que la diffusion autorise à l'instant même, tels que leur annonce publiée les décrit, sans adresse, agent ni donnée personnelle [R592]. Réseau inconnu : 404. Limites par heure : 120 demandes par adresse (`cf-connecting-ip`, en empreinte d'une heure), 5000 par réseau ; au-delà 429.
 
+## Conditions de passage des phases (BR10)
+
+Sous `/v1/phases`, la direction seule ; tout autre rôle est refusé (403) et le refus écrit au journal [R16]. Les rapports sont recalculés à chaque lecture ; rien n'est envoyé. Corps JSON de 8 ko au plus ; un corps illisible répond 400 sans rien ranger, un refus de règle 409 avec sa règle, un agent inconnu 404.
+
+- `GET /pilotes` : la comparaison de chaque agent pilote, avant et après son arrivée, et la condition de la phase 3 [R641, R642].
+- `POST /pilotes` (`{agentId}`) : désigne un agent actif du réseau comme pilote, une fois, avant le début de sa mesure [R640].
+- `POST /pilotes/avant` (`{agentId, months: [n1, n2, n3], proofRef}`) : les mandats signés dans chacun des 3 mois d'avant, avec la référence de la preuve ; une version s'ajoute, rien ne change [R640].
+- `GET /phase1` : la série de jours sans envoi hors règles, jour de Paris par jour, et la condition de la phase 1 [R643, R645].
+- `POST /phase1/envois-hors-aimmo` (`{day: AAAA-MM-JJ, application: gohighlevel | manychat | site | github_actions | autre, proofRef}`) : un envoi hors règles constaté hors d'AIMMO, jamais retiré [R644].
+- `POST /phase1/inventaire` (`{tasks: {gohighlevel, manychat, site, github_actions, autre}, proofRef}`) : l'inventaire des tâches encore planifiées dans les applications, chaque application dite même à zéro, par versions [R644].
+
+Au planificateur : `phases.releve_phase1`, de minuit à 3 h de Paris, fige le relevé de la veille pour chaque réseau, une seule fois ; un jour manqué n'est jamais rattrapé et reste « sans donnée » [R643, R17].
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
