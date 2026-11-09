@@ -86,6 +86,7 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(await t.grant({ cardExpiresOn: '2028-01-09' })).toEqual({ ok: false, rule: 'R654', code: 'carte_echue' });
     for (const department of ['20', '96', 'Dijon', '', 21]) expect(await t.grant({ department })).toEqual({ ok: false, rule: 'R654', code: 'departement_inconnu' });
     expect(await t.grant({ agencyName: ' ' })).toEqual({ ok: false, rule: null, code: 'bad_name' });
+    expect(await t.grant({ agencyName: 'a'.repeat(121) })).toEqual({ ok: false, rule: null, code: 'bad_name' });
     expect(await t.grant({ cardExpiresOn: '2028-01-10', department: '2a' })).toMatchObject({ ok: true });
     expect(await t.grant({ agencyName: 'Autre nom, même SIREN' })).toEqual({ ok: false, rule: 'R654', code: 'deja_licenciee' });
     expect(await t.grant({ siren: '111111118' })).toMatchObject({ ok: true });
@@ -99,6 +100,10 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     await t.openPhase5();
     expect(await t.grant()).toEqual({ ok: false, rule: 'R655', code: 'tarif_absent' });
     for (const monthlyCents of [0, 99, 10_000_001, 299.5, '29900', null]) expect(await t.tariff(monthlyCents as number)).toEqual({ ok: false, rule: 'R655', code: 'bad_price' });
+    expect(await t.tariff(100)).toMatchObject({ ok: true, value: { version: 1 } });
+    expect(await t.tariff(10_000_000)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.licences.setTariff(t.direction, { monthlyCents: 500, reason: 'ab' })).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    expect(await t.licences.setTariff(t.direction, { monthlyCents: 500, reason: 'a'.repeat(201) })).toEqual({ ok: false, rule: null, code: 'bad_reason' });
     await t.tariff(29900);
     expect(await t.tariff(29900)).toEqual({ ok: false, rule: 'R655', code: 'tarif_inchange' });
     // Une remise ne peut pas se demander : un champ de prix est inconnu.
@@ -114,15 +119,15 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
           "INSERT INTO software_licences (id, network_id, licensee_network_id, agency_name, siren, card_number, card_expires_on, department, tariff_version, monthly_cents, phase5_hash, granted_by, granted_at) VALUES (?, ?, 'agence-y', 'Agence Y', '222222226', 'CPI 7501 2027 000 000 002', '2030-01-01', '75', ?, ?, ?, 'direction:x', '2028-01-10')",
         )
         .run(`l-${version}-${cents}`, t.network.id, version, cents, phase5);
-    expect(() => insert(1, 19900)).toThrow(/tarif publié/);
+    expect(() => insert(3, 19900)).toThrow(/tarif publié/);
     await t.tariff(34900);
-    expect(() => insert(1, 29900)).toThrow(/tarif publié/);
+    expect(() => insert(3, 29900)).toThrow(/tarif publié/);
     // Un nouveau tarif ne change pas la licence déjà donnée : elle est dite à l'ancien tarif.
     const second = await t.granted({ siren: '987654324' });
-    expect(second).toMatchObject({ tariffVersion: 2, monthlyCents: 34900 });
+    expect(second).toMatchObject({ tariffVersion: 4, monthlyCents: 34900 });
     const list = await t.licences.list(t.direction);
     if (!list.ok) throw new Error(list.code);
-    expect(list.value.tariff).toMatchObject({ version: 2, monthlyCents: 34900 });
+    expect(list.value.tariff).toMatchObject({ version: 4, monthlyCents: 34900 });
     expect(list.value.licences.map((l) => [l.monthlyCents, l.oldTariff])).toEqual([
       [29900, true],
       [34900, false],
@@ -133,6 +138,8 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(pub).toEqual({
       current: { monthlyCents: 34900, since: '2028-01-10T09:00:00.000Z' },
       history: [
+        { monthlyCents: 100, from: '2028-01-10T09:00:00.000Z' },
+        { monthlyCents: 10_000_000, from: '2028-01-10T09:00:00.000Z' },
         { monthlyCents: 29900, from: '2028-01-10T09:00:00.000Z' },
         { monthlyCents: 34900, from: '2028-01-10T09:00:00.000Z' },
       ],
@@ -149,6 +156,8 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(await decide('active')).toEqual({ ok: false, rule: 'R656', code: 'etat_inchange' });
     expect(await decide('effacee')).toEqual({ ok: false, rule: 'R656', code: 'bad_state' });
     expect(await decide('suspendue', id, ' ')).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    expect(await decide('suspendue', id, 'ab')).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    expect(await decide('suspendue', id, 'a'.repeat(201))).toEqual({ ok: false, rule: null, code: 'bad_reason' });
     expect(await decide('suspendue', 'inconnue')).toEqual({ ok: false, rule: null, code: 'not_found' });
     expect(await decide('suspendue')).toMatchObject({ ok: true, value: { version: 1, state: 'suspendue' } });
     expect(await decide('active')).toMatchObject({ ok: true, value: { version: 2, state: 'active' } });
@@ -206,6 +215,8 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(await t.licences.decide(agence, { licenceId: a.id, state: 'suspendue', reason: 'Essai' })).toEqual({ ok: false, rule: 'R657', code: 'agence_licenciee' });
     // Le réseau qui donne n'a pas de licence à lire ; un autre réseau ne voit pas les licences d'un autre.
     expect(await t.licences.mine(t.direction)).toEqual({ ok: false, rule: 'R657', code: 'pas_de_licence' });
+    // Chaque lecture est écrite au journal, celle de l'agence sur sa seule licence.
+    expect((await t.db.all<{ subject: string }>("SELECT subject FROM journal WHERE type = 'licences.lecture'")).map((e) => e.subject)).toEqual([`licence:${a.id}`]);
     const otherDir = t.as('direction', 'direction-2', t.other.id);
     const otherList = await t.licences.list(otherDir);
     expect(otherList).toMatchObject({ ok: true, value: { tariff: null, licences: [] } });
@@ -227,7 +238,12 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(() => insert('l9', 'agence-w')).not.toThrow();
     // Une agence sous licence (agence-w, licenciée par l'autre réseau) ne donne pas de licence.
     t.raw.prepare("INSERT INTO networks (id, name, created_at) VALUES ('agence-v', 'Agence V', '2028-01-10')").run();
-    expect(() => insert('l10', 'agence-v', 'agence-w')).toThrow();
+    // Phase 5 ouverte et tarif réglé pour agence-w, pour que seul le sens soit en cause.
+    const agenceW = t.as('direction', 'w', 'agence-w');
+    await t.openPhase5(agenceW);
+    t.raw.prepare("INSERT INTO licence_tariffs (network_id, version, monthly_cents, reason, decided_by, decided_at) VALUES ('agence-w', 1, 100, 'essai', 'direction:w', '2028-01-10')").run();
+    const phase5W = (await t.db.first<{ evidence_hash: string }>("SELECT evidence_hash FROM phase_openings WHERE network_id = 'agence-w' AND phase = 5"))!.evidence_hash;
+    expect(() => insert('l10', 'agence-v', 'agence-w', phase5W)).toThrow(/ne donne pas de licence/);
     expect(await t.licences.list(t.as('direction', 'w', 'agence-w'))).toEqual({ ok: false, rule: 'R657', code: 'agence_licenciee' });
   });
 
