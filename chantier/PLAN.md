@@ -685,7 +685,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR05 · Routes des clés d'appareil, du quiz et du serveur MCP
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#453), `packages/api/src/cles.ts` sous `/v1/cles` et `/v1/export`, variables `CLES_RP_ID` et `CLES_ORIGINS` (H64), aucune règle nouvelle ni migration. Décidé : rôles contrôlés avant le corps, refus au journal ; sans site WebAuthn réglé, 503 ; un agent au dossier incomplet garde ses clés et son export (`OPEN_WITHOUT_AGENT_FILE`) ; la vérification d'un fichier d'un autre réseau ne lit rien ; simulateur d'appareil partagé dans `packages/core/test/appareil-simule.ts`. Relecture forte : 1 P1 (dossier incomplet) corrigé ; Codex rien à signaler, deux fois ; GitHub Actions bloqué (facturation), vérification locale verte (5185 tests). Restent : écrans ; connexion par clé (BR06).
 - Qui : Claude, relecture forte · Dépend de : HX55, HX56, HX63
 - Objectif : routes de `ClesAppareil` (WebAuthn : enregistrement, appareils, accord, retrait, preuve d'une action) et l'export complet de l'agent (HX62), qui exige la preuve d'une clé d'appareil [R601], venu de BR04. Découpé le 2026-11-09 : la connexion par clé, le quiz et le serveur MCP passent à BR06, BR07 et BR08 (une journée au plus par tâche).
 - Critères : droits [R16] (test) ; R600 et R601 tenues par la route (tests) ; R561 par la route (test) ; sans site WebAuthn réglé, routes fermées (test).
