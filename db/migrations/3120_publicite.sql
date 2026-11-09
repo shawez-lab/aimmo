@@ -50,10 +50,21 @@ CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_validation BEFORE INSERT ON ad_c
 WHEN NOT EXISTS (SELECT 1 FROM ad_campaign_approvals a WHERE a.id = NEW.approval_id AND a.campaign_id = NEW.campaign_id)
   OR EXISTS (SELECT 1 FROM ad_campaign_stops s WHERE s.approval_id = NEW.approval_id)
   OR EXISTS (SELECT 1 FROM ad_campaign_stops p WHERE p.campaign_id = NEW.campaign_id AND p.paused_at IS NULL)
+  OR EXISTS (SELECT 1 FROM ad_campaign_starts q WHERE q.campaign_id = NEW.campaign_id AND NOT EXISTS (SELECT 1 FROM ad_campaign_launches l WHERE l.approval_id = q.approval_id))
   OR EXISTS (SELECT 1 FROM ad_campaign_approvals b WHERE b.campaign_id = NEW.campaign_id AND b.version > (SELECT version FROM ad_campaign_approvals WHERE id = NEW.approval_id))
 BEGIN SELECT RAISE(ABORT, 'ad_campaign_starts : aucun lancement sans la dernière validation en vigueur de la direction'); END;
 CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_garde BEFORE DELETE ON ad_campaign_starts BEGIN SELECT RAISE(ABORT, 'ad_campaign_starts : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_fige BEFORE UPDATE ON ad_campaign_starts BEGIN SELECT RAISE(ABORT, 'ad_campaign_starts : rien ne se réécrit'); END;
+
+-- La réponse de la plateforme au lancement. Tant qu'un lancement n'a pas sa réponse, aucune validation ni aucun
+-- lancement nouveau de la campagne [R587].
+CREATE TABLE IF NOT EXISTS ad_campaign_launches (
+  approval_id TEXT PRIMARY KEY REFERENCES ad_campaign_starts (approval_id) ON DELETE RESTRICT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('lancee', 'echec')),
+  done_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS ad_campaign_launches_garde BEFORE DELETE ON ad_campaign_launches BEGIN SELECT RAISE(ABORT, 'ad_campaign_launches : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS ad_campaign_launches_fige BEFORE UPDATE ON ad_campaign_launches BEGIN SELECT RAISE(ABORT, 'ad_campaign_launches : rien ne se réécrit'); END;
 
 -- L'arrêt d'une validation, une seule fois : au seuil, au budget, par la direction, ou lancement en échec [R588].
 -- Une validation arrêtée ne repart jamais : il en faut une nouvelle de la direction.

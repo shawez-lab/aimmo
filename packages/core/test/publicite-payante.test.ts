@@ -239,6 +239,36 @@ describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
     expect(log).toEqual(['pause', 'start', 'pause']);
   });
 
+  it('[R587] tant que la plateforme n’a pas répondu au lancement, aucune validation ni aucun lancement nouveau', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: AdPlatform = { mode: 'essai', start: async () => { await gate; }, pause: async () => {} };
+    const t = await setup({ google_ads: slow, meta: trialAdPlatform() });
+    const c = await t.pub.create(t.dir, { platform: 'google_ads', name: 'Vendeurs Dijon', targeting: TARGET });
+    if (!c.ok) throw new Error(c.code);
+    await t.pub.approve(t.dir, c.value.id, BUDGET);
+    const starting = t.pub.start(t.dir, c.value.id);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await t.pub.stop(t.dir, c.value.id)).toMatchObject({ ok: true });
+    expect(await t.pub.approve(t.dir, c.value.id, BUDGET)).toMatchObject({ ok: false, rule: 'R587', code: 'lancement_en_cours' });
+    release();
+    await starting;
+    expect(await t.pub.approve(t.dir, c.value.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+  });
+
+  it('[R588] une vente signée avant l’arrivée du contact, même rangée après, ne compte pas', async () => {
+    const t = await setup();
+    const c = await t.running({ ...BUDGET, maxCostPerContactCents: 10_000 });
+    const ana = await t.person('Ana');
+    await t.pub.recordContact(t.network.id, c.code, ana);
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES ('d-x', ?, 'bien-x', 'o-x', ?, 200000, '2027-09-01T08:00:00.000Z', 'agent:test')", [t.network.id, ana]);
+    await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES ('d-x', ?, '2027-10-01', 'preuves/test.pdf', 'a_demarrer', '2027-12-01T08:00:00.000Z', 'agent:test')", [t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ sales: 0 });
+  });
+
   it('[R588] une pause pas encore confirmée bloque toute validation et tout lancement nouveaux', async () => {
     let down = true;
     const paused: string[] = [];

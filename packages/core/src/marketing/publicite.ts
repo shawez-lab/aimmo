@@ -285,6 +285,7 @@ export class PublicitePayante {
     if (last && (await this.running(last.id))) return { ok: false, rule: 'R587', code: 'en_cours' };
     // Une pause pas encore confirmée par la plateforme : rien de nouveau tant qu'elle ne l'est pas [R588].
     if (await this.pausePending(c.id)) return { ok: false, rule: 'R588', code: 'pause_en_attente' };
+    if (await this.launchPending(c.id)) return { ok: false, rule: 'R587', code: 'lancement_en_cours' };
     const version = (last?.version ?? 0) + 1;
     const approvalId = this.newId();
     let changes = 0;
@@ -321,6 +322,12 @@ export class PublicitePayante {
     const k = await this.db.all<{ person_id: string }>('SELECT person_id FROM ad_campaign_contacts WHERE campaign_id = ?', [campaignId]);
     const roots = new Set(await Promise.all(k.map((r) => this.fiche.rootOf(r.person_id))));
     return { spendCents: Number(s?.total ?? 0), contacts: roots.size };
+  }
+
+  /** Un lancement demandé à la plateforme dont la réponse n'est pas encore revenue. */
+  private async launchPending(campaignId: string): Promise<boolean> {
+    const r = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts s WHERE s.campaign_id = ? AND NOT EXISTS (SELECT 1 FROM ad_campaign_launches l WHERE l.approval_id = s.approval_id)', [campaignId]);
+    return Number(r?.n) > 0;
   }
 
   /** Une pause demandée à la plateforme et pas encore confirmée, pour cette campagne. */
@@ -361,6 +368,7 @@ export class PublicitePayante {
     // Une validation déjà lancée ou arrêtée ne repart jamais : il en faut une nouvelle de la direction [R587].
     const used = await this.db.first<{ n: number }>('SELECT (SELECT count(*) FROM ad_campaign_starts WHERE approval_id = ?) + (SELECT count(*) FROM ad_campaign_stops WHERE approval_id = ?) AS n', [a.id, a.id]);
     if (Number(used?.n) > 0) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
+    if (await this.launchPending(c.id)) return this.refuse(viewer, 'ad_start', 'R587', 'lancement_en_cours', { campaign: c.id });
     if (await this.pausePending(c.id)) return this.refuse(viewer, 'ad_start', 'R588', 'pause_en_attente', { campaign: c.id });
     // Déjà au-delà du seuil ou du budget avec ce qui est dépensé : rien ne repart [R588].
     const over = this.overLimit(a, await this.totals(c.id));
@@ -381,7 +389,9 @@ export class PublicitePayante {
     const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
     try {
       await this.platforms[c.platform].start(launch);
+      await this.launched(a.id, 'lancee');
     } catch {
+      await this.launched(a.id, 'echec');
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
       return { ok: false, rule: 'R587', code: 'echec_lancement' };
     }
@@ -393,6 +403,11 @@ export class PublicitePayante {
     }
     await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: 'essai', version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
     return { ok: true, value: { approvalId: a.id } };
+  }
+
+  /** La réponse de la plateforme au lancement, rangée une fois : tant qu'elle manque, rien d'autre ne se lance. */
+  private async launched(approvalId: string, outcome: 'lancee' | 'echec'): Promise<void> {
+    await this.db.run('INSERT INTO ad_campaign_launches (approval_id, outcome, done_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [approvalId, outcome, this.now().toISOString()]);
   }
 
   /** Range l'arrêt une fois, puis demande la pause à la plateforme ; une pause non confirmée sera redemandée. */
@@ -525,8 +540,9 @@ export class PublicitePayante {
       const props = m.map((r) => r.property_id).filter((p): p is string => p !== null);
       const s = await this.db.all<{ file_id: string }>(
         `SELECT c.file_id FROM sale_file_closings c JOIN sale_files f ON f.id = c.file_id
-         WHERE c.at >= ? AND (f.buyer_person_id IN (${marks(members.length)})${props.length ? ` OR f.property_id IN (${marks(props.length)})` : ''})`,
-        [k.arrived_at, ...members, ...props],
+         WHERE c.signed_on >= ? AND (f.buyer_person_id IN (${marks(members.length)})${props.length ? ` OR f.property_id IN (${marks(props.length)})` : ''})`,
+        // Le jour de l'acte, à Paris, jamais le jour où il a été rangé.
+        [PublicitePayante.parisDay(new Date(k.arrived_at)), ...members, ...props],
       );
       for (const r of s) sales.add(r.file_id);
     }
