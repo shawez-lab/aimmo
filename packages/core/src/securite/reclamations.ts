@@ -110,6 +110,7 @@ export class Reclamations {
   private readonly send: Sender;
   /** Sans canal donné, les seuls canaux du mode essai : rien ne part vraiment, la proposition reste à remettre [R26]. */
   private readonly trialOnly: boolean;
+  private readonly fiches: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -120,6 +121,7 @@ export class Reclamations {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.trialOnly = !options.send;
+    this.fiches = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
     if (options.send) {
       this.send = options.send;
     } else {
@@ -403,18 +405,19 @@ export class Reclamations {
   /** Les réclamations : la direction voit celles du réseau, l'agent celles des fiches qu'il suit ; l'échéance la plus proche d'abord. */
   async list(viewer: Viewer): Promise<{ ok: true; value: Complaint[] } | ComplaintRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'role');
-    // Un agent : seulement les réclamations des fiches qu'il suit (fiches réunies comprises), pour ne jamais tenter de
-    // lire celles d'un autre ; la lecture est ensuite revérifiée et écrite au journal.
-    const rows =
-      viewer.role === 'direction'
-        ? await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId])
-        : await this.db.all<ComplaintRow>(
-            `SELECT c.* FROM complaints c WHERE c.network_id = ? AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM persons p WHERE p.id = c.person_id AND p.agent_id = ?)
-               OR EXISTS (SELECT 1 FROM person_merges m JOIN persons p ON p.id IN (m.survivor_id, m.merged_id)
-                          WHERE c.person_id IN (m.survivor_id, m.merged_id) AND p.agent_id = ? AND m.undone_at IS NULL))
-             ORDER BY c.due_on, c.id`,
-            [viewer.networkId, viewer.userId, viewer.userId, viewer.userId],
-          );
+    // Un agent : seulement les réclamations des fiches qu'il suit, tout le groupe des fiches réunies compris, pour ne
+    // jamais tenter de lire celles d'un autre ; la lecture est ensuite revérifiée et écrite au journal.
+    const all = await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId]);
+    let rows = all;
+    if (viewer.role === 'agent') {
+      rows = [];
+      for (const row of all) {
+        const members = await this.fiches.membersOf(row.person_id);
+        const marks = members.map(() => '?').join(', ');
+        const mine = await this.db.first<{ n: number }>(`SELECT count(*) AS n FROM persons WHERE network_id = ? AND agent_id = ? AND id IN (${marks})`, [viewer.networkId, viewer.userId, ...members]);
+        if ((mine?.n ?? 0) > 0) rows.push(row);
+      }
+    }
     const out: Complaint[] = [];
     for (const row of rows) if (await this.allowed(viewer, row)) out.push((await this.load(row.id))!);
     return { ok: true, value: out };

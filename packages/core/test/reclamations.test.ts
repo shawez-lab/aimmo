@@ -185,6 +185,19 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(await one(t, c.complaintId)).toMatchObject({ mediator: { cause: 'echeance', status: 'a_remettre' } });
   });
 
+  it('[R16] une réclamation d’une fiche réunie, même par plusieurs fusions, est dans la liste de l’agent du groupe', async () => {
+    const t = await setup();
+    const a = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Ancienne' });
+    const b = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Intermédiaire' });
+    const r = await t.reclamations.record(t.direction, a.id, { receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Ancienne fiche.' });
+    if (!r.ok) throw new Error(r.code);
+    const unique = new FicheUnique(t.db, t.store, { now: t.now });
+    await unique.merge({ survivorId: b.id, mergedId: a.id, reason: 'même mail' });
+    await unique.merge({ survivorId: t.personId, mergedId: b.id, reason: 'même téléphone' });
+    const l = await t.reclamations.list(t.agent);
+    expect(l.ok && l.value.map((c) => c.complaintId)).toEqual([r.value.complaintId]);
+  });
+
   it('[R606] [R16] seuls l’agent qui suit la fiche et la direction rangent et lisent ; le journal ne garde que des codes', async () => {
     const t = await setup();
     for (const v of [t.sam, t.compliance, t.partner]) {
