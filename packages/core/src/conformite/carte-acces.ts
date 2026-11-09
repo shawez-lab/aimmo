@@ -236,6 +236,11 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   // Le signalement au responsable d'un dossier de vente : jamais dans la réponse (lutte contre le blanchiment).
   'conformite.signalement': { excluded: 'lcb_ft', why: 'Signalement au responsable de la conformité.' },
   'conformite.signalement_decision': { excluded: 'lcb_ft', why: 'Décision du responsable sur un signalement.' },
+  // HX57 : le contrôle du gel des avoirs, au responsable seul (lutte contre le blanchiment et gel des avoirs).
+  'securite.gel_registre': { excluded: 'lcb_ft', why: 'Version du registre national des gels importée par le responsable.' },
+  'securite.gel_controle': { excluded: 'lcb_ft', why: 'Contrôle d\'un dossier contre le registre des gels.' },
+  'securite.gel_correspondance': { excluded: 'lcb_ft', why: 'Correspondance au registre des gels, au responsable seul.' },
+  'securite.gel_decision': { excluded: 'lcb_ft', why: 'Décision du responsable sur une correspondance au registre des gels.' },
 };
 
 /** Les événements écrits sous le bien qui portent une offre : ceux d'un acquéreur, jamais de qui possède ou a possédé le bien [R96]. */
@@ -360,6 +365,9 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   budget_ia: { excluded: 'pas_un_sujet', why: 'Clé d\'une alerte du pilotage (pilotage_alerts), jamais un sujet du journal.' },
   remplace: { excluded: 'pas_un_sujet', why: 'Code d\'attente d\'une facture, rangé dans les données d\'un événement du dossier de vente.' },
   suspicion_report: { excluded: 'lcb_ft', why: 'Signalement au responsable.' },
+  freeze_registry: { excluded: 'lcb_ft', why: 'Version du registre des gels.' },
+  freeze_check: { excluded: 'lcb_ft', why: 'Contrôle du gel des avoirs.' },
+  freeze_match: { excluded: 'lcb_ft', why: 'Correspondance au registre des gels.' },
 };
 
 export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {

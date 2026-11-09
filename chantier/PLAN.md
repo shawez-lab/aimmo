@@ -582,13 +582,15 @@ Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à par
 - Critères : un appareil retiré ne se connecte plus (test) ; une action sensible exige un second facteur (test) ; une base hors Europe fait échouer la vérification (test).
 
 ### HX57 · Contrôle du gel des avoirs
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#442), module `packages/core/src/securite/gel-avoirs.ts`, migration `3310`, R603 à R605 ; périmètre et copie figée de L05 extraits dans `conformite/dossier-fige.ts` (L05 inchangé). Décidé, lecture prudente : registre importé par le responsable (identifiant, nature, noms), en une seule écriture par lots de 100 valeurs au plus, scellé avec son empreinte, toujours plus récent ; noms comparés sans accents, casse ni ordre, lettres liées transcrites, fiches réunies qui se complètent, un prénom seul ne suffit jamais, une fiche sans nom de famille dite « nom manquant » au responsable ; empreinte du contrôle sur le périmètre et les noms (un nom corrigé se recontrôle) ; correspondance figée par empreinte comme L05, jugée une fois par le responsable ; dossiers ouverts revérifiés à chaque version, passage chaque heure au planificateur ; l'agent reçoit toujours « controle_fait ». Relecture forte : 5 P1 corrigés ; Codex : 2 P0 corrigés, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5097 tests). Restent (voie 1) : routes et écran du responsable (import, correspondances, décision) et bouton de l'agent dans `app.ts` ; lecture du fichier public de la DG Trésor derrière `importRegistry`.
 - Qui : Claude, voie 1, relecture forte
 - Objectif : comme Modelo : vérifier chaque client contre le registre national des gels. Jamais vu : les dossiers ouverts sont revérifiés à chaque mise à jour du registre, et une correspondance va au seul responsable, sans rien changer à ce que voit le client, comme L05.
 - Critères : une correspondance alerte le responsable et fige le dossier (test) ; le client ne voit aucune différence (test) ; chaque contrôle est daté avec la version du registre (test).
 
 ### HX58 · Réclamations des clients et médiateur
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
 - Objectif : comme Hektor : médiateur de la consommation pris en charge. Jamais vu : chaque réclamation est suivie avec son délai de réponse, et le médiateur est proposé de lui-même au client si la réclamation n'est pas réglée à l'échéance.
 - Critères : chaque réclamation a son échéance et ses alertes (test) ; le médiateur est proposé à l'échéance (test).
 

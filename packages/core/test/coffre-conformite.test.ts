@@ -130,9 +130,9 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
       }
     };
     walk(root);
-    // Le registre des traitements (L06) nomme la table sans la lire ; le signalement (L05) n'en garde que l'empreinte
-    // de chaque ligne, pour figer le dossier, et ne la montre qu'au responsable.
-    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts', 'core/src/conformite/registre-traitements.ts', 'core/src/conformite/signalement.ts']);
+    // Le registre des traitements (L06) nomme la table sans la lire ; le dossier figé du signalement (L05) et du gel des
+    // avoirs (HX57) n'en garde que l'empreinte de chaque ligne, et ne la montre qu'au responsable.
+    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts', 'core/src/conformite/dossier-fige.ts', 'core/src/conformite/registre-traitements.ts']);
   });
 
   it('[R90] les autres modules ne voient qu’un état : la date de l’identité vérifiée et valide ce jour-là', async () => {
