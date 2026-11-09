@@ -14,7 +14,9 @@
  *     central : il est sorti sans passer par lui ;
  *   - une ligne « parti » du contrôle vers une personne qui avait, à cet instant, une exclusion en cours et déjà connue,
  *     sur sa fiche ou une fiche réunie à elle à cet instant : la base recompte elle-même, sans croire le contrôle ;
- *   - un écart non expliqué ou une panne signalés par le site sur une de ses automatisations : il a décidé seul ;
+ *   - un écart non expliqué ou une panne signalés par le site sur une de ses automatisations, un refus du socle à un
+ *     palier où il ne décide pas (le site a pu envoyer quand même), ou une panne dont le retour en ombre n'a pas pu
+ *     s'écrire (comptée pour chaque réseau, faute de savoir lequel) : le site a décidé seul ;
  *   - un envoi hors règles constaté hors d'AIMMO, rangé par la direction.
  * Les heures, les plafonds et les accords restent jugés par le contrôle lui-même (R01, R03, R11) : les recompter ici
  * doublerait ses règles et leurs exceptions. Un refus du contrôle n'est pas un envoi : il se voit, il ne salit rien.
@@ -29,7 +31,7 @@
  * planificateur (branché par la voie 1).
  */
 import type { Viewer } from '../acces/droits.ts';
-import { AUTOMATION_NAMES } from '../bascule/automatisations.ts';
+import { AUTOMATION_JOURNAL_TYPE, AUTOMATION_NAMES } from '../bascule/automatisations.ts';
 import { ROLLOUT_INCIDENT_JOURNAL_TYPE } from '../bascule/paliers.ts';
 import { SCHEDULER_JOURNAL_TYPE } from '../bascule/planificateur.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -72,7 +74,7 @@ export interface Phase1Counts {
   withoutControl: number;
   /** Lignes « parti » vers une personne exclue à cet instant, exclusion déjà connue. */
   whileExcluded: number;
-  /** Écarts non expliqués signalés par le site. */
+  /** Écarts non expliqués signalés par le site, et refus du socle que le site pouvait passer outre. */
   siteGaps: number;
   /** Pannes du contrôle sur une automatisation du site : il a décidé seul. */
   siteFailures: number;
@@ -423,6 +425,37 @@ export class ConditionPhase1 {
       if (!(AUTOMATION_NAMES as readonly unknown[]).includes(data.automation)) continue;
       if (data.kind === 'failure') slot(e.at).siteFailures += 1;
       else slot(e.at).siteGaps += 1;
+    }
+
+    // Un refus du socle que le site pouvait passer outre (palier où le socle ne décide pas) : le site a pu envoyer
+    // quand même. Sans preuve du contraire, c'est un envoi hors règles. Un refus sans règle (fiche inconnue) n'en est pas un.
+    const overridable = await this.db.all<{ at: string; data: string }>(
+      `SELECT j.at, j.data FROM journal j JOIN persons p ON j.subject = 'person:' || p.id
+        WHERE j.type = ? AND p.network_id = ? AND j.at >= ? AND j.at < ? ORDER BY j.seq`,
+      [AUTOMATION_JOURNAL_TYPE, networkId, start, end],
+    );
+    for (const e of overridable) {
+      let data: { status?: unknown; decides?: unknown; rule?: unknown };
+      try {
+        data = JSON.parse(e.data) as typeof data;
+      } catch {
+        slot(e.at).siteGaps += 1;
+        continue;
+      }
+      if (data.status === 'refused' && data.decides !== true && typeof data.rule === 'string') slot(e.at).siteGaps += 1;
+    }
+
+    // Une panne du socle dont le retour en ombre n'a pas pu s'écrire : le site a décidé seul, et le journal ne dit pas
+    // pour quel réseau. Elle compte pour chaque réseau : jamais propre par défaut.
+    const unwritten = await this.db.all<{ at: string; data: string }>("SELECT at, data FROM journal WHERE type = 'api.erreur' AND at >= ? AND at < ? ORDER BY seq", [start, end]);
+    for (const e of unwritten) {
+      let route: unknown;
+      try {
+        route = (JSON.parse(e.data) as { route?: unknown }).route;
+      } catch {
+        continue;
+      }
+      if (route === 'automatisations.retour_arriere') slot(e.at).siteFailures += 1;
     }
 
     const outside = await this.db.all<{ day: string; n: number }>('SELECT day, COUNT(*) AS n FROM phase1_outside_sends WHERE network_id = ? AND day >= ? AND day <= ? GROUP BY day', [

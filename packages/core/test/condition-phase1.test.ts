@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  AUTOMATION_JOURNAL_TYPE,
   FicheClient,
   FicheUnique,
   PaliersBascule,
@@ -208,6 +209,31 @@ describeWithSqlite('HX70 · 30 jours sans aucun envoi hors règles : la conditio
     await paliers.incident(t.other.id, 'rappel_visite', 'unexplained_gap', null, 'intake:site_auto');
     const counts = await t.condition.count(t.network.id, '2027-03-10', '2027-03-10');
     expect(counts.get('2027-03-10')).toMatchObject({ siteGaps: 1, siteFailures: 1 });
+  });
+
+  it('[R643] un refus du socle que le site pouvait passer outre, ou une panne dont le retour en ombre n’a pas pu s’écrire, rend le jour hors règles', async () => {
+    const t = await setup();
+    const p = await t.person();
+    const q = await t.person(t.other.id);
+    t.setClock('2027-03-10T09:00:00.000Z');
+    const ask = (personId: string, data: Record<string, unknown>) =>
+      appendEvent(t.journal, { type: AUTOMATION_JOURNAL_TYPE, actor: 'intake:site_auto', subject: `person:${personId}`, data: { mode: 'essai', sent: false, automation: 'rappel_visite', ...data } }, t.now);
+    // En ombre, le socle refuse pour R02 : le site décide seul, il a pu envoyer.
+    await ask(p, { status: 'refused', rule: 'R02', decides: false });
+    // Le socle décide : son refus vaut, rien n'est parti.
+    await ask(p, { status: 'refused', rule: 'R02', decides: true });
+    // Le socle aurait laissé partir ; ou fiche inconnue, sans règle : rien d'hors règles.
+    await ask(p, { status: 'would_send', rule: null, decides: false });
+    await ask(p, { status: 'refused', rule: null, decides: false, code: 'unknown_person' });
+    // Un autre réseau ne compte pas ici.
+    await ask(q, { status: 'refused', rule: 'R04', decides: false });
+    // Le 11 : une panne dont le retour en ombre n'a pas pu s'écrire ; une autre erreur d'API ne compte pas.
+    t.setClock('2027-03-11T09:00:00.000Z');
+    await appendEvent(t.journal, { type: 'api.erreur', actor: 'intake:site_auto', subject: null, data: { route: 'automatisations.retour_arriere', error: 'Error' } }, t.now);
+    await appendEvent(t.journal, { type: 'api.erreur', actor: 'intake:site', subject: null, data: { route: 'demandes', error: 'Error' } }, t.now);
+    const counts = await t.condition.count(t.network.id, '2027-03-10', '2027-03-11');
+    expect(counts.get('2027-03-10')).toMatchObject({ siteGaps: 1, siteFailures: 0 });
+    expect(counts.get('2027-03-11')).toMatchObject({ siteGaps: 0, siteFailures: 1 });
   });
 
   it('[R643, R644] un jour figé propre ne le reste pas si un envoi hors règles est rangé après : le pire des deux l’emporte', async () => {
