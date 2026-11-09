@@ -516,6 +516,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       candidate_interviews: ['candidate_id', 'interviewer', 'created_by'],
       candidate_interview_outcomes: ['held_by_name', 'marked_by'],
       candidate_decisions: ['candidate_id', 'reason', 'decided_by', 'decider_name'],
+      // HX64 : les vidéos et épisodes du recrutement, et le contenu d'origine de chaque candidature.
+      recruiting_contents: ['url', 'created_by'],
+      recruiting_content_withdrawals: ['content_id', 'withdrawn_by'],
+      candidate_content_origins: ['candidate_id', 'content_id'],
     },
   },
   {
@@ -1306,6 +1310,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   candidate_interviews: ['id', 'network_id', 'scheduled_at', 'created_at'],
   candidate_interview_outcomes: ['interview_id', 'network_id', 'marked_at'],
   candidate_decisions: ['id', 'network_id', 'decision', 'interview_id', 'decided_at'],
+  recruiting_contents: ['id', 'network_id', 'kind', 'title', 'description', 'published_on', 'code', 'created_at'],
+  recruiting_content_withdrawals: ['network_id', 'withdrawn_at'],
+  candidate_content_origins: ['network_id', 'at'],
   agent_onboardings: ['network_id', 'created_at'],
   agent_time_saved: ['network_id', 'week', 'version', 'declared_at'],
   agent_file_pieces: ['id', 'network_id', 'kind', 'version', 'ref', 'issued_on', 'valid_until', 'recorded_at'],

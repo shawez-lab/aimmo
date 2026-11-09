@@ -12,3 +12,4 @@ export * from './depart.ts';
 export * from './parrainage.ts';
 export * from './accompagnement.ts';
 export * from './branchement.ts';
+export * from './contenus-recrutement.ts';

@@ -654,6 +654,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   candidate_interviews: out('candidat', 'Entretiens de recrutement.'),
   candidate_interview_outcomes: out('candidat', 'Issue des entretiens.'),
   candidate_decisions: out('candidat', 'Décisions de recrutement.'),
+  recruiting_contents: out('sans_client', 'Vidéos et épisodes du recrutement, rangés par la direction (HX64).'),
+  recruiting_content_withdrawals: out('sans_client', 'Retrait d\'une vidéo ou d\'un épisode du recrutement.'),
+  candidate_content_origins: out('candidat', 'Contenu d\'origine d\'une candidature.'),
   // agents-reseau
   networks: out('sans_client', 'Le réseau lui-même.'),
   agents: out('agent', 'Fiche de l\'agent.'),
