@@ -1,0 +1,459 @@
+{
+  "db/migrations/0040_fiche_bien.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0042_annonces.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0043_publication.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0047_acces_invitations.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/0201_offres.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0202_controles_offres.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0305_bouclier_fonds.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0407_cle_recommandations.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0501_commissions.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0502_factures.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0504_rapport_matin.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0505_alertes_pilotage.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0702_fiche_risque.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/0704_vigilance.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0706_signalement.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0708_durees_fuites.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/0801_annuaire_partenaires.sql": {
+    "glob": 1
+  },
+  "db/migrations/0802_mises_en_relation.sql": {
+    "glob": 1
+  },
+  "db/migrations/0804_pieces_partenaires.sql": {
+    "glob": 2
+  },
+  "db/migrations/0807_envois_professionnels.sql": {
+    "autoincrement": 1
+  },
+  "db/migrations/0901_mises_en_location.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0905_choix_proprietaire.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/0906_bail_location.sql": {
+    "json_sqlite": 3
+  },
+  "db/migrations/0907_etat_des_lieux.sql": {
+    "json_sqlite": 5
+  },
+  "db/migrations/0909_signature_bail.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/1001_fiche_commerce.sql": {
+    "glob": 1
+  },
+  "db/migrations/1002_estimation_commerce.sql": {
+    "glob": 1
+  },
+  "db/migrations/1004_confidentialite_commerce.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/1006_repreneurs_commerce.sql": {
+    "json_sqlite": 4
+  },
+  "db/migrations/1007_cession_commerce.sql": {
+    "glob": 1
+  },
+  "db/migrations/1008_vigilance_cession.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/1103_calculs_investissement.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/1105_notes_investissement.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/1205_bibliotheque_licences.sql": {
+    "glob": 1
+  },
+  "db/migrations/1301_lettres_quartier.sql": {
+    "glob": 1
+  },
+  "db/migrations/1303_anciens_contacts.sql": {
+    "glob": 2
+  },
+  "db/migrations/1304_mesure_sources.sql": {
+    "glob": 2
+  },
+  "db/migrations/1550_vendeur_dossier.sql": {
+    "insert_or": 1
+  },
+  "db/migrations/1700_sceaux_preuve.sql": {
+    "glob": 1
+  },
+  "db/migrations/1715_temps_gagne.sql": {
+    "glob": 1
+  },
+  "db/migrations/1735_engagements_manques.sql": {
+    "glob": 1
+  },
+  "db/migrations/1760_second_dossier.sql": {
+    "date_sqlite": 1,
+    "pragma": 2
+  },
+  "db/migrations/1775_notifications_controle.sql": {
+    "autoincrement": 1
+  },
+  "db/migrations/1804_annonces_traduites.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/1805_boutique.sql": {
+    "glob": 1
+  },
+  "db/migrations/1806_remises.sql": {
+    "glob": 2
+  },
+  "db/migrations/1807_actualites.sql": {
+    "char": 2,
+    "glob": 3,
+    "instr": 2,
+    "json_sqlite": 1
+  },
+  "db/migrations/1808_cles.sql": {
+    "char": 1,
+    "instr": 1
+  },
+  "db/migrations/1811_presentation.sql": {
+    "json_sqlite": 3
+  },
+  "db/migrations/1815_score_adresse.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/1816_adresse_pige.sql": {
+    "json_sqlite": 4
+  },
+  "db/migrations/1818_avis_marche.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/2000_recherche_langage.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/2200_diffusion_surveillee.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/2302_videos_generees.sql": {
+    "instr": 1
+  },
+  "db/migrations/2304_avant_apres_visite.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/2400_avant_contrat.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/2500_avis_verifies.sql": {
+    "glob": 2
+  },
+  "db/migrations/2600_controle_dossiers_location.sql": {
+    "json_sqlite": 2
+  },
+  "db/migrations/2610_neuf_viager.sql": {
+    "glob": 3
+  },
+  "db/migrations/2800_factures_fournisseurs_banque.sql": {
+    "json_sqlite": 27
+  },
+  "db/migrations/2900_rapports.sql": {
+    "glob": 1,
+    "instr": 1,
+    "json_sqlite": 1
+  },
+  "db/migrations/3000_formation_quiz.sql": {
+    "glob": 2,
+    "json_sqlite": 9
+  },
+  "db/migrations/3100_calendrier_publications.sql": {
+    "glob": 2,
+    "json_sqlite": 3
+  },
+  "db/migrations/3120_publicite.sql": {
+    "glob": 1,
+    "json_sqlite": 3
+  },
+  "db/migrations/3200_mcp_brouillons.sql": {
+    "json_sqlite": 1
+  },
+  "db/migrations/3310_gel_avoirs.sql": {
+    "json_sqlite": 10
+  },
+  "db/migrations/3320_reclamations.sql": {
+    "date_sqlite": 4
+  },
+  "db/migrations/3400_contenus_recrutement.sql": {
+    "glob": 1
+  },
+  "db/migrations/3410_cout_agent.sql": {
+    "glob": 1
+  },
+  "packages/core/src/acces/fiche-agent.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/actualites/actualites.ts": {
+    "json_sqlite": 2
+  },
+  "packages/core/src/adresse-pige/adresse.ts": {
+    "json_sqlite": 1,
+    "rowid": 2
+  },
+  "packages/core/src/annonces/medias.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/annonces/mentions.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/annonces/page-bien.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/apres-vente/demandes-avis.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/apres-vente/relances-apres-vente.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/attirer/fiche-google.ts": {
+    "rowid": 13
+  },
+  "packages/core/src/attirer/mentions-site.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/attirer/origine-contacts.ts": {
+    "insert_or": 3
+  },
+  "packages/core/src/attirer/page-agent.ts": {
+    "rowid": 8
+  },
+  "packages/core/src/attirer/prix-versions.ts": {
+    "insert_or": 3
+  },
+  "packages/core/src/attirer/quartier.ts": {
+    "insert_or": 1,
+    "rowid": 5
+  },
+  "packages/core/src/attirer/referencement.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/automatismes/boite-mail.ts": {
+    "insert_or": 4,
+    "rowid": 1
+  },
+  "packages/core/src/automatismes/dates-clients.ts": {
+    "insert_or": 1,
+    "rowid": 1
+  },
+  "packages/core/src/automatismes/notifications.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/automatismes/scenarios.ts": {
+    "insert_or": 3,
+    "rowid": 1
+  },
+  "packages/core/src/bascule/paliers.ts": {
+    "insert_or": 1
+  },
+  "packages/core/src/boutique/boutique.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/captation/alertes-agent.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/captation/relais.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/cles/cles.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/commerces/confidentialite.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/commerces/dossier.ts": {
+    "rowid": 5
+  },
+  "packages/core/src/commerces/estimation.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/commerces/vigilance-cession.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/conformite/demandes-personnes.ts": {
+    "json_sqlite": 2
+  },
+  "packages/core/src/conformite/identification.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/conformite/risque.ts": {
+    "json_sqlite": 1
+  },
+  "packages/core/src/conformite/vigilance.ts": {
+    "json_sqlite": 2,
+    "rowid": 2
+  },
+  "packages/core/src/db/sql.ts": {
+    "pragma": 1
+  },
+  "packages/core/src/diffusion/surveillance.ts": {
+    "rowid": 21
+  },
+  "packages/core/src/diffusion/textes.ts": {
+    "insert_or": 1,
+    "rowid": 5
+  },
+  "packages/core/src/documents/controles.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/documents/mandat-du-bien.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/envoi/controle.ts": {
+    "insert_or": 2
+  },
+  "packages/core/src/envoi/journal-envois.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/estimation/avis-imprime.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/estimation/marche-avis.ts": {
+    "json_sqlite": 1,
+    "rowid": 2
+  },
+  "packages/core/src/facturation/banque.ts": {
+    "json_sqlite": 1
+  },
+  "packages/core/src/fiche/corriger-nom.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/location/logement.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/mandat-questionnaire/questionnaire.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/mandats/gagner/anciens-contacts.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/mandats/gagner/dossier-presentation.ts": {
+    "date_sqlite": 3
+  },
+  "packages/core/src/medias/filigrane.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/passage-postgresql/seuils.ts": {
+    "pragma": 2
+  },
+  "packages/core/src/pige/pige.ts": {
+    "insert_or": 6,
+    "json_sqlite": 12,
+    "rowid": 9
+  },
+  "packages/core/src/pilotage/commissions.ts": {
+    "json_sqlite": 1
+  },
+  "packages/core/src/pilotage/encaissements.ts": {
+    "json_sqlite": 1
+  },
+  "packages/core/src/pilotage/engagements-tenus.ts": {
+    "date_sqlite": 2,
+    "json_sqlite": 1
+  },
+  "packages/core/src/pilotage/factures.ts": {
+    "json_sqlite": 2
+  },
+  "packages/core/src/presentation/presentation.ts": {
+    "insert_or": 1
+  },
+  "packages/core/src/qualification/attribution.ts": {
+    "rowid": 2
+  },
+  "packages/core/src/qualification/qualification.ts": {
+    "rowid": 6
+  },
+  "packages/core/src/rapports/export-agent.ts": {
+    "insert_or": 1
+  },
+  "packages/core/src/reception/reception.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/recherche/moteurs-ia.ts": {
+    "insert_or": 1
+  },
+  "packages/core/src/recherche/vitrine.ts": {
+    "insert_or": 1,
+    "rowid": 1
+  },
+  "packages/core/src/remises/remises.ts": {
+    "insert_or": 2,
+    "rowid": 1
+  },
+  "packages/core/src/rendezvous/statut.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/reprise/depots.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/reseau/accompagnement.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/reseau/contenus-recrutement.ts": {
+    "date_sqlite": 2,
+    "rowid": 2
+  },
+  "packages/core/src/reseau/entretiens.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/reseau/parrainage.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/reseau/reponses-candidats.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/sauvegarde/copie.ts": {
+    "pragma": 4,
+    "rowid": 6
+  },
+  "packages/core/src/statistiques-site/statistiques.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/studio/atelier.ts": {
+    "rowid": 3
+  },
+  "packages/core/src/studio/guide.ts": {
+    "rowid": 1
+  },
+  "packages/core/src/studio/supports.ts": {
+    "rowid": 1
+  }
+}
