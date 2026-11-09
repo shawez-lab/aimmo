@@ -136,6 +136,24 @@ describeWithSqlite('BR05 · routes des clés d’appareil, du second facteur et 
     expect(await t.http('direction', 'POST', `/cles/appareils/${first.done.body.data.id}/retrait`)).toMatchObject({ status: 200 });
   });
 
+  it('[R82] [R600] [R561] un agent au dossier incomplet garde ses clés et son export : enregistrer, prouver, retirer, exporter', async () => {
+    const t = await setup();
+    // Une entrée par M14 sans pièce rangée (candidature inventée, hors du parcours) : le dossier est incomplet.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand-1', 'direction:dir-1', '2027-01-01')", [t.alexId, t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    // Le dossier incomplet ferme bien le reste : aucune fiche client.
+    expect(await t.http('alex', 'GET', '/marketing/calendrier/reglages')).toMatchObject({ status: 403, body: { rule: 'R82', code: 'agent_file_incomplete' } });
+    const { device, done } = await t.enroll('alex', 5);
+    expect(done).toMatchObject({ status: 200, body: { data: { status: 'actif' } } });
+    const proof = await t.stepUp('alex', device, 'export_complet', `agent:${t.alexId}`);
+    const made = await t.http('alex', 'POST', '/export/agent', { stepUpId: proof });
+    expect(made.status).toBe(200);
+    expect((await t.http('alex', 'POST', '/export/agent/verification', { document: made.body.data.document })).body.data).toMatchObject({ verified: true });
+    // Le téléphone perdu : la clé se retire d'un geste.
+    expect(await t.http('alex', 'POST', `/cles/appareils/${done.body.data.id}/retrait`)).toMatchObject({ status: 200, body: { data: { status: 'retire' } } });
+  });
+
   it('[R601] [R561] l’export de l’agent ne sort que sur sa preuve « export_complet », une fois ; l’empreinte seule est rangée et se vérifie', async () => {
     const t = await setup();
     const { device } = await t.enroll('alex', 3);

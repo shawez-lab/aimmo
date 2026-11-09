@@ -254,6 +254,15 @@ export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
   'reseau.assistance',
   'reseau.mes_primes',
   'reseau.primes',
+  // Ses clés d'appareil et l'export de ses propres données (BR05) : aucune fiche client n'y est lue. Retirer une clé
+  // d'un geste reste possible [R600], et l'export se tire à tout moment, clients par identifiant seulement [R561].
+  'cles.enregistrement.debut',
+  'cles.enregistrement.fin',
+  'cles.appareils.retrait',
+  'cles.preuve.debut',
+  'cles.preuve.fin',
+  'export.agent',
+  'export.agent.verification',
 ]);
 
 const MAX_BODY_BYTES = 10_000;
