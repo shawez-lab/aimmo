@@ -272,17 +272,21 @@ export class PassagePostgresql {
     if (denied) return denied;
     if (typeof choice !== 'string' || !(POSTGRES_CHOICES as readonly string[]).includes(choice)) return this.refuse(viewer, { ok: false, rule: null, code: 'bad_choice' });
     const alert = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM postgres_threshold_alerts');
-    if (Number(alert?.n ?? 0) === 0) return this.refuse(viewer, { ok: false, rule: 'R631', code: 'aucun_seuil' });
+    const alertsSeen = Number(alert?.n ?? 0);
+    if (alertsSeen === 0) return this.refuse(viewer, { ok: false, rule: 'R631', code: 'aucun_seuil' });
     const last = await this.db.first<{ version: number | null }>('SELECT MAX(version) AS version FROM postgres_decisions');
     const version = Number(last?.version ?? 0) + 1;
     const decidedAt = this.now().toISOString();
     try {
-      await this.db.run('INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (?, ?, ?)', [version, choice, decidedAt]);
+      // La décision porte le nombre d'alertes vues : la base la refuse si un seuil a été franchi entre-temps [R631].
+      await this.db.run('INSERT INTO postgres_decisions (version, choice, decided_at, alerts_seen) VALUES (?, ?, ?, ?)', [version, choice, decidedAt, alertsSeen]);
     } catch (error) {
       // Une autre décision est passée entre la lecture et l'écriture : rien n'est rangé. Toute autre erreur est écrite
       // au journal et remonte, jamais déguisée en conflit.
       const now = await this.db.first<{ version: number | null }>('SELECT MAX(version) AS version FROM postgres_decisions');
       if (Number(now?.version ?? 0) >= version) return this.refuse(viewer, { ok: false, rule: 'R631', code: 'conflit' });
+      const alertsNow = await this.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM postgres_threshold_alerts');
+      if (Number(alertsNow?.n ?? 0) !== alertsSeen) return this.refuse(viewer, { ok: false, rule: 'R631', code: 'nouveau_seuil' });
       await appendEvent(this.journal, { type: 'postgresql.erreur', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { kind: 'postgres_decision', code: 'ecriture' } }, this.now);
       throw error;
     }
@@ -324,7 +328,7 @@ export class PassagePostgresql {
       };
     });
 
-    const d = await this.db.first<{ version: number; choice: PostgresChoice; decided_at: string }>('SELECT version, choice, decided_at FROM postgres_decisions ORDER BY version DESC LIMIT 1');
+    const d = await this.db.first<{ version: number; choice: PostgresChoice; decided_at: string; alerts_seen: number }>('SELECT version, choice, decided_at, alerts_seen FROM postgres_decisions ORDER BY version DESC LIMIT 1');
     const decision = d
       ? {
           version: Number(d.version),
@@ -345,7 +349,8 @@ export class PassagePostgresql {
     if (decision?.choice === 'passer') status = 'passage_decide';
     else if (lastAlertAt !== null) {
       // « Attendre » ne vaut que pour les seuils déjà franchis quand il a été dit, et 90 jours au plus [R631].
-      const waiting = decision?.choice === 'attendre' && decision.decidedAt >= lastAlertAt && decision.validUntil !== null && now.toISOString() < decision.validUntil;
+      // Elle couvre les alertes qu'elle a vues, comptées dans la base, jamais devinées par l'instant.
+      const waiting = decision?.choice === 'attendre' && Number(d?.alerts_seen) === alerts.length && decision.validUntil !== null && now.toISOString() < decision.validUntil;
       status = waiting ? 'attendre' : 'a_decider';
     } else status = unknownBecause.length > 0 ? 'inconnu' : 'sous_les_seuils';
 

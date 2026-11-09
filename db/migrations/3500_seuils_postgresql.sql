@@ -34,11 +34,13 @@ CREATE TRIGGER IF NOT EXISTS postgres_threshold_alerts_fige BEFORE UPDATE ON pos
 CREATE TABLE IF NOT EXISTS postgres_decisions (
   version INTEGER PRIMARY KEY CHECK (version >= 1),
   choice TEXT NOT NULL CHECK (choice IN ('passer', 'attendre')),
-  decided_at TEXT NOT NULL
+  decided_at TEXT NOT NULL,
+  -- Le nombre de seuils franchis quand la décision est prise : elle ne couvre que ceux-là [R631].
+  alerts_seen INTEGER NOT NULL CHECK (alerts_seen BETWEEN 1 AND 3)
 );
 CREATE TRIGGER IF NOT EXISTS postgres_decisions_suite BEFORE INSERT ON postgres_decisions
 WHEN NEW.version <> 1 + COALESCE((SELECT MAX(d.version) FROM postgres_decisions d), 0)
-  OR NOT EXISTS (SELECT 1 FROM postgres_threshold_alerts)
-BEGIN SELECT RAISE(ABORT, 'postgres_decisions : version hors suite ou aucun seuil franchi'); END;
+  OR NEW.alerts_seen <> (SELECT COUNT(*) FROM postgres_threshold_alerts)
+BEGIN SELECT RAISE(ABORT, 'postgres_decisions : version hors suite ou seuils franchis pas ceux vus'); END;
 CREATE TRIGGER IF NOT EXISTS postgres_decisions_garde BEFORE DELETE ON postgres_decisions BEGIN SELECT RAISE(ABORT, 'postgres_decisions : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS postgres_decisions_fige BEFORE UPDATE ON postgres_decisions BEGIN SELECT RAISE(ABORT, 'postgres_decisions : une décision ne change plus, une version s''ajoute'); END;

@@ -1308,7 +1308,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_cost_settings: ['network_id', 'version', 'valid_from', 'provision_bp', 'margin_bp', 'set_at'],
   postgres_threshold_readings: ['id', 'seq', 'measured_at', 'agents_active', 'db_bytes', 'report_ms', 'source'],
   postgres_threshold_alerts: ['threshold', 'reading_id', 'created_at'],
-  postgres_decisions: ['version', 'choice', 'decided_at'],
+  postgres_decisions: ['version', 'choice', 'decided_at', 'alerts_seen'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],

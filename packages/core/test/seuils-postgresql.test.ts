@@ -204,7 +204,7 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     await expect(t.db.run("UPDATE postgres_decisions SET choice = 'passer'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM postgres_decisions')).rejects.toThrow(/rien ne s'efface/);
     // La base refuse une version hors suite, et une mesure négative.
-    await expect(t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (5, 'passer', 'x')")).rejects.toThrow(/hors suite/);
+    await expect(t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at, alerts_seen) VALUES (5, 'passer', 'x', 1)")).rejects.toThrow(/hors suite/);
     await expect(t.db.run("INSERT INTO postgres_threshold_readings (id, seq, measured_at, agents_active, source) VALUES ('z', 2, 'x', -1, 'direction')")).rejects.toThrow();
   });
 
@@ -289,6 +289,35 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     expect(s.ok && s.value.status).toBe('passage_decide');
     expect(s.ok && s.value.decision).toMatchObject({ version: 3, choice: 'passer', validUntil: null });
     expect((await t.events('postgresql.decision')).map((e) => e.choice)).toEqual(['attendre', 'attendre', 'passer']);
+  });
+
+  it('[R631] « attendre » ne couvre que les seuils vus, même franchis au même instant ; un seuil franchi pendant la décision la refuse', async () => {
+    const t = await setup({ report: { ms: 6000 } });
+    t.goTo('2027-03-10T09:00:00.000Z');
+    await t.passage.measureNow(t.dir);
+    await t.passage.decide(t.dir, 'attendre');
+    // Même instant : la taille franchit après la décision.
+    t.setBytes(POSTGRES_LIMITS.taille + 1);
+    await t.passage.measureNow(t.dir);
+    const s = await t.passage.state(t.dir);
+    expect(s.ok && s.value.status).toBe('a_decider');
+    // Un seuil franchi entre la lecture des alertes et l'écriture : la décision est refusée, rien n'est rangé.
+    const u = await setup({ report: { ms: 6000 } });
+    await u.passage.measureNow(u.dir);
+    const racing: SqlDatabase = {
+      exec: (sql) => u.db.exec(sql),
+      all: (sql, params) => u.db.all(sql, params),
+      first: (sql, params) => u.db.first(sql, params),
+      run: async (sql, params) => {
+        if (sql.startsWith('INSERT INTO postgres_decisions')) {
+          await u.db.run("INSERT INTO postgres_threshold_alerts (threshold, reading_id, created_at) VALUES ('taille', 'rel-1', 'x')");
+        }
+        return u.db.run(sql, params);
+      },
+    };
+    const p = new PassagePostgresql(racing, new SqlJournalStore(u.db), { now: () => new Date('2027-03-10T09:00:00.000Z'), platformNetworkId: u.network.id });
+    expect(await p.decide(u.dir, 'attendre')).toEqual({ ok: false, rule: 'R631', code: 'nouveau_seuil' });
+    expect(await u.db.all('SELECT version FROM postgres_decisions')).toEqual([]);
   });
 
   it('[R632] prévision par moindres carrés, recalculée à la main sur un jeu inventé', () => {
@@ -384,7 +413,7 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
       all: (sql, params) => t.db.all(sql, params),
       first: (sql, params) => t.db.first(sql, params),
       run: async (sql, params) => {
-        if (sql.startsWith('INSERT INTO postgres_decisions')) await t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (1, 'attendre', 'x')");
+        if (sql.startsWith('INSERT INTO postgres_decisions')) await t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at, alerts_seen) VALUES (1, 'attendre', 'x', 1)");
         return t.db.run(sql, params);
       },
     };
