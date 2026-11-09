@@ -579,6 +579,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX69 : les agents pilotes et les mandats qu'ils signaient avant leur arrivée, avec la référence de la preuve.
       pilot_agents: ['agent_id', 'designated_by'],
       pilot_before_declarations: ['agent_id', 'month_1', 'month_2', 'month_3', 'proof_ref', 'declared_by'],
+      // HX70 : les envois hors règles constatés hors d'AIMMO et l'inventaire des tâches planifiées, avec la référence de la preuve.
+      phase1_outside_sends: ['proof_ref'],
+      phase1_app_inventories: ['proof_ref'],
     },
   },
   {
@@ -988,6 +991,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   postgres_threshold_readings: 'Relevés des seuils du passage à PostgreSQL (HX66) : des nombres, un instant et une sorte de geste, aucune personne.',
   postgres_threshold_alerts: 'Première fois qu\'un seuil du passage à PostgreSQL est franchi (HX66) : un seuil, un relevé, un instant.',
   postgres_decisions: 'Décisions de la direction sur le passage à PostgreSQL (HX66) : passer ou attendre, et un instant ; qui a décidé est au journal.',
+  phase1_day_readings: 'Relevés figés de chaque jour pour la condition de la phase 1 (HX70) : des nombres et un jour, aucune personne.',
 };
 
 /**
@@ -1314,6 +1318,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   postgres_threshold_readings: ['id', 'seq', 'measured_at', 'agents_active', 'db_bytes', 'elapsed_ms', 'source'],
   postgres_threshold_alerts: ['threshold', 'reading_id', 'created_at'],
   postgres_decisions: ['version', 'choice', 'decided_at', 'alerts_seen'],
+  phase1_day_readings: ['network_id', 'day', 'taken_at', 'planner_runs', 'sent', 'refused', 'without_control', 'while_excluded', 'site_gaps', 'site_failures', 'outside'],
+  phase1_outside_sends: ['id', 'network_id', 'day', 'application', 'declared_at'],
+  phase1_app_inventories: ['network_id', 'version', 'gohighlevel', 'manychat', 'site', 'github_actions', 'autre', 'declared_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],
