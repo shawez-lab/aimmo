@@ -37,6 +37,67 @@ const REGIONS = (ok = true, reasons: string[] = [], until: string | null = null)
     line('84', 'Auvergne-Rhône-Alpes'),
   ],
 });
+const PILOTS = {
+  currentMonth: '2028-01',
+  minimum: 3,
+  registerSound: true,
+  condition: { met: false, reasons: ['moins_de_3_pilotes', 'pilote_en_cours', 'code_pilote_jamais_vu'] },
+  pilots: [
+    {
+      agentId: 'agent-a',
+      arrivedAt: '2027-09-15T09:00:00.000Z',
+      arrivalMonth: '2027-09',
+      measureStart: '2027-09-30T22:00:00.000Z',
+      measureEndMonth: '2027-12',
+      finishedOn: '2028-01-15',
+      beforeMonths: ['2027-06', '2027-07', '2027-08'],
+      before: [1, 0, 2],
+      beforeTotal: 3,
+      after: [{ month: '2027-10', counted: 2 }, { month: '2027-11', counted: 1 }, { month: '2027-12', counted: 3 }],
+      afterTotal: 6,
+      lines: [],
+      arrivalMonthCounted: 1,
+      withdrawnOrCancelled: 0,
+      declarations: [
+        { version: 1, months: [1, 0, 2], proofRef: 'preuves/a-1.pdf', declaredAt: '2027-09-20T09:00:00.000Z', inTime: true, counts: true },
+        { version: 2, months: [5, 5, 5], proofRef: 'preuves/a-2.pdf', declaredAt: '2027-10-20T09:00:00.000Z', inTime: false, counts: false },
+      ],
+      status: 'plus',
+    },
+    {
+      agentId: 'agent-b',
+      arrivedAt: '2027-12-02T09:00:00.000Z',
+      arrivalMonth: '2027-12',
+      measureStart: '2027-12-31T23:00:00.000Z',
+      measureEndMonth: '2028-03',
+      finishedOn: '2028-04-15',
+      beforeMonths: ['2027-09', '2027-10', '2027-11'],
+      before: null,
+      beforeTotal: null,
+      after: [{ month: '2028-01', counted: 0 }],
+      afterTotal: 0,
+      lines: [],
+      arrivalMonthCounted: 0,
+      withdrawnOrCancelled: 1,
+      declarations: [],
+      status: 'statut_jamais_vu',
+    },
+  ],
+};
+const zero = { sent: 0, refused: 0, withoutControl: 0, whileExcluded: 0, siteGaps: 0, siteFailures: 0, outside: 0 };
+const dayOf = (d: string, status: string, recountWorse = false) => ({ day: d, status, reading: null, live: zero, recountWorse });
+const PHASE1 = {
+  today: '2028-01-10',
+  lastDay: '2028-01-09',
+  required: 30,
+  days: [dayOf('2028-01-05', 'propre'), dayOf('2028-01-06', 'hors_regles', true), dayOf('2028-01-07', 'sans_donnee'), dayOf('2028-01-08', 'propre'), dayOf('2028-01-09', 'propre')],
+  inventories: [{ version: 1, tasks: { gohighlevel: 2, manychat: 1, site: 0, github_actions: 0, autre: 0 }, total: 3, proofRef: 'preuves/inv-1.png', declaredAt: '2028-01-02T09:00:00.000Z' }],
+  countFrom: null,
+  currentSeries: 2,
+  countedSeries: 0,
+  bestSeries: 2,
+  condition: { met: false, reasons: ['taches_planifiees', 'serie_trop_courte'] },
+};
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -54,6 +115,12 @@ async function run(answers: Record<string, Answer> = {}, role = 'direction') {
     'POST /v1/phases/ouvrir': ok({ phase: 3 }),
     'POST /v1/regions/decision': ok({ region: '84', version: 2, open: true, hash: 'b'.repeat(64) }),
     'GET /v1/regions/verification': ok({ intact: true, versions: 1 }),
+    'GET /v1/phases/pilotes': ok(PILOTS),
+    'GET /v1/phases/phase1': ok(PHASE1),
+    'POST /v1/phases/pilotes': ok({ agentId: 'agent-c' }),
+    'POST /v1/phases/pilotes/avant': ok({ agentId: 'agent-b', version: 1, inTime: true }),
+    'POST /v1/phases/phase1/inventaire': ok({ version: 2, total: 0 }),
+    'POST /v1/phases/phase1/envois-hors-aimmo': ok({ id: 'x', day: '2028-01-08' }),
     ...answers,
   };
   const context: Record<string, unknown> = {
@@ -122,7 +189,7 @@ describe('BR13 · les phases et les régions à l’écran', () => {
     expect(x).not.toContain('lecture_impossible');
     expect(x).not.toContain('code_jamais_vu');
     // Une phase fermée ne dit pas encore sa condition : elle ne compte qu'une fois ouverte.
-    expect(x).not.toContain('Moins de 3 agents pilotes.');
+    expect(x.split('Les régions')[0]).not.toContain('Moins de 3 agents pilotes.');
     expect(t.state()).toBe('');
   });
 
@@ -212,6 +279,145 @@ describe('BR13 · les phases et les régions à l’écran', () => {
     expect(handleAgentApp(new Request('https://x.test/app/phases.js'))?.status).toBe(200);
     expect(budgetProblems({ html: '', js: PHASES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
+    expect(PHASES_SCRIPT).not.toContain('innerHTML');
+  });
+});
+
+describe('BR14 · les agents pilotes et la phase 1 à l’écran', () => {
+  it('[R642] [R643] chaque statut et chaque raison dits en mots, jamais un code ; une déclaration tardive se voit', async () => {
+    const t = await run();
+    await t.voir();
+    const x = t.texts();
+    expect(x).toContain('Agent agent-a');
+    expect(x).toContain('Signe plus qu’avant son arrivée.');
+    expect(x).toContain('Avant : juin 2027 1, juillet 2027 0, août 2027 2 ; total 3.');
+    expect(x).toContain('Après : octobre 2027 2, novembre 2027 1, décembre 2027 3 ; total 6.');
+    expect(x).toContain('1 déclaration(s) rangée(s) après le début de la mesure : gardée(s), jamais comptée(s).');
+    expect(x).toContain('Avant : aucune déclaration rangée à temps.');
+    expect(x).toContain('État que cet écran ne sait pas encore dire.');
+    expect(x).toContain('Moins de 3 agents pilotes.');
+    expect(x).toContain('Un agent pilote est encore en cours de mesure.');
+    expect(x).toContain('Des tâches sont encore planifiées hors d’AIMMO.');
+    expect(x).toContain('Moins de 30 jours de suite sans aucun envoi hors règles.');
+    expect(x).toContain('0 jour(s) propre(s) de suite qui comptent, sur 30 ; 2 de suite en tout jusqu’au 09/01/2028, meilleure série 2.');
+    expect(x).toContain('Aucun jour ne compte encore : l’inventaire n’est pas à zéro.');
+    expect(x).toContain('07/01/2028 : sans donnée.');
+    expect(x).toContain('06/01/2028 : hors règles, recompté pire qu’au relevé de la nuit.');
+    expect(x).toContain('Inventaire version 1 du 02/01/2028 : 3 tâche(s) encore planifiée(s) hors d’AIMMO (GoHighLevel 2, ManyChat 1, Le site 0, GitHub Actions 0, Autre application 0).');
+    for (const code of ['statut_jamais_vu', 'code_pilote_jamais_vu', 'hors_regles', 'sans_donnee', 'pas_plus', 'en_cours', 'taches_planifiees', 'gohighlevel', 'github_actions']) expect(x).not.toContain(code);
+    expect(t.state()).toBe('');
+  });
+
+  it('[R640] désigner un pilote et ranger ses mois d’avant ; une saisie illisible ne part pas', async () => {
+    const t = await run();
+    await t.voir();
+    await t.click(t.find('Désigner comme pilote'));
+    expect(t.posts()).toHaveLength(0);
+    expect(t.state()).toBe('Donnez l’identifiant de l’agent.');
+    t.input('pilote-agent').value = 'agent c';
+    await t.click(t.find('Désigner comme pilote'));
+    expect(t.posts()).toHaveLength(0);
+    t.input('pilote-agent').value = ' agent-c ';
+    await t.click(t.find('Désigner comme pilote'));
+    expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/phases/pilotes', body: { agentId: 'agent-c' } }]);
+    expect(t.state()).toBe('Pilote désigné.');
+
+    const u = await run();
+    await u.voir();
+    const save = () => u.body().all().filter((e) => e.tagName === 'button' && e.textContent === 'Ranger les mois d’avant')[1];
+    u.input('pilote-1-mois-0').value = '2';
+    u.input('pilote-1-mois-1').value = '1,5';
+    u.input('pilote-1-mois-2').value = '0';
+    u.input('pilote-1-preuve').value = 'preuves/b.pdf';
+    await u.click(save());
+    expect(u.state()).toBe('Chaque mois d’avant : un nombre entier de mandats, de 0 à 500.');
+    u.input('pilote-1-mois-1').value = '501';
+    await u.click(save());
+    expect(u.posts()).toHaveLength(0);
+    u.input('pilote-1-mois-1').value = '1';
+    u.input('pilote-1-preuve').value = 'preuves/../b.pdf';
+    await u.click(save());
+    expect(u.posts()).toHaveLength(0);
+    expect(u.state()).toBe('La référence de la preuve : de 3 à 200 lettres, chiffres ou / _ . : -, sans espace.');
+    u.input('pilote-1-preuve').value = 'preuves/b.pdf';
+    await u.click(save());
+    expect(u.posts()).toEqual([{ method: 'POST', url: '/v1/phases/pilotes/avant', body: { agentId: 'agent-b', months: [2, 1, 0], proofRef: 'preuves/b.pdf' } }]);
+    expect(u.state()).toBe('Mois d’avant rangés : une nouvelle version s’ajoute, rien n’est effacé.');
+  });
+
+  it('[R644] l’inventaire part avec chaque application, même à zéro ; un champ vide ne part pas', async () => {
+    const t = await run();
+    await t.voir();
+    for (const a of ['gohighlevel', 'manychat', 'site', 'github_actions']) t.input(`inventaire-${a}`).value = '0';
+    t.input('inventaire-preuve').value = 'preuves/inv-2.png';
+    await t.click(t.find('Ranger l’inventaire'));
+    expect(t.posts()).toHaveLength(0);
+    expect(t.state()).toBe('Chaque application : un nombre entier de tâches, de 0 à 1000, même à zéro.');
+    t.input('inventaire-autre').value = '0';
+    await t.click(t.find('Ranger l’inventaire'));
+    expect(t.posts()).toEqual([
+      { method: 'POST', url: '/v1/phases/phase1/inventaire', body: { tasks: { gohighlevel: 0, manychat: 0, site: 0, github_actions: 0, autre: 0 }, proofRef: 'preuves/inv-2.png' } },
+    ]);
+    expect(t.state()).toBe('Inventaire rangé : une nouvelle version s’ajoute.');
+  });
+
+  it('[R644] un envoi constaté hors d’AIMMO se range en deux appuis, jamais avec une saisie illisible', async () => {
+    const t = await run();
+    await t.voir();
+    t.input('hors-jour').value = '2028-01-08';
+    t.input('hors-application').value = 'Choisir…';
+    t.input('hors-preuve').value = 'preuves/capture.png';
+    await t.click(t.find('Ranger cet envoi'));
+    expect(t.state()).toBe('Choisissez l’application où l’envoi a été constaté.');
+    t.input('hors-application').value = 'manychat';
+    t.input('hors-jour').value = '';
+    await t.click(t.find('Ranger cet envoi'));
+    expect(t.state()).toBe('Le jour : une date depuis le 1er janvier 2026, jamais dans le futur.');
+    t.input('hors-jour').value = '2028-01-08';
+    await t.click(t.find('Ranger cet envoi'));
+    expect(t.posts()).toHaveLength(0);
+    await t.click(t.find('Confirmer : cet envoi ne sera jamais retiré'));
+    expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/phases/phase1/envois-hors-aimmo', body: { day: '2028-01-08', application: 'manychat', proofRef: 'preuves/capture.png' } }]);
+    expect(t.state()).toBe('Envoi hors règles rangé : son jour compte comme hors règles.');
+  });
+
+  it('un refus du serveur dit sa raison en mots ; une réponse perdue est dite incertaine ; une lecture refusée est dite', async () => {
+    const t = await run({ 'POST /v1/phases/pilotes': no(409, { ok: false, rule: 'R640', code: 'trop_tard' }) });
+    await t.voir();
+    t.input('pilote-agent').value = 'agent-c';
+    await t.click(t.find('Désigner comme pilote'));
+    expect(t.state()).toBe('Sa mesure a déjà commencé : un pilote se désigne avant le 1er du mois qui suit son arrivée.');
+    const u = await run({ 'POST /v1/phases/pilotes': no(404, { ok: false, rule: 'R640', code: 'agent_inconnu' }) });
+    await u.voir();
+    u.input('pilote-agent').value = 'agent-z';
+    await u.click(u.find('Désigner comme pilote'));
+    expect(u.state()).toBe('Cet agent ne se trouve pas dans le réseau.');
+    const v = await run({ 'POST /v1/phases/phase1/inventaire': no(503, { ok: false }) });
+    await v.voir();
+    for (const a of ['gohighlevel', 'manychat', 'site', 'github_actions', 'autre']) v.input(`inventaire-${a}`).value = '0';
+    v.input('inventaire-preuve').value = 'preuves/inv-2.png';
+    await v.click(v.find('Ranger l’inventaire'));
+    expect(v.state()).toBe('La réponse n’est pas arrivée : rien n’est sûr. Relisez l’écran avant de recommencer.');
+    const w = await run({ 'POST /v1/phases/pilotes': () => Promise.reject(new TypeError('coupé')) });
+    await w.voir();
+    w.input('pilote-agent').value = 'agent-c';
+    await w.click(w.find('Désigner comme pilote'));
+    expect(w.state()).toBe('La réponse n’est pas arrivée : rien n’est sûr. Relisez l’écran avant de recommencer.');
+    const y = await run({ 'GET /v1/phases/pilotes': no(403, { ok: false, rule: 'R16', code: 'role' }), 'GET /v1/phases/phase1': async () => Response.json({ ok: true, data: { days: 'x' } }) });
+    await y.voir();
+    expect(y.state()).toBe('Ce n’est pas dans vos droits. Phase 1 indisponible pour le moment.');
+    expect(y.texts()).toContain('Les cinq phases');
+  });
+
+  it('chaque code de refus des pilotes et de la phase 1 a son libellé ; budget tenu, aucun innerHTML [R201]', () => {
+    const sources = ['phase1.ts', 'pilotes.ts'].map((f) => readFileSync(new URL(`../../core/src/conditions-phases/${f}`, import.meta.url), 'utf8')).join('\n');
+    const codes = new Set([...sources.matchAll(/code: '([a-z_]+)'/g)].map((m) => m[1]!));
+    // Les refus d'un geste du système (relevé de la nuit) ne viennent jamais à l'écran.
+    for (const c of ['jour_pas_fini']) codes.delete(c);
+    expect(codes.size).toBeGreaterThanOrEqual(12);
+    for (const c of codes) expect(PHASES_SCRIPT, c).toContain(`"${c}":`);
+    for (const s of ['en_cours', 'parti', 'avant_non_declare', 'plus', 'pas_plus']) expect(PHASES_SCRIPT).toContain(`"${s}":`);
+    expect(budgetProblems({ html: '', js: PHASES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(PHASES_SCRIPT).not.toContain('innerHTML');
   });
 });
