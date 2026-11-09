@@ -456,6 +456,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       bank_lines: ['amount_cents', 'imported_by'],
       bank_reconciliations: ['by'],
       invoice_reminders: ['person_id', 'text', 'validated_by'],
+      // HX65 : le poste de chaque facture fournisseur et les réglages du coût complet de l'agent moyen.
+      agent_cost_assignments: ['assigned_by'],
+      agent_cost_settings: ['reason', 'set_by'],
     },
   },
   {
@@ -1287,6 +1290,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   bank_lines: ['id', 'network_id', 'day', 'invoice_refs', 'created_at'],
   bank_reconciliations: ['line_id', 'invoice_id', 'network_id', 'mode', 'created_at'],
   invoice_reminders: ['id', 'network_id', 'invoice_id', 'rank', 'status', 'rule', 'message_id', 'sending_at', 'prepared_at', 'validated_at', 'updated_at'],
+  agent_cost_assignments: ['invoice_id', 'network_id', 'version', 'category', 'assigned_at'],
+  agent_cost_settings: ['network_id', 'version', 'valid_from', 'provision_bp', 'margin_bp', 'set_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],

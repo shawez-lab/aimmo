@@ -634,6 +634,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   bank_lines: out('non_rattachable', 'Ligne du relevé de banque du réseau : un jour, un montant, une empreinte, sans libellé.'),
   bank_reconciliations: { locate: [via('invoice_id', 'invoices')] },
   invoice_reminders: { locate: by('person_id') },
+  agent_cost_assignments: out('sans_client', 'Poste d\'une facture d\'un fournisseur du réseau, dit par la direction (HX65).'),
+  agent_cost_settings: out('sans_client', 'Réglages du coût complet de l\'agent moyen, par la direction (HX65).'),
   commission_payouts: out('agent', 'Reversement à l\'agent.'),
   commission_payout_alerts: out('agent', 'Alerte de reversement à l\'agent.'),
   // pilotage
