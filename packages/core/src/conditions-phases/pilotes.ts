@@ -16,7 +16,8 @@
  *
  * Décidé, lecture prudente : l'arrivée est l'entrée du candidat devenu agent (J04), sinon la création de sa fiche ;
  * jamais une date saisie. Un agent ne se désigne pilote qu'avant le début de sa mesure. La mesure n'est finie que
- * 14 jours après son dernier jour, quand plus aucun mandat ne peut être rétracté (L221-18). « Plus » veut dire strictement plus. Un pilote parti avant la fin de sa mesure (départ
+ * le lendemain du dernier jour où un mandat signé son dernier jour peut encore être rétracté (14 jours, prolongés au
+ * jour ouvré suivant, L221-18, comme `withdrawalLastDay`). « Plus » veut dire strictement plus. Un pilote parti avant la fin de sa mesure (départ
  * maintenu dont le jour est atteint au plus tard le dernier jour de son 3e mois, ou fiche « partie ») est « parti ».
  * La condition n'est remplie qu'avec au moins 3 pilotes (« 3 à 5 agents »), tous finis et tous « plus », et un
  * registre sain. Passer à la phase suivante reste une décision de Shawez : rien ne bascule seul.
@@ -29,6 +30,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { withdrawalLastDay } from '../documents/retractation.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import { monthBounds } from '../pilotage/indicateurs-reseau.ts';
 import { parisMonth } from '../pilotage/preuve.ts';
@@ -39,11 +41,6 @@ export const PILOT_MONTHS = 3;
 export const PILOT_MINIMUM = 3;
 /** Le plus grand nombre de mandats d'un mois déclarable. */
 export const PILOT_MONTH_MAX = 500;
-/**
- * Le délai de rétractation d'un mandat signé hors de l'agence (code de la consommation, L221-18) : la mesure n'est finie
- * que lorsque plus aucun mandat de son 3e mois ne peut encore être retiré, pour qu'un « plus » ne retombe jamais.
- */
-export const PILOT_WITHDRAWAL_DAYS = 14;
 
 export const PILOT_DESIGNATION_FIELDS = ['agentId'] as const;
 export const PILOT_DECLARATION_FIELDS = ['agentId', 'months', 'proofRef'] as const;
@@ -87,7 +84,7 @@ export interface PilotReportLine {
   measureStart: string;
   /** Le dernier mois de la mesure, `AAAA-MM`. */
   measureEndMonth: string;
-  /** Le premier jour de Paris où la mesure est finie : 14 jours de rétractation après son dernier jour. */
+  /** Le premier jour de Paris où la mesure est finie : le lendemain du délai de rétractation d'un mandat signé son dernier jour. */
   finishedOn: string;
   /** Les 3 mois d'avant, dans l'ordre, avec la déclaration qui compte ; `null` sans déclaration à temps. */
   beforeMonths: string[];
@@ -352,8 +349,10 @@ export class AgentsPilotes {
       const measureStart = measureStartOf(p.arrived_at);
       const measureEndMonth = afterMonths[PILOT_MONTHS - 1]!;
       const lastDay = lastDayOf(measureEndMonth);
-      // Finie le lendemain du dernier jour où un mandat du 3e mois peut encore être retiré [R642].
-      const finished = currentMonth > measureEndMonth && today > addDays(lastDay, PILOT_WITHDRAWAL_DAYS);
+      // Finie le lendemain du dernier jour où un mandat signé le dernier jour du 3e mois peut encore être rétracté,
+      // délai prolongé au jour ouvré suivant comme pour tout mandat (`withdrawalLastDay`) [R642].
+      const finishedOn = addDays(withdrawalLastDay(new Date(`${lastDay}T12:00:00.000Z`), 'distance')!, 1);
+      const finished = currentMonth > measureEndMonth && today >= finishedOn;
 
       const own = declarations.filter((d) => d.agent_id === p.agent_id);
       const inTime = own.filter((d) => d.declared_at < measureStart);
@@ -402,7 +401,7 @@ export class AgentsPilotes {
         arrivalMonth,
         measureStart,
         measureEndMonth,
-        finishedOn: addDays(lastDay, PILOT_WITHDRAWAL_DAYS + 1),
+        finishedOn,
         beforeMonths,
         before,
         beforeTotal,

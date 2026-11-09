@@ -65,7 +65,7 @@ async function setup() {
     if (!b.ok) throw new Error(b.code);
     return b.value;
   };
-  const report = async (at = '2027-12-15T10:00:00.000Z') => {
+  const report = async (at = '2027-12-16T10:00:00.000Z') => {
     setClock(at);
     const r = await pilotes.report(direction);
     if (!r.ok) throw new Error(r.code);
@@ -292,6 +292,18 @@ describeWithSqlite('HX69 · les agents pilotes signent-ils plus qu’avant leur 
     ]);
     const r = await t.report('2027-12-15T10:00:00.000Z');
     expect(r.pilots[0]).toMatchObject({ status: 'pas_plus', afterTotal: 3, withdrawnOrCancelled: 1 });
+  }, 60_000);
+
+  it('[R642] un délai de rétractation qui finit un dimanche ou un jour férié est prolongé, la mesure aussi', async () => {
+    const t = await setup();
+    // Arrivée en octobre 2026 : mesure de novembre 2026 à janvier 2027 ; le 31 janvier + 14 jours tombe le dimanche
+    // 14 février, prolongé au lundi 15 : la mesure n'est finie que le 16.
+    t.setClock('2026-10-05T09:00:00.000Z');
+    const alex = await t.agent('Alex');
+    await t.pilot(alex, [0, 0, 0], '2026-10-20T10:00:00.000Z');
+    await t.fill('2026-12', 1, alex);
+    expect((await t.report('2027-02-15T20:00:00.000Z')).pilots[0]).toMatchObject({ status: 'en_cours', finishedOn: '2027-02-16' });
+    expect((await t.report('2027-02-16T08:00:00.000Z')).pilots[0]).toMatchObject({ status: 'plus' });
   }, 60_000);
 
   it('[R642] « parti » se lit dans la base : départ annulé, fiche partie, départ après la mesure, départ pas encore atteint', async () => {
