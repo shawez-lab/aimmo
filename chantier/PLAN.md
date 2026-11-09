@@ -621,6 +621,28 @@ Réservé le 2026-11-09 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : une facture du mois non classée rend le mois incomplet, jamais dit « couvert » [R623] (test) ; un classement ne change plus, une nouvelle version le remplace, la direction seule, la base refuse le reste [R623] (test) ; montants hors taxe en centimes, provision et marge au centime inférieur, seuil au point de base supérieur, recalculés à la main sur un jeu inventé [R624] (test) ; seule la part du réseau des commissions encaissées dans le mois compte, la part d'une agence partenaire jamais [R624] (test) ; mois en cours refusé, aucun réglage : incomplet [R624] (test) ; aucun chiffre par agent, la moyenne seule [R625, R14] (test) ; chaque chiffre porte ses factures et ses dossiers (test) ; la direction seule, lecture écrite au journal avant d'être rendue [R16] (test).
 - Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte). Routes et écran : à la voie 1 (`app.ts`).
 
+## Passage à PostgreSQL, Feuille de route phase 4
+
+Voie : 2
+
+Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre : les branchements BR sont à la voie 1, le reste attend un humain. Or la Feuille de route, phase 4, demande le « passage à PostgreSQL », et l'Architecture technique dit qu'il « se décide dès qu'un seuil est atteint » (plus de 50 agents actifs, une base de plus de 5 Go, un rapport du réseau de plus de 5 secondes) et que le code n'utilise « que du SQL standard ». Rien ne mesurait ces seuils, rien ne vérifiait le SQL. Ids `HX66` et suivants. Règles R630 à R639 et migrations à partir de `3500` réservées à ce groupe. Le code vit dans `packages/core/src/passage-postgresql/` ; `app.ts`, `packages/core/src/index.ts`, le planificateur et les fichiers du socle ne changent pas : le passage planifié, les routes et l'écran seront une tâche de la voie 1. Le passage lui-même (nouvelle base, recopie) reste une décision de Shawez, jamais automatique.
+
+### HX66 · Les seuils du passage à PostgreSQL, mesurés, avec le jour estimé où ils seront franchis (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : aucune
+- Partie du cahier : Architecture technique, « Données » (seuils du passage à PostgreSQL) et « Exigences de service », capacité ; Feuille de route, phase 4.
+- Objectif : un relevé lit dans la base le nombre d'agents actifs, la taille de la base et le temps d'un rapport du réseau ; chaque relevé est rangé et ne change plus. Un seuil franchi rend l'état « à décider » et donne une seule alerte à la direction par seuil ; la direction dit « passer » ou « attendre ». Jamais vu : pour chaque seuil pas encore franchi, le jour estimé où il le sera, tiré de la tendance des relevés des 90 derniers jours, pour décider avant d'y être et non après.
+- Critères : une mesure absente ou en échec est « inconnue », jamais « sous le seuil », et l'état n'est jamais « sous les seuils » avec une inconnue ou sans relevé récent [R630] (test) ; un relevé ne change ni ne s'efface, la base refuse le reste [R630, R17] (test) ; plus de 50 agents actifs, plus de 5 Go ou plus de 5 secondes rendent « à décider », avec une seule alerte par seuil même relevé deux fois [R631] (test) ; « attendre » vaut 90 jours puis l'état redevient « à décider », un nouveau seuil franchi aussi ; rien ne bascule seul [R631] (test) ; prévision par moindres carrés, nulle avec moins de 3 relevés, sur moins de 7 jours, ou sans hausse, recalculée à la main sur un jeu inventé [R632] (test) ; la direction seule relève, lit et décide, refus et lecture au journal [R16] (test).
+- Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte).
+
+### HX67 · Ce qui n'est pas du SQL standard, compté et qui ne grandit plus
+- Statut : à faire
+- Qui : Claude, voie 2, relecture normale · Dépend de : HX66
+- Partie du cahier : Architecture technique, « Pour que ce passage soit simple, le code n'utilise dès le départ que du SQL standard ».
+- Objectif : un test lit les migrations et les requêtes de `packages/core/src/` et compte, fichier par fichier, ce que PostgreSQL ne lit pas tel quel (`RAISE(ABORT…)`, `INSERT OR IGNORE`, `GLOB`, `datetime('now')`, `AUTOINCREMENT`, `PRAGMA`…) ; le compte de chaque sorte est figé : il peut baisser, jamais monter, et une forme nouvelle est refusée.
+- Critères : chaque sorte comptée a son test, sur un jeu inventé (test) ; une forme ajoutée fait échouer le test avec le fichier et la ligne (test) ; la carte du passage écrite dans `docs/` depuis ce compte (test).
+- Attend : rien.
+
 ## Branchements des groupes HX
 
 Voie : 1
