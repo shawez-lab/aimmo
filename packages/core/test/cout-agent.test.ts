@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { AGENT_COST_CATEGORIES, CoutAgent, bpOf, breakEvenBp } from '../src/reseau/index.ts';
+import { AGENT_COST_CATEGORIES, CoutAgent, bpOf, breakEvenBp, requiredFor } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -38,7 +38,7 @@ async function setup() {
     );
     return id;
   };
-  /** Une vente dont la commission est rangée et encaissée, ses parts écrites à la main. */
+  /** Une vente dont la commission est rangée et encaissée, ses parts écrites à la main, toutes taxes comme dans K01. */
   const sale = async (receivedAt: string, parts: { reseau: number; agent: number; partage?: number; parrainage?: number; agency?: number }, networkId = network.id) => {
     const file = `f-${++n}`;
     const fee = parts.reseau + parts.agent + (parts.partage ?? 0) + (parts.parrainage ?? 0) + (parts.agency ?? 0);
@@ -75,8 +75,8 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     const t = await setup();
     await t.settings(1000, 1500);
     // Deux ventes encaissées en février (heure de Paris), une en janvier et une en mars : seules celles de février comptent.
-    const f1 = await t.sale('2027-02-03T10:00:00.000Z', { reseau: 300_000, agent: 700_000 });
-    const f2 = await t.sale('2027-02-28T22:30:00.000Z', { reseau: 150_000, agent: 300_000, partage: 50_000 }); // 23 h 30 à Paris
+    const f1 = await t.sale('2027-02-03T10:00:00.000Z', { reseau: 500_000, agent: 700_000 });
+    const f2 = await t.sale('2027-02-28T22:30:00.000Z', { reseau: 250_000, agent: 300_000, partage: 50_000 }); // 23 h 30 à Paris
     await t.sale('2027-01-31T22:59:59.000Z', { reseau: 999_999, agent: 1 }); // 23 h 59 le 31 janvier à Paris
     await t.sale('2027-02-28T23:00:00.000Z', { reseau: 999_999, agent: 1 }); // minuit le 1er mars à Paris
     const ia = await t.invoice('2027-02-05', 40_000);
@@ -93,8 +93,8 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     if (!r.ok) throw new Error(r.code);
     const m = r.value;
     // Calcul écrit à la main :
-    // part du réseau 300 000 + 150 000 = 450 000 ; parts des agents 700 000 + 300 000 + 50 000 = 1 050 000 ;
-    // honoraires 1 000 000 + 500 000 = 1 500 000 ; postes 40 000 + 120 000 + 60 000 + 30 000 + 15 000 = 265 000 ;
+    // honoraires 1 200 000 et 600 000 toutes taxes, soit 1 000 000 + 500 000 = 1 500 000 hors taxe (TVA de 20 %) ;
+    // parts des agents, sans TVA : 700 000 + 300 000 + 50 000 = 1 050 000 ; reste au réseau 1 500 000 − 1 050 000 = 450 000 ; postes 40 000 + 120 000 + 60 000 + 30 000 + 15 000 = 265 000 ;
     // provision 10 % de 1 050 000 = 105 000 ; coût complet 370 000 ; marge 15 % = 55 500 ; à couvrir 425 500.
     expect(m).toMatchObject({
       month: '2027-02',
@@ -112,8 +112,11 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
       averageAgent: { networkShareCents: 112_500, requiredCents: 106_375 },
       covered: true,
       networkBp: 3000,
-      // 425 500 × 10 000 / 1 500 000 = 2 836,67 : au point supérieur, 2 837.
-      breakEvenNetworkBp: 2837,
+      // Au seuil, les agents ont moins et la provision baisse : à 2 854 points, 428 100 au réseau, 1 071 900 aux agents,
+      // provision 107 190, coût complet 372 190, marge 55 828, à couvrir 428 018 : couvert. À 2 853 points, 427 950
+      // au réseau, à couvrir 428 035 : pas couvert.
+      breakEvenNetworkBp: 2854,
+      breakEvenUnreachable: false,
     });
     expect(m.lines.files.map((f) => f.fileId)).toEqual([f1, f2]);
     expect(m.lines.invoices.map((i) => i.invoiceId).sort()).toEqual([ia, leads, diff, acc, conf, hors].sort());
@@ -123,18 +126,32 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(m.networkShareCents).toBe(m.lines.files.reduce((a, f) => a + f.networkShareCents, 0));
   });
 
-  it('arrondit la provision et la marge au centime inférieur, le seuil au point supérieur [R624]', () => {
+  it('arrondit la provision et la marge au centime inférieur ; le seuil est la plus petite part qui couvre [R624] [R625]', () => {
     expect(bpOf(999, 1000)).toBe(99);
     expect(bpOf(1, 9999)).toBe(0);
-    expect(breakEvenBp(1, 3)).toBe(3334);
-    expect(breakEvenBp(300, 1000)).toBe(3000);
-    expect(breakEvenBp(5, 0)).toBeNull();
+    expect(requiredFor(265_000, 1_071_900, 1000, 1500)).toEqual({ provisionCents: 107_190, fullCostCents: 372_190, marginCents: 55_828, requiredCents: 428_018 });
+    const input = { feesCents: 1_500_000, sponsorSharesCents: 0, costsCents: 265_000, provisionBp: 1000, marginBp: 1500 };
+    expect(breakEvenBp(input).bp).toBe(2854);
+    // Couvert au seuil, plus couvert un point en dessous, provision et marge refaites à chaque part.
+    const covers = (b: number) => {
+      const net = bpOf(input.feesCents, b);
+      return net >= requiredFor(input.costsCents, input.feesCents - net, input.provisionBp, input.marginBp).requiredCents;
+    };
+    expect(covers(2854)).toBe(true);
+    expect(covers(2853)).toBe(false);
+    // Le parrainage ne bouge pas avec la part du réseau : 879 points couvrent, 878 non.
+    expect(breakEvenBp({ feesCents: 600_000, sponsorSharesCents: 20_000, costsCents: 0, provisionBp: 1000, marginBp: 0 })).toEqual({ bp: 879, unreachable: false });
+    expect(breakEvenBp({ feesCents: 0, sponsorSharesCents: 0, costsCents: 5, provisionBp: 0, marginBp: 0 })).toEqual({ bp: null, unreachable: false });
+    // Même tout au réseau ne couvre pas : le seuil est nul et le dit.
+    expect(breakEvenBp({ feesCents: 1000, sponsorSharesCents: 0, costsCents: 1001, provisionBp: 0, marginBp: 0 })).toEqual({ bp: null, unreachable: true });
   });
 
-  it('dit « non couvert » quand la part du réseau manque, et la part qui couvrirait [R624] [R625]', async () => {
+  it('compare hors taxe : la TVA des honoraires n’est pas une recette du réseau [R624] [R625]', async () => {
     const t = await setup();
     await t.settings(0, 0);
-    await t.sale('2027-02-10T10:00:00.000Z', { reseau: 100_000, agent: 900_000 });
+    // 1 200 000 toutes taxes, dont 300 000 au réseau : comparé toutes taxes, le coût de 150 000 serait couvert. Hors
+    // taxe, il reste au réseau 1 000 000 − 900 000 = 100 000 : pas couvert.
+    await t.sale('2027-02-10T10:00:00.000Z', { reseau: 300_000, agent: 900_000 });
     await t.cout.assign(t.dir, await t.invoice('2027-02-10', 150_000), 'clients_apportes');
     const r = await t.cout.month(t.dir, '2027-02');
     if (!r.ok) throw new Error(r.code);
@@ -147,8 +164,9 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     await t.sale('2027-02-10T10:00:00.000Z', { reseau: 200_000, agent: 500_000, parrainage: 20_000, agency: 280_000 });
     const r = await t.cout.month(t.dir, '2027-02');
     if (!r.ok) throw new Error(r.code);
-    // Honoraires 1 000 000, dont 280 000 à l'agence : la base du seuil est 720 000 ; la provision suit l'agent seul.
-    expect(r.value).toMatchObject({ feesCents: 720_000, networkShareCents: 200_000, agentSharesCents: 500_000, provisionCents: 50_000, requiredCents: 50_000, networkBp: 2777, breakEvenNetworkBp: 695 });
+    // Honoraires 1 000 000 toutes taxes, soit 833 333 hors taxe ; la part de l'agence, 280 000 toutes taxes, soit
+    // 233 333 hors taxe, en sort : 600 000. Au réseau : 600 000 − 500 000 − 20 000 = 80 000 ; provision sur l'agent seul.
+    expect(r.value).toMatchObject({ feesCents: 600_000, networkShareCents: 80_000, agentSharesCents: 500_000, sponsorSharesCents: 20_000, provisionCents: 50_000, requiredCents: 50_000, covered: true, networkBp: 1333, breakEvenNetworkBp: 879 });
   });
 
   it('une facture du mois non classée, ou aucun réglage : mois incomplet, jamais dit couvert [R623] [R624]', async () => {

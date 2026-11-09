@@ -25,6 +25,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { DEFAULT_VAT_BP, splitVat } from '../pilotage/factures.ts';
 import { monthBounds } from '../pilotage/indicateurs-reseau.ts';
 import { parisMonth } from '../pilotage/preuve.ts';
 
@@ -55,11 +56,14 @@ export interface AgentCostMonth {
   settings: AgentCostSettings | null;
   /** Agents entrés avant la fin du mois et pas partis avant son début. */
   agentsPresent: number;
-  /** Honoraires des commissions encaissées dans le mois, hors part d'une agence partenaire. */
+  /** Honoraires hors taxe des commissions encaissées dans le mois, hors part d'une agence partenaire. */
   feesCents: number;
+  /** Ce qui reste au réseau, hors taxe : les honoraires moins les parts des agents et la prime de parrainage. */
   networkShareCents: number;
-  /** Parts de l'agent et des agents qui partagent : la base de la provision. */
+  /** Parts de l'agent et des agents qui partagent, hors taxe : la base de la provision. */
   agentSharesCents: number;
+  /** Primes de parrainage, hors taxe. */
+  sponsorSharesCents: number;
   costs: Record<AgentCostCategory, number>;
   provisionCents: number;
   /** Les postes et la provision. */
@@ -75,11 +79,13 @@ export interface AgentCostMonth {
   networkBp: number | null;
   /** Jamais vu : la part du réseau qui couvre tout juste le coût avec sa marge, au point supérieur ; nulle sans honoraires. */
   breakEvenNetworkBp: number | null;
+  /** Vrai quand même toute la part des honoraires au réseau ne couvrirait pas le coût : le seuil est alors nul. */
+  breakEvenUnreachable: boolean;
   /** Le coût de l'IA mesuré message par message, pour comparer aux factures ; il n'entre pas dans le calcul. */
   aiMeasuredCents: number;
   /** Les lignes de chaque chiffre. */
   lines: {
-    files: { fileId: string; feesCents: number; networkShareCents: number; agentSharesCents: number }[];
+    files: { fileId: string; feesCents: number; networkShareCents: number; agentSharesCents: number; sponsorSharesCents: number }[];
     invoices: { invoiceId: string; category: CostAssignmentCategory; htCents: number }[];
     unclassified: string[];
   };
@@ -87,6 +93,8 @@ export interface AgentCostMonth {
 
 interface Options {
   now?: () => Date;
+  /** Les taux de TVA des factures d'honoraires et de reversement, ceux de `Factures` (K02). */
+  vatBp?: { honoraires: number; reversement: number };
 }
 
 const isMonth = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
@@ -99,8 +107,38 @@ const nextMonth = (month: string): string => {
 /** Au centime inférieur : `amount × bp / 10 000`, en entiers. */
 export const bpOf = (amountCents: number, bp: number): number => Math.floor((amountCents * bp) / 10_000);
 
-/** La part du réseau, au point de base supérieur, qui couvre `requiredCents` sur `feesCents` d'honoraires [R625]. */
-export const breakEvenBp = (requiredCents: number, feesCents: number): number | null => (feesCents > 0 ? Math.ceil((requiredCents * 10_000) / feesCents) : null);
+/** Ce que la part du réseau doit couvrir : les postes, la provision sur les parts des agents, et la marge [R624]. */
+export function requiredFor(costsCents: number, agentSharesCents: number, provisionBp: number, marginBp: number): { provisionCents: number; fullCostCents: number; marginCents: number; requiredCents: number } {
+  const provisionCents = bpOf(agentSharesCents, provisionBp);
+  const fullCostCents = costsCents + provisionCents;
+  const marginCents = bpOf(fullCostCents, marginBp);
+  return { provisionCents, fullCostCents, marginCents, requiredCents: fullCostCents + marginCents };
+}
+
+/**
+ * Jamais vu : la plus petite part du réseau, en points de base des honoraires hors taxe, qui couvre le coût avec sa
+ * marge [R625]. Quand la part du réseau monte, celle des agents baisse d'autant, et la provision avec elle : à chaque
+ * part essayée, la provision et la marge sont refaites avec les mêmes arrondis. Le parrainage ne bouge pas. Nul sans
+ * honoraires ; `unreachable` quand même 100 % ne suffirait pas.
+ */
+export function breakEvenBp(input: { feesCents: number; sponsorSharesCents: number; costsCents: number; provisionBp: number; marginBp: number }): { bp: number | null; unreachable: boolean } {
+  const { feesCents, sponsorSharesCents, costsCents, provisionBp, marginBp } = input;
+  if (feesCents <= 0) return { bp: null, unreachable: false };
+  const covers = (bp: number): boolean => {
+    const network = bpOf(feesCents, bp);
+    const agents = Math.max(0, feesCents - network - sponsorSharesCents);
+    return network >= requiredFor(costsCents, agents, provisionBp, marginBp).requiredCents;
+  };
+  if (!covers(10_000)) return { bp: null, unreachable: true };
+  let lo = 0;
+  let hi = 10_000;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (covers(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+  return { bp: lo, unreachable: false };
+}
 
 export class CoutAgent {
   private readonly now: () => Date;
@@ -111,7 +149,10 @@ export class CoutAgent {
     options: Options = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.vat = options.vatBp ?? DEFAULT_VAT_BP;
   }
+
+  private readonly vat: { honoraires: number; reversement: number };
 
   private actor(viewer: Viewer): string {
     return `${String(viewer.role)}:${viewer.userId}`;
@@ -214,22 +255,24 @@ export class CoutAgent {
     const settings: AgentCostSettings | null = s ? { version: Number(s.version), validFrom: s.valid_from, provisionBp: Number(s.provision_bp), marginBp: Number(s.margin_bp) } : null;
 
     // Les commissions encaissées dans le mois, chacune avec ses parts ; la part d'une agence partenaire sort des honoraires.
-    const files = await this.db.all<{ file_id: string; fee_cents: number; agency: number | null; reseau: number | null; agents: number | null }>(
+    // Les montants des commissions sont toutes taxes (K02 facture les honoraires avec leur TVA) : tout est ramené hors
+    // taxe, comme les factures fournisseurs. La TVA collectée n'est pas une recette du réseau.
+    const files = await this.db.all<{ file_id: string; fee_cents: number; agency: number | null; agents: number | null; sponsor: number | null }>(
       `SELECT c.file_id, c.fee_cents,
               (SELECT g.amount_cents FROM commission_agency_shares g WHERE g.file_id = c.file_id) AS agency,
-              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind = 'reseau') AS reseau,
-              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind IN ('agent', 'partage')) AS agents
+              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind IN ('agent', 'partage')) AS agents,
+              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind = 'parrainage') AS sponsor
          FROM commission_receipts r JOIN commissions c ON c.file_id = r.file_id AND c.network_id = r.network_id
         WHERE r.network_id = ? AND r.received_at >= ? AND r.received_at < ?
         ORDER BY r.received_at, c.file_id`,
       [net, start, end],
     );
-    const fileLines = files.map((f) => ({
-      fileId: f.file_id,
-      feesCents: Number(f.fee_cents) - Number(f.agency ?? 0),
-      networkShareCents: Number(f.reseau ?? 0),
-      agentSharesCents: Number(f.agents ?? 0),
-    }));
+    const fileLines = files.map((f) => {
+      const feesCents = splitVat(Number(f.fee_cents), this.vat.honoraires).htCents - splitVat(Number(f.agency ?? 0), this.vat.honoraires).htCents;
+      const agentSharesCents = splitVat(Number(f.agents ?? 0), this.vat.reversement).htCents;
+      const sponsorSharesCents = splitVat(Number(f.sponsor ?? 0), this.vat.reversement).htCents;
+      return { fileId: f.file_id, feesCents, networkShareCents: feesCents - agentSharesCents - sponsorSharesCents, agentSharesCents, sponsorSharesCents };
+    });
 
     // Les factures fournisseurs du mois (jour d'émission), chacune avec son dernier classement.
     const invoices = await this.db.all<{ id: string; ht_cents: number; category: CostAssignmentCategory | null }>(
@@ -257,10 +300,9 @@ export class CoutAgent {
     const feesCents = sum(fileLines.map((f) => f.feesCents));
     const networkShareCents = sum(fileLines.map((f) => f.networkShareCents));
     const agentSharesCents = sum(fileLines.map((f) => f.agentSharesCents));
-    const provisionCents = settings ? bpOf(agentSharesCents, settings.provisionBp) : 0;
-    const fullCostCents = sum(Object.values(costs)) + provisionCents;
-    const marginCents = settings ? bpOf(fullCostCents, settings.marginBp) : 0;
-    const requiredCents = fullCostCents + marginCents;
+    const sponsorSharesCents = sum(fileLines.map((f) => f.sponsorSharesCents));
+    const costsCents = sum(Object.values(costs));
+    const { provisionCents, fullCostCents, marginCents, requiredCents } = requiredFor(costsCents, agentSharesCents, settings?.provisionBp ?? 0, settings?.marginBp ?? 0);
     const agentsPresent = Number(present?.n ?? 0);
     const missing: AgentCostMonth['missing'] = [];
     if (!settings) missing.push('reglage');
@@ -276,6 +318,7 @@ export class CoutAgent {
       feesCents,
       networkShareCents,
       agentSharesCents,
+      sponsorSharesCents,
       costs,
       provisionCents,
       fullCostCents,
@@ -284,7 +327,11 @@ export class CoutAgent {
       averageAgent: agentsPresent > 0 ? { networkShareCents: Math.floor(networkShareCents / agentsPresent), requiredCents: Math.floor(requiredCents / agentsPresent) } : null,
       covered: complete && networkShareCents >= requiredCents,
       networkBp: feesCents > 0 ? Math.floor((networkShareCents * 10_000) / feesCents) : null,
-      breakEvenNetworkBp: complete ? breakEvenBp(requiredCents, feesCents) : null,
+      ...(() => {
+        if (!complete || !settings) return { breakEvenNetworkBp: null, breakEvenUnreachable: false };
+        const b = breakEvenBp({ feesCents, sponsorSharesCents, costsCents, provisionBp: settings.provisionBp, marginBp: settings.marginBp });
+        return { breakEvenNetworkBp: b.bp, breakEvenUnreachable: b.unreachable };
+      })(),
       aiMeasuredCents: Number(ai?.c ?? 0),
       lines: { files: fileLines, invoices: invoiceLines, unclassified },
     };
