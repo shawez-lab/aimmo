@@ -274,7 +274,7 @@ export class ContenusRecrutement {
        latest AS (
          SELECT d.candidate_id, d.decision FROM candidate_decisions d
           WHERE d.network_id = ? AND NOT EXISTS (
-            SELECT 1 FROM candidate_decisions e WHERE e.candidate_id = d.candidate_id AND (e.decided_at > d.decided_at OR (e.decided_at = d.decided_at AND e.id > d.id)))
+            SELECT 1 FROM candidate_decisions e WHERE e.candidate_id = d.candidate_id AND (e.decided_at > d.decided_at OR (e.decided_at = d.decided_at AND e.rowid > d.rowid)))
        ),
        entry AS (
          SELECT origin.content_id, a.id AS agent_id, a.status, ob.created_at AS entered_at,

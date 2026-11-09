@@ -260,6 +260,21 @@ describeWithSqlite('HX64 · vidéos et épisodes du podcast, mesurés jusqu’à
     expect(o).toEqual({ ok: true, value: [] });
   });
 
+  it('[R622] la dernière décision est celle rangée en dernier, même à la même milliseconde, comme dans l’entretien', async () => {
+    const t = await setup();
+    const v = await t.video();
+    await t.apply({ email: 'meme.instant@example.test', contentCode: v.code });
+    const cid = await t.candidateId('meme.instant@example.test');
+    const i = await t.path.interviewHeld(cid);
+    const at = '2027-09-03T08:00:00.000Z';
+    // L'identifiant du « oui » est plus grand que celui du « non » rangé après lui : seul l'ordre de rangement compte.
+    await t.db.run("INSERT INTO candidate_decisions (id, network_id, candidate_id, decision, reason, decided_by, decider_name, interview_id, decided_at) VALUES ('zzz', ?, ?, 'oui', 'raison écrite', 'direction:dir-1', 'Dominique Direction', ?, ?)", [t.network.id, cid, i, at]);
+    await t.db.run("INSERT INTO candidate_decisions (id, network_id, candidate_id, decision, reason, decided_by, decider_name, interview_id, decided_at) VALUES ('aaa', ?, ?, 'non', 'raison écrite', 'direction:dir-1', 'Dominique Direction', NULL, ?)", [t.network.id, cid, at]);
+    const r = await t.contenus.report(t.dir);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value[0]!.funnel).toMatchObject({ interviewsHeld: 1, accepted: 0 });
+  });
+
   it('[R622] une entrée datée après la lecture et un mandat signé après la lecture ne comptent pas encore', async () => {
     const t = await setup();
     const v = await t.video();
