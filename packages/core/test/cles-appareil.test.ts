@@ -348,6 +348,26 @@ describeWithSqlite('HX56 · clé d’accès par appareil et second facteur', () 
     expect(await db.first('SELECT used_at FROM security_step_ups WHERE id = ?', [proof])).toEqual({ used_at: null });
   });
 
+  it('[R601] une preuve qui échoit pendant son usage ne passe pas', async () => {
+    const { db, journal, agent, enroll, stepUp } = await setup();
+    const { device } = await enroll(agent, 1);
+    const proof = await stepUp(agent, device, 'export_complet', `agent:${agent.userId}`);
+    let clock = new Date('2027-03-10T10:04:59.000Z');
+    const hooked = {
+      all: () => journal.all(),
+      last: () => journal.last(),
+      bySubject: (s: string) => journal.bySubject(s),
+      byPeriod: (a: string, b: string) => journal.byPeriod(a, b),
+      append: async (e: Parameters<typeof journal.append>[0]) => {
+        await journal.append(e);
+        if (e.type === 'securite.second_facteur.utilise') clock = new Date('2027-03-10T10:05:01.000Z');
+      },
+    };
+    const cles2 = new ClesAppareil(db, hooked, { rpId: RP, origins: [ORIGIN], now: () => clock });
+    expect(await cles2.requireSecondFactor(agent, 'export_complet', `agent:${agent.userId}`, proof)).toMatchObject({ ok: false, code: 'expired' });
+    expect(await db.first('SELECT used_at FROM security_step_ups WHERE id = ?', [proof])).toEqual({ used_at: null });
+  });
+
   it('[R600] deux enregistrements simultanés ne font pas deux premières clés', async () => {
     const { cles, db, agent } = await setup();
     const a = await FakeAuthenticator.create(1);
