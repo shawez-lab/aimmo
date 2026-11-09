@@ -671,7 +671,7 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Attend : rien (des chiffres lus dans la base et une déclaration de la direction ; aucun envoi, aucun compte).
 
 ### HX70 · 30 jours sans aucun envoi hors règles : la condition de la phase 1, comptée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2, relecture forte · Dépend de : HX69
 - Partie du cahier : Feuille de route, phase 1 ; Architecture technique, contrôle central des envois.
 - Objectif : le code lit dans la base, jour de Paris par jour, ce que le contrôle central a laissé partir et ce qui est parti hors de lui (envois refusés puis forcés, envois sans passage au contrôle, envois hors des heures, à une personne exclue ou sans accord) ; la série de jours sans aucun envoi hors règles, et la liste des tâches du système encore planifiées dans les applications, rangée par la direction avec sa preuve, par versions. Lire d'abord le contrôle central (`packages/core/src/envoi/`) pour savoir ce qui y est déjà gardé.
