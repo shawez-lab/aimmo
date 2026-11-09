@@ -384,8 +384,9 @@ describe('HX57 · rien ne lit le contrôle du gel hors de son code', () => {
     roots.forEach(walk);
     const readers = files.filter((f) => /freeze_(registry|checks|matches|match_decisions)|ControleGels|gel-avoirs\.ts/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
     // Le registre des traitements et la carte des accès nomment les tables sans les lire ; l'index de la sécurité exporte le module.
-    // Le planificateur appelle le passage, sans lire aucune table du gel.
-    expect(readers.sort()).toEqual(['conformite/carte-acces.ts', 'conformite/registre-traitements.ts', 'securite/gel-avoirs.ts', 'securite/index.ts', 'src/planificateur.ts']);
+    // Le planificateur appelle le passage, et les routes de `/v1/securite` (BR01) appellent `ControleGels`, dont les droits
+    // gardent le résultat au responsable [R605] ; ni l'un ni l'autre ne lit une table du gel.
+    expect(readers.sort()).toEqual(['conformite/carte-acces.ts', 'conformite/registre-traitements.ts', 'securite/gel-avoirs.ts', 'securite/index.ts', 'src/planificateur.ts', 'src/securite.ts']);
     const tables = files.filter((f) => /freeze_(registry_versions|registry_entries|checks|matches|match_decisions)\b/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
     expect(tables.sort()).toEqual(['conformite/registre-traitements.ts', 'securite/gel-avoirs.ts']);
   });
