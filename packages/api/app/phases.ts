@@ -31,6 +31,25 @@ const CONDITIONS: Record<string, string> = {
   inconnue: 'Condition illisible pour le moment : comptée comme non remplie',
   sans_condition: 'Dernière phase : pas de condition après elle',
 };
+/** Les raisons rendues par les modules des conditions (HX65, HX69, HX70, IN02, HX71) : toujours dites en mots. */
+const CONDITION_REASONS: Record<string, string> = {
+  lecture_impossible: 'La condition ne se lit pas pour le moment.',
+  inventaire_absent: 'L’inventaire des tâches planifiées hors d’AIMMO n’est pas rangé.',
+  taches_planifiees: 'Des tâches sont encore planifiées hors d’AIMMO.',
+  serie_trop_courte: 'Moins de 30 jours de suite sans aucun envoi hors règles.',
+  chaine_abimee: 'La chaîne des sceaux de la preuve est abîmée.',
+  registre_abime: 'Le registre des mandats est abîmé.',
+  serie_publiee_trop_courte: 'Pas encore assez de mois publiés de suite.',
+  moins_de_3_pilotes: 'Moins de 3 agents pilotes.',
+  pilote_en_cours: 'Un agent pilote est encore en cours de mesure.',
+  pilote_parti: 'Un agent pilote est parti.',
+  avant_non_declare: 'Un agent pilote n’a pas encore ses mois d’avant déclarés.',
+  pas_plus: 'Un agent pilote ne signe pas plus qu’avant son arrivée.',
+  phase_non_ouverte: 'La phase n’est pas encore ouverte.',
+  pas_assez_de_mois: 'Pas encore 3 mois finis depuis l’ouverture de la phase.',
+  mois_incomplet: 'Un des 3 derniers mois n’est pas complet.',
+  mois_non_couvert: 'Sur un des 3 derniers mois, la part du réseau ne couvre pas le coût complet de l’agent moyen.',
+};
 const OPENABLE_REASONS: Record<string, string> = {
   phase5_fermee: 'la phase 5 n’est pas ouverte',
   region_recente: 'une autre région s’est ouverte il y a moins de 90 jours',
@@ -89,6 +108,7 @@ globalThis.AIMMO_PHASES = function (t) {
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var CONDITIONS = ${JSON.stringify(CONDITIONS)};
   var OPENABLE_REASONS = ${JSON.stringify(OPENABLE_REASONS)};
+  var CONDITION_REASONS = ${JSON.stringify(CONDITION_REASONS)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   /* Une écriture sans réponse, ou coupée par une panne du serveur, a pu passer : l'écran ne dit ni fait ni pas fait. */
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez l’écran avant de recommencer.';
@@ -141,7 +161,8 @@ globalThis.AIMMO_PHASES = function (t) {
       li.appendChild(el('p', since, 'doux'));
       if (p.open) {
         li.appendChild(el('p', CONDITIONS[p.condition.state] || CONDITIONS.inconnue));
-        (p.condition.reasons || []).forEach(function (r) { li.appendChild(el('p', String(r), 'doux')); });
+        /* Un code que l'écran ne connaît pas encore n'est jamais montré tel quel. */
+        (p.condition.reasons || []).forEach(function (r) { li.appendChild(el('p', CONDITION_REASONS[r] || 'Une autre raison, que cet écran ne sait pas encore dire.', 'doux')); });
       }
       if (p.fellSince) li.appendChild(el('p', 'Retombée : la phase suivante est ouverte, mais cette condition ne se lit plus remplie. Rien ne se ferme seul.', 'alerte'));
       var next = report.phases[i + 1];

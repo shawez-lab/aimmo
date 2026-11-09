@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
@@ -18,9 +19,9 @@ const PHASES = {
   readAt: '2028-01-10T09:00:00.000Z',
   current: 2,
   phases: [
-    { phase: 1, name: PHASE_NAMES[1], open: true, opening: null, condition: cond('inconnue', ['Relevé de la veille illisible']), fellSince: true, nextOpenable: false },
+    { phase: 1, name: PHASE_NAMES[1], open: true, opening: null, condition: cond('inconnue', ['lecture_impossible', 'code_jamais_vu']), fellSince: true, nextOpenable: false },
     { phase: 2, name: PHASE_NAMES[2], open: true, opening: { phase: 2, openedAt: '2027-12-01T09:00:00.000Z', evidence: { met: true, reasons: [], evidence: {} }, evidenceHash: 'a'.repeat(64) }, condition: cond('remplie'), fellSince: false, nextOpenable: true },
-    { phase: 3, name: PHASE_NAMES[3], open: false, opening: null, condition: cond('non_remplie', ['3 agents pilotes sur 5']), fellSince: false, nextOpenable: false },
+    { phase: 3, name: PHASE_NAMES[3], open: false, opening: null, condition: cond('non_remplie', ['moins_de_3_pilotes']), fellSince: false, nextOpenable: false },
     { phase: 4, name: PHASE_NAMES[4], open: false, opening: null, condition: cond('inconnue'), fellSince: false, nextOpenable: false },
     { phase: 5, name: PHASE_NAMES[5], open: false, opening: null, condition: cond('sans_condition'), fellSince: false, nextOpenable: false },
   ],
@@ -116,9 +117,12 @@ describe('BR13 · les phases et les régions à l’écran', () => {
     const words = t.body().all().map((e) => e.textContent);
     for (const code of ['remplie', 'inconnue']) expect(words).not.toContain(code);
     expect(x).toContain('Condition illisible pour le moment : comptée comme non remplie');
-    expect(x).toContain('Relevé de la veille illisible');
+    expect(x).toContain('La condition ne se lit pas pour le moment.');
+    expect(x).toContain('Une autre raison, que cet écran ne sait pas encore dire.');
+    expect(x).not.toContain('lecture_impossible');
+    expect(x).not.toContain('code_jamais_vu');
     // Une phase fermée ne dit pas encore sa condition : elle ne compte qu'une fois ouverte.
-    expect(x).not.toContain('3 agents pilotes sur 5');
+    expect(x).not.toContain('Moins de 3 agents pilotes.');
     expect(t.state()).toBe('');
   });
 
@@ -191,6 +195,11 @@ describe('BR13 · les phases et les régions à l’écran', () => {
   });
 
   it('chaque code de condition et de refus du serveur a son libellé', () => {
+    // Chaque raison que rendent les modules des conditions, lue dans leur code, a son libellé.
+    const sources = ['phase1.ts', 'pilotes.ts', 'portes.ts'].map((f) => readFileSync(new URL(`../../core/src/conditions-phases/${f}`, import.meta.url), 'utf8')).join('\n');
+    const reasons = new Set([...sources.matchAll(/reasons\.(?:push|add)\('([a-z0-9_]+)'\)|reasons: \['([a-z0-9_]+)'\]/g)].map((m) => m[1] ?? m[2]!));
+    expect(reasons.size).toBeGreaterThanOrEqual(15);
+    for (const r of reasons) expect(PHASES_SCRIPT, r).toContain(`"${r}":`);
     for (const c of ['remplie', 'non_remplie', 'inconnue', 'sans_condition']) expect(PHASES_SCRIPT).toContain(`"${c}":`);
     for (const c of ['phase_precedente_fermee', 'condition_non_remplie', 'condition_inconnue', 'deja_ouverte', 'bad_phase', 'region_inconnue', 'region_d_origine', 'deja_fermee', 'bad_reason', 'phase5_fermee', 'region_recente', 'conflit']) {
       expect(PHASES_SCRIPT).toContain(`"${c}":`);
