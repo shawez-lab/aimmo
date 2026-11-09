@@ -808,6 +808,15 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Critères : autre rôle refusé (403), refus au journal [R16] (test) ; ouverture refusée sans condition remplie, 409 avec la règle et les raisons [R647] (test) ; corps illisible 400 sans rien ranger (test) ; état lu avec la phase 1 ouverte d'office [R646] (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
+### BR12 · Routes des régions
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX72, BR11
+- Partie du cahier : Feuille de route, phase 5 « Ouverture région par région ».
+- Décidé (2026-11-09, voie 1) : ajoutée parce que HX72 (voie 2) n'a ni route ni écran (« Restent (voie 1) »). Fichier neuf `packages/api/src/regions.ts`, sous `/v1/regions` ; aucune règle nouvelle ni migration.
+- Objectif : la direction lit l'état des 18 régions et si une ouverture est possible, ouvre ou ferme une région en un geste, et vérifie que la chaîne des décisions n'a pas été réécrite, par `RegionsOuvertes`.
+- Critères : autre rôle refusé (403), refus au journal, rien de rangé [R16] (test) ; corps illisible 400 sans rien ranger (test) ; ouverture refusée sans phase 5 ouverte, 409 avec R651 (test) ; région d'origine refusée en 409 avec R650 (test) ; seconde région avant 90 jours 409 avec R652 (test) ; ouverture acceptée après la phase 5, lue ensuite comme ouverte (test) ; vérification intacte, puis cassée après une ligne changée, avec sa version [R653] (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
