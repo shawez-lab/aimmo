@@ -136,6 +136,8 @@ describeWithSqlite('HX70 · 30 jours sans aucun envoi hors règles : la conditio
     expect(await t.condition.takeReading(t.network.id, '2027-03-11')).toEqual({ ok: false, rule: 'R643', code: 'jour_pas_fini' });
     expect(await t.condition.takeReading(t.network.id, '2027-03-12')).toEqual({ ok: false, rule: 'R643', code: 'jour_pas_fini' });
     expect(await t.condition.takeReading(t.network.id, '2027-02-30')).toEqual({ ok: false, rule: 'R643', code: 'bad_day' });
+    expect(await t.condition.takeReading(t.network.id, '2027-13-01')).toEqual({ ok: false, rule: 'R643', code: 'bad_day' });
+    expect(await t.condition.takeReading(t.network.id, '2027-03-32')).toEqual({ ok: false, rule: 'R643', code: 'bad_day' });
     expect(await t.condition.takeReading(t.network.id, '2025-12-31')).toEqual({ ok: false, rule: 'R643', code: 'bad_day' });
     const first = await t.condition.takeReading(t.network.id, '2027-03-10');
     expect(first.ok && first.already).toBe(false);
@@ -264,12 +266,13 @@ describeWithSqlite('HX70 · 30 jours sans aucun envoi hors règles : la conditio
     const declare = (input: unknown) => t.condition.declareOutsideSend(t.direction, input);
     expect(await declare({ day: '2027-03-11', application: 'manychat', proofRef: PROOF })).toEqual({ ok: false, rule: 'R644', code: 'bad_day' });
     expect(await declare({ day: '2027-02-29', application: 'manychat', proofRef: PROOF })).toEqual({ ok: false, rule: 'R644', code: 'bad_day' });
+    expect(await declare({ day: '2027-13-01', application: 'manychat', proofRef: PROOF })).toEqual({ ok: false, rule: 'R644', code: 'bad_day' });
     expect(await declare({ day: '2027-03-10', application: 'zapier', proofRef: PROOF })).toEqual({ ok: false, rule: 'R644', code: 'bad_application' });
     expect(await declare({ day: '2027-03-10', application: 'manychat', proofRef: '../secret' })).toEqual({ ok: false, rule: 'R644', code: 'bad_proof' });
     expect(await declare({ day: '2027-03-10', application: 'manychat', proofRef: PROOF, note: 'x' })).toEqual({ ok: false, rule: null, code: 'unknown_field' });
     expect(await declare([])).toEqual({ ok: false, rule: null, code: 'bad_shape' });
     expect((await declare({ day: '2027-03-10', application: 'manychat', proofRef: PROOF })).ok).toBe(true);
-    expect(await t.events('condition_phase1.refuse')).toHaveLength(6);
+    expect(await t.events('condition_phase1.refuse')).toHaveLength(7);
     // Le journal ne porte pas la preuve.
     expect(JSON.stringify(await t.events('condition_phase1.envoi_hors_aimmo'))).not.toContain('capture');
   });

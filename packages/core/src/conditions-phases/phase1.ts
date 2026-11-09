@@ -149,7 +149,12 @@ export function phase1Condition(inventory: Phase1Inventory | null, countedSeries
 }
 
 const parisDay = (iso: string): string => localTime(new Date(iso), TZ).date;
-const isDay = (v: unknown): v is string => typeof v === 'string' && DAY.test(v) && new Date(`${v}T12:00:00.000Z`).toISOString().slice(0, 10) === v;
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !DAY.test(v)) return false;
+  // `2027-13-01` passe le motif mais n'est pas une date : refusé, jamais une exception.
+  const at = Date.parse(`${v}T12:00:00.000Z`);
+  return Number.isFinite(at) && new Date(at).toISOString().slice(0, 10) === v;
+};
 const isProof = (v: unknown): v is string => typeof v === 'string' && PROOF_REF.test(v) && !v.includes('..');
 
 interface ReadingRow {
