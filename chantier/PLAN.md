@@ -668,14 +668,15 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR03 · Routes du marketing : calendrier, lettre, publicité payante
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#450), `packages/api/src/marketing.ts` sous `/v1/marketing`, aucune règle nouvelle ni migration. Décidé : rôles contrôlés avant le corps, refus au journal ; champ non prévu en 400 `unknown_field` ; aucune route ne passe les créneaux (porte de publication fermée), n'envoie une édition (pas de lien de désinscription) ni ne saisit dépense ou contacts. Codex 1 P1 (magazine non prouvé par la route) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5165 tests). Restent : écrans ; travaux planifiés `runDue`, envoi d'une édition avec sa page de désinscription, `recordSpend`, `recordContact`, `runChecks`.
 - Qui : Claude, relecture normale · Dépend de : HX52, HX53, HX54
 - Objectif : routes de `CalendrierPublications`, `LettreInformation` et `PublicitePayante`, mode essai seul.
 - Critères : droits [R16] (test) ; R580 à R589 tenues par la route (tests) ; rien ne part ni ne se paie (test).
 - Attend : rien (H63 pour la publicité réelle).
 
 ### BR04 · Routes des factures fournisseurs, du rapprochement, des relances et des rapports
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : HX49, HX62
 - Objectif : routes de `FacturesFournisseurs`, `Rapprochements`, `RelancesImpayes` et des rapports sur mesure et de l'export.
 - Critères : droits [R16] (test) ; aucun montant saisi hors de ce que la règle permet [R550 à R553] (tests) ; rapports R560, R561 (tests).
