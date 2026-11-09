@@ -131,27 +131,49 @@ export class CommunesAPourvoir {
       [net, ...WAITING_CLIENT_CATEGORIES, start, end],
     );
 
+    // Chaque fiche ramenée à sa fiche gardée : une personne dont deux fiches ont été réunies compte une fois (S04).
+    const merges = await this.db.all<{ survivor_id: string; merged_id: string }>('SELECT survivor_id, merged_id FROM person_merges WHERE network_id = ? AND undone_at IS NULL', [net]);
+    const survivorOf = new Map(merges.map((m) => [m.merged_id, m.survivor_id]));
+    const rootOf = (id: string): string => {
+      let current = id;
+      const seen = new Set<string>();
+      while (survivorOf.has(current) && !seen.has(current)) {
+        seen.add(current);
+        current = survivorOf.get(current)!;
+      }
+      return current;
+    };
+
     const waiting = new Map<string, Set<string>>();
     const withoutCommune = new Set<string>();
-    for (const r of rows) {
+    for (const row of rows) {
+      const r = { ...row, person_id: rootOf(row.person_id) };
       const commune = r.city ?? (r.property_city && listed.has(r.property_city) ? r.property_city : null);
       if (!commune || !listed.has(commune)) {
         withoutCommune.add(r.person_id);
         continue;
       }
-      // Une zone ouverte sur la commune à l'instant de l'attribution : le contact n'attendait pas faute d'agent (tous
-      // ses agents l'avaient déjà eu) ; il n'est pas compté. Lecture prudente : jamais une commune dite en attente à tort.
+      // Une zone ouverte sur la commune à l'instant de l'attribution, d'un agent alors en activité : le contact
+      // n'attendait pas faute d'agent (tous ses agents l'avaient déjà eu) ; il n'est pas compté. Un départ ne ferme pas
+      // les zones (J11) : un agent compte comme en activité s'il l'est encore, ou si son départ a été passé après
+      // l'instant de l'attribution. Un agent parti avant ne couvre rien.
       const covered = await this.db.first<{ one: number }>(
-        `SELECT 1 AS one FROM agent_zones z
+        `SELECT 1 AS one FROM agent_zones z JOIN agents g ON g.id = z.agent_id AND g.network_id = z.network_id
           WHERE z.network_id = ? AND z.commune = ? AND z.created_at <= ? AND (z.ended_at IS NULL OR z.ended_at > ?)
+            AND (g.status = 'active' OR EXISTS (
+              SELECT 1 FROM agent_departures d
+               WHERE d.agent_id = g.id AND d.network_id = g.network_id AND d.cancelled_at IS NULL AND d.processed_at > ?))
           LIMIT 1`,
-        [net, commune, r.created_at, r.created_at],
+        [net, commune, r.created_at, r.created_at, r.created_at],
       );
       if (covered) continue;
       const set = waiting.get(commune) ?? new Set<string>();
       set.add(r.person_id);
       waiting.set(commune, set);
     }
+
+    // Une personne comptée dans une commune ne l'est pas aussi « sans commune ».
+    for (const set of waiting.values()) for (const id of set) withoutCommune.delete(id);
 
     const agents = await this.db.all<{ commune: string; n: number }>(
       `SELECT z.commune, COUNT(DISTINCT z.agent_id) AS n FROM agent_zones z

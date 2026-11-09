@@ -152,6 +152,53 @@ describeWithSqlite('HX68 · communes où des clients attendent un agent', () => 
     expect(read).toEqual([{ rule: 'R16', month: '2027-02', waiting: 5, withoutCommune: 2 }]);
   });
 
+  it('un agent parti avant ne couvre plus sa commune, même si sa zone est restée ouverte ; parti après, si [R626]', async () => {
+    const t = await setup();
+    const depart = async (agentId: string, processedAt: string) => {
+      await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [agentId]);
+      await t.db.run(
+        "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at, processed_at) VALUES (?, ?, ?, '2026-12-01', ?, 'demission_agent', 1, 'direction:dir-1', 'x', ?)",
+        [`dep-${agentId}`, t.network.id, agentId, processedAt.slice(0, 10), processedAt],
+      );
+    };
+    // Talant : le seul agent est parti le 15 janvier ; sa zone n'a jamais été fermée (J11 ne ferme pas les zones).
+    await t.zone(t.alex, 'Talant', '2026-12-01T00:00:00.000Z');
+    await depart(t.alex, '2027-01-15T06:00:00.000Z');
+    await t.contact({ person: 'per-1', at: FEB, city: 'Talant' });
+    // Dijon : l'agent couvrait encore la commune le 10 février, il est parti le 20 : le contact n'attendait pas faute d'agent.
+    await t.zone(t.sam, 'Dijon', '2026-12-01T00:00:00.000Z');
+    await depart(t.sam, '2027-02-20T06:00:00.000Z');
+    await t.contact({ person: 'per-2', at: FEB, city: 'Dijon' });
+    // Chenôve : un agent devenu « parti » sans départ rangé ne couvre rien.
+    await t.zone(t.parti, 'Chenôve', '2026-12-01T00:00:00.000Z');
+    await t.contact({ person: 'per-3', at: FEB, city: 'Chenôve' });
+    const r = await t.communes.month(t.dir, '2027-02');
+    if (!r.ok) throw new Error(r.code);
+    const by = Object.fromEntries(r.value.communes.map((c) => [c.commune, c]));
+    expect(by['Talant']).toMatchObject({ clientsWaiting: 1, agentsNow: 0, toOpen: true });
+    expect(by['Dijon']).toMatchObject({ clientsWaiting: 0, agentsNow: 0 });
+    expect(by['Chenôve']).toMatchObject({ clientsWaiting: 1, agentsNow: 0 });
+  });
+
+  it('deux fiches réunies comptent une personne, et une personne comptée dans une commune ne l’est pas « sans commune » [R626]', async () => {
+    const t = await setup();
+    await t.contact({ person: 'per-a', at: FEB, city: 'Talant' });
+    await t.contact({ person: 'per-b', at: '2027-02-11T10:00:00.000Z', city: 'Talant' });
+    await t.contact({ person: 'per-c', at: '2027-02-12T10:00:00.000Z' });
+    await t.contact({ person: 'per-d', at: FEB, city: 'Talant' });
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    // per-b réunie à per-a, puis per-a à per-c : une seule personne.
+    await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, undone_at, created_at) VALUES ('m-1', ?, NULL, 'per-a', 'per-b', 'Même personne', 'x', NULL, 'x')", [t.network.id]);
+    await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, undone_at, created_at) VALUES ('m-2', ?, NULL, 'per-c', 'per-a', 'Même personne', 'x', NULL, 'x')", [t.network.id]);
+    // Une réunion défaite ne compte pas.
+    await t.db.run("INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, undone_at, created_at) VALUES ('m-3', ?, NULL, 'per-c', 'per-d', 'Erreur', 'x', 'y', 'x')", [t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const r = await t.communes.month(t.dir, '2027-02');
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.communes.find((c) => c.commune === 'Talant')).toMatchObject({ clientsWaiting: 2 });
+    expect(r.value.withoutCommune).toBe(0);
+  });
+
   it('seuls les clients comptent : vendeur, acquéreur, estimation, location et professionnel [R626]', () => {
     expect([...WAITING_CLIENT_CATEGORIES].sort()).toEqual(['buyer', 'professional', 'rent_out', 'seller', 'valuation']);
   });
