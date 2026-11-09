@@ -347,6 +347,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   agency_share: { excluded: 'partenaire', why: 'Un bien partagé avec une agence partenaire : ni nom ni montant d\'un client (HX01).' },
   pro_send: { excluded: 'partenaire', why: 'Un envoi à un professionnel, rangé dans la boîte d\'essai.' },
   network: { excluded: 'sans_client', why: 'Le réseau lui-même.' },
+  licence: { excluded: 'sans_client', why: 'Une licence du logiciel donnée à une agence hors réseau (HX73) : son octroi, ses états et ses lectures, des codes et un prix, jamais un client.' },
   template: { excluded: 'sans_client', why: 'Modèle de document.' },
   clause: { excluded: 'sans_client', why: 'Texte d\'une clause du questionnaire de mandat.' },
   mandat_questionnaire: { excluded: 'sans_client', why: 'Mandat préparé par questionnaire : refus d\'accès et écart montré, seulement son identifiant ; sa préparation est au sujet de la fiche.' },
@@ -766,6 +767,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   phase1_app_inventories: out('sans_client', 'Tâches encore planifiées dans les applications, dites par la direction avec leur preuve (HX70).'),
   phase_openings: out('agent', 'Ouverture d\'une phase de la Feuille de route par la direction (HX71).'),
   region_decisions: out('sans_client', 'Régions ouvertes ou fermées par la direction (HX72) : un code de région, aucune personne.'),
+  licence_tariffs: out('sans_client', 'Tarif de la licence du logiciel, un seul pour toutes les agences (HX73) : un prix, aucune personne.'),
+  software_licences: out('sans_client', 'Licence du logiciel donnée à une agence hors réseau (HX73) : une entreprise, jamais un client.'),
+  licence_states: out('sans_client', 'État d\'une licence du logiciel (HX73) : une entreprise, jamais un client.'),
   agent_departure_handovers: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
   agent_departure_reassignments: { locate: [{ column: 'subject_id', where: { kind: 'person' } }, via('subject_id', 'projects', 'id', { where: { kind: 'project' } }), via('subject_id', 'properties', 'id', { where: { kind: 'property' } })] },
   // conformite-lcb-ft : ses tables sont écartées toutes ensemble, depuis le registre (`LCB_FT_EXCLUSIONS`), sans être

@@ -587,6 +587,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       phase_openings: ['opened_by'],
       // HX72 : l'ouverture ou la fermeture d'une région, avec sa raison et qui l'a décidée.
       region_decisions: ['reason', 'decided_by'],
+      // HX73 : le tarif et les licences du logiciel aux agences hors réseau, avec qui les a décidés ; le nom d'une
+      // agence et sa carte peuvent être ceux d'un entrepreneur individuel.
+      licence_tariffs: ['reason', 'decided_by'],
+      software_licences: ['agency_name', 'siren', 'card_number', 'card_expires_on', 'granted_by'],
+      licence_states: ['reason', 'decided_by'],
     },
   },
   {
@@ -1329,6 +1334,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase1_app_inventories: ['network_id', 'version', 'gohighlevel', 'manychat', 'site', 'github_actions', 'autre', 'declared_at'],
   phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   region_decisions: ['network_id', 'version', 'region', 'is_open', 'decided_at', 'phase5_hash', 'prev_hash', 'hash'],
+  licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
+  software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
+  licence_states: ['licence_id', 'version', 'state', 'decided_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],
