@@ -90,6 +90,7 @@ import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
+import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
 import { clesRoutes, handleConnexion, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
 import type { LecteurFactures } from '../../core/src/facturation/index.ts';
 import {
@@ -265,6 +266,10 @@ export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
   'cles.preuve.fin',
   'export.agent',
   'export.agent.verification',
+  // Le quiz de sa formation et ses attestations (BR07) : aucune fiche client n'y est lue [R570, R571].
+  'formation.quiz',
+  'formation.reponses',
+  'formation.attestations',
 ]);
 
 const MAX_BODY_BYTES = 10_000;
@@ -1206,6 +1211,16 @@ function recrutementRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes du quiz et des attestations de formation (BR07) : chaque rôle contrôlé avant le corps [R16, R570, R571]. */
+function formationRoutesDef(): RouteDef[] {
+  return formationRoutes().map((r: FormationRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes du marketing (BR03) : chaque rôle contrôlé avant le corps [R16] ; rien ne part ni ne se paie [R26, R587]. */
 function marketingRoutesDef(): RouteDef[] {
   return marketingRoutes().map((r: MarketingRoute) => ({
@@ -1768,6 +1783,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // La vérification publique d'une attestation de formation (BR07) : la page et sa route, sans clé, rien de rangé [R571].
+  if (url.pathname === '/attestation' || url.pathname === `${API_PREFIX}/formation/verification`) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleAttestationPublic(request, { db: config.db });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:attestation', 'formation.verification', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   if (!url.pathname.startsWith(`${API_PREFIX}/`)) return failure(404, 'not_found', 'Adresse inconnue.');
   const path = url.pathname.slice(API_PREFIX.length);
 
@@ -1907,6 +1933,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...securiteRoutesDef(),
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
+    ...formationRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
     ...clesRoutesDef(config.cles ?? null),
     ...m18Routes(config.partenaires ?? null),

@@ -324,6 +324,19 @@ Tout refus (réseau, utilisateur, rôle, clé, défi, signature) a la même rép
 
 Le jeton s'envoie comme une clé : `Authorization: Bearer <jeton>`. L'API essaie d'abord les clés d'API, qui restent acceptées comme avant, puis la séance, relue dans la base à chaque demande : une clé retirée, une séance finie ou un agent parti la coupent à la demande suivante (401) [R600, R82]. Sans clé d'API configurée, l'API reste fermée (503), sauf si le site WebAuthn est réglé : seules les séances ouvrent alors.
 
+## Quiz et attestations de formation (BR07)
+
+Sous `/v1/formation`, chaque route dit les rôles qu'elle admet, contrôlés avant le corps ; un refus est écrit au journal [R16]. Un champ non prévu : 400 `unknown_field`. Rien n'est envoyé.
+
+- `POST /formation/questions` (direction ; `{moduleId, ruleId?, prompt, choices, correctIndex}`) : une question liée à un module de l'académie du réseau et, si elle en cite une, à une règle en service ; sinon 409 `module_required` ou `rule_not_in_service` [R570]. `POST /formation/questions/<id>/retrait` (direction) : retirée, jamais effacée [R17].
+- `POST /formation/quiz` (agent ; `{track}` ou `{moduleId}`, un seul) : `{attemptId, questions}`, sans la bonne réponse ; moins de trois questions en service : 409 `not_enough_questions` [R570].
+- `POST /formation/quiz/<id>/reponses` (l'agent du quiz ; `{answers}`, un indice par question) : une fois ; chaque réponse est juste ou à revoir, avec son module, sa vidéo et sa règle ; `allRight`, les modules encore à faire, et l'attestation quand le quiz est sans faute sur des modules tous faits. Aucune note, aucun nombre de bonnes réponses [R570, R571, R14].
+- `GET /formation/agents/<id>/attestations` (l'agent lui-même, ou la direction de son réseau) : ses attestations, document et empreinte [R571].
+
+Le quiz, les réponses et les attestations restent ouverts à l'agent au dossier incomplet : c'est sa formation [R82].
+
+Sans clé, la vérification publique d'une attestation : `POST /v1/formation/verification` (`{document, fingerprint}`, 32 ko au plus) et la page `/attestation` (formulaire : document et empreinte). Elles ne disent que « valide », avec le jour de délivrance, ou « non reconnue », sans raison ni nom ; un seul caractère changé, ou une empreinte recalculée par un faussaire, échoue. Rien de ce qui est collé n'est rangé [R571, R13].
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
