@@ -86,6 +86,10 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
     expect(kinds("SELECT datetime('now'), STRFTIME('%Y', a), julianday(a), UnixEpoch(a);")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
     expect(kinds("SELECT DISTINCT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';").filter((k) => k.startsWith('char'))).toEqual(['char@1', 'char@1', 'char@1']);
     expect(kinds("SELECT date('now'), DATE(a, '+1 day'), date(a), date(substr(a, 1, 10)), time(a, 'localtime');")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
+    // Un espace avant les parenthèses ne change rien pour SQLite, ni pour le compte.
+    expect(kinds("SELECT date ('now'), time  ('now'), DATE (a, '+1 day'), date (a);")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
+    // Dans les chaînes du TypeScript, une phrase en français n'est pas un appel ; la forme collée du SQL, si.
+    expect(kinds("const t = 'Les ventes, avec leur date (R28, R29).'; db.all(\"SELECT date(a, '+1 day')\");", 'ts')).toEqual(['date_sqlite@1']);
   });
 
   it('[R633] les commentaires ne comptent pas, les chaînes oui, et les lignes restent justes', () => {
