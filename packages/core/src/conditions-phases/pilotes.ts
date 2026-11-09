@@ -15,7 +15,8 @@
  * mandat d'après porte son numéro du registre.
  *
  * Décidé, lecture prudente : l'arrivée est l'entrée du candidat devenu agent (J04), sinon la création de sa fiche ;
- * jamais une date saisie. « Plus » veut dire strictement plus. Un pilote parti avant la fin de sa mesure (départ
+ * jamais une date saisie. Un agent ne se désigne pilote qu'avant le début de sa mesure. La mesure n'est finie que
+ * 14 jours après son dernier jour, quand plus aucun mandat ne peut être rétracté (L221-18). « Plus » veut dire strictement plus. Un pilote parti avant la fin de sa mesure (départ
  * maintenu dont le jour est atteint au plus tard le dernier jour de son 3e mois, ou fiche « partie ») est « parti ».
  * La condition n'est remplie qu'avec au moins 3 pilotes (« 3 à 5 agents »), tous finis et tous « plus », et un
  * registre sain. Passer à la phase suivante reste une décision de Shawez : rien ne bascule seul.
@@ -38,6 +39,11 @@ export const PILOT_MONTHS = 3;
 export const PILOT_MINIMUM = 3;
 /** Le plus grand nombre de mandats d'un mois déclarable. */
 export const PILOT_MONTH_MAX = 500;
+/**
+ * Le délai de rétractation d'un mandat signé hors de l'agence (code de la consommation, L221-18) : la mesure n'est finie
+ * que lorsque plus aucun mandat de son 3e mois ne peut encore être retiré, pour qu'un « plus » ne retombe jamais.
+ */
+export const PILOT_WITHDRAWAL_DAYS = 14;
 
 export const PILOT_DESIGNATION_FIELDS = ['agentId'] as const;
 export const PILOT_DECLARATION_FIELDS = ['agentId', 'months', 'proofRef'] as const;
@@ -81,6 +87,8 @@ export interface PilotReportLine {
   measureStart: string;
   /** Le dernier mois de la mesure, `AAAA-MM`. */
   measureEndMonth: string;
+  /** Le premier jour de Paris où la mesure est finie : 14 jours de rétractation après son dernier jour. */
+  finishedOn: string;
   /** Les 3 mois d'avant, dans l'ordre, avec la déclaration qui compte ; `null` sans déclaration à temps. */
   beforeMonths: string[];
   before: number[] | null;
@@ -116,6 +124,8 @@ const previousMonth = (month: string): string => {
 const parisDate = (iso: string): string => localTime(new Date(iso), 'Europe/Paris').date;
 /** Le dernier jour de Paris d'un mois, `AAAA-MM-JJ`. */
 const lastDayOf = (month: string): string => parisDate(new Date(Date.parse(monthBounds(month)[1]) - 1).toISOString());
+/** Un jour de Paris plus `n` jours, `AAAA-MM-JJ`. */
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 /** Le statut d'un pilote, dans cet ordre : parti, en cours, avant non déclaré à temps, plus ou pas plus [R642]. */
 export function pilotStatus(p: { gone: boolean; finished: boolean; beforeTotal: number | null; afterTotal: number }): PilotStatus {
@@ -212,10 +222,18 @@ export class AgentsPilotes {
     const raw = AgentsPilotes.shape(input, PILOT_DESIGNATION_FIELDS);
     if (typeof raw === 'string') return this.refuse(viewer, { ok: false, rule: null, code: raw });
     if (typeof raw.agentId !== 'string' || raw.agentId.length === 0) return this.refuse(viewer, { ok: false, rule: null, code: 'bad_agent' });
-    const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [raw.agentId, viewer.networkId]);
+    const agent = await this.db.first<{ status: string; arrived_at: string }>(
+      `SELECT a.status, COALESCE(o.created_at, a.created_at) AS arrived_at FROM agents a
+         LEFT JOIN agent_onboardings o ON o.agent_id = a.id AND o.network_id = a.network_id
+        WHERE a.id = ? AND a.network_id = ?`,
+      [raw.agentId, viewer.networkId],
+    );
     // Un agent d'un autre réseau est dit inconnu, comme un agent qui n'existe pas.
     if (!agent) return this.refuse(viewer, { ok: false, rule: 'R640', code: 'agent_inconnu' });
     if (agent.status !== 'active') return this.refuse(viewer, { ok: false, rule: 'R640', code: 'agent_parti' });
+    // Une fois la mesure commencée, aucun avant ne pourrait plus compter : le pilote serait « avant non déclaré » pour
+    // toujours, et un pilote n'est jamais retiré. La désignation vient donc avant la mesure.
+    if (this.now().toISOString() >= measureStartOf(agent.arrived_at)) return this.refuse(viewer, { ok: false, rule: 'R640', code: 'trop_tard' });
     try {
       await this.db.run('INSERT INTO pilot_agents (network_id, agent_id, designated_by, designated_at) VALUES (?, ?, ?, ?)', [
         viewer.networkId,
@@ -333,7 +351,9 @@ export class AgentsPilotes {
       for (let m = arrivalMonth, i = 0; i < PILOT_MONTHS; i++) afterMonths.push((m = nextMonth(m)));
       const measureStart = measureStartOf(p.arrived_at);
       const measureEndMonth = afterMonths[PILOT_MONTHS - 1]!;
-      const finished = currentMonth > measureEndMonth;
+      const lastDay = lastDayOf(measureEndMonth);
+      // Finie le lendemain du dernier jour où un mandat du 3e mois peut encore être retiré [R642].
+      const finished = currentMonth > measureEndMonth && today > addDays(lastDay, PILOT_WITHDRAWAL_DAYS);
 
       const own = declarations.filter((d) => d.agent_id === p.agent_id);
       const inTime = own.filter((d) => d.declared_at < measureStart);
@@ -373,7 +393,6 @@ export class AgentsPilotes {
 
       // Parti avant la fin de la mesure : départ maintenu dont le jour est atteint au plus tard le dernier jour du 3e
       // mois, ou fiche « partie » sans départ rangé.
-      const lastDay = lastDayOf(measureEndMonth);
       const leaving = departures.filter((d) => d.agent_id === p.agent_id && d.leaves_on <= lastDay && d.leaves_on <= today);
       const gone = leaving.length > 0 || (p.status !== 'active' && !departures.some((d) => d.agent_id === p.agent_id && d.leaves_on > lastDay));
 
@@ -383,6 +402,7 @@ export class AgentsPilotes {
         arrivalMonth,
         measureStart,
         measureEndMonth,
+        finishedOn: addDays(lastDay, PILOT_WITHDRAWAL_DAYS + 1),
         beforeMonths,
         before,
         beforeTotal,

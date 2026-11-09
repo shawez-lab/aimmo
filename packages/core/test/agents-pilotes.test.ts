@@ -65,7 +65,7 @@ async function setup() {
     if (!b.ok) throw new Error(b.code);
     return b.value;
   };
-  const report = async (at = '2027-12-02T10:00:00.000Z') => {
+  const report = async (at = '2027-12-15T10:00:00.000Z') => {
     setClock(at);
     const r = await pilotes.report(direction);
     if (!r.ok) throw new Error(r.code);
@@ -234,7 +234,11 @@ describeWithSqlite('HX69 · les agents pilotes signent-ils plus qu’avant leur 
     const order = (r: PilotReport) => [alex, sam, lou].map((id) => r.pilots.find((p) => p.agentId === id)!);
     let r = await t.report('2027-11-30T10:00:00.000Z');
     expect(order(r).map((p) => p.status)).toEqual(['en_cours', 'en_cours', 'parti']);
-    r = await t.report('2027-12-01T10:00:00.000Z');
+    r = await t.report('2027-12-14T10:00:00.000Z');
+    // Jusqu'au 14 décembre, un mandat de novembre peut encore être rétracté : rien n'est fini.
+    expect(order(r).map((p) => p.status)).toEqual(['en_cours', 'en_cours', 'parti']);
+    expect(order(r)[0]!.finishedOn).toBe('2027-12-15');
+    r = await t.report('2027-12-15T10:00:00.000Z');
     expect(order(r).map((p) => [p.status, p.beforeTotal, p.afterTotal])).toEqual([
       ['plus', 3, 4],
       ['pas_plus', 3, 3],
@@ -268,6 +272,51 @@ describeWithSqlite('HX69 · les agents pilotes signent-ils plus qu’avant leur 
     expect(pilotCondition(['plus', 'plus'], true)).toEqual({ met: false, reasons: ['moins_de_3_pilotes'] });
     expect(pilotCondition(['plus', 'plus', 'pas_plus', 'avant_non_declare', 'parti'], true)).toEqual({ met: false, reasons: ['pilote_parti', 'avant_non_declare', 'pas_plus'] });
     expect(pilotCondition([], false)).toEqual({ met: false, reasons: ['moins_de_3_pilotes', 'registre_abime'] });
+  }, 60_000);
+
+  it('[R642] une rétractation rangée dans les 14 jours après la mesure défait un « plus » qui n’était pas encore dit', async () => {
+    const t = await setup();
+    const alex = await t.agent('Alex');
+    await t.pilot(alex, [1, 1, 1]);
+    await t.fill('2027-10', 3, alex);
+    const late = await t.inscribed('2027-11-28T10:00:00.000Z', alex);
+    expect((await t.report('2027-12-09T10:00:00.000Z')).pilots[0]).toMatchObject({ status: 'en_cours', afterTotal: 4 });
+    // Rétractation rangée sans ligne d'annulation au registre : elle retire quand même le mandat.
+    await t.db.run('INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+      late,
+      t.network.id,
+      'preuve inventée',
+      '2027-12-10T10:00:00.000Z',
+      'x',
+      '2027-12-10T10:00:00.000Z',
+    ]);
+    const r = await t.report('2027-12-15T10:00:00.000Z');
+    expect(r.pilots[0]).toMatchObject({ status: 'pas_plus', afterTotal: 3, withdrawnOrCancelled: 1 });
+  }, 60_000);
+
+  it('[R642] « parti » se lit dans la base : départ annulé, fiche partie, départ après la mesure, départ pas encore atteint', async () => {
+    const t = await setup();
+    const annule = await t.agent('Annule');
+    const fiche = await t.agent('Fiche');
+    const apres = await t.agent('Apres');
+    const bientot = await t.agent('Bientot');
+    for (const id of [annule, fiche, apres, bientot]) await t.pilot(id, [0, 0, 0]);
+    for (const id of [annule, fiche, apres, bientot]) await t.fill('2027-09', 1, id);
+    const depart = (id: string, agentId: string, leavesOn: string, cancelled: string | null) =>
+      t.db.run(
+        "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at, cancelled_at, cancelled_by) VALUES (?, ?, ?, '2027-10-01', ?, 'demission_agent', 1, 'direction:x', '2027-10-01T10:00:00.000Z', ?, ?)",
+        [id, t.network.id, agentId, leavesOn, cancelled, cancelled ? 'direction:x' : null],
+      );
+    await depart('d-annule', annule, '2027-11-01', '2027-10-15T10:00:00.000Z');
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [fiche]);
+    await depart('d-apres', apres, '2027-12-01', null);
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [apres]);
+    await depart('d-bientot', bientot, '2027-11-20', null);
+    const status = (r: PilotReport, id: string) => r.pilots.find((p) => p.agentId === id)!.status;
+    let r = await t.report('2027-11-10T10:00:00.000Z');
+    expect([annule, fiche, apres, bientot].map((id) => status(r, id))).toEqual(['en_cours', 'parti', 'en_cours', 'en_cours']);
+    r = await t.report('2027-12-15T10:00:00.000Z');
+    expect([annule, fiche, apres, bientot].map((id) => status(r, id))).toEqual(['plus', 'parti', 'plus', 'parti']);
   }, 60_000);
 
   it('[R14] les pilotes se lisent dans l’ordre de leur arrivée, jamais dans l’ordre d’un nombre', async () => {
@@ -318,6 +367,11 @@ describeWithSqlite('HX69 · les agents pilotes signent-ils plus qu’avant leur 
     expect(await t.pilotes.designate(t.direction, { agentId: parti })).toEqual({ ok: false, rule: 'R640', code: 'agent_parti' });
     expect(await t.pilotes.designate(t.direction, { agentId: alex })).toEqual({ ok: true, value: { agentId: alex } });
     expect(await t.pilotes.designate(t.direction, { agentId: alex })).toEqual({ ok: false, rule: 'R640', code: 'deja_pilote' });
+    // Une fois sa mesure commencée, un agent ne se désigne plus : aucun avant ne pourrait compter.
+    t.setClock(ARRIVAL);
+    const tard = await t.agent('Tard');
+    t.setClock(MEASURE_START);
+    expect(await t.pilotes.designate(t.direction, { agentId: tard })).toEqual({ ok: false, rule: 'R640', code: 'trop_tard' });
     expect(await t.pilotes.designate(t.direction, { agentId: alex, note: 'x' })).toEqual({ ok: false, rule: null, code: 'unknown_field' });
     expect(await t.pilotes.designate(t.direction, null)).toEqual({ ok: false, rule: null, code: 'bad_shape' });
     // Un pilote d'un autre réseau ne se lit jamais.
