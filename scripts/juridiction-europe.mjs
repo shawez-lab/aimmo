@@ -13,15 +13,26 @@
 import { appendFileSync, readFileSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-/** Les tables admises dans la configuration du Worker. Toute autre table échoue, jusqu'à décision écrite. */
-export const ALLOWED_TABLES = Object.freeze(['vars', 'triggers', 'observability', '[d1_databases]', '[r2_buckets]']);
-/** Les liaisons qui rangent des données, à refuser sous toute forme (table ou clé en ligne). */
-export const STORAGE_KEYS = Object.freeze(['kv_namespaces', 'durable_objects', 'queues', 'vectorize', 'hyperdrive', 'analytics_engine_datasets', 'd1_databases', 'r2_buckets', 'migrations']);
+/** Les tables admises dans la configuration du Worker, chacune avec ses clés admises (`null` : toute clé, des valeurs). */
+export const ALLOWED_TABLES = Object.freeze({
+  '': ['name', 'main', 'compatibility_date', 'compatibility_flags', 'workers_dev', 'preview_urls'],
+  vars: null,
+  triggers: ['crons'],
+  observability: ['enabled', 'head_sampling_rate'],
+  '[d1_databases]': ['binding', 'database_name', 'database_id', 'migrations_dir', 'migrations_table'],
+  '[r2_buckets]': ['binding', 'bucket_name', 'jurisdiction'],
+});
 export const D1_PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
 
 function unquote(value) {
   const m = /^"([^"]*)"\s*(#.*)?$/.exec(value.trim());
   return m ? m[1] : null;
+}
+
+/** Un tableau ouvert sur la ligne et pas refermé : `[` sans `]` de fin, hors texte entre guillemets. */
+function opensArray(value) {
+  const v = value.replace(/"[^"]*"/g, '""').replace(/#.*$/, '').trim();
+  return v.startsWith('[') && (v.match(/\[/g) ?? []).length > (v.match(/\]/g) ?? []).length;
 }
 
 /** Les tables de la configuration, chacune avec ses clés, dans l'ordre. Une ligne illisible est rendue en erreur. */
@@ -30,24 +41,32 @@ export function parseTables(toml) {
   const errors = [];
   let current = { name: '', keys: {}, line: 0 };
   tables.push(current);
+  let inArray = false;
   toml.split('\n').forEach((raw, i) => {
     const line = raw.trim();
     if (line === '' || line.startsWith('#')) return;
+    if (inArray) {
+      // Seulement des valeurs entre guillemets, jusqu'au crochet qui ferme.
+      if (!/^("[^"]*"\s*,?\s*)*\]?\s*(#.*)?$/.test(line)) errors.push(`ligne ${i + 1} illisible [R602]`);
+      if (/\]\s*(#.*)?$/.test(line)) inArray = false;
+      return;
+    }
     const header = /^\[(\[?[A-Za-z0-9_.-]+\]?)\]\s*(#.*)?$/.exec(line);
     if (header) {
       current = { name: header[1], keys: {}, line: i + 1 };
       tables.push(current);
       return;
     }
+    // Une clé nue seulement : une clé entre guillemets ou à points pourrait cacher une liaison.
     const kv = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/.exec(line);
     if (!kv) {
-      // Une valeur sur plusieurs lignes (tableau des déclencheurs) : seule la première ligne compte ici.
-      if (/^["\]\d]/.test(line)) return;
-      errors.push(`ligne ${i + 1} illisible`);
+      errors.push(`ligne ${i + 1} illisible [R602]`);
       return;
     }
     current.keys[kv[1]] = kv[2];
+    if (opensArray(kv[2])) inArray = true;
   });
+  if (inArray) errors.push('tableau non refermé [R602]');
   return { tables, errors };
 }
 
@@ -55,17 +74,19 @@ export function parseTables(toml) {
 export function checkConfig(toml) {
   const { tables, errors } = parseTables(toml);
   for (const t of tables) {
-    if (t.name !== '' && !ALLOWED_TABLES.includes(t.name)) errors.push(`table [${t.name}] non admise (ligne ${t.line}) : sa juridiction n'est pas garantie en Europe [R602]`);
-    for (const key of Object.keys(t.keys)) {
-      if (STORAGE_KEYS.includes(key)) errors.push(`liaison « ${key} » écrite en ligne${t.name ? ` dans [${t.name}]` : ''} : non admise [R602]`);
+    if (!Object.hasOwn(ALLOWED_TABLES, t.name)) {
+      errors.push(`table [${t.name}] non admise (ligne ${t.line}) : sa juridiction n'est pas garantie en Europe [R602]`);
+      continue;
+    }
+    const allowed = ALLOWED_TABLES[t.name];
+    if (allowed !== null) {
+      for (const key of Object.keys(t.keys)) {
+        if (!allowed.includes(key)) errors.push(`clé « ${key} »${t.name ? ` dans [${t.name}]` : ''} non admise : elle peut lier un stockage hors d'Europe [R602]`);
+      }
     }
     if (t.name === '[r2_buckets]') {
       const bucket = unquote(t.keys.bucket_name ?? '') ?? '?';
       if (unquote(t.keys.jurisdiction ?? '') !== 'eu') errors.push(`compartiment R2 ${bucket} sans juridiction "eu" (ligne ${t.line}) [R602]`);
-      if (t.keys.preview_bucket_name !== undefined) errors.push(`compartiment R2 ${bucket} : un compartiment d'aperçu n'est pas admis [R602]`);
-    }
-    if (t.name === '[d1_databases]') {
-      if (t.keys.preview_database_id !== undefined) errors.push(`base D1 ${unquote(t.keys.database_name ?? '') ?? '?'} : une base d'aperçu n'est pas admise [R602]`);
     }
   }
   return errors;

@@ -212,19 +212,34 @@ export class ClesAppareil {
     const id = this.newId();
     const at = this.now().toISOString();
     let approvedBy: string | null = null;
-    if (previous.length === 0) {
-      approvedBy = 'premiere_cle';
-    } else if (payload.stepUpId !== undefined) {
+    if (previous.length > 0 && payload.stepUpId !== undefined) {
       const proof = await this.requireSecondFactor(viewer, 'ajouter_appareil', `user:${viewer.userId}`, payload.stepUpId);
       if (!proof.ok) return proof;
       approvedBy = `step_up:${proof.value.deviceId}`;
     }
-    const status: DeviceStatus = approvedBy === null ? 'en_attente' : 'actif';
-    await this.write(viewer, 'securite.cle.rangee', `device:${id}`, { rule: 'R600', status, by: approvedBy ?? 'direction_attendue' });
-    await this.db.run(
-      'INSERT INTO security_devices (id, network_id, user_role, user_id, credential_id, public_key, alg, sign_count, label, status, created_at, approved_at, approved_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, viewer.networkId, viewer.role, viewer.userId, credential, toBase64Url(publicKey), ES256, check.value.signCount, label, status, at, approvedBy === null ? null : at, approvedBy],
-    );
+    const insert = (status: DeviceStatus, by: string | null, onlyIfFirst: boolean) =>
+      this.db.run(
+        `INSERT INTO security_devices (id, network_id, user_role, user_id, credential_id, public_key, alg, sign_count, label, status, created_at, approved_at, approved_by)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${onlyIfFirst ? ' WHERE NOT EXISTS (SELECT 1 FROM security_devices WHERE network_id = ? AND user_role = ? AND user_id = ?)' : ''}`,
+        [id, viewer.networkId, viewer.role, viewer.userId, credential, toBase64Url(publicKey), ES256, check.value.signCount, label, status, at, by === null ? null : at, by, ...(onlyIfFirst ? [viewer.networkId, viewer.role, viewer.userId] : [])],
+      );
+    let status: DeviceStatus = approvedBy === null ? 'en_attente' : 'actif';
+    let stored = false;
+    if (previous.length === 0) {
+      // La toute première clé, seulement si aucune autre n'est rangée entre-temps : deux enregistrements simultanés ne
+      // font pas deux premières clés [R600].
+      // Si la course est perdue, une seconde ligne du journal dit la clé en attente.
+      await this.write(viewer, 'securite.cle.rangee', `device:${id}`, { rule: 'R600', status: 'actif', by: 'premiere_cle' });
+      stored = (await insert('actif', 'premiere_cle', true)).changes === 1;
+      if (stored) {
+        status = 'actif';
+        approvedBy = 'premiere_cle';
+      }
+    }
+    if (!stored) {
+      await this.write(viewer, 'securite.cle.rangee', `device:${id}`, { rule: 'R600', status, by: approvedBy ?? 'direction_attendue' });
+      await insert(status, approvedBy, false);
+    }
     return { ok: true, value: { id, userRole: viewer.role, userId: viewer.userId, label, status, createdAt: at, approvedAt: approvedBy === null ? null : at, revokedAt: null } };
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { ExportAgent } from '../src/rapports/index.ts';
 import { ClesAppareil, SENSITIVE_ACTIONS, type AssertionPayload, type Challenge } from '../src/securite/index.ts';
 import { derToRaw, fromBase64Url, sha256, toBase64Url, verifyAssertion } from '../src/securite/webauthn.ts';
 import { loadMigrations } from './migrations.ts';
@@ -311,6 +312,35 @@ describeWithSqlite('HX56 · clé d’accès par appareil et second facteur', () 
     const late = await stepUp(agent, device, 'export_complet', subject);
     advance(5 * 60_000);
     expect(await cles.requireSecondFactor(agent, 'export_complet', subject, late)).toMatchObject({ ok: false, code: 'expired' });
+  });
+
+  it('[R601] l’export complet de l’agent exige le second facteur, fait pour lui seul', async () => {
+    const { cles, db, journal, agent, enroll, stepUp } = await setup();
+    const exports = new ExportAgent(db, journal, cles);
+    const { device } = await enroll(agent, 1);
+    expect(await exports.make(agent)).toMatchObject({ ok: false, rule: 'R601', code: 'second_factor_required' });
+    const wrong = await stepUp(agent, device, 'effacement', `agent:${agent.userId}`);
+    expect(await exports.make(agent, wrong)).toMatchObject({ ok: false, rule: 'R601', code: 'other_action' });
+    const proof = await stepUp(agent, device, 'export_complet', `agent:${agent.userId}`);
+    expect((await exports.make(agent, proof)).ok).toBe(true);
+    expect(await exports.make(agent, proof)).toMatchObject({ ok: false, rule: 'R601', code: 'already_used' });
+    expect(await db.first<{ n: number }>('SELECT count(*) AS n FROM agent_exports')).toEqual({ n: 1 });
+  });
+
+  it('[R600] deux enregistrements simultanés ne font pas deux premières clés', async () => {
+    const { cles, db, agent } = await setup();
+    const a = await FakeAuthenticator.create(1);
+    const b = await FakeAuthenticator.create(2);
+    const ca = await cles.beginRegistration(agent);
+    const cb = await cles.beginRegistration(agent);
+    if (!ca.ok || !cb.ok) throw new Error('défi');
+    const [ra, rb] = await Promise.all([cles.finishRegistration(agent, await a.register(ca.value)), cles.finishRegistration(agent, await b.register(cb.value))]);
+    expect([ra.ok && ra.value.status, rb.ok && rb.value.status].sort()).toEqual(['actif', 'en_attente']);
+    await expect(
+      db.run(
+        "INSERT INTO security_devices (id, network_id, user_role, user_id, credential_id, public_key, alg, sign_count, label, status, created_at, approved_at, approved_by) SELECT 'x', network_id, user_role, user_id, 'c9', 'k', -7, 0, 'Tel', 'actif', 't', 't', 'premiere_cle' FROM security_devices LIMIT 1",
+      ),
+    ).rejects.toThrow();
   });
 
   it('[R601] une preuve faite par une clé retirée depuis ne vaut plus ; un défi de connexion ne sert pas de preuve', async () => {

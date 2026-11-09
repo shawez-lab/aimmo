@@ -59,7 +59,12 @@ export async function fingerprintOf(doc: unknown): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-type Refusal = { ok: false; rule: 'R16'; code: string };
+type Refusal = { ok: false; rule: 'R16' | 'R601'; code: string };
+
+/** La porte du second facteur (HX56, `ClesAppareil.requireSecondFactor`) [R601]. */
+export interface SecondFactorGate {
+  requireSecondFactor(viewer: Viewer, action: 'export_complet', subject: string, stepUpId: unknown): Promise<{ ok: true } | { ok: false; rule: string; code: string }>;
+}
 
 export class ExportAgent {
   private readonly now: () => Date;
@@ -68,14 +73,16 @@ export class ExportAgent {
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
+    /** L'export complet est une action sensible : il exige la preuve d'une clé d'appareil active, pour lui seul [R601]. */
+    private readonly secondFactor: SecondFactorGate,
     options: { now?: () => Date; newId?: () => string } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
-  /** Tire l'export complet de l'agent lecteur, et range son empreinte. */
-  async make(viewer: Viewer): Promise<{ ok: true; value: { document: AgentExport; fingerprint: string } } | Refusal> {
+  /** Tire l'export complet de l'agent lecteur, sur la preuve du second facteur, et range son empreinte [R601]. */
+  async make(viewer: Viewer, stepUpId?: unknown): Promise<{ ok: true; value: { document: AgentExport; fingerprint: string } } | Refusal> {
     const refuse = async (code: string): Promise<Refusal> => {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_export', code } }, this.now);
       return { ok: false, rule: 'R16', code };
@@ -83,6 +90,9 @@ export class ExportAgent {
     if (viewer.role !== 'agent') return refuse('role');
     const me = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
     if (!me || me.network_id !== viewer.networkId || me.status !== 'active') return refuse('agent_inactive');
+    // Avant toute lecture : sans preuve pour cet export, rien n'est lu (la porte écrit son refus au journal) [R601].
+    const proof = await this.secondFactor.requireSecondFactor(viewer, 'export_complet', `agent:${viewer.userId}`, stepUpId);
+    if (!proof.ok) return { ok: false, rule: 'R601', code: proof.code };
     const net = viewer.networkId;
     const id = viewer.userId;
     const q = (sql: string, args: string[] = [net, id]) => this.db.all<Row>(sql, args);

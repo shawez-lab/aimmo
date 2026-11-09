@@ -32,6 +32,11 @@ CREATE INDEX IF NOT EXISTS security_devices_user ON security_devices (network_id
 CREATE TRIGGER IF NOT EXISTS security_devices_naissance BEFORE INSERT ON security_devices
 WHEN NEW.status = 'retire' OR EXISTS (SELECT 1 FROM security_devices WHERE id = NEW.id)
 BEGIN SELECT RAISE(ABORT, 'security_devices : une clé naît en attente ou active, une seule fois [R600]'); END;
+-- La première clé, active d'emblée, est la seule de son utilisateur [R600].
+CREATE TRIGGER IF NOT EXISTS security_devices_premiere BEFORE INSERT ON security_devices
+WHEN NEW.approved_by = 'premiere_cle' AND EXISTS (
+  SELECT 1 FROM security_devices WHERE network_id = NEW.network_id AND user_role = NEW.user_role AND user_id = NEW.user_id)
+BEGIN SELECT RAISE(ABORT, 'security_devices : une seule première clé par utilisateur [R600]'); END;
 CREATE TRIGGER IF NOT EXISTS security_devices_garde BEFORE DELETE ON security_devices
 BEGIN SELECT RAISE(ABORT, 'security_devices : rien ne s''efface'); END;
 -- La clé publique, son appareil et son utilisateur ne changent jamais ; une clé retirée ne revient pas ; le compteur

@@ -40,15 +40,21 @@ describe('HX56 · données en Europe', () => {
     const autre = `${REPO_TOML}\n[[r2_buckets]]\nbinding = "MEDIA"\nbucket_name = "aimmo-medias"\njurisdiction = "fedramp"\n`;
     expect(checkConfig(autre)).toHaveLength(1);
     const apercu = `${eu}preview_bucket_name = "aimmo-medias-apercu"\n`;
-    expect(checkConfig(apercu)).toEqual([expect.stringContaining('compartiment d\'aperçu')]);
+    expect(checkConfig(apercu)).toEqual([expect.stringContaining('clé « preview_bucket_name » dans [[r2_buckets]] non admise')]);
   });
 
   it('[R602] tout autre stockage, en table ou en ligne, fait échouer la vérification', () => {
     expect(checkConfig(`${REPO_TOML}\n[[kv_namespaces]]\nbinding = "KV"\nid = "abc"\n`)).toEqual([expect.stringContaining('table [[kv_namespaces]] non admise')]);
     expect(checkConfig(`${REPO_TOML}\n[[queues.producers]]\nbinding = "Q"\n`)).toHaveLength(1);
-    expect(checkConfig(`kv_namespaces = [{ binding = "KV", id = "x" }]\n${REPO_TOML}`)).toEqual([expect.stringContaining('liaison « kv_namespaces » écrite en ligne')]);
+    expect(checkConfig(`kv_namespaces = [{ binding = "KV", id = "x" }]\n${REPO_TOML}`)).toEqual([expect.stringContaining('clé « kv_namespaces » non admise')]);
+    // Une clé entre guillemets, ou une liaison que la liste ne connaît pas encore : refusées aussi.
+    expect(checkConfig(`"kv_namespaces" = [{ binding = "KV", id = "x" }]\n${REPO_TOML}`)).toEqual([expect.stringContaining('ligne 1 illisible')]);
+    expect(checkConfig(`workflows = [{ name = "w", binding = "W", class_name = "W" }]\n${REPO_TOML}`)).toEqual([expect.stringContaining('clé « workflows » non admise')]);
+    expect(checkConfig(`${REPO_TOML}\n[[workflows]]\nname = "w"\n`)).toHaveLength(1);
+    expect(checkConfig(`${REPO_TOML}\n[triggers]\ncrons = [\n  "* * * * *",\n]\n`)).toEqual([]);
+    expect(checkConfig(`${REPO_TOML}\n[triggers]\ncrons = [\n  "* * * * *",\nkv_namespaces = []\n]\n`)).toContainEqual(expect.stringContaining("illisible"));
     expect(checkConfig(`${REPO_TOML}\n[durable_objects]\nbindings = []\n`)).toHaveLength(1);
-    expect(checkConfig(REPO_TOML.replace('migrations_dir', 'preview_database_id = "x"\nmigrations_dir'))[0]).toContain('base d\'aperçu');
+    expect(checkConfig(REPO_TOML.replace('migrations_dir', 'preview_database_id = "x"\nmigrations_dir'))[0]).toContain('clé « preview_database_id » dans [[d1_databases]] non admise');
   });
 
   it('[R602] ce que le déploiement ajoute à la configuration passe la vérification', () => {
