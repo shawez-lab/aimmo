@@ -40,6 +40,7 @@ import { ANNUAIRE_SCRIPT } from '../app/annuaire.ts';
 import { PROSPECTION_SCRIPT } from '../app/prospection.ts';
 import { BIBLIOTHEQUE_SCRIPT } from '../app/bibliotheque.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
+import { PHASES_SCRIPT } from '../app/phases.ts';
 import { GUIDES_PHOTO_SCRIPT } from '../app/guides-photo.ts';
 import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
@@ -140,6 +141,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/bibliotheque.js': { body: BIBLIOTHEQUE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les engagements de service pour la direction (G15), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les guides photo à valider pour la direction (X23), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/guides-photo.js': { body: GUIDES_PHOTO_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La fin de bail notée depuis la fiche (G15), chargée au premier geste, jamais gardée sur l'appareil [R201].
