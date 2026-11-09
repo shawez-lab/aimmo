@@ -235,7 +235,7 @@ export class PassagePostgresql {
     const statements: SqlStatement[] = [
       {
         // L'ordre est pris dans la même instruction : deux relevés du même instant restent dans leur ordre [R630].
-        sql: 'INSERT INTO postgres_threshold_readings (id, seq, measured_at, agents_active, db_bytes, report_ms, source) SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ? FROM postgres_threshold_readings',
+        sql: 'INSERT INTO postgres_threshold_readings (id, seq, measured_at, agents_active, db_bytes, elapsed_ms, source) SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ? FROM postgres_threshold_readings',
         params: [reading.id, reading.measuredAt, values.agents, values.taille, values.rapport, source],
       },
     ];
@@ -299,19 +299,19 @@ export class PassagePostgresql {
     const denied = await this.direction(viewer, 'postgres_state');
     if (denied) return denied;
     const now = this.now();
-    const rows = await this.db.all<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; report_ms: number | null; source: 'direction' | 'passage' }>(
-      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings WHERE measured_at >= ? ORDER BY seq',
+    const rows = await this.db.all<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; elapsed_ms: number | null; source: 'direction' | 'passage' }>(
+      'SELECT id, measured_at, agents_active, db_bytes, elapsed_ms, source FROM postgres_threshold_readings WHERE measured_at >= ? ORDER BY seq',
       [new Date(now.getTime() - POSTGRES_FORECAST_WINDOW_DAYS * DAY_MS).toISOString()],
     );
-    const lastRow = await this.db.first<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; report_ms: number | null; source: 'direction' | 'passage' }>(
-      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings ORDER BY seq DESC LIMIT 1',
+    const lastRow = await this.db.first<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; elapsed_ms: number | null; source: 'direction' | 'passage' }>(
+      'SELECT id, measured_at, agents_active, db_bytes, elapsed_ms, source FROM postgres_threshold_readings ORDER BY seq DESC LIMIT 1',
     );
     const num = (v: number | null): number | null => (v === null ? null : Number(v));
     const lastReading: PostgresReading | null = lastRow
-      ? { id: lastRow.id, measuredAt: lastRow.measured_at, source: lastRow.source, values: { agents: num(lastRow.agents_active), taille: num(lastRow.db_bytes), rapport: num(lastRow.report_ms) } }
+      ? { id: lastRow.id, measuredAt: lastRow.measured_at, source: lastRow.source, values: { agents: num(lastRow.agents_active), taille: num(lastRow.db_bytes), rapport: num(lastRow.elapsed_ms) } }
       : null;
     const alerts = await this.db.all<{ threshold: PostgresThreshold; created_at: string }>('SELECT threshold, created_at FROM postgres_threshold_alerts ORDER BY created_at');
-    const column: Record<PostgresThreshold, 'agents_active' | 'db_bytes' | 'report_ms'> = { agents: 'agents_active', taille: 'db_bytes', rapport: 'report_ms' };
+    const column: Record<PostgresThreshold, 'agents_active' | 'db_bytes' | 'elapsed_ms'> = { agents: 'agents_active', taille: 'db_bytes', rapport: 'elapsed_ms' };
 
     const thresholds: PostgresThresholdState[] = POSTGRES_THRESHOLDS.map((t) => {
       const value = lastReading ? lastReading.values[t] : null;

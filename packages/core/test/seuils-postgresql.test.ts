@@ -104,7 +104,7 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     t.setBytes(42_000_000);
     const r = await t.passage.measureNow(t.dir);
     expect(r.ok && r.value.values).toEqual({ agents: 3, taille: 42_000_000, rapport: 1234 });
-    expect(await t.db.all('SELECT agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings')).toEqual([{ agents_active: 3, db_bytes: 42_000_000, report_ms: 1234, source: 'direction' }]);
+    expect(await t.db.all('SELECT agents_active, db_bytes, elapsed_ms, source FROM postgres_threshold_readings')).toEqual([{ agents_active: 3, db_bytes: 42_000_000, elapsed_ms: 1234, source: 'direction' }]);
     const [ev] = await t.events('postgresql.releve');
     expect(ev).toMatchObject({ readingId: 'rel-1', agents: 3, crossed: [], alerted: [], unknown: {} });
   });
@@ -197,7 +197,7 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     const t = await setup({ report: { ms: 6000 } });
     await t.passage.measureNow(t.dir);
     await t.passage.decide(t.dir, 'attendre');
-    await expect(t.db.run('UPDATE postgres_threshold_readings SET report_ms = 1')).rejects.toThrow(/ne change plus/);
+    await expect(t.db.run('UPDATE postgres_threshold_readings SET elapsed_ms = 1')).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM postgres_threshold_readings')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE postgres_threshold_alerts SET created_at = 'x'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM postgres_threshold_alerts')).rejects.toThrow(/rien ne s'efface/);

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS postgres_threshold_readings (
   measured_at TEXT NOT NULL,
   agents_active INTEGER CHECK (agents_active IS NULL OR agents_active >= 0),
   db_bytes INTEGER CHECK (db_bytes IS NULL OR db_bytes >= 0),
-  report_ms INTEGER CHECK (report_ms IS NULL OR report_ms >= 0),
+  elapsed_ms INTEGER CHECK (elapsed_ms IS NULL OR elapsed_ms >= 0),
   source TEXT NOT NULL CHECK (source IN ('direction', 'passage'))
 );
 CREATE INDEX IF NOT EXISTS postgres_threshold_readings_at ON postgres_threshold_readings (measured_at);
