@@ -266,6 +266,29 @@ describeWithSqlite('HX57 · contrôle du gel des avoirs', () => {
     expect(await t.gels.checks(t.conformite, t.mandateRef)).toMatchObject({ ok: true, value: [{ result: 'correspondance' }] });
   });
 
+  it('[R603] [R605] un nom corrigé après un contrôle est recontrôlé, sur la même version', async () => {
+    const t = await setup();
+    await t.db.exec('DROP TRIGGER IF EXISTS persons_fige');
+    await t.db.run("UPDATE persons SET last_name = 'Autre' WHERE id = ?", [t.personId]);
+    await t.importAt('2027-03-01T10:00:00.000Z', AVEC_LEA);
+    expect(await t.gels.matches(t.conformite)).toEqual({ ok: true, value: [] });
+    await t.db.run("UPDATE persons SET last_name = 'Exemple' WHERE id = ?", [t.personId]);
+    expect(await t.gels.sweepAll()).toEqual({ checked: 1 });
+    expect(await t.gels.checks(t.conformite, t.mandateRef)).toMatchObject({ ok: true, value: [{ result: 'aucune' }, { result: 'correspondance', reason: 'passage' }] });
+  });
+
+  it('[R603] des fiches réunies se complètent : le prénom de l’une et le nom de l’autre', async () => {
+    const t = await setup();
+    await t.db.exec('DROP TRIGGER IF EXISTS persons_fige');
+    await t.db.run('UPDATE persons SET first_name = ?, last_name = NULL WHERE id = ?', ['Marcel', t.personId]);
+    const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, lastName: 'Fictif' });
+    await new FicheUnique(t.db, t.store, { now: t.now }).merge({ survivorId: t.personId, mergedId: other.id, reason: 'même mail' });
+    await t.importAt('2027-03-01T10:00:00.000Z', [{ entryId: 'G-5001', nature: 'personne_physique', names: ['FICTIF Marcel'] }]);
+    const list = await t.gels.matches(t.conformite);
+    expect(list.ok && list.value.map((m) => m.check.result)).toEqual(['correspondance']);
+    expect(list.ok && list.value[0]!.check.unnamed).toEqual([]);
+  });
+
   it('[R603] une fiche avec un prénom seul ne peut pas être jugée « aucune »', async () => {
     const t = await setup();
     await t.db.exec('DROP TRIGGER IF EXISTS persons_fige');

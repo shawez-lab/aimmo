@@ -311,33 +311,49 @@ export class ControleGels {
     const found = await caseScopeOf(this.db, this.fiches, networkId, m[1] as 'mandate' | 'offer' | 'sale_file', m[2]!);
     if (!found) return false;
     const { scope } = found;
-    const scopeSha256 = await sha256Hex(JSON.stringify(canonical(scope)));
-    const done = await this.db.first<{ id: string }>('SELECT id FROM freeze_checks WHERE case_ref = ? AND version_id = ? AND scope_sha256 = ?', [caseRef, version.id, scopeSha256]);
-    if (done) return false;
 
-    // Les noms de chaque partie, fiche par fiche ; une partie n'est « sans nom » que si aucune de ses fiches réunies n'en a.
+    // Les noms de chaque partie. Les fiches réunies (S04) se complètent : chaque prénom d'une fiche du groupe est
+    // essayé avec chaque nom de famille du groupe, en plus du nom de chaque fiche. Une partie n'est « sans nom » que si
+    // aucune fiche du groupe n'a de nom de famille.
     const marks = scope.persons.map(() => '?').join(', ');
     const rows = await this.db.all<{ id: string; first_name: string | null; last_name: string | null }>(
       `SELECT id, first_name, last_name FROM persons WHERE network_id = ? AND id IN (${marks}) ORDER BY id`,
       [networkId, ...scope.persons],
     );
-    const tokens = new Map(rows.map((r) => [r.id, nameTokens(`${r.first_name ?? ''} ${r.last_name ?? ''}`)]));
-    // Sans nom de famille, une fiche ne peut pas être jugée : un prénom seul ne correspond jamais [R603].
-    const named = new Set(rows.filter((r) => nameTokens(r.last_name).length > 0).map((r) => r.id));
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const candidates = new Map<string, string[][]>();
     const unnamed: string[] = [];
     for (const p of scope.persons) {
-      if (named.has(p)) continue;
-      const members = await this.fiches.membersOf(p);
-      if (!members.some((x) => named.has(x))) unnamed.push(p);
+      const group = [...new Set([p, ...(await this.fiches.membersOf(p))])].map((id) => byId.get(id)).filter((r) => r !== undefined);
+      const firsts = [...new Set(group.map((r) => r.first_name ?? ''))];
+      const lasts = [...new Set(group.map((r) => r.last_name ?? '').filter((l) => nameTokens(l).length > 0))];
+      if (lasts.length === 0) unnamed.push(p);
+      const sets = new Map<string, string[]>();
+      for (const r of group) {
+        const t = nameTokens(`${r.first_name ?? ''} ${r.last_name ?? ''}`);
+        if (t.length > 0) sets.set(t.join(' '), t);
+      }
+      for (const f of firsts) {
+        for (const l of lasts) {
+          const t = nameTokens(`${f} ${l}`);
+          sets.set(t.join(' '), t);
+        }
+      }
+      candidates.set(p, [...sets.values()].sort((a, b) => (a.join(' ') < b.join(' ') ? -1 : 1)));
     }
+
+    // L'empreinte du contrôle porte le périmètre et les noms comparés : un nom corrigé ou complété se recontrôle.
+    const scopeSha256 = await sha256Hex(JSON.stringify(canonical({ scope, names: [...candidates.entries()].sort(([a], [b]) => (a < b ? -1 : 1)) })));
+    const done = await this.db.first<{ id: string }>('SELECT id FROM freeze_checks WHERE case_ref = ? AND version_id = ? AND scope_sha256 = ?', [caseRef, version.id, scopeSha256]);
+    if (done) return false;
 
     const matches: { personId: string; entryId: string }[] = [];
     const entries = await this.db.all<{ entry_id: string; names: string }>('SELECT entry_id, names FROM freeze_registry_entries WHERE version_id = ? ORDER BY entry_id', [version.id]);
     for (const e of entries) {
       const names = (JSON.parse(e.names) as string[]).map((n) => n.split(' '));
       for (const p of scope.persons) {
-        const t = tokens.get(p) ?? [];
-        if (names.some((n) => namesMatch(n, t))) matches.push({ personId: p, entryId: e.entry_id });
+        const sets = candidates.get(p) ?? [];
+        if (names.some((n) => sets.some((t) => namesMatch(n, t)))) matches.push({ personId: p, entryId: e.entry_id });
       }
     }
     const result: FreezeResult = matches.length > 0 ? 'correspondance' : unnamed.length > 0 ? 'nom_manquant' : 'aucune';
