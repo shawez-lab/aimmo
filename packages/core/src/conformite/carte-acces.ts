@@ -642,6 +642,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   invoice_reminders: { locate: by('person_id') },
   agent_cost_assignments: out('sans_client', 'Poste d\'une facture d\'un fournisseur du réseau, dit par la direction (HX65).'),
   agent_cost_settings: out('sans_client', 'Réglages du coût complet de l\'agent moyen, par la direction (HX65).'),
+  postgres_threshold_readings: out('sans_client', 'Relevé des seuils du passage à PostgreSQL : des nombres (HX66).'),
+  postgres_threshold_alerts: out('sans_client', 'Seuil du passage à PostgreSQL franchi une première fois (HX66).'),
+  postgres_decisions: out('sans_client', 'Décision de la direction sur le passage à PostgreSQL (HX66).'),
   commission_payouts: out('agent', 'Reversement à l\'agent.'),
   commission_payout_alerts: out('agent', 'Alerte de reversement à l\'agent.'),
   // pilotage
