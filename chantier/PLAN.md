@@ -655,6 +655,28 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre : 
 - Critères : chaque sorte comptée a son test, sur un jeu inventé (test) ; une forme ajoutée fait échouer le test avec le fichier et la ligne (test) ; la carte du passage écrite dans `docs/` depuis ce compte (test).
 - Attend : rien.
 
+## Conditions de passage des phases, Feuille de route
+
+Voie : 2
+
+Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (BR07 et BR08 à la voie 1, le reste attend un humain) et toute la phase 4 de la Feuille de route est découpée (recrutement HX64 à HX68, parrainage J10, PostgreSQL HX66 et HX67). Or la Feuille de route ouvre chaque phase « seulement si la précédente a rempli sa condition », et deux conditions n'ont aucun calcul : phase 1, « 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications » ; phase 3, « les agents pilotes signent plus de mandats qu'avant leur arrivée, mesuré sur 3 mois ». La phase 2 a le sien (IN01), la phase 4 aussi (HX65). Ids `HX69` et suivants. Règles R640 à R649 et migrations à partir de `3600` réservées à ce groupe. Le code vit dans `packages/core/src/conditions-phases/` ; `app.ts`, `packages/core/src/index.ts`, le planificateur et les fichiers du socle ne changent pas : routes et écran seront une tâche de la voie 1. Passer à la phase suivante reste une décision de Shawez, jamais automatique.
+
+### HX69 · Les agents pilotes signent-ils plus qu'avant leur arrivée ? La comparaison qu'on ne peut pas arranger après coup (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : IN01, J04, J11
+- Partie du cahier : Feuille de route, « Les phases et leurs conditions », phase 3 ; Offre aux agents (aucun classement).
+- Objectif : la direction désigne les agents pilotes ; pour chacun, elle range le nombre de mandats signés dans chacun des 3 mois de Paris qui précèdent son mois d'arrivée, avec la référence de la preuve (extrait de son ancien registre des mandats), par versions. Le code lit dans le registre des mandats (R39), comme IN01, les mandats inscrits et signés par l'agent dans chacun des 3 mois de Paris qui suivent son mois d'arrivée. Jamais vu : seule compte la déclaration d'avant rangée avant le premier jour de la mesure ; une version rangée ensuite est gardée et montrée, jamais comptée ; chaque mandat d'après porte son numéro du registre. Aucun réseau ne prouve que ses agents signent plus chez lui, chiffres d'avant figés avant de connaître ceux d'après.
+- Critères : seuls les mandats inscrits, signés par l'agent sur le mois de Paris de la signature figée, comptent ; erreur et rétractation retirent, résiliation compte ; le mois d'arrivée est dit à part [R641] (test) ; la déclaration d'avant : trois nombres entiers et une référence de preuve, versions qui se suivent, rien ne change ni ne s'efface, la base refuse le reste [R640, R17] (test) ; une version rangée après le début de la mesure ne compte pas, sans version à temps le pilote est « avant non déclaré à temps » [R640] (test) ; un pilote est « en cours » tant que son 3e mois n'est pas fini, « parti » s'il part avant, « plus » seulement si l'après dépasse strictement l'avant [R642] (test) ; la condition est remplie seulement avec au moins 3 pilotes, tous finis et tous « plus », registre sain [R642] (test) ; aucun classement : les pilotes se lisent dans l'ordre de leur arrivée, rien n'est montré à un agent [R14] ; direction seule, refus et lecture au journal [R16] (test).
+- Attend : rien (des chiffres lus dans la base et une déclaration de la direction ; aucun envoi, aucun compte).
+
+### HX70 · 30 jours sans aucun envoi hors règles : la condition de la phase 1, comptée
+- Statut : à faire
+- Qui : Claude, voie 2, relecture forte · Dépend de : HX69
+- Partie du cahier : Feuille de route, phase 1 ; Architecture technique, contrôle central des envois.
+- Objectif : le code lit dans la base, jour de Paris par jour, ce que le contrôle central a laissé partir et ce qui est parti hors de lui (envois refusés puis forcés, envois sans passage au contrôle, envois hors des heures, à une personne exclue ou sans accord) ; la série de jours sans aucun envoi hors règles, et la liste des tâches du système encore planifiées dans les applications, rangée par la direction avec sa preuve, par versions. Lire d'abord le contrôle central (`packages/core/src/envoi/`) pour savoir ce qui y est déjà gardé.
+- Critères : à écrire au début de la tâche, après lecture du contrôle central ; un jour sans donnée n'est jamais compté propre [R643] (test) ; direction seule [R16] (test).
+- Attend : rien.
+
 ## Branchements des groupes HX
 
 Voie : 1
