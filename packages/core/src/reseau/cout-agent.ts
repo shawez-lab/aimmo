@@ -127,7 +127,10 @@ export function breakEvenBp(input: { feesCents: number; sponsorSharesCents: numb
   // Le parrainage est réservé d'abord : la part du réseau ne peut prendre que ce qui reste après lui.
   const available = feesCents - sponsorSharesCents;
   if (available < 0) return { bp: null, unreachable: true };
-  const maxBp = Math.floor((available * 10_000) / feesCents);
+  // La plus haute part dont le montant arrondi tient dans ce qui reste : l'arrondi au centime inférieur peut en admettre
+  // une ou plusieurs au-delà du rapport arrondi.
+  let maxBp = Math.min(10_000, Math.floor((available * 10_000) / feesCents));
+  while (maxBp < 10_000 && bpOf(feesCents, maxBp + 1) <= available) maxBp += 1;
   const covers = (bp: number): boolean => {
     const network = bpOf(feesCents, bp);
     return network >= requiredFor(costsCents, available - network, provisionBp, marginBp).requiredCents;
