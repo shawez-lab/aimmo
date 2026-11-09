@@ -581,7 +581,8 @@ Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à par
 - Critères : un appareil retiré ne se connecte plus (test) ; une action sensible exige un second facteur (test) ; une base hors Europe fait échouer la vérification (test).
 
 ### HX57 · Contrôle du gel des avoirs
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
 - Objectif : comme Modelo : vérifier chaque client contre le registre national des gels. Jamais vu : les dossiers ouverts sont revérifiés à chaque mise à jour du registre, et une correspondance va au seul responsable, sans rien changer à ce que voit le client, comme L05.
 - Critères : une correspondance alerte le responsable et fige le dossier (test) ; le client ne voit aucune différence (test) ; chaque contrôle est daté avec la version du registre (test).
 
