@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { breakEvenBp } from '../../core/src/reseau/index.ts';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { handleCandidature } from '../src/candidature.ts';
 import { sha256Hex } from '../src/index.ts';
@@ -46,8 +47,19 @@ async function setup() {
       [id, t.network.id, `r-${id}`, `F-${id}`, issuedOn, htCents, vat, htCents + vat, JSON.stringify([{ baseCents: htCents, rateBp: 2000, vatCents: vat }])],
     );
   };
+  let n = 0;
+  /** Une vente dont la commission est rangée et encaissée, ses parts écrites à la main, comme dans K01. */
+  const sale = async (receivedAt: string, parts: { reseau: number; agent: number }) => {
+    const file = `f-${++n}`;
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, 'm', '2027-01-05', ?, NULL, 'g', 'x')", [file, t.network.id, t.alexId, parts.reseau + parts.agent]);
+    await t.db.run("INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES (?, 1, 'reseau', NULL, NULL, ?)", [file, parts.reseau]);
+    await t.db.run("INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES (?, 2, 'agent', ?, NULL, ?)", [file, t.alexId, parts.agent]);
+    await t.db.run("INSERT INTO commission_receipts (file_id, network_id, received_at, proof_ref, payout_due_at, recorded_by, created_at) VALUES (?, ?, ?, 'preuve', ?, 'direction:dir-1', 'x')", [file, t.network.id, receivedAt, receivedAt]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+  };
   const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
-  return { ...t, http, page, invoice, refusals };
+  return { ...t, http, page, invoice, sale, refusals };
 }
 
 describeWithSqlite('BR02 · routes du recrutement : contenus et coût de l’agent moyen', () => {
@@ -58,6 +70,9 @@ describeWithSqlite('BR02 · routes du recrutement : contenus et coût de l’age
       ['POST', '/recrutement/contenus', VIDEO],
       ['POST', '/recrutement/contenus/c-1/retrait'],
       ['POST', '/recrutement/cout-agent/factures/inv-1/poste', { category: 'ia' }],
+      // Un corps refusé ne passe jamais avant le rôle : le refus est écrit quand même [R16].
+      ['POST', '/recrutement/cout-agent/factures/inv-1/poste', { category: 'ia', htCents: 1 }],
+      ['POST', '/recrutement/contenus', 'pas un objet'], // un corps JSON qui n'est pas un objet : le rôle d'abord
       ['POST', '/recrutement/cout-agent/reglages', { validFrom: '2027-04', provisionBp: 1000, marginBp: 1000, reason: 'Essai' }],
       ['GET', '/recrutement/cout-agent?mois=2027-02'],
     ];
@@ -115,6 +130,7 @@ describeWithSqlite('BR02 · routes du recrutement : contenus et coût de l’age
     expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-1/poste', { category: 'diffusion' })).body.data).toMatchObject({ version: 2 });
     expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-1/poste', { category: 'loisirs' })).body).toMatchObject({ ok: false, rule: 'R623' });
     expect(await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-1/poste', { category: 'ia', htCents: 1 })).toMatchObject({ status: 400, body: { rule: 'R624', code: 'amount_refused' } });
+    expect((await t.journal.all()).filter((e) => e.type === 'recrutement.montant_refuse')).toHaveLength(1);
     expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inconnue/poste', { category: 'ia' })).status).toBe(404);
     const month = await t.http('direction', 'GET', '/recrutement/cout-agent?mois=2027-02');
     expect(month.body.data).toMatchObject({ month: '2027-02', complete: false, missing: ['reglage'], covered: false });
@@ -124,5 +140,33 @@ describeWithSqlite('BR02 · routes du recrutement : contenus et coût de l’age
     expect(current.body).toMatchObject({ ok: false, rule: 'R624' });
     expect((await t.http('direction', 'GET', '/recrutement/cout-agent')).status).toBe(400);
     expect((await t.http('direction', 'POST', '/recrutement/cout-agent/reglages', { validFrom: '2027-04', provisionBp: 1000, marginBp: 1000, reason: 'Réglage du pilote' })).status).toBe(200);
+  });
+
+  it('[R625] pour un mois complet, la part du réseau, le coût avec sa marge et le seuil qui le couvre tout juste ; inatteignable dit tel', async () => {
+    const t = await setup();
+    // Le réglage est rangé en janvier, valable depuis janvier : il vaut pour février.
+    t.setClock(new Date('2027-01-20T09:00:00.000Z'));
+    expect((await t.http('direction', 'POST', '/recrutement/cout-agent/reglages', { validFrom: '2027-01', provisionBp: 1000, marginBp: 1000, reason: 'Réglage du pilote' })).status).toBe(200);
+    t.setClock(NOW);
+    await t.sale('2027-02-03T10:00:00.000Z', { reseau: 600_000, agent: 600_000 });
+    await t.invoice('inv-a', '2027-02-05', 50_000);
+    await t.invoice('inv-b', '2027-02-20', 30_000);
+    // Une facture non classée : le mois est incomplet, jamais « couvert » [R623].
+    expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-a/poste', { category: 'ia' })).status).toBe(200);
+    expect((await t.http('direction', 'GET', '/recrutement/cout-agent?mois=2027-02')).body.data).toMatchObject({ complete: false, missing: ['factures_non_classees'], covered: false });
+    expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-b/poste', { category: 'diffusion' })).status).toBe(200);
+    const m = (await t.http('direction', 'GET', '/recrutement/cout-agent?mois=2027-02')).body.data;
+    expect(m).toMatchObject({ complete: true, missing: [], costs: { ia: 50_000, diffusion: 30_000 }, breakEvenUnreachable: false });
+    expect(m.covered).toBe(m.networkShareCents >= m.requiredCents);
+    expect(m.covered).toBe(true);
+    // Le seuil rendu par la route est celui du calcul, recompté depuis les chiffres du mois.
+    const expected = breakEvenBp({ feesCents: m.feesCents, sponsorSharesCents: m.sponsorSharesCents, costsCents: 80_000, provisionBp: 1000, marginBp: 1000 });
+    expect(m.breakEvenNetworkBp).toBe(expected.bp);
+    expect(m.breakEvenNetworkBp).toBeGreaterThan(0);
+    expect(m.breakEvenNetworkBp).toBeLessThanOrEqual(m.networkBp);
+    // Des coûts plus grands que tous les honoraires : aucun seuil ne couvre, et c'est dit.
+    await t.invoice('inv-c', '2027-02-25', 5_000_000);
+    expect((await t.http('direction', 'POST', '/recrutement/cout-agent/factures/inv-c/poste', { category: 'accompagnement' })).status).toBe(200);
+    expect((await t.http('direction', 'GET', '/recrutement/cout-agent?mois=2027-02')).body.data).toMatchObject({ complete: true, covered: false, breakEvenNetworkBp: null, breakEvenUnreachable: true });
   });
 });

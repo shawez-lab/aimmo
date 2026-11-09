@@ -6,7 +6,7 @@
  * rendu ne donne que des nombres [R622]. Le coût de l'agent moyen est calculé par le code depuis la base, pour un mois
  * fini seulement [R623, R624, R625] : aucun montant n'entre par une route. Rien n'est envoyé.
  */
-import { reseau, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { appendEvent, reseau, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -73,11 +73,26 @@ export function recrutementRoutes(): RecrutementRoute[] {
   const withBody = (fn: Handler, costs = false): RecrutementRoute['handle'] => async (s, v, params, request) => {
     const body = await readJson(request);
     if (!body) return badBody();
-    if (costs && carriesAmount(body)) return json(400, { ok: false, rule: 'R624', code: 'amount_refused', message: 'Aucun montant ne se saisit : il est calculé par le code.' });
+    if (costs && carriesAmount(body)) {
+      await appendEvent(s.journal, { type: 'recrutement.montant_refuse', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R624', code: 'amount_refused' } }, s.now);
+      return json(400, { ok: false, rule: 'R624', code: 'amount_refused', message: 'Aucun montant ne se saisit : il est calculé par le code.' });
+    }
     return fn(s, v, params, body);
   };
   const P = '^/recrutement';
-  return [
+  /**
+   * La direction seule, contrôlée avant même de lire le corps : un refus est toujours écrit au journal, quel que soit
+   * le corps [R16]. La couche métier refait son propre contrôle derrière.
+   */
+  const direction = (route: RecrutementRoute): RecrutementRoute => ({
+    ...route,
+    handle: async (s, v, params, request) => {
+      if (v.role === 'direction') return route.handle(s, v, params, request);
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R16', role: String(v.role), kind: route.name, code: 'role' } }, s.now);
+      return json(403, { ok: false, rule: 'R16', code: 'role' });
+    },
+  });
+  const routes: RecrutementRoute[] = [
     // Vidéos et épisodes du podcast (HX64).
     {
       method: 'GET',
@@ -121,4 +136,5 @@ export function recrutementRoutes(): RecrutementRoute[] {
       handle: async (s, v, _p, r) => reply(await cout(s).month(v, new URL(r.url).searchParams.get('mois'))),
     },
   ];
+  return routes.map(direction);
 }
