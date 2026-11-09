@@ -164,6 +164,25 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(r.value).toMatchObject({ complete: true, covered: false, networkBp: 1000, breakEvenNetworkBp: 1500, requiredCents: 150_000 });
   });
 
+  it('ramène chaque dossier hors taxe avec le taux de son brouillon de facture rangé, sinon le taux réglé [R624]', async () => {
+    const t = await setup();
+    await t.settings(0, 0);
+    // Deux ventes de 1 200 000 : l'une facturée sans TVA (taux rangé 0), l'autre sans brouillon (20 % réglés).
+    const a = await t.sale('2027-02-10T10:00:00.000Z', { reseau: 500_000, agent: 700_000 });
+    await t.sale('2027-02-11T10:00:00.000Z', { reseau: 500_000, agent: 700_000 });
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO invoice_drafts (id, network_id, file_id, kind, issuer, recipient_person_id, amount_cents, vat_bp, round, created_at) VALUES ('dr1', ?, ?, 'honoraires', 'reseau', 'p', 1200000, 0, 1, 'x')", [t.network.id, a]);
+    // Un reversement facturé avec TVA à 20 % : l'agent la facture, le réseau la récupère ; 700 000 font 583 333 hors taxe.
+    await t.db.run("INSERT INTO invoice_drafts (id, network_id, file_id, kind, issuer, recipient_person_id, amount_cents, vat_bp, round, created_at) VALUES ('dr2', ?, ?, 'reversement', ?, NULL, 700000, 2000, 1, 'x')", [t.network.id, a, `agent:${t.agents[0]!}`]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const r = await t.cout.month(t.dir, '2027-02');
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.lines.files).toEqual([
+      { fileId: a, feesCents: 1_200_000, networkShareCents: 616_667, agentSharesCents: 583_333, sponsorSharesCents: 0 },
+      { fileId: expect.any(String), feesCents: 1_000_000, networkShareCents: 300_000, agentSharesCents: 700_000, sponsorSharesCents: 0 },
+    ]);
+  });
+
   it('ne compte que la part du réseau, jamais la part d’une agence partenaire ni le parrainage [R624]', async () => {
     const t = await setup();
     await t.settings(1000, 0);

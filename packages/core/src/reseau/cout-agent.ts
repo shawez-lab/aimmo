@@ -263,20 +263,34 @@ export class CoutAgent {
     // Les commissions encaissées dans le mois, chacune avec ses parts ; la part d'une agence partenaire sort des honoraires.
     // Les montants des commissions sont toutes taxes (K02 facture les honoraires avec leur TVA) : tout est ramené hors
     // taxe, comme les factures fournisseurs. La TVA collectée n'est pas une recette du réseau.
-    const files = await this.db.all<{ file_id: string; fee_cents: number; agency: number | null; agents: number | null; sponsor: number | null }>(
+    // Chaque montant est ramené hors taxe avec le taux du brouillon de facture rangé pour ce dossier et cet émetteur
+    // (K02, `invoice_drafts.vat_bp`), le dernier rang ; sans brouillon, avec le taux réglé de `Factures`.
+    const files = await this.db.all<{ file_id: string; fee_cents: number; agency: number | null; vat_fee: number | null }>(
       `SELECT c.file_id, c.fee_cents,
               (SELECT g.amount_cents FROM commission_agency_shares g WHERE g.file_id = c.file_id) AS agency,
-              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind IN ('agent', 'partage')) AS agents,
-              (SELECT SUM(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.kind = 'parrainage') AS sponsor
+              (SELECT d.vat_bp FROM invoice_drafts d WHERE d.file_id = c.file_id AND d.kind = 'honoraires' AND d.issuer = 'reseau' ORDER BY d.round DESC LIMIT 1) AS vat_fee
          FROM commission_receipts r JOIN commissions c ON c.file_id = r.file_id AND c.network_id = r.network_id
         WHERE r.network_id = ? AND r.received_at >= ? AND r.received_at < ?
         ORDER BY r.received_at, c.file_id`,
       [net, start, end],
     );
+    const shares = await this.db.all<{ file_id: string; kind: 'agent' | 'partage' | 'parrainage'; amount_cents: number; vat: number | null }>(
+      `SELECT x.file_id, x.kind, SUM(x.amount_cents) AS amount_cents,
+              (SELECT d.vat_bp FROM invoice_drafts d WHERE d.file_id = x.file_id AND d.kind = 'reversement' AND d.issuer = 'agent:' || x.beneficiary_id ORDER BY d.round DESC LIMIT 1) AS vat
+         FROM commission_shares x JOIN commission_receipts r ON r.file_id = x.file_id
+        WHERE r.network_id = ? AND r.received_at >= ? AND r.received_at < ? AND x.kind IN ('agent', 'partage', 'parrainage')
+        GROUP BY x.file_id, x.kind, x.beneficiary_id`,
+      [net, start, end],
+    );
     const fileLines = files.map((f) => {
-      const feesCents = splitVat(Number(f.fee_cents), this.vat.honoraires).htCents - splitVat(Number(f.agency ?? 0), this.vat.honoraires).htCents;
-      const agentSharesCents = splitVat(Number(f.agents ?? 0), this.vat.reversement).htCents;
-      const sponsorSharesCents = splitVat(Number(f.sponsor ?? 0), this.vat.reversement).htCents;
+      const feeVat = f.vat_fee === null ? this.vat.honoraires : Number(f.vat_fee);
+      const feesCents = splitVat(Number(f.fee_cents), feeVat).htCents - splitVat(Number(f.agency ?? 0), feeVat).htCents;
+      const ht = (kinds: readonly string[]): number =>
+        shares
+          .filter((x) => x.file_id === f.file_id && kinds.includes(x.kind))
+          .reduce((a, x) => a + splitVat(Number(x.amount_cents), x.vat === null ? this.vat.reversement : Number(x.vat)).htCents, 0);
+      const agentSharesCents = ht(['agent', 'partage']);
+      const sponsorSharesCents = ht(['parrainage']);
       return { fileId: f.file_id, feesCents, networkShareCents: feesCents - agentSharesCents - sponsorSharesCents, agentSharesCents, sponsorSharesCents };
     });
 
