@@ -304,6 +304,17 @@ Sous `/v1/finances` : chaque route dit les rôles qu'elle admet, contrôlés ava
 
 Restent aux passages du planificateur : le rapprochement seul (`Rapprochements.run`), la préparation et l'envoi des relances (`RelancesImpayes.prepare`, `send`). L'export complet de l'agent exige une clé d'appareil [R601] : il vient avec les routes des clés (BR05).
 
+## Clés d'appareil, second facteur et export de l'agent (BR05)
+
+Sous `/v1/cles` et `/v1/export` : chaque route dit les rôles qu'elle admet (agent, direction, conformité ; la direction seule pour la liste et l'accord ; l'agent seul pour son export), contrôlés avant le corps ; un refus est écrit au journal [R16]. Sans site WebAuthn réglé, les routes répondent 503 `cles_non_configurees` : variables du Worker `CLES_RP_ID` (le domaine de l'application, sans schéma) et `CLES_ORIGINS` (les origines en https, séparées par des virgules), lues sans rien deviner (H64). Un champ non prévu : 400 `unknown_field`.
+
+- `POST /cles/enregistrement/debut`, puis `POST /cles/enregistrement/fin` (`{challengeId, credentialId, publicKey, clientDataJSON, authenticatorData, label, stepUpId?}`, en base64url) : la première clé est active, les suivantes attendent la direction ou une preuve « ajouter_appareil » [R600].
+- `GET /cles/appareils` (direction) : les clés du réseau, sans clé publique ni identifiant de clé. `POST /cles/appareils/<id>/accord` (`{stepUpId}`) : la direction accepte une clé sur la preuve « approuver_appareil » de sa propre clé pour `device:<id>`. `POST /cles/appareils/<id>/retrait` : d'un geste, chacun les siennes, la direction toute clé du réseau [R600, R601].
+- `POST /cles/preuve/debut` (`{action, subject}`), puis `POST /cles/preuve/fin` (`{challengeId, credentialId, clientDataJSON, authenticatorData, signature}`) : une preuve pour cette action et cet objet seuls, cinq minutes, une fois [R601].
+- `POST /export/agent` (`{stepUpId}`, preuve « export_complet » pour `agent:<lui>`) : l'agent actif tire l'export complet de ses données, avec son empreinte ; AIMMO ne range que l'empreinte. `POST /export/agent/verification` (`{document}`, 4 Mo au plus) : vrai si le fichier est celui qu'AIMMO a remis, au caractère près ; un fichier d'un autre réseau n'est pas lu [R561].
+
+La connexion par une clé d'appareil (séance à la place de la clé d'API) touche à l'authentification du socle : elle viendra dans sa propre tâche (BR06).
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).

@@ -687,8 +687,32 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 ### BR05 · Routes des clés d'appareil, du quiz et du serveur MCP
 - Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : HX55, HX56, HX63
-- Objectif : routes de `ClesAppareil` (WebAuthn), du quiz et des attestations, et l'adresse du serveur MCP ; l'export complet de l'agent (HX62), qui exige la preuve d'une clé d'appareil [R601], venu de BR04.
-- Critères : droits [R16] (test) ; R590 à R592, R600 à R602, R570, R571 tenues par la route (tests).
+- Objectif : routes de `ClesAppareil` (WebAuthn : enregistrement, appareils, accord, retrait, preuve d'une action) et l'export complet de l'agent (HX62), qui exige la preuve d'une clé d'appareil [R601], venu de BR04. Découpé le 2026-11-09 : la connexion par clé, le quiz et le serveur MCP passent à BR06, BR07 et BR08 (une journée au plus par tâche).
+- Critères : droits [R16] (test) ; R600 et R601 tenues par la route (tests) ; R561 par la route (test) ; sans site WebAuthn réglé, routes fermées (test).
+- Attend : H64 pour l'usage réel (site WebAuthn).
+
+### BR06 · Connexion par clé d'appareil dans le socle
+- Statut : à faire
+- Qui : Claude, relecture forte · Dépend de : BR05
+- Partie du cahier : Conformité (accès), HX56.
+- Objectif : `beginLogin` et `finishLogin` en routes publiques limitées en débit, et la séance (`authenticate`) acceptée par l'authentification de `app.ts` à côté des clés d'API, relue à chaque demande ; retrait de la clé ou départ de l'agent coupent la séance.
+- Critères : une séance d'une clé retirée ou d'un agent parti est refusée à la demande suivante (test) ; un défi ne sert qu'une fois (test) ; une clé d'API reste acceptée telle qu'aujourd'hui (test) [R600, R82].
+- Attend : H64 pour l'usage réel.
+
+### BR07 · Routes du quiz et des attestations de formation
+- Statut : à faire
+- Qui : Claude, relecture forte · Dépend de : HX63
+- Partie du cahier : M14 (réseau et académie).
+- Objectif : routes du quiz (questions de la direction, quiz de l'agent, réponses) et des attestations, et la page publique de vérification d'une attestation.
+- Critères : droits [R16] (test) ; R570 et R571 tenues par la route : aucune note ni bonne réponse rendue, attestation sur quiz sans faute seulement, vérification au caractère près (tests).
+- Attend : rien.
+
+### BR08 · Adresse du serveur MCP
+- Statut : à faire
+- Qui : Claude, relecture forte · Dépend de : HX55
+- Partie du cahier : Intelligence artificielle, HX55.
+- Objectif : `/v1/mcp` (JSON-RPC, clé de l'agent) et la lecture publique des biens diffusables par réseau, et les routes de décision des brouillons de l'agent.
+- Critères : droits [R16] et R82 revérifiés à chaque appel (test) ; R590 à R592 tenues par la route (tests) ; aucune donnée de client vers l'assistant (test).
 - Attend : rien.
 
 ## Phase 1 : le socle

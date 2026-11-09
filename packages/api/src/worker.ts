@@ -10,6 +10,7 @@ import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
+import { readClesConfig } from './cles.ts';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -40,6 +41,10 @@ export interface Env {
    * de la date du réglage : `750@2027-09-01`. Absent ou mal formé, aucune alerte qui demande un rendement.
    */
   INVESTIR_FRAIS_BAREME?: string;
+  /** Le site WebAuthn des clés d'appareil (BR05) : le domaine de l'application, sans schéma ; absent, les clés sont fermées. */
+  CLES_RP_ID?: string;
+  /** Les origines admises des clés d'appareil, en https, séparées par des virgules. */
+  CLES_ORIGINS?: string;
   /** Début des liens publics de l'après-vente (F07), en https, sans chiffre, terminé par `/apres-vente/`. */
   APRES_VENTE_BASE?: string;
   /** Début des liens du dossier protégé d'un commerce (CE10), en https, sans chiffre, terminé par `/` ; absent, aucun dossier ne part. */
@@ -124,6 +129,8 @@ export default {
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
+      cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
       // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
       espaces: { networkId: env.ESPACE_NETWORK_ID, baseUrl: env.ESPACE_BASE, releveKeys: env.ESPACE_RELEVE_KEYS },
