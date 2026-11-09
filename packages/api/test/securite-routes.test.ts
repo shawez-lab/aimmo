@@ -57,6 +57,14 @@ describeWithSqlite('BR01 · routes des réclamations et du gel des avoirs', () =
       ['direction', 'GET', '/securite/gel/correspondances/m-1/fige'],
       ['alex', 'POST', '/securite/gel/correspondances/m-1/decision', { decision: 'fausse_correspondance', reason: 'x', validatorName: 'x' }],
     ];
+    // Une réclamation existante : ni l'autre agent ni la conformité ne la règlent ni ne remettent son médiateur.
+    expect((await t.http('direction', 'POST', '/securite/reclamations/reglage', MEDIATOR)).status).toBe(200);
+    const late = await t.http('alex', 'POST', `/securite/fiches/${t.personId}/reclamations`, { receivedOn: '2027-01-15', receivedBy: 'oral', summary: 'Pas de nouvelles.' });
+    const id = late.body.data.complaintId as string;
+    for (const who of ['sam', 'conformite'] as Who[]) {
+      cases.push([who, 'POST', `/securite/reclamations/${id}/reponse`, { outcome: 'reglee', note: 'Réglé.' }]);
+      cases.push([who, 'POST', `/securite/reclamations/${id}/mediateur-remis`]);
+    }
     for (const [who, method, path, body] of cases) {
       const before = (await t.refusals()).length;
       const r = await t.http(who, method, path, body);
@@ -64,6 +72,8 @@ describeWithSqlite('BR01 · routes des réclamations et du gel des avoirs', () =
       expect(r.body).toMatchObject({ ok: false, rule: 'R16' });
       expect((await t.refusals()).length, `${who} ${method} ${path}`).toBeGreaterThan(before);
     }
+    const after = (await t.http('direction', 'GET', '/securite/reclamations')).body.data.find((c: { complaintId: string }) => c.complaintId === id);
+    expect(after).toMatchObject({ status: 'ouverte', mediator: { status: 'a_remettre' } });
   });
 
   it('[R606] [R607] une réclamation rangée par la route a son échéance de la base ; le médiateur reste à remettre, rien ne part [R26]', async () => {
