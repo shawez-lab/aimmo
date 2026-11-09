@@ -65,8 +65,12 @@ CREATE TRIGGER IF NOT EXISTS complaint_answers_naissance BEFORE INSERT ON compla
 WHEN NOT EXISTS (
   SELECT 1 FROM complaints c WHERE c.id = NEW.complaint_id AND c.network_id = NEW.network_id
     AND NEW.answered_on >= c.received_on AND NEW.late = (NEW.answered_on > c.due_on)
-    -- Le jour de la réponse est celui de son écriture (à un jour près, pour l'heure de Paris) : jamais antidatée.
-    AND NEW.answered_on BETWEEN date(NEW.at, '-1 day') AND date(NEW.at, '+1 day'))
+    -- Le jour de la réponse est le jour de Paris de son écriture, heure d'été comprise (du dernier dimanche de mars au
+    -- dernier dimanche d'octobre, à 1 h UTC) : jamais antidatée.
+    AND NEW.answered_on = date(NEW.at, CASE
+      WHEN NEW.at >= date(substr(NEW.at, 1, 4) || '-04-01', 'weekday 0', '-7 days') || 'T01:00:00'
+       AND NEW.at < date(substr(NEW.at, 1, 4) || '-11-01', 'weekday 0', '-7 days') || 'T01:00:00'
+      THEN '+2 hours' ELSE '+1 hours' END))
 BEGIN SELECT RAISE(ABORT, 'complaint_answers : la réponse suit la réclamation, en retard si après l''échéance [R606]'); END;
 CREATE TRIGGER IF NOT EXISTS complaint_answers_fige BEFORE UPDATE ON complaint_answers
 BEGIN SELECT RAISE(ABORT, 'complaint_answers : une réponse ne change plus'); END;

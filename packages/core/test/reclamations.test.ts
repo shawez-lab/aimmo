@@ -88,6 +88,13 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     await expect(
       t.db.run("INSERT INTO complaint_answers (complaint_id, network_id, outcome, note, answered_on, late, answered_by, at) VALUES (?, ?, 'reglee', 'x', '2027-04-01', 0, 'x', 'x')", [d.complaintId, t.network.id]),
     ).rejects.toThrow('R606');
+    // Le jour de Paris de l'écriture, ni la veille ni le lendemain, heure d'hiver comme d'été.
+    const direct = (day: string, iso: string, late: number) =>
+      t.db.run("INSERT INTO complaint_answers (complaint_id, network_id, outcome, note, answered_on, late, answered_by, at) VALUES (?, ?, 'reglee', 'x', ?, ?, 'x', ?)", [d.complaintId, t.network.id, day, late, iso]);
+    await expect(direct('2027-05-10', '2027-05-11T12:00:00.000Z', 0)).rejects.toThrow('R606');
+    await expect(direct('2027-05-11', '2027-05-10T12:00:00.000Z', 1)).rejects.toThrow('R606');
+    await expect(direct('2027-06-30', '2027-06-30T22:30:00.000Z', 1)).rejects.toThrow('R606');
+    await expect(direct('2027-07-01', '2027-06-30T22:30:00.000Z', 1)).resolves.toMatchObject({ changes: 1 });
   });
 
   it('[R607] Jamais vu : à l’échéance sans réponse réglée, le médiateur est proposé de lui-même, par le contrôle central, en réponse dans la conversation', async () => {
