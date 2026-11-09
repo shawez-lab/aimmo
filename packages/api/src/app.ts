@@ -86,6 +86,7 @@ import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type Commerc
 import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
+import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import {
   handleEspacePartenaire,
   handlePartenairesPublic,
@@ -1165,6 +1166,16 @@ function m12Routes(coffre: VaultFiles | null): RouteDef[] {
   }));
 }
 
+/** Les routes des réclamations et du gel des avoirs (BR01) : droits de la couche métier [R16], mode essai seul [R26]. */
+function securiteRoutesDef(): RouteDef[] {
+  return securiteRoutes().map((r: SecuriteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /**
  * Les routes de M18 (U09) : chacune contrôle son rôle avant tout et écrit le refus au journal [R16] ; un partenaire ne
  * lit que ses mises en relation confiées, par la couche métier [R77]. Sans stockage des fichiers, elles sont fermées.
@@ -1802,7 +1813,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Puis celles de M07 (P10) : fiche, contrôle, annonce, publication ; puis celles de M09 (O09) : les offres ; puis
   // celles de M10 (N09) : les dossiers de vente, fermés sans le stockage des pièces ; puis celles de M11 (F07) ; puis
   // celles de M13 (K08) : le pilotage ; puis celles de M14 (J13) : le réseau et l'académie ; puis celles de M15 (W10) :
-  // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité ; puis celles de M18
+  // la location, fermées sans le stockage des pièces ; puis celles de M12 (L09) : la conformité, avec les réclamations et
+  // le gel des avoirs (BR01) ; puis celles de M18
   // (U09) : les partenaires, fermées sans le stockage de leurs fichiers ; puis celles de M17 (Y08) : investir ; puis
   // celles de M16 (CE10) : les commerces ; puis celles de M19
   // (X10) : le Studio, fermées sans le stockage des fichiers ; puis celles de M20 complet (G12) : gagner des mandats ;
@@ -1822,6 +1834,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...captationRolloutRoutes(config.captationRollout),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
+    ...securiteRoutesDef(),
     ...m18Routes(config.partenaires ?? null),
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
     ...m16Routes(config.commerces),

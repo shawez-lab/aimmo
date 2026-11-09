@@ -259,6 +259,20 @@ La page publique de candidature est servie à `/rejoindre`, sans clé ni script 
 - Variables du Worker : `ESPACE_NETWORK_ID` (le réseau des espaces) et `ESPACE_BASE` (l'adresse publique du Worker suivie de `/espace/`, en https, sans chiffre). Sans elles, l'espace et la route de l'agent répondent 503 `espace_not_configured`.
 - Secret `ESPACE_RELEVE_KEYS` : `nom:secret`, séparés par des virgules ; le nom en minuscules et tirets, le secret de 32 caractères ou plus, tiré au hasard et gardé dans un coffre, jamais dans le dépôt. La première clé signe, les suivantes vérifient seulement (rotation). Absent ou mal formé : le relevé répond « indisponible », l'espace reste lisible.
 
+## Réclamations et gel des avoirs, en mode essai (BR01)
+
+Sous `/v1/securite`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé : la proposition du médiateur passe par le contrôle central et les seuls canaux du mode essai, elle reste « à remettre » par l'agent [R26, R607].
+
+- `GET /reclamations` : la direction lit celles du réseau, l'agent celles des fiches qu'il suit, l'échéance la plus proche d'abord, avec leurs alertes et le médiateur.
+- `POST /reclamations/reglage` (`{responseDays, mediatorName, mediatorSite}`) : la direction règle le délai de réponse (1 à 60 jours) et le médiateur, par une nouvelle version [R607].
+- `POST /fiches/<id>/reclamations` (`{receivedOn: AAAA-MM-JJ, receivedBy: mail | courrier | message | oral, summary, reply?: {channel, conversationId}}`) : l'agent qui suit la fiche, ou la direction, range une réclamation ; l'échéance est écrite par la base et ne change plus [R606].
+- `POST /reclamations/<id>/reponse` (`{outcome: reglee | non_reglee, note}`) : la réponse, une fois. `POST /reclamations/<id>/mediateur-remis` : la proposition du médiateur remise au client.
+- `POST /gel/registre` (`{publishedAt, entries: [{entryId, nature, names}]}`, 4 Mo au plus) : le responsable de la conformité importe une version du registre, scellée, et chaque dossier ouvert est revérifié [R603, R604].
+- `POST /gel/controle` (`{caseRef: mandate:<id> | offer:<id> | sale_file:<id>}`) : l'agent du client ou le responsable demande le contrôle d'un dossier ; la réponse est toujours `controle_fait`, jamais le résultat [R605].
+- `GET /gel/controles?dossier=<caseRef>`, `GET /gel/sans-nom`, `GET /gel/correspondances`, `GET /gel/correspondances/<id>/fige`, `POST /gel/correspondances/<id>/decision` (`{decision: fausse_correspondance | correspondance_confirmee, reason, validatorName}`) : le responsable seul lit les résultats et juge chaque correspondance, une fois [R605].
+
+Au planificateur, inchangé : `securite.reclamations` de 9 h à 19 h, `securite.gel_avoirs` chaque heure.
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
