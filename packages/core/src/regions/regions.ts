@@ -264,37 +264,40 @@ export class RegionsOuvertes {
     const denied = await this.direction(viewer, 'regions_verify');
     if (denied) return denied;
     const rows = await this.decisions(viewer.networkId);
+    // La chaîne seule : la première version qui ne suit pas, ou dont l'empreinte ne se recalcule pas.
+    let structural: number | null = null;
     let prev = REGION_CHAIN_START;
-    let value: ChainCheck = { intact: true, versions: rows.length };
     for (let i = 0; i < rows.length; i += 1) {
       const r = rows[i]!;
       const expected = i + 1;
-      const recomputed = await regionDecisionHash(r);
-      if (Number(r.version) !== expected || r.prev_hash !== prev || r.hash !== recomputed) {
-        value = { intact: false, versions: rows.length, brokenAt: Math.min(Number(r.version), expected) };
+      if (Number(r.version) !== expected || r.prev_hash !== prev || r.hash !== (await regionDecisionHash(r))) {
+        structural = Math.min(Number(r.version), expected);
         break;
       }
       prev = r.hash;
     }
-    // Recoupée avec le journal, qui garde chaque décision et son empreinte : une fin de chaîne retirée, ou une chaîne
-    // réécrite en entier avec des empreintes recalculées, ne s'y retrouve pas. Une décision rangée dont l'écriture au
-    // journal a manqué est dite cassée aussi : la lecture prudente préfère un doute dit à une carte crue sans preuve.
-    if (value.intact) {
-      const events = await this.db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? AND subject = ? ORDER BY seq', ['regions.decision', `network:${viewer.networkId}`]);
-      const logged = new Map<number, string>();
-      for (const e of events) {
-        const d = JSON.parse(e.data) as { version?: unknown; hash?: unknown };
-        if (typeof d.version === 'number' && typeof d.hash === 'string' && !logged.has(d.version)) logged.set(d.version, d.hash);
-      }
-      const total = Math.max(rows.length, ...logged.keys(), 0);
-      for (let v = 1; v <= total; v += 1) {
-        const row = rows[v - 1];
-        if (!row || logged.get(v) !== row.hash) {
-          value = { intact: false, versions: rows.length, brokenAt: v };
-          break;
-        }
+    // Recoupée avec le journal, qui garde chaque décision et son empreinte : une fin de chaîne retirée, une ligne
+    // réécrite avec son empreinte recalculée, ou une chaîne réécrite en entier ne s'y retrouvent pas. Une décision rangée
+    // dont l'écriture au journal a manqué est dite cassée aussi : un doute dit plutôt qu'une carte crue sans preuve.
+    // La première version cassée est la plus petite des deux lectures.
+    const events = await this.db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? AND subject = ? ORDER BY seq', ['regions.decision', `network:${viewer.networkId}`]);
+    const logged = new Map<number, string>();
+    for (const e of events) {
+      const d = JSON.parse(e.data) as { version?: unknown; hash?: unknown };
+      if (typeof d.version === 'number' && typeof d.hash === 'string' && !logged.has(d.version)) logged.set(d.version, d.hash);
+    }
+    const byVersion = new Map(rows.map((r) => [Number(r.version), r.hash]));
+    let journalBroken: number | null = null;
+    const total = Math.max(0, ...byVersion.keys(), ...logged.keys());
+    for (let v = 1; v <= total; v += 1) {
+      const hash = byVersion.get(v);
+      if (hash === undefined || logged.get(v) !== hash) {
+        journalBroken = v;
+        break;
       }
     }
+    const broken = [structural, journalBroken].filter((v): v is number => v !== null);
+    const value: ChainCheck = broken.length === 0 ? { intact: true, versions: rows.length } : { intact: false, versions: rows.length, brokenAt: Math.min(...broken) };
     await appendEvent(
       this.journal,
       { type: 'regions.verification', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R653', ...value } },

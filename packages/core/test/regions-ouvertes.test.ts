@@ -215,10 +215,10 @@ describeWithSqlite('HX72 · Les régions s’ouvrent une par une', () => {
     t.raw.exec('DROP TRIGGER region_decisions_fige');
     t.raw.prepare("UPDATE region_decisions SET reason = 'réécrite' WHERE version = 2").run();
     expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 3, brokenAt: 2 } });
-    // Même réécrite avec une empreinte recalculée, la suivante ne la suit plus.
+    // Même réécrite avec une empreinte recalculée, la version 2 reste la première dite cassée : le journal garde son empreinte.
     const two = await t.db.first<Record<string, unknown>>('SELECT * FROM region_decisions WHERE version = 2');
     t.raw.prepare('UPDATE region_decisions SET hash = ? WHERE version = 2').run(await regionDecisionHash(two as never));
-    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 3, brokenAt: 3 } });
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 3, brokenAt: 2 } });
     // Une ligne retirée : la version qui manque est dite.
     t.raw.exec('DROP TRIGGER region_decisions_garde');
     t.raw.prepare('DELETE FROM region_decisions WHERE version = 1').run();
