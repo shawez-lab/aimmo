@@ -665,6 +665,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agents: out('agent', 'Fiche de l\'agent.'),
   access_invitations: out('agent', 'Invitation d\'accès d\'un agent.'),
   access_keys: out('agent', 'Clé d\'accès d\'un utilisateur du réseau.'),
+  assistant_keys: out('agent', 'Clé que l\'agent confie à son assistant pour le serveur MCP (BR09) : empreinte seule.'),
   agent_zones: out('agent', 'Communes de l\'agent.'),
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),

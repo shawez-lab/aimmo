@@ -63,7 +63,8 @@ import {
   type Fetcher,
   type ValuationReport,
 } from '@aimmo/core';
-import { fromMcpKey, intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { bearerKey, fromMcpKey, intakeFromRequest, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
+import { assistantKeyViewer } from '../../core/src/securite/index.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
@@ -1926,7 +1927,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
   const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
   if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  let keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  // La clé qu'un agent a créée pour son assistant (BR09), relue dans la base à chaque demande : retirée, ou son agent
+  // parti, elle n'est plus reconnue [R82]. Elle porte la portée « mcp » : elle n'ouvre que le serveur MCP [R590].
+  if (keyViewer === null) {
+    const bearer = bearerKey(request);
+    const assistant = bearer === null ? null : await assistantKeyViewer(config.db, await sha256Hex(bearer), now());
+    if (assistant !== null) {
+      markMcpKey(request);
+      keyViewer = assistant;
+    }
+  }
   const viewer = keyViewer ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
   // Une demande ouverte par la séance d'une clé d'appareil, et non par une clé qu'on peut confier à un assistant (BR08).
   if (keyViewer === null && viewer !== null) markDeviceSession(request);

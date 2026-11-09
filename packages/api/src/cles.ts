@@ -21,7 +21,7 @@ import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type
 import { takeSlot } from './assistant.ts';
 import { sha256Hex } from './auth.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
-import { ClesAppareil, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
+import { ClesAppareil, ClesAssistant, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -64,6 +64,8 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
 
 /** Ce qui n'existe pas pour ce lecteur : 404, sans dire s'il existe ailleurs. */
 const NOT_FOUND = new Set(['unknown', 'unknown_device', 'appareil_inconnu']);
+/** Une règle de nombre, pas de droit : 409. */
+const CONFLICT = new Set(['limite_atteinte']);
 
 type Outcome = { ok: true; value?: unknown } | { ok: false; rule: string | null; code: string };
 
@@ -73,7 +75,7 @@ function reply(result: Outcome): Response {
   const { rule, code } = result;
   if (rule === 'R16') return json(NOT_FOUND.has(code) ? 404 : 403, { ok: false, rule, code });
   if (NOT_FOUND.has(code)) return json(404, { ok: false, rule, code });
-  return json(rule ? 409 : 400, { ok: false, rule, code });
+  return json(rule || CONFLICT.has(code) ? 409 : 400, { ok: false, rule, code });
 }
 
 async function readJson(request: Request, max = MAX_BODY_BYTES): Promise<Record<string, unknown> | null> {
@@ -105,6 +107,8 @@ const withBody =
   };
 
 const cles = (s: ClesServices & { site: ClesConfig }) => new ClesAppareil(s.db, s.journal, { rpId: s.site.rpId, origins: s.site.origins, now: s.now });
+const assistant = (s: ClesServices & { site: ClesConfig }) => new ClesAssistant(s.db, s.journal, cles(s), { now: s.now });
+const AGENT_OR_DIRECTION: readonly Role[] = ['agent', 'direction'];
 
 const REGISTRATION = ['challengeId', 'credentialId', 'publicKey', 'clientDataJSON', 'authenticatorData', 'label', 'stepUpId'] as const;
 const ASSERTION = ['challengeId', 'credentialId', 'clientDataJSON', 'authenticatorData', 'signature'] as const;
@@ -165,6 +169,41 @@ export function clesRoutes(): ClesRoute[] {
       name: 'cles.preuve.fin',
       roles: DEVICE_USERS,
       handle: withBody(ASSERTION, async (s, v, _p, b) => reply(await cles(s).finishStepUp(v, b as unknown as AssertionPayload))),
+    },
+    // La clé de l'assistant de l'agent (BR09) : créée depuis l'application seule, sur la preuve de sa clé d'appareil,
+    // rendue une fois ; seule l'empreinte est rangée [R601, R590, R13]. Lue sans empreinte ; retirée d'un geste [R600].
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/assistant$`),
+      name: 'cles.assistant',
+      roles: AGENT,
+      handle: async (s, v) => reply(await assistant(s as ClesServices & { site: ClesConfig }).listOwn(v)),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/assistant$`),
+      name: 'cles.assistant.creation',
+      roles: AGENT,
+      handle: async (s, v, params, request) => {
+        // Une clé d'API, qu'un assistant peut tenir, ne fabrique pas de clé : la séance d'une clé d'appareil seule [R601].
+        if (!fromDeviceSession(request)) {
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R601', role: String(v.role), kind: 'cles.assistant.creation', code: 'application_requise' } }, s.now);
+          return json(403, { ok: false, rule: 'R601', code: 'application_requise', message: 'Depuis l’application seulement, avec la clé de cet appareil.' });
+        }
+        return withBody(['stepUpId', 'label'], async (s2, v2, _p, b) => {
+          const made = await assistant(s2).create(v2, b.stepUpId, b.label);
+          if (!made.ok) return reply(made);
+          const { key, ...rest } = made.value;
+          return reply({ ok: true, value: { ...rest, cle: key } });
+        })(s, v, params, request);
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/assistant/${ID}/retrait$`),
+      name: 'cles.assistant.retrait',
+      roles: AGENT_OR_DIRECTION,
+      handle: async (s, v, [id]) => reply(await assistant(s as ClesServices & { site: ClesConfig }).revoke(v, id)),
     },
     // L'export complet de l'agent, sur sa preuve « export_complet » ; l'empreinte seule est rangée [R561, R601].
     {
