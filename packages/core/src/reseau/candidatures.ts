@@ -173,8 +173,8 @@ export class Candidatures {
     // Le lien marqué d'une vidéo ou d'un épisode (HX64) : un contenu actif du réseau, sinon ignoré sans le dire [R621].
     // Sa sorte devient la source : le code prouve d'où vient le candidat mieux que ce qu'il a coché.
     let content: { id: string; kind: CandidateSource } | null = null;
-    if (raw.contentCode !== undefined && raw.contentCode !== null && raw.contentCode !== '') {
-      if (typeof raw.contentCode !== 'string' || raw.contentCode.length > 40) return this.refuse(networkId, null, 'bad_content_code');
+    // Un code abîmé (pas une chaîne, trop long) est ignoré comme un code inconnu : la candidature n'est jamais perdue.
+    if (typeof raw.contentCode === 'string' && raw.contentCode !== '' && raw.contentCode.length <= 40) {
       content = await this.db.first<{ id: string; kind: CandidateSource }>(
         'SELECT r.id, r.kind FROM recruiting_contents r WHERE r.code = ? AND r.network_id = ? AND NOT EXISTS (SELECT 1 FROM recruiting_content_withdrawals w WHERE w.content_id = r.id)',
         [raw.contentCode, networkId],

@@ -53,7 +53,9 @@ async function setup() {
       await db.exec('PRAGMA foreign_keys = ON');
       return agent.id;
     },
-    leave: async (agentId: string, leavesOn: string) => {
+    /** Un départ ; passé, l'agent est marqué parti, comme le fait `depart.ts` le jour du départ. */
+    leave: async (agentId: string, leavesOn: string, gone = true) => {
+      if (gone) await db.run("UPDATE agents SET status = 'left' WHERE id = ?", [agentId]);
       await db.run("INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'demission_agent', 1, 'direction:dir-1', '2027-01-01T00:00:00.000Z')", [`dep-${++seq}`, network.id, agentId, leavesOn, leavesOn]);
     },
     mandate: async (agentId: string, signedAt: string) => {
@@ -172,7 +174,10 @@ describeWithSqlite('HX64 · vidéos et épisodes du podcast, mesurés jusqu’à
     expect(await t.apply({ email: 'inconnu@example.test', contentCode: 'zzzzzzzzzzzz' })).toEqual(ok);
     expect(await t.apply({ email: 'retire@example.test', contentCode: w.code })).toEqual(ok);
     expect(await t.apply({ email: 'autre.reseau@example.test', contentCode: v.code }, t.other.id)).toEqual(ok);
-    expect(await t.apply({ email: 'trop.long@example.test', contentCode: 'x'.repeat(41) })).toMatchObject({ ok: false, code: 'bad_content_code' });
+    // Un code abîmé (trop long, pas une chaîne) est ignoré aussi : la candidature est rangée.
+    expect(await t.apply({ email: 'trop.long@example.test', contentCode: 'x'.repeat(41) })).toEqual(ok);
+    expect(await t.apply({ email: 'nombre@example.test', contentCode: 12345 })).toEqual(ok);
+    expect((await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM candidates WHERE email IN ('trop.long@example.test', 'nombre@example.test')"))!.n).toBe(2);
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM candidate_content_origins'))!.n).toBe(0);
     // La source cochée reste celle du candidat quand le code ne sert pas.
     expect(await t.db.first('SELECT source FROM candidates WHERE id = ?', [await t.candidateId('retire@example.test')])).toEqual({ source: 'page' });
