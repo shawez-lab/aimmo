@@ -225,4 +225,43 @@ describeWithSqlite('HX72 · Les régions s’ouvrent une par une', () => {
     expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 2, brokenAt: 1 } });
     expect((await t.events('regions.verification')).map((e) => e.intact)).toEqual([true, true, false, false, false]);
   });
+  it('[R653] une dernière version retirée ou une chaîne recalculée en entier se voient, recoupées avec le journal', async () => {
+    const t = await setup();
+    await t.openPhase5();
+    await t.decide('11', true);
+    await t.decide('11', false);
+    t.raw.exec('DROP TRIGGER region_decisions_garde');
+    t.raw.prepare('DELETE FROM region_decisions WHERE version = 2').run();
+    // La région semble rouverte, mais la vérification le dit.
+    expect(await t.regions.openRegionNames(t.network.id)).toContain('Île-de-France');
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 1, brokenAt: 2 } });
+
+    const u = await setup();
+    await u.openPhase5();
+    await u.decide('11', true);
+    await u.decide('11', false);
+    // Chaîne réécrite en entier : raison changée, puis chaque empreinte recalculée dans l'ordre.
+    u.raw.exec('DROP TRIGGER region_decisions_fige');
+    u.raw.prepare("UPDATE region_decisions SET reason = 'réécrite' WHERE version = 1").run();
+    let prev = REGION_CHAIN_START;
+    for (const v of [1, 2]) {
+      u.raw.prepare('UPDATE region_decisions SET prev_hash = ? WHERE version = ?').run(prev, v);
+      const row = await u.db.first<Record<string, unknown>>('SELECT * FROM region_decisions WHERE version = ?', [v]);
+      prev = await regionDecisionHash(row as never);
+      u.raw.prepare('UPDATE region_decisions SET hash = ? WHERE version = ?').run(prev, v);
+    }
+    expect(await u.regions.verify(u.direction)).toEqual({ ok: true, value: { intact: false, versions: 2, brokenAt: 1 } });
+  });
+
+  it('[R651] deux décisions en même temps : la base garde la première, l’autre est refusée et dite au journal', async () => {
+    const t = await setup();
+    await t.openPhase5();
+    const [a, b] = await Promise.all([t.decide('11', true), t.decide('53', true)]);
+    const results = [a, b];
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, rule: 'R651', code: 'conflit' }]);
+    expect(await t.db.all('SELECT version FROM region_decisions')).toEqual([{ version: 1 }]);
+    expect((await t.events('regions.refuse')).map((e) => e.code)).toEqual(['conflit']);
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: true, versions: 1 } });
+  });
 });

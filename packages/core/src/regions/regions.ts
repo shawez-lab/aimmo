@@ -15,7 +15,7 @@
  *
  * Jamais vu : chaque décision est enchaînée à la précédente par son empreinte (SHA-256). La direction peut vérifier à
  * tout instant que la carte des régions n'a pas été réécrite, même par une écriture directe dans la base : la première
- * version cassée est dite [R653]. Le public ne lit que les noms des régions ouvertes, sans aucun chiffre.
+ * version cassée est dite, recoupée avec le journal qui garde chaque empreinte [R653]. Le public ne lit que les noms des régions ouvertes, sans aucun chiffre.
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -275,6 +275,25 @@ export class RegionsOuvertes {
         break;
       }
       prev = r.hash;
+    }
+    // Recoupée avec le journal, qui garde chaque décision et son empreinte : une fin de chaîne retirée, ou une chaîne
+    // réécrite en entier avec des empreintes recalculées, ne s'y retrouve pas. Une décision rangée dont l'écriture au
+    // journal a manqué est dite cassée aussi : la lecture prudente préfère un doute dit à une carte crue sans preuve.
+    if (value.intact) {
+      const events = await this.db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? AND subject = ? ORDER BY seq', ['regions.decision', `network:${viewer.networkId}`]);
+      const logged = new Map<number, string>();
+      for (const e of events) {
+        const d = JSON.parse(e.data) as { version?: unknown; hash?: unknown };
+        if (typeof d.version === 'number' && typeof d.hash === 'string' && !logged.has(d.version)) logged.set(d.version, d.hash);
+      }
+      const total = Math.max(rows.length, ...logged.keys(), 0);
+      for (let v = 1; v <= total; v += 1) {
+        const row = rows[v - 1];
+        if (!row || logged.get(v) !== row.hash) {
+          value = { intact: false, versions: rows.length, brokenAt: v };
+          break;
+        }
+      }
     }
     await appendEvent(
       this.journal,
