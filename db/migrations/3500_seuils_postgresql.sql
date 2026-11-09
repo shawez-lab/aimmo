@@ -6,6 +6,8 @@
 -- seuil » [R630].
 CREATE TABLE IF NOT EXISTS postgres_threshold_readings (
   id TEXT PRIMARY KEY,
+  -- L'ordre des relevés, qui se suit sans trou : deux relevés du même instant restent dans leur ordre [R630].
+  seq INTEGER NOT NULL UNIQUE CHECK (seq >= 1),
   measured_at TEXT NOT NULL,
   agents_active INTEGER CHECK (agents_active IS NULL OR agents_active >= 0),
   db_bytes INTEGER CHECK (db_bytes IS NULL OR db_bytes >= 0),
@@ -13,6 +15,9 @@ CREATE TABLE IF NOT EXISTS postgres_threshold_readings (
   source TEXT NOT NULL CHECK (source IN ('direction', 'passage'))
 );
 CREATE INDEX IF NOT EXISTS postgres_threshold_readings_at ON postgres_threshold_readings (measured_at);
+CREATE TRIGGER IF NOT EXISTS postgres_threshold_readings_suite BEFORE INSERT ON postgres_threshold_readings
+WHEN NEW.seq <> 1 + COALESCE((SELECT MAX(r.seq) FROM postgres_threshold_readings r), 0)
+BEGIN SELECT RAISE(ABORT, 'postgres_threshold_readings : relevé hors suite'); END;
 CREATE TRIGGER IF NOT EXISTS postgres_threshold_readings_garde BEFORE DELETE ON postgres_threshold_readings BEGIN SELECT RAISE(ABORT, 'postgres_threshold_readings : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS postgres_threshold_readings_fige BEFORE UPDATE ON postgres_threshold_readings BEGIN SELECT RAISE(ABORT, 'postgres_threshold_readings : un relevé ne change plus'); END;
 

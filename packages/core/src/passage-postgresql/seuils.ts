@@ -234,7 +234,8 @@ export class PassagePostgresql {
     const reading: PostgresReading = { id: this.newId(), measuredAt: this.now().toISOString(), source, values };
     const statements: SqlStatement[] = [
       {
-        sql: 'INSERT INTO postgres_threshold_readings (id, measured_at, agents_active, db_bytes, report_ms, source) VALUES (?, ?, ?, ?, ?, ?)',
+        // L'ordre est pris dans la même instruction : deux relevés du même instant restent dans leur ordre [R630].
+        sql: 'INSERT INTO postgres_threshold_readings (id, seq, measured_at, agents_active, db_bytes, report_ms, source) SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ? FROM postgres_threshold_readings',
         params: [reading.id, reading.measuredAt, values.agents, values.taille, values.rapport, source],
       },
     ];
@@ -295,11 +296,11 @@ export class PassagePostgresql {
     if (denied) return denied;
     const now = this.now();
     const rows = await this.db.all<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; report_ms: number | null; source: 'direction' | 'passage' }>(
-      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings WHERE measured_at >= ? ORDER BY measured_at, id',
+      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings WHERE measured_at >= ? ORDER BY seq',
       [new Date(now.getTime() - POSTGRES_FORECAST_WINDOW_DAYS * DAY_MS).toISOString()],
     );
     const lastRow = await this.db.first<{ id: string; measured_at: string; agents_active: number | null; db_bytes: number | null; report_ms: number | null; source: 'direction' | 'passage' }>(
-      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings ORDER BY measured_at DESC, id DESC LIMIT 1',
+      'SELECT id, measured_at, agents_active, db_bytes, report_ms, source FROM postgres_threshold_readings ORDER BY seq DESC LIMIT 1',
     );
     const num = (v: number | null): number | null => (v === null ? null : Number(v));
     const lastReading: PostgresReading | null = lastRow

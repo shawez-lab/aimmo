@@ -143,6 +143,39 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     expect((await w.events('postgresql.releve'))[0]).toMatchObject({ unknown: { rapport: 'non_branche' } });
   });
 
+  it('[R630] deux relevés du même instant : le dernier rangé vaut, même avec un identifiant plus petit', async () => {
+    let fail = false;
+    const t = await setup({
+      bytes: async () => {
+        if (fail) throw new Error('pragma refusé');
+        return 1000;
+      },
+      report: { ms: 100 },
+    });
+    const ids = ['z', 'a'];
+    const db = t.db;
+    const passage = new PassagePostgresql(db, new SqlJournalStore(db), {
+      now: () => new Date('2027-03-10T09:00:00.000Z'),
+      databaseBytes: async () => {
+        if (fail) throw new Error('pragma refusé');
+        return 1000;
+      },
+      networkReport: async () => undefined,
+      clockMs: () => 0,
+      newId: () => ids.shift()!,
+      platformNetworkId: t.network.id,
+    });
+    await passage.measureNow(t.dir);
+    fail = true;
+    await passage.measureNow(t.dir);
+    const s = await passage.state(t.dir);
+    expect(s.ok && s.value.lastReading?.id).toBe('a');
+    expect(s.ok && s.value.status).toBe('inconnu');
+    expect(s.ok && s.value.unknownBecause).toEqual(['mesure_inconnue']);
+    // La base refuse un ordre qui ne suit pas.
+    await expect(db.run("INSERT INTO postgres_threshold_readings (id, seq, measured_at, source) VALUES ('b', 7, 'x', 'direction')")).rejects.toThrow(/hors suite/);
+  });
+
   it('[R630] jamais « sous les seuils » sans relevé, ni avec un relevé de plus de 8 jours', async () => {
     const t = await setup({ report: { ms: 100 } });
     let s = await t.passage.state(t.dir);
@@ -172,7 +205,7 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     await expect(t.db.run('DELETE FROM postgres_decisions')).rejects.toThrow(/rien ne s'efface/);
     // La base refuse une version hors suite, et une mesure négative.
     await expect(t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (5, 'passer', 'x')")).rejects.toThrow(/hors suite/);
-    await expect(t.db.run("INSERT INTO postgres_threshold_readings (id, measured_at, agents_active, source) VALUES ('z', 'x', -1, 'direction')")).rejects.toThrow();
+    await expect(t.db.run("INSERT INTO postgres_threshold_readings (id, seq, measured_at, agents_active, source) VALUES ('z', 2, 'x', -1, 'direction')")).rejects.toThrow();
   });
 
   it('[R631] plus de 50 agents actifs : à décider, une seule alerte même relevé deux fois ; 50 tout juste ne franchit pas', async () => {

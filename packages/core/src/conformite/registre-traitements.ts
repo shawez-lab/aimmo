@@ -1306,7 +1306,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   invoice_reminders: ['id', 'network_id', 'invoice_id', 'rank', 'status', 'rule', 'message_id', 'sending_at', 'prepared_at', 'validated_at', 'updated_at'],
   agent_cost_assignments: ['invoice_id', 'network_id', 'version', 'category', 'assigned_at'],
   agent_cost_settings: ['network_id', 'version', 'valid_from', 'provision_bp', 'margin_bp', 'set_at'],
-  postgres_threshold_readings: ['id', 'measured_at', 'agents_active', 'db_bytes', 'report_ms', 'source'],
+  postgres_threshold_readings: ['id', 'seq', 'measured_at', 'agents_active', 'db_bytes', 'report_ms', 'source'],
   postgres_threshold_alerts: ['threshold', 'reading_id', 'created_at'],
   postgres_decisions: ['version', 'choice', 'decided_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
