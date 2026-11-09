@@ -589,7 +589,8 @@ Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à par
 - Critères : une correspondance alerte le responsable et fige le dossier (test) ; le client ne voit aucune différence (test) ; chaque contrôle est daté avec la version du registre (test).
 
 ### HX58 · Réclamations des clients et médiateur
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#444), module `packages/core/src/securite/reclamations.ts`, migration `3320`, R606 et R607, passage `securite.reclamations` au planificateur (9 h à 19 h, lundi au samedi). Décidé, lecture prudente : échéance écrite par la base (jour de réception plus le délai du réglage, 30 jours sans réglage), alertes à 7 jours, 2 jours et le jour même ; réponse unique, réglée ou non réglée, datée du jour de Paris de son écriture ; médiateur proposé de lui-même à l'échéance sans réponse réglée ou dès une réponse non réglée, texte du code (« sans frais », prénom de la fiche gardée, chiffres du médiateur permis), par le contrôle central en réponse dans la conversation, sinon « à remettre » par l'agent alerté (courrier, oral, refus R21, mode essai R26, envoi interrompu) ; sans médiateur réglé, alerte à la direction. Relecture forte : 3 P1 et 1 P1 limite corrigés ; Codex : 1 P0 et 1 P1 corrigés, 3 P2 corrigés, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5117 tests). Restent (voie 1) : routes et écrans (réclamations, réglage du médiateur, remise) dans `app.ts` ; délai et texte à faire relire par l'avocat ; médiateur après H09.
 - Qui : Claude, voie 1, relecture forte
 - Objectif : comme Hektor : médiateur de la consommation pris en charge. Jamais vu : chaque réclamation est suivie avec son délai de réponse, et le médiateur est proposé de lui-même au client si la réclamation n'est pas réglée à l'échéance.
 - Critères : chaque réclamation a son échéance et ses alertes (test) ; le médiateur est proposé à l'échéance (test).
