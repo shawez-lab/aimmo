@@ -734,7 +734,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : H64 pour l'usage réel.
 
 ### BR07 · Routes du quiz et des attestations de formation
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#456), `packages/api/src/formation.ts` sous `/v1/formation`, page publique `/attestation` et `POST /v1/formation/verification` sans clé ; aucune règle nouvelle ni migration. Décidé : rôles contrôlés avant le corps, refus au journal ; quiz, réponses et attestations ouverts à l'agent au dossier incomplet (sa formation) ; la vérification publique ne dit que « valide » et le jour, ou « non reconnue », sans raison ni nom, empreinte prise au caractère près. Relecture forte 1 P1 (empreinte remise en forme) corrigé ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5212 tests). Restent : écrans de la direction et de l'agent.
 - Qui : Claude, relecture forte · Dépend de : HX63
 - Partie du cahier : M14 (réseau et académie).
 - Objectif : routes du quiz (questions de la direction, quiz de l'agent, réponses) et des attestations, et la page publique de vérification d'une attestation.
@@ -742,7 +743,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR08 · Adresse du serveur MCP
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : HX55
 - Partie du cahier : Intelligence artificielle, HX55.
 - Objectif : `/v1/mcp` (JSON-RPC, clé de l'agent) et la lecture publique des biens diffusables par réseau, et les routes de décision des brouillons de l'agent.
