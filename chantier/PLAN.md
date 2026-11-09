@@ -680,7 +680,8 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Attend : rien.
 
 ### HX71 · La porte des phases : chaque phase ne s'ouvre que sur la condition de la précédente, prouvée à l'instant (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#461, `ef877f1e`), `packages/core/src/conditions-phases/portes.ts`, migration `3620`, R646 à R648 en service ; table au registre des traitements et à la carte des demandes d'accès. Relecture forte rien à signaler ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5265 tests). Routes `/v1/phases` (état, ouverture) et écran de la direction : à la voie 1 (`app.ts`).
 - Qui : Claude, voie 2, relecture forte · Dépend de : IN01, IN02, HX65, HX69, HX70
 - Partie du cahier : Feuille de route, « Cinq phases, chacune ouverte seulement si la précédente a rempli sa condition » et « Les phases et leurs conditions ».
 - Décidé (2026-11-09, voie 2), lecture prudente : ajouté parce que la voie 2 n'avait plus de tâche libre et que les quatre conditions sont comptées chacune à part (HX70, IN01 et IN02, HX69, HX65) sans que rien ne dise quelle phase est ouverte. La phase 1 est ouverte d'office. Phase 2 : la condition publiée (mois scellés, IN02), pas le compteur vivant seul, car le cahier dit « chiffres publiés ». Phase 4 : « la part du réseau couvre le coût complet » lue sur l'agent moyen de HX65, 3 mois finis de Paris de suite complets et couverts, tous commencés après l'ouverture de la phase 4. Rien ne s'ouvre ni ne se ferme seul.
