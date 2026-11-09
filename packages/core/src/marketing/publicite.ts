@@ -285,10 +285,16 @@ export class PublicitePayante {
     if (last && (await this.running(last.id))) return { ok: false, rule: 'R587', code: 'en_cours' };
     const version = (last?.version ?? 0) + 1;
     const approvalId = this.newId();
-    const { changes } = await this.db.run(
-      'INSERT INTO ad_campaign_approvals (id, campaign_id, version, daily_budget_cents, total_budget_cents, max_cost_per_contact_cents, approved_by, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
-      [approvalId, c.id, version, daily, total, max, this.actor(viewer), this.now().toISOString()],
-    );
+    let changes = 0;
+    try {
+      ({ changes } = await this.db.run(
+        'INSERT INTO ad_campaign_approvals (id, campaign_id, version, daily_budget_cents, total_budget_cents, max_cost_per_contact_cents, approved_by, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        [approvalId, c.id, version, daily, total, max, this.actor(viewer), this.now().toISOString()],
+      ));
+    } catch {
+      // Lancée entre-temps : la base refuse une validation nouvelle tant que l'autre dépense [R587].
+      return { ok: false, rule: 'R587', code: 'en_cours' };
+    }
     if (changes !== 1) return { ok: false, rule: null, code: 'conflict' };
     await appendEvent(this.journal, { type: 'publicite.validation', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', version, dailyBudgetCents: daily, totalBudgetCents: total, maxCostPerContactCents: max } }, this.now);
     return { ok: true, value: { approvalId, version } };
@@ -309,8 +315,20 @@ export class PublicitePayante {
        AND version = (SELECT max(version) FROM ad_campaign_spend d WHERE d.campaign_id = s.campaign_id AND d.day = s.day)`,
       [campaignId],
     );
-    const k = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_contacts WHERE campaign_id = ?', [campaignId]);
-    return { spendCents: Number(s?.total ?? 0), contacts: Number(k?.n ?? 0) };
+    // Une personne par fiche : deux contacts réunis après coup ne comptent qu'une fois [R588].
+    const k = await this.db.all<{ person_id: string }>('SELECT person_id FROM ad_campaign_contacts WHERE campaign_id = ?', [campaignId]);
+    const roots = new Set(await Promise.all(k.map((r) => this.fiche.rootOf(r.person_id))));
+    return { spendCents: Number(s?.total ?? 0), contacts: roots.size };
+  }
+
+  /** Les validations lancées et pas encore arrêtées : une seule en principe, toutes contrôlées quand même. */
+  private async runningApprovals(campaignId: string): Promise<ApprovalRow[]> {
+    return this.db.all<ApprovalRow>(
+      `SELECT a.id, a.version, a.daily_budget_cents, a.total_budget_cents, a.max_cost_per_contact_cents FROM ad_campaign_approvals a
+       JOIN ad_campaign_starts s ON s.approval_id = a.id
+       WHERE a.campaign_id = ? AND NOT EXISTS (SELECT 1 FROM ad_campaign_stops t WHERE t.approval_id = a.id) ORDER BY a.version`,
+      [campaignId],
+    );
   }
 
   /** Le motif d'arrêt automatique, ou null : seuil de coût par contact dépassé, ou budget total atteint [R588]. */
@@ -392,9 +410,9 @@ export class PublicitePayante {
     if (denied) return denied;
     const c = await this.campaign(viewer.networkId, campaignId);
     if (!c) return { ok: false, rule: null, code: 'unknown' };
-    const a = await this.lastApproval(c.id);
-    if (!a || !(await this.running(a.id))) return { ok: false, rule: null, code: 'pas_en_cours' };
-    await this.stopApproval(c, a.id, 'direction', this.actor(viewer));
+    const runs = await this.runningApprovals(c.id);
+    if (runs.length === 0) return { ok: false, rule: null, code: 'pas_en_cours' };
+    for (const a of runs) await this.stopApproval(c, a.id, 'direction', this.actor(viewer));
     return { ok: true, value: null };
   }
 
@@ -413,7 +431,12 @@ export class PublicitePayante {
       'SELECT max(version) AS v, (SELECT amount_cents FROM ad_campaign_spend WHERE campaign_id = ? AND day = ? ORDER BY version DESC LIMIT 1) AS a FROM ad_campaign_spend WHERE campaign_id = ? AND day = ?',
       [c.id, day, c.id, day],
     );
-    if (last?.a === null || last?.a === undefined || Number(last.a) !== amountCents) {
+    const previous = last?.a === null || last?.a === undefined ? null : Number(last.a);
+    // Une dépense qui monte alors qu'aucune validation n'est en cours est rangée telle que lue, et signalée [R587].
+    if ((previous === null ? amountCents > 0 : amountCents > previous) && (await this.runningApprovals(c.id)).length === 0) {
+      await this.refuse(null, 'ad_spend', 'R587', 'depense_hors_validation', { campaign: c.id, amountCents });
+    }
+    if (previous !== amountCents) {
       await this.db.run('INSERT INTO ad_campaign_spend (campaign_id, day, version, amount_cents, reported_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
         c.id,
         day,
@@ -445,11 +468,13 @@ export class PublicitePayante {
   private async check(c: CampaignRow): Promise<boolean> {
     const pending = await this.db.all<{ approval_id: string }>('SELECT approval_id FROM ad_campaign_stops WHERE campaign_id = ? AND paused_at IS NULL', [c.id]);
     for (const p of pending) await this.pause(c, p.approval_id);
-    const a = await this.lastApproval(c.id);
-    if (!a || !(await this.running(a.id))) return false;
-    const over = this.overLimit(a, await this.totals(c.id));
-    if (!over) return false;
-    return this.stopApproval(c, a.id, over, 'system:publicite');
+    const totals = await this.totals(c.id);
+    let stopped = false;
+    for (const a of await this.runningApprovals(c.id)) {
+      const over = this.overLimit(a, totals);
+      if (over && (await this.stopApproval(c, a.id, over, 'system:publicite'))) stopped = true;
+    }
+    return stopped;
   }
 
   /** Le passage planifié : chaque campagne du réseau contrôlée [R588]. */

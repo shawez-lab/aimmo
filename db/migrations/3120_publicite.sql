@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS ad_campaign_approvals (
   approved_at TEXT NOT NULL,
   UNIQUE (campaign_id, version)
 );
+-- Une validation nouvelle n'arrive jamais pendant qu'une autre dépense : celle-ci s'arrête d'abord [R587, R588].
+CREATE TRIGGER IF NOT EXISTS ad_campaign_approvals_une_a_la_fois BEFORE INSERT ON ad_campaign_approvals
+WHEN EXISTS (SELECT 1 FROM ad_campaign_starts s WHERE s.campaign_id = NEW.campaign_id AND NOT EXISTS (SELECT 1 FROM ad_campaign_stops t WHERE t.approval_id = s.approval_id))
+BEGIN SELECT RAISE(ABORT, 'ad_campaign_approvals : une validation est en cours, elle s''arrête d''abord'); END;
 CREATE TRIGGER IF NOT EXISTS ad_campaign_approvals_garde BEFORE DELETE ON ad_campaign_approvals BEGIN SELECT RAISE(ABORT, 'ad_campaign_approvals : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS ad_campaign_approvals_fige BEFORE UPDATE ON ad_campaign_approvals BEGIN SELECT RAISE(ABORT, 'ad_campaign_approvals : une validation ne change plus'); END;
 
@@ -55,7 +59,7 @@ CREATE TRIGGER IF NOT EXISTS ad_campaign_starts_fige BEFORE UPDATE ON ad_campaig
 CREATE TABLE IF NOT EXISTS ad_campaign_stops (
   approval_id TEXT PRIMARY KEY REFERENCES ad_campaign_approvals (id) ON DELETE RESTRICT,
   campaign_id TEXT NOT NULL REFERENCES ad_campaigns (id) ON DELETE RESTRICT,
-  reason TEXT NOT NULL CHECK (reason IN ('seuil', 'budget', 'direction', 'echec_lancement', 'depense_sans_validation')),
+  reason TEXT NOT NULL CHECK (reason IN ('seuil', 'budget', 'direction', 'echec_lancement')),
   spend_cents INTEGER NOT NULL CHECK (spend_cents >= 0),
   contacts INTEGER NOT NULL CHECK (contacts >= 0),
   stopped_by TEXT NOT NULL,

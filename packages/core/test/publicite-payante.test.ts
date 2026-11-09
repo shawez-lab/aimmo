@@ -197,6 +197,36 @@ describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
     expect(r.value[1]).toMatchObject({ state: 'a_valider', spendCents: 0, contacts: 0, mandates: 0, costPerContactCents: null, costPerMandateCents: null });
   });
 
+  it('[R587] la base refuse une validation nouvelle pendant qu’une autre dépense ; arrêtée, elle est contrôlée seule', async () => {
+    const t = await setup();
+    const c = await t.running();
+    // Comme une validation arrivée en même temps qu'un lancement : la base la refuse.
+    await expect(
+      t.db.run("INSERT INTO ad_campaign_approvals (id, campaign_id, version, daily_budget_cents, total_budget_cents, max_cost_per_contact_cents, approved_by, approved_at) VALUES ('v2', ?, 2, 10, 10, 10, 'direction:dir-1', 'x')", [c.id]),
+    ).rejects.toThrow(/en cours/);
+    // Une dépense qui monte après l'arrêt est rangée telle que lue, et signalée.
+    expect(await t.pub.stop(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(await t.pub.recordSpend(t.network.id, c.id, '2027-10-13', 300)).toMatchObject({ ok: true, value: { stopped: false } });
+    expect(await t.events('publicite.refus')).toEqual([expect.objectContaining({ rule: 'R587', code: 'depense_hors_validation' })]);
+    expect(await t.pub.recordSpend(t.network.id, c.id, '2027-10-13', 300)).toMatchObject({ ok: true });
+    expect(await t.events('publicite.refus')).toHaveLength(1);
+  });
+
+  it('[R588] deux contacts réunis après coup ne comptent qu’une fois, au seuil comme au compte rendu', async () => {
+    const t = await setup();
+    const c = await t.running();
+    const ana = await t.person('Ana');
+    const ana2 = await t.person('Ana');
+    await t.pub.recordContact(t.network.id, c.code, ana);
+    await t.pub.recordContact(t.network.id, c.code, ana2);
+    expect(await t.pub.recordSpend(t.network.id, c.id, '2027-10-11', 2_000)).toMatchObject({ ok: true, value: { stopped: false } });
+    await t.fiche.merge({ survivorId: ana, mergedId: ana2, reason: 'même personne, test' });
+    // 20 € pour un seul contact : au-delà du seuil de 15 €.
+    expect(await t.pub.runChecks(t.network.id)).toEqual({ stopped: 1 });
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ contacts: 1, state: 'arretee', stopReason: 'seuil' });
+  });
+
   it('[R588] fiches réunies : un contact compté une fois, le mandat de la fiche réunie rapporté à la campagne', async () => {
     const t = await setup();
     const c = await t.running({ ...BUDGET, maxCostPerContactCents: 10_000 });
