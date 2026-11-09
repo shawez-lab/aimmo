@@ -9,7 +9,7 @@ import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
-import { ControleGels } from '../../core/src/securite/index.ts';
+import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -119,6 +119,12 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Gel des avoirs (HX57), chaque heure : les dossiers ouverts depuis la dernière version du registre sont contrôlés ;
       // une correspondance va au seul responsable, rien n'est envoyé ni changé pour le client [R603, R604, R605].
       freezeSweepJob(config.db, journal, { now }),
+      // Réclamations (HX58), de 9 h à 19 h : alertes de l'échéance rangées pour l'agent et la direction ; le médiateur
+      // proposé de lui-même à l'échéance, par le contrôle central et les canaux du mode essai seulement [R606, R607].
+      complaintsJob(config.db, journal, (() => {
+        const store = new FicheClient(config.db, { now });
+        return new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
+      })(), { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
