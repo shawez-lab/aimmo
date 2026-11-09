@@ -8,6 +8,11 @@ import { ROLES, type Viewer } from '@aimmo/core';
  */
 export interface ApiKeyEntry extends Viewer {
   sha256: string;
+  /**
+   * `mcp` : la clé qu'un agent confie à son assistant (BR08). Elle n'ouvre que `POST /v1/mcp`, toute autre route la
+   * refuse ; et `POST /v1/mcp` n'accepte qu'elle [R590, R591]. Réservée au rôle `agent`.
+   */
+  scope?: 'mcp';
 }
 
 /** Une clé plus courte est refusée sans même être comparée. */
@@ -36,11 +41,13 @@ export function parseApiKeys(raw: string | undefined): ApiKeyEntry[] | null {
   const entries: ApiKeyEntry[] = [];
   for (const item of parsed as unknown[]) {
     if (item === null || typeof item !== 'object') return null;
-    const { sha256, role, userId, networkId } = item as Record<string, unknown>;
+    const { sha256, role, userId, networkId, scope } = item as Record<string, unknown>;
     if (typeof sha256 !== 'string' || !HEX64.test(sha256)) return null;
     if (typeof role !== 'string' || !(ROLES as readonly string[]).includes(role)) return null;
     if (typeof userId !== 'string' || userId === '' || typeof networkId !== 'string' || networkId === '') return null;
-    entries.push({ sha256, role: role as Viewer['role'], userId, networkId });
+    // Une portée inconnue, ou la portée « mcp » sur un autre rôle que l'agent, ferme l'API : lecture prudente.
+    if (scope !== undefined && (scope !== 'mcp' || role !== 'agent')) return null;
+    entries.push({ sha256, role: role as Viewer['role'], userId, networkId, ...(scope === 'mcp' ? { scope: 'mcp' as const } : {}) });
   }
   if (new Set(entries.map((entry) => entry.sha256)).size !== entries.length) return null;
   return entries;
@@ -63,7 +70,14 @@ export async function viewerFromRequest(request: Request, keys: readonly ApiKeyE
   const hash = await sha256Hex(key);
   let found: ApiKeyEntry | null = null;
   for (const entry of keys) if (sameHex(entry.sha256, hash)) found = entry;
+  if (found?.scope === 'mcp') MCP_KEY_REQUESTS.add(request);
   return found === null ? null : { role: found.role, userId: found.userId, networkId: found.networkId };
+}
+
+/** Les demandes ouvertes par une clé de portée « mcp », marquées à l'authentification (BR08). */
+const MCP_KEY_REQUESTS = new WeakSet<Request>();
+export function fromMcpKey(request: Request): boolean {
+  return MCP_KEY_REQUESTS.has(request);
 }
 
 /**

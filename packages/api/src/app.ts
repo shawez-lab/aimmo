@@ -63,7 +63,7 @@ import {
   type Fetcher,
   type ValuationReport,
 } from '@aimmo/core';
-import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { fromMcpKey, intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
@@ -90,8 +90,9 @@ import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
+import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
-import { clesRoutes, handleConnexion, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
+import { clesRoutes, handleConnexion, markDeviceSession, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
 import type { LecteurFactures } from '../../core/src/facturation/index.ts';
 import {
   handleEspacePartenaire,
@@ -202,6 +203,8 @@ export interface ApiConfig {
   cles?: ClesConfig | null;
   /** Les limites d'appels de la connexion par une clé (BR06) ; absentes, les réglages par défaut. */
   clesLimits?: ConnexionLimits;
+  /** Les limites de la lecture publique du serveur MCP (BR08) ; absentes, les réglages par défaut. */
+  mcpPublicLimits?: McpPublicLimits;
   /**
    * Les espaces des clients (EC07) : le réseau de la page publique (`ESPACE_NETWORK_ID`), l'adresse de l'espace
    * (`ESPACE_BASE`, en https, sans chiffre, terminée par `/espace/`) et les clés du relevé prouvé (secret
@@ -1211,6 +1214,16 @@ function recrutementRoutesDef(): RouteDef[] {
   }));
 }
 
+/** L'adresse du serveur MCP de l'agent et ses brouillons (BR08) : l'agent seul, contrôlé avant le corps [R16, R590, R591]. */
+function mcpRoutesDef(): RouteDef[] {
+  return mcpRoutes().map((r: McpRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes du quiz et des attestations de formation (BR07) : chaque rôle contrôlé avant le corps [R16, R570, R571]. */
 function formationRoutesDef(): RouteDef[] {
   return formationRoutes().map((r: FormationRoute) => ({
@@ -1894,6 +1907,18 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
   }
 
+  // Le serveur MCP sans agent (BR08) : les seuls biens diffusables d'un réseau, sans clé, limité en débit [R592].
+  if (url.pathname.startsWith(MCP_PUBLIC_PREFIX)) {
+    const s = services(config.db, now);
+    try {
+      const page = await handleMcpPublic(request, { db: s.db, acces: s.acces, now, ...(config.mcpPublicLimits ? { limits: config.mcpPublicLimits } : {}) });
+      if (page) return page;
+    } catch (error) {
+      await journalError(s.journal, 'public:mcp', 'mcp.public', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
   // Les clés du secret `API_KEYS`, et celles remises par une invitation (Z02). Un secret présent mais mal formé
   // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente. À côté des clés, la séance d'une clé
   // d'appareil (BR06), relue dans la base à chaque demande : une clé retirée ou un agent parti la coupent [R600, R82].
@@ -1901,7 +1926,10 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
   const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
   if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const viewer = (keys.length > 0 ? await viewerFromRequest(request, keys) : null) ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
+  const keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  const viewer = keyViewer ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
+  // Une demande ouverte par la séance d'une clé d'appareil, et non par une clé qu'on peut confier à un assistant (BR08).
+  if (keyViewer === null && viewer !== null) markDeviceSession(request);
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
@@ -1934,6 +1962,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
     ...formationRoutesDef(),
+    ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
     ...clesRoutesDef(config.cles ?? null),
     ...m18Routes(config.partenaires ?? null),
@@ -1962,6 +1991,14 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     if (await accessCut(s.db, s.journal, viewer, now)) {
       await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'access_cut' } }, now);
       return json(403, { ok: false, rule: 'R16', code: 'access_cut' });
+    }
+    // La clé confiée à un assistant (portée « mcp ») n'ouvre que le serveur MCP, et le serveur MCP n'accepte qu'elle :
+    // l'assistant ne lit aucune fiche, n'enregistre aucune clé d'appareil et ne décide aucun brouillon [R590, R591].
+    const mcpKey = fromMcpKey(request);
+    if (mcpKey !== (route.name === 'mcp.agent')) {
+      const code = mcpKey ? 'cle_mcp_hors_mcp' : 'cle_mcp_requise';
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R590', role: viewer.role, kind: `route.${route.name}`, code } }, now);
+      return json(403, { ok: false, rule: 'R590', code });
     }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.

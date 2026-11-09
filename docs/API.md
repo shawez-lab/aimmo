@@ -111,6 +111,8 @@ Le secret Cloudflare `API_KEYS` contient seulement l'empreinte SHA-256 de chaque
 
 Rôles : `agent`, `direction`, `compliance`, `partner`.
 
+Une clé d'agent peut porter `"scope": "mcp"` (agent seulement ; une autre portée, ou sur un autre rôle, ferme l'API) : c'est la clé que l'agent confie à son assistant. Elle n'ouvre que `POST /v1/mcp`, et `POST /v1/mcp` n'accepte qu'elle ; sur toute autre route, 403 `cle_mcp_hors_mcp`, au journal (BR08).
+
 ## Captation, en mode essai (C06)
 
 - **Formulaire du site** : `POST /v1/captation/formulaire`, corps `{"submissionId", "firstName", "email", "phone", "message", "page", "propertyRef", "submittedAt", "link", "landingPage"}`. `link` (l'adresse https d'arrivée, avec son code porteur `?o=`) et `landingPage` (l'adresse https de la page où le formulaire a été rempli), facultatifs, servent seulement à lire l'origine du contact (M01) : ils ne sont jamais rangés [R156]. Clé de dépôt dans le secret `INTAKE_KEYS`, qui ne lit rien : `[{ "sha256": "<empreinte>", "networkId": "<id du réseau>", "source": "site_form" }]`.
@@ -336,6 +338,15 @@ Sous `/v1/formation`, chaque route dit les rôles qu'elle admet, contrôlés ava
 Le quiz, les réponses et les attestations restent ouverts à l'agent au dossier incomplet : c'est sa formation [R82].
 
 Sans clé, la vérification publique d'une attestation : `POST /v1/formation/verification` (`{document, fingerprint}`, 32 ko au plus) et la page `/attestation` (formulaire : document et empreinte). Elles ne disent que « valide », avec le jour de délivrance, ou « non reconnue », sans raison ni nom ; un seul caractère changé, ou une empreinte recalculée par un faussaire, échoue. Rien de ce qui est collé n'est rangé [R571, R13].
+
+## Serveur MCP (BR08)
+
+Le serveur MCP de HX55, en JSON-RPC 2.0 (protocole `2025-06-18`), sur HTTP. Rien n'est envoyé, publié ni validé par lui.
+
+- `POST /v1/mcp`, avec la clé de portée « mcp » de l'agent, et elle seule (une autre clé ou une séance : 403 `cle_mcp_requise`) : `initialize`, `ping`, `tools/list`, `tools/call`. L'agent seul : la direction, la conformité et les partenaires sont refusés avant le corps, 403 et refus au journal [R16, R590]. Le socle revérifie à chaque appel l'accès coupé, le départ et le dossier de l'agent (aucune route MCP n'est ouverte au dossier incomplet) [R82] ; la couche métier revérifie ses droits sur chaque bien et chaque fiche et écrit chaque appel et chaque refus au journal avant de rendre la moindre donnée. Aucune donnée de client ne sort : une fiche ne se désigne que par son identifiant [R590]. Une notification (sans `id`) : 202, corps vide ; un corps illisible : 400, erreur `-32700`. 16 ko au plus.
+- `GET /v1/mcp/brouillons` (agent) : ses brouillons. `POST /v1/mcp/brouillons/<id>/decision` (`{decision: "valide" | "refuse"}`) : l'agent du brouillon seul ; une décision ne change plus. Aucun outil MCP ne décide [R591]. Ces deux routes n'admettent que la séance d'une clé d'appareil (BR06) : une clé d'API, que l'agent a pu confier à son assistant, y reçoit 403 `application_requise`, au journal, pour qu'un assistant ne valide jamais ce qu'il a écrit ni ne relise le texte d'une note [R590, R591].
+- La clé « mcp » n'enregistre aucune clé d'appareil et n'ouvre aucune séance : l'assistant ne peut pas se donner l'accès de l'application. Elle se range dans `API_KEYS` par Shawez (H65) ; la créer depuis l'application est la tâche BR09.
+- `POST /v1/mcp/public/<réseau>`, sans clé : le seul outil `biens_diffusables`, les biens que la diffusion autorise à l'instant même, tels que leur annonce publiée les décrit, sans adresse, agent ni donnée personnelle [R592]. Réseau inconnu : 404. Limites par heure : 120 demandes par adresse (`cf-connecting-ip`, en empreinte d'une heure), 5000 par réseau ; au-delà 429.
 
 ## Mise en ligne
 

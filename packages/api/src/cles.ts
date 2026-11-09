@@ -334,3 +334,13 @@ export async function sessionViewer(request: Request, s: { db: SqlDatabase; now:
   const found = await new ClesAppareil(s.db, new SqlJournalStore(s.db), { rpId: s.site.rpId, origins: s.site.origins, now: s.now }).authenticate(token);
   return found === null ? null : found.viewer;
 }
+
+/** Les demandes ouvertes par la séance d'une clé d'appareil (BR06), marquées par le socle après l'authentification. */
+const DEVICE_SESSIONS = new WeakSet<Request>();
+export function markDeviceSession(request: Request): void {
+  DEVICE_SESSIONS.add(request);
+}
+/** Vrai si la demande vient de l'application, par une clé d'appareil, et non d'une clé d'API qu'un assistant peut tenir. */
+export function fromDeviceSession(request: Request): boolean {
+  return DEVICE_SESSIONS.has(request);
+}
