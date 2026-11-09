@@ -11,7 +11,7 @@
  * Rien n'est envoyé ici ; aucune coordonnée, aucun nom ni aucune question ne va au journal [R13].
  */
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { normalizeEmail, normalizePhone } from '../fiche/normalize.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -24,7 +24,7 @@ export const CANDIDATE_SOURCES = ['video', 'podcast', 'page', 'parrain', 'autre'
 export type CandidateSource = (typeof CANDIDATE_SOURCES)[number];
 
 /** Les seuls champs d'une candidature : aucun ne note, ne classe ni ne trie [R81]. */
-export const CANDIDATE_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'town', 'currentStatus', 'experience', 'question', 'source', 'sponsorAgentId', 'contactConsent'] as const;
+export const CANDIDATE_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'town', 'currentStatus', 'experience', 'question', 'source', 'sponsorAgentId', 'contactConsent', 'contentCode'] as const;
 
 export interface Candidate {
   id: string;
@@ -170,18 +170,48 @@ export class Candidatures {
       sponsor = agent?.id ?? null;
     }
 
+    // Le lien marqué d'une vidéo ou d'un épisode (HX64) : un contenu actif du réseau, sinon ignoré sans le dire [R621].
+    // Sa sorte devient la source : le code prouve d'où vient le candidat mieux que ce qu'il a coché.
+    let content: { id: string; kind: CandidateSource } | null = null;
+    if (raw.contentCode !== undefined && raw.contentCode !== null && raw.contentCode !== '') {
+      if (typeof raw.contentCode !== 'string' || raw.contentCode.length > 40) return this.refuse(networkId, null, 'bad_content_code');
+      content = await this.db.first<{ id: string; kind: CandidateSource }>(
+        'SELECT r.id, r.kind FROM recruiting_contents r WHERE r.code = ? AND r.network_id = ? AND NOT EXISTS (SELECT 1 FROM recruiting_content_withdrawals w WHERE w.content_id = r.id)',
+        [raw.contentCode, networkId],
+      );
+    }
+    const source: CandidateSource = content ? content.kind : raw.source;
+
     const at = this.now().toISOString();
     const id = this.newId();
     // Les index uniques sur le mail et le téléphone font qu'une coordonnée ne range qu'une candidature, même en même temps [R18].
-    const { changes } = await this.db.run(
-      `INSERT INTO candidates (id, network_id, first_name, last_name, email, phone, town, current_status, experience, question, source, sponsor_agent_id, contact_consent_at, contact_consent_proof, created_at)
+    const statements: SqlStatement[] = [
+      {
+        sql: `INSERT INTO candidates (id, network_id, first_name, last_name, email, phone, town, current_status, experience, question, source, sponsor_agent_id, contact_consent_at, contact_consent_proof, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-      [id, networkId, firstName, lastName, email, phone, town, raw.currentStatus, raw.experience, question, raw.source, sponsor, consentProof ? at : null, consentProof, at],
-    );
+        params: [id, networkId, firstName, lastName, email, phone, town, raw.currentStatus, raw.experience, question, source, sponsor, consentProof ? at : null, consentProof, at],
+      },
+    ];
+    // Dans le même lot : rattachée seulement si la candidature vient d'être rangée et le contenu toujours actif [R621].
+    if (content) {
+      statements.push({
+        sql: `INSERT INTO candidate_content_origins (candidate_id, network_id, content_id, at)
+              SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND network_id = ?)
+                AND NOT EXISTS (SELECT 1 FROM recruiting_content_withdrawals WHERE content_id = ?)`,
+        params: [id, networkId, content.id, at, id, networkId, content.id],
+      });
+    }
+    const [inserted, origin] = await runBatch(this.db, statements);
+    const changes = inserted?.changes ?? 0;
     await appendEvent(
       this.journal,
       changes === 1
-        ? { type: 'candidature.rangee', actor: 'candidat', subject: `candidate:${id}`, data: { source: raw.source, contactable: consentProof !== null } }
+        ? {
+            type: 'candidature.rangee',
+            actor: 'candidat',
+            subject: `candidate:${id}`,
+            data: { source, contactable: consentProof !== null, ...(origin?.changes === 1 && content ? { contentId: content.id } : {}) },
+          }
         : { type: 'candidature.deja_rangee', actor: 'candidat', subject: `network:${networkId}`, data: { rule: 'R18' } },
       this.now,
     );
