@@ -63,7 +63,7 @@ import {
   type Fetcher,
   type ValuationReport,
 } from '@aimmo/core';
-import { intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
+import { fromMcpKey, intakeFromRequest, parseApiKeys, parseIntakeKeys, viewerFromRequest } from './auth.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter } from '@aimmo/core';
@@ -1991,6 +1991,14 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     if (await accessCut(s.db, s.journal, viewer, now)) {
       await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'access_cut' } }, now);
       return json(403, { ok: false, rule: 'R16', code: 'access_cut' });
+    }
+    // La clé confiée à un assistant (portée « mcp ») n'ouvre que le serveur MCP, et le serveur MCP n'accepte qu'elle :
+    // l'assistant ne lit aucune fiche, n'enregistre aucune clé d'appareil et ne décide aucun brouillon [R590, R591].
+    const mcpKey = fromMcpKey(request);
+    if (mcpKey !== (route.name === 'mcp.agent')) {
+      const code = mcpKey ? 'cle_mcp_hors_mcp' : 'cle_mcp_requise';
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R590', role: viewer.role, kind: `route.${route.name}`, code } }, now);
+      return json(403, { ok: false, rule: 'R590', code });
     }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.

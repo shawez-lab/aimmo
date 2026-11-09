@@ -1,7 +1,8 @@
 /**
  * L'adresse du serveur MCP d'AIMMO (HX55), sous `/v1/mcp` (BR08).
  *
- * - `POST /v1/mcp` : JSON-RPC 2.0, avec la clé de l'agent (clé d'API ou séance d'une clé d'appareil). Le socle a déjà
+ * - `POST /v1/mcp` : JSON-RPC 2.0, avec la clé de portée « mcp » de l'agent, la seule qu'il confie à son assistant ; elle
+ *   n'ouvre aucune autre route, et aucune autre clé n'ouvre celle-ci (contrôle du socle, `app.ts`). Le socle a déjà
  *   revérifié, pour cet appel, l'accès coupé, le départ et le dossier de l'agent [R16, R82] ; la couche métier revérifie
  *   ses droits sur chaque bien et chaque fiche, et écrit chaque appel et chaque refus au journal avant de rendre la
  *   moindre donnée [R590]. La direction, la conformité et les partenaires n'y ont aucun outil : refusés avant le corps.
@@ -96,7 +97,11 @@ export function mcpRoutes(): McpRoute[] {
       roles: AGENT,
       handle: async (s, v, _p, request) => {
         const body = await readJson(request);
-        if (body === undefined) return parseError();
+        if (body === undefined) {
+          // Un corps illisible, d'un autre type ou trop gros est un refus : au journal, sans le corps [R590, R13].
+          await appendEvent(s.journal, { type: 'mcp.refus', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R590', code: 'parse_error' } }, s.now);
+          return parseError();
+        }
         const caller: McpCaller = { kind: 'agent', viewer: v };
         return rpc(await server(s).handle(caller, body));
       },

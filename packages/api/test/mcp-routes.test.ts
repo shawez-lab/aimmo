@@ -15,6 +15,9 @@ const KEYS = {
   direction: 'test-cle-br08-direction-cccccccccccccccccccccc',
   conformite: 'test-cle-br08-conformite-ddddddddddddddddddddd',
   partenaire: 'test-cle-br08-partenaire-eeeeeeeeeeeeeeeeeeeee',
+  // Les clés de portée « mcp », que chaque agent confie à son assistant.
+  alexMcp: 'test-cle-br08-alex-mcp-gggggggggggggggggggggggg',
+  samMcp: 'test-cle-br08-sam-mcp-hhhhhhhhhhhhhhhhhhhhhhhhh',
 };
 type Who = keyof typeof KEYS;
 type Body = Record<string, any>;
@@ -22,12 +25,14 @@ type Body = Record<string, any>;
 async function setup(limits?: ApiConfig['mcpPublicLimits']) {
   const t = await setupAnnonce();
   const other = (await new FicheClient(t.db).createNetwork('Autre réseau')).id;
-  const ids: Record<Who, { role: string; userId: string; networkId: string }> = {
+  const ids: Record<Who, { role: string; userId: string; networkId: string; scope?: 'mcp' }> = {
     alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
     sam: { role: 'agent', userId: t.sam.userId, networkId: t.network.id },
     direction: { role: 'direction', userId: t.direction.userId, networkId: t.network.id },
     conformite: { role: 'compliance', userId: 'conformite-1', networkId: t.network.id },
     partenaire: { role: 'partner', userId: 'partenaire-1', networkId: t.network.id },
+    alexMcp: { role: 'agent', userId: t.alexId, networkId: t.network.id, scope: 'mcp' },
+    samMcp: { role: 'agent', userId: t.sam.userId, networkId: t.network.id, scope: 'mcp' },
   };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] }, ...(limits ? { mcpPublicLimits: limits } : {}) };
@@ -43,7 +48,9 @@ async function setup(limits?: ApiConfig['mcpPublicLimits']) {
     return { status: r.status, body: text === '' ? null : (JSON.parse(text) as Body) };
   };
   let n = 0;
-  const rpc = (who: Who, method: string, params?: unknown) => send('/mcp', { who, body: { jsonrpc: '2.0', id: ++n, method, ...(params === undefined ? {} : { params }) } });
+  /** L'assistant de l'agent parle au serveur par la clé « mcp » de cet agent. */
+  const mcpOf = (who: Who): Who => (who === 'alex' ? 'alexMcp' : who === 'sam' ? 'samMcp' : who);
+  const rpc = (who: Who, method: string, params?: unknown) => send('/mcp', { who: mcpOf(who), body: { jsonrpc: '2.0', id: ++n, method, ...(params === undefined ? {} : { params }) } });
   const tool = async (who: Who, name: string, args: Record<string, unknown> = {}) => (await rpc(who, 'tools/call', { name, arguments: args })).body?.result as { isError: boolean; structuredContent: Body };
   const lines = async (type: string) => (await t.journal.all()).filter((e) => e.type === type);
   /** La séance de l'application : la clé de cet appareil, enregistrée puis signée (BR06). */
@@ -56,7 +63,8 @@ async function setup(limits?: ApiConfig['mcpPublicLimits']) {
     if (f.status !== 200) throw new Error(`séance ${f.body?.code}`);
     return f.body?.data.token as string;
   };
-  return { ...t, other, send, rpc, tool, lines, appSession };
+  const count = async (table: string) => Number((await t.db.first<{ n: number }>(`SELECT count(*) AS n FROM ${table}`))?.n);
+  return { ...t, other, send, rpc, tool, lines, appSession, count };
 }
 
 describeWithSqlite('BR08 · adresse du serveur MCP', () => {
@@ -70,13 +78,45 @@ describeWithSqlite('BR08 · adresse du serveur MCP', () => {
       ] as const) {
         const before = (await t.lines('acces.refuse')).length;
         const r = await t.send(path, { who, method, ...(body === undefined ? {} : { raw: typeof body === 'string' ? body : JSON.stringify(body) }) });
-        expect([who, path, r.status, r.body]).toEqual([who, path, 403, { ok: false, rule: 'R16', code: 'role' }]);
+        // Sur le serveur, la clé n'est pas de portée « mcp » ; ailleurs, le rôle n'est pas celui de l'agent.
+        expect([who, path, r.status, r.body]).toEqual([who, path, 403, path === '/mcp' ? { ok: false, rule: 'R590', code: 'cle_mcp_requise' } : { ok: false, rule: 'R16', code: 'role' }]);
         expect((await t.lines('acces.refuse')).length).toBe(before + 1);
       }
     }
     // Sans clé : 401 ; aucun appel n'atteint le serveur.
     expect((await t.send('/mcp', { body: { jsonrpc: '2.0', id: 1, method: 'ping' } })).status).toBe(401);
     expect(await t.lines('mcp.appel')).toEqual([]);
+  });
+
+  it('[R590] [R591] la clé confiée à l’assistant n’ouvre que le serveur MCP, et le serveur n’accepte qu’elle', async () => {
+    const t = await setup();
+    // La clé ordinaire de l'agent n'ouvre pas le serveur MCP.
+    expect(await t.send('/mcp', { who: 'alex', body: { jsonrpc: '2.0', id: 1, method: 'ping' } })).toMatchObject({ status: 403, body: { rule: 'R590', code: 'cle_mcp_requise' } });
+    // La clé « mcp » n'ouvre rien d'autre : ni fiche, ni clé d'appareil (donc aucune séance), ni brouillon, ni export.
+    for (const [method, path, body] of [
+      ['GET', '/moi', undefined],
+      ['GET', `/fiches/${t.personId}`, undefined],
+      ['POST', '/cles/enregistrement/debut', undefined],
+      ['GET', '/mcp/brouillons', undefined],
+      ['POST', '/mcp/brouillons/d-1/decision', { decision: 'valide' }],
+      ['POST', '/export/agent', { stepUpId: 's' }],
+    ] as const) {
+      const before = (await t.lines('acces.refuse')).length;
+      const r = await t.send(path, { who: 'alexMcp', method, ...(body === undefined ? {} : { body }) });
+      expect([path, r.status, r.body]).toEqual([path, 403, { ok: false, rule: 'R590', code: 'cle_mcp_hors_mcp' }]);
+      expect((await t.lines('acces.refuse')).length).toBe(before + 1);
+    }
+    expect(await t.count('security_challenges')).toBe(0);
+    expect((await t.rpc('alex', 'ping')).status).toBe(200);
+  });
+
+  it('[R590] la portée « mcp » ne se lit que pour un agent ; une portée inconnue ferme l’API', async () => {
+    const { parseApiKeys } = await import('../src/auth.ts');
+    const base = { sha256: 'a'.repeat(64), userId: 'u-1', networkId: 'n-1' };
+    expect(parseApiKeys(JSON.stringify([{ ...base, role: 'agent', scope: 'mcp' }]))).toEqual([{ ...base, role: 'agent', scope: 'mcp' }]);
+    expect(parseApiKeys(JSON.stringify([{ ...base, role: 'direction', scope: 'mcp' }]))).toBeNull();
+    expect(parseApiKeys(JSON.stringify([{ ...base, role: 'agent', scope: 'tout' }]))).toBeNull();
+    expect(parseApiKeys(JSON.stringify([{ ...base, role: 'agent' }]))).toEqual([{ ...base, role: 'agent' }]);
   });
 
   it('[R590] l’agent parle au serveur par sa clé : chaque appel au journal avant la donnée ; notification sans réponse', async () => {
@@ -96,9 +136,13 @@ describeWithSqlite('BR08 · adresse du serveur MCP', () => {
     // Un argument hors du schéma est refusé.
     expect((await t.tool('alex', 'lire_bien', { bien: t.propertyId, adresse: true })).isError).toBe(true);
     // Notification : 202, corps vide. Corps illisible : erreur JSON-RPC.
-    expect(await t.send('/mcp', { who: 'alex', body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).toEqual({ status: 202, body: null });
-    expect(await t.send('/mcp', { who: 'alex', raw: '{pas du json' })).toMatchObject({ status: 400, body: { error: { code: -32700 } } });
-    expect((await t.send('/mcp', { who: 'alex', method: 'GET' })).status).toBe(405);
+    expect(await t.send('/mcp', { who: 'alexMcp', body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).toEqual({ status: 202, body: null });
+    const refusals = (await t.lines('mcp.refus')).length;
+    expect(await t.send('/mcp', { who: 'alexMcp', raw: '{pas du json' })).toMatchObject({ status: 400, body: { error: { code: -32700 } } });
+    // Le refus d'un corps illisible est au journal, sans le corps.
+    expect((await t.lines('mcp.refus')).length).toBe(refusals + 1);
+    expect(JSON.stringify(await t.lines('mcp.refus'))).not.toContain('pas du json');
+    expect((await t.send('/mcp', { who: 'alexMcp', method: 'GET' })).status).toBe(405);
   });
 
   it('[R590] [R591] aucune donnée de client vers l’assistant ; un brouillon se décide dans l’application, par son agent seul', async () => {
@@ -130,8 +174,8 @@ describeWithSqlite('BR08 · adresse du serveur MCP', () => {
     const own = await t.send('/mcp/brouillons', { token: alexApp, method: 'GET' });
     expect(own).toMatchObject({ status: 200 });
     expect((own.body?.data as { id: string; status: string }[]).find((d) => d.id === draftId)?.status).toBe('valide');
-    // La séance de l'application sert aussi le serveur MCP : elle reste soumise aux mêmes outils.
-    expect((await t.send('/mcp', { token: alexApp, body: { jsonrpc: '2.0', id: 99, method: 'ping' } })).status).toBe(200);
+    // La séance de l'application n'ouvre pas le serveur MCP : seule la clé « mcp » le fait.
+    expect(await t.send('/mcp', { token: alexApp, body: { jsonrpc: '2.0', id: 99, method: 'ping' } })).toMatchObject({ status: 403, body: { code: 'cle_mcp_requise' } });
   });
 
   it('[R16] [R82] les droits sont revérifiés à chaque appel : un agent parti n’a plus rien, dès l’appel suivant ; aucune route MCP sans dossier complet', async () => {
