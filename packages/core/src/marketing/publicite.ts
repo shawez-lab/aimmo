@@ -1,0 +1,590 @@
+/**
+ * Publicité payante mesurée au mandat (HX54, M07, M20 « Mesure », M12).
+ *
+ * Une campagne Google Ads ou Meta ne dépense rien sans la validation de la direction : un budget par jour, un budget
+ * total et un seuil de coût par contact. La plateforme ne reçoit que ces budgets, en mode essai seulement tant que le
+ * plan ne l'a pas mise en service ; le lancement est tenu par la base, une fois par validation, jamais sur une
+ * validation arrêtée ni remplacée [R587].
+ *
+ * La campagne s'arrête seule dès que son coût par contact dépasse le seuil (dépense > seuil × contacts, et sans
+ * contact dès que la dépense passe le seuil) ou que son budget total est atteint ; la pause est redemandée à la
+ * plateforme jusqu'à sa confirmation. L'arrêt protège la dépense, il ne décide pas de garder une source : relancer
+ * reste une décision de la direction, par une nouvelle validation [R588, R144]. Chaque campagne est jugée sur les
+ * mandats et les ventes qu'elle rapporte, lus dans la base comme la mesure mensuelle de G10 : les mandats signés par
+ * une personne qu'elle a amenée, après son arrivée, et les actes de ces biens ou de ces acquéreurs.
+ *
+ * Le ciblage ne porte que sur des communes et un rayon d'au moins 15 km, pour tous les adultes : âge, sexe, origine,
+ * nationalité, religion, langue, situation de famille, handicap, revenus, centres d'intérêt, listes de contacts ou
+ * audiences semblables sont refusés et nommés ; la base ne range rien d'autre [R589, R50]. Au journal : les issues,
+ * les règles et des montants, jamais une personne [R13]. Rien ne s'efface [R17].
+ */
+import type { Viewer } from '../acces/droits.ts';
+import { randomContentCode } from '../attirer/origine-contacts.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import type { SqlDatabase } from '../db/sql.ts';
+import { localTime } from '../envoi/horaires.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
+import { appendEvent } from '../journal/journal.ts';
+import type { JournalStore } from '../journal/types.ts';
+
+export const AD_PLATFORMS = ['google_ads', 'meta'] as const;
+export type AdPlatformName = (typeof AD_PLATFORMS)[number];
+export const MIN_RADIUS_KM = 15;
+export const MAX_RADIUS_KM = 80;
+export const MAX_COMMUNES = 30;
+
+/** Les seuls critères de ciblage admis [R589]. */
+export const ALLOWED_TARGETING = ['communes', 'rayonKm'] as const;
+
+/**
+ * Les critères interdits pour une annonce de logement, nommés quand ils sont demandés [R589, R50]. La liste admise
+ * reste fermée : un critère qui n'est ni admis ni ici est refusé aussi, sans être nommé.
+ */
+export const FORBIDDEN_TARGETING: readonly string[] = Object.freeze([
+  'age',
+  'ages',
+  'ageMin',
+  'ageMax',
+  'tranche_age',
+  'sexe',
+  'genre',
+  'gender',
+  'origine',
+  'ethnie',
+  'nationalite',
+  'religion',
+  'langue',
+  'langues',
+  'language',
+  'situationFamille',
+  'situation_famille',
+  'parents',
+  'enfants',
+  'handicap',
+  'sante',
+  'orientation',
+  'revenus',
+  'revenu',
+  'income',
+  'interets',
+  'centresInteret',
+  'interests',
+  'comportements',
+  'behaviors',
+  'codePostal',
+  'code_postal',
+  'adresse',
+  'listeContacts',
+  'audiencePersonnalisee',
+  'customAudience',
+  'audienceSimilaire',
+  'lookalike',
+  'politique',
+  'syndicat',
+]);
+
+export type AdRule = 'R16' | 'R587' | 'R588' | 'R589';
+export type AdResult<T> = { ok: true; value: T } | { ok: false; rule: AdRule | null; code: string; detail?: string };
+
+/** Ce que la plateforme reçoit au lancement : le code de suivi, la zone, les budgets validés. Rien d'autre. */
+export interface AdLaunch {
+  code: string;
+  communes: string[];
+  radiusKm: number | null;
+  dailyBudgetCents: number;
+  totalBudgetCents: number;
+}
+
+/** Une plateforme de publicité. Seul le mode essai est admis tant que le plan ne l'a pas mise en service [R587]. */
+export interface AdPlatform {
+  readonly mode: 'essai';
+  start(launch: AdLaunch): Promise<void>;
+  pause(code: string): Promise<void>;
+}
+
+/** Une plateforme d'essai : elle note ce qu'elle reçoit, n'appelle personne et ne dépense rien. */
+export function trialAdPlatform(): AdPlatform & { started: AdLaunch[]; paused: string[] } {
+  const started: AdLaunch[] = [];
+  const paused: string[] = [];
+  return {
+    mode: 'essai',
+    started,
+    paused,
+    start: async (launch) => {
+      started.push(structuredClone(launch));
+    },
+    pause: async (code) => {
+      paused.push(code);
+    },
+  };
+}
+
+export type CampaignState = 'a_valider' | 'validee' | 'en_cours' | 'arretee';
+export type StopReason = 'seuil' | 'budget' | 'direction' | 'echec_lancement';
+
+export interface CampaignReport {
+  id: string;
+  platform: AdPlatformName;
+  name: string;
+  state: CampaignState;
+  stopReason: StopReason | null;
+  spendCents: number;
+  contacts: number;
+  mandates: number;
+  sales: number;
+  /** Arrondis à l'entier ; `null` sans contact, sans mandat ou sans vente. */
+  costPerContactCents: number | null;
+  costPerMandateCents: number | null;
+  costPerSaleCents: number | null;
+  maxCostPerContactCents: number | null;
+}
+
+export interface PubliciteOptions {
+  now?: () => Date;
+  newId?: () => string;
+  newCode?: () => string;
+}
+
+interface CampaignRow {
+  id: string;
+  network_id: string;
+  platform: AdPlatformName;
+  name: string;
+  code: string;
+  communes: string;
+  radius_km: number | null;
+  created_at: string;
+}
+
+interface ApprovalRow {
+  id: string;
+  version: number;
+  daily_budget_cents: number;
+  total_budget_cents: number;
+  max_cost_per_contact_cents: number;
+}
+
+const INSEE = /^(\d{5}|2[AB]\d{3})$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const marks = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
+const cents = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+
+/** Un nom de critère ramené à sa forme simple, pour le reconnaître même écrit autrement. */
+const simple = (k: string): string =>
+  k
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+const FORBIDDEN_SIMPLE = new Map(FORBIDDEN_TARGETING.map((k) => [simple(k), k]));
+
+/** Lit un ciblage : communes et rayon seulement ; le premier critère interdit est nommé [R589]. */
+export function readTargeting(raw: unknown): AdResult<{ communes: string[]; radiusKm: number | null }> {
+  if (!isPlainObject(raw)) return { ok: false, rule: 'R589', code: 'ciblage_invalide' };
+  for (const key of Object.keys(raw)) {
+    if ((ALLOWED_TARGETING as readonly string[]).includes(key)) continue;
+    const named = FORBIDDEN_SIMPLE.get(simple(key));
+    if (named) return { ok: false, rule: 'R589', code: 'critere_interdit', detail: named };
+    return { ok: false, rule: 'R589', code: 'critere_inconnu' };
+  }
+  const communes = raw.communes;
+  if (!Array.isArray(communes) || communes.length < 1 || communes.length > MAX_COMMUNES) return { ok: false, rule: 'R589', code: 'communes' };
+  if (!communes.every((c): c is string => typeof c === 'string' && INSEE.test(c)) || new Set(communes).size !== communes.length) return { ok: false, rule: 'R589', code: 'communes' };
+  const r = raw.rayonKm;
+  if (r !== undefined && r !== null && (typeof r !== 'number' || !Number.isSafeInteger(r) || r < MIN_RADIUS_KM || r > MAX_RADIUS_KM)) return { ok: false, rule: 'R589', code: 'rayon' };
+  return { ok: true, value: { communes: [...communes].sort(), radiusKm: typeof r === 'number' ? r : null } };
+}
+
+export class PublicitePayante {
+  private readonly now: () => Date;
+  private readonly newId: () => string;
+  private readonly newCode: () => string;
+  private readonly fiche: FicheUnique;
+
+  constructor(
+    private readonly db: SqlDatabase,
+    private readonly journal: JournalStore,
+    private readonly platforms: Readonly<Record<AdPlatformName, AdPlatform>>,
+    options: PubliciteOptions = {},
+  ) {
+    for (const name of AD_PLATFORMS) {
+      // Aucun envoi réel tant que le plan ne l'a pas mis en service [R587].
+      if (platforms[name]?.mode !== 'essai') throw new Error(`plateforme ${name} : seul le mode essai est admis`);
+    }
+    this.now = options.now ?? (() => new Date());
+    this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.newCode = options.newCode ?? randomContentCode;
+    this.fiche = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private async refuse<T>(viewer: Viewer | null, kind: string, rule: AdRule, code: string, data: Record<string, unknown> = {}, detail?: string): Promise<AdResult<T>> {
+    await appendEvent(this.journal, { type: rule === 'R16' ? 'acces.refuse' : 'publicite.refus', actor: viewer ? this.actor(viewer) : 'system:publicite', subject: null, data: { rule, kind, code, ...data } }, this.now);
+    return detail === undefined ? { ok: false, rule, code } : { ok: false, rule, code, detail };
+  }
+
+  /** Seule la direction valide, lance, arrête et lit les chiffres [R16, R587]. */
+  private async direction<T>(viewer: Viewer, kind: string): Promise<AdResult<T> | null> {
+    if (viewer.role === 'direction') return null;
+    return this.refuse(viewer, kind, 'R16', 'role', { role: String(viewer.role) });
+  }
+
+  private async campaign(networkId: string, id: unknown): Promise<CampaignRow | null> {
+    if (typeof id !== 'string') return null;
+    return (await this.db.first<CampaignRow>('SELECT id, network_id, platform, name, code, communes, radius_km, created_at FROM ad_campaigns WHERE id = ? AND network_id = ?', [id, networkId])) ?? null;
+  }
+
+  private async lastApproval(campaignId: string): Promise<ApprovalRow | null> {
+    return (
+      (await this.db.first<ApprovalRow>(
+        'SELECT id, version, daily_budget_cents, total_budget_cents, max_cost_per_contact_cents FROM ad_campaign_approvals WHERE campaign_id = ? ORDER BY version DESC LIMIT 1',
+        [campaignId],
+      )) ?? null
+    );
+  }
+
+  /** La direction ou un agent du réseau propose une campagne ; elle ne dépense rien tant qu'elle n'est pas validée. */
+  async create(viewer: Viewer, input: { platform?: unknown; name?: unknown; targeting?: unknown }): Promise<AdResult<{ id: string; code: string }>> {
+    if (viewer.role !== 'direction' && viewer.role !== 'agent') return this.refuse(viewer, 'ad_campaign', 'R16', 'role', { role: String(viewer.role) });
+    const { platform, name } = input;
+    if (typeof platform !== 'string' || !(AD_PLATFORMS as readonly string[]).includes(platform)) return { ok: false, rule: null, code: 'bad_platform' };
+    if (typeof name !== 'string' || name.trim().length < 3 || name.trim().length > 80) return { ok: false, rule: null, code: 'bad_name' };
+    const targeting = readTargeting(input.targeting);
+    if (!targeting.ok) return this.refuse(viewer, 'ad_campaign', 'R589', targeting.code, targeting.detail ? { criterion: targeting.detail } : {}, targeting.detail);
+    const id = this.newId();
+    const code = this.newCode();
+    await this.db.run('INSERT INTO ad_campaigns (id, network_id, platform, name, code, communes, radius_km, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      id,
+      viewer.networkId,
+      platform,
+      name.trim(),
+      code,
+      JSON.stringify(targeting.value.communes),
+      targeting.value.radiusKm,
+      this.actor(viewer),
+      this.now().toISOString(),
+    ]);
+    await appendEvent(this.journal, { type: 'publicite.campagne', actor: this.actor(viewer), subject: `ad_campaign:${id}`, data: { rule: 'R589', platform, communes: targeting.value.communes.length, radiusKm: targeting.value.radiusKm } }, this.now);
+    return { ok: true, value: { id, code } };
+  }
+
+  /** La direction valide les budgets et le seuil ; chaque validation est une version nouvelle [R587]. */
+  async approve(viewer: Viewer, campaignId: unknown, input: { dailyBudgetCents?: unknown; totalBudgetCents?: unknown; maxCostPerContactCents?: unknown }): Promise<AdResult<{ approvalId: string; version: number }>> {
+    const denied = await this.direction<{ approvalId: string; version: number }>(viewer, 'ad_approval');
+    if (denied) return denied;
+    const c = await this.campaign(viewer.networkId, campaignId);
+    if (!c) return { ok: false, rule: null, code: 'unknown' };
+    const { dailyBudgetCents: daily, totalBudgetCents: total, maxCostPerContactCents: max } = input;
+    if (!cents(daily) || !cents(total) || !cents(max) || total < daily) return { ok: false, rule: 'R587', code: 'bad_budget' };
+    // Une validation en cours de dépense n'est pas remplacée sous ses pieds : elle s'arrête d'abord.
+    const last = await this.lastApproval(c.id);
+    if (last && (await this.running(last.id))) return { ok: false, rule: 'R587', code: 'en_cours' };
+    // Une pause pas encore confirmée par la plateforme : rien de nouveau tant qu'elle ne l'est pas [R588].
+    if (await this.pausePending(c.id)) return { ok: false, rule: 'R588', code: 'pause_en_attente' };
+    if (await this.launchPending(c.id)) return { ok: false, rule: 'R587', code: 'lancement_en_cours' };
+    const version = (last?.version ?? 0) + 1;
+    const approvalId = this.newId();
+    let changes = 0;
+    try {
+      ({ changes } = await this.db.run(
+        'INSERT INTO ad_campaign_approvals (id, campaign_id, version, daily_budget_cents, total_budget_cents, max_cost_per_contact_cents, approved_by, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+        [approvalId, c.id, version, daily, total, max, this.actor(viewer), this.now().toISOString()],
+      ));
+    } catch {
+      // Lancée entre-temps : la base refuse une validation nouvelle tant que l'autre dépense [R587].
+      return { ok: false, rule: 'R587', code: 'en_cours' };
+    }
+    if (changes !== 1) return { ok: false, rule: null, code: 'conflict' };
+    await appendEvent(this.journal, { type: 'publicite.validation', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', version, dailyBudgetCents: daily, totalBudgetCents: total, maxCostPerContactCents: max } }, this.now);
+    return { ok: true, value: { approvalId, version } };
+  }
+
+  private async running(approvalId: string): Promise<boolean> {
+    const r = await this.db.first<{ s: number; t: number }>(
+      'SELECT EXISTS (SELECT 1 FROM ad_campaign_starts WHERE approval_id = ?) AS s, EXISTS (SELECT 1 FROM ad_campaign_stops WHERE approval_id = ?) AS t',
+      [approvalId, approvalId],
+    );
+    return Number(r?.s) === 1 && Number(r?.t) === 0;
+  }
+
+  /** La dépense de la campagne, dernière version de chaque jour, et ses contacts : tout depuis la base. */
+  private async totals(campaignId: string): Promise<{ spendCents: number; contacts: number }> {
+    const s = await this.db.first<{ total: number | null }>(
+      `SELECT sum(amount_cents) AS total FROM ad_campaign_spend s WHERE campaign_id = ?
+       AND version = (SELECT max(version) FROM ad_campaign_spend d WHERE d.campaign_id = s.campaign_id AND d.day = s.day)`,
+      [campaignId],
+    );
+    // Une personne par fiche : deux contacts réunis après coup ne comptent qu'une fois [R588].
+    const k = await this.db.all<{ person_id: string }>('SELECT person_id FROM ad_campaign_contacts WHERE campaign_id = ?', [campaignId]);
+    const roots = new Set(await Promise.all(k.map((r) => this.fiche.rootOf(r.person_id))));
+    return { spendCents: Number(s?.total ?? 0), contacts: roots.size };
+  }
+
+  /** Un lancement demandé à la plateforme dont la réponse n'est pas encore revenue. */
+  private async launchPending(campaignId: string): Promise<boolean> {
+    const r = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts s WHERE s.campaign_id = ? AND NOT EXISTS (SELECT 1 FROM ad_campaign_launches l WHERE l.approval_id = s.approval_id)', [campaignId]);
+    return Number(r?.n) > 0;
+  }
+
+  /** Une pause demandée à la plateforme et pas encore confirmée, pour cette campagne. */
+  private async pausePending(campaignId: string): Promise<boolean> {
+    const r = await this.db.first<{ n: number }>(
+      `SELECT (SELECT count(*) FROM ad_campaign_stops WHERE campaign_id = ? AND paused_at IS NULL)
+        + (SELECT count(*) FROM ad_campaign_repauses r JOIN ad_campaign_stops s ON s.approval_id = r.approval_id WHERE s.campaign_id = ? AND r.paused_at IS NULL) AS n`,
+      [campaignId, campaignId],
+    );
+    return Number(r?.n) > 0;
+  }
+
+  /** Les validations lancées et pas encore arrêtées : une seule en principe, toutes contrôlées quand même. */
+  private async runningApprovals(campaignId: string): Promise<ApprovalRow[]> {
+    return this.db.all<ApprovalRow>(
+      `SELECT a.id, a.version, a.daily_budget_cents, a.total_budget_cents, a.max_cost_per_contact_cents FROM ad_campaign_approvals a
+       JOIN ad_campaign_starts s ON s.approval_id = a.id
+       WHERE a.campaign_id = ? AND NOT EXISTS (SELECT 1 FROM ad_campaign_stops t WHERE t.approval_id = a.id) ORDER BY a.version`,
+      [campaignId],
+    );
+  }
+
+  /** Le motif d'arrêt automatique, ou null : seuil de coût par contact dépassé, ou budget total atteint [R588]. */
+  private overLimit(a: ApprovalRow, t: { spendCents: number; contacts: number }): 'seuil' | 'budget' | null {
+    if (t.spendCents > Number(a.max_cost_per_contact_cents) * Math.max(t.contacts, 1)) return 'seuil';
+    if (t.spendCents >= Number(a.total_budget_cents)) return 'budget';
+    return null;
+  }
+
+  /** La direction lance la dernière validation, une fois ; la plateforme ne reçoit que les budgets validés [R587]. */
+  async start(viewer: Viewer, campaignId: unknown): Promise<AdResult<{ approvalId: string }>> {
+    const denied = await this.direction<{ approvalId: string }>(viewer, 'ad_start');
+    if (denied) return denied;
+    const c = await this.campaign(viewer.networkId, campaignId);
+    if (!c) return { ok: false, rule: null, code: 'unknown' };
+    const a = await this.lastApproval(c.id);
+    if (!a) return this.refuse(viewer, 'ad_start', 'R587', 'sans_validation', { campaign: c.id });
+    // Une validation déjà lancée ou arrêtée ne repart jamais : il en faut une nouvelle de la direction [R587].
+    const used = await this.db.first<{ n: number }>('SELECT (SELECT count(*) FROM ad_campaign_starts WHERE approval_id = ?) + (SELECT count(*) FROM ad_campaign_stops WHERE approval_id = ?) AS n', [a.id, a.id]);
+    if (Number(used?.n) > 0) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
+    if (await this.launchPending(c.id)) return this.refuse(viewer, 'ad_start', 'R587', 'lancement_en_cours', { campaign: c.id });
+    if (await this.pausePending(c.id)) return this.refuse(viewer, 'ad_start', 'R588', 'pause_en_attente', { campaign: c.id });
+    // Déjà au-delà du seuil ou du budget avec ce qui est dépensé : rien ne repart [R588].
+    const over = this.overLimit(a, await this.totals(c.id));
+    if (over) return this.refuse(viewer, 'ad_start', 'R588', over, { campaign: c.id });
+    let changes = 0;
+    try {
+      ({ changes } = await this.db.run("INSERT INTO ad_campaign_starts (approval_id, campaign_id, mode, started_by, started_at) VALUES (?, ?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [
+        a.id,
+        c.id,
+        this.actor(viewer),
+        this.now().toISOString(),
+      ]));
+    } catch {
+      changes = 0;
+    }
+    // Déjà lancée, arrêtée ou remplacée : la base refuse, rien ne part [R587].
+    if (changes !== 1) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
+    const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
+    try {
+      await this.platforms[c.platform].start(launch);
+      await this.launched(a.id, 'lancee');
+    } catch {
+      await this.launched(a.id, 'echec');
+      await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
+      return { ok: false, rule: 'R587', code: 'echec_lancement' };
+    }
+    // Arrêtée pendant que la plateforme lançait : la pause a pu passer avant le lancement, elle est redemandée.
+    const stoppedMeanwhile = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_stops WHERE approval_id = ?', [a.id]);
+    if (Number(stoppedMeanwhile?.n) > 0) {
+      await this.pause(c, a.id, true);
+      return { ok: false, rule: 'R588', code: 'arretee_au_lancement' };
+    }
+    await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: 'essai', version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
+    return { ok: true, value: { approvalId: a.id } };
+  }
+
+  /** La réponse de la plateforme au lancement, rangée une fois : tant qu'elle manque, rien d'autre ne se lance. */
+  private async launched(approvalId: string, outcome: 'lancee' | 'echec'): Promise<void> {
+    await this.db.run('INSERT INTO ad_campaign_launches (approval_id, outcome, done_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [approvalId, outcome, this.now().toISOString()]);
+  }
+
+  /** Range l'arrêt une fois, puis demande la pause à la plateforme ; une pause non confirmée sera redemandée. */
+  private async stopApproval(c: CampaignRow, approvalId: string, reason: StopReason, by: string): Promise<boolean> {
+    const t = await this.totals(c.id);
+    const { changes } = await this.db.run('INSERT INTO ad_campaign_stops (approval_id, campaign_id, reason, spend_cents, contacts, stopped_by, stopped_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
+      approvalId,
+      c.id,
+      reason,
+      t.spendCents,
+      t.contacts,
+      by,
+      this.now().toISOString(),
+    ]);
+    if (changes !== 1) return false;
+    await appendEvent(this.journal, { type: 'publicite.arretee', actor: by, subject: `ad_campaign:${c.id}`, data: { rule: reason === 'direction' ? 'R587' : 'R588', reason, spendCents: t.spendCents, contacts: t.contacts } }, this.now);
+    await this.pause(c, approvalId);
+    return true;
+  }
+
+  private async pause(c: CampaignRow, approvalId: string, again = false): Promise<void> {
+    try {
+      await this.platforms[c.platform].pause(c.code);
+    } catch {
+      await appendEvent(this.journal, { type: 'publicite.pause_echec', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
+      // Une pause redemandée après le lancement et en échec redevient à confirmer.
+      if (again) await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [approvalId, this.now().toISOString()]);
+      return;
+    }
+    if (again) await this.db.run('UPDATE ad_campaign_repauses SET paused_at = ? WHERE approval_id = ? AND paused_at IS NULL', [this.now().toISOString(), approvalId]);
+    await this.db.run('UPDATE ad_campaign_stops SET paused_at = ? WHERE approval_id = ? AND paused_at IS NULL', [this.now().toISOString(), approvalId]);
+  }
+
+  /** La direction arrête une campagne en cours. */
+  async stop(viewer: Viewer, campaignId: unknown): Promise<AdResult<null>> {
+    const denied = await this.direction<null>(viewer, 'ad_stop');
+    if (denied) return denied;
+    const c = await this.campaign(viewer.networkId, campaignId);
+    if (!c) return { ok: false, rule: null, code: 'unknown' };
+    const runs = await this.runningApprovals(c.id);
+    if (runs.length === 0) return { ok: false, rule: null, code: 'pas_en_cours' };
+    for (const a of runs) await this.stopApproval(c, a.id, 'direction', this.actor(viewer));
+    return { ok: true, value: null };
+  }
+
+  /**
+   * La dépense d'un jour lue chez la plateforme ; une correction s'ajoute en version. Une dépense sur une campagne
+   * jamais lancée n'est pas rangée : elle est signalée [R587]. Le contrôle du seuil passe aussitôt [R588].
+   */
+  async recordSpend(networkId: string, campaignId: unknown, day: unknown, amountCents: unknown): Promise<AdResult<{ stopped: boolean }>> {
+    const c = await this.campaign(networkId, campaignId);
+    if (!c) return { ok: false, rule: null, code: 'unknown' };
+    if (typeof day !== 'string' || !DAY.test(day)) return { ok: false, rule: null, code: 'bad_day' };
+    if (typeof amountCents !== 'number' || !Number.isSafeInteger(amountCents) || amountCents < 0) return { ok: false, rule: null, code: 'bad_amount' };
+    const started = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts WHERE campaign_id = ?', [c.id]);
+    if (Number(started?.n) === 0) return this.refuse(null, 'ad_spend', 'R587', 'depense_sans_lancement', { campaign: c.id, amountCents });
+    // Deux lectures du même jour en même temps : la version prise est réessayée, aucune lecture n'est perdue [R588].
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const last = await this.db.first<{ v: number | null; a: number | null }>(
+        'SELECT max(version) AS v, (SELECT amount_cents FROM ad_campaign_spend WHERE campaign_id = ? AND day = ? ORDER BY version DESC LIMIT 1) AS a FROM ad_campaign_spend WHERE campaign_id = ? AND day = ?',
+        [c.id, day, c.id, day],
+      );
+      const previous = last?.a === null || last?.a === undefined ? null : Number(last.a);
+      if (previous === amountCents) break;
+      const { changes } = await this.db.run('INSERT INTO ad_campaign_spend (campaign_id, day, version, amount_cents, reported_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
+        c.id,
+        day,
+        Number(last?.v ?? 0) + 1,
+        amountCents,
+        this.now().toISOString(),
+      ]);
+      if (changes !== 1) continue;
+      // Une dépense qui monte alors qu'aucune validation n'est en cours est rangée telle que lue, et signalée [R587].
+      if ((previous === null ? amountCents > 0 : amountCents > previous) && (await this.runningApprovals(c.id)).length === 0) {
+        await this.refuse(null, 'ad_spend', 'R587', 'depense_hors_validation', { campaign: c.id, amountCents });
+      }
+      break;
+    }
+    return { ok: true, value: { stopped: await this.check(c) } };
+  }
+
+  /** Un contact amené par le code de suivi d'une campagne lancée, une fois par personne. */
+  async recordContact(networkId: string, code: unknown, personId: unknown): Promise<AdResult<{ campaignId: string; counted: boolean }>> {
+    if (typeof code !== 'string' || typeof personId !== 'string') return { ok: false, rule: null, code: 'bad_input' };
+    const c = await this.db.first<{ id: string }>('SELECT id FROM ad_campaigns WHERE code = ? AND network_id = ?', [code, networkId]);
+    if (!c) return { ok: false, rule: null, code: 'unknown' };
+    const started = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts WHERE campaign_id = ?', [c.id]);
+    if (Number(started?.n) === 0) return { ok: false, rule: null, code: 'pas_lancee' };
+    const root = await this.fiche.rootOf(personId);
+    const members = await this.fiche.membersOf(root);
+    const seen = await this.db.first<{ n: number }>(`SELECT count(*) AS n FROM ad_campaign_contacts WHERE campaign_id = ? AND person_id IN (${marks(members.length)})`, [c.id, ...members]);
+    if (Number(seen?.n) > 0) return { ok: true, value: { campaignId: c.id, counted: false } };
+    const { changes } = await this.db.run('INSERT INTO ad_campaign_contacts (campaign_id, network_id, person_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [c.id, networkId, root, this.now().toISOString()]);
+    if (changes === 1) await appendEvent(this.journal, { type: 'publicite.contact', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
+    return { ok: true, value: { campaignId: c.id, counted: changes === 1 } };
+  }
+
+  /** Le contrôle d'une campagne : arrêt au seuil ou au budget, et pause redemandée tant qu'elle n'est pas confirmée. */
+  private async check(c: CampaignRow): Promise<boolean> {
+    const pending = await this.db.all<{ approval_id: string }>('SELECT approval_id FROM ad_campaign_stops WHERE campaign_id = ? AND paused_at IS NULL', [c.id]);
+    for (const p of pending) await this.pause(c, p.approval_id);
+    const again = await this.db.all<{ approval_id: string }>('SELECT r.approval_id FROM ad_campaign_repauses r JOIN ad_campaign_stops s ON s.approval_id = r.approval_id WHERE s.campaign_id = ? AND r.paused_at IS NULL', [c.id]);
+    for (const p of again) await this.pause(c, p.approval_id, true);
+    const totals = await this.totals(c.id);
+    let stopped = false;
+    for (const a of await this.runningApprovals(c.id)) {
+      const over = this.overLimit(a, totals);
+      if (over && (await this.stopApproval(c, a.id, over, 'system:publicite'))) stopped = true;
+    }
+    return stopped;
+  }
+
+  /** Le passage planifié : chaque campagne du réseau contrôlée [R588]. */
+  async runChecks(networkId: string): Promise<{ stopped: number }> {
+    const rows = await this.db.all<CampaignRow>('SELECT id, network_id, platform, name, code, communes, radius_km, created_at FROM ad_campaigns WHERE network_id = ? ORDER BY created_at, id', [networkId]);
+    let stopped = 0;
+    for (const c of rows) if (await this.check(c)) stopped += 1;
+    return { stopped };
+  }
+
+  /** Les mandats et les ventes qu'une campagne rapporte, lus dans la base comme ceux de G10. */
+  private async outcomes(campaignId: string): Promise<{ mandates: number; sales: number }> {
+    const contacts = await this.db.all<{ person_id: string; arrived_at: string }>('SELECT person_id, arrived_at FROM ad_campaign_contacts WHERE campaign_id = ?', [campaignId]);
+    const mandates = new Set<string>();
+    const sales = new Set<string>();
+    for (const k of contacts) {
+      const members = await this.fiche.membersOf(await this.fiche.rootOf(k.person_id));
+      const m = await this.db.all<{ id: string; property_id: string | null }>(`SELECT id, property_id FROM mandates WHERE person_id IN (${marks(members.length)}) AND signed_at >= ?`, [...members, k.arrived_at]);
+      for (const r of m) mandates.add(r.id);
+      const props = m.map((r) => r.property_id).filter((p): p is string => p !== null);
+      const s = await this.db.all<{ file_id: string }>(
+        `SELECT c.file_id FROM sale_file_closings c JOIN sale_files f ON f.id = c.file_id
+         WHERE c.signed_on >= ? AND (f.buyer_person_id IN (${marks(members.length)})${props.length ? ` OR f.property_id IN (${marks(props.length)})` : ''})`,
+        // Le jour de l'acte, à Paris, jamais le jour où il a été rangé.
+        [PublicitePayante.parisDay(new Date(k.arrived_at)), ...members, ...props],
+      );
+      for (const r of s) sales.add(r.file_id);
+    }
+    return { mandates: mandates.size, sales: sales.size };
+  }
+
+  /** Le compte rendu des campagnes pour la direction : dépense, contacts, mandats, ventes et leurs coûts. */
+  async report(viewer: Viewer): Promise<AdResult<CampaignReport[]>> {
+    const denied = await this.direction<CampaignReport[]>(viewer, 'ad_report');
+    if (denied) return denied;
+    const rows = await this.db.all<CampaignRow>('SELECT id, network_id, platform, name, code, communes, radius_km, created_at FROM ad_campaigns WHERE network_id = ? ORDER BY created_at, id', [viewer.networkId]);
+    const out: CampaignReport[] = [];
+    for (const c of rows) {
+      const a = await this.lastApproval(c.id);
+      const t = await this.totals(c.id);
+      const o = await this.outcomes(c.id);
+      const stop = a ? await this.db.first<{ reason: StopReason }>('SELECT reason FROM ad_campaign_stops WHERE approval_id = ?', [a.id]) : null;
+      const started = a ? await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_starts WHERE approval_id = ?', [a.id]) : null;
+      const state: CampaignState = !a ? 'a_valider' : stop ? 'arretee' : Number(started?.n) > 0 ? 'en_cours' : 'validee';
+      const per = (n: number): number | null => (n === 0 ? null : Math.round(t.spendCents / n));
+      out.push({
+        id: c.id,
+        platform: c.platform,
+        name: c.name,
+        state,
+        stopReason: stop?.reason ?? null,
+        spendCents: t.spendCents,
+        contacts: t.contacts,
+        mandates: o.mandates,
+        sales: o.sales,
+        costPerContactCents: per(t.contacts),
+        costPerMandateCents: per(o.mandates),
+        costPerSaleCents: per(o.sales),
+        maxCostPerContactCents: a ? Number(a.max_cost_per_contact_cents) : null,
+      });
+    }
+    await appendEvent(this.journal, { type: 'publicite.compte_rendu', actor: this.actor(viewer), subject: null, data: { rule: 'R16', campaigns: out.length } }, this.now);
+    return { ok: true, value: out };
+  }
+
+  /** Le jour de Paris d'un instant, pour ranger la dépense du jour. */
+  static parisDay(at: Date): string {
+    return localTime(at, 'Europe/Paris').date;
+  }
+}

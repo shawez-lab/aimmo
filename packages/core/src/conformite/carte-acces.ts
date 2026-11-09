@@ -245,6 +245,7 @@ const saleFileTypes = (...uses: SaleFileEventUse[]): string[] => Object.entries(
 const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Sujet d'un envoi du contrôle central (${why}) : jamais écrit au journal, rangé avec la personne dans message_subjects et send_log, lus par sa fiche.` });
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
+  ad_campaign: { excluded: 'sans_client', why: 'Une campagne de publicité payante (HX54) : sa création, ses validations, son lancement, son arrêt et ses contacts comptés, sans donnée d\'un client ; les contacts se lisent dans ad_campaign_contacts par person_id.' },
   device: { excluded: 'agent', why: 'Une clé d\'accès d\'un appareil d\'un utilisateur du réseau (HX56) : rangement, accord, retrait, connexion.' },
   user: { excluded: 'agent', why: 'Un utilisateur du réseau, objet d\'une preuve de second facteur (HX56) : « ajouter un appareil ».' },
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
@@ -538,6 +539,14 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
+  ad_campaigns: out('sans_client', 'Campagnes de publicité payante (HX54) : une plateforme, un nom, des communes et un rayon ; aucune personne.'),
+  ad_campaign_approvals: out('sans_client', 'Validations de la direction d\'une campagne (HX54) : budgets et seuil ; aucune personne.'),
+  ad_campaign_starts: out('sans_client', 'Lancements d\'une campagne (HX54), en essai : aucune personne.'),
+  ad_campaign_stops: out('sans_client', 'Arrêts d\'une campagne (HX54) : motif, dépense et nombre de contacts ; aucune personne.'),
+  ad_campaign_spend: out('sans_client', 'Dépense d\'une campagne par jour, lue chez la plateforme (HX54) : aucune personne.'),
+  ad_campaign_repauses: out('sans_client', 'Pauses redemandées d\'une campagne (HX54) : aucune personne.'),
+  ad_campaign_launches: out('sans_client', 'Réponses des plateformes aux lancements d\'une campagne (HX54) : aucune personne.'),
+  ad_campaign_contacts: { locate: by('person_id') },
   newsletter_editions: out('sans_client', 'Éditions de la lettre d\'information (HX53) : un titre, la direction qui l\'ouvre ; aucune personne.'),
   newsletter_letters: { locate: by('person_id') },
   newsletter_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
