@@ -693,7 +693,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : H64 pour l'usage réel (site WebAuthn).
 
 ### BR06 · Connexion par clé d'appareil dans le socle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : BR05
 - Partie du cahier : Conformité (accès), HX56.
 - Objectif : `beginLogin` et `finishLogin` en routes publiques limitées en débit, et la séance (`authenticate`) acceptée par l'authentification de `app.ts` à côté des clés d'API, relue à chaque demande ; retrait de la clé ou départ de l'agent coupent la séance.
