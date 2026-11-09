@@ -622,7 +622,8 @@ Réservé le 2026-11-09 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte). Routes et écran : à la voie 1 (`app.ts`).
 
 ### HX68 · Les communes où des clients attendent un agent, ouvertes au recrutement (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#454), `packages/core/src/reseau/communes-a-pourvoir.ts`, migration `3420`, R626 à R628 en service ; table au registre (traitement recrutement, la commune y est classée personnelle comme `agent_zones`) et à la carte des demandes d'accès. Routes, écran de la direction et liste sur la page de candidature : à la voie 1.
 - Qui : Claude, voie 2, relecture forte · Dépend de : Q03, HX64
 - Partie du cahier : Feuille de route, phase 4, « Recrutement en Bourgogne-Franche-Comté par les vidéos et le podcast » ; M14, « Candidature » ; M03, attribution (« si aucun agent ne couvre la commune, le contact va à la direction ») ; Offre aux agents (aucune promesse de revenus).
 - Décidé (2026-11-09, voie 2), lecture prudente : ajouté parce que la voie 2 n'avait plus de tâche libre et que la Feuille de route demande le recrutement par zone ; la commune est celle que l'attribution a lue (celle du contact, à défaut celle du bien cité) ; un contact dont seul un message d'avant disait la commune est compté « sans commune », jamais rangé au hasard ; une zone ouverte à l'instant de l'attribution, d'un agent alors en activité (aucun départ en vigueur arrivé ce jour-là, jour de Paris, comme `agentGone`), fait que le contact n'est pas compté ; un départ ne ferme pas les zones (J11), donc la zone d'un agent parti avant ne couvre rien ; chaque fiche est ramenée à sa fiche gardée (S04) ; les curieux ne comptent pas.
