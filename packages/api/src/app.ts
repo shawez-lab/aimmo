@@ -90,6 +90,7 @@ import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
+import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
 import { clesRoutes, handleConnexion, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
 import type { LecteurFactures } from '../../core/src/facturation/index.ts';
@@ -202,6 +203,8 @@ export interface ApiConfig {
   cles?: ClesConfig | null;
   /** Les limites d'appels de la connexion par une clé (BR06) ; absentes, les réglages par défaut. */
   clesLimits?: ConnexionLimits;
+  /** Les limites de la lecture publique du serveur MCP (BR08) ; absentes, les réglages par défaut. */
+  mcpPublicLimits?: McpPublicLimits;
   /**
    * Les espaces des clients (EC07) : le réseau de la page publique (`ESPACE_NETWORK_ID`), l'adresse de l'espace
    * (`ESPACE_BASE`, en https, sans chiffre, terminée par `/espace/`) et les clés du relevé prouvé (secret
@@ -1211,6 +1214,16 @@ function recrutementRoutesDef(): RouteDef[] {
   }));
 }
 
+/** L'adresse du serveur MCP de l'agent et ses brouillons (BR08) : l'agent seul, contrôlé avant le corps [R16, R590, R591]. */
+function mcpRoutesDef(): RouteDef[] {
+  return mcpRoutes().map((r: McpRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes du quiz et des attestations de formation (BR07) : chaque rôle contrôlé avant le corps [R16, R570, R571]. */
 function formationRoutesDef(): RouteDef[] {
   return formationRoutes().map((r: FormationRoute) => ({
@@ -1894,6 +1907,18 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
   }
 
+  // Le serveur MCP sans agent (BR08) : les seuls biens diffusables d'un réseau, sans clé, limité en débit [R592].
+  if (url.pathname.startsWith(MCP_PUBLIC_PREFIX)) {
+    const s = services(config.db, now);
+    try {
+      const page = await handleMcpPublic(request, { db: s.db, acces: s.acces, now, ...(config.mcpPublicLimits ? { limits: config.mcpPublicLimits } : {}) });
+      if (page) return page;
+    } catch (error) {
+      await journalError(s.journal, 'public:mcp', 'mcp.public', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
   // Les clés du secret `API_KEYS`, et celles remises par une invitation (Z02). Un secret présent mais mal formé
   // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente. À côté des clés, la séance d'une clé
   // d'appareil (BR06), relue dans la base à chaque demande : une clé retirée ou un agent parti la coupent [R600, R82].
@@ -1934,6 +1959,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
     ...formationRoutesDef(),
+    ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
     ...clesRoutesDef(config.cles ?? null),
     ...m18Routes(config.partenaires ?? null),

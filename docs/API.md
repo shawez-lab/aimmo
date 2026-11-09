@@ -337,6 +337,14 @@ Le quiz, les réponses et les attestations restent ouverts à l'agent au dossier
 
 Sans clé, la vérification publique d'une attestation : `POST /v1/formation/verification` (`{document, fingerprint}`, 32 ko au plus) et la page `/attestation` (formulaire : document et empreinte). Elles ne disent que « valide », avec le jour de délivrance, ou « non reconnue », sans raison ni nom ; un seul caractère changé, ou une empreinte recalculée par un faussaire, échoue. Rien de ce qui est collé n'est rangé [R571, R13].
 
+## Serveur MCP (BR08)
+
+Le serveur MCP de HX55, en JSON-RPC 2.0 (protocole `2025-06-18`), sur HTTP. Rien n'est envoyé, publié ni validé par lui.
+
+- `POST /v1/mcp`, avec la clé de l'agent (clé d'API ou séance d'une clé d'appareil) : `initialize`, `ping`, `tools/list`, `tools/call`. L'agent seul : la direction, la conformité et les partenaires sont refusés avant le corps, 403 et refus au journal [R16, R590]. Le socle revérifie à chaque appel l'accès coupé, le départ et le dossier de l'agent (aucune route MCP n'est ouverte au dossier incomplet) [R82] ; la couche métier revérifie ses droits sur chaque bien et chaque fiche et écrit chaque appel et chaque refus au journal avant de rendre la moindre donnée. Aucune donnée de client ne sort : une fiche ne se désigne que par son identifiant [R590]. Une notification (sans `id`) : 202, corps vide ; un corps illisible : 400, erreur `-32700`. 16 ko au plus.
+- `GET /v1/mcp/brouillons` (agent) : ses brouillons. `POST /v1/mcp/brouillons/<id>/decision` (`{decision: "valide" | "refuse"}`) : l'agent du brouillon seul, depuis l'application ; une décision ne change plus. Aucun outil MCP ne décide [R591].
+- `POST /v1/mcp/public/<réseau>`, sans clé : le seul outil `biens_diffusables`, les biens que la diffusion autorise à l'instant même, tels que leur annonce publiée les décrit, sans adresse, agent ni donnée personnelle [R592]. Réseau inconnu : 404. Limites par heure : 120 demandes par adresse (`cf-connecting-ip`, en empreinte d'une heure), 5000 par réseau ; au-delà 429.
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
