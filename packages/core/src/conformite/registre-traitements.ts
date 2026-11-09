@@ -590,7 +590,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX73 : le tarif et les licences du logiciel aux agences hors réseau, avec qui les a décidés ; le nom d'une
       // agence et sa carte peuvent être ceux d'un entrepreneur individuel.
       licence_tariffs: ['reason', 'decided_by'],
-      software_licences: ['agency_name', 'siren', 'card_number', 'granted_by'],
+      software_licences: ['agency_name', 'siren', 'card_number', 'card_expires_on', 'granted_by'],
       licence_states: ['reason', 'decided_by'],
     },
   },
@@ -1335,7 +1335,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   region_decisions: ['network_id', 'version', 'region', 'is_open', 'decided_at', 'phase5_hash', 'prev_hash', 'hash'],
   licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
-  software_licences: ['id', 'network_id', 'licensee_network_id', 'card_expires_on', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
+  software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
   licence_states: ['licence_id', 'version', 'state', 'decided_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],

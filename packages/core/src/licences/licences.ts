@@ -323,7 +323,7 @@ export class LicencesLogiciel {
     if (denied) return denied;
     const net = viewer.networkId;
     const tariff = (await this.tariffs(net)).at(-1) ?? null;
-    const rows = await this.db.all<LicenceRow>('SELECT * FROM software_licences WHERE network_id = ? ORDER BY granted_at, rowid', [net]);
+    const rows = await this.db.all<LicenceRow>('SELECT * FROM software_licences WHERE network_id = ? ORDER BY granted_at, tariff_version, agency_name, id', [net]);
     const licences = await this.lines(rows, tariff?.version ?? null);
     await appendEvent(this.journal, { type: 'licences.lecture', actor: this.actor(viewer), subject: `network:${net}`, data: { rule: 'R16', licences: licences.length } }, this.now);
     return { ok: true, value: { readAt: this.now().toISOString(), tariff, licences } };
