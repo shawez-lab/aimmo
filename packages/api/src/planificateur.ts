@@ -9,6 +9,7 @@ import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { ControleGels } from '../../core/src/securite/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -115,6 +116,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Attirer (AT10), à 5 h : les pages de prix recalculées dès qu'une nouvelle publication DVF est lue ; la même
       // publication ne donne jamais deux versions [R150, R151]. Seulement avec les ventes publiques de l'estimation.
       ...(config.soldSales ? [pricesJob(config.db, journal, config.soldSales, { now })] : []),
+      // Gel des avoirs (HX57), chaque heure : les dossiers ouverts depuis la dernière version du registre sont contrôlés ;
+      // une correspondance va au seul responsable, rien n'est envoyé ni changé pour le client [R603, R604, R605].
+      freezeSweepJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
@@ -180,6 +184,25 @@ export function pricesJob(db: SqlDatabase, journal: JournalStore, sales: PriceSa
         }
       }
       if (failure !== null) throw failure;
+    },
+  };
+}
+
+/** Le nom du passage du gel des avoirs, sans donnée. */
+export const FREEZE_SWEEP_JOB = 'securite.gel_avoirs';
+
+/**
+ * Le contrôle du gel des avoirs (HX57), au planificateur : chaque heure, chaque dossier ouvert qui n'a pas encore été
+ * contrôlé sur la dernière version scellée du registre l'est. Le passage ne lit aucune table du gel lui-même.
+ */
+export function freezeSweepJob(db: SqlDatabase, journal: SqlJournalStore, options: { now: () => Date }): ScheduledJob {
+  return {
+    name: FREEZE_SWEEP_JOB,
+    hours: Array.from({ length: 24 }, (_, h) => h),
+    run: async () => {
+      const store = new FicheClient(db, { now: options.now });
+      const acces = new Acces(db, store, new FicheUnique(db, store, { now: options.now }), journal, { now: options.now });
+      await new ControleGels(db, acces, journal, { now: options.now }).sweepAll();
     },
   };
 }
