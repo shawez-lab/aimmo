@@ -621,6 +621,48 @@ Réservé le 2026-11-09 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : une facture du mois non classée rend le mois incomplet, jamais dit « couvert » [R623] (test) ; un classement ne change plus, une nouvelle version le remplace, la direction seule, la base refuse le reste [R623] (test) ; montants hors taxe en centimes, provision et marge au centime inférieur, seuil au point de base supérieur, recalculés à la main sur un jeu inventé [R624] (test) ; seule la part du réseau des commissions encaissées dans le mois compte, la part d'une agence partenaire jamais [R624] (test) ; mois en cours refusé, aucun réglage : incomplet [R624] (test) ; aucun chiffre par agent, la moyenne seule [R625, R14] (test) ; chaque chiffre porte ses factures et ses dossiers (test) ; la direction seule, lecture écrite au journal avant d'être rendue [R16] (test).
 - Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte). Routes et écran : à la voie 1 (`app.ts`).
 
+## Branchements des groupes HX
+
+Voie : 1
+
+Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous les modules de la Feuille de route sont découpés ; le groupe « Recrutement » est à la voie 2 et le reste attend un humain. Or plusieurs modules HX n'ont encore aucune route : rien n'y arrive depuis l'application ni le Worker. Ids `BR..`. Chaque tâche branche des modules déjà fusionnés, sans changer leurs règles : les routes passent par les droits de la couche métier [R16], qui écrivent chaque refus au journal ; un fichier neuf dans `packages/api/src/`, ajouté au routeur de `app.ts` (voie 1 seule) et décrit dans `docs/API.md`. Aucun envoi réel : les modules gardent leur mode essai. Pas de module neuf, donc pas de tâche « Jamais vu » propre : le Jamais vu est celui de chaque HX, rendu enfin utilisable. Les écrans suivront dans des tâches à part.
+
+### BR01 · Routes des réclamations et du gel des avoirs
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX57, HX58
+- Partie du cahier : Conformité, réclamations et médiateur ; M12, gel des avoirs.
+- Objectif : sous `/v1/securite`, les routes de `Reclamations` (réglage, rangement, réponse, remise du médiateur, liste) et de `ControleGels` (import du registre, contrôle d'un dossier, contrôles, dossiers sans nom, correspondances, état figé, décision), dans `packages/api/src/securite.ts`, au routeur de `app.ts`, décrites dans `docs/API.md`.
+- Critères : chaque route refuse le mauvais rôle, réponse 403, refus au journal [R16] (test) ; une réclamation rangée par la route a son échéance écrite par la base [R606] (test) ; la proposition du médiateur ne part que par le mode essai, rien n'est envoyé [R607, R26] (test) ; le contrôle d'un dossier demandé par l'agent rend toujours le même mot, le résultat ne se lit que par le responsable [R605] (test) ; corps JSON invalide ou trop gros refusé sans rien ranger (test) ; les routes passent par le routeur de `app.ts` (test).
+- Attend : rien.
+
+### BR02 · Routes du coût de l'agent moyen et des contenus de recrutement
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : HX64, HX65
+- Objectif : routes de `ContenusRecrutement` et `CoutAgent` (direction), dans `packages/api/src/reseau.ts` ou un fichier neuf, au routeur ; le lien marqué accepté par la page de candidature.
+- Critères : droits [R16] (test) ; R620 à R625 tenues par la route (tests).
+- Attend : rien.
+
+### BR03 · Routes du marketing : calendrier, lettre, publicité payante
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : HX52, HX53, HX54
+- Objectif : routes de `CalendrierPublications`, `LettreInformation` et `PublicitePayante`, mode essai seul.
+- Critères : droits [R16] (test) ; R580 à R589 tenues par la route (tests) ; rien ne part ni ne se paie (test).
+- Attend : rien (H63 pour la publicité réelle).
+
+### BR04 · Routes des factures fournisseurs, du rapprochement, des relances et des rapports
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : HX49, HX62
+- Objectif : routes de `FacturesFournisseurs`, `Rapprochements`, `RelancesImpayes` et des rapports sur mesure et de l'export.
+- Critères : droits [R16] (test) ; aucun montant saisi hors de ce que la règle permet [R550 à R553] (tests) ; rapports R560, R561 (tests).
+- Attend : rien.
+
+### BR05 · Routes des clés d'appareil, du quiz et du serveur MCP
+- Statut : à faire
+- Qui : Claude, relecture forte · Dépend de : HX55, HX56, HX63
+- Objectif : routes de `ClesAppareil` (WebAuthn), du quiz et des attestations, et l'adresse du serveur MCP.
+- Critères : droits [R16] (test) ; R590 à R592, R600 à R602, R570, R571 tenues par la route (tests).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
