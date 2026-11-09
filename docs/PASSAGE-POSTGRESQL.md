@@ -6,8 +6,8 @@ Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, com
 
 | Sorte | Occurrences | Fichiers | À la place, sous PostgreSQL |
 | --- | ---: | ---: | --- |
-| Déclencheur écrit à la façon de SQLite (`CREATE TRIGGER … BEGIN … END`) | 1032 | 212 | une fonction `plpgsql` et `CREATE TRIGGER … EXECUTE FUNCTION` |
-| `RAISE(ABORT, …)` dans un déclencheur | 1032 | 212 | `RAISE EXCEPTION` dans la fonction du déclencheur |
+| Déclencheur écrit à la façon de SQLite (`CREATE TRIGGER … BEGIN … END`) | tolérée, sans plafond | | une fonction `plpgsql` et `CREATE TRIGGER … EXECUTE FUNCTION` |
+| `RAISE(ABORT, …)` dans un déclencheur | tolérée, sans plafond | | `RAISE EXCEPTION` dans la fonction du déclencheur |
 | `INSERT OR IGNORE` ou `INSERT OR REPLACE` | 32 | 16 | `INSERT … ON CONFLICT DO NOTHING` ou `DO UPDATE` |
 | `GLOB` | 35 | 24 | `~` (expression régulière) ou `SIMILAR TO` |
 | Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`) | 2 | 2 | `now()`, `to_char`, `extract`, `interval` |
@@ -22,29 +22,31 @@ Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, com
 | `char(…)` pour un caractère par son code | 3 | 2 | `chr(…)` |
 | `printf` en SQL | 0 | 0 | `format` ou `to_char` |
 
-En tout : 2464 occurrences dans 286 fichiers sur 645 lus.
+En tout, hors sortes tolérées : 400 occurrences dans 143 fichiers.
+
+Les déclencheurs et leur `RAISE` sont la garde des tables (R17) : chaque migration nouvelle en porte, ils sont tolérés sans plafond et seront réécrits en fonctions `plpgsql` au passage.
 
 ## Les fichiers les plus chargés
 
 | Fichier | Occurrences |
 | --- | ---: |
-| `db/migrations/2800_factures_fournisseurs_banque.sql` | 57 |
-| `db/migrations/1765_partage_agences.sql` | 46 |
-| `db/migrations/3120_publicite.sql` | 40 |
-| `db/migrations/3310_gel_avoirs.sql` | 40 |
-| `db/migrations/0708_durees_fuites.sql` | 38 |
-| `db/migrations/2200_diffusion_surveillee.sql` | 38 |
-| `db/migrations/2610_neuf_viager.sql` | 33 |
-| `db/migrations/3000_formation_quiz.sql` | 27 |
+| `db/migrations/2800_factures_fournisseurs_banque.sql` | 27 |
 | `packages/core/src/pige/pige.ts` | 27 |
-| `db/migrations/1809_pige.sql` | 26 |
-| `db/migrations/3320_reclamations.sql` | 26 |
-| `db/migrations/1007_cession_commerce.sql` | 25 |
-| `db/migrations/1401_prix_regroupes.sql` | 24 |
-| `db/migrations/1403_fiche_google.sql` | 24 |
-| `db/migrations/1808_cles.sql` | 24 |
-| `db/migrations/1816_adresse_pige.sql` | 24 |
-| `db/migrations/3100_calendrier_publications.sql` | 23 |
-| `db/migrations/0807_envois_professionnels.sql` | 21 |
-| `db/migrations/0901_mises_en_location.sql` | 21 |
-| `db/migrations/1004_confidentialite_commerce.sql` | 21 |
+| `packages/core/src/diffusion/surveillance.ts` | 21 |
+| `packages/core/src/sauvegarde/copie.ts` | 14 |
+| `packages/core/src/attirer/fiche-google.ts` | 13 |
+| `db/migrations/3000_formation_quiz.sql` | 11 |
+| `packages/core/src/attirer/referencement.ts` | 11 |
+| `db/migrations/3310_gel_avoirs.sql` | 10 |
+| `db/migrations/1807_actualites.sql` | 8 |
+| `packages/core/src/attirer/page-agent.ts` | 8 |
+| `packages/core/src/attirer/quartier.ts` | 6 |
+| `packages/core/src/diffusion/textes.ts` | 6 |
+| `packages/core/src/qualification/qualification.ts` | 6 |
+| `db/migrations/0907_etat_des_lieux.sql` | 5 |
+| `db/migrations/3100_calendrier_publications.sql` | 5 |
+| `packages/core/src/automatismes/boite-mail.ts` | 5 |
+| `packages/core/src/commerces/dossier.ts` | 5 |
+| `db/migrations/1006_repreneurs_commerce.sql` | 4 |
+| `db/migrations/1816_adresse_pige.sql` | 4 |
+| `db/migrations/3120_publicite.sql` | 4 |

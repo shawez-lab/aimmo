@@ -1,930 +1,220 @@
 {
-  "db/migrations/0002_journal.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0008_reprise.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0009_biens_cites.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0010_details_biens.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0011_relais.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0012_essai.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0013_echos_en_attente.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0014_assistant.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0015_qualification.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0016_note.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0017_attribution.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0018_rappels.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0019_planificateur.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0020_avis_valeur.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0021_suivi_vendeur.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0022_rendez_vous.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0023_agenda.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0024_rappels_rdv.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0025_brief_rdv.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0026_statut_rdv.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0028_plan_du_jour.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0029_mandats.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0030_suivi_valeur.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0031_controle_base_legale.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0032_registre_mandats.sql": {
-    "declencheur": 5,
-    "raise": 5
-  },
-  "db/migrations/0033_modeles.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0034_controles_signature.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0035_signature_papier.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0036_retractation.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0037_echeances_mandats.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0038_avenants.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0039_signature_en_ligne.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
   "db/migrations/0040_fiche_bien.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
-  },
-  "db/migrations/0041_reglages_annonces.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/0042_annonces.sql": {
-    "declencheur": 4,
-    "json_sqlite": 1,
-    "raise": 4
+    "json_sqlite": 1
   },
   "db/migrations/0043_publication.sql": {
-    "declencheur": 5,
-    "json_sqlite": 1,
-    "raise": 5
-  },
-  "db/migrations/0044_carte_agent.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0045_videos.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0046_mesure_biens.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/0047_acces_invitations.sql": {
-    "declencheur": 4,
-    "json_sqlite": 2,
-    "raise": 4
-  },
-  "db/migrations/0101_fiche_acquereur.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0102_alertes_acquereurs.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0103_whatsapp_agent.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/0104_visites.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0105_visite_securisee.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0106_comptes_rendus.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0107_point_semaine.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 2
   },
   "db/migrations/0201_offres.sql": {
-    "declencheur": 3,
-    "json_sqlite": 1,
-    "raise": 3
+    "json_sqlite": 1
   },
   "db/migrations/0202_controles_offres.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
-  },
-  "db/migrations/0203_transmission_offres.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0204_echeances_offres.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0205_contre_offres.sql": {
-    "declencheur": 8,
-    "raise": 8
-  },
-  "db/migrations/0206_dossiers_vente.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0301_pieces_dossier.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0302_echeancier_dossier.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0303_relances_pieces.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0304_financement_dossier.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "json_sqlite": 1
   },
   "db/migrations/0305_bouclier_fonds.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
-  },
-  "db/migrations/0306_acte_signe.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0401_recommandations.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0402_demandes_avis.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0403_relances_apres_vente.sql": {
-    "declencheur": 5,
-    "raise": 5
-  },
-  "db/migrations/0404_satisfaction.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/0405_remerciements.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0406_carnet_proprietaire.sql": {
-    "declencheur": 3,
-    "raise": 3
+    "json_sqlite": 1
   },
   "db/migrations/0407_cle_recommandations.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/0501_commissions.sql": {
-    "declencheur": 9,
-    "json_sqlite": 1,
-    "raise": 9
+    "json_sqlite": 1
   },
   "db/migrations/0502_factures.sql": {
-    "declencheur": 7,
-    "json_sqlite": 1,
-    "raise": 7
-  },
-  "db/migrations/0503_encaissements.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "json_sqlite": 1
   },
   "db/migrations/0504_rapport_matin.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/0505_alertes_pilotage.sql": {
-    "declencheur": 4,
-    "json_sqlite": 1,
-    "raise": 4
-  },
-  "db/migrations/0601_candidatures.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/0602_reponses_candidats.sql": {
-    "declencheur": 5,
-    "raise": 5
-  },
-  "db/migrations/0603_entretiens.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0604_dossier_agent.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0605_import_agent.sql": {
-    "declencheur": 5,
-    "raise": 5
-  },
-  "db/migrations/0606_academie.sql": {
-    "declencheur": 9,
-    "raise": 9
-  },
-  "db/migrations/0607_bac_a_sable.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0608_entrainement.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0609_accompagnement.sql": {
-    "declencheur": 9,
-    "raise": 9
-  },
-  "db/migrations/0610_parrainage.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0611_depart_agent.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0701_coffre_conformite.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/0702_fiche_risque.sql": {
-    "declencheur": 4,
-    "json_sqlite": 2,
-    "raise": 4
-  },
-  "db/migrations/0703_identification.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "json_sqlite": 2
   },
   "db/migrations/0704_vigilance.sql": {
-    "declencheur": 6,
-    "json_sqlite": 1,
-    "raise": 6
-  },
-  "db/migrations/0705_registre_traitements.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "json_sqlite": 1
   },
   "db/migrations/0706_signalement.sql": {
-    "declencheur": 4,
-    "json_sqlite": 1,
-    "raise": 4
-  },
-  "db/migrations/0707_demandes_personnes.sql": {
-    "declencheur": 8,
-    "raise": 8
+    "json_sqlite": 1
   },
   "db/migrations/0708_durees_fuites.sql": {
-    "declencheur": 18,
-    "json_sqlite": 2,
-    "raise": 18
+    "json_sqlite": 2
   },
   "db/migrations/0801_annuaire_partenaires.sql": {
-    "declencheur": 8,
-    "glob": 1,
-    "raise": 8
+    "glob": 1
   },
   "db/migrations/0802_mises_en_relation.sql": {
-    "declencheur": 7,
-    "glob": 1,
-    "raise": 7
-  },
-  "db/migrations/0803_remunerations_partenaires.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "glob": 1
   },
   "db/migrations/0804_pieces_partenaires.sql": {
-    "declencheur": 3,
-    "glob": 2,
-    "raise": 3
-  },
-  "db/migrations/0805_suivi_partenaires.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0806_prospection_partenaires.sql": {
-    "declencheur": 8,
-    "raise": 8
+    "glob": 2
   },
   "db/migrations/0807_envois_professionnels.sql": {
-    "autoincrement": 1,
-    "declencheur": 10,
-    "raise": 10
+    "autoincrement": 1
   },
   "db/migrations/0901_mises_en_location.sql": {
-    "declencheur": 10,
-    "json_sqlite": 1,
-    "raise": 10
-  },
-  "db/migrations/0902_honoraires_location.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/0903_annonces_location.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/0904_candidatures_location.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "json_sqlite": 1
   },
   "db/migrations/0905_choix_proprietaire.sql": {
-    "declencheur": 6,
-    "json_sqlite": 1,
-    "raise": 6
+    "json_sqlite": 1
   },
   "db/migrations/0906_bail_location.sql": {
-    "declencheur": 4,
-    "json_sqlite": 3,
-    "raise": 4
+    "json_sqlite": 3
   },
   "db/migrations/0907_etat_des_lieux.sql": {
-    "declencheur": 6,
-    "json_sqlite": 5,
-    "raise": 6
-  },
-  "db/migrations/0908_remise_des_cles.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "json_sqlite": 5
   },
   "db/migrations/0909_signature_bail.sql": {
-    "declencheur": 6,
-    "json_sqlite": 1,
-    "raise": 6
-  },
-  "db/migrations/0910_envois_location.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/1001_fiche_commerce.sql": {
-    "declencheur": 2,
-    "glob": 1,
-    "raise": 2
+    "glob": 1
   },
   "db/migrations/1002_estimation_commerce.sql": {
-    "declencheur": 6,
-    "glob": 1,
-    "raise": 6
-  },
-  "db/migrations/1003_presentation_commerce.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "glob": 1
   },
   "db/migrations/1004_confidentialite_commerce.sql": {
-    "declencheur": 10,
-    "json_sqlite": 1,
-    "raise": 10
-  },
-  "db/migrations/1005_dossier_commerce.sql": {
-    "declencheur": 10,
-    "raise": 10
+    "json_sqlite": 1
   },
   "db/migrations/1006_repreneurs_commerce.sql": {
-    "declencheur": 2,
-    "json_sqlite": 4,
-    "raise": 2
+    "json_sqlite": 4
   },
   "db/migrations/1007_cession_commerce.sql": {
-    "declencheur": 12,
-    "glob": 1,
-    "raise": 12
+    "glob": 1
   },
   "db/migrations/1008_vigilance_cession.sql": {
-    "declencheur": 6,
-    "json_sqlite": 1,
-    "raise": 6
-  },
-  "db/migrations/1101_profil_investisseur.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1102_loyers_marche.sql": {
-    "declencheur": 5,
-    "raise": 5
+    "json_sqlite": 1
   },
   "db/migrations/1103_calculs_investissement.sql": {
-    "declencheur": 2,
-    "json_sqlite": 2,
-    "raise": 2
-  },
-  "db/migrations/1104_regles_communes.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 2
   },
   "db/migrations/1105_notes_investissement.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
-  },
-  "db/migrations/1106_alertes_investisseurs.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/1201_guide_prise_de_vue.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1202_certificats_photos.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1203_montages_video.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1204_plans_logement.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 1
   },
   "db/migrations/1205_bibliotheque_licences.sql": {
-    "declencheur": 4,
-    "glob": 1,
-    "raise": 4
-  },
-  "db/migrations/1206_publications_reseaux.sql": {
-    "declencheur": 10,
-    "raise": 10
-  },
-  "db/migrations/1207_options_studio.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "glob": 1
   },
   "db/migrations/1301_lettres_quartier.sql": {
-    "declencheur": 4,
-    "glob": 1,
-    "raise": 4
-  },
-  "db/migrations/1302_recommandations_partenaires.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "glob": 1
   },
   "db/migrations/1303_anciens_contacts.sql": {
-    "declencheur": 4,
-    "glob": 2,
-    "raise": 4
+    "glob": 2
   },
   "db/migrations/1304_mesure_sources.sql": {
-    "declencheur": 4,
-    "glob": 2,
-    "raise": 4
-  },
-  "db/migrations/1305_engagements_service.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1401_prix_regroupes.sql": {
-    "declencheur": 12,
-    "raise": 12
-  },
-  "db/migrations/1402_page_agent.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1403_fiche_google.sql": {
-    "declencheur": 12,
-    "raise": 12
-  },
-  "db/migrations/1404_referencement.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1405_origine_contacts.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/1470_pages_quartier.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/1490_reprise_lancement.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1501_espaces_entree.sql": {
-    "declencheur": 10,
-    "raise": 10
-  },
-  "db/migrations/1502_espaces_favoris.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "glob": 2
   },
   "db/migrations/1550_vendeur_dossier.sql": {
-    "declencheur": 2,
-    "insert_or": 1,
-    "raise": 2
-  },
-  "db/migrations/1570_scan_avenant_unique.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1590_depots_pieces_candidature.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "insert_or": 1
   },
   "db/migrations/1700_sceaux_preuve.sql": {
-    "declencheur": 3,
-    "glob": 1,
-    "raise": 3
+    "glob": 1
   },
   "db/migrations/1715_temps_gagne.sql": {
-    "declencheur": 2,
-    "glob": 1,
-    "raise": 2
-  },
-  "db/migrations/1720_mises_en_vente.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "glob": 1
   },
   "db/migrations/1735_engagements_manques.sql": {
-    "declencheur": 2,
-    "glob": 1,
-    "raise": 2
-  },
-  "db/migrations/1740_copies_de_nuit.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1745_recus_restauration.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1750_arret_dossier.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/1755_corrections_nom.sql": {
-    "declencheur": 1,
-    "raise": 1
+    "glob": 1
   },
   "db/migrations/1760_second_dossier.sql": {
     "date_sqlite": 1,
-    "declencheur": 5,
-    "pragma": 2,
-    "raise": 5
-  },
-  "db/migrations/1765_partage_agences.sql": {
-    "declencheur": 23,
-    "raise": 23
-  },
-  "db/migrations/1770_part_agence_commission.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "pragma": 2
   },
   "db/migrations/1775_notifications_controle.sql": {
-    "autoincrement": 1,
-    "declencheur": 5,
-    "raise": 5
-  },
-  "db/migrations/1800_notes_vocales.sql": {
-    "declencheur": 1,
-    "raise": 1
-  },
-  "db/migrations/1801_appels.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1802_assistant_vocal.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/1803_facture_electronique.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "autoincrement": 1
   },
   "db/migrations/1804_annonces_traduites.sql": {
-    "declencheur": 6,
-    "json_sqlite": 2,
-    "raise": 6
+    "json_sqlite": 2
   },
   "db/migrations/1805_boutique.sql": {
-    "declencheur": 10,
-    "glob": 1,
-    "raise": 10
+    "glob": 1
   },
   "db/migrations/1806_remises.sql": {
-    "declencheur": 6,
-    "glob": 2,
-    "raise": 6
+    "glob": 2
   },
   "db/migrations/1807_actualites.sql": {
     "char": 2,
-    "declencheur": 6,
     "glob": 3,
     "instr": 2,
-    "json_sqlite": 1,
-    "raise": 6
+    "json_sqlite": 1
   },
   "db/migrations/1808_cles.sql": {
     "char": 1,
-    "declencheur": 11,
-    "instr": 1,
-    "raise": 11
-  },
-  "db/migrations/1809_pige.sql": {
-    "declencheur": 13,
-    "raise": 13
-  },
-  "db/migrations/1810_hors_ligne.sql": {
-    "declencheur": 8,
-    "raise": 8
+    "instr": 1
   },
   "db/migrations/1811_presentation.sql": {
-    "declencheur": 2,
-    "json_sqlite": 3,
-    "raise": 2
-  },
-  "db/migrations/1812_panneaux.sql": {
-    "declencheur": 9,
-    "raise": 9
-  },
-  "db/migrations/1813_statistiques_site.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1814_veille_dpe.sql": {
-    "declencheur": 10,
-    "raise": 10
+    "json_sqlite": 3
   },
   "db/migrations/1815_score_adresse.sql": {
-    "declencheur": 4,
-    "json_sqlite": 1,
-    "raise": 4
+    "json_sqlite": 1
   },
   "db/migrations/1816_adresse_pige.sql": {
-    "declencheur": 10,
-    "json_sqlite": 4,
-    "raise": 10
-  },
-  "db/migrations/1817_sequences_prospection.sql": {
-    "declencheur": 5,
-    "raise": 5
+    "json_sqlite": 4
   },
   "db/migrations/1818_avis_marche.sql": {
-    "declencheur": 5,
-    "json_sqlite": 2,
-    "raise": 5
-  },
-  "db/migrations/1900_scenarios_automatiques.sql": {
-    "declencheur": 3,
-    "raise": 3
-  },
-  "db/migrations/1901_dates_clients.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/1902_boite_mail.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/1903_notifications.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "json_sqlite": 2
   },
   "db/migrations/2000_recherche_langage.sql": {
-    "declencheur": 2,
-    "json_sqlite": 1,
-    "raise": 2
-  },
-  "db/migrations/2001_moteurs_ia.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/2002_vitrine.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/2100_mandat_questionnaire.sql": {
-    "declencheur": 10,
-    "raise": 10
-  },
-  "db/migrations/2101_etat_risques.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/2102_copropriete_urbanisme.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/2110_lettre_recommandee.sql": {
-    "declencheur": 4,
-    "raise": 4
-  },
-  "db/migrations/2111_circuit_signature.sql": {
-    "declencheur": 8,
-    "raise": 8
+    "json_sqlite": 1
   },
   "db/migrations/2200_diffusion_surveillee.sql": {
-    "declencheur": 18,
-    "json_sqlite": 2,
-    "raise": 18
-  },
-  "db/migrations/2201_textes_portails.sql": {
-    "declencheur": 6,
-    "raise": 6
-  },
-  "db/migrations/2300_retouches_filigrane.sql": {
-    "declencheur": 2,
-    "raise": 2
-  },
-  "db/migrations/2301_amenagements_virtuels.sql": {
-    "declencheur": 2,
-    "raise": 2
+    "json_sqlite": 2
   },
   "db/migrations/2302_videos_generees.sql": {
-    "declencheur": 6,
-    "instr": 1,
-    "raise": 6
-  },
-  "db/migrations/2303_visites_360.sql": {
-    "declencheur": 4,
-    "raise": 4
+    "instr": 1
   },
   "db/migrations/2304_avant_apres_visite.sql": {
-    "declencheur": 8,
-    "json_sqlite": 1,
-    "raise": 8
+    "json_sqlite": 1
   },
   "db/migrations/2400_avant_contrat.sql": {
-    "declencheur": 8,
-    "json_sqlite": 2,
-    "raise": 8
+    "json_sqlite": 2
   },
   "db/migrations/2500_avis_verifies.sql": {
-    "declencheur": 5,
-    "glob": 2,
-    "raise": 5
+    "glob": 2
   },
   "db/migrations/2600_controle_dossiers_location.sql": {
-    "declencheur": 2,
-    "json_sqlite": 2,
-    "raise": 2
+    "json_sqlite": 2
   },
   "db/migrations/2610_neuf_viager.sql": {
-    "declencheur": 15,
-    "glob": 3,
-    "raise": 15
+    "glob": 3
   },
   "db/migrations/2800_factures_fournisseurs_banque.sql": {
-    "declencheur": 15,
-    "json_sqlite": 27,
-    "raise": 15
+    "json_sqlite": 27
   },
   "db/migrations/2900_rapports.sql": {
-    "declencheur": 4,
     "glob": 1,
     "instr": 1,
-    "json_sqlite": 1,
-    "raise": 4
+    "json_sqlite": 1
   },
   "db/migrations/3000_formation_quiz.sql": {
-    "declencheur": 8,
     "glob": 2,
-    "json_sqlite": 9,
-    "raise": 8
+    "json_sqlite": 9
   },
   "db/migrations/3100_calendrier_publications.sql": {
-    "declencheur": 9,
     "glob": 2,
-    "json_sqlite": 3,
-    "raise": 9
-  },
-  "db/migrations/3110_lettre_information.sql": {
-    "declencheur": 6,
-    "raise": 6
+    "json_sqlite": 3
   },
   "db/migrations/3120_publicite.sql": {
-    "declencheur": 18,
     "glob": 1,
-    "json_sqlite": 3,
-    "raise": 18
+    "json_sqlite": 3
   },
   "db/migrations/3200_mcp_brouillons.sql": {
-    "declencheur": 3,
-    "json_sqlite": 1,
-    "raise": 3
-  },
-  "db/migrations/3300_cles_appareil.sql": {
-    "declencheur": 10,
-    "raise": 10
+    "json_sqlite": 1
   },
   "db/migrations/3310_gel_avoirs.sql": {
-    "declencheur": 15,
-    "json_sqlite": 10,
-    "raise": 15
-  },
-  "db/migrations/3320_reclamations.sql": {
-    "declencheur": 13,
-    "raise": 13
+    "json_sqlite": 10
   },
   "db/migrations/3400_contenus_recrutement.sql": {
-    "declencheur": 7,
-    "glob": 1,
-    "raise": 7
+    "glob": 1
   },
   "db/migrations/3410_cout_agent.sql": {
-    "declencheur": 6,
-    "glob": 1,
-    "raise": 6
-  },
-  "db/migrations/3500_seuils_postgresql.sql": {
-    "declencheur": 8,
-    "raise": 8
+    "glob": 1
   },
   "packages/core/src/acces/fiche-agent.ts": {
     "rowid": 2

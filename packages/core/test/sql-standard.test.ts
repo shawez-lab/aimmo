@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { NON_STANDARD_KINDS, blankComments, excesses, findNonStandard, lowerCeilings, renderMap, type Ceilings, type NonStandardHit } from '../src/passage-postgresql/index.ts';
+import { NON_STANDARD_KINDS, blankComments, countByKind, excesses, findNonStandard, lowerCeilings, raisedCeilings, renderMap, type Ceilings, type NonStandardHit } from '../src/passage-postgresql/index.ts';
 
 // HX67 : ce qui n'est pas du SQL standard, compté fichier par fichier, plafonné, et la carte du passage écrite depuis
 // ce compte [R633]. Les jeux d'essai sont inventés.
@@ -33,6 +34,29 @@ function scanRepository(): Record<string, NonStandardHit[]> {
   return found;
 }
 
+/**
+ * Les plafonds de la branche principale, lus par git : sans eux, aucune baisse ni montée ne se vérifie, et le test
+ * échoue plutôt que de passer sans rien dire. Quand la référence manque (copie sans historique), elle est cherchée une
+ * fois. Avant la première fusion, le fichier n'existe pas sur la branche principale : la référence est alors le
+ * fichier lui-même.
+ */
+function baseCeilings(): Ceilings {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    git('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main');
+  } catch {
+    git('fetch', '--quiet', '--depth=1', 'origin', 'main:refs/remotes/origin/main');
+  }
+  const rel = relative(root, ceilingsPath);
+  try {
+    return JSON.parse(git('show', `refs/remotes/origin/main:${rel}`)) as Ceilings;
+  } catch (error) {
+    const known = git('ls-tree', '--name-only', 'refs/remotes/origin/main', rel).trim();
+    if (known === '') return JSON.parse(readFileSync(ceilingsPath, 'utf8')) as Ceilings;
+    throw error;
+  }
+}
+
 const kinds = (text: string, lang: 'sql' | 'ts' = 'sql') => findNonStandard(text, lang).map((h) => `${h.kind}@${h.line}`);
 
 describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
@@ -42,7 +66,7 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       raise: ["SELECT RAISE(ABORT, 'non');", "SELECT 'RAISE plus tard';"],
       insert_or: ['INSERT OR IGNORE INTO x VALUES (1);', 'INSERT INTO x VALUES (1) ON CONFLICT DO NOTHING;'],
       glob: ["SELECT 1 WHERE a GLOB '[0-9]*';", "SELECT 1 WHERE a LIKE '1%';"],
-      date_sqlite: ["SELECT datetime('now'), strftime('%Y', a), julianday(a), unixepoch(a);", 'SELECT CURRENT_TIMESTAMP;'],
+      date_sqlite: ["SELECT DATETIME('now'), strftime('%Y', a), JulianDay(a), unixepoch(a);", 'SELECT CURRENT_TIMESTAMP;'],
       autoincrement: ['CREATE TABLE x (id INTEGER PRIMARY KEY AUTOINCREMENT);', 'CREATE TABLE x (id INTEGER PRIMARY KEY);'],
       pragma: ['PRAGMA foreign_keys = ON; SELECT * FROM pragma_table_info(\'x\');', 'SELECT 1;'],
       rowid: ['SELECT rowid, last_insert_rowid() FROM x;', 'SELECT id FROM x;'],
@@ -51,15 +75,16 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       ifnull: ['SELECT IFNULL(a, 0) FROM x;', 'SELECT COALESCE(a, 0) FROM x;'],
       iif: ['SELECT iif(a > 0, 1, 0) FROM x;', 'SELECT CASE WHEN a > 0 THEN 1 ELSE 0 END FROM x;'],
       instr: ["SELECT instr(a, 'b') FROM x;", "SELECT position('b' in a) FROM x;"],
-      char: ['SELECT char(10) FROM x;', 'CREATE TABLE x (a CHAR(3)); SELECT chr(10);'],
-      printf: ["SELECT printf('%d', a) FROM x;", "SELECT format('%s', a) FROM x;"],
+      char: ["SELECT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';", 'CREATE TABLE x (a CHAR(3), "b" char (12)); SELECT chr(10);'],
+      printf: ["SELECT PRINTF('%d', a) FROM x;", "SELECT format('%s', a) FROM x;"],
     };
     expect(Object.keys(cases).sort()).toEqual(NON_STANDARD_KINDS.map((k) => k.kind).sort());
     for (const [kind, [bad, good]] of Object.entries(cases)) {
       expect(findNonStandard(bad, 'sql').filter((h) => h.kind === kind).length, kind).toBeGreaterThan(0);
       expect(findNonStandard(good, 'sql'), kind).toEqual([]);
     }
-    expect(kinds("SELECT datetime('now'), strftime('%Y', a), julianday(a), unixepoch(a);")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
+    expect(kinds("SELECT datetime('now'), STRFTIME('%Y', a), julianday(a), UnixEpoch(a);")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
+    expect(kinds("SELECT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';").filter((k) => k.startsWith('char'))).toEqual(['char@1', 'char@1', 'char@1']);
   });
 
   it('[R633] les commentaires ne comptent pas, les chaînes oui, et les lignes restent justes', () => {
@@ -83,11 +108,11 @@ describe('HX67 · plafonds par fichier', () => {
   const hit = (kind: string, line: number): NonStandardHit => ({ kind, line });
 
   it('[R633] une forme ajoutée dans un fichier fait échouer avec le fichier et la ligne ; un compte qui baisse passe', () => {
-    const ceilings: Ceilings = { 'db/migrations/0001_x.sql': { raise: 2 } };
-    expect(excesses({ 'db/migrations/0001_x.sql': [hit('raise', 3), hit('raise', 9)] }, ceilings)).toEqual([]);
-    expect(excesses({ 'db/migrations/0001_x.sql': [hit('raise', 3)] }, ceilings)).toEqual([]);
-    expect(excesses({ 'db/migrations/0001_x.sql': [hit('raise', 3), hit('raise', 9), hit('raise', 12)] }, ceilings)).toEqual([
-      { file: 'db/migrations/0001_x.sql', kind: 'raise', ceiling: 2, count: 3, lines: [3, 9, 12] },
+    const ceilings: Ceilings = { 'db/migrations/0001_x.sql': { rowid: 2 } };
+    expect(excesses({ 'db/migrations/0001_x.sql': [hit('rowid', 3), hit('rowid', 9)] }, ceilings)).toEqual([]);
+    expect(excesses({ 'db/migrations/0001_x.sql': [hit('rowid', 3)] }, ceilings)).toEqual([]);
+    expect(excesses({ 'db/migrations/0001_x.sql': [hit('rowid', 3), hit('rowid', 9), hit('rowid', 12)] }, ceilings)).toEqual([
+      { file: 'db/migrations/0001_x.sql', kind: 'rowid', ceiling: 2, count: 3, lines: [3, 9, 12] },
     ]);
     // Une sorte nouvelle dans un fichier connu, ou un fichier nouveau : plafond zéro.
     expect(excesses({ 'db/migrations/0001_x.sql': [hit('glob', 4)], 'db/migrations/9999_neuf.sql': [hit('pragma', 1)] }, ceilings)).toEqual([
@@ -96,9 +121,27 @@ describe('HX67 · plafonds par fichier', () => {
     ]);
   });
 
+  it('[R633] un plafond qui monte par rapport à la branche principale est refusé, un fichier ou une sorte nouveaux aussi', () => {
+    const base: Ceilings = { a: { raise: 2, glob: 1 } };
+    expect(raisedCeilings({ a: { glob: 1 } }, base)).toEqual([]);
+    expect(raisedCeilings({ a: { glob: 2, iif: 1 }, b: { pragma: 1 } }, base)).toEqual([
+      { file: 'a', kind: 'glob', base: 1, now: 2 },
+      { file: 'a', kind: 'iif', base: 0, now: 1 },
+      { file: 'b', kind: 'pragma', base: 0, now: 1 },
+    ]);
+  });
+
+  it('[R633] les déclencheurs et leur RAISE, garde des tables, sont comptés mais tolérés sans plafond', () => {
+    const hits = findNonStandard("CREATE TRIGGER t BEFORE DELETE ON x BEGIN SELECT RAISE(ABORT, 'non'); END;\nSELECT 1 WHERE a GLOB 'b';", 'sql');
+    expect(hits.map((h) => h.kind)).toEqual(['declencheur', 'raise', 'glob']);
+    expect(countByKind(hits)).toEqual({ glob: 1 });
+    expect(excesses({ 'db/migrations/9999_neuf.sql': hits.slice(0, 2) }, {})).toEqual([]);
+    expect(lowerCeilings({ a: hits }, { a: { raise: 5, glob: 1 } })).toEqual({ a: { glob: 1 } });
+  });
+
   it('[R633] les plafonds ne font que baisser quand ils sont réécrits', () => {
-    const ceilings: Ceilings = { a: { raise: 2, glob: 1 }, b: { pragma: 1 } };
-    expect(lowerCeilings({ a: [hit('raise', 1), hit('raise', 2), hit('raise', 3), hit('iif', 4)], b: [] }, ceilings)).toEqual({ a: { raise: 2 } });
+    const ceilings: Ceilings = { a: { glob: 2, iif: 1 }, b: { pragma: 1 } };
+    expect(lowerCeilings({ a: [hit('glob', 1), hit('glob', 2), hit('glob', 3), hit('instr', 4)], b: [] }, ceilings)).toEqual({ a: { glob: 2 } });
   });
 
   it('[R633] le dépôt ne dépasse aucun plafond, et chaque plafond correspond à une occurrence', () => {
@@ -108,6 +151,8 @@ describe('HX67 · plafonds par fichier', () => {
       writeFileSync(ceilingsPath, `${JSON.stringify(lowerCeilings(found, ceilings), null, 2)}\n`);
       writeFileSync(mapPath, renderMap(found));
     }
+    const raised = raisedCeilings(ceilings, baseCeilings());
+    expect(raised.map((r) => `${r.file} : plafond ${r.kind} monté de ${r.base} à ${r.now} par rapport à la branche principale`)).toEqual([]);
     const over = excesses(found, ceilings);
     expect(over.map((e) => `${e.file} : ${e.kind}, ${e.count} pour un plafond de ${e.ceiling}, lignes ${e.lines.join(', ')}`)).toEqual([]);
     // Un plafond au-dessus du compte doit être baissé : la carte et les plafonds disent ce qui existe.

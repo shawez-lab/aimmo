@@ -7,7 +7,8 @@
  * jamais monter, et une forme nouvelle dans un fichier est refusée avec son fichier et sa ligne. La carte du passage
  * (`docs/PASSAGE-POSTGRESQL.md`) est écrite depuis ce compte.
  *
- * Les commentaires ne comptent pas. Dans le code TypeScript, seules les formes qui ne peuvent pas être du JavaScript
+ * Les déclencheurs et leur `RAISE(ABORT…)`, garde des tables [R17], sont comptés mais tolérés sans plafond : chaque
+ * migration nouvelle en porte. Une fonction est reconnue quelle que soit sa casse. Les commentaires ne comptent pas. Dans le code TypeScript, seules les formes qui ne peuvent pas être du JavaScript
  * sont cherchées (aucune fonction `Date`, aucun `typeof`).
  */
 
@@ -18,14 +19,29 @@ export interface NonStandardKind {
   /** Ce que PostgreSQL demande à la place. */
   postgres: string;
   pattern: RegExp;
+  /**
+   * Tolérée sans plafond : la garde des tables par déclencheur est la façon dont la base tient R17 (rien ne change ni
+   * ne s'efface) ; chaque migration nouvelle en porte. Comptée, jamais plafonnée.
+   */
+  tolerated?: true;
+  /** Écarte une occurrence qui n'est pas la forme cherchée (un type `CHAR(3)`, par exemple). */
+  skip?: (text: string, index: number) => boolean;
+}
+
+/** Un type de colonne `CHAR(n)` après le nom d'une colonne, standard, n'est pas la fonction `char`. */
+const SQL_WORDS_BEFORE_A_VALUE = new Set(['and', 'or', 'not', 'select', 'when', 'then', 'else', 'in', 'by', 'return', 'is', 'like', 'values', 'set', 'on', 'where', 'having']);
+function isCharType(text: string, index: number): boolean {
+  if (!/^char\s*\(\s*\d+\s*\)/i.test(text.slice(index, index + 20))) return false;
+  const before = /([A-Za-z_][A-Za-z0-9_]*)"?\s+$/.exec(text.slice(Math.max(0, index - 80), index));
+  return before !== null && !SQL_WORDS_BEFORE_A_VALUE.has(before[1]!.toLowerCase());
 }
 
 export const NON_STANDARD_KINDS: readonly NonStandardKind[] = [
-  { kind: 'declencheur', label: 'Déclencheur écrit à la façon de SQLite (`CREATE TRIGGER … BEGIN … END`)', postgres: 'une fonction `plpgsql` et `CREATE TRIGGER … EXECUTE FUNCTION`', pattern: /\bCREATE\s+TRIGGER\b/gi },
-  { kind: 'raise', label: '`RAISE(ABORT, …)` dans un déclencheur', postgres: '`RAISE EXCEPTION` dans la fonction du déclencheur', pattern: /\bRAISE\s*\(\s*(?:ABORT|FAIL|IGNORE|ROLLBACK)\b/gi },
+  { kind: 'declencheur', label: 'Déclencheur écrit à la façon de SQLite (`CREATE TRIGGER … BEGIN … END`)', postgres: 'une fonction `plpgsql` et `CREATE TRIGGER … EXECUTE FUNCTION`', pattern: /\bCREATE\s+TRIGGER\b/gi, tolerated: true },
+  { kind: 'raise', label: '`RAISE(ABORT, …)` dans un déclencheur', postgres: '`RAISE EXCEPTION` dans la fonction du déclencheur', pattern: /\bRAISE\s*\(\s*(?:ABORT|FAIL|IGNORE|ROLLBACK)\b/gi, tolerated: true },
   { kind: 'insert_or', label: '`INSERT OR IGNORE` ou `INSERT OR REPLACE`', postgres: '`INSERT … ON CONFLICT DO NOTHING` ou `DO UPDATE`', pattern: /\bINSERT\s+OR\s+(?:IGNORE|REPLACE|ABORT|FAIL|ROLLBACK)\b/gi },
   { kind: 'glob', label: '`GLOB`', postgres: '`~` (expression régulière) ou `SIMILAR TO`', pattern: /\bGLOB\b/gi },
-  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(/g },
+  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(/gi },
   { kind: 'autoincrement', label: '`AUTOINCREMENT`', postgres: '`GENERATED ALWAYS AS IDENTITY`', pattern: /\bAUTOINCREMENT\b/gi },
   { kind: 'pragma', label: '`PRAGMA` et fonctions `pragma_…`', postgres: 'le catalogue (`pg_catalog`, `information_schema`) ou un réglage de la base', pattern: /\bPRAGMA\b|\bpragma_\w+\s*\(/gi },
   { kind: 'rowid', label: '`rowid` et `last_insert_rowid()`', postgres: 'une clé déclarée et `RETURNING`', pattern: /\b(?:last_insert_)?rowid\b/gi },
@@ -34,8 +50,8 @@ export const NON_STANDARD_KINDS: readonly NonStandardKind[] = [
   { kind: 'ifnull', label: '`IFNULL`', postgres: '`COALESCE`', pattern: /\bIFNULL\s*\(/gi },
   { kind: 'iif', label: '`IIF`', postgres: '`CASE WHEN … END`', pattern: /\bIIF\s*\(/gi },
   { kind: 'instr', label: '`instr`', postgres: '`position(… in …)` ou `strpos`', pattern: /\binstr\s*\(/gi },
-  { kind: 'char', label: '`char(…)` pour un caractère par son code', postgres: '`chr(…)`', pattern: /\bchar\s*\(/g },
-  { kind: 'printf', label: '`printf` en SQL', postgres: '`format` ou `to_char`', pattern: /\bprintf\s*\(/g },
+  { kind: 'char', label: '`char(…)` pour un caractère par son code', postgres: '`chr(…)`', pattern: /\bchar\s*\(/gi, skip: isCharType },
+  { kind: 'printf', label: '`printf` en SQL', postgres: '`format` ou `to_char`', pattern: /\bprintf\s*\(/gi },
 ];
 
 export interface NonStandardHit {
@@ -119,15 +135,43 @@ export function findNonStandard(text: string, lang: 'sql' | 'ts'): NonStandardHi
   };
   const hits: NonStandardHit[] = [];
   for (const k of NON_STANDARD_KINDS) {
-    for (const m of clean.matchAll(new RegExp(k.pattern.source, k.pattern.flags))) hits.push({ kind: k.kind, line: lineOf(m.index) });
+    for (const m of clean.matchAll(new RegExp(k.pattern.source, k.pattern.flags))) {
+      if (k.skip?.(clean, m.index)) continue;
+      hits.push({ kind: k.kind, line: lineOf(m.index) });
+    }
   }
   return hits.sort((a, b) => a.line - b.line || NON_STANDARD_KINDS.findIndex((k) => k.kind === a.kind) - NON_STANDARD_KINDS.findIndex((k) => k.kind === b.kind));
 }
 
-/** Les comptes d'un fichier, sorte par sorte, sans les sortes absentes. */
+const TOLERATED = new Set(NON_STANDARD_KINDS.filter((k) => k.tolerated).map((k) => k.kind));
+
+/** Les comptes plafonnés d'un fichier, sorte par sorte, sans les sortes absentes ni les sortes tolérées. */
 export function countByKind(hits: readonly NonStandardHit[]): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const h of hits) out[h.kind] = (out[h.kind] ?? 0) + 1;
+  for (const h of hits) if (!TOLERATED.has(h.kind)) out[h.kind] = (out[h.kind] ?? 0) + 1;
+  return out;
+}
+
+export interface CeilingRaise {
+  file: string;
+  kind: string;
+  base: number;
+  now: number;
+}
+
+/**
+ * Chaque plafond plus haut que celui de la version de référence (la branche principale) : un plafond ne monte jamais,
+ * et un fichier ou une sorte absents de la référence y valent zéro [R633].
+ */
+export function raisedCeilings(current: Ceilings, base: Ceilings): CeilingRaise[] {
+  const out: CeilingRaise[] = [];
+  for (const file of Object.keys(current).sort()) {
+    for (const kind of Object.keys(current[file]!).sort()) {
+      const now = current[file]![kind]!;
+      const was = base[file]?.[kind] ?? 0;
+      if (now > was) out.push({ file, kind, base: was, now });
+    }
+  }
   return out;
 }
 
@@ -161,7 +205,7 @@ export function lowerCeilings(found: Readonly<Record<string, readonly NonStandar
   for (const file of Object.keys(ceilings).sort()) {
     const counts = countByKind(found[file] ?? []);
     const kept: Record<string, number> = {};
-    for (const kind of Object.keys(ceilings[file]!).sort()) {
+    for (const kind of Object.keys(ceilings[file]!).filter((k) => !TOLERATED.has(k)).sort()) {
       const n = Math.min(ceilings[file]![kind]!, counts[kind] ?? 0);
       if (n > 0) kept[kind] = n;
     }
@@ -195,13 +239,25 @@ export function renderMap(found: Readonly<Record<string, readonly NonStandardHit
   ];
   for (const k of NON_STANDARD_KINDS) {
     const t = total(k.kind);
-    lines.push(`| ${k.label} | ${t.count} | ${t.files} | ${k.postgres} |`);
+    if (k.tolerated) lines.push(`| ${k.label} | tolérée, sans plafond | | ${k.postgres} |`);
+    else lines.push(`| ${k.label} | ${t.count} | ${t.files} | ${k.postgres} |`);
   }
-  const all = files.reduce((a, f) => a + found[f]!.length, 0);
-  const touched = files.filter((f) => found[f]!.length > 0);
-  lines.push('', `En tout : ${all} occurrences dans ${touched.length} fichiers sur ${files.length} lus.`, '', '## Les fichiers les plus chargés', '', '| Fichier | Occurrences |', '| --- | ---: |');
-  const top = touched.sort((a, b) => found[b]!.length - found[a]!.length || a.localeCompare(b)).slice(0, 20);
-  for (const f of top) lines.push(`| \`${f}\` | ${found[f]!.length} |`);
+  const capped = (f: string): number => found[f]!.filter((h) => !TOLERATED.has(h.kind)).length;
+  const all = files.reduce((a, f) => a + capped(f), 0);
+  const touched = files.filter((f) => capped(f) > 0);
+  lines.push(
+    '',
+    `En tout, hors sortes tolérées : ${all} occurrences dans ${touched.length} fichiers.`,
+    '',
+    'Les déclencheurs et leur `RAISE` sont la garde des tables (R17) : chaque migration nouvelle en porte, ils sont tolérés sans plafond et seront réécrits en fonctions `plpgsql` au passage.',
+    '',
+    '## Les fichiers les plus chargés',
+    '',
+    '| Fichier | Occurrences |',
+    '| --- | ---: |',
+  );
+  const top = touched.sort((a, b) => capped(b) - capped(a) || a.localeCompare(b)).slice(0, 20);
+  for (const f of top) lines.push(`| \`${f}\` | ${capped(f)} |`);
   lines.push('');
   return lines.join('\n');
 }
