@@ -59,7 +59,7 @@ export function fromBase64Url(text: unknown, maxBytes = 4096): Uint8Array | null
 
 export async function sha256(bytes: Uint8Array | string): Promise<Uint8Array> {
   const data = typeof bytes === 'string' ? new TextEncoder().encode(bytes) : bytes;
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', data as BufferSource));
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', data));
 }
 
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -134,9 +134,11 @@ export function derToRaw(der: Uint8Array): Uint8Array | null {
   return at === der.length ? out : null;
 }
 
-export async function importEs256(spki: Uint8Array): Promise<CryptoKey | null> {
+type VerifyKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
+
+export async function importEs256(spki: Uint8Array): Promise<VerifyKey | null> {
   try {
-    return await crypto.subtle.importKey('spki', spki as BufferSource, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    return await crypto.subtle.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
   } catch {
     return null;
   }
@@ -197,7 +199,7 @@ export async function verifyAssertion(input: AssertionInput, publicKey: Uint8Arr
   const signed = new Uint8Array(input.authenticatorData.length + clientHash.length);
   signed.set(input.authenticatorData, 0);
   signed.set(clientHash, input.authenticatorData.length);
-  const valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, raw as BufferSource, signed as BufferSource);
+  const valid = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, raw, signed);
   if (!valid) return { ok: false, code: 'bad_signature' };
   return { ok: true, value: { signCount: common.value.signCount } };
 }
