@@ -576,6 +576,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       agent_departures: ['agent_id', 'reason', 'created_by', 'cancelled_by', 'successor_agent_id', 'successor_status', 'successor_decided_by', 'successor_decided_at'],
       agent_departure_handovers: ['subject_id', 'from_agent_id', 'to_agent_id'],
       agent_departure_reassignments: ['subject_id', 'to_agent_id', 'by'],
+      // HX69 : les agents pilotes et les mandats qu'ils signaient avant leur arrivée, avec la référence de la preuve.
+      pilot_agents: ['agent_id', 'designated_by'],
+      pilot_before_declarations: ['agent_id', 'month_1', 'month_2', 'month_3', 'proof_ref', 'declared_by'],
     },
   },
   {
@@ -1354,6 +1357,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   assistance_alerts: ['request_id', 'kind', 'created_at'],
   sponsorships: ['network_id', 'created_at'],
   referral_settings: ['id', 'network_id', 'rate_bp', 'levels', 'written_at'],
+  pilot_agents: ['network_id', 'designated_at'],
+  pilot_before_declarations: ['network_id', 'version', 'declared_at'],
   agent_departures: ['id', 'network_id', 'notice_given_on', 'leaves_on', 'notice_months', 'created_at', 'cancelled_at', 'processed_at'],
   agent_departure_handovers: ['departure_id', 'network_id', 'kind', 'at'],
   agent_departure_reassignments: ['departure_id', 'kind', 'network_id', 'at'],
