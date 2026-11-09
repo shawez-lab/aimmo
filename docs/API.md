@@ -365,6 +365,14 @@ Sous `/v1/phases`, la direction seule ; tout autre rôle est refusé (403) et le
 
 Au planificateur : `phases.releve_phase1`, de minuit à 3 h de Paris, fige le relevé de la veille pour chaque réseau, une seule fois ; un jour manqué n'est jamais rattrapé et reste « sans donnée » [R643, R17].
 
+## Ouverture région par région (BR12)
+
+Sous `/v1/regions`, la direction seule ; tout autre rôle est refusé (403) et le refus écrit au journal [R16]. L'état est relu à chaque demande ; rien n'est envoyé, et aucune région ne s'ouvre seule. Corps JSON de 8 ko au plus ; un corps illisible répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
+
+- `GET /` (soit `GET /v1/regions`) : les 18 régions de l'INSEE, chacune ouverte ou non, depuis quand et par quelle version ; la Bourgogne-Franche-Comté ouverte d'office ; si une nouvelle région peut s'ouvrir maintenant, avec ses raisons et la date de fin d'attente [R650, R652].
+- `POST /decision` (`{region: <code INSEE>, open: true | false, reason}`, raison de 3 à 200 caractères) : ouvre ou ferme une région ; une version s'ajoute à la chaîne, rien ne change. Une ouverture est refusée en 409 tant que la phase 5 n'est pas ouverte (R651, `phase5_fermee`) ou qu'une autre région est ouverte depuis moins de 90 jours (R652, `region_recente`, avec `until`) ; la région d'origine ou un code inconnu sont refusés (R650) [R651, R652].
+- `GET /verification` : la chaîne des décisions recomptée depuis la première et recoupée avec le journal ; `{intact, versions}` ou, si une ligne a été changée ou retirée, `brokenAt`, la première version cassée [R653].
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
