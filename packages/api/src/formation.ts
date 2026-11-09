@@ -168,7 +168,8 @@ export const ATTESTATION_PAGE_PATH = '/attestation';
 type PublicVerdict = { valid: true; issuedOn: string } | { valid: false };
 
 async function verdict(db: SqlDatabase, document: unknown, fingerprint: unknown): Promise<PublicVerdict> {
-  const v = await verifyAttestation(db, document, typeof fingerprint === 'string' ? fingerprint.trim().toLowerCase() : fingerprint);
+  // L'empreinte telle quelle : au caractère près, sans la remettre en forme [R571].
+  const v = await verifyAttestation(db, document, fingerprint);
   return v.valid ? { valid: true, issuedOn: v.issuedOn } : { valid: false };
 }
 
@@ -240,7 +241,7 @@ export async function handleAttestationPublic(request: Request, s: { db: SqlData
   if (new TextEncoder().encode(raw).length > MAX_VERIFY_BYTES) return html(413, renderAttestationPage({ result: 'unreadable' }));
   const form = new URLSearchParams(raw);
   const text = form.get('document') ?? '';
-  const fingerprint = (form.get('empreinte') ?? '').trim();
+  const fingerprint = form.get('empreinte') ?? '';
   let document: unknown;
   try {
     document = JSON.parse(text);

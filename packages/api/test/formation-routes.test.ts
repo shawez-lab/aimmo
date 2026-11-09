@@ -151,6 +151,9 @@ describeWithSqlite('BR07 · routes du quiz et des attestations de formation', ()
     const forger = await sha256Hex(JSON.stringify(changed));
     expect((await verify(changed, forger)).body.data).toEqual({ valid: false });
     expect((await verify('pas un document', 'x')).body.data).toEqual({ valid: false });
+    // L'empreinte au caractère près : en capitales ou avec un espace, elle n'est plus la même.
+    expect((await verify(attestation.document, attestation.fingerprint.toUpperCase())).body.data).toEqual({ valid: false });
+    expect((await verify(attestation.document, ` ${attestation.fingerprint}`)).body.data).toEqual({ valid: false });
     // Aucune raison ni aucun nom rendu au public.
     expect(JSON.stringify((await verify(attestation.document, attestation.fingerprint)).body)).not.toContain(t.alexId);
 
@@ -163,6 +166,7 @@ describeWithSqlite('BR07 · routes du quiz et des attestations de formation', ()
     const tampered = JSON.stringify(attestation.document).replace('Module inventé 1', 'Module inventé 2');
     expect(await post(tampered, attestation.fingerprint)).toContain('Attestation non reconnue.');
     expect(await post('{pas du json', attestation.fingerprint)).toContain('Lecture impossible.');
+    expect(await post(JSON.stringify(attestation.document), attestation.fingerprint.toUpperCase())).toContain('Attestation non reconnue.');
     // Rien de ce qui est collé n'est rangé.
     expect(await t.count('quiz_attestations')).toBe(1);
   });
