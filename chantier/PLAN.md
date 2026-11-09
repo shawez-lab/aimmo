@@ -668,7 +668,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR03 · Routes du marketing : calendrier, lettre, publicité payante
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : HX52, HX53, HX54
 - Objectif : routes de `CalendrierPublications`, `LettreInformation` et `PublicitePayante`, mode essai seul.
 - Critères : droits [R16] (test) ; R580 à R589 tenues par la route (tests) ; rien ne part ni ne se paie (test).
