@@ -24,6 +24,11 @@ export interface NonStandardKind {
    * ne s'efface) ; chaque migration nouvelle en porte. Comptée, jamais plafonnée.
    */
   tolerated?: true;
+  /**
+   * La forme cherchée dans les chaînes du TypeScript, quand elle diffère : une phrase en français (« avec leur date
+   * (pages…) ») ne doit pas compter comme un appel.
+   */
+  tsPattern?: RegExp;
   /** Écarte une occurrence qui n'est pas la forme cherchée (un type `CHAR(3)`, par exemple). */
   skip?: (text: string, index: number) => boolean;
 }
@@ -43,7 +48,7 @@ export const NON_STANDARD_KINDS: readonly NonStandardKind[] = [
   { kind: 'raise', label: '`RAISE(ABORT, …)` dans un déclencheur', postgres: '`RAISE EXCEPTION` dans la fonction du déclencheur', pattern: /\bRAISE\s*\(\s*(?:ABORT|FAIL|IGNORE|ROLLBACK)\b/gi, tolerated: true },
   { kind: 'insert_or', label: '`INSERT OR IGNORE` ou `INSERT OR REPLACE`', postgres: '`INSERT … ON CONFLICT DO NOTHING` ou `DO UPDATE`', pattern: /\bINSERT\s+OR\s+(?:IGNORE|REPLACE|ABORT|FAIL|ROLLBACK)\b/gi },
   { kind: 'glob', label: '`GLOB`', postgres: '`~` (expression régulière) ou `SIMILAR TO`', pattern: /\bGLOB\b/gi },
-  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`, et `date` ou `time` avec `\'now\'` ou un modificateur)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(|\b(?:date|time)\((?=\s*'now'|[^()]*(?:\([^()]*\)[^()]*)*,)/gi },
+  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`, et `date` ou `time` avec `\'now\'` ou un modificateur)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(|\b(?:date|time)\s*\((?=\s*'now'|[^()]*(?:\([^()]*\)[^()]*)*,)/gi, tsPattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(|\b(?:date|time)\((?=\s*'now'|[^()]*(?:\([^()]*\)[^()]*)*,)/gi },
   { kind: 'autoincrement', label: '`AUTOINCREMENT`', postgres: '`GENERATED ALWAYS AS IDENTITY`', pattern: /\bAUTOINCREMENT\b/gi },
   { kind: 'pragma', label: '`PRAGMA` et fonctions `pragma_…`', postgres: 'le catalogue (`pg_catalog`, `information_schema`) ou un réglage de la base', pattern: /\bPRAGMA\b|\bpragma_\w+\s*\(/gi },
   { kind: 'rowid', label: '`rowid` et `last_insert_rowid()`', postgres: 'une clé déclarée et `RETURNING`', pattern: /\b(?:last_insert_)?rowid\b/gi },
@@ -159,7 +164,8 @@ export function findNonStandard(text: string, lang: 'sql' | 'ts'): NonStandardHi
   };
   const hits: NonStandardHit[] = [];
   for (const k of NON_STANDARD_KINDS) {
-    for (const m of clean.matchAll(new RegExp(k.pattern.source, k.pattern.flags))) {
+    const pattern = lang === 'ts' && k.tsPattern ? k.tsPattern : k.pattern;
+    for (const m of clean.matchAll(new RegExp(pattern.source, pattern.flags))) {
       if (k.skip?.(clean, m.index)) continue;
       hits.push({ kind: k.kind, line: lineOf(m.index) });
     }
