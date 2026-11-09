@@ -273,6 +273,16 @@ Sous `/v1/securite`, chaque route passe par les droits de la couche métier [R16
 
 Au planificateur, inchangé : `securite.reclamations` de 9 h à 19 h, `securite.gel_avoirs` chaque heure.
 
+## Recrutement des 100 premiers agents, en mode essai (BR02)
+
+Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.
+
+- `GET /contenus` : chaque vidéo et chaque épisode du podcast, avec son lien marqué (`/rejoindre?c=<code>`) et son chemin en nombres seulement : candidatures, entretiens tenus, « oui », entrées, restés à 90 jours, mandats dans les 90 jours [R622].
+- `POST /contenus` (`{kind: video | podcast, title, url, description?, publishedOn}`) : range un contenu ; titre et description passent le contrôle des promesses de revenus, une vidéo est sur YouTube seulement [R80, R620]. `POST /contenus/<id>/retrait` : retiré, jamais effacé.
+- La page de candidature reprend le code du lien marqué dans son formulaire ; la candidature est rattachée au contenu, un code inconnu ou retiré est ignoré et la réponse au candidat reste la même [R621].
+- `POST /cout-agent/factures/<id>/poste` (`{category: ia | clients_apportes | diffusion | accompagnement | conformite | hors_agents}`) : le poste d'une facture fournisseur, par une nouvelle version [R623]. `POST /cout-agent/reglages` (`{validFrom: AAAA-MM, provisionBp, marginBp, reason}`) : provision et marge, par versions datées.
+- `GET /cout-agent?mois=AAAA-MM` : pour un mois fini de Paris, la part du réseau, le coût complet par poste, la provision, la marge, l'agent moyen, si la part couvre le coût et le seuil qui le couvre tout juste ; un mois incomplet n'est jamais dit couvert ; mois en cours : 409 [R623, R624, R625]. Aucun montant n'entre par ces routes (`amount_refused`).
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).

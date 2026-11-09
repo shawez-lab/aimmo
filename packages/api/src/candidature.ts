@@ -19,6 +19,8 @@ export const CANDIDATURE_PATH = '/rejoindre';
 export const CANDIDATURE_PAGE_VERSION = '2026-10-28';
 const MAX_FORM_BYTES = 8_000;
 const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** Le code d'un contenu de recrutement (HX64), porté par le lien marqué `?c=` : lettres et chiffres seuls. */
+const CONTENT_CODE = /^[A-Za-z0-9]{1,40}$/;
 
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
@@ -206,7 +208,7 @@ function html(status: number, title: string, body: string): Response {
   });
 }
 
-type FormValues = { [K in 'firstName' | 'lastName' | 'email' | 'phone' | 'town' | 'currentStatus' | 'experience' | 'source' | 'question' | 'parrain']?: string | undefined } & { consent?: boolean };
+type FormValues = { [K in 'firstName' | 'lastName' | 'email' | 'phone' | 'town' | 'currentStatus' | 'experience' | 'source' | 'question' | 'parrain' | 'contenu']?: string | undefined } & { consent?: boolean };
 
 /** Le message d'un refus de la couche métier, et le champ qu'il vise. */
 const ERRORS: Readonly<Record<string, [string, keyof FormValues | null]>> = Object.freeze({
@@ -238,6 +240,7 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
   const t = PAGE_TEXT;
   const inv = error?.field ?? null;
   const sponsor = values.parrain && AGENT_ID.test(values.parrain) ? values.parrain : null;
+  const content = values.contenu && CONTENT_CODE.test(values.contenu) ? values.contenu : null;
   const select = (name: 'currentStatus' | 'experience' | 'source', label: string, body: string): string =>
     `<label for="${name}">${escape(label)}</label><select id="${name}" name="${name}" required${inv === name ? ' aria-invalid="true" aria-describedby="erreur"' : ''}>${body}</select>`;
   return `<p class="marque">${escape(t.kicker)}</p><div class="frise" aria-hidden="true"></div>
@@ -285,6 +288,7 @@ ${select('source', 'Comment nous avez-vous connus ?', options(SOURCE_LABELS, CAN
 </fieldset>
 <div class="piege" aria-hidden="true"><label for="site">Ne pas remplir</label><input id="site" name="site" type="text" tabindex="-1" autocomplete="off"></div>
 ${sponsor ? `<input type="hidden" name="parrain" value="${escape(sponsor)}">` : ''}
+${content ? `<input type="hidden" name="contenu" value="${escape(content)}">` : ''}
 <button type="submit">Envoyer ma candidature</button>
 <p class="doux">${escape(t.privacy)}</p>
 </form>`;
@@ -317,7 +321,12 @@ export async function handleCandidature(request: Request, config: CandidatureCon
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const parrain = url.searchParams.get('parrain') ?? undefined;
-    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(parrain === undefined ? {} : { parrain }));
+    // Le lien marqué d'une vidéo ou d'un épisode (HX64) : le code suit le formulaire, sans rien changer pour le candidat.
+    const contenu = url.searchParams.get('c') ?? undefined;
+    const values: FormValues = {};
+    if (parrain !== undefined) values.parrain = parrain;
+    if (contenu !== undefined) values.contenu = contenu;
+    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(values));
     return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
   }
   if (request.method !== 'POST') return html(405, 'Méthode non admise · AIMMO', '<h1>Méthode non admise</h1><p>Utilisez le formulaire de la page.</p>');
@@ -342,6 +351,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     source: get('source'),
     question: get('question'),
     parrain: get('parrain'),
+    contenu: get('contenu'),
     consent: form.get('consent') === 'oui',
   };
   // Le champ piège, invisible aux personnes : rempli, c'est un robot. Même réponse, rien n'est rangé.
@@ -361,6 +371,8 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     source: values.source,
     question: blank(values.question),
     sponsorAgentId: values.parrain && AGENT_ID.test(values.parrain) ? values.parrain : null,
+    // Un code inconnu, retiré ou abîmé est ignoré par la couche métier : la réponse au candidat reste la même [R621].
+    contentCode: values.contenu && CONTENT_CODE.test(values.contenu) ? values.contenu : null,
     // La preuve dit ce que le candidat a coché et sur quelle version de la page : jamais son adresse ni son appareil.
     contactConsent: values.consent ? { given: true, proof: `Case cochée sur la page ${CANDIDATURE_PATH}, version ${CANDIDATURE_PAGE_VERSION}, le ${now().toISOString()}` } : { given: false },
   };
