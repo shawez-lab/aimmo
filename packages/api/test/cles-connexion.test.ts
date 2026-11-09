@@ -143,25 +143,31 @@ describeWithSqlite('BR06 · connexion par une clé d’appareil dans le socle', 
     expect(await t.count('security_sessions')).toBe(0);
     // Chaque refus est au journal, avec sa raison, jamais l'identifiant demandé.
     const codes = (await t.journal.all()).filter((e) => e.type === 'securite.refus').map((e) => (e.data as { code: string }).code);
-    expect(codes).toEqual(['unknown_network', 'bad_input', 'agent_inactive', 'no_device', 'unknown_challenge', 'unknown_challenge']);
+    // Ce qui concerne quelqu'un est au journal ; un réseau ou un défi inconnus ne concernent personne et n'écrivent rien.
+    expect(codes).toEqual(['bad_input', 'agent_inactive', 'no_device']);
     expect(JSON.stringify(await t.journal.all())).not.toContain('reseau-inconnu');
+    // Au-delà de la limite d'une adresse : 429, et plus aucune ligne au journal.
+    const flood = await setup({ limits: { perIp: 2, perNetwork: 100 } });
+    const before = (await flood.journal.all()).length;
+    for (let i = 0; i < 6; i += 1) await flood.call('POST', '/cles/connexion/debut', { body: { networkId: flood.network.id, role: 'partner', userId: 'p-1' }, ip: '192.0.2.9' });
+    for (let i = 0; i < 6; i += 1) await flood.call('POST', '/cles/connexion/fin', { body: { challengeId: 'x' }, ip: '192.0.2.9' });
+    expect((await flood.journal.all()).length).toBe(before + 2);
   });
 
-  it('[R600] la connexion est limitée en débit, par adresse puis par réseau, chaque heure ; une adresse pleine ne prend pas la place des autres', async () => {
-    const t = await setup({ limits: { perIp: 3, perNetwork: 6 } });
+  it('[R600] la connexion est limitée en débit, par adresse puis par réseau, chaque heure ; ni une adresse pleine ni des utilisateurs inventés ne bloquent les autres', async () => {
+    const t = await setup({ limits: { perIp: 3, perNetwork: 4 } });
     const { device } = await t.enroll('alex', 8);
     await t.enroll('direction', 9);
-    // Une même adresse : trois demandes, puis plus rien, pour personne ; ses demandes refusées ne comptent pas au réseau.
+    // Une même adresse : trois demandes, puis plus rien, pour personne.
     for (let i = 0; i < 3; i += 1) expect((await t.begin('alex', '203.0.113.7')).status).toBe(200);
     for (let i = 0; i < 5; i += 1) expect(await t.begin('direction', '203.0.113.7')).toMatchObject({ status: 429, body: { code: 'too_many_requests' } });
-    // Ni Alex ni personne n'est privé d'entrer par une adresse saturée : d'une autre adresse, il se connecte.
+    // Des utilisateurs inventés ne prennent aucune place du réseau.
+    for (let i = 0; i < 10; i += 1) expect((await t.call('POST', '/cles/connexion/debut', { body: { networkId: t.network.id, role: 'agent', userId: `invente-${i}` } })).status).toBe(403);
+    // D'une autre adresse, Alex se connecte.
     const c = await t.begin('alex', '198.51.100.4');
     expect(c.status).toBe(200);
     expect((await t.call('POST', '/cles/connexion/fin', { body: await device.sign(c.body.data as Challenge), ip: '198.51.100.4' })).status).toBe(200);
-    // Un défi inconnu ne prend aucune place.
-    for (let i = 0; i < 5; i += 1) expect((await t.call('POST', '/cles/connexion/fin', { body: { challengeId: 'x' } })).status).toBe(403);
-    // Le réseau entier est plein (six demandes valables) ; une heure plus tard, tout se rouvre.
-    expect((await t.begin('direction')).status).toBe(200);
+    // Quatre défis émis : le réseau est plein ; une heure plus tard, tout se rouvre.
     expect(await t.begin('direction')).toMatchObject({ status: 429 });
     t.setClock(new Date(t.now().getTime() + 3_600_000));
     expect((await t.begin('alex', '203.0.113.7')).status).toBe(200);

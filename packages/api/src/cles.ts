@@ -231,14 +231,14 @@ export const CONNEXION_DEBUT_PATH = '/v1/cles/connexion/debut';
 export const CONNEXION_FIN_PATH = '/v1/cles/connexion/fin';
 
 /**
- * Les limites d'appels de la connexion, par heure. L'adresse d'abord : une demande arrêtée là ne prend aucune place du
- * réseau. Pas de limite par utilisateur : n'importe qui pourrait la remplir au nom d'un agent et l'empêcher d'entrer ; un
+ * Les limites d'appels de la connexion, par heure. L'adresse d'abord ; le réseau ne compte que les défis émis, qu'un
+ * utilisateur inventé ne remplit pas. Pas de limite par utilisateur : n'importe qui pourrait la remplir au nom d'un agent et l'empêcher d'entrer ; un
  * défi ne sert qu'une fois et ne se signe qu'avec la clé, rien ne se devine en le redemandant.
  */
 export interface ConnexionLimits {
   /** Demandes d'une même adresse (`cf-connecting-ip`), début et fin ensemble. */
   perIp: number;
-  /** Demandes valables vers un même réseau, début et fin ensemble. */
+  /** Défis émis pour un même réseau (utilisateur actif avec une clé active). */
   perNetwork: number;
 }
 export const DEFAULT_CONNEXION_LIMITS: ConnexionLimits = Object.freeze({ perIp: 30, perNetwork: 2000 });
@@ -255,18 +255,21 @@ const NETWORK_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const refusedLogin = (): Response => json(403, { ok: false, rule: 'R600', code: 'connexion_refusee' });
 const tooMany = (): Response => json(429, { ok: false, rule: null, code: 'too_many_requests', message: 'Trop de demandes : réessayez plus tard.' });
 
-/** Prend une place à l'adresse, puis au réseau ; la première pleine arrête tout. L'adresse n'est rangée qu'en empreinte d'une heure. */
-async function withinLimits(s: ConnexionServices, request: Request, networkId: string): Promise<boolean> {
-  const at = s.now();
-  const limits = s.limits ?? DEFAULT_CONNEXION_LIMITS;
+/** Prend une place à l'adresse ; l'adresse n'est rangée qu'en empreinte d'une heure. Sans adresse connue, rien. */
+async function ipSlot(s: ConnexionServices, request: Request, networkId: string): Promise<boolean> {
   const ip = request.headers.get('cf-connecting-ip');
-  if (ip && !(await takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${at.toISOString().slice(0, 13)}`)}`, limits.perIp, at))) return false;
-  return takeSlot(s.db, networkId, 'cles_connexion:reseau', limits.perNetwork, at);
+  if (!ip) return true;
+  const at = s.now();
+  return takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${at.toISOString().slice(0, 13)}`)}`, (s.limits ?? DEFAULT_CONNEXION_LIMITS).perIp, at);
 }
 
-/** Un refus que la couche métier n'écrit pas elle-même (réseau, rôle ou défi inconnu) : au journal, sans l'identifiant demandé [R600, R16]. */
-async function journalRefusal(s: ConnexionServices, step: 'debut' | 'fin', code: string): Promise<Response> {
-  await appendEvent(new SqlJournalStore(s.db), { type: 'securite.refus', actor: 'public:connexion', subject: null, data: { rule: 'R600', step, code } }, s.now);
+/** Prend une place au réseau, pour un défi vraiment émis : un utilisateur inventé n'en prend aucune. */
+const networkSlot = (s: ConnexionServices, networkId: string): Promise<boolean> =>
+  takeSlot(s.db, networkId, 'cles_connexion:reseau', (s.limits ?? DEFAULT_CONNEXION_LIMITS).perNetwork, s.now());
+
+/** Un refus que la couche métier n'écrit pas elle-même (rôle ou identifiant mal formé), après la limite de l'adresse [R600, R16]. */
+async function journalRefusal(s: ConnexionServices, code: string): Promise<Response> {
+  await appendEvent(new SqlJournalStore(s.db), { type: 'securite.refus', actor: 'public:connexion', subject: null, data: { rule: 'R600', step: 'debut', code } }, s.now);
   return refusedLogin();
 }
 
@@ -286,22 +289,27 @@ export async function handleConnexion(request: Request, s: ConnexionServices): P
   if (path === CONNEXION_DEBUT_PATH) {
     if (Object.keys(body).some((k) => !['networkId', 'role', 'userId'].includes(k))) return unknownField();
     const { networkId, role, userId } = body;
-    if (typeof networkId !== 'string' || !NETWORK_ID.test(networkId) || !(await s.db.first('SELECT 1 FROM networks WHERE id = ?', [networkId]))) return journalRefusal(s, 'debut', 'unknown_network');
-    if (typeof role !== 'string' || !ROLE_OF_DEVICE.has(role) || typeof userId !== 'string' || !USER_ID.test(userId)) return journalRefusal(s, 'debut', 'bad_input');
-    if (!(await withinLimits(s, request, networkId))) return tooMany();
+    // Un réseau inconnu ne concerne personne : refusé sans rien écrire, pour qu'aucune boucle ne remplisse le journal.
+    if (typeof networkId !== 'string' || !NETWORK_ID.test(networkId) || !(await s.db.first('SELECT 1 FROM networks WHERE id = ?', [networkId]))) return refusedLogin();
+    if (!(await ipSlot(s, request, networkId))) return tooMany();
+    if (typeof role !== 'string' || !ROLE_OF_DEVICE.has(role) || typeof userId !== 'string' || !USER_ID.test(userId)) return journalRefusal(s, 'bad_input');
     const challenge = await service.beginLogin(networkId, role, userId);
-    return challenge.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: challenge.value }) : refusedLogin();
+    if (!challenge.ok) return refusedLogin();
+    // Le défi émis compte au réseau ; plein, il n'est pas rendu et expire sans servir.
+    if (!(await networkSlot(s, networkId))) return tooMany();
+    return json(200, { ok: true, mode: TRIAL_MODE, data: challenge.value });
   }
 
   if (Object.keys(body).some((k) => !(ASSERTION as readonly string[]).includes(k))) return unknownField();
-  // Le réseau est celui du défi, lu dans la base : jamais celui qu'annonce l'appelant.
+  // Le réseau est celui du défi, lu dans la base : jamais celui qu'annonce l'appelant. Un défi inconnu ne concerne
+  // personne : refusé sans rien écrire. Les défis connus sont bornés par ceux émis, déjà comptés au réseau.
   const { challengeId } = body;
   const owner =
     typeof challengeId === 'string' && USER_ID.test(challengeId)
       ? await s.db.first<{ network_id: string }>("SELECT network_id FROM security_challenges WHERE id = ? AND purpose = 'login'", [challengeId])
       : null;
-  if (!owner) return journalRefusal(s, 'fin', 'unknown_challenge');
-  if (!(await withinLimits(s, request, owner.network_id))) return tooMany();
+  if (!owner) return refusedLogin();
+  if (!(await ipSlot(s, request, owner.network_id))) return tooMany();
   const session = await service.finishLogin(body as unknown as AssertionPayload);
   if (!session.ok) return refusedLogin();
   const { token, expiresAt, viewer, deviceId } = session.value;
