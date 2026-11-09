@@ -130,6 +130,37 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(await t.reclamations.handed(t.agent, c.complaintId)).toEqual({ ok: false, rule: null, code: 'nothing_to_hand' });
   });
 
+  it('[R607] en mode essai, rien ne part vraiment : la proposition reste à remettre, l’agent est alerté', async () => {
+    const t = await setup();
+    const trial = new Reclamations(t.db, t.acces, t.journal, { now: t.now });
+    await trial.configure(t.direction, MEDIATOR);
+    await t.mailIn('conv-essai', at('2027-03-09', '09:30'));
+    const r = await trial.record(t.agent, t.personId, { receivedOn: '2027-03-09', receivedBy: 'mail', summary: 'Suivi.', reply: { channel: 'email', conversationId: 'conv-essai' } });
+    if (!r.ok) throw new Error(r.code);
+    t.setClock(at('2027-04-08'));
+    await trial.tick(t.network.id);
+    const l = await trial.list(t.direction);
+    expect(l.ok && l.value[0]).toMatchObject({ mediator: { status: 'a_remettre', sendRule: 'R26' }, alerts: expect.arrayContaining([{ kind: 'a_remettre', createdOn: '2027-04-08' }]) });
+  });
+
+  it('[R607] un envoi interrompu n’est jamais renvoyé : une heure après, la proposition est à remettre, l’agent alerté', async () => {
+    const t = await setup();
+    let calls = 0;
+    const broken = new Reclamations(t.db, t.acces, t.journal, { now: t.now, send: async () => { calls++; throw new Error('Worker interrompu'); } });
+    await broken.configure(t.direction, MEDIATOR);
+    await t.mailIn('conv-x', at('2027-03-09', '09:30'));
+    const r = await broken.record(t.agent, t.personId, { receivedOn: '2027-03-09', receivedBy: 'mail', summary: 'Suivi.', reply: { channel: 'email', conversationId: 'conv-x' } });
+    if (!r.ok) throw new Error(r.code);
+    t.setClock(at('2027-04-08'));
+    await expect(broken.tick(t.network.id)).rejects.toThrow('Worker interrompu');
+    await broken.tick(t.network.id);
+    expect(calls).toBe(1);
+    t.setClock(at('2027-04-08', '11:30'));
+    await broken.tick(t.network.id);
+    expect(calls).toBe(1);
+    expect(await one(t, r.value.complaintId)).toMatchObject({ mediator: { status: 'a_remettre', sendRule: 'interrompu' }, alerts: expect.arrayContaining([{ kind: 'a_remettre', createdOn: '2027-04-08' }]) });
+  });
+
   it('[R607] sans médiateur réglé, rien n’est inventé : la direction est alertée, la proposition part après le réglage', async () => {
     const t = await setup();
     const c = await t.record({ receivedOn: '2027-03-09', receivedBy: 'courrier', summary: 'Visites trop rares.' });
@@ -157,7 +188,13 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: '2027-02-30', receivedBy: 'oral', summary: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
     expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'x', reply: { channel: 'email', conversationId: 'c' } })).toEqual({ ok: false, rule: null, code: 'bad_reply' });
     const c = await t.record({ receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Motif confidentiel.' });
+    const before = (await t.journal.all()).length;
     expect(await t.reclamations.list(t.sam)).toEqual({ ok: true, value: [] });
+    // Sam ne suit pas la fiche : sa liste ne tente aucune lecture, le journal n'écrit aucun faux refus.
+    expect((await t.journal.all()).length).toBe(before);
+    // La direction lit : la lecture de la fiche est écrite au journal avant que rien ne soit rendu.
+    await t.reclamations.list(t.direction);
+    expect((await t.journal.all()).slice(before).map((e) => [e.type, e.subject])).toEqual([['fiche.lue', `person:${t.personId}`]]);
     expect(await t.reclamations.list(t.compliance)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.reclamations.answer(t.sam, c.complaintId, { outcome: 'reglee', note: 'x' })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect((await t.reclamations.list(t.agent)).ok && ((await t.reclamations.list(t.agent)) as { value: Complaint[] }).value.map((x) => x.complaintId)).toEqual([c.complaintId]);

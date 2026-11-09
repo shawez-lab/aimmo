@@ -108,6 +108,8 @@ export class Reclamations {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly send: Sender;
+  /** Sans canal donné, les seuls canaux du mode essai : rien ne part vraiment, la proposition reste à remettre [R26]. */
+  private readonly trialOnly: boolean;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -117,6 +119,7 @@ export class Reclamations {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.trialOnly = !options.send;
     if (options.send) {
       this.send = options.send;
     } else {
@@ -222,10 +225,10 @@ export class Reclamations {
 
   /** Peut-il agir sur cette réclamation ? La direction du réseau, ou l'agent qui suit la fiche. */
   private async allowed(viewer: Viewer, row: ComplaintRow): Promise<boolean> {
-    if (viewer.role === 'direction') return true;
-    if (viewer.role !== 'agent') return false;
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return false;
+    // La lecture de la fiche est écrite au journal avant que rien ne soit rendu [R16].
     const read = await this.acces.readFiche(viewer, row.person_id);
-    return read.ok && read.view === 'full';
+    return read.ok && (viewer.role === 'direction' || read.view === 'full');
   }
 
   private async row(networkId: string, complaintId: string): Promise<ComplaintRow | null> {
@@ -286,6 +289,17 @@ export class Reclamations {
     const today = this.today();
     let alerts = 0;
     let offers = 0;
+    // Une proposition réservée dont l'envoi a été interrompu (erreur, délai du Worker) depuis plus d'une heure : jamais
+    // renvoyée, elle passe à remettre par l'agent, alerté.
+    const stale = await this.db.all<ComplaintRow>(
+      `SELECT c.* FROM complaints c JOIN complaint_mediator_offers o ON o.complaint_id = c.id
+       WHERE c.network_id = ? AND o.status = 'a_remettre' AND o.send_rule IS NULL AND o.created_at <= ? ORDER BY c.id`,
+      [networkId, new Date(this.now().getTime() - 3_600_000).toISOString()],
+    );
+    for (const row of stale) {
+      await this.db.run("UPDATE complaint_mediator_offers SET send_rule = 'interrompu' WHERE complaint_id = ? AND status = 'a_remettre' AND send_rule IS NULL", [row.id]);
+      await this.alert(row, 'a_remettre', today);
+    }
     const rows = await this.db.all<ComplaintRow & { outcome: ComplaintOutcome | null; answered_on: string | null }>(
       `SELECT c.*, a.outcome, a.answered_on FROM complaints c LEFT JOIN complaint_answers a ON a.complaint_id = c.id
        WHERE c.network_id = ? AND NOT EXISTS (SELECT 1 FROM complaint_mediator_offers o WHERE o.complaint_id = c.id)
@@ -340,13 +354,15 @@ export class Reclamations {
         fallbackTexts: [text],
       });
     }
+    const reallyLeft = result !== null && result.status === 'sent' && !result.trial && !this.trialOnly;
     if (result !== null) {
       await this.db.run(
         "UPDATE complaint_mediator_offers SET status = ?, send_rule = ? WHERE complaint_id = ? AND status = 'a_remettre' AND send_rule IS NULL",
-        [result.status === 'sent' ? 'envoye' : 'a_remettre', result.status === 'sent' ? (result.rule ?? 'envoye') : (result.rule ?? result.status), row.id],
+        [reallyLeft ? 'envoye' : 'a_remettre', reallyLeft ? (result.rule ?? 'envoye') : result.status === 'sent' ? 'R26' : (result.rule ?? result.status), row.id],
       );
       await appendEvent(this.journal, { type: 'reclamation.mediateur_envoi', actor: 'system:reclamations', subject: `complaint:${row.id}`, data: { rule: 'R607', status: result.status, sendRule: result.rule ?? null } }, this.now);
-      if (result.status === 'sent') return true;
+      // Rangé dans la boîte d'essai, rien n'est parti : à remettre, avec sa règle [R26].
+      if (reallyLeft) return true;
     }
     await this.alert(row, 'a_remettre', today);
     return true;
@@ -386,7 +402,18 @@ export class Reclamations {
   /** Les réclamations : la direction voit celles du réseau, l'agent celles des fiches qu'il suit ; l'échéance la plus proche d'abord. */
   async list(viewer: Viewer): Promise<{ ok: true; value: Complaint[] } | ComplaintRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'role');
-    const rows = await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId]);
+    // Un agent : seulement les réclamations des fiches qu'il suit (fiches réunies comprises), pour ne jamais tenter de
+    // lire celles d'un autre ; la lecture est ensuite revérifiée et écrite au journal.
+    const rows =
+      viewer.role === 'direction'
+        ? await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId])
+        : await this.db.all<ComplaintRow>(
+            `SELECT c.* FROM complaints c WHERE c.network_id = ? AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM persons p WHERE p.id = c.person_id AND p.agent_id = ?)
+               OR EXISTS (SELECT 1 FROM person_merges m JOIN persons p ON p.id IN (m.survivor_id, m.merged_id)
+                          WHERE c.person_id IN (m.survivor_id, m.merged_id) AND p.agent_id = ? AND m.undone_at IS NULL))
+             ORDER BY c.due_on, c.id`,
+            [viewer.networkId, viewer.userId, viewer.userId, viewer.userId],
+          );
     const out: Complaint[] = [];
     for (const row of rows) if (await this.allowed(viewer, row)) out.push((await this.load(row.id))!);
     return { ok: true, value: out };

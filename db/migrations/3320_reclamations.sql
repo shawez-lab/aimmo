@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS complaint_answers (
 CREATE TRIGGER IF NOT EXISTS complaint_answers_naissance BEFORE INSERT ON complaint_answers
 WHEN NOT EXISTS (
   SELECT 1 FROM complaints c WHERE c.id = NEW.complaint_id AND c.network_id = NEW.network_id
-    AND NEW.answered_on >= c.received_on AND NEW.late = (NEW.answered_on > c.due_on))
+    AND NEW.answered_on >= c.received_on AND NEW.late = (NEW.answered_on > c.due_on)
+    -- Le jour de la réponse est celui de son écriture (à un jour près, pour l'heure de Paris) : jamais antidatée.
+    AND NEW.answered_on BETWEEN date(NEW.at, '-1 day') AND date(NEW.at, '+1 day'))
 BEGIN SELECT RAISE(ABORT, 'complaint_answers : la réponse suit la réclamation, en retard si après l''échéance [R606]'); END;
 CREATE TRIGGER IF NOT EXISTS complaint_answers_fige BEFORE UPDATE ON complaint_answers
 BEGIN SELECT RAISE(ABORT, 'complaint_answers : une réponse ne change plus'); END;
