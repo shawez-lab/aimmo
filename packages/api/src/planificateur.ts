@@ -7,6 +7,7 @@ import { conformiteJobs } from './conformite.ts';
 import { partenairesJobs } from './partenaires.ts';
 import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
+import { phase1ReadingJob } from './phases.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
@@ -125,6 +126,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
         const store = new FicheClient(config.db, { now });
         return new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
       })(), { now }),
+      // Condition de la phase 1 (HX70), de minuit à 3 h : le relevé de la veille figé pour chaque réseau, une seule fois,
+      // jamais rattrapé plus tard ; rien n'est envoyé [R643, R17].
+      phase1ReadingJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

@@ -88,6 +88,7 @@ import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type SecuriteRoute } from './securite.ts';
+import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
@@ -1205,6 +1206,16 @@ function securiteRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
+function phasesRoutesDef(): RouteDef[] {
+  return phasesRoutes().map((r: PhasesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes du recrutement des 100 premiers agents (BR02) : la direction seule, par la couche métier [R16]. */
 function recrutementRoutesDef(): RouteDef[] {
   return recrutementRoutes().map((r: RecrutementRoute) => ({
@@ -1970,6 +1981,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...securiteRoutesDef(),
+    ...phasesRoutesDef(),
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
     ...formationRoutesDef(),
