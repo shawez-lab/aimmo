@@ -137,6 +137,17 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(await t.reclamations.handed(t.agent, c.complaintId)).toEqual({ ok: false, rule: null, code: 'nothing_to_hand' });
   });
 
+  it('[R607] un médiateur dont le nom ou le site porte des chiffres est proposé quand même', async () => {
+    const t = await setup();
+    await t.reclamations.configure(t.direction, { responseDays: 30, mediatorName: 'Médiation 21 Exemple', mediatorSite: 'https://mediation2.example.test' });
+    await t.mailIn('conv-21', at('2027-03-09', '09:30'));
+    const c = await t.record({ receivedOn: '2027-03-09', receivedBy: 'mail', summary: 'Suivi.', reply: { channel: 'email', conversationId: 'conv-21' } });
+    t.setClock(at('2027-04-08'));
+    await t.reclamations.tick(t.network.id);
+    expect(await one(t, c.complaintId)).toMatchObject({ mediator: { status: 'envoye' } });
+    expect(t.outbox[0]!.sent[0]!.body).toContain('Médiation 21 Exemple, https://mediation2.example.test');
+  });
+
   it('[R607] en mode essai, rien ne part vraiment : la proposition reste à remettre, l’agent est alerté', async () => {
     const t = await setup();
     const trial = new Reclamations(t.db, t.acces, t.journal, { now: t.now });

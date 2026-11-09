@@ -357,6 +357,8 @@ export class Reclamations {
         channel: row.reply_channel,
         kind: 'reply',
         fallbackTexts: [text],
+        // Les seuls chiffres du texte sont ceux du nom et du site du médiateur, réglés par la direction [R10].
+        figures: [settings.mediator_name, settings.mediator_site],
       });
     }
     const reallyLeft = result !== null && result.status === 'sent' && !result.trial && !this.trialOnly;
