@@ -32,6 +32,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
+import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -335,8 +336,9 @@ export class Reclamations {
   /** La proposition du médiateur, une fois : par le contrôle central quand elle le peut, sinon à remettre par l'agent. */
   private async offer(row: ComplaintRow, cause: 'echeance' | 'non_reglee', settings: Settings, today: string): Promise<boolean> {
     // Vouvoiement avec le prénom, comme tout premier message [R08].
-    const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [row.person_id]);
-    const text = mediatorOfferText({ name: settings.mediator_name, site: settings.mediator_site }, person?.first_name ?? null);
+    // Le prénom de la fiche gardée, celui que le contrôle central attend [R08].
+    const firstName = await ficheFirstName(this.db, await this.fiches.membersOf(row.person_id));
+    const text = mediatorOfferText({ name: settings.mediator_name, site: settings.mediator_site }, firstName);
     // La proposition est d'abord réservée : un passage rejoué ou simultané n'envoie jamais deux fois.
     const { changes } = await this.db.run(
       `INSERT INTO complaint_mediator_offers (complaint_id, network_id, cause, settings_version, text, status, send_rule, created_on, created_at)
