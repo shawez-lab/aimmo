@@ -87,8 +87,9 @@ async function setup() {
     await db.exec('PRAGMA foreign_keys = ON');
     return `a-${id}`;
   };
+  const addAgent = async (firstName: string) => (await store.createAgent({ networkId: network.id, firstName, lastName: 'Agent' })).id;
   const events = async (type: string) => (await db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY rowid', [type])).map((r) => JSON.parse(r.data) as Record<string, unknown>);
-  return { db, chaine, qualification, attribution, communes, journal, network, other, alex, sam, parti, ailleurs, as, dir, zone, contact, events, goTo, now };
+  return { addAgent, db, chaine, qualification, attribution, communes, journal, network, other, alex, sam, parti, ailleurs, as, dir, zone, contact, events, goTo, now };
 }
 
 const FEB = '2027-02-10T10:00:00.000Z';
@@ -172,12 +173,41 @@ describeWithSqlite('HX68 · communes où des clients attendent un agent', () => 
     // Chenôve : un agent devenu « parti » sans départ rangé ne couvre rien.
     await t.zone(t.parti, 'Chenôve', '2026-12-01T00:00:00.000Z');
     await t.contact({ person: 'per-3', at: FEB, city: 'Chenôve' });
+    // Longvic : départ du 10 février, pas encore passé (agent encore « actif ») : parti dès ce jour-là, à Paris.
+    const max = await t.addAgent('Max');
+    await t.zone(max, 'Longvic', '2026-12-01T00:00:00.000Z');
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-max', ?, ?, '2026-12-01', '2027-02-10', 'demission_agent', 1, 'direction:dir-1', 'x')",
+      [t.network.id, max],
+    );
+    await t.contact({ person: 'per-4', at: '2027-02-09T22:59:00.000Z', city: 'Longvic' }); // 23 h 59 le 9 février à Paris : couvert
+    await t.contact({ person: 'per-5', at: '2027-02-09T23:00:00.000Z', city: 'Longvic' }); // minuit le 10 février : plus couvert
+    // Quetigny : un départ annulé ne compte pas ; Ouges : un départ rangé pour plus tard, l'agent couvre encore.
+    const noa = await t.addAgent('Noa');
+    await t.zone(noa, 'Quetigny', '2026-12-01T00:00:00.000Z');
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at, cancelled_at, cancelled_by) VALUES ('dep-noa', ?, ?, '2026-12-01', '2027-01-10', 'demission_agent', 1, 'direction:dir-1', 'x', 'y', 'direction:dir-1')",
+      [t.network.id, noa],
+    );
+    await t.contact({ person: 'per-6', at: FEB, city: 'Quetigny' });
+    const eli = await t.addAgent('Eli');
+    await t.zone(eli, 'Ouges', '2026-12-01T00:00:00.000Z');
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-eli', ?, ?, '2027-02-01', '2027-03-10', 'demission_agent', 1, 'direction:dir-1', 'x')",
+      [t.network.id, eli],
+    );
+    await t.contact({ person: 'per-7', at: FEB, city: 'Ouges' });
     const r = await t.communes.month(t.dir, '2027-02');
     if (!r.ok) throw new Error(r.code);
     const by = Object.fromEntries(r.value.communes.map((c) => [c.commune, c]));
     expect(by['Talant']).toMatchObject({ clientsWaiting: 1, agentsNow: 0, toOpen: true });
     expect(by['Dijon']).toMatchObject({ clientsWaiting: 0, agentsNow: 0 });
     expect(by['Chenôve']).toMatchObject({ clientsWaiting: 1, agentsNow: 0 });
+    // Max est encore « actif » dans la base, mais son départ est arrivé : il ne couvre plus Longvic aujourd'hui.
+    expect(by['Longvic']).toMatchObject({ clientsWaiting: 1, agentsNow: 0 });
+    expect(by['Quetigny']).toMatchObject({ clientsWaiting: 0, agentsNow: 1 });
+    // Le 10 mars, jour du départ d'Eli, il ne couvre plus Ouges, même avant le passage qui le dit « parti ».
+    expect(by['Ouges']).toMatchObject({ clientsWaiting: 0, agentsNow: 0 });
   });
 
   it('deux fiches réunies comptent une personne, et une personne comptée dans une commune ne l’est pas « sans commune » [R626]', async () => {

@@ -19,6 +19,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { monthBounds } from '../pilotage/indicateurs-reseau.ts';
@@ -62,6 +63,8 @@ interface Options {
 
 const isMonth = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
 const byName = (a: string, b: string): number => a.localeCompare(b, 'fr');
+/** Le jour de Paris d'un instant : un agent est parti dès le jour de son départ, passé ou non (J11, `agentGone`). */
+const parisDate = (iso: string): string => localTime(new Date(iso), 'Europe/Paris').date;
 
 export class CommunesAPourvoir {
   private readonly now: () => Date;
@@ -155,16 +158,19 @@ export class CommunesAPourvoir {
       }
       // Une zone ouverte sur la commune à l'instant de l'attribution, d'un agent alors en activité : le contact
       // n'attendait pas faute d'agent (tous ses agents l'avaient déjà eu) ; il n'est pas compté. Un départ ne ferme pas
-      // les zones (J11) : un agent compte comme en activité s'il l'est encore, ou si son départ a été passé après
-      // l'instant de l'attribution. Un agent parti avant ne couvre rien.
+      // les zones (J11) : un agent était en activité si aucun départ en vigueur n'était arrivé ce jour-là (jour de
+      // Paris, comme `agentGone`), et s'il est encore actif ou que son départ en vigueur arrive après. Un agent parti
+      // avant, ou « parti » sans départ rangé, ne couvre rien.
+      const day = parisDate(r.created_at);
       const covered = await this.db.first<{ one: number }>(
         `SELECT 1 AS one FROM agent_zones z JOIN agents g ON g.id = z.agent_id AND g.network_id = z.network_id
           WHERE z.network_id = ? AND z.commune = ? AND z.created_at <= ? AND (z.ended_at IS NULL OR z.ended_at > ?)
-            AND (g.status = 'active' OR EXISTS (
-              SELECT 1 FROM agent_departures d
-               WHERE d.agent_id = g.id AND d.network_id = g.network_id AND d.cancelled_at IS NULL AND d.processed_at > ?))
+            AND NOT EXISTS (SELECT 1 FROM agent_departures d
+                             WHERE d.agent_id = g.id AND d.network_id = g.network_id AND d.cancelled_at IS NULL AND d.leaves_on <= ?)
+            AND (g.status = 'active' OR EXISTS (SELECT 1 FROM agent_departures d
+                             WHERE d.agent_id = g.id AND d.network_id = g.network_id AND d.cancelled_at IS NULL AND d.leaves_on > ?))
           LIMIT 1`,
-        [net, commune, r.created_at, r.created_at, r.created_at],
+        [net, commune, r.created_at, r.created_at, day, day],
       );
       if (covered) continue;
       const set = waiting.get(commune) ?? new Set<string>();
@@ -179,8 +185,11 @@ export class CommunesAPourvoir {
       `SELECT z.commune, COUNT(DISTINCT z.agent_id) AS n FROM agent_zones z
          JOIN agents g ON g.id = z.agent_id AND g.network_id = z.network_id
         WHERE z.network_id = ? AND z.ended_at IS NULL AND g.status = 'active'
+          AND NOT EXISTS (SELECT 1 FROM agent_departures d
+                           WHERE d.agent_id = g.id AND d.network_id = g.network_id AND d.cancelled_at IS NULL AND d.leaves_on <= ?)
         GROUP BY z.commune`,
-      [net],
+      // Le jour de son départ, un agent ne couvre plus rien, même avant le passage qui le dit « parti » (J11).
+      [net, parisDate(this.now().toISOString())],
     );
     const agentsBy = new Map(agents.map((a) => [a.commune, Number(a.n)]));
     const states = await this.states(net);
