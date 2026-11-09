@@ -764,7 +764,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 
 
 ### BR09 · L'agent crée et retire lui-même la clé de son assistant
-- Statut : prête, à fusionner (#460) : vérification locale verte (5241 tests), Codex rien à signaler, fusion par la séance refusée par le contrôle des permissions (H66)
+- Statut : fait (2026-11-09) : fusionnée (#460) par Shawez, vérification locale verte (5241 tests), Codex rien à signaler
 - Reste : `packages/core/src/securite/cles-assistant.ts`, routes `/v1/cles/assistant` dans `packages/api/src/cles.ts`, lecture de la clé à chaque demande dans `app.ts`, migration `3700_cles_assistant.sql`. Décidé : preuve `creer_cle_api` pour l'objet `cle_assistant:<agent>` (liste fermée inchangée, R601 complétée) ; trois clés actives au plus ; la direction retire celles de son réseau. Relecture forte : 1 P1 (départ programmé non testé) corrigé. Restent : écran ; fusion (H66).
 - Qui : Claude, relecture forte · Dépend de : BR08, BR06
 - Partie du cahier : Intelligence artificielle, HX55 ; Conformité (accès).
