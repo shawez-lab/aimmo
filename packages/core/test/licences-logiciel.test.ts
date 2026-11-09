@@ -197,7 +197,7 @@ describeWithSqlite('HX73 · La licence du logiciel aux agences hors réseau', ()
     expect(mine).toMatchObject({ ok: true, value: { cardExpired: true, state: 'active' } });
   });
 
-  it('[R657, R16] l’agence ne lit que sa licence, ne donne aucune licence et ne voit rien du réseau ni des autres agences', async () => {
+  it('[R657] [R16] l’agence ne lit que sa licence, ne donne aucune licence et ne voit rien du réseau ni des autres agences', async () => {
     const t = await setup();
     await t.openPhase5();
     await t.tariff(29900);
