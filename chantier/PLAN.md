@@ -677,16 +677,17 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H63 pour la publicité réelle).
 
 ### BR04 · Routes des factures fournisseurs, du rapprochement, des relances et des rapports
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#451), `packages/api/src/finances.ts` sous `/v1/finances`, aucune règle nouvelle ni migration. Décidé : rôles contrôlés avant le corps, refus au journal ; aucun montant n'entre sauf la correction nommée d'une facture fournisseur [R550] ; lecteur des factures en option de la configuration (`lecteurFactures`), absent : 503 `lecteur_absent` ; l'export complet de l'agent passe à BR05, car il exige une clé d'appareil [R601]. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5171 tests), puis tests de HX67 et de BR03/BR04 verts sur main après fusion. Restent : écran de la direction ; passages `Rapprochements.run`, `RelancesImpayes.prepare` et `send` au planificateur ; lecteur réel (H13).
 - Qui : Claude, relecture normale · Dépend de : HX49, HX62
 - Objectif : routes de `FacturesFournisseurs`, `Rapprochements`, `RelancesImpayes` et des rapports sur mesure et de l'export.
 - Critères : droits [R16] (test) ; aucun montant saisi hors de ce que la règle permet [R550 à R553] (tests) ; rapports R560, R561 (tests).
 - Attend : rien.
 
 ### BR05 · Routes des clés d'appareil, du quiz et du serveur MCP
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : HX55, HX56, HX63
-- Objectif : routes de `ClesAppareil` (WebAuthn), du quiz et des attestations, et l'adresse du serveur MCP.
+- Objectif : routes de `ClesAppareil` (WebAuthn), du quiz et des attestations, et l'adresse du serveur MCP ; l'export complet de l'agent (HX62), qui exige la preuve d'une clé d'appareil [R601], venu de BR04.
 - Critères : droits [R16] (test) ; R590 à R592, R600 à R602, R570, R571 tenues par la route (tests).
 - Attend : rien.
 
