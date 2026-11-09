@@ -210,6 +210,9 @@
   "db/migrations/3310_gel_avoirs.sql": {
     "json_sqlite": 10
   },
+  "db/migrations/3320_reclamations.sql": {
+    "date_sqlite": 4
+  },
   "db/migrations/3400_contenus_recrutement.sql": {
     "glob": 1
   },
@@ -261,7 +264,7 @@
     "rowid": 5
   },
   "packages/core/src/attirer/referencement.ts": {
-    "rowid": 11
+    "rowid": 2
   },
   "packages/core/src/automatismes/boite-mail.ts": {
     "insert_or": 4,
@@ -362,6 +365,9 @@
   "packages/core/src/mandats/gagner/anciens-contacts.ts": {
     "rowid": 2
   },
+  "packages/core/src/mandats/gagner/dossier-presentation.ts": {
+    "date_sqlite": 3
+  },
   "packages/core/src/medias/filigrane.ts": {
     "rowid": 1
   },
@@ -380,6 +386,7 @@
     "json_sqlite": 1
   },
   "packages/core/src/pilotage/engagements-tenus.ts": {
+    "date_sqlite": 2,
     "json_sqlite": 1
   },
   "packages/core/src/pilotage/factures.ts": {
@@ -417,14 +424,11 @@
   "packages/core/src/reprise/depots.ts": {
     "rowid": 1
   },
-  "packages/core/src/reprise/lecture-seule.ts": {
-    "pragma": 1
-  },
   "packages/core/src/reseau/accompagnement.ts": {
     "rowid": 3
   },
   "packages/core/src/reseau/contenus-recrutement.ts": {
-    "date_sqlite": 1,
+    "date_sqlite": 2,
     "rowid": 2
   },
   "packages/core/src/reseau/entretiens.ts": {
@@ -437,9 +441,8 @@
     "rowid": 1
   },
   "packages/core/src/sauvegarde/copie.ts": {
-    "autoincrement": 1,
     "pragma": 4,
-    "rowid": 9
+    "rowid": 6
   },
   "packages/core/src/statistiques-site/statistiques.ts": {
     "rowid": 1

@@ -8,8 +8,8 @@
  * (`docs/PASSAGE-POSTGRESQL.md`) est écrite depuis ce compte.
  *
  * Les déclencheurs et leur `RAISE(ABORT…)`, garde des tables [R17], sont comptés mais tolérés sans plafond : chaque
- * migration nouvelle en porte. Une fonction est reconnue quelle que soit sa casse. Les commentaires ne comptent pas. Dans le code TypeScript, seules les formes qui ne peuvent pas être du JavaScript
- * sont cherchées (aucune fonction `Date`, aucun `typeof`).
+ * migration nouvelle en porte. Une fonction est reconnue quelle que soit sa casse. Les commentaires ne comptent pas. Dans le code TypeScript, seules les chaînes sont lues : c'est là qu'est le
+ * SQL.
  */
 
 export interface NonStandardKind {
@@ -28,12 +28,14 @@ export interface NonStandardKind {
   skip?: (text: string, index: number) => boolean;
 }
 
-/** Un type de colonne `CHAR(n)` après le nom d'une colonne, standard, n'est pas la fonction `char`. */
-const SQL_WORDS_BEFORE_A_VALUE = new Set(['and', 'or', 'not', 'select', 'when', 'then', 'else', 'in', 'by', 'return', 'is', 'like', 'values', 'set', 'on', 'where', 'having']);
+/**
+ * Un type `CHAR(n)`, standard, n'est pas la fonction `char` : seulement dans une déclaration de colonne (après `(` ou
+ * `,` puis le nom de la colonne, ou après `ADD COLUMN` et le nom) ou après `AS` d'un `CAST`.
+ */
 function isCharType(text: string, index: number): boolean {
   if (!/^char\s*\(\s*\d+\s*\)/i.test(text.slice(index, index + 20))) return false;
-  const before = /([A-Za-z_][A-Za-z0-9_]*)"?\s+$/.exec(text.slice(Math.max(0, index - 80), index));
-  return before !== null && !SQL_WORDS_BEFORE_A_VALUE.has(before[1]!.toLowerCase());
+  const before = text.slice(Math.max(0, index - 120), index);
+  return /(?:[(,]\s*|\bCOLUMN\s+)"?[A-Za-z_][A-Za-z0-9_]*"?\s+$/i.test(before) || /\bAS\s+$/i.test(before);
 }
 
 export const NON_STANDARD_KINDS: readonly NonStandardKind[] = [
@@ -41,7 +43,7 @@ export const NON_STANDARD_KINDS: readonly NonStandardKind[] = [
   { kind: 'raise', label: '`RAISE(ABORT, …)` dans un déclencheur', postgres: '`RAISE EXCEPTION` dans la fonction du déclencheur', pattern: /\bRAISE\s*\(\s*(?:ABORT|FAIL|IGNORE|ROLLBACK)\b/gi, tolerated: true },
   { kind: 'insert_or', label: '`INSERT OR IGNORE` ou `INSERT OR REPLACE`', postgres: '`INSERT … ON CONFLICT DO NOTHING` ou `DO UPDATE`', pattern: /\bINSERT\s+OR\s+(?:IGNORE|REPLACE|ABORT|FAIL|ROLLBACK)\b/gi },
   { kind: 'glob', label: '`GLOB`', postgres: '`~` (expression régulière) ou `SIMILAR TO`', pattern: /\bGLOB\b/gi },
-  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(/gi },
+  { kind: 'date_sqlite', label: 'Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`, et `date` ou `time` avec `\'now\'` ou un modificateur)', postgres: '`now()`, `to_char`, `extract`, `interval`', pattern: /\b(?:datetime|julianday|strftime|unixepoch)\s*\(|\b(?:date|time)\((?=\s*'now'|[^()]*(?:\([^()]*\)[^()]*)*,)/gi },
   { kind: 'autoincrement', label: '`AUTOINCREMENT`', postgres: '`GENERATED ALWAYS AS IDENTITY`', pattern: /\bAUTOINCREMENT\b/gi },
   { kind: 'pragma', label: '`PRAGMA` et fonctions `pragma_…`', postgres: 'le catalogue (`pg_catalog`, `information_schema`) ou un réglage de la base', pattern: /\bPRAGMA\b|\bpragma_\w+\s*\(/gi },
   { kind: 'rowid', label: '`rowid` et `last_insert_rowid()`', postgres: 'une clé déclarée et `RETURNING`', pattern: /\b(?:last_insert_)?rowid\b/gi },
@@ -64,8 +66,10 @@ export interface NonStandardHit {
  * Remplace les commentaires par des espaces, en gardant les retours à la ligne, pour que les lignes restent justes.
  * SQL : `-- …` hors chaîne. TypeScript : `// …` hors chaîne et `/* … *\/`. Les chaînes ne sont pas touchées.
  */
-export function blankComments(text: string, lang: 'sql' | 'ts'): string {
+export function blankComments(text: string, lang: 'sql' | 'ts', keep: 'all' | 'strings' = 'all'): string {
   let out = '';
+  // Hors chaîne, en ne gardant que les chaînes : un espace, ou le retour à la ligne.
+  const outside = (ch: string): string => (keep === 'strings' ? (ch === '\n' ? '\n' : ' ') : ch);
   let i = 0;
   let quote: string | null = null;
   while (i < text.length) {
@@ -87,7 +91,7 @@ export function blankComments(text: string, lang: 'sql' | 'ts'): string {
     }
     if (c === "'" || (lang === 'ts' && (c === '"' || c === '`'))) {
       quote = c;
-      out += c;
+      out += outside(c);
       i += 1;
       continue;
     }
@@ -98,6 +102,25 @@ export function blankComments(text: string, lang: 'sql' | 'ts'): string {
         i += 1;
       }
       continue;
+    }
+    // Une expression régulière du TypeScript, après un signe qui attend une valeur : elle est passée d'un bloc, pour
+    // qu'une apostrophe dedans n'ouvre pas de chaîne.
+    if (lang === 'ts' && c === '/' && next !== '/' && next !== '*' && /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn)\s*$/.test(text.slice(Math.max(0, i - 40), i))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < text.length && text[j] !== '\n') {
+        const d = text[j]!;
+        if (d === '\\') j += 1;
+        else if (d === '[') inClass = true;
+        else if (d === ']') inClass = false;
+        else if (d === '/' && !inClass) break;
+        j += 1;
+      }
+      if (j < text.length && text[j] === '/') {
+        for (let k = i; k <= j; k += 1) out += outside(text[k]!);
+        i = j + 1;
+        continue;
+      }
     }
     if (c === '/' && next === '*') {
       out += '  ';
@@ -112,7 +135,7 @@ export function blankComments(text: string, lang: 'sql' | 'ts'): string {
       }
       continue;
     }
-    out += c;
+    out += outside(c);
     i += 1;
   }
   return out;
@@ -120,7 +143,8 @@ export function blankComments(text: string, lang: 'sql' | 'ts'): string {
 
 /** Chaque forme non standard du texte, avec sa ligne, dans l'ordre du texte puis des sortes. */
 export function findNonStandard(text: string, lang: 'sql' | 'ts'): NonStandardHit[] {
-  const clean = blankComments(text, lang);
+  // Dans le TypeScript, le SQL n'est que dans les chaînes : le reste du code n'est pas lu.
+  const clean = blankComments(text, lang, lang === 'ts' ? 'strings' : 'all');
   const lineStarts = [0];
   for (let i = 0; i < clean.length; i += 1) if (clean[i] === '\n') lineStarts.push(i + 1);
   const lineOf = (index: number): number => {

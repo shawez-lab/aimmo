@@ -66,7 +66,7 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       raise: ["SELECT RAISE(ABORT, 'non');", "SELECT 'RAISE plus tard';"],
       insert_or: ['INSERT OR IGNORE INTO x VALUES (1);', 'INSERT INTO x VALUES (1) ON CONFLICT DO NOTHING;'],
       glob: ["SELECT 1 WHERE a GLOB '[0-9]*';", "SELECT 1 WHERE a LIKE '1%';"],
-      date_sqlite: ["SELECT DATETIME('now'), strftime('%Y', a), JulianDay(a), unixepoch(a);", 'SELECT CURRENT_TIMESTAMP;'],
+      date_sqlite: ["SELECT DATETIME('now'), strftime('%Y', a), JulianDay(a), unixepoch(a), date('now'), DATE(a, '+' || n || ' days'), time(a, '+1 hour');", 'SELECT CURRENT_TIMESTAMP, date(a), DATE(substr(a, 1, 10));'],
       autoincrement: ['CREATE TABLE x (id INTEGER PRIMARY KEY AUTOINCREMENT);', 'CREATE TABLE x (id INTEGER PRIMARY KEY);'],
       pragma: ['PRAGMA foreign_keys = ON; SELECT * FROM pragma_table_info(\'x\');', 'SELECT 1;'],
       rowid: ['SELECT rowid, last_insert_rowid() FROM x;', 'SELECT id FROM x;'],
@@ -75,7 +75,7 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       ifnull: ['SELECT IFNULL(a, 0) FROM x;', 'SELECT COALESCE(a, 0) FROM x;'],
       iif: ['SELECT iif(a > 0, 1, 0) FROM x;', 'SELECT CASE WHEN a > 0 THEN 1 ELSE 0 END FROM x;'],
       instr: ["SELECT instr(a, 'b') FROM x;", "SELECT position('b' in a) FROM x;"],
-      char: ["SELECT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';", 'CREATE TABLE x (a CHAR(3), "b" char (12)); SELECT chr(10);'],
+      char: ["SELECT DISTINCT CHAR(10), ALL char(9) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';", 'CREATE TABLE x (a CHAR(3), "b" char (12)); ALTER TABLE x ADD COLUMN c CHAR(2); SELECT CAST(a AS CHAR(3)), chr(10);'],
       printf: ["SELECT PRINTF('%d', a) FROM x;", "SELECT format('%s', a) FROM x;"],
     };
     expect(Object.keys(cases).sort()).toEqual(NON_STANDARD_KINDS.map((k) => k.kind).sort());
@@ -84,7 +84,8 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       expect(findNonStandard(good, 'sql'), kind).toEqual([]);
     }
     expect(kinds("SELECT datetime('now'), STRFTIME('%Y', a), julianday(a), UnixEpoch(a);")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
-    expect(kinds("SELECT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';").filter((k) => k.startsWith('char'))).toEqual(['char@1', 'char@1', 'char@1']);
+    expect(kinds("SELECT DISTINCT CHAR(10) FROM x WHERE instr(a, char(13)) = 0 AND CHAR(9) <> '';").filter((k) => k.startsWith('char'))).toEqual(['char@1', 'char@1', 'char@1']);
+    expect(kinds("SELECT date('now'), DATE(a, '+1 day'), date(a), date(substr(a, 1, 10)), time(a, 'localtime');")).toEqual(['date_sqlite@1', 'date_sqlite@1', 'date_sqlite@1']);
   });
 
   it('[R633] les commentaires ne comptent pas, les chaînes oui, et les lignes restent justes', () => {
@@ -94,11 +95,14 @@ describe('HX67 · chaque sorte de SQL non standard est reconnue', () => {
       "// db.run('PRAGMA foreign_keys = ON')",
       '/** Lit `PRAGMA page_count`. */',
       "const url = 'https://exemple.test/a'; const q = 'SELECT IFNULL(a, 0) FROM x';",
-      'const d = new Date(); const t = typeof d; const n = Date.parse("x");',
+      'const d = new Date(); const t = typeof d; const n = date(a, b); rowid(x); GLOB;',
       "const r = /[']/; await db.run('INSERT OR REPLACE INTO x VALUES (1)');",
       '`SELECT ${a} FROM x WHERE b GLOB ?`;',
     ].join('\n');
     expect(kinds(ts, 'ts')).toEqual(['ifnull@3', 'insert_or@5', 'glob@6']);
+    // Une division n'est pas une expression régulière : la chaîne qui suit est lue.
+    expect(kinds("const h = a / 2 + b / 3; await db.first('SELECT IFNULL(a, 0) FROM x');", 'ts')).toEqual(['ifnull@1']);
+    expect(kinds("const h = a / 2; const p = '/chemin/'; await db.first('SELECT IFNULL(a, 0) FROM x');", 'ts')).toEqual(['ifnull@1']);
     // Les retours à la ligne d'un commentaire bloc sont gardés.
     expect(blankComments('a/*\n\n*/b', 'ts').split('\n')).toHaveLength(3);
   });
