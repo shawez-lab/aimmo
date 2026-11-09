@@ -18,9 +18,10 @@
  *   chaque alias) ; il y a correspondance quand les mots sont les mêmes, ou quand l'un contient tous les mots de
  *   l'autre et que le plus court en a au moins deux. Un seul prénom ne suffit jamais. Dans le doute, l'alerte part : le
  *   responsable seul la juge (fausse correspondance ou correspondance confirmée), avec sa raison, son nom et sa date ;
- * - une fiche sans nom ne peut pas être jugée : le contrôle le dit (« nom manquant »), au responsable seul ;
+ * - une fiche sans nom de famille ne peut pas être jugée : le contrôle le dit (« nom manquant »), au responsable seul ;
+ * - lettres liées et barrées transcrites (æ → AE, ł → L…) ; un alias dans une autre écriture est laissé, pas le registre ;
  * - un dossier est ouvert tant qu'il n'est pas fini : un mandat sans retrait ni acte signé sur son bien, une offre et un
- *   dossier de vente sans acte ni arrêt. Revérifier trop vaut mieux que pas assez ;
+ *   dossier de vente sans acte ni arrêt ; un acte ne finit un mandat que si son dossier a été ouvert après la signature. Revérifier trop vaut mieux que pas assez ;
  * - « figer » a le sens de L05 : une copie par empreinte, que le responsable compare à tout moment. Le blocage des
  *   fonds et la déclaration à la DG Trésor restent la décision du responsable, hors d'AIMMO ;
  * - le registre arrive par le responsable, déjà lu (identifiant, nature, noms) ; la lecture du fichier public de la DG
@@ -43,7 +44,8 @@ const ENTRY_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const MAX_ENTRIES = 20000;
 const MAX_NAMES = 30;
 const MAX_NAME_LENGTH = 200;
-const CHUNK = 50;
+// D1 refuse plus de 100 valeurs liées par requête : 25 entrées de 4 valeurs.
+const CHUNK = 25;
 
 /** Ce que voit celui qui demande un contrôle : un mot, toujours le même, quel que soit le résultat. */
 export const FREEZE_CHECK_STATUS = 'controle_fait';
@@ -88,9 +90,11 @@ export interface FreezeMatch {
 export type FreezeRefusal = { ok: false; rule: 'R16' | 'R605' | null; code: string };
 
 /** Les mots d'un nom : sans accents, casse ni ponctuation. */
+const LIGATURES: Record<string, string> = { æ: 'ae', Æ: 'AE', œ: 'oe', Œ: 'OE', ł: 'l', Ł: 'L', ø: 'o', Ø: 'O', đ: 'd', Đ: 'D', þ: 'th', Þ: 'TH', ß: 'ss', ð: 'd', Ð: 'D', ı: 'i' };
+
 export function nameTokens(text: string | null | undefined): string[] {
   if (typeof text !== 'string') return [];
-  const plain = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ');
+  const plain = text.replace(/[æÆœŒłŁøØđĐþÞßðÐı]/g, (c) => LIGATURES[c]!).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ');
   return [...new Set(plain.split(' ').filter((t) => t.length > 0))].sort();
 }
 
@@ -182,10 +186,11 @@ export class ControleGels {
       const names: string[] = [];
       for (const n of e.names as unknown[]) {
         if (typeof n !== 'string' || n.length > MAX_NAME_LENGTH) return { ok: false, rule: null, code: 'bad_entry' };
+        // Un alias dans une autre écriture (cyrillique, arabe…) ne donne aucun mot : il est laissé, pas le registre.
         const tokens = nameTokens(n);
-        if (tokens.length === 0) return { ok: false, rule: null, code: 'bad_entry' };
-        names.push(tokens.join(' '));
+        if (tokens.length > 0) names.push(tokens.join(' '));
       }
+      if (names.length === 0) return { ok: false, rule: null, code: 'bad_entry' };
       seen.add(e.entryId);
       entries.push({ entryId: e.entryId, nature: e.nature as FreezeNature, names: [...new Set(names)].sort() });
     }
@@ -196,15 +201,13 @@ export class ControleGels {
     const latest = await this.db.first<{ published_at: string }>('SELECT published_at FROM freeze_registry_versions WHERE network_id = ? ORDER BY published_at DESC LIMIT 1', [viewer.networkId]);
     if (latest && latest.published_at >= publishedAt.toISOString()) return { ok: false, rule: 'R605', code: 'older_version' };
     const versionId = this.newId();
-    try {
-      await this.db.run(
-        'INSERT INTO freeze_registry_versions (id, network_id, published_at, sha256, entries, imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [versionId, viewer.networkId, publishedAt.toISOString(), sha256, entries.length, this.actor(viewer), this.now().toISOString()],
-      );
-    } catch {
-      return { ok: false, rule: 'R605', code: 'older_version' };
-    }
-    const statements: SqlStatement[] = [];
+    // La version, ses entrées et son sceau dans une seule écriture : un import interrompu ne laisse rien.
+    const statements: SqlStatement[] = [
+      {
+        sql: 'INSERT INTO freeze_registry_versions (id, network_id, published_at, sha256, entries, imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        params: [versionId, viewer.networkId, publishedAt.toISOString(), sha256, entries.length, this.actor(viewer), this.now().toISOString()],
+      },
+    ];
     for (let i = 0; i < entries.length; i += CHUNK) {
       const part = entries.slice(i, i + CHUNK);
       statements.push({
@@ -213,7 +216,14 @@ export class ControleGels {
       });
     }
     statements.push({ sql: 'UPDATE freeze_registry_versions SET sealed_at = ? WHERE id = ?', params: [this.now().toISOString(), versionId] });
-    await runBatch(this.db, statements);
+    try {
+      await runBatch(this.db, statements);
+    } catch (error) {
+      // Une version plus récente rangée entre-temps : la base refuse, rien n'est gardé.
+      const sealed = await this.db.first<{ id: string }>('SELECT id FROM freeze_registry_versions WHERE id = ?', [versionId]);
+      if (!sealed && /plus récente/.test(String(error))) return { ok: false, rule: 'R605', code: 'older_version' };
+      throw error;
+    }
     await appendEvent(this.journal, { type: 'securite.gel_registre', actor: this.actor(viewer), subject: `freeze_registry:${versionId}`, data: { rule: 'R605', entries: entries.length, sha256 } }, this.now);
     const checked = await this.recheckOpen(viewer.networkId, 'mise_a_jour', 'system:gel-avoirs');
     return { ok: true, value: { versionId, entries: entries.length, sha256, checked } };
@@ -225,7 +235,7 @@ export class ControleGels {
       `SELECT m.id FROM mandates m WHERE m.network_id = ?
          AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)
          AND NOT EXISTS (SELECT 1 FROM sale_files f JOIN offer_register o ON o.id = f.offer_id JOIN sale_file_closings c ON c.file_id = f.id
-                         WHERE o.property_id = m.property_id)
+                         WHERE o.property_id = m.property_id AND f.opened_at >= m.signed_at)
        ORDER BY m.id`,
       [networkId],
     );
@@ -259,6 +269,21 @@ export class ControleGels {
   /** Le passage planifié : chaque dossier ouvert qui n'a pas encore été contrôlé sur la dernière version, l'est. */
   async sweep(networkId: string): Promise<{ checked: number }> {
     return { checked: await this.recheckOpen(networkId, 'passage', 'system:gel-avoirs') };
+  }
+
+  /** Le passage planifié de chaque réseau qui a un registre scellé ; un réseau en panne n'arrête pas les autres. */
+  async sweepAll(): Promise<{ checked: number }> {
+    let checked = 0;
+    let failure: unknown = null;
+    for (const n of await this.db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM freeze_registry_versions WHERE sealed_at IS NOT NULL ORDER BY network_id')) {
+      try {
+        checked += (await this.sweep(n.network_id)).checked;
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (failure !== null) throw failure;
+    return { checked };
   }
 
   /**
@@ -297,11 +322,13 @@ export class ControleGels {
       [networkId, ...scope.persons],
     );
     const tokens = new Map(rows.map((r) => [r.id, nameTokens(`${r.first_name ?? ''} ${r.last_name ?? ''}`)]));
+    // Sans nom de famille, une fiche ne peut pas être jugée : un prénom seul ne correspond jamais [R603].
+    const named = new Set(rows.filter((r) => nameTokens(r.last_name).length > 0).map((r) => r.id));
     const unnamed: string[] = [];
     for (const p of scope.persons) {
-      if ((tokens.get(p) ?? []).length > 0) continue;
+      if (named.has(p)) continue;
       const members = await this.fiches.membersOf(p);
-      if (!members.some((x) => (tokens.get(x) ?? []).length > 0)) unnamed.push(p);
+      if (!members.some((x) => named.has(x))) unnamed.push(p);
     }
 
     const matches: { personId: string; entryId: string }[] = [];
@@ -335,17 +362,17 @@ export class ControleGels {
     }
     const [inserted] = await runBatch(this.db, statements);
     if (!inserted || inserted.changes === 0) return false;
-    await this.ensureEvents(networkId);
+    await this.ensureEvents(networkId, checkId);
     return true;
   }
 
   /** Chaque contrôle et chaque correspondance rangés ont leur événement au journal : un manquant est repris, une fois. */
-  private async ensureEvents(networkId: string): Promise<void> {
+  private async ensureEvents(networkId: string, onlyCheck: string | null = null): Promise<void> {
     const rows = await this.db.all<{ id: string; version_id: string; requested_by: string; match_id: string | null; snapshot_sha256: string | null; decision: string | null; decided_by: string | null }>(
       `SELECT c.id, c.version_id, c.requested_by, m.id AS match_id, m.snapshot_sha256, d.decision, d.decided_by FROM freeze_checks c
        LEFT JOIN freeze_matches m ON m.check_id = c.id LEFT JOIN freeze_match_decisions d ON d.match_id = m.id
-       WHERE c.network_id = ? ORDER BY c.checked_at, c.id`,
-      [networkId],
+       WHERE c.network_id = ? AND (? IS NULL OR c.id = ?) ORDER BY c.checked_at, c.id`,
+      [networkId, onlyCheck, onlyCheck],
     );
     for (const r of rows) {
       const subject = `freeze_check:${r.id}`;

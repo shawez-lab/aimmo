@@ -52,6 +52,10 @@ describe('HX57 · comparer les noms', () => {
     expect(namesMatch(nameTokens('IMAGINAIRE'), nameTokens('Imaginaire'))).toBe(true);
     expect(namesMatch(nameTokens('IMAGINAIRE'), nameTokens('Imaginaire Conseil'))).toBe(false);
     expect(namesMatch([], [])).toBe(false);
+    // Les lettres liées et barrées se lisent comme le registre les écrit.
+    expect(nameTokens('Lætitia Œuvray-Łukasz Øster')).toEqual(['LAETITIA', 'LUKASZ', 'OEUVRAY', 'OSTER']);
+    expect(namesMatch(nameTokens('EXEMPLE Laetitia'), nameTokens('Lætitia Exemple'))).toBe(true);
+    expect(nameTokens('Иван Петров')).toEqual([]);
   });
 });
 
@@ -208,6 +212,82 @@ describeWithSqlite('HX57 · contrôle du gel des avoirs', () => {
     ).rejects.toThrow('correspondance');
   });
 
+  it('[R605] l’import est une seule écriture, en lots de 100 valeurs au plus (limite de D1) ; un alias illisible est laissé', async () => {
+    const t = await setup();
+    let max = 0;
+    const strict = Object.create(t.db) as typeof t.db;
+    const guard = (params: readonly unknown[] | undefined) => {
+      max = Math.max(max, params?.length ?? 0);
+      if ((params?.length ?? 0) > 100) throw new Error('too many SQL variables');
+    };
+    strict.run = async (sql, params) => (guard(params), t.db.run(sql, params));
+    strict.batch = async (statements) => {
+      statements.forEach((st) => guard(st.params));
+      return t.db.batch ? t.db.batch(statements) : Promise.all(statements.map((st) => t.db.run(st.sql, st.params ?? [])));
+    };
+    const gels = new ControleGels(strict, t.acces, t.journal, { now: t.now });
+    const many: FreezeRegistryEntry[] = Array.from({ length: 120 }, (_, i) => ({ entryId: `G-${3000 + i}`, nature: 'personne_physique', names: [`FICTIF Numero${i} Inventé`, 'Иван Петров'] }));
+    const r = await gels.importRegistry(t.conformite, { publishedAt: '2027-03-01T10:00:00.000Z', entries: [...many, ...AVEC_LEA] });
+    expect(r).toMatchObject({ ok: true, value: { entries: 123, checked: 1 } });
+    expect(max).toBeLessThanOrEqual(100);
+    // Une entrée dont aucun nom n'est lisible est refusée.
+    expect(await gels.importRegistry(t.conformite, { publishedAt: '2027-03-05T10:00:00.000Z', entries: [{ entryId: 'G-1', nature: 'personne_physique', names: ['Иван Петров'] }] })).toEqual({ ok: false, rule: null, code: 'bad_entry' });
+    // Un lot qui échoue ne laisse aucune version ouverte : le même import repasse ensuite.
+    const failing = Object.create(t.db) as typeof t.db;
+    failing.batch = async () => { throw new Error('D1 en panne'); };
+    failing.run = async () => { throw new Error('D1 en panne'); };
+    const broken = new ControleGels(failing, t.acces, t.journal, { now: t.now });
+    await expect(broken.importRegistry(t.conformite, { publishedAt: '2027-03-06T10:00:00.000Z', entries: SANS_LEA })).rejects.toThrow('D1 en panne');
+    expect(await t.db.first('SELECT id FROM freeze_registry_versions WHERE sealed_at IS NULL')).toBeNull();
+    expect(await t.gels.importRegistry(t.conformite, { publishedAt: '2027-03-06T10:00:00.000Z', entries: SANS_LEA })).toMatchObject({ ok: true });
+  });
+
+  it('[R605] un bien revendu : le nouveau mandat est revérifié, malgré l’acte d’une vente d’avant', async () => {
+    const t = await setup();
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
+    const offer = await new RegistreOffres(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.propertyId, {
+      buyerPersonId: buyer.id, amountEur: 195000, conditions: [], validUntil: '2027-03-20', downPaymentEur: 195000, loanEur: 0,
+      signedRef: 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000003.pdf', receivedAt: '2027-03-09T08:00:00.000Z',
+    });
+    if (!offer.ok) throw new Error(offer.code);
+    // Une vente d'avant, ouverte et close bien avant le mandat en cours.
+    const fileId = '0b6f1d2e-9999-4a2b-8c3d-000000000010';
+    await t.db.run(
+      'INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [fileId, t.network.id, t.propertyId, offer.value.id, buyer.id, 195000, '2020-01-01T00:00:00.000Z', `agent:${t.alexId}`],
+    );
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at) VALUES (?, ?, '2020-03-01', 'actes/preuve.pdf', 'a_demarrer', '2020-03-01T10:00:00.000Z')", [fileId, t.network.id]).catch(async () => {
+      const cols = await t.db.all<{ name: string }>('PRAGMA table_info(sale_file_closings)');
+      const v: Record<string, string> = { file_id: fileId, network_id: t.network.id, signed_on: '2020-03-01', proof_ref: 'actes/preuve.pdf', aftersale: 'a_demarrer', at: '2020-03-01T10:00:00.000Z' };
+      await t.db.run(`INSERT INTO sale_file_closings (${cols.map((c) => c.name).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map((c) => v[c.name] ?? 'x'));
+    });
+    await t.importAt('2027-03-01T10:00:00.000Z', AVEC_LEA);
+    expect(await t.gels.checks(t.conformite, t.mandateRef)).toMatchObject({ ok: true, value: [{ result: 'correspondance' }] });
+  });
+
+  it('[R603] une fiche avec un prénom seul ne peut pas être jugée « aucune »', async () => {
+    const t = await setup();
+    await t.db.exec('DROP TRIGGER IF EXISTS persons_fige');
+    await t.db.run('UPDATE persons SET last_name = NULL WHERE id = ?', [t.personId]);
+    await t.importAt('2027-03-01T10:00:00.000Z', AVEC_LEA);
+    expect(await t.gels.checks(t.conformite, t.mandateRef)).toMatchObject({ ok: true, value: [{ result: 'nom_manquant', unnamed: [t.personId] }] });
+  });
+
+  it('[R605] le passage de chaque heure contrôle les dossiers ouverts de chaque réseau', async () => {
+    const t = await setup();
+    expect(await t.gels.sweepAll()).toEqual({ checked: 0 });
+    await t.importAt('2027-03-01T10:00:00.000Z', SANS_LEA);
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Marcel Auguste', lastName: 'Fictif' });
+    const offer = await new RegistreOffres(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.propertyId, {
+      buyerPersonId: buyer.id, amountEur: 195000, conditions: [], validUntil: '2027-03-20', downPaymentEur: 195000, loanEur: 0,
+      signedRef: 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000004.pdf', receivedAt: '2027-03-09T08:00:00.000Z',
+    });
+    if (!offer.ok) throw new Error(offer.code);
+    expect(await t.gels.sweepAll()).toEqual({ checked: 1 });
+    expect(await t.gels.matches(t.conformite)).toMatchObject({ ok: true, value: [{ caseRef: `offer:${offer.value.id}`, check: { reason: 'passage' } }] });
+  });
+
   it('[R603] une fiche sans nom ne peut pas être jugée : le responsable seul le sait', async () => {
     const t = await setup();
     await t.db.exec('DROP TRIGGER IF EXISTS persons_fige');
@@ -280,6 +360,9 @@ describe('HX57 · rien ne lit le contrôle du gel hors de son code', () => {
     roots.forEach(walk);
     const readers = files.filter((f) => /freeze_(registry|checks|matches|match_decisions)|ControleGels|gel-avoirs\.ts/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
     // Le registre des traitements et la carte des accès nomment les tables sans les lire ; l'index de la sécurité exporte le module.
-    expect(readers.sort()).toEqual(['conformite/carte-acces.ts', 'conformite/registre-traitements.ts', 'securite/gel-avoirs.ts', 'securite/index.ts']);
+    // Le planificateur appelle le passage, sans lire aucune table du gel.
+    expect(readers.sort()).toEqual(['conformite/carte-acces.ts', 'conformite/registre-traitements.ts', 'securite/gel-avoirs.ts', 'securite/index.ts', 'src/planificateur.ts']);
+    const tables = files.filter((f) => /freeze_(registry_versions|registry_entries|checks|matches|match_decisions)\b/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
+    expect(tables.sort()).toEqual(['conformite/registre-traitements.ts', 'securite/gel-avoirs.ts']);
   });
 });
