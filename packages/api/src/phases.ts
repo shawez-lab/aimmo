@@ -1,5 +1,6 @@
 /**
- * Les routes des conditions de passage des phases (HX69, HX70), sous `/v1/phases` (BR10), et le relevé de chaque nuit.
+ * Les routes des conditions de passage des phases (HX69, HX70, BR10) et de la porte des phases (HX71, BR11), sous
+ * `/v1/phases`, et le relevé de chaque nuit.
  *
  * Chaque route passe par les droits de la couche métier [R16] : la direction seule, tout autre rôle est refusé et le
  * refus écrit au journal. Les rapports sont recalculés à chaque lecture [R641, R642, R643] ; rien n'est envoyé.
@@ -7,7 +8,7 @@
  * nuit qui suit, et une seule fois [R643, R17].
  */
 import type { JournalStore, ScheduledJob, SqlDatabase, Viewer } from '@aimmo/core';
-import { AgentsPilotes, ConditionPhase1 } from '../../core/src/conditions-phases/index.ts';
+import { AgentsPilotes, ConditionPhase1, PortesPhases } from '../../core/src/conditions-phases/index.ts';
 import { localTime } from '../../core/src/envoi/horaires.ts';
 import { addDays } from '../../core/src/facturation/commun.ts';
 
@@ -32,7 +33,7 @@ export interface PhasesRoute {
 const HEADERS = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...HEADERS } });
 
-type Outcome = { ok: true; value?: unknown } | { ok: false; rule: string | null; code: string };
+type Outcome = { ok: true; value?: unknown } | { ok: false; rule: string | null; code: string; reasons?: string[] };
 
 /** 200 ; 403 pour un refus de droits ; 404 pour un agent inconnu ; 409 pour une règle ; 400 sinon. */
 function reply(result: Outcome): Response {
@@ -61,6 +62,7 @@ const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invali
 
 const pilotes = (s: PhasesServices) => new AgentsPilotes(s.db, s.journal, { now: s.now });
 const phase1 = (s: PhasesServices) => new ConditionPhase1(s.db, s.journal, { now: s.now });
+const portes = (s: PhasesServices) => new PortesPhases(s.db, s.journal, { now: s.now });
 
 /** Les routes de `/v1/phases`, à ajouter à celles de `app.ts`. */
 export function phasesRoutes(): PhasesRoute[] {
@@ -75,6 +77,9 @@ export function phasesRoutes(): PhasesRoute[] {
   };
   const P = '^/phases';
   return [
+    // La porte des phases (HX71) : l'état des cinq phases, lu à l'instant, et l'ouverture de la suivante [R646, R647, R648].
+    { method: 'GET', pattern: new RegExp(`${P}$`), name: 'phases.etat', handle: async (s, v) => reply(await portes(s).report(v)) },
+    { method: 'POST', pattern: new RegExp(`${P}/ouvrir$`), name: 'phases.ouvrir', handle: withBody(async (s, v, b) => reply(await portes(s).open(v, b))) },
     // Agents pilotes, condition de la phase 3 (HX69).
     { method: 'GET', pattern: new RegExp(`${P}/pilotes$`), name: 'phases.pilotes', handle: async (s, v) => reply(await pilotes(s).report(v)) },
     { method: 'POST', pattern: new RegExp(`${P}/pilotes$`), name: 'phases.pilotes.designer', handle: withBody(async (s, v, b) => reply(await pilotes(s).designate(v, b))) },
