@@ -6,7 +6,9 @@
  *   ses droits sur chaque bien et chaque fiche, et écrit chaque appel et chaque refus au journal avant de rendre la
  *   moindre donnée [R590]. La direction, la conformité et les partenaires n'y ont aucun outil : refusés avant le corps.
  * - `GET /v1/mcp/brouillons` et `POST /v1/mcp/brouillons/<id>/decision` : l'agent lit ses brouillons et les valide ou
- *   les refuse lui-même, depuis l'application ; aucun outil MCP ne le fait [R591].
+ *   les refuse lui-même, depuis l'application ; aucun outil MCP ne le fait [R591]. Ces deux routes n'admettent que la
+ *   séance d'une clé d'appareil (BR06) : une clé d'API, que l'agent a pu confier à son assistant, y est refusée, pour
+ *   qu'un assistant ne valide jamais ce qu'il a écrit, ni ne relise le texte d'une note [R590, R591].
  * - `POST /v1/mcp/public/<réseau>` : sans clé, le seul outil public, les biens que la diffusion autorise à l'instant
  *   même, tels que leur annonce publiée les décrit [R592]. Limité en débit par adresse et par réseau.
  *
@@ -17,6 +19,7 @@ import { Referencement } from '../../core/src/attirer/index.ts';
 import { Diffusion } from '../../core/src/documents/retractation.ts';
 import { Brouillons, ServeurMcp, type JsonRpcResponse, type McpCaller } from '../../core/src/mcp/index.ts';
 import { takeSlot } from './assistant.ts';
+import { fromDeviceSession } from './cles.ts';
 import { sha256Hex } from './auth.ts';
 
 export const TRIAL_MODE = 'essai';
@@ -120,6 +123,7 @@ export function mcpRoutes(): McpRoute[] {
       },
     },
   ];
+  const APPLICATION_ONLY = new Set(['mcp.brouillons', 'mcp.brouillons.decision']);
   return routes.map((route) => ({
     ...route,
     handle: async (s, v, params, request) => {
@@ -127,6 +131,10 @@ export function mcpRoutes(): McpRoute[] {
       if (!route.roles.includes(v.role)) {
         await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R16', role: String(v.role), kind: route.name, code: 'role' } }, s.now);
         return json(403, { ok: false, rule: 'R16', code: 'role' });
+      }
+      if (APPLICATION_ONLY.has(route.name) && !fromDeviceSession(request)) {
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: `network:${v.networkId}`, data: { rule: 'R591', role: String(v.role), kind: route.name, code: 'application_requise' } }, s.now);
+        return json(403, { ok: false, rule: 'R591', code: 'application_requise', message: 'Depuis l’application seulement, avec la clé de cet appareil.' });
       }
       return route.handle(s, v, params, request);
     },

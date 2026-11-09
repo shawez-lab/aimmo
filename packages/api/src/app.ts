@@ -92,7 +92,7 @@ import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
 import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
-import { clesRoutes, handleConnexion, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
+import { clesRoutes, handleConnexion, markDeviceSession, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
 import type { LecteurFactures } from '../../core/src/facturation/index.ts';
 import {
   handleEspacePartenaire,
@@ -1926,7 +1926,10 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
   const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
   if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const viewer = (keys.length > 0 ? await viewerFromRequest(request, keys) : null) ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
+  const keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  const viewer = keyViewer ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
+  // Une demande ouverte par la séance d'une clé d'appareil, et non par une clé qu'on peut confier à un assistant (BR08).
+  if (keyViewer === null && viewer !== null) markDeviceSession(request);
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.

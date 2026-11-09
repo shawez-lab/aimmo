@@ -3,6 +3,8 @@ import { FicheClient } from '@aimmo/core';
 import { handleRequest, OPEN_WITHOUT_AGENT_FILE, type ApiConfig } from '../src/app.ts';
 import { mcpRoutes } from '../src/mcp.ts';
 import { sha256Hex } from '../src/index.ts';
+import type { Challenge } from '../../core/src/securite/index.ts';
+import { FakeAuthenticator, ORIGIN, RP } from '../../core/test/appareil-simule.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
@@ -28,10 +30,11 @@ async function setup(limits?: ApiConfig['mcpPublicLimits']) {
     partenaire: { role: 'partner', userId: 'partenaire-1', networkId: t.network.id },
   };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
-  const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, ...(limits ? { mcpPublicLimits: limits } : {}) };
-  const send = async (path: string, init: { who?: Who; method?: string; body?: unknown; raw?: string; ip?: string } = {}): Promise<{ status: number; body: Body | null }> => {
+  const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] }, ...(limits ? { mcpPublicLimits: limits } : {}) };
+  const send = async (path: string, init: { who?: Who; token?: string; method?: string; body?: unknown; raw?: string; ip?: string } = {}): Promise<{ status: number; body: Body | null }> => {
     const headers: Record<string, string> = {};
     if (init.who) headers.authorization = `Bearer ${KEYS[init.who]}`;
+    if (init.token) headers.authorization = `Bearer ${init.token}`;
     if (init.ip) headers['cf-connecting-ip'] = init.ip;
     const payload = init.raw ?? (init.body === undefined ? undefined : JSON.stringify(init.body));
     if (payload !== undefined) headers['content-type'] = 'application/json';
@@ -43,7 +46,17 @@ async function setup(limits?: ApiConfig['mcpPublicLimits']) {
   const rpc = (who: Who, method: string, params?: unknown) => send('/mcp', { who, body: { jsonrpc: '2.0', id: ++n, method, ...(params === undefined ? {} : { params }) } });
   const tool = async (who: Who, name: string, args: Record<string, unknown> = {}) => (await rpc(who, 'tools/call', { name, arguments: args })).body?.result as { isError: boolean; structuredContent: Body };
   const lines = async (type: string) => (await t.journal.all()).filter((e) => e.type === type);
-  return { ...t, other, send, rpc, tool, lines };
+  /** La séance de l'application : la clé de cet appareil, enregistrée puis signée (BR06). */
+  const appSession = async (who: Who, seed: number): Promise<string> => {
+    const device = await FakeAuthenticator.create(seed);
+    const c = await send('/cles/enregistrement/debut', { who });
+    await send('/cles/enregistrement/fin', { who, body: await device.register(c.body?.data as Challenge) });
+    const d = await send('/cles/connexion/debut', { body: { networkId: ids[who].networkId, role: ids[who].role, userId: ids[who].userId } });
+    const f = await send('/cles/connexion/fin', { body: await device.sign(d.body?.data as Challenge) });
+    if (f.status !== 200) throw new Error(`séance ${f.body?.code}`);
+    return f.body?.data.token as string;
+  };
+  return { ...t, other, send, rpc, tool, lines, appSession };
 }
 
 describeWithSqlite('BR08 · adresse du serveur MCP', () => {
@@ -101,14 +114,24 @@ describeWithSqlite('BR08 · adresse du serveur MCP', () => {
     }
     // Aucun outil ne décide : seule la route de l'application, par l'agent du brouillon.
     expect((await t.rpc('alex', 'tools/call', { name: 'valider_brouillon', arguments: { brouillon: draftId } })).body?.error).toMatchObject({ code: -32602 });
-    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'sam', body: { decision: 'valide' } })).toMatchObject({ status: 403, body: { rule: 'R16' } });
-    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'alex', body: { decision: 'peut-etre' } })).toMatchObject({ status: 409, body: { rule: 'R591', code: 'bad_input' } });
-    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'alex', body: { decision: 'valide', texte: 'x' } })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
-    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'alex', body: { decision: 'valide' } })).toMatchObject({ status: 200, body: { ok: true } });
-    expect((await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'alex', body: { decision: 'refuse' } })).status).toBe(409);
-    const own = await t.send('/mcp/brouillons', { who: 'alex', method: 'GET' });
+    // La clé d'API, que l'agent a pu confier à son assistant, ne lit ni ne décide aucun brouillon : au journal.
+    const before = (await t.lines('acces.refuse')).length;
+    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { who: 'alex', body: { decision: 'valide' } })).toMatchObject({ status: 403, body: { rule: 'R591', code: 'application_requise' } });
+    expect(await t.send('/mcp/brouillons', { who: 'alex', method: 'GET' })).toMatchObject({ status: 403, body: { code: 'application_requise' } });
+    expect((await t.lines('acces.refuse')).length).toBe(before + 2);
+    // Depuis l'application, par la clé de son appareil : l'agent du brouillon seul décide, une fois.
+    const alexApp = await t.appSession('alex', 21);
+    const samApp = await t.appSession('sam', 22);
+    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { token: samApp, body: { decision: 'valide' } })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { token: alexApp, body: { decision: 'peut-etre' } })).toMatchObject({ status: 409, body: { rule: 'R591', code: 'bad_input' } });
+    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { token: alexApp, body: { decision: 'valide', texte: 'x' } })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
+    expect(await t.send(`/mcp/brouillons/${draftId}/decision`, { token: alexApp, body: { decision: 'valide' } })).toMatchObject({ status: 200, body: { ok: true } });
+    expect((await t.send(`/mcp/brouillons/${draftId}/decision`, { token: alexApp, body: { decision: 'refuse' } })).status).toBe(409);
+    const own = await t.send('/mcp/brouillons', { token: alexApp, method: 'GET' });
     expect(own).toMatchObject({ status: 200 });
     expect((own.body?.data as { id: string; status: string }[]).find((d) => d.id === draftId)?.status).toBe('valide');
+    // La séance de l'application sert aussi le serveur MCP : elle reste soumise aux mêmes outils.
+    expect((await t.send('/mcp', { token: alexApp, body: { jsonrpc: '2.0', id: 99, method: 'ping' } })).status).toBe(200);
   });
 
   it('[R16] [R82] les droits sont revérifiés à chaque appel : un agent parti n’a plus rien, dès l’appel suivant ; aucune route MCP sans dossier complet', async () => {
