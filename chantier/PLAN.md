@@ -679,6 +679,15 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Critères : à écrire au début de la tâche, après lecture du contrôle central ; un jour sans donnée n'est jamais compté propre [R643] (test) ; direction seule [R16] (test).
 - Attend : rien.
 
+### HX71 · La porte des phases : chaque phase ne s'ouvre que sur la condition de la précédente, prouvée à l'instant (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : IN01, IN02, HX65, HX69, HX70
+- Partie du cahier : Feuille de route, « Cinq phases, chacune ouverte seulement si la précédente a rempli sa condition » et « Les phases et leurs conditions ».
+- Décidé (2026-11-09, voie 2), lecture prudente : ajouté parce que la voie 2 n'avait plus de tâche libre et que les quatre conditions sont comptées chacune à part (HX70, IN01 et IN02, HX69, HX65) sans que rien ne dise quelle phase est ouverte. La phase 1 est ouverte d'office. Phase 2 : la condition publiée (mois scellés, IN02), pas le compteur vivant seul, car le cahier dit « chiffres publiés ». Phase 4 : « la part du réseau couvre le coût complet » lue sur l'agent moyen de HX65, 3 mois finis de Paris de suite complets et couverts, tous commencés après l'ouverture de la phase 4. Rien ne s'ouvre ni ne se ferme seul.
+- Objectif : pour la direction, l'état des cinq phases : ouverte (quand, par quelle décision), condition de la phase lue à l'instant dans son module avec ses raisons, phase suivante ouvrable ou non. La direction ouvre la phase suivante en un geste ; l'ouverture est refusée si la phase d'avant n'est pas ouverte ou si sa condition n'est pas remplie à l'instant ; elle range l'empreinte du rapport qui la prouve. Jamais vu : une ouverture ne peut pas précéder sa preuve, et une condition retombée après l'ouverture est dite, sans rien fermer seul.
+- Critères : phase 1 ouverte d'office, chaque phase suivante fermée tant qu'aucune ouverture n'est rangée [R646] (test) ; une condition dont le module ne peut pas se lire est « inconnue », jamais remplie [R646] (test) ; ouverture refusée sans la phase d'avant ouverte, ou sans sa condition remplie à l'instant, avec la raison, refus au journal [R647] (tests) ; une ouverture rangée garde l'empreinte du rapport, ne change ni ne s'efface, une seule par phase, la base refuse le reste [R647, R17] (test) ; condition retombée après l'ouverture dite « retombée », la phase reste ouverte [R648] (test) ; phase 4 : 3 mois de suite complets et couverts après l'ouverture, un mois incomplet casse la série [R648] (test) ; direction seule, lecture au journal [R16] (test).
+- Attend : rien (des conditions lues dans la base ; aucun envoi, aucun compte). Routes et écran : à la voie 1 (`app.ts`).
+
 ## Branchements des groupes HX
 
 Voie : 1
