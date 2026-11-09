@@ -7,13 +7,19 @@
  * clé ; chacun retire les siennes, la direction toute clé de son réseau [R600] ; une preuve ne vaut que pour son action,
  * son objet et cinq minutes, une fois [R601].
  *
- * Sans site WebAuthn réglé (`rpId` et origines), ces routes sont fermées : 503, rien n'est rangé. La connexion par une
- * clé (séance à la place de la clé d'API) touche à l'authentification du socle : elle viendra dans sa propre tâche.
+ * Sans site WebAuthn réglé (`rpId` et origines), ces routes sont fermées : 503, rien n'est rangé.
+ *
+ * La connexion par une clé (BR06) : `/v1/cles/connexion/debut` et `/v1/cles/connexion/fin`, publiques, limitées en
+ * débit par adresse et par réseau. Tout refus y a la même réponse, sans dire pourquoi ; la raison est au
+ * journal. La séance rendue s'utilise comme une clé d'API (`Authorization: Bearer <jeton>`) et se relit à chaque
+ * demande : une clé retirée ou un agent parti la coupent tout de suite [R600, R82].
  *
  * L'export complet n'est tiré que par l'agent actif lui-même, sur une preuve « export_complet » de sa clé faite pour
  * lui ; AIMMO ne range que l'empreinte, jamais le contenu [R561, R601, R13].
  */
-import { appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { takeSlot } from './assistant.ts';
+import { sha256Hex } from './auth.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
 import { ClesAppareil, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
@@ -217,4 +223,114 @@ export function readClesConfig(rpId: string | undefined, origins: string | undef
     return null;
   }
   return { rpId, origins: list };
+}
+
+// ---------------------------------------------------------------- connexion par une clé (BR06)
+
+export const CONNEXION_DEBUT_PATH = '/v1/cles/connexion/debut';
+export const CONNEXION_FIN_PATH = '/v1/cles/connexion/fin';
+
+/**
+ * Les limites d'appels de la connexion, par heure. L'adresse d'abord ; le réseau ne compte que les défis émis, qu'un
+ * utilisateur inventé ne remplit pas. Pas de limite par utilisateur : n'importe qui pourrait la remplir au nom d'un agent et l'empêcher d'entrer ; un
+ * défi ne sert qu'une fois et ne se signe qu'avec la clé, rien ne se devine en le redemandant.
+ */
+export interface ConnexionLimits {
+  /** Demandes d'une même adresse (`cf-connecting-ip`), début et fin ensemble. */
+  perIp: number;
+  /** Défis émis pour un même réseau (utilisateur actif avec une clé active). */
+  perNetwork: number;
+}
+export const DEFAULT_CONNEXION_LIMITS: ConnexionLimits = Object.freeze({ perIp: 30, perNetwork: 2000 });
+
+export interface ConnexionServices {
+  db: SqlDatabase;
+  now: () => Date;
+  site: ClesConfig | null;
+  limits?: ConnexionLimits;
+}
+
+const NETWORK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** Un seul refus, quelle qu'en soit la raison : ni l'utilisateur, ni la clé, ni le défi ne se devinent d'ici. */
+const refusedLogin = (): Response => json(403, { ok: false, rule: 'R600', code: 'connexion_refusee' });
+const tooMany = (): Response => json(429, { ok: false, rule: null, code: 'too_many_requests', message: 'Trop de demandes : réessayez plus tard.' });
+
+/** Prend une place à l'adresse ; l'adresse n'est rangée qu'en empreinte d'une heure. Sans adresse connue, rien. */
+async function ipSlot(s: ConnexionServices, request: Request, networkId: string): Promise<boolean> {
+  const ip = request.headers.get('cf-connecting-ip');
+  if (!ip) return true;
+  const at = s.now();
+  return takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${at.toISOString().slice(0, 13)}`)}`, (s.limits ?? DEFAULT_CONNEXION_LIMITS).perIp, at);
+}
+
+/** Le réseau a-t-il encore de la place cette heure ? Lu avant d'émettre, pour qu'un réseau plein ne range plus aucun défi. */
+async function networkHasRoom(s: ConnexionServices, networkId: string): Promise<boolean> {
+  const at = s.now();
+  const row = await s.db.first<{ n: number }>('SELECT count(*) AS n FROM assistant_calls WHERE network_id = ? AND scope = ? AND bucket = ?', [networkId, 'cles_connexion:reseau', at.toISOString().slice(0, 13)]);
+  return Number(row?.n ?? 0) < (s.limits ?? DEFAULT_CONNEXION_LIMITS).perNetwork;
+}
+
+/** Prend une place au réseau, pour un défi vraiment émis : un utilisateur inventé n'en prend aucune. */
+const networkSlot = (s: ConnexionServices, networkId: string): Promise<boolean> =>
+  takeSlot(s.db, networkId, 'cles_connexion:reseau', (s.limits ?? DEFAULT_CONNEXION_LIMITS).perNetwork, s.now());
+
+/** Un refus que la couche métier n'écrit pas elle-même (rôle ou identifiant mal formé), après la limite de l'adresse [R600, R16]. */
+async function journalRefusal(s: ConnexionServices, code: string): Promise<Response> {
+  await appendEvent(new SqlJournalStore(s.db), { type: 'securite.refus', actor: 'public:connexion', subject: null, data: { rule: 'R600', step: 'debut', code } }, s.now);
+  return refusedLogin();
+}
+
+const ROLE_OF_DEVICE = new Set<string>(DEVICE_USERS);
+const USER_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Les deux routes publiques de la connexion ; `null` si l'adresse n'en est pas une. */
+export async function handleConnexion(request: Request, s: ConnexionServices): Promise<Response | null> {
+  const path = new URL(request.url).pathname;
+  if (path !== CONNEXION_DEBUT_PATH && path !== CONNEXION_FIN_PATH) return null;
+  if (request.method !== 'POST') return json(405, { ok: false, rule: null, code: 'method_not_allowed' });
+  if (!s.site) return json(503, { ok: false, rule: null, code: 'cles_non_configurees', message: 'Clés d’accès fermées : aucun site WebAuthn réglé.' });
+  const body = await readJson(request);
+  if (!body) return badBody();
+  const service = new ClesAppareil(s.db, new SqlJournalStore(s.db), { rpId: s.site.rpId, origins: s.site.origins, now: s.now });
+
+  if (path === CONNEXION_DEBUT_PATH) {
+    if (Object.keys(body).some((k) => !['networkId', 'role', 'userId'].includes(k))) return unknownField();
+    const { networkId, role, userId } = body;
+    // Un réseau inconnu ne concerne personne : refusé sans rien écrire, pour qu'aucune boucle ne remplisse le journal.
+    if (typeof networkId !== 'string' || !NETWORK_ID.test(networkId) || !(await s.db.first('SELECT 1 FROM networks WHERE id = ?', [networkId]))) return refusedLogin();
+    if (!(await ipSlot(s, request, networkId))) return tooMany();
+    if (typeof role !== 'string' || !ROLE_OF_DEVICE.has(role) || typeof userId !== 'string' || !USER_ID.test(userId)) return journalRefusal(s, 'bad_input');
+    if (!(await networkHasRoom(s, networkId))) return tooMany();
+    const challenge = await service.beginLogin(networkId, role, userId);
+    if (!challenge.ok) return refusedLogin();
+    // Le défi émis compte au réseau ; plein, il n'est pas rendu et expire sans servir.
+    if (!(await networkSlot(s, networkId))) return tooMany();
+    return json(200, { ok: true, mode: TRIAL_MODE, data: challenge.value });
+  }
+
+  if (Object.keys(body).some((k) => !(ASSERTION as readonly string[]).includes(k))) return unknownField();
+  // Le réseau est celui du défi, lu dans la base : jamais celui qu'annonce l'appelant. Un défi inconnu ne concerne
+  // personne : refusé sans rien écrire. Les défis connus sont bornés par ceux émis, déjà comptés au réseau.
+  const { challengeId } = body;
+  const owner =
+    typeof challengeId === 'string' && USER_ID.test(challengeId)
+      ? await s.db.first<{ network_id: string }>("SELECT network_id FROM security_challenges WHERE id = ? AND purpose = 'login'", [challengeId])
+      : null;
+  if (!owner) return refusedLogin();
+  if (!(await ipSlot(s, request, owner.network_id))) return tooMany();
+  const session = await service.finishLogin(body as unknown as AssertionPayload);
+  if (!session.ok) return refusedLogin();
+  const { token, expiresAt, viewer, deviceId } = session.value;
+  return json(200, { ok: true, mode: TRIAL_MODE, data: { token, expiresAt, viewer, deviceId } });
+}
+
+/**
+ * Qui tient la séance de la requête (`Authorization: Bearer <jeton>`), relu dans la base à cet instant : `null` si la
+ * séance est inconnue ou finie, si sa clé a été retirée, ou si l'agent est parti [R600, R82].
+ */
+export async function sessionViewer(request: Request, s: { db: SqlDatabase; now: () => Date; site: ClesConfig }): Promise<Viewer | null> {
+  const token = /^Bearer ([^\s]+)$/.exec(request.headers.get('authorization') ?? '')?.[1];
+  if (token === undefined) return null;
+  const found = await new ClesAppareil(s.db, new SqlJournalStore(s.db), { rpId: s.site.rpId, origins: s.site.origins, now: s.now }).authenticate(token);
+  return found === null ? null : found.viewer;
 }

@@ -313,7 +313,16 @@ Sous `/v1/cles` et `/v1/export` : chaque route dit les rôles qu'elle admet (age
 - `POST /cles/preuve/debut` (`{action, subject}`), puis `POST /cles/preuve/fin` (`{challengeId, credentialId, clientDataJSON, authenticatorData, signature}`) : une preuve pour cette action et cet objet seuls, cinq minutes, une fois [R601].
 - `POST /export/agent` (`{stepUpId}`, preuve « export_complet » pour `agent:<lui>`) : l'agent actif tire l'export complet de ses données, avec son empreinte ; AIMMO ne range que l'empreinte. `POST /export/agent/verification` (`{document}`, 4 Mo au plus) : vrai si le fichier est celui qu'AIMMO a remis, au caractère près ; un fichier d'un autre réseau n'est pas lu [R561].
 
-La connexion par une clé d'appareil (séance à la place de la clé d'API) touche à l'authentification du socle : elle viendra dans sa propre tâche (BR06).
+### Connexion par une clé d'appareil (BR06)
+
+Deux routes publiques, sans clé d'API, fermées (503 `cles_non_configurees`) sans site WebAuthn réglé :
+
+- `POST /v1/cles/connexion/debut` (`{networkId, role, userId}`, rôle `agent`, `direction` ou `compliance`) : un défi de cinq minutes, avec les seules clés actives de cet utilisateur [R600].
+- `POST /v1/cles/connexion/fin` (`{challengeId, credentialId, clientDataJSON, authenticatorData, signature}`, en base64url) : `{token, expiresAt, viewer, deviceId}`, une séance de 12 heures. Le défi est usé dès la première tentative, même ratée ; seule l'empreinte du jeton est rangée. Le réseau de la séance est celui du défi, lu dans la base ; aucun réseau n'est accepté de l'appelant.
+
+Tout refus (réseau, utilisateur, rôle, clé, défi, signature) a la même réponse, 403 `connexion_refusee`. La raison est au journal (`securite.refus`) dès qu'elle concerne quelqu'un d'un réseau existant ; un réseau ou un défi inconnus ne concernent personne et n'écrivent rien, pour qu'aucune boucle ne remplisse le journal. Limites par heure, l'adresse d'abord : 30 demandes par adresse (`cf-connecting-ip`, rangée en empreinte d'une heure seulement), puis 2000 défis émis par réseau (utilisateur actif avec une clé active : un utilisateur inventé ne compte pas ; plein, aucun défi n'est plus émis ni rangé) ; au-delà 429 `too_many_requests`. Pas de limite par utilisateur : n'importe qui pourrait la remplir au nom d'un agent et l'empêcher d'entrer, alors qu'un défi ne sert qu'une fois et ne se signe qu'avec la clé.
+
+Le jeton s'envoie comme une clé : `Authorization: Bearer <jeton>`. L'API essaie d'abord les clés d'API, qui restent acceptées comme avant, puis la séance, relue dans la base à chaque demande : une clé retirée, une séance finie ou un agent parti la coupent à la demande suivante (401) [R600, R82]. Sans clé d'API configurée, l'API reste fermée (503), sauf si le site WebAuthn est réglé : seules les séances ouvrent alors.
 
 ## Mise en ligne
 

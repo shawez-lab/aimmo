@@ -90,7 +90,7 @@ import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
-import { clesRoutes, type ClesConfig, type ClesRoute } from './cles.ts';
+import { clesRoutes, handleConnexion, sessionViewer, type ClesConfig, type ClesRoute, type ConnexionLimits } from './cles.ts';
 import type { LecteurFactures } from '../../core/src/facturation/index.ts';
 import {
   handleEspacePartenaire,
@@ -199,6 +199,8 @@ export interface ApiConfig {
   lecteurFactures?: LecteurFactures | null;
   /** Le site WebAuthn des clés d'appareil (BR05, `CLES_RP_ID` et `CLES_ORIGINS`) ; absent, leurs routes sont fermées. */
   cles?: ClesConfig | null;
+  /** Les limites d'appels de la connexion par une clé (BR06) ; absentes, les réglages par défaut. */
+  clesLimits?: ConnexionLimits;
   /**
    * Les espaces des clients (EC07) : le réseau de la page publique (`ESPACE_NETWORK_ID`), l'adresse de l'espace
    * (`ESPACE_BASE`, en https, sans chiffre, terminée par `/espace/`) et les clés du relevé prouvé (secret
@@ -1857,13 +1859,23 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     }
   }
 
+  // La connexion par une clé d'appareil (BR06) : publique, limitée en débit, une seule réponse pour tout refus [R600].
+  try {
+    const login = await handleConnexion(request, { db: config.db, now, site: config.cles ?? null, ...(config.clesLimits ? { limits: config.clesLimits } : {}) });
+    if (login) return login;
+  } catch (error) {
+    await journalError(new SqlJournalStore(config.db), 'public:connexion', 'cles.connexion', error, now);
+    return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+  }
+
   // Les clés du secret `API_KEYS`, et celles remises par une invitation (Z02). Un secret présent mais mal formé
-  // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente.
+  // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente. À côté des clés, la séance d'une clé
+  // d'appareil (BR06), relue dans la base à chaque demande : une clé retirée ou un agent parti la coupent [R600, R82].
   const secretKeys = config.apiKeys === undefined || config.apiKeys.trim() === '' ? [] : parseApiKeys(config.apiKeys);
   if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
   const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
-  if (keys.length === 0) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const viewer = await viewerFromRequest(request, keys);
+  if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
+  const viewer = (keys.length > 0 ? await viewerFromRequest(request, keys) : null) ?? (config.cles ? await sessionViewer(request, { db: config.db, now, site: config.cles }) : null);
   if (viewer === null) return failure(401, 'unauthorized', 'Clé absente ou refusée.');
 
   // Une même adresse peut servir à lire (GET) et à écrire (POST) : la route est choisie par l'adresse et la méthode.
