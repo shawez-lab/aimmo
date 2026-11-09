@@ -689,6 +689,21 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Critères : phase 1 ouverte d'office, chaque phase suivante fermée tant qu'aucune ouverture n'est rangée [R646] (test) ; une condition dont le module ne peut pas se lire est « inconnue », jamais remplie [R646] (test) ; ouverture refusée sans la phase d'avant ouverte, ou sans sa condition remplie à l'instant, avec la raison, refus au journal [R647] (tests) ; une ouverture rangée garde l'empreinte du rapport, ne change ni ne s'efface, une seule par phase, la base refuse le reste [R647, R17] (test) ; condition retombée après l'ouverture dite « retombée », la phase reste ouverte [R648] (test) ; phase 4 : 3 mois de suite complets et couverts après l'ouverture, un mois incomplet casse la série [R648] (test) ; direction seule, lecture au journal [R16] (test).
 - Attend : rien (des conditions lues dans la base ; aucun envoi, aucun compte). Routes et écran : à la voie 1 (`app.ts`).
 
+## Phase 5 : ouverture région par région, Feuille de route
+
+Voie : 2
+
+Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (BR10 en cours à la voie 1, le reste attend un humain ou la voie 1) et les phases 1 à 4 de la Feuille de route sont découpées (HX64 à HX71). Reste la phase 5, « Ouverture région par région, puis licence du logiciel aux agences hors réseau », sans aucune tâche. Ids `HX72` et suivants. Règles R650 à R659 et migrations à partir de `3800` réservées à ce groupe. Le code vit dans `packages/core/src/regions/` ; `app.ts`, `packages/core/src/index.ts`, le planificateur et les fichiers du socle ne changent pas : routes et écran seront une tâche de la voie 1. Ouvrir une région reste une décision de Shawez, jamais automatique. La licence aux agences hors réseau viendra dans une tâche à part, après celle-ci.
+
+### HX72 · Les régions s'ouvrent une par une, chacune sur la preuve de la phase 5, dans un registre qu'on ne peut pas réécrire (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : HX71, HX68
+- Partie du cahier : Feuille de route, « Les phases et leurs conditions », phase 5 ; phase 4 « Recrutement en Bourgogne-Franche-Comté ».
+- Décidé (2026-11-09, voie 2), lecture prudente : la liste des régions est celle de l'INSEE (13 de métropole, 5 d'outre-mer), chaque département rattaché à une seule région, un département inconnu n'a pas de région (jamais devinée). La Bourgogne-Franche-Comté (27), région de la phase 4, est ouverte d'office et ne se ferme pas. « Région par région » : une nouvelle région ne s'ouvre pas tant qu'une autre, ouverte hors origine, l'est depuis moins de 90 jours (trois mois, comme la phase 4). Fermer reste possible, par la direction seule, jamais seul.
+- Objectif : pour la direction, l'état de chaque région (ouverte, depuis quand, par quelle version) et si une ouverture est possible maintenant, avec ses raisons. La direction ouvre ou ferme une région par versions qui ne changent plus ; une ouverture est refusée tant que la phase 5 n'est pas ouverte dans la porte des phases (HX71) et range l'empreinte de cette ouverture. Le public ne lit que les noms des régions ouvertes. Jamais vu : chaque décision est enchaînée à la précédente par son empreinte, et n'importe qui de la direction peut vérifier que la carte des régions n'a pas été réécrite ; la première version cassée est dite.
+- Critères : 18 régions, chaque département de métropole et d'outre-mer dans une seule région, département inconnu sans région [R650] (test) ; la région d'origine ouverte d'office, jamais fermée [R650] (test) ; ouverture refusée sans phase 5 ouverte, empreinte de la phase 5 rangée sinon [R651] (test) ; versions qui ne changent ni ne s'effacent, la base refuse le reste [R651, R17] (test) ; seconde région refusée moins de 90 jours après la précédente encore ouverte, acceptée après ou si la précédente a été fermée [R652] (test) ; la direction seule, refus au journal [R16] (test) ; le public ne lit que des noms, par ordre alphabétique [R653] (test) ; chaîne vérifiable, une ligne changée dite avec sa version [R653] (test).
+- Attend : rien (des décisions de la direction lues dans la base ; aucun envoi, aucun compte).
+
 ## Branchements des groupes HX
 
 Voie : 1
