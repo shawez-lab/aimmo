@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
-import { HOME_REGION, REGIONS, REGION_CHAIN_START, REGION_SPACING_DAYS, RegionsOuvertes, regionDecisionHash, regionOfDepartment, type RegionsReport } from '../src/regions/index.ts';
+import { HOME_REGION, REGIONS, REGION_CHAIN_START, REGION_JOURNAL_GRACE_MS, REGION_SPACING_DAYS, RegionsOuvertes, regionDecisionHash, regionOfDepartment, type RegionsReport } from '../src/regions/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -263,5 +263,36 @@ describeWithSqlite('HX72 · Les régions s’ouvrent une par une', () => {
     expect(await t.db.all('SELECT version FROM region_decisions')).toEqual([{ version: 1 }]);
     expect((await t.events('regions.refuse')).map((e) => e.code)).toEqual(['conflit']);
     expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: true, versions: 1 } });
+  });
+  it('[R653] une décision passée pendant la vérification ne la casse pas ; une décision jamais écrite au journal est dite après une minute', async () => {
+    const t = await setup();
+    await t.openPhase5();
+    await t.decide('11', true);
+    // Une seconde décision passe juste au moment où la vérification lit le journal.
+    let injected = false;
+    const db: SqlDatabase = {
+      ...t.db,
+      all: async (sql: string, params?: unknown[]) => {
+        if (!injected && sql.includes('FROM journal')) {
+          injected = true;
+          const r = await t.decide('11', false);
+          if (!r.ok) throw new Error(r.code);
+        }
+        return t.db.all(sql, params as never);
+      },
+    } as SqlDatabase;
+    const racing = new RegionsOuvertes(db, t.journal, { now: t.now });
+    expect(await racing.verify(t.direction)).toEqual({ ok: true, value: { intact: true, versions: 2 } });
+    expect(injected).toBe(true);
+    // Une décision rangée à la main, chaînée comme il faut, mais jamais écrite au journal.
+    const last = await t.db.first<Record<string, unknown>>('SELECT hash FROM region_decisions WHERE version = 2');
+    const row = { network_id: t.network.id, version: 3, region: '11', is_open: 1, reason: 'à la main', decided_by: 'direction:x', decided_at: t.now().toISOString(), phase5_hash: (await t.db.first<{ evidence_hash: string }>('SELECT evidence_hash FROM phase_openings WHERE phase = 5 AND network_id = ?', [t.network.id]))!.evidence_hash, prev_hash: last!.hash as string };
+    const hash = await regionDecisionHash(row);
+    t.raw
+      .prepare('INSERT INTO region_decisions (network_id, version, region, is_open, reason, decided_by, decided_at, phase5_hash, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(row.network_id, row.version, row.region, row.is_open, row.reason, row.decided_by, row.decided_at, row.phase5_hash, row.prev_hash, hash);
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: true, versions: 3 } });
+    t.setClock(new Date(t.now().getTime() + REGION_JOURNAL_GRACE_MS).toISOString());
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 3, brokenAt: 3 } });
   });
 });

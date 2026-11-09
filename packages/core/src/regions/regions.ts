@@ -55,6 +55,8 @@ export const REGIONS: readonly Region[] = Object.freeze([
 export const HOME_REGION = '27';
 /** Le délai, en jours, avant qu'une nouvelle région puisse suivre la précédente [R652]. */
 export const REGION_SPACING_DAYS = 90;
+/** Le temps laissé à une décision rangée pour être écrite au journal avant d'être dite cassée [R653]. */
+export const REGION_JOURNAL_GRACE_MS = 60_000;
 export const REGION_DECISION_FIELDS = ['region', 'open', 'reason'] as const;
 /** L'empreinte qui précède la première version d'un réseau. */
 export const REGION_CHAIN_START = '0'.repeat(64);
@@ -263,7 +265,18 @@ export class RegionsOuvertes {
   async verify(viewer: Viewer): Promise<{ ok: true; value: ChainCheck } | RegionsRefusal> {
     const denied = await this.direction(viewer, 'regions_verify');
     if (denied) return denied;
-    const rows = await this.decisions(viewer.networkId);
+    // Une lecture stable : les décisions, puis le journal, puis les décisions de nouveau ; si une décision est passée
+    // entre-temps, tout se relit (trois fois au plus). Une décision rangée mais pas encore écrite au journal depuis
+    // moins d'une minute est en cours, pas cassée ; au-delà, elle est dite cassée.
+    let rows = await this.decisions(viewer.networkId);
+    let events: { data: string }[] = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      events = await this.db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? AND subject = ? ORDER BY seq', ['regions.decision', `network:${viewer.networkId}`]);
+      const again = await this.decisions(viewer.networkId);
+      const same = again.length === rows.length && again.every((r, i) => r.version === rows[i]!.version && r.hash === rows[i]!.hash);
+      rows = again;
+      if (same) break;
+    }
     // La chaîne seule : la première version qui ne suit pas, ou dont l'empreinte ne se recalcule pas.
     let structural: number | null = null;
     let prev = REGION_CHAIN_START;
@@ -280,18 +293,24 @@ export class RegionsOuvertes {
     // réécrite avec son empreinte recalculée, ou une chaîne réécrite en entier ne s'y retrouvent pas. Une décision rangée
     // dont l'écriture au journal a manqué est dite cassée aussi : un doute dit plutôt qu'une carte crue sans preuve.
     // La première version cassée est la plus petite des deux lectures.
-    const events = await this.db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? AND subject = ? ORDER BY seq', ['regions.decision', `network:${viewer.networkId}`]);
     const logged = new Map<number, string>();
     for (const e of events) {
       const d = JSON.parse(e.data) as { version?: unknown; hash?: unknown };
       if (typeof d.version === 'number' && typeof d.hash === 'string' && !logged.has(d.version)) logged.set(d.version, d.hash);
     }
-    const byVersion = new Map(rows.map((r) => [Number(r.version), r.hash]));
+    const byVersion = new Map(rows.map((r) => [Number(r.version), r]));
+    const lastLogged = Math.max(0, ...logged.keys());
+    const nowMs = this.now().getTime();
+    const inFlight = (v: number): boolean => {
+      const row = byVersion.get(v);
+      return v > lastLogged && !logged.has(v) && row !== undefined && nowMs - Date.parse(row.decided_at) < REGION_JOURNAL_GRACE_MS;
+    };
     let journalBroken: number | null = null;
-    const total = Math.max(0, ...byVersion.keys(), ...logged.keys());
+    const total = Math.max(0, ...byVersion.keys(), lastLogged);
     for (let v = 1; v <= total; v += 1) {
-      const hash = byVersion.get(v);
-      if (hash === undefined || logged.get(v) !== hash) {
+      if (inFlight(v)) break;
+      const row = byVersion.get(v);
+      if (row === undefined || logged.get(v) !== row.hash) {
         journalBroken = v;
         break;
       }
