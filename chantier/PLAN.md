@@ -771,6 +771,15 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Objectif : aujourd'hui la clé de portée « mcp » se range à la main dans `API_KEYS` (H65). L'agent la crée depuis l'application, sur la preuve de sa clé d'appareil, la voit une seule fois, et la retire d'un geste ; seule l'empreinte est rangée, comme les clés d'invitation (`access_keys`).
 - Critères : création seulement par la séance d'une clé d'appareil, sur une preuve « cle_assistant » [R601] (test) ; la clé créée n'ouvre que `POST /v1/mcp` (test) [R590] ; retirée, elle est refusée à l'appel suivant (test) ; seule l'empreinte est rangée (test) ; un agent parti n'en a plus aucune (test) [R82].
 - Attend : rien.
+### BR10 · Routes et relevé de chaque nuit des conditions de passage des phases
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX69, HX70
+- Partie du cahier : Feuille de route, « Les phases et leurs conditions ».
+- Décidé (2026-11-09, voie 1) : ajoutée parce que HX69 et HX70 n'ont ni route ni passage du planificateur (« Restent (voie 1) » de HX70) ; HX71 (voie 2) ne touche qu'à `packages/core`, BR10 seulement à `packages/api`. Fichier neuf `packages/api/src/phases.ts`, sous `/v1/phases`.
+- Objectif : la direction lit le rapport des agents pilotes et celui de la phase 1, désigne un pilote, range sa déclaration d'avant, range un envoi constaté hors d'AIMMO et l'inventaire des tâches planifiées ; chaque nuit, le planificateur fige le relevé de la veille (jour de Paris) pour chaque réseau.
+- Critères : chaque route passe par les droits de la couche métier, un autre rôle est refusé (403) et le refus est au journal [R16] (test) ; un corps illisible est refusé (400) sans rien ranger (test) ; un refus de règle répond 409 avec sa règle [R640, R644] (test) ; le passage de nuit fige la veille de chaque réseau une seule fois, un second passage ne change rien [R643, R17] (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
