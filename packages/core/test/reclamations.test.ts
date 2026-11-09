@@ -193,6 +193,7 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     }
     expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: '2027-03-10', receivedBy: 'oral', summary: 'x' })).toEqual({ ok: false, rule: null, code: 'future_date' });
     expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: '2027-02-30', receivedBy: 'oral', summary: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
+    for (const day of ['2027-13-01', '2027-03-32', '9 mars']) expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: day, receivedBy: 'oral', summary: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_date' });
     expect(await t.reclamations.record(t.agent, t.personId, { receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'x', reply: { channel: 'email', conversationId: 'c' } })).toEqual({ ok: false, rule: null, code: 'bad_reply' });
     const c = await t.record({ receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Motif confidentiel.' });
     const before = (await t.journal.all()).length;

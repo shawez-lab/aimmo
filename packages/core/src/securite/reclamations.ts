@@ -193,7 +193,8 @@ export class Reclamations {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (viewer.role === 'agent' && read.view !== 'full') return this.refuse(viewer, 'not_assigned');
     const today = this.today();
-    if (typeof input.receivedOn !== 'string' || !DAY.test(input.receivedOn) || new Date(`${input.receivedOn}T12:00:00Z`).toISOString().slice(0, 10) !== input.receivedOn) {
+    const parsed = typeof input.receivedOn === 'string' && DAY.test(input.receivedOn) ? new Date(`${input.receivedOn}T12:00:00Z`) : null;
+    if (!parsed || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== input.receivedOn) {
       return { ok: false, rule: null, code: 'bad_date' };
     }
     if (input.receivedOn > today) return { ok: false, rule: null, code: 'future_date' };
