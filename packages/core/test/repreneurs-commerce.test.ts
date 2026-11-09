@@ -65,7 +65,8 @@ describeWithSqlite('CE06 · repreneurs, sans évaluation de solvabilité', () =>
     expect(await t.repreneurs.update(t.acces, t.alex, project.id, { budgetMaxEur: 300_000, revenusMensuels: 4_200 })).toMatchObject({ ok: false, rule: 'R115', code: 'champ_inconnu' });
     // Rien n'est rangé d'une entrée refusée ; au journal, ni la valeur ni le nom du champ inconnu [R13].
     expect(await t.db.all('SELECT 1 FROM business_buyer_profiles')).toHaveLength(0);
-    const text = JSON.stringify(await t.journal.all());
+    // Les identifiants tirés au hasard peuvent contenir « 4200 » : ils sont ôtés avant de chercher le montant.
+    const text = JSON.stringify(await t.journal.all()).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '');
     expect(text).not.toContain('revenusMensuels');
     expect(text).not.toContain('4200');
   });
