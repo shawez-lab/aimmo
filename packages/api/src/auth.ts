@@ -79,6 +79,16 @@ const MCP_KEY_REQUESTS = new WeakSet<Request>();
 export function fromMcpKey(request: Request): boolean {
   return MCP_KEY_REQUESTS.has(request);
 }
+/** Marque une demande ouverte par la clé d'assistant qu'un agent a créée lui-même (BR09) : portée « mcp ». */
+export function markMcpKey(request: Request): void {
+  MCP_KEY_REQUESTS.add(request);
+}
+
+/** La clé portée par la requête (`Authorization: Bearer <clé>`), si elle a la longueur d'une clé ; sinon `null`. */
+export function bearerKey(request: Request): string | null {
+  const key = /^Bearer ([^\s]+)$/.exec(request.headers.get('authorization') ?? '')?.[1];
+  return key === undefined || key.length < MIN_KEY_LENGTH ? null : key;
+}
 
 /**
  * Les clés de dépôt : chacune ne sert qu'à une source du site, pour un réseau, et ne lit aucune fiche.
