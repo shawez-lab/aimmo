@@ -523,6 +523,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       recruiting_contents: ['url', 'created_by'],
       recruiting_content_withdrawals: ['content_id', 'withdrawn_by'],
       candidate_content_origins: ['candidate_id', 'content_id'],
+      // HX68 : l'ouverture d'une commune au recrutement, par la direction, avec son motif.
+      recruiting_commune_decisions: ['commune', 'reason', 'decided_by'],
     },
   },
   {
@@ -1323,6 +1325,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   candidate_decisions: ['id', 'network_id', 'decision', 'interview_id', 'decided_at'],
   recruiting_contents: ['id', 'network_id', 'kind', 'title', 'description', 'published_on', 'code', 'created_at'],
   recruiting_content_withdrawals: ['network_id', 'withdrawn_at'],
+  recruiting_commune_decisions: ['network_id', 'version', 'is_open', 'decided_at'],
   candidate_content_origins: ['network_id', 'at'],
   agent_onboardings: ['network_id', 'created_at'],
   agent_time_saved: ['network_id', 'week', 'version', 'declared_at'],
