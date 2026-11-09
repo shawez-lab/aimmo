@@ -716,6 +716,16 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Attend : H67 pour le prix réel et la facturation réelle (le module tourne sans).
 - Restent après : routes `/v1/licences` et écran (voie 1) ; reprise des données de l'agence à la fin de sa licence (voie 2, à découper).
 
+### HX74 · La reprise des données de l'agence sous licence : tout, table par table, rien d'oublié (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : HX73, HX62, HX56
+- Partie du cahier : Feuille de route, phase 5, « licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel » ; M13, export complet (HX62).
+- Décidé (2026-11-10, voie 2), lecture prudente : la direction de l'agence sous licence tire à tout moment, licence active, suspendue ou terminée, le fichier complet de son réseau, sur la preuve d'un second facteur (`export_complet`, HX56) ; rien du réseau qui donne la licence ni d'une autre agence ; les jetons et codes masqués ; AIMMO range l'empreinte, jamais le contenu ; aucun prix, aucun délai, aucune condition pour reprendre ses données. Le code vit dans `packages/core/src/licences/` ; migration `3820`, règles R658 et R659. Les fichiers déposés (photos, pièces) et le journal commun restent hors du fichier, dits comme tels.
+- Objectif : la carte de reprise dit, pour chaque table de la base, comment y trouver les lignes d'un réseau (sa colonne `network_id`, ou la clé d'une table déjà trouvée) ou pourquoi elle n'y entre pas ; le fichier porte chaque table avec ses lignes, chaque table laissée avec sa raison, et les colonnes masquées. Jamais vu : une table que la base gagne sans entrer à la carte fait échouer les vérifications, et le fichier lui-même prouve qu'aucune table n'a été oubliée.
+- Critères : chaque table des migrations à la carte, une seule fois, chaque chemin suivi par une vraie clé étrangère ou une colonne déclarée, chaque clé étrangère vers une table reprise suivie [R658] (test) ; le fichier contient chaque ligne de l'agence et aucune ligne d'un autre réseau, sur un jeu inventé couvrant des tables directes et des tables filles à deux niveaux [R658, R657] (test) ; direction de l'agence seule, second facteur exigé, licence de tout état, refus au journal [R659, R16, R601] (test) ; jetons et codes masqués, chaque secret de la carte des demandes d'accès compris [R659] (test) ; empreinte rangée, un octet changé et la vérification échoue [R659] (test).
+- Attend : rien.
+- Restent après : routes et écran (voie 1) ; les fichiers déposés de l'agence, à part.
+
 ## Branchements des groupes HX
 
 Voie : 1
