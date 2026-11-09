@@ -293,6 +293,17 @@ Sous `/v1/marketing` : chaque route dit les rôles qu'elle admet, contrôlés av
 
 Restent hors des routes, à des travaux planifiés : le passage des créneaux dus (`runDue`), l'envoi d'une édition avec sa page de désinscription, la lecture de la dépense et des contacts chez les plateformes et le contrôle du seuil (`recordSpend`, `recordContact`, `runChecks`).
 
+## Finances du réseau, en mode essai (BR04)
+
+Sous `/v1/finances` : chaque route dit les rôles qu'elle admet, contrôlés avant le corps ; un refus est écrit au journal [R16]. Aucun montant n'entre par une route, sauf la correction nommée d'une facture fournisseur, recomptée par le code et la base [R550] ; un champ non prévu : 400 `unknown_field`. Rien ne part.
+
+- La direction, factures fournisseurs (HX49) : `POST /fournisseurs/lectures` (`{documentRef}`) fait lire la facture par le lecteur (l'IA, H13 ; sans lecteur configuré, 503 `lecteur_absent`), la recompte et rend ses écarts ; `POST /fournisseurs/lectures/<id>/rangement` (corps : les corrections nommées, `supplier`, `number`, `issuedOn`, `vatLines`, `htCents`, `vatCents`, `ttcCents`, ou `{}`) la range si elle se recompte ; `GET /fournisseurs` [R550].
+- La direction, banque : `POST /banque/releve` (corps `text/csv`, 1 Mo au plus), sans libellé ni coordonnée bancaire gardés, le même relevé deux fois ne double rien ; `GET /banque/propositions` ; `POST /banque/lignes/<id>/rapprochement` (`{invoiceId}`), une ligne pour une facture au même montant ; `GET /banque/rapprochements` ; `POST /banque/factures/<id>/encaissement`, la ligne de banque pour preuve [R551, R552].
+- La direction, relances : `GET /relances`, `POST /relances/<id>/validation`, une fois, texte inchangé [R553].
+- L'agent ou la direction, rapports sur mesure (HX62) : `POST /rapports/lecture` (`{definition: {measures, grouping}, from, to, agentId?, network?}`), `POST /rapports` (`{name, definition}`), `GET /rapports`, `POST /rapports/<id>/lecture` (`{from, to, agentId?, network?}`) ; un agent ses chiffres, la direction un agent ou le total, jamais deux agents côte à côte, chaque chiffre avec ses lignes [R560, R14].
+
+Restent aux passages du planificateur : le rapprochement seul (`Rapprochements.run`), la préparation et l'envoi des relances (`RelancesImpayes.prepare`, `send`). L'export complet de l'agent exige une clé d'appareil [R601] : il vient avec les routes des clés (BR05).
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).

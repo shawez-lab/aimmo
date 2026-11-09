@@ -1,0 +1,226 @@
+import { expect, it } from 'vitest';
+import { handleRequest, type ApiConfig } from '../src/app.ts';
+import { sha256Hex } from '../src/index.ts';
+import { ActeVente, Echeancier } from '../../core/src/dossiers/index.ts';
+import { RelancesImpayes, type LecteurFactures, type SupplierInvoiceRead } from '../../core/src/facturation/index.ts';
+import { Commissions, Factures, PlateformeEssai } from '../../core/src/pilotage/index.ts';
+import { PROOF, setupDossier } from '../../core/test/dossiers-jeu.ts';
+import { describeWithSqlite } from '../../core/test/sqlite.ts';
+
+// Tout est inventé : réseau, agents, fournisseurs, numéros, montants, relevés et clés.
+const ACT_PROOF = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000b04.pdf';
+const at9 = (day: string) => new Date(`${day}T07:00:00.000Z`);
+const KEYS = {
+  agent: 'test-cle-br04-agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  direction: 'test-cle-br04-direction-cccccccccccccccccccccc',
+  conformite: 'test-cle-br04-conformite-ddddddddddddddddddddd',
+};
+type Who = keyof typeof KEYS;
+
+/** Une facture fournisseur lue, juste : 1 000,00 € à 20 % et 50,00 € à 5,5 %. */
+function goodRead(patch: Partial<SupplierInvoiceRead> = {}): SupplierInvoiceRead {
+  return {
+    supplier: { value: 'Imprimerie Exemple', page: 1 },
+    number: { value: 'FA-0042', page: 1 },
+    issuedOn: { value: '2027-06-01', page: 1 },
+    vatLines: [
+      { value: { baseCents: 100_000, rateBp: 2000, vatCents: 20_000 }, page: 1 },
+      { value: { baseCents: 5_000, rateBp: 550, vatCents: 275 }, page: 2 },
+    ],
+    htCents: { value: 105_000, page: 2 },
+    vatCents: { value: 20_275, page: 2 },
+    ttcCents: { value: 125_275, page: 2 },
+    ...patch,
+  };
+}
+const READS: Record<string, SupplierInvoiceRead | null> = {
+  'factures/juste.pdf': goodRead(),
+  'factures/fausse.pdf': goodRead({ number: { value: 'FA-0043', page: 1 }, ttcCents: { value: 125_375, page: 2 } }),
+};
+const lecteur: LecteurFactures = { read: async (ref) => READS[ref] ?? null };
+
+/** Une vente menée jusqu'à la facture d'honoraires validée : F-2027-00001, 10 000,00 €, émise le 11 juin 2027. */
+async function setup(withReader = true) {
+  const t = await setupDossier('appartement');
+  const echeancier = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+  const c = new Commissions(t.db, t.acces, t.journal, { now: t.now });
+  await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+  await t.startCompromis();
+  t.setClock(at9('2027-03-11'));
+  for (const [kind, day] of [['compromis_signe', '2027-03-10'], ['notification_acquereur', '2027-03-11'], ['dia_recue', '2027-03-11'], ['date_limite_pret', '2027-05-10'], ['etat_date_attendu', '2027-05-20'], ['acte_prevu', '2027-06-10']] as const) {
+    const r = await echeancier.record(t.agent, t.fileId, { kind, day, proofRef: PROOF });
+    if (!r.ok) throw new Error(r.code);
+  }
+  await c.sync(t.network.id);
+  const status = await t.pieces.status(t.agent, t.fileId);
+  if (!status.ok) throw new Error(status.code);
+  for (const piece of status.value.missing) {
+    const r = await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2027-03-11' });
+    if (!r.ok) throw new Error(r.code);
+  }
+  t.setClock(at9('2027-06-11'));
+  const acte = await new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now }).record(t.agent, t.fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF });
+  if (!acte.ok) throw new Error(acte.code);
+  await c.sync(t.network.id);
+  const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: new PlateformeEssai() });
+  await f.prepare(t.network.id);
+  const drafts = await f.drafts(t.direction);
+  if (!drafts.ok) throw new Error('drafts');
+  const h = await f.validate(t.direction, drafts.value.find((d) => d.kind === 'honoraires')!.id);
+  if (!h.ok) throw new Error('facture');
+
+  const ids: Record<Who, { role: string; userId: string }> = {
+    agent: { role: 'agent', userId: t.agent.userId },
+    direction: { role: 'direction', userId: t.direction.userId },
+    conformite: { role: 'compliance', userId: 'conformite-1' },
+  };
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: t.network.id, ...ids[w] }))));
+  const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, ...(withReader ? { lecteurFactures: lecteur } : {}) };
+  const raw = (who: Who, method: string, path: string, body?: string, type = 'application/json') =>
+    handleRequest(new Request(`https://aimmo-api.example.test/v1${path}`, { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': type }) }, ...(body === undefined ? {} : { body }) }), config);
+  const http = async (who: Who, method: string, path: string, body?: unknown) => {
+    const r = await raw(who, method, path, body === undefined ? undefined : JSON.stringify(body));
+    return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; rule?: string; code?: string; problems?: unknown; added?: number; already?: number } };
+  };
+  const statement = async (csv: string) => {
+    const r = await raw('direction', 'POST', '/finances/banque/releve', csv, 'text/csv');
+    return { status: r.status, body: (await r.json()) as { ok: boolean; added?: number; already?: number; code?: string } };
+  };
+  const refusals = async () => (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
+  const count = async (table: string) => Number((await t.db.first<{ n: number }>(`SELECT count(*) AS n FROM ${table}`))?.n);
+  return { ...t, invoice: h.value, raw, http, statement, refusals, count };
+}
+
+describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque, relances, rapports', () => {
+  it('[R16] chaque route refuse le mauvais rôle, avant le corps : 403 et refus au journal, rien rangé', async () => {
+    const t = await setup();
+    const DEF = { measures: ['contacts'], grouping: 'total' };
+    const routes: [Who[], string, string, unknown?][] = [
+      [['agent', 'conformite'], 'POST', '/finances/fournisseurs/lectures', { documentRef: 'factures/juste.pdf' }],
+      [['agent', 'conformite'], 'POST', '/finances/fournisseurs/lectures/l-1/rangement', { ttcCents: 1 }],
+      [['agent', 'conformite'], 'GET', '/finances/fournisseurs'],
+      [['agent', 'conformite'], 'POST', '/finances/banque/releve', 'pas un objet'],
+      [['agent', 'conformite'], 'GET', '/finances/banque/propositions'],
+      [['agent', 'conformite'], 'POST', '/finances/banque/lignes/l-1/rapprochement', { invoiceId: 'f-1' }],
+      [['agent', 'conformite'], 'GET', '/finances/banque/rapprochements'],
+      [['agent', 'conformite'], 'POST', '/finances/banque/factures/f-1/encaissement'],
+      [['agent', 'conformite'], 'GET', '/finances/relances'],
+      [['agent', 'conformite'], 'POST', '/finances/relances/r-1/validation'],
+      [['conformite'], 'GET', '/finances/rapports'],
+      [['conformite'], 'POST', '/finances/rapports', { name: 'Mes contacts', definition: DEF }],
+      [['conformite'], 'POST', '/finances/rapports/lecture', { definition: DEF, from: '2027-01-01', to: '2027-06-30' }],
+      [['conformite'], 'POST', '/finances/rapports/r-1/lecture', { from: '2027-01-01', to: '2027-06-30' }],
+    ];
+    for (const [whos, method, path, body] of routes) {
+      for (const who of whos) {
+        const before = (await t.refusals()).length;
+        const r = await t.http(who, method, path, body);
+        expect(r.status, `${who} ${method} ${path}`).toBe(403);
+        expect(r.body).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+        expect((await t.refusals()).length, `${who} ${method} ${path}`).toBe(before + 1);
+      }
+    }
+    for (const table of ['supplier_invoice_reads', 'supplier_invoices', 'bank_lines', 'bank_reconciliations', 'custom_reports']) expect(await t.count(table), table).toBe(0);
+  });
+
+  it('[R550] la facture lue n’est rangée que si elle se recompte ; seule une correction nommée porte un montant ; sans lecteur, fermé', async () => {
+    const t = await setup();
+    expect(await t.http('direction', 'POST', '/finances/fournisseurs/lectures', { documentRef: 'factures/illisible.pdf' })).toMatchObject({ status: 400, body: { code: 'unreadable' } });
+    const wrong = await t.http('direction', 'POST', '/finances/fournisseurs/lectures', { documentRef: 'factures/fausse.pdf' });
+    expect(wrong).toMatchObject({ status: 200, body: { ok: true, data: { problems: [{ code: 'total_ttc', field: 'ttcCents' }], recorded: false } } });
+    const id = wrong.body.data.id as string;
+    // Telle que lue, elle ne se range pas ; une correction qui ne recompte toujours pas non plus.
+    expect(await t.http('direction', 'POST', `/finances/fournisseurs/lectures/${id}/rangement`, {})).toMatchObject({ status: 409, body: { rule: 'R550', code: 'ecart' } });
+    expect(await t.http('direction', 'POST', `/finances/fournisseurs/lectures/${id}/rangement`, { ttcCents: 125_000 })).toMatchObject({ status: 409, body: { rule: 'R550', code: 'ecart' } });
+    // Un champ qui n'est pas une correction nommée, même un montant : refusé sans rien ranger.
+    expect(await t.http('direction', 'POST', `/finances/fournisseurs/lectures/${id}/rangement`, { totalCents: 125_275 })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
+    expect(await t.count('supplier_invoices')).toBe(0);
+    const fixed = await t.http('direction', 'POST', `/finances/fournisseurs/lectures/${id}/rangement`, { ttcCents: 125_275 });
+    expect(fixed).toMatchObject({ status: 200, body: { data: { ttcCents: 125_275, corrected: ['ttcCents'] } } });
+    expect(await t.http('direction', 'POST', `/finances/fournisseurs/lectures/${id}/rangement`, { ttcCents: 125_275 })).toMatchObject({ status: 400, body: { code: 'already' } });
+    expect(await t.http('direction', 'POST', '/finances/fournisseurs/lectures/inconnue/rangement', {})).toMatchObject({ status: 404 });
+    expect((await t.http('direction', 'GET', '/finances/fournisseurs')).body.data).toHaveLength(1);
+    // Au journal : aucun montant, aucun nom de fournisseur [R13].
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/Imprimerie|125275/);
+    // Sans lecteur configuré, la lecture est fermée ; ranger et lister restent possibles.
+    const closed = await setup(false);
+    expect(await closed.http('direction', 'POST', '/finances/fournisseurs/lectures', { documentRef: 'factures/juste.pdf' })).toMatchObject({ status: 503, body: { code: 'lecteur_absent' } });
+    expect(await closed.count('supplier_invoice_reads')).toBe(0);
+    expect((await closed.http('direction', 'GET', '/finances/fournisseurs')).status).toBe(200);
+  });
+
+  it('[R551] [R15] le relevé déposé tel quel : rien de doublé, ni libellé ni IBAN ; une ligne, une facture, au même montant', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    expect(await t.raw('direction', 'POST', '/finances/banque/releve', JSON.stringify({ csv: 'x' }))).toMatchObject({ status: 400 });
+    const csv = '2027-07-14;VIR F-2027-00001;10 000,00\n2027-07-15;VIR NOTAIRE F-2027-00001 FR7630006000011234567890189;10 000,00\n2027-07-15;VIR AUTRE;9 999,99\n';
+    expect(await t.statement(csv)).toMatchObject({ status: 200, body: { ok: true, added: 3, already: 0 } });
+    expect(await t.statement(csv)).toMatchObject({ status: 200, body: { ok: true, added: 0, already: 3 } });
+    expect(JSON.stringify(await t.db.all('SELECT * FROM bank_lines'))).not.toMatch(/FR76|NOTAIRE/);
+    expect(await t.statement('2030-01-01;VIR;1,00')).toMatchObject({ status: 400, body: { code: 'bad_statement' } });
+    const proposals = (await t.http('direction', 'GET', '/finances/banque/propositions')).body.data as { lineId: string; amountCents: number; day: string }[];
+    const [first, second] = proposals.filter((p) => p.amountCents === 1_000_000).sort((a, b) => a.day.localeCompare(b.day));
+    const other = proposals.find((p) => p.amountCents === 999_999)!;
+    // Un autre montant : refusé ; aucun montant n'entre par la route.
+    expect(await t.http('direction', 'POST', `/finances/banque/lignes/${other.lineId}/rapprochement`, { invoiceId: t.invoice.id })).toMatchObject({ status: 409, body: { rule: 'R551', code: 'amount' } });
+    expect(await t.http('direction', 'POST', `/finances/banque/lignes/${other.lineId}/rapprochement`, { invoiceId: t.invoice.id, amountCents: 999_999 })).toMatchObject({ status: 400, body: { code: 'unknown_field' } });
+    expect(await t.http('direction', 'POST', `/finances/banque/lignes/${first!.lineId}/rapprochement`, { invoiceId: t.invoice.id })).toMatchObject({ status: 200, body: { data: { invoiceId: t.invoice.id, mode: 'direction' } } });
+    expect(await t.http('direction', 'POST', `/finances/banque/lignes/${second!.lineId}/rapprochement`, { invoiceId: t.invoice.id })).toMatchObject({ status: 409, body: { rule: 'R551', code: 'already' } });
+    expect(await t.http('direction', 'POST', '/finances/banque/lignes/inconnue/rapprochement', { invoiceId: t.invoice.id })).toMatchObject({ status: 404 });
+    expect(await t.count('bank_reconciliations')).toBe(1);
+  });
+
+  it('[R552] l’encaissement par la route a pour preuve la ligne de banque ; une facture non rapprochée ne s’encaisse pas', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    expect(await t.http('direction', 'POST', `/finances/banque/factures/${t.invoice.id}/encaissement`)).toMatchObject({ status: 409, body: { rule: 'R552', code: 'not_reconciled' } });
+    await t.statement('2027-07-14;VIR SEPA ETUDE REF F-2027-00001;10 000,00\n');
+    const lineId = ((await t.http('direction', 'GET', '/finances/banque/propositions')).body.data as { lineId: string }[])[0]!.lineId;
+    expect((await t.http('direction', 'POST', `/finances/banque/lignes/${lineId}/rapprochement`, { invoiceId: t.invoice.id })).status).toBe(200);
+    expect((await t.http('direction', 'GET', '/finances/banque/rapprochements')).body.data).toEqual([expect.objectContaining({ invoiceId: t.invoice.id, lineId, amountCents: 1_000_000 })]);
+    expect((await t.http('direction', 'POST', `/finances/banque/factures/${t.invoice.id}/encaissement`)).status).toBe(200);
+    expect(await t.db.first('SELECT proof_ref FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: `banque:${lineId}` });
+    expect(await t.http('direction', 'POST', `/finances/banque/factures/${t.invoice.id}/encaissement`)).toMatchObject({ status: 400, body: { code: 'already' } });
+  });
+
+  it('[R553] aucune relance sans validation : la route valide une fois, n’envoie rien, et ne change pas le texte', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-12'));
+    expect(await new RelancesImpayes(t.db, t.journal, { now: t.now }).prepare(t.network.id)).toBe(1);
+    const list = await t.http('direction', 'GET', '/finances/relances');
+    expect(list.body.data).toEqual([expect.objectContaining({ label: 'F-2027-00001', rank: 1, status: 'a_valider', validatedBy: null })]);
+    const id = list.body.data[0].id as string;
+    expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`)).toMatchObject({ status: 200, body: { ok: true, mode: 'essai' } });
+    expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`)).toMatchObject({ status: 409, body: { rule: 'R553', code: 'not_pending' } });
+    expect(await t.http('direction', 'POST', '/finances/relances/inconnue/validation')).toMatchObject({ status: 404 });
+    // Validée, elle attend le passage d'envoi : aucune route n'envoie.
+    expect((await t.http('direction', 'GET', '/finances/relances')).body.data[0]).toMatchObject({ status: 'validee', text: list.body.data[0].text });
+    expect(await t.count('trial_outbox')).toBe(0);
+    expect((await t.http('direction', 'POST', '/finances/relances/envoi', {})).status).toBe(404);
+  });
+
+  it('[R560] [R14] les rapports par la route : catalogue fermé, ses propres chiffres, jamais deux agents côte à côte', async () => {
+    const t = await setup();
+    const DEF = { measures: ['mandats', 'contacts'], grouping: 'total' };
+    const period = { from: '2027-01-01', to: '2027-06-30' };
+    const mine = await t.http('agent', 'POST', '/finances/rapports/lecture', { definition: DEF, ...period });
+    expect(mine).toMatchObject({ status: 200, body: { data: { scope: 'agent', agentId: t.agent.userId, definition: { measures: ['contacts', 'mandats'], grouping: 'total' } } } });
+    // Chaque chiffre est le nombre de ses lignes.
+    const cells = mine.body.data.cells as { value: number; lines: unknown[] }[];
+    expect(cells.some((c) => c.value > 0)).toBe(true);
+    for (const cell of cells) expect(cell.value).toBe(cell.lines.length);
+    expect(await t.http('agent', 'POST', '/finances/rapports/lecture', { definition: { measures: ['honoraires'], grouping: 'total' }, ...period })).toMatchObject({ status: 409, body: { rule: 'R560', code: 'bad_measures' } });
+    expect(await t.http('agent', 'POST', '/finances/rapports/lecture', { definition: { measures: ['contacts'], grouping: 'agent' }, ...period })).toMatchObject({ status: 409, body: { rule: 'R14' } });
+    expect(await t.http('direction', 'POST', '/finances/rapports/lecture', { definition: DEF, ...period, network: true, agentId: t.agent.userId })).toMatchObject({ status: 409, body: { rule: 'R14', code: 'compares_agents' } });
+    expect(await t.http('agent', 'POST', '/finances/rapports/lecture', { definition: DEF, ...period, network: true })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.http('direction', 'POST', '/finances/rapports/lecture', { definition: DEF, ...period, network: true })).toMatchObject({ status: 200, body: { data: { scope: 'reseau' } } });
+    expect(await t.http('direction', 'POST', '/finances/rapports/lecture', { definition: DEF, ...period, network: 'oui' })).toMatchObject({ status: 400 });
+    // Enregistré, il ne se relit que par son auteur.
+    const saved = await t.http('agent', 'POST', '/finances/rapports', { name: 'Mes mandats', definition: DEF });
+    expect(saved.status).toBe(200);
+    const id = saved.body.data.id as string;
+    expect((await t.http('agent', 'GET', '/finances/rapports')).body.data).toEqual([expect.objectContaining({ id, name: 'Mes mandats' })]);
+    expect(await t.http('agent', 'POST', `/finances/rapports/${id}/lecture`, period)).toMatchObject({ status: 200, body: { data: { scope: 'agent' } } });
+    expect(await t.http('direction', 'POST', `/finances/rapports/${id}/lecture`, period)).toMatchObject({ status: 404, body: { code: 'unknown_report' } });
+  });
+});
