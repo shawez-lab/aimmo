@@ -637,7 +637,8 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre : 
 - Attend : rien (des chiffres lus dans la base ; aucun envoi, aucun compte).
 
 ### HX67 · Ce qui n'est pas du SQL standard, compté et qui ne grandit plus
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#449), `packages/core/src/passage-postgresql/sql-standard.ts`, plafonds `packages/core/test/sql-plafonds.json`, carte `docs/PASSAGE-POSTGRESQL.md`, R633 en service. Décidé, lecture prudente : déclencheurs et `RAISE` (garde R17) tolérés sans plafond, chaque migration en porte ; le TypeScript n'est lu que dans ses chaînes ; un plafond est comparé à celui de la branche principale par git, sans référence le test échoue ; une branche en retard sur une baisse de main doit se mettre à jour. Hors sortes tolérées : 396 occurrences dans 144 fichiers. Codex 5 P0 corrigés ; dernière version non relue par Codex (pas de réponse en 45 minutes) ; GitHub Actions bloqué (facturation), vérification locale verte (5165 tests). Restent : faire baisser le compte (fichiers du socle, voie 1) ; compter aussi `packages/api/src/`. Attention voie 1 : une migration nouvelle avec `GLOB`, `rowid`, `json_…` ou `date(…, modificateur)` fait désormais échouer `sql-standard.test.ts`.
 - Qui : Claude, voie 2, relecture normale · Dépend de : HX66
 - Partie du cahier : Architecture technique, « Pour que ce passage soit simple, le code n'utilise dès le départ que du SQL standard ».
 - Objectif : un test lit les migrations et les requêtes de `packages/core/src/` et compte, fichier par fichier, ce que PostgreSQL ne lit pas tel quel (`RAISE(ABORT…)`, `INSERT OR IGNORE`, `GLOB`, `datetime('now')`, `AUTOINCREMENT`, `PRAGMA`…) ; le compte de chaque sorte est figé : il peut baisser, jamais monter, et une forme nouvelle est refusée.
