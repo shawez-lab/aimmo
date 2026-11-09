@@ -134,7 +134,7 @@ describeWithSqlite('BR09 · l’agent crée et retire lui-même la clé de son a
     expect(await t.ping(second.cle)).toMatchObject({ status: 401 });
     // La liste de l'agent garde les deux, retirées et datées, sans empreinte ni clé.
     const list = (await t.send('/cles/assistant', { who: 'alex', method: 'GET' })).body?.data as Body[];
-    expect(list.map((k) => [k.label, k.revokedAt !== null])).toEqual([
+    expect(list.map((k) => [k.label, k.revokedAt !== null]).sort()).toEqual([
       ['ChatGPT', true],
       ['Claude', true],
     ]);
@@ -165,6 +165,18 @@ describeWithSqlite('BR09 · l’agent crée et retire lui-même la clé de son a
     const alex = await t.app('alex', 5);
     const key = (await t.create(alex)).body?.data.cle as string;
     expect((await t.ping(key)).status).toBe(200);
+    // Un départ programmé, statut encore « actif » : la clé sert jusqu'à la veille, plus le jour du départ, dès minuit à Paris.
+    const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(d);
+    const today = day(t.now());
+    const tomorrow = day(new Date(t.now().getTime() + 86_400_000));
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, ?, ?, 'demission_agent', 1, 'direction:x', ?)",
+      [t.network.id, t.alexId, today, tomorrow, t.now().toISOString()],
+    );
+    expect((await t.ping(key)).status).toBe(200);
+    // Le lendemain, à minuit cinq à Paris : la clé n'est plus reconnue, sans que personne ne l'ait retirée.
+    t.setClock(new Date(`${tomorrow}T00:05:00+01:00`));
+    expect(await t.ping(key)).toMatchObject({ status: 401 });
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
     expect(await t.ping(key)).toMatchObject({ status: 401 });
     expect((await t.send('/cles/assistant', { bearer: alex.token, body: { stepUpId: 'x', label: 'Claude' } })).status).toBe(401);
