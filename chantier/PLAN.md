@@ -809,7 +809,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR12 · Routes des régions
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#465, `a723c89d`), `packages/api/src/regions.ts` ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5289 tests). Reste : écran de la direction (phases et régions).
 - Qui : Claude, relecture normale · Dépend de : HX72, BR11
 - Partie du cahier : Feuille de route, phase 5 « Ouverture région par région ».
 - Décidé (2026-11-09, voie 1) : ajoutée parce que HX72 (voie 2) n'a ni route ni écran (« Restent (voie 1) »). Fichier neuf `packages/api/src/regions.ts`, sous `/v1/regions` ; aucune règle nouvelle ni migration.
