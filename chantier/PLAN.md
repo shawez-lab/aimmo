@@ -650,7 +650,8 @@ Voie : 1
 Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous les modules de la Feuille de route sont découpés ; le groupe « Recrutement » est à la voie 2 et le reste attend un humain. Or plusieurs modules HX n'ont encore aucune route : rien n'y arrive depuis l'application ni le Worker. Ids `BR..`. Chaque tâche branche des modules déjà fusionnés, sans changer leurs règles : les routes passent par les droits de la couche métier [R16], qui écrivent chaque refus au journal ; un fichier neuf dans `packages/api/src/`, ajouté au routeur de `app.ts` (voie 1 seule) et décrit dans `docs/API.md`. Aucun envoi réel : les modules gardent leur mode essai. Pas de module neuf, donc pas de tâche « Jamais vu » propre : le Jamais vu est celui de chaque HX, rendu enfin utilisable. Les écrans suivront dans des tâches à part.
 
 ### BR01 · Routes des réclamations et du gel des avoirs
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#446), `packages/api/src/securite.ts`, aucune règle nouvelle ni migration. Décidé : import du registre seul à 4 Mo de corps, les autres à 8 ko ; la garde R604 de `gel-avoirs.test.ts` admet `src/securite.ts`, qui n'appelle que `ControleGels` et ne lit aucune table. Codex 1 P1 (refus non testés sur réponse et remise) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5134 tests). Écran à faire.
 - Qui : Claude, relecture normale · Dépend de : HX57, HX58
 - Partie du cahier : Conformité, réclamations et médiateur ; M12, gel des avoirs.
 - Objectif : sous `/v1/securite`, les routes de `Reclamations` (réglage, rangement, réponse, remise du médiateur, liste) et de `ControleGels` (import du registre, contrôle d'un dossier, contrôles, dossiers sans nom, correspondances, état figé, décision), dans `packages/api/src/securite.ts`, au routeur de `app.ts`, décrites dans `docs/API.md`.
@@ -658,7 +659,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR02 · Routes du coût de l'agent moyen et des contenus de recrutement
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : HX64, HX65
 - Objectif : routes de `ContenusRecrutement` et `CoutAgent` (direction), dans `packages/api/src/reseau.ts` ou un fichier neuf, au routeur ; le lien marqué accepté par la page de candidature.
 - Critères : droits [R16] (test) ; R620 à R625 tenues par la route (tests).
