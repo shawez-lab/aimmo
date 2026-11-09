@@ -24,18 +24,24 @@ export function parseBucketNames(output) {
 
 /**
  * La configuration avec les liaisons des compartiments trouvés. `found` associe un nom à sa juridiction (`null` : aucune).
- * Une liaison déjà déclarée n'est jamais doublée.
+ * Une liaison déjà déclarée n'est jamais doublée. Un compartiment hors de la juridiction européenne n'est jamais lié
+ * (HX56) [R602] : il est rendu dans `outside`, et ses routes répondent « indisponible ».
  */
 export function withBindings(toml, found) {
   let out = toml;
   const linked = [];
+  const outside = [];
   for (const [binding, bucket] of Object.entries(R2_BINDINGS)) {
     if (!found.has(bucket) || new RegExp(`^binding\\s*=\\s*"${binding}"`, 'm').test(toml)) continue;
     const jurisdiction = found.get(bucket);
-    out = `${out.trimEnd()}\n\n[[r2_buckets]]\nbinding = "${binding}"\nbucket_name = "${bucket}"\n${jurisdiction ? `jurisdiction = "${jurisdiction}"\n` : ''}`;
+    if (jurisdiction !== 'eu') {
+      outside.push(binding);
+      continue;
+    }
+    out = `${out.trimEnd()}\n\n[[r2_buckets]]\nbinding = "${binding}"\nbucket_name = "${bucket}"\njurisdiction = "eu"\n`;
     linked.push(binding);
   }
-  return { toml: out, linked };
+  return { toml: out, linked, outside };
 }
 
 /** Les compartiments du compte, partout où ils peuvent être. Une liste illisible rend `null`, jamais une liste vide trompeuse. */
@@ -56,11 +62,12 @@ export function readBuckets(list) {
 export function declare(path, list, read = readFileSync, write = writeFileSync) {
   const found = readBuckets(list);
   if (found === null) return "Compartiments R2 : liste illisible (R2 non activé, droit du jeton ou panne, voir H45). Mise en ligne sans liaison R2 : les documents déjà rangés restent dans leurs compartiments, mais leurs routes répondent « indisponible » jusqu'au prochain passage réussi.";
-  const { toml, linked } = withBindings(read(path, 'utf8'), found);
+  const { toml, linked, outside } = withBindings(read(path, 'utf8'), found);
   if (linked.length > 0) write(path, toml);
+  const hors = outside.length > 0 ? ` Hors de la juridiction Europe, jamais liés (R602, H45) : ${outside.map((b) => `${b} (${R2_BINDINGS[b]})`).join(', ')}.` : '';
   // Une liaison posée à la main sous un autre nom ne se voit pas d'ici : le résumé dit ce qui reste sans compartiment.
   const missing = Object.entries(R2_BINDINGS).filter(([, bucket]) => !found.has(bucket)).map(([binding, bucket]) => `${binding} (${bucket})`);
-  return `Compartiments R2 liés : ${linked.length > 0 ? linked.join(', ') : 'aucun'}. Sans compartiment de ce nom : ${missing.length > 0 ? missing.join(', ') : 'aucun'}.`;
+  return `Compartiments R2 liés : ${linked.length > 0 ? linked.join(', ') : 'aucun'}. Sans compartiment de ce nom : ${missing.length > 0 ? missing.join(', ') : 'aucun'}.${hors}`;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {

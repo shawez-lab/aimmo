@@ -392,7 +392,8 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
     // Rien de la recherche au journal [R13].
     const entries = await t.journal.all();
     // Les données de l'entrée seulement : un identifiant tiré au hasard peut contenir « 350 ».
-    const text = JSON.stringify(entries.filter((e) => e.type.startsWith('recherche.')).map((e) => e.data));
+    // Les identifiants (UUID) sont retirés : tirés au hasard, ils peuvent contenir « 350 » (test instable vu sur HX56).
+    const text = JSON.stringify(entries.filter((e) => e.type.startsWith('recherche.')).map((e) => e.data)).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>');
     for (const forbidden of ['Dijon', '350', 'garage', 'Camille']) expect(text).not.toContain(forbidden);
     expect((await verifyChain(entries)).ok).toBe(true);
   });

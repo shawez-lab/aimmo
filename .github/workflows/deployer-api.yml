@@ -79,12 +79,21 @@ jobs:
           fi
           sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
       - if: steps.h04.outputs.pret == 'oui'
+        # Avant toute migration : une base hors d'Europe arrête tout, rien n'y est écrit [R602].
+        name: Base en Europe (HX56, R602)
+        run: |
+          npx -y "$WRANGLER" d1 list --json > "$RUNNER_TEMP/d1.json"
+          node scripts/juridiction-europe.mjs packages/api/wrangler.toml --d1 "$RUNNER_TEMP/d1.json"
+      - if: steps.h04.outputs.pret == 'oui'
         name: Migrations de la base
         working-directory: packages/api
         run: npx -y "$WRANGLER" d1 migrations apply aimmo --remote
       - if: steps.h04.outputs.pret == 'oui'
         name: Liaisons des compartiments R2
         run: node scripts/liaisons-r2.mjs packages/api/wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Compartiments en Europe (HX56, R602)
+        run: node scripts/juridiction-europe.mjs packages/api/wrangler.toml
       - if: steps.h04.outputs.pret == 'oui'
         name: Mise en ligne du Worker
         working-directory: packages/api

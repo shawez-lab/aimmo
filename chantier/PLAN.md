@@ -573,14 +573,16 @@ Voie : 1
 Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à partir de `3300` réservées à ce groupe. Le code vit dans `packages/core/src/securite/` (fichiers neufs).
 
 ### HX56 · Clé d'accès, double authentification et données en Europe
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#440), module `packages/core/src/securite/`, migration `3300`, R600 à R602. Décidé, lecture prudente : WebAuthn ES256 seul, UP et UV exigés, origine, site, défi et type exacts, clé publique SPKI de `getPublicKey()` ; première clé active d'emblée (une seule, gardée par la base), les suivantes attendent la direction ou une preuve « ajouter un appareil » ; retrait d'un geste sans second facteur, séances relues à chaque demande ; défi à usage unique même raté ; compteur qui doit monter. Second facteur lié à l'action et à son objet (Jamais vu), usé en une écriture qui relit clé active et échéance ; branché sur l'export complet (HX62) et l'accord d'un appareil. Données en Europe (Jamais vu) : `scripts/juridiction-europe.mjs` en liste fermée (tables et clés), base D1 vérifiée avant toute migration, compartiments après les liaisons ; `liaisons-r2.mjs` ne lie plus un compartiment hors d'Europe. Relecture forte 3 P1 corrigés ; Codex 2 P0 corrigés (retrait et échéance pendant l'usage d'une preuve), puis rien à signaler ; test instable de HX28 rendu fixe ; GitHub Actions bloqué (facturation), vérification locale verte (5067 tests). Restent (voie 1) : routes et écrans (enregistrement, connexion, appareils de la direction, preuve avant action) dans `app.ts`, réglage du `rpId` et des origines, porte branchée sur effacement, droits, RIB et clé d'API à leur branchement.
 - Qui : Claude, voie 1, relecture forte
 - Partie du cahier : Architecture technique (hébergement, sécurité) et Conformité ; droits de S08.
 - Objectif : comme iad : connexion par empreinte ou visage et double authentification, et comme Hektor, Modelo et Talqor : hébergement en Europe. Jamais vu : une clé d'accès par appareil, retirée d'un geste par la direction, et un test de configuration qui échoue si une base ou un stockage sort de la juridiction européenne.
 - Critères : un appareil retiré ne se connecte plus (test) ; une action sensible exige un second facteur (test) ; une base hors Europe fait échouer la vérification (test).
 
 ### HX57 · Contrôle du gel des avoirs
-- Statut : à faire
+- Statut : en cours
+- Qui : Claude, voie 1, relecture forte
 - Objectif : comme Modelo : vérifier chaque client contre le registre national des gels. Jamais vu : les dossiers ouverts sont revérifiés à chaque mise à jour du registre, et une correspondance va au seul responsable, sans rien changer à ce que voit le client, comme L05.
 - Critères : une correspondance alerte le responsable et fige le dossier (test) ; le client ne voit aucune différence (test) ; chaque contrôle est daté avec la version du registre (test).
 

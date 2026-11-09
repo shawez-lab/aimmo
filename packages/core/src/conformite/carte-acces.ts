@@ -246,6 +246,8 @@ const ENVOI = (why: string): JournalSubjectUse => ({ excluded: 'envoi', why: `Su
 
 export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   ad_campaign: { excluded: 'sans_client', why: 'Une campagne de publicité payante (HX54) : sa création, ses validations, son lancement, son arrêt et ses contacts comptés, sans donnée d\'un client ; les contacts se lisent dans ad_campaign_contacts par person_id.' },
+  device: { excluded: 'agent', why: 'Une clé d\'accès d\'un appareil d\'un utilisateur du réseau (HX56) : rangement, accord, retrait, connexion.' },
+  user: { excluded: 'agent', why: 'Un utilisateur du réseau, objet d\'une preuve de second facteur (HX56) : « ajouter un appareil ».' },
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
   lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   bien: ENVOI('bien proposé à une personne, une seule fois [R05], relu par la lettre d\'information, HX53'),
@@ -605,6 +607,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
   custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
   mcp_drafts: { locate: by('person_id') },
+  security_devices: out('agent', 'Clés d\'accès des appareils des utilisateurs du réseau (HX56) : aucun client.'),
+  security_challenges: out('agent', 'Défis envoyés aux appareils des utilisateurs du réseau (HX56) : aucun client ; l\'objet d\'une action sensible n\'est qu\'un identifiant.'),
+  security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
+  security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },

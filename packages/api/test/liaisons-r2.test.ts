@@ -17,19 +17,30 @@ describe('X27 · les compartiments R2 restent liés après un déploiement', () 
     expect(parseBucketNames('\u001b[37mname:\u001b[39m  \u001b[90maimmo-coffre\u001b[39m\n')).toEqual(['aimmo-coffre']);
   });
 
-  it('un compartiment existant est lié, un absent ne l’est pas, le reste de la configuration est gardé', () => {
-    const { toml, linked } = withBindings(TOML, new Map([['aimmo-commerces', null]]));
+  it('un compartiment existant en Europe est lié, un absent ne l’est pas, le reste de la configuration est gardé', () => {
+    const { toml, linked, outside } = withBindings(TOML, new Map([['aimmo-commerces', 'eu']]));
     expect(linked).toEqual(['COMMERCES']);
+    expect(outside).toEqual([]);
     expect(toml.startsWith(TOML.trimEnd())).toBe(true);
-    expect(toml).toContain('[[r2_buckets]]\nbinding = "COMMERCES"\nbucket_name = "aimmo-commerces"\n');
+    expect(toml).toContain('[[r2_buckets]]\nbinding = "COMMERCES"\nbucket_name = "aimmo-commerces"\njurisdiction = "eu"\n');
     expect(toml).not.toMatch(/PIECES|MEDIA|COFFRE/);
-    expect(toml).not.toContain('jurisdiction');
+  });
+
+  it('[R602] un compartiment hors de la juridiction Europe n’est jamais lié, et le résumé le dit', () => {
+    const { toml, linked, outside } = withBindings(TOML, new Map([['aimmo-commerces', null], ['aimmo-medias', 'eu']]));
+    expect(linked).toEqual(['MEDIA']);
+    expect(outside).toEqual(['COMMERCES']);
+    expect(toml).not.toContain('aimmo-commerces');
+    let written = '';
+    const summary = declare('x.toml', (j: string | null) => (j === 'eu' ? '' : 'name: aimmo-commerces\n'), () => TOML, (_p: string, t: string) => (written = t));
+    expect(written).toBe('');
+    expect(summary).toContain('Hors de la juridiction Europe, jamais liés (R602, H45) : COMMERCES (aimmo-commerces).');
   });
 
   it('un compartiment en Europe garde sa juridiction ; une liaison déjà déclarée n’est jamais doublée', () => {
     const first = withBindings(TOML, new Map([['aimmo-coffre', 'eu']]));
     expect(first.toml).toContain('bucket_name = "aimmo-coffre"\njurisdiction = "eu"\n');
-    expect(withBindings(first.toml, new Map([['aimmo-coffre', 'eu']]))).toEqual({ toml: first.toml, linked: [] });
+    expect(withBindings(first.toml, new Map([['aimmo-coffre', 'eu']]))).toEqual({ toml: first.toml, linked: [], outside: [] });
   });
 
   it('[L09] le coffre reste sur son propre compartiment, chaque liaison sur le sien', () => {
