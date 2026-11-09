@@ -594,6 +594,20 @@ Réservé le 2026-11-09 par la voie 1. Règles R600 à R609 et migrations à par
 
 ---
 
+## Recrutement des 100 premiers agents
+
+Voie : 2
+
+Réservé le 2026-11-09 par la voie 2. Plus aucun module de la Feuille de route n'était libre : tous sont découpés, et le dernier groupe HX (Sécurité et conformité) est à la voie 1. La Feuille de route, phase 4 « 100 premiers agents », demande le « recrutement en Bourgogne-Franche-Comté par les vidéos et le podcast » ; M14, « Candidature », cite « vidéos et épisodes du podcast » ; J01 ne garde que la sorte de source (`video`, `podcast`), jamais quelle vidéo ni quel épisode. Règles R620 à R629 et migrations à partir de `3400` réservées à ce groupe. Le code vit dans `packages/core/src/reseau/` (fichier neuf `contenus-recrutement.ts`, et le champ `contentCode` de `candidatures.ts`) ; `app.ts`, `packages/core/src/index.ts` et les fichiers du socle ne changent pas : routes et écran seront une tâche de la voie 1.
+
+### HX64 · Vidéos et épisodes du podcast, mesurés jusqu'à l'agent resté
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : J01, J03, J04, J11
+- Partie du cahier : M14, « Candidature » et « Règles » ; Feuille de route, phase 4 ; Offre aux agents (aucune promesse de revenus).
+- Objectif : la direction range chaque vidéo YouTube et chaque épisode du podcast qui sert au recrutement ; chacun reçoit son lien marqué vers la page de candidature ; une candidature arrivée par ce lien lui est rattachée. Jamais vu : pour chaque vidéo et chaque épisode, le chemin entier lu dans la base, des candidatures aux entretiens tenus, aux entrées, aux agents encore là 90 jours après leur entrée et à ceux qui ont signé un mandat qui compte dans leurs 90 premiers jours. Aucun réseau ne mesure son recrutement épisode par épisode jusqu'au mandat.
+- Critères : titre et description passent le contrôle R80, sinon refusés (test) [R620] ; seule la direction range ou retire un contenu, retiré jamais effacé, la base refuse le reste (test) [R620] ; une candidature avec le code d'un contenu actif lui est rattachée dans la même écriture, sa source devient la sorte du contenu, un code inconnu ou retiré est ignoré et la réponse au candidat reste la même [R621, R18] (test) ; le compte rendu par contenu compte candidatures, entretiens tenus, « oui », entrées, restés à 90 jours et mandats dans les 90 jours, sans nom, ni coordonnée, ni classement de personne, direction seule, lecture au journal [R622, R81, R16] (test).
+- Attend : rien (aucun envoi, aucun compte : la chaîne et le podcast existent déjà).
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
