@@ -7,13 +7,19 @@
  * clé ; chacun retire les siennes, la direction toute clé de son réseau [R600] ; une preuve ne vaut que pour son action,
  * son objet et cinq minutes, une fois [R601].
  *
- * Sans site WebAuthn réglé (`rpId` et origines), ces routes sont fermées : 503, rien n'est rangé. La connexion par une
- * clé (séance à la place de la clé d'API) touche à l'authentification du socle : elle viendra dans sa propre tâche.
+ * Sans site WebAuthn réglé (`rpId` et origines), ces routes sont fermées : 503, rien n'est rangé.
+ *
+ * La connexion par une clé (BR06) : `/v1/cles/connexion/debut` et `/v1/cles/connexion/fin`, publiques, limitées en
+ * débit par utilisateur, par adresse et par réseau. Tout refus y a la même réponse, sans dire pourquoi ; la raison est au
+ * journal. La séance rendue s'utilise comme une clé d'API (`Authorization: Bearer <jeton>`) et se relit à chaque
+ * demande : une clé retirée ou un agent parti la coupent tout de suite [R600, R82].
  *
  * L'export complet n'est tiré que par l'agent actif lui-même, sur une preuve « export_complet » de sa clé faite pour
  * lui ; AIMMO ne range que l'empreinte, jamais le contenu [R561, R601, R13].
  */
-import { appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { takeSlot } from './assistant.ts';
+import { sha256Hex } from './auth.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
 import { ClesAppareil, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
@@ -217,4 +223,90 @@ export function readClesConfig(rpId: string | undefined, origins: string | undef
     return null;
   }
   return { rpId, origins: list };
+}
+
+// ---------------------------------------------------------------- connexion par une clé (BR06)
+
+export const CONNEXION_DEBUT_PATH = '/v1/cles/connexion/debut';
+export const CONNEXION_FIN_PATH = '/v1/cles/connexion/fin';
+
+/** Les limites d'appels de la connexion, par heure. */
+export interface ConnexionLimits {
+  /** Défis demandés pour un même utilisateur. */
+  perUser: number;
+  /** Demandes d'une même adresse (`cf-connecting-ip`), début et fin ensemble. */
+  perIp: number;
+  /** Demandes vers un même réseau, début et fin ensemble. */
+  perNetwork: number;
+}
+export const DEFAULT_CONNEXION_LIMITS: ConnexionLimits = Object.freeze({ perUser: 10, perIp: 30, perNetwork: 600 });
+
+export interface ConnexionServices {
+  db: SqlDatabase;
+  now: () => Date;
+  site: ClesConfig | null;
+  limits?: ConnexionLimits;
+}
+
+const NETWORK_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** Un seul refus, quelle qu'en soit la raison : ni l'utilisateur, ni la clé, ni le défi ne se devinent d'ici. */
+const refusedLogin = (): Response => json(403, { ok: false, rule: 'R600', code: 'connexion_refusee' });
+const tooMany = (): Response => json(429, { ok: false, rule: null, code: 'too_many_requests', message: 'Trop de demandes : réessayez plus tard.' });
+
+/** Prend une place dans chaque limite ; la première pleine arrête tout. L'adresse n'est rangée qu'en empreinte d'une heure. */
+async function withinLimits(s: ConnexionServices, request: Request, networkId: string, userScope: string | null): Promise<boolean> {
+  const at = s.now();
+  const limits = s.limits ?? DEFAULT_CONNEXION_LIMITS;
+  const hour = at.toISOString().slice(0, 13);
+  if (userScope !== null && !(await takeSlot(s.db, networkId, `cles_connexion_utilisateur:${await sha256Hex(`${userScope}:${hour}`)}`, limits.perUser, at))) return false;
+  const ip = request.headers.get('cf-connecting-ip');
+  if (ip && !(await takeSlot(s.db, networkId, `cles_connexion_adresse:${await sha256Hex(`${ip}:${hour}`)}`, limits.perIp, at))) return false;
+  return takeSlot(s.db, networkId, 'cles_connexion:reseau', limits.perNetwork, at);
+}
+
+/** Le réseau demandé, s'il existe ; sinon `null`. */
+const existingNetwork = async (db: SqlDatabase, id: unknown): Promise<string | null> =>
+  typeof id === 'string' && NETWORK_ID.test(id) && (await db.first('SELECT 1 FROM networks WHERE id = ?', [id])) !== null ? id : null;
+
+/** Les deux routes publiques de la connexion ; `null` si l'adresse n'en est pas une. */
+export async function handleConnexion(request: Request, s: ConnexionServices): Promise<Response | null> {
+  const path = new URL(request.url).pathname;
+  if (path !== CONNEXION_DEBUT_PATH && path !== CONNEXION_FIN_PATH) return null;
+  if (request.method !== 'POST') return json(405, { ok: false, rule: null, code: 'method_not_allowed' });
+  if (!s.site) return json(503, { ok: false, rule: null, code: 'cles_non_configurees', message: 'Clés d’accès fermées : aucun site WebAuthn réglé.' });
+  const body = await readJson(request);
+  if (!body) return badBody();
+  const service = new ClesAppareil(s.db, new SqlJournalStore(s.db), { rpId: s.site.rpId, origins: s.site.origins, now: s.now });
+
+  if (path === CONNEXION_DEBUT_PATH) {
+    if (Object.keys(body).some((k) => !['networkId', 'role', 'userId'].includes(k))) return unknownField();
+    const { role, userId } = body;
+    const networkId = await existingNetwork(s.db, body.networkId);
+    if (networkId === null) return refusedLogin();
+    if (!(await withinLimits(s, request, networkId, `${String(role)}:${String(userId)}`))) return tooMany();
+    const challenge = await service.beginLogin(networkId, role, userId);
+    return challenge.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: challenge.value }) : refusedLogin();
+  }
+
+  if (Object.keys(body).some((k) => !['networkId', ...ASSERTION].includes(k))) return unknownField();
+  const { networkId: announced, ...assertion } = body;
+  const networkId = await existingNetwork(s.db, announced);
+  if (networkId === null) return refusedLogin();
+  if (!(await withinLimits(s, request, networkId, null))) return tooMany();
+  const session = await service.finishLogin(assertion as unknown as AssertionPayload);
+  // Le réseau annoncé doit être celui du défi : sinon le jeton n'est jamais rendu, et il expire sans servir.
+  if (!session.ok || session.value.viewer.networkId !== networkId) return refusedLogin();
+  const { token, expiresAt, viewer, deviceId } = session.value;
+  return json(200, { ok: true, mode: TRIAL_MODE, data: { token, expiresAt, viewer, deviceId } });
+}
+
+/**
+ * Qui tient la séance de la requête (`Authorization: Bearer <jeton>`), relu dans la base à cet instant : `null` si la
+ * séance est inconnue ou finie, si sa clé a été retirée, ou si l'agent est parti [R600, R82].
+ */
+export async function sessionViewer(request: Request, s: { db: SqlDatabase; now: () => Date; site: ClesConfig }): Promise<Viewer | null> {
+  const token = /^Bearer ([^\s]+)$/.exec(request.headers.get('authorization') ?? '')?.[1];
+  if (token === undefined) return null;
+  const found = await new ClesAppareil(s.db, new SqlJournalStore(s.db), { rpId: s.site.rpId, origins: s.site.origins, now: s.now }).authenticate(token);
+  return found === null ? null : found.viewer;
 }
