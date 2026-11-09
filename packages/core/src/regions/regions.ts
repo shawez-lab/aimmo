@@ -303,12 +303,13 @@ export class RegionsOuvertes {
     const nowMs = this.now().getTime();
     const inFlight = (v: number): boolean => {
       const row = byVersion.get(v);
-      return v > lastLogged && !logged.has(v) && row !== undefined && nowMs - Date.parse(row.decided_at) < REGION_JOURNAL_GRACE_MS;
+      // Les écritures au journal ne suivent pas forcément l'ordre des versions : la grâce vaut pour toute version récente.
+      return !logged.has(v) && row !== undefined && nowMs - Date.parse(row.decided_at) < REGION_JOURNAL_GRACE_MS;
     };
     let journalBroken: number | null = null;
     const total = Math.max(0, ...byVersion.keys(), lastLogged);
     for (let v = 1; v <= total; v += 1) {
-      if (inFlight(v)) break;
+      if (inFlight(v)) continue;
       const row = byVersion.get(v);
       if (row === undefined || logged.get(v) !== row.hash) {
         journalBroken = v;

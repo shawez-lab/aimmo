@@ -295,4 +295,18 @@ describeWithSqlite('HX72 · Les régions s’ouvrent une par une', () => {
     t.setClock(new Date(t.now().getTime() + REGION_JOURNAL_GRACE_MS).toISOString());
     expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 3, brokenAt: 3 } });
   });
+  it('[R653] des écritures au journal dans le désordre : une version récente pas encore au journal reste en cours', async () => {
+    const t = await setup();
+    await t.openPhase5();
+    // La version 1 est rangée, son écriture au journal tarde ; la version 2 passe et s'écrit au journal la première.
+    const p5 = (await t.db.first<{ evidence_hash: string }>('SELECT evidence_hash FROM phase_openings WHERE phase = 5 AND network_id = ?', [t.network.id]))!.evidence_hash;
+    const row = { network_id: t.network.id, version: 1, region: '11', is_open: 1, reason: 'en cours', decided_by: 'direction:x', decided_at: t.now().toISOString(), phase5_hash: p5, prev_hash: REGION_CHAIN_START };
+    t.raw
+      .prepare('INSERT INTO region_decisions (network_id, version, region, is_open, reason, decided_by, decided_at, phase5_hash, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(row.network_id, row.version, row.region, row.is_open, row.reason, row.decided_by, row.decided_at, row.phase5_hash, row.prev_hash, await regionDecisionHash(row));
+    expect((await t.decide('11', false)).ok).toBe(true);
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: true, versions: 2 } });
+    t.setClock(new Date(t.now().getTime() + REGION_JOURNAL_GRACE_MS).toISOString());
+    expect(await t.regions.verify(t.direction)).toEqual({ ok: true, value: { intact: false, versions: 2, brokenAt: 1 } });
+  });
 });
