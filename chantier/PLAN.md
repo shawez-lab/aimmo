@@ -706,8 +706,8 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Attend : rien (des décisions de la direction lues dans la base ; aucun envoi, aucun compte).
 
 ### HX73 · La licence du logiciel aux agences hors réseau, à un seul tarif publié (Jamais vu)
-- Statut : en cours (voie 2)
-- Reste : proposition #466, `packages/core/src/licences/licences.ts`, migration `3810`, R654 à R657. Relecture forte 1 P1 et 1 P1 mineur corrigés ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale en cours.
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#466, `997bca72`), `packages/core/src/licences/licences.ts`, migration `3810`, R654 à R657 en service ; tables au registre des traitements (échéance de la carte comprise) et à la carte des demandes d'accès, sujet `licence:` à la carte du journal. Décidé : ni `GLOB` ni `rowid` (plafonds de HX67), licences listées par date, tarif, nom. Relecture forte 1 P1 et 1 P1 mineur corrigés ; Codex rien à signaler, deux fois ; GitHub Actions bloqué (facturation), vérification locale verte (5297 tests), puis tests de BR13 et de HX73 verts sur main après fusion.
 - Qui : Claude, voie 2, relecture forte · Dépend de : HX71, HX72
 - Partie du cahier : Feuille de route, phase 5, « puis licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel », « AIMMO proposé à des agences hors réseau, à l'abonnement ».
 - Décidé (2026-11-09, voie 2), lecture prudente : une licence ne se donne qu'avec la phase 5 ouverte ; l'agence (SIREN à clé juste, carte « CPI … » valable, département connu) naît comme son propre réseau et ne voit rien du réseau qui la donne ; elle peut être partout en France, la licence n'est pas une entrée dans le réseau ; un seul tarif mensuel par versions, aucune remise ; une licence active, suspendue, reprise ou terminée par la direction, avec raison ; carte échue dite, rien ne se coupe seul. Aucun prélèvement ni envoi.
