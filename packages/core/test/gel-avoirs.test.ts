@@ -273,6 +273,7 @@ describeWithSqlite('HX57 · contrôle du gel des avoirs', () => {
     await t.importAt('2027-03-01T10:00:00.000Z', AVEC_LEA);
     expect(await t.gels.matches(t.conformite)).toEqual({ ok: true, value: [] });
     await t.db.run("UPDATE persons SET last_name = 'Exemple' WHERE id = ?", [t.personId]);
+    t.setClock(new Date('2027-03-09T10:00:00.000Z'));
     expect(await t.gels.sweepAll()).toEqual({ checked: 1 });
     expect(await t.gels.checks(t.conformite, t.mandateRef)).toMatchObject({ ok: true, value: [{ result: 'aucune' }, { result: 'correspondance', reason: 'passage' }] });
   });
