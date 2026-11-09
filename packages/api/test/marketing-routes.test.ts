@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
-import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
+import { runListingSync } from '../src/vitrine.ts';
+import { FicheBien } from '../../core/src/annonces/index.ts';
+import { DELAY_END, MIN, setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
 // Réseau, agents, communes, campagnes, montants et clés inventés. Le mardi 9 mars 2027, à 10 h à Paris.
@@ -115,17 +117,35 @@ describeWithSqlite('BR03 · routes du marketing : calendrier, lettre, publicité
     expect(await t.count('newsletter_unsubscribe_tokens')).toBe(0);
   });
 
-  it('[R585] le magazine tiré par l’agent ou la direction : une page imprimable, fermée, au titre écrit par le code', async () => {
+  it('[R585] [R43] le magazine tiré par l’agent ou la direction : le prix de la base et les mentions de M07 sous chaque bien, une page fermée', async () => {
     const t = await setup();
+    // Le bien du jeu publié par le vrai passage : disponible, diffusable, prix de 200 000 € hors honoraires.
+    const v = await t.annonces.validate(t.agent, t.draftId);
+    expect(v.ok).toBe(true);
+    t.setClock(new Date(DELAY_END.getTime() + 5 * MIN));
+    await runListingSync(t.db, t.now);
     for (const who of ['alex', 'direction'] as Who[]) {
       const r = await t.raw(who, 'GET', '/marketing/magazine');
       expect(r.status, who).toBe(200);
       expect(r.headers.get('content-type')).toBe('text/html; charset=utf-8');
       expect(r.headers.get('content-security-policy')).toContain("default-src 'none'");
-      const page = await r.text();
-      expect(page).toContain('Nos biens et les prix de nos quartiers');
+      // Les espaces insécables des montants ramenés à des espaces simples, pour lire le texte.
+      const page = (await r.text()).replace(/[\u00a0\u202f]/g, ' ');
+      expect(page).toContain('<h1>Nos biens et les prix de nos quartiers</h1>');
       expect(page).not.toMatch(/<script/i);
+      // Le prix affiché est celui de la base, honoraires inclus, et les mentions calculées par M07 sont sous le bien.
+      expect(page).toContain('logement à Dijon, 62 m², 3 pièces, 210 000 €');
+      expect(page).toContain('<p class="mentions">Prix : 210 000 € honoraires inclus, soit 200 000 € hors honoraires');
+      expect(page).toContain('Carte professionnelle n° CPI 2101 2027 000 000 001.');
+      expect(page).not.toMatch(/Léa|Exemple/);
     }
+    // Une nouvelle version de la fiche sans son diagnostic : les mentions sont incomplètes, le bien n'entre pas dans le magazine [R43].
+    const saved = await new FicheBien(t.db, t.acces, t.journal, { now: t.now }).save(t.agent, t.propertyId, { risks: { inRiskZone: false } });
+    expect(saved).toMatchObject({ ok: true });
+    const sans = (await (await t.raw('direction', 'GET', '/marketing/magazine')).text()).replace(/[\u00a0\u202f]/g, ' ');
+    expect(sans).toContain('<h1>Nos biens et les prix de nos quartiers</h1>');
+    expect(sans).not.toContain('210 000 €');
+    expect(sans).not.toContain('class="mentions"');
   });
 
   it('[R587] aucune dépense sans validation de la direction : l’agent propose, la direction valide et lance, en essai seulement', async () => {
