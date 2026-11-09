@@ -2,7 +2,8 @@ import { expect, it } from 'vitest';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { PHASE1_READING_JOB, phase1ReadingJob } from '../src/phases.ts';
-import { FicheClient, Planificateur, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '@aimmo/core';
+import { FicheClient, Planificateur, SCHEDULER_JOURNAL_TYPE, SqlJournalStore, appendEvent, applyMigrations, fromSyncSqlite, type SqlDatabase } from '@aimmo/core';
+import { ConditionPhase1 } from '../../core/src/conditions-phases/index.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -49,7 +50,7 @@ async function setup() {
   return { db, journal, now, setClock, network, other, agentId, http, events, count };
 }
 
-describeWithSqlite('BR10 · routes et relevé de nuit des conditions de passage des phases', () => {
+describeWithSqlite('BR10 et BR11 · routes des phases et relevé de nuit', () => {
   it('[R16] chaque route refuse tout autre rôle que la direction, en 403, avec le refus au journal, sans rien ranger', async () => {
     const t = await setup();
     const cases: [string, string, unknown?][] = [
@@ -59,6 +60,8 @@ describeWithSqlite('BR10 · routes et relevé de nuit des conditions de passage 
       ['GET', '/phases/phase1'],
       ['POST', '/phases/phase1/envois-hors-aimmo', { day: '2027-02-27', application: 'manychat', proofRef: PROOF }],
       ['POST', '/phases/phase1/inventaire', { tasks: TASKS, proofRef: PROOF }],
+      ['GET', '/phases'],
+      ['POST', '/phases/ouvrir', { phase: 2 }],
     ];
     for (const who of ['agent', 'conformite'] as Who[]) {
       for (const [method, path, body] of cases) {
@@ -73,12 +76,12 @@ describeWithSqlite('BR10 · routes et relevé de nuit des conditions de passage 
       expect((await t.http(who, 'POST', '/phases/phase1/inventaire', undefined, '{pas du json')).status).toBe(403);
       expect((await t.events('acces.refuse')).length).toBe(before + 1);
     }
-    for (const table of ['pilot_agents', 'pilot_before_declarations', 'phase1_outside_sends', 'phase1_app_inventories']) expect(await t.count(table), table).toBe(0);
+    for (const table of ['pilot_agents', 'pilot_before_declarations', 'phase1_outside_sends', 'phase1_app_inventories', 'phase_openings']) expect(await t.count(table), table).toBe(0);
   });
 
   it('un corps illisible est refusé en 400 sans rien ranger ; un refus de règle répond 409 avec sa règle [R640] [R644]', async () => {
     const t = await setup();
-    for (const path of ['/phases/pilotes', '/phases/pilotes/avant', '/phases/phase1/envois-hors-aimmo', '/phases/phase1/inventaire']) {
+    for (const path of ['/phases/pilotes', '/phases/pilotes/avant', '/phases/phase1/envois-hors-aimmo', '/phases/phase1/inventaire', '/phases/ouvrir']) {
       expect((await t.http('direction', 'POST', path, undefined, '{pas du json')).status, path).toBe(400);
       expect((await t.http('direction', 'POST', path, undefined, '[1, 2]')).status, path).toBe(400);
     }
@@ -147,6 +150,49 @@ describeWithSqlite('BR10 · routes et relevé de nuit des conditions de passage 
     // À midi, le passage ne tourne pas : un jour manqué n'est jamais rattrapé plus tard.
     t.setClock('2027-03-02T11:00:00.000Z');
     expect((await planner.tick()).ran).toEqual([]);
+  });
+
+  it('[R646] [R647] l’état des phases : la 1 ouverte d’office ; ouvrir la 2 est refusé en 409 avec ses raisons tant que sa condition n’est pas remplie', async () => {
+    const t = await setup();
+    const state = await t.http('direction', 'GET', '/phases');
+    expect(state.status).toBe(200);
+    expect(state.body.data.current).toBe(1);
+    expect(state.body.data.phases.map((p: { open: boolean }) => p.open)).toEqual([true, false, false, false, false]);
+    expect(state.body.data.phases[0].nextOpenable).toBe(false);
+    const refused = await t.http('direction', 'POST', '/phases/ouvrir', { phase: 2 });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ ok: false, rule: 'R647', code: 'condition_non_remplie' });
+    expect((refused.body as { reasons?: string[] }).reasons).toContain('inventaire_absent');
+    // Sans la phase d'avant ouverte, la 3 est refusée ; une phase hors de 2 à 5 aussi.
+    expect((await t.http('direction', 'POST', '/phases/ouvrir', { phase: 3 })).body).toMatchObject({ rule: 'R647', code: 'phase_precedente_fermee' });
+    expect((await t.http('direction', 'POST', '/phases/ouvrir', { phase: 1 })).body).toMatchObject({ rule: 'R647', code: 'bad_phase' });
+    expect(await t.count('phase_openings')).toBe(0);
+  });
+
+  it('[R647] 30 jours propres comptés : la direction ouvre la phase 2 par la route, une seule fois, avec l’empreinte de la condition lue', async () => {
+    const t = await setup();
+    const condition = new ConditionPhase1(t.db, t.journal, { now: t.now });
+    const direction = { role: 'direction', userId: 'direction-1', networkId: t.network.id } as never;
+    t.setClock('2027-03-01T10:00:00.000Z');
+    const inv = await condition.declareInventory(direction, { tasks: { gohighlevel: 0, manychat: 0, site: 0, github_actions: 0, autre: 0 }, proofRef: PROOF });
+    expect(inv.ok).toBe(true);
+    const addDay = (day: string, k: number) => new Date(Date.parse(`${day}T12:00:00.000Z`) + k * 86_400_000).toISOString().slice(0, 10);
+    for (let i = 0; i < 31; i++) {
+      const day = addDay('2027-03-02', i);
+      t.setClock(`${day}T11:00:00.000Z`);
+      await appendEvent(t.journal, { type: SCHEDULER_JOURNAL_TYPE, actor: 'system:planificateur', subject: null, data: { job: 'essai', slot: day, outcome: 'ok', error: null } }, t.now);
+      t.setClock(`${addDay(day, 1)}T01:00:00.000Z`);
+      expect((await condition.takeReading(t.network.id, day)).ok).toBe(true);
+    }
+    t.setClock('2027-04-02T10:00:00.000Z');
+    expect((await t.http('direction', 'GET', '/phases')).body.data.phases[0].nextOpenable).toBe(true);
+    const opened = await t.http('direction', 'POST', '/phases/ouvrir', { phase: 2 });
+    expect(opened.status).toBe(200);
+    expect(opened.body.data).toMatchObject({ phase: 2, evidence: { met: true } });
+    expect(opened.body.data.evidenceHash).toMatch(/^[0-9a-f]{64}$/);
+    expect((await t.http('direction', 'POST', '/phases/ouvrir', { phase: 2 })).body).toMatchObject({ rule: 'R647', code: 'deja_ouverte' });
+    expect((await t.http('direction', 'GET', '/phases')).body.data.current).toBe(2);
+    expect(await t.count('phase_openings')).toBe(1);
   });
 
   it('le passage de nuit est dans le planificateur du Worker', async () => {

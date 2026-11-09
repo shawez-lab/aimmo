@@ -350,10 +350,12 @@ Le serveur MCP de HX55, en JSON-RPC 2.0 (protocole `2025-06-18`), sur HTTP. Rien
 - `GET /v1/cles/assistant` (agent) : ses clés, sans empreinte. `POST /v1/cles/assistant/<id>/retrait` (agent pour les siennes, direction pour tout agent de son réseau) : d'un geste, sans preuve [R600] ; la clé d'un autre agent : 404. Une clé retirée ne revient jamais et ne s'efface pas [R17].
 - `POST /v1/mcp/public/<réseau>`, sans clé : le seul outil `biens_diffusables`, les biens que la diffusion autorise à l'instant même, tels que leur annonce publiée les décrit, sans adresse, agent ni donnée personnelle [R592]. Réseau inconnu : 404. Limites par heure : 120 demandes par adresse (`cf-connecting-ip`, en empreinte d'une heure), 5000 par réseau ; au-delà 429.
 
-## Conditions de passage des phases (BR10)
+## Conditions et porte des phases (BR10, BR11)
 
 Sous `/v1/phases`, la direction seule ; tout autre rôle est refusé (403) et le refus écrit au journal [R16]. Les rapports sont recalculés à chaque lecture ; rien n'est envoyé. Corps JSON de 8 ko au plus ; un corps illisible répond 400 sans rien ranger, un refus de règle 409 avec sa règle, un agent inconnu 404.
 
+- `GET /` (soit `GET /v1/phases`) : l'état des cinq phases, lu à l'instant : la phase 1 ouverte d'office, chaque ouverture avec l'empreinte de la condition lue, la condition de chaque phase, une condition retombée depuis l'ouverture de la suivante, et si la suivante peut s'ouvrir [R646, R648] (BR11).
+- `POST /ouvrir` (`{phase: 2 | 3 | 4 | 5}`) : ouvre la phase, une seule fois, seulement si la précédente est ouverte et sa condition remplie à cet instant ; sinon 409 avec la règle R647 et les raisons (BR11).
 - `GET /pilotes` : la comparaison de chaque agent pilote, avant et après son arrivée, et la condition de la phase 3 [R641, R642].
 - `POST /pilotes` (`{agentId}`) : désigne un agent actif du réseau comme pilote, une fois, avant le début de sa mesure [R640].
 - `POST /pilotes/avant` (`{agentId, months: [n1, n2, n3], proofRef}`) : les mandats signés dans chacun des 3 mois d'avant, avec la référence de la preuve ; une version s'ajoute, rien ne change [R640].
