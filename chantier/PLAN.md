@@ -659,7 +659,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR02 · Routes du coût de l'agent moyen et des contenus de recrutement
-- Statut : en cours
+- Statut : fait (2026-11-09)
+- Reste : fusionnée (#448), `packages/api/src/recrutement.ts` sous `/v1/recrutement` ; la page de candidature reprend le code `?c=` dans un champ caché `contenu` (lettres et chiffres, 40 au plus). Décidé : rôle de la direction contrôlé avant le corps, refus au journal ; montants refusés sur les seules routes du coût, écrits au journal (`recrutement.montant_refuse`) ; `unknown_field` en 400, `not_found` en 404. Codex 1 P0 et 1 P1 corrigés, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5138 tests). Écran à faire.
 - Qui : Claude, relecture normale · Dépend de : HX64, HX65
 - Objectif : routes de `ContenusRecrutement` et `CoutAgent` (direction), dans `packages/api/src/reseau.ts` ou un fichier neuf, au routeur ; le lien marqué accepté par la page de candidature.
 - Critères : droits [R16] (test) ; R620 à R625 tenues par la route (tests).
