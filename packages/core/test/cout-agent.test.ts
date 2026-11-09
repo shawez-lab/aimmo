@@ -131,7 +131,7 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(breakEvenBp(5, 0)).toBeNull();
   });
 
-  it('dit « non couvert » quand la part du réseau manque, et la part qui couvrirait [R624, R625]', async () => {
+  it('dit « non couvert » quand la part du réseau manque, et la part qui couvrirait [R624] [R625]', async () => {
     const t = await setup();
     await t.settings(0, 0);
     await t.sale('2027-02-10T10:00:00.000Z', { reseau: 100_000, agent: 900_000 });
@@ -151,7 +151,7 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(r.value).toMatchObject({ feesCents: 720_000, networkShareCents: 200_000, agentSharesCents: 500_000, provisionCents: 50_000, requiredCents: 50_000, networkBp: 2777, breakEvenNetworkBp: 695 });
   });
 
-  it('une facture du mois non classée, ou aucun réglage : mois incomplet, jamais dit couvert [R623, R624]', async () => {
+  it('une facture du mois non classée, ou aucun réglage : mois incomplet, jamais dit couvert [R623] [R624]', async () => {
     const t = await setup();
     await t.sale('2027-02-10T10:00:00.000Z', { reseau: 900_000, agent: 100_000 });
     const loose = await t.invoice('2027-02-14', 10_000);
@@ -233,7 +233,7 @@ describeWithSqlite('HX65 · coût complet de l’agent moyen, couvert par la par
     expect(d.value).toMatchObject({ agentsPresent: 0, averageAgent: null });
   });
 
-  it('aucun chiffre ni aucun identifiant d’agent, la moyenne seule [R625, R14]', async () => {
+  it('aucun chiffre ni aucun identifiant d’agent, la moyenne seule [R625] [R14]', async () => {
     const t = await setup();
     await t.settings();
     await t.sale('2027-02-10T10:00:00.000Z', { reseau: 300_000, agent: 600_000, partage: 50_000, parrainage: 50_000 });
