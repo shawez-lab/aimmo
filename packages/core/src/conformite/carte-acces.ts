@@ -256,6 +256,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
   lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   bien: ENVOI('bien proposé à une personne, une seule fois [R05], relu par la lettre d\'information, HX53'),
+  complaint: { excluded: 'sans_client', why: 'Une réclamation (HX58) : des codes seulement (rangement, réponse, alertes, médiateur), jamais le motif ni le texte ; la réclamation se lit dans complaints par person_id.' },
   mcp_draft: { excluded: 'agent', why: 'Un brouillon de l\'assistant de l\'agent (HX55) : son rangement et sa décision ; une note, et sa fiche, se lisent dans mcp_drafts par person_id.' },
   report: { excluded: 'sans_client', why: 'Un rapport sur mesure enregistré (HX62) : des mesures et un regroupement, sans donnée d\'un client.' },
   new_program: { excluded: 'sans_client', why: 'Un programme neuf d\'un promoteur partenaire (HX48) : sa création et les versions de ses lots, sans donnée d\'un client.' },
