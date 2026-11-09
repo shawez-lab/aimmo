@@ -15,8 +15,8 @@
  * des 90 derniers jours ; dit « estimation », jamais une promesse [R632].
  *
  * Lecture prudente : la base est une seule pour tout le système, donc les mesures comptent toute la base (tous les
- * réseaux), pour avertir plus tôt et jamais plus tard ; seul un nombre en sort, aucune ligne d'un autre réseau. La
- * direction seule relève, lit et décide ; la lecture est écrite au journal avant d'être rendue [R16]. Qui a relevé ou
+ * réseaux), pour avertir plus tôt et jamais plus tard ; aucune ligne d'un autre réseau n'en sort. Ces nombres couvrent
+ * tous les réseaux : la direction du réseau qui exploite la plateforme, seule, relève, lit et décide ; la lecture est écrite au journal avant d'être rendue [R16]. Qui a relevé ou
  * décidé n'est qu'au journal : les tables ne portent aucune donnée personnelle.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -48,7 +48,7 @@ export type PostgresChoice = (typeof POSTGRES_CHOICES)[number];
 
 const DAY_MS = 86_400_000;
 
-export type PassagePostgresqlRefusal = { ok: false; rule: 'R16'; code: 'role' } | { ok: false; rule: 'R631' | null; code: string };
+export type PassagePostgresqlRefusal = { ok: false; rule: 'R16'; code: 'role' | 'autre_reseau' } | { ok: false; rule: 'R631' | null; code: string };
 
 export interface PostgresReading {
   id: string;
@@ -99,6 +99,11 @@ interface Options {
   /** L'horloge du chronomètre, en millisecondes. */
   clockMs?: () => number;
   newId?: () => string;
+  /**
+   * Le réseau qui exploite la plateforme : la base est une pour tous les réseaux, donc seule sa direction relève, lit
+   * des nombres de toute la base et décide du passage [R16]. Sans lui, tout est refusé.
+   */
+  platformNetworkId?: string;
 }
 
 /** Une mesure, ou pourquoi elle manque : en échec, ou pas branchée. */
@@ -109,9 +114,10 @@ const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isF
 /**
  * La tendance par moindres carrés des relevés d'un seuil, et le jour où elle dépasse la limite [R632]. Les points sont
  * des instants (ms) et des valeurs ; le jour rendu est celui de Paris. Nul avec moins de 3 points, sur moins de 7
- * jours, sans hausse, ou au-delà de 10 ans ; « franchi » quand le dernier point dépasse déjà la limite.
+ * jours, sans hausse, ou au-delà de 10 ans ; « franchi » quand le dernier point dépasse déjà la limite. Le jour n'est
+ * jamais avant `nowMs` : une droite qui a déjà passé la limite sans relevé au-delà dit « aujourd'hui ».
  */
-export function forecastCrossing(points: readonly { atMs: number; value: number }[], limit: number): PostgresForecast {
+export function forecastCrossing(points: readonly { atMs: number; value: number }[], limit: number, nowMs: number): PostgresForecast {
   const sorted = [...points].sort((a, b) => a.atMs - b.atMs);
   const n = sorted.length;
   const last = sorted[n - 1];
@@ -134,8 +140,9 @@ export function forecastCrossing(points: readonly { atMs: number; value: number 
   const intercept = meanY - slope * meanX;
   // Le jour où la droite atteint la limite ; s'il est déjà passé alors que le dernier relevé est en deçà, c'est le jour
   // du dernier relevé : la tendance dit « maintenant », jamais une date dans le passé.
-  const at = Math.max((limit - intercept) / slope, xLast);
-  if (at - xLast > POSTGRES_FORECAST_HORIZON_DAYS) return { date: null, perDay: slope, points: n, reason: 'au_dela' };
+  const xNow = Math.max((nowMs - t0) / DAY_MS, xLast);
+  const at = Math.max((limit - intercept) / slope, xNow);
+  if (at - xNow > POSTGRES_FORECAST_HORIZON_DAYS) return { date: null, perDay: slope, points: n, reason: 'au_dela' };
   return { date: localTime(new Date(t0 + Math.ceil(at * DAY_MS)), 'Europe/Paris').date, perDay: slope, points: n, reason: null };
 }
 
@@ -158,15 +165,19 @@ export class PassagePostgresql {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  /** La direction seule ; tout autre rôle est refusé et le refus écrit au journal [R16]. */
+  /**
+   * La direction du réseau qui exploite la plateforme, seule ; tout autre rôle, et la direction d'un autre réseau de la
+   * même base, sont refusés et le refus écrit au journal [R16]. Sans réseau de la plateforme réglé, tout est refusé.
+   */
   private async direction(viewer: Viewer, kind: string): Promise<PassagePostgresqlRefusal | null> {
-    if (viewer.role === 'direction') return null;
+    const code = viewer.role !== 'direction' ? 'role' : this.options.platformNetworkId && viewer.networkId === this.options.platformNetworkId ? null : 'autre_reseau';
+    if (code === null) return null;
     await appendEvent(
       this.journal,
-      { type: 'acces.refuse', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind, code: 'role' } },
+      { type: 'acces.refuse', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind, code } },
       this.now,
     );
-    return { ok: false, rule: 'R16', code: 'role' };
+    return { ok: false, rule: 'R16', code };
   }
 
   private async refuse(viewer: Viewer, refusal: PassagePostgresqlRefusal): Promise<PassagePostgresqlRefusal> {
@@ -266,9 +277,13 @@ export class PassagePostgresql {
     const decidedAt = this.now().toISOString();
     try {
       await this.db.run('INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (?, ?, ?)', [version, choice, decidedAt]);
-    } catch {
-      // Une autre décision est passée entre la lecture et l'écriture : rien n'est rangé.
-      return this.refuse(viewer, { ok: false, rule: 'R631', code: 'conflit' });
+    } catch (error) {
+      // Une autre décision est passée entre la lecture et l'écriture : rien n'est rangé. Toute autre erreur est écrite
+      // au journal et remonte, jamais déguisée en conflit.
+      const now = await this.db.first<{ version: number | null }>('SELECT MAX(version) AS version FROM postgres_decisions');
+      if (Number(now?.version ?? 0) >= version) return this.refuse(viewer, { ok: false, rule: 'R631', code: 'conflit' });
+      await appendEvent(this.journal, { type: 'postgresql.erreur', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { kind: 'postgres_decision', code: 'ecriture' } }, this.now);
+      throw error;
     }
     await appendEvent(this.journal, { type: 'postgresql.decision', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { version, choice } }, this.now);
     return { ok: true, value: { version, choice: choice as PostgresChoice, decidedAt } };
@@ -295,14 +310,16 @@ export class PassagePostgresql {
 
     const thresholds: PostgresThresholdState[] = POSTGRES_THRESHOLDS.map((t) => {
       const value = lastReading ? lastReading.values[t] : null;
+      const alertedAt = alerts.find((a) => a.threshold === t)?.created_at ?? null;
       const points = rows.filter((r) => r[column[t]] !== null).map((r) => ({ atMs: Date.parse(r.measured_at), value: Number(r[column[t]]) }));
       return {
         threshold: t,
         limit: POSTGRES_LIMITS[t],
         value,
         crossed: value === null ? null : value > POSTGRES_LIMITS[t],
-        alertedAt: alerts.find((a) => a.threshold === t)?.created_at ?? null,
-        forecast: forecastCrossing(points, POSTGRES_LIMITS[t]),
+        alertedAt,
+        // Un seuil déjà franchi une fois attend une décision : il n'a plus de jour à prévoir [R632].
+        forecast: alertedAt !== null ? { date: null, perDay: null, points: points.length, reason: 'franchi' } : forecastCrossing(points, POSTGRES_LIMITS[t], now.getTime()),
       };
     });
 

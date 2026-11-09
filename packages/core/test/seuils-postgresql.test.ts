@@ -37,12 +37,13 @@ async function setup(opts: { bytes?: () => Promise<number | null>; report?: { ms
       : {}),
     clockMs: () => chrono,
     newId: () => `rel-${++n}`,
+    platformNetworkId: network.id,
   });
   const agents: string[] = [];
   const addAgents = async (count: number, networkId = network.id) => {
     for (let i = 0; i < count; i += 1) agents.push((await store.createAgent({ networkId, firstName: `Prénom${agents.length}`, lastName: 'Agent' })).id);
   };
-  const as = (role: string, userId = 'dir-1'): Viewer => ({ role, userId, networkId: network.id }) as Viewer;
+  const as = (role: string, userId = 'dir-1', networkId = network.id): Viewer => ({ role, userId, networkId }) as Viewer;
   const dir = as('direction');
   const events = async (type: string) => (await db.all<{ data: string }>('SELECT data FROM journal WHERE type = ? ORDER BY seq', [type])).map((r) => JSON.parse(r.data) as Record<string, unknown>);
   return {
@@ -74,7 +75,16 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
       expect(await t.passage.decide(t.as(role), 'passer')).toEqual({ ok: false, rule: 'R16', code: 'role' });
     }
     expect((await t.events('acces.refuse')).length).toBe(9);
+    // La direction d'un autre réseau de la même base ne lit pas les nombres de toute la base et ne décide pas.
+    const ailleurs = t.as('direction', 'dir-2', t.other.id);
+    expect(await t.passage.measureNow(ailleurs)).toEqual({ ok: false, rule: 'R16', code: 'autre_reseau' });
+    expect(await t.passage.state(ailleurs)).toEqual({ ok: false, rule: 'R16', code: 'autre_reseau' });
+    expect(await t.passage.decide(ailleurs, 'passer')).toEqual({ ok: false, rule: 'R16', code: 'autre_reseau' });
+    expect((await t.events('acces.refuse')).filter((e) => e.code === 'autre_reseau').length).toBe(3);
     expect(await t.db.all('SELECT id FROM postgres_threshold_readings')).toEqual([]);
+    // Sans réseau de la plateforme réglé, même la direction est refusée.
+    const sans = new PassagePostgresql(t.db, new SqlJournalStore(t.db), { now: () => new Date('2027-03-10T09:00:00.000Z') });
+    expect(await sans.state(t.dir)).toEqual({ ok: false, rule: 'R16', code: 'autre_reseau' });
   });
 
   it('[R630] un relevé lit les agents actifs de toute la base, la taille et le temps du rapport, puis est rangé', async () => {
@@ -252,22 +262,24 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     const t0 = Date.parse('2027-01-01T12:00:00.000Z');
     // 10, 20, 30, 40 agents à 0, 10, 20, 30 jours : pente 1 par jour, droite y = 10 + x ; plus de 50 au jour 40.
     const points = [10, 20, 30, 40].map((v, i) => ({ atMs: t0 + i * 10 * DAY, value: v }));
-    expect(forecastCrossing(points, 50)).toEqual({ date: '2027-02-10', perDay: 1, points: 4, reason: null });
+    const t3 = t0 + 30 * DAY;
+    expect(forecastCrossing(points, 50, t3)).toEqual({ date: '2027-02-10', perDay: 1, points: 4, reason: null });
     // Valeurs bruitées : x = 0, 7, 14 ; y = 0, 14, 7. Moyennes 7 et 7 ; sxy = (-7)(-7) + 0 + 7·0 = 49 ; sxx = 98 ;
     // pente 0,5 ; ordonnée 7 − 0,5·7 = 3,5 ; la limite 10 est atteinte à x = 13, déjà passé : le jour du dernier relevé.
     const noisy = [0, 14, 7].map((v, i) => ({ atMs: t0 + i * 7 * DAY, value: v }));
-    expect(forecastCrossing(noisy, 10)).toEqual({ date: '2027-01-15', perDay: 0.5, points: 3, reason: null });
+    expect(forecastCrossing(noisy, 10, t0 + 14 * DAY)).toEqual({ date: '2027-01-15', perDay: 0.5, points: 3, reason: null });
   });
 
   it('[R632] aucune prévision avec moins de 3 relevés, sur moins de 7 jours, sans hausse, déjà franchi ou au-delà de 10 ans', () => {
     const t0 = Date.parse('2027-01-01T12:00:00.000Z');
     const at = (days: number[], values: number[]) => days.map((d, i) => ({ atMs: t0 + d * DAY, value: values[i]! }));
-    expect(forecastCrossing(at([0, 10], [1, 2]), 50).reason).toBe('trop_peu');
-    expect(forecastCrossing(at([0, 3, 6.9], [1, 2, 3]), 50).reason).toBe('trop_peu');
-    expect(forecastCrossing(at([0, 4, 8], [3, 3, 3]), 50).reason).toBe('sans_hausse');
-    expect(forecastCrossing(at([0, 4, 8], [5, 4, 3]), 50).reason).toBe('sans_hausse');
-    expect(forecastCrossing(at([0, 4, 8], [10, 30, 51]), 50)).toEqual({ date: null, perDay: null, points: 3, reason: 'franchi' });
-    const far = forecastCrossing(at([0, 10, 20], [0, 0.001, 0.002]), 50);
+    const f = (pts: { atMs: number; value: number }[], limit: number) => forecastCrossing(pts, limit, pts[pts.length - 1]!.atMs);
+    expect(f(at([0, 10], [1, 2]), 50).reason).toBe('trop_peu');
+    expect(f(at([0, 3, 6.9], [1, 2, 3]), 50).reason).toBe('trop_peu');
+    expect(f(at([0, 4, 8], [3, 3, 3]), 50).reason).toBe('sans_hausse');
+    expect(f(at([0, 4, 8], [5, 4, 3]), 50).reason).toBe('sans_hausse');
+    expect(f(at([0, 4, 8], [10, 30, 51]), 50)).toEqual({ date: null, perDay: null, points: 3, reason: 'franchi' });
+    const far = f(at([0, 10, 20], [0, 0.001, 0.002]), 50);
     expect(far.reason).toBe('au_dela');
     expect(far.date).toBeNull();
   });
@@ -296,6 +308,69 @@ describeWithSqlite('HX66 · seuils du passage à PostgreSQL', () => {
     expect(agents?.forecast).toEqual({ date: '2027-04-19', perDay: 1, points: 3, reason: null });
     const rapport = s.ok ? s.value.thresholds.find((x) => x.threshold === 'rapport') : null;
     expect(rapport?.forecast.reason).toBe('sans_hausse');
+  });
+
+  it('[R632] le jour estimé n\'est jamais dans le passé : un dernier relevé ancien donne aujourd\'hui', () => {
+    const t0 = Date.parse('2027-01-01T12:00:00.000Z');
+    // 10, 30, 45 aux jours 0, 10, 20 : pente 1,75, ordonnée 10,833… ; 50 vers le jour 22,4. Lu au jour 60 : le jour 60.
+    const pts = [10, 30, 45].map((v, i) => ({ atMs: t0 + i * 10 * DAY, value: v }));
+    const r = forecastCrossing(pts, 50, t0 + 60 * DAY);
+    expect(r.date).toBe('2027-03-02');
+    expect(r.reason).toBeNull();
+    // L'horizon de 10 ans se compte depuis aujourd'hui.
+    const slow = [0, 1, 2].map((v, i) => ({ atMs: t0 + i * 10 * DAY, value: v }));
+    // Pente 0,1 par jour : 50 au jour 500.
+    expect(forecastCrossing(slow, 50, t0 + 20 * DAY).date).toBe('2028-05-15');
+    expect(forecastCrossing(slow, 400, t0 + 20 * DAY).reason).toBe('au_dela');
+  });
+
+  it('[R632] un seuil déjà franchi une fois n\'a plus de jour estimé, même revenu sous le seuil', async () => {
+    const t = await setup({ report: { ms: 100 } });
+    await t.addAgents(52);
+    t.goTo('2027-03-01T09:00:00.000Z');
+    await t.passage.measureNow(t.dir);
+    for (const [day, leave] of [['2027-03-05', 4], ['2027-03-10', 1], ['2027-03-15', 1]] as const) {
+      await t.db.run("UPDATE agents SET status = 'left' WHERE id IN (SELECT id FROM agents WHERE status = 'active' LIMIT ?)", [leave]);
+      t.goTo(`${day}T09:00:00.000Z`);
+      await t.passage.measureNow(t.dir);
+    }
+    const s = await t.passage.state(t.dir);
+    const agents = s.ok ? s.value.thresholds.find((x) => x.threshold === 'agents') : null;
+    expect(agents).toMatchObject({ value: 46, crossed: false, alertedAt: '2027-03-01T09:00:00.000Z' });
+    expect(agents?.forecast).toEqual({ date: null, perDay: null, points: 4, reason: 'franchi' });
+    expect(s.ok && s.value.status).toBe('a_decider');
+  });
+
+  it('[R631] deux décisions en même temps : la seconde est un conflit ; une autre erreur d\'écriture remonte et est au journal', async () => {
+    const t = await setup({ report: { ms: 6000 } });
+    await t.passage.measureNow(t.dir);
+    // Une décision rangée entre la lecture de la version et l'écriture.
+    const racing: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      all: (sql, params) => t.db.all(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      run: async (sql, params) => {
+        if (sql.startsWith('INSERT INTO postgres_decisions')) await t.db.run("INSERT INTO postgres_decisions (version, choice, decided_at) VALUES (1, 'attendre', 'x')");
+        return t.db.run(sql, params);
+      },
+    };
+    const p1 = new PassagePostgresql(racing, new SqlJournalStore(t.db), { now: () => new Date('2027-03-11T09:00:00.000Z'), platformNetworkId: t.network.id });
+    expect(await p1.decide(t.dir, 'passer')).toEqual({ ok: false, rule: 'R631', code: 'conflit' });
+    // Une base qui refuse l'écriture pour une autre raison : l'erreur remonte, jamais déguisée en conflit.
+    const broken: SqlDatabase = {
+      exec: (sql) => t.db.exec(sql),
+      all: (sql, params) => t.db.all(sql, params),
+      first: (sql, params) => t.db.first(sql, params),
+      run: async (sql, params) => {
+        if (sql.startsWith('INSERT INTO postgres_decisions')) throw new Error('base indisponible');
+        return t.db.run(sql, params);
+      },
+    };
+    const p2 = new PassagePostgresql(broken, new SqlJournalStore(t.db), { now: () => new Date('2027-03-11T09:00:00.000Z'), platformNetworkId: t.network.id });
+    await expect(p2.decide(t.dir, 'passer')).rejects.toThrow('base indisponible');
+    expect(await t.events('postgresql.erreur')).toEqual([{ kind: 'postgres_decision', code: 'ecriture' }]);
+    expect(await t.db.all('SELECT version, choice FROM postgres_decisions')).toEqual([{ version: 1, choice: 'attendre' }]);
   });
 
   it('[R16] [R13] la lecture est écrite au journal avant d\'être rendue, sans donnée personnelle', async () => {
