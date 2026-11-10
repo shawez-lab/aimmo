@@ -307,4 +307,27 @@ describe('BR33 · écran de la pige des annonces de particuliers', () => {
     expect(t.pigePart().textContent).toContain('Pas de réseau. Réessayez dans un moment.');
     expect((t.buttons(t.pigePart(), 'Ouvrir la pige')[0] as unknown as { disabled?: boolean }).disabled).toBeFalsy();
   });
+
+  it('deux ouvertures de suite : seule la dernière lecture dessine, même quand la première répond après', async () => {
+    let release: () => void = () => undefined;
+    let first = true;
+    const t = await run({
+      'GET /v1/pige': async () => {
+        if (first) {
+          first = false;
+          await new Promise<void>((r) => (release = r));
+          return Response.json({ ok: true, mode: 'essai', data: [QUEUE[0]] });
+        }
+        return Response.json({ ok: true, mode: 'essai', data: QUEUE });
+      },
+    });
+    await t.openPige();
+    await t.click(t.buttons(t.pigePart(), 'Ouvrir la pige')[0]);
+    release();
+    await t.settle();
+    const text = t.pigePart().textContent;
+    expect(text.match(/Ma file \(/g)).toHaveLength(1);
+    expect(text.match(/Ce que la pige vous a rapporté/g)).toHaveLength(1);
+    expect(text).toContain('Ma file (3)');
+  });
 });

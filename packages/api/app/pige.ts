@@ -47,7 +47,7 @@ globalThis.AIMMO_PIGE = function (t) {
   var KINDS = ${JSON.stringify(KINDS)};
   var LEVELS = ${JSON.stringify(LEVELS)};
   var REFUSALS = ${JSON.stringify(PIGE_REFUSALS)};
-  var root = null, note = null;
+  var root = null, note = null, load = 0;
   function euros(n) { return typeof n === 'number' && isFinite(n) ? String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €' : ''; }
   function said(res, fallback) {
     if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez la file avant de recommencer.';
@@ -166,13 +166,14 @@ globalThis.AIMMO_PIGE = function (t) {
   /** La file, dans l'ordre reçu ; chaque partie qui manque est dite à part. */
   function open(message) {
     if (!root) return Promise.resolve(false);
-    var box = root;
+    var box = root, mine = ++load;
     clear(box);
     note = el('p', 'Chargement…', 'etat');
     note.setAttribute('role', 'status');
     box.appendChild(note);
     return Promise.all([send('/v1/pige/rapport', 'GET'), send('/v1/pige', 'GET')]).then(function (all) {
-      if (box !== root || all.some(function (r) { return r.gone; })) return false;
+      // Seule la dernière lecture dessine : une réponse plus ancienne, arrivée après, est oubliée.
+      if (box !== root || mine !== load || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { note.textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       note.textContent = message || '';
       box.appendChild(report(all[0]));
