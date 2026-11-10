@@ -1091,7 +1091,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC03 · Un message de date arrêté net en cours reprend seul
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-10)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : RC02
 - Cahier : HX25, messages d'anniversaire et de fête ; R405, R05, R18.
 - Décidé (2026-11-10, voie 2) : relevé dans les « Restent » de HX25. Une place `en_cours` laissée par un passage coupé net (Worker arrêté entre la prise de place et la fin) bloque la date pour l'année. Lecture prudente à confirmer au début de la tâche : une place `en_cours` plus vieille qu'un délai fixe n'est reprise que si le contrôle central n'a rangé aucun message pour ce sujet (`date:<sorte>:<année>`) ; s'il en a rangé un, la place est fermée avec ce message, jamais un second envoi [R05]. Seuls `packages/core/src/automatismes/dates-clients.ts` et son test changent.
