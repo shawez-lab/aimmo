@@ -423,6 +423,15 @@ Sous `/v1/veille-dpe` : chaque route dit les rôles qu'elle admet, contrôlés a
 
 Le planificateur passe chaque jour à 7 h (`veille_dpe.passage`) : pour chaque code postal suivi, la base ouverte de l'ADEME (`dpe03existant`) est lue sur 7 jours ; seuls le code postal et le jour partent. Chaque diagnostic est rangé une seule fois par réseau, dans l'alerte du jour de chaque secteur de sa commune [R288, R289]. Le texte de la lettre attend la relecture de l'avocat (H60).
 
+## Score de vente par adresse (BR27)
+
+Sous `/v1/score-adresse` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 2 ko au plus ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger. Aucune civilité ni nom n'est demandé, rangé ni rendu [R292] ; aucune donnée de personne rendue par une source ne sort [R291]. Rien n'est envoyé.
+
+- L'agent en activité : `POST /scores` (`{address}`) note une adresse avec numéro d'une commune de ses zones ; chaque point cite sa donnée publique, sa source et sa date, et ce qui manque est dit avec sa raison ; notée de nouveau le même jour, le même score est rendu [R291]. Une adresse avec un nom : 409 R292 (`nom_dans_adresse`) ; hors de ses zones : 403 (`hors_zone`) ; sans sources publiques branchées : 400 `sources_absentes`.
+- L'agent en activité ou la direction : `GET /scores` le dernier score de chaque adresse, du plus fort au plus faible, des communes de ses zones pour l'agent, de tout le réseau pour la direction ; `POST /scores/<id>/mandat` (`{mandateId}`) relie un mandat signé, par son agent ou la direction, signé dans l'année qui suit le premier score, dans la même commune, une seule fois (409 R293) ; `GET /mesure` le taux de mandats signés par tranche, sur les seules années closes, sans adresse ni nom [R293].
+
+Sources : `scoreSources` de la configuration, sinon la Base adresse nationale et les ventes DVF de l'estimation, avec le cadastre et les diagnostics de l'ADEME des données publiques (`fetchPublicData`).
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
