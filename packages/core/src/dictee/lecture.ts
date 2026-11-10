@@ -237,6 +237,39 @@ const CORRECTION_WORD = '(?:ou(?:\\s+bien|\\s+plutot)?|non|sinon|voire|plutot|en
 const BARE_NUMBER_AFTER = new RegExp(`(?:^\\s*-|(?<![\\p{L}\\d])${CORRECTION_WORD})[\\s,]*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|^\\s*,?\\s*(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d]))`, 'u');
 /** Un nombre, puis un mot de correction ou de choix, juste avant l'heure : « seize, non quinze heures », « 14 ou 15 h ». */
 const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*,?\\s*(?:(?<![\\p{L}\\d])${CORRECTION_WORD}|-|,|a)?\\s*(?:a\\s+|vers\\s+)?$`, 'u');
+/**
+ * Un choix ou une correction entre deux nombres, cherché sur toute la phrase (RC01, Codex sur #486) : un nombre, son
+ * unité facultative (un mois, « pièces », « m² », « euros »), un mot de choix ou de correction (« ou », « ou bien »,
+ * « ou plutôt », « ou alors », « non », « voire »…), un article facultatif, puis un autre nombre : « le douze ou le
+ * treize janvier », « trois ou bien quatre pièces », « trois pièces, non quatre ». Sans unité, « et » et « à » suivis
+ * d'un article comptent aussi (« le 12 et le 13 janvier », « du 12 au 13 janvier ») ; « et » ou « à » seuls restent
+ * l'affaire de `NUMBER_BEFORE` et de `DIGITS_BEFORE` (« vingt et un » est un nombre). « un » ou « une » seuls après le
+ * mot de choix sont l'article (« un trois pièces ou une maison »). Jour, pièces, surface ou prix qui touchent ce
+ * passage : le champ est refusé, l'agent le saisira.
+ */
+const CHOICE_NUMBER = `(?:(?<![\\d.,])\\d+(?:[\\s.\u00a0\u202f]\\d{3})*(?:[.,]\\d+)?(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+const CHOICE_SECOND = `(?:(?<![\\d.,])\\d+(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|(?!une?(?![\\p{L}\\d])(?![\\s-]+${WORD}))${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+const CHOICE_UNIT = `(?:\\s+(?:${MONTHS.join('|')}|pieces?|m²|m2|metres? carres?|euros?|€|k€)(?![\\p{L}\\d]))`;
+const CHOICE_ARTICLE = `(?:(?:le|la|les|un|une|des|du|de|au|aux)\\s+|l['’]\\s*)`;
+const CHOICE_WORD = '(?<![\\p{L}\\d])(?:ou(?:\\s+(?:bien|plutot|alors))?|non|sinon|voire|plutot|enfin|pardon|disons)(?![\\p{L}\\d])';
+const CHOICE = new RegExp(
+  `${CHOICE_NUMBER}(?:${CHOICE_UNIT}?\\s*,?\\s*${CHOICE_WORD}[\\s,]*${CHOICE_ARTICLE}?|\\s+(?:(?:et|a)\\s+${CHOICE_ARTICLE}|(?:au|aux)\\s+))${CHOICE_SECOND}`,
+  'gu',
+);
+/** Les passages de la phrase où deux nombres se disputent un champ. */
+function choices(sentence: string): Hit[] {
+  const { folded, index } = fold(sentence);
+  const out: Hit[] = [];
+  CHOICE.lastIndex = 0;
+  for (let m = CHOICE.exec(folded); m !== null; m = CHOICE.exec(folded)) {
+    const at = index[m.index]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value: 0, quote: sentence.slice(at, end).trim(), at, end });
+    // Le second nombre peut ouvrir un autre choix : « trois, ou quatre, ou cinq pièces ».
+    CHOICE.lastIndex = m.index + 1;
+  }
+  return out;
+}
 function crowded(sentence: string, h: Hit): boolean {
   return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);
 }
@@ -420,14 +453,19 @@ export function readDictation(dictation: string, options: { now: Date; communes?
     add('bien', 'kind', i, kinds);
     const inRange = (lo: number, hi: number) => (n: number) => (n >= lo && n <= hi ? n : null);
     const surfaceWords = wordHits(s, SURFACE_AFTER, inRange(1, 999_999));
-    add('bien', 'surfaceM2', i, [...hits(s, SURFACE, (m) => Number(m[1])).filter(digitsAlone(s)), ...surfaceWords].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
-    add('bien', 'rooms', i, [...hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter(digitsAlone(s)), ...wordHits(s, ROOMS_AFTER, inRange(1, 99))].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    const contested = choices(s);
+    // Un champ qu'un choix ou une correction entre deux nombres touche est refusé, l'agent le saisira (Codex sur #486).
+    const addOrRefuse = (target: DictationTarget, key: DictatedKey, list: readonly Hit[]) => {
+      if (list.some((h) => overlaps(h, contested))) found.push({ target, key, value: '', sentence: i, quote: '' });
+      else add(target, key, i, list);
+    };
+    addOrRefuse('bien', 'surfaceM2', [...hits(s, SURFACE, (m) => Number(m[1])).filter(digitsAlone(s)), ...surfaceWords].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    addOrRefuse('bien', 'rooms', [...hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter(digitsAlone(s)), ...wordHits(s, ROOMS_AFTER, inRange(1, 99))].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
     const priceWords = wordHits(s, PRICE_AFTER, inRange(1, 1_000_000_000));
     if (has(s, PRICE_CONTEXT) && !has(s, NOT_A_PRICE)) {
-      add(
+      addOrRefuse(
         'bien',
         'priceEur',
-        i,
         [...priceWords, ...hits(s, PRICE, (m) => {
           const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
           const v = m[2] ? n * 1000 : n;
@@ -446,6 +484,13 @@ export function readDictation(dictation: string, options: { now: Date; communes?
         ...wordHits(s, DAY_WORDS_AFTER, (n, m) => (n >= 1 && n <= 31 ? dateOf(n, MONTHS.indexOf(m[2]!) + 1, null, today) : null)),
         ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)).filter((h) => digitsAlone(s)(h) && !NUMBER_BEFORE.test(fold(s.slice(0, h.at)).folded)),
       ];
+      // Les jours sont pris avant leurs filtres : un jour déjà écarté par un autre motif fait aussi refuser.
+      const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...wordHits(s, DAY_WORDS_AFTER, () => ''), ...hits(s, FIRST_OF_MONTH, () => '')];
+      if ([...days, ...anyDays].some((h) => overlaps(h, contested))) {
+        // Deux jours qui se disputent le rendez-vous : il n'est pas lu.
+        found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
+        return;
+      }
       const timeWords = wordHits(
         s,
         TIME_WORDS_AFTER,

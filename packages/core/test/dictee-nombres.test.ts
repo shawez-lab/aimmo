@@ -196,4 +196,26 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Estimation le 12 mars 2100 à 10 h.')).toBeUndefined();
     expect(at('Estimation le 12 mars 2027 à 10 h.')).toBe('2027-03-12T09:00:00.000Z');
   });
+
+  it('[R260] un choix ou une correction entre deux nombres, article ou « bien » compris, fait refuser le champ (Codex sur #486)', () => {
+    for (const s of ['Visite le douze ou le treize janvier à dix heures.', 'Visite le 12 ou le 13 janvier à 10 h.', 'Visite le douze ou bien le treize janvier à dix heures.', 'Visite le douze janvier ou le treize à dix heures.', 'Visite le 12 janvier, ou plutôt le 13, à 10 h.', 'Visite le 12 et le 13 janvier à 10 h.', 'Visite du 12 au 13 janvier à 10 h.', 'Visite le premier ou le deux mars à 10 h.']) {
+      expect(at(s), s).toBeUndefined();
+      expect(read(s).conflicts, s).toContainEqual({ target: 'rendezvous', key: 'start' });
+    }
+    for (const s of ['Il vend une maison de trois ou bien quatre pièces.', 'Il vend une maison de 3 ou bien 4 pièces.', 'Il vend une maison de trois ou plutôt quatre pièces.', 'Il vend une maison de trois pièces, non quatre.', 'Il vend une maison de trois pièces ou bien quatre.', 'Il vend un appartement, un T3 ou bien un T4.', 'Il vend une maison de trois, voire quatre pièces.', 'Il vend une maison de trois pièces, ou alors un quatre pièces.']) {
+      expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
+      expect(read(s).conflicts, s).toContainEqual({ target: 'bien', key: 'rooms' });
+    }
+    for (const s of ['Il vend sa maison de quatre-vingts ou bien quatre-vingt-dix mètres carrés.', 'Il vend sa maison de 85 m², ou plutôt 90.']) expect(field(s, 'bien', 'surfaceM2'), s).toBeUndefined();
+    for (const s of ['Il vend sa maison, prix deux cent mille ou bien deux cent dix mille euros.', 'Il vend sa maison, prix 250 000 euros, non 260 000.']) expect(field(s, 'bien', 'priceEur'), s).toBeUndefined();
+    // Ce qui n'est pas un choix entre deux nombres se lit toujours.
+    expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
+    expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
+    expect(field('Il vend un appartement, un trois pièces à deux cent mille euros.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
+    expect(field('Il vend sa maison de vingt et un mètres carrés.', 'bien', 'surfaceM2')).toEqual([21, 'vingt et un mètres carrés']);
+    expect(field('Il vend sa maison, 3 pièces à 250 000 euros.', 'bien', 'rooms')).toEqual([3, '3 pièces']);
+    expect(field('Il vend sa maison, trois pièces, prix deux cent mille euros, non loin de la gare.', 'bien', 'priceEur')).toEqual([200_000, 'deux cent mille euros']);
+    expect(at('Visite le douze janvier à dix heures.')).toBe('2027-01-12T09:00:00.000Z');
+    expect(at('Visite le 12 janvier à 10 h et le client viendra seul.')).toBe('2027-01-12T09:00:00.000Z');
+  });
 });
