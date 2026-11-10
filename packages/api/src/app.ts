@@ -90,6 +90,7 @@ import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } fr
 import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
+import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
@@ -1231,6 +1232,16 @@ function trousseauxRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes de la boutique de l'agent (BR22) : rôle contrôlé avant le corps [R16], imprimeur d'essai seul [R26]. */
+function boutiqueRoutesDef(): RouteDef[] {
+  return boutiqueRoutes().map((r: BoutiqueRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2040,6 +2051,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...securiteRoutesDef(),
     ...reseauUtileRoutesDef(),
     ...trousseauxRoutesDef(),
+    ...boutiqueRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...licencesRoutesDef(),

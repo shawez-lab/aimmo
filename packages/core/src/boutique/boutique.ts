@@ -55,6 +55,18 @@ export interface TariffInput {
   validUntil: unknown;
 }
 
+export interface TariffView {
+  id: string;
+  support: Support;
+  quantity: number;
+  priceCents: number;
+  printer: string;
+  source: string;
+  validUntil: string;
+  setAt: string;
+  inForce: boolean;
+}
+
 export interface OrderView {
   id: string;
   support: Support;
@@ -84,6 +96,21 @@ interface OrderRow {
   tariff_id: string;
   price_cents: number;
   prepared_at: string;
+}
+
+/** Le dernier tarif réglé pour un support et une quantité : le seul qui fasse foi [R264]. */
+const LATEST_TARIFF =
+  'SELECT id, support, quantity, price_cents, printer, source, valid_until, set_at FROM shop_tariffs WHERE network_id = ? AND support = ? AND quantity = ? ORDER BY set_at DESC, rowid DESC LIMIT 1';
+
+interface TariffFull {
+  id: string;
+  support: Support;
+  quantity: number;
+  price_cents: number;
+  printer: string;
+  source: string;
+  valid_until: string;
+  set_at: string;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -143,12 +170,38 @@ export class Boutique {
     return { ok: true, tariffId: id };
   }
 
+  /**
+   * Les tarifs du réseau, la direction seule : pour chaque support et chaque quantité, le dernier réglé, dit en vigueur
+   * ou échu. Un tarif plus ancien ne fait jamais foi, il n'est donc pas rendu [R264].
+   */
+  async tariffs(viewer: Viewer): Promise<{ ok: true; value: TariffView[] } | Refusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const pairs = await this.db.all<{ support: Support; quantity: number }>('SELECT DISTINCT support, quantity FROM shop_tariffs WHERE network_id = ? ORDER BY support, quantity', [viewer.networkId]);
+    const rows: TariffFull[] = [];
+    for (const p of pairs) {
+      const t = await this.db.first<TariffFull>(LATEST_TARIFF, [viewer.networkId, p.support, Number(p.quantity)]);
+      if (t) rows.push(t);
+    }
+    const today = this.today();
+    return {
+      ok: true,
+      value: rows.map((r) => ({
+        id: r.id,
+        support: r.support,
+        quantity: Number(r.quantity),
+        priceCents: Number(r.price_cents),
+        printer: r.printer,
+        source: r.source,
+        validUntil: r.valid_until,
+        setAt: r.set_at,
+        inForce: r.valid_until >= today,
+      })),
+    };
+  }
+
   /** Le tarif qui fait foi : le dernier réglé pour ce support et cette quantité, s'il est encore en vigueur. Jamais un plus ancien. */
   private async tariff(networkId: string, support: Support, quantity: number): Promise<TariffRow | null> {
-    const t = await this.db.first<TariffRow>(
-      'SELECT id, price_cents, valid_until, printer FROM shop_tariffs WHERE network_id = ? AND support = ? AND quantity = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
-      [networkId, support, quantity],
-    );
+    const t = await this.db.first<TariffRow>(LATEST_TARIFF, [networkId, support, quantity]);
     return t && t.valid_until >= this.today() ? { id: t.id, price_cents: Number(t.price_cents), valid_until: t.valid_until, printer: t.printer } : null;
   }
 

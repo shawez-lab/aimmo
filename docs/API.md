@@ -296,6 +296,14 @@ Sous `/v1/trousseaux`, chaque route passe par les droits de la couche métier [R
 
 La vue du vendeur reste celle de son espace (HX10, `forSeller`), hors de ces routes.
 
+## Boutique de l'agent, en mode essai (BR22)
+
+Sous `/v1/boutique` : chaque route dit le rôle qu'elle admet, contrôlé avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 4 ko au plus ; un champ non prévu : 400 `unknown_field`, donc aucun prix ni texte saisi n'entre sur un support. La commande ne part qu'à l'imprimeur d'essai (`essai`) : rien n'est imprimé ni payé [R26].
+
+- La direction : `POST /tarifs` (`{support: panneau | flyer | vitrine | carte, quantity, priceCents, printer, source, validUntil: AAAA-MM-JJ}`), d'après le devis d'un imprimeur ; `GET /tarifs` : pour chaque support et quantité, le dernier tarif réglé, dit en vigueur ou échu [R264].
+- L'agent : `POST /apercu` (`{support, propertyId?}`) rend le support tel qu'il serait imprimé, tiré de la dernière version publiée de l'annonce de son bien (la carte de visite, sans bien), avec son code QR et son mot-clé ; sans page publiée, bien vendu ou chiffre sans source : 409 R263.
+- L'agent : `POST /commandes` (`{requestId, support, propertyId?, quantity}`) prépare une commande au prix du tarif en vigueur, sans rien commander ; la même demande rejouée rend la même commande [R264, R265]. `GET /commandes` : ses commandes et leur état. `POST /commandes/<id>/validation` : son geste, qui envoie exactement le support vu, une seule fois ; un support ou un tarif changé depuis : 409 R264 ; déjà validée : 409 R265 ; imprimeur en panne : 502, jamais renvoyée seule.
+
 ## Recrutement des 100 premiers agents, en mode essai (BR02)
 
 Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.
