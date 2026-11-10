@@ -1020,7 +1020,7 @@ Voie : 2
 Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
 
 ### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
-- Statut : bloquée : troisième tour de P0 de Codex sur la lecture des heures (#486, branche `chantier/RC01` gardée)
+- Statut : en cours (voie 2) : reprise le 2026-11-10 par l’autre approche des heures (#486)
 - Reste : relecture forte 4 P0 et 6 P1 corrigés ; Codex 2 puis 3 P0 corrigés, puis 2 P0 restés sur `6b7735e0`. « de dix heures et demie à onze heures » choisit 11 h, et « à quinze heures et trente minutes » donne 15 h. La cause : la recherche des autres heures dites reprend le motif qui les lit. Autre approche à prendre : compter comme heure dite toute suite « nombre, puis h, heure ou heures », et midi et minuit, quel que soit ce qui suit, sauf après un mot de durée ; refuser toute heure suivie de « et » ou de « minutes ». Pièces, surface, prix et jours : aucune remarque ouverte. GitHub Actions bloqué (facturation) ; vérification locale verte sur `21573b6b` (5415 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX06
 - Cahier : Phase 3, « Création d'un bien et d'un contact à la voix » ; R260.
