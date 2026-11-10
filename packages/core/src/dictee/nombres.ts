@@ -87,7 +87,7 @@ export const NUMBER_WORDS = [
   'octante', 'nonante', 'cents', 'cent', 'mille', 'millions', 'million',
 ] as const;
 
-const WORD = `(?:${NUMBER_WORDS.join('|')})(?![\\p{L}\\d])`;
+export const WORD = `(?:${NUMBER_WORDS.join('|')})(?![\\p{L}\\d])`;
 /** Pour dire qu'un nombre en touche un autre, « premier » compte aussi (« le premier ou deux janvier »). */
 const ADJACENT = `(?:${NUMBER_WORDS.join('|')}|premier|1er)(?![\\p{L}\\d])`;
 const WORD_NO_ARTICLE = `(?:${NUMBER_WORDS.filter((w) => w !== 'un' && w !== 'une').join('|')}|premier|1er)(?![\\p{L}\\d])`;

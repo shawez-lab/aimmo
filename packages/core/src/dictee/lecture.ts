@@ -17,7 +17,7 @@ import { normalizeIdentifier } from '../fiche/normalize.ts';
 import { DEFAULT_COMMUNES } from '../qualification/regles.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { AGENDA_TIME_ZONE, parisInstant, type AppointmentKind } from '../rendezvous/creneaux.ts';
-import { DIGITS_BEFORE, NUMBER_BEFORE, NUMBER_RUN, WORD_AFTER, parseNumberWords, readNumberRun } from './nombres.ts';
+import { DIGITS_BEFORE, NUMBER_BEFORE, NUMBER_RUN, WORD, WORD_AFTER, parseNumberWords, readNumberRun } from './nombres.ts';
 
 export type DictationTarget = 'contact' | 'bien' | 'rendezvous';
 
@@ -200,7 +200,7 @@ const FIRST_OF_MONTH = new RegExp(`\\bpremier\\s+(${MONTHS.join('|')})(?![\\p{L}
  * de 1 à 59, sinon rien ; « et » (« et demie », « et trente minutes »), « minutes », « moins » ou un chiffre
  * derrière : rien.
  */
-const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et\\b|minutes?\\b|moins\\b))`;
+const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et\\s+(?:demie?|quart|des\\b|\\d|${WORD})|minutes?\\b|moins\\b))`;
 /**
  * Une heure en lettres ne se lit qu'après « à » ou « vers » (« il y a deux heures » est une durée), de 8 h à 23 h :
  * « à deux heures » se dit pour 14 h comme pour 2 h. Suivie de « du matin », « du soir » ou « de l'après-midi », elle
@@ -218,13 +218,22 @@ const TIME_QUALIFIER = /^\s+(?:du (?:matin|soir)|de l['’ ]\s*apres[- ]midi)/u;
 /** Ce qui suit des minutes en lettres : la fin de la phrase ou une ponctuation, sinon elles ont pu prendre un autre mot. */
 const MINUTES_END = /^\s*(?:[,.;:!?)]|$)/u;
 /** Une heure entière : suivie d'un chiffre ou de « et demie », « et quart », « moins », elle n'est pas lue. */
-const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et\b|minutes?\b|moins\b))/u;
+const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et\s+(?:(?:demie?|quart|des)\b|\d)|et\s+(?:un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|vingt|trente|quarante|cinquante)(?![\p{L}\d])|minutes?\b|moins\b))/u;
 /**
  * Toute heure dite, lue ou non (RC01) : un nombre en chiffres ou en lettres suivi de « h », « heure » ou « heures »,
  * quoi qu'il y ait derrière, et midi et minuit. Cette recherche ne reprend pas le motif qui lit l'heure : une heure
  * que la lecture refuse (« dix heures et demie ») compte quand même comme une autre heure dite.
  */
 const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?![\\p{L}])|(?:${NUMBER_RUN})\\s+heures?(?![\\p{L}\\d])|midi(?![\\p{L}\\d])|minuit(?![\\p{L}\\d]))`, 'gu');
+/**
+ * Un nombre nu collé à l'heure lue dit une autre heure sans « h » (RC01, relecture) : « 14-15 h », « 15 h 30 ou 45 »,
+ * « 15 h, sinon 16 », « 15 h, 16 au plus tard ». Dans le doute, l'heure n'est pas lue.
+ */
+const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|a|-)\\s*)?(?:\\d{1,2}(?![\\d]|\\s?(?:€|euros?|k|m2|m²|metres?|pieces?)(?![\\p{L}\\d]))|${WORD}(?!\\s+(?:pieces?|euros?|metres?|mille|cent)))`, 'u');
+const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*(?:-|,|ou|a)\\s*$`, 'u');
+function crowded(sentence: string, h: Hit): boolean {
+  return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);
+}
 /** Les heures dites dans la phrase, hors de celles qui suivent un mot de durée. */
 function hourMentions(sentence: string): Hit[] {
   const { folded, index } = fold(sentence);
@@ -448,9 +457,10 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       const times = [...hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter(digitsAlone(s, { wordAfter: true })), ...timeWords].filter((h) => !overlaps(h, numbers));
       const sorts: Hit[] = [];
       for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
+      const crowdedTimes = times.filter((h) => crowded(s, h));
       const mentions = hourMentions(s).filter((h) => !overlaps(h, numbers) || overlaps(h, times));
       const otherTimes = mentions.filter((h) => !overlaps(h, times));
-      if (days.length === 1 && times.length === 1 && otherTimes.length === 0 && mentions.length === 1) {
+      if (days.length === 1 && times.length === 1 && otherTimes.length === 0 && mentions.length === 1 && crowdedTimes.length === 0) {
         const day = days[0]!;
         const time = times[0]!;
         const start = parisInstant(day.value as string, time.value as number);

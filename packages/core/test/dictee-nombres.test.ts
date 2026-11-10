@@ -173,6 +173,11 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Visite demain de 10 h à 11 h.')).toBeUndefined();
     // Une heure que la lecture refuse compte quand même comme une autre heure dite (Codex sur #486).
     for (const s of ['Visite demain de dix heures et demie à onze heures.', 'Visite demain de 10 h et demie à 11 h.', 'Visite demain de dix heures et quart à onze heures.', 'Visite demain à onze heures, ou dix heures et demie.', 'Visite demain à midi ou minuit.', 'Visite demain à 10 h ou dix heures moins le quart.']) expect(at(s), s).toBeUndefined();
+    // Une heure suivie de « et » puis d'un autre mot se lit (relecture forte).
+    expect(at('Visite demain à 15 h et le client viendra seul.')).toBe('2026-12-04T14:00:00.000Z');
+    expect(at('Estimation mardi à quinze heures et on signe le mandat.')).toBe('2026-12-08T14:00:00.000Z');
+    // Un nombre nu collé à l'heure dit une autre heure : rien n'est choisi (relecture forte).
+    for (const s of ['Visite demain vers 14-15 h.', 'Visite demain à 15 h 30 ou 45.', 'Visite demain à 9 h 30 ou 10.', 'Visite demain à 15 h, sinon 16.', 'Visite demain à quinze heures, sinon seize.', 'Visite demain à 15 h, 16 au plus tard.', 'Visite demain à 14 ou 15 h.']) expect(at(s), s).toBeUndefined();
     // Une heure suivie de « et » ou de « minutes » n'est pas lue.
     for (const s of ['Visite demain à quinze heures et trente minutes.', 'Visite demain à 15 heures et 30 minutes.', 'Visite demain à quinze heures trente minutes.', 'Visite demain à 15 h 30 minutes.', 'Visite demain à quinze heures et des poussières.']) expect(at(s), s).toBeUndefined();
     expect(at('Visite d’une heure demain à 10 h.')).toBe('2026-12-04T09:00:00.000Z');
