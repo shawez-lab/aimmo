@@ -995,12 +995,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H60 pour l'usage réel de la lettre).
 
 ### BR27 · Routes du score de vente par adresse
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#487, `79ad1c3e`), `packages/api/src/score-adresse.ts`, option `scoreSources` d'`ApiConfig` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5418 tests, paquet du Worker). Restent : écran du score et de la mesure ; `carriesPerson` de HX16 à aligner (cœur).
 - Qui : Claude, relecture normale · Dépend de : HX17
 - Partie du cahier : Phase 3, « Score de vente par adresse » ; M20, mesure par source.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX17 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/score-adresse.ts`, sous `/v1/score-adresse`, ajouté à `app.ts`. Sources : `scoreSources` de la configuration, sinon le géocodeur et les ventes de `estimation` avec le cadastre et les diagnostics de `publicDataServices(fetchPublicData)` ; aucune source : 400 `sources_absentes`, rien n'est rangé. `packages/core/src/score-adresse/` ne change pas ; l'alignement de `carriesPerson` de HX16 reste au cœur (voie 2).
 - Objectif : l'agent note une adresse de ses zones ; l'agent et la direction lisent les scores et la mesure par tranche, et relient un mandat signé à une adresse notée.
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque point rendu cite sa source et sa date, même score le même jour [R291] (test) ; adresse avec un nom ou hors zone refusée, rien n'est rangé [R292] (test) ; mandat relié une fois, mesure sans adresse ni nom [R293] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
+### BR28 · Routes de la carte des opportunités et de la tournée de prospection
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX19
+- Partie du cahier : Phase 3, « Carte des opportunités et tournée de prospection » ; M05, créneaux et trajets (R32).
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX19 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/tournee.ts`, sous `/v1/tournee`, ajouté à `app.ts`. Géocodage des panneaux par le géocodeur de `estimation` (Base adresse nationale), sinon lieu inconnu. L'agenda relié (V03) et la position des biens n'ont encore aucune source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`). Sans `date`, le jour de Paris. `packages/core/src/tournee-prospection/` ne change pas.
+- Objectif : l'agent en activité lit sa carte des opportunités et sa tournée d'un jour.
+- Critères : refus de rôle en 403 au journal, direction comprise [R16, R297] (test) ; aucune adresse hors des zones de l'agent, comptée seulement [R297] (test) ; la tournée tient dans les disponibilités de l'agent, autour de ses rendez-vous [R298] (test) ; le lien de la vue des rues ne porte que la position [R299] (test) ; date mal formée 409 R298, paramètre non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
 ## Restes du cœur des groupes HX
