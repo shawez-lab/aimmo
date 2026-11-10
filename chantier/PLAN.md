@@ -1015,13 +1015,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR29 · Routes de la pige des annonces de particuliers
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#489, `2800f44c`), `packages/api/src/pige.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex 1 P2 (corps non prévu sur les routes sans corps) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5431 tests, paquet du Worker). Restent : écran de la file ; vraie source de pige ; H58.
 - Qui : Claude, relecture normale · Dépend de : HX11
 - Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R273 à R275.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX11 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. Aucune vraie source de pige n'est branchée : la relève passe par la source de la configuration, sinon 400 `source_absente`, rien n'est rangé. Le premier message reste à coller par l'agent, rien n'est envoyé. `packages/core/src/pige/` ne change pas.
 - Objectif : l'agent de la zone lit sa file de pige, valide ou écarte le premier message ; la direction lance la relève.
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; une annonce « pas d'agence » n'apparaît jamais dans la file rendue [R273] (test) ; aucune coordonnée du particulier dans les réponses [R274] (test) ; aucun envoi, le message est rendu à coller [R275, R26] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H58 et la vraie source restent à part).
+
+### BR30 · Routes de l'adresse probable d'une annonce de pige, et du bien créé sans ressaisie
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX18, BR29
+- Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R294 à R296.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX18 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/adresse-pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. La recherche de l'ADEME (`AdemeDiagnosisSearch`) et le cadastre (`IgnCadastre`) passent par `fetchPublicData`, la lecture des données publiques déjà branchée (E09) ; sans elle, seuls les diagnostics de la veille servent et la réponse le dit (`missing`). `packages/core/src/adresse-pige/` ne change pas.
+- Objectif : l'agent de la zone lit les adresses probables d'une annonce de sa file et crée la fiche du bien d'un geste ; l'agent et la direction lisent ce que la pige rapporte.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque adresse rendue porte sa confiance et ses sources, aucune coordonnée du particulier [R294] (test) ; le bien créé reprend les champs de l'annonce, source « pige » [R295] (test) ; une annonce « pas d'agence » n'est jamais convertie [R273] (test) ; une adresse non proposée refusée en 409 R294 (test) ; ce que la pige rapporte, par niveau de confiance [R296] (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
 
 ## Restes du cœur des groupes HX
 
@@ -1031,7 +1041,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 
 ### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
 - Statut : en cours (voie 2)
-- Reste : relecture forte 4 P0 et 6 P1 corrigés ; Codex 2 puis 3 P0 corrigés, puis 2 P0 restés sur `6b7735e0`. « de dix heures et demie à onze heures » choisit 11 h, et « à quinze heures et trente minutes » donne 15 h. La cause : la recherche des autres heures dites reprend le motif qui les lit. Autre approche à prendre : compter comme heure dite toute suite « nombre, puis h, heure ou heures », et midi et minuit, quel que soit ce qui suit, sauf après un mot de durée ; refuser toute heure suivie de « et » ou de « minutes ». Pièces, surface, prix et jours : aucune remarque ouverte. GitHub Actions bloqué (facturation) ; vérification locale verte sur `21573b6b` (5415 tests).
+- Reste : heures refaites le 2026-11-10 (voie 2) : toute heure dite compte (`hourMentions`), heure suivie de « et » ou « minutes » non lue, nombre nu après un mot de correction ou de choix refusé, garde de l'année après un jour et un mois seulement ; relecture forte 1 P1 et 3 P0 anciens corrigés, puis 1 P1 ; Codex 2 tours corrigés, plus aucune remarque sur les heures. Reste 1 P0 de Codex sur cd337613 : « le douze ou le treize janvier » donne le 13, « trois ou bien quatre pièces » donne 4, car `NUMBER_BEFORE` ne voit pas l'article ni « bien ». Autre approche : un motif indépendant « nombre, puis ou, ou bien, ou plutôt, et, à, puis article facultatif, puis nombre », cherché sur toute la phrase avant de lire jours, pièces, surface et prix, qui fait refuser le champ. Vérification locale verte sur cd337613 (5432 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX06
 - Cahier : Phase 3, « Création d'un bien et d'un contact à la voix » ; R260.
 - Décidé (2026-11-10, voie 2), lecture prudente : relevé dans les « Restent » de HX06. La dictée d'un téléphone écrit souvent les petits nombres en lettres (« un trois pièces », « quatre-vingts mètres carrés », « à quinze heures », « le douze janvier ») : aujourd'hui l'agent doit tout ressaisir. Le code lit un nombre en lettres seulement s'il ne se lit que d'une façon, en français écrit (et septante, huitante, octante, nonante) ; « un » ou « une » devant un nombre se lit comme l'article ; un nombre en lettres collé à un autre nombre, à « virgule », à un chiffre, ou suivi de « et demi », n'est pas lu ; une heure en lettres après « dans », « pendant », « durant » ou « pour » est une durée et n'est pas lue ; une année dite après le jour et le mois, en lettres ou en chiffres, sans être lue, fait refuser le jour. Fichier neuf `packages/core/src/dictee/nombres.ts`, `lecture.ts` le suit ; `dictee.ts` ne change pas. Le contrôle du compte rendu (`checkReport`) ne change pas : un chiffre du compte rendu que la dictée dit seulement en lettres reste refusé, c'est plus prudent.
