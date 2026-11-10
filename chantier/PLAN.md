@@ -850,13 +850,22 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR14 · Les agents pilotes et la phase 1 à l'écran
-- Statut : en cours
-- Reste : proposition #468 (`21742de9`), `packages/api/app/phases.ts` ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5311 tests). Fusion refusée par le contrôle des permissions de la séance (H68) : la séance suivante la fusionne à l'étape 3 si elle en a le droit. Décidé : désignation par l'identifiant de l'agent ; envoi hors d'AIMMO en deux appuis (jamais retiré) ; les 10 derniers jours non propres des 30 derniers jours sont listés.
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#468, `7432df0e`) par la séance suivante, `packages/api/app/phases.ts` ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5311 tests). Décidé : désignation par l'identifiant de l'agent ; envoi hors d'AIMMO en deux appuis (jamais retiré) ; les 10 derniers jours non propres des 30 derniers jours sont listés.
 - Qui : Claude, relecture normale · Dépend de : BR10, BR13
 - Partie du cahier : Feuille de route, « Les phases et leurs conditions ».
 - Objectif : dans le bloc « Phases et régions » (`packages/api/app/phases.ts`), la direction lit la comparaison des agents pilotes et la série de la phase 1, désigne un pilote, range ses mois d'avant avec la référence de la preuve, range un envoi constaté hors d'AIMMO et l'inventaire des tâches planifiées, par les routes de BR10.
 - Critères : chaque statut et chaque refus dits en mots, jamais un code (test) ; une saisie illisible ne part pas (test) ; réponse perdue dite incertaine (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
+
+### BR15 · Routes des licences du logiciel
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX73
+- Partie du cahier : Feuille de route, phase 5, « puis licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel ».
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX73 (voie 2) n'a ni route ni écran (« Restent après »). Fichier neuf `packages/api/src/licences.ts`, sous `/v1/licences` ; la page publique du tarif sans clé ; aucune règle nouvelle ni migration ; `packages/core/src/licences/` (HX74, voie 2) ne change pas.
+- Objectif : la direction lit le tarif et les licences, fixe le tarif, donne une licence, la suspend, la reprend ou la termine, par `LicencesLogiciel` ; l'agence lit sa seule licence ; le public lit le tarif en vigueur et ses changements datés.
+- Critères : autre rôle refusé (403), refus au journal, rien de rangé [R16] (test) ; corps illisible ou champ non prévu 400 sans rien ranger (test) ; licence refusée sans phase 5 ouverte, 409 avec R654 (test) ; tarif hors bornes 409 avec R655 (test) ; terminée figée, 409 avec R656 (test) ; la lecture publique ne porte ni agence ni nombre [R655] (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H67 pour le prix réel).
 
 ## Phase 1 : le socle
 
