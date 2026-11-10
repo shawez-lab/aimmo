@@ -31,7 +31,7 @@ async function colsOf(db: SqlDatabase, table: string) {
 
 async function setup(opts: { fillLcb?: boolean } = {}) {
   const db = await openDb();
-  const clock = Date.parse('2028-01-10T09:00:00.000Z');
+  let clock = Date.parse('2028-01-10T09:00:00.000Z');
   const now = (): Date => new Date(clock);
   const journal = new SqlJournalStore(db);
   const store = new FicheClient(db, { now });
@@ -71,7 +71,7 @@ async function setup(opts: { fillLcb?: boolean } = {}) {
   const reprise = new RepriseDonneesAgence(db, journal, gate, { now });
   const lacCompliance = as('compliance', 'conformite-lac', lac.licenseeNetworkId);
   const lacDirection = as('direction', 'direction-lac', lac.licenseeNetworkId);
-  const events = async (type: string) => (await db.all<{ data: string; subject: string }>('SELECT data, subject FROM journal WHERE type = ?', [type])).map((e) => ({ ...(JSON.parse(e.data) as Record<string, unknown>), subject: e.subject }));
+  const events = async (type: string): Promise<Record<string, unknown>[]> => (await db.all<{ data: string; subject: string }>('SELECT data, subject FROM journal WHERE type = ?', [type])).map((e) => ({ ...(JSON.parse(e.data) as Record<string, unknown>), subject: e.subject }));
 
   // Un même jeu dans chaque réseau : une personne, une pièce au coffre, un signalement et sa décision, une version du
   // registre des gels et une entrée (table sans `network_id`, trouvée par sa version).
@@ -106,7 +106,10 @@ async function setup(opts: { fillLcb?: boolean } = {}) {
     await fill(pres.licenseeNetworkId, 'pres');
     await fill(network.id, 'reseau');
   }
-  return { db, network, direction, as, lac, pres, dossier, reprise, lacCompliance, lacDirection, proofs, events, reads };
+  const tick = (ms: number) => {
+    clock += ms;
+  };
+  return { db, network, direction, as, lac, pres, dossier, reprise, licences, lacCompliance, lacDirection, proofs, events, reads, tick };
 }
 
 describeWithSqlite('HX76 · Le dossier de la lutte contre le blanchiment de l’agence sous licence', () => {
@@ -203,38 +206,69 @@ describeWithSqlite('HX76 · Le dossier de la lutte contre le blanchiment de l’
     await expect(t.db.run("UPDATE licence_lcb_exports SET made_at = 'y'")).rejects.toThrow(/ne change plus/);
   });
 
-  it('[R663] Jamais vu : le fichier de reprise de la direction et le journal sont les mêmes avec ou sans dossier rempli', async () => {
+  it('[R663] Jamais vu : le fichier de reprise de la direction, le registre des remises et le journal sont les mêmes avec ou sans dossier rempli', async () => {
     const vide = await setup({ fillLcb: false });
     const plein = await setup({ fillLcb: true });
-    // La même agence, les mêmes clients : seule la lutte contre le blanchiment diffère (pièce, signalement, gel).
-    for (const t of [vide, plein]) {
-      const at = '2028-01-09T08:00:00.000Z';
-      if (t === vide) await t.db.run('INSERT INTO persons (id, network_id, first_name, last_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', ['personne-lac', t.lac.licenseeNetworkId, 'Alix', 'Essai lac', at, at]);
-    }
-    const ids = (t: typeof vide) => [t.network.id, t.lac.id, t.lac.licenseeNetworkId];
-    const same = (t: typeof vide, s: string) => {
-      // Les identifiants tirés au hasard (réseaux, licences) ne sont pas ceux d'une base à l'autre : on les nomme.
-      let out = s;
-      ids(t).forEach((id, i) => (out = out.split(id).join(`<id${i}>`)));
-      return out;
+    // La même agence, la même fiche de client : seule la lutte contre le blanchiment diffère (pièce, signalement, gel).
+    const at = '2028-01-09T08:00:00.000Z';
+    await vide.db.run('INSERT INTO persons (id, network_id, first_name, last_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', ['personne-lac', vide.lac.licenseeNetworkId, 'Alix', 'Essai lac', at, at]);
+    // Les identifiants tirés au hasard (réseaux, licences, lignes) et les empreintes ne sont pas ceux d'une base à
+    // l'autre : ils sont remplacés par des repères, tout le reste est comparé tel quel, comptes compris.
+    const norm = (t: typeof vide, v: unknown): string => {
+      let out = JSON.stringify(v);
+      [t.network.id, t.lac.id, t.lac.licenseeNetworkId, t.pres.id, t.pres.licenseeNetworkId].forEach((id, i) => (out = out.split(id).join(`<id${i}>`)));
+      return out.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<uuid>').replace(/\b[0-9a-f]{64}\b/g, '<empreinte>');
     };
-    const docs: string[] = [];
-    const traces: string[] = [];
-    for (const t of [vide, plein]) {
+    // Une table ou une liste comparée comme un ensemble : son ordre peut suivre un identifiant tiré au hasard.
+    const bag = (t: typeof vide, rows: readonly unknown[]) => rows.map((r) => norm(t, r)).sort();
+    const reprise = async (t: typeof vide) => {
       const r = await t.reprise.make(t.lacDirection, 'preuve-ok');
       if (!r.ok) throw new Error(r.code);
-      const { document } = r.value;
-      // Les tables reprises et les tables laissées : rien n'y dit qu'un dossier existe ou ce qu'il contient.
-      const tables = Object.fromEntries(Object.entries(document.tables).filter(([k]) => !['licence_data_exports', 'licence_states', 'software_licences', 'licence_tariffs', 'networks'].includes(k)));
-      docs.push(same(t, JSON.stringify({ tables, laissees: document.laissees, fichiers: document.fichiers })));
+      const d = r.value.document;
+      return {
+        tables: Object.fromEntries(Object.entries(d.tables).map(([k, rows]) => [k, bag(t, rows)])),
+        laissees: norm(t, d.laissees),
+        masquees: norm(t, d.masquees),
+        fichiers: bag(t, d.fichiers),
+        rows: r.value.rows,
+      };
+    };
+    const traces = async (t: typeof vide) => ({
+      journal: bag(t, (await t.db.all<{ type: string; actor: string; subject: string; data: string }>("SELECT type, actor, subject, data FROM journal WHERE type LIKE 'conformite.%' OR type LIKE 'licences.%' OR type LIKE 'acces.%'")).map((e) => ({ ...e, data: JSON.parse(e.data) as unknown }))),
+      remises: bag(t, await t.db.all('SELECT * FROM licence_data_exports')),
+      dossiers: bag(t, await t.db.all('SELECT * FROM licence_lcb_exports')),
+    });
+    const seen: unknown[][] = [[], []];
+    for (const [i, t] of [vide, plein].entries()) {
+      // Une reprise avant le dossier, le dossier, une reprise après : à chaque pas, les mêmes traces.
+      seen[i]!.push(await reprise(t));
+      t.tick(1000);
       const d = await t.dossier.make(t.lacCompliance, 'preuve-ok');
       if (!d.ok) throw new Error(d.code);
-      const jr = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type LIKE 'conformite.%' OR type LIKE 'licences.reprise'");
-      traces.push(same(t, JSON.stringify(jr.map((e) => [e.type, Object.keys(JSON.parse(e.data) as object).sort()]))));
-      expect(Object.keys((await t.db.first('SELECT * FROM licence_lcb_exports')) ?? {}).sort()).toEqual(['fingerprint', 'id', 'licence_id', 'made_at', 'made_by', 'network_id']);
+      t.tick(1000);
+      seen[i]!.push(await reprise(t));
+      seen[i]!.push(await traces(t));
     }
-    expect(docs[0]).toBe(docs[1]);
-    expect(traces[0]).toBe(traces[1]);
+    expect(seen[1]).toEqual(seen[0]);
+    // Et le dossier lui-même diffère bien : la comparaison porte sur quelque chose.
+    const dv = await vide.dossier.make(vide.lacCompliance, 'preuve-ok');
+    const dp = await plein.dossier.make(plein.lacCompliance, 'preuve-ok');
+    expect(dv.ok && dp.ok && dv.value.document.tables.suspicion_reports!.length !== dp.value.document.tables.suspicion_reports!.length).toBe(true);
+  });
+
+  it('[R662] licence suspendue ou terminée : le dossier se remet toujours, et se vérifie', async () => {
+    const t = await setup();
+    for (const state of ['suspendue', 'terminee'] as const) {
+      const d = await t.licences.decide(t.direction, { licenceId: t.lac.id, state, reason: 'Essai de fin' });
+      expect(d.ok).toBe(true);
+      t.tick(1000);
+      const r = await t.dossier.make(t.lacCompliance, 'preuve-ok');
+      if (!r.ok) throw new Error(r.code);
+      expect(r.value.document.tables.suspicion_reports!.map((x) => x.id)).toEqual(['signalement-lac']);
+      const v = await t.dossier.verify(t.lacCompliance, r.value.document);
+      expect(v.ok && v.value.verified).toBe(true);
+    }
+    expect((await t.db.all('SELECT id FROM licence_lcb_exports')).length).toBe(2);
   });
 
   it('[R664] chaque pièce du coffre est dite avec sa référence et son empreinte ; la vérification recalcule tout', async () => {
