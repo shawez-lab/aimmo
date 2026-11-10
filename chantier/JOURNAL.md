@@ -888,3 +888,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 19:00 · VOIE 2 : RC01, commits 4bcac46c à cd337613 sur chantier/RC01 (#486, non fusionnée), relancé non
 - 2026-11-10 19:00 · VOIE 2 : relance refusée, question 2 du plafond (la séance voie 2 de 13:55 n'a produit aucun commit, et aucune des trois dernières n'a terminé de tâche)
 - 2026-11-10 20:15 · BR30 · fusionnée (#490, bcab8758) : routes de l'adresse probable d'une annonce de pige et du bien créé sans ressaisie ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5438 tests) · prochaine : routes de la séquence de prospection (HX20)
+- 2026-11-10 20:56 · BR31 · fusionnée (#491, 8b7a55d6) : routes de la séquence de prospection et passage au planificateur, canaux du mode essai, Bloctel non branché (H61) ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5446 tests) · prochaine : à choisir (étapes des séquences dans le plan du jour, ou écrans de la pige)
+- 2026-11-10 20:56 · voie 1 · fin de séance : BR30 et BR31 fusionnées ; verrou libéré, relance · prochaine : à choisir

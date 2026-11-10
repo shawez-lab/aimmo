@@ -1035,7 +1035,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR31 · Routes de la séquence de prospection, et son passage au planificateur
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#491, `8b7a55d6`), `packages/api/src/sequences.ts`, passage `sequences.passage` au planificateur ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5446 tests, paquet du Worker). Restent : écran des séquences ; étapes du jour dans le plan du jour (option `sequences` de `PlanDuJour`) ; Bloctel réel (H61).
 - Qui : Claude, relecture normale · Dépend de : HX20
 - Partie du cahier : Phase 3, « Séquence de prospection sur plusieurs canaux » ; R300 à R302, R01, R03, R11.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX20 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/sequences.ts`, sous `/v1/sequences`, ajouté à `app.ts`, et son passage `sequences.passage` inscrit au planificateur de 9 h à 19 h du lundi au samedi. Le contrôle central reçoit les seuls canaux du mode essai : rien ne part vers une personne [R26]. Bloctel n'est pas branché (H61) : aucune liste d'opposition n'est donnée, donc un appel de prospection seule n'est jamais proposé [R302]. `packages/core/src/sequence-prospection/` ne change pas. Le plan du jour (option `sequences` de `PlanDuJour`) reste à brancher à part.
