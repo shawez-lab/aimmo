@@ -994,6 +994,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; carte et alerte limitées aux communes des zones de l'agent [R289] (test) ; lettre seulement pour un F ou un G, sans nom de propriétaire [R290] (test) ; passage inscrit au planificateur, rien ne remonte deux fois [R288] (test) ; corps mal formé 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H60 pour l'usage réel de la lettre).
 
+### BR27 · Routes du score de vente par adresse
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX17
+- Partie du cahier : Phase 3, « Score de vente par adresse » ; M20, mesure par source.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX17 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/score-adresse.ts`, sous `/v1/score-adresse`, ajouté à `app.ts`. Sources : `scoreSources` de la configuration, sinon le géocodeur et les ventes de `estimation` avec le cadastre et les diagnostics de `publicDataServices(fetchPublicData)` ; aucune source : 400 `sources_absentes`, rien n'est rangé. `packages/core/src/score-adresse/` ne change pas ; l'alignement de `carriesPerson` de HX16 reste au cœur (voie 2).
+- Objectif : l'agent note une adresse de ses zones ; l'agent et la direction lisent les scores et la mesure par tranche, et relient un mandat signé à une adresse notée.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque point rendu cite sa source et sa date, même score le même jour [R291] (test) ; adresse avec un nom ou hors zone refusée, rien n'est rangé [R292] (test) ; mandat relié une fois, mesure sans adresse ni nom [R293] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
