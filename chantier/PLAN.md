@@ -727,6 +727,15 @@ Réservé le 2026-11-09 par la voie 2. La voie 2 n'avait plus de tâche libre (B
 - Attend : rien.
 - Restent après : routes et écran (voie 1), avec une lecture groupée dans `db/sql.ts` ; les fichiers déposés de l'agence et son dossier de la lutte contre le blanchiment, à part.
 
+### HX75 · Les fichiers déposés de l'agence sous licence : chacun dit, avec la table, la colonne et la ligne qui le citent (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2, relecture forte · Dépend de : HX74
+- Partie du cahier : Feuille de route, phase 5, « licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel » ; Conformité, portabilité.
+- Décidé (2026-11-10, voie 2), lecture prudente : ajoutée parce que la voie 2 n'avait plus de tâche libre et que HX74 laisse « les fichiers déposés de l'agence, à part ». Aucun stockage de fichiers n'est branché au Worker : la tâche ne remet pas le contenu des fichiers, elle dit chacun. Chaque colonne `_ref` ou `_refs` d'une table reprise est classée une seule fois : `fichier` (référence du stockage des pièces, photos, vidéos, enregistrements), `preuve` (référence d'une preuve, fichier déposé possible : listée aussi, par prudence) ou `externe` (identifiant chez un autre service ou numéro, avec sa raison : pas listée). Format du fichier `aimmo-reprise-agence/2`, un fichier `/1` reste vérifiable. Aucune migration ; règles R660 et R661 réservées à cette tâche. Le code vit dans `packages/core/src/licences/`.
+- Objectif : le fichier de reprise porte la liste `fichiers` : chaque référence non vide d'une colonne `fichier` ou `preuve` des lignes du fichier, avec sa table, sa colonne, sa ligne et sa sorte, triée. Jamais vu : une colonne de référence que la base gagne sans être classée fait échouer les vérifications, et la vérification d'un fichier recalcule la liste depuis ses propres lignes et dit si elle est complète au regard de la carte d'aujourd'hui.
+- Critères : chaque colonne `_ref` ou `_refs` de chaque table reprise classée une fois, aucune classe pour une colonne absente ou une table laissée, chaque `externe` avec sa raison [R660] (test) ; une colonne ajoutée sans classe fait échouer le test, avec la table et la colonne [R660] (test) ; la liste porte chaque référence `fichier` et `preuve` de l'agence, aucune d'un autre réseau, aucune `externe`, masquée comme la ligne [R661, R657, R659] (test) ; un fichier `/1` reste vérifié, un fichier `/2` dont la liste ne concorde pas avec ses lignes est dit incomplet [R661] (test).
+- Attend : rien (le contenu des fichiers attendra un stockage branché).
+
 ## Branchements des groupes HX
 
 Voie : 1
