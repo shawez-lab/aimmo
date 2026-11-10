@@ -69,7 +69,10 @@ const actualites = (s: ReseauUtileServices) => new Actualites(s.db, s.acces, s.j
 /** Les routes de `/v1/remises` et `/v1/actualites`, à ajouter à celles de `app.ts`. */
 export function reseauUtileRoutes(): ReseauUtileRoute[] {
   type Handler = (s: ReseauUtileServices, v: Viewer, params: string[], body: Record<string, unknown>) => Promise<Response>;
+  // Chaque route avec un corps est à la direction seule : un autre rôle est refusé par la couche métier, au journal,
+  // avant toute lecture du corps [R16].
   const withBody = (fn: Handler): ReseauUtileRoute['handle'] => async (s, v, params, request) => {
+    if (v.role !== 'direction') return fn(s, v, params, {});
     const body = await readJson(request);
     if (!body) return badBody();
     return fn(s, v, params, body);

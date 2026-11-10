@@ -79,6 +79,16 @@ describeWithSqlite('BR20 · routes des remises et des actualités', () => {
       ['alex', 'POST', '/actualites', actualite()],
       ['sam', 'POST', `/actualites/${newsId}/retrait`, { reason: 'Source retirée.' }],
     ];
+    // Le mauvais rôle est refusé au journal avant toute lecture du corps, même absent ou mal formé.
+    for (const path of ['/remises', `/remises/${discountId}/retrait`, '/actualites', `/actualites/${newsId}/retrait`]) {
+      const before = (await t.refusals()).length;
+      for (const raw of [undefined, 'pas du json', 'x'.repeat(9_000)]) {
+        const r = await t.http('alex', 'POST', path, undefined, raw);
+        expect(r.status, `alex POST ${path}`).toBe(403);
+        expect(r.body).toMatchObject({ ok: false, rule: 'R16' });
+      }
+      expect((await t.refusals()).length - before, path).toBe(3);
+    }
     for (const [who, method, path, body] of cases) {
       const before = (await t.refusals()).length;
       const r = await t.http(who, method, path, body);
