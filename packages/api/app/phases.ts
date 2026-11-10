@@ -1,9 +1,12 @@
 /**
- * Les phases et les régions sur l'écran du réseau (BR13) : la direction lit l'état des cinq phases (HX71) et ouvre la
+ * Les phases et les régions sur l'écran du réseau (BR13, BR14) : la direction lit l'état des cinq phases (HX71) et ouvre la
  * suivante, lit les 18 régions (HX72), en ouvre ou en ferme une avec sa raison, et vérifie la chaîne des décisions.
  * Script servi à part (`/app/phases.js`), chargé au premier geste [R201]. Chaque condition et chaque refus se disent en
  * mots, jamais par un code. Ouvrir une phase ne se défait pas : deux appuis, et seulement quand le serveur dit que
  * c'est possible ; c'est lui qui relit la condition à l'instant [R647]. Tout texte reçu est posé en texte.
+ * BR14 : la direction y lit aussi la comparaison des agents pilotes (HX69) et la série de la phase 1 (HX70), désigne un
+ * pilote, range ses mois d'avant avec la référence de la preuve, range un envoi constaté hors d'AIMMO (deux appuis : il
+ * n'est jamais retiré) et l'inventaire des tâches planifiées, par les routes de BR10. Une saisie illisible ne part pas.
  */
 
 const REFUSALS: Record<string, string> = {
@@ -24,7 +27,33 @@ const REFUSALS: Record<string, string> = {
   phase5_fermee: 'La phase 5 n’est pas ouverte : aucune nouvelle région ne s’ouvre avant.',
   region_recente: 'Une autre région s’est ouverte il y a moins de 90 jours.',
   conflit: 'Une autre décision vient de passer : relisez la liste, puis recommencez.',
+  bad_agent: 'Donnez l’identifiant de l’agent.',
+  agent_inconnu: 'Cet agent ne se trouve pas dans le réseau.',
+  agent_parti: 'Cet agent n’est plus actif : il ne peut pas être pilote.',
+  trop_tard: 'Sa mesure a déjà commencé : un pilote se désigne avant le 1er du mois qui suit son arrivée.',
+  deja_pilote: 'Cet agent est déjà pilote.',
+  pas_pilote: 'Cet agent n’est pas pilote : désignez-le d’abord.',
+  bad_months: 'Chaque mois d’avant : un nombre entier de mandats, de 0 à 500.',
+  bad_proof: 'La référence de la preuve : de 3 à 200 lettres, chiffres ou / _ . : -, sans espace.',
+  bad_day: 'Le jour : une date depuis le 1er janvier 2026, jamais dans le futur.',
+  bad_application: 'Choisissez l’application où l’envoi a été constaté.',
+  bad_tasks: 'Chaque application : un nombre entier de tâches, de 0 à 1000, même à zéro.',
 };
+const PILOT_STATUS: Record<string, string> = {
+  en_cours: 'Mesure en cours.',
+  parti: 'Parti avant la fin de sa mesure.',
+  avant_non_declare: 'Mois d’avant pas déclarés à temps : il ne pourra pas compter.',
+  plus: 'Signe plus qu’avant son arrivée.',
+  pas_plus: 'Ne signe pas plus qu’avant son arrivée.',
+};
+/** Les applications de l'inventaire et des envois constatés hors d'AIMMO (HX70), dans l'ordre du serveur. */
+const APPS: [string, string][] = [
+  ['gohighlevel', 'GoHighLevel'],
+  ['manychat', 'ManyChat'],
+  ['site', 'Le site'],
+  ['github_actions', 'GitHub Actions'],
+  ['autre', 'Autre application'],
+];
 const CONDITIONS: Record<string, string> = {
   remplie: 'Condition remplie',
   non_remplie: 'Condition pas encore remplie',
@@ -109,6 +138,14 @@ globalThis.AIMMO_PHASES = function (t) {
   var CONDITIONS = ${JSON.stringify(CONDITIONS)};
   var OPENABLE_REASONS = ${JSON.stringify(OPENABLE_REASONS)};
   var CONDITION_REASONS = ${JSON.stringify(CONDITION_REASONS)};
+  var PILOT_STATUS = ${JSON.stringify(PILOT_STATUS)};
+  var APPS = ${JSON.stringify(APPS)};
+  var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  /* Mêmes formes que le serveur : une saisie illisible ne part pas. */
+  var PROOF = new RegExp('^[A-Za-z0-9][A-Za-z0-9/_.:-]{2,199}$');
+  var AGENT = new RegExp('^[A-Za-z0-9_.:-]{1,100}$');
+  var DAY = new RegExp('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+  var WHOLE = new RegExp('^[0-9]{1,4}$');
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   /* Une écriture sans réponse, ou coupée par une panne du serveur, a pu passer : l'écran ne dit ni fait ni pas fait. */
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez l’écran avant de recommencer.';
@@ -200,6 +237,124 @@ globalThis.AIMMO_PHASES = function (t) {
     body.appendChild(button('Vérifier la chaîne des décisions', function () { verify(check); }));
     body.appendChild(check);
   }
+  function month(m) {
+    var p = String(m || '').split('-');
+    var i = Number(p[1]) - 1;
+    return MONTHS[i] ? MONTHS[i] + ' ' + p[0] : '';
+  }
+  function day(d) { return DAY.test(String(d)) ? date(d + 'T12:00:00.000Z') : ''; }
+  function proofOf(input) {
+    var v = String(input.value || '').trim();
+    return PROOF.test(v) && v.indexOf('..') < 0 ? v : null;
+  }
+  function whole(input, max) {
+    var v = String(input.value || '').trim();
+    if (!WHOLE.test(v)) return null;
+    var n = Number(v);
+    return n <= max ? n : null;
+  }
+  function numberField(box, id, label) {
+    var f = field(box, id, label);
+    f.setAttribute('inputmode', 'numeric');
+    return f;
+  }
+  function reasonsOf(box, condition, yes) {
+    if (condition.met) { box.appendChild(el('p', yes)); return; }
+    (condition.reasons || []).forEach(function (r) { box.appendChild(el('p', CONDITION_REASONS[r] || 'Une autre raison, que cet écran ne sait pas encore dire.', 'doux')); });
+  }
+  function renderPilots(body, report) {
+    body.appendChild(el('h4', 'Les agents pilotes'));
+    body.appendChild(el('p', 'Chacun comparé à lui-même : ses 3 mois d’avant, déclarés avec leur preuve, contre ses 3 mois d’après, lus dans le registre. Il en faut au moins ' + report.minimum + ', tous finis, tous en hausse.', 'doux'));
+    reasonsOf(body, report.condition, 'Condition des pilotes remplie.');
+    var ul = el('ul', null, 'liste');
+    report.pilots.forEach(function (p, i) {
+      var li = el('li');
+      li.appendChild(el('strong', 'Agent ' + p.agentId));
+      li.appendChild(el('p', 'Arrivé le ' + date(p.arrivedAt) + ' ; mesuré jusqu’à fin ' + month(p.measureEndMonth) + '.', 'doux'));
+      li.appendChild(el('p', PILOT_STATUS[p.status] || 'État que cet écran ne sait pas encore dire.'));
+      li.appendChild(el('p', p.before ? 'Avant : ' + p.beforeMonths.map(function (m, j) { return month(m) + ' ' + p.before[j]; }).join(', ') + ' ; total ' + p.beforeTotal + '.' : 'Avant : aucune déclaration rangée à temps.', 'doux'));
+      li.appendChild(el('p', 'Après : ' + p.after.map(function (m) { return month(m.month) + ' ' + m.counted; }).join(', ') + ' ; total ' + p.afterTotal + '.', 'doux'));
+      li.appendChild(el('p', 'Mois d’arrivée, à part : ' + p.arrivalMonthCounted + ' ; retirés (erreur ou rétractation) : ' + p.withdrawnOrCancelled + '.', 'doux'));
+      var late = p.declarations.filter(function (d) { return !d.inTime; }).length;
+      if (late) li.appendChild(el('p', late + ' déclaration(s) rangée(s) après le début de la mesure : gardée(s), jamais comptée(s).', 'alerte'));
+      var d = el('details');
+      d.appendChild(el('summary', 'Déclarer ses mois d’avant'));
+      var inputs = p.beforeMonths.map(function (m, j) { return numberField(d, 'pilote-' + i + '-mois-' + j, 'Mandats signés en ' + month(m)); });
+      var proof = field(d, 'pilote-' + i + '-preuve', 'Référence de la preuve');
+      d.appendChild(button('Ranger les mois d’avant', function () {
+        var months = inputs.map(function (f) { return whole(f, 500); });
+        if (months.some(function (n) { return n === null; })) { state(REFUSALS.bad_months); return; }
+        var ref = proofOf(proof);
+        if (!ref) { state(REFUSALS.bad_proof); return; }
+        write('/v1/phases/pilotes/avant', { agentId: p.agentId, months: months, proofRef: ref }, 'Mois d’avant rangés : une nouvelle version s’ajoute, rien n’est effacé.', 'Les mois d’avant ne sont pas rangés.');
+      }));
+      li.appendChild(d);
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+    var add = el('details');
+    add.appendChild(el('summary', 'Désigner un pilote'));
+    add.appendChild(el('p', 'Avant le 1er du mois qui suit son arrivée. Un pilote n’est jamais retiré.', 'doux'));
+    var who = field(add, 'pilote-agent', 'Identifiant de l’agent');
+    add.appendChild(button('Désigner comme pilote', function () {
+      var id = String(who.value || '').trim();
+      if (!AGENT.test(id)) { state(REFUSALS.bad_agent); return; }
+      write('/v1/phases/pilotes', { agentId: id }, 'Pilote désigné.', 'Le pilote n’est pas désigné.');
+    }));
+    body.appendChild(add);
+  }
+  var DAY_STATUS = { hors_regles: 'hors règles', sans_donnee: 'sans donnée' };
+  function renderPhase1(body, report) {
+    body.appendChild(el('h4', 'La phase 1 : 30 jours sans envoi hors règles'));
+    reasonsOf(body, report.condition, 'Condition de la phase 1 remplie.');
+    body.appendChild(el('p', report.countedSeries + ' jour(s) propre(s) de suite qui comptent, sur ' + report.required + ' ; ' + report.currentSeries + ' de suite en tout jusqu’au ' + day(report.lastDay) + ', meilleure série ' + report.bestSeries + '.'));
+    body.appendChild(el('p', report.countFrom ? 'Les jours comptent à partir du ' + day(report.countFrom) + ', lendemain de l’inventaire à zéro.' : 'Aucun jour ne compte encore : l’inventaire n’est pas à zéro.', 'doux'));
+    var dark = report.days.slice(-30).filter(function (x) { return x.status !== 'propre'; }).reverse().slice(0, 10);
+    if (dark.length) {
+      var ul = el('ul', null, 'liste');
+      dark.forEach(function (x) {
+        var text = day(x.day) + ' : ' + (DAY_STATUS[x.status] || 'état inconnu');
+        if (x.recountWorse) text += ', recompté pire qu’au relevé de la nuit';
+        ul.appendChild(el('li', text + '.'));
+      });
+      body.appendChild(ul);
+    }
+    var inv = report.inventories[report.inventories.length - 1];
+    body.appendChild(el('p', inv ? 'Inventaire version ' + inv.version + ' du ' + date(inv.declaredAt) + ' : ' + inv.total + ' tâche(s) encore planifiée(s) hors d’AIMMO (' + APPS.map(function (a) { return a[1] + ' ' + inv.tasks[a[0]]; }).join(', ') + ').' : 'Aucun inventaire des tâches planifiées hors d’AIMMO n’est rangé.', 'doux'));
+    var d = el('details');
+    d.appendChild(el('summary', 'Ranger l’inventaire des tâches planifiées'));
+    var counts = APPS.map(function (a) { return numberField(d, 'inventaire-' + a[0], a[1] + ' : tâches encore planifiées'); });
+    var proof = field(d, 'inventaire-preuve', 'Référence de la preuve');
+    d.appendChild(button('Ranger l’inventaire', function () {
+      var tasks = {}, bad = false;
+      APPS.forEach(function (a, j) { var n = whole(counts[j], 1000); if (n === null) bad = true; tasks[a[0]] = n; });
+      if (bad) { state(REFUSALS.bad_tasks); return; }
+      var ref = proofOf(proof);
+      if (!ref) { state(REFUSALS.bad_proof); return; }
+      write('/v1/phases/phase1/inventaire', { tasks: tasks, proofRef: ref }, 'Inventaire rangé : une nouvelle version s’ajoute.', 'L’inventaire n’est pas rangé.');
+    }));
+    body.appendChild(d);
+    var o = el('details');
+    o.appendChild(el('summary', 'Ranger un envoi hors règles constaté hors d’AIMMO'));
+    o.appendChild(el('p', 'Il rend son jour hors règles et n’est jamais retiré.', 'doux'));
+    var when = field(o, 'hors-jour', 'Le jour de l’envoi');
+    when.setAttribute('type', 'date');
+    var app = field(o, 'hors-application', 'L’application', 'select');
+    app.appendChild(el('option', 'Choisir…'));
+    APPS.forEach(function (a) { var opt = el('option', a[1]); opt.setAttribute('value', a[0]); app.appendChild(opt); });
+    var ref = field(o, 'hors-preuve', 'Référence de la preuve');
+    var b = button('Ranger cet envoi', function () {
+      var dd = String(when.value || '').trim(), aa = String(app.value || '');
+      if (!DAY.test(dd)) { state(REFUSALS.bad_day); return; }
+      if (!APPS.some(function (a) { return a[0] === aa; })) { state(REFUSALS.bad_application); return; }
+      var r = proofOf(ref);
+      if (!r) { state(REFUSALS.bad_proof); return; }
+      if (!b.armed) { b.armed = true; b.textContent = 'Confirmer : cet envoi ne sera jamais retiré'; return; }
+      write('/v1/phases/phase1/envois-hors-aimmo', { day: dd, application: aa, proofRef: r }, 'Envoi hors règles rangé : son jour compte comme hors règles.', 'L’envoi n’est pas rangé.');
+    });
+    o.appendChild(b);
+    body.appendChild(o);
+  }
   function verify(out) {
     var mine = t.session();
     out.textContent = 'Vérification…';
@@ -216,15 +371,19 @@ globalThis.AIMMO_PHASES = function (t) {
     var turn = ++showing;
     clear($('phases-corps'));
     state('Chargement…');
-    return Promise.all([send('/v1/phases', 'GET'), send('/v1/regions', 'GET')]).then(function (all) {
-      if (all[0].gone || all[1].gone || mine !== t.session() || turn !== showing) return false;
-      var p = all[0], r = all[1];
+    return Promise.all([send('/v1/phases', 'GET'), send('/v1/regions', 'GET'), send('/v1/phases/pilotes', 'GET'), send('/v1/phases/phase1', 'GET')]).then(function (all) {
+      if (all.some(function (x) { return x.gone; }) || mine !== t.session() || turn !== showing) return false;
+      var p = all[0], r = all[1], pl = all[2], p1 = all[3];
       var body = $('phases-corps');
       var bad = [];
       if (p.ok && p.body && p.body.data && Array.isArray(p.body.data.phases)) renderPhases(body, p.body.data);
       else bad.push(why(p, 'Phases indisponibles pour le moment.'));
       if (r.ok && r.body && r.body.data && Array.isArray(r.body.data.regions)) renderRegions(body, r.body.data);
       else bad.push(why(r, 'Régions indisponibles pour le moment.'));
+      if (pl.ok && pl.body && pl.body.data && Array.isArray(pl.body.data.pilots)) renderPilots(body, pl.body.data);
+      else bad.push(why(pl, 'Agents pilotes indisponibles pour le moment.'));
+      if (p1.ok && p1.body && p1.body.data && Array.isArray(p1.body.data.days)) renderPhase1(body, p1.body.data);
+      else bad.push(why(p1, 'Phase 1 indisponible pour le moment.'));
       state([message].concat(bad).filter(function (x, i, all) { return x && all.indexOf(x) === i; }).join(' '));
       return bad.length === 0;
     });
