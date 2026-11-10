@@ -197,9 +197,10 @@ const DAY_WORDS_AFTER = `\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ
 const FIRST_OF_MONTH = new RegExp(`\\bpremier\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`, 'u');
 /**
  * L'heure en lettres (RC01) : « quinze heures », « quinze heures trente ». Les minutes se lisent d'une seule façon,
- * de 1 à 59, sinon rien ; « et demie », « et quart », « moins » ou un chiffre derrière : rien.
+ * de 1 à 59, sinon rien ; « et » (« et demie », « et trente minutes »), « minutes », « moins » ou un chiffre
+ * derrière : rien.
  */
-const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et (?:demie?|quart)\\b|moins\\b))`;
+const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et\\b|minutes?\\b|moins\\b))`;
 /**
  * Une heure en lettres ne se lit qu'après « à » ou « vers » (« il y a deux heures » est une durée), de 8 h à 23 h :
  * « à deux heures » se dit pour 14 h comme pour 2 h. Suivie de « du matin », « du soir » ou « de l'après-midi », elle
@@ -217,7 +218,26 @@ const TIME_QUALIFIER = /^\s+(?:du (?:matin|soir)|de l['’ ]\s*apres[- ]midi)/u;
 /** Ce qui suit des minutes en lettres : la fin de la phrase ou une ponctuation, sinon elles ont pu prendre un autre mot. */
 const MINUTES_END = /^\s*(?:[,.;:!?)]|$)/u;
 /** Une heure entière : suivie d'un chiffre ou de « et demie », « et quart », « moins », elle n'est pas lue. */
-const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et (?:demie?|quart)\b|moins\b))/u;
+const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et\b|minutes?\b|moins\b))/u;
+/**
+ * Toute heure dite, lue ou non (RC01) : un nombre en chiffres ou en lettres suivi de « h », « heure » ou « heures »,
+ * quoi qu'il y ait derrière, et midi et minuit. Cette recherche ne reprend pas le motif qui lit l'heure : une heure
+ * que la lecture refuse (« dix heures et demie ») compte quand même comme une autre heure dite.
+ */
+const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?![\\p{L}])|(?:${NUMBER_RUN})\\s+heures?(?![\\p{L}\\d])|midi(?![\\p{L}\\d])|minuit(?![\\p{L}\\d]))`, 'gu');
+/** Les heures dites dans la phrase, hors de celles qui suivent un mot de durée. */
+function hourMentions(sentence: string): Hit[] {
+  const { folded, index } = fold(sentence);
+  const out: Hit[] = [];
+  HOUR_MENTION.lastIndex = 0;
+  for (let m = HOUR_MENTION.exec(folded); m !== null; m = HOUR_MENTION.exec(folded)) {
+    if (DURATION_BEFORE.test(folded.slice(0, m.index))) continue;
+    const at = index[m.index]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value: 0, quote: sentence.slice(at, end).trim(), at, end });
+  }
+  return out;
+}
 
 const addDays = (date: string, n: number): string => {
   const d = new Date(`${date}T12:00:00.000Z`);
@@ -417,7 +437,8 @@ export function readDictation(dictation: string, options: { now: Date; communes?
         (h, m) => {
           const rest = m.input.slice(m.index + m[0].length);
           if (h < 8 || h > 23 || TIME_QUALIFIER.test(rest)) return null;
-          if (m[2] === undefined) return h * 60;
+          // Un mot de nombre derrière l'heure, non pris pour minutes (« quinze heures trente minutes ») : rien.
+          if (m[2] === undefined) return WORD_AFTER.test(rest) ? null : h * 60;
           if (!MINUTES_END.test(rest)) return null;
           const minutes = parseNumberWords(m[2]);
           return minutes !== null && minutes >= 1 && minutes <= 59 ? h * 60 + minutes : null;
@@ -427,10 +448,9 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       const times = [...hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter(digitsAlone(s, { wordAfter: true })), ...timeWords].filter((h) => !overlaps(h, numbers));
       const sorts: Hit[] = [];
       for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
-      const otherTimes = [...hits(s, TIME, () => 0), ...wordHits(s, TIME_WORDS_AFTER, () => 0)].filter(
-        (h) => !overlaps(h, times) && !overlaps(h, numbers) && !DURATION_BEFORE.test(fold(s.slice(0, h.at)).folded),
-      );
-      if (days.length === 1 && times.length === 1 && otherTimes.length === 0) {
+      const mentions = hourMentions(s).filter((h) => !overlaps(h, numbers) || overlaps(h, times));
+      const otherTimes = mentions.filter((h) => !overlaps(h, times));
+      if (days.length === 1 && times.length === 1 && otherTimes.length === 0 && mentions.length === 1) {
         const day = days[0]!;
         const time = times[0]!;
         const start = parisInstant(day.value as string, time.value as number);
@@ -440,7 +460,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
           found.push({ target: 'rendezvous', key: 'start', value: start.toISOString(), sentence: i, quote: s.slice(a, b).trim() });
           add('rendezvous', 'appointmentKind', i, sorts);
         }
-      } else if (days.length >= 1 && times.length + otherTimes.length >= 1) {
+      } else if (days.length >= 1 && times.length + mentions.length >= 1) {
         // Deux jours ou deux heures dans la phrase : le rendez-vous n'est pas lu, l'agent le prendra lui-même.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
       }

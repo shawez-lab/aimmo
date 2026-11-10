@@ -171,6 +171,10 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Visite de deux heures demain à 10 h.')).toBeUndefined();
     expect(at('Visite demain de dix heures à onze heures.')).toBeUndefined();
     expect(at('Visite demain de 10 h à 11 h.')).toBeUndefined();
+    // Une heure que la lecture refuse compte quand même comme une autre heure dite (Codex sur #486).
+    for (const s of ['Visite demain de dix heures et demie à onze heures.', 'Visite demain de 10 h et demie à 11 h.', 'Visite demain de dix heures et quart à onze heures.', 'Visite demain à onze heures, ou dix heures et demie.', 'Visite demain à midi ou minuit.', 'Visite demain à 10 h ou dix heures moins le quart.']) expect(at(s), s).toBeUndefined();
+    // Une heure suivie de « et » ou de « minutes » n'est pas lue.
+    for (const s of ['Visite demain à quinze heures et trente minutes.', 'Visite demain à 15 heures et 30 minutes.', 'Visite demain à quinze heures trente minutes.', 'Visite demain à 15 h 30 minutes.', 'Visite demain à quinze heures et des poussières.']) expect(at(s), s).toBeUndefined();
     expect(at('Visite d’une heure demain à 10 h.')).toBe('2026-12-04T09:00:00.000Z');
     expect(at('Visite le douze janvier vingt-huit à dix heures.')).toBeUndefined();
     expect(at('Visite le 12 janvier 28 à 10 h.')).toBeUndefined();
