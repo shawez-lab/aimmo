@@ -993,6 +993,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; carte et alerte limitées aux communes des zones de l'agent [R289] (test) ; lettre seulement pour un F ou un G, sans nom de propriétaire [R290] (test) ; passage inscrit au planificateur, rien ne remonte deux fois [R288] (test) ; corps mal formé 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H60 pour l'usage réel de la lettre).
 
+## Restes du cœur des groupes HX
+
+Voie : 2
+
+Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
+
+### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX06
+- Cahier : Phase 3, « Création d'un bien et d'un contact à la voix » ; R260.
+- Décidé (2026-11-10, voie 2), lecture prudente : relevé dans les « Restent » de HX06. La dictée d'un téléphone écrit souvent les petits nombres en lettres (« un trois pièces », « quatre-vingts mètres carrés », « à quinze heures », « le douze janvier ») : aujourd'hui l'agent doit tout ressaisir. Le code lit un nombre en lettres seulement s'il ne se lit que d'une façon, en français écrit (et septante, huitante, octante, nonante) ; « un » ou « une » devant un nombre se lit comme l'article ; un nombre en lettres collé à un autre nombre, à « virgule », à un chiffre, ou suivi de « et demi », n'est pas lu ; une heure en lettres après « dans », « pendant », « durant » ou « pour » est une durée et n'est pas lue ; une année dite après le jour et le mois, en lettres ou en chiffres, sans être lue, fait refuser le jour. Fichier neuf `packages/core/src/dictee/nombres.ts`, `lecture.ts` le suit ; `dictee.ts` ne change pas. Le contrôle du compte rendu (`checkReport`) ne change pas : un chiffre du compte rendu que la dictée dit seulement en lettres reste refusé, c'est plus prudent.
+- Objectif : pièces, surface, prix demandé, heure et jour du rendez-vous dits en lettres sont lus comme les chiffres, avec le passage exact.
+- Jamais vu : une dictée immobilière qui lit « un trois pièces de quatre-vingt-cinq mètres carrés, deux cent cinquante mille euros » sans rien deviner : chaque nombre renvoie à ses mots, et « deux trois pièces » ou « cent vingt virgule cinq mètres carrés » ne sont jamais tranchés à la place de l'agent.
+- Critères : chaque nombre en lettres lu avec son passage exact [R260] (test) ; formes ambiguës ou mal formées non lues [R260] (test) ; « un trois pièces » lu 3 [R260] (test) ; chiffres et lettres qui disent deux valeurs : conflit (test) ; durée et année non lues [R260] (test) ; la validation relit et accepte le champ dit en lettres [R260, R261] (test) ; tous les tests de HX06 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
