@@ -275,6 +275,16 @@ Sous `/v1/securite`, chaque route passe par les droits de la couche métier [R16
 
 Au planificateur, inchangé : `securite.reclamations` de 9 h à 19 h, `securite.gel_avoirs` chaque heure.
 
+## Remises et actualités du réseau (BR20)
+
+Sous `/v1/remises` et `/v1/actualites`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé : ni au fournisseur, ni au client, ni à l'agent hors de l'application. Corps JSON de 8 ko au plus, sinon 400 `invalid_body`.
+
+- `GET /remises` : la direction ou un agent en activité lit les remises en vigueur ce jour-là à Paris ; une remise échue n'y est plus dès le lendemain, sans passage [R266].
+- `POST /remises` (`{category, supplier, partnerId?, beneficiary: agent | client, title, terms, source, moment: estimation | mandat | en_vente | compromis | acte | toujours, validFrom, validUntil}`) : la direction seule range une remise, toujours avec sa source et sa date de fin [R266] ; diagnostiqueur, déménageur et artisan pour le client seul [R76]. `POST /remises/<id>/retrait` (`{reason}`) : retirée, jamais effacée.
+- `GET /remises/biens/<id>` : l'agent du bien lit les remises du moment de son dossier, lu dans la base, chacune avec sa raison en une ligne ; celles du client dans un ordre tiré au sort ; `data: null` quand aucun moment n'est sûr [R267, R75]. `POST /remises/<id>/biens/<bien>/ecarter` : écartée pour ce bien, elle n'y revient plus.
+- `GET /actualites` : le fil de l'agent en activité, chaque actualité avec sa source, la ligne de ce qu'elle change et ses dossiers concernés ; montrée une fois [R269].
+- `POST /actualites` (`{topic: juridique | marche, title, impact, sourceName, sourceUrl, sourceDate, target?}`) : la direction seule ; adresse https publique, une seule fois par source [R268, R269]. `GET /actualites/catalogue` et `POST /actualites/<id>/retrait` (`{reason}`) : la direction seule.
+
 ## Recrutement des 100 premiers agents, en mode essai (BR02)
 
 Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.
