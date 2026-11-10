@@ -8,7 +8,7 @@
  *     et financier, article L561-12) : elle le reprend à tout moment, licence active, suspendue ou terminée ;
  *   - seul le rôle `compliance` du réseau de l'agence le tire et le vérifie : ni sa direction, ni le réseau qui donne la
  *     licence, ni une autre agence. Le cahier : les documents anti-blanchiment « ne sont visibles que du responsable » ;
- *   - sur la preuve d'un second facteur, pour ce dossier seul (`export_complet`, sujet `licence-lcb:<id>`) [R601] ;
+ *   - sur la preuve d'un second facteur, pour ce dossier seul (`export_complet`, sujet `licence_lcb:<id>`) [R601] ;
  *   - les tables sont celles du traitement `conformite-lcb-ft` du registre des traitements, prises sans être nommées
  *     une à une. Une table sans colonne `network_id` déclare son chemin ici (`CHEMINS_LCB`), suivi par une vraie clé
  *     étrangère ; les tables se lisent enfants d'abord (`ORDRE_LCB`), pour qu'une ligne écrite pendant la lecture
@@ -178,7 +178,7 @@ export class DossierLcbAgences {
     // Le réseau qui donne les licences garde son dossier chez lui : seule l'agence sous licence le reprend [R662].
     if (licenceId === null) return this.refuse(viewer, 'R662', 'pas_de_licence');
     // Avant toute lecture : sans preuve pour ce dossier, rien n'est lu (la porte écrit son refus au journal) [R601].
-    const proof = await this.secondFactor.requireSecondFactor(viewer, 'export_complet', `licence-lcb:${licenceId}`, stepUpId);
+    const proof = await this.secondFactor.requireSecondFactor(viewer, 'export_complet', `licence_lcb:${licenceId}`, stepUpId);
     if (!proof.ok) return { ok: false, rule: 'R601', code: proof.code };
     const net = viewer.networkId;
     const document: DossierLcbAgence = { format: DOSSIER_LCB_FORMAT, licenceId, networkId: net, madeAt: this.now().toISOString(), tables: {}, horsFichier: [...DOSSIER_LCB_HORS_FICHIER], pieces: [] };

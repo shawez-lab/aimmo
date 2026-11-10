@@ -6,6 +6,7 @@ import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type Sql
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
 import { CHEMINS_LCB, DOSSIER_LCB_FORMAT, DossierLcbAgences, ORDRE_LCB, filtreLcb, ordreLcb, piecesDe } from '../src/conformite/index.ts';
 import { LicencesLogiciel, RepriseDonneesAgence, tablesLcbFt } from '../src/licences/index.ts';
+import { ClesAppareil } from '../src/securite/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -109,7 +110,7 @@ async function setup(opts: { fillLcb?: boolean } = {}) {
   const tick = (ms: number) => {
     clock += ms;
   };
-  return { db, network, direction, as, lac, pres, dossier, reprise, licences, lacCompliance, lacDirection, proofs, events, reads, tick };
+  return { db, journal, now, network, direction, as, lac, pres, dossier, reprise, licences, lacCompliance, lacDirection, proofs, events, reads, tick };
 }
 
 describeWithSqlite('HX76 · Le dossier de la lutte contre le blanchiment de l’agence sous licence', () => {
@@ -156,10 +157,20 @@ describeWithSqlite('HX76 · Le dossier de la lutte contre le blanchiment de l’
     expect((await t.events('conformite.refuse')).map((e) => e.code)).toEqual(['role', 'role', 'pas_de_licence']);
   });
 
+  it('[R601] la vraie porte du second facteur accepte le sujet du dossier, et refuse sans preuve', async () => {
+    const t = await setup();
+    const gate = new ClesAppareil(t.db, t.journal, { rpId: 'app.aimmo.test', origins: ['https://app.aimmo.test'], now: t.now });
+    const dossier = new DossierLcbAgences(t.db, t.journal, gate, { now: t.now });
+    // Un sujet mal formé donnerait `bad_input` : la porte n'accepterait jamais aucune preuve pour ce dossier.
+    expect(await dossier.make(t.lacCompliance)).toEqual({ ok: false, rule: 'R601', code: 'second_factor_required' });
+    expect(await dossier.make(t.lacCompliance, 'preuve-inventee')).toEqual({ ok: false, rule: 'R601', code: 'second_factor_required' });
+    expect(await t.db.all('SELECT id FROM licence_lcb_exports')).toEqual([]);
+  });
+
   it('[R601] sans second facteur, rien n’est lu', async () => {
     const t = await setup();
     expect(await t.dossier.make(t.lacCompliance)).toEqual({ ok: false, rule: 'R601', code: 'second_factor_required' });
-    expect(t.proofs).toEqual([{ subject: `licence-lcb:${t.lac.id}`, stepUpId: undefined }]);
+    expect(t.proofs).toEqual([{ subject: `licence_lcb:${t.lac.id}`, stepUpId: undefined }]);
     expect(t.reads).toEqual([]);
     expect(await t.db.all('SELECT id FROM licence_lcb_exports')).toEqual([]);
   });
