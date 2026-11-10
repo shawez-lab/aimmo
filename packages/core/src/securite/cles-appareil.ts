@@ -184,7 +184,8 @@ export class ClesAppareil {
     if (!who.ok) return who;
     const rows = await this.devicesOf(viewer);
     if (rows.filter((d) => d.status !== 'retire').length >= MAX_DEVICES_PER_USER) return this.refused(viewer, 'R600', 'too_many_devices', null);
-    return this.issue(viewer, 'register', null, null, rows.map((d) => d.credential_id));
+    // Seules les clés encore rangées sont à exclure : une clé retirée ne bloque pas l'appareil qui veut en ranger une neuve.
+    return this.issue(viewer, 'register', null, null, rows.filter((d) => d.status !== 'retire').map((d) => d.credential_id));
   }
 
   /**
@@ -257,12 +258,21 @@ export class ClesAppareil {
 
   // ---------------------------------------------------------------- direction
 
-  /** Toutes les clés du réseau, pour la direction ; jamais une clé publique ni un identifiant de clé. */
-  async listDevices(viewer: Viewer): Promise<SecurityResult<Device[]>> {
+  /**
+   * Toutes les clés du réseau, pour la direction ; jamais une clé publique ni un identifiant de clé. Une clé d'agent
+   * porte le nom de l'agent tiré de la base (`ownerName`), jamais celui que le demandeur a donné à l'appareil : la
+   * direction sait à qui elle accepte une clé (BR18) [R600].
+   */
+  async listDevices(viewer: Viewer): Promise<SecurityResult<(Device & { ownerName: string | null })[]>> {
     if (viewer.role !== 'direction') return this.refused(viewer, 'R16', 'role', null);
-    const rows = await this.db.all<DeviceRow>('SELECT * FROM security_devices WHERE network_id = ? ORDER BY created_at DESC, id', [viewer.networkId]);
+    const rows = await this.db.all<DeviceRow & { owner_first: string | null; owner_last: string | null }>(
+      `SELECT d.*, a.first_name AS owner_first, a.last_name AS owner_last FROM security_devices d
+       LEFT JOIN agents a ON d.user_role = 'agent' AND a.id = d.user_id AND a.network_id = d.network_id
+       WHERE d.network_id = ? ORDER BY d.created_at DESC, d.id`,
+      [viewer.networkId],
+    );
     await this.write(viewer, 'securite.cles.lues', null, { rule: 'R600', count: rows.length });
-    return { ok: true, value: rows.map(toDevice) };
+    return { ok: true, value: rows.map((r) => ({ ...toDevice(r), ownerName: r.owner_first === null ? null : `${r.owner_first} ${r.owner_last ?? ''}`.trim() })) };
   }
 
   /** La direction accepte une clé en attente, sur la preuve de sa propre clé pour cette clé-là [R600, R601]. */

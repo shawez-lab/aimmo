@@ -155,7 +155,14 @@ describeWithSqlite('HX56 · clé d’accès par appareil et second facteur', () 
     expect(mine.ok && mine.value.map((d) => `${d.userId}:${d.status}`).sort()).toEqual([`${agent.userId}:en_attente`, `${agent.userId}:retire`]);
     expect(JSON.stringify(mine)).not.toMatch(/publicKey|public_key|credential/);
     expect(await cles.listOwnDevices(direction)).toEqual({ ok: true, value: [] });
-    const read = (await journal.all()).filter((e) => e.type === 'securite.cles.lues');
+    // Une clé retirée n'est plus à exclure : l'appareil peut en ranger une neuve.
+    const again = await cles.beginRegistration(agent);
+    expect(again.ok && again.value.credentialIds).toHaveLength(1);
+    expect(again.ok && again.value.credentialIds).not.toContain(toBase64Url(first.device.credentialId));
+    // La direction lit le nom de l'agent tiré de la base, jamais le seul nom donné à l'appareil.
+    const net = await cles.listDevices(direction);
+    expect(net.ok && net.value.map((d) => d.ownerName).sort()).toEqual(['Alex Agent', 'Alex Agent', 'Sam Agent']);
+    const read = (await journal.all()).filter((e) => e.type === 'securite.cles.lues' && e.data.scope === 'siennes');
     expect(read.map((e) => e.data)).toEqual([{ rule: 'R600', count: 2, scope: 'siennes' }, { rule: 'R600', count: 0, scope: 'siennes' }]);
     expect(await cles.listOwnDevices({ role: 'partner' as never, networkId: agent.networkId, userId: 'x' })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
   });

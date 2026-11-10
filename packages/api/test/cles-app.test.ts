@@ -38,7 +38,7 @@ async function run(answers: Record<string, Answer> = {}, role = 'agent', dev: De
   const table: Record<string, Answer> = {
     'GET /v1/moi': ok({ role, firstName: 'Alex' }),
     'GET /v1/cles/mes-appareils': ok(MINE),
-    'GET /v1/cles/appareils': ok([...MINE, device({ id: 'd-9', userRole: 'agent', userId: 'agent-2', label: 'Téléphone de Sam', status: 'en_attente', approvedAt: null }), device({ id: 'd-8', userRole: 'compliance', userId: 'conf-1', label: 'Poste conformité' })]),
+    'GET /v1/cles/appareils': ok([...MINE, device({ id: 'd-9', userRole: 'agent', userId: 'agent-2', ownerName: 'Sam Imaginaire', label: 'Téléphone de Sam', status: 'en_attente', approvedAt: null }), device({ id: 'd-7', userRole: 'agent', userId: 'agent-3', ownerName: null, label: 'Téléphone de Lou', status: 'en_attente', approvedAt: null }), device({ id: 'd-8', userRole: 'compliance', userId: 'conf-1', label: 'Poste conformité' })]),
     'POST /v1/cles/enregistrement/debut': ok(CHALLENGE),
     'POST /v1/cles/enregistrement/fin': ok(device({ id: 'd-4', label: 'Mon téléphone', status: 'en_attente', approvedAt: null })),
     'POST /v1/cles/preuve/debut': ok(CHALLENGE),
@@ -228,8 +228,11 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     expect(x).toContain('Téléphone de Sam');
     expect(x).toContain('En attente de l’accord de la direction · rangée le 01/03/2027.');
     expect(x).toContain('Conformité');
-    expect(x).toContain('Avant d’accepter une clé, vérifiez de vive voix avec la personne qu’elle vient de la ranger.');
-    for (const code of ['en_attente', 'compliance', 'agent-2', 'd-9']) expect(x).not.toContain(code);
+    // Le titulaire réel, tiré de la base, est dit avant le geste ; un titulaire illisible est signalé.
+    expect(x).toContain('Agent · Sam Imaginaire');
+    expect(x).toContain('Le titulaire de cette clé ne se lit pas : ne l’acceptez pas sans savoir à qui elle est.');
+    expect(x).toContain('Avant d’accepter une clé, appelez la personne nommée : elle vous dit le nom qu’elle a donné à l’appareil.');
+    for (const code of ['en_attente', 'compliance', 'agent-2', 'agent-3', 'd-9']) expect(x).not.toContain(code);
     // Ses propres clés ne reviennent pas dans la liste du réseau.
     expect(t.body().all().filter((e) => e.tagName === 'strong' && e.textContent === 'Téléphone pro')).toHaveLength(1);
     await t.click(t.find('Accepter « Téléphone de Sam »'));
@@ -286,5 +289,7 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     expect(budgetProblems({ html: '', js: CLES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
     expect(CLES_SCRIPT).not.toContain('innerHTML');
+    // Le chemin des autres blocs rend toujours une réponse lisible (testé de bout en bout par BR19).
+    expect(JS).toContain('function proveAction(action, subject)');
   });
 });

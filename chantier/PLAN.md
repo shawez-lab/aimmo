@@ -921,7 +921,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Qui : Claude, relecture normale · Dépend de : BR16, BR17, BR18
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
 - Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil (BR18), l'enregistre sur l'appareil, et le fait vérifier.
-- Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `export_complet` et `licence:<id>` avant l'envoi (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `export_complet` et `licence:<id>` avant l'envoi, par `proveAction` de BR18, y compris pendant le chargement de `/app/cles.js` et hors ligne (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
 ## Phase 1 : le socle
