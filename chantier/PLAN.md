@@ -927,6 +927,24 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `export_complet` et `licence:<id>` avant l'envoi, par `proveAction` de BR18, y compris pendant le chargement de `/app/cles.js` et hors ligne (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
+Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans route suivent, dans l'ordre du plan (HX08, HX09, HX10, puis HX07 et HX14).
+
+### BR20 · Routes des remises et des actualités
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX08, HX09
+- Partie du cahier : M14 Réseau et académie ; Phase 3, « Mes remises » et « Mes actualités ».
+- Objectif : un fichier `packages/api/src/reseau-utile.ts`, ajouté au routeur de `app.ts` et décrit dans `docs/API.md`, sous `/v1/remises` et `/v1/actualites` : la direction range et retire une remise ou une actualité ; l'agent lit le catalogue, les remises de son bien au bon moment, en écarte une, et lit son fil d'actualités.
+- Critères : chaque route refuse le mauvais rôle en 403, avec le refus au journal [R16] (test) ; une remise sans source ou sans date de fin est refusée en 409 [R266] (test) ; une remise échue n'est plus au catalogue le lendemain (test) ; l'agent d'un autre bien ne lit pas ses remises (test) ; une actualité sans adresse https est refusée [R268], et une actualité n'est montrée qu'une fois dans le fil [R269] (test) ; corps trop gros ou pas en JSON refusé en 400 (test).
+- Attend : rien.
+
+### BR21 · Routes des clés des biens
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : HX10, BR20
+- Partie du cahier : M07 et M08 ; Phase 3, « Les clés des biens ».
+- Objectif : routes de l'armoire des clés (`/v1/trousseaux`), dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : ranger un trousseau, le sortir, le rendre, le dire perdu, lire l'armoire, ce que l'agent doit rendre, et la vue du vendeur.
+- Critères : refus de rôle en 403 au journal [R16] (test) ; numéro donné par le code [R270] (test) ; une clé déjà sortie ne ressort pas [R271] (test) ; l'agent voit ses trousseaux à rendre [R272] (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
