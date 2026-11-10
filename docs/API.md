@@ -441,6 +441,14 @@ Sous `/v1/tournee`, l'agent en activité seul : la carte et la tournée sont les
 
 Les panneaux sont placés par la Base adresse nationale (le géocodeur de l'estimation), sinon leur lieu est inconnu. L'agenda relié (V03) et la position des biens n'ont pas encore de source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`).
 
+## Pige des annonces de particuliers (BR29)
+
+Sous `/v1/pige` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 2 ko au plus ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; les routes sans corps n'admettent qu'un corps vide ou `{}`. Aucun nom, numéro, mail, adresse ni texte d'annonce n'est gardé ni rendu ; une annonce « pas d'agence » n'entre jamais dans la file, ni le même bien vu ailleurs [R273]. Rien n'est envoyé par AIMMO [R275, R26].
+
+- L'agent en activité ou la direction : `GET /` (soit `GET /v1/pige`) la file, des communes de ses zones pour l'agent, du réseau pour la direction ; l'écart au m² face à la seule case publiée des prix regroupés, avec sa source et sa dernière vente, sinon `marche_non_chiffre` [R274]. `POST /annonces/<id>/opposition` : le particulier a dit non, le bien est fermé sur tous ses sites (hors zone : 403 `hors_zone`) [R04].
+- L'agent de la zone seul : `POST /annonces/<id>/message` prépare le premier message, écrit par le code, une seule fois par bien (409 R05 `deja_prepare`) ; `POST /messages/<id>/validation` (`{channel}`) : par `annonce`, le texte est remis à l'agent, une fois, dans les heures d'envoi (409 R01 sinon), pour qu'il le colle lui-même (`sent: false`, `toPaste: true`) ; par `phone`, `sms`, `whatsapp` ou `email`, la décision unique refuse faute d'accord (409 R03) [R275].
+- La direction seule : `POST /releve` lance un passage de la source de pige (`pigeSource` de la configuration) et rend combien d'annonces sont entrées, écartées « pas d'agence », hors zone ou illisibles. Aucune source n'est encore branchée : 400 `source_absente`, rien n'est rangé.
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
