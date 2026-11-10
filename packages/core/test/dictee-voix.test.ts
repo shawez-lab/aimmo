@@ -221,7 +221,8 @@ describeWithSqlite('HX06 · création à la voix', () => {
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages'))!.n).toBe(0);
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM consents'))!.n).toBe(0);
     // Le journal ne porte que des noms de champs et des identifiants [R13].
-    const all = JSON.stringify(await t.journal.all());
+    // Empreintes et identifiants tirés au hasard retirés d'abord : « 0612 » peut y tomber par chance.
+    const all = JSON.stringify(await t.journal.all()).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32,}/g, '');
     for (const secret of ['Claire', 'Exemple', '0612', '+33612345678', 'example.test', 'Talant', '320000', '320 000', 'Madame']) expect(all, secret).not.toContain(secret);
     expect((await t.journal.all()).filter((e) => e.type === 'dictee.validee')).toHaveLength(1);
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
