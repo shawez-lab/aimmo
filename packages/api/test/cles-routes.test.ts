@@ -76,6 +76,7 @@ describeWithSqlite('BR05 · routes des clés d’appareil, du second facteur et 
       [['partenaire'], 'POST', '/cles/enregistrement/debut'],
       [['partenaire'], 'POST', '/cles/enregistrement/fin', { challengeId: 'x' }],
       [['partenaire', 'alex', 'conformite'], 'GET', '/cles/appareils'],
+      [['partenaire'], 'GET', '/cles/mes-appareils'],
       [['partenaire', 'alex', 'conformite'], 'POST', '/cles/appareils/d-1/accord', { stepUpId: 's-1' }],
       [['partenaire'], 'POST', '/cles/appareils/d-1/retrait'],
       [['partenaire'], 'POST', '/cles/preuve/debut', { action: 'export_complet', subject: 'agent:a' }],
@@ -134,6 +135,20 @@ describeWithSqlite('BR05 · routes des clés d’appareil, du second facteur et 
     expect(await t.http('alex', 'POST', `/cles/appareils/${pending}/retrait`)).toMatchObject({ status: 200, body: { data: { status: 'retire' } } });
     expect(await t.http('alex', 'POST', `/cles/appareils/${pending}/retrait`)).toMatchObject({ status: 409, body: { rule: 'R600', code: 'already_revoked' } });
     expect(await t.http('direction', 'POST', `/cles/appareils/${first.done.body.data.id}/retrait`)).toMatchObject({ status: 200 });
+  });
+
+  it('[R600] chacun lit ses propres clés par `/cles/mes-appareils` (BR18), sans clé publique ni celles des autres', async () => {
+    const t = await setup();
+    await t.enroll('alex', 1);
+    await t.enroll('alex', 2);
+    await t.enroll('sam', 3);
+    const mine = await t.http('alex', 'GET', '/cles/mes-appareils');
+    expect(mine.status).toBe(200);
+    expect(mine.body.data.map((d: { status: string }) => d.status).sort()).toEqual(['actif', 'en_attente']);
+    expect(mine.body.data.every((d: { userId: string }) => d.userId === t.alexId)).toBe(true);
+    expect(JSON.stringify(mine.body.data)).not.toMatch(/publicKey|credential/i);
+    expect(await t.http('conformite', 'GET', '/cles/mes-appareils')).toMatchObject({ status: 200, body: { data: [] } });
+    await expect((await setup(null)).http('alex', 'GET', '/cles/mes-appareils')).resolves.toMatchObject({ status: 503 });
   });
 
   it('[R82] [R600] [R561] un agent au dossier incomplet garde ses clés et son export : enregistrer, prouver, retirer, exporter', async () => {

@@ -243,6 +243,18 @@ export class ClesAppareil {
     return { ok: true, value: { id, userRole: viewer.role, userId: viewer.userId, label, status, createdAt: at, approvedAt: approvedBy === null ? null : at, revokedAt: null } };
   }
 
+  /**
+   * Ses propres clés, pour l'utilisateur lui-même (BR18) : actives, en attente ou retirées, jamais une clé publique ni un
+   * identifiant de clé ; la lecture va au journal [R600].
+   */
+  async listOwnDevices(viewer: Viewer): Promise<SecurityResult<Device[]>> {
+    const who = await this.checkUser(viewer, null);
+    if (!who.ok) return who;
+    const rows = await this.devicesOf(viewer);
+    await this.write(viewer, 'securite.cles.lues', null, { rule: 'R600', count: rows.length, scope: 'siennes' });
+    return { ok: true, value: rows.map(toDevice) };
+  }
+
   // ---------------------------------------------------------------- direction
 
   /** Toutes les clés du réseau, pour la direction ; jamais une clé publique ni un identifiant de clé. */
