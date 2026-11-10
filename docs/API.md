@@ -285,6 +285,17 @@ Sous `/v1/remises` et `/v1/actualites`, chaque route passe par les droits de la 
 - `GET /actualites` : le fil de l'agent en activité, chaque actualité avec sa source, la ligne de ce qu'elle change et ses dossiers concernés ; montrée une fois [R269].
 - `POST /actualites` (`{topic: juridique | marche, title, impact, sourceName, sourceUrl, sourceDate, target?}`) : la direction seule ; adresse https publique, une seule fois par source [R268, R269]. `GET /actualites/catalogue` et `POST /actualites/<id>/retrait` (`{reason}`) : la direction seule.
 
+## Armoire des clés des biens (BR21)
+
+Sous `/v1/trousseaux`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal : l'agent du bien en activité ou la direction tiennent l'armoire ; tout autre rôle est refusé avant même de savoir si le trousseau existe. Un corps absent ou mal formé ne passe jamais avant les droits : seul un appelant admis reçoit 400 `invalid_body`. Corps de 4 ko au plus. Rien n'est envoyé.
+
+- `GET /biens/<id>` : l'armoire du bien, chaque trousseau dans l'armoire, sorti (qui, depuis quand, pour quoi, retour attendu) ou retiré. `POST /biens/<id>` (`{label}`) : range un trousseau ; le numéro est donné par le code, le suivant dans le réseau, et le libellé ne porte ni adresse ni code [R270].
+- `POST /<id>/sortie` (`{holderAgentId, purpose: visite | estimation | photos | diagnostic | travaux, appointmentId?, dueAt?}`) : vers un agent du réseau en activité ; visite et estimation pour un rendez-vous prévu du bien tenu par lui, retour à sa fin ; sinon `dueAt` dans les 12 heures. Jamais chez deux personnes [R271].
+- `POST /<id>/rendu` : rendu à l'armoire, noté par qui la tient. `POST /<id>/perdu` : dit aussi par l'agent qui l'a ; le trousseau est retiré. `POST /<id>/rendu-au-proprietaire` : retiré depuis l'armoire seulement [R271].
+- `GET /<id>/mouvements` : chaque sortie et son retour. `GET /a-rendre` : l'agent lit chaque trousseau qu'il a, à rendre à la fin du rendez-vous, tout de suite s'il est annulé, en retard l'heure passée [R272].
+
+La vue du vendeur reste celle de son espace (HX10, `forSeller`), hors de ces routes.
+
 ## Recrutement des 100 premiers agents, en mode essai (BR02)
 
 Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.

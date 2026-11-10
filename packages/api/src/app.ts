@@ -89,6 +89,7 @@ import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
+import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
@@ -1219,6 +1220,17 @@ function reseauUtileRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes de l'armoire des clés des biens (BR21) : droits de la couche métier [R16], rien n'est envoyé. */
+function trousseauxRoutesDef(): RouteDef[] {
+  return trousseauxRoutes().map((r: TrousseauxRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) =>
+      r.handle({ db: s.db, journal: s.journal, acces: s.acces, fiche: new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2027,6 +2039,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m12Routes(config.coffre ?? null),
     ...securiteRoutesDef(),
     ...reseauUtileRoutesDef(),
+    ...trousseauxRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...licencesRoutesDef(),

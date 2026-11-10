@@ -202,6 +202,11 @@ export class Cles {
     return { ok: true, status: read.value.status };
   }
 
+  /** Ni agent ni direction : refusé au journal avant toute lecture du trousseau, connu ou non [R16]. */
+  private async outsider(viewer: Viewer, keyId: string): Promise<Refusal | null> {
+    return viewer.role !== 'agent' && viewer.role !== 'direction' ? this.refuse(viewer, `key:${keyId}`, 'role') : null;
+  }
+
   private async keyRow(networkId: string, keyId: string): Promise<KeyRow | null> {
     return this.db.first<KeyRow>('SELECT id, network_id, property_id, number, label FROM property_keys WHERE id = ? AND network_id = ?', [keyId, networkId]);
   }
@@ -240,6 +245,8 @@ export class Cles {
     keyId: string,
     input: { holderAgentId: unknown; purpose: unknown; appointmentId?: unknown; dueAt?: unknown },
   ): Promise<{ ok: true; loanId: string; dueAt: string } | Refusal | Problem> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
     const key = await this.keyRow(viewer.networkId, keyId);
     if (!key) return { ok: false, rule: null, code: 'unknown_key' };
     const k = await this.keeper(viewer, key.property_id);
@@ -299,6 +306,8 @@ export class Cles {
    * Perdu : dit aussi par l'agent qui l'avait ; le trousseau est alors retiré, il ne sort plus [R271].
    */
   async giveBack(viewer: Viewer, keyId: string, outcomeInput: unknown = 'rendu'): Promise<{ ok: true } | Refusal | Problem> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
     const key = await this.keyRow(viewer.networkId, keyId);
     if (!key) return { ok: false, rule: null, code: 'unknown_key' };
     if (outcomeInput !== 'rendu' && outcomeInput !== 'perdu') return { ok: false, rule: null, code: 'bad_outcome' };
@@ -328,6 +337,8 @@ export class Cles {
 
   /** Le trousseau quitte l'armoire pour de bon : rendu au propriétaire (depuis l'armoire seulement) ou perdu. */
   async retire(viewer: Viewer, keyId: string, reasonInput: unknown): Promise<{ ok: true } | Refusal | Problem> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
     const key = await this.keyRow(viewer.networkId, keyId);
     if (!key) return { ok: false, rule: null, code: 'unknown_key' };
     const k = await this.keeper(viewer, key.property_id);
@@ -380,6 +391,8 @@ export class Cles {
 
   /** Tous les mouvements d'un trousseau, du plus ancien au plus récent : l'agent du bien ou la direction. */
   async history(viewer: Viewer, keyId: string): Promise<{ ok: true; value: Movement[] } | Refusal | Problem> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
     const key = await this.keyRow(viewer.networkId, keyId);
     if (!key) return { ok: false, rule: null, code: 'unknown_key' };
     const k = await this.keeper(viewer, key.property_id);
