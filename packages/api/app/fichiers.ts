@@ -342,7 +342,60 @@ export const APP_JS = `'use strict';
       list.appendChild(li);
     });
     if (data.hiddenSinceFrozen > 0) list.appendChild(el('li', String(data.hiddenSinceFrozen) + ' ligne(s) retirée(s) depuis 7 h 30.', 'doux'));
-    return items.length === 0 && !(data.hiddenSinceFrozen > 0) ? 'Rien au plan aujourd’hui.' : null;
+    var steps = Array.isArray(data.sequenceSteps) ? data.sequenceSteps : [];
+    steps.forEach(function (step) { list.appendChild(renderSequenceStep(step)); });
+    return items.length === 0 && steps.length === 0 && !(data.hiddenSinceFrozen > 0) ? 'Rien au plan aujourd’hui.' : null;
+  }
+  // Les étapes du jour des séquences de prospection (BR32), relues par le socle à chaque lecture [R301, R302].
+  var STEP_CHANNELS = { email: 'mail', sms: 'SMS', phone: 'appel', letter: 'courrier', door: 'passage à la porte' };
+  // Pourquoi une étape n'est pas proposée : la raison, jamais un code interne.
+  var STEP_REASONS = {
+    opposition_unchecked: 'Appel de prospection : la liste d’opposition au démarchage n’est pas encore vérifiable, il n’est pas proposé.',
+    no_consent: 'Pas d’accord pour l’appel.',
+    no_phone: 'Aucun numéro sur la fiche.',
+    excluded: 'La personne ne veut plus être contactée.',
+    refused_request: 'La personne a refusé les appels.',
+    refused_recently: 'La personne a refusé un appel récemment.',
+    too_many_calls: 'Trop d’appels récents.',
+    outside_hours: 'Hors des heures d’appel permises : l’étape revient au prochain créneau.',
+  };
+  function renderSequenceStep(step) {
+    var li = el('li');
+    li.appendChild(el('strong', 'Séquence · ' + (STEP_CHANNELS[step.channel] || 'étape') + ' · ' + (step.firstName || 'Prénom inconnu')));
+    if (step.action === 'auto') {
+      // Un mail ou un SMS ne part que par le contrôle central, au prochain passage : aucun bouton [R300].
+      li.appendChild(el('p', 'Part seul par le contrôle central des envois, au prochain passage.', 'doux'));
+    } else if (!step.proposed) {
+      li.appendChild(el('p', STEP_REASONS[step.reason] || 'Pas proposée maintenant.', 'doux'));
+    } else if (step.action === 'call') {
+      if (typeof step.call === 'string' && TEL.test(step.call)) {
+        var a = el('a', 'Appeler');
+        a.setAttribute('href', step.call);
+        li.appendChild(a);
+      }
+      if (step.callClosesAt) li.appendChild(el('p', 'Appel permis jusqu’à ' + hour(step.callClosesAt) + '.', 'doux'));
+      li.appendChild(stepButton(step, 'Appelé', { callOutcome: 'called' }, li));
+      li.appendChild(stepButton(step, 'A refusé', { callOutcome: 'refused' }, li));
+    } else {
+      li.appendChild(stepButton(step, 'Fait', undefined, li));
+    }
+    if (ID.test(step.personId)) li.appendChild(ficheButton(step.personId));
+    return li;
+  }
+  function stepButton(step, text, body, li) {
+    return button(text, function () {
+      if (!ID.test(step.stepId)) return;
+      send('/v1/sequences/etapes/' + step.stepId + '/fait', 'POST', body).then(function (res) {
+        if (res.gone) return;
+        if (res.offline) { li.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); return; }
+        if (!res.ok) { li.appendChild(el('p', 'L’étape n’a pas pu être notée : relisez le plan.', 'alerte')); return; }
+        // Notée : le plan est relu, l'étape suivante ou l'arrêt viennent du socle.
+        var mine = session;
+        if (currentKey) part('plan', api('/v1/plan-du-jour', currentKey), renderPlan, mine).then(function (done) {
+          if (done === false && mine === session) { wipe(); forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
+        });
+      });
+    });
   }
   function renderHot(list, data) {
     var contacts = data && Array.isArray(data.contacts) ? data.contacts : [];

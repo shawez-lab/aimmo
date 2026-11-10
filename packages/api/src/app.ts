@@ -98,7 +98,7 @@ import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
 import type { PigeSource } from '../../core/src/pige/index.ts';
 import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
-import { sequencesRoutes, type SequencesRoute } from './sequences.ts';
+import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.ts';
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
@@ -503,9 +503,12 @@ const ROUTES: RouteDef[] = [
     method: 'GET',
     pattern: /^\/plan-du-jour$/,
     name: 'plan_du_jour',
-    // Le plan du jour figé à 7 h 30 : l'agent seul lit le sien [R16] ; `null` tant qu'il n'est pas encore figé.
+    // Le plan du jour figé à 7 h 30 : l'agent seul lit le sien [R16] ; `null` tant qu'il n'est pas encore figé. Les étapes
+    // des séquences s'y ajoutent à la lecture (BR32), sans liste d'opposition tant que Bloctel n'est pas branché (H61) :
+    // un appel qui ne repose que sur la prospection n'y est donc jamais proposé [R302].
     handle: async (s, viewer) => {
-      const plan = await new PlansDuJour(s.db, s.journal, { now: s.now }).read(viewer);
+      const sequences = { today: (v: Viewer) => sequencesOf(s.db, s.journal, s.acces, s.now, null).today(v) };
+      const plan = await new PlansDuJour(s.db, s.journal, { now: s.now, sequences }).read(viewer);
       return plan.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: plan.value }) : refusal({ rule: plan.rule, code: plan.code });
     },
   },
