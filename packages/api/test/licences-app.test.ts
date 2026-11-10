@@ -246,7 +246,8 @@ describe('BR16 · les licences du logiciel à l’écran', () => {
     expect(x).not.toContain('Les licences données');
     expect(x).not.toContain('Le tarif');
     expect(x).not.toContain('SIREN');
-    expect(t.buttons()).toEqual([]);
+    // Aucun geste sur la licence ; seulement la reprise de ses données (BR19).
+    expect(t.buttons()).toEqual(['Tirer le fichier de mes données', 'Vérifier le fichier tiré']);
     expect(t.state()).toBe('');
     const u = await run({ 'GET /v1/licences': no(409, { ok: false, rule: 'R657', code: 'agence_licenciee' }), 'GET /v1/licences/ma-licence': no(409, { ok: false, rule: 'R657', code: 'pas_de_licence' }) });
     await u.voir();

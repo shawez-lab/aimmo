@@ -34,6 +34,13 @@ const REFUSALS: Record<string, string> = {
   bad_state: 'Choisissez de suspendre, de reprendre ou de terminer.',
   terminee: 'Cette licence est terminée : elle ne bouge plus.',
   etat_inchange: 'La licence est déjà dans cet état : relisez la liste.',
+  second_factor_required: 'Il faut la preuve de la clé de cet appareil pour tirer le fichier.',
+  other_action: 'La preuve faite porte sur un autre geste : recommencez.',
+  already_used: 'Cette preuve a déjà servi : recommencez.',
+  expired: 'La preuve a expiré : elle ne vaut que cinq minutes. Recommencez.',
+  device_revoked: 'La clé qui a fait la preuve a été retirée : recommencez avec une clé active.',
+  agent_inactive: 'Votre accès n’est plus actif.',
+  cles_non_configurees: 'Les clés d’accès ne sont pas encore ouvertes sur ce service : le fichier ne se tire pas sans elles.',
 };
 const STATES: Record<string, string> = {
   active: 'Active',
@@ -77,7 +84,7 @@ export const LICENCES_JS = `
         try { delete globalThis.AIMMO_LICENCES; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { $('licences-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        licencesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } });
+        licencesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, prove: proveAction, session: function () { return session; } });
         resolve(act(licencesTools));
       });
       s.addEventListener('error', function () {
@@ -93,7 +100,7 @@ export const LICENCES_JS = `
 /** Le script servi à part (`/app/licences.js`). Il ne lit et n'écrit que `/v1/licences` [R16]. */
 export const LICENCES_SCRIPT = `'use strict';
 globalThis.AIMMO_LICENCES = function (t) {
-  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date;
+  var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date, prove = t.prove;
   var REFUSALS = ${JSON.stringify(REFUSALS)};
   var STATES = ${JSON.stringify(STATES)};
   var REGION_NAMES = ${JSON.stringify(REGION_NAMES)};
@@ -265,7 +272,7 @@ globalThis.AIMMO_LICENCES = function (t) {
     }
     renderGrant(body, data.tariff);
   }
-  /* La direction d'une agence sous licence : la sienne seule, sans aucun geste [R657]. */
+  /* La direction d'une agence sous licence : la sienne seule, sans geste sur la licence ; la reprise de ses données [R657]. */
   function renderMine(body, l) {
     body.appendChild(el('h4', 'Votre licence'));
     body.appendChild(el('strong', l.agencyName));
@@ -273,6 +280,70 @@ globalThis.AIMMO_LICENCES = function (t) {
     body.appendChild(el('p', stateLine(l)));
     body.appendChild(el('p', priceLine(l), 'doux'));
     cardLine(body, l);
+    renderReprise(body, l);
+  }
+  /* La reprise des données de l'agence sous licence (BR19) : sur la preuve de la clé de cet appareil, pour cette licence
+     seule ; le fichier reste sur l'appareil, AIMMO n'en garde que l'empreinte [R657, R658, R659, R601]. */
+  /* Le fichier tiré, gardé en mémoire pour la seule séance qui l'a tiré : jamais sur l'appareil hors du fichier enregistré. */
+  var held = null, heldSession = null;
+  function verdict(v) {
+    if (!v || v.verified !== true) return 'Faux : ce fichier n’est pas celui qu’AIMMO a remis, ou il a changé depuis.';
+    var parts = [];
+    if (v.complete !== true) parts.push('il ne couvre pas ces tables d’aujourd’hui : ' + (Array.isArray(v.missing) && v.missing.length ? v.missing.join(', ') : 'liste non rendue') + '.');
+    if (v.filesComplete !== true) parts.push('sa liste des fichiers déposés ne concorde pas : ' + Number(v.filesMissing || 0) + ' non dit, ' + Number(v.filesExtra || 0) + ' en trop.');
+    if (!parts.length) return 'Vrai et complet : c’est le fichier remis par AIMMO, il couvre chaque table et chaque fichier déposé d’aujourd’hui.';
+    return 'Vrai mais incomplet : c’est le fichier remis par AIMMO, mais ' + parts.join(' Et ');
+  }
+  function saveFile(doc, name) {
+    var url = URL.createObjectURL(new Blob([JSON.stringify(doc)], { type: 'application/json' }));
+    var a = el('a', 'Enregistrer le fichier');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  }
+  function takeOut(l) {
+    return once(function () {
+      state('Preuve de la clé de cet appareil…');
+      return prove('export_complet', 'licence:' + l.id).then(function (p) {
+        if (p.gone) return false;
+        if (!p.ok) { state(p.text); return false; }
+        state('Préparation du fichier…');
+        return send('/v1/export/agence', 'POST', { stepUpId: p.stepUpId }).then(function (x) {
+          if (x.gone) return false;
+          if (x.offline || !x.body || x.status >= 500) { state(LOST); return false; }
+          if (!x.ok) { state(why(x, 'Le fichier n’est pas tiré.')); return false; }
+          var d = x.body.data || {};
+          if (!d.document || typeof d.document !== 'object') { state(LOST); return false; }
+          held = d.document;
+          heldSession = t.session();
+          saveFile(held, 'aimmo-reprise-' + String(d.document.madeAt || '').slice(0, 10) + '.json');
+          state('Fichier enregistré sur cet appareil : ' + Number(d.rows || 0) + ' lignes. Empreinte ' + String(d.fingerprint || '') + '. Vérifiez-le avant de vous en servir.');
+          return true;
+        });
+      });
+    });
+  }
+  function check() {
+    if (!held || heldSession !== t.session()) { held = null; state('Tirez d’abord le fichier de vos données.'); return Promise.resolve(false); }
+    return once(function () {
+      state('Vérification…');
+      return send('/v1/export/agence/verification', 'POST', { document: held }).then(function (x) {
+        if (x.gone) return false;
+        if (x.offline || !x.body || x.status >= 500) { state('La vérification n’a pas abouti : rien n’est dit du fichier. Réessayez dans un moment.'); return false; }
+        if (!x.ok) { state(why(x, 'Le fichier n’est pas vérifié.')); return false; }
+        state(verdict(x.body.data));
+        return true;
+      });
+    });
+  }
+  function renderReprise(body, l) {
+    body.appendChild(el('h4', 'Reprendre mes données'));
+    body.appendChild(el('p', 'Le fichier complet de votre agence, à tout moment, quel que soit l’état de la licence. Il se tire sur la preuve de la clé de cet appareil et reste sur cet appareil : AIMMO n’en garde que l’empreinte.', 'doux'));
+    body.appendChild(button('Tirer le fichier de mes données', function () { takeOut(l); }));
+    body.appendChild(button('Vérifier le fichier tiré', function () { check(); }));
   }
   function show(message) {
     var mine = t.session();
