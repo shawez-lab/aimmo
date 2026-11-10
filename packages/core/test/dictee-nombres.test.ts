@@ -220,6 +220,15 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(field('Il vend une maison de 120 m2 au 3 rue Monge.', 'bien', 'surfaceM2')).toEqual([120, '120 m2']);
     expect(field('Il vend un appartement de 65 m2 au 1er étage.', 'bien', 'surfaceM2')).toEqual([65, '65 m2']);
     expect(at('Visite le 12 janvier à 10 h au 3 rue Monge.')).toBe('2027-01-12T09:00:00.000Z');
+    // Codex sur #486 : un choix que la lecture écarte fait quand même refuser la valeur dite plus tôt.
+    for (const s of ['Il vend sa maison de trois pièces. En fait quatre ou cinq pièces.', 'Il vend sa maison de 3 pièces. En fait 4 ou 5 pièces.']) {
+      expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
+      expect(read(s).conflicts, s).toContainEqual({ target: 'bien', key: 'rooms' });
+    }
+    expect(field('Il vend sa maison de 90 m². En fait quatre-vingts ou quatre-vingt-dix mètres carrés.', 'bien', 'surfaceM2')).toBeUndefined();
+    expect(field('Il vend sa maison, prix 250 000 euros. Le prix sera deux cent ou trois cent mille euros.', 'bien', 'priceEur')).toBeUndefined();
+    // Codex sur #486 : les mêmes mots de correction valent pour l'heure.
+    for (const s of ['Visite demain à quinze heures, je veux dire seize.', 'Visite demain à quinze heures, peut-être seize.', 'Visite demain à quinze heures, ou alors seize.', 'Visite demain à 15 h, ou sinon 16.', 'Visite demain à 15 h, éventuellement 16.']) expect(at(s), s).toBeUndefined();
     // Ce qui n'est pas un choix entre deux nombres se lit toujours.
     expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);

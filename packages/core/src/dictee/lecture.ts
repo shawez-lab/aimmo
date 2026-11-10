@@ -232,7 +232,7 @@ const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?!
  * mot de correction ou de choix (ou, non, sinon, voire, plutôt, enfin, pardon, disons), même plus loin dans la
  * phrase, ou s'il la finit : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
  */
-const CORRECTION_WORD = '(?:ou(?:\\s+bien|\\s+plutot)?|non|sinon|voire|plutot|enfin|pardon|disons)(?![\\p{L}\\d])';
+const CORRECTION_WORD = '(?:ou(?:\\s+(?:bien|plutot|alors|sinon|meme|encore|eventuellement|peut[\\s-]etre))?|non|sinon|voire|plutot|enfin|pardon|disons|eventuellement|peut[\\s-]etre|je veux dire|au plus (?:tard|tot))(?![\\p{L}\\d])';
 /** Un mot de correction ou de choix, puis un nombre, n'importe où après l'heure : « non seize », « ou à 16 », « enfin 16 ». */
 const BARE_NUMBER_AFTER = new RegExp(`(?:^\\s*-|(?<![\\p{L}\\d])${CORRECTION_WORD})[\\s,]*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|^\\s*,?\\s*(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d]))`, 'u');
 /** Un nombre, puis un mot de correction ou de choix, juste avant l'heure : « seize, non quinze heures », « 14 ou 15 h ». */
@@ -254,11 +254,23 @@ const CHOICE_SECOND = `(?:(?<![\\p{L}\\d.,])\\d+(?![\\d])|(?<![\\p{L}\\d])[tf]\\
 const CHOICE_PLAIN = `(?:(?<![\\p{L}\\d.,])\\d{1,3}(?![\\d.,]\\d)|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
 const CHOICE_UNIT = `(?:\\s+(?:${MONTHS.join('|')}|pieces?|m²|m2|metres? carres?|euros?|€|k€)(?![\\p{L}\\d]))`;
 const CHOICE_ARTICLE = `(?:(?:le|la|les|un|une|des|du|de|au|aux)\\s+|l['’]\\s*)`;
-const CHOICE_WORD = '(?<![\\p{L}\\d])(?:ou(?:\\s+(?:bien|plutot|alors|sinon|meme|encore|eventuellement|peut[\\s-]etre))?|non|sinon|voire|plutot|enfin|pardon|disons|eventuellement|peut[\\s-]etre|je veux dire|au plus (?:tard|tot))(?![\\p{L}\\d])';
+/** Les mêmes mots de choix et de correction que pour l'heure (Codex sur #486). */
+const CHOICE_WORD = `(?<![\\p{L}\\d])${CORRECTION_WORD}`;
 const CHOICE = new RegExp(
   `${CHOICE_NUMBER}${CHOICE_UNIT}?\\s*,?\\s*${CHOICE_WORD}[\\s,]*${CHOICE_ARTICLE}?${CHOICE_SECOND}|${CHOICE_PLAIN}\\s+(?:(?:et|a)\\s+${CHOICE_ARTICLE}|(?:au|aux)\\s+)${CHOICE_SECOND}${CHOICE_UNIT}|(?<![\\p{L}\\d.,])\\d{1,3}\\s*[/-]\\s*\\d{1,3}(?![\\d])${CHOICE_UNIT}`,
   'gu',
 );
+/**
+ * Toute mention d'un nombre suivi de son unité, avant les filtres qui écartent un nombre collé à un autre (Codex sur
+ * #486) : « quatre ou cinq pièces » n'est pas lu, mais le choix doit quand même faire refuser un « trois pièces »
+ * dit plus tôt.
+ */
+const RAW_UNITS = {
+  rooms: `(?:${CHOICE_NUMBER}\\s*pieces?(?![\\p{L}\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d]))`,
+  surfaceM2: `${CHOICE_NUMBER}\\s*(?:m²|m2|metres? carres?)(?![\\p{L}\\d])`,
+  priceEur: `${CHOICE_NUMBER}\\s*(?:€|k€|euros?(?![\\p{L}\\d])|k euros?(?![\\p{L}\\d])|mille euros?(?![\\p{L}\\d]))`,
+} as const;
+const rawMentions = (sentence: string, key: keyof typeof RAW_UNITS): Hit[] => hits(sentence, new RegExp(RAW_UNITS[key], 'u'), () => 0);
 /** Les passages de la phrase où deux nombres se disputent un champ. */
 function choices(sentence: string): Hit[] {
   const { folded, index } = fold(sentence);
@@ -458,8 +470,8 @@ export function readDictation(dictation: string, options: { now: Date; communes?
     const surfaceWords = wordHits(s, SURFACE_AFTER, inRange(1, 999_999));
     const contested = choices(s);
     // Un champ qu'un choix ou une correction entre deux nombres touche est refusé, l'agent le saisira (Codex sur #486).
-    const addOrRefuse = (target: DictationTarget, key: DictatedKey, list: readonly Hit[]) => {
-      if (list.some((h) => overlaps(h, contested))) found.push({ target, key, value: '', sentence: i, quote: '' });
+    const addOrRefuse = (target: DictationTarget, key: keyof typeof RAW_UNITS, list: readonly Hit[]) => {
+      if ([...list, ...rawMentions(s, key)].some((h) => overlaps(h, contested))) found.push({ target, key, value: '', sentence: i, quote: '' });
       else add(target, key, i, list);
     };
     addOrRefuse('bien', 'surfaceM2', [...hits(s, SURFACE, (m) => Number(m[1])).filter(digitsAlone(s)), ...surfaceWords].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
