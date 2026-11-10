@@ -16,10 +16,15 @@
  *
  * L'export complet n'est tiré que par l'agent actif lui-même, sur une preuve « export_complet » de sa clé faite pour
  * lui ; AIMMO ne range que l'empreinte, jamais le contenu [R561, R601, R13].
+ *
+ * La reprise des données de l'agence sous licence (HX74, BR17), sous `/v1/export/agence` : sa direction seule tire le
+ * fichier complet de son réseau, sur une preuve « export_complet » pour `licence:<id>` ; la direction du réseau qui
+ * donne les licences n'en a pas [R657, R658, R659, R601].
  */
 import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { takeSlot } from './assistant.ts';
 import { sha256Hex } from './auth.ts';
+import { RepriseDonneesAgence } from '../../core/src/licences/index.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
 import { ClesAppareil, ClesAssistant, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
@@ -227,6 +232,33 @@ export function clesRoutes(): ClesRoute[] {
           const sameNetwork = doc !== null && typeof doc === 'object' && (doc as { networkId?: unknown }).networkId === v.networkId;
           if (!sameNetwork) return reply({ ok: true, value: { verified: false, fingerprint: null } });
           return reply({ ok: true, value: await new ExportAgent(s.db, s.journal, cles(s), { now: s.now }).verify(doc) });
+        },
+        MAX_EXPORT_BYTES,
+      ),
+    },
+    // La reprise des données de l'agence sous licence, sur sa preuve « export_complet » pour `licence:<id>` ; l'empreinte
+    // et les comptes seuls sont rangés [R657, R658, R659, R601].
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence$/,
+      name: 'export.agence',
+      roles: DIRECTION,
+      handle: withBody(['stepUpId'], async (s, v, _p, b) => reply(await new RepriseDonneesAgence(s.db, s.journal, cles(s), { now: s.now }).make(v, b.stepUpId))),
+    },
+    // Vérifier un fichier de reprise : est-il celui qu'AIMMO a remis, et couvre-t-il chaque table d'aujourd'hui ? Rien
+    // n'est gardé ; un fichier d'un autre réseau n'est pas lu [R659].
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/verification$/,
+      name: 'export.agence.verification',
+      roles: DIRECTION,
+      handle: withBody(
+        ['document'],
+        async (s, v, _p, b) => {
+          const doc = b.document;
+          const sameNetwork = doc !== null && typeof doc === 'object' && (doc as { networkId?: unknown }).networkId === v.networkId;
+          if (!sameNetwork) return reply({ ok: true, value: { verified: false, fingerprint: null, complete: false, missing: [] } });
+          return reply({ ok: true, value: await new RepriseDonneesAgence(s.db, s.journal, cles(s), { now: s.now }).verify(doc) });
         },
         MAX_EXPORT_BYTES,
       ),
