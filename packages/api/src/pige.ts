@@ -63,6 +63,28 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
 
 const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
 
+/**
+ * Une route sans corps n'en admet aucun : un corps vide ou `{}` passe ; un corps illisible, trop gros ou portant un
+ * champ est refusé en 400 avant que rien ne soit lu ni rangé.
+ */
+async function refuseAnyBody(request: Request): Promise<Response | null> {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) return badBody();
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) return badBody();
+  if (text.trim() === '') return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return badBody();
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return badBody();
+  const field = Object.keys(value)[0];
+  return field === undefined ? null : json(400, { ok: false, rule: null, code: 'unknown_field', field });
+}
+
+
 /** Le refus d'un rôle, écrit au journal comme ceux de la couche métier, avant que le corps soit lu [R16]. */
 async function refuseRole(s: PigeServices, viewer: Viewer): Promise<Response> {
   await appendEvent(
@@ -111,6 +133,10 @@ export function pigeRoutes(): PigeRoute[] {
       if (!(roles as readonly string[]).includes(String(v.role))) return refuseRole(s, v);
       const extra = extraQuery(request);
       if (extra !== null) return json(400, { ok: false, rule: null, code: 'unknown_field', field: extra });
+      if (request.method === 'POST') {
+        const refused = await refuseAnyBody(request);
+        if (refused) return refused;
+      }
       return reply(await fn(s, v, params));
     };
   const AGENT: readonly Role[] = ['agent'];

@@ -218,4 +218,21 @@ describeWithSqlite('BR29 · routes de la pige des annonces de particuliers', () 
     expect(bad.body.code).toBe('bad_channel');
     expect(await t.count('pige_handovers')).toBe(0);
   });
+
+  it('une route sans corps refuse tout corps illisible, trop gros ou portant un champ, sans rien lire ni ranger', async () => {
+    const t = await setup();
+    for (const raw of ['{"unexpected":true}', '{pas du json', '[1]', JSON.stringify({ x: 'a'.repeat(3000) })]) {
+      const r = await t.http('direction', 'POST', '/pige/releve', undefined, raw);
+      expect(r.status, raw.slice(0, 20)).toBe(400);
+    }
+    expect(t.sourceCalls()).toBe(0);
+    expect(await t.count('pige_ads')).toBe(0);
+    // Un corps vide ou `{}` passe.
+    expect((await t.http('direction', 'POST', '/pige/releve', {})).status).toBe(200);
+    const [entry] = (await t.http('alex', 'GET', '/pige')).body.data;
+    expect((await t.http('alex', 'POST', `/pige/annonces/${entry.adId}/message`, { body: 'Mon texte' })).body).toMatchObject({ code: 'unknown_field', field: 'body' });
+    expect((await t.http('alex', 'POST', `/pige/annonces/${entry.adId}/opposition`, undefined, '{oops')).body).toMatchObject({ code: 'invalid_body' });
+    expect(await t.count('pige_drafts')).toBe(0);
+    expect(await t.count('pige_oppositions')).toBe(0);
+  });
 });
