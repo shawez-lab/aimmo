@@ -280,7 +280,7 @@ const OLD_YEAR_AFTER = /^\s+1\d{3}(?!\d)/u;
  * Un jour dit sans son mois après « le » : « le 14 à 10 h », « le quatorze ou le quinze » (relecture forte de RC01).
  * « le premier » et « le 2e » n'en sont pas ; une heure (« le 10 h ») ni un nombre suivi de son unité (« le trois pièces », Codex sur #486) non plus ; un jour suivi de son mois est vu par `RAW_DAY`.
  */
-const RAW_BARE_DAY = new RegExp(`(?<![\\p{L}\\d])le\\s+(?:\\d{1,2}(?![\\p{L}\\d.,:])|${NUMBER_RUN})(?!\\s*(?:h(?![\\p{L}])|heures?(?![\\p{L}])|${MONTHS.join('|')}|pieces?(?![\\p{L}])|m²|m2(?![\\p{L}\\d])|metres?(?![\\p{L}])|euros?(?![\\p{L}])|€|k€|etages?(?![\\p{L}])|chambres?(?![\\p{L}])))`, 'u');
+const RAW_BARE_DAY = new RegExp(`(?<![\\p{L}\\d])le\\s+(?:\\d{1,2}(?![\\p{L}\\d.,:])|${NUMBER_RUN}(?![\\s-]+(?:et[\\s-]+)?${WORD}))(?!\\s*(?:h(?![\\p{L}])|heures?(?![\\p{L}])|${MONTHS.join('|')}|pieces?(?![\\p{L}])|m²|m2(?![\\p{L}\\d])|metres?(?![\\p{L}])|euros?(?![\\p{L}])|€|k€|etages?(?![\\p{L}])|chambres?(?![\\p{L}])))`, 'u');
 /** Les passages de la phrase où deux nombres se disputent un champ. */
 function choices(sentence: string): Hit[] {
   const { folded, index } = fold(sentence);

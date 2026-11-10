@@ -248,6 +248,9 @@ describe('RC01 · les nombres dits en lettres', () => {
     // Codex sur #486 : « le trois pièces » décrit le bien, pas un jour.
     expect(at('Visite demain à 10 h dans le trois pièces.')).toBe('2026-12-04T09:00:00.000Z');
     expect(at('Visite demain à dix heures dans le 3 pièces de 80 m2.')).toBe('2026-12-04T09:00:00.000Z');
+    expect(at('Visite demain à 10 h dans le quatre-vingt-cinq mètres carrés.')).toBe('2026-12-04T09:00:00.000Z');
+    expect(at('Visite demain à 10 h dans le vingt et un mètres carrés.')).toBe('2026-12-04T09:00:00.000Z');
+    expect(at('Visite le douze janvier à dix heures. En fait visite le vingt et un à dix heures.')).toBeUndefined();
     expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces à deux cent mille euros.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
