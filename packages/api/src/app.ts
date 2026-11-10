@@ -90,6 +90,7 @@ import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } fr
 import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
+import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
@@ -1227,6 +1228,16 @@ function regionsRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes de la licence du logiciel aux agences hors réseau (BR15) : la direction, par la couche métier [R16, R657]. */
+function licencesRoutesDef(): RouteDef[] {
+  return licencesRoutes().map((r: LicencesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes du recrutement des 100 premiers agents (BR02) : la direction seule, par la couche métier [R16]. */
 function recrutementRoutesDef(): RouteDef[] {
   return recrutementRoutes().map((r: RecrutementRoute) => ({
@@ -1819,6 +1830,18 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // Le tarif public de la licence du logiciel (BR15) : sans clé, sans aucune agence ni aucun nombre [R655, R657].
+  if (url.pathname.startsWith(`${API_PREFIX}/licences/tarif/`)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    const journal = new SqlJournalStore(config.db);
+    try {
+      const page = await handleLicencesPublic(request, { db: config.db, journal, now });
+      if (page) return page;
+    } catch (error) {
+      await journalError(journal, 'public:licences', 'licences.tarif_public', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   // La vérification publique d'une attestation de formation (BR07) : la page et sa route, sans clé, rien de rangé [R571].
   if (url.pathname === '/attestation' || url.pathname === `${API_PREFIX}/formation/verification`) {
     if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -1994,6 +2017,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...securiteRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
+    ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
     ...formationRoutesDef(),

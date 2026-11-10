@@ -373,6 +373,17 @@ Sous `/v1/regions`, la direction seule ; tout autre rôle est refusé (403) et l
 - `POST /decision` (`{region: <code INSEE>, open: true | false, reason}`, raison de 3 à 200 caractères) : ouvre ou ferme une région ; une version s'ajoute à la chaîne, rien ne change. Une ouverture est refusée en 409 tant que la phase 5 n'est pas ouverte (R651, `phase5_fermee`) ou qu'une autre région est ouverte depuis moins de 90 jours (R652, `region_recente`, avec `until`) ; la région d'origine ou un code inconnu sont refusés (R650) [R651, R652].
 - `GET /verification` : la chaîne des décisions recomptée depuis la première et recoupée avec le journal ; `{intact, versions}` ou, si une ligne a été changée ou retirée, `brokenAt`, la première version cassée [R653].
 
+## Licence du logiciel aux agences hors réseau (BR15)
+
+Sous `/v1/licences`, la direction seule ; tout autre rôle est refusé (403) et le refus écrit au journal [R16]. La direction d'une agence sous licence ne lit que sa licence : elle ne fixe aucun tarif, ne donne aucune licence et ne lit pas les autres (409, R657, `agence_licenciee`) [R657]. Aucun prélèvement, aucun envoi. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle, une licence inconnue 404.
+
+- `GET /` (soit `GET /v1/licences`) : le tarif en vigueur et les licences données par le réseau, chacune avec son état, son tarif (`oldTariff` quand ce n'est plus celui en vigueur) et sa carte échue ou non ; la lecture va au journal [R16, R656].
+- `GET /ma-licence` : pour la direction d'une agence sous licence, sa seule licence, sans SIREN ni région ; ailleurs 409 (R657, `pas_de_licence`) [R657].
+- `POST /tarif` (`{monthlyCents, reason}`, de 100 à 10 000 000 centimes hors taxes, raison de 3 à 200 caractères) : un nouveau tarif mensuel, un seul pour toutes les agences ; une version s'ajoute. Hors bornes ou inchangé : 409 (R655) [R655].
+- `POST /licence` (`{agencyName, siren, cardNumber, cardExpiresOn, department}`) : donne une licence au tarif en vigueur ; la demande n'a aucun champ de prix (un prix est refusé en 409, R655, `unknown_field`). Refusée en 409 tant que la phase 5 n'est pas ouverte (R654, `phase5_fermee`), sans tarif (R655, `tarif_absent`), pour un SIREN, une carte ou un département invalides, ou un SIREN déjà sous licence (R654) [R654, R655].
+- `POST /etat` (`{licenceId, state: "active" | "suspendue" | "terminee", reason}`) : suspend, reprend ou termine une licence ; terminée, elle ne bouge plus (409, R656, `terminee`) [R656].
+- `GET /tarif/<réseau>`, **sans clé** : le tarif public, `{current: {monthlyCents, since}, history: [{monthlyCents, from}]}`, sans aucune agence ni aucun nombre ; 404 tant qu'aucune licence ne peut se donner (phase 5 fermée, aucun tarif, réseau inconnu), sans dire laquelle [R655, R657].
+
 ## Mise en ligne
 
 `.github/workflows/deployer-api.yml`, à chaque arrivée sur main, une fois H04 fait : vérifications, création de la base `aimmo` en juridiction européenne si elle manque, migrations de `db/migrations`, puis déploiement. Aucune route sur shawez-immo.com : seulement l'adresse workers.dev du compte. Chaque proposition vérifie aussi que le Worker s'empaquette (`wrangler deploy --dry-run`).
