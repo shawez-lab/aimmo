@@ -66,6 +66,8 @@ export interface Env {
   PARTENAIRES_OPPOSITION_BASE?: string;
   /** Le réseau des espaces des clients (EC07) ; absent, l'espace est fermé. */
   ESPACE_NETWORK_ID?: string;
+  /** Le réseau qui exploite la plateforme (BR25) : seule sa direction lit et décide des seuils du passage à PostgreSQL. */
+  PLATFORM_NETWORK_ID?: string;
   /** L'adresse de l'espace des clients (EC07), en https, sans chiffre, terminée par `/espace/` ; absente, l'espace est fermé. */
   ESPACE_BASE?: string;
   /** Secret : les clés du relevé prouvé de l'espace, `nom:secret` séparées par des virgules ; absent, relevé indisponible [R164]. */
@@ -133,6 +135,7 @@ export default {
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
       // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
+      platformNetworkId: env.PLATFORM_NETWORK_ID,
       espaces: { networkId: env.ESPACE_NETWORK_ID, baseUrl: env.ESPACE_BASE, releveKeys: env.ESPACE_RELEVE_KEYS },
       partenaires: { files: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, optOutBase: env.PARTENAIRES_OPPOSITION_BASE ?? null },
       // M17 (Y08) : sans IA branchée (H13), la note suit le secours sans IA ; le barème vient du réglage de la direction.
@@ -173,6 +176,7 @@ export default {
       pieces: env.PIECES ? new R2PieceStore(env.PIECES) : null,
       partnerOptOutBase: env.PARTENAIRES_OPPOSITION_BASE,
       investorFeesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME),
+      platformNetworkId: env.PLATFORM_NETWORK_ID,
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));

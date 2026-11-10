@@ -8,6 +8,7 @@ import { partenairesJobs } from './partenaires.ts';
 import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import { phase1ReadingJob } from './phases.ts';
+import { postgresReadingJob } from './postgresql.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
@@ -35,6 +36,8 @@ export interface SchedulerConfig {
   partnerOptOutBase?: string | undefined;
   /** Le barème des frais d'acquisition réglé par la direction (M17) ; absent, aucune alerte qui demande un rendement. */
   investorFeesRateBp?: investir.Sourced<number> | null;
+  /** Variable `PLATFORM_NETWORK_ID` : le réseau qui exploite la plateforme, pour le rapport chronométré des seuils (BR25). */
+  platformNetworkId?: string | undefined;
   now?: () => Date;
 }
 
@@ -130,6 +133,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Condition de la phase 1 (HX70), de minuit à 3 h : le relevé de la veille figé pour chaque réseau, une seule fois,
       // jamais rattrapé plus tard ; rien n'est envoyé [R643, R17].
       phase1ReadingJob(config.db, journal, { now }),
+      // Seuils du passage à PostgreSQL (HX66, BR25), le lundi à 4 h : un relevé rangé, jamais changé ; sans réseau de la
+      // plateforme, le temps du rapport est inconnu, jamais « sous le seuil » ; rien ne bascule seul [R630, R631].
+      postgresReadingJob(config.db, journal, { now, platformNetworkId: config.platformNetworkId || null }),
       // Panneaux (HX14, BR23), à 6 h, 13 h et 19 h : un panneau posé sur un bien vendu ou qui ne peut plus être diffusé
       // reçoit sa tâche « récupérer le panneau », une seule par pose ; rien n'est envoyé [R283].
       (() => {
