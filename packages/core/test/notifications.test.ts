@@ -211,9 +211,12 @@ describeWithSqlite('HX27 · notifications sur le téléphone, réglables', () =>
     expect(t.sent.length).toBeGreaterThan(0);
     const outgoing = JSON.stringify(t.sent) + JSON.stringify(await t.db.all('SELECT lock_title, lock_line FROM agent_pushes'));
     const journal = JSON.stringify(await t.journal.all());
-    for (const secret of ['Noa', 'Sacha', 'noa@example.test', '+33612345678', '06 12 34 56 78', 'Tuiles', '345', noa, sacha]) {
-      expect(outgoing).not.toContain(secret);
+    // Les identifiants tirés au hasard sont retirés avant de chercher les fragments courts : « 345 » peut y tomber.
+    const withoutIds = outgoing.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>');
+    for (const secret of ['Noa', 'Sacha', 'noa@example.test', '+33612345678', '06 12 34 56 78', 'Tuiles', '345']) {
+      expect(withoutIds).not.toContain(secret);
     }
+    for (const id of [noa, sacha]) expect(outgoing).not.toContain(id);
     for (const secret of ['Noa', 'Sacha', 'example.test', '+33612345678', 'Tuiles', '345 000']) expect(journal).not.toContain(secret);
     for (const s of t.sent) {
       expect(lockTextIsSafe(s.payload.title) && lockTextIsSafe(s.payload.body)).toBe(true);
