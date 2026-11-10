@@ -98,6 +98,7 @@ import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
 import type { PigeSource } from '../../core/src/pige/index.ts';
 import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
+import { sequencesRoutes, type SequencesRoute } from './sequences.ts';
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
@@ -1338,6 +1339,17 @@ function adressePigeRoutesDef(sources: AdressePigeServices): RouteDef[] {
   }));
 }
 
+/** Les routes de la séquence de prospection (BR31) : l'agent seul, contrôlé avant le corps [R16] ; rien ne part d'une route [R300]. */
+function sequencesRoutesDef(): RouteDef[] {
+  return sequencesRoutes().map((r: SequencesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    // Bloctel n'est pas branché (H61) : aucune liste d'opposition, donc aucun appel de prospection seule proposé [R302].
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now, opposition: null }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2164,6 +2176,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...pigeRoutesDef(config.pigeSource ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
+    ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),

@@ -458,6 +458,16 @@ Sous `/v1/pige`, avec les mêmes limites que la pige (BR29) : rôles contrôlés
 
 La base de l'ADEME et le cadastre de l'IGN passent par la lecture des données publiques (`fetchPublicData`, branchée avec l'estimation) ; sans elle, seuls les diagnostics déjà rangés par la veille (BR26) servent, et `missing` le dit.
 
+## Séquence de prospection sur plusieurs canaux (BR31)
+
+Sous `/v1/sequences`, l'agent en activité seul : tout autre rôle est refusé avant toute lecture du corps, au journal (403, `role`) [R16]. Corps JSON de 16 ko au plus, vide ou objet ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; un refus de règle 409 avec sa règle. Aucune route n'envoie rien [R300].
+
+- `POST /` (soit `POST /v1/sequences`, `{personId, steps: [{channel, afterDays, text?}]}`) prépare la séquence d'une fiche de l'agent : au plus 8 étapes, sur `email`, `sms`, `phone`, `letter` ou `door`, de J0 à J90, jamais avant l'étape d'avant ; le texte d'un mail ou d'un SMS est écrit par l'agent, et lui seul en a un (409 HX20 sinon). Une seule séquence en cours par personne ; une personne déjà opposée n'en reçoit pas [R301].
+- `GET /jour` : les étapes du jour de ses séquences. Un mail ou un SMS est `auto` : il part au passage, par le contrôle central. Un appel est proposé avec son numéro seulement si le bouton d'appel de la fiche est ouvert ; un appel qui ne repose que sur la prospection demande aussi Bloctel, pas encore branché (H61) : il n'est jamais proposé (`opposition_unchecked`) [R302]. Les séquences à arrêter s'arrêtent à la lecture [R301].
+- `POST /etapes/<id>/fait` (`{}` ou `{callOutcome: "called" | "refused"}`) : l'agent note fait un appel, un courrier ou un passage à la porte du jour, revérifié à cet instant ; un appel dit son issue, noté dans les appels de la fiche, et un refus arrête la séquence partout [R204, R301]. Une étape d'un autre agent : 404.
+
+Le passage `sequences.passage`, au planificateur de 9 h à 19 h du lundi au samedi : chaque séquence en cours est arrêtée si elle doit l'être (réponse, exclusion, accord retiré, refus d'appel, changement ou départ de l'agent, fiches réunies), puis ses mails et SMS dus sont remis au contrôle central, qui redécide heures, plafond et doublons [R01, R11, R05]. Les canaux sont ceux du mode essai : rien ne part vers une personne [R26].
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
