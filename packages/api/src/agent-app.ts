@@ -8,6 +8,7 @@
 
 import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
+import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
 import { CLASSEMENT_SCRIPT } from '../app/classement.ts';
 import { BIENS_FICHE_SCRIPT } from '../app/biens-fiche.ts';
@@ -82,6 +83,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les étapes du jour des séquences (BR32), chargées seulement s'il y en a au plan, jamais gardées sur l'appareil [R201].
+  '/app/sequences-jour.js': { body: SEQUENCES_JOUR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Ce qu'il y a à tenir sur les ventes (W26), chargé seulement s'il y en a, jamais gardé sur l'appareil [R201].
   '/app/a-tenir.js': { body: A_TENIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].

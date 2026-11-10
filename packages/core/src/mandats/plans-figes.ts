@@ -11,7 +11,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { Acces } from '../acces/acces.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { localDay, PlanDuJour, type DailyPlan, type PlanSettings } from './plan-du-jour.ts';
+import { localDay, PlanDuJour, type DailyPlan, type PlanSequenceSource, type PlanSettings } from './plan-du-jour.ts';
 
 export const DAILY_PLAN_JOB = 'mandats.plan_du_jour';
 /** 7 h 30, heure de Paris, tous les jours : le cahier ne prévoit pas de repos pour le plan. */
@@ -23,6 +23,11 @@ const ACTOR = 'system:planificateur';
 export interface PlansOptions {
   now?: () => Date;
   settings?: PlanSettings;
+  /**
+   * Les étapes du jour des séquences de prospection (HX20, BR32), lues à chaque lecture, jamais rangées dans le plan
+   * figé : une réponse ou une opposition depuis 7 h 30 les retire [R301, R302].
+   */
+  sequences?: PlanSequenceSource;
 }
 
 /**
@@ -53,6 +58,7 @@ export class PlansDuJour {
   private readonly plan: PlanDuJour;
   private readonly acces: Acces;
   private readonly unique: FicheUnique;
+  private readonly sequences: PlanSequenceSource | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -64,6 +70,7 @@ export class PlansDuJour {
     const unique = new FicheUnique(db, store, { now: this.now });
     this.acces = new Acces(db, store, unique, journal, { now: this.now });
     this.unique = unique;
+    this.sequences = options.sequences ?? null;
     this.plan = new PlanDuJour(db, unique, { now: this.now, ...(options.settings ? { settings: options.settings } : {}) });
   }
 
@@ -151,6 +158,8 @@ export class PlansDuJour {
       if (!(await this.plan.eligibility(ids, at, item)).ok) continue;
       items.push(item);
     }
+    // Les étapes des séquences se lisent maintenant, revérifiées par leur module ; une source qui refuse n'en donne aucune.
+    const steps = this.sequences ? await this.sequences.today(viewer) : null;
     return {
       ok: true,
       value: {
@@ -161,6 +170,7 @@ export class PlansDuJour {
         removed: JSON.parse(row.removed) as DailyPlan['removed'],
         // Les lettres à déposer se lisent maintenant : une lettre déposée depuis 7 h 30 n'y est plus. Aucun nom [R140].
         letters: await this.plan.lettersOf(viewer),
+        ...(steps?.ok ? { sequenceSteps: steps.value.steps } : {}),
         hiddenSinceFrozen: stored.length - items.length,
       },
     };

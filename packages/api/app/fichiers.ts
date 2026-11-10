@@ -342,7 +342,28 @@ export const APP_JS = `'use strict';
       list.appendChild(li);
     });
     if (data.hiddenSinceFrozen > 0) list.appendChild(el('li', String(data.hiddenSinceFrozen) + ' ligne(s) retirée(s) depuis 7 h 30.', 'doux'));
-    return items.length === 0 && !(data.hiddenSinceFrozen > 0) ? 'Rien au plan aujourd’hui.' : null;
+    var steps = Array.isArray(data.sequenceSteps) ? data.sequenceSteps : [];
+    drawSteps(list, steps, session);
+    return items.length === 0 && steps.length === 0 && !(data.hiddenSinceFrozen > 0) ? 'Rien au plan aujourd’hui.' : null;
+  }
+  // Les étapes du jour des séquences (BR32), dessinées par un script à part, chargé seulement s'il y en a [R201].
+  var sequencesDraw = null;
+  function drawSteps(list, steps, mine) {
+    if (!steps.length) return;
+    if (sequencesDraw) { sequencesDraw(list, steps); return; }
+    var s = el('script');
+    s.setAttribute('src', '/app/sequences-jour.js');
+    s.addEventListener('load', function () {
+      sequencesDraw = globalThis.AIMMO_SEQUENCES({ el: el, button: button, send: send, ficheButton: ficheButton, hour: hour, reload: function () {
+        var again = session;
+        if (currentKey) loadPlan(currentKey, again).then(function (done) {
+          if (done === false && again === session) { wipe(); forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
+        });
+      } });
+      if (mine === session) sequencesDraw(list, steps);
+    });
+    s.addEventListener('error', function () { if (mine === session) $('plan-etat').textContent = 'Étapes des séquences non chargées : pas de réseau. Réessayez dans un moment.'; });
+    $('accueil').appendChild(s);
   }
   function renderHot(list, data) {
     var contacts = data && Array.isArray(data.contacts) ? data.contacts : [];
@@ -645,10 +666,11 @@ export const APP_JS = `'use strict';
     $('accueil').appendChild(s);
     return 'Chargement…';
   }
+  function loadPlan(key, mine) { return part('plan', api('/v1/plan-du-jour', key), renderPlan, mine); }
   function day(key, mine) {
     return Promise.all([
       // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
-      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine).then(function (done) {
+      loadPlan(key, mine).then(function (done) {
         if (!done || mine !== session) return done;
         return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
       }),
