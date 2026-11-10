@@ -948,7 +948,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR22 · Routes de la boutique de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : HX07, BR21
 - Partie du cahier : Offre aux agents ; Phase 3, « La boutique de l'agent ».
 - Objectif : routes de la boutique (`packages/core/src/boutique/`) dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : tarifs de la direction, préparation d'un support depuis le bien, validation par l'agent ; commande seulement à l'imprimeur d'essai.
