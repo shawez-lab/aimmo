@@ -1034,6 +1034,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque adresse rendue porte sa confiance et ses sources, aucune coordonnée du particulier [R294] (test) ; le bien créé reprend les champs de l'annonce, source « pige » [R295] (test) ; une annonce « pas d'agence » n'est jamais convertie [R273] (test) ; une adresse non proposée refusée en 409 R294 (test) ; ce que la pige rapporte, par niveau de confiance [R296] (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
+### BR31 · Routes de la séquence de prospection, et son passage au planificateur
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX20
+- Partie du cahier : Phase 3, « Séquence de prospection sur plusieurs canaux » ; R300 à R302, R01, R03, R11.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX20 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/sequences.ts`, sous `/v1/sequences`, ajouté à `app.ts`, et son passage `sequences.passage` inscrit au planificateur de 9 h à 19 h du lundi au samedi. Le contrôle central reçoit les seuls canaux du mode essai : rien ne part vers une personne [R26]. Bloctel n'est pas branché (H61) : aucune liste d'opposition n'est donnée, donc un appel de prospection seule n'est jamais proposé [R302]. `packages/core/src/sequence-prospection/` ne change pas. Le plan du jour (option `sequences` de `PlanDuJour`) reste à brancher à part.
+- Objectif : l'agent prépare la séquence d'une de ses fiches, lit ses étapes du jour et note un appel, un courrier ou un passage fait ; le passage remet les mails et SMS dus au contrôle central.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; rien ne part hors du contrôle central, canaux du mode essai seulement [R300, R26] (test) ; une opposition arrête la séquence sur tous les canaux [R301] (test) ; un appel n'est proposé que dans les heures permises, jamais sans Bloctel quand il ne repose que sur la prospection [R302] (test) ; le passage est inscrit au planificateur (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H61 reste à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
