@@ -414,6 +414,15 @@ Sous `/v1/regions`, la direction seule ; tout autre rôle est refusé (403) et l
 - `POST /decision` (`{region: <code INSEE>, open: true | false, reason}`, raison de 3 à 200 caractères) : ouvre ou ferme une région ; une version s'ajoute à la chaîne, rien ne change. Une ouverture est refusée en 409 tant que la phase 5 n'est pas ouverte (R651, `phase5_fermee`) ou qu'une autre région est ouverte depuis moins de 90 jours (R652, `region_recente`, avec `until`) ; la région d'origine ou un code inconnu sont refusés (R650) [R651, R652].
 - `GET /verification` : la chaîne des décisions recomptée depuis la première et recoupée avec le journal ; `{intact, versions}` ou, si une ligne a été changée ou retirée, `brokenAt`, la première version cassée [R653].
 
+## Veille des diagnostics énergétiques (BR26)
+
+Sous `/v1/veille-dpe` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 2 ko au plus ; un champ ou un paramètre de requête non prévu : 400 `unknown_field`. Aucun nom de propriétaire n'est demandé, rangé ni rendu [R288] ; le journal ne porte aucune adresse [R13]. Rien n'est envoyé.
+
+- L'agent en activité : `GET /secteurs` ses secteurs ouverts ; `POST /secteurs` (`{commune, postcode}`) ouvre un secteur sur une commune de ses zones en cours (409 `hors_zone`, `deja_suivi`, `trop_de_secteurs`) [R289] ; `POST /secteurs/<id>/fermeture` (`{}`) le ferme, ce qu'il a reçu reste [R17] ; `GET /alertes?day=AAAA-MM-JJ` l'alerte d'un jour (aujourd'hui sans `day`), des seules communes encore dans ses zones [R289] ; `POST /diagnostics/<id>/lettre` (`{}`) prépare la lettre « Au propriétaire » d'un logement F ou G de sa zone, une seule par diagnostic dans le réseau, texte écrit par le code avec la date d'interdiction de louer de M15 [R290].
+- L'agent en activité ou la direction : `GET /carte?commune=…&classes=F,G` les diagnostics reçus sur 90 jours, dans les zones de l'agent ou tout le réseau pour la direction, avec position, classe et date d'interdiction de louer [R289, R100] ; `GET /lettres/<id>` la lettre à imprimer (HTML), par l'agent qui l'a préparée ou la direction [R290, R201].
+
+Le planificateur passe chaque jour à 7 h (`veille_dpe.passage`) : pour chaque code postal suivi, la base ouverte de l'ADEME (`dpe03existant`) est lue sur 7 jours ; seuls le code postal et le jour partent. Chaque diagnostic est rangé une seule fois par réseau, dans l'alerte du jour de chaque secteur de sa commune [R288, R289]. Le texte de la lettre attend la relecture de l'avocat (H60).
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
