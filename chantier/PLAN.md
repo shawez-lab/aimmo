@@ -975,7 +975,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR25 · Routes des seuils du passage à PostgreSQL et relevé de chaque semaine
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#484, `6e912295`), `packages/api/src/postgresql.ts`, passage `postgresql.releve` (lundi 4 h), variable `PLATFORM_NETWORK_ID` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5405 tests). Restent : écran de la direction ; taille réelle de la base sur D1 (lue par `PRAGMA`, inconnue si D1 la refuse) ; `PLATFORM_NETWORK_ID` à régler au déploiement.
 - Qui : Claude, relecture normale · Dépend de : HX66
 - Partie du cahier : Architecture technique, « Données » (seuils du passage à PostgreSQL) ; Feuille de route, phase 4.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX66 n'a ni route, ni relevé au planificateur, ni `platformNetworkId` branché (« Restent (voie 1) »). Fichier neuf `packages/api/src/postgresql.ts`, sous `/v1/postgresql` ; variable `PLATFORM_NETWORK_ID` (le réseau qui exploite la plateforme), absente : tout est refusé, comme le veut HX66. Lecture prudente : le rapport chronométré est le tableau du réseau de la plateforme (TableauReseau, M13) sur la plus longue période permise (366 jours), lu sous l'acteur du système ; un tableau refusé compte comme mesure en échec, jamais comme rapide [R630]. `packages/core/src/passage-postgresql/` ne change pas.
