@@ -228,11 +228,15 @@ const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![
 const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?![\\p{L}])|(?:${NUMBER_RUN})\\s+heures?(?![\\p{L}\\d])|midi(?![\\p{L}\\d])|minuit(?![\\p{L}\\d]))`, 'gu');
 /**
  * Un nombre nu collé à l'heure lue dit une autre heure sans « h » (RC01, relecture) : « 14-15 h », « 15 h 30 ou 45 »,
- * « 15 h, sinon 16 », « 15 h, 16 au plus tard ». Le nombre ne compte qu'après « ou », « sinon », « voire », « plutôt »
- * ou un tiret, ou s'il finit la phrase : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
+ * « 15 h, sinon 16 », « 15 h, non seize », « 15 h, 16 au plus tard ». Après l'heure, le nombre compte dès qu'il suit un
+ * mot de correction ou de choix (ou, non, sinon, voire, plutôt, enfin, pardon, disons), même plus loin dans la
+ * phrase, ou s'il la finit : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
  */
-const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|-)\\s*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d])))`, 'u');
-const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*(?:-|,|ou|a)\\s*$`, 'u');
+const CORRECTION_WORD = '(?:ou(?:\\s+bien|\\s+plutot)?|non|sinon|voire|plutot|enfin|pardon|disons)(?![\\p{L}\\d])';
+/** Un mot de correction ou de choix, puis un nombre, n'importe où après l'heure : « non seize », « ou à 16 », « enfin 16 ». */
+const BARE_NUMBER_AFTER = new RegExp(`(?:^\\s*-|(?<![\\p{L}\\d])${CORRECTION_WORD})[\\s,]*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|^\\s*,?\\s*(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d]))`, 'u');
+/** Un nombre, puis un mot de correction ou de choix, juste avant l'heure : « seize, non quinze heures », « 14 ou 15 h ». */
+const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*,?\\s*(?:(?<![\\p{L}\\d])${CORRECTION_WORD}|-|,|a)?\\s*(?:a\\s+|vers\\s+)?$`, 'u');
 function crowded(sentence: string, h: Hit): boolean {
   return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);
 }

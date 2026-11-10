@@ -178,6 +178,7 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Estimation mardi à quinze heures et on signe le mandat.')).toBe('2026-12-08T14:00:00.000Z');
     // Codex sur #486 : l'autre heure redit sa préposition ; et une heure après « demain » n'est pas une année.
     for (const s of ['Visite demain à quinze heures ou à seize.', 'Visite demain à quinze heures, plutôt à seize.', 'Visite demain à 15 h ou vers 16.']) expect(at(s), s).toBeUndefined();
+    for (const s of ['Visite demain à quinze heures, non seize.', 'Visite demain à 15 h, enfin 16.', 'Visite demain à 15 h avec le couple, ou plutôt à 16.', 'Visite demain à seize, non quinze heures.', 'Visite demain à 16, pardon 15 h.']) expect(at(s), s).toBeUndefined();
     expect(at('Visite demain 10 h.')).toBe('2026-12-04T09:00:00.000Z');
     expect(at('Visite mardi 15h30.')).toBe('2026-12-08T14:30:00.000Z');
     expect(at('Visite le 12 janvier 10 h.')).toBe('2027-01-12T09:00:00.000Z');
