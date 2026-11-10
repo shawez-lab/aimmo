@@ -887,6 +887,23 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Critères : chaque état et chaque refus dits en mots, jamais un code (test) ; terminer en deux appuis (test) ; une saisie illisible ne part pas (test) ; réponse perdue dite incertaine (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
+### BR17 · Route de la reprise des données de l'agence sous licence
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX74, BR05
+- Partie du cahier : Offre aux agents, « Licence du logiciel » ; Feuille de route, phase 5.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX74 (voie 2) n'a ni route ni écran (« Restent après »). Les routes vont dans `packages/api/src/cles.ts`, à côté de l'export de l'agent, puisqu'elles passent par la même preuve « export_complet » ; `packages/core/src/licences/` (voie 2) ne change pas. La lecture groupée de `db/sql.ts` reste à part : le fichier se lit sur la base qui vit, enfants d'abord, comme HX74 le dit.
+- Objectif : la direction de l'agence sous licence tire le fichier complet de son réseau par `POST /v1/export/agence`, sur sa preuve « export_complet » pour `licence:<id>`, et le vérifie par `POST /v1/export/agence/verification`.
+- Critères : autre rôle refusé (403) avant le corps, refus au journal [R16] (test) ; la direction du réseau qui donne les licences refusée, 409 avec R657 (test) ; sans preuve, ou preuve d'un autre objet, rien n'est lu, 409 avec R601 (test) ; le fichier rendu porte les lignes de l'agence seule, et son empreinte est rangée [R658, R659] (test) ; la vérification dit vrai pour le fichier remis, faux pour un octet changé, et ne lit pas un fichier d'un autre réseau [R659] (test) ; champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H64 pour les clés d'appareil réelles).
+
+### BR18 · L'agence sous licence reprend ses données depuis l'écran
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : BR16, BR17
+- Partie du cahier : Offre aux agents, « Licence du logiciel ».
+- Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil, l'enregistre sur l'appareil, et le fait vérifier.
+- Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `licence:<id>` avant l'envoi (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
