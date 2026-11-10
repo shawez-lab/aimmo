@@ -851,6 +851,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 
 ### BR14 · Les agents pilotes et la phase 1 à l'écran
 - Statut : en cours
+- Reste : proposition #468 (`21742de9`), `packages/api/app/phases.ts` ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5311 tests). Fusion refusée par le contrôle des permissions de la séance (H68) : la séance suivante la fusionne à l'étape 3 si elle en a le droit. Décidé : désignation par l'identifiant de l'agent ; envoi hors d'AIMMO en deux appuis (jamais retiré) ; les 10 derniers jours non propres des 30 derniers jours sont listés.
 - Qui : Claude, relecture normale · Dépend de : BR10, BR13
 - Partie du cahier : Feuille de route, « Les phases et leurs conditions ».
 - Objectif : dans le bloc « Phases et régions » (`packages/api/app/phases.ts`), la direction lit la comparaison des agents pilotes et la série de la phase 1, désigne un pilote, range ses mois d'avant avec la référence de la preuve, range un envoi constaté hors d'AIMMO et l'inventaire des tâches planifiées, par les routes de BR10.
