@@ -247,17 +247,17 @@ const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])$
  * mot de choix sont l'article (« un trois pièces ou une maison »). Jour, pièces, surface ou prix qui touchent ce
  * passage : le champ est refusé, l'agent le saisira.
  */
+const CHOICE_UNIT = `(?:\\s+(?:${MONTHS.join('|')}|pieces?|m²|m2|metres? carres?|euros?|€|k€)(?![\\p{L}\\d]))`;
 const CHOICE_NUMBER = `(?:(?<![\\p{L}\\d.,])\\d+(?:[\\s.\u00a0\u202f]\\d{3})*(?:[.,]\\d+)?(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
-const CHOICE_SECOND = `(?:(?<![\\p{L}\\d.,])\\d+(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|(?!une?(?![\\p{L}\\d])(?![\\s-]+${WORD}))${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+const CHOICE_SECOND = `(?:(?<![\\p{L}\\d.,])\\d+(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|(?!une?(?![\\p{L}\\d])(?![\\s-]+${WORD})(?!\\s*(?:[.,;:!?)]|$))(?!${CHOICE_UNIT}))${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
 /** « et », « à », « au » ne disent un choix qu'entre deux nombres simples, le second suivi de son unité : « du 12 au 13
  * janvier », pas « un T3 au 2 rue Monge » ni « 65 m2 au 1er étage » (relecture forte). */
 const CHOICE_PLAIN = `(?:(?<![\\p{L}\\d.,])\\d{1,3}(?![\\d.,]\\d)|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
-const CHOICE_UNIT = `(?:\\s+(?:${MONTHS.join('|')}|pieces?|m²|m2|metres? carres?|euros?|€|k€)(?![\\p{L}\\d]))`;
 const CHOICE_ARTICLE = `(?:(?:le|la|les|un|une|des|du|de|au|aux)\\s+|l['’]\\s*)`;
 /** Les mêmes mots de choix et de correction que pour l'heure (Codex sur #486). */
 const CHOICE_WORD = `(?<![\\p{L}\\d])${CORRECTION_WORD}`;
 const CHOICE = new RegExp(
-  `${CHOICE_NUMBER}${CHOICE_UNIT}?\\s*,?\\s*${CHOICE_WORD}[\\s,]*${CHOICE_ARTICLE}?${CHOICE_SECOND}|${CHOICE_PLAIN}\\s+(?:(?:et|a)\\s+${CHOICE_ARTICLE}|(?:au|aux)\\s+)${CHOICE_SECOND}${CHOICE_UNIT}|(?<![\\p{L}\\d.,])\\d{1,3}\\s*[/-]\\s*\\d{1,3}(?![\\d])${CHOICE_UNIT}`,
+  `${CHOICE_NUMBER}${CHOICE_UNIT}?\\s*,?\\s*${CHOICE_WORD}[\\s,]*${CHOICE_ARTICLE}?${CHOICE_SECOND}|${CHOICE_PLAIN}\\s+(?:et\\s+${CHOICE_ARTICLE}|a\\s+${CHOICE_ARTICLE}?|(?:au|aux)\\s+)${CHOICE_SECOND}${CHOICE_UNIT}|(?<![\\p{L}\\d.,])\\d{1,3}\\s*[/-]\\s*\\d{1,3}(?![\\d])${CHOICE_UNIT}`,
   'gu',
 );
 /**

@@ -229,6 +229,11 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(field('Il vend sa maison, prix 250 000 euros. Le prix sera deux cent ou trois cent mille euros.', 'bien', 'priceEur')).toBeUndefined();
     // Codex sur #486 : les mêmes mots de correction valent pour l'heure.
     for (const s of ['Visite demain à quinze heures, je veux dire seize.', 'Visite demain à quinze heures, peut-être seize.', 'Visite demain à quinze heures, ou alors seize.', 'Visite demain à 15 h, ou sinon 16.', 'Visite demain à 15 h, éventuellement 16.']) expect(at(s), s).toBeUndefined();
+    // Codex sur #486 : « un » seul qui finit la correction est un nombre ; une plage « à » sans article fait refuser.
+    for (const s of ['Il vend sa maison de trois pièces, non une.', 'Il vend sa maison de deux pièces, ou plutôt une pièce.', 'Il vend sa maison de trois pièces. En fait quatre à cinq pièces.', 'Il vend sa maison de 3 pièces. En fait 4 à 5 pièces.']) {
+      expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
+      expect(read(s).conflicts, s).toContainEqual({ target: 'bien', key: 'rooms' });
+    }
     // Ce qui n'est pas un choix entre deux nombres se lit toujours.
     expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
