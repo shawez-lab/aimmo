@@ -22,7 +22,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { AUTOMATION_CHANNELS, checkFixedText, renderScenarioText, type AutomationChannel, type ScenarioResult } from './scenarios.ts';
+import { AUTOMATION_CHANNELS, IDENTIFIER_FOR, checkFixedText, renderScenarioText, type AutomationChannel, type ScenarioResult } from './scenarios.ts';
 
 /** Finalité de l'accord d'un message de date [R03, R404]. */
 export const DATES_PURPOSE = 'dates_clients';
@@ -56,7 +56,7 @@ export interface DatesTickReport {
   messagesInTrial: number;
   refused: number;
   postponed: number;
-  /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou pas de texte pour un canal permis [R404]. */
+  /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou aucun canal permis à la fois écrit et joignable [R404]. */
   withoutConsent: number;
 }
 
@@ -223,7 +223,11 @@ export class DatesClients {
       const members = await this.fiche.membersOf(d.root);
       let channel: AutomationChannel | null = null;
       let texts: string[] | null = null;
+      // Les coordonnées de toutes les fiches réunies : un canal où la personne n'est pas joignable n'est jamais pris, sinon
+      // le contrôle central le refuserait et la place de l'année serait perdue alors qu'un autre canal permis servait [R404].
+      const kinds = new Set((await this.fiche.view(d.root)).identifiers.map((i) => i.kind as string));
       for (const c of AUTOMATION_CHANNELS) {
+        if (!IDENTIFIER_FOR[c].some((k) => kinds.has(k))) continue;
         // La même décision que le contrôle central, lue sans rien écrire : l'accord « dates des clients » en vigueur sur
         // ce canal, toutes fiches réunies et retraits compris, et aucune exclusion [R03, R02, R04, R404].
         const decision = await this.decisions.decide(d.root, { channel: c, kind: 'follow_up', purpose: DATES_PURPOSE, conversationId: null, at: now });
@@ -235,7 +239,8 @@ export class DatesClients {
           break;
         }
       }
-      // Sans accord en vigueur, exclue, ou sans texte pour un canal permis : rien n'est préparé, aucune place n'est prise [R404].
+      // Sans accord en vigueur, exclue, sans texte ou sans coordonnée pour un canal permis : rien n'est préparé, aucune place
+      // n'est prise [R404].
       if (channel === null || texts === null) {
         report.withoutConsent += 1;
         continue;
