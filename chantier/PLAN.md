@@ -957,12 +957,21 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (imprimeur réel : H56, hors de cette tâche).
 
 ### BR23 · Routes du stock de panneaux et passage du planificateur
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#482, `d00412c6`), `packages/api/src/panneaux.ts`, aucune règle nouvelle ni migration, cœur inchangé ; `signPickupsJob` au planificateur avec la porte de diffusion de D05. Codex 1 P1 (correction d'un test hors du périmètre) : sortie dans BR24, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5398 tests). Écran du stock et de la tournée (HX19) à faire.
 - Qui : Claude, relecture normale · Dépend de : HX14, BR22
 - Partie du cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux ».
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX14 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/panneaux.ts`, ajouté à `app.ts` ; `signPickupsJob` inscrit au planificateur avec la porte de diffusion de D05.
 - Objectif : sous `/v1/panneaux`, la direction ajoute des panneaux au stock ; l'agent du bien ou la direction pose un panneau, le dit récupéré ou perdu ; chacun lit le stock et les panneaux à récupérer. Le planificateur range chaque jour à 6 h, 13 h et 19 h les tâches « récupérer le panneau ».
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; numéros donnés par le code, une pose seulement sur un bien diffusable à son adresse [R282, R42] (test) ; l'agent ne lit que ses poses [R284] (test) ; tâche rangée par le planificateur quand le bien est vendu [R283] (test) ; champ non prévu ou corps mal formé 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
+### BR24 · Test de la dictée sans faux échec
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#483, `2e36e337`). Le test « [R261] validée d'un geste » de HX06 cherchait « 0612 » dans tout le journal, empreintes et identifiants tirés au hasard compris : 1 échec au hasard sur 5401 pendant BR23. Ils sont retirés avant la recherche. Codex rien à signaler.
+- Qui : Claude, relecture normale · Dépend de : HX06
+- Décidé (2026-11-10, voie 1) : séparée de BR23 à la demande de Codex (P1, hors du périmètre).
+- Critères : le test reste aussi strict sur tout le reste du journal [R13] (test).
 - Attend : rien.
 
 ## Phase 1 : le socle
