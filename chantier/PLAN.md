@@ -984,6 +984,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : autre rôle refusé (403) avant toute lecture du corps, refus au journal [R16] (test) ; la direction d'un autre réseau refusée (403, `autre_reseau`), et tout refusé sans `PLATFORM_NETWORK_ID` [R16] (test) ; relevé rangé avec le temps du rapport mesuré [R630] (test) ; décision sans seuil franchi 409 R631 (test) ; choix inconnu ou corps illisible 400 sans rien ranger (test) ; relevé du lundi rangé une seule fois par le planificateur [R630] (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
+### BR26 · Routes de la veille des diagnostics énergétiques et passage du planificateur
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX16
+- Partie du cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; M15, date d'interdiction de louer.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX16 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/veille-dpe.ts`, ajouté à `app.ts` ; `dpeWatchJob` inscrit au planificateur avec `AdemeDiagnosisFeed`. `packages/core/src/veille-dpe/` ne change pas.
+- Objectif : sous `/v1/veille-dpe`, l'agent lit sa carte et son alerte du jour, prépare la lettre « Au propriétaire » d'un logement F ou G ; le planificateur passe chaque jour.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; carte et alerte limitées aux communes des zones de l'agent [R289] (test) ; lettre seulement pour un F ou un G, sans nom de propriétaire [R290] (test) ; passage inscrit au planificateur, rien ne remonte deux fois [R288] (test) ; corps mal formé 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H60 pour l'usage réel de la lettre).
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
