@@ -1045,7 +1045,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H61 reste à part).
 
 ### BR32 · Les étapes des séquences dans le plan du jour, et le bouton « Fait »
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#492, `af80d881`). Étapes lues à chaque lecture de `GET /v1/plan-du-jour` (`sequenceSteps`), dessinées par `/app/sequences-jour.js`, chargé seulement s'il y a des étapes. Codex : 1 P1 corrigé (aucun message quand le script ne charge pas), puis rien à signaler. GitHub Actions bloqué (facturation), vérification locale verte (5455 tests). Restent : écrans de la pige ; écran de préparation d'une séquence ; Bloctel réel (H61).
 - Qui : Claude, relecture normale · Dépend de : BR31
 - Partie du cahier : Phase 3, « Séquence de prospection sur plusieurs canaux » ; M20, plan du jour ; R300 à R302, R16, R13.
 - Décidé (2026-11-10, voie 1), lecture prudente : ajoutée parce que BR31 laisse « étapes du jour dans le plan du jour ». Le plan figé à 7 h 30 ne change pas et ne range aucune étape : `PlansDuJour.read` lit les étapes du jour au moment de la lecture, comme les lettres, par une source `sequences` (option de `PlansOptions`) que la route `GET /v1/plan-du-jour` branche sur `SequencesProspection.today`, sans liste d'opposition (H61). Une source qui refuse : pas d'étapes, le plan reste lisible. Tant que le plan n'est pas figé, rien n'est lu. À l'écran du jour, sous le plan : chaque étape avec son prénom et son canal ; mail ou SMS « part seul par le contrôle central », sans bouton ; appel proposé : lien d'appel et deux boutons « Appelé » et « A refusé » ; courrier et passage : « Fait » ; étape non proposée : sa raison en clair, jamais le code. Le bouton appelle `POST /v1/sequences/etapes/{id}/fait`, puis relit le plan.
