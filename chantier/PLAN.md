@@ -985,7 +985,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR26 · Routes de la veille des diagnostics énergétiques et passage du planificateur
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#485, `87048db8`), `packages/api/src/veille-dpe.ts`, aucune règle nouvelle ni migration, cœur inchangé ; `dpeWatchJob` au planificateur (7 h), `AdemeDiagnosisFeed` donné par le Worker (`dpeFeed`), ajouté à la liste écrite des lectures publiques de `meta.test.ts`. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5410 tests, puis 2 listes de tests mises à jour et relancées). Restent : écran de la veille (carte et alerte) ; H60.
 - Qui : Claude, relecture normale · Dépend de : HX16
 - Partie du cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; M15, date d'interdiction de louer.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX16 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/veille-dpe.ts`, ajouté à `app.ts` ; `dpeWatchJob` inscrit au planificateur avec `AdemeDiagnosisFeed`. `packages/core/src/veille-dpe/` ne change pas.
