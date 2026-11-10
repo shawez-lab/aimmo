@@ -468,7 +468,8 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     for (const e of events) {
       expect(e.data).not.toContain('Inès');
       expect(e.data).not.toContain('example.test');
-      expect(e.data).not.toContain('280');
+      // L'identifiant de l'édition est tiré au hasard et peut porter « 280 » : seul le prix du bien est cherché.
+      expect(e.data.split(id).join('')).not.toContain('280');
     }
     await expect(t.db.run('DELETE FROM newsletter_letters')).rejects.toThrow();
     await expect(t.db.run("UPDATE newsletter_letters SET status = 'pending'")).rejects.toThrow();
