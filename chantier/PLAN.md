@@ -1005,7 +1005,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR28 · Routes de la carte des opportunités et de la tournée de prospection
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#488, `0edf2ba3`), `packages/api/src/tournee.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5422 tests, paquet du Worker). Restent : écran de la carte et de la tournée ; sources de l'agenda relié (V03) et de la position des biens pour la tournée.
 - Qui : Claude, relecture normale · Dépend de : HX19
 - Partie du cahier : Phase 3, « Carte des opportunités et tournée de prospection » ; M05, créneaux et trajets (R32).
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX19 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/tournee.ts`, sous `/v1/tournee`, ajouté à `app.ts`. Géocodage des panneaux par le géocodeur de `estimation` (Base adresse nationale), sinon lieu inconnu. L'agenda relié (V03) et la position des biens n'ont encore aucune source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`). Sans `date`, le jour de Paris. `packages/core/src/tournee-prospection/` ne change pas.
