@@ -930,7 +930,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans route suivent, dans l'ordre du plan (HX08, HX09, HX10, puis HX07 et HX14).
 
 ### BR20 · Routes des remises et des actualités
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#479, `377df885`), `packages/api/src/reseau-utile.ts`, aucune règle nouvelle ni migration. Codex 1 P0 (refus de rôle avant la lecture du corps) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5380 tests). Écrans des remises et du fil à faire.
 - Qui : Claude, relecture normale · Dépend de : HX08, HX09
 - Partie du cahier : M14 Réseau et académie ; Phase 3, « Mes remises » et « Mes actualités ».
 - Objectif : un fichier `packages/api/src/reseau-utile.ts`, ajouté au routeur de `app.ts` et décrit dans `docs/API.md`, sous `/v1/remises` et `/v1/actualites` : la direction range et retire une remise ou une actualité ; l'agent lit le catalogue, les remises de son bien au bon moment, en écarte une, et lit son fil d'actualités.
@@ -938,7 +939,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR21 · Routes des clés des biens
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : HX10, BR20
 - Partie du cahier : M07 et M08 ; Phase 3, « Les clés des biens ».
 - Objectif : routes de l'armoire des clés (`/v1/trousseaux`), dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : ranger un trousseau, le sortir, le rendre, le dire perdu, lire l'armoire, ce que l'agent doit rendre, et la vue du vendeur.
