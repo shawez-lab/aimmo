@@ -234,6 +234,11 @@ describe('RC01 · les nombres dits en lettres', () => {
       expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
       expect(read(s).conflicts, s).toContainEqual({ target: 'bien', key: 'rooms' });
     }
+    // Codex sur #486 : un jour que `NUMBER_BEFORE` écarte (« quatorze ou quinze janvier ») fait quand même refuser le jour dit plus tôt.
+    for (const s of ['Visite le douze janvier à dix heures. En fait visite le quatorze ou quinze janvier à dix heures.', 'Visite le 12 janvier à 10 h. En fait visite le 14 ou 15 janvier à 10 h.', 'Visite le douze janvier à dix heures. En fait visite le quatorze et quinze janvier à dix heures.', 'Visite le douze janvier à dix heures. En fait visite le quatorze, quinze janvier à dix heures.', 'Visite le 12 janvier à 10 h. En fait visite le 14, 15 janvier à 10 h.']) {
+      expect(at(s), s).toBeUndefined();
+      expect(read(s).conflicts, s).toContainEqual({ target: 'rendezvous', key: 'start' });
+    }
     // Ce qui n'est pas un choix entre deux nombres se lit toujours.
     expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);

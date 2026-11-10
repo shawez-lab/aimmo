@@ -269,6 +269,8 @@ const RAW_UNITS = {
   rooms: `(?:${CHOICE_NUMBER}\\s*pieces?(?![\\p{L}\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d]))`,
   surfaceM2: `${CHOICE_NUMBER}\\s*(?:m²|m2|metres? carres?)(?![\\p{L}\\d])`,
   priceEur: `${CHOICE_NUMBER}\\s*(?:€|k€|euros?(?![\\p{L}\\d])|k euros?(?![\\p{L}\\d])|mille euros?(?![\\p{L}\\d]))`,
+  /** Le jour dit avant son mois, sans aucun filtre : « quinze janvier » dans « quatorze ou quinze janvier » (Codex sur #486). */
+  days: `${CHOICE_NUMBER}\\s+(?:${MONTHS.join('|')})(?![\\p{L}\\d])`,
 } as const;
 const rawMentions = (sentence: string, key: keyof typeof RAW_UNITS): Hit[] => hits(sentence, new RegExp(RAW_UNITS[key], 'u'), () => 0);
 /** Les passages de la phrase où deux nombres se disputent un champ. */
@@ -500,8 +502,11 @@ export function readDictation(dictation: string, options: { now: Date; communes?
         ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)).filter((h) => digitsAlone(s)(h) && !NUMBER_BEFORE.test(fold(s.slice(0, h.at)).folded)),
       ];
       // Les jours sont pris avant leurs filtres : un jour déjà écarté par un autre motif fait aussi refuser.
-      const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...wordHits(s, DAY_WORDS_AFTER, () => ''), ...hits(s, FIRST_OF_MONTH, () => '')];
-      if ([...days, ...anyDays].some((h) => overlaps(h, contested))) {
+      const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...rawMentions(s, 'days'), ...hits(s, FIRST_OF_MONTH, () => '')];
+      // Un jour dit avec son mois que la lecture écarte (« quatorze et quinze janvier », « quatorze, quinze janvier ») :
+      // l'agent a dit un jour qu'on ne sait pas lire, le rendez-vous n'est pas lu, même si une phrase d'avant en disait un.
+      const daysDropped = rawMentions(s, 'days').some((h) => !overlaps(h, days));
+      if (daysDropped || [...days, ...anyDays].some((h) => overlaps(h, contested))) {
         // Deux jours qui se disputent le rendez-vous : il n'est pas lu.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
         return;
