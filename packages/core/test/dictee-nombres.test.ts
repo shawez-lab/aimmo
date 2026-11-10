@@ -208,6 +208,18 @@ describe('RC01 · les nombres dits en lettres', () => {
     }
     for (const s of ['Il vend sa maison de quatre-vingts ou bien quatre-vingt-dix mètres carrés.', 'Il vend sa maison de 85 m², ou plutôt 90.']) expect(field(s, 'bien', 'surfaceM2'), s).toBeUndefined();
     for (const s of ['Il vend sa maison, prix deux cent mille ou bien deux cent dix mille euros.', 'Il vend sa maison, prix 250 000 euros, non 260 000.']) expect(field(s, 'bien', 'priceEur'), s).toBeUndefined();
+    // Relecture forte : d'autres mots de choix ou de correction, et les chiffres séparés par un trait ou une barre.
+    for (const s of ['Il vend une maison de trois ou sinon quatre pièces.', 'Il vend une maison de trois ou même quatre pièces.', 'Il vend une maison de trois ou peut-être quatre pièces.', 'Il vend une maison de trois, peut-être quatre pièces.', 'Il vend une maison de trois ou éventuellement quatre pièces.', 'Il vend une maison de trois ou encore quatre pièces.', 'Il vend une maison de 3/4 pièces.', 'Il vend une maison de 3-4 pièces.', 'Il vend une maison de trois pièces, je veux dire quatre.']) {
+      expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
+    }
+    for (const s of ['Visite le 12 ou sinon le 13 janvier à 10 h.', 'Visite le 12 ou peut-être le 13 janvier à 10 h.', 'Visite le 12 ou encore le 13 janvier à 10 h.', 'Visite le 12 au plus tard le 13 janvier à 10 h.', 'Visite le 12-13 janvier à 10 h.']) expect(at(s), s).toBeUndefined();
+    // Relecture forte : « au » suivi d'une adresse ou d'un étage n'est pas un choix.
+    expect(field('Il vend un appartement, un T3 au 2 rue Monge.', 'bien', 'rooms')).toEqual([3, 'T3']);
+    expect(field('Il vend un appartement T3 au 1er étage.', 'bien', 'rooms')).toEqual([3, 'T3']);
+    expect(field('Il vend un appartement F4 au 12 rue de la Liberté.', 'bien', 'rooms')).toEqual([4, 'F4']);
+    expect(field('Il vend une maison de 120 m2 au 3 rue Monge.', 'bien', 'surfaceM2')).toEqual([120, '120 m2']);
+    expect(field('Il vend un appartement de 65 m2 au 1er étage.', 'bien', 'surfaceM2')).toEqual([65, '65 m2']);
+    expect(at('Visite le 12 janvier à 10 h au 3 rue Monge.')).toBe('2027-01-12T09:00:00.000Z');
     // Ce qui n'est pas un choix entre deux nombres se lit toujours.
     expect(field('Il vend un trois pièces ou une maison.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
     expect(field('Il vend un appartement, un trois pièces et un garage.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
