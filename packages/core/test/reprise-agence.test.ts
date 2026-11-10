@@ -60,7 +60,7 @@ async function gapsOf(db: SqlDatabase, carte = carteReprise()): Promise<string[]
       if (!c.includes('network_id')) gaps.push(`sans_network_id:${t}`);
       continue;
     }
-    if (c.includes('network_id')) gaps.push(`network_id_non_suivi:${t}`);
+    if (c.includes('network_id') && !('soi' in e)) gaps.push(`network_id_non_suivi:${t}`);
     if ('soi' in e) {
       if (!c.includes(e.soi)) gaps.push(`colonne:${t}.${e.soi}`);
       continue;
@@ -160,7 +160,8 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     const { db } = await openDb();
     expect(await gapsOf(db)).toEqual([]);
     const { tables, cols } = await schemaOf(db);
-    expect(new Set(TABLES_RESEAU)).toEqual(new Set(tables.filter((t) => cols.get(t)!.includes('network_id'))));
+    expect(new Set(TABLES_RESEAU)).toEqual(new Set(tables.filter((t) => cols.get(t)!.includes('network_id') && t !== 'software_licences')));
+    expect(CARTE_REPRISE_AUTRES.software_licences).toEqual({ soi: 'licensee_network_id' });
     expect(carteReprise().size).toBe(tables.length);
     for (const t of Object.keys(CARTE_REPRISE_AUTRES)) expect(TABLES_RESEAU).not.toContain(t);
   });
@@ -236,7 +237,8 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     for (const other of ['pres', 'reseau']) expect(text).not.toContain(`-${other}`);
     expect(text).not.toContain(t.network.id);
     expect(text).not.toContain(t.pres.licenseeNetworkId);
-    expect(doc.tables.software_licences).toEqual([]);
+    // Sa licence, sans rien du réseau qui la donne [R657].
+    expect(doc.tables.software_licences).toEqual([expect.objectContaining({ id: t.lac.id, licensee_network_id: net, siren: AGENCE.siren, network_id: REPRISE_MASQUE, granted_by: REPRISE_MASQUE, phase5_hash: REPRISE_MASQUE })]);
     expect(doc.tables.licence_tariffs).toEqual([]);
     expect(doc.tables.phase_openings).toEqual([]);
     // Chaque ligne d'une table `network_id` est du réseau de l'agence.
@@ -278,6 +280,15 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
       expect(r.ok).toBe(true);
     }
     expect((await t.db.all('SELECT id FROM licence_data_exports WHERE network_id = ?', [t.lac.licenseeNetworkId])).length).toBe(2);
+    // Le dernier fichier porte la licence terminée et ses deux états, sans qui les a décidés [R657].
+    const r = await t.reprise.make(t.lacDirection, 'preuve-ok');
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.document.tables.licence_states!.map((x) => [x.state, x.decided_by])).toEqual([
+      ['suspendue', REPRISE_MASQUE],
+      ['terminee', REPRISE_MASQUE],
+    ]);
+    expect(JSON.stringify(r.value.document)).not.toContain(t.network.id);
+    expect(JSON.stringify(r.value.document)).not.toContain(t.pres.id);
   });
 
   it('[R659] empreinte rangée, au journal sans contenu ; un octet changé et la vérification échoue', async () => {

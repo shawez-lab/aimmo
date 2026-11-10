@@ -4,7 +4,7 @@
  * Pour chaque table de la base, la carte dit comment y trouver les lignes d'un réseau, ou pourquoi elle n'entre pas
  * dans le fichier de reprise :
  *   - `TABLES_RESEAU` : la table porte la colonne `network_id` ; ses lignes sont celles de ce réseau ;
- *   - `soi` : la ligne du réseau lui-même ;
+ *   - `soi` : la ligne du réseau lui-même, ou celle qui le nomme dans une autre colonne que `network_id` (sa licence) ;
  *   - `via` : la table n'a pas de colonne `network_id` ; ses lignes sont celles dont une clé vaut celle d'une ligne déjà
  *     trouvée dans une autre table (chaque clé étrangère vers une table reprise est suivie, l'une ou l'autre suffit ;
  *     une clé de plusieurs colonnes est suivie entière). `sansCle` dit pourquoi le chemin suit une colonne sans clé
@@ -97,7 +97,7 @@ export const TABLES_RESEAU: readonly string[] = `
   send_log send_quota_slots send_reservations seo_signals service_commitments shop_orders shop_tariffs
   sign_pickup_tasks sign_placements sign_removals signature_circuit_annexes signature_circuit_events
   signature_circuit_signers signature_circuits signature_sessions signed_amendments signed_documents signs
-  site_legal_mentions site_page_views social_calendar_rules social_calendar_slots social_posts software_licences
+  site_legal_mentions site_page_views social_calendar_rules social_calendar_slots social_posts
   sources sponsorships studio_option_requests supplier_invoice_reads supplier_invoices suspicion_decisions
   suspicion_reports thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
@@ -154,6 +154,9 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmissions: { via: [['invoice_id', 'invoices', 'id']] },
   journal: { hors: 'commun', why: 'Le journal est commun à toute la base et chaîné ligne à ligne : ses lignes ne portent pas de réseau, et en sortir une partie casserait la chaîne.' },
+  // La licence de l'agence elle-même : sa ligne porte le réseau qui la donne dans `network_id`, et l'agence dans
+  // `licensee_network_id`. Ce qui vient du réseau qui la donne est masqué [R657].
+  software_licences: { soi: 'licensee_network_id' },
   licence_states: { via: [['licence_id', 'software_licences', 'id']] },
   licensed_asset_withdrawals: { via: [['asset_id', 'licensed_assets', 'id']] },
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
@@ -258,7 +261,10 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   remote_slip_signatures: ['code_hash', 'token_hash'],
   rental_lease_signatures: ['code_hash'],
   satisfaction_tokens: ['token_hash'],
+  licence_states: ['decided_by'],
+  security_challenges: ['challenge'],
   security_sessions: ['token_hash'],
+  software_licences: ['granted_by', 'network_id', 'phase5_hash'],
   signature_sessions: ['code_hash'],
   verified_review_invites: ['token_hash'],
   virtual_stagings: ['real_token', 'staged_token'],
