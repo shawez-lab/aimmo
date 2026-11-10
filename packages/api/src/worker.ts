@@ -11,6 +11,7 @@ import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
+import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -177,6 +178,7 @@ export default {
       partnerOptOutBase: env.PARTENAIRES_OPPOSITION_BASE,
       investorFeesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME),
       platformNetworkId: env.PLATFORM_NETWORK_ID,
+      dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));

@@ -92,6 +92,7 @@ import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
+import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
@@ -1259,6 +1260,16 @@ function panneauxRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes de la veille des diagnostics énergétiques (BR26) : rôle contrôlé avant le corps [R16], aucun nom [R288]. */
+function veilleDpeRoutesDef(): RouteDef[] {
+  return veilleDpeRoutes().map((r: VeilleDpeRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2080,6 +2091,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...trousseauxRoutesDef(),
     ...boutiqueRoutesDef(),
     ...panneauxRoutesDef(),
+    ...veilleDpeRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),
