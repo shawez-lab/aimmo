@@ -592,6 +592,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       licence_tariffs: ['reason', 'decided_by'],
       software_licences: ['agency_name', 'siren', 'card_number', 'card_expires_on', 'granted_by'],
       licence_states: ['reason', 'decided_by'],
+      // HX74 : chaque fichier de reprise remis à la direction d'une agence sous licence, avec qui l'a tiré.
+      licence_data_exports: ['made_by'],
     },
   },
   {
@@ -1337,6 +1339,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
   software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
   licence_states: ['licence_id', 'version', 'state', 'decided_at'],
+  licence_data_exports: ['id', 'licence_id', 'network_id', 'fingerprint', 'tables_count', 'rows_count', 'made_at'],
   commission_payouts: ['file_id', 'network_id', 'paid_at', 'created_at'],
   commission_payout_alerts: ['file_id', 'kind', 'created_at'],
   morning_reports: ['network_id', 'day', 'period_from', 'period_to', 'created_at'],
