@@ -34,13 +34,43 @@ export const REPRISE_FORMAT = 'aimmo-reprise-agence/1';
 export const REPRISE_MASQUE = '(masqué)';
 /** Ce qui remplace, dans un texte, un lien qui porte un jeton (un lien de rappel, de désinscription, d'espace). */
 export const REPRISE_LIEN_MASQUE = '(lien masqué)';
-// Un lien dont le chemin ou les paramètres portent une suite d'au moins 16 caractères d'un jeton : il ouvrirait
-// quelque chose sans autre preuve. Les liens courts restent.
-const TOKEN_LINK = /\bhttps?:\/\/[^\s"'<>]*[A-Za-z0-9_-]{16,}[^\s"'<>]*/gi;
+// Un lien : son origine (`https://hôte`), puis son chemin, ses paramètres et son ancre. Ni guillemet, ni espace, ni
+// barre oblique inverse : un lien écrit dans un JSON s'arrête avant l'échappement de son guillemet.
+const LINK = /\bhttps?:\/\/[^\s"'<>\\/?#]*([^\s"'<>\\]*)/gi;
+// Un jeton : une suite d'au moins 16 caractères d'un jeton, cherchée dans le chemin et les paramètres seulement, jamais
+// dans le nom d'hôte.
+const TOKEN = /[A-Za-z0-9_-]{16,}/;
 
-/** Masque, dans un texte, chaque lien qui porte un jeton [R659]. */
+/** Masque, dans un texte, chaque lien dont le chemin ou les paramètres portent un jeton [R659]. */
 export function masquerLiens(text: string): string {
-  return text.replace(TOKEN_LINK, REPRISE_LIEN_MASQUE);
+  return text.replace(LINK, (link: string, rest: string) => (TOKEN.test(rest) ? REPRISE_LIEN_MASQUE : link));
+}
+
+function maskDeep(value: unknown): unknown {
+  if (typeof value === 'string') return masquerLiens(value);
+  if (Array.isArray(value)) return value.map(maskDeep);
+  if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, maskDeep(v)]));
+  return value;
+}
+
+/**
+ * Masque une valeur texte d'une ligne. Un JSON (objet ou tableau) est masqué chaîne par chaîne puis réécrit, pour rester
+ * un JSON lisible ; il n'est réécrit que si un lien a été masqué [R659, R658].
+ */
+export function masquerTexte(text: string): string {
+  const t = text.trimStart();
+  if (t.startsWith('{') || t.startsWith('[')) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return masquerLiens(text);
+    }
+    const masked = maskDeep(parsed);
+    const out = JSON.stringify(masked);
+    return out === JSON.stringify(parsed) ? text : out;
+  }
+  return masquerLiens(text);
 }
 /** Ce que le fichier ne porte pas, dit dans le fichier même. */
 export const REPRISE_HORS_FICHIER = [
@@ -181,7 +211,7 @@ export class RepriseDonneesAgence {
       if (masked.length > 0) document.masquees[table] = [...masked];
       const clean = found.map((r) => {
         const out: Row = { ...r };
-        for (const [c, v] of Object.entries(out)) if (typeof v === 'string') out[c] = masquerLiens(v);
+        for (const [c, v] of Object.entries(out)) if (typeof v === 'string') out[c] = masquerTexte(v);
         for (const c of masked) if (out[c] !== null && out[c] !== undefined) out[c] = REPRISE_MASQUE;
         return out;
       });

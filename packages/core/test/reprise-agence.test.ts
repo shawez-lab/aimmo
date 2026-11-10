@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { CARTE_ACCES } from '../src/conformite/carte-acces.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
-import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, ORDRE_REPRISE, REPRISE_LIEN_MASQUE, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
+import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, ORDRE_REPRISE, REPRISE_LIEN_MASQUE, masquerLiens, masquerTexte, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -302,6 +302,17 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     for (const attempt of tables.social_post_attempts!) expect(ids('social_posts').has(attempt.post_id!)).toBe(true);
     for (const post of tables.social_posts!) expect(ids('properties').has(post.property_id!)).toBe(true);
     expect(ids('social_post_attempts').has('essai-tard')).toBe(false);
+  });
+
+  it('[R659] liens à jeton : chemin et paramètres seuls, nom d’hôte long gardé, JSON resté lisible', () => {
+    expect(masquerLiens('https://agence-immobiliere-du-lac.test')).toBe('https://agence-immobiliere-du-lac.test');
+    expect(masquerLiens('https://agence-immobiliere-du-lac.test/biens/maison')).toBe('https://agence-immobiliere-du-lac.test/biens/maison');
+    expect(masquerLiens('Voir https://agence-immobiliere-du-lac.test/r?t=AbCdEf0123456789xyz fin')).toBe(`Voir ${REPRISE_LIEN_MASQUE} fin`);
+    const json = JSON.stringify({ texte: 'Lien "https://exemple.test/rdv/AbCdEf0123456789xyz"', liste: ['https://exemple.test/a'] });
+    const masked = masquerTexte(json);
+    expect(JSON.parse(masked)).toEqual({ texte: `Lien "${REPRISE_LIEN_MASQUE}"`, liste: ['https://exemple.test/a'] });
+    // Un JSON sans lien à jeton reste au caractère près.
+    expect(masquerTexte('{ "a" : "https://exemple.test/a" }')).toBe('{ "a" : "https://exemple.test/a" }');
   });
 
   it('[R659] jetons masqués dans le fichier, le reste intact', async () => {
