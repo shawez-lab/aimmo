@@ -55,6 +55,18 @@ export interface TariffInput {
   validUntil: unknown;
 }
 
+export interface TariffView {
+  id: string;
+  support: Support;
+  quantity: number;
+  priceCents: number;
+  printer: string;
+  source: string;
+  validUntil: string;
+  setAt: string;
+  inForce: boolean;
+}
+
 export interface OrderView {
   id: string;
   support: Support;
@@ -141,6 +153,35 @@ export class Boutique {
     );
     await appendEvent(this.journal, { type: 'boutique.tarif_regle', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { tariffId: id, support: input.support, quantity: input.quantity } }, this.now);
     return { ok: true, tariffId: id };
+  }
+
+  /**
+   * Les tarifs du réseau, la direction seule : pour chaque support et chaque quantité, le dernier réglé, dit en vigueur
+   * ou échu. Un tarif plus ancien ne fait jamais foi, il n'est donc pas rendu [R264].
+   */
+  async tariffs(viewer: Viewer): Promise<{ ok: true; value: TariffView[] } | Refusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const rows = await this.db.all<{ id: string; support: Support; quantity: number; price_cents: number; printer: string; source: string; valid_until: string; set_at: string }>(
+      `SELECT t.id, t.support, t.quantity, t.price_cents, t.printer, t.source, t.valid_until, t.set_at FROM shop_tariffs t
+        WHERE t.network_id = ? AND t.rowid = (SELECT u.rowid FROM shop_tariffs u WHERE u.network_id = t.network_id AND u.support = t.support AND u.quantity = t.quantity ORDER BY u.set_at DESC, u.rowid DESC LIMIT 1)
+        ORDER BY t.support, t.quantity`,
+      [viewer.networkId],
+    );
+    const today = this.today();
+    return {
+      ok: true,
+      value: rows.map((r) => ({
+        id: r.id,
+        support: r.support,
+        quantity: Number(r.quantity),
+        priceCents: Number(r.price_cents),
+        printer: r.printer,
+        source: r.source,
+        validUntil: r.valid_until,
+        setAt: r.set_at,
+        inForce: r.valid_until >= today,
+      })),
+    };
   }
 
   /** Le tarif qui fait foi : le dernier réglé pour ce support et cette quantité, s'il est encore en vigueur. Jamais un plus ancien. */
