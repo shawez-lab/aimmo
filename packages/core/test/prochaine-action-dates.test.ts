@@ -280,6 +280,45 @@ describeWithSqlite('HX25 · prochaine action, filtres et dates des clients', () 
     expect(all).not.toMatch(/"month"|"day"/);
   });
 
+  it('[R404] le message de date prend un canal où la fiche a une coordonnée, jamais une place perdue faute d’adresse', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    await t.dates.setTexts(t.direction, { kind: 'anniversaire', channel: 'email', texts: BIRTHDAY_TEXTS });
+    await t.dates.setTexts(t.direction, { kind: 'anniversaire', channel: 'sms', texts: ['Bonjour {prenom}, joyeux anniversaire !'] });
+    const both = (personId: string) =>
+      Promise.all(
+        (['email', 'sms'] as const).map((channel) =>
+          t.store.addConsent({ networkId: t.network.id, personId, purpose: DATES_PURPOSE, channel, proof: 'case cochée (test)', givenAt: new Date(TUE_10H - DAY) }),
+        ),
+      );
+    // Accord par mail et par SMS, mais seulement un téléphone : le SMS est pris, pas le mail sans adresse.
+    const phoneOnly = (await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Sam' })).id;
+    await t.store.addIdentifier({ networkId: t.network.id, personId: phoneOnly, kind: 'phone', value: '+33600000001' });
+    await both(phoneOnly);
+    await t.dates.recordDate(me, { personId: phoneOnly, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
+    // Accord par mail et SMS, sans aucune coordonnée : rien n'est préparé, aucune place n'est prise.
+    const nowhere = (await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Noa' })).id;
+    await both(nowhere);
+    await t.dates.recordDate(me, { personId: nowhere, kind: 'anniversaire', month: 10, day: 12, proof: 'dit en visite (test)' });
+    // Le téléphone est rangé sur une autre fiche de la personne, réunie : il compte.
+    const kept = (await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Eli' })).id;
+    await both(kept);
+    await t.dates.recordDate(me, { personId: kept, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)' });
+    const merged = (await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Eli' })).id;
+    await t.store.addIdentifier({ networkId: t.network.id, personId: merged, kind: 'phone', value: '+33600000002' });
+    await t.unique.merge({ survivorId: kept, mergedId: merged, reason: 'même personne (test)' });
+
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 2, refused: 0, withoutConsent: 1 });
+    expect(await t.db.all("SELECT person_id, channel, outcome FROM send_log WHERE kind = 'follow_up' ORDER BY person_id")).toEqual(
+      [phoneOnly, kept].sort().map((person_id) => ({ person_id, channel: 'sms', outcome: 'sent' })),
+    );
+    expect(await t.db.all('SELECT person_id, status FROM client_date_messages ORDER BY person_id')).toEqual([phoneOnly, kept].sort().map((person_id) => ({ person_id, status: 'essai' })));
+    // Un mail rangé plus tard pour la personne sans coordonnée : le passage suivant du jour la souhaite, sa place n'était pas prise.
+    await t.store.addIdentifier({ networkId: t.network.id, personId: nowhere, kind: 'email', value: 'noa@example.test' });
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, withoutConsent: 0 });
+    expect(await t.db.first("SELECT channel FROM send_log WHERE person_id = ? AND kind = 'follow_up'", [nowhere])).toEqual({ channel: 'email' });
+  });
+
   it('[R405] [R01] jamais la nuit ni le dimanche : une date du dimanche se souhaite le lundi, une seule fois', async () => {
     const t = await setup();
     await t.dates.setTexts(t.direction, { kind: 'anniversaire', channel: 'email', texts: BIRTHDAY_TEXTS });

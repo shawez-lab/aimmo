@@ -22,7 +22,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { AUTOMATION_CHANNELS, checkFixedText, renderScenarioText, type AutomationChannel, type ScenarioResult } from './scenarios.ts';
+import { AUTOMATION_CHANNELS, IDENTIFIER_FOR, checkFixedText, renderScenarioText, type AutomationChannel, type ScenarioResult } from './scenarios.ts';
 
 /** Finalité de l'accord d'un message de date [R03, R404]. */
 export const DATES_PURPOSE = 'dates_clients';
@@ -30,6 +30,11 @@ export const CLIENT_DATE_KINDS = ['anniversaire', 'fete'] as const;
 export type ClientDateKind = (typeof CLIENT_DATE_KINDS)[number];
 const MAX_TEXTS = 5;
 const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+/**
+ * Au-delà de ce délai, une place `en_cours` est celle d'un passage coupé net (Worker arrêté entre la prise de la place
+ * et sa fin) : un passage suivant la reprend. En deçà, c'est un passage qui travaille encore : personne ne la reprend [R18].
+ */
+export const STALE_PLACE_MS = 15 * 60_000;
 
 export interface DatesSettings {
   window: SendingWindow;
@@ -56,7 +61,9 @@ export interface DatesTickReport {
   messagesInTrial: number;
   refused: number;
   postponed: number;
-  /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou pas de texte pour un canal permis [R404]. */
+  /** Places laissées par un passage coupé net, fermées avec le message qu'il avait déjà rangé : aucun second message [R05]. */
+  recovered: number;
+  /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou aucun canal permis à la fois écrit et joignable [R404]. */
   withoutConsent: number;
 }
 
@@ -202,7 +209,7 @@ export class DatesClients {
    * (la nuit, le dimanche), il ne prépare rien [R01, R405].
    */
   async tick(networkId: string): Promise<DatesTickReport> {
-    const report: DatesTickReport = { closed: false, messagesInTrial: 0, refused: 0, postponed: 0, withoutConsent: 0 };
+    const report: DatesTickReport = { closed: false, messagesInTrial: 0, refused: 0, postponed: 0, withoutConsent: 0, recovered: 0 };
     const now = this.now();
     if (afterSendingTime(now, 0, this.settings.window).getTime() > now.getTime()) return { ...report, closed: true };
     const local = localTime(now, this.settings.window.timeZone);
@@ -223,7 +230,11 @@ export class DatesClients {
       const members = await this.fiche.membersOf(d.root);
       let channel: AutomationChannel | null = null;
       let texts: string[] | null = null;
+      // Les coordonnées de toutes les fiches réunies : un canal où la personne n'est pas joignable n'est jamais pris, sinon
+      // le contrôle central le refuserait et la place de l'année serait perdue alors qu'un autre canal permis servait [R404].
+      const kinds = new Set((await this.fiche.view(d.root)).identifiers.map((i) => i.kind as string));
       for (const c of AUTOMATION_CHANNELS) {
+        if (!IDENTIFIER_FOR[c].some((k) => kinds.has(k))) continue;
         // La même décision que le contrôle central, lue sans rien écrire : l'accord « dates des clients » en vigueur sur
         // ce canal, toutes fiches réunies et retraits compris, et aucune exclusion [R03, R02, R04, R404].
         const decision = await this.decisions.decide(d.root, { channel: c, kind: 'follow_up', purpose: DATES_PURPOSE, conversationId: null, at: now });
@@ -235,7 +246,8 @@ export class DatesClients {
           break;
         }
       }
-      // Sans accord en vigueur, exclue, ou sans texte pour un canal permis : rien n'est préparé, aucune place n'est prise [R404].
+      // Sans accord en vigueur, exclue, sans texte ou sans coordonnée pour un canal permis : rien n'est préparé, aucune place
+      // n'est prise [R404].
       if (channel === null || texts === null) {
         report.withoutConsent += 1;
         continue;
@@ -251,7 +263,49 @@ export class DatesClients {
           "UPDATE client_date_messages SET status = 'en_cours', created_at = ? WHERE network_id = ? AND person_id = ? AND kind = ? AND year = ? AND status = 'reporte'",
           [createdAt, networkId, d.root, d.kind, year],
         );
-        if (retaken.changes !== 1) continue;
+        if (retaken.changes !== 1) {
+          // Une place `en_cours` trop vieille est celle d'un passage coupé net : un seul passage la reprend, celui dont la
+          // mise à jour a changé la ligne. Une place récente est celle d'un passage en cours : jamais reprise [R18].
+          const stale = await this.db.run(
+            "UPDATE client_date_messages SET created_at = ? WHERE network_id = ? AND person_id = ? AND kind = ? AND year = ? AND status = 'en_cours' AND created_at < ?",
+            [createdAt, networkId, d.root, d.kind, year, new Date(now.getTime() - STALE_PLACE_MS).toISOString()],
+          );
+          if (stale.changes !== 1) continue;
+          // Le passage coupé avait-il déjà rangé son message ? Alors la place est fermée avec ce message, jamais un second
+          // envoi ; toutes fiches réunies comprises, sauf un envoi tombé en panne, que le contrôle central laisse refaire [R05].
+          const sent = await this.db.first<{ message_id: string }>(
+            `SELECT s.message_id FROM message_subjects s
+             WHERE s.network_id = ? AND s.subject = ? AND s.person_id IN (${marks(members.length)})
+               AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')
+             ORDER BY s.created_at LIMIT 1`,
+            [networkId, `date:${d.kind}:${year}`, ...members],
+          );
+          if (sent) {
+            const inTrial = (await this.db.first<{ n: number }>('SELECT 1 AS n FROM trial_outbox WHERE message_id = ?', [sent.message_id])) !== null;
+            await this.finish(networkId, d, year, inTrial ? 'essai' : 'refuse', inTrial ? null : 'R05', sent.message_id, true);
+            report.recovered += 1;
+            continue;
+          }
+          // Coupé après la réservation du contrôle central, avant le message : la réservation n'a jamais été rendue et
+          // ferait refuser le message pour l'année. Elle est rendue comme le contrôle central rend la sienne, sans rien
+          // effacer : ses clés et sa place dans le plafond du jour sont renommées [R05, R11, R17].
+          // Seule une réservation elle-même plus vieille que le délai : celle d'un passage encore en vie n'est jamais rendue [R18].
+          const held = await this.db.all<{ reservation_id: string }>(
+            `SELECT reservation_id FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND created_at < ? AND person_id IN (${marks(members.length)})`,
+            [networkId, `sujet:date:${d.kind}:${year}`, new Date(now.getTime() - STALE_PLACE_MS).toISOString(), ...members],
+          );
+          for (const r of held) {
+            await this.db.run("UPDATE send_reservations SET key = key || '#coupe:' || reservation_id WHERE reservation_id = ? AND message_id IS NULL", [r.reservation_id]);
+            await this.db.run("UPDATE send_quota_slots SET slot = slot || '#coupe:' || reservation_id WHERE reservation_id = ?", [r.reservation_id]);
+          }
+          // Une réservation encore récente, sans message : le passage qui l'a prise peut être en vie. La place reste
+          // ouverte, reprise plus tard, jamais fermée sur un refus R05 qui perdrait la date de l'année [R18, R405].
+          const recent = await this.db.first<{ n: number }>(
+            `SELECT 1 AS n FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND person_id IN (${marks(members.length)}) LIMIT 1`,
+            [networkId, `sujet:date:${d.kind}:${year}`, ...members],
+          );
+          if (recent) continue;
+        }
       }
       // Une place prise avant une réunion de fiches, sous une autre fiche de la personne, compte aussi [R405].
       const others = await this.db.first<{ n: number }>(
@@ -296,11 +350,19 @@ export class DatesClients {
     return report;
   }
 
-  private async finish(networkId: string, d: DateRow & { root: string }, year: number, status: 'essai' | 'refuse', rule: string | null, messageId: string | null): Promise<void> {
+  private async finish(
+    networkId: string,
+    d: DateRow & { root: string },
+    year: number,
+    status: 'essai' | 'refuse',
+    rule: string | null,
+    messageId: string | null,
+    recovered = false,
+  ): Promise<void> {
     await this.db.run(
       "UPDATE client_date_messages SET status = ?, rule = ?, message_id = ?, done_at = ? WHERE network_id = ? AND person_id = ? AND kind = ? AND year = ? AND status = 'en_cours'",
       [status, rule, messageId, this.now().toISOString(), networkId, d.root, d.kind, year],
     );
-    await appendEvent(this.journal, { type: 'dates.message', actor: 'system:dates', subject: `person:${d.root}`, data: { rule: 'R405', kind: d.kind, mode: 'essai', status, messageRule: rule } }, this.now);
+    await appendEvent(this.journal, { type: 'dates.message', actor: 'system:dates', subject: `person:${d.root}`, data: { rule: 'R405', kind: d.kind, mode: 'essai', status, messageRule: rule, ...(recovered ? { recovered: true } : {}) } }, this.now);
   }
 }

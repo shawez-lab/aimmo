@@ -97,6 +97,9 @@ import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
 import type { PigeSource } from '../../core/src/pige/index.ts';
+import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
+import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.ts';
+import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
@@ -171,6 +174,8 @@ export interface ApiConfig {
   scoreSources?: ScoreServices | null;
   /** La source des annonces de particuliers de la pige (BR29) ; absente, aucune relève, rien n'est rangé. */
   pigeSource?: PigeSource | null;
+  /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
+  adressePigeSources?: AdressePigeServices;
   estimationLimits?: EstimationLimits;
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
@@ -498,9 +503,12 @@ const ROUTES: RouteDef[] = [
     method: 'GET',
     pattern: /^\/plan-du-jour$/,
     name: 'plan_du_jour',
-    // Le plan du jour figé à 7 h 30 : l'agent seul lit le sien [R16] ; `null` tant qu'il n'est pas encore figé.
+    // Le plan du jour figé à 7 h 30 : l'agent seul lit le sien [R16] ; `null` tant qu'il n'est pas encore figé. Les étapes
+    // des séquences s'y ajoutent à la lecture (BR32), sans liste d'opposition tant que Bloctel n'est pas branché (H61) :
+    // un appel qui ne repose que sur la prospection n'y est donc jamais proposé [R302].
     handle: async (s, viewer) => {
-      const plan = await new PlansDuJour(s.db, s.journal, { now: s.now }).read(viewer);
+      const sequences = { today: (v: Viewer) => sequencesOf(s.db, s.journal, s.acces, s.now, null).today(v) };
+      const plan = await new PlansDuJour(s.db, s.journal, { now: s.now, sequences }).read(viewer);
       return plan.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: plan.value }) : refusal({ rule: plan.rule, code: plan.code });
     },
   },
@@ -1314,6 +1322,34 @@ function pigeRoutesDef(source: PigeSource | null): RouteDef[] {
     pattern: r.pattern,
     name: r.name,
     handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, source }, viewer, params, request),
+  }));
+}
+
+/** Les sources de l'adresse de pige : celles données, sinon la base de l'ADEME et le cadastre par la lecture des données publiques. */
+function adressePigeSourcesOf(config: ApiConfig): AdressePigeServices {
+  if (config.adressePigeSources !== undefined) return config.adressePigeSources;
+  if (!config.fetchPublicData) return {};
+  return { search: new AdemeDiagnosisSearch(config.fetchPublicData), cadastre: publicDataServices(config.fetchPublicData).cadastre };
+}
+
+/** Les routes de l'adresse probable d'une annonce de pige et du bien créé (BR30) : rôles contrôlés avant le corps [R16], aucun nom [R294]. */
+function adressePigeRoutesDef(sources: AdressePigeServices): RouteDef[] {
+  return adressePigeRoutes().map((r: AdressePigeRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, sources }, viewer, params, request),
+  }));
+}
+
+/** Les routes de la séquence de prospection (BR31) : l'agent seul, contrôlé avant le corps [R16] ; rien ne part d'une route [R300]. */
+function sequencesRoutesDef(): RouteDef[] {
+  return sequencesRoutes().map((r: SequencesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    // Bloctel n'est pas branché (H61) : aucune liste d'opposition, donc aucun appel de prospection seule proposé [R302].
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now, opposition: null }, viewer, params, request),
   }));
 }
 
@@ -2142,6 +2178,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...scoreAdresseRoutesDef(scoreSourcesOf(config)),
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...pigeRoutesDef(config.pigeSource ?? null),
+    ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
+    ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),
