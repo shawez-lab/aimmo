@@ -895,4 +895,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 21:23 · VOIE 2 : relance refusée, questions 2 et 3 du plafond (aucune des trois dernières séances voie 2 n'a terminé de tâche, la séance de 13:55 n'a produit aucun commit, et c'est la troisième séance de suite sur RC01)
 - 2026-11-10 22:32 · RC02 · fusionnée (#493, 4ede4147) : le message de date ne prend qu'un canal où une fiche réunie a une coordonnée, aucune place perdue faute d'adresse ; RC01 laissée bloquée (trois séances), autre tâche prise selon SECOURS.md ; RC03 ajoutée ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5447 tests) · prochaine : RC03
 - 2026-11-10 22:32 · VOIE 2 : plafond vérifié, trois oui (18 séances voie 2 aujourd'hui ; commits à 19:00, 21:23 et cette séance, RC02 terminée ; tâche différente de RC01)
-- 2026-11-10 22:32 · VOIE 2 : RC02, 4ede4147 (#493, fusionnée), relancé oui
+- 2026-11-10 22:32 · VOIE 2 : RC02, 4ede4147 (#493, fusionnée), relancé non
+- 2026-11-10 22:33 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage horaire de 22:52 reprendra RC03 · prochaine : RC03
