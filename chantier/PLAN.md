@@ -1015,7 +1015,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR29 · Routes de la pige des annonces de particuliers
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#489, `2800f44c`), `packages/api/src/pige.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex 1 P2 (corps non prévu sur les routes sans corps) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5431 tests, paquet du Worker). Restent : écran de la file ; vraie source de pige ; H58.
 - Qui : Claude, relecture normale · Dépend de : HX11
 - Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R273 à R275.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX11 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. Aucune vraie source de pige n'est branchée : la relève passe par la source de la configuration, sinon 400 `source_absente`, rien n'est rangé. Le premier message reste à coller par l'agent, rien n'est envoyé. `packages/core/src/pige/` ne change pas.
