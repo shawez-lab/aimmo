@@ -1014,6 +1014,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, direction comprise [R16, R297] (test) ; aucune adresse hors des zones de l'agent, comptée seulement [R297] (test) ; la tournée tient dans les disponibilités de l'agent, autour de ses rendez-vous [R298] (test) ; le lien de la vue des rues ne porte que la position [R299] (test) ; date mal formée 409 R298, paramètre non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
 
+### BR29 · Routes de la pige des annonces de particuliers
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX11
+- Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R273 à R275.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX11 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. Aucune vraie source de pige n'est branchée : la relève passe par la source de la configuration, sinon 400 `source_absente`, rien n'est rangé. Le premier message reste à coller par l'agent, rien n'est envoyé. `packages/core/src/pige/` ne change pas.
+- Objectif : l'agent de la zone lit sa file de pige, valide ou écarte le premier message ; la direction lance la relève.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; une annonce « pas d'agence » n'apparaît jamais dans la file rendue [R273] (test) ; aucune coordonnée du particulier dans les réponses [R274] (test) ; aucun envoi, le message est rendu à coller [R275, R26] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H58 et la vraie source restent à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
