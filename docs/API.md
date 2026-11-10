@@ -458,6 +458,8 @@ Sous `/v1/pige`, avec les mêmes limites que la pige (BR29) : rôles contrôlés
 
 La base de l'ADEME et le cadastre de l'IGN passent par la lecture des données publiques (`fetchPublicData`, branchée avec l'estimation) ; sans elle, seuls les diagnostics déjà rangés par la veille (BR26) servent, et `missing` le dit.
 
+À l'écran (BR33) : l'écran « Gagner des mandats » de l'application a une partie « Annonces de particuliers » ; son bouton « Ouvrir la pige » charge `/app/pige.js`, qui lit la file et ce que la pige rapporte, prépare et valide le premier message (canal `annonce` seul, texte montré à copier, rien n'est envoyé), note un non, montre les adresses probables avec leurs points et crée la fiche du bien, avec ou sans adresse. Chaque refus est dit en mots, jamais par son code.
+
 ## Séquence de prospection sur plusieurs canaux (BR31)
 
 Sous `/v1/sequences`, l'agent en activité seul : tout autre rôle est refusé avant toute lecture du corps, au journal (403, `role`) [R16]. Corps JSON de 16 ko au plus, vide ou objet ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; un refus de règle 409 avec sa règle. Aucune route n'envoie rien [R300].
