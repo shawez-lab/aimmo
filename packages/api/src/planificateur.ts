@@ -9,6 +9,7 @@ import { gagnerJobs } from './gagner.ts';
 import { dossiersJob, type PieceStore } from './dossiers.ts';
 import { phase1ReadingJob } from './phases.ts';
 import { postgresReadingJob } from './postgresql.ts';
+import { sequencesJob } from './sequences.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
@@ -150,6 +151,10 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Veille des diagnostics énergétiques (HX16, BR26), à 7 h : les diagnostics nouveaux des secteurs ouverts, rangés
       // une seule fois par réseau, dans l'alerte du jour ; seuls le code postal et le jour partent, rien n'est envoyé [R288, R289].
       dpeWatchJob(config.db, config.dpeFeed ?? null, journal, { now }),
+      // Séquences de prospection (HX20, BR31), de 9 h à 19 h du lundi au samedi : arrêt sur tous les canaux à la première
+      // réponse ou opposition, puis les mails et SMS dus remis au contrôle central, canaux du mode essai seulement ;
+      // Bloctel n'est pas branché (H61) [R300, R301, R26].
+      sequencesJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
