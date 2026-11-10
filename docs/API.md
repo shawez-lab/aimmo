@@ -432,6 +432,15 @@ Sous `/v1/score-adresse` : chaque route dit les rôles qu'elle admet, contrôlé
 
 Sources : `scoreSources` de la configuration, sinon la Base adresse nationale et les ventes DVF de l'estimation, avec le cadastre et les diagnostics de l'ADEME des données publiques (`fetchPublicData`).
 
+## Carte des opportunités et tournée de prospection (BR28)
+
+Sous `/v1/tournee`, l'agent en activité seul : la carte et la tournée sont les siennes ; la direction et tout autre rôle sont refusés (403, `role`), au journal [R16, R297]. Un seul paramètre, `date` (AAAA-MM-JJ, le jour de Paris sans lui) ; une date mal formée : 409 R298 (`bad_date`) ; un autre paramètre ou une date répétée : 400 `unknown_field`. Rien n'est réservé ni envoyé.
+
+- `GET /carte` : les panneaux à récupérer, les lettres de quartier à déposer et les nouveaux diagnostics de ses secteurs, des seules communes de ses zones ; le reste est compté (`outsideZone`), jamais montré ni géocodé [R297] ; le lien de la vue des rues ne porte que la position arrondie [R299].
+- `GET /` (soit `GET /v1/tournee`) : la tournée du jour ; les rendez-vous déjà pris restent où ils sont, les arrêts de prospection sont placés au plus tôt dans ses disponibilités, route comprise ; ce qui n'a pas de lieu connu ou pas de place est dit (`left`) [R298].
+
+Les panneaux sont placés par la Base adresse nationale (le géocodeur de l'estimation), sinon leur lieu est inconnu. L'agenda relié (V03) et la position des biens n'ont pas encore de source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`).
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.

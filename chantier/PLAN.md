@@ -1005,13 +1005,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR28 · Routes de la carte des opportunités et de la tournée de prospection
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#488, `0edf2ba3`), `packages/api/src/tournee.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5422 tests, paquet du Worker). Restent : écran de la carte et de la tournée ; sources de l'agenda relié (V03) et de la position des biens pour la tournée.
 - Qui : Claude, relecture normale · Dépend de : HX19
 - Partie du cahier : Phase 3, « Carte des opportunités et tournée de prospection » ; M05, créneaux et trajets (R32).
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX19 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/tournee.ts`, sous `/v1/tournee`, ajouté à `app.ts`. Géocodage des panneaux par le géocodeur de `estimation` (Base adresse nationale), sinon lieu inconnu. L'agenda relié (V03) et la position des biens n'ont encore aucune source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`). Sans `date`, le jour de Paris. `packages/core/src/tournee-prospection/` ne change pas.
 - Objectif : l'agent en activité lit sa carte des opportunités et sa tournée d'un jour.
 - Critères : refus de rôle en 403 au journal, direction comprise [R16, R297] (test) ; aucune adresse hors des zones de l'agent, comptée seulement [R297] (test) ; la tournée tient dans les disponibilités de l'agent, autour de ses rendez-vous [R298] (test) ; le lien de la vue des rues ne porte que la position [R299] (test) ; date mal formée 409 R298, paramètre non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien.
+
+### BR29 · Routes de la pige des annonces de particuliers
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX11
+- Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R273 à R275.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX11 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. Aucune vraie source de pige n'est branchée : la relève passe par la source de la configuration, sinon 400 `source_absente`, rien n'est rangé. Le premier message reste à coller par l'agent, rien n'est envoyé. `packages/core/src/pige/` ne change pas.
+- Objectif : l'agent de la zone lit sa file de pige, valide ou écarte le premier message ; la direction lance la relève.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; une annonce « pas d'agence » n'apparaît jamais dans la file rendue [R273] (test) ; aucune coordonnée du particulier dans les réponses [R274] (test) ; aucun envoi, le message est rendu à coller [R275, R26] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H58 et la vraie source restent à part).
 
 ## Restes du cœur des groupes HX
 
@@ -1020,7 +1030,7 @@ Voie : 2
 Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
 
 ### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
-- Statut : en cours (voie 2) : reprise le 2026-11-10 par l’autre approche des heures (#486)
+- Statut : en cours (voie 2)
 - Reste : relecture forte 4 P0 et 6 P1 corrigés ; Codex 2 puis 3 P0 corrigés, puis 2 P0 restés sur `6b7735e0`. « de dix heures et demie à onze heures » choisit 11 h, et « à quinze heures et trente minutes » donne 15 h. La cause : la recherche des autres heures dites reprend le motif qui les lit. Autre approche à prendre : compter comme heure dite toute suite « nombre, puis h, heure ou heures », et midi et minuit, quel que soit ce qui suit, sauf après un mot de durée ; refuser toute heure suivie de « et » ou de « minutes ». Pièces, surface, prix et jours : aucune remarque ouverte. GitHub Actions bloqué (facturation) ; vérification locale verte sur `21573b6b` (5415 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX06
 - Cahier : Phase 3, « Création d'un bien et d'un contact à la voix » ; R260.
