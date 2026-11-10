@@ -132,7 +132,7 @@ const PLAN = {
   ],
 };
 
-async function screen(answers: Record<string, () => Promise<Response>> = {}) {
+async function screen(answers: Record<string, () => Promise<Response>> = {}, load = true) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: Call[] = [];
@@ -162,7 +162,7 @@ async function screen(answers: Record<string, () => Promise<Response>> = {}) {
   await tick();
   // Le dessin des étapes est servi à part : le script est demandé, puis exécuté comme le ferait le navigateur.
   const scripts = els.accueil!.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/sequences-jour.js');
-  if (scripts.length > 0) {
+  if (load && scripts.length > 0) {
     runInNewContext(SEQUENCES_JOUR_SCRIPT, context);
     for (const e of scripts) e.listeners.load!({});
     await tick();
@@ -211,6 +211,14 @@ describe('BR32 · écran « Ma journée » : les étapes des séquences', () => 
     expect(AGENT_APP_FILES['/app/app.js']).not.toContain('opposition_unchecked');
     expect(budgetProblems({ html: AGENT_APP_FILES['/app/']!, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);
     expect(budgetProblems({ html: '<!doctype html><title>x</title>', js: SEQUENCES_JOUR_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+
+  it('le script des étapes ne charge pas : l’écran le dit, même quand le plan n’a que des étapes', async () => {
+    const t = await screen({ '/v1/plan-du-jour': ok({ ...PLAN, sequenceSteps: [PLAN.sequenceSteps[3]] }) }, false);
+    expect(t.scripts).toHaveLength(1);
+    expect(t.els.plan!.children).toHaveLength(0);
+    for (const e of t.scripts) e.listeners.error!({});
+    expect(t.els['plan-etat']!.textContent).toBe('Étapes des séquences non chargées : pas de réseau. Réessayez dans un moment.');
   });
 
   it('un refus est dit sans relire le plan ; un plan sans ligne ni étape dit « Rien au plan »', async () => {

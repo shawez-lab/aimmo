@@ -362,6 +362,7 @@ export const APP_JS = `'use strict';
       } });
       if (mine === session) sequencesDraw(list, steps);
     });
+    s.addEventListener('error', function () { if (mine === session) $('plan-etat').textContent = 'Étapes des séquences non chargées : pas de réseau. Réessayez dans un moment.'; });
     $('accueil').appendChild(s);
   }
   function renderHot(list, data) {
