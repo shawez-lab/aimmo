@@ -3,6 +3,8 @@ import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type Sql
 import { CARTE_ACCES } from '../src/conformite/carte-acces.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
 import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, ORDRE_REPRISE, REPRISE_LIEN_MASQUE, masquerLiens, masquerTexte, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
+import { CARTE_FICHIERS, CLES_LIGNES, COLONNE_REFERENCE, cleLigne, REPRISE_FORMAT_1, fichiersDe } from '../src/licences/index.ts';
+import { fingerprintOf } from '../src/rapports/export-agent.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -373,16 +375,16 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     ]);
     expect(stored).toEqual({ fingerprint: r.value.fingerprint, rows_count: r.value.rows, tables_count: Object.keys(r.value.document.tables).length, made_by: 'direction:direction-lac' });
     const [event] = await t.events('licences.reprise');
-    expect(event).toEqual({ rule: 'R659', fingerprint: r.value.fingerprint, tables: stored!.tables_count, rows: r.value.rows });
+    expect(event).toEqual({ rule: 'R659', fingerprint: r.value.fingerprint, tables: stored!.tables_count, rows: r.value.rows, files: r.value.document.fichiers.length });
     const copy = JSON.parse(JSON.stringify(r.value.document));
-    expect(await t.reprise.verify(copy)).toEqual({ verified: true, fingerprint: r.value.fingerprint, complete: true, missing: [] });
+    expect(await t.reprise.verify(copy)).toEqual({ verified: true, fingerprint: r.value.fingerprint, complete: true, missing: [], filesComplete: true, filesMissing: 0, filesExtra: 0 });
     copy.tables.agents[0].last_name = 'Essai laX';
     expect((await t.reprise.verify(copy)).verified).toBe(false);
     // Un fichier dont une table a été retirée n'est plus complet, et ne se vérifie plus.
     const cut = JSON.parse(JSON.stringify(r.value.document));
     delete cut.tables.agenda_cursors;
     expect(await t.reprise.verify(cut)).toMatchObject({ verified: false, complete: false, missing: ['agenda_cursors'] });
-    expect(await t.reprise.verify({ format: 'autre' })).toEqual({ verified: false, fingerprint: null, complete: false, missing: [] });
+    expect(await t.reprise.verify({ format: 'autre' })).toEqual({ verified: false, fingerprint: null, complete: false, missing: [], filesComplete: false, filesMissing: 0, filesExtra: 0 });
   });
 
   it('[R659, R657] la base refuse de ranger un fichier pour un autre réseau que celui de l’agence, et rien ne s’efface', async () => {
@@ -399,5 +401,135 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     await insert(t.lac.licenseeNetworkId);
     await expect(t.db.run('DELETE FROM licence_data_exports')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE licence_data_exports SET rows_count = 9")).rejects.toThrow(/ne change plus/);
+  });
+});
+
+/** Les écarts entre la carte des fichiers et la base [R660]. */
+async function fileGapsOf(db: SqlDatabase): Promise<string[]> {
+  const { cols } = await schemaOf(db);
+  const pks = new Map<string, string[]>();
+  for (const t of cols.keys()) pks.set(t, (await db.all<{ name: string; pk: number }>(`PRAGMA table_info(${t})`)).filter((c) => c.pk > 0).sort((a, b) => a.pk - b.pk).map((c) => c.name));
+  const carte = carteReprise();
+  const resumed = (t: string) => {
+    const e = carte.get(t);
+    return e !== undefined && (e === 'reseau' || !('hors' in e));
+  };
+  const gaps: string[] = [];
+  for (const [t, c] of cols) {
+    if (!resumed(t)) continue;
+    for (const col of c) if (COLONNE_REFERENCE.test(col) && CARTE_FICHIERS[`${t}.${col}`] === undefined) gaps.push(`non_classee:${t}.${col}`);
+  }
+  for (const [k, classe] of Object.entries(CARTE_FICHIERS)) {
+    const [t, col] = k.split('.') as [string, string];
+    if (!cols.has(t)) gaps.push(`table_inconnue:${k}`);
+    else if (!cols.get(t)!.includes(col)) gaps.push(`colonne_inconnue:${k}`);
+    else if (!resumed(t)) gaps.push(`table_laissee:${k}`);
+    else if (classe.sorte !== 'externe' && (pks.get(t) ?? []).join(',') !== cleLigne(t).join(',')) gaps.push(`cle:${k}`);
+    if (classe.sorte === 'externe' && classe.why.trim().length < 10) gaps.push(`sans_raison:${k}`);
+  }
+  // Une clé déclarée sert une table à fichiers.
+  for (const t of Object.keys(CLES_LIGNES)) if (!Object.entries(CARTE_FICHIERS).some(([k, c]) => k.startsWith(`${t}.`) && c.sorte !== 'externe')) gaps.push(`cle_inutile:${t}`);
+  return gaps.sort();
+}
+
+describeWithSqlite('HX75 · Les fichiers déposés de l’agence sous licence', () => {
+  it('[R660] chaque colonne de référence d’une table reprise est classée une fois, et rien d’autre', async () => {
+    const { db } = await openDb();
+    expect(await fileGapsOf(db)).toEqual([]);
+    // Les colonnes de référence du dossier de la lutte contre le blanchiment restent hors du fichier, et hors de la carte.
+    for (const t of tablesLcbFt()) expect(Object.keys(CARTE_FICHIERS).some((k) => k.startsWith(`${t}.`))).toBe(false);
+    expect(Object.values(CARTE_FICHIERS).filter((c) => c.sorte === 'fichier').length).toBeGreaterThan(15);
+  });
+
+  it('[R660] une colonne de référence que la base gagne sans être classée fait échouer la vérification', async () => {
+    const { db } = await openDb([{ id: '9999_essai', sql: 'ALTER TABLE agents ADD COLUMN photo_ref TEXT; ALTER TABLE properties ADD COLUMN plan_refs TEXT;' }]);
+    expect(await fileGapsOf(db)).toEqual(['non_classee:agents.photo_ref', 'non_classee:properties.plan_refs']);
+  });
+
+  it('[R661] la liste ne porte que les valeurs non vides des colonnes fichier et preuve, triée', () => {
+    const tables = {
+      voice_notes: [
+        { id: 'n2', media_ref: 'stock/b.ogg' },
+        { id: 'n1', media_ref: 'stock/a.ogg' },
+        { id: 'n3', media_ref: null },
+        { id: 'n4', media_ref: '  ' },
+      ],
+      mandate_source_costs: [{ id: 'c1', proof_ref: 'facture-essai.pdf' }],
+      gbp_reviews: [{ id: 'g1', review_ref: 'avis-essai-1' }],
+      agents: [{ id: 'a1', last_name: 'Essai' }],
+    };
+    expect(fichiersDe(tables)).toEqual([
+      { table: 'mandate_source_costs', colonne: 'proof_ref', ligne: { id: 'c1' }, sorte: 'preuve', ref: 'facture-essai.pdf' },
+      { table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'n1' }, sorte: 'fichier', ref: 'stock/a.ogg' },
+      { table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'n2' }, sorte: 'fichier', ref: 'stock/b.ogg' },
+    ]);
+    expect(fichiersDe({ voice_notes: 'abîmé' as never })).toEqual([]);
+    // Une table sans colonne `id` : la ligne est dite par sa clé primaire.
+    expect(fichiersDe({ sale_file_dates: [{ file_id: 'd1', network_id: 'n', kind: 'acte', version: 2, proof_ref: 'stock/acte.pdf' }] })).toEqual([
+      { table: 'sale_file_dates', colonne: 'proof_ref', ligne: { file_id: 'd1', kind: 'acte', version: 2 }, sorte: 'preuve', ref: 'stock/acte.pdf' },
+    ]);
+  });
+
+  async function withFiles() {
+    const t = await setup();
+    const at = '2028-01-09T08:00:00.000Z';
+    const note = (net: string, id: string, ref: string) =>
+      t.db.run("INSERT INTO voice_notes (id, network_id, channel, external_id, status, media_ref, mime, transcript, created_at) VALUES (?, ?, 'whatsapp', ?, 'transcrite', ?, 'audio/ogg', 'Bonjour, essai.', ?)", [id, net, `ext-${id}`, ref, at]);
+    await note(t.lac.licenseeNetworkId, 'note-lac-1', 'stock/lac/note-1.ogg');
+    await note(t.lac.licenseeNetworkId, 'note-lac-2', 'https://stockage.exemple.test/lac/note-2.ogg?jeton=AbCdEf0123456789xyz_lac');
+    await note(t.pres.licenseeNetworkId, 'note-pres-1', 'stock/pres/note-1.ogg');
+    await note(t.network.id, 'note-reseau-1', 'stock/reseau/note-1.ogg');
+    await t.db.run("INSERT INTO mandate_source_costs (id, network_id, month, source, version, amount_cents, proof_ref, entered_by, entered_at) VALUES ('cout-lac', ?, '2027-12', 'flyers', 1, 12000, 'stock/lac/facture-flyers.pdf', 'direction:direction-lac', ?)", [
+      t.lac.licenseeNetworkId,
+      at,
+    ]);
+    await t.db.run("INSERT INTO gbp_reviews (id, network_id, agent_id, review_ref, rating, comment, author_token_hashes, reviewed_at, imported_at) VALUES ('avis-lac', ?, 'agent-lac', 'avis-google-essai-1', 5, 'Très bien (essai).', '[]', ?, ?)", [
+      t.lac.licenseeNetworkId,
+      at,
+      at,
+    ]);
+    const r = await t.reprise.make(t.lacDirection, 'preuve-ok');
+    if (!r.ok) throw new Error(r.code);
+    return { t, r: r.value };
+  }
+
+  it('[R661, R657, R659] le fichier dit chaque fichier déposé de l’agence, aucun d’un autre réseau, masqué comme la ligne', async () => {
+    const { r } = await withFiles();
+    const d = r.document;
+    expect(d.format).toBe('aimmo-reprise-agence/2');
+    expect(d.fichiers).toEqual([
+      { table: 'mandate_source_costs', colonne: 'proof_ref', ligne: { id: 'cout-lac' }, sorte: 'preuve', ref: 'stock/lac/facture-flyers.pdf' },
+      { table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'note-lac-1' }, sorte: 'fichier', ref: 'stock/lac/note-1.ogg' },
+      { table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'note-lac-2' }, sorte: 'fichier', ref: '(lien masqué)' },
+    ]);
+    // Ce qui est dans la liste est dans les lignes, tel quel ; rien d'un autre réseau, aucun identifiant externe.
+    for (const f of d.fichiers) expect((d.tables[f.table] ?? []).find((row) => row.id === f.ligne.id)?.[f.colonne]).toBe(f.ref);
+    expect(JSON.stringify(d.fichiers)).not.toMatch(/pres|reseau|avis-google|AbCdEf/);
+    expect(d.horsFichier[0]).toMatch(/la liste « fichiers » dit chacun/);
+  });
+
+  it('[R661] la vérification recalcule la liste depuis les lignes ; un fichier /1 reste vérifié', async () => {
+    const { t, r } = await withFiles();
+    const copy = () => JSON.parse(JSON.stringify(r.document)) as typeof r.document;
+    expect(await t.reprise.verify(copy())).toMatchObject({ verified: true, complete: true, filesComplete: true, filesMissing: 0, filesExtra: 0 });
+    const cut = copy();
+    cut.fichiers.splice(1, 1);
+    expect(await t.reprise.verify(cut)).toMatchObject({ verified: false, filesComplete: false, filesMissing: 1, filesExtra: 0 });
+    const more = copy();
+    more.fichiers.push({ table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'note-x' }, sorte: 'fichier', ref: 'stock/x.ogg' });
+    expect(await t.reprise.verify(more)).toMatchObject({ verified: false, filesComplete: false, filesMissing: 0, filesExtra: 1 });
+    const broken = copy() as unknown as Record<string, unknown>;
+    broken.fichiers = 'abîmé';
+    expect(await t.reprise.verify(broken)).toMatchObject({ filesComplete: false });
+    // Un fichier remis avant HX75, sans liste, garde son empreinte vérifiable ; sa liste est dite absente.
+    const old = copy() as unknown as Record<string, unknown>;
+    old.format = REPRISE_FORMAT_1;
+    delete old.fichiers;
+    await t.db.run("INSERT INTO licence_data_exports (id, licence_id, network_id, fingerprint, tables_count, rows_count, made_by, made_at) VALUES ('ancien', ?, ?, ?, 1, 0, 'direction:direction-lac', 'x')", [
+      t.lac.id,
+      t.lac.licenseeNetworkId,
+      await fingerprintOf(old),
+    ]);
+    expect(await t.reprise.verify(old)).toMatchObject({ verified: true, complete: true, filesComplete: false, filesMissing: 0, filesExtra: 0 });
   });
 });
