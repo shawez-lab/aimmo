@@ -41,6 +41,7 @@ import { PROSPECTION_SCRIPT } from '../app/prospection.ts';
 import { BIBLIOTHEQUE_SCRIPT } from '../app/bibliotheque.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { LICENCES_SCRIPT } from '../app/licences.ts';
+import { CLES_SCRIPT } from '../app/cles.ts';
 import { PHASES_SCRIPT } from '../app/phases.ts';
 import { GUIDES_PHOTO_SCRIPT } from '../app/guides-photo.ts';
 import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
@@ -144,6 +145,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/licences.js': { body: LICENCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La clé de cet appareil et la preuve d'une action (BR18), chargées au premier geste, jamais gardées [R201].
+  '/app/cles.js': { body: CLES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les guides photo à valider pour la direction (X23), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/guides-photo.js': { body: GUIDES_PHOTO_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La fin de bail notée depuis la fiche (G15), chargée au premier geste, jamais gardée sur l'appareil [R201].

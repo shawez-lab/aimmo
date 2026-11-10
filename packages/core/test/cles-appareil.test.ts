@@ -145,6 +145,28 @@ describeWithSqlite('HX56 · clé d’accès par appareil et second facteur', () 
     expect(await cles.listDevices(agent)).toMatchObject({ ok: false, code: 'role' });
   });
 
+  it('[R600] chacun lit ses propres clés, sans clé publique ni identifiant de clé, et rien de celles des autres (BR18)', async () => {
+    const { cles, agent, agentSam, direction, enroll, journal } = await setup();
+    const first = await enroll(agent, 1);
+    await enroll(agent, 2);
+    await enroll(agentSam, 3);
+    await cles.revokeDevice(agent, first.record.id);
+    const mine = await cles.listOwnDevices(agent);
+    expect(mine.ok && mine.value.map((d) => `${d.userId}:${d.status}`).sort()).toEqual([`${agent.userId}:en_attente`, `${agent.userId}:retire`]);
+    expect(JSON.stringify(mine)).not.toMatch(/publicKey|public_key|credential/);
+    expect(await cles.listOwnDevices(direction)).toEqual({ ok: true, value: [] });
+    // Une clé retirée n'est plus à exclure : l'appareil peut en ranger une neuve.
+    const again = await cles.beginRegistration(agent);
+    expect(again.ok && again.value.credentialIds).toHaveLength(1);
+    expect(again.ok && again.value.credentialIds).not.toContain(toBase64Url(first.device.credentialId));
+    // La direction lit le nom de l'agent tiré de la base, jamais le seul nom donné à l'appareil.
+    const net = await cles.listDevices(direction);
+    expect(net.ok && net.value.map((d) => d.ownerName).sort()).toEqual(['Alex Agent', 'Alex Agent', 'Sam Agent']);
+    const read = (await journal.all()).filter((e) => e.type === 'securite.cles.lues' && e.data.scope === 'siennes');
+    expect(read.map((e) => e.data)).toEqual([{ rule: 'R600', count: 2, scope: 'siennes' }, { rule: 'R600', count: 0, scope: 'siennes' }]);
+    expect(await cles.listOwnDevices({ role: 'partner' as never, networkId: agent.networkId, userId: 'x' })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+  });
+
   it('[R600] une clé suivante est active d’emblée avec la preuve « ajouter un appareil » d’une clé active', async () => {
     const { agent, enroll, stepUp } = await setup();
     const first = await enroll(agent, 1);

@@ -137,6 +137,14 @@ export function clesRoutes(): ClesRoute[] {
       roles: DEVICE_USERS,
       handle: withBody(REGISTRATION, async (s, v, _p, b) => reply(await cles(s).finishRegistration(v, b as unknown as RegistrationPayload))),
     },
+    // Ses propres clés, pour chacun (BR18) : sans clé publique ni identifiant de clé [R600].
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/mes-appareils$`),
+      name: 'cles.mes_appareils',
+      roles: DEVICE_USERS,
+      handle: async (s, v) => reply(await cles(s as ClesServices & { site: ClesConfig }).listOwnDevices(v)),
+    },
     // Les clés du réseau, pour la direction ; l'accord d'une clé en attente, sur la preuve de sa propre clé [R600, R601].
     {
       method: 'GET',
