@@ -874,3 +874,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 14:22 · voie 1 · fin de séance : BR25 fusionnée ; verrou libéré, relance · prochaine : à choisir
 - 2026-11-10 14:24 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
 - 2026-11-10 15:09 · BR26 · fusionnée (#485, 87048db8) : routes de la veille des diagnostics énergétiques, passage de 7 h au planificateur avec la source de l'ADEME ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5410 tests) · prochaine : à choisir (routes d'un module HX restant : score par adresse, pige, tournée, séquence…)
+- 2026-11-10 15:11 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
