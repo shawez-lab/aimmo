@@ -1024,6 +1024,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; une annonce « pas d'agence » n'apparaît jamais dans la file rendue [R273] (test) ; aucune coordonnée du particulier dans les réponses [R274] (test) ; aucun envoi, le message est rendu à coller [R275, R26] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H58 et la vraie source restent à part).
 
+### BR30 · Routes de l'adresse probable d'une annonce de pige, et du bien créé sans ressaisie
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX18, BR29
+- Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R294 à R296.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX18 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/adresse-pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. La recherche de l'ADEME (`AdemeDiagnosisSearch`) et le cadastre (`IgnCadastre`) passent par `fetchPublicData`, la lecture des données publiques déjà branchée (E09) ; sans elle, seuls les diagnostics de la veille servent et la réponse le dit (`missing`). `packages/core/src/adresse-pige/` ne change pas.
+- Objectif : l'agent de la zone lit les adresses probables d'une annonce de sa file et crée la fiche du bien d'un geste ; l'agent et la direction lisent ce que la pige rapporte.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque adresse rendue porte sa confiance et ses sources, aucune coordonnée du particulier [R294] (test) ; le bien créé reprend les champs de l'annonce, source « pige » [R295] (test) ; une annonce « pas d'agence » n'est jamais convertie [R273] (test) ; une adresse non proposée refusée en 409 R294 (test) ; ce que la pige rapporte, par niveau de confiance [R296] (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
