@@ -272,7 +272,7 @@ globalThis.AIMMO_CLES = function (t) {
   function line(d) {
     return (STATES[d.status] || 'État que cet écran ne sait pas encore dire') + ' · rangée le ' + date(d.createdAt) + (d.revokedAt ? ', retirée le ' + date(d.revokedAt) : '') + '.';
   }
-  function renderList(body, list, withOwner) {
+  function renderList(body, list, withOwner, canApprove) {
     var ul = el('ul', null, 'liste');
     list.forEach(function (d) {
       if (!d || typeof d.id !== 'string' || !ID.test(d.id)) return;
@@ -281,7 +281,7 @@ globalThis.AIMMO_CLES = function (t) {
       if (withOwner) li.appendChild(el('p', (ROLES[d.userRole] || 'Rôle que cet écran ne sait pas encore dire') + (typeof d.ownerName === 'string' && d.ownerName ? ' · ' + d.ownerName : ''), 'doux'));
       li.appendChild(el('p', line(d)));
       if (withOwner && d.status === 'en_attente' && d.userRole === 'agent' && !d.ownerName) li.appendChild(el('p', 'Le titulaire de cette clé ne se lit pas : ne l’acceptez pas sans savoir à qui elle est.', 'alerte'));
-      if (withOwner && d.status === 'en_attente') li.appendChild(button('Accepter « ' + d.label + ' »', function () { approve(d); }));
+      if (canApprove && d.status === 'en_attente') li.appendChild(button('Accepter « ' + d.label + ' »', function () { approve(d); }));
       if (d.status !== 'retire') li.appendChild(revokeButton(d));
       ul.appendChild(li);
     });
@@ -314,7 +314,7 @@ globalThis.AIMMO_CLES = function (t) {
       if (!own) { state(why(all[0], 'Vos clés sont indisponibles pour le moment.')); return false; }
       body.appendChild(el('h4', 'Mes clés'));
       if (!own.length) body.appendChild(el('p', 'Aucune clé rangée pour vous : rangez celle de cet appareil.', 'doux'));
-      else renderList(body, own, false);
+      else renderList(body, own, false, place === 'reseau');
       renderRegister(body);
       if (all[1]) {
         var net = listOf(all[1]);
@@ -326,7 +326,7 @@ globalThis.AIMMO_CLES = function (t) {
           if (!others.length) body.appendChild(el('p', 'Aucune autre clé dans le réseau.', 'doux'));
           else {
             body.appendChild(el('p', 'Avant d’accepter une clé, appelez la personne nommée : elle vous dit le nom qu’elle a donné à l’appareil.', 'doux'));
-            renderList(body, others, true);
+            renderList(body, others, true, true);
           }
         }
       }

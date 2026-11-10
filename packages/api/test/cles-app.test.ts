@@ -242,6 +242,15 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
       ['/v1/cles/appareils/d-9/accord', { stepUpId: 'p-1' }],
     ]);
     expect(t.state()).toBe('Clé « Téléphone de Sam » acceptée : elle est active.');
+    // La direction accepte aussi sa propre clé en attente, sur la preuve d'une clé active ; l'agent, jamais.
+    const own = await run({ 'GET /v1/cles/mes-appareils': ok([device({ userRole: 'direction', userId: 'dir-1' }), device({ id: 'd-5', userRole: 'direction', userId: 'dir-1', label: 'Ordinateur du bureau', status: 'en_attente', approvedAt: null })]), 'POST /v1/cles/preuve/fin': ok({ stepUpId: 'p-5', action: 'approuver_appareil', subject: 'device:d-5', expiresAt: '2027-03-10T09:05:00.000Z' }), 'POST /v1/cles/appareils/d-5/accord': ok(device({ id: 'd-5', status: 'actif' })) }, 'direction');
+    await own.voir();
+    await own.click(own.find('Accepter « Ordinateur du bureau »'));
+    expect(own.posts().map((c) => c.url)).toEqual(['/v1/cles/preuve/debut', '/v1/cles/preuve/fin', '/v1/cles/appareils/d-5/accord']);
+    expect(own.state()).toBe('Clé « Ordinateur du bureau » acceptée : elle est active.');
+    const agent = await run({ 'GET /v1/cles/mes-appareils': ok([device({ id: 'd-5', label: 'Ordinateur du bureau', status: 'en_attente', approvedAt: null })]) });
+    await agent.voir();
+    expect(agent.buttons().filter((b) => b.startsWith('Accepter'))).toEqual([]);
     // Une preuve refusée : rien n'est accepté.
     const u = await run({ 'POST /v1/cles/preuve/fin': no(409, { ok: false, rule: 'R601', code: 'bad_signature' }) }, 'direction');
     await u.voir();
