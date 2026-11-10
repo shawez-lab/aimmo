@@ -908,7 +908,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H64 pour les clés d'appareil réelles).
 
 ### BR18 · La clé de cet appareil et la preuve d'une action sensible, à l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture forte · Dépend de : BR05, BR06
 - Partie du cahier : Conformité, sécurité des accès ; Architecture technique.
 - Décidé (2026-11-10, voie 1) : ajoutée parce qu'aucun écran ne parle encore aux routes `/v1/cles` : l'application n'a ni enregistrement d'une clé d'appareil, ni preuve d'action sensible (WebAuthn, `navigator.credentials`). Sans elles, ni l'export de l'agent (BR05), ni la clé de l'assistant (BR09), ni la reprise de l'agence (BR17) ne se tirent depuis l'application. Un script servi à part, chargé au premier geste, qui offre aux autres blocs une seule fonction « prouver cette action sur cet objet ».
