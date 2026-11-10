@@ -356,7 +356,7 @@ export const APP_JS = `'use strict';
     s.addEventListener('load', function () {
       sequencesDraw = globalThis.AIMMO_SEQUENCES({ el: el, button: button, send: send, ficheButton: ficheButton, hour: hour, reload: function () {
         var again = session;
-        if (currentKey) part('plan', api('/v1/plan-du-jour', currentKey), renderPlan, again).then(function (done) {
+        if (currentKey) loadPlan(currentKey, again).then(function (done) {
           if (done === false && again === session) { wipe(); forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); }
         });
       } });
@@ -665,10 +665,11 @@ export const APP_JS = `'use strict';
     $('accueil').appendChild(s);
     return 'Chargement…';
   }
+  function loadPlan(key, mine) { return part('plan', api('/v1/plan-du-jour', key), renderPlan, mine); }
   function day(key, mine) {
     return Promise.all([
       // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
-      part('plan', api('/v1/plan-du-jour', key), renderPlan, mine).then(function (done) {
+      loadPlan(key, mine).then(function (done) {
         if (!done || mine !== session) return done;
         return part('semaine', api('/v1/usage/matin', key), renderWeek, mine);
       }),
