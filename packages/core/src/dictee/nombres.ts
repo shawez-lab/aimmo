@@ -8,7 +8,7 @@
  * en minuscules (le `fold` de la lecture).
  *
  * Décidé, lecture prudente : « un » ou « une » devant un nombre qui suit se lit comme l'article (« un trois pièces »
- * est un bien de 3 pièces) ; « un mille » n'est pas un nombre ; « vingts », « cents » et « million » au pluriel ou non
+ * est un bien de 3 pièces), sauf devant « cent », « mille » ou « million » ; « un mille » n'est pas un nombre ; « vingts », « cents » et « million » au pluriel ou non
  * sont admis, la valeur restant la même.
  */
 
@@ -88,6 +88,9 @@ export const NUMBER_WORDS = [
 ] as const;
 
 const WORD = `(?:${NUMBER_WORDS.join('|')})(?![\\p{L}\\d])`;
+const WORD_NO_ARTICLE = `(?:${NUMBER_WORDS.filter((w) => w !== 'un' && w !== 'une').join('|')})(?![\\p{L}\\d])`;
+/** Les blancs et les traits entre deux mots ; les tirets typographiques comptent, pour ne jamais lire la fin d'un nombre. */
+const DASHES = '[\\s\\u2012-\\u2015-]';
 const WORD_OR_ET = `(?:${NUMBER_WORDS.join('|')}|et)(?![\\p{L}\\d])`;
 
 /** Une suite de mots de nombres, d'un seul tenant (espaces ou traits d'union), qui ne commence pas par « et ». */
@@ -97,7 +100,18 @@ export const NUMBER_RUN = `(?<![\\p{L}\\d])${WORD}(?:[\\s-]+${WORD_OR_ET})*`;
  * Ce qui, juste avant une suite de mots, en fait la fin d'un autre nombre : un chiffre, « virgule », « point », ou un
  * mot de nombre (suivi ou non de « et »). Le nombre en lettres n'est alors pas lu.
  */
-export const NUMBER_BEFORE = new RegExp(`(?:\\d[.,]?|(?<![\\p{L}\\d])(?:virgule|point)|(?<![\\p{L}\\d])${WORD}(?:[\\s-]+et)?)[\\s-]*$`, 'u');
+export const NUMBER_BEFORE = new RegExp(`(?:\\d[.,]?|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a)|(?<![\\p{L}\\d])(?:virgule|point)|(?<![\\p{L}\\d])${WORD}(?:[\\s-]+(?:et|ou|a)|\\s*,)?)${DASHES}*$`, 'u');
+
+/**
+ * Ce qui, juste avant un nombre en chiffres, en fait la fin d'un nombre en lettres ou l'autre terme d'un choix
+ * (« deux cent 50 000 », « un million 200 000 », « 3 ou 4 pièces », « trois, 4 pièces ») : il n'est pas lu. « un » et
+ * « une » seuls restent l'article (« un 3 pièces »). « à » ne compte qu'après trois chiffres au plus (« 3 à 4 pièces ») :
+ * après une année, il dit l'heure (« le 12 mars 2027 à 10 h »).
+ */
+export const DIGITS_BEFORE = new RegExp(`(?:(?<![\\p{L}\\d])${WORD_NO_ARTICLE}|(?<![\\p{L}\\d])${WORD}[\\s-]+(?:et|ou|a)|(?<![\\p{L}\\d])${WORD}\\s*,|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a))${DASHES}*$`, 'u');
+
+/** Juste après un nombre en chiffres : un mot de nombre (« 15 heures trente », « 10 h quinze ») : il n'est pas lu. */
+export const WORD_AFTER = new RegExp(`^\\s+${WORD}`, 'u');
 
 const tokens = (run: string): string[] => run.split(/[\s-]+/).filter((t) => t.length > 0);
 
@@ -145,7 +159,8 @@ export function readNumberRun(run: string): { value: number; skip: number } | nu
   const whole = parseNumberWords(run);
   if (whole !== null) return { value: whole, skip: 0 };
   const article = /^(une?)[\s-]+/.exec(run);
-  if (!article) return null;
+  // « un mille », « un cent », « un million deux » ne se disent pas : l'article n'est pas retiré devant eux.
+  if (!article || /^(?:mille|cents?|millions?)(?![\p{L}])/u.test(run.slice(article[0].length))) return null;
   const rest = parseNumberWords(run.slice(article[0].length));
   return rest === null ? null : { value: rest, skip: article[0].length };
 }

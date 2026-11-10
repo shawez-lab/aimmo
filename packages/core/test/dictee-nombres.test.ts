@@ -89,9 +89,28 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(field('Il vend sa maison de 85,5 cinq pièces.', 'bien', 'rooms')).toBeUndefined();
     // « neuf » se dit aussi d'un bien neuf : collé au nombre, rien n'est tranché.
     expect(field('Il vend un appartement neuf trois pièces.', 'bien', 'rooms')).toBeUndefined();
-    // Séparé par une virgule ou par « et », le nombre suivant se lit.
-    expect(field('Il vend un appartement neuf, trois pièces.', 'bien', 'rooms')).toEqual([3, 'trois pièces']);
+    expect(field('Il vend un appartement neuf, trois pièces.', 'bien', 'rooms')).toBeUndefined();
+    // Après un mot qui n'est pas un nombre, « et » ne gêne pas.
     expect(field('Il vend sa maison, salon et quatre pièces.', 'bien', 'rooms')).toEqual([4, 'quatre pièces']);
+    expect(field('Il vend une maison, un trois pièces et demie.', 'bien', 'rooms')).toBeUndefined();
+    expect(field('Il vend une maison, 3 pièces et demie.', 'bien', 'rooms')).toBeUndefined();
+    // Un tiret typographique : le trait d'union insécable lie le nombre, un demi-cadratin ne laisse lire aucun bout.
+    expect(field('Il vend sa maison de quatre\u2011vingt\u2011cinq mètres carrés.', 'bien', 'surfaceM2')).toEqual([85, 'quatre\u2011vingt\u2011cinq mètres carrés']);
+    expect(field('Il vend sa maison de quatre\u2013vingt\u2013cinq mètres carrés.', 'bien', 'surfaceM2')).toBeUndefined();
+  });
+
+  it('[R260] un choix entre deux nombres, ou des lettres et des chiffres mêlés, ne sont pas lus', () => {
+    for (const s of ['Il vend une maison de trois ou quatre pièces.', 'Il vend une maison de 3 ou 4 pièces.', 'Il vend une maison de trois à quatre pièces.', 'Il vend une maison de trois, quatre pièces.', 'Il vend sa maison, 2 ou trois pièces.']) {
+      expect(field(s, 'bien', 'rooms'), s).toBeUndefined();
+    }
+    for (const s of ['Il vend sa maison, prix deux cent 50 000 euros.', 'Il vend sa maison, prix un million 200 000 euros.', 'Il vend sa maison, prix deux cent cinquante mille 500 euros.', 'Il vend sa maison, prix deux cent quatre-vingt ou trois cent mille euros.']) {
+      expect(field(s, 'bien', 'priceEur'), s).toBeUndefined();
+    }
+    expect(field('Il vend sa maison de cent 20 m².', 'bien', 'surfaceM2')).toBeUndefined();
+    for (const s of ['Visite demain à 15 heures trente.', 'Visite demain à 10 h quinze.', 'Visite demain à midi trente.', 'Visite le douze ou treize janvier à dix heures.', 'Visite le 12 ou 13 janvier à 10 h.']) expect(at(s), s).toBeUndefined();
+    // « un » seul reste l'article devant des chiffres.
+    expect(field('Il vend sa maison, un 3 pièces.', 'bien', 'rooms')).toEqual([3, '3 pièces']);
+    expect(field('La maison fait 120 m², 5 pièces.', 'bien', 'rooms')).toEqual([5, '5 pièces']);
   });
 
   it('[R260] chiffres et lettres qui disent deux valeurs : le champ n’est pas proposé ; la même valeur : il l’est', () => {
@@ -105,12 +124,17 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(field('Il vend sa maison, il demande une remise de cinq mille euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Il vend sa maison, son budget est de trois cent mille euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Il vend sa maison de cent mètres carrés pour trois cent mille euros.', 'bien', 'priceEur')).toBeUndefined();
+    expect(field('Il vend sa maison, prix au mètre carré deux mille cinq cents euros.', 'bien', 'priceEur')).toBeUndefined();
+    expect(field('Il vend sa maison, prix au m² 2 500 euros.', 'bien', 'priceEur')).toBeUndefined();
+    // « un mille » ne se dit pas : rien, pas même « mille ».
+    expect(field('Il vend sa maison, prix un mille euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Elle veut vendre sa maison trois cent mille euros.', 'bien', 'priceEur')).toEqual([300000, 'trois cent mille euros']);
   });
 
   it('[R260] l’heure et le jour du rendez-vous dits en lettres', () => {
     expect(at('Estimation mardi à quinze heures.')).toBe('2026-12-08T14:00:00.000Z');
     expect(at('Estimation mardi à quinze heures trente.')).toBe('2026-12-08T14:30:00.000Z');
+    expect(at('Estimation mardi vers dix-sept heures.')).toBe('2026-12-08T16:00:00.000Z');
     expect(at('Visite le douze janvier à neuf heures.')).toBe('2027-01-12T08:00:00.000Z');
     expect(at('Visite le trente et un décembre à 10 h.')).toBe('2026-12-31T09:00:00.000Z');
     expect(at('Signature le premier février à onze heures.')).toBe('2027-02-01T10:00:00.000Z');
@@ -120,13 +144,27 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Estimation mardi à dix heures moins le quart.')).toBeUndefined();
     expect(at('Estimation mardi à vingt-cinq heures.')).toBeUndefined();
     expect(at('Estimation mardi à quinze heures soixante-dix.')).toBeUndefined();
+    // Des minutes suivies d'un autre mot ont pu le prendre : rien.
+    expect(at('Visite demain à dix heures une maison à Talant.')).toBeUndefined();
+    expect(at('Visite mardi à quinze heures deux acheteurs.')).toBeUndefined();
+    expect(at('Visite demain à quinze heures trente avec lui.')).toBeUndefined();
+    // De 1 h à 7 h en lettres, ou suivie de « du soir », l'heure ne se lit pas d'une seule façon.
+    expect(at('Visite demain à deux heures.')).toBeUndefined();
+    expect(at('Visite demain à huit heures du soir.')).toBeUndefined();
+    expect(at('Visite demain à dix heures du matin.')).toBeUndefined();
     expect(at('Visite le trente février à 10 h.')).toBeUndefined();
     expect(at('Visite le deux trois janvier à 10 h.')).toBeUndefined();
   });
 
   it('[R260] une durée n’est pas une heure, et une année dite sans être lue fait refuser le jour', () => {
     expect(at('Rappel demain à 10 h, dans une heure.')).toBe('2026-12-04T09:00:00.000Z');
-    expect(at('Visite de deux heures demain à 10 h.')).toBeUndefined();
+    // Seule l'heure dite après « à » ou « vers » est une heure ; « il y a deux heures » est une durée.
+    for (const s of ['Visite de deux heures demain.', 'Estimation demain, prévoir deux heures.', 'Visite demain en une heure.', 'Visite de dix heures demain.', 'Rappel demain, il a appelé il y a dix heures.']) {
+      expect(dictee.fieldOf(read(s), 'rendezvous', 'start'), s).toBeUndefined();
+    }
+    expect(at('Visite de deux heures demain à 10 h.')).toBe('2026-12-04T09:00:00.000Z');
+    expect(at('Visite le douze janvier vingt-huit à dix heures.')).toBeUndefined();
+    expect(at('Visite le 12 janvier 28 à 10 h.')).toBeUndefined();
     expect(at('Estimation le premier mars deux mille vingt-huit à dix heures.')).toBeUndefined();
     expect(at('Estimation le 1er mars deux mille vingt-huit à 10 h.')).toBeUndefined();
     expect(at('Estimation le 12 mars 2100 à 10 h.')).toBeUndefined();
