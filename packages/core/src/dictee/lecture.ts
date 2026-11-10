@@ -227,9 +227,10 @@ const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![
 const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?![\\p{L}])|(?:${NUMBER_RUN})\\s+heures?(?![\\p{L}\\d])|midi(?![\\p{L}\\d])|minuit(?![\\p{L}\\d]))`, 'gu');
 /**
  * Un nombre nu collé à l'heure lue dit une autre heure sans « h » (RC01, relecture) : « 14-15 h », « 15 h 30 ou 45 »,
- * « 15 h, sinon 16 », « 15 h, 16 au plus tard ». Dans le doute, l'heure n'est pas lue.
+ * « 15 h, sinon 16 », « 15 h, 16 au plus tard ». Le nombre ne compte qu'après « ou », « sinon », « voire », « plutôt »
+ * ou un tiret, ou s'il finit la phrase : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
  */
-const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|a|-)\\s*)?(?:\\d{1,2}(?![\\d]|\\s?(?:€|euros?|k|m2|m²|metres?|pieces?)(?![\\p{L}\\d]))|${WORD}(?!\\s+(?:pieces?|euros?|metres?|mille|cent)))`, 'u');
+const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|-)\\s*(?:\\d{1,2}(?!\\d)|${WORD})|(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d])))`, 'u');
 const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*(?:-|,|ou|a)\\s*$`, 'u');
 function crowded(sentence: string, h: Hit): boolean {
   return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);

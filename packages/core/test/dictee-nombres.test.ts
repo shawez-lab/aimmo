@@ -176,6 +176,8 @@ describe('RC01 · les nombres dits en lettres', () => {
     // Une heure suivie de « et » puis d'un autre mot se lit (relecture forte).
     expect(at('Visite demain à 15 h et le client viendra seul.')).toBe('2026-12-04T14:00:00.000Z');
     expect(at('Estimation mardi à quinze heures et on signe le mandat.')).toBe('2026-12-08T14:00:00.000Z');
+    // Un nombre qui parle d'autre chose que l'heure ne la fait pas refuser (relecture forte).
+    for (const s of ['Visite demain à 15 h, un couple avec enfants.', 'Visite demain à 15 h, 12 rue de la Liberté.', 'Visite demain à 15 h à 12 km de Dijon.', 'Visite demain à 15 h, à deux pas de la gare.', 'Visite demain à 15 h, 1er étage.']) expect(at(s), s).toBe('2026-12-04T14:00:00.000Z');
     // Un nombre nu collé à l'heure dit une autre heure : rien n'est choisi (relecture forte).
     for (const s of ['Visite demain vers 14-15 h.', 'Visite demain à 15 h 30 ou 45.', 'Visite demain à 9 h 30 ou 10.', 'Visite demain à 15 h, sinon 16.', 'Visite demain à quinze heures, sinon seize.', 'Visite demain à 15 h, 16 au plus tard.', 'Visite demain à 14 ou 15 h.']) expect(at(s), s).toBeUndefined();
     // Une heure suivie de « et » ou de « minutes » n'est pas lue.
