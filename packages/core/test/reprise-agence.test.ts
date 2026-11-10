@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { CARTE_ACCES } from '../src/conformite/carte-acces.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
-import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, REPRISE_MASQUE, RepriseDonneesAgence, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
+import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -60,6 +60,8 @@ async function gapsOf(db: SqlDatabase, carte = carteReprise()): Promise<string[]
       if (!c.includes('network_id')) gaps.push(`sans_network_id:${t}`);
       continue;
     }
+    // Le dossier de la lutte contre le blanchiment est laissé entier, quelles que soient ses colonnes et ses clés.
+    if ('hors' in e && e.hors === 'lcb_ft') continue;
     if (c.includes('network_id') && !('soi' in e)) gaps.push(`network_id_non_suivi:${t}`);
     if ('soi' in e) {
       if (!c.includes(e.soi)) gaps.push(`colonne:${t}.${e.soi}`);
@@ -160,7 +162,9 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     const { db } = await openDb();
     expect(await gapsOf(db)).toEqual([]);
     const { tables, cols } = await schemaOf(db);
-    expect(new Set(TABLES_RESEAU)).toEqual(new Set(tables.filter((t) => cols.get(t)!.includes('network_id') && t !== 'software_licences')));
+    const lcb = new Set(tablesLcbFt());
+    expect(lcb.size).toBeGreaterThan(10);
+    expect(new Set(TABLES_RESEAU)).toEqual(new Set(tables.filter((t) => cols.get(t)!.includes('network_id') && t !== 'software_licences' && !lcb.has(t))));
     expect(CARTE_REPRISE_AUTRES.software_licences).toEqual({ soi: 'licensee_network_id' });
     expect(carteReprise().size).toBe(tables.length);
     for (const t of Object.keys(CARTE_REPRISE_AUTRES)) expect(TABLES_RESEAU).not.toContain(t);
@@ -223,7 +227,8 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     const all = [...carteReprise().keys()].sort();
     expect([...Object.keys(doc.tables), ...Object.keys(doc.laissees)].sort()).toEqual(all);
     expect(doc.laissees.journal?.hors).toBe('commun');
-    expect(doc.horsFichier.length).toBe(2);
+    expect(doc.horsFichier.length).toBe(3);
+    for (const lcb of tablesLcbFt()) expect(doc.laissees[lcb]?.hors, lcb).toBe('lcb_ft');
     // Les lignes de l'agence : tables directes, colonne sans clé étrangère, deux niveaux de tables filles, son réseau.
     expect(doc.tables.networks).toEqual([expect.objectContaining({ id: net, name: AGENCE.agencyName })]);
     expect(doc.tables.agents!.map((x) => x.id)).toEqual(['agent-lac']);

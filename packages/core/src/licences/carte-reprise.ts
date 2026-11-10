@@ -3,13 +3,13 @@
  *
  * Pour chaque table de la base, la carte dit comment y trouver les lignes d'un réseau, ou pourquoi elle n'entre pas
  * dans le fichier de reprise :
- *   - `TABLES_RESEAU` : la table porte la colonne `network_id` ; ses lignes sont celles de ce réseau ;
- *   - `soi` : la ligne du réseau lui-même, ou celle qui le nomme dans une autre colonne que `network_id` (sa licence) ;
- *   - `via` : la table n'a pas de colonne `network_id` ; ses lignes sont celles dont une clé vaut celle d'une ligne déjà
- *     trouvée dans une autre table (chaque clé étrangère vers une table reprise est suivie, l'une ou l'autre suffit ;
- *     une clé de plusieurs colonnes est suivie entière). `sansCle` dit pourquoi le chemin suit une colonne sans clé
- *     étrangère ;
- *   - `hors` : la table ne porte les données d'aucun réseau (technique, publique) ou ne se découpe pas (le journal).
+ * - `TABLES_RESEAU` : la table porte la colonne `network_id` ; ses lignes sont celles de ce réseau ;
+ * - `soi` : la ligne du réseau lui-même, ou celle qui le nomme dans une autre colonne que `network_id` (sa licence) ;
+ * - `via` : la table n'a pas de colonne `network_id` ; ses lignes sont celles dont une clé vaut celle d'une ligne déjà
+ * trouvée dans une autre table (chaque clé étrangère vers une table reprise est suivie, l'une ou l'autre suffit ;
+ * une clé de plusieurs colonnes est suivie entière). `sansCle` dit pourquoi le chemin suit une colonne sans clé
+ * étrangère ;
+ * - `hors` : la table ne porte les données d'aucun réseau (technique, publique) ou ne se découpe pas (le journal).
  *
  * Jamais vu : le test `reprise-agence` relit les migrations et leurs clés étrangères ; une table que la base gagne sans
  * entrer ici, une clé étrangère vers une table reprise qui n'est pas suivie, ou un chemin qui ne suit aucune vraie clé,
@@ -19,7 +19,7 @@
 /** Un chemin : la ou les colonnes d'ici, la table déjà trouvée, la ou les colonnes de sa clé. */
 export type CheminReprise = readonly [string | readonly string[], string, string | readonly string[]];
 
-export type HorsReprise = 'technique' | 'public' | 'commun';
+export type HorsReprise = 'technique' | 'public' | 'commun' | 'lcb_ft';
 
 export type EntreeReprise =
   | { readonly soi: string }
@@ -41,24 +41,24 @@ export const TABLES_RESEAU: readonly string[] = `
   appointment_reports appointment_tasks appointments assistance_requests assistant_calls assistant_keys
   assistant_sessions attach_log attributions automation_daily_messages automation_rollouts automation_runs
   automation_scenarios automation_simulations automation_switches automation_tasks bank_lines bank_reconciliations
-  beneficial_owners business_access_requests business_buyer_profiles business_dossier_accesses
+   business_access_requests business_buyer_profiles business_dossier_accesses
   business_dossier_documents business_dossier_link_revocations business_dossier_links business_dossier_open_codes
   business_nda_revocations business_nda_signatures business_nda_templates business_ndas
   business_presentation_validations business_presentations business_safeguard_communes business_sheets
   business_transfer_buyers business_transfer_dates business_transfer_files business_transfer_ready
-  business_transfer_tasks business_transfer_third_parties business_transfer_watch business_transfer_watch_decisions
+  business_transfer_tasks business_transfer_third_parties  
   business_valuation_scales business_valuation_validations business_valuations buyer_searches call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
   candidate_interviews candidate_replies candidates card_holders client_date_messages client_date_texts client_dates
-  client_identifications client_space_favorites client_space_links client_space_sessions commission_grids
+   client_space_favorites client_space_links client_space_sessions commission_grids
   commission_payouts commission_receipts commissions commune_rental_rules complaint_alerts complaint_answers
-  complaint_mediator_offers complaint_settings complaints compliance_vault_pieces consents contact_ai_engines
+  complaint_mediator_offers complaint_settings complaints consents contact_ai_engines
   contact_keys contact_origins contact_scores contact_vitrines conversation_handovers coownership_summaries
   custom_reports daily_plans data_breach_cuts data_breaches diffusion_photo_subjects diffusion_portal_checks
   diffusion_portal_choices diffusion_portal_feedback diffusion_portal_settings diffusion_portal_suspensions
   diffusion_portal_tasks diffusion_portal_texts document_checks document_templates documents dpe_alert_items
-  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans freeze_checks
-  freeze_match_decisions freeze_matches freeze_registry_versions gbp_claims gbp_drafts gbp_locations gbp_reviews
+  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
+     gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
   investment_notes investor_alerts investor_profiles invoice_drafts invoice_reminders invoices legal_basis_checks
   licence_data_exports licence_tariffs licensed_assets life_tables listing_drafts listing_settings
@@ -90,7 +90,7 @@ export const TABLES_RESEAU: readonly string[] = `
   remote_slip_signatures remote_visits rental_ads rental_applications rental_handovers rental_inventories
   rental_lease_copies rental_lease_signatures rental_lease_templates rental_leases rental_listings
   rental_management_links rental_piece_findings rental_presentations rental_sends reprise_avancement reprise_depots
-  review_requests risk_sheets risk_statements risk_validations safety_alerts sale_commissions sale_file_closings
+  review_requests risk_statements safety_alerts sale_commissions sale_file_closings
   sale_file_dates sale_file_financing sale_file_financing_alerts sale_file_fund_alerts sale_file_pieces
   sale_file_reminders sale_file_sellers sale_file_stops sale_file_tasks sale_files sandbox_runs sandbox_steps
   satisfaction_answers satisfaction_tokens security_challenges security_devices security_sessions security_step_ups
@@ -98,10 +98,10 @@ export const TABLES_RESEAU: readonly string[] = `
   sign_pickup_tasks sign_placements sign_removals signature_circuit_annexes signature_circuit_events
   signature_circuit_signers signature_circuits signature_sessions signed_amendments signed_documents signs
   site_legal_mentions site_page_views social_calendar_rules social_calendar_slots social_posts
-  sources sponsorships studio_option_requests supplier_invoice_reads supplier_invoices suspicion_decisions
-  suspicion_reports thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
+  sources sponsorships studio_option_requests supplier_invoice_reads supplier_invoices 
+   thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
-  viager_calculations video_montages video_text_checks vigilance_alerts vigilance_decisions vigilance_settings
+  viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photos visit_reports
   visit_safety visit_shot_skips visit_slip_templates visit_slips visit_tasks visits vitrine_screens
   voice_assistant_calls voice_assistant_lines voice_notes weekly_points
@@ -148,7 +148,6 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   diffusion_portal_task_closures: { via: [['task_id', 'diffusion_portal_tasks', 'id']] },
   diffusion_portal_text_validations: { via: [['text_id', 'diffusion_portal_texts', 'id']] },
   first_reply_claims: { via: [['inbound_id', 'inbound_messages', 'id']] },
-  freeze_registry_entries: { via: [['version_id', 'freeze_registry_versions', 'id']] },
   gbp_validations: { via: [['draft_id', 'gbp_drafts', 'id']] },
   invoice_facturx: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },

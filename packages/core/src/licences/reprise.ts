@@ -21,6 +21,8 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { LCB_FT_TRAITEMENT } from '../conformite/carte-acces.ts';
+import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import { canonicalJson, fingerprintOf, type SecondFactorGate } from '../rapports/export-agent.ts';
 import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, TABLES_RESEAU, type CheminReprise, type EntreeReprise, type HorsReprise } from './carte-reprise.ts';
 
@@ -31,7 +33,18 @@ export const REPRISE_MASQUE = '(masqué)';
 export const REPRISE_HORS_FICHIER = [
   'Les fichiers déposés (photos, plans, pièces) : le fichier porte leurs références et leurs empreintes, pas leur contenu.',
   'Le journal commun à toute la base, chaîné ligne à ligne : il ne se découpe pas par réseau.',
+  'Le dossier de la lutte contre le blanchiment (coffre, vigilance, signalement, gel des avoirs) : il ne se lit que par la conformité, et se remet à part.',
 ] as const;
+
+/** Pourquoi les tables de la lutte contre le blanchiment sont laissées [R15, R93, R94, R604]. */
+export const REPRISE_LCB_FT = 'Lutte contre le blanchiment : ne se lit que par le code de la conformité, et se remet à part, par la conformité.';
+
+/** Les tables de la lutte contre le blanchiment, prises au registre des traitements sans être nommées dans ce code. */
+export function tablesLcbFt(): string[] {
+  const t = REGISTRE_TRAITEMENTS.find((x) => x.id === LCB_FT_TRAITEMENT);
+  if (t === undefined) throw new Error('carte de reprise : traitement de la lutte contre le blanchiment absent du registre');
+  return Object.keys(t.tables);
+}
 
 type Json = string | number | boolean | null;
 type Row = Record<string, Json>;
@@ -61,6 +74,10 @@ export function carteReprise(): Map<string, EntreeReprise | 'reseau'> {
   for (const [t, e] of Object.entries(CARTE_REPRISE_AUTRES)) {
     if (carte.has(t)) throw new Error(`carte de reprise : ${t} deux fois`);
     carte.set(t, e);
+  }
+  for (const t of tablesLcbFt()) {
+    if (carte.has(t)) throw new Error(`carte de reprise : ${t} deux fois`);
+    carte.set(t, { hors: 'lcb_ft', why: REPRISE_LCB_FT });
   }
   for (const t of carte.keys()) if (!NAME.test(t)) throw new Error(`carte de reprise : nom ${t}`);
   return carte;
