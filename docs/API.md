@@ -304,6 +304,16 @@ Sous `/v1/boutique` : chaque route dit le rôle qu'elle admet, contrôlé avant 
 - L'agent : `POST /apercu` (`{support, propertyId?}`) rend le support tel qu'il serait imprimé, tiré de la dernière version publiée de l'annonce de son bien (la carte de visite, sans bien), avec son code QR et son mot-clé ; sans page publiée, bien vendu ou chiffre sans source : 409 R263.
 - L'agent : `POST /commandes` (`{requestId, support, propertyId?, quantity}`) prépare une commande au prix du tarif en vigueur, sans rien commander ; la même demande rejouée rend la même commande [R264, R265]. `GET /commandes` : ses commandes et leur état. `POST /commandes/<id>/validation` : son geste, qui envoie exactement le support vu, une seule fois ; un support ou un tarif changé depuis : 409 R264 ; déjà validée : 409 R265 ; imprimeur en panne : 502, jamais renvoyée seule.
 
+## Stock de panneaux (BR23)
+
+Sous `/v1/panneaux` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 4 ko au plus ; un champ non prévu : 400 `unknown_field`. Rien n'est envoyé ; le journal ne porte aucune adresse [R13].
+
+- La direction : `POST /stock` (`{size: grand | moyen | petit, count?}`, 1 à 50) ajoute des panneaux, numérotés par le code, les suivants du réseau [R282].
+- L'agent du bien en activité ou la direction : `POST /poses` (`{signNumber, propertyId, address: {streetNumber, street, postcode, city}}`) pose un panneau du stock sur un bien diffusable maintenant (porte de diffusion de D05, sinon 409 R42), à une adresse au code postal et à la commune du bien, un seul endroit à la fois [R282]. `POST /poses/<id>/retrait` (`{outcome: recupere | perdu}`) : l'agent de la pose ou la direction ; perdu, il ne se pose plus [R283].
+- L'agent en activité ou la direction : `GET /` les comptes du stock (en stock, posés, à récupérer, perdus, par format) et les poses avec leur adresse, toutes pour la direction, les siennes pour l'agent [R284] ; `GET /a-recuperer` les panneaux à récupérer, comme arrêts de la tournée [R283].
+
+Le planificateur passe à 6 h, 13 h et 19 h (`panneaux.recuperer`) : un panneau posé sur un bien vendu ou qui ne peut plus être diffusé reçoit sa tâche « récupérer le panneau », une seule par pose [R283].
+
 ## Recrutement des 100 premiers agents, en mode essai (BR02)
 
 Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.
