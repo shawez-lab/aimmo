@@ -143,7 +143,8 @@ const isInt = (v: unknown, min: number, max: number): v is number => typeof v ==
 const text = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() !== '' && v.length <= max ? v.trim() : null);
 const SAMPLE_FIRST_NAME = 'Camille';
 /** Les coordonnées de la fiche par où part chaque canal, comme au contrôle central. */
-const IDENTIFIER_FOR: Readonly<Record<AutomationChannel, readonly string[]>> = { email: ['email'], sms: ['phone'], whatsapp: ['whatsapp', 'phone'] };
+/** La coordonnée qui rend une personne joignable sur un canal, comme le contrôle central la cherche. */
+export const IDENTIFIER_FOR: Readonly<Record<AutomationChannel, readonly string[]>> = { email: ['email'], sms: ['phone'], whatsapp: ['whatsapp', 'phone'] };
 /** Un texte comparé comme au contrôle central : minuscules, sans accents ni ponctuation [R05]. */
 const sameText = (body: string): string => plain(body).replace(/[^a-z0-9]+/g, ' ').trim();
 /** La plus longue mention que le contrôle central peut ajouter au premier message [R06]. */
