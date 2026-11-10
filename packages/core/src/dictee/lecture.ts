@@ -274,6 +274,13 @@ const rawMentions = (sentence: string, key: keyof typeof RAW_UNITS): Hit[] => hi
 /** Le jour dit avant son mois, sans aucun filtre : « quinze janvier » dans « quatorze ou quinze janvier » (Codex sur #486). */
 const RAW_DAY = new RegExp(`${CHOICE_NUMBER}\\s+(?:${MONTHS.join('|')})(?![\\p{L}\\d])`, 'u');
 const rawDays = (sentence: string): Hit[] => hits(sentence, RAW_DAY, () => 0);
+/** Un jour suivi d'une année ancienne n'est pas un rendez-vous : « rue du 8 mai 1945 », « construit le 3 juin 1990 ». */
+const OLD_YEAR_AFTER = /^\s+1\d{3}(?!\d)/u;
+/**
+ * Un jour dit sans son mois après « le » : « le 14 à 10 h », « le quatorze ou le quinze » (relecture forte de RC01).
+ * « le premier » et « le 2e » n'en sont pas ; une heure (« le 10 h ») non plus ; un jour suivi de son mois est vu par `RAW_DAY`.
+ */
+const RAW_BARE_DAY = new RegExp(`(?<![\\p{L}\\d])le\\s+(?:\\d{1,2}(?![\\p{L}\\d.,:])|${NUMBER_RUN})(?!\\s*(?:h(?![\\p{L}])|heures?(?![\\p{L}])|${MONTHS.join('|')}))`, 'u');
 /** Les passages de la phrase où deux nombres se disputent un champ. */
 function choices(sentence: string): Hit[] {
   const { folded, index } = fold(sentence);
@@ -504,9 +511,9 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       ];
       // Les jours sont pris avant leurs filtres : un jour déjà écarté par un autre motif fait aussi refuser.
       const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...rawDays(s), ...hits(s, FIRST_OF_MONTH, () => '')];
-      // Un jour dit avec son mois que la lecture écarte (« quatorze et quinze janvier », « quatorze, quinze janvier ») :
+      // Un jour dit que la lecture écarte (« quatorze et quinze janvier », « quatorze, quinze janvier », « le 14 » sans mois) :
       // l'agent a dit un jour qu'on ne sait pas lire, le rendez-vous n'est pas lu, même si une phrase d'avant en disait un.
-      const daysDropped = rawDays(s).some((h) => !overlaps(h, days));
+      const daysDropped = [...rawDays(s).filter((h) => !OLD_YEAR_AFTER.test(fold(s.slice(h.end)).folded)), ...hits(s, RAW_BARE_DAY, () => 0)].some((h) => !overlaps(h, days));
       if (daysDropped || [...days, ...anyDays].some((h) => overlaps(h, contested))) {
         // Deux jours qui se disputent le rendez-vous : il n'est pas lu.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
