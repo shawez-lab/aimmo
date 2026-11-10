@@ -414,6 +414,16 @@ Sous `/v1/regions`, la direction seule ; tout autre rôle est refusé (403) et l
 - `POST /decision` (`{region: <code INSEE>, open: true | false, reason}`, raison de 3 à 200 caractères) : ouvre ou ferme une région ; une version s'ajoute à la chaîne, rien ne change. Une ouverture est refusée en 409 tant que la phase 5 n'est pas ouverte (R651, `phase5_fermee`) ou qu'une autre région est ouverte depuis moins de 90 jours (R652, `region_recente`, avec `until`) ; la région d'origine ou un code inconnu sont refusés (R650) [R651, R652].
 - `GET /verification` : la chaîne des décisions recomptée depuis la première et recoupée avec le journal ; `{intact, versions}` ou, si une ligne a été changée ou retirée, `brokenAt`, la première version cassée [R653].
 
+## Seuils du passage à PostgreSQL (BR25)
+
+Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
+
+- `GET /` (soit `GET /v1/postgresql`) : l'état des trois seuils (agents actifs, taille de la base, temps du rapport du réseau), le dernier relevé, les alertes, la décision en cours et le jour estimé où chaque seuil sera franchi ; la lecture est écrite au journal avant d'être rendue [R630, R631, R632].
+- `POST /releve` : un relevé pris à l'instant, rangé, jamais changé ; une mesure en échec ou absente est inconnue [R630].
+- `POST /decision` (`{choice: passer | attendre}`) : seulement après un seuil franchi, sinon 409 avec R631 (`aucun_seuil`) ; « attendre » vaut 90 jours ; « passer » est une décision rangée, le passage lui-même reste un geste humain [R631].
+
+Le rapport chronométré est le tableau du réseau de la plateforme (M13) sur 366 jours, lu par le système ; un tableau refusé est une mesure en échec. Au planificateur : `postgresql.releve`, le lundi à 4 h de Paris, un relevé ; un lundi manqué n'est pas rattrapé, et au-delà de 8 jours sans relevé l'état n'est plus « sous les seuils » [R630].
+
 ## Licence du logiciel aux agences hors réseau (BR15)
 
 Sous `/v1/licences`, la direction seule ; tout autre rôle est refusé (403) et le refus écrit au journal [R16]. La direction d'une agence sous licence ne lit que sa licence : elle ne fixe aucun tarif, ne donne aucune licence et ne lit pas les autres (409, R657, `agence_licenciee`) [R657]. Aucun prélèvement, aucun envoi. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle, une licence inconnue 404.

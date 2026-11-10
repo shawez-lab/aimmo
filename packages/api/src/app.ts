@@ -94,6 +94,7 @@ import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
+import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
@@ -220,6 +221,11 @@ export interface ApiConfig {
    * et l'espace reste lisible [R164]. Le lien part par le contrôle central, en mode essai seulement [R26].
    */
   espaces?: EspacesOptions;
+  /**
+   * Le réseau qui exploite la plateforme (`PLATFORM_NETWORK_ID`, BR25) : seule sa direction lit et décide des seuils du
+   * passage à PostgreSQL, qui couvrent toute la base ; absent, ces routes refusent tout [R16].
+   */
+  platformNetworkId?: string | undefined;
   now?: () => Date;
 }
 
@@ -1273,6 +1279,16 @@ function regionsRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes des seuils du passage à PostgreSQL (BR25) : la direction du réseau de la plateforme seule [R16]. */
+function postgresqlRoutesDef(platformNetworkId: string | null): RouteDef[] {
+  return postgresqlRoutes().map((r: PostgresqlRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, platformNetworkId }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la licence du logiciel aux agences hors réseau (BR15) : la direction, par la couche métier [R16, R657]. */
 function licencesRoutesDef(): RouteDef[] {
   return licencesRoutes().map((r: LicencesRoute) => ({
@@ -2066,6 +2082,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...panneauxRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
+    ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
     ...marketingRoutesDef(),
