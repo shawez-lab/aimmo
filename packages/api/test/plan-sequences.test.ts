@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
+import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { FicheClient, PlansDuJour, SqlJournalStore, applyMigrations, fromSyncSqlite, type Channel, type SqlDatabase } from '../../core/src/index.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -141,7 +143,7 @@ async function screen(answers: Record<string, () => Promise<Response>> = {}) {
     '/v1/rendez-vous/jour': ok({ day: '2026-11-10', appointments: [] }),
     ...answers,
   };
-  runInNewContext(AGENT_APP_FILES['/app/app.js']!, {
+  const context: Record<string, unknown> = {
     document,
     Date,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
@@ -151,14 +153,22 @@ async function screen(answers: Record<string, () => Promise<Response>> = {}) {
       return answer ? answer() : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-  });
+  };
+  runInNewContext(AGENT_APP_FILES['/app/app.js']!, context);
   listeners.DOMContentLoaded!();
   const tick = async () => {
     for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
   };
   await tick();
+  // Le dessin des étapes est servi à part : le script est demandé, puis exécuté comme le ferait le navigateur.
+  const scripts = els.accueil!.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/sequences-jour.js');
+  if (scripts.length > 0) {
+    runInNewContext(SEQUENCES_JOUR_SCRIPT, context);
+    for (const e of scripts) e.listeners.load!({});
+    await tick();
+  }
   const buttons = (root: FakeElement, text: string) => root.all().filter((e) => e.tagName === 'button' && e.textContent === text);
-  return { els, calls, tick, buttons, routes };
+  return { els, calls, tick, buttons, routes, scripts };
 }
 
 describe('BR32 · écran « Ma journée » : les étapes des séquences', () => {
@@ -189,6 +199,18 @@ describe('BR32 · écran « Ma journée » : les étapes des séquences', () => 
     t.buttons(again, 'A refusé')[0]!.click();
     await t.tick();
     expect(t.calls.filter((c) => c.method === 'POST')[1]).toEqual({ url: '/v1/sequences/etapes/e3/fait', method: 'POST', body: { callOutcome: 'refused' } });
+  });
+
+  it('[R201] le dessin est servi à part, chargé seulement s’il y a des étapes, et l’application tient son budget', async () => {
+    const t = await screen();
+    expect(t.scripts).toHaveLength(1);
+    const none = await screen({ '/v1/plan-du-jour': ok({ ...PLAN, sequenceSteps: [] }) });
+    expect(none.scripts).toHaveLength(0);
+    expect(AGENT_APP_FILES['/app/sequences-jour.js']).toBe(SEQUENCES_JOUR_SCRIPT);
+    expect(SEQUENCES_JOUR_SCRIPT).not.toMatch(/innerHTML|insertAdjacentHTML|eval\(/);
+    expect(AGENT_APP_FILES['/app/app.js']).not.toContain('opposition_unchecked');
+    expect(budgetProblems({ html: AGENT_APP_FILES['/app/']!, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);
+    expect(budgetProblems({ html: '<!doctype html><title>x</title>', js: SEQUENCES_JOUR_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 
   it('un refus est dit sans relire le plan ; un plan sans ligne ni étape dit « Rien au plan »', async () => {
