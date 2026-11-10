@@ -859,3 +859,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 08:55 · VOIE 2 : aucune tâche, rien (aucun commit de code), relancé non (même constat qu'à 07:58 : BR21 en cours à la voie 1 avec sa proposition #480 ; B04, C09, SV05, S10 attendent un humain ; aucun module libre ; verrou resté libre, non pris)
 - 2026-11-10 09:27 · BR21 · fusionnée (#480, c1918bf1) : routes de l'armoire des clés, rôle étranger refusé au journal avant toute lecture du trousseau ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5385 tests) ; BR22 ajoutée · prochaine : BR22
 - 2026-11-10 09:27 · voie 1 · fin de séance : BR20 et BR21 fusionnées ; verrou libéré, relance · prochaine : BR22
+- 2026-11-10 09:28 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra BR22 · prochaine : BR22
