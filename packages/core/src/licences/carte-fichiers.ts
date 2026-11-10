@@ -2,8 +2,8 @@
  * La carte des fichiers déposés de l'agence sous licence (HX75) [R660, R661].
  *
  * Aucun stockage de fichiers n'est branché au Worker : le fichier de reprise ne porte pas le contenu des pièces, des
- * photos ni des vidéos, il dit chacune. Chaque colonne `_ref` ou `_refs` d'une table reprise est classée ici une seule
- * fois :
+ * photos ni des vidéos, il dit chacune. Chaque colonne `ref`, `_ref` ou `_refs` d'une table reprise est classée ici une
+ * seule fois :
  * - `fichier` : une référence du stockage (pièce signée, photo, vidéo, enregistrement) ;
  * - `preuve` : la référence d'une preuve, écrit signé, mail ou pièce ; un fichier déposé est possible, elle est listée
  *   aussi, par prudence ;
@@ -18,7 +18,7 @@ export type SorteReference = 'fichier' | 'preuve';
 export type ClasseReference = { readonly sorte: SorteReference } | { readonly sorte: 'externe'; readonly why: string };
 
 /** Une colonne de référence d'une table reprise : son nom se termine ainsi [R660]. */
-export const COLONNE_REFERENCE = /_refs?$/;
+export const COLONNE_REFERENCE = /(^|_)refs?$/;
 
 const F: ClasseReference = { sorte: 'fichier' };
 const P: ClasseReference = { sorte: 'preuve' };
@@ -50,6 +50,14 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'visit_slips.scan_ref': F,
   'voice_notes.media_ref': F,
   'academy_modules.script_ref': F,
+  'agent_file_pieces.ref': F,
+  'mailbox_attachments.ref': F,
+  'partner_documents.ref': F,
+  'rental_annexes.ref': F,
+  'rental_application_pieces.ref': F,
+  'rental_piece_deposits.ref': F,
+  'sale_file_pieces.ref': F,
+  'signature_circuit_annexes.ref': F,
   // Preuves : écrit, mail ou pièce ; listées par prudence.
   'agency_delegation_steps.proof_ref': P,
   'agency_partner_invoices.proof_ref': P,
@@ -77,6 +85,8 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'social_visual_checks.consent_ref': P,
   'virtual_tours.tour_ref': P,
   // Identifiants chez un autre service, ou numéros : pas des fichiers.
+  'public_contents.ref': externe('L’identifiant interne du contenu porté par un lien : un bien, un agent, une publication, un portail.'),
+  'diffusion_portal_task_closures.ref': externe('La référence de l’annonce chez le portail à la clôture de la tâche : un identifiant chez le portail.'),
   'automation_runs.trigger_ref': externe('Ce qui a lancé une automatisation : un identifiant de tâche, pas un fichier.'),
   'bank_lines.invoice_refs': externe('Les numéros de facture cités par une ligne de banque : les factures sont dans leurs propres tables.'),
   'diffusion_portal_tasks.first_ref': externe('La référence de l’annonce chez le portail, au premier écart relevé : un identifiant chez le portail.'),
@@ -117,6 +127,7 @@ export const CLES_LIGNES: Readonly<Record<string, readonly string[]>> = {
   sale_file_closings: ['file_id'],
   sale_file_dates: ['file_id', 'kind', 'version'],
   sale_file_stops: ['file_id'],
+  signature_circuit_annexes: ['circuit_id', 'position'],
   signature_circuit_events: ['circuit_id', 'seq'],
   signed_amendments: ['document_id'],
   signed_documents: ['document_id'],
@@ -142,3 +153,11 @@ export function colonnesFichiers(table: string): { colonne: string; sorte: Sorte
   }
   return out.sort((a, b) => (a.colonne < b.colonne ? -1 : a.colonne > b.colonne ? 1 : 0));
 }
+
+/**
+ * Les colonnes JSON qui portent des références de stockage dans une liste : la fiche du bien range ses photos et ses
+ * vidéos dans `media`, chacune par sa référence `ref` (M07, `annonces/fiche-bien.ts`) [R661].
+ */
+export const FICHIERS_JSON: Readonly<Record<string, { readonly colonne: string; readonly liste: string; readonly champ: string; readonly sorte: SorteReference }>> = {
+  property_sheets: { colonne: 'data', liste: 'media', champ: 'ref', sorte: 'fichier' },
+};

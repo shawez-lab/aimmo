@@ -3,7 +3,7 @@ import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type Sql
 import { CARTE_ACCES } from '../src/conformite/carte-acces.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
 import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, ORDRE_REPRISE, REPRISE_LIEN_MASQUE, masquerLiens, masquerTexte, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
-import { CARTE_FICHIERS, CLES_LIGNES, COLONNE_REFERENCE, cleLigne, REPRISE_FORMAT_1, fichiersDe } from '../src/licences/index.ts';
+import { CARTE_FICHIERS, CLES_LIGNES, FICHIERS_JSON, COLONNE_REFERENCE, cleLigne, REPRISE_FORMAT_1, fichiersDe } from '../src/licences/index.ts';
 import { fingerprintOf } from '../src/rapports/export-agent.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -429,6 +429,10 @@ async function fileGapsOf(db: SqlDatabase): Promise<string[]> {
   }
   // Une clé déclarée sert une table à fichiers.
   for (const t of Object.keys(CLES_LIGNES)) if (!Object.entries(CARTE_FICHIERS).some(([k, c]) => k.startsWith(`${t}.`) && c.sorte !== 'externe')) gaps.push(`cle_inutile:${t}`);
+  for (const [t, j] of Object.entries(FICHIERS_JSON)) {
+    if (!resumed(t) || !(cols.get(t) ?? []).includes(j.colonne)) gaps.push(`json:${t}.${j.colonne}`);
+    else if ((pks.get(t) ?? []).join(',') !== cleLigne(t).join(',')) gaps.push(`cle:${t}.${j.colonne}`);
+  }
   return gaps.sort();
 }
 
@@ -439,6 +443,13 @@ describeWithSqlite('HX75 · Les fichiers déposés de l’agence sous licence', 
     // Les colonnes de référence du dossier de la lutte contre le blanchiment restent hors du fichier, et hors de la carte.
     for (const t of tablesLcbFt()) expect(Object.keys(CARTE_FICHIERS).some((k) => k.startsWith(`${t}.`))).toBe(false);
     expect(Object.values(CARTE_FICHIERS).filter((c) => c.sorte === 'fichier').length).toBeGreaterThan(15);
+    // Une colonne nommée `ref` seule est une colonne de référence ; les pièces des dossiers sont des fichiers.
+    expect(COLONNE_REFERENCE.test('ref') && !COLONNE_REFERENCE.test('prefs') && !COLONNE_REFERENCE.test('xref')).toBe(true);
+    expect(CARTE_FICHIERS['sale_file_pieces.ref']).toEqual({ sorte: 'fichier' });
+    // La fiche du bien, seule colonne JSON de références, est reprise et garde sa colonne.
+    const { cols } = await schemaOf(db);
+    expect(cols.get('property_sheets')).toContain('data');
+    expect(TABLES_RESEAU).toContain('property_sheets');
   });
 
   it('[R660] une colonne de référence que la base gagne sans être classée fait échouer la vérification', async () => {
@@ -464,6 +475,16 @@ describeWithSqlite('HX75 · Les fichiers déposés de l’agence sous licence', 
       { table: 'voice_notes', colonne: 'media_ref', ligne: { id: 'n2' }, sorte: 'fichier', ref: 'stock/b.ogg' },
     ]);
     expect(fichiersDe({ voice_notes: 'abîmé' as never })).toEqual([]);
+    // Les photos et vidéos de la fiche du bien, rangées en JSON dans `media` ; un JSON abîmé ne donne rien.
+    expect(
+      fichiersDe({
+        property_sheets: [
+          { id: 's1', data: JSON.stringify({ media: [{ ref: 'biens/b1/a.jpg', kind: 'photo', edit: 'aucune' }, { ref: '' }, { kind: 'photo' }] }) },
+          { id: 's2', data: '{abîmé' },
+          { id: 's3', data: JSON.stringify({ media: 'x' }) },
+        ],
+      }),
+    ).toEqual([{ table: 'property_sheets', colonne: 'data.media[].ref', ligne: { id: 's1' }, sorte: 'fichier', ref: 'biens/b1/a.jpg' }]);
     // Une table sans colonne `id` : la ligne est dite par sa clé primaire.
     expect(fichiersDe({ sale_file_dates: [{ file_id: 'd1', network_id: 'n', kind: 'acte', version: 2, proof_ref: 'stock/acte.pdf' }] })).toEqual([
       { table: 'sale_file_dates', colonne: 'proof_ref', ligne: { file_id: 'd1', kind: 'acte', version: 2 }, sorte: 'preuve', ref: 'stock/acte.pdf' },

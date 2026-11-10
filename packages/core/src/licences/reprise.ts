@@ -30,7 +30,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { LCB_FT_TRAITEMENT } from '../conformite/carte-acces.ts';
 import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import { canonicalJson, fingerprintOf, type SecondFactorGate } from '../rapports/export-agent.ts';
-import { cleLigne, colonnesFichiers, type SorteReference } from './carte-fichiers.ts';
+import { FICHIERS_JSON, cleLigne, colonnesFichiers, type SorteReference } from './carte-fichiers.ts';
 import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, ORDRE_REPRISE, TABLES_RESEAU, type CheminReprise, type EntreeReprise, type HorsReprise } from './carte-reprise.ts';
 
 export const REPRISE_FORMAT = 'aimmo-reprise-agence/2';
@@ -133,7 +133,8 @@ export function fichiersDe(tables: Readonly<Record<string, readonly Readonly<Rec
   const out: FichierRepris[] = [];
   for (const table of Object.keys(tables).sort()) {
     const cols = colonnesFichiers(table);
-    if (cols.length === 0) continue;
+    const json = FICHIERS_JSON[table];
+    if (cols.length === 0 && json === undefined) continue;
     const rows = tables[table];
     if (!Array.isArray(rows)) continue;
     for (const row of rows) {
@@ -147,6 +148,23 @@ export function fichiersDe(tables: Readonly<Record<string, readonly Readonly<Rec
         const v = row[colonne];
         if (typeof v !== 'string' || v.trim() === '') continue;
         out.push({ table, colonne, ligne, sorte, ref: v });
+      }
+      // Une liste de références dans une colonne JSON (les photos et vidéos de la fiche du bien) ; dite `data.media[].ref`.
+      if (json !== undefined) {
+        const raw = row[json.colonne];
+        let parsed: unknown = null;
+        try {
+          parsed = typeof raw === 'string' ? JSON.parse(raw) : null;
+        } catch {
+          parsed = null;
+        }
+        const items = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>)[json.liste] : null;
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            const v = item !== null && typeof item === 'object' ? (item as Record<string, unknown>)[json.champ] : null;
+            if (typeof v === 'string' && v.trim() !== '') out.push({ table, colonne: `${json.colonne}.${json.liste}[].${json.champ}`, ligne, sorte: json.sorte, ref: v });
+          }
+        }
       }
     }
   }
