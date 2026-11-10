@@ -883,3 +883,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 17:05 · voie 1 · fin de séance : BR27 et BR28 fusionnées ; verrou libéré, relance · prochaine : à choisir
 - 2026-11-10 17:10 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
 - 2026-11-10 18:41 · BR29 · fusionnée (#489, 2800f44c) : routes de la pige des annonces de particuliers, relève sans source branchée refusée ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5431 tests) · prochaine : à choisir (routes de l'adresse de pige HX18 ou de la séquence HX20)
+- 2026-11-10 18:41 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
