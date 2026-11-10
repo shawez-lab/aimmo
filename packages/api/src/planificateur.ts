@@ -1,4 +1,4 @@
-import { Acces, DecisionEnvoi, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, onSaleDatesJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
+import { Acces, DecisionEnvoi, Diffusion, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, onSaleDatesJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -11,6 +11,7 @@ import { phase1ReadingJob } from './phases.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
+import { signPickupsJob } from '../../core/src/panneaux/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -129,6 +130,14 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Condition de la phase 1 (HX70), de minuit à 3 h : le relevé de la veille figé pour chaque réseau, une seule fois,
       // jamais rattrapé plus tard ; rien n'est envoyé [R643, R17].
       phase1ReadingJob(config.db, journal, { now }),
+      // Panneaux (HX14, BR23), à 6 h, 13 h et 19 h : un panneau posé sur un bien vendu ou qui ne peut plus être diffusé
+      // reçoit sa tâche « récupérer le panneau », une seule par pose ; rien n'est envoyé [R283].
+      (() => {
+        const store = new FicheClient(config.db, { now });
+        const acces = new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now });
+        const diffusion = new Diffusion(config.db, acces, journal, { now });
+        return signPickupsJob(config.db, acces, { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) }, journal, { now });
+      })(),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

@@ -91,6 +91,7 @@ import { securiteRoutes, type SecuriteRoute } from './securite.ts';
 import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
+import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
@@ -1242,6 +1243,16 @@ function boutiqueRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes du stock de panneaux (BR23) : rôle contrôlé avant le corps [R16], porte de diffusion de D05 [R42]. */
+function panneauxRoutesDef(): RouteDef[] {
+  return panneauxRoutes().map((r: PanneauxRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2052,6 +2063,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...reseauUtileRoutesDef(),
     ...trousseauxRoutesDef(),
     ...boutiqueRoutesDef(),
+    ...panneauxRoutesDef(),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...licencesRoutesDef(),
