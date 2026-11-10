@@ -1054,6 +1054,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : étapes lues à la lecture, revérifiées [R301, R302] : une opposition depuis 7 h 30 les retire (test) ; plan figé inchangé, aucune étape rangée (test) ; source absente ou refusée : plan sans étapes (test) ; appel jamais proposé sans Bloctel sur la seule prospection [R302] (test) ; l'écran ne montre jamais un code interne, le bouton « Fait » note l'étape et relit le plan (test) ; mail et SMS sans bouton [R300] (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H61 reste à part).
 
+### BR33 · L'écran de la pige : la file, le premier message à coller, l'adresse probable et le bien créé
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR29, BR30
+- Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R273 à R275, R294 à R296, R16, R201.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que BR29 et BR30 laissent « écran de la file » et « écran des adresses et de la création du bien ». Script neuf servi à part, `/app/pige.js` (`packages/api/app/pige.ts`), chargé au premier geste depuis l'écran « Gagner des mandats » (partie « Annonces de particuliers », bouton « Ouvrir la pige ») : l'application ne grossit presque pas [R201]. L'écran ne lit et n'écrit que par `/v1/pige` ; il ne calcule ni ne trie rien. Chaque annonce : sorte, commune, surface, pièces, prix, site et date, l'écart au marché avec sa source et sa dernière vente, sinon « marché non chiffré » [R274]. « Préparer le premier message », puis « Je l'ai relu : le copier pour la messagerie de l'annonce » (canal `annonce`, seul canal proposé) : le texte rendu est montré à copier, rien ne part [R275]. « Le particulier a dit non » ferme le bien [R04]. « Adresses probables » montre chaque adresse avec sa confiance, son niveau et ses points (donnée, source, date), et ce qui n'a pas répondu [R294] ; « Créer la fiche avec cette adresse » ou « Créer la fiche sans adresse » [R295]. En haut, ce que la pige rapporte, par niveau [R296]. Un refus se dit en mots, jamais par son code.
+- Objectif : l'agent travaille sa file de pige depuis son téléphone, du premier message au bien créé.
+- Critères : le script est servi à part, chargé seulement au geste, et tient le budget d'une page ; l'application tient le sien [R201] (test) ; l'écran ne montre jamais un code interne, chaque refus connu a ses mots (test) ; aucun envoi : le message validé est montré à copier, seul le canal `annonce` est proposé [R275] (test) ; l'écart au marché porte sa source, sinon « marché non chiffré » [R274] (test) ; chaque adresse montre confiance, niveau et points avec source et date ; une fiche se crée avec ou sans adresse et relit la file [R294, R295] (test) ; tout texte reçu est posé en texte (test).
+- Attend : rien (vraie source de pige et H58 restent à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
