@@ -919,7 +919,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H64 pour les clés réelles).
 
 ### BR19 · L'agence sous licence reprend ses données depuis l'écran
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#478, `c54d5b0d`), dans `packages/api/app/licences.ts` : « Reprendre mes données » pour la direction de l'agence sous licence, preuve par `proveAction` de BR18, fichier enregistré sur l'appareil et gardé en mémoire pour la seule séance qui l'a tiré, vérification dite vraie, fausse ou incomplète. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5362 tests).
 - Qui : Claude, relecture normale · Dépend de : BR16, BR17, BR18
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
 - Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil (BR18), l'enregistre sur l'appareil, et le fait vérifier.
