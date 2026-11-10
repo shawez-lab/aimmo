@@ -9,7 +9,10 @@
  *   - sur la preuve d'un second facteur, pour ce fichier seul (`export_complet`, HX56) [R601] ;
  *   - le fichier suit la carte de reprise (`carte-reprise.ts`) : chaque table de la base y est, avec ses lignes ou la
  *     raison de la laisser ; rien du réseau qui donne la licence ni d'une autre agence n'y entre [R658, R657] ;
- *   - les jetons, codes et empreintes de clés sont masqués : ils ouvriraient un lien ou une séance [R659] ;
+ *   - les jetons, codes et empreintes de clés sont masqués, et dans chaque texte les liens qui portent un jeton : ils
+ *     ouvriraient un lien ou une séance [R659] ;
+ *   - le fichier se lit sur la base qui vit, chaque table avant celles qu'elle désigne : une ligne écrite pendant la
+ *     lecture n'y entre qu'avec ce qu'elle désigne [R658] ;
  *   - AIMMO range l'empreinte et les comptes du fichier, jamais son contenu ; la base refuse de ranger un fichier pour
  *     un autre réseau que celui de l'agence. Le fichier se vérifie ensuite, un octet changé et il ne l'est plus [R659] ;
  *   - les fichiers déposés (photos, pièces) et le journal commun ne sont pas dans le fichier, et le fichier le dit.
@@ -24,11 +27,21 @@ import type { JournalStore } from '../journal/types.ts';
 import { LCB_FT_TRAITEMENT } from '../conformite/carte-acces.ts';
 import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import { canonicalJson, fingerprintOf, type SecondFactorGate } from '../rapports/export-agent.ts';
-import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, TABLES_RESEAU, type CheminReprise, type EntreeReprise, type HorsReprise } from './carte-reprise.ts';
+import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, ORDRE_REPRISE, TABLES_RESEAU, type CheminReprise, type EntreeReprise, type HorsReprise } from './carte-reprise.ts';
 
 export const REPRISE_FORMAT = 'aimmo-reprise-agence/1';
 /** Ce qui remplace un secret masqué. */
 export const REPRISE_MASQUE = '(masqué)';
+/** Ce qui remplace, dans un texte, un lien qui porte un jeton (un lien de rappel, de désinscription, d'espace). */
+export const REPRISE_LIEN_MASQUE = '(lien masqué)';
+// Un lien dont le chemin ou les paramètres portent une suite d'au moins 16 caractères d'un jeton : il ouvrirait
+// quelque chose sans autre preuve. Les liens courts restent.
+const TOKEN_LINK = /\bhttps?:\/\/[^\s"'<>]*[A-Za-z0-9_-]{16,}[^\s"'<>]*/gi;
+
+/** Masque, dans un texte, chaque lien qui porte un jeton [R659]. */
+export function masquerLiens(text: string): string {
+  return text.replace(TOKEN_LINK, REPRISE_LIEN_MASQUE);
+}
 /** Ce que le fichier ne porte pas, dit dans le fichier même. */
 export const REPRISE_HORS_FICHIER = [
   'Les fichiers déposés (photos, plans, pièces) : le fichier porte leurs références et leurs empreintes, pas leur contenu.',
@@ -155,18 +168,20 @@ export class RepriseDonneesAgence {
     const carte = carteReprise();
     const document: RepriseAgence = { format: REPRISE_FORMAT, licenceId: licence.id, networkId: net, madeAt: this.now().toISOString(), tables: {}, laissees: {}, masquees: {}, horsFichier: [...REPRISE_HORS_FICHIER] };
     let rows = 0;
-    for (const table of [...carte.keys()].sort()) {
-      const entry = carte.get(table)!;
-      if (entry !== 'reseau' && 'hors' in entry) {
-        document.laissees[table] = { hors: entry.hors, why: entry.why };
-        continue;
-      }
+    // Les tables du fichier se rangent par nom, quel que soit l'ordre de lecture.
+    for (const [table, entry] of carte) if (entry !== 'reseau' && 'hors' in entry) document.laissees[table] = { hors: entry.hors, why: entry.why };
+    // Les tables reprises, chacune avant celles qu'elle désigne : une ligne ajoutée pendant la lecture n'entre qu'avec ce
+    // qu'elle désigne [R658].
+    const order = ORDRE_REPRISE.filter((t) => carte.has(t) && !(t in document.laissees));
+    if (order.length + Object.keys(document.laissees).length !== carte.size) throw new Error('carte de reprise : ordre de lecture incomplet');
+    for (const table of order) {
       const where = filtreReprise(carte, table, net);
       const found = await this.db.all<Row>(`SELECT * FROM ${table} WHERE ${where.sql}`, where.params);
       const masked = COLONNES_MASQUEES[table] ?? [];
       if (masked.length > 0) document.masquees[table] = [...masked];
       const clean = found.map((r) => {
         const out: Row = { ...r };
+        for (const [c, v] of Object.entries(out)) if (typeof v === 'string') out[c] = masquerLiens(v);
         for (const c of masked) if (out[c] !== null && out[c] !== undefined) out[c] = REPRISE_MASQUE;
         return out;
       });

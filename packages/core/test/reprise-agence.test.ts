@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { CARTE_ACCES } from '../src/conformite/carte-acces.ts';
 import { PortesPhases, type PhaseConditionReading } from '../src/conditions-phases/index.ts';
-import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
+import { CARTE_REPRISE_AUTRES, COLONNES_MASQUEES, LicencesLogiciel, ORDRE_REPRISE, REPRISE_LIEN_MASQUE, REPRISE_MASQUE, RepriseDonneesAgence, tablesLcbFt, TABLES_RESEAU, carteReprise, type CheminReprise } from '../src/licences/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -119,7 +119,21 @@ async function setup() {
       return stepUpId === 'preuve-ok' ? ({ ok: true } as const) : ({ ok: false, rule: 'R601', code: 'second_factor_required' } as const);
     },
   };
-  const reprise = new RepriseDonneesAgence(db, journal, gate, { now });
+  // Une écriture glissée pendant la lecture, juste après la lecture d'une table donnée.
+  const hook: { after: string | null; run: (() => Promise<void>) | null } = { after: null, run: null };
+  const watched: SqlDatabase = {
+    ...db,
+    all: async (sql, params) => {
+      const out = await db.all(sql, params);
+      if (hook.after !== null && hook.run !== null && sql.startsWith(`SELECT * FROM ${hook.after} `)) {
+        const run = hook.run;
+        hook.run = null;
+        await run();
+      }
+      return out as never;
+    },
+  } as SqlDatabase;
+  const reprise = new RepriseDonneesAgence(watched, journal, gate, { now });
   const lacDirection = as('direction', 'direction-lac', lac.licenseeNetworkId);
   const events = async (type: string) => (await db.all<{ data: string }>('SELECT data FROM journal WHERE type = ?', [type])).map((e) => JSON.parse(e.data) as Record<string, unknown>);
 
@@ -142,7 +156,7 @@ async function setup() {
       `post-${tag}`,
       `bien-${tag}`,
       net,
-      `Nouveau bien d’essai ${tag}, lumineux.`,
+      `Nouveau bien d’essai ${tag}, lumineux. Décaler : https://exemple.test/rdv/AbCdEf0123456789xyz_${tag} ; site : https://exemple.test/a`,
       at,
     ]);
     await db.run("INSERT INTO social_post_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES (?, ?, 'instagram', 'reseau', 0, 'essai', 'essai', ?)", [`essai-${tag}`, `post-${tag}`, at]);
@@ -154,7 +168,7 @@ async function setup() {
   const tick = (ms: number) => {
     clock += ms;
   };
-  return { raw, db, network, direction, as, lac, pres, reprise, lacDirection, proofs, events, licences, tick };
+  return { raw, db, network, direction, as, lac, pres, reprise, lacDirection, proofs, events, licences, tick, hook };
 }
 
 describeWithSqlite('HX74 · La reprise des données de l’agence sous licence', () => {
@@ -251,6 +265,45 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     expect(r.value.rows).toBe(Object.values(doc.tables).reduce((a, x) => a + x.length, 0));
   });
 
+  it('[R658] l’ordre de lecture : chaque table reprise une fois, avant celles qu’elle désigne', async () => {
+    const { db } = await openDb();
+    const carte = carteReprise();
+    const resumed = [...carte.keys()].filter((t) => {
+      const e = carte.get(t)!;
+      return e === 'reseau' || !('hors' in e);
+    });
+    expect([...ORDRE_REPRISE].sort()).toEqual(resumed.sort());
+    const at = new Map(ORDRE_REPRISE.map((t, i) => [t, i]));
+    const { fks } = await schemaOf(db);
+    for (const t of resumed) {
+      const e = carte.get(t)!;
+      const parents = [...fks.get(t)!.map((f) => f.table), ...(e !== 'reseau' && 'via' in e ? e.via.map((v) => v[1]) : [])];
+      for (const p of parents) if (p !== t && at.has(p)) expect(at.get(t)!, `${t} avant ${p}`).toBeLessThan(at.get(p)!);
+    }
+  });
+
+  it('[R658] une écriture pendant la lecture : aucune ligne du fichier ne désigne une ligne absente', async () => {
+    const t = await setup();
+    const net = t.lac.licenseeNetworkId;
+    const at = '2028-01-10T08:30:00.000Z';
+    // Une publication, son essai et son issue écrits juste après la lecture des essais.
+    t.hook.after = 'social_post_attempts';
+    t.hook.run = async () => {
+      await t.db.run("INSERT INTO social_posts (id, property_id, network_id, event, text, origin, visuals, created_by, created_at) VALUES ('post-tard', 'bien-lac', ?, 'visite', 'Visite d’essai tardive.', 'secours', '[]', 'agent', ?)", [net, at]);
+      await t.db.run("INSERT INTO social_post_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES ('essai-tard', 'post-tard', 'instagram', 'reseau', 0, 'essai', 'essai', ?)", [at]);
+      await t.db.run("INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES ('essai-tard', 'envoye', ?)", [at]);
+    };
+    const r = await t.reprise.make(t.lacDirection, 'preuve-ok');
+    if (!r.ok) throw new Error(r.code);
+    expect(t.hook.run).toBeNull();
+    const tables = r.value.document.tables;
+    const ids = (table: string, col = 'id') => new Set(tables[table]!.map((x) => x[col]));
+    for (const send of tables.social_post_sends!) expect(ids('social_post_attempts').has(send.attempt_id!)).toBe(true);
+    for (const attempt of tables.social_post_attempts!) expect(ids('social_posts').has(attempt.post_id!)).toBe(true);
+    for (const post of tables.social_posts!) expect(ids('properties').has(post.property_id!)).toBe(true);
+    expect(ids('social_post_attempts').has('essai-tard')).toBe(false);
+  });
+
   it('[R659] jetons masqués dans le fichier, le reste intact', async () => {
     const t = await setup();
     const r = await t.reprise.make(t.lacDirection, 'preuve-ok');
@@ -259,6 +312,10 @@ describeWithSqlite('HX74 · La reprise des données de l’agence sous licence',
     expect(invit).toMatchObject({ id: 'invit-lac', token_sha256: REPRISE_MASQUE });
     expect(JSON.stringify(r.value.document)).not.toContain('a'.repeat(64));
     expect(r.value.document.masquees.access_invitations).toEqual(['token_sha256']);
+    // Un lien qui porte un jeton, dans un texte, est masqué ; un lien court reste.
+    const [post] = r.value.document.tables.social_posts!;
+    expect(post!.text).toBe(`Nouveau bien d’essai lac, lumineux. Décaler : ${REPRISE_LIEN_MASQUE} ; site : https://exemple.test/a`);
+    expect(JSON.stringify(r.value.document)).not.toContain('AbCdEf0123456789');
   });
 
   it('[R659, R16, R601] direction de l’agence seule, second facteur exigé, refus au journal', async () => {
