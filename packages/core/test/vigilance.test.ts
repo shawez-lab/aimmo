@@ -103,7 +103,8 @@ describe('L04 · règles de vigilance renforcée', () => {
     const readers = files.filter((f) => /vigilance_(alerts|decisions|settings)/.test(readFileSync(f, 'utf8'))).map((f) => f.split(/[\\/]/).slice(-2).join('/'));
     // Le registre des traitements (L06) nomme les tables sans les lire ; le signalement (L05) n'en garde que
     // l'empreinte de chaque ligne, pour figer le dossier, et ne bloque rien.
-    expect(readers.sort()).toEqual(['conformite/dossier-fige.ts', 'conformite/registre-traitements.ts', 'conformite/vigilance.ts']);
+    // Le dossier de l'agence sous licence (HX76) remet les tables entières à son seul responsable, et ne bloque rien [R662].
+    expect(readers.sort()).toEqual(['conformite/dossier-fige.ts', 'conformite/dossier-lcb-agence.ts', 'conformite/registre-traitements.ts', 'conformite/vigilance.ts']);
   });
 });
 

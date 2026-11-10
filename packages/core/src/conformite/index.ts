@@ -11,3 +11,4 @@ export * from './carte-acces.ts';
 export * from './demandes-personnes.ts';
 export * from './durees-prospects.ts';
 export * from './fuites.ts';
+export * from './dossier-lcb-agence.ts';
