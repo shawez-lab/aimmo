@@ -879,7 +879,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H67 pour le prix réel).
 
 ### BR16 · Écran des licences du logiciel pour la direction
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : BR15
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
 - Objectif : un bloc de l'écran du réseau, script servi à part et chargé au premier geste (comme `phases.ts`), où la direction lit le tarif et les licences, fixe le tarif, donne une licence, la suspend, la reprend ou la termine, par les routes de BR15 ; la direction d'une agence sous licence ne voit que la sienne.
