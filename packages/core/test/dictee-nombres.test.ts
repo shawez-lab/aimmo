@@ -126,6 +126,8 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(field('Il vend sa maison de cent mètres carrés pour trois cent mille euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Il vend sa maison, prix au mètre carré deux mille cinq cents euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Il vend sa maison, prix au m² 2 500 euros.', 'bien', 'priceEur')).toBeUndefined();
+    expect(field('Il vend sa maison, prix trois cent mille euros et demi.', 'bien', 'priceEur')).toBeUndefined();
+    expect(field('Il vend sa maison, prix 300 000 euros et demi.', 'bien', 'priceEur')).toBeUndefined();
     // « un mille » ne se dit pas : rien, pas même « mille ».
     expect(field('Il vend sa maison, prix un mille euros.', 'bien', 'priceEur')).toBeUndefined();
     expect(field('Elle veut vendre sa maison trois cent mille euros.', 'bien', 'priceEur')).toEqual([300000, 'trois cent mille euros']);
@@ -148,6 +150,8 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Visite demain à dix heures une maison à Talant.')).toBeUndefined();
     expect(at('Visite mardi à quinze heures deux acheteurs.')).toBeUndefined();
     expect(at('Visite demain à quinze heures trente avec lui.')).toBeUndefined();
+    // Deux heures dites, même si l'une ne se lit pas : rien n'est choisi.
+    for (const s of ['Visite demain à dix heures ou onze heures.', 'Visite demain à dix heures, non onze heures.', 'Visite demain à 10 h ou onze heures.', 'Visite demain à dix heures, enfin plutôt deux heures.']) expect(at(s), s).toBeUndefined();
     // De 1 h à 7 h en lettres, ou suivie de « du soir », l'heure ne se lit pas d'une seule façon.
     expect(at('Visite demain à deux heures.')).toBeUndefined();
     expect(at('Visite demain à huit heures du soir.')).toBeUndefined();

@@ -156,7 +156,9 @@ const PRICE_LEAD = /\b(?:prix|vend\w*|demande|affiche)\b[^\d]{0,30}$/;
 /** Ce qui suit un nombre en lettres de pièces, de surface ou de prix (RC01). Une surface « et demie » n'est pas lue. */
 const ROOMS_AFTER = '\\s+pieces?(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
 const SURFACE_AFTER = '\\s+(?:m²|m2|metres? carres?)(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
-const PRICE_AFTER = '\\s+euros?(?![\\p{L}\\d])';
+const PRICE_AFTER = '\\s+euros?(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
+/** Un montant « et demi » ne se lit pas, en chiffres non plus. */
+const HALF_AFTER = /^\s+et demie?\b/u;
 const POSTAL = /(?<![\d.,]|\d[\s\u00a0\u202f])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
 
 const KINDS: readonly [RegExp, PropertyKind][] = [
@@ -205,6 +207,11 @@ const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\
  */
 const TIME_WORDS_BEFORE = /(?<![\p{L}\d])(?:a|vers)\s+$/u;
 const DURATION_YA = /(?<![\p{L}\d])y\s+a\s+$/u;
+/**
+ * Une autre heure dite dans la phrase, même non lue (« à dix heures ou onze heures », « à dix heures, non onze
+ * heures ») : le rendez-vous n'est pas lu. Seule une heure qui suit un mot de durée ne compte pas.
+ */
+const DURATION_BEFORE = /(?:(?<![\p{L}\d])(?:dans|pendant|durant|pour|depuis|en|de|prevoir|prevu|y\s+a)|(?<![\p{L}\d])d['’])\s*$/u;
 const TIME_QUALIFIER = /^\s+(?:du (?:matin|soir)|de l['’ ]\s*apres[- ]midi)/u;
 /** Ce qui suit des minutes en lettres : la fin de la phrase ou une ponctuation, sinon elles ont pu prendre un autre mot. */
 const MINUTES_END = /^\s*(?:[,.;:!?)]|$)/u;
@@ -389,7 +396,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
           const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
           const v = m[2] ? n * 1000 : n;
           return Number.isInteger(v) && v >= 1 && v <= 1_000_000_000 ? v : null;
-        }).filter(digitsAlone(s))].filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
+        }).filter((h) => digitsAlone(s)(h) && !HALF_AFTER.test(fold(s.slice(h.end)).folded))].filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
       );
     }
     const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0), ...priceWords, ...surfaceWords];
@@ -419,7 +426,10 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       const times = [...hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter(digitsAlone(s, { wordAfter: true })), ...timeWords].filter((h) => !overlaps(h, numbers));
       const sorts: Hit[] = [];
       for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
-      if (days.length === 1 && times.length === 1) {
+      const otherTimes = [...hits(s, TIME, () => 0), ...wordHits(s, TIME_WORDS_AFTER, () => 0)].filter(
+        (h) => !overlaps(h, times) && !overlaps(h, numbers) && !DURATION_BEFORE.test(fold(s.slice(0, h.at)).folded),
+      );
+      if (days.length === 1 && times.length === 1 && otherTimes.length === 0) {
         const day = days[0]!;
         const time = times[0]!;
         const start = parisInstant(day.value as string, time.value as number);
@@ -429,7 +439,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
           found.push({ target: 'rendezvous', key: 'start', value: start.toISOString(), sentence: i, quote: s.slice(a, b).trim() });
           add('rendezvous', 'appointmentKind', i, sorts);
         }
-      } else if (days.length >= 1 && times.length >= 1) {
+      } else if (days.length >= 1 && times.length + otherTimes.length >= 1) {
         // Deux jours ou deux heures dans la phrase : le rendez-vous n'est pas lu, l'agent le prendra lui-même.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
       }
