@@ -90,6 +90,22 @@ describeWithSqlite('RC03 · un message de date arrêté net en cours reprend seu
     expect(await t.db.first("SELECT slot FROM send_quota_slots WHERE reservation_id = 'resa-coupee'")).toEqual({ slot: '1#coupe:resa-coupee' });
   });
 
+  it('[R18] une place coupée dont la réservation est encore récente reste ouverte, reprise plus tard, jamais perdue', async () => {
+    const t = await setup();
+    await t.cutPlace(STALE_PLACE_MS + MINUTE);
+    const at = new Date(TUE_10H - STALE_PLACE_MS + MINUTE).toISOString();
+    await t.db.run("INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES (?, 'sujet:date:anniversaire:2027', 'resa-recente', ?, NULL, ?)", [t.person.id, t.network.id, at]);
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, refused: 0, recovered: 0 });
+    expect(await t.place()).toMatchObject({ status: 'en_cours', message_id: null });
+    expect(await t.sends()).toEqual([]);
+    expect(await t.db.first("SELECT key FROM send_reservations WHERE reservation_id = 'resa-recente'")).toEqual({ key: 'sujet:date:anniversaire:2027' });
+    // Plus tard, place et réservation sont toutes deux trop vieilles : la réservation est rendue, un seul message part.
+    t.setClock(TUE_10H + STALE_PLACE_MS + MINUTE);
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, refused: 0 });
+    expect(await t.outbox()).toHaveLength(1);
+    expect(await t.place()).toMatchObject({ status: 'essai' });
+  });
+
   it('[R05] une place coupée après le message passé au mode essai est fermée avec lui, aucun second message', async () => {
     const t = await setup();
     expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });

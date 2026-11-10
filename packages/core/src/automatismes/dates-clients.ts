@@ -298,6 +298,13 @@ export class DatesClients {
             await this.db.run("UPDATE send_reservations SET key = key || '#coupe:' || reservation_id WHERE reservation_id = ? AND message_id IS NULL", [r.reservation_id]);
             await this.db.run("UPDATE send_quota_slots SET slot = slot || '#coupe:' || reservation_id WHERE reservation_id = ?", [r.reservation_id]);
           }
+          // Une réservation encore récente, sans message : le passage qui l'a prise peut être en vie. La place reste
+          // ouverte, reprise plus tard, jamais fermée sur un refus R05 qui perdrait la date de l'année [R18, R405].
+          const recent = await this.db.first<{ n: number }>(
+            `SELECT 1 AS n FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND person_id IN (${marks(members.length)}) LIMIT 1`,
+            [networkId, `sujet:date:${d.kind}:${year}`, ...members],
+          );
+          if (recent) continue;
         }
       }
       // Une place prise avant une réunion de fiches, sous une autre fiche de la personne, compte aussi [R405].
