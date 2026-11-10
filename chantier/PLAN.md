@@ -939,12 +939,21 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR21 · Routes des clés des biens
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#480, `c1918bf1`), `packages/api/src/trousseaux.ts`, aucune règle nouvelle ni migration ; dans `cles.ts`, un rôle ni agent ni direction est refusé au journal avant toute lecture du trousseau. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5385 tests). Écrans de l'armoire et du vendeur à faire.
 - Qui : Claude, relecture normale · Dépend de : HX10, BR20
 - Partie du cahier : M07 et M08 ; Phase 3, « Les clés des biens ».
 - Objectif : routes de l'armoire des clés (`/v1/trousseaux`), dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : ranger un trousseau, le sortir, le rendre, le dire perdu, lire l'armoire, ce que l'agent doit rendre, et la vue du vendeur.
 - Critères : refus de rôle en 403 au journal [R16] (test) ; numéro donné par le code [R270] (test) ; une clé déjà sortie ne ressort pas [R271] (test) ; l'agent voit ses trousseaux à rendre [R272] (test).
 - Attend : rien.
+
+### BR22 · Routes de la boutique de l'agent
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : HX07, BR21
+- Partie du cahier : Offre aux agents ; Phase 3, « La boutique de l'agent ».
+- Objectif : routes de la boutique (`packages/core/src/boutique/`) dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : tarifs de la direction, préparation d'un support depuis le bien, validation par l'agent ; commande seulement à l'imprimeur d'essai.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; aucun prix ni mention inventés sur un support [R263 à R265] (test) ; préparer ne commande rien, seule la validation de l'agent commande, une fois (test).
+- Attend : rien (imprimeur réel : H56, hors de cette tâche).
 
 ## Phase 1 : le socle
 
