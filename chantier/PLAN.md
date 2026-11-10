@@ -879,7 +879,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H67 pour le prix réel).
 
 ### BR16 · Écran des licences du logiciel pour la direction
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#472, `b0fada82`), `packages/api/app/licences.ts`, script `/app/licences.js` ; aucune règle nouvelle ni migration. Décidé : la direction d'une agence sous licence est reconnue par le refus `agence_licenciee` de `/v1/licences`, puis lit `/v1/licences/ma-licence`, sans geste. Codex 1 P1 (correction du test HX53 hors du périmètre) corrigé : passée à part (#474, `2bbbd795`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5336 tests).
 - Qui : Claude, relecture normale · Dépend de : BR15
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
 - Objectif : un bloc de l'écran du réseau, script servi à part et chargé au premier geste (comme `phases.ts`), où la direction lit le tarif et les licences, fixe le tarif, donne une licence, la suspend, la reprend ou la termine, par les routes de BR15 ; la direction d'une agence sous licence ne voit que la sienne.
