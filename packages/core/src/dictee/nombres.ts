@@ -88,7 +88,9 @@ export const NUMBER_WORDS = [
 ] as const;
 
 const WORD = `(?:${NUMBER_WORDS.join('|')})(?![\\p{L}\\d])`;
-const WORD_NO_ARTICLE = `(?:${NUMBER_WORDS.filter((w) => w !== 'un' && w !== 'une').join('|')})(?![\\p{L}\\d])`;
+/** Pour dire qu'un nombre en touche un autre, « premier » compte aussi (« le premier ou deux janvier »). */
+const ADJACENT = `(?:${NUMBER_WORDS.join('|')}|premier|1er)(?![\\p{L}\\d])`;
+const WORD_NO_ARTICLE = `(?:${NUMBER_WORDS.filter((w) => w !== 'un' && w !== 'une').join('|')}|premier|1er)(?![\\p{L}\\d])`;
 /** Les blancs et les traits entre deux mots ; les tirets typographiques comptent, pour ne jamais lire la fin d'un nombre. */
 const DASHES = '[\\s\\u2012-\\u2015-]';
 const WORD_OR_ET = `(?:${NUMBER_WORDS.join('|')}|et)(?![\\p{L}\\d])`;
@@ -100,7 +102,7 @@ export const NUMBER_RUN = `(?<![\\p{L}\\d])${WORD}(?:[\\s-]+${WORD_OR_ET})*`;
  * Ce qui, juste avant une suite de mots, en fait la fin d'un autre nombre : un chiffre, « virgule », « point », ou un
  * mot de nombre (suivi ou non de « et »). Le nombre en lettres n'est alors pas lu.
  */
-export const NUMBER_BEFORE = new RegExp(`(?:\\d[.,]?|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a)|(?<![\\p{L}\\d])(?:virgule|point)|(?<![\\p{L}\\d])${WORD}(?:[\\s-]+(?:et|ou|a)|\\s*,)?)${DASHES}*$`, 'u');
+export const NUMBER_BEFORE = new RegExp(`(?:\\d[.,]?|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a)|(?<![\\p{L}\\d])(?:virgule|point)|(?<![\\p{L}\\d])${ADJACENT}(?:[\\s-]+(?:et|ou|a)|\\s*,)?)${DASHES}*$`, 'u');
 
 /**
  * Ce qui, juste avant un nombre en chiffres, en fait la fin d'un nombre en lettres ou l'autre terme d'un choix
@@ -108,7 +110,7 @@ export const NUMBER_BEFORE = new RegExp(`(?:\\d[.,]?|(?<![\\p{L}\\d.,])(?:\\d+(?
  * « une » seuls restent l'article (« un 3 pièces »). « à » ne compte qu'après trois chiffres au plus (« 3 à 4 pièces ») :
  * après une année, il dit l'heure (« le 12 mars 2027 à 10 h »).
  */
-export const DIGITS_BEFORE = new RegExp(`(?:(?<![\\p{L}\\d])${WORD_NO_ARTICLE}|(?<![\\p{L}\\d])${WORD}[\\s-]+(?:et|ou|a)|(?<![\\p{L}\\d])${WORD}\\s*,|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a))${DASHES}*$`, 'u');
+export const DIGITS_BEFORE = new RegExp(`(?:(?<![\\p{L}\\d])${WORD_NO_ARTICLE}|(?<![\\p{L}\\d])${ADJACENT}[\\s-]+(?:et|ou|a)|(?<![\\p{L}\\d])${ADJACENT}\\s*,|(?<![\\p{L}\\d.,])(?:\\d+(?:[.,]\\d+)?\\s*(?:,|ou|et)|\\d{1,3}\\s*a))${DASHES}*$`, 'u');
 
 /** Juste après un nombre en chiffres : un mot de nombre (« 15 heures trente », « 10 h quinze ») : il n'est pas lu. */
 export const WORD_AFTER = new RegExp(`^\\s+${WORD}`, 'u');

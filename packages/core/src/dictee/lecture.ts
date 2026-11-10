@@ -209,9 +209,10 @@ const TIME_WORDS_BEFORE = /(?<![\p{L}\d])(?:a|vers)\s+$/u;
 const DURATION_YA = /(?<![\p{L}\d])y\s+a\s+$/u;
 /**
  * Une autre heure dite dans la phrase, même non lue (« à dix heures ou onze heures », « à dix heures, non onze
- * heures ») : le rendez-vous n'est pas lu. Seule une heure qui suit un mot de durée ne compte pas.
+ * heures », « de dix heures à onze heures ») : le rendez-vous n'est pas lu. Seule une heure qui suit un mot de
+ * durée ne compte pas ; « de » n'en est pas un, il ouvre aussi une plage.
  */
-const DURATION_BEFORE = /(?:(?<![\p{L}\d])(?:dans|pendant|durant|pour|depuis|en|de|prevoir|prevu|y\s+a)|(?<![\p{L}\d])d['’])\s*$/u;
+const DURATION_BEFORE = /(?:(?<![\p{L}\d])(?:dans|pendant|durant|pour|depuis|en|prevoir|prevu|y\s+a)|(?<![\p{L}\d])d['’])\s*$/u;
 const TIME_QUALIFIER = /^\s+(?:du (?:matin|soir)|de l['’ ]\s*apres[- ]midi)/u;
 /** Ce qui suit des minutes en lettres : la fin de la phrase ou une ponctuation, sinon elles ont pu prendre un autre mot. */
 const MINUTES_END = /^\s*(?:[,.;:!?)]|$)/u;
@@ -408,7 +409,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       const days = [
         ...hits(s, DAY, (m) => dayOf(m, today)).filter(digitsAlone(s)),
         ...wordHits(s, DAY_WORDS_AFTER, (n, m) => (n >= 1 && n <= 31 ? dateOf(n, MONTHS.indexOf(m[2]!) + 1, null, today) : null)),
-        ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)),
+        ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)).filter((h) => digitsAlone(s)(h) && !NUMBER_BEFORE.test(fold(s.slice(0, h.at)).folded)),
       ];
       const timeWords = wordHits(
         s,

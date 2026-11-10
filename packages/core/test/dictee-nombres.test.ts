@@ -158,6 +158,7 @@ describe('RC01 · les nombres dits en lettres', () => {
     expect(at('Visite demain à dix heures du matin.')).toBeUndefined();
     expect(at('Visite le trente février à 10 h.')).toBeUndefined();
     expect(at('Visite le deux trois janvier à 10 h.')).toBeUndefined();
+    for (const s of ['Visite le premier ou deux janvier à 10 h.', 'Visite le deux ou premier janvier à 10 h.', 'Visite le 2 ou 1er janvier à 10 h.', 'Visite le deux ou 1er janvier à 10 h.', 'Visite le 1er ou deux janvier à 10 h.']) expect(at(s), s).toBeUndefined();
   });
 
   it('[R260] une durée n’est pas une heure, et une année dite sans être lue fait refuser le jour', () => {
@@ -166,7 +167,11 @@ describe('RC01 · les nombres dits en lettres', () => {
     for (const s of ['Visite de deux heures demain.', 'Estimation demain, prévoir deux heures.', 'Visite demain en une heure.', 'Visite de dix heures demain.', 'Rappel demain, il a appelé il y a dix heures.']) {
       expect(dictee.fieldOf(read(s), 'rendezvous', 'start'), s).toBeUndefined();
     }
-    expect(at('Visite de deux heures demain à 10 h.')).toBe('2026-12-04T09:00:00.000Z');
+    // « de » ouvre aussi une plage : une heure qui le suit compte comme une autre heure dite.
+    expect(at('Visite de deux heures demain à 10 h.')).toBeUndefined();
+    expect(at('Visite demain de dix heures à onze heures.')).toBeUndefined();
+    expect(at('Visite demain de 10 h à 11 h.')).toBeUndefined();
+    expect(at('Visite d’une heure demain à 10 h.')).toBe('2026-12-04T09:00:00.000Z');
     expect(at('Visite le douze janvier vingt-huit à dix heures.')).toBeUndefined();
     expect(at('Visite le 12 janvier 28 à 10 h.')).toBeUndefined();
     expect(at('Estimation le premier mars deux mille vingt-huit à dix heures.')).toBeUndefined();
