@@ -974,6 +974,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le test reste aussi strict sur tout le reste du journal [R13] (test).
 - Attend : rien.
 
+### BR25 · Routes des seuils du passage à PostgreSQL et relevé de chaque semaine
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX66
+- Partie du cahier : Architecture technique, « Données » (seuils du passage à PostgreSQL) ; Feuille de route, phase 4.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX66 n'a ni route, ni relevé au planificateur, ni `platformNetworkId` branché (« Restent (voie 1) »). Fichier neuf `packages/api/src/postgresql.ts`, sous `/v1/postgresql` ; variable `PLATFORM_NETWORK_ID` (le réseau qui exploite la plateforme), absente : tout est refusé, comme le veut HX66. Lecture prudente : le rapport chronométré est le tableau du réseau de la plateforme (TableauReseau, M13) sur la plus longue période permise (366 jours), lu sous l'acteur du système ; un tableau refusé compte comme mesure en échec, jamais comme rapide [R630]. `packages/core/src/passage-postgresql/` ne change pas.
+- Objectif : la direction du réseau de la plateforme lit l'état des seuils, demande un relevé et dit « passer » ou « attendre » ; le planificateur prend un relevé chaque lundi à 4 h de Paris.
+- Critères : autre rôle refusé (403) avant toute lecture du corps, refus au journal [R16] (test) ; la direction d'un autre réseau refusée (403, `autre_reseau`), et tout refusé sans `PLATFORM_NETWORK_ID` [R16] (test) ; relevé rangé avec le temps du rapport mesuré [R630] (test) ; décision sans seuil franchi 409 R631 (test) ; choix inconnu ou corps illisible 400 sans rien ranger (test) ; relevé du lundi rangé une seule fois par le planificateur [R630] (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
