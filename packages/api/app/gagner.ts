@@ -7,7 +7,8 @@ import { LETTER_RECIPIENT_LABELS } from '../../core/src/mandats/gagner/lettres-q
  *
  * Quatre parties, dans l'ordre de la journée : les rendez-vous d'estimation à venir et leur dossier de présentation
  * (G07), les recommandations à appeler (G08), les relances d'anciens contacts à valider (G09), les lettres de quartier
- * à préparer, imprimer et noter déposées (G06). L'écran ne lit et n'écrit que par les routes `/v1/gagner` [R16] ; il ne
+ * à préparer, imprimer et noter déposées (G06) ; puis l'entrée de la pige (BR33), dont le script `/app/pige.js` est
+ * servi à part et lit `/v1/pige`. L'écran lui-même ne lit et n'écrit que par les routes `/v1/gagner` [R16] ; il ne
  * calcule rien, ne trie rien et ne décide rien : il montre ce que le code a décidé, dans l'ordre reçu. Aucun texte ne
  * promet de mandats [R145]. Tout texte reçu est posé avec `textContent`.
  */
@@ -190,9 +191,38 @@ globalThis.AIMMO_GAGNER = function (t) {
       body.appendChild(renderCalls(all[1]));
       body.appendChild(renderFollowups(all[2]));
       body.appendChild(renderLetters(all[3]));
+      body.appendChild(renderPige());
       state(message || '');
       return true;
     });
+  }
+  /* BR33 · la pige des annonces de particuliers : son script est servi à part, chargé seulement à l'ouverture [R201]. */
+  var pigeScreen = null;
+  function renderPige() {
+    var box = part('Annonces de particuliers');
+    box.appendChild(el('p', 'Votre file de pige : rien ne part d’AIMMO, vous collez vous-même le premier message.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir la pige', function () {
+      if (b.disabled) return;
+      if (pigeScreen) { pigeScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/pige.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_PIGE;
+        try { delete globalThis.AIMMO_PIGE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session() || typeof make !== 'function') return;
+        pigeScreen = make({ el: el, clear: clear, send: send, button: button, date: date, ID: ID });
+        pigeScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
   }
   function list(res) { return res.ok && Array.isArray(res.body.data) ? res.body.data : null; }
   function missing(box, res) { box.appendChild(el('p', res.offline ? 'Pas de réseau pour cette partie.' : refusal(res, 'Indisponible pour le moment.'), 'etat')); return box; }
