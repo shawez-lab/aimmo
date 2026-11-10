@@ -899,3 +899,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 22:33 · voie 2 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage horaire de 22:52 reprendra RC03 · prochaine : RC03
 - 2026-11-10 22:38 · BR32 · fusionnée (#492, af80d881) : étapes des séquences au plan du jour, lues à la lecture, et boutons « Fait », « Appelé », « A refusé » à l'écran ; Codex 1 P1 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5455 tests) · prochaine : à choisir (écran de préparation d'une séquence, ou écrans de la pige)
 - 2026-11-10 22:40 · voie 1 · fin de séance : BR32 fusionnée ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-10 22:42 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
