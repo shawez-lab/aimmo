@@ -24,6 +24,7 @@ import { PROSPECTION_ENTRY_HTML, PROSPECTION_JS } from './prospection.ts';
 import { BIBLIOTHEQUE_ENTRY_HTML, BIBLIOTHEQUE_JS } from './bibliotheque.ts';
 import { ENGAGEMENTS_ENTRY_HTML, ENGAGEMENTS_JS } from './engagements.ts';
 import { LICENCES_ENTRY_HTML, LICENCES_JS } from './licences.ts';
+import { CLES_JS, clesEntryHtml } from './cles.ts';
 import { PHASES_ENTRY_HTML, PHASES_JS } from './phases.ts';
 import { GUIDES_PHOTO_ENTRY_HTML, GUIDES_PHOTO_JS } from './guides-photo.ts';
 import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
@@ -124,7 +125,7 @@ ${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME
 <p id="semaine-etat" class="etat"></p>
 <ul id="semaine" class="liste"></ul>
 </section>
-</section>
+${clesEntryHtml('accueil')}</section>
 <section id="fiche" hidden>
 <button id="retour" type="button">Retour à ma journée</button>
 <h2 id="fiche-nom"></h2>
@@ -216,7 +217,7 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${GUIDES_PHOTO_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${GUIDES_PHOTO_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${clesEntryHtml('reseau')}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -670,6 +671,7 @@ export const APP_JS = `'use strict';
     wipeApres();
     wipeChiffres();
     wipeReseau();
+    wipeCles();
     wipePartenaires();
     wipeLouer();
     wipeInvestir();
@@ -1983,7 +1985,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${RECOMMANDATION_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -2187,6 +2189,7 @@ ${LOUER_JS}
     $('engagements-voir').addEventListener('click', function () { withEngagements(function (e) { return e.show(''); }); });
     $('phases-voir').addEventListener('click', function () { withPhases(function (p) { return p.show(''); }); });
     $('licences-voir').addEventListener('click', function () { withLicences(function (l) { return l.show(''); }); });
+    ['accueil', 'reseau', 'conformite'].forEach(function (p) { $('cles-' + p + '-voir').addEventListener('click', function () { withCles(p, function (c) { return c.show(p, ''); }); }); });
     $('guides-photo-voir').addEventListener('click', function () { withGuidesPhoto(function (g) { return g.show(''); }); });
     $('bascule-voir').addEventListener('click', function () { withBascule(function (b) { return b.show(''); }); });
     $('bascule-canaux').addEventListener('click', function () { withBascule(function (b) { return b.showChannels(''); }); });
