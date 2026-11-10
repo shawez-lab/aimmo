@@ -868,3 +868,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 13:25 · BR23 · fusionnée (#482, d00412c6) : routes du stock de panneaux, passage « récupérer le panneau » au planificateur ; Codex 1 P1 (hors périmètre) corrigé en sortant BR24 ; GitHub Actions bloqué (facturation), vérification locale verte (5398 tests) · prochaine : à choisir (écrans des routes BR20 à BR23, ou module suivant)
 - 2026-11-10 13:25 · BR24 · fusionnée (#483, 2e36e337) : faux échec au hasard du test de la dictée (HX06) corrigé ; Codex rien à signaler · prochaine : à choisir
 - 2026-11-10 13:25 · voie 1 · fin de séance : BR22, BR23 et BR24 fusionnées ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-10 13:27 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
