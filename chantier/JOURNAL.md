@@ -904,3 +904,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 23:50 · VOIE 2 : plafond vérifié, trois oui (20 séances voie 2 aujourd'hui ; commits à 21:23, 22:32 et cette séance, RC02 et RC03 terminées ; tâche différente des deux d'avant)
 - 2026-11-10 23:50 · VOIE 2 : RC03, a3a491db (#494, fusionnée), relancé oui
 - 2026-11-11 00:43 · BR33 · fusionnée (#495, 6d7319cb) : écran de la pige, de la file au bien créé, servi à part depuis « Gagner des mandats » ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5466 tests) · prochaine : à choisir (écran de préparation d'une séquence, ou carte et tournée)
+- 2026-11-11 00:43 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
