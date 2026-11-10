@@ -132,7 +132,9 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
     walk(root);
     // Le registre des traitements (L06) nomme la table sans la lire ; le dossier figé du signalement (L05) et du gel des
     // avoirs (HX57) n'en garde que l'empreinte de chaque ligne, et ne la montre qu'au responsable.
-    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts', 'core/src/conformite/dossier-fige.ts', 'core/src/conformite/registre-traitements.ts']);
+    // Le dossier de la lutte contre le blanchiment de l'agence sous licence (HX76) remet la table entière au seul
+    // responsable de la conformité de l'agence, et dit chaque pièce par sa référence et son empreinte [R662, R664].
+    expect(readers.sort()).toEqual(['core/src/conformite/coffre.ts', 'core/src/conformite/dossier-fige.ts', 'core/src/conformite/dossier-lcb-agence.ts', 'core/src/conformite/registre-traitements.ts']);
   });
 
   it('[R90] les autres modules ne voient qu’un état : la date de l’identité vérifiée et valide ce jour-là', async () => {
