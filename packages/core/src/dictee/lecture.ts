@@ -4,9 +4,10 @@
  *
  * Aucun champ n'est inventé [R260] : chaque champ vient d'une seule phrase de la dictée, avec le passage exact qui le
  * porte. Le code lit, aucune IA ne propose de valeur. Un champ dit deux fois avec deux valeurs différentes n'est pas
- * proposé ; un nombre dit en lettres, une surface à virgule, un prix sans « prix » ni « vend » dans sa phrase ne le sont
- * pas non plus : l'agent les saisira lui-même. Un bien n'est lu que si sa sorte est dite, et jamais pour un acquéreur ;
- * un rendez-vous n'est lu que d'une seule phrase qui dit sa sorte, son jour et son heure.
+ * proposé ; un nombre dit en lettres qui ne se lit pas d'une seule façon, une surface à virgule, un prix sans « prix »
+ * ni « vend » dans sa phrase ne le sont pas non plus : l'agent les saisira lui-même. Un nombre en lettres qui se lit
+ * d'une seule façon (RC01, `nombres.ts`) vaut le même nombre en chiffres, avec ses mots pour passage. Un bien n'est
+ * lu que si sa sorte est dite, et jamais pour un acquéreur ; un rendez-vous n'est lu que d'une seule phrase qui dit sa sorte, son jour et son heure.
  *
  * Décidé, lecture prudente : un jour de la semaine dit (« mardi ») est le prochain, jamais aujourd'hui ; une date sans
  * année est la prochaine à venir ; une heure dite sans minutes est pile.
@@ -16,6 +17,7 @@ import { normalizeIdentifier } from '../fiche/normalize.ts';
 import { DEFAULT_COMMUNES } from '../qualification/regles.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { AGENDA_TIME_ZONE, parisInstant, type AppointmentKind } from '../rendezvous/creneaux.ts';
+import { NUMBER_BEFORE, NUMBER_RUN, parseNumberWords, readNumberRun } from './nombres.ts';
 
 export type DictationTarget = 'contact' | 'bien' | 'rendezvous';
 
@@ -117,6 +119,29 @@ function hits(sentence: string, pattern: RegExp, read: (m: RegExpExecArray) => s
 
 const has = (sentence: string, pattern: RegExp): boolean => pattern.test(fold(sentence).folded);
 
+/**
+ * Chaque nombre dit en lettres suivi de `after` (RC01) : la suite de mots doit se lire d'une seule façon, et ne pas
+ * finir un autre nombre (un chiffre, « virgule », un autre mot de nombre juste avant) [R260]. Le passage commence au
+ * nombre, article laissé hors de lui, et finit avec `after`. `notBefore` écarte un mot qui en change le sens.
+ */
+function wordHits(sentence: string, after: string, read: (n: number, m: RegExpExecArray) => string | number | null, notBefore?: RegExp): Hit[] {
+  const { folded, index } = fold(sentence);
+  const re = new RegExp(`(${NUMBER_RUN})${after}`, 'gu');
+  const out: Hit[] = [];
+  for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+    const run = readNumberRun(m[1]!);
+    if (run === null) continue;
+    const before = folded.slice(0, m.index);
+    if (NUMBER_BEFORE.test(before) || notBefore?.test(before)) continue;
+    const value = read(run.value, m);
+    if (value === null) continue;
+    const at = index[m.index + run.skip]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value, quote: sentence.slice(at, end).trim(), at, end });
+  }
+  return out;
+}
+
 // Les expressions s'appliquent au texte sans accents et en minuscules.
 const PHONE = /(?<![\d+])(?:\+33[\s.-]?|0)[1-9](?:[\s.-]?\d{2}){4}(?!\d)/;
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/;
@@ -127,6 +152,10 @@ const PRICE_CONTEXT = /\b(?:prix|vend|vendre|vendu|mise? en vente|mettre en vent
 const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite|remise|rabais|baisse|baisser|negoci\w*|paye|payee|achete|achetee|achat|acquis|acquise|marge)\b/;
 /** Le prix demandé suit de près « prix », « vend » ou « demande », sans autre nombre entre eux. */
 const PRICE_LEAD = /\b(?:prix|vend\w*|demande|affiche)\b[^\d]{0,30}$/;
+/** Ce qui suit un nombre en lettres de pièces, de surface ou de prix (RC01). Une surface « et demie » n'est pas lue. */
+const ROOMS_AFTER = '\\s+pieces?(?![\\p{L}\\d])';
+const SURFACE_AFTER = '\\s+(?:m²|m2|metres? carres?)(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
+const PRICE_AFTER = '\\s+euros?(?![\\p{L}\\d])';
 const POSTAL = /(?<![\d.,]|\d[\s\u00a0\u202f])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
 
 const KINDS: readonly [RegExp, PropertyKind][] = [
@@ -157,7 +186,19 @@ const APPOINTMENT_KINDS_READ: readonly [RegExp, AppointmentKind][] = [
 ];
 const WEEKDAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
-const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?)\\b`);
+/** Une année dite après le jour et le mois, qui n'est pas lue (en lettres, ou autre que 20xx) : le jour est refusé. */
+const YEAR_NOT_READ = `(?!\\s+(?:\\d{4}(?!\\d)|deux mille\\b|mille\\b))`;
+const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?)\\b${YEAR_NOT_READ}`);
+/** Le jour du mois en lettres (RC01) : « le douze janvier », « le premier mai ». */
+const DAY_WORDS_AFTER = `\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`;
+const FIRST_OF_MONTH = new RegExp(`\\bpremier\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`, 'u');
+/**
+ * L'heure en lettres (RC01) : « quinze heures », « quinze heures trente ». Les minutes se lisent d'une seule façon,
+ * de 1 à 59, sinon rien ; « et demie », « et quart », « moins » ou un chiffre derrière : rien.
+ */
+const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et (?:demie?|quart)\\b|moins\\b))`;
+/** Une heure en lettres après « dans », « pendant », « durant », « pour », « depuis » ou « d' » est une durée. */
+const DURATION_BEFORE = /(?:\b(?:dans|pendant|durant|pour|depuis)|\bd['’])\s*$/u;
 /** Une heure entière : suivie d'un chiffre ou de « et demie », « et quart », « moins », elle n'est pas lue. */
 const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et (?:demie?|quart)\b|moins\b))/u;
 
@@ -175,8 +216,11 @@ function dayOf(m: RegExpExecArray, today: { date: string; weekday: number }): st
     const ahead = ((target - today.weekday + 7) % 7) || 7;
     return addDays(today.date, ahead);
   }
-  const day = m[3] === '1er' ? 1 : Number(m[3]);
-  const month = MONTHS.indexOf(m[4]!) + 1;
+  return dateOf(m[3] === '1er' ? 1 : Number(m[3]), MONTHS.indexOf(m[4]!) + 1, m[5] ? Number(m[5]) : null, today);
+}
+
+/** Le jour et le mois dits, l'année dite ou la prochaine à venir ; null s'il n'existe pas ou est passé. */
+function dateOf(day: number, month: number, year: number | null, today: { date: string }): string | null {
   const pad = (n: number) => String(n).padStart(2, '0');
   const thisYear = Number(today.date.slice(0, 4));
   const build = (y: number): string | null => {
@@ -184,8 +228,8 @@ function dayOf(m: RegExpExecArray, today: { date: string; weekday: number }): st
     const d = new Date(`${iso}T12:00:00.000Z`);
     return d.getUTCMonth() + 1 === month && d.getUTCDate() === day ? iso : null;
   };
-  if (m[5]) {
-    const date = build(Number(m[5]));
+  if (year !== null) {
+    const date = build(year);
     return date !== null && date >= today.date ? date : null;
   }
   const date = build(thisYear);
@@ -315,28 +359,46 @@ export function readDictation(dictation: string, options: { now: Date; communes?
     for (const [re, kind] of KINDS) for (const h of hits(s, re, () => kind)) if (!overlaps(h, kinds)) kinds.push(h);
     if (kinds.length > 0) kindSeen = true;
     add('bien', 'kind', i, kinds);
-    add('bien', 'surfaceM2', i, hits(s, SURFACE, (m) => Number(m[1])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
-    add('bien', 'rooms', i, hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    const inRange = (lo: number, hi: number) => (n: number) => (n >= lo && n <= hi ? n : null);
+    const surfaceWords = wordHits(s, SURFACE_AFTER, inRange(1, 999_999));
+    add('bien', 'surfaceM2', i, [...hits(s, SURFACE, (m) => Number(m[1])), ...surfaceWords].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    add('bien', 'rooms', i, [...hits(s, ROOMS, (m) => Number(m[1] ?? m[2])), ...wordHits(s, ROOMS_AFTER, inRange(1, 99))].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    const priceWords = wordHits(s, PRICE_AFTER, inRange(1, 1_000_000_000));
     if (has(s, PRICE_CONTEXT) && !has(s, NOT_A_PRICE)) {
       add(
         'bien',
         'priceEur',
         i,
-        hits(s, PRICE, (m) => {
+        [...priceWords, ...hits(s, PRICE, (m) => {
           const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
           const v = m[2] ? n * 1000 : n;
           return Number.isInteger(v) && v >= 1 && v <= 1_000_000_000 ? v : null;
-        }).filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
+        })].filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
       );
     }
-    const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0)];
+    const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0), ...priceWords, ...surfaceWords];
     add('bien', 'postalCode', i, hits(s, POSTAL, (m) => m[1]!).filter((h) => !overlaps(h, numbers)));
     add('bien', 'city', i, readCity(s, communes));
 
     // Le rendez-vous : sa sorte, son jour et son heure, dans la même phrase.
     if (has(s, APPOINTMENT_WORDS)) {
-      const days = hits(s, DAY, (m) => dayOf(m, today));
-      const times = hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter((h) => !overlaps(h, numbers));
+      const days = [
+        ...hits(s, DAY, (m) => dayOf(m, today)),
+        ...wordHits(s, DAY_WORDS_AFTER, (n, m) => (n >= 1 && n <= 31 ? dateOf(n, MONTHS.indexOf(m[2]!) + 1, null, today) : null)),
+        ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)),
+      ];
+      const timeWords = wordHits(
+        s,
+        TIME_WORDS_AFTER,
+        (h, m) => {
+          if (h > 23) return null;
+          if (m[2] === undefined) return h * 60;
+          const minutes = parseNumberWords(m[2]);
+          return minutes !== null && minutes >= 1 && minutes <= 59 ? h * 60 + minutes : null;
+        },
+        DURATION_BEFORE,
+      );
+      const times = [...hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))), ...timeWords].filter((h) => !overlaps(h, numbers));
       const sorts: Hit[] = [];
       for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
       if (days.length === 1 && times.length === 1) {

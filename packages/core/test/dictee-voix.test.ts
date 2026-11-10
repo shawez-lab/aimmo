@@ -63,12 +63,14 @@ describe('HX06 · lecture de la dictée', () => {
     expect(d.conflicts).toEqual([]);
   });
 
-  it('[R260] un nombre en lettres, une surface à virgule ou un prix hors de son contexte ne sont pas lus', () => {
-    const d = readDictation('Il vend un appartement de quatre-vingts mètres carrés pour trois cent mille euros. Il fait 85,5 m². Les travaux sont à 20 000 euros.', { now: NOW });
+  it('[R260] un nombre en lettres qui ne se lit pas d’une seule façon, une surface à virgule ou un prix hors de son contexte ne sont pas lus', () => {
+    // RC01 : « quatre-vingts mètres carrés » se lit ; « deux trois pièces » et « cent vingt virgule cinq » non.
+    const d = readDictation('Il vend un appartement de deux trois pièces, cent vingt virgule cinq mètres carrés, pour trois cent mille euros. Il fait 85,5 m². Les travaux sont à 20 000 euros.', { now: NOW });
     expect(value(d, 'bien', 'kind')).toBe('home');
+    expect(value(d, 'bien', 'rooms')).toBeUndefined();
     expect(value(d, 'bien', 'surfaceM2')).toBeUndefined();
     expect(value(d, 'bien', 'priceEur')).toBeUndefined();
-    expect(d.fields.every((f) => typeof f.value !== 'number' || d.sentences[f.sentence]!.includes(String(f.value)))).toBe(true);
+    expect(value(readDictation('Il vend un appartement de quatre-vingts mètres carrés.', { now: NOW }), 'bien', 'surfaceM2')).toBe(80);
     // Un budget, des honoraires ou une estimation ne sont pas le prix demandé.
     for (const s of ['Il vend sa maison, son budget est de 300 000 euros.', 'Il vend sa maison, honoraires de 10 000 euros.', 'Il vend sa maison, je l’estime à 280 000 euros.']) {
       expect(value(readDictation(s, { now: NOW }), 'bien', 'priceEur'), s).toBeUndefined();
@@ -226,6 +228,33 @@ describeWithSqlite('HX06 · création à la voix', () => {
     for (const secret of ['Claire', 'Exemple', '0612', '+33612345678', 'example.test', 'Talant', '320000', '320 000', 'Madame']) expect(all, secret).not.toContain(secret);
     expect((await t.journal.all()).filter((e) => e.type === 'dictee.validee')).toHaveLength(1);
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R260] [R261] RC01 : les nombres dits en lettres sont relus à la validation et rangés comme en chiffres', async () => {
+    const t = await setup();
+    const words = [
+      'Je sors de chez Madame Claire Exemple, elle veut vendre sa maison.',
+      'Son numéro est le 06 12 34 56 78.',
+      'La maison fait cent vingt mètres carrés, un cinq pièces, au 21240 Talant.',
+      'Prix demandé trois cent vingt mille euros.',
+      "Rendez-vous d'estimation mardi à dix heures.",
+    ].join(' ');
+    const read = await t.voix.prepare(t.alex, { dictation: words });
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.draft.fields.filter((f) => f.target === 'bien' && typeof f.value === 'number').map((f) => [f.key, f.value, f.quote])).toEqual([
+      ['surfaceM2', 120, 'cent vingt mètres carrés'],
+      ['rooms', 5, 'cinq pièces'],
+      ['priceEur', 320000, 'trois cent vingt mille euros'],
+    ]);
+    const r = await t.voix.validate(t.alex, { readAt: read.readAt, requestId: key(1), dictation: words, keep: { contact: ['firstName', 'lastName', 'phone', 'project'], bien: KEEP_ALL.bien, rendezvous: KEEP_ALL.rendezvous } });
+    expect(r).toMatchObject({ ok: true, propertyId: key(1) });
+    if (!r.ok) return;
+    expect(await t.db.first('SELECT surface_m2, rooms, price_eur FROM properties WHERE id = ?', [key(1)])).toEqual({ surface_m2: 120, rooms: 5, price_eur: 320000 });
+    expect(await t.db.first('SELECT kind, start_at FROM appointments WHERE id = ?', [r.appointmentId])).toEqual({ kind: 'estimation', start_at: '2026-12-08T09:00:00.000Z' });
+    // Une autre dictée, qui ne dit pas ces nombres, ne les fait pas garder.
+    const other = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(2), dictation: 'Madame Zoé Exemple vend sa maison de deux trois pièces au 21240 Talant.', keep: { bien: ['rooms'] } });
+    expect(other).toMatchObject({ ok: false, rule: 'R260', code: 'not_dictated', keys: ['bien.rooms'] });
   });
 
   it('[R261] la même demande rejouée ne crée rien de plus', async () => {
