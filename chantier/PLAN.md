@@ -1025,7 +1025,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H58 et la vraie source restent à part).
 
 ### BR30 · Routes de l'adresse probable d'une annonce de pige, et du bien créé sans ressaisie
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#490, `bcab8758`), `packages/api/src/adresse-pige.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5438 tests, paquet du Worker). Reste : écran des adresses et de la création du bien depuis la file.
 - Qui : Claude, relecture normale · Dépend de : HX18, BR29
 - Partie du cahier : Phase 3, « Pige des annonces de particuliers » ; R294 à R296.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX18 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/adresse-pige.ts`, sous `/v1/pige`, ajouté à `app.ts`. La recherche de l'ADEME (`AdemeDiagnosisSearch`) et le cadastre (`IgnCadastre`) passent par `fetchPublicData`, la lecture des données publiques déjà branchée (E09) ; sans elle, seuls les diagnostics de la veille servent et la réponse le dit (`missing`). `packages/core/src/adresse-pige/` ne change pas.
