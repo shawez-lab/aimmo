@@ -898,7 +898,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR17 · Route de la reprise des données de l'agence sous licence
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#475, `c029ff5d`), routes `POST /v1/export/agence` et `/v1/export/agence/verification` dans `packages/api/src/cles.ts` ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5342 tests). Reste : écran (BR18, BR19).
 - Qui : Claude, relecture normale · Dépend de : HX74, BR05
 - Partie du cahier : Offre aux agents, « Licence du logiciel » ; Feuille de route, phase 5.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX74 (voie 2) n'a ni route ni écran (« Restent après »). Les routes vont dans `packages/api/src/cles.ts`, à côté de l'export de l'agent, puisqu'elles passent par la même preuve « export_complet » ; `packages/core/src/licences/` (voie 2) ne change pas. La lecture groupée de `db/sql.ts` reste à part : le fichier se lit sur la base qui vit, enfants d'abord, comme HX74 le dit.
@@ -906,12 +907,21 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Critères : autre rôle refusé (403) avant le corps, refus au journal [R16] (test) ; la direction du réseau qui donne les licences refusée, 409 avec R657 (test) ; sans preuve, ou preuve d'un autre objet, rien n'est lu, 409 avec R601 (test) ; le fichier rendu porte les lignes de l'agence seule, et son empreinte est rangée [R658, R659] (test) ; la vérification dit vrai pour le fichier remis, faux pour un octet changé, et ne lit pas un fichier d'un autre réseau [R659] (test) ; champ non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H64 pour les clés d'appareil réelles).
 
-### BR18 · L'agence sous licence reprend ses données depuis l'écran
+### BR18 · La clé de cet appareil et la preuve d'une action sensible, à l'écran
 - Statut : à faire
-- Qui : Claude, relecture normale · Dépend de : BR16, BR17
+- Qui : Claude, relecture forte · Dépend de : BR05, BR06
+- Partie du cahier : Conformité, sécurité des accès ; Architecture technique.
+- Décidé (2026-11-10, voie 1) : ajoutée parce qu'aucun écran ne parle encore aux routes `/v1/cles` : l'application n'a ni enregistrement d'une clé d'appareil, ni preuve d'action sensible (WebAuthn, `navigator.credentials`). Sans elles, ni l'export de l'agent (BR05), ni la clé de l'assistant (BR09), ni la reprise de l'agence (BR17) ne se tirent depuis l'application. Un script servi à part, chargé au premier geste, qui offre aux autres blocs une seule fonction « prouver cette action sur cet objet ».
+- Objectif : chacun enregistre la clé de cet appareil, voit ses clés et en retire une d'un geste ; la direction accepte une clé en attente sur la preuve de la sienne ; les autres blocs demandent une preuve pour une action et un objet, et reçoivent `stepUpId`.
+- Critères : enregistrement par `navigator.credentials.create` sur le défi du serveur, la clé publique jamais montrée (test) ; preuve par `navigator.credentials.get` pour l'action et l'objet demandés, seulement ceux-là (test) ; appareil sans WebAuthn, refus de l'utilisateur, clés fermées (503) dits en mots (test) ; retrait en deux appuis (test) ; réponse perdue dite incertaine (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Attend : rien (H64 pour les clés réelles).
+
+### BR19 · L'agence sous licence reprend ses données depuis l'écran
+- Statut : à faire
+- Qui : Claude, relecture normale · Dépend de : BR16, BR17, BR18
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
-- Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil, l'enregistre sur l'appareil, et le fait vérifier.
-- Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `licence:<id>` avant l'envoi (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil (BR18), l'enregistre sur l'appareil, et le fait vérifier.
+- Critères : le geste n'apparaît que pour l'agence sous licence (test) ; la preuve est demandée pour `export_complet` et `licence:<id>` avant l'envoi (test) ; chaque refus dit en mots (test) ; réponse perdue dite incertaine (test) ; vérification dite vraie, fausse ou incomplète avec les tables manquantes (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
 ## Phase 1 : le socle
