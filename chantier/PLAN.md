@@ -869,13 +869,22 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien.
 
 ### BR15 · Routes des licences du logiciel
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#470, `b16f2045`), `packages/api/src/licences.ts` ; tarif public sans clé `GET /v1/licences/tarif/<réseau>` ; aucune règle nouvelle ni migration. Codex 1 P1 (correction du test HX27 hors du périmètre) corrigé : passée à part (#471, `a69124f6`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5317 tests). Le champ de prix dans une demande de licence répond 409 avec R655 (couche métier), pas 400. Reste : écran (BR16).
 - Qui : Claude, relecture normale · Dépend de : HX73
 - Partie du cahier : Feuille de route, phase 5, « puis licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel ».
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX73 (voie 2) n'a ni route ni écran (« Restent après »). Fichier neuf `packages/api/src/licences.ts`, sous `/v1/licences` ; la page publique du tarif sans clé ; aucune règle nouvelle ni migration ; `packages/core/src/licences/` (HX74, voie 2) ne change pas.
 - Objectif : la direction lit le tarif et les licences, fixe le tarif, donne une licence, la suspend, la reprend ou la termine, par `LicencesLogiciel` ; l'agence lit sa seule licence ; le public lit le tarif en vigueur et ses changements datés.
 - Critères : autre rôle refusé (403), refus au journal, rien de rangé [R16] (test) ; corps illisible ou champ non prévu 400 sans rien ranger (test) ; licence refusée sans phase 5 ouverte, 409 avec R654 (test) ; tarif hors bornes 409 avec R655 (test) ; terminée figée, 409 avec R656 (test) ; la lecture publique ne porte ni agence ni nombre [R655] (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H67 pour le prix réel).
+
+### BR16 · Écran des licences du logiciel pour la direction
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR15
+- Partie du cahier : Offre aux agents, « Licence du logiciel ».
+- Objectif : un bloc de l'écran du réseau, script servi à part et chargé au premier geste (comme `phases.ts`), où la direction lit le tarif et les licences, fixe le tarif, donne une licence, la suspend, la reprend ou la termine, par les routes de BR15 ; la direction d'une agence sous licence ne voit que la sienne.
+- Critères : chaque état et chaque refus dits en mots, jamais un code (test) ; terminer en deux appuis (test) ; une saisie illisible ne part pas (test) ; réponse perdue dite incertaine (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Attend : rien.
 
 ## Phase 1 : le socle
 
