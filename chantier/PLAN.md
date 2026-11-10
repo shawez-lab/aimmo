@@ -1071,12 +1071,21 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC02 · Le message de date choisit un canal où la fiche a une coordonnée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#493, 4ede4147). Codex : rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5447 tests).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX25
 - Cahier : M13 ou Phase 3, « messages d'anniversaire et de fête » (HX25) ; R404, R405.
 - Décidé (2026-11-10, voie 2), lecture prudente : relevé dans les « Restent » de HX25 (P2 de Codex). RC01 bloquée après trois séances, la voie 2 prend une autre tâche (SECOURS.md). Aujourd'hui le passage prend le premier canal où l'accord est en vigueur et un texte existe, même si aucune fiche réunie n'a de coordonnée pour ce canal : le contrôle central refuse alors, et la place de l'année est perdue alors qu'un autre canal permis aurait pu servir. Le canal n'est pris que si une fiche réunie a une coordonnée pour lui (mail pour le mail, téléphone pour le SMS, WhatsApp ou téléphone pour WhatsApp, comme le contrôle central). Sans canal à la fois permis, écrit et joignable : rien n'est préparé, aucune place n'est prise, compté sans canal. Changent seulement `packages/core/src/automatismes/dates-clients.ts`, l’export de la table des coordonnées par canal de `scenarios.ts` (même module) et le test.
 - Objectif : un message de date part par un canal où la personne est joignable, jamais une place perdue faute de coordonnée.
 - Critères : accord par mail et SMS, fiche sans mail mais avec téléphone : le SMS est pris [R404] (test) ; aucune coordonnée pour aucun canal permis : rien préparé, aucune place prise [R404] (test) ; coordonnée rangée sur une fiche réunie : comptée [R404] (test) ; tous les tests de HX25 restent verts.
+- Attend : rien.
+
+### RC03 · Un message de date arrêté net en cours reprend seul
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : RC02
+- Cahier : HX25, messages d'anniversaire et de fête ; R405, R05, R18.
+- Décidé (2026-11-10, voie 2) : relevé dans les « Restent » de HX25. Une place `en_cours` laissée par un passage coupé net (Worker arrêté entre la prise de place et la fin) bloque la date pour l'année. Lecture prudente à confirmer au début de la tâche : une place `en_cours` plus vieille qu'un délai fixe n'est reprise que si le contrôle central n'a rangé aucun message pour ce sujet (`date:<sorte>:<année>`) ; s'il en a rangé un, la place est fermée avec ce message, jamais un second envoi [R05]. Seuls `packages/core/src/automatismes/dates-clients.ts` et son test changent.
+- Critères : place coupée sans message : reprise au passage suivant, un seul message (test) ; place coupée après le message rangé : fermée, aucun second message [R05] (test) ; place récente d'un passage en cours : jamais reprise par un autre [R18] (test) ; tous les tests de HX25 restent verts.
 - Attend : rien.
 
 ## Phase 1 : le socle
