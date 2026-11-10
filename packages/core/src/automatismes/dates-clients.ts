@@ -289,9 +289,10 @@ export class DatesClients {
           // Coupé après la réservation du contrôle central, avant le message : la réservation n'a jamais été rendue et
           // ferait refuser le message pour l'année. Elle est rendue comme le contrôle central rend la sienne, sans rien
           // effacer : ses clés et sa place dans le plafond du jour sont renommées [R05, R11, R17].
+          // Seule une réservation elle-même plus vieille que le délai : celle d'un passage encore en vie n'est jamais rendue [R18].
           const held = await this.db.all<{ reservation_id: string }>(
-            `SELECT reservation_id FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND person_id IN (${marks(members.length)})`,
-            [networkId, `sujet:date:${d.kind}:${year}`, ...members],
+            `SELECT reservation_id FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND created_at < ? AND person_id IN (${marks(members.length)})`,
+            [networkId, `sujet:date:${d.kind}:${year}`, new Date(now.getTime() - STALE_PLACE_MS).toISOString(), ...members],
           );
           for (const r of held) {
             await this.db.run("UPDATE send_reservations SET key = key || '#coupe:' || reservation_id WHERE reservation_id = ? AND message_id IS NULL", [r.reservation_id]);
