@@ -13,6 +13,7 @@ import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
 import { signPickupsJob } from '../../core/src/panneaux/index.ts';
+import { dpeWatchJob, type DiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -38,6 +39,8 @@ export interface SchedulerConfig {
   investorFeesRateBp?: investir.Sourced<number> | null;
   /** Variable `PLATFORM_NETWORK_ID` : le réseau qui exploite la plateforme, pour le rapport chronométré des seuils (BR25). */
   platformNetworkId?: string | undefined;
+  /** La base ouverte des diagnostics de l'ADEME (HX16, BR26) ; absente, la veille ne lit rien. */
+  dpeFeed?: DiagnosisFeed | null;
   now?: () => Date;
 }
 
@@ -144,6 +147,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
         const diffusion = new Diffusion(config.db, acces, journal, { now });
         return signPickupsJob(config.db, acces, { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) }, journal, { now });
       })(),
+      // Veille des diagnostics énergétiques (HX16, BR26), à 7 h : les diagnostics nouveaux des secteurs ouverts, rangés
+      // une seule fois par réseau, dans l'alerte du jour ; seuls le code postal et le jour partent, rien n'est envoyé [R288, R289].
+      dpeWatchJob(config.db, config.dpeFeed ?? null, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

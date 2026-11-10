@@ -92,6 +92,9 @@ import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
+import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
+import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
+import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
@@ -161,6 +164,8 @@ export interface ApiConfig {
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
   fetchPublicData?: Fetcher;
+  /** Les sources du score par adresse (BR27) ; absentes, celles de `estimation` et de `fetchPublicData`, sinon aucune. */
+  scoreSources?: ScoreServices | null;
   estimationLimits?: EstimationLimits;
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
@@ -1259,6 +1264,34 @@ function panneauxRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes de la veille des diagnostics énergétiques (BR26) : rôle contrôlé avant le corps [R16], aucun nom [R288]. */
+function veilleDpeRoutesDef(): RouteDef[] {
+  return veilleDpeRoutes().map((r: VeilleDpeRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
+/** Les sources du score par adresse : celles données, sinon la Base adresse nationale et les ventes de l'estimation avec le cadastre et les diagnostics publics. */
+function scoreSourcesOf(config: ApiConfig): ScoreServices | null {
+  if (config.scoreSources !== undefined) return config.scoreSources;
+  if (!config.estimation || !config.fetchPublicData) return null;
+  const pub = publicDataServices(config.fetchPublicData);
+  return { geocoder: config.estimation.geocoder, cadastre: pub.cadastre, energy: pub.energy, sales: config.estimation.sales };
+}
+
+/** Les routes du score de vente par adresse (BR27) : rôle contrôlé avant le corps [R16], aucun nom [R292]. */
+function scoreAdresseRoutesDef(sources: ScoreServices | null): RouteDef[] {
+  return scoreAdresseRoutes().map((r: ScoreAdresseRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, sources }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2080,6 +2113,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...trousseauxRoutesDef(),
     ...boutiqueRoutesDef(),
     ...panneauxRoutesDef(),
+    ...veilleDpeRoutesDef(),
+    ...scoreAdresseRoutesDef(scoreSourcesOf(config)),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),

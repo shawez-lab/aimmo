@@ -391,6 +391,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
       // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
       '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
+              // La base ouverte des diagnostics de l'ADEME pour la veille (HX16, BR26), en lecture seule : seuls le code
+              // postal et le jour partent, jamais un envoi.
+              'dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),',
             ]
           : [],
       );

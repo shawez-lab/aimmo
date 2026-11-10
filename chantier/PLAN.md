@@ -985,13 +985,33 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR26 · Routes de la veille des diagnostics énergétiques et passage du planificateur
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#485, `87048db8`), `packages/api/src/veille-dpe.ts`, aucune règle nouvelle ni migration, cœur inchangé ; `dpeWatchJob` au planificateur (7 h), `AdemeDiagnosisFeed` donné par le Worker (`dpeFeed`), ajouté à la liste écrite des lectures publiques de `meta.test.ts`. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5410 tests, puis 2 listes de tests mises à jour et relancées). Restent : écran de la veille (carte et alerte) ; H60.
 - Qui : Claude, relecture normale · Dépend de : HX16
 - Partie du cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; M15, date d'interdiction de louer.
 - Décidé (2026-11-10, voie 1) : ajoutée parce que HX16 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/veille-dpe.ts`, ajouté à `app.ts` ; `dpeWatchJob` inscrit au planificateur avec `AdemeDiagnosisFeed`. `packages/core/src/veille-dpe/` ne change pas.
 - Objectif : sous `/v1/veille-dpe`, l'agent lit sa carte et son alerte du jour, prépare la lettre « Au propriétaire » d'un logement F ou G ; le planificateur passe chaque jour.
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; carte et alerte limitées aux communes des zones de l'agent [R289] (test) ; lettre seulement pour un F ou un G, sans nom de propriétaire [R290] (test) ; passage inscrit au planificateur, rien ne remonte deux fois [R288] (test) ; corps mal formé 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H60 pour l'usage réel de la lettre).
+
+### BR27 · Routes du score de vente par adresse
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#487, `79ad1c3e`), `packages/api/src/score-adresse.ts`, option `scoreSources` d'`ApiConfig` ; aucune règle nouvelle ni migration, cœur inchangé. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5418 tests, paquet du Worker). Restent : écran du score et de la mesure ; `carriesPerson` de HX16 à aligner (cœur).
+- Qui : Claude, relecture normale · Dépend de : HX17
+- Partie du cahier : Phase 3, « Score de vente par adresse » ; M20, mesure par source.
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX17 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/score-adresse.ts`, sous `/v1/score-adresse`, ajouté à `app.ts`. Sources : `scoreSources` de la configuration, sinon le géocodeur et les ventes de `estimation` avec le cadastre et les diagnostics de `publicDataServices(fetchPublicData)` ; aucune source : 400 `sources_absentes`, rien n'est rangé. `packages/core/src/score-adresse/` ne change pas ; l'alignement de `carriesPerson` de HX16 reste au cœur (voie 2).
+- Objectif : l'agent note une adresse de ses zones ; l'agent et la direction lisent les scores et la mesure par tranche, et relient un mandat signé à une adresse notée.
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; chaque point rendu cite sa source et sa date, même score le même jour [R291] (test) ; adresse avec un nom ou hors zone refusée, rien n'est rangé [R292] (test) ; mandat relié une fois, mesure sans adresse ni nom [R293] (test) ; sans source, 400 sans rien ranger (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
+
+### BR28 · Routes de la carte des opportunités et de la tournée de prospection
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX19
+- Partie du cahier : Phase 3, « Carte des opportunités et tournée de prospection » ; M05, créneaux et trajets (R32).
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX19 n'a ni route ni branchement (« Reste »). Fichier neuf `packages/api/src/tournee.ts`, sous `/v1/tournee`, ajouté à `app.ts`. Géocodage des panneaux par le géocodeur de `estimation` (Base adresse nationale), sinon lieu inconnu. L'agenda relié (V03) et la position des biens n'ont encore aucune source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`). Sans `date`, le jour de Paris. `packages/core/src/tournee-prospection/` ne change pas.
+- Objectif : l'agent en activité lit sa carte des opportunités et sa tournée d'un jour.
+- Critères : refus de rôle en 403 au journal, direction comprise [R16, R297] (test) ; aucune adresse hors des zones de l'agent, comptée seulement [R297] (test) ; la tournée tient dans les disponibilités de l'agent, autour de ses rendez-vous [R298] (test) ; le lien de la vue des rues ne porte que la position [R299] (test) ; date mal formée 409 R298, paramètre non prévu 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
 
 ## Restes du cœur des groupes HX
 
@@ -1000,7 +1020,8 @@ Voie : 2
 Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
 
 ### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : en cours (voie 2) : reprise le 2026-11-10 par l’autre approche des heures (#486)
+- Reste : relecture forte 4 P0 et 6 P1 corrigés ; Codex 2 puis 3 P0 corrigés, puis 2 P0 restés sur `6b7735e0`. « de dix heures et demie à onze heures » choisit 11 h, et « à quinze heures et trente minutes » donne 15 h. La cause : la recherche des autres heures dites reprend le motif qui les lit. Autre approche à prendre : compter comme heure dite toute suite « nombre, puis h, heure ou heures », et midi et minuit, quel que soit ce qui suit, sauf après un mot de durée ; refuser toute heure suivie de « et » ou de « minutes ». Pièces, surface, prix et jours : aucune remarque ouverte. GitHub Actions bloqué (facturation) ; vérification locale verte sur `21573b6b` (5415 tests).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX06
 - Cahier : Phase 3, « Création d'un bien et d'un contact à la voix » ; R260.
 - Décidé (2026-11-10, voie 2), lecture prudente : relevé dans les « Restent » de HX06. La dictée d'un téléphone écrit souvent les petits nombres en lettres (« un trois pièces », « quatre-vingts mètres carrés », « à quinze heures », « le douze janvier ») : aujourd'hui l'agent doit tout ressaisir. Le code lit un nombre en lettres seulement s'il ne se lit que d'une façon, en français écrit (et septante, huitante, octante, nonante) ; « un » ou « une » devant un nombre se lit comme l'article ; un nombre en lettres collé à un autre nombre, à « virgule », à un chiffre, ou suivi de « et demi », n'est pas lu ; une heure en lettres après « dans », « pendant », « durant » ou « pour » est une durée et n'est pas lue ; une année dite après le jour et le mois, en lettres ou en chiffres, sans être lue, fait refuser le jour. Fichier neuf `packages/core/src/dictee/nombres.ts`, `lecture.ts` le suit ; `dictee.ts` ne change pas. Le contrôle du compte rendu (`checkReport`) ne change pas : un chiffre du compte rendu que la dictée dit seulement en lettres reste refusé, c'est plus prudent.
