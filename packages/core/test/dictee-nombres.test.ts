@@ -176,6 +176,11 @@ describe('RC01 · les nombres dits en lettres', () => {
     // Une heure suivie de « et » puis d'un autre mot se lit (relecture forte).
     expect(at('Visite demain à 15 h et le client viendra seul.')).toBe('2026-12-04T14:00:00.000Z');
     expect(at('Estimation mardi à quinze heures et on signe le mandat.')).toBe('2026-12-08T14:00:00.000Z');
+    // Codex sur #486 : l'autre heure redit sa préposition ; et une heure après « demain » n'est pas une année.
+    for (const s of ['Visite demain à quinze heures ou à seize.', 'Visite demain à quinze heures, plutôt à seize.', 'Visite demain à 15 h ou vers 16.']) expect(at(s), s).toBeUndefined();
+    expect(at('Visite demain 10 h.')).toBe('2026-12-04T09:00:00.000Z');
+    expect(at('Visite mardi 15h30.')).toBe('2026-12-08T14:30:00.000Z');
+    expect(at('Visite le 12 janvier 10 h.')).toBe('2027-01-12T09:00:00.000Z');
     // Un nombre qui parle d'autre chose que l'heure ne la fait pas refuser (relecture forte).
     for (const s of ['Visite demain à 15 h, un couple avec enfants.', 'Visite demain à 15 h, 12 rue de la Liberté.', 'Visite demain à 15 h à 12 km de Dijon.', 'Visite demain à 15 h, à deux pas de la gare.', 'Visite demain à 15 h, 1er étage.']) expect(at(s), s).toBe('2026-12-04T14:00:00.000Z');
     // Un nombre nu collé à l'heure dit une autre heure : rien n'est choisi (relecture forte).

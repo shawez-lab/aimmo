@@ -190,8 +190,9 @@ const APPOINTMENT_KINDS_READ: readonly [RegExp, AppointmentKind][] = [
 const WEEKDAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
 /** Une année dite après le jour et le mois, qui n'est pas lue (en lettres, ou autre que 20xx) : le jour est refusé. */
-const YEAR_NOT_READ = `(?!\\s+(?:\\d{2}(?:\\d{2})?(?!\\d)|${NUMBER_RUN}))`;
-const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?)\\b${YEAR_NOT_READ}`);
+/** Deux chiffres suivis de « h » ou « heures » disent l'heure, pas l'année (Codex sur #486). */
+const YEAR_NOT_READ = `(?!\\s+(?:\\d{2}(?:\\d{2})?(?!\\d)(?!\\s?(?:h|heures?)(?![\\p{L}]))|${NUMBER_RUN}(?!\\s+heures?(?![\\p{L}\\d]))))`;
+const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?\\b${YEAR_NOT_READ})\\b`, 'u');
 /** Le jour du mois en lettres (RC01) : « le douze janvier », « le premier mai ». */
 const DAY_WORDS_AFTER = `\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`;
 const FIRST_OF_MONTH = new RegExp(`\\bpremier\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`, 'u');
@@ -230,7 +231,7 @@ const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?!
  * « 15 h, sinon 16 », « 15 h, 16 au plus tard ». Le nombre ne compte qu'après « ou », « sinon », « voire », « plutôt »
  * ou un tiret, ou s'il finit la phrase : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
  */
-const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|-)\\s*(?:\\d{1,2}(?!\\d)|${WORD})|(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d])))`, 'u');
+const BARE_NUMBER_AFTER = new RegExp(`^\\s*,?\\s*(?:(?:ou(?:\\s+bien)?|sinon|voire|plutot|-)\\s*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d])))`, 'u');
 const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*(?:-|,|ou|a)\\s*$`, 'u');
 function crowded(sentence: string, h: Hit): boolean {
   return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);
