@@ -1044,6 +1044,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; rien ne part hors du contrôle central, canaux du mode essai seulement [R300, R26] (test) ; une opposition arrête la séquence sur tous les canaux [R301] (test) ; un appel n'est proposé que dans les heures permises, jamais sans Bloctel quand il ne repose que sur la prospection [R302] (test) ; le passage est inscrit au planificateur (test) ; corps mal formé ou champ non prévu 400 (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H61 reste à part).
 
+### BR32 · Les étapes des séquences dans le plan du jour, et le bouton « Fait »
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR31
+- Partie du cahier : Phase 3, « Séquence de prospection sur plusieurs canaux » ; M20, plan du jour ; R300 à R302, R16, R13.
+- Décidé (2026-11-10, voie 1), lecture prudente : ajoutée parce que BR31 laisse « étapes du jour dans le plan du jour ». Le plan figé à 7 h 30 ne change pas et ne range aucune étape : `PlansDuJour.read` lit les étapes du jour au moment de la lecture, comme les lettres, par une source `sequences` (option de `PlansOptions`) que la route `GET /v1/plan-du-jour` branche sur `SequencesProspection.today`, sans liste d'opposition (H61). Une source qui refuse : pas d'étapes, le plan reste lisible. Tant que le plan n'est pas figé, rien n'est lu. À l'écran du jour, sous le plan : chaque étape avec son prénom et son canal ; mail ou SMS « part seul par le contrôle central », sans bouton ; appel proposé : lien d'appel et deux boutons « Appelé » et « A refusé » ; courrier et passage : « Fait » ; étape non proposée : sa raison en clair, jamais le code. Le bouton appelle `POST /v1/sequences/etapes/{id}/fait`, puis relit le plan.
+- Objectif : l'agent voit ses étapes de séquence du jour dans son plan, et les note faites d'un appui.
+- Critères : étapes lues à la lecture, revérifiées [R301, R302] : une opposition depuis 7 h 30 les retire (test) ; plan figé inchangé, aucune étape rangée (test) ; source absente ou refusée : plan sans étapes (test) ; appel jamais proposé sans Bloctel sur la seule prospection [R302] (test) ; l'écran ne montre jamais un code interne, le bouton « Fait » note l'étape et relit le plan (test) ; mail et SMS sans bouton [R300] (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H61 reste à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
