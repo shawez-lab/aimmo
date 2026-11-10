@@ -41,6 +41,13 @@ async function setup() {
   const cutMessage = async () => {
     const m = await store.recordMessage({ networkId: network.id, agentId: alex.id, personId: person.id, channel: 'email', direction: 'out', authorKind: 'system', body: 'Bonjour Zoé, joyeux anniversaire !', occurredAt: new Date(clock - 20 * MINUTE) });
     await db.run("INSERT INTO message_subjects (message_id, network_id, person_id, subject, created_at) VALUES (?, ?, ?, 'date:anniversaire:2027', ?)", [m.id, network.id, person.id, new Date(clock - 20 * MINUTE).toISOString()]);
+    // Comme le contrôle central : la réservation du sujet, reliée au message.
+    await db.run("INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES (?, 'sujet:date:anniversaire:2027', 'resa-message', ?, ?, ?)", [
+      person.id,
+      network.id,
+      m.id,
+      new Date(clock - 20 * MINUTE).toISOString(),
+    ]);
     return m.id;
   };
   const outbox = () => db.all<{ person_id: string }>('SELECT m.person_id FROM trial_outbox o JOIN messages m ON m.id = o.message_id');
@@ -60,6 +67,27 @@ describeWithSqlite('RC03 · un message de date arrêté net en cours reprend seu
     t.setClock(TUE_10H + 30 * MINUTE);
     expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, recovered: 0 });
     expect(await t.outbox()).toHaveLength(1);
+  });
+
+  it('[R405] une place coupée juste après la réservation du contrôle central, avant le message : reprise, un seul message', async () => {
+    const t = await setup();
+    await t.cutPlace(STALE_PLACE_MS + MINUTE);
+    // Le contrôle central avait réservé le sujet, le texte et une place du plafond du jour, puis le Worker s'est arrêté.
+    const at = new Date(TUE_10H - 15 * MINUTE - 30_000).toISOString();
+    await t.db.run(
+      "INSERT INTO send_reservations (person_id, key, reservation_id, network_id, message_id, created_at) VALUES (?, 'sujet:date:anniversaire:2027', 'resa-coupee', ?, NULL, ?), (?, 'texte:bonjour prenom joyeux anniversaire', 'resa-coupee', ?, NULL, ?)",
+      [t.person.id, t.network.id, at, t.person.id, t.network.id, at],
+    );
+    await t.db.run("INSERT INTO send_quota_slots (network_id, kind, day, slot, reservation_id, created_at) VALUES (?, 'follow_up', '2027-10-12', '1', 'resa-coupee', ?)", [t.network.id, at]);
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, refused: 0, recovered: 0 });
+    expect(await t.outbox()).toHaveLength(1);
+    expect(await t.place()).toMatchObject({ status: 'essai', rule: null });
+    // Rien n'est effacé : la réservation coupée est gardée, renommée [R17].
+    expect(await t.db.all("SELECT key FROM send_reservations WHERE reservation_id = 'resa-coupee' ORDER BY key")).toEqual([
+      { key: 'sujet:date:anniversaire:2027#coupe:resa-coupee' },
+      { key: 'texte:bonjour prenom joyeux anniversaire#coupe:resa-coupee' },
+    ]);
+    expect(await t.db.first("SELECT slot FROM send_quota_slots WHERE reservation_id = 'resa-coupee'")).toEqual({ slot: '1#coupe:resa-coupee' });
   });
 
   it('[R05] une place coupée après le message passé au mode essai est fermée avec lui, aucun second message', async () => {
@@ -99,6 +127,8 @@ describeWithSqlite('RC03 · un message de date arrêté net en cours reprend seu
       "INSERT INTO send_log (id, network_id, agent_id, person_id, message_id, channel, kind, outcome, rule, reason, occurred_at, created_at) VALUES ('log-f', ?, ?, ?, ?, 'email', 'follow_up', 'failed', NULL, 'panne (test)', ?, ?)",
       [t.network.id, t.alex.id, t.person.id, messageId, t.now().toISOString(), t.now().toISOString()],
     );
+    // Comme le contrôle central après une panne : la réservation est rendue, renommée.
+    await t.db.run("UPDATE send_reservations SET key = key || '#panne:' || reservation_id WHERE message_id = ?", [messageId]);
     expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, recovered: 0 });
     expect(await t.outbox()).toHaveLength(1);
     expect((await t.place())?.message_id).not.toBe(messageId);

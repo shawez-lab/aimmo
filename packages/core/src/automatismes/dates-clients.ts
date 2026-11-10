@@ -286,6 +286,17 @@ export class DatesClients {
             report.recovered += 1;
             continue;
           }
+          // Coupé après la réservation du contrôle central, avant le message : la réservation n'a jamais été rendue et
+          // ferait refuser le message pour l'année. Elle est rendue comme le contrôle central rend la sienne, sans rien
+          // effacer : ses clés et sa place dans le plafond du jour sont renommées [R05, R11, R17].
+          const held = await this.db.all<{ reservation_id: string }>(
+            `SELECT reservation_id FROM send_reservations WHERE network_id = ? AND key = ? AND message_id IS NULL AND person_id IN (${marks(members.length)})`,
+            [networkId, `sujet:date:${d.kind}:${year}`, ...members],
+          );
+          for (const r of held) {
+            await this.db.run("UPDATE send_reservations SET key = key || '#coupe:' || reservation_id WHERE reservation_id = ? AND message_id IS NULL", [r.reservation_id]);
+            await this.db.run("UPDATE send_quota_slots SET slot = slot || '#coupe:' || reservation_id WHERE reservation_id = ?", [r.reservation_id]);
+          }
         }
       }
       // Une place prise avant une réunion de fiches, sous une autre fiche de la personne, compte aussi [R405].
