@@ -94,6 +94,7 @@ import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
 import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
+import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
@@ -1292,6 +1293,16 @@ function scoreAdresseRoutesDef(sources: ScoreServices | null): RouteDef[] {
   }));
 }
 
+/** Les routes de la carte des opportunités et de la tournée (BR28) : l'agent seul, par la couche métier [R16, R297]. */
+function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
+  return tourneeRoutes().map((r: TourneeRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, geocoder }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2115,6 +2126,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...panneauxRoutesDef(),
     ...veilleDpeRoutesDef(),
     ...scoreAdresseRoutesDef(scoreSourcesOf(config)),
+    ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...phasesRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),
