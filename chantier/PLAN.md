@@ -908,7 +908,8 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H64 pour les clés d'appareil réelles).
 
 ### BR18 · La clé de cet appareil et la preuve d'une action sensible, à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#476, `14725ae2`), `packages/api/app/cles.ts`, script `/app/cles.js`, bloc sur la journée, le réseau et la conformité ; route neuve `GET /v1/cles/mes-appareils` (`listOwnDevices`) ; `listDevices` rend `ownerName` (nom de l'agent tiré de la base) ; une clé retirée n'est plus exclue à l'enregistrement. `prove(action, objet)` et `proveAction` du chargeur pour les autres blocs. Relecture forte 3 P1 corrigés ; Codex 1 P2 (la direction accepte sa propre clé en attente) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5357 tests). Pas encore : ranger une clé suivante active d'emblée par la preuve « ajouter_appareil » d'une autre clé.
 - Qui : Claude, relecture forte · Dépend de : BR05, BR06
 - Partie du cahier : Conformité, sécurité des accès ; Architecture technique.
 - Décidé (2026-11-10, voie 1) : ajoutée parce qu'aucun écran ne parle encore aux routes `/v1/cles` : l'application n'a ni enregistrement d'une clé d'appareil, ni preuve d'action sensible (WebAuthn, `navigator.credentials`). Sans elles, ni l'export de l'agent (BR05), ni la clé de l'assistant (BR09), ni la reprise de l'agence (BR17) ne se tirent depuis l'application. Un script servi à part, chargé au premier geste, qui offre aux autres blocs une seule fonction « prouver cette action sur cet objet ».
@@ -917,7 +918,7 @@ Découpé le 2026-11-09 par la voie 1. Toutes les tâches HX sont faites et tous
 - Attend : rien (H64 pour les clés réelles).
 
 ### BR19 · L'agence sous licence reprend ses données depuis l'écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, relecture normale · Dépend de : BR16, BR17, BR18
 - Partie du cahier : Offre aux agents, « Licence du logiciel ».
 - Objectif : dans le bloc « Licences du logiciel » (`packages/api/app/licences.ts`), la direction de l'agence sous licence tire le fichier de reprise de ses données sur la preuve de sa clé d'appareil (BR18), l'enregistre sur l'appareil, et le fait vérifier.
