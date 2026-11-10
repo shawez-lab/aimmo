@@ -948,12 +948,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR22 · Routes de la boutique de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-10)
+- Reste : fusionnée (#481, `8ae85942`), `packages/api/src/boutique.ts`, aucune règle nouvelle ni migration ; dans le cœur, la lecture `Boutique.tariffs` (dernier tarif de chaque support et quantité, en vigueur ou échu). Rôle refusé au journal avant toute lecture du corps ; champ non prévu 400, donc aucun prix saisi ; commande à l'imprimeur d'essai seul. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5393 tests). Écran de la boutique à faire ; imprimeur réel (H56).
 - Qui : Claude, relecture normale · Dépend de : HX07, BR21
 - Partie du cahier : Offre aux agents ; Phase 3, « La boutique de l'agent ».
 - Objectif : routes de la boutique (`packages/core/src/boutique/`) dans un fichier neuf de `packages/api/src/`, ajouté à `app.ts` et décrit dans `docs/API.md` : tarifs de la direction, préparation d'un support depuis le bien, validation par l'agent ; commande seulement à l'imprimeur d'essai.
 - Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; aucun prix ni mention inventés sur un support [R263 à R265] (test) ; préparer ne commande rien, seule la validation de l'agent commande, une fois (test).
 - Attend : rien (imprimeur réel : H56, hors de cette tâche).
+
+### BR23 · Routes du stock de panneaux et passage du planificateur
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : HX14, BR22
+- Partie du cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux ».
+- Décidé (2026-11-10, voie 1) : ajoutée parce que HX14 n'a ni route ni passage au planificateur (« Restent »). Fichier neuf `packages/api/src/panneaux.ts`, ajouté à `app.ts` ; `signPickupsJob` inscrit au planificateur avec la porte de diffusion de D05.
+- Objectif : sous `/v1/panneaux`, la direction ajoute des panneaux au stock ; l'agent du bien ou la direction pose un panneau, le dit récupéré ou perdu ; chacun lit le stock et les panneaux à récupérer. Le planificateur range chaque jour à 6 h, 13 h et 19 h les tâches « récupérer le panneau ».
+- Critères : refus de rôle en 403 au journal, avant toute lecture du corps [R16] (test) ; numéros donnés par le code, une pose seulement sur un bien diffusable à son adresse [R282, R42] (test) ; l'agent ne lit que ses poses [R284] (test) ; tâche rangée par le planificateur quand le bien est vendu [R283] (test) ; champ non prévu ou corps mal formé 400 (test) ; décrit dans `docs/API.md`.
+- Attend : rien.
 
 ## Phase 1 : le socle
 
