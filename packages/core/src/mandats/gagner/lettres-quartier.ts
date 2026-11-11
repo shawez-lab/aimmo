@@ -55,8 +55,13 @@ export interface LettresQuartierOptions {
 }
 
 const NUMBER = /^\d{1,4}(?: ?(?:bis|ter|quater|[a-d]))?$/i;
-const STREET_TYPES =
-  /^(?:rue|avenue|av|boulevard|bd|place|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond point|residence|lotissement|ruelle|sentier|promenade|esplanade|voie|parvis|hameau|lieu dit|clos|cite|montee|venelle|traverse|mail)\b/;
+/** Les types de voie d'une adresse de lettre ; un titre qui suit l'un d'eux n'est pas une personne (`withoutRoadTitles`, RC06). */
+export const LETTER_STREET_TYPES = Object.freeze([
+  'rue', 'avenue', 'av', 'boulevard', 'bd', 'place', 'chemin', 'allee', 'impasse', 'route', 'quai', 'cours', 'square', 'passage',
+  'faubourg', 'rond point', 'residence', 'lotissement', 'ruelle', 'sentier', 'promenade', 'esplanade', 'voie', 'parvis', 'hameau',
+  'lieu dit', 'clos', 'cite', 'montee', 'venelle', 'traverse', 'mail',
+] as const);
+const STREET_TYPES = new RegExp(`^(?:${LETTER_STREET_TYPES.join('|')})\\b`);
 /** Une civilité ou une marque de personne : jamais dans une adresse de lettre de quartier [R140]. */
 const PERSON_MARKERS = /(?:^|\s)(?:m|mr|mme|mlle|mm|dr|me|monsieur|madame|mademoiselle|messieurs|famille|chez|maitre|docteur|c o|attn|a l attention|aux bons soins)(?:\s|$)/;
 /** Les mots qui diraient d'où vient l'adresse, quand elle ne vient pas de l'agent [R37]. */

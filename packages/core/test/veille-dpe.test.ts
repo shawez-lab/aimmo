@@ -118,6 +118,18 @@ it('[R288] une voie au titre d’une personne n’écarte plus le diagnostic ; t
   expect(addressCarriesPerson('M. Dupont 7 rue des Essais')).toBe(true);
 });
 
+it('[R288] un titre après un faubourg, un mail, une cité, une ruelle, un lieu-dit n’écarte plus le diagnostic (RC06)', () => {
+  for (const street of ['Faubourg du Docteur Essai', 'Mail du Président Essai', 'Cité du Maréchal Essai', 'Ruelle du Docteur Essai', 'Lieu-dit Mademoiselle Essai', 'Venelle de la Mère Essai', 'Montée du Général Essai']) {
+    expect(readDiagnosis(row({ nom_rue_ban: street }), '21240'), street).toMatchObject({ ok: true, value: { street } });
+  }
+  for (const street of ['Faubourg Mme Essai', 'Mail Mlle Essai', 'Cité Mr Essai', 'Faubourg du Docteur Essai chez Martin', 'Mail du Président Essai Docteur Martin', 'Mademoiselle Essai']) {
+    expect(readDiagnosis(row({ nom_rue_ban: street }), '21240'), street).toEqual({ ok: false, code: 'nom_dans_adresse' });
+  }
+  expect(addressCarriesPerson('3 faubourg du Docteur Essai, Dijon')).toBe(false);
+  expect(scoreAddressCarriesPerson('3 faubourg du Docteur Essai, Dijon')).toBe(false);
+  expect(addressCarriesPerson('3 faubourg Mme Essai, Dijon')).toBe(true);
+});
+
 it('[R290] la lettre est écrite par le code : la classe, la date d’interdiction de M15, aucun autre chiffre, aucun nom', () => {
   const g = ownerLetterText('G', banDate('G')!, '2026-12-07');
   expect(g).toContain('classé G');
