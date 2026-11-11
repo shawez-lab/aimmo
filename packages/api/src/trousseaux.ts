@@ -6,6 +6,9 @@
  * a à rendre [R272]. Le numéro est donné par le code [R270] ; un trousseau n'est jamais chez deux personnes [R271].
  * Un corps absent ou mal formé ne passe jamais avant les droits : la même demande, sans corps, est d'abord soumise à la
  * couche métier, et seul un appelant admis reçoit le 400. Rien n'est envoyé.
+ *
+ * La remise à un partenaire (BR46) : `POST /v1/trousseaux/<id>/remise-partenaire`, `partnerId`, `purpose` (`diagnostic`,
+ * `photos` ou `travaux`) et `dueAt` (12 h au plus) ; l'agent qui remet en répond [R665].
  */
 import type { Acces, FicheUnique, JournalStore, SqlDatabase, Viewer } from '@aimmo/core';
 import { Cles } from '../../core/src/cles/index.ts';
@@ -112,6 +115,22 @@ export function trousseauxRoutes(): TrousseauxRoute[] {
       handle: withBody(async (s, v, [keyId], b) =>
         cles(s).handOut(v, keyId!, { holderAgentId: b.holderAgentId, purpose: b.purpose, appointmentId: b.appointmentId, dueAt: b.dueAt }),
       ),
+    },
+    // La remise à un partenaire de l'annuaire qui entre seul (RC15, BR46) : l'agent du bien ou la direction ; le retour se
+    // note par `rendu` ou `perdu`, comme une sortie [R665, R271, R16].
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/${ID}/remise-partenaire$`),
+      name: 'trousseaux.remise_partenaire',
+      handle: withBody(async (s, v, [keyId], b) => {
+        if (Object.keys(b).some((k) => !['partnerId', 'purpose', 'dueAt'].includes(k))) {
+          // Un champ en trop ne passe jamais avant les droits : la demande est d'abord soumise sans corps.
+          const probe = await cles(s).handToPartner(v, keyId!, { partnerId: undefined, purpose: undefined, dueAt: undefined });
+          if (!probe.ok && (probe.rule === 'R16' || /^unknown/.test(probe.code))) return probe;
+          return { ok: false, rule: null, code: 'champ_inconnu' };
+        }
+        return cles(s).handToPartner(v, keyId!, { partnerId: b.partnerId, purpose: b.purpose, dueAt: b.dueAt });
+      }),
     },
     // Sans corps : le geste est dans l'adresse, rien à lire avant les droits.
     {
