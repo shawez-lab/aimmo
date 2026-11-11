@@ -1155,6 +1155,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; l'écran ne fait que lire `/v1/site`, la clé dans l'en-tête seul, rien d'écrit [R16] (test) ; chaque page dans l'ordre reçu, avec ses chiffres et les identifiants de ses messages, aucun nom [R286] (test) ; la prochaine page dit la phrase et les chiffres du code, ou sa raison en mots quand rien n'est proposé [R287] (test) ; changer de période relit avec `jours`, seule la dernière lecture dessine (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test).
 - Attend : rien.
 
+### BR43 · Les statistiques du site de tout le réseau, dans « Attirer » de la direction
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR42
+- Cahier : M01, « Gérer mon site » ; R285 à R287, R16, R201.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans le « Reste » de BR42 (« l'entrée de la direction (tout le réseau) dans « Attirer » »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. L'écran « Attirer » gagne une septième partie, « Statistiques du site », avec un bouton qui charge le même script `/app/site.js` (BR42), en mode réseau : titres et libellés dits pour tout le réseau (« Les pages du réseau », « Page d'un agent »), mêmes routes `/v1/site` que la direction lit déjà pour tout le réseau (BR41). Aucune route, règle ni migration nouvelle ; `app.js` inchangé.
+- Objectif : la direction ouvre « Attirer », puis « Statistiques du site », choisit la période et lit, pour tout le réseau, la prochaine page à écrire et chaque page avec ses vues, demandes, vendeurs et mandats prouvés par leurs messages.
+- Critères : le script `/app/site.js` n'est chargé qu'au geste, depuis « Attirer », et les deux scripts tiennent le budget d'une page [R201] (test) ; la partie ne lit que `/v1/site`, la clé dans l'en-tête seul, rien d'écrit [R16] (test) ; en mode réseau, les titres et la page d'un agent sont dits pour le réseau, l'ordre et les chiffres sont ceux reçus [R286] (test) ; l'écran de l'agent (BR42) garde ses mots (test) ; changer de période relit, seule la dernière lecture dessine (test) ; un refus est dit en mots (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
