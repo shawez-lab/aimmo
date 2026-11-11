@@ -1148,7 +1148,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC06 · Une voie au titre d'une personne dans un faubourg, un mail, une cité
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#500, 089cfb75). Les deux listes sont exportées (`ROAD_TITLE_TYPES` dans `titre-voie.ts`, `LETTER_STREET_TYPES` dans `lettres-quartier.ts`, qui construit sa règle depuis la liste) ; un test relève que la seconde est dans la première. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5489 tests).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC05
 - Cahier : M20 Gagner des mandats, lettres de quartier ; Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R140, R288, R292.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC05. La lettre de quartier accepte comme voie « faubourg », « mail », « cité », « ruelle », « sentier », « venelle », « clos », « hameau », « lieu-dit », « lotissement », « montée », « parvis », « traverse », « voie », mais le titre d'une personne juste après l'un de ces types (« faubourg du Docteur », « mail du Président ») n'est pas reconnu : l'adresse est refusée, et la veille écarte le diagnostic. Les types de `withoutRoadTitles` (`veille-dpe/titre-voie.ts`) deviennent exactement ceux de la lettre, plus ceux qu'il avait déjà ; « mademoiselle » rejoint les titres (« madame » y est déjà). Les abréviations (« Mme », « Mr », « Mlle ») et toute autre civilité refusent toujours. Change seulement `titre-voie.ts` et les tests des lettres et de la veille.
