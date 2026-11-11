@@ -1207,7 +1207,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC10 · L'essai d'un scénario compte les messages de date
-- Statut : en cours (voie 2)
+- Statut : proposition #506 prête, fusion en attente (H69)
+- Reste : vérification locale verte sur d04a3e05 (5533 tests) ; GitHub Actions bloqué (facturation). Codex 1 P0 (la date n'était pas dite quand un scénario allumé tenait déjà le jour) corrigé, puis rien à signaler. Fusion par l'API refusée par le contrôle des permissions, un essai, pas de contournement.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC09
 - Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R400, R402.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC09. Depuis RC09, un message de date tient la place du jour : un scénario allumé qui tombe le jour d'un anniversaire déjà remis est refusé, ou fait perdre l'anniversaire de l'année s'il passe le premier. L'essai (R400) ne le montre pas : il ne compare qu'aux autres scénarios. Désormais un message prévu par l'essai qui tombe, ce jour de Paris, sur un message de date remis à la boîte d'essai ou en préparation pour la même personne (fiches réunies comprises, même lecture que `dateMessageOn`) compte comme un double du même jour : l'allumage est refusé, comme pour deux scénarios. Le compte rendu le dit à part (`sameDayAsDate`, compris dans `sameDayTwice`), sans colonne ni migration. Un message de date reporté ou refusé ne compte pas. Changent seulement `automatismes/scenarios.ts` et son test.
