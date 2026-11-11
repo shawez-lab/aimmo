@@ -141,5 +141,36 @@ describeWithSqlite('BR37 · routes des communes à pourvoir et communes ouvertes
     expect(res.status).toBe(200);
     expect(res.html).toContain('<form method="post"');
     expect(section(res.html)).toBeNull();
+    // La panne est dite au journal, sans rien de personnel.
+    const failed = await t.events('candidature.communes_illisibles');
+    expect(failed.length).toBe(1);
+    expect(failed[0]!.data).toEqual({ rule: 'R628', error: 'Error' });
+  });
+
+  it('une lecture qui échoue, journal en panne aussi : la page sert, la panne est dite à la console', async () => {
+    const t = await setup();
+    const broken: SqlDatabase = {
+      exec: (sql) => t.db.exec(sql),
+      run: async (sql, p) => {
+        if (/journal/i.test(sql)) throw new Error('journal indisponible');
+        return t.db.run(sql, p);
+      },
+      first: (sql, p) => t.db.first(sql, p),
+      all: async (sql, p) => {
+        if (/recruiting_commune_decisions/.test(sql)) throw new Error('base indisponible');
+        return t.db.all(sql, p);
+      },
+    };
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args);
+    try {
+      const res = await t.page('/rejoindre', undefined, broken);
+      expect(res.status).toBe(200);
+      expect(section(res.html)).toBeNull();
+    } finally {
+      console.error = original;
+    }
+    expect(errors).toEqual([['candidature : communes ouvertes illisibles, journal indisponible', 'Error']]);
   });
 });

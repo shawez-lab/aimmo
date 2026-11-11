@@ -320,13 +320,22 @@ export interface CandidatureConfig {
 }
 
 /**
- * Les communes ouvertes au recrutement du réseau, par leur nom seul [R628]. Une lecture qui échoue rend une liste vide :
- * la page de candidature ne tombe jamais pour elle.
+ * Les communes ouvertes au recrutement du réseau, par leur nom seul [R628]. Une lecture qui échoue est écrite au journal
+ * et rend une liste vide : la page de candidature ne tombe jamais pour elle.
  */
 async function openCommunes(db: SqlDatabase, networkId: string, now: () => Date): Promise<string[]> {
+  const journal = new SqlJournalStore(db);
   try {
-    return await new CommunesAPourvoir(db, new SqlJournalStore(db), { now }).openCommunes(networkId);
-  } catch {
+    return await new CommunesAPourvoir(db, journal, { now }).openCommunes(networkId);
+  } catch (error) {
+    // La panne est dite, sans rien de personnel, au journal ; si le journal échoue aussi, à la console. Jamais elle
+    // n'empêche la page de servir.
+    const name = error instanceof Error ? error.name : 'Error';
+    try {
+      await appendEvent(journal, { type: 'candidature.communes_illisibles', actor: 'system:candidature', subject: `network:${networkId}`, data: { rule: 'R628', error: name } }, now);
+    } catch {
+      console.error('candidature : communes ouvertes illisibles, journal indisponible', name);
+    }
     return [];
   }
 }
