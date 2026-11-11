@@ -24,7 +24,10 @@ import { DEFAULT_RANGE_SETTINGS, departmentOf, distance, type EstimatedKind, typ
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { banDate, dayInFrench } from '../location/logement.ts';
-import { carriesPerson } from '../veille-dpe/veille.ts';
+import { addressCarriesPerson } from '../veille-dpe/veille.ts';
+
+/** La même lecture que la veille des diagnostics : le titre d'une voie n'est pas une personne [R292]. */
+export { addressCarriesPerson };
 
 const TIME_ZONE = 'Europe/Paris';
 const DAY_MS = 86_400_000;
@@ -155,22 +158,6 @@ export interface ScoreServices {
 export interface CountableSales {
   coverage(): Promise<SalesCoverage | null>;
   scan(kind: EstimatedKind, lat: number, lon: number, radius: number): Promise<{ sales: Sale[]; issues: number }>;
-}
-
-const ROAD_TITLE = /(?:^| )(?:rue|avenue|av|boulevard|bd|place|allee|impasse|quai|square|chemin|cours|route|passage|promenade|rond point|esplanade|parc|residence)(?: (?:du|de la|de l|des|de|d))? (?:docteur|dr|maitre|me|m|monsieur|madame|president|general|marechal|professeur|abbe|cardinal|commandant|colonel|capitaine|lieutenant|chanoine|pere|mere|saint|sainte)(?= |$)/g;
-const plainWords = (t: string): string =>
-  t
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-/**
- * Vrai si l'adresse porte une civilité ou un nom de personne. Le titre d'une voie (« rue du Docteur Chaussier ») n'en est
- * pas un : il est retiré avant le contrôle [R292].
- */
-export function addressCarriesPerson(t: string): boolean {
-  return carriesPerson(` ${plainWords(t)} `.replace(ROAD_TITLE, ' voie').trim());
 }
 
 const SALES_SOURCE = 'Demandes de valeurs foncières (DGFiP)';

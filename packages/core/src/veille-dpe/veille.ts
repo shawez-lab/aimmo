@@ -122,6 +122,15 @@ const KINDS: Record<string, DpeKind> = { appartement: 'apartment', maison: 'hous
 const words = (t: string): string => plain(t).replace(/[^a-z0-9]+/g, ' ').trim();
 /** Vrai si le texte porte une civilité ou une marque de personne : il est alors écarté entier [R288, R292]. */
 export const carriesPerson = (t: string): boolean => PERSON_MARKERS.test(` ${words(t)} `);
+/** Le titre d'une voie, juste après son type et un article facultatif : « rue du Docteur », « place du Maréchal ». */
+const ROAD_TITLE = /(?:^| )(?:rue|avenue|av|boulevard|bd|place|allee|impasse|quai|square|chemin|cours|route|passage|promenade|rond point|esplanade|parc|residence)(?: (?:du|de la|de l|des|de|d))? (?:docteur|dr|maitre|me|m|monsieur|madame|president|general|marechal|professeur|abbe|cardinal|commandant|colonel|capitaine|lieutenant|chanoine|pere|mere|saint|sainte)(?= |$)/g;
+/**
+ * Vrai si l'adresse porte une civilité ou un nom de personne. Le titre d'une voie (« rue du Docteur Chaussier ») n'en est
+ * pas un : il est retiré avant le contrôle ; toute autre marque écarte l'adresse entière [R288, R292].
+ */
+export function addressCarriesPerson(t: string): boolean {
+  return carriesPerson(` ${words(t.normalize('NFD').replace(/\p{M}/gu, ''))} `.replace(ROAD_TITLE, ' voie').trim());
+}
 const text = (v: unknown, max: number): string | null => {
   if (typeof v !== 'string' || /[\r\n\t<>]/.test(v)) return null;
   const t = v.trim().replace(/\s+/g, ' ');
@@ -160,7 +169,7 @@ export function readDiagnosis(raw: unknown, postcode: string): { ok: true; value
   const streetNumber = rawNumber === undefined || rawNumber === null || rawNumber === '' ? null : text(typeof rawNumber === 'number' ? String(rawNumber) : rawNumber, 12);
   if (!street || !commune || !pc || !POSTCODE.test(pc) || !/\p{L}/u.test(commune) || !STREET.test(street) || !/\p{L}{2}/u.test(street)) return { ok: false, code: 'illisible' };
   if (rawNumber !== undefined && rawNumber !== null && rawNumber !== '' && (!streetNumber || !STREET_NUMBER.test(streetNumber))) return { ok: false, code: 'illisible' };
-  for (const v of [street, commune, streetNumber ?? '']) if (PERSON_MARKERS.test(` ${words(v)} `)) return { ok: false, code: 'nom_dans_adresse' };
+  if (addressCarriesPerson(street) || carriesPerson(commune) || carriesPerson(streetNumber ?? '')) return { ok: false, code: 'nom_dans_adresse' };
   if (pc !== postcode) return { ok: false, code: 'hors_code_postal' };
   const s = r['surface_habitable_logement'];
   const surfaceM2 = typeof s === 'number' && Number.isFinite(s) && s > 0 && s < 10_000 ? Math.round(s * 100) / 100 : null;
