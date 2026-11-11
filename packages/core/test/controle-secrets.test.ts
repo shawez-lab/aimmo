@@ -105,4 +105,41 @@ describeWithSqlite('HX61 · le contrôle central range un message à secret masq
     await expect(t.controle.send({ ...t.order('482615', 1), kind: 'reply', subject: undefined })).rejects.toThrow(/cite son sujet/);
     expect(t.email.sent).toHaveLength(0);
   });
+
+  it('[R06] [RC08] un lien dont le jeton commence par « gpt », « robot » ou « assistant » part, entier au canal, masqué dans la base', async () => {
+    const t = await setup(false);
+    let n = 10;
+    for (const start of ['gpt', 'robot', 'assistant', 'chatbot', 'ia']) {
+      const link = `https://app.example.test/bon/${start}qzkwxvjrtlmnbpqzkwxvjrtlmnbpq`;
+      const text = `Bonjour Léa, votre document : ${link}. Ne le donnez à personne.`;
+      const sent = await t.controle.send({ ...t.order('482615', (n += 1)), fallbackTexts: [text], figures: [], secrets: [{ kind: 'lien', value: link }] });
+      expect(sent.status).toBe('sent');
+      expect(t.email.sent.at(-1)!.body).toContain(link);
+      const row = await t.db.first<{ body: string }>('SELECT body FROM messages WHERE id = ?', [sent.messageId]);
+      expect(row!.body).not.toContain(link);
+      expect(row!.body).toContain(MASKED_SECRET.lien);
+    }
+  });
+
+  it('[R06] [RC08] le même mot écrit hors du secret est toujours refusé', async () => {
+    const t = await setup(false);
+    const link = 'https://app.example.test/bon/gptqzkwxvjrtlmnbpqzkwxvjrtlmnbpq';
+    const texts = [`Notre assistant vous envoie votre document : ${link}.`, `Votre document, préparé par GPT : ${link}.`];
+    for (const [i, text] of texts.entries()) {
+      const sent = await t.controle.send({ ...t.order('482615', 20 + i), fallbackTexts: [text], figures: [], secrets: [{ kind: 'lien', value: link }] });
+      expect(sent).toMatchObject({ status: 'refused', rule: 'R06' });
+    }
+    expect(t.email.sent).toHaveLength(0);
+  });
+
+  it('[R10] [RC08] les chiffres d’un secret ne sont pas des chiffres écrits ; un chiffre hors du secret reste contrôlé', async () => {
+    const t = await setup(false);
+    const link = 'https://app.example.test/bon/a1b2c3d4e5f6g7h8i9j0';
+    const secrets = [{ kind: 'code' as const, value: '739204' }, { kind: 'lien' as const, value: link }];
+    const sent = await t.controle.send({ ...t.order('482615', 30), fallbackTexts: [`Bonjour Léa, votre code : 739204. Votre document : ${link}.`], figures: [], secrets });
+    expect(sent.status).toBe('sent');
+    expect(t.email.sent.at(-1)!.body).toContain('739204');
+    const other = await t.controle.send({ ...t.order('482615', 31), fallbackTexts: ['Bonjour Léa, votre code : 739204. Le bien vaut 250 000 €.'], figures: [], secrets: [secrets[0]!] });
+    expect(other).toMatchObject({ status: 'refused', rule: 'R10' });
+  });
 });
