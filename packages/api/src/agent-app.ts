@@ -35,6 +35,7 @@ import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
 import { PIGE_SCRIPT } from '../app/pige.ts';
+import { SITE_SCRIPT } from '../app/site.ts';
 import { TOURNEE_SCRIPT } from '../app/tournee.ts';
 import { VEILLE_DPE_SCRIPT } from '../app/veille-dpe.ts';
 import { COMMUNES_SCRIPT } from '../app/communes.ts';
@@ -142,6 +143,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/pige.js': { body: PIGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La tournée de prospection et la carte des opportunités (BR35), chargées depuis « Gagner des mandats », jamais gardées [R201].
   '/app/tournee.js': { body: TOURNEE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/site.js': { body: SITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/veille-dpe.js': { body: VEILLE_DPE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
