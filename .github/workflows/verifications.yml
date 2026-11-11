@@ -4,19 +4,16 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore:
-      - 'chantier/**'
 
 permissions:
   contents: read
 
-concurrency:
-  group: verifications-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   verifier:
     name: Vérifier
+    concurrency:
+      group: verifications-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     # Marge d'au moins 30 % sur la durée mesurée (X28) : `scripts/controle-verifications.mjs` y veille.
     timeout-minutes: 25
@@ -39,3 +36,90 @@ jobs:
         run: npm run check
       - name: Tests
         run: npm test
+
+  deployer:
+    name: Déployer
+    needs: verifier
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verifier.result == 'success'
+    concurrency:
+      group: deployer-api
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      WRANGLER: wrangler@4.149.0
+      WRANGLER_SEND_METRICS: 'false'
+      D1_PLACEHOLDER: 00000000-0000-0000-0000-000000000000
+      GITHUB_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Secrets Cloudflare présents (H04)
+        id: h04
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "pret=oui" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Secrets Cloudflare absents (H04) : rien n'est mis en ligne."
+          fi
+      - if: steps.h04.outputs.pret == 'oui'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - if: steps.h04.outputs.pret == 'oui'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Commit actuel de main
+        run: node scripts/require-current-main.mjs
+      - if: steps.h04.outputs.pret == 'oui'
+        run: npm ci
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Base D1 en Europe
+        working-directory: packages/api
+        run: |
+          find_id() {
+            npx -y "$WRANGLER" d1 list --json | node -e '
+              let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+                const base = JSON.parse(s).find((d) => d.name === "aimmo");
+                process.stdout.write(base ? base.uuid : "");
+              });'
+          }
+          id="$(find_id)"
+          if [ -z "$id" ]; then
+            node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+            npx -y "$WRANGLER" d1 create aimmo --jurisdiction eu
+            id="$(find_id)"
+          fi
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable après création."
+            exit 1
+          fi
+          sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
+        # Avant toute migration : une base hors d'Europe arrête tout, rien n'y est écrit [R602].
+        name: Base en Europe (HX56, R602)
+        run: |
+          npx -y "$WRANGLER" d1 list --json > "$RUNNER_TEMP/d1.json"
+          node scripts/juridiction-europe.mjs packages/api/wrangler.toml --d1 "$RUNNER_TEMP/d1.json"
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Migrations de la base
+        working-directory: packages/api
+        run: |
+          node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+          npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Liaisons des compartiments R2
+        run: node scripts/liaisons-r2.mjs packages/api/wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Compartiments en Europe (HX56, R602)
+        run: node scripts/juridiction-europe.mjs packages/api/wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Mise en ligne du Worker
+        working-directory: packages/api
+        run: |
+          node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+          npx -y "$WRANGLER" deploy
