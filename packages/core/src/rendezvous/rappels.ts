@@ -236,6 +236,8 @@ export class RappelsRendezVous {
         subject: kind === 'confirmation' ? `rdv_confirmation:${row.id}` : `rdv_rappel_${kind}:${row.id}`,
         fallbackTexts: [text],
         figures,
+        // Le lien décale ou annule ce rendez-vous : remis au canal, jamais rangé en clair [HX61, RC16].
+        ...(link ? { secrets: [{ kind: 'lien' as const, value: link }] } : {}),
       });
       messageId = result.messageId;
       // Refusé pour l'heure seulement [R01] : repris au passage suivant. Tout autre refus est définitif.

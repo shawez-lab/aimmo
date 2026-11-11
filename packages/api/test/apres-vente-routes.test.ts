@@ -6,6 +6,7 @@ import { handleRequest } from '../src/app.ts';
 import { dossierRoutes, type DossierServices } from '../src/dossiers.ts';
 import { offreRoutes } from '../src/offres.ts';
 import { PROOF, setupDossier } from '../../core/test/dossiers-jeu.ts';
+import { enClair } from '../../core/test/boite-essai.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
 // Tout est inventé : clients, biens, adresses de test.
@@ -60,7 +61,8 @@ async function setup() {
     for (const j of jobs()) await j.run({ job: j.name, slot: t.now().toISOString().slice(0, 13), at: t.now() });
   };
   const outbox = async (personId: string) =>
-    (await t.db.all<{ body: string }>('SELECT m.body FROM trial_outbox o JOIN messages m ON m.id = o.message_id WHERE m.person_id = ? ORDER BY m.occurred_at, m.id', [personId])).map((r) => r.body);
+    // Le lien de satisfaction est rangé masqué : le client le lit dans ce que la boîte d'essai a reçu [HX61, RC16].
+    (await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM trial_outbox o JOIN messages m ON m.id = o.message_id WHERE m.person_id = ? ORDER BY m.occurred_at, m.id', [personId]))).map((r) => r.body);
   const page = async (method: string, path: string, body?: string) => {
     const r = await handleApresVentePublic(
       new Request(`https://aimmo.example.test${path}`, body === undefined ? { method } : { method, headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }),

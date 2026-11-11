@@ -6,6 +6,7 @@ import { dossierProblems, publishedVersionOf, renderDossier, VisiteDistance } fr
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { enClair, tablesContenant } from './boite-essai.ts';
+import { MASKED_SECRET } from '../src/envoi/controle.ts';
 
 // Réseau, agents, vendeurs, visiteurs et biens inventés.
 const MONDAY_9H = Date.parse('2026-12-07T08:00:00.000Z');
@@ -210,6 +211,10 @@ describeWithSqlite('HX44 · dossier envoyé avant la visite', () => {
     expect(box[0]!.body).toContain('Bonjour Inès');
     expect(box[0]!.body).toContain(t.issued[0]);
     expect(box[0]!.body).not.toContain('Vendeur');
+    // Le lien du dossier est rangé masqué : l'agent qui lit la fiche ne l'ouvre pas à la place du visiteur [HX61, RC16].
+    const rangé = await t.db.first<{ body: string }>('SELECT body FROM messages WHERE id = ?', [box[0]!.id]);
+    expect(rangé!.body).toContain(MASKED_SECRET.lien);
+    expect(await tablesContenant(t.db, t.issued[0]!)).toEqual([]);
     const row = await t.db.first<{ status: string; message_id: string }>('SELECT status, message_id FROM visit_dossiers');
     expect(row?.status).toBe('envoye');
     expect(await t.db.first('SELECT id FROM messages WHERE id = ?', [row!.message_id])).not.toBeNull();

@@ -3,6 +3,8 @@ import { DemandesAvis, REVIEW_PURPOSE, RelancesApresVente, Satisfaction, reviewT
 import { checkText } from '../src/envoi/texte.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { FakeDossiersClos } from './apres-vente-jeu.ts';
+import { enClair, tablesContenant } from './boite-essai.ts';
+import { MASKED_SECRET } from '../src/envoi/controle.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
 const LINK = 'https://g.page/r/CexempleAgent42/review';
@@ -33,7 +35,8 @@ describeWithSqlite('F05 · satisfaction : note et commentaire rangés pour M13',
       return p.id;
     };
     const close = (fileId: string, closedOn: string, clients: ClosedSale['clients']) => dossiers.sales.push({ fileId, agentId: t.alexId, closedOn, city: 'Dijon', reference: `REF-${fileId}`, clients });
-    const inbox = (personId: string) => t.db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at', [personId]);
+    // Le lien de satisfaction est rangé masqué : le client le lit dans ce que la boîte d'essai a reçu [HX61, RC16].
+    const inbox = (personId: string) => enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at', [personId]));
     const tokenOf = async (personId: string, i = 0) => {
       const body = (await inbox(personId))[i]!.body;
       const at = body.indexOf(BASE) + BASE.length;
@@ -53,6 +56,10 @@ describeWithSqlite('F05 · satisfaction : note et commentaire rangés pour M13',
     expect(await t.avis.run(t.network.id)).toBe(1);
     const token = await t.tokenOf(a);
     expect(token).toMatch(/^[a-z]{32}$/);
+    // Rangé masqué : l'agent qui lit la fiche ne peut pas noter à la place du client [HX61, RC16].
+    const rangé = await t.db.first<{ body: string }>("SELECT body FROM messages WHERE person_id = ? AND direction = 'out'", [a]);
+    expect(rangé!.body).toContain(MASKED_SECRET.lien);
+    expect(await tablesContenant(t.db, token)).toEqual([]);
     t.setClock(paris('2027-03-10', 20));
     expect(await t.satisfaction.submit(token, { score: 4, comment: '  Très à l’écoute, merci Alex.  ' })).toEqual({ ok: true });
     // Le lien ne sert qu'une fois.

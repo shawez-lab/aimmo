@@ -377,6 +377,8 @@ export class RendezVous {
           subject: `rdv_confirmation:${id}`,
           fallbackTexts: [text],
           figures,
+          // Le lien décale ou annule ce rendez-vous : remis au canal, jamais rangé en clair [HX61, RC16].
+          ...(link ? { secrets: [{ kind: 'lien' as const, value: link }] } : {}),
         });
         confirmation = { status: sent.status, rule: sent.rule };
         // Refusée pour l'heure [R01] : la confirmation attend, les rappels (V04) l'enverront dans les heures d'envoi.

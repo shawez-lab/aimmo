@@ -18,6 +18,8 @@ import {
   type Availability,
   type Viewer,
 } from '../src/index.ts';
+import { MASKED_SECRET } from '../src/envoi/controle.ts';
+import { enClair, tablesContenant } from './boite-essai.ts';
 import { mergeWithDouble } from './doublon.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -73,12 +75,14 @@ async function world() {
     return r;
   };
   const outbox = () => db.all<{ message_id: string }>('SELECT message_id FROM trial_outbox');
-  const bodies = async () => (await db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out' ORDER BY occurred_at, rowid")).map((m) => m.body);
+  // Le lien est rangé masqué : la personne le lit dans ce que la boîte d'essai a reçu [HX61, RC16].
+  const bodies = async () => (await enClair(db.all<{ id: string; body: string }>("SELECT id, body FROM messages WHERE direction = 'out' ORDER BY occurred_at, rowid"))).map((m) => m.body);
+  const stored = async () => (await db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out' ORDER BY occurred_at, rowid")).map((m) => m.body);
   const runAt = (d: Date) => {
     setClock(d);
     return rappels.run();
   };
-  return { db, store, net, paul, lea, journal, rdv, rappels, decisions, asPaul, tokens, book, outbox, bodies, runAt, setClock };
+  return { db, store, net, paul, lea, journal, rdv, rappels, decisions, asPaul, tokens, book, outbox, bodies, stored, runAt, setClock };
 }
 
 describeWithSqlite('V04 · rappels la veille et le jour même', () => {
@@ -95,6 +99,11 @@ describeWithSqlite('V04 · rappels la veille et le jour même', () => {
     expect(jour).toContain('aujourd’hui, le mercredi 11 novembre à 9 h.');
     expect(veille).toContain(`${LINK}${w.tokens[0]}`);
     expect(jour).toContain(`${LINK}${w.tokens[1]}`);
+    // Rangés masqués : ni la base ni le journal ne gardent un jeton qui décale ou annule [HX61, RC16].
+    const [, veilleRangee, jourRangee] = await w.stored();
+    expect(veilleRangee).toContain(MASKED_SECRET.lien);
+    expect(jourRangee).toContain(MASKED_SECRET.lien);
+    for (const token of w.tokens) expect(await tablesContenant(w.db, token)).toEqual([]);
     // Le lien du rappel ne sert qu'à son rendez-vous : il l'annule, et rien ne part ensuite.
     const other = await w.book(at('2026-11-12', '09:00'));
     w.setClock(at('2026-11-11', '08:40'));
