@@ -1105,7 +1105,9 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR38 · Écran des communes à pourvoir pour la direction
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#507, `a39fd9e7`) : `packages/api/app/communes.ts`, `/app/communes.js`, chargé au geste depuis « Phases et régions » (`phases.ts`), `app.js` inchangé ; douze derniers mois finis de Paris, ordre du serveur gardé, aucun nom [R14]. Relecture forte 1 P1 corrigé (script chargé sans écran : bloc vide) ; Codex 2 P2 corrigés (mois relu après une décision), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5550 tests).
+- Décidé (2026-11-11, voie 1) : l'entrée est dans « Phases et régions » et non dans « Candidatures », dont le test [R81] interdit tout autre bouton ou champ ; l'application n'a plus de marge. Après une décision, le mois choisi à l'instant est relu.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR37
 - Cahier : M14 ; Le produit, système de design ; R201.
 - Objectif : sur l'écran du réseau, la direction choisit un mois fini, lit commune par commune les clients allés à la direction faute d'agent, les agents qui la couvrent, « à ouvrir » et « à fermer », et ouvre ou ferme une commune avec sa raison, en un geste.
