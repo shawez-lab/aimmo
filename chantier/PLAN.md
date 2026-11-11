@@ -1108,6 +1108,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : place coupée sans message : reprise au passage suivant, un seul message (test) ; place coupée après le message rangé : fermée, aucun second message [R05] (test) ; place récente d'un passage en cours : jamais reprise par un autre [R18] (test) ; tous les tests de HX25 restent verts.
 - Attend : rien.
 
+### RC04 · Une voie au titre d'une personne n'écarte plus un diagnostic
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX16, HX17
+- Cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R288, R292.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX17 et BR27 (`carriesPerson` de HX16 à aligner, cœur, voie 2). Aujourd'hui la veille écarte en entier un diagnostic au « 12 rue du Docteur Chaussier » ou « place du Maréchal Leclerc » : à Dijon, nombre de logements F ou G ne remontent jamais. Le titre d'une voie, juste après son type (rue, avenue, place…) et un article facultatif, n'est pas une personne : il est retiré avant le contrôle, comme le fait déjà le score par adresse. Tout autre marque de personne (« Mme », « chez », « famille », un titre sans type de voie devant) écarte toujours le diagnostic entier. `addressCarriesPerson` et son motif passent dans `packages/core/src/veille-dpe/veille.ts` (le score l'importait déjà de là pour `carriesPerson`) ; `score.ts` le réexporte sans rien changer d'autre. La lettre de quartier (`mandats/gagner`, R140) ne change pas.
+- Objectif : un diagnostic dans une rue qui porte le titre d'une personne remonte, jamais un nom de propriétaire.
+- Critères : « Rue du Docteur Chaussier », « Place du Maréchal Leclerc », « Avenue du Président Wilson » lus [R288] (test) ; « Docteur Chaussier » sans type de voie, « chez Mme X », « Famille Y » dans la rue ou la commune toujours écartés [R288] (test) ; le score par adresse garde exactement sa lecture [R292] (test) ; tous les tests de HX16 et HX17 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
