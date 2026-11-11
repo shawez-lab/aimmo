@@ -442,7 +442,9 @@ Sous `/v1/recherche`, l'agent ou la direction : tout autre rôle est refusé (40
 - `POST /phrase` : la recherche (`search` : chaque critère avec les mots exacts de la phrase et leur place, les mots écartés et pourquoi [R420, R50]), les biens diffusables du réseau qui y répondent (`results`, sans adresse, chacun avec ses raisons [R421]), ceux des communes voisines à part et marqués (`neighbours`) et les voisines proposées (`proposedNeighbours`), jamais ajoutées sans un geste [R423].
 - `POST /projets/<projet>/phrase` : range la recherche dans la fiche acquéreur du projet (T01), par l'agent de la fiche ou la direction, seulement avec l'accord `buyer_search` en cours de la personne (409 R422 `sans_accord`) ; une recherche vidée par les refus : 409 R424 (`a_preciser`) ; un projet inconnu : 404. La phrase n'est gardée nulle part ; les critères et leurs mots, oui [R422]. Rend `{buyerSearchId, criteria}`.
 
-La route publique, sans connexion, et les écrans viendront à part.
+À l'écran (BR40) : sur la fiche d'une personne qui a un projet d'achat, le bloc « Recherche en langage courant » (servi avec `/app/biens-fiche.js`) a un bouton « Chercher avec ses mots » qui charge `/app/recherche.js`. L'agent tape la phrase de la personne ; l'écran appelle `POST /v1/recherche/phrase` avec la phrase et les gestes, jamais des critères, et montre dans l'ordre reçu chaque bien avec ses raisons et les mots qui les portent, sans adresse, les mots écartés, les biens voisins marqués et un bouton par voisine proposée. Écarter un bien envoie sa raison de la liste (et la contrainte pour « il manque ») ; « Ranger cette recherche » envoie à `POST /v1/recherche/projets/<projet>/phrase` la phrase et les gestes montrés, le projet choisi parmi les projets d'achat que rend la fiche (`projects[].id`). Chaque refus est dit en mots, jamais par son code.
+
+La route publique, sans connexion, et la prise de l'accord `buyer_search` à l'écran viendront à part.
 
 ## Carte des opportunités et tournée de prospection (BR28)
 

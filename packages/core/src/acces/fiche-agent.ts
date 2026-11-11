@@ -56,7 +56,7 @@ export interface AgentFiche {
   callRefusal: 'excluded' | 'no_phone' | 'no_consent' | 'refused_request' | 'refused_recently' | 'too_many_calls' | 'outside_hours' | null;
   /** Quand l'appel rouvre, après un refus ou trop d'appels [R204] ; sinon rien. */
   callReopensAt: string | null;
-  projects: { kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
+  projects: { id: string; kind: string; stage: string; deadline: string | null; budgetMinEur: number | null; budgetMaxEur: number | null }[];
   sources: { channel: string; detail: string | null; occurredAt: string }[];
   consents: { id: string; purpose: string; channel: string; givenAt: string; withdrawnAt: string | null }[];
   /** Les derniers messages, du plus récent au plus ancien. */
@@ -254,7 +254,7 @@ export class FicheAgent {
         callRefusal,
         callClosesAt,
         callReopensAt,
-        projects: fiche.projects.map((p) => ({ kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
+        projects: fiche.projects.map((p) => ({ id: p.id, kind: p.kind, stage: p.stage, deadline: p.deadline, budgetMinEur: p.budget_min_eur, budgetMaxEur: p.budget_max_eur })),
         sources: [...fiche.sources].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at)).map((s) => ({ channel: s.channel, detail: s.detail, occurredAt: s.occurred_at })),
         consents: fiche.consents.map((c) => ({ id: c.id, purpose: c.purpose, channel: c.channel, givenAt: c.given_at, withdrawnAt: c.withdrawn_at })),
         messages,
