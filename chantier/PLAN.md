@@ -1247,6 +1247,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : lettre préparée par l'agent : `letterMine` vrai sur sa carte et son alerte [R290] (test) ; lettre d'un autre agent du réseau : faux, et son impression reste refusée [R16] (test) ; sans lettre : faux (test) ; direction : faux sur la carte (test) ; tous les tests de HX16, BR26 et BR36 restent verts.
 - Attend : rien.
 
+### RC12 · Les robots ne comptent pas dans les vues du site
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX15
+- Cahier : Phase 3, « Gérer mon site » ; R285.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX15 (« filtre des robots »). Aujourd'hui chaque appel de `countView` monte le compteur : un moteur de recherche, un aperçu de lien (WhatsApp, Facebook, LinkedIn), un outil de mesure ou un script gonfle les vues, et le rapport « vendeurs par vue » de R287 propose alors la mauvaise page. `countView` reçoit désormais, en plus du code, le navigateur annoncé par la visite (`{ userAgent }`, obligatoire pour que le Worker ne puisse pas l'oublier) ; il le lit seulement pour décider, ne le range nulle part et ne l'écrit pas au journal [R285]. Une visite sans navigateur, ou dont le navigateur porte une marque d'une liste fermée (robots, aperçus de liens, outils de mesure, navigateurs sans écran, bibliothèques de script), ne compte pas : réponse `{ ok: true, counted: false }`. Un code inconnu reste refusé d'abord. Le téléphone Cubot n'est pas un robot. Fichier neuf `statistiques-site/robots.ts` ; changent aussi `statistiques.ts`, l'index du module, son test et R285 dans `docs/REGLES.md`. Ni route, ni écran (voie 1), ni migration.
+- Objectif : les vues du site sont celles de personnes, pour que la prochaine page proposée le soit sur de vrais chiffres.
+- Critères : vue d'un navigateur de téléphone ou d'ordinateur comptée (test) ; Googlebot, Bingbot, GPTBot, aperçu WhatsApp et Facebook, Lighthouse, Chrome sans écran, curl, python-requests : rien compté [R285] (test) ; navigateur vide ou absent : rien compté [R285] (test) ; le navigateur n'est rangé dans aucune table ni au journal [R285] (test) ; Cubot compté (test) ; code inconnu toujours refusé, robot ou non (test) ; tous les tests de HX15 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
