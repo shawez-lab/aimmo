@@ -1115,7 +1115,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR39 · Routes de la recherche de biens en langage courant
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#509, `96d2f582`), `packages/api/src/recherche.ts`, aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5560 tests). Restent : route publique sans connexion (à protéger du moissonnage), écran public et écran de l'agent, prise de l'accord `buyer_search` à l'écran.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de HX28 (« routes, écran public et écran de l'agent »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Fichier neuf `packages/api/src/recherche.ts`, sous `/v1/recherche`, ajouté au routeur de `app.ts` ; aucune règle nouvelle ni migration. Routes de l'agent et de la direction seulement : la route publique (sans connexion, à protéger du moissonnage) et les écrans viendront dans des tâches à part. L'écran envoie la phrase et les gestes de la personne, jamais des critères : tout est relu sur le serveur. Une phrase de plus de 500 signes est refusée, jamais tronquée en silence.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX28
 - Cahier : M08, recherche de biens ; R420 à R424.

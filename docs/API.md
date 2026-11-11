@@ -435,6 +435,15 @@ Sous `/v1/score-adresse` : chaque route dit les rôles qu'elle admet, contrôlé
 
 Sources : `scoreSources` de la configuration, sinon la Base adresse nationale et les ventes DVF de l'estimation, avec le cadastre et les diagnostics de l'ADEME des données publiques (`fetchPublicData`).
 
+## Recherche de biens en langage courant (BR39)
+
+Sous `/v1/recherche`, l'agent ou la direction : tout autre rôle est refusé (403, `role`) avant la lecture du corps, au journal [R16]. Corps JSON de 16 ko au plus, avec `phrase` (texte non vide de 500 signes au plus, jamais tronqué : sinon 400 `bad_phrase`) et `steps` facultatif, les gestes de la personne, 50 au plus : `{refuse: <id du bien>, reason}` (raison en liste fermée : `trop_cher`, `trop_petit`, `pas_assez_de_pieces`, `pas_assez_de_chambres`, `commune`, `type`, ou `manque` avec `feature`) ou `{acceptNeighbour: <commune>}` ; un geste mal formé : 400 `bad_steps`. Un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`). L'écran n'envoie jamais de critères : la phrase est lue par le code seul, sur le serveur, et les gestes y sont rejoués ; un refus ne vaut que pour un bien montrable ou déjà mis en vente, une voisine que si elle a été proposée. Rien n'est envoyé.
+
+- `POST /phrase` : la recherche (`search` : chaque critère avec les mots exacts de la phrase et leur place, les mots écartés et pourquoi [R420, R50]), les biens diffusables du réseau qui y répondent (`results`, sans adresse, chacun avec ses raisons [R421]), ceux des communes voisines à part et marqués (`neighbours`) et les voisines proposées (`proposedNeighbours`), jamais ajoutées sans un geste [R423].
+- `POST /projets/<projet>/phrase` : range la recherche dans la fiche acquéreur du projet (T01), par l'agent de la fiche ou la direction, seulement avec l'accord `buyer_search` en cours de la personne (409 R422 `sans_accord`) ; une recherche vidée par les refus : 409 R424 (`a_preciser`) ; un projet inconnu : 404. La phrase n'est gardée nulle part ; les critères et leurs mots, oui [R422]. Rend `{buyerSearchId, criteria}`.
+
+La route publique, sans connexion, et les écrans viendront à part.
+
 ## Carte des opportunités et tournée de prospection (BR28)
 
 Sous `/v1/tournee`, l'agent en activité seul : la carte et la tournée sont les siennes ; la direction et tout autre rôle sont refusés (403, `role`), au journal [R16, R297]. Un seul paramètre, `date` (AAAA-MM-JJ, le jour de Paris sans lui) ; une date mal formée : 409 R298 (`bad_date`) ; un autre paramètre ou une date répétée : 400 `unknown_field`. Rien n'est réservé ni envoyé.
