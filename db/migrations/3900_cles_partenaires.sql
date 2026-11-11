@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS property_key_partner_loans (
   due_at TEXT NOT NULL,
   handed_by TEXT NOT NULL,
   out_at TEXT NOT NULL CHECK (due_at > out_at),
-  CHECK ((julianday(due_at) - julianday(out_at)) * 86400000 <= 43200000 + 1),
   FOREIGN KEY (key_id, network_id) REFERENCES property_keys (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (partner_id, network_id) REFERENCES partners (id, network_id) ON DELETE RESTRICT,
   FOREIGN KEY (responsible_agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT

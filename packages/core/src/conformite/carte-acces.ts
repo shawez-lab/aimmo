@@ -705,6 +705,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   property_key_loans: out('agent', 'Sortie d\'un trousseau : l\'agent qui l\'a, depuis quand, pour quoi.'),
   property_key_returns: out('agent', 'Retour d\'un trousseau à l\'armoire.'),
   property_key_retirements: out('sans_client', 'Trousseau rendu au propriétaire ou perdu.'),
+  property_key_partner_loans: out('agent', 'Remise d\'un trousseau à un partenaire de l\'annuaire : à qui, pour quoi, jusqu\'à quand, l\'agent qui en répond.'),
+  property_key_partner_returns: out('agent', 'Retour d\'un trousseau remis à un partenaire.'),
   // HX14 : le stock de panneaux. L'adresse d'une pose est celle du bien : trouvée par le bien de la personne.
   signs: out('sans_client', 'Panneau du stock du réseau, avec son numéro et son format.'),
   sign_placements: { locate: [via('property_id', 'properties')] },

@@ -566,7 +566,7 @@ export class Cles {
     const k = await this.keeper(viewer, key.property_id);
     if (!k.ok) return k;
     const rows = await this.db.all<LoanRow>(`${LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.rowid`, [keyId]);
-    const partnerRows = await this.db.all<PartnerLoanRow>(`${PARTNER_LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.rowid`, [keyId]);
+    const partnerRows = await this.db.all<PartnerLoanRow>(`${PARTNER_LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.id`, [keyId]);
     const value: Movement[] = [
       ...rows.map((l) => ({
         loanId: l.id,
@@ -588,8 +588,10 @@ export class Cles {
         partner: { partnerId: l.partner_id, trade: l.trade, businessName: l.business_name },
       })),
     ];
-    // Du plus ancien au plus récent, les deux sortes de sortie mêlées (un trousseau n'est jamais sorti deux fois à la fois).
-    value.sort((a, b) => a.outAt.localeCompare(b.outAt));
+    // Du plus ancien au plus récent, les deux sortes de sortie mêlées (un trousseau n'est jamais sorti deux fois à la fois) :
+    // à la même heure de sortie, celle revenue d'abord, la sortie encore ouverte en dernier.
+    const back = (m: Movement): string => m.returned?.at ?? '\uffff';
+    value.sort((a, b) => a.outAt.localeCompare(b.outAt) || back(a).localeCompare(back(b)));
     return { ok: true, value };
   }
 

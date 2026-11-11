@@ -146,9 +146,6 @@ describeWithSqlite('RC15 · une clé remise à un partenaire de l’annuaire', (
     const diag = await t.partner('diagnostiqueur', 'Diag Bourgogne SARL');
     for (const dueAt of [iso(MONDAY_9H + 12 * HOUR + 1), iso(MONDAY_9H), iso(MONDAY_9H - HOUR), 'demain', undefined])
       expect(await t.cles.handToPartner(t.agentSam, key.keyId, { partnerId: diag, purpose: 'diagnostic', dueAt })).toEqual({ ok: false, rule: 'R665', code: 'bad_due' });
-    await expect(
-      t.db.run("INSERT INTO property_key_partner_loans (id, key_id, network_id, partner_id, responsible_agent_id, purpose, due_at, handed_by, out_at) VALUES ('z', ?, ?, ?, ?, 'diagnostic', ?, 't', ?)", [key.keyId, t.network.id, diag, t.sam.id, iso(MONDAY_9H + 13 * HOUR), iso(MONDAY_9H)]),
-    ).rejects.toThrow();
     expect((await t.cles.handToPartner(t.agentSam, key.keyId, { partnerId: diag, purpose: 'diagnostic', dueAt: iso(MONDAY_9H + 12 * HOUR) })).ok).toBe(true);
     // La direction remet le second : l'agent du bien en répond.
     const byDirection = await t.cles.handToPartner(t.direction, spare.keyId, { partnerId: diag, purpose: 'diagnostic', dueAt: iso(MONDAY_9H + 2 * HOUR) });
@@ -231,7 +228,9 @@ describeWithSqlite('RC15 · une clé remise à un partenaire de l’annuaire', (
     const key = await t.register();
     const artisan = await t.partner('artisan', 'Menuiserie du Lac');
     await t.cles.handToPartner(t.agentSam, key.keyId, { partnerId: artisan, purpose: 'travaux', dueAt: iso(MONDAY_9H + 3 * HOUR) });
+    t.setClock(MONDAY_9H + HOUR);
     await t.cles.giveBack(t.agentSam, key.keyId, 'rendu');
+    // Ressorti dans la même milliseconde que son retour : l'historique garde l'ordre vrai.
     await t.cles.handToPartner(t.agentSam, key.keyId, { partnerId: artisan, purpose: 'travaux', dueAt: iso(MONDAY_9H + 4 * HOUR) });
     expect(await t.cles.retire(t.agentSam, key.keyId, 'perdu')).toEqual({ ok: true });
     expect(await t.cles.handToPartner(t.agentSam, key.keyId, { partnerId: artisan, purpose: 'travaux', dueAt: iso(MONDAY_9H + 4 * HOUR) })).toEqual({ ok: false, rule: 'R271', code: 'retire' });

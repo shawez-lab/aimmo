@@ -283,6 +283,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_key_loans: ['holder_agent_id', 'handed_by'],
       property_key_returns: ['recorded_by'],
       property_key_retirements: ['reason', 'retired_by'],
+      // RC15 : la clé remise à un partenaire de l'annuaire ; l'agent qui en répond et ceux qui notent sont nommés.
+      property_key_partner_loans: ['responsible_agent_id', 'handed_by'],
+      property_key_partner_returns: ['recorded_by'],
       // HX14 : le stock de panneaux ; l'adresse d'une pose (le bien du vendeur) et les agents qui posent ou récupèrent. Raisons et
       // heure du retrait inscrites par prudence (leur nom ressemble à une donnée personnelle).
       signs: ['created_by'],
@@ -1183,6 +1186,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],
+  property_key_partner_loans: ['id', 'key_id', 'network_id', 'partner_id', 'purpose', 'due_at', 'out_at'],
+  property_key_partner_returns: ['loan_id', 'outcome', 'returned_at'],
   signs: ['id', 'network_id', 'number', 'size', 'created_at'],
   sign_placements: ['id', 'network_id', 'sign_id', 'property_id', 'mandate_id', 'placed_at'],
   sign_removals: ['placement_id', 'network_id', 'outcome'],
