@@ -441,6 +441,8 @@ Sous `/v1/tournee`, l'agent en activité seul : la carte et la tournée sont les
 
 Les panneaux sont placés par la Base adresse nationale (le géocodeur de l'estimation), sinon leur lieu est inconnu. L'agenda relié (V03) et la position des biens n'ont pas encore de source dans l'API : la tournée ne voit que les rendez-vous d'AIMMO, et la réponse le dit (`agendaRelie: false`).
 
+À l'écran (BR35) : dans « Gagner des mandats », la partie « Ma tournée de prospection » a un bouton « Ouvrir ma tournée » qui charge `/app/tournee.js`. Il lit `GET /v1/tournee` et `GET /v1/tournee/carte`, pour le jour de Paris puis pour le jour choisi, et n'écrit rien : les arrêts dans l'ordre reçu, les rendez-vous déjà pris dits fixes, ce qui ne tient pas avec sa raison en mots, les minutes de route, ce qui est hors des zones en nombre seul ; la carte regroupe les opportunités par commune, sans fond de carte venu d'ailleurs. Le lien de la vue des rues n'est posé qu'à sa forme attendue, dans un nouvel onglet sans référent [R299]. Chaque refus est dit en mots, jamais par son code.
+
 ## Pige des annonces de particuliers (BR29)
 
 Sous `/v1/pige` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 2 ko au plus ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; les routes sans corps n'admettent qu'un corps vide ou `{}`. Aucun nom, numéro, mail, adresse ni texte d'annonce n'est gardé ni rendu ; une annonce « pas d'agence » n'entre jamais dans la file, ni le même bien vu ailleurs [R273]. Rien n'est envoyé par AIMMO [R275, R26].
