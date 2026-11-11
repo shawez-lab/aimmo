@@ -1319,6 +1319,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : remise à un partenaire valable : le trousseau est chez lui, une seconde sortie (agent ou partenaire) refusée par le code et par la base [R271] (tests) ; métier hors liste, partenaire d'un autre réseau, sans justificatif valable ou raison `visite`/`estimation` refusés [R665] (tests) ; retour au plus tard 12 h, rappel à l'agent qui a remis, tout de suite en retard [R272] (test) ; seul l'agent du bien ou la direction remet et note le retour, refus au journal [R16] (test) ; vue du vendeur : métier et raison sociale, aucun nom de personne [R13] (test) ; tout mouvement au journal, rien ne change ni ne s'efface [R17] (test) ; tous les tests de HX10 et U01 restent verts.
 - Attend : rien.
 
+### RC16 · Les liens personnels masqués dans les messages rangés
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX61, HX44, V04, F05
+- Cahier : Conformité, règles des messages ; HX61 « Le contrôle central range un message à secret masqué » ; R06, R05, R13.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX61 (« jetons personnels sans acte à signer, non masqués : dossier publié avant la visite (HX44), lien de rendez-vous, lien de satisfaction »). Aujourd'hui ces trois liens sont rangés en clair dans `messages.body` : l'agent, ou quiconque lit la fiche, peut annuler ou décaler le rendez-vous du client, ouvrir son dossier ou donner sa note à sa place. Chaque appel au contrôle central qui porte l'un de ces liens le déclare dans `secrets` (sorte `lien`) : le canal reçoit le texte entier, la base « [lien masqué] ». `envoi/controle.ts` (socle) ne change pas. Changent seulement `medias/visite-distance.ts`, `rendezvous/reservation.ts`, `rendezvous/rappels.ts`, `apres-vente/demandes-avis.ts` et leurs tests ; aucune règle nouvelle ni migration.
+- Objectif : plus aucun jeton personnel en clair dans ce que l'agent ou la base peuvent relire.
+- Critères : dossier avant la visite, confirmation de rendez-vous (réservation et passage des rappels), rappel de la veille et du jour, demande d'avis avec lien de satisfaction : aucun jeton en clair dans `messages` ni dans le journal, le canal (boîte d'essai) reçoit le lien entier [HX61, R13] (tests) ; le lien reçu ouvre toujours ce qu'il ouvrait (test) ; sans lien réglé, rien ne change (test) ; tous les tests de HX44, V03, V04, F02, F05 et HX61 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
