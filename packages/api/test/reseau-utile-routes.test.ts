@@ -166,6 +166,31 @@ describeWithSqlite('BR20 · routes des remises et des actualités', () => {
     expect((await t.http('direction', 'POST', '/actualites/inconnue-1/retrait', { reason: 'x x x' })).status).toBe(404);
   });
 
+  it('BR47 · [R269] [R16] ce qui a été montré se relit dans « Déjà vues », sans revenir au fil ; à l’agent lui seul', async () => {
+    const t = await setup();
+    const id = (await t.http('direction', 'POST', '/actualites', actualite())).body.newsId!;
+    expect((await t.http('alex', 'GET', '/actualites/deja-vues')).body.data).toEqual([]);
+    // Montrée une fois dans le fil, puis réponse perdue : elle n'y revient pas, mais se relit.
+    expect((await t.http('alex', 'GET', '/actualites')).body.data.map((n: { id: string }) => n.id)).toContain(id);
+    const seen = await t.http('alex', 'GET', '/actualites/deja-vues');
+    expect(seen.status).toBe(200);
+    expect(seen.body.data).toMatchObject([{ id, impact: actualite().impact, shownOn: '2027-02-12' }]);
+    expect((await t.http('alex', 'GET', '/actualites/deja-vues')).body.data.map((n: { id: string }) => n.id)).toEqual([id]);
+    expect((await t.http('alex', 'GET', '/actualites')).body.data.map((n: { id: string }) => n.id)).not.toContain(id);
+    // Sam ne l'a pas vue : rien chez lui, et son fil la montre encore.
+    expect((await t.http('sam', 'GET', '/actualites/deja-vues')).body.data).toEqual([]);
+    expect((await t.http('sam', 'GET', '/actualites')).body.data.map((n: { id: string }) => n.id)).toContain(id);
+    // Retirée : plus relue.
+    expect((await t.http('direction', 'POST', `/actualites/${id}/retrait`, { reason: 'Source retirée.' })).status).toBe(200);
+    expect((await t.http('alex', 'GET', '/actualites/deja-vues')).body.data).toEqual([]);
+    // La direction est refusée, en 403, au journal.
+    const before = (await t.refusals()).length;
+    const d = await t.http('direction', 'GET', '/actualites/deja-vues');
+    expect(d.status).toBe(403);
+    expect(d.body).toMatchObject({ ok: false, rule: 'R16' });
+    expect((await t.refusals()).length).toBeGreaterThan(before);
+  });
+
   it('un corps absent, pas en JSON ou trop gros est refusé en 400, sans rien ranger', async () => {
     const t = await setup();
     const bad = [
