@@ -1227,6 +1227,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : message de date remis le jour où l'essai prévoit un message : compté, allumage refusé R402 (test) ; fiche réunie comprise (test) ; message de date d'un autre jour, reporté ou refusé : rien compté (test) ; l'essai n'écrit toujours rien hors de son compte rendu [R400] (test) ; tous les tests de HX24, HX25 et RC09 restent verts.
 - Attend : rien.
 
+### RC11 · La carte et l'alerte disent si la lettre est celle de l'agent
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : BR36
+- Cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R290, R16.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de BR36 (« reste du cœur (voie 2) : la carte et l'alerte ne disent pas si la lettre est celle de l'agent (`letterMine`) »). Aujourd'hui un point de la carte ou de l'alerte dit seulement qu'une lettre existe dans le réseau (`letterId`) : l'écran ne peut savoir si l'agent peut la télécharger, et le téléchargement d'une lettre d'un autre agent n'est refusé qu'après coup. Chaque point gagne `letterMine` : vrai seulement quand une lettre existe et que celui qui lit est l'agent qui l'a préparée ; faux sans lettre, pour la lettre d'un autre agent, et pour la direction (qui ne signe aucune lettre). `letterId` et le reste du point ne changent pas. Changent seulement `veille-dpe/veille.ts`, son test et `docs/API.md` ; ni route, ni écran (voie 1), ni migration.
+- Objectif : l'écran de la veille sait, sans essai, si la lettre d'un logement est celle de l'agent.
+- Critères : lettre préparée par l'agent : `letterMine` vrai sur sa carte et son alerte [R290] (test) ; lettre d'un autre agent du réseau : faux, et son impression reste refusée [R16] (test) ; sans lettre : faux (test) ; direction : faux sur la carte (test) ; tous les tests de HX16, BR26 et BR36 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
