@@ -23,11 +23,59 @@ const AFFAIBLISSEMENTS = [
 const delai = (yaml) => Number(yaml.match(/^\s*timeout-minutes:\s*(\d+)\s*$/m)?.[1] ?? 0);
 const lignesRun = (yaml) => [...yaml.matchAll(/^\s*(?:-\s*)?run:\s*(.+?)\s*$/gm)].map((match) => match[1]);
 
+// Les contrôles restent inconditionnels dans verifier ; seul deployer peut être conditionnel.
+const jobBody = (yaml, id) => {
+  const jobs = yaml.split(/^jobs:\s*$/m)[1] ?? '';
+  const sections = jobs.split(/^(?= {2}[a-zA-Z][\w-]*:\s*$)/m);
+  return sections.find((section) => section.startsWith(`  ${id}:`)) ?? '';
+};
+const AUTO_CONDITION = "github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verifier.result == 'success'";
+const CURRENT_MAIN_COMMAND = 'node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"';
+
+function deploymentGuards(job, label) {
+  const errors = [];
+  const steps = job.split(/^(?= {6}- )/m).slice(1);
+  const firstGuard = steps.findIndex((step) => lignesRun(step).includes('node scripts/require-current-main.mjs'));
+  const install = steps.findIndex((step) => lignesRun(step).includes('npm ci'));
+  const checkout = steps.find((step) => step.includes('uses: actions/checkout@v4')) ?? '';
+  if (!checkout.includes('ref: ${{ github.sha }}') || !checkout.includes('persist-credentials: false')) {
+    errors.push(`${label} : checkout sur le SHA exact requis, sans identifiant Git persistant.`);
+  }
+  if (firstGuard < 0 || install < 0 || firstGuard > install) {
+    errors.push(`${label} : le commit actuel de main doit être contrôlé avant l’installation.`);
+  }
+  if (firstGuard >= 0) {
+    const conditions = [...steps[firstGuard].matchAll(/^\s*-?\s*if:\s*(.+?)\s*$/gm)].map((match) => match[1]);
+    if (conditions.length !== 1 || conditions[0] !== "steps.h04.outputs.pret == 'oui'") {
+      errors.push(`${label} : la garde du commit actuel ne peut dépendre que de H04.`);
+    }
+  }
+  if (!/^ {6}GITHUB_TOKEN: \$\{\{ github.token \}\}\s*$/m.test(job)) {
+    errors.push(`${label} : jeton de lecture de main absent.`);
+  }
+  const lines = job.split('\n');
+  let mutations = 0;
+  lines.forEach((line, index) => {
+    if (!/npx .*\b(?:d1 create|d1 migrations apply|deploy\s*$)/.test(line)) return;
+    mutations++;
+    if (lines[index - 1]?.trim() !== CURRENT_MAIN_COMMAND) {
+      errors.push(`${label} : une mutation distante n’est pas précédée de la garde du commit actuel.`);
+    }
+  });
+  if (mutations !== 3) errors.push(`${label} : les trois mutations protégées doivent rester explicites.`);
+  if (/continue-on-error|\|\|\s*(true|:|exit 0)/.test(job)) {
+    errors.push(`${label} : un échec de la garde ou du déploiement ne peut être ignoré.`);
+  }
+  return errors;
+}
+
 export function controleVerifications({ verifications, deploiement, attente }) {
   const errors = [];
   const ici = '.github/workflows/verifications.yml';
 
-  const lignes = lignesRun(verifications);
+  const verifier = jobBody(verifications, 'verifier');
+  const automatique = jobBody(verifications, 'deployer');
+  const lignes = lignesRun(verifier);
   const positions = new Map();
   for (const [nom, correspond] of COMMANDES) {
     const position = lignes.findIndex(correspond);
@@ -40,14 +88,36 @@ export function controleVerifications({ verifications, deploiement, attente }) {
     }
   }
   for (const [nom, motif] of AFFAIBLISSEMENTS) {
-    if (motif.test(verifications)) errors.push(`${ici} : ${nom} affaiblit les vérifications.`);
+    if (motif.test(verifier)) errors.push(`${ici} : ${nom} affaiblit les vérifications.`);
   }
   if (!/^ {2}pull_request:\s*\n {2}push:/m.test(verifications)) {
     errors.push(`${ici} : les vérifications doivent tourner sur toute proposition, sans filtre.`);
   }
+  const push = verifications.match(/^ {2}push:\n((?: {4,}.*\n)*)/m)?.[1] ?? '';
+  if (push.trim() !== 'branches: [main]') {
+    errors.push(`${ici} : chaque push main doit être vérifié, sans filtre de chemins, même chantier.`);
+  }
   if (delai(verifications) < DELAI_MINIMUM) {
     errors.push(`${ici} : délai de ${delai(verifications)} minutes, il en faut au moins ${DELAI_MINIMUM} (durée mesurée ${DUREE_MESUREE_MINUTES} + 30 %).`);
   }
+
+  if (/^concurrency:/m.test(verifications) || !/group: verifications-\$\{\{ github.ref \}\}\n\s+cancel-in-progress: true/.test(verifier)) {
+    errors.push(`${ici} : seule la vérification peut être annulée, dans son groupe par ref.`);
+  }
+  if (!/^ {4}needs: verifier\s*$/m.test(automatique) || !automatique.includes(`    if: ${AUTO_CONDITION}\n`)) {
+    errors.push(`${ici} : le déploiement exige le succès de verifier et un push sur main.`);
+  }
+  if (!/group: deployer-api\n\s+cancel-in-progress: false/.test(automatique)) {
+    errors.push(`${ici} : le déploiement doit garder son groupe non annulable.`);
+  }
+  if (/^ {2}(workflow_run|pull_request_target|workflow_call):/m.test(verifications + deploiement)) {
+    errors.push(`${ici} : aucun événement privilégié ni appel extérieur pour ce déploiement.`);
+  }
+  if (/^ {2}push:/m.test(deploiement) || !/^ {2}workflow_dispatch:/m.test(deploiement)) {
+    errors.push('deployer-api.yml : le workflow séparé doit rester manuel, sans doublon automatique.');
+  }
+  errors.push(...deploymentGuards(automatique, `${ici} / deployer`));
+  errors.push(...deploymentGuards(jobBody(deploiement, 'deployer'), 'deployer-api.yml'));
 
   const ligneDeploiement = '.github/workflows/deployer-api.yml';
   if (delai(deploiement) < DELAI_MINIMUM) {
@@ -56,8 +126,8 @@ export function controleVerifications({ verifications, deploiement, attente }) {
   // Toutes les étapes de ce fichier portent la condition « H04 fait » : c'est la seule admise sur les contrôles.
   const etapes = deploiement.split(/^(?= {6}- )/m).slice(1);
   const controle = etapes.findIndex((etape) => lignesRun(etape).includes('npm run garde-fous && npm run check && npm test'));
-  const miseEnLigne = etapes.findIndex((etape) => lignesRun(etape).some((run) => /\bdeploy\b/.test(run) && !run.includes('--dry-run')));
-  const premierChangement = etapes.findIndex((etape) => lignesRun(etape).some((run) => /d1 |\bdeploy\b/.test(run)) && !etape.includes('Vérifications'));
+  const miseEnLigne = etapes.findIndex((etape) => /^\s+(?:run: )?npx .*\bdeploy\s*$/m.test(etape));
+  const premierChangement = etapes.findIndex((etape) => /^\s+(?:run: )?npx .*\b(?:d1 |deploy\b)/m.test(etape) && !etape.includes('Vérifications'));
   if (controle < 0) {
     errors.push(`${ligneDeploiement} : garde-fous, types et tests doivent tous passer avant la mise en ligne, garde-fous d’abord.`);
   } else {
