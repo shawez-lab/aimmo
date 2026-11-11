@@ -12,6 +12,7 @@ import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
 import { APPELS_SCRIPT } from '../app/appels.ts';
 import { CLASSEMENT_SCRIPT } from '../app/classement.ts';
 import { BIENS_FICHE_SCRIPT } from '../app/biens-fiche.ts';
+import { SEQUENCE_FICHE_SCRIPT } from '../app/sequence-fiche.ts';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
@@ -94,6 +95,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/classement.js': { body: CLASSEMENT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les biens du client et leur création depuis la fiche (SV06), chargés à l'ouverture d'une fiche [R201].
   '/app/biens-fiche.js': { body: BIENS_FICHE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La préparation d'une séquence de prospection (BR34), chargée au geste depuis la fiche, jamais gardée [R201].
+  '/app/sequence-fiche.js': { body: SEQUENCE_FICHE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le dépôt des fichiers de la reprise (I05), chargé au premier geste de la direction [R201].
   '/app/reprise.js': { body: REPRISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.
