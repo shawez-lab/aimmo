@@ -7,9 +7,10 @@ import type { FACT_KINDS, FACT_UNITS, NeighbourhoodProblem } from '../../core/sr
  * sa section de page, son chargeur, et son script servi à part (`/app/attirer.js`), chargé à la première ouverture pour
  * tenir le budget de l'application [R201].
  *
- * Six parties : les agents, leurs mentions et leur site (AT16), les communes et quartiers qui portent les prix (AT15), la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
+ * Sept parties : les agents, leurs mentions et leur site (AT16), les communes et quartiers qui portent les prix (AT15), la part des contacts dont l'origine est connue, mois par mois (AT05), les versions des prix publics
  * et leur recalcul (AT01), les pages de quartier, du fait sourcé au texte validé (AT07, AT13), les sites en service et
- * leur plan (AT04). L'écran ne lit et n'écrit que par `/v1/attirer`
+ * leur plan (AT04), et les statistiques du site de tout le réseau (BR43), dont le script `/app/site.js` (BR42) est servi
+ * à part, chargé au geste, et ne lit que `/v1/site`. Sinon l'écran ne lit et n'écrit que par `/v1/attirer`
  * [R16] ; il ne calcule ni ne trie aucun chiffre, il montre ceux du serveur dans l'ordre reçu. Tout texte reçu est posé
  * avec `textContent`.
  */
@@ -235,6 +236,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       body.appendChild(renderQuarters(all[3]));
       body.appendChild(renderZones(all[4]));
       body.appendChild(renderSites(all[1]));
+      body.appendChild(renderSiteStats());
       body.appendChild(renderAgents(all[5]));
       state(message || '');
       return true;
@@ -487,6 +489,34 @@ globalThis.AIMMO_ATTIRER = function (t) {
         agentWrite('/v1/attirer/mentions-site', payload, 'Mentions enregistrées.', 'Les mentions ne sont pas enregistrées.');
       }));
     });
+  }
+  /* BR43 · les statistiques du site de tout le réseau : le script de « Mon site » (BR42), en mode réseau [R201, R286]. */
+  var statsScreen = null;
+  function renderSiteStats() {
+    var box = part('Statistiques du site');
+    box.appendChild(el('p', 'Pour tout le réseau : quelle page amène des vendeurs, prouvé par leurs messages, et la prochaine page à écrire.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir les statistiques', function () {
+      if (b.disabled) return;
+      if (statsScreen) { statsScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/site.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_SITE;
+        try { delete globalThis.AIMMO_SITE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session() || typeof make !== 'function') return;
+        statsScreen = make({ el: el, clear: clear, send: send, button: button, scope: 'reseau' });
+        statsScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
   }
   function renderAgents(res) {
     var box = part('Agents, mentions et sites');

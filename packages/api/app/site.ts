@@ -8,6 +8,9 @@
  * prochaine page à écrire est dite par la phrase et les chiffres du code [R287] ; quand rien n'est proposé, sa raison
  * est dite en mots. Aucun nom n'est montré : le serveur n'en rend pas. Un refus se dit en mots, jamais par son code.
  * Tout texte reçu est posé avec `textContent` ; rien n'est gardé sur l'appareil.
+ *
+ * La direction l'ouvre aussi depuis l'écran « Attirer » (BR43), en mode réseau (`scope: 'reseau'`) : mêmes routes,
+ * que le serveur lui rend pour tout le réseau [R286] ; seuls les titres et la page d'un agent sont dits autrement.
  */
 
 /** Les sortes de pages publiques, dites à l'agent. */
@@ -20,6 +23,12 @@ const KINDS: Readonly<Record<string, string>> = {
   quartier: 'Page de quartier',
   simulateur: 'Simulateur',
   portail: 'Portail',
+};
+/** Les mots qui changent quand la direction lit tout le réseau (BR43). */
+const NETWORK_WORDS: Readonly<Record<string, string>> = {
+  agent: 'Page d’un agent',
+  pages: 'Les pages du réseau',
+  intro: 'Quelle page du réseau amène des vendeurs, prouvé par leurs messages, et la prochaine page à écrire.',
 };
 /** Les périodes proposées, en jours (de 7 à 365 côté serveur). */
 export const SITE_PERIODS: readonly number[] = [30, 90, 365];
@@ -43,6 +52,10 @@ globalThis.AIMMO_SITE = function (t) {
   var PERIODS = ${JSON.stringify(SITE_PERIODS)};
   var NO_PAGE = ${JSON.stringify(NO_PAGE)};
   var REFUSALS = ${JSON.stringify(SITE_REFUSALS)};
+  var NETWORK = t.scope === 'reseau';
+  var WORDS = ${JSON.stringify(NETWORK_WORDS)};
+  if (NETWORK) KINDS.agent = WORDS.agent;
+  var PAGES_TITLE = NETWORK ? WORDS.pages : 'Mes pages';
   var DAY = /^\\d{4}-\\d{2}-\\d{2}$/;
   var root = null, load = 0, days = 90;
   function said(res, fallback) {
@@ -99,8 +112,8 @@ globalThis.AIMMO_SITE = function (t) {
     var box = el('section', null, 'bloc');
     var v = res.ok && res.body.data;
     var list = v && Array.isArray(v.pages) ? v.pages : null;
-    if (!list) { box.appendChild(el('h4', 'Mes pages')); box.appendChild(el('p', said(res, 'Les statistiques sont indisponibles pour le moment.'), 'etat')); return box; }
-    box.appendChild(el('h4', 'Mes pages (' + list.length + ')'));
+    if (!list) { box.appendChild(el('h4', PAGES_TITLE)); box.appendChild(el('p', said(res, 'Les statistiques sont indisponibles pour le moment.'), 'etat')); return box; }
+    box.appendChild(el('h4', PAGES_TITLE + ' (' + list.length + ')'));
     if (day(v.firstDay) && day(v.lastDay)) box.appendChild(el('p', 'Du ' + day(v.firstDay) + ' au ' + day(v.lastDay) + ', jours de Paris.', 'doux'));
     box.appendChild(el('p', 'Une vue est comptée sans rien garder du visiteur ; les robots ne comptent pas.', 'doux'));
     if (!list.length) { box.appendChild(el('p', 'Aucune page vue ni demande sur la période.', 'doux')); return box; }
@@ -114,6 +127,7 @@ globalThis.AIMMO_SITE = function (t) {
     var box = root, mine = ++load;
     days = chosen;
     clear(box);
+    if (NETWORK) box.appendChild(el('p', WORDS.intro, 'doux'));
     var bar = el('p');
     bar.appendChild(el('span', 'Période : '));
     PERIODS.forEach(function (d) {
