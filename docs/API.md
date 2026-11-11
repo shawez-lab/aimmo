@@ -446,6 +446,15 @@ Sous `/v1/recherche`, l'agent ou la direction : tout autre rôle est refusé (40
 
 La route publique, sans connexion, et la prise de l'accord `buyer_search` à l'écran viendront à part.
 
+## Statistiques du site (BR41)
+
+Sous `/v1/site`, la direction (tout le réseau) ou l'agent actif (sa page et ses biens) : tout autre rôle est refusé (403, `role`) avant toute lecture, au journal [R16] ; un agent inconnu ou inactif, 403 `agent_inactive`. Seul paramètre admis : `jours`, entier de 7 à 365 écrit en chiffres (90 sans lui) ; sinon 400 `bad_period`, et un autre paramètre 400 `unknown_field`. Rien n'est envoyé.
+
+- `GET /statistiques` : chaque page publique (`kind`, `ref`) avec ses vues, ses demandes, ses vendeurs et ses mandats, chacun par l'identifiant de son premier message, et ses vendeurs pour 1 000 vues [R286] ; aucun nom
+- `GET /prochaine-page` : la prochaine page de prix ou de quartier à écrire, la commune des zones qui ne l'a pas encore, les chiffres qui la font et sa phrase (`suggestion`), ou `null` avec sa raison (`aucun_vendeur_mesure`, `toutes_les_communes_ont_leur_page`) [R287]
+
+Les vues : la page d'un bien (`/biens/<bien>`, pas sa fiche), de prix, d'agent, de quartier (sa page seule, et seulement si elle a déjà son code de AT05) et le simulateur, servies en 200 par un GET sur un site en service du réseau, comptent une vue de leur contenu, par jour de Paris. Un robot, un script ou une requête sans navigateur annoncé (RC12), un HEAD, la page servie à l'adresse de l'API ne comptent pas. Rien du visiteur n'est gardé ni écrit au journal : ni adresse, ni navigateur, ni paramètre [R285, R156]. Compter ne change jamais la page : un échec est écrit au journal (`site.vue_non_comptee`, sorte de page et nom de l'erreur seuls). L'écran « Gérer mon site » viendra à part.
+
 ## Carte des opportunités et tournée de prospection (BR28)
 
 Sous `/v1/tournee`, l'agent en activité seul : la carte et la tournée sont les siennes ; la direction et tout autre rôle sont refusés (403, `role`), au journal [R16, R297]. Un seul paramètre, `date` (AAAA-MM-JJ, le jour de Paris sans lui) ; une date mal formée : 409 R298 (`bad_date`) ; un autre paramètre ou une date répétée : 400 `unknown_field`. Rien n'est réservé ni envoyé.

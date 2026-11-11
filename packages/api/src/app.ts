@@ -96,6 +96,7 @@ import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
+import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
 import type { PigeSource } from '../../core/src/pige/index.ts';
 import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
@@ -1316,6 +1317,16 @@ function rechercheRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes des statistiques du site (BR41) : rôle contrôlé avant toute lecture [R16], rien du visiteur [R285]. */
+function statistiquesSiteRoutesDef(): RouteDef[] {
+  return statistiquesSiteRoutes().map((r: StatistiquesSiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la carte des opportunités et de la tournée (BR28) : l'agent seul, par la couche métier [R16, R297]. */
 function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
   return tourneeRoutes().map((r: TourneeRoute) => ({
@@ -2189,6 +2200,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...scoreAdresseRoutesDef(scoreSourcesOf(config)),
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...rechercheRoutesDef(),
+    ...statistiquesSiteRoutesDef(),
     ...pigeRoutesDef(config.pigeSource ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),

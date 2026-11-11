@@ -30,6 +30,7 @@ import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
 import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts';
+import { countPublicView, type CountedKind } from './statistiques-site.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -373,6 +374,11 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   const mode: 'essai' | 'reel' = s.mode === 'reel' && (await legal.read(networkId)).missing.length === 0 ? 'reel' : 'essai';
   const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
+  // La page servie compte une vue de son contenu (BR41) ; rien du visiteur, et compter ne change jamais la page [R285].
+  const counted = async (res: Response, content: CountedKind, ref: string): Promise<Response> => {
+    if (res.status === 200) await countPublicView(s, request, networkId, content, ref);
+    return res;
+  };
   // Une page qui montre des biens ne survit qu'une minute en cache au retrait de l'un d'eux [R220].
   const liveHtml = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: { ...pageHeaders('text/html; charset=utf-8', mode), 'cache-control': 'public, max-age=60' } });
   switch (kind) {
@@ -417,7 +423,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const prices = await svc.readPrices.communePrices(networkId, m[1]!);
       if (!prices) return notFound();
       const page = renderPricePage(prices, { communeSlug: m[1]!, quarterSlug: m[2] ?? null, estimateHref: ESTIMATE_HREF, siteUrl: site.baseUrl });
-      return page.ok ? html(page.html) : notFound();
+      return page.ok ? counted(html(page.html), 'prix', m[2] ? `${m[1]}/${m[2]}` : m[1]!) : notFound();
     }
     case 'agent': {
       // Le site d'un agent ne montre que la page de son agent.
@@ -425,14 +431,16 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       // Sans la porte, rien n'est montré : ses biens la passent comme sur la liste [R220].
       if (!s.diffusion) return notFound();
       const page = await svc.pageAgent.page(networkId, m[1]!, s.diffusion);
-      return page.ok ? liveHtml(page.html) : notFound();
+      return page.ok ? counted(liveHtml(page.html), 'agent', m[1]!) : notFound();
     }
     case 'quartier': {
       if (site.kind !== 'reseau') return notFound();
       const published = await svc.quartiers.published(networkId, m[1], m[2], m[3] ?? 'quartier');
       if (!published) return notFound();
       const page = renderNeighbourhoodPage(published, { siteUrl: site.baseUrl, estimateHref: ESTIMATE_HREF });
-      return page.ok ? html(page.html) : notFound();
+      // Seule la page du quartier compte, jamais ses articles : le contenu de AT07 est la page.
+      if (!page.ok) return notFound();
+      return m[3] ? html(page.html) : counted(html(page.html), 'quartier', `${m[1]}/${m[2]}`);
     }
     case 'estimation': {
       // Le rendez-vous : la page de l'agent sur son site si elle est publiable [R152], sinon l'accueil ; la liste sur le réseau.
@@ -446,7 +454,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       return html(renderPrivacyPage(await legal.read(networkId)));
     case 'simulateur': {
       const headers = await loanSimulatorHeaders();
-      return new Response(request.method === 'HEAD' ? null : withLegalLinks(renderLoanSimulatorPage()), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } });
+      return counted(new Response(request.method === 'HEAD' ? null : withLegalLinks(renderLoanSimulatorPage()), { status: 200, headers: { ...headers, ...(mode === 'essai' ? { 'x-robots-tag': 'noindex, nofollow' } : {}) } }), 'simulateur', 'simulateur');
     }
     case 'preuve': {
       // Le compte du réseau, sur son seul site : les pages d'agent ne le portent pas.
