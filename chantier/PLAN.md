@@ -1206,6 +1206,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : message de date remis ce jour, puis scénario dû : refusé R402, place rendue, rien ne part [R402] (test) ; place de scénario prise ce jour, puis date : rien n'est préparé, place de l'année « reporté », compté `sameDay` [R402, R405] (test) ; le scénario refusé par le contrôle central rend sa place : la date part au passage suivant du même jour [R402] (test) ; fiches réunies comprises (test) ; un message de date d'un autre jour ne gêne pas le scénario (test) ; tous les tests de HX24, HX25, RC02 et RC03 restent verts.
 - Attend : rien.
 
+### RC10 · L'essai d'un scénario compte les messages de date
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC09
+- Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R400, R402.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC09. Depuis RC09, un message de date tient la place du jour : un scénario allumé qui tombe le jour d'un anniversaire déjà remis est refusé, ou fait perdre l'anniversaire de l'année s'il passe le premier. L'essai (R400) ne le montre pas : il ne compare qu'aux autres scénarios. Désormais un message prévu par l'essai qui tombe, ce jour de Paris, sur un message de date remis à la boîte d'essai ou en préparation pour la même personne (fiches réunies comprises, même lecture que `dateMessageOn`) compte comme un double du même jour : l'allumage est refusé, comme pour deux scénarios. Le compte rendu le dit à part (`sameDayAsDate`, compris dans `sameDayTwice`), sans colonne ni migration. Un message de date reporté ou refusé ne compte pas. Changent seulement `automatismes/scenarios.ts` et son test.
+- Objectif : la direction voit, avant d'allumer, qu'un scénario aurait tapé le jour d'un anniversaire.
+- Critères : message de date remis le jour où l'essai prévoit un message : compté, allumage refusé R402 (test) ; fiche réunie comprise (test) ; message de date d'un autre jour, reporté ou refusé : rien compté (test) ; l'essai n'écrit toujours rien hors de son compte rendu [R400] (test) ; tous les tests de HX24, HX25 et RC09 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
