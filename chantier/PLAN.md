@@ -1157,6 +1157,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : chaque type de voie de la lettre suivi d'un titre accepté dans une lettre [R140] (test) ; les mêmes lus par la veille [R288] (test) ; « Mme », « Mlle », « chez », titre sans type de voie toujours refusés [R140, R288] (test) ; chaque type de voie de la lettre est dans `withoutRoadTitles`, relevé par test pour qu'ils ne divergent plus (test) ; tous les tests de G06, HX16, HX17, RC04 et RC05 restent verts.
 - Attend : rien.
 
+### RC07 · Un commerce ne passe jamais par les publications du studio
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : X05, SV11, CE01
+- Cahier : M16 Commerces et entreprises, « Commerce discret » ; M19 Studio ; R110, R134.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de SV11 (P2 non traité). Depuis SV11, un commerce diffusable passe à `available` ; le studio peut alors préparer une publication `nouveau_bien` (ou `visite`, `offre`, `vente`) pour lui, dont le corps reprend les faits de l'annonce et les mentions le prix du mandat, et l'envoyer vers les réseaux. Or le prix d'un commerce n'est pas dans sa vue publique (R110, `SHEET_VISIBILITY`), et sa présentation publique a son propre chemin (CE03), validée par l'agent. Le studio refuse donc toute publication d'un bien de sorte commerce (`BUSINESS_KINDS` de `commerces/fiche.ts`) : à la préparation, à la validation et juste avant l'envoi, pour une publication rangée avant ce changement ou un bien dont la sorte a changé ; règle R110, code `commerce_discret`, au journal sans texte. Changent seulement `packages/core/src/studio/publications.ts` et son test.
+- Objectif : aucun prix, aucun fait d'un commerce ne part sur les réseaux par le studio.
+- Critères : un commerce, un fonds avec murs, un local commercial disponibles : aucune publication préparée, pour aucun événement, refus au journal sans texte [R110] (test) ; une publication rangée puis le bien devenu commerce : ni validée ni envoyée, rien ne part [R110] (test) ; un logement garde exactement son parcours (tests de X05 verts).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
