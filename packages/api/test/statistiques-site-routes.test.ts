@@ -123,8 +123,13 @@ describeWithSqlite('BR41 · routes des statistiques du site, et les vues des pag
     expect(JSON.stringify(failed)).not.toContain('iPhone');
   });
 
-  it('[R16] [R286] un autre rôle, un agent inconnu du réseau : refusés, refus au journal ; la direction et l’agent seuls', async () => {
+  it('[R16] [R286] un autre rôle, un agent inconnu du réseau, un agent connu mais inactif : refusés, refus au journal ; la direction et l’agent actif seuls', async () => {
     const t = await setup();
+    // Sam entre par M14 sans aucune pièce (candidature inventée, hors du parcours) : son dossier est incomplet, il n'est plus un agent actif.
+    expect((await t.call('sam', '/site/statistiques')).status).toBe(200);
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand-br41', 'direction:direction-1', '2027-01-01')", [t.sam.userId, t.network.id]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
     for (const r of statistiquesSiteRoutes()) {
       const path = r.pattern.source.replace(/^\^/, '').replace(/\$$/, '').replace(/\\\//g, '/');
       const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
@@ -132,8 +137,15 @@ describeWithSqlite('BR41 · routes des statistiques du site, et les vues des pag
       const inconnu = await t.call('inconnu', path);
       expect(inconnu.status).toBe(403);
       expect(inconnu.body).toMatchObject({ ok: false, rule: 'R16', code: 'agent_inactive' });
+      // Par le socle : l'agent au dossier incomplet est refusé avant la route [R82].
+      expect(await t.call('sam', path)).toEqual({ status: 403, body: { ok: false, rule: 'R82', code: 'agent_file_incomplete' } });
+      // La route elle-même, appelée sans le socle, refuse aussi l'agent connu mais inactif [R16].
+      const direct = await r.handle({ db: t.db, journal: t.journal, now: t.now }, { role: 'agent', userId: t.sam.userId, networkId: t.network.id }, [], new Request(`${API}${path}`));
+      expect(direct.status).toBe(403);
+      expect(await direct.json()).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
       const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').slice(before);
-      expect(refused.map((e) => e.data.code)).toEqual(['role', 'agent_inactive']);
+      expect(refused.map((e) => e.data.code)).toEqual(['role', 'agent_inactive', 'agent_file_incomplete', 'agent_inactive']);
+      expect(refused.slice(2).map((e) => e.actor)).toEqual([`agent:${t.sam.userId}`, `agent:${t.sam.userId}`]);
       expect(refused[0]!.data.kind).toBe(`route.${r.name}`);
       for (const who of ['direction', 'alex'] as const) expect((await t.call(who, path)).status).toBe(200);
       // Une autre méthode n'est pas une route.
