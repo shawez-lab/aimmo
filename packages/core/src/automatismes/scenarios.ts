@@ -14,7 +14,7 @@
  *
  * Allumé, un scénario ne regarde que les faits venus après son allumage, jamais le passé ; un fait ne le déclenche
  * qu'une fois. Son message ne part que par le contrôle central des envois, en mode essai : rien ne part vraiment
- * [R401, R26]. Une personne ne reçoit qu'un message de scénario par jour, tous scénarios confondus [R402]. Le journal
+ * [R401, R26]. Une personne ne reçoit qu'un message de scénario par jour, tous scénarios confondus, message de date compris [R402]. Le journal
  * ne garde ni texte ni coordonnée [R13]. Rien ne s'efface [R17].
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -337,6 +337,22 @@ export class ScenariosAutomatiques {
   }
 
   /**
+   * Un message de date (anniversaire, fête) tient la place du jour de la personne, fiches réunies comprises : remis à la
+   * boîte d'essai ce jour de Paris, ou en cours de préparation depuis ce jour. Un message reporté ou refusé ne la tient
+   * pas [R402, R405].
+   */
+  private async dateMessageOn(networkId: string, day: string, members: string[]): Promise<boolean> {
+    const rows = await this.db.all<{ status: string; created_at: string; done_at: string | null }>(
+      `SELECT status, created_at, done_at FROM client_date_messages WHERE network_id = ? AND status IN ('en_cours', 'essai') AND person_id IN (${members.map(() => '?').join(', ')})`,
+      [networkId, ...members],
+    );
+    return rows.some((r) => {
+      const at = r.status === 'essai' ? r.done_at : r.created_at;
+      return at !== null && this.day(new Date(at)) === day;
+    });
+  }
+
+  /**
    * Ce que le contrôle central dirait d'un message, lu sans rien écrire : la décision à l'heure du passage [R01 à R04],
    * une coordonnée pour ce canal, et jamais deux fois le même texte à la même personne [R05]. `null` : il partirait.
    */
@@ -602,6 +618,16 @@ export class ScenariosAutomatiques {
         [networkId, day, ...members],
       );
       if (!holders.some((h) => h.run_id === run.id) || holders.some((h) => h.run_id !== run.id)) {
+        // Une autre fiche réunie tient déjà la place : celle prise ici sous la fiche gardée est rendue, sinon elle
+        // ferait attendre pour rien le message de date de la personne ce jour-là [R402, RC09].
+        await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
+        messageStatus = 'refuse';
+        messageRule = 'R402';
+      } else if (await this.dateMessageOn(networkId, day, members)) {
+        // Un message de date remis ce jour, ou en cours de préparation, tient la place du jour : rien ne part, la place
+        // prise est rendue. Prise avant de regarder, la place fait aussi attendre un message de date venu en même temps :
+        // de deux passages simultanés, au plus un message part, jamais deux [R402, RC09].
+        await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
         messageStatus = 'refuse';
         messageRule = 'R402';
       } else {
