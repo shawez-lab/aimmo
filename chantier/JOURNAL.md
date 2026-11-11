@@ -972,5 +972,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-11 22:12 · VOIE 2 : plafond vérifié : 1) oui, moins de 30 séances voie 2 depuis minuit ; 2) oui, commits à 18:39, 20:15 et cette séance ; 3) oui, RC16 différente de RC15 et RC14 ; relance non tentée : déjà refusée deux fois par le contrôle des permissions, pas de troisième essai ; le passage horaire reprendra
 - 2026-11-11 22:12 · VOIE 2 : RC16, ae8938d (#520, ouverte, fusion en attente), relancé non
 - 2026-11-11 22:53 · RC16 · fusionnée (#520, 82f15cbd) ; H69 réglé · prochaine : un nouveau reste HX du cœur (voie 2)
-- 2026-11-11 23:58 · RC16 · fusionnée par la voie 1 (#520, 82f15cbd) après vérification locale verte sur la fusion avec main (5661 tests) · prochaine : BR45
-- 2026-11-12 00:40 · BR45 · fusionnée (#522, 9ab266e8) : formulaire de la recherche avec ses mots en tête de l'accueil et de la liste des biens, deux sites, jamais au plan ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5662 tests) · prochaine : BR46
+- 2026-11-11 23:02 · RC16 · fusionnée par la voie 1 (#520, 82f15cbd) après vérification locale verte sur la fusion avec main (5661 tests) · prochaine : BR45
+- 2026-11-11 23:39 · BR45 · fusionnée (#522, 9ab266e8) : formulaire de la recherche avec ses mots en tête de l'accueil et de la liste des biens, deux sites, jamais au plan ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5662 tests) · prochaine : BR46
