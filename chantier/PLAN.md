@@ -1114,6 +1114,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : « à ouvrir » et « à fermer » dits en mots (test) ; raison exigée avant l'envoi (test) ; réponse perdue dite incertaine (test) ; droits [R16] (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
 - Attend : rien.
 
+### BR39 · Routes de la recherche de biens en langage courant
+- Statut : en cours
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de HX28 (« routes, écran public et écran de l'agent »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Fichier neuf `packages/api/src/recherche.ts`, sous `/v1/recherche`, ajouté au routeur de `app.ts` ; aucune règle nouvelle ni migration. Routes de l'agent et de la direction seulement : la route publique (sans connexion, à protéger du moissonnage) et les écrans viendront dans des tâches à part. L'écran envoie la phrase et les gestes de la personne, jamais des critères : tout est relu sur le serveur. Une phrase de plus de 500 signes est refusée, jamais tronquée en silence.
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX28
+- Cahier : M08, recherche de biens ; R420 à R424.
+- Objectif : `POST /v1/recherche/phrase` rend les biens diffusables du réseau qui répondent à la phrase, avec les raisons de chacun, les communes voisines proposées à part et les gestes de la personne appliqués ; `POST /v1/recherche/projets/:projet/phrase` range la recherche dans la fiche acquéreur, avec l'accord `buyer_search` en cours.
+- Critères : seuls des biens diffusables du réseau, sans adresse, chacun avec les mots de la phrase [R420, R421] (test) ; voisine ajoutée par un geste seulement, refus d'un bien appliqué [R423, R424] (test) ; rangement sans accord refusé, phrase jamais gardée [R422] (test) ; un autre agent, un autre rôle ou un autre réseau refusés, refus au journal [R16] (test) ; saisie mal formée refusée 400 (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
@@ -1209,8 +1218,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC10 · L'essai d'un scénario compte les messages de date
-- Statut : bloquée : proposition #506 prête, fusion en attente (H69)
-- Reste : vérification locale verte sur d04a3e05 (5533 tests), puis le 2026-11-11 à 11:30 après mise à jour avec main sur 3efd9de2 (5554 tests, le seul échec étant ce statut, que le test des fondations refusait) ; GitHub Actions bloqué (facturation). Codex 1 P0 (la date n'était pas dite quand un scénario allumé tenait déjà le jour) corrigé, puis rien à signaler. Fusion par l'API refusée par le contrôle des permissions, un essai, pas de contournement.
+- Statut : fait (2026-11-11)
+- Reste : fusionnée par la voie 1 (#506, `91aa4899`) après la vérification locale de la voie 2 sur 3efd9de2 ; vérification locale verte sur d04a3e05 (5533 tests), puis le 2026-11-11 à 11:30 après mise à jour avec main sur 3efd9de2 (5554 tests, le seul échec étant ce statut, que le test des fondations refusait) ; GitHub Actions bloqué (facturation). Codex 1 P0 (la date n'était pas dite quand un scénario allumé tenait déjà le jour) corrigé, puis rien à signaler. Fusion par l'API refusée par le contrôle des permissions, un essai, pas de contournement.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC09
 - Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R400, R402.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC09. Depuis RC09, un message de date tient la place du jour : un scénario allumé qui tombe le jour d'un anniversaire déjà remis est refusé, ou fait perdre l'anniversaire de l'année s'il passe le premier. L'essai (R400) ne le montre pas : il ne compare qu'aux autres scénarios. Désormais un message prévu par l'essai qui tombe, ce jour de Paris, sur un message de date remis à la boîte d'essai ou en préparation pour la même personne (fiches réunies comprises, même lecture que `dateMessageOn`) compte comme un double du même jour : l'allumage est refusé, comme pour deux scénarios. Le compte rendu le dit à part (`sameDayAsDate`, compris dans `sameDayTwice`), sans colonne ni migration. Un message de date reporté ou refusé ne compte pas. Changent seulement `automatismes/scenarios.ts` et son test.
