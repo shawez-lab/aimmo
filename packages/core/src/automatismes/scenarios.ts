@@ -614,12 +614,13 @@ export class ScenariosAutomatiques {
       // Et seulement si sa version est encore celle allumée à cet instant [R401].
       const claimed = await this.db.run(`UPDATE automation_runs SET status = 'en_cours' WHERE id = ? AND status = 'a_faire' AND ${STILL_LIT}`, [run.id, run.scenario_id, run.version, run.scenario_id]);
       if (claimed.changes !== 1) continue;
-      // Un mandat retiré depuis son inscription ne déclenche plus rien : le passage est annulé, jamais effacé [RC18].
-      if (!(await this.factHolds(run.trigger_ref))) {
-        await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE id = ? AND status = 'en_cours'", [now.toISOString(), run.id]);
-        continue;
-      }
       try {
+        // Un mandat retiré depuis son inscription ne déclenche plus rien : le passage est annulé, jamais effacé [RC18].
+        // Dans le bloc de reprise : une panne de cette lecture rend le passage à faire.
+        if (!(await this.factHolds(run.trigger_ref))) {
+          await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE id = ? AND status = 'en_cours'", [now.toISOString(), run.id]);
+          continue;
+        }
         await this.execute(networkId, run, def, now, report);
       } catch (error) {
         // Une panne rend le passage à faire ; l'erreur remonte, jamais avalée.

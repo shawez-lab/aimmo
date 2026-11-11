@@ -120,7 +120,7 @@ async function setup() {
     if (!made.ok) throw new Error(made.code);
     return made.value.scenarioId;
   };
-  return { db, scenarios, network, other, direction, person, appointment, mark, mandate, cancelMandate, withdraw, outbox, runs, composed, setClock: (t: number) => (clock = t) };
+  return { db, journal, scenarios, network, other, direction, person, appointment, mark, mandate, cancelMandate, withdraw, outbox, runs, composed, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('RC18 · une visite faite et un mandat signé déclenchent un scénario', () => {
@@ -226,5 +226,37 @@ describeWithSqlite('RC18 · une visite faite et un mandat signé déclenchent un
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM automation_tasks')).toEqual({ n: 1 });
     // Rien ne s'efface : les passages annulés restent [R17].
     expect((await t.runs()).length).toBe(3);
+  });
+
+  it('[R401] [RC18] une panne en relisant le mandat rend le passage à faire, repris ensuite sans rien perdre', async () => {
+    const t = await setup();
+    const id = await t.composed(AFTER_MANDATE);
+    await t.scenarios.simulate(t.direction, id);
+    await t.scenarios.switchOn(t.direction, id);
+    t.setClock(TUE_10H + HOUR);
+    const ines = await t.person('Inès');
+    await t.mandate(ines);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 1 });
+    let broken = true;
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      all: (sql, params) => t.db.all(sql, params),
+      run: (sql, params) => t.db.run(sql, params),
+      first: async (sql, params) => {
+        if (broken && sql.includes('FROM mandate_register r JOIN mandates m ON m.id = r.mandate_id') && sql.includes('WHERE m.id = ?')) {
+          broken = false;
+          throw new Error('panne de la base (test)');
+        }
+        return t.db.first(sql, params);
+      },
+    };
+    const later = TUE_10H + 26 * HOUR;
+    const flaky = new ScenariosAutomatiques(db, t.journal, { now: () => new Date(later) });
+    await expect(flaky.tick(t.network.id)).rejects.toThrow(/panne/);
+    expect(await t.runs()).toEqual([expect.objectContaining({ status: 'a_faire' })]);
+    expect(await flaky.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, tasks: 1 });
+    expect((await t.outbox()).map((o) => o.person_id)).toEqual([ines]);
+    expect(await t.runs()).toEqual([expect.objectContaining({ status: 'fait', message_status: 'essai' })]);
   });
 });
