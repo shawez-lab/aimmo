@@ -1135,7 +1135,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR41 · Routes des statistiques du site, et les vues comptées par les pages publiques
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#514, `4823e1aa`), `packages/api/src/statistiques-site.ts`, vues comptées dans `attirer.ts` et `vitrine.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Codex 1 P1 (agent connu mais inactif non testé) corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5586 tests). Restent : écran « Gérer mon site » ; formulaires et partenaires du site à leurs modules.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX15, RC12
 - Cahier : M01, « Gérer mon site » ; R285 à R287, R156, R16.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de HX15 (« branchement au Worker, `countView` appelé par les pages publiques ») ; le filtre des robots est fait par RC12. Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Fichier neuf `packages/api/src/statistiques-site.ts`, sous `/v1/site`, ajouté au routeur de `app.ts` ; aucune règle nouvelle ni migration, cœur inchangé. Une vue est comptée seulement pour une page servie en 200 par un GET sur un site en service du réseau (la page de l'API seule ne compte pas), jamais pour un HEAD ; seules les pages d'un contenu de AT05 comptent : bien, prix, agent, quartier (sa page seule, jamais ses articles, et seulement s'il a déjà son code), simulateur. Compter ne doit jamais empêcher la page de servir : un échec est écrit au journal, sans rien du visiteur. L'écran « Gérer mon site » viendra dans une tâche à part.
