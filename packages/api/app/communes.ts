@@ -112,14 +112,17 @@ globalThis.AIMMO_COMMUNES = function (t) {
   function decide(commune, open, reason) {
     if (busy) return Promise.resolve(false);
     busy = true;
-    var mine = t.session();
+    var mine = t.session(), turn = reading;
     say('Envoi…');
     return send('/v1/recrutement/communes/decision', 'POST', { commune: commune, open: open, reason: reason }).then(function (x) {
       busy = false;
       if (x.gone || mine !== t.session()) return false;
       if (x.offline || !x.body || x.status >= 500) { say(LOST); return false; }
       if (!x.ok) { say(why(x, 'La décision n’est pas rangée.')); return false; }
-      return read(shown, commune + (open ? ' ouverte' : ' fermée') + ' au recrutement : la décision est rangée, la page de candidature le dit sans aucun chiffre.');
+      var done = commune + (open ? ' ouverte' : ' fermée') + ' au recrutement : la décision est rangée, la page de candidature le dit sans aucun chiffre.';
+      /* Un autre mois demandé pendant l'envoi garde la main : sa lecture dessine, la décision est seulement dite. */
+      if (turn !== reading) { say(done); return true; }
+      return read(shown, done);
     }, function () { busy = false; say(LOST); return false; });
   }
   function show(inner) {
