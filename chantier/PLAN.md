@@ -1094,6 +1094,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; l'écran ne lit et n'écrit que par `/v1/veille-dpe`, la clé dans l'en-tête seul [R16] (test) ; aucune saisie de nom, aucun envoi : la lettre se télécharge à imprimer [R288, R290] (test) ; le bouton de lettre seulement pour un F ou un G sans lettre (test) ; saisie fausse refusée avant tout appel (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test) ; deux lectures de suite : seule la dernière dessine (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H60 pour l'usage réel de la lettre).
 
+### BR37 · Routes des communes à pourvoir, et les communes ouvertes sur la page de candidature
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX68, BR02
+- Cahier : Feuille de route, phase 4, recrutement par zone ; M14, « Candidature » ; Offre aux agents ; R626 à R628.
+- Décidé (2026-11-11, voie 1) : ajoutée parce que HX68 n'a ni route ni liste sur la page (« Reste » de HX68 : à la voie 1) et que toutes les autres tâches de la voie 1 attendent une fusion ou un humain. Les routes vont dans `packages/api/src/recrutement.ts` (BR02), sous `/v1/recrutement/communes`, sans toucher `app.ts` ; la page `/rejoindre` lit `openCommunes` du réseau qui reçoit les candidatures. Lecture prudente : une lecture des communes qui échoue n'empêche jamais la page de servir, la liste est alors absente ; aucune commune ouverte, aucune section.
+- Objectif : la direction lit les communes d'un mois fini et ouvre ou ferme une commune au recrutement par l'API ; la page de candidature dit, sans chiffre, les communes où le réseau recrute.
+- Critères : `GET /v1/recrutement/communes?mois=` rend le mois de la couche métier, mois en cours refusé 409 [R626] (test) ; `POST /v1/recrutement/communes/decision` ouvre puis ferme, commune hors liste et décision répétée refusées 409 [R627] (test) ; un autre rôle refusé 403, refus au journal [R16] (test) ; la page liste les seules communes ouvertes du réseau, triées, sans aucun chiffre, et passe le contrôle des promesses [R628, R80] (test) ; aucune commune ouverte : aucune section (test) ; une base qui échoue à la lecture : la page sert quand même (test).
+- Attend : rien.
+
+### BR38 · Écran des communes à pourvoir pour la direction
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR37
+- Cahier : M14 ; Le produit, système de design ; R201.
+- Objectif : sur l'écran du réseau, la direction choisit un mois fini, lit commune par commune les clients allés à la direction faute d'agent, les agents qui la couvrent, « à ouvrir » et « à fermer », et ouvre ou ferme une commune avec sa raison, en un geste.
+- Critères : « à ouvrir » et « à fermer » dits en mots (test) ; raison exigée avant l'envoi (test) ; réponse perdue dite incertaine (test) ; droits [R16] (test) ; budget tenu [R201] (test) ; aucun `innerHTML` (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
