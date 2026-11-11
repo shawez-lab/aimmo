@@ -1105,7 +1105,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR38 · Écran des communes à pourvoir pour la direction
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR37
 - Cahier : M14 ; Le produit, système de design ; R201.
 - Objectif : sur l'écran du réseau, la direction choisit un mois fini, lit commune par commune les clients allés à la direction faute d'agent, les agents qui la couvrent, « à ouvrir » et « à fermer », et ouvre ou ferme une commune avec sa raison, en un geste.
