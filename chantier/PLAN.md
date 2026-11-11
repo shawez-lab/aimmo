@@ -1377,6 +1377,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : remise acceptée, l'agent qui remet la voit à rendre, retour noté par `/rendu`, puis le trousseau ressort [R665, R272] (test) ; trousseau déjà chez un partenaire ou un agent refusé en 409 [R271] (test) ; métier non admis, justificatif échu, raison ou heure hors liste refusés en 409, partenaire inconnu ou d'un autre réseau en 404 [R665] (test) ; mauvais rôle ou agent d'un autre bien en 403 au journal, corps mal formé compris [R16] (test) ; corps mal formé refusé en 400 à qui tient l'armoire (test) ; « perdu » noté par l'agent qui en répond retire le trousseau [R271] (test).
 - Attend : rien.
 
+### RC18 · Une visite faite et un mandat signé déclenchent un scénario
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX24, T04, V06, D01
+- Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R403, R400, R401, R39.
+- Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX24 (« d'autres déclencheurs (visite faite, mandat signé) »). Seul `packages/core/src/automatismes/scenarios.ts` change, avec son test ; aucune migration (le déclencheur vit dans la définition en JSON). Visite faite : une visite (rendez-vous `visite` relié à un bien et à un projet d'achat, table `visits`) notée honorée ; le fait est l'instant noté (`updated_at`, le statut final ne change plus), la personne est l'acquéreur ; absente, annulée, ou une estimation honorée : rien. Mandat signé : un mandat inscrit au registre (comme R210) ; le fait est l'inscription, la personne est le mandant ; signé et pas inscrit : rien ; annulé au registre, quelle qu'en soit la raison (résiliation comprise, un message de remerciement n'a plus de sens), ou rétracté : rien, et un passage déjà rangé est annulé au moment de passer, sans message ni tâche, jamais effacé [R17]. Pas de type de projet avec ces déclencheurs.
+- Objectif : la direction compose « après chaque visite » et « après chaque mandat signé », essayés sur le mois passé comme les autres, et ils passent par le contrôle central en essai.
+- Critères : les deux déclencheurs acceptés, sans type de projet [R403] (test) ; l'essai compte seulement les visites honorées, pour l'acquéreur, dans le réseau et la période [R400] (test) ; l'essai compte seulement les mandats inscrits, jamais retirés, pour le mandant [R400, R39] (test) ; allumé, une visite faite ensuite envoie au seul acquéreur, une fois, en essai [R401] (test) ; un mandat retiré avant le passage n'envoie rien et ne donne aucune tâche, le passage reste annulé [R401, R17] (test) ; tous les tests de HX24, RC09 et RC10 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.

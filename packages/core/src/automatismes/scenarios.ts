@@ -2,8 +2,14 @@
  * Scénarios automatiques réglables, essayés avant d'être allumés (HX24).
  *
  * La direction compose ses scénarios : un déclencheur pris dans une liste fermée (un nouveau contact, un nouveau projet
- * d'un type choisi), une attente, un message au texte fixe et contrôlé, une tâche [R403]. Chaque version est gardée et
- * ne change jamais.
+ * d'un type choisi, une visite faite, un mandat signé), une attente, un message au texte fixe et contrôlé, une tâche
+ * [R403]. Chaque version est gardée et ne change jamais.
+ *
+ * Une visite faite est une visite (rendez-vous relié à un bien et à un projet d'achat) notée honorée : le fait est cet
+ * instant, la personne est l'acquéreur ; une visite annulée ou manquée ne déclenche rien. Un mandat signé est un mandat
+ * inscrit au registre (R39) : le fait est l'inscription, la personne est le mandant ; un mandat signé et pas inscrit ne
+ * déclenche rien, et un mandat retiré (annulation au registre, quelle qu'en soit la raison, ou rétractation) non plus :
+ * son passage encore en attente est annulé, sans message ni tâche [R403, RC18].
  *
  * Jamais vu : avant d'être allumée, une version est rejouée sur les faits datés du mois passé. L'essai dit combien de
  * messages elle aurait envoyés, à combien de personnes, combien le contrôle central en aurait refusé et pour quelle
@@ -35,7 +41,7 @@ import type { JournalStore } from '../journal/types.ts';
 
 /** Finalité de l'accord d'un message de scénario [R03]. */
 export const AUTOMATION_PURPOSE = 'automatismes';
-export const AUTOMATION_TRIGGERS = ['nouveau_contact', 'nouveau_projet'] as const;
+export const AUTOMATION_TRIGGERS = ['nouveau_contact', 'nouveau_projet', 'visite_faite', 'mandat_signe'] as const;
 export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
 export const AUTOMATION_CHANNELS = ['email', 'sms', 'whatsapp'] as const;
 export type AutomationChannel = (typeof AUTOMATION_CHANNELS)[number];
@@ -139,6 +145,11 @@ const STILL_LIT = `EXISTS (SELECT 1 FROM automation_switches w WHERE w.scenario_
   AND w.seq = (SELECT MAX(seq) FROM automation_switches WHERE scenario_id = ?))`;
 /** L'allumage lu est encore le dernier état du scénario : paramètres, le scénario, la séquence de l'allumage [R401]. */
 const SAME_SWITCH = '(SELECT MAX(seq) FROM automation_switches WHERE scenario_id = ?) = ?';
+/** Le mandat `m`, inscrit au registre par la ligne `r`, n'a été ni annulé au registre ni rétracté [R39, RC18]. */
+const MANDATE_HOLDS = `NOT EXISTS (SELECT 1 FROM mandate_register c WHERE c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq)
+  AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
+/** Le préfixe du fait rangé dans `trigger_ref`, par déclencheur. */
+const FACT_PREFIX: Readonly<Record<AutomationTrigger, string>> = { nouveau_contact: 'person', nouveau_projet: 'project', visite_faite: 'visit', mandat_signe: 'mandate' };
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -305,24 +316,44 @@ export class ScenariosAutomatiques {
   /** Les faits datés qui déclenchent ce scénario, dans `[from, to)` : jamais une fiche reprise, réunie, ni d'un autre réseau. */
   private async facts(networkId: string, def: ScenarioDefinition, from: Date, to: Date): Promise<Fact[]> {
     const range = [networkId, from.toISOString(), to.toISOString()];
-    const rows =
-      def.trigger === 'nouveau_contact'
-        ? await this.db.all<{ id: string; person_id: string; at: string }>(
-            `SELECT p.id, p.id AS person_id, p.created_at AS at FROM persons p
-             WHERE p.network_id = ? AND p.created_at >= ? AND p.created_at < ?
-               AND NOT EXISTS (SELECT 1 FROM import_keys k WHERE k.network_id = p.network_id AND k.target_kind = 'person' AND k.target_id = p.id)
-               AND NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = p.id AND m.undone_at IS NULL)
-             ORDER BY p.created_at, p.id`,
-            range,
-          )
-        : await this.db.all<{ id: string; person_id: string; at: string }>(
-            `SELECT j.id, j.person_id, j.created_at AS at FROM projects j
-             WHERE j.network_id = ? AND j.created_at >= ? AND j.created_at < ?${def.projectKind === null ? '' : ' AND j.kind = ?'}
-               AND NOT EXISTS (SELECT 1 FROM import_keys k WHERE k.network_id = j.network_id AND k.target_kind = 'project' AND k.target_id = j.id)
-             ORDER BY j.created_at, j.id`,
-            def.projectKind === null ? range : [...range, def.projectKind],
-          );
-    const prefix = def.trigger === 'nouveau_contact' ? 'person' : 'project';
+    let rows: { id: string; person_id: string; at: string }[];
+    if (def.trigger === 'nouveau_contact') {
+      rows = await this.db.all<{ id: string; person_id: string; at: string }>(
+        `SELECT p.id, p.id AS person_id, p.created_at AS at FROM persons p
+         WHERE p.network_id = ? AND p.created_at >= ? AND p.created_at < ?
+           AND NOT EXISTS (SELECT 1 FROM import_keys k WHERE k.network_id = p.network_id AND k.target_kind = 'person' AND k.target_id = p.id)
+           AND NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = p.id AND m.undone_at IS NULL)
+         ORDER BY p.created_at, p.id`,
+        range,
+      );
+    } else if (def.trigger === 'nouveau_projet') {
+      rows = await this.db.all<{ id: string; person_id: string; at: string }>(
+        `SELECT j.id, j.person_id, j.created_at AS at FROM projects j
+         WHERE j.network_id = ? AND j.created_at >= ? AND j.created_at < ?${def.projectKind === null ? '' : ' AND j.kind = ?'}
+           AND NOT EXISTS (SELECT 1 FROM import_keys k WHERE k.network_id = j.network_id AND k.target_kind = 'project' AND k.target_id = j.id)
+         ORDER BY j.created_at, j.id`,
+        def.projectKind === null ? range : [...range, def.projectKind],
+      );
+    } else if (def.trigger === 'visite_faite') {
+      // La visite notée honorée : son statut final ne change plus, l'instant où il est noté est le fait [RC18].
+      rows = await this.db.all<{ id: string; person_id: string; at: string }>(
+        `SELECT v.appointment_id AS id, v.person_id, a.updated_at AS at FROM visits v JOIN appointments a ON a.id = v.appointment_id
+         WHERE a.network_id = ? AND a.updated_at >= ? AND a.updated_at < ? AND v.network_id = a.network_id
+           AND a.kind = 'visite' AND a.status = 'honored'
+         ORDER BY a.updated_at, a.id`,
+        range,
+      );
+    } else {
+      // Le mandat inscrit au registre, jamais retiré : l'inscription est le fait, le mandant la personne [R39, RC18].
+      rows = await this.db.all<{ id: string; person_id: string; at: string }>(
+        `SELECT m.id, m.person_id, r.at FROM mandate_register r JOIN mandates m ON m.id = r.mandate_id
+         WHERE r.network_id = ? AND r.at >= ? AND r.at < ? AND r.kind = 'inscription' AND m.network_id = r.network_id
+           AND ${MANDATE_HOLDS}
+         ORDER BY r.at, m.id`,
+        range,
+      );
+    }
+    const prefix = FACT_PREFIX[def.trigger];
     const facts: Fact[] = [];
     for (const r of rows) facts.push({ ref: `${prefix}:${r.id}`, personId: await this.fiche.rootOf(r.person_id), at: r.at });
     return facts;
@@ -583,6 +614,11 @@ export class ScenariosAutomatiques {
       // Et seulement si sa version est encore celle allumée à cet instant [R401].
       const claimed = await this.db.run(`UPDATE automation_runs SET status = 'en_cours' WHERE id = ? AND status = 'a_faire' AND ${STILL_LIT}`, [run.id, run.scenario_id, run.version, run.scenario_id]);
       if (claimed.changes !== 1) continue;
+      // Un mandat retiré depuis son inscription ne déclenche plus rien : le passage est annulé, jamais effacé [RC18].
+      if (!(await this.factHolds(run.trigger_ref))) {
+        await this.db.run("UPDATE automation_runs SET status = 'annule', done_at = ? WHERE id = ? AND status = 'en_cours'", [now.toISOString(), run.id]);
+        continue;
+      }
       try {
         await this.execute(networkId, run, def, now, report);
       } catch (error) {
@@ -592,6 +628,17 @@ export class ScenariosAutomatiques {
       }
     }
     return report;
+  }
+
+  /** Le fait tient encore : seul un mandat peut être retiré après coup (annulé au registre ou rétracté) [RC18]. */
+  private async factHolds(ref: string): Promise<boolean> {
+    if (!ref.startsWith('mandate:')) return true;
+    const row = await this.db.first<{ ok: number }>(
+      `SELECT 1 AS ok FROM mandate_register r JOIN mandates m ON m.id = r.mandate_id
+       WHERE m.id = ? AND r.kind = 'inscription' AND m.network_id = r.network_id AND ${MANDATE_HOLDS}`,
+      [ref.slice('mandate:'.length)],
+    );
+    return row !== null;
   }
 
   private async execute(networkId: string, run: RunRow, def: ScenarioDefinition, now: Date, report: TickReport): Promise<void> {
