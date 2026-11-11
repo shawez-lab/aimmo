@@ -1238,7 +1238,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC11 · La carte et l'alerte disent si la lettre est celle de l'agent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#508, `b22a7dd1`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5561 tests, après mise à jour avec main). Reste pour la voie 1 : l'écran de la veille (`app/veille-dpe.ts`) peut ne proposer le téléchargement que des lettres où `letterMine` est vrai.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : BR36
 - Cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R290, R16.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de BR36 (« reste du cœur (voie 2) : la carte et l'alerte ne disent pas si la lettre est celle de l'agent (`letterMine`) »). Aujourd'hui un point de la carte ou de l'alerte dit seulement qu'une lettre existe dans le réseau (`letterId`) : l'écran ne peut savoir si l'agent peut la télécharger, et le téléchargement d'une lettre d'un autre agent n'est refusé qu'après coup. Chaque point gagne `letterMine` : vrai seulement quand une lettre existe et que celui qui lit est l'agent qui l'a préparée ; faux sans lettre, pour la lettre d'un autre agent, et pour la direction (qui ne signe aucune lettre). `letterId` et le reste du point ne changent pas. Changent seulement `veille-dpe/veille.ts`, son test et `docs/API.md` ; ni route, ni écran (voie 1), ni migration.
