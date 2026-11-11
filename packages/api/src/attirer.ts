@@ -33,7 +33,7 @@ import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
 import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts';
 import { countPublicView, type CountedKind } from './statistiques-site.ts';
 import { RechercheLangage } from '../../core/src/recherche/langage-courant.ts';
-import { PUBLIC_SEARCH_LIMIT, keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
+import { keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
 import { isRobotVisit } from '../../core/src/statistiques-site/robots.ts';
 
 export const TRIAL_MODE = 'essai';
@@ -495,10 +495,11 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       // Un robot annoncé ne reçoit aucun bien : la liste publique reste son chemin, page par page [RC12].
       if (isRobotVisit(request.headers.get('user-agent'))) return page(200, { state: 'robot', phrase: query.phrase });
       const fiche = new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now });
-      const recherche = new RechercheLangage(s.db, new Rapprochement(s.db, fiche, s.diffusion, s.journal, { now: s.now }), s.diffusion, s.journal, { now: s.now, limit: PUBLIC_SEARCH_LIMIT * 4 });
+      const recherche = new RechercheLangage(s.db, new Rapprochement(s.db, fiche, s.diffusion, s.journal, { now: s.now }), s.diffusion, s.journal, { now: s.now, limit: Number.MAX_SAFE_INTEGER });
       const found = await recherche.search(networkId, query.phrase, publicSearchSteps(query));
       const all = await svc.referencement.published(networkId);
       const published = site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all;
+      // La coupe à PUBLIC_SEARCH_LIMIT se fait après le tri par site : un bien de ce site n'est jamais évincé par d'autres.
       const kept = keepPublished(found, published);
       return page(200, {
         state: 'results',

@@ -66,7 +66,8 @@ describeWithSqlite('BR44 · la recherche en langage courant sur le site public',
       const html = await res.text();
       expect(html).toContain(lien);
       expect(html).toContain('Les biens qui vous correspondent');
-      expect(html).toMatch(/<ul class="raisons"><li>[^<]+<\/li>/);
+      // Chaque raison dit d'après quels mots de la phrase [R420].
+      expect(html).toMatch(/<ul class="raisons"><li>[^<]+ <span class="doux">D'après « [^<]+ »\.<\/span><\/li>/);
       // Jamais l'adresse du bien [R421].
       expect(html).not.toContain('21000');
     }
@@ -200,7 +201,7 @@ describe('BR44 · lecture de l’adresse et coupe des listes', () => {
     const kept = keepPublished(results, published);
     expect(kept.results).toHaveLength(PUBLIC_SEARCH_LIMIT);
     expect(kept.results.every((r) => Number(r.propertyId.slice(1)) % 2 === 0)).toBe(true);
-    expect(kept.results[0]).toMatchObject({ title: 'Annonce 0', priceEur: 1000 });
+    expect(kept.results[0]).toMatchObject({ title: 'Annonce 0', priceEur: 1000, reasons: [{ text: 'Commune cherchée.', from: 'Dijon' }] });
     expect(kept.neighbours).toHaveLength(0);
   });
 });

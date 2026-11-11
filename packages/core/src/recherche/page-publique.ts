@@ -68,7 +68,7 @@ export function keepPublished(results: PhraseResults, published: readonly Public
     for (const r of list) {
       const l = byId.get(r.propertyId);
       if (!l) continue;
-      out.push({ propertyId: r.propertyId, title: l.title, priceEur: l.priceEur, city: l.city, status: r.status, reasons: r.reasons.map((x) => x.text), neighbourOf: r.neighbourOf });
+      out.push({ propertyId: r.propertyId, title: l.title, priceEur: l.priceEur, city: l.city, status: r.status, reasons: r.reasons.map((x) => ({ text: x.text, from: x.from })), neighbourOf: r.neighbourOf });
       if (out.length === PUBLIC_SEARCH_LIMIT) break;
     }
     return out;
@@ -82,7 +82,8 @@ export interface PublicSearchHit {
   priceEur: number;
   city: string | null;
   status: 'match' | 'tolerated';
-  reasons: string[];
+  /** Pourquoi il correspond, et d'après quels mots de la phrase [R420]. */
+  reasons: { text: string; from: string }[];
   neighbourOf: string | null;
 }
 
@@ -131,7 +132,7 @@ function form(phrase: string): string {
 
 function card(h: PublicSearchHit): string {
   const label = h.status === 'tolerated' ? '<span class="doux">Proche de ce que vous cherchez</span>' : '';
-  const reasons = h.reasons.length > 0 ? `<ul class="raisons">${h.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : '';
+  const reasons = h.reasons.length > 0 ? `<ul class="raisons">${h.reasons.map((r) => `<li>${escapeHtml(r.text)}${r.from ? ` <span class="doux">D'après ${escapeHtml(r.from)}.</span>` : ''}</li>`).join('')}</ul>` : '';
   return `<li><a href="/biens/${encodeURIComponent(h.propertyId)}"><strong>${escapeHtml(h.title)}</strong><span class="prix">${escapeHtml(euros(h.priceEur))}</span></a>${h.city ? `<span class="doux">${escapeHtml(h.city)}</span>` : ''}${label}${reasons}</li>`;
 }
 
