@@ -101,7 +101,7 @@ globalThis.AIMMO_COMMUNES = function (t) {
     say('Chargement…');
     return send('/v1/recrutement/communes?mois=' + encodeURIComponent(m), 'GET').then(function (res) {
       if (res.gone || turn !== reading || mine !== t.session()) return false;
-      if (!res.ok || !res.body || !res.body.data) { say(why(res, 'Les communes ne se lisent pas pour le moment.')); return false; }
+      if (!res.ok || !res.body || !res.body.data) { say((message ? message + ' ' : '') + why(res, 'Les communes ne se lisent pas pour le moment.')); return false; }
       shown = m;
       render(res.body.data);
       say(message || '');

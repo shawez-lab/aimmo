@@ -148,6 +148,25 @@ describe('BR38 · les communes à pourvoir à l’écran', () => {
     expect((t.button('Ouvrir les communes à pourvoir') as unknown as { disabled: boolean }).disabled).toBe(false);
   });
 
+  it('un script arrivé sans son écran (page de portail, version ancienne) : l’écran le dit, jamais un bloc vide', async () => {
+    const t = await run();
+    await t.open(false);
+    t.scriptsOf(t.part(), '/app/communes.js')[0]!.listeners.load!({});
+    await settle();
+    expect(t.texts()).toContain('Indisponible pour le moment. Réessayez dans un moment.');
+    expect((t.button('Ouvrir les communes à pourvoir') as unknown as { disabled: boolean }).disabled).toBe(false);
+  });
+
+  it('une décision rangée reste dite même si la relecture du mois échoue', async () => {
+    let n = 0;
+    const t = await run({ [`GET ${URL_MONTH}`]: () => (++n === 1 ? ok(MONTH_DATA)() : Promise.reject(new TypeError('coupé'))) });
+    await t.open();
+    t.reason('Commune Trois').value = 'Trois clients sans agent';
+    await t.click(t.button('Ouvrir Commune Trois au recrutement'));
+    expect(t.status()).toContain('Commune Trois ouverte au recrutement : la décision est rangée');
+    expect(t.status()).toContain('Pas de réseau. Réessayez dans un moment.');
+  });
+
   it('[R626] le dernier mois fini par défaut ; « à ouvrir » et « à fermer » dits en mots, dans l’ordre reçu, sans aucun code ; tout texte reçu reste du texte', async () => {
     const t = await run();
     await t.open();

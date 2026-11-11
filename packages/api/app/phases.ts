@@ -384,7 +384,8 @@ globalThis.AIMMO_PHASES = function (t) {
         var make = globalThis.AIMMO_COMMUNES;
         try { delete globalThis.AIMMO_COMMUNES; } catch (e) { /* rien */ }
         b.disabled = false;
-        if (mine !== t.session() || typeof make !== 'function') return;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
         communesScreen = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, session: t.session });
         communesScreen.show(inner);
       });
