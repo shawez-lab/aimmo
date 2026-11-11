@@ -1177,6 +1177,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : un lien dont le jeton commence par « gpt », « robot », « assistant » part [R06] (test) ; le même mot écrit hors du secret est toujours refusé [R06] (test) ; un secret qui porte des chiffres ne déclenche pas R10 (test) ; le canal reçoit le texte entier, la base le texte masqué [HX61] (test) ; le test CE23 « le même code rouvre ensuite le dossier » n'a plus de raison d'échouer (test sur un jeton fixe « gpt… ») ; tous les tests du contrôle central restent verts.
 - Attend : rien.
 
+### RC09 · Un message de date tient la place du jour des scénarios
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : HX24, HX25, RC03
+- Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R402, R405.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX25 (« un message de date ne prend pas la place du jour des scénarios [R402] »). Aujourd'hui une personne peut recevoir le même jour un message de scénario et son message d'anniversaire : deux messages automatiques. Un message de date tient la place du jour, comme un message de scénario : le premier arrivé passe, le suivant ne part pas. Côté scénario : après avoir pris sa place du jour, un passage dont la personne (fiches réunies comprises) a, ce jour de Paris, un message de date remis à la boîte d'essai ou en cours de préparation est refusé R402, sa place rendue. Côté date : après avoir pris sa place de l'année, un message de date dont la personne a déjà la place du jour d'un scénario n'est pas préparé ; sa place passe à « reporté », reprise au passage suivant du même jour si le scénario rend la sienne (message refusé), jamais un jour plus tard [R405] ; compté à part (`sameDay`). Les deux côtés prennent leur place avant de regarder l'autre : de deux passages en même temps, au plus un message part, jamais deux. Pas de migration : la date est lue dans `client_date_messages`, le scénario dans `automation_daily_messages`. Changent seulement `automatismes/scenarios.ts`, `automatismes/dates-clients.ts` et leurs tests. L'essai d'un scénario (R400) ne compte pas les messages de date : reste.
+- Objectif : jamais deux messages automatiques le même jour à la même personne, date comprise.
+- Critères : message de date remis ce jour, puis scénario dû : refusé R402, place rendue, rien ne part [R402] (test) ; place de scénario prise ce jour, puis date : rien n'est préparé, place de l'année « reporté », compté `sameDay` [R402, R405] (test) ; le scénario refusé par le contrôle central rend sa place : la date part au passage suivant du même jour [R402] (test) ; fiches réunies comprises (test) ; un message de date d'un autre jour ne gêne pas le scénario (test) ; tous les tests de HX24, HX25, RC02 et RC03 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
