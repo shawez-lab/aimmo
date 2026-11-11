@@ -207,6 +207,28 @@ describeWithSqlite('RS02 · l’accueil du site', () => {
       expect(html).not.toMatch(/mandataire|gratuit/i);
     }
   });
+
+  it('BR45 · l’accueil et la liste des biens portent la recherche avec ses mots, sur les deux sites ; jamais au plan [R153]', async () => {
+    const t = await setup();
+    await t.publish();
+    await t.mentions();
+    for (const host of [NET, ALEX_SITE]) {
+      for (const path of ['/', '/biens']) {
+        const html = await (await t.page(`${host}${path}`)).text();
+        const form = html.match(/<form class="chercher" method="get" action="([^"]+)" role="search">([\s\S]*?)<\/form>/);
+        expect(form, `${host}${path}`).not.toBeNull();
+        expect(form![1]).toBe('/chercher');
+        expect(form![2]).toMatch(/<label for="chercher-q">[^<]+<\/label>/);
+        expect(form![2]).toMatch(/<input id="chercher-q" name="q" type="search" maxlength="500" required/);
+        // Le formulaire ouvre une page qui répond, avec la phrase envoyée.
+        const sent = await t.page(`${host}/chercher?q=${encodeURIComponent('appartement à Dijon')}`);
+        expect(sent.status).toBe(200);
+      }
+      const plan = await (await t.page(`${host}/sitemap.xml`)).text();
+      expect(plan).not.toContain('/chercher');
+      expect(hrefs(await (await t.page(`${host}/`)).text())).not.toContain('/chercher');
+    }
+  });
 });
 
 it('[R220] [R14] les derniers biens : du plus récent au plus ancien, un nombre borné de contrôles, même si la porte refuse tout', async () => {

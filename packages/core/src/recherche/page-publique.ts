@@ -130,6 +130,23 @@ function form(phrase: string): string {
   );
 }
 
+/**
+ * L'entrée de la recherche sur l'accueil et la liste des biens du site (BR45) : un formulaire sans script vers la page,
+ * même champ, même longueur. La page n'entre jamais dans le plan du site ni dans ses chemins : elle n'est pas indexée.
+ */
+export function publicSearchEntry(): string {
+  return (
+    `<form class="chercher" method="get" action="${PUBLIC_SEARCH_PATH}" role="search"><label for="chercher-q">Cherchez avec vos mots</label>` +
+    `<input id="chercher-q" name="q" type="search" maxlength="${PHRASE_MAX_LENGTH}" required placeholder="Trois pièces à Dijon avec balcon, jusqu'à 250 000 euros">` +
+    `<button type="submit">Chercher</button></form>`
+  );
+}
+
+/** Le style de l'entrée, ajouté par les pages qui la portent. */
+export const PUBLIC_SEARCH_ENTRY_CSS =
+  '.chercher{display:flex;flex-wrap:wrap;gap:var(--e-2);align-items:end;margin:var(--e-4) 0}' +
+  '.chercher label{flex-basis:100%;font-weight:700}.chercher input{flex:1 1 14rem;min-height:44px;font:inherit}.chercher button{min-height:44px}';
+
 function card(h: PublicSearchHit): string {
   const label = h.status === 'tolerated' ? '<span class="doux">Proche de ce que vous cherchez</span>' : '';
   const reasons = h.reasons.length > 0 ? `<ul class="raisons">${h.reasons.map((r) => `<li>${escapeHtml(r.text)}${r.from ? ` <span class="doux">D'après ${escapeHtml(r.from)}.</span>` : ''}</li>`).join('')}</ul>` : '';
