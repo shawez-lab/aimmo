@@ -1,17 +1,11 @@
 name: Déployer l'API
 
-# Met en ligne le Worker `aimmo-api` (S09) à chaque arrivée sur main, une fois H04 fait.
+# Secours manuel : vérifie puis déploie le commit actuel de main.
+# L’automatique est dans Vérifications, après son job verifier réussi, sans deuxième suite.
 # Sans les secrets Cloudflare, le travail s'arrête sans erreur : rien n'est mis en ligne.
 # Il ne touche qu'au Worker `aimmo-api` et à la base D1 `aimmo` : rien de shawez-immo.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'packages/**'
-      - 'db/migrations/**'
-      - 'package-lock.json'
-      - '.github/workflows/deployer-api.yml'
   workflow_dispatch:
 
 permissions:
@@ -30,10 +24,11 @@ jobs:
   deployer:
     name: Déployer
     # Jamais depuis une autre branche que main, même lancé à la main.
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
+      GITHUB_TOKEN: ${{ github.token }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
@@ -47,11 +42,17 @@ jobs:
           fi
       - if: steps.h04.outputs.pret == 'oui'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - if: steps.h04.outputs.pret == 'oui'
         uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
+      - if: steps.h04.outputs.pret == 'oui'
+        name: Commit actuel de main
+        run: node scripts/require-current-main.mjs
       - if: steps.h04.outputs.pret == 'oui'
         run: npm ci
       - if: steps.h04.outputs.pret == 'oui'
@@ -70,6 +71,7 @@ jobs:
           }
           id="$(find_id)"
           if [ -z "$id" ]; then
+            node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
             npx -y "$WRANGLER" d1 create aimmo --jurisdiction eu
             id="$(find_id)"
           fi
@@ -87,7 +89,9 @@ jobs:
       - if: steps.h04.outputs.pret == 'oui'
         name: Migrations de la base
         working-directory: packages/api
-        run: npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+        run: |
+          node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+          npx -y "$WRANGLER" d1 migrations apply aimmo --remote
       - if: steps.h04.outputs.pret == 'oui'
         name: Liaisons des compartiments R2
         run: node scripts/liaisons-r2.mjs packages/api/wrangler.toml
@@ -97,4 +101,6 @@ jobs:
       - if: steps.h04.outputs.pret == 'oui'
         name: Mise en ligne du Worker
         working-directory: packages/api
-        run: npx -y "$WRANGLER" deploy
+        run: |
+          node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+          npx -y "$WRANGLER" deploy
