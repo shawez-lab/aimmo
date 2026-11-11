@@ -1175,6 +1175,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : seuls des biens publiés sur ce site et diffusables à l'instant, sans adresse, chacun avec ses raisons [R420, R421, R220] (test) ; voisine ajoutée par le seul lien suivi, bien voisin marqué à part [R423] (test) ; mots sur les personnes écartés et dits [R50] (test) ; phrase ni gardée ni au journal, aucune vue comptée (test) ; robot sans bien, `no-store`, `noindex`, 12 biens au plus, paramètres non prévus 404, phrase trop longue dite 400 (test).
 - Attend : rien.
 
+### BR45 · La recherche avec ses mots, depuis l'accueil et la liste des biens du site
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR44
+- Cahier : M08, recherche de biens ; M01, site ; R420, R220, R153.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR44 (« un lien vers `/chercher` depuis l'accueil et la liste des biens du site »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Un petit formulaire sans script (`GET /chercher`, champ `q`, même longueur maximale que la page) en tête de l'accueil et de la liste des biens, sur le site du réseau et sur celui de chaque agent ; `/chercher` n'entre ni dans `sitePaths`, ni dans le plan du site : elle reste non indexée.
+- Objectif : le visiteur trouve la recherche avec ses mots là où il arrive, sans chercher le lien.
+- Critères : l'accueil et la liste des biens, sur les deux sites, portent un formulaire `role="search"` vers `/chercher`, champ `q` limité à la longueur de la page, avec son étiquette, et la page qu'il ouvre répond (test) ; `/chercher` n'est jamais dans le plan du site ni dans les chemins de l'accueil [R153] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
