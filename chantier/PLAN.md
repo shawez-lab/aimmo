@@ -1125,7 +1125,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR40 · La recherche en langage courant, depuis la fiche de l'acquéreur
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#510, `ae9c9e01`), `packages/api/app/recherche.ts`, `/app/recherche.js`, chargé au geste depuis la fiche (`biens-fiche.ts`), `app.js` inchangé ; `FicheAgent` rend `projects[].id`. Codex 1 P0 (deux refus pendant une recherche en cours : le premier perdu) corrigé, un geste à la fois, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5572 tests). Restent : la prise de l'accord `buyer_search` à l'écran (sujet absent de `AGENT_CONSENT_LABELS`, touche R03) ; la route publique sans connexion.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR39
 - Cahier : M08, recherche de biens ; R420 à R424, R16, R201.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR39 (« écran de l'agent, prise de l'accord à l'écran »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Script neuf servi à part, `/app/recherche.js` (`packages/api/app/recherche.ts`), chargé au premier geste depuis la fiche (bloc de `biens-fiche.ts`), seulement quand la fiche a un projet d'achat ; `app.js` inchangé. La fiche de l'agent (`FicheAgent`) rend l'identifiant de chaque projet, pour ranger dans le bon. L'écran envoie la phrase et les gestes, jamais des critères ; il ne trie ni ne calcule rien, l'ordre reçu est gardé. Les mots écartés (discriminants, négations) sont dits. Ranger exige l'accord `buyer_search` en cours, contrôlé par le serveur seul : sans lui, l'écran le dit en mots. Ce sujet n'est pas dans la liste des accords que l'agent note (`AGENT_CONSENT_LABELS`) : l'y ajouter touche le contrôle des accords [R03], tâche à part. La route publique sans connexion reste à faire.
