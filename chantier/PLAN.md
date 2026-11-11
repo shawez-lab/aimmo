@@ -1124,6 +1124,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : seuls des biens diffusables du réseau, sans adresse, chacun avec les mots de la phrase [R420, R421] (test) ; voisine ajoutée par un geste seulement, refus d'un bien appliqué [R423, R424] (test) ; rangement sans accord refusé, phrase jamais gardée [R422] (test) ; un autre agent, un autre rôle ou un autre réseau refusés, refus au journal [R16] (test) ; saisie mal formée refusée 400 (test).
 - Attend : rien.
 
+### BR40 · La recherche en langage courant, depuis la fiche de l'acquéreur
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR39
+- Cahier : M08, recherche de biens ; R420 à R424, R16, R201.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR39 (« écran de l'agent, prise de l'accord à l'écran »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Script neuf servi à part, `/app/recherche.js` (`packages/api/app/recherche.ts`), chargé au premier geste depuis la fiche (bloc de `biens-fiche.ts`), seulement quand la fiche a un projet d'achat ; `app.js` inchangé. La fiche de l'agent (`FicheAgent`) rend l'identifiant de chaque projet, pour ranger dans le bon. L'écran envoie la phrase et les gestes, jamais des critères ; il ne trie ni ne calcule rien, l'ordre reçu est gardé. Les mots écartés (discriminants, négations) sont dits. Ranger exige l'accord `buyer_search` en cours, contrôlé par le serveur seul : sans lui, l'écran le dit en mots ; la prise de l'accord reste au bloc des accords de la fiche. La route publique sans connexion reste à faire.
+- Objectif : sur la fiche d'un acquéreur, l'agent tape la phrase de la personne, lit les biens qui répondent avec leurs raisons, les communes voisines proposées à part, refuse un bien avec sa raison, accepte une voisine, puis range la recherche dans le projet.
+- Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; l'écran ne lit et n'écrit que par `/v1/recherche`, la clé dans l'en-tête seul [R16] (test) ; chaque bien dit ses raisons et les mots qui les portent, aucune adresse [R420, R421] (test) ; une voisine n'entre que par le geste, les biens voisins sont marqués [R423] (test) ; un refus part avec sa raison de la liste, et « manque » avec sa contrainte [R424] (test) ; sans accord, le rangement est refusé en mots [R422] (test) ; phrase vide ou trop longue refusée avant tout appel (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test) ; deux recherches de suite : seule la dernière dessine (test) ; la fiche rend l'identifiant de chaque projet (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
