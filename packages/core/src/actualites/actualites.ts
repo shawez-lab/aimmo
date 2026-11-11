@@ -459,9 +459,16 @@ export class Actualites {
     }
     // Retirée pendant la lecture de ses dossiers : le retrait est relu juste avant de rendre, elle n'est pas relue.
     if (items.length > 0) {
-      const ids = items.map((i) => i.id);
+      // Deux paramètres seulement, quel que soit le nombre d'actualités déjà vues (D1 en limite le nombre par requête).
       const gone = new Set(
-        (await this.db.all<{ news_id: string }>(`SELECT news_id FROM network_news_withdrawals WHERE news_id IN (${ids.map(() => '?').join(', ')})`, ids)).map((w) => w.news_id),
+        (
+          await this.db.all<{ news_id: string }>(
+            `SELECT w.news_id FROM network_news_withdrawals w
+               JOIN network_news_deliveries d ON d.news_id = w.news_id
+              WHERE d.agent_id = ? AND d.network_id = ?`,
+            [viewer.userId, viewer.networkId],
+          )
+        ).map((w) => w.news_id),
       );
       if (gone.size > 0) items.splice(0, items.length, ...items.filter((i) => !gone.has(i.id)));
     }

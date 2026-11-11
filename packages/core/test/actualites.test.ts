@@ -309,6 +309,27 @@ describeWithSqlite('RC14 · une actualité perdue par une coupure se relit dans 
     expect(r.value.map((i) => i.id)).toEqual([kept]);
   });
 
+  it('[R269] plus de 100 actualités déjà vues se relisent, toujours en peu de paramètres par requête', async () => {
+    const t = await setup();
+    for (let i = 0; i < 105; i++) await t.add();
+    await t.feed();
+    let most = 0;
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver);
+        if (key !== 'all' && key !== 'first' && key !== 'run') return typeof v === 'function' ? v.bind(target) : v;
+        return async (sql: string, params?: unknown[]) => {
+          most = Math.max(most, params?.length ?? 0);
+          return (v as (s: string, p?: unknown[]) => Promise<unknown>).call(target, sql, params);
+        };
+      },
+    });
+    const r = await new Actualites(db, t.acces, t.journal, { now: t.now }).seen(t.agent);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.length).toBe(105);
+    expect(most).toBeLessThanOrEqual(10);
+  });
+
   it('[R16] seules les siennes : jamais une actualité montrée à un autre agent', async () => {
     const t = await setup();
     const id = await t.add();
