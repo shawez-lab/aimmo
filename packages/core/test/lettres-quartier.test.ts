@@ -20,6 +20,11 @@ const PLACES: Record<string, { lat: number; lon: number; label?: string; score?:
   '15 bis place du Marché Essai 21000 Dijon': { lat: 47.3195, lon: 5.0415 },
   '40 rue Lointaine Essai 21000 Dijon': { lat: 47.335, lon: 5.0415 },
   '8 rue des Tilleuls Essai 21000 Dijon': CENTER,
+  // Des voies au titre d'une personne, inventées : le titre suit le type de la voie.
+  '12 rue du Docteur Essai 21000 Dijon': { lat: 47.3225, lon: 5.0415 },
+  '4 place du Maréchal Essai 21000 Dijon': { lat: 47.3215, lon: 5.0415 },
+  '7 avenue du Président Essai 21000 Dijon': { lat: 47.323, lon: 5.0415 },
+  '2 rue Saint-Essai 21000 Dijon': { lat: 47.3218, lon: 5.0415 },
 };
 const geocoder: Geocoder = {
   geocode: async (address) => {
@@ -133,6 +138,35 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
     }
     expect(await t.lettres.createCampaign(t.agent(), t.input({ origin: 'import' }))).toEqual({ ok: false, rule: 'R140', code: 'bad_origin' });
     expect(await t.lettres.createCampaign(t.agent(), t.input({ origin: undefined }))).toEqual({ ok: false, rule: 'R140', code: 'bad_origin' });
+  });
+
+  it('[R140] une voie au titre d’une personne est une adresse ; toute autre civilité refuse toujours l’adresse', async () => {
+    const t = await setup();
+    await t.signMandate();
+    const titled = [
+      { number: '12', street: 'rue du Docteur Essai', postcode: '21000', city: 'Dijon' },
+      { number: '4', street: 'place du Maréchal Essai', postcode: '21000', city: 'Dijon' },
+      { number: '7', street: 'avenue du Président Essai', postcode: '21000', city: 'Dijon' },
+      { number: '2', street: 'rue Saint-Essai', postcode: '21000', city: 'Dijon' },
+    ];
+    const r = await t.lettres.createCampaign(t.agent(), t.input({ addresses: titled }));
+    expect(r).toEqual({ ok: true, value: { campaignId: expect.any(String), letters: 4, textBy: 'secours' } });
+    if (!r.ok) return;
+    const list = await t.lettres.letters(t.agent(), r.value.campaignId);
+    expect(list.ok && list.value.map((l) => l.street)).toEqual(titled.map((a) => a.street));
+    const printed = await t.lettres.printable(t.agent(), r.value.campaignId);
+    expect(printed.ok && printed.value.html.match(/Au propriétaire<br>/g)).toHaveLength(4);
+    // Le titre sans type de voie devant, une civilité en plus du titre, ou dans le numéro ou la commune : refusé.
+    const named = [
+      { number: '12', street: 'Docteur Essai', postcode: '21000', city: 'Dijon' },
+      { number: '12', street: 'rue du Docteur Essai chez Mme Martin', postcode: '21000', city: 'Dijon' },
+      { number: '12', street: 'rue du Docteur Essai Famille Durand', postcode: '21000', city: 'Dijon' },
+      { number: '12', street: 'Monsieur rue du Docteur Essai', postcode: '21000', city: 'Dijon' },
+      { number: '12', street: 'rue des Tilleuls Essai Docteur Martin', postcode: '21000', city: 'Dijon' },
+      { number: '12', street: 'rue du Docteur Essai', postcode: '21000', city: 'Docteur Dijon' },
+      { number: 'Dr 12', street: 'rue du Docteur Essai', postcode: '21000', city: 'Dijon' },
+    ];
+    for (const a of named) expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [a] })), JSON.stringify(a)).toEqual({ ok: false, rule: 'R140', code: 'name_in_address', index: 0 });
   });
 
   it('[R140] sans mandat signé ni vente rapportée, aucune campagne ; une vente rapportée en ouvre une', async () => {

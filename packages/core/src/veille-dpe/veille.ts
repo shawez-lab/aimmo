@@ -30,6 +30,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { banDate, dayInFrench, ownerNoticeText } from '../location/logement.ts';
 import { checkLetterText, LETTER_RECIPIENT_LABELS, renderLetters } from '../mandats/gagner/lettres-quartier.ts';
+import { withoutRoadTitles } from './titre-voie.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const DPE_WATCH_JOB = 'veille_dpe.passage';
@@ -122,14 +123,12 @@ const KINDS: Record<string, DpeKind> = { appartement: 'apartment', maison: 'hous
 const words = (t: string): string => plain(t).replace(/[^a-z0-9]+/g, ' ').trim();
 /** Vrai si le texte porte une civilité ou une marque de personne : il est alors écarté entier [R288, R292]. */
 export const carriesPerson = (t: string): boolean => PERSON_MARKERS.test(` ${words(t)} `);
-/** Le titre d'une voie, juste après son type et un article facultatif : « rue du Docteur », « place du Maréchal ». */
-const ROAD_TITLE = /(?:^| )(?:rue|avenue|av|boulevard|bd|place|allee|impasse|quai|square|chemin|cours|route|passage|promenade|rond point|esplanade|parc|residence)(?: (?:du|de la|de l|des|de|d))? (?:docteur|dr|maitre|me|m|monsieur|madame|president|general|marechal|professeur|abbe|cardinal|commandant|colonel|capitaine|lieutenant|chanoine|pere|mere|saint|sainte)(?= |$)/g;
 /**
  * Vrai si l'adresse porte une civilité ou un nom de personne. Le titre d'une voie (« rue du Docteur Chaussier ») n'en est
  * pas un : il est retiré avant le contrôle ; toute autre marque écarte l'adresse entière [R288, R292].
  */
 export function addressCarriesPerson(t: string): boolean {
-  return carriesPerson(` ${words(t.normalize('NFD').replace(/\p{M}/gu, ''))} `.replace(ROAD_TITLE, ' voie').trim());
+  return carriesPerson(withoutRoadTitles(words(t.normalize('NFD').replace(/\p{M}/gu, ''))));
 }
 const text = (v: unknown, max: number): string | null => {
   if (typeof v !== 'string' || /[\r\n\t<>]/.test(v)) return null;
