@@ -12,6 +12,10 @@
  * - Jamais vu : l'agenda de l'agent rappelle de rendre la clé à la fin de la visite, et tout de suite si le rendez-vous
  *   est annulé ; le vendeur voit dans son espace qui a pris la clé de chez lui, quand, pour quel rendez-vous et quand
  *   elle est revenue, sans jamais le nom d'un visiteur [R272, R161].
+ * - Un trousseau peut aussi être remis à un partenaire de l'annuaire du réseau qui entre seul (diagnostiqueur,
+ *   photographe, artisan ou géomètre, justificatifs valides ce jour-là), pour un diagnostic, des photos ou des travaux, à
+ *   rendre dans les 12 heures. L'agent qui le remet en répond et reçoit le rappel ; le vendeur voit le métier et la raison
+ *   sociale, jamais un nom de personne, et aucun classement de partenaire (RC15) [R665, R14, R75].
  * - Rien n'est envoyé : aucun message, aucune notification.
  */
 import type { Acces } from '../acces/acces.ts';
@@ -24,6 +28,7 @@ import { sellerWindows } from '../espaces/sources-vendeur.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { Annuaire, PARTNER_TRADES, type PartnerTrade } from '../partenaires/annuaire.ts';
 
 /** Pourquoi un trousseau sort. Visite et estimation : toujours pour un rendez-vous du bien. */
 export const PURPOSES = ['visite', 'estimation', 'photos', 'diagnostic', 'travaux'] as const;
@@ -37,6 +42,13 @@ export const PURPOSE_LABEL: Record<Purpose, string> = {
   diagnostic: 'Diagnostics',
   travaux: 'Travaux ou artisan',
 };
+
+/** Les métiers de l'annuaire qui peuvent entrer seuls, et pour quoi [R665]. */
+export const KEY_PARTNER_TRADES = ['diagnostiqueur', 'photographe', 'artisan', 'geometre'] as const satisfies readonly PartnerTrade[];
+export type KeyPartnerTrade = (typeof KEY_PARTNER_TRADES)[number];
+export const PARTNER_PURPOSES = ['diagnostic', 'photos', 'travaux'] as const satisfies readonly Purpose[];
+export type PartnerPurpose = (typeof PARTNER_PURPOSES)[number];
+const tradeLabel = (trade: PartnerTrade): string => PARTNER_TRADES.find((t) => t.trade === trade)?.label ?? trade;
 
 export const RETIREMENT_REASONS = ['rendu_au_proprietaire', 'perdu'] as const;
 export type RetirementReason = (typeof RETIREMENT_REASONS)[number];
@@ -61,6 +73,20 @@ export interface KeyHolder {
   dueAt: string;
 }
 
+/** Le partenaire de l'annuaire qui a le trousseau, et l'agent qui en répond [R665]. */
+export interface KeyPartnerHolder {
+  partnerId: string;
+  trade: KeyPartnerTrade;
+  /** Le métier, en clair. */
+  tradeLabel: string;
+  businessName: string;
+  /** L'agent qui l'a remis et en répond : prénom et initiale. */
+  responsible: { agentId: string; name: string };
+  since: string;
+  purpose: PartnerPurpose;
+  dueAt: string;
+}
+
 export interface KeyView {
   id: string;
   number: number;
@@ -69,6 +95,8 @@ export interface KeyView {
   /** `armoire` : à l'agence ; `sorti` : chez un agent ; `retire` : rendu au propriétaire ou perdu. */
   state: 'armoire' | 'sorti' | 'retire';
   holder: KeyHolder | null;
+  /** Présent seulement quand un partenaire de l'annuaire a le trousseau ; `holder` est alors `null`. */
+  partner?: KeyPartnerHolder;
   retirement: { reason: RetirementReason; at: string } | null;
 }
 
@@ -80,6 +108,8 @@ export interface Movement {
   outAt: string;
   dueAt: string;
   returned: { outcome: 'rendu' | 'perdu'; at: string } | null;
+  /** Une remise à un partenaire : `holder` est alors l'agent qui en répond. */
+  partner?: { partnerId: string; trade: KeyPartnerTrade; businessName: string };
 }
 
 /** Un rappel de l'agenda de l'agent : rendre tel trousseau, à telle heure. */
@@ -105,6 +135,8 @@ export interface SellerKeyEntry {
   appointment: { start: string; end: string; state: 'prevu' | 'fait' | 'absent' | 'annule' } | null;
   returnedAt: string | null;
   lost: boolean;
+  /** Le professionnel entré seul : son métier et sa raison sociale, jamais un nom de personne [R665, R13]. */
+  partner?: { trade: string; businessName: string };
 }
 
 interface KeyRow {
@@ -123,6 +155,22 @@ interface LoanRow {
   last_name: string;
   purpose: Purpose;
   appointment_id: string | null;
+  due_at: string;
+  out_at: string;
+  outcome: 'rendu' | 'perdu' | null;
+  returned_at: string | null;
+}
+
+interface PartnerLoanRow {
+  id: string;
+  key_id: string;
+  partner_id: string;
+  trade: KeyPartnerTrade;
+  business_name: string;
+  responsible_agent_id: string;
+  first_name: string;
+  last_name: string;
+  purpose: PartnerPurpose;
   due_at: string;
   out_at: string;
   outcome: 'rendu' | 'perdu' | null;
@@ -149,8 +197,17 @@ const LOAN_SELECT = `
     JOIN agents a ON a.id = l.holder_agent_id
     LEFT JOIN property_key_returns r ON r.loan_id = l.id`;
 
-/** Une sortie sans retour, quand le trousseau est encore dans l'armoire et pas retiré : la condition de la base aussi. */
+const PARTNER_LOAN_SELECT = `
+  SELECT l.id, l.key_id, l.partner_id, p.trade, p.business_name, l.responsible_agent_id, a.first_name, a.last_name, l.purpose,
+         l.due_at, l.out_at, r.outcome, r.returned_at
+    FROM property_key_partner_loans l
+    JOIN partners p ON p.id = l.partner_id
+    JOIN agents a ON a.id = l.responsible_agent_id
+    LEFT JOIN property_key_partner_returns r ON r.loan_id = l.id`;
+
+/** Aucune sortie ouverte (agent ou partenaire) et pas retiré : la condition de la base aussi. Trois fois la clé. */
 const IN_CABINET = `NOT EXISTS (SELECT 1 FROM property_key_loans l WHERE l.key_id = ? AND NOT EXISTS (SELECT 1 FROM property_key_returns r WHERE r.loan_id = l.id))
+  AND NOT EXISTS (SELECT 1 FROM property_key_partner_loans l WHERE l.key_id = ? AND NOT EXISTS (SELECT 1 FROM property_key_partner_returns r WHERE r.loan_id = l.id))
   AND NOT EXISTS (SELECT 1 FROM property_key_retirements t WHERE t.key_id = ?)`;
 
 export interface ClesOptions {
@@ -213,6 +270,10 @@ export class Cles {
 
   private async openLoan(keyId: string): Promise<LoanRow | null> {
     return this.db.first<LoanRow>(`${LOAN_SELECT} WHERE l.key_id = ? AND r.loan_id IS NULL`, [keyId]);
+  }
+
+  private async openPartnerLoan(keyId: string): Promise<PartnerLoanRow | null> {
+    return this.db.first<PartnerLoanRow>(`${PARTNER_LOAN_SELECT} WHERE l.key_id = ? AND r.loan_id IS NULL`, [keyId]);
   }
 
   /** Ranger un trousseau dans l'armoire : son numéro est donné par le code, le suivant dans le réseau [R270]. */
@@ -286,7 +347,7 @@ export class Cles {
       `INSERT INTO property_key_loans (id, key_id, network_id, holder_agent_id, purpose, appointment_id, due_at, handed_by, out_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${IN_CABINET}
           AND (? IS NULL OR EXISTS (SELECT 1 FROM appointments a WHERE a.id = ? AND a.status = 'booked' AND a.end_at = ? AND a.agent_id = ? AND a.property_id = ? AND a.kind = ?))`,
-      [id, keyId, viewer.networkId, holder, purpose, appointmentId, dueAt, this.actor(viewer), now.toISOString(), keyId, keyId, appointmentId, appointmentId, appointmentEnd, holder, key.property_id, purpose],
+      [id, keyId, viewer.networkId, holder, purpose, appointmentId, dueAt, this.actor(viewer), now.toISOString(), keyId, keyId, keyId, appointmentId, appointmentId, appointmentEnd, holder, key.property_id, purpose],
     );
     if (r.changes === 0) {
       // Le rendez-vous annulé ou décalé entre la lecture et l'écriture : la clé ne sort pas.
@@ -302,6 +363,95 @@ export class Cles {
   }
 
   /**
+   * Remettre un trousseau à un partenaire de l'annuaire du réseau qui entre seul : diagnostiqueur, photographe, artisan
+   * ou géomètre, aux justificatifs valides ce jour-là, pour un diagnostic, des photos ou des travaux, à rendre dans les
+   * 12 heures. Seuls l'agent du bien ou la direction le remettent ; l'agent qui remet en répond (la direction : l'agent du
+   * bien, en activité). Jamais chez deux personnes à la fois [R665, R271, R16].
+   */
+  async handToPartner(
+    viewer: Viewer,
+    keyId: string,
+    input: { partnerId: unknown; purpose: unknown; dueAt: unknown },
+  ): Promise<{ ok: true; loanId: string; dueAt: string; responsibleAgentId: string } | Refusal | { ok: false; rule: 'R665' | 'R271' | null; code: string }> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
+    const key = await this.keyRow(viewer.networkId, keyId);
+    if (!key) return { ok: false, rule: null, code: 'unknown_key' };
+    const k = await this.keeper(viewer, key.property_id);
+    if (!k.ok) return k;
+    if (k.status === 'withdrawn') return { ok: false, rule: null, code: 'bien_retire' };
+    if (typeof input.purpose !== 'string' || !(PARTNER_PURPOSES as readonly string[]).includes(input.purpose)) return { ok: false, rule: 'R665', code: 'bad_purpose' };
+    const purpose = input.purpose as PartnerPurpose;
+    if (typeof input.partnerId !== 'string') return { ok: false, rule: 'R665', code: 'unknown_partner' };
+    // Un partenaire d'un autre réseau est inconnu ici, comme s'il n'existait pas.
+    const partner = await this.db.first<{ id: string; trade: PartnerTrade }>('SELECT id, trade FROM partners WHERE id = ? AND network_id = ?', [input.partnerId, viewer.networkId]);
+    if (!partner) return { ok: false, rule: 'R665', code: 'unknown_partner' };
+    if (!(KEY_PARTNER_TRADES as readonly string[]).includes(partner.trade)) return { ok: false, rule: 'R665', code: 'metier_non_admis' };
+    const now = this.now();
+    const annuaire = new Annuaire(this.db, { has: async () => false }, this.journal, { now: this.now });
+    if (!(await annuaire.proposableOn(viewer.networkId, partner.id, now))) return { ok: false, rule: 'R665', code: 'justificatif_non_valable' };
+    const due = typeof input.dueAt === 'string' ? Date.parse(input.dueAt) : Number.NaN;
+    if (Number.isNaN(due) || due <= now.getTime() || due > now.getTime() + MAX_LOAN_HOURS * HOUR) return { ok: false, rule: 'R665', code: 'bad_due' };
+    const dueAt = new Date(due).toISOString();
+    // L'agent qui en répond : celui qui remet ; pour la direction, l'agent du bien, s'il est en activité.
+    let responsible = viewer.userId;
+    if (viewer.role === 'direction') {
+      const p = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [key.property_id, viewer.networkId]);
+      if (!p?.agent_id || !(await this.activeAgent(viewer.networkId, p.agent_id))) return { ok: false, rule: 'R665', code: 'sans_agent_responsable' };
+      responsible = p.agent_id;
+    }
+    const id = this.newId();
+    // La remise n'entre que si le trousseau est dans l'armoire, relu dans la même instruction [R271].
+    const r = await this.db.run(
+      `INSERT INTO property_key_partner_loans (id, key_id, network_id, partner_id, responsible_agent_id, purpose, due_at, handed_by, out_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${IN_CABINET}`,
+      [id, keyId, viewer.networkId, partner.id, responsible, purpose, dueAt, this.actor(viewer), now.toISOString(), keyId, keyId, keyId],
+    );
+    if (r.changes === 0) {
+      const retired = await this.db.first<{ key_id: string }>('SELECT key_id FROM property_key_retirements WHERE key_id = ?', [keyId]);
+      return { ok: false, rule: 'R271', code: retired ? 'retire' : 'deja_sorti' };
+    }
+    await appendEvent(
+      this.journal,
+      { type: 'cle.remise_partenaire', actor: this.actor(viewer), subject: `key:${keyId}`, data: { rule: 'R665', loan: id, partner: `partner:${partner.id}`, responsible: `agent:${responsible}`, purpose } },
+      this.now,
+    );
+    return { ok: true, loanId: id, dueAt, responsibleAgentId: responsible };
+  }
+
+  /**
+   * Le retour d'un trousseau remis à un partenaire : noté par l'agent qui en répond, en activité, ou la direction ; le
+   * partenaire n'a pas de compte. Perdu : le trousseau est retiré [R665, R271].
+   */
+  private async partnerBack(viewer: Viewer, key: KeyRow, loan: PartnerLoanRow, outcome: 'rendu' | 'perdu'): Promise<{ ok: true } | Refusal | Problem> {
+    if (viewer.role === 'direction') {
+      const k = await this.keeper(viewer, key.property_id);
+      if (!k.ok) return k;
+    } else if (viewer.role !== 'agent' || viewer.userId !== loan.responsible_agent_id) {
+      return this.refuse(viewer, `key:${key.id}`, 'pas_responsable');
+    } else if (!(await this.activeAgent(viewer.networkId, viewer.userId))) {
+      return this.refuse(viewer, `key:${key.id}`, 'agent_inactive');
+    }
+    const at = this.now().toISOString();
+    const statements = [{ sql: 'INSERT INTO property_key_partner_returns (loan_id, outcome, recorded_by, returned_at) VALUES (?, ?, ?, ?) ON CONFLICT (loan_id) DO NOTHING', params: [loan.id, outcome, this.actor(viewer), at] }];
+    if (outcome === 'perdu')
+      statements.push({
+        sql: `INSERT INTO property_key_retirements (key_id, reason, retired_by, retired_at)
+              SELECT ?, 'perdu', ?, ? WHERE EXISTS (SELECT 1 FROM property_key_partner_returns r WHERE r.loan_id = ? AND r.outcome = 'perdu' AND r.recorded_by = ? AND r.returned_at = ?)
+              ON CONFLICT (key_id) DO NOTHING`,
+        params: [key.id, this.actor(viewer), at, loan.id, this.actor(viewer), at],
+      });
+    const [res] = await runBatch(this.db, statements);
+    if (!res || res.changes === 0) return { ok: false, rule: 'R271', code: 'pas_sorti' };
+    await appendEvent(
+      this.journal,
+      { type: outcome === 'rendu' ? 'cle.rendue' : 'cle.perdue', actor: this.actor(viewer), subject: `key:${key.id}`, data: { rule: 'R665', loan: loan.id, partner: `partner:${loan.partner_id}`, responsible: `agent:${loan.responsible_agent_id}` } },
+      this.now,
+    );
+    return { ok: true };
+  }
+
+  /**
    * Le retour d'un trousseau sorti. Rendu à l'armoire : noté par celui qui la tient (l'agent du bien ou la direction).
    * Perdu : dit aussi par l'agent qui l'avait ; le trousseau est alors retiré, il ne sort plus [R271].
    */
@@ -313,7 +463,11 @@ export class Cles {
     if (outcomeInput !== 'rendu' && outcomeInput !== 'perdu') return { ok: false, rule: null, code: 'bad_outcome' };
     const outcome = outcomeInput;
     const loan = await this.openLoan(keyId);
-    if (!loan) return { ok: false, rule: 'R271', code: 'pas_sorti' };
+    if (!loan) {
+      const partnerLoan = await this.openPartnerLoan(keyId);
+      if (partnerLoan) return this.partnerBack(viewer, key, partnerLoan, outcome);
+      return { ok: false, rule: 'R271', code: 'pas_sorti' };
+    }
     const holderSaysLost = outcome === 'perdu' && viewer.role === 'agent' && viewer.userId === loan.holder_agent_id && (await this.activeAgent(viewer.networkId, viewer.userId));
     if (!holderSaysLost) {
       const k = await this.keeper(viewer, key.property_id);
@@ -345,15 +499,16 @@ export class Cles {
     if (!k.ok) return k;
     if (typeof reasonInput !== 'string' || !(RETIREMENT_REASONS as readonly string[]).includes(reasonInput)) return { ok: false, rule: null, code: 'bad_reason' };
     // Sorti : il revient d'abord, ou il est dit perdu par son retour.
-    if (await this.openLoan(keyId)) {
+    if ((await this.openLoan(keyId)) || (await this.openPartnerLoan(keyId))) {
       if (reasonInput === 'perdu') return this.giveBack(viewer, keyId, 'perdu');
       return { ok: false, rule: 'R271', code: 'encore_sorti' };
     }
     const r = await this.db.run(
       `INSERT INTO property_key_retirements (key_id, reason, retired_by, retired_at)
        SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM property_key_loans l WHERE l.key_id = ? AND NOT EXISTS (SELECT 1 FROM property_key_returns r WHERE r.loan_id = l.id))
+          AND NOT EXISTS (SELECT 1 FROM property_key_partner_loans l WHERE l.key_id = ? AND NOT EXISTS (SELECT 1 FROM property_key_partner_returns r WHERE r.loan_id = l.id))
        ON CONFLICT (key_id) DO NOTHING`,
-      [keyId, reasonInput, this.actor(viewer), this.now().toISOString(), keyId],
+      [keyId, reasonInput, this.actor(viewer), this.now().toISOString(), keyId, keyId],
     );
     if (r.changes === 0) return { ok: false, rule: 'R271', code: 'deja_retire' };
     await appendEvent(this.journal, { type: 'cle.retiree', actor: this.actor(viewer), subject: `key:${keyId}`, data: { rule: 'R271', reason: reasonInput } }, this.now);
@@ -373,17 +528,30 @@ export class Cles {
     const out: KeyView[] = [];
     for (const key of keys) {
       const loan = await this.openLoan(key.id);
-      out.push({
+      const partnerLoan = loan ? null : await this.openPartnerLoan(key.id);
+      const view: KeyView = {
         id: key.id,
         number: key.number,
         label: key.label,
         propertyId: key.property_id,
-        state: key.reason ? 'retire' : loan ? 'sorti' : 'armoire',
+        state: key.reason ? 'retire' : loan || partnerLoan ? 'sorti' : 'armoire',
         holder: loan
           ? { agentId: loan.holder_agent_id, name: shortName(loan.first_name, loan.last_name), since: loan.out_at, purpose: loan.purpose, appointmentId: loan.appointment_id, dueAt: loan.due_at }
           : null,
         retirement: key.reason && key.retired_at ? { reason: key.reason, at: key.retired_at } : null,
-      });
+      };
+      if (partnerLoan)
+        view.partner = {
+          partnerId: partnerLoan.partner_id,
+          trade: partnerLoan.trade,
+          tradeLabel: tradeLabel(partnerLoan.trade),
+          businessName: partnerLoan.business_name,
+          responsible: { agentId: partnerLoan.responsible_agent_id, name: shortName(partnerLoan.first_name, partnerLoan.last_name) },
+          since: partnerLoan.out_at,
+          purpose: partnerLoan.purpose,
+          dueAt: partnerLoan.due_at,
+        };
+      out.push(view);
     }
     await appendEvent(this.journal, { type: 'cle.armoire_lue', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R271', count: out.length } }, this.now);
     return { ok: true, value: out };
@@ -398,9 +566,9 @@ export class Cles {
     const k = await this.keeper(viewer, key.property_id);
     if (!k.ok) return k;
     const rows = await this.db.all<LoanRow>(`${LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.rowid`, [keyId]);
-    return {
-      ok: true,
-      value: rows.map((l) => ({
+    const partnerRows = await this.db.all<PartnerLoanRow>(`${PARTNER_LOAN_SELECT} WHERE l.key_id = ? ORDER BY l.out_at, l.id`, [keyId]);
+    const value: Movement[] = [
+      ...rows.map((l) => ({
         loanId: l.id,
         holder: { agentId: l.holder_agent_id, name: shortName(l.first_name, l.last_name) },
         purpose: l.purpose,
@@ -409,7 +577,22 @@ export class Cles {
         dueAt: l.due_at,
         returned: l.outcome && l.returned_at ? { outcome: l.outcome, at: l.returned_at } : null,
       })),
-    };
+      ...partnerRows.map((l) => ({
+        loanId: l.id,
+        holder: { agentId: l.responsible_agent_id, name: shortName(l.first_name, l.last_name) },
+        purpose: l.purpose as Purpose,
+        appointmentId: null,
+        outAt: l.out_at,
+        dueAt: l.due_at,
+        returned: l.outcome && l.returned_at ? { outcome: l.outcome, at: l.returned_at } : null,
+        partner: { partnerId: l.partner_id, trade: l.trade, businessName: l.business_name },
+      })),
+    ];
+    // Du plus ancien au plus récent, les deux sortes de sortie mêlées (un trousseau n'est jamais sorti deux fois à la fois) :
+    // à la même heure de sortie, celle revenue d'abord, la sortie encore ouverte en dernier.
+    const back = (m: Movement): string => m.returned?.at ?? '\uffff';
+    value.sort((a, b) => a.outAt.localeCompare(b.outAt) || back(a).localeCompare(back(b)));
+    return { ok: true, value };
   }
 
   /**
@@ -447,6 +630,29 @@ export class Cles {
         text: `Rendre le trousseau n° ${r.number} (${r.label}) du bien ${r.reference} à l’agence : ${why}.`,
       };
     });
+    // Les trousseaux qu'il a remis à un partenaire et dont il répond : à faire revenir à l'heure dite [R665, R272].
+    const partnerRows = await this.db.all<{ key_id: string; number: number; property_id: string; reference: string; label: string; purpose: PartnerPurpose; due_at: string; trade: PartnerTrade; business_name: string }>(
+      `SELECT k.id AS key_id, k.number, k.property_id, p.reference, k.label, l.purpose, l.due_at, pa.trade, pa.business_name
+         FROM property_key_partner_loans l
+         JOIN property_keys k ON k.id = l.key_id
+         JOIN properties p ON p.id = k.property_id
+         JOIN partners pa ON pa.id = l.partner_id
+        WHERE l.network_id = ? AND l.responsible_agent_id = ?
+          AND NOT EXISTS (SELECT 1 FROM property_key_partner_returns r WHERE r.loan_id = l.id)`,
+      [viewer.networkId, viewer.userId],
+    );
+    for (const r of partnerRows) {
+      const due = Date.parse(r.due_at);
+      out.push({
+        keyId: r.key_id,
+        number: r.number,
+        propertyId: r.property_id,
+        reference: r.reference,
+        dueAt: new Date(due).toISOString(),
+        overdue: now >= due,
+        text: `Faire revenir le trousseau n° ${r.number} (${r.label}) du bien ${r.reference}, remis à ${r.business_name} (${tradeLabel(r.trade).toLowerCase()}) : après « ${PURPOSE_LABEL[r.purpose].toLowerCase()} ».`,
+      });
+    }
     out.sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.number - b.number);
     await appendEvent(this.journal, { type: 'cle.rappels_lus', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R272', count: out.length, overdue: out.filter((r) => r.overdue).length } }, this.now);
     return { ok: true, value: out };
@@ -481,6 +687,17 @@ export class Cles {
         ORDER BY l.out_at DESC, l.id`,
       [viewer.networkId, propertyId, w.since],
     );
+    const partnerRows = await this.db.all<PartnerLoanRow & { number: number; label: string }>(
+      `SELECT l.id, l.key_id, l.partner_id, p.trade, p.business_name, l.responsible_agent_id, a.first_name, a.last_name, l.purpose,
+              l.due_at, l.out_at, r.outcome, r.returned_at, k.number, k.label
+         FROM property_key_partner_loans l
+         JOIN property_keys k ON k.id = l.key_id
+         JOIN partners p ON p.id = l.partner_id
+         JOIN agents a ON a.id = l.responsible_agent_id
+         LEFT JOIN property_key_partner_returns r ON r.loan_id = l.id
+        WHERE k.network_id = ? AND k.property_id = ? AND l.out_at >= ?`,
+      [viewer.networkId, propertyId, w.since],
+    );
     const value: SellerKeyEntry[] = rows.map((l) => ({
       number: l.number,
       label: l.label,
@@ -494,6 +711,20 @@ export class Cles {
       returnedAt: l.outcome === 'rendu' ? l.returned_at : null,
       lost: l.outcome === 'perdu',
     }));
+    // Le professionnel entré seul : son métier et sa raison sociale, jamais le nom d'une personne [R665, R13].
+    for (const l of partnerRows)
+      value.push({
+        number: l.number,
+        label: l.label,
+        agent: shortName(l.first_name, l.last_name),
+        purpose: PURPOSE_LABEL[l.purpose],
+        takenAt: l.out_at,
+        appointment: null,
+        returnedAt: l.outcome === 'rendu' ? l.returned_at : null,
+        lost: l.outcome === 'perdu',
+        partner: { trade: tradeLabel(l.trade), businessName: l.business_name },
+      });
+    value.sort((a, b) => b.takenAt.localeCompare(a.takenAt));
     await appendEvent(this.journal, { type: 'cle.vue_vendeur', actor, subject, data: { rule: 'R272', count: value.length } }, this.now);
     return { ok: true, value };
   }

@@ -81,7 +81,7 @@ export const TABLES_RESEAU: readonly string[] = `
   pige_oppositions pige_properties pige_property_keys pilot_agents pilot_before_declarations pilotage_alerts
   pilotage_settings pre_contract_briefs pre_contract_deposits presentation_ratings price_versions price_zones
   pro_send_log pro_sends project_properties projects proof_publication_cache proof_seals properties property_alerts
-  property_communes property_details property_key_loans property_keys property_links property_on_sale
+  property_communes property_details property_key_loans property_key_partner_loans property_keys property_links property_on_sale
   property_sheets proposal_tasks prospect_retention_cycles prospecting_sequence_steps prospecting_sequences
   public_content_posts public_contents public_sites qualification_corrections qualifications quiz_attempts
   quiz_attestations quiz_questions reception_log recruiting_answers recruiting_commune_decisions
@@ -189,6 +189,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   price_zone_retirements: { via: [['area_id', 'price_zones', 'id']] },
   pro_trial_outbox: { via: [['send_id', 'pro_sends', 'id']] },
   property_key_retirements: { via: [['key_id', 'property_keys', 'id']] },
+  property_key_partner_returns: { via: [['loan_id', 'property_key_partner_loans', 'id']] },
   property_key_returns: { via: [['loan_id', 'property_key_loans', 'id']] },
   proposal_responses: { via: [['proposal_id', 'offer_proposals', 'id']] },
   proposal_transmissions: { via: [['proposal_id', 'offer_proposals', 'id']] },
@@ -290,7 +291,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   agent_notifications agent_onboardings agent_pairs agent_public_cards agent_push_log agent_push_trial_outbox
   agent_push_sends agent_pushes agent_referents agent_review_links agent_time_saved agent_whatsapp_alerts
   agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
-  appointment_reports appointment_tasks presentation_ratings property_key_returns property_key_loans safety_alerts
+  appointment_reports appointment_tasks presentation_ratings property_key_partner_returns property_key_partner_loans property_key_returns property_key_loans safety_alerts
   visit_field_notes visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
   visit_safety visit_slips visit_tasks visits appointments assistance_alerts assistance_requests assistant_keys
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
