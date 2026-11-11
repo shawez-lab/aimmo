@@ -13,6 +13,8 @@ import {
   type Availability,
   type Viewer,
 } from '../src/index.ts';
+import { MASKED_SECRET } from '../src/envoi/controle.ts';
+import { remis, tablesContenant } from './boite-essai.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -285,10 +287,13 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     const w = await world();
     const r = await w.book(at('2026-11-10', '09:00'), { channel: 'email' });
     expect(r).toMatchObject({ ok: true, confirmation: { status: 'sent', rule: null }, appointment: { confirmation_status: 'sent' } });
-    const out = await w.db.all<{ body: string }>("SELECT body FROM messages WHERE direction = 'out'");
+    const out = await w.db.all<{ id: string; body: string }>("SELECT id, body FROM messages WHERE direction = 'out'");
     expect(out).toHaveLength(1);
     expect(out[0]!.body).toContain('confirmé le mardi 10 novembre à 9 h');
-    expect(out[0]!.body).toContain(LINK);
+    // Le lien pour décaler ou annuler est remis entier, et rangé masqué [HX61, RC16].
+    expect(remis(out[0]!.id)).toContain(`${LINK}${r.token}`);
+    expect(out[0]!.body).toContain(MASKED_SECRET.lien);
+    expect(await tablesContenant(w.db, r.token)).toEqual([]);
     expect(await w.db.all('SELECT message_id FROM trial_outbox')).toHaveLength(1);
     // Sans accord pour les rendez-vous, la réservation tient, la confirmation est refusée [R03].
     const marc = await w.store.createPerson({ networkId: w.net.id, firstName: 'Marc' });

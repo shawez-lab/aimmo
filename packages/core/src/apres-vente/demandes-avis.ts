@@ -266,6 +266,7 @@ export class DemandesAvis {
         if (row.next_try_day && row.next_try_day > today) continue;
         const firstName = await this.firstName(c.personId);
         const others = clients.filter((o) => o.side !== c.side).map((o) => o.personId);
+        const satisfactionLink = this.satisfactionBase ? await newSatisfactionLink(this.db, this.satisfactionBase, { networkId, fileId: sale.fileId, personId: c.personId, agentId: sale.agentId }, this.now()) : null;
         const result = await this.controle.send({
           networkId,
           agentId: sale.agentId,
@@ -274,9 +275,9 @@ export class DemandesAvis {
           kind: 'review_request',
           purpose: REVIEW_PURPOSE,
           subject: `avis:${sale.fileId}`,
-          fallbackTexts: [
-            reviewText(firstName, c.side, sale, url, this.satisfactionBase ? await newSatisfactionLink(this.db, this.satisfactionBase, { networkId, fileId: sale.fileId, personId: c.personId, agentId: sale.agentId }, this.now()) : null),
-          ],
+          fallbackTexts: [reviewText(firstName, c.side, sale, url, satisfactionLink)],
+          // Le lien de satisfaction donne la note de ce client : remis au canal, jamais rangé en clair [HX61, RC16].
+          ...(satisfactionLink ? { secrets: [{ kind: 'lien' as const, value: satisfactionLink }] } : {}),
           // Les chiffres de la référence du bien et ceux du lien, lus dans la base [R10].
           figures: [...(sale.reference.match(/\d+/g) ?? []).map(Number), url],
           // Le nom d'un client de l'autre côté n'apparaît jamais [R19].

@@ -398,6 +398,8 @@ export class VisiteDistance {
       fallbackTexts: [`${await this.greeting(v.person_id)}Avant votre visite du ${day}, voici le dossier du bien ${version.reference}, tel qu’il est publié aujourd’hui : ${this.dossierUrl(token)}`],
       figures: [day, version.reference, ...(this.dossierUrl(token).match(/\d+/g) ?? [])],
       sellerNames: sellers.names,
+      // Le lien ouvre le dossier de ce visiteur : remis au canal, jamais rangé en clair [HX61, RC16].
+      secrets: [{ kind: 'lien', value: this.dossierUrl(token) }],
     });
     if (sent.status !== 'sent' || !sent.messageId) {
       await this.db.run(`UPDATE visit_dossiers SET status = 'refuse' WHERE id = ? AND status = 'a_envoyer'`, [id]);
