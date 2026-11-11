@@ -1156,7 +1156,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR43 · Les statistiques du site de tout le réseau, dans « Attirer » de la direction
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#517, `1b01dc55`), partie « Statistiques du site » de `packages/api/app/attirer.ts`, mode réseau de `/app/site.js` ; aucune route, règle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5610 tests). Rien ne reste pour cette entrée.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR42
 - Cahier : M01, « Gérer mon site » ; R285 à R287, R16, R201.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans le « Reste » de BR42 (« l'entrée de la direction (tout le réseau) dans « Attirer » »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. L'écran « Attirer » gagne une septième partie, « Statistiques du site », avec un bouton qui charge le même script `/app/site.js` (BR42), en mode réseau : titres et libellés dits pour tout le réseau (« Les pages du réseau », « Page d'un agent »), mêmes routes `/v1/site` que la direction lit déjà pour tout le réseau (BR41). Aucune route, règle ni migration nouvelle ; `app.js` inchangé.
