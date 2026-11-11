@@ -291,6 +291,7 @@ describeWithSqlite('V02 · réservation, confirmation et annulation', () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.body).toContain('confirmé le mardi 10 novembre à 9 h');
     // Le lien pour décaler ou annuler est remis entier, et rangé masqué [HX61, RC16].
+    if (!r.ok) throw new Error(r.code);
     expect(remis(out[0]!.id)).toContain(`${LINK}${r.token}`);
     expect(out[0]!.body).toContain(MASKED_SECRET.lien);
     expect(await tablesContenant(w.db, r.token)).toEqual([]);
