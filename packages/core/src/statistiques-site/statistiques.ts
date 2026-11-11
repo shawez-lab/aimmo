@@ -3,7 +3,8 @@
  *
  * - Une vue n'est comptée que pour un contenu public connu du réseau (le code porteur de AT05), par un compteur par
  *   contenu et par jour de Paris. Rien d'autre n'est gardé du visiteur : ni adresse IP, ni navigateur, ni page d'arrivée,
- *   ni cookie, ni heure ; la fonction ne reçoit d'ailleurs rien d'autre que le code [R285, R156].
+ *   ni cookie, ni heure ; la fonction ne reçoit d'ailleurs rien d'autre que le code et le navigateur annoncé, lu
+ *   seulement pour écarter les robots (RC12) [R285, R156].
  * - Chaque chiffre est relié à des demandes réelles : une demande est une conversation reçue dont la première origine
  *   connue est ce contenu (la règle de la mesure de AT05), nommée par son premier message ; sa personne est la première
  *   rattachée à ses messages ; un mandat, une demande dont la personne a signé un mandat ensuite, projet ou non ; un
@@ -24,6 +25,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { parisDayStart } from '../pilotage/tableau-agent.ts';
+import { isRobotVisit } from './robots.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 const CODE = /^[a-z2-7]{12}$/;
@@ -92,17 +94,25 @@ export class StatistiquesSite {
     return null;
   }
 
-  /** Compter une vue d'un contenu public : le seul code porteur, rien du visiteur [R285]. */
-  async countView(networkId: string, code: unknown): Promise<{ ok: true } | { ok: false; code: 'unknown_content' }> {
+  /**
+   * Compter une vue d'un contenu public : le seul code porteur, rien du visiteur. Le navigateur annoncé est lu pour
+   * écarter les robots, jamais rangé ni écrit au journal ; obligatoire, pour qu'aucun appel ne l'oublie [R285, RC12].
+   */
+  async countView(
+    networkId: string,
+    code: unknown,
+    visit: { userAgent: unknown },
+  ): Promise<{ ok: true; counted: boolean } | { ok: false; code: 'unknown_content' }> {
     if (typeof code !== 'string' || !CODE.test(code)) return { ok: false, code: 'unknown_content' };
     const c = await this.db.first<{ id: string }>('SELECT id FROM public_contents WHERE id = ? AND network_id = ?', [code, networkId]);
     if (!c) return { ok: false, code: 'unknown_content' };
+    if (isRobotVisit(visit?.userAgent)) return { ok: true, counted: false };
     const day = localTime(this.now(), TIME_ZONE).date;
     await this.db.run(
       'INSERT INTO site_page_views (network_id, content_id, day, views) VALUES (?, ?, ?, 1) ON CONFLICT (network_id, content_id, day) DO UPDATE SET views = views + 1',
       [networkId, code, day],
     );
-    return { ok: true };
+    return { ok: true, counted: true };
   }
 
   private period(input: unknown): { firstDay: string; lastDay: string; from: string; to: string } | null {
