@@ -1331,6 +1331,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 
 ### RC16 · Les liens personnels masqués dans les messages rangés
 - Statut : en cours (voie 2)
+- Reste : proposition #520 prête (ae8938d) : Codex rien à signaler, vérification locale verte (5651 tests) ; fusion refusée par le contrôle des permissions, un essai, ajoutée à H69.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX61, HX44, V04, F05
 - Cahier : Conformité, règles des messages ; HX61 « Le contrôle central range un message à secret masqué » ; R06, R05, R13.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX61 (« jetons personnels sans acte à signer, non masqués : dossier publié avant la visite (HX44), lien de rendez-vous, lien de satisfaction »). Aujourd'hui ces trois liens sont rangés en clair dans `messages.body` : l'agent, ou quiconque lit la fiche, peut annuler ou décaler le rendez-vous du client, ouvrir son dossier ou donner sa note à sa place. Chaque appel au contrôle central qui porte l'un de ces liens le déclare dans `secrets` (sorte `lien`) : le canal reçoit le texte entier, la base « [lien masqué] ». `envoi/controle.ts` (socle) ne change pas. Changent seulement `medias/visite-distance.ts`, `rendezvous/reservation.ts`, `rendezvous/rappels.ts`, `apres-vente/demandes-avis.ts` et leurs tests ; aucune règle nouvelle ni migration.
