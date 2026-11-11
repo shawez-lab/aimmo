@@ -1129,7 +1129,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC05 · Une voie au titre d'une personne dans la lettre de quartier
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#498, dde373c4). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5487 tests). Les types de voie du titre restent ceux de la veille : « faubourg du Docteur », « mail du Président » restent refusés dans une lettre (plus prudent), reste possible pour la voie 2.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC04, G06
 - Cahier : M20 Gagner des mandats, lettres de quartier ; R140.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC04. Aujourd'hui l'agent ne peut pas adresser une lettre au « 12 rue du Docteur Chaussier » : la civilité « docteur » refuse l'adresse entière. Le titre d'une voie, juste après son type et un article facultatif, est retiré de la voie avant le contrôle, par la même fonction que la veille et le score (`withoutRoadTitles`, sortie de `veille.ts` dans le fichier neuf `veille-dpe/titre-voie.ts`, qui n'importe rien : `veille.ts` importe déjà les lettres, aucun cycle). Le numéro et la commune gardent le contrôle strict ; toute autre civilité dans la voie refuse toujours ; l'adresse doit toujours être celle de la Base adresse nationale (`not_an_address`). Changent `lettres-quartier.ts`, `veille.ts` (import seul), le fichier neuf et le test des lettres.
