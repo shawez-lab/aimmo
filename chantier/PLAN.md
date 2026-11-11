@@ -1064,6 +1064,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le script est servi à part, chargé seulement au geste, et tient le budget d'une page ; l'application tient le sien [R201] (test) ; l'écran ne montre jamais un code interne, chaque refus connu a ses mots (test) ; aucun envoi : le message validé est montré à copier, seul le canal `annonce` est proposé [R275] (test) ; l'écart au marché porte sa source, sinon « marché non chiffré » [R274] (test) ; chaque adresse montre confiance, niveau et points avec source et date ; une fiche se crée avec ou sans adresse et relit la file [R294, R295] (test) ; tout texte reçu est posé en texte (test).
 - Attend : rien (vraie source de pige et H58 restent à part).
 
+### BR34 · L'écran de préparation d'une séquence de prospection, depuis la fiche
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR31, BR32
+- Partie du cahier : Phase 3, « Séquence de prospection sur plusieurs canaux » ; R300 à R302, R16, R201.
+- Décidé (2026-11-11, voie 1) : ajoutée parce que BR32 et BR33 laissent « écran de préparation d'une séquence ». L'application n'a plus que 198 octets de marge : rien ne change dans `app.js`. Script neuf servi à part, `/app/sequence-fiche.js` (`packages/api/app/sequence-fiche.ts`), chargé au premier geste depuis le bloc de la fiche déjà servi à part (`/app/biens-fiche.js`), seulement si la fiche est joignable (`contact.allowed`). L'écran n'écrit que par `POST /v1/sequences` ; il ne calcule rien d'autre que les contrôles de saisie que le serveur refait. De une à huit étapes : canal (mail, SMS, appel, courrier, passage à la porte), jour après le départ (0 à 90, jamais avant l'étape d'avant), texte écrit par l'agent pour un mail ou un SMS seulement. Un refus se dit en mots, jamais par son code ; une réponse perdue se réessaie sans risque, la seconde séquence serait refusée.
+- Objectif : l'agent prépare d'un geste, depuis la fiche, la séquence de prospection d'un vendeur possible.
+- Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; aucun envoi, l'écran dit que mails et SMS partent seuls par le contrôle central [R300, R26] (test) ; une fiche exclue ou arrêtée n'a pas le bouton [R301] (test) ; saisie fausse refusée avant tout appel (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test) ; décrit dans `docs/API.md`.
+- Attend : rien (H61 reste à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
