@@ -21,16 +21,20 @@
  *   GET /simulateur                                le simulateur de prêt, qui ne garde rien [R157]
  *   GET /preuve, /preuve.json                      le compte public de la preuve à Dijon, sur le site du réseau [R213]
  *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
+ *   GET /chercher                                  la recherche en langage courant, sans connexion, jamais gardée (BR44) [R420, R421, R423]
  * Une adresse inconnue, un site hors service, une page non publiable : 404, sans rien dire de plus. Tant que le
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
-import { appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { FicheClient, FicheUnique, Rapprochement, appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
 import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts';
 import { countPublicView, type CountedKind } from './statistiques-site.ts';
+import { RechercheLangage } from '../../core/src/recherche/langage-courant.ts';
+import { keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
+import { isRobotVisit } from '../../core/src/statistiques-site/robots.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -287,7 +291,19 @@ export const PUBLIC_PATHS = {
   preuve: /^\/preuve(\.json)?$/,
   plan: /^\/sitemap\.xml$/,
   robots: /^\/robots\.txt$/,
+  chercher: /^\/chercher$/,
 };
+
+/** La page de la recherche publique : jamais en cache, jamais indexée, et son formulaire ne mène qu'à elle-même. */
+const SEARCH_CSP = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const searchHeaders = (): Record<string, string> => ({
+  'content-type': 'text/html; charset=utf-8',
+  'content-security-policy': SEARCH_CSP,
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'cache-control': 'no-store',
+  'x-robots-tag': 'noindex, nofollow',
+});
 
 /** Le site en service qui sert cette adresse, et son réseau ; `null` pour toute autre adresse. */
 async function siteOf(s: AttirerServices, referencement: Referencement, origin: string) {
@@ -468,9 +484,39 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       if (!plan.ok) return notFound();
       return new Response(request.method === 'HEAD' ? null : plan.xml, { status: 200, headers: { ...pageHeaders('application/xml; charset=utf-8', mode), 'cache-control': 'public, max-age=3600' } });
     }
+    case 'chercher': {
+      // Sans la porte, rien n'est montré [R220] ; la phrase n'est ni gardée, ni écrite au journal, ni comptée.
+      const query = parsePublicSearchQuery(url.searchParams);
+      if (!query || !s.diffusion) return notFound();
+      const page = (status: number, input: PublicSearchPageInput): Response =>
+        new Response(request.method === 'HEAD' ? null : withLegalLinks(renderPublicSearchPage(input)), { status, headers: searchHeaders() });
+      if ('tooLong' in query) return page(400, { state: 'too_long', phrase: query.phrase });
+      if (query.phrase === null) return page(200, { state: 'form' });
+      // Un robot annoncé ne reçoit aucun bien : la liste publique reste son chemin, page par page [RC12].
+      if (isRobotVisit(request.headers.get('user-agent'))) return page(200, { state: 'robot', phrase: query.phrase });
+      const fiche = new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now });
+      const recherche = new RechercheLangage(s.db, new Rapprochement(s.db, fiche, s.diffusion, s.journal, { now: s.now }), s.diffusion, s.journal, { now: s.now, limit: Number.MAX_SAFE_INTEGER });
+      const found = await recherche.search(networkId, query.phrase, publicSearchSteps(query));
+      const all = await svc.referencement.published(networkId);
+      const published = site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all;
+      // La coupe à PUBLIC_SEARCH_LIMIT se fait après le tri par site : un bien de ce site n'est jamais évincé par d'autres.
+      const kept = keepPublished(found, published);
+      return page(200, {
+        state: 'results',
+        phrase: query.phrase,
+        neighbours: query.neighbours,
+        results: kept.results,
+        near: kept.neighbours,
+        proposedNeighbours: found.proposedNeighbours,
+        ignored: found.search.ignored,
+        understood: found.search.criteria.length,
+        checkedAt: s.now(),
+      });
+    }
     case 'robots': {
       // En essai, rien n'est indexé ; le plan est toujours déclaré, celui du site lui-même [R153].
-      const lines = ['User-agent: *', mode === 'essai' ? 'Disallow: /' : 'Allow: /', `Sitemap: ${site.baseUrl}/sitemap.xml`, ''];
+      // La recherche publique n'est jamais parcourue par un moteur (BR44).
+      const lines = ['User-agent: *', ...(mode === 'essai' ? ['Disallow: /'] : ['Disallow: /chercher', 'Allow: /']), `Sitemap: ${site.baseUrl}/sitemap.xml`, ''];
       return new Response(request.method === 'HEAD' ? null : lines.join('\n'), { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'public, max-age=3600' } });
     }
   }

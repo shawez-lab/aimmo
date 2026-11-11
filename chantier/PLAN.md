@@ -1165,6 +1165,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le script `/app/site.js` n'est chargé qu'au geste, depuis « Attirer », et les deux scripts tiennent le budget d'une page [R201] (test) ; la partie ne lit que `/v1/site`, la clé dans l'en-tête seul, rien d'écrit [R16] (test) ; en mode réseau, les titres et la page d'un agent sont dits pour le réseau, l'ordre et les chiffres sont ceux reçus [R286] (test) ; l'écran de l'agent (BR42) garde ses mots (test) ; changer de période relit, seule la dernière lecture dessine (test) ; un refus est dit en mots (test).
 - Attend : rien.
 
+### BR44 · La recherche en langage courant sur le site public, sans connexion
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR39
+- Cahier : M08, recherche de biens ; R420, R421, R423, R50, R220.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR39 (« route publique sans connexion, à protéger du moissonnage ») et de HX28 (« écran public »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Une page `GET /chercher` servie par le site du réseau et par celui de chaque agent (`attirer.ts`, comme `/biens`), rendue par le serveur, sans script ; elle ne montre que les biens publiés sur ce site (le site d'un agent, les siens) et revérifiés par la porte de diffusion, avec le titre et le prix de l'annonce publiée. Contre le moissonnage, sans rien garder du visiteur (ni adresse IP, ni compteur, ni migration) : au plus 12 biens par liste, aucune page suivante, paramètres en liste fermée (`q`, `voisine` au plus 5), phrase de 500 signes au plus (dite, jamais tronquée), `no-store`, jamais indexée (`noindex, nofollow`, `Disallow: /chercher` en réel), et un robot annoncé ou sans navigateur (liste de RC12) ne reçoit que le formulaire. Pas de refus d'un bien sur la page publique : ils ne servent qu'à la fiche rangée par l'agent. La phrase n'est ni gardée, ni écrite au journal, ni comptée dans les vues.
+- Objectif : le visiteur écrit ce qu'il cherche avec ses mots sur le site et lit les biens qui y répondent, chacun avec ses raisons, les communes voisines à part et proposées par un lien, les mots écartés dits.
+- Critères : seuls des biens publiés sur ce site et diffusables à l'instant, sans adresse, chacun avec ses raisons [R420, R421, R220] (test) ; voisine ajoutée par le seul lien suivi, bien voisin marqué à part [R423] (test) ; mots sur les personnes écartés et dits [R50] (test) ; phrase ni gardée ni au journal, aucune vue comptée (test) ; robot sans bien, `no-store`, `noindex`, 12 biens au plus, paramètres non prévus 404, phrase trop longue dite 400 (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
