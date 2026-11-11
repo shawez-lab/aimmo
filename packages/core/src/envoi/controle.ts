@@ -7,7 +7,7 @@
  *   1. décision d'envoi de S05 : arrêt, exclusions, horaires, plafonds, accord [R01 à R04, R11] ;
  *   2. anti-doublon par sujet : un bien, une relance ou une alerte, une seule fois par personne [R05] ;
  *   3. texte : celui de l'IA si son budget le permet et qu'elle répond à temps, sinon un texte de secours [R12] ;
- *   4. contrôle du texte [R06 à R10, longueur] et anti-doublon du texte [R05] ; un texte refusé passe au secours ;
+ *   4. contrôle du texte, secrets masqués [R06 à R10], longueur, et anti-doublon du texte [R05] ; un texte refusé passe au secours ;
  *   5. mention de l'assistant au premier message automatique de la conversation [R06] ;
  *   6. enregistrement du message et du journal, puis envoi [R13].
  * Chaque refus est écrit au journal avec sa règle. Une panne du canal aussi : aucune erreur n'est avalée.
@@ -451,8 +451,10 @@ export class ControleEnvois {
     let chosen: { text: string; core: string; ai: boolean } | null = null;
     const problems: { rule: string; reason: string; ai: boolean }[] = [];
     for (const candidate of candidates) {
+      // Le texte est relu secrets masqués : les lettres tirées au hasard d'un lien ou les chiffres d'un code ne sont
+      // pas des mots ni des chiffres écrits [R06, R10, RC08]. Le reste du texte est relu entier.
       const found = checkText(
-        candidate.core,
+        maskSecrets(candidate.core, secrets),
         {
           audience: 'client',
           channel: order.channel,
