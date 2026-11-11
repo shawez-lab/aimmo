@@ -1109,7 +1109,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC04 · Une voie au titre d'une personne n'écarte plus un diagnostic
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#497, abc8fba8). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5486 tests). La lettre de quartier (R140, `mandats/gagner/lettres-quartier.ts`) garde encore son propre contrôle strict des titres de voie : reste du cœur possible pour la voie 2.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX16, HX17
 - Cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R288, R292.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX17 et BR27 (`carriesPerson` de HX16 à aligner, cœur, voie 2). Aujourd'hui la veille écarte en entier un diagnostic au « 12 rue du Docteur Chaussier » ou « place du Maréchal Leclerc » : à Dijon, nombre de logements F ou G ne remontent jamais. Le titre d'une voie, juste après son type (rue, avenue, place…) et un article facultatif, n'est pas une personne : il est retiré avant le contrôle, comme le fait déjà le score par adresse. Tout autre marque de personne (« Mme », « chez », « famille », un titre sans type de voie devant) écarte toujours le diagnostic entier. `addressCarriesPerson` et son motif passent dans `packages/core/src/veille-dpe/veille.ts` (le score l'importait déjà de là pour `carriesPerson`) ; `score.ts` le réexporte sans rien changer d'autre. La lettre de quartier (`mandats/gagner`, R140) ne change pas.
