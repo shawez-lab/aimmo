@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { StatistiquesSite } from '../src/statistiques-site/statistiques.ts';
+import { isRobotVisit } from '../src/statistiques-site/robots.ts';
 import { readSchema } from '../src/conformite/registre.ts';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -8,6 +9,32 @@ import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 // Réseau, agents, communes, contacts et contenus inventés.
 const NOW = Date.parse('2026-12-07T10:00:00.000Z');
 const DAY = 86_400_000;
+// Navigateurs de personnes, tels qu'annoncés (chaînes publiques, aucune personne derrière).
+const PHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+const DESKTOP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 13; SM-A536B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+const FIREFOX = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5; rv:127.0) Gecko/20100101 Firefox/127.0';
+const CUBOT = 'Mozilla/5.0 (Linux; Android 12; CUBOT X70) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36';
+const ROBOTS = [
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+  'Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)',
+  'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)',
+  'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+  'WhatsApp/2.23.20.0 A',
+  'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+  'LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)',
+  'Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36',
+  'curl/8.5.0',
+  'python-requests/2.32.3',
+  'Wget/1.21.4',
+  'Go-http-client/2.0',
+  'Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)',
+  'Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; trendictionbot0.5.0) Gecko/20100101 Firefox/126.0',
+  'Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) AppleWebKit/601.2.4 (KHTML, like Gecko) Version/9.0.1 Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0',
+];
 
 async function setup() {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -65,7 +92,7 @@ async function setup() {
     return id;
   };
   const views = async (code: string, n: number) => {
-    for (let i = 0; i < n; i += 1) expect(await stats.countView(network.id, code)).toEqual({ ok: true });
+    for (let i = 0; i < n; i += 1) expect(await stats.countView(network.id, code, { userAgent: PHONE })).toEqual({ ok: true, counted: true });
   };
   const zone = async (agentId: string, commune: string) =>
     db.run('INSERT INTO agent_zones (id, network_id, agent_id, commune, created_at) VALUES (?, ?, ?, ?, ?)', [`z-${agentId}-${commune}`, network.id, agentId, commune, new Date(NOW).toISOString()]);
@@ -94,7 +121,7 @@ describeWithSqlite('HX15 · statistiques du site', () => {
     expect(cols ? [...cols.columns].sort() : null).toEqual(['content_id', 'day', 'network_id', 'views']);
     // Un code inconnu, d'un autre réseau, ou qui n'en est pas un : rien n'est compté.
     const elsewhere = await t.content('prix', 'ailleurs-test', t.other.id);
-    for (const bad of [elsewhere, 'pas-un-code', 'zzzzzzzzzzzz', 42, null]) expect(await t.stats.countView(t.network.id, bad)).toEqual({ ok: false, code: 'unknown_content' });
+    for (const bad of [elsewhere, 'pas-un-code', 'zzzzzzzzzzzz', 42, null]) expect(await t.stats.countView(t.network.id, bad, { userAgent: PHONE })).toEqual({ ok: false, code: 'unknown_content' });
     expect(await t.db.first<{ n: number }>('SELECT SUM(views) AS n FROM site_page_views')).toEqual({ n: 4 });
     // Un compteur ne descend pas et ne s'efface pas.
     await expect(t.db.run('UPDATE site_page_views SET views = 0')).rejects.toThrow();
@@ -270,5 +297,51 @@ describeWithSqlite('HX15 · statistiques du site', () => {
     const a = await t.stats.nextPage(t.direction);
     expect(a).toMatchObject({ ok: true, suggestion: { kind: 'prix', commune: 'Dijon-Test', path: '/prix/dijon-test' } });
     expect(await t.stats.nextPage(t.direction)).toEqual(a);
+  });
+
+  it('[R285] RC12 · une visite de personne compte, un robot, un aperçu de lien ou un script ne compte pas', async () => {
+    const t = await setup();
+    const page = await t.content('prix', 'dijon-test');
+    for (const ua of [PHONE, DESKTOP, ANDROID, FIREFOX, CUBOT]) {
+      expect(isRobotVisit(ua)).toBe(false);
+      expect(await t.stats.countView(t.network.id, page, { userAgent: ua })).toEqual({ ok: true, counted: true });
+    }
+    for (const ua of ROBOTS) {
+      expect(isRobotVisit(ua)).toBe(true);
+      expect(await t.stats.countView(t.network.id, page, { userAgent: ua })).toEqual({ ok: true, counted: false });
+    }
+    // Sans navigateur, vide, illisible : pas une personne.
+    for (const ua of [undefined, null, '', '   ', 42, ['Mozilla/5.0']]) {
+      expect(isRobotVisit(ua)).toBe(true);
+      expect(await t.stats.countView(t.network.id, page, { userAgent: ua })).toEqual({ ok: true, counted: false });
+    }
+    expect(await t.db.all('SELECT content_id, views FROM site_page_views')).toEqual([{ content_id: page, views: 5 }]);
+  });
+
+  it('[R285] RC12 · un code inconnu est refusé d’abord, robot ou non', async () => {
+    const t = await setup();
+    const elsewhere = await t.content('prix', 'ailleurs-test', t.other.id);
+    for (const ua of [PHONE, ROBOTS[0], undefined]) {
+      for (const bad of [elsewhere, 'pas-un-code', 'zzzzzzzzzzzz', 42, null]) {
+        expect(await t.stats.countView(t.network.id, bad, { userAgent: ua })).toEqual({ ok: false, code: 'unknown_content' });
+      }
+    }
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM site_page_views')).toEqual({ n: 0 });
+  });
+
+  it('[R285] RC12 · le navigateur annoncé n’est rangé dans aucune table ni au journal', async () => {
+    const t = await setup();
+    const page = await t.content('prix', 'dijon-test');
+    const marked = 'Mozilla/5.0 (Linux; Android 14; Marque-Inventee-RC12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+    const robot = 'Mozilla/5.0 (compatible; RobotInventeRC12bot/1.0)';
+    expect(await t.stats.countView(t.network.id, page, { userAgent: marked })).toEqual({ ok: true, counted: true });
+    expect(await t.stats.countView(t.network.id, page, { userAgent: robot })).toEqual({ ok: true, counted: false });
+    const tables = await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
+    for (const { name } of tables) {
+      const rows = await t.db.all<Record<string, unknown>>(`SELECT * FROM "${name}"`);
+      const text = JSON.stringify(rows);
+      expect(text.includes('Marque-Inventee-RC12'), name).toBe(false);
+      expect(text.includes('RobotInventeRC12'), name).toBe(false);
+    }
   });
 });
