@@ -36,7 +36,7 @@ globalThis.AIMMO_COMMUNES = function (t) {
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   var MONTH = new RegExp('^[0-9]{4}-(0[1-9]|1[0-2])$');
-  var root = null, out = null, status = null, picker = null, reading = 0, busy = false, shown = null;
+  var root = null, out = null, status = null, picker = null, reading = 0, busy = false;
   function say(text) { if (status) status.textContent = text; }
   function why(res, fallback) {
     if (res.offline) return OFFLINE;
@@ -102,7 +102,6 @@ globalThis.AIMMO_COMMUNES = function (t) {
     return send('/v1/recrutement/communes?mois=' + encodeURIComponent(m), 'GET').then(function (res) {
       if (res.gone || turn !== reading || mine !== t.session()) return false;
       if (!res.ok || !res.body || !res.body.data) { say((message ? message + ' ' : '') + why(res, 'Les communes ne se lisent pas pour le moment.')); return false; }
-      shown = m;
       render(res.body.data);
       say(message || '');
       return true;
@@ -112,7 +111,7 @@ globalThis.AIMMO_COMMUNES = function (t) {
   function decide(commune, open, reason) {
     if (busy) return Promise.resolve(false);
     busy = true;
-    var mine = t.session(), turn = reading;
+    var mine = t.session();
     say('Envoi…');
     return send('/v1/recrutement/communes/decision', 'POST', { commune: commune, open: open, reason: reason }).then(function (x) {
       busy = false;
@@ -120,9 +119,8 @@ globalThis.AIMMO_COMMUNES = function (t) {
       if (x.offline || !x.body || x.status >= 500) { say(LOST); return false; }
       if (!x.ok) { say(why(x, 'La décision n’est pas rangée.')); return false; }
       var done = commune + (open ? ' ouverte' : ' fermée') + ' au recrutement : la décision est rangée, la page de candidature le dit sans aucun chiffre.';
-      /* Un autre mois demandé pendant l'envoi garde la main : sa lecture dessine, la décision est seulement dite. */
-      if (turn !== reading) { say(done); return true; }
-      return read(shown, done);
+      /* Le mois choisi à l'instant est relu, même si un autre a été demandé pendant l'envoi : l'écran dit l'état rangé. */
+      return read(picker.value, done);
     }, function () { busy = false; say(LOST); return false; });
   }
   function show(inner) {

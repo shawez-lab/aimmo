@@ -167,7 +167,7 @@ describe('BR38 · les communes à pourvoir à l’écran', () => {
     expect(t.status()).toContain('Pas de réseau. Réessayez dans un moment.');
   });
 
-  it('un autre mois demandé pendant l’envoi d’une décision garde la main : la décision ne relit pas l’ancien', async () => {
+  it('un autre mois demandé pendant l’envoi d’une décision : c’est lui qui est relu après, jamais l’ancien', async () => {
     let release: () => void = () => undefined;
     const slow: Answer = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: { commune: 'Commune Trois', version: 1, open: true } }))));
     const t = await run({ 'POST /v1/recrutement/communes/decision': slow });
@@ -180,9 +180,12 @@ describe('BR38 · les communes à pourvoir à l’écran', () => {
     select.value = other;
     await t.click(t.button('Lire ce mois'));
     const reads = t.calls.filter((c) => c.url === URL_MONTH).length;
+    const others = t.calls.filter((c) => c.url.endsWith(`mois=${other}`)).length;
     release();
     await settle();
+    // Le mois choisi à l'instant est relu après la décision, jamais l'ancien.
     expect(t.calls.filter((c) => c.url === URL_MONTH).length).toBe(reads);
+    expect(t.calls.filter((c) => c.url.endsWith(`mois=${other}`)).length).toBe(others + 1);
     expect(t.texts()).toContain('Commune Autre');
     expect(t.status()).toContain('Commune Trois ouverte au recrutement : la décision est rangée');
   });
