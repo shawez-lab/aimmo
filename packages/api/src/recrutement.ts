@@ -4,7 +4,8 @@
  * La direction seule : chaque route passe par les droits de la couche métier [R16], qui écrit chaque refus au journal.
  * Les contenus (vidéos et épisodes) passent le contrôle des promesses [R80, R620], ne s'effacent jamais, et leur compte
  * rendu ne donne que des nombres [R622]. Le coût de l'agent moyen est calculé par le code depuis la base, pour un mois
- * fini seulement [R623, R624, R625] : aucun montant n'entre par une route. Rien n'est envoyé.
+ * fini seulement [R623, R624, R625] : aucun montant n'entre par une route. Les communes à pourvoir (HX68, BR37) se lisent
+ * pour un mois fini [R626] et s'ouvrent ou se ferment par versions [R627]. Rien n'est envoyé.
  */
 import { appendEvent, reseau, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 
@@ -65,6 +66,7 @@ const carriesAmount = (body: Record<string, unknown>): boolean => Object.keys(bo
 
 const contenus = (s: RecrutementServices) => new reseau.ContenusRecrutement(s.db, s.journal, { now: s.now });
 const cout = (s: RecrutementServices) => new reseau.CoutAgent(s.db, s.journal, { now: s.now });
+const communes = (s: RecrutementServices) => new reseau.CommunesAPourvoir(s.db, s.journal, { now: s.now });
 
 /** Les routes de `/v1/recrutement`, à ajouter à celles de `app.ts`. */
 export function recrutementRoutes(): RecrutementRoute[] {
@@ -134,6 +136,20 @@ export function recrutementRoutes(): RecrutementRoute[] {
       pattern: new RegExp(`${P}/cout-agent$`),
       name: 'recrutement.cout.mois',
       handle: async (s, v, _p, r) => reply(await cout(s).month(v, new URL(r.url).searchParams.get('mois'))),
+    },
+    // Les communes où des clients attendent un agent (HX68).
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/communes$`),
+      name: 'recrutement.communes.mois',
+      handle: async (s, v, _p, r) => reply(await communes(s).month(v, new URL(r.url).searchParams.get('mois'))),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/communes/decision$`),
+      name: 'recrutement.communes.decision',
+      // Le corps entier va à la couche métier, qui refuse tout champ inconnu et toute commune hors liste [R627].
+      handle: withBody(async (s, v, _p, b) => reply(await communes(s).decide(v, b))),
     },
   ];
   return routes.map(direction);

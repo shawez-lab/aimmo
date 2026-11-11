@@ -10,9 +10,12 @@
  * la réponse est la même, que la candidature soit nouvelle ou déjà rangée [R18] ; l'accord d'être recontacté est une
  * case libre, rangée avec sa preuve, et sans elle personne ne recontacte le candidat [R03]. Aucune coordonnée ne va au
  * journal [R13]. Rien n'est envoyé d'ici.
+ *
+ * Les communes ouvertes au recrutement par la direction (HX68, BR37) sont dites par leur nom seul, triées, sans aucun
+ * chiffre ni promesse [R628] ; aucune ouverte, ou une lecture qui échoue : la section n'est pas là, la page sert quand même.
  */
 import { appendEvent, DESIGN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
-import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES, Candidatures, checkRecruitingText } from '../../core/src/reseau/index.ts';
+import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES, Candidatures, CommunesAPourvoir, checkRecruitingText } from '../../core/src/reseau/index.ts';
 
 export const CANDIDATURE_PATH = '/rejoindre';
 /** La version des textes de la page : elle entre dans la preuve de l'accord, pour savoir ce que le candidat a lu. */
@@ -103,6 +106,9 @@ export const PAGE_TEXT = deepFreeze({
   consent: 'J’accepte d’être recontacté par l’équipe AIMMO au sujet de ma candidature, par les coordonnées données ici.',
   consentNote: 'Sans cette case, votre candidature est rangée mais personne ne pourra vous répondre. Vous pouvez retirer votre accord à tout moment.',
   privacy: 'Vos réponses servent seulement à étudier votre candidature. Elles ne sont ni vendues ni partagées hors de l’équipe qui recrute.',
+  wherePrefix: 'Où nous recrutons',
+  whereTitle: 'Les communes ouvertes aujourd’hui',
+  whereNote: 'Votre commune n’y est pas ? Candidatez quand même : chaque candidature est lue.',
   thanks: 'Votre candidature est bien arrivée. Une personne de l’équipe la lit, dans l’ordre d’arrivée. Si vous avez accepté d’être recontacté, elle vous répond par les coordonnées données.',
 });
 
@@ -125,6 +131,9 @@ export function pageTexts(): string[] {
     t.consent,
     t.consentNote,
     t.privacy,
+    t.wherePrefix,
+    t.whereTitle,
+    t.whereNote,
     t.thanks,
     ...Object.values(STATUS_LABELS),
     ...Object.values(EXPERIENCE_LABELS),
@@ -163,6 +172,8 @@ td{text-align:right;font:600 var(--t-l)/1.2 var(--police-titre);color:var(--acce
 .sans li+li{margin-top:var(--e-3)}
 ul.liste{margin:0 0 var(--e-4);padding-left:var(--e-5)}
 ul.liste li+li{margin-top:var(--e-2)}
+ul.communes{list-style:none;margin:0 0 var(--e-3);padding:0;display:flex;flex-wrap:wrap;gap:var(--e-2)}
+ul.communes li{padding:var(--e-1) var(--e-3);border:1px solid var(--trait);border-radius:var(--r-rond)}
 ol.etapes{counter-reset:e;list-style:none;margin:0;padding:0}
 ol.etapes li{counter-increment:e;position:relative;padding:0 0 var(--e-5) var(--e-7)}
 ol.etapes li::before{content:counter(e);position:absolute;left:0;top:0;width:32px;height:32px;background:var(--moutarde);color:var(--sur-moutarde);transform:rotate(45deg);border-radius:var(--r-s);display:flex;align-items:center;justify-content:center;font-weight:700}
@@ -236,7 +247,7 @@ function field(name: keyof FormValues, label: string, type: 'text' | 'email' | '
 }
 
 /** La page entière : l'offre, puis le formulaire, avec les valeurs saisies et l'erreur à corriger s'il y en a une. */
-export function candidaturePage(values: FormValues = {}, error: { message: string; field: keyof FormValues | null } | null = null): string {
+export function candidaturePage(values: FormValues = {}, error: { message: string; field: keyof FormValues | null } | null = null, communes: readonly string[] = []): string {
   const t = PAGE_TEXT;
   const inv = error?.field ?? null;
   const sponsor = values.parrain && AGENT_ID.test(values.parrain) ? values.parrain : null;
@@ -260,7 +271,10 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
 <dl class="offre">${t.trial.map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>
 <h2><small>Le parrainage</small>Dans les règles</h2>
 <p>${escape(t.referral)}</p>
-<h2><small>Après votre candidature</small>Quatre étapes, les mêmes pour tous</h2>
+${communes.length > 0 ? `<h2><small>${escape(t.wherePrefix)}</small>${escape(t.whereTitle)}</h2>
+<ul class="communes">${communes.map((c) => `<li>${escape(c)}</li>`).join('')}</ul>
+<p class="doux">${escape(t.whereNote)}</p>
+` : ''}<h2><small>Après votre candidature</small>Quatre étapes, les mêmes pour tous</h2>
 <ol class="etapes">${t.steps.map(([k, v]) => `<li><strong>${escape(k)}</strong>${escape(v)}</li>`).join('')}</ol>
 <h2 id="candidater"><small>Candidater</small>Quelques réponses, deux minutes</h2>
 ${error ? `<div class="erreur" id="erreur" role="alert"><p>${escape(error.message)}</p></div>` : ''}
@@ -305,6 +319,18 @@ export interface CandidatureConfig {
   problems?: () => string[];
 }
 
+/**
+ * Les communes ouvertes au recrutement du réseau, par leur nom seul [R628]. Une lecture qui échoue rend une liste vide :
+ * la page de candidature ne tombe jamais pour elle.
+ */
+async function openCommunes(db: SqlDatabase, networkId: string, now: () => Date): Promise<string[]> {
+  try {
+    return await new CommunesAPourvoir(db, new SqlJournalStore(db), { now }).openCommunes(networkId);
+  } catch {
+    return [];
+  }
+}
+
 /** La page de candidature, ou `null` si l'adresse n'est pas à elle. */
 export async function handleCandidature(request: Request, config: CandidatureConfig): Promise<Response | null> {
   const url = new URL(request.url);
@@ -326,7 +352,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     const values: FormValues = {};
     if (parrain !== undefined) values.parrain = parrain;
     if (contenu !== undefined) values.contenu = contenu;
-    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(values));
+    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(values, null, await openCommunes(config.db, config.networkId, now)));
     return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
   }
   if (request.method !== 'POST') return html(405, 'Méthode non admise · AIMMO', '<h1>Méthode non admise</h1><p>Utilisez le formulaire de la page.</p>');
@@ -379,5 +405,5 @@ export async function handleCandidature(request: Request, config: CandidatureCon
   const outcome = await new Candidatures(config.db, journal, { now }).apply(config.networkId, input);
   if (outcome.ok) return thanks();
   const [message, target] = ERRORS[outcome.code] ?? ['Votre candidature n’a pas pu être rangée. Vérifiez vos réponses et réessayez.', null];
-  return html(400, 'À corriger · Rejoindre AIMMO', candidaturePage(values, { message, field: target }));
+  return html(400, 'À corriger · Rejoindre AIMMO', candidaturePage(values, { message, field: target }, await openCommunes(config.db, config.networkId, now)));
 }
