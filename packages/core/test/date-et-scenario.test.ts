@@ -177,6 +177,27 @@ describeWithSqlite('RC09 · un message de date tient la place du jour des scéna
     expect((await t.outbox()).filter(([p]) => p === sam || p === samOther)).toEqual([[samOther, 'scenario']]);
   });
 
+  it('[R402] un scénario refusé parce qu’une fiche réunie tenait déjà la place rend la sienne', async () => {
+    const t = await setup();
+    t.setClock(TUE_10H - HOUR);
+    const kept = await t.person('Eli', { scenarioConsent: false });
+    const other = (await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Eli' })).id;
+    // L'autre fiche tient la place du jour par un passage refusé sans la rendre (comme avant RC09) : elle compte encore.
+    await t.db.run(
+      "INSERT INTO automation_runs (id, network_id, scenario_id, version, trigger_ref, person_id, triggered_at, due_at, status, created_at) SELECT 'run-autre', ?, id, 1, 'test', ?, ?, ?, 'fait', ? FROM automation_scenarios LIMIT 1",
+      [t.network.id, other, new Date(TUE_10H - HOUR).toISOString(), new Date(TUE_10H - HOUR).toISOString(), new Date(TUE_10H - HOUR).toISOString()],
+    );
+    await t.db.run("INSERT INTO automation_daily_messages (network_id, person_id, day, run_id, created_at) VALUES (?, ?, '2027-10-12', 'run-autre', ?)", [t.network.id, other, new Date(TUE_10H - HOUR).toISOString()]);
+    await t.unique.merge({ survivorId: kept, mergedId: other, reason: 'même personne (test)' });
+    await t.project(kept);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesRefused: 1 });
+    // La place prise sous la fiche gardée est rendue : seule celle de l'autre fiche reste tenue.
+    expect(await t.places()).toEqual([
+      { person_id: other, run_id: 'run-autre' },
+      { person_id: kept, run_id: null },
+    ]);
+  });
+
   it('[R402] un message de date d’un autre jour ne gêne pas le scénario', async () => {
     const t = await setup();
     // Anniversaire le 11 octobre, souhaité le lundi ; le projet arrive le mardi.

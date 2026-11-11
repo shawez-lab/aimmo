@@ -618,6 +618,9 @@ export class ScenariosAutomatiques {
         [networkId, day, ...members],
       );
       if (!holders.some((h) => h.run_id === run.id) || holders.some((h) => h.run_id !== run.id)) {
+        // Une autre fiche réunie tient déjà la place : celle prise ici sous la fiche gardée est rendue, sinon elle
+        // ferait attendre pour rien le message de date de la personne ce jour-là [R402, RC09].
+        await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
         messageStatus = 'refuse';
         messageRule = 'R402';
       } else if (await this.dateMessageOn(networkId, day, members)) {
