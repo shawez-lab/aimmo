@@ -14,6 +14,7 @@ import { euros } from '../annonces/mentions.ts';
 import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import type { PublishedListing } from './referencement.ts';
+import { PUBLIC_SEARCH_ENTRY_CSS, publicSearchEntry } from '../recherche/page-publique.ts';
 
 export const LISTINGS_PER_PAGE = 24;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -119,6 +120,7 @@ export const SITE_CSS =
 
 const CSS =
   SITE_CSS +
+  PUBLIC_SEARCH_ENTRY_CSS +
   '.communes{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}.communes [aria-current]{font-weight:700}' +
   '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}';
 
@@ -166,7 +168,7 @@ export function renderListingsPage(input: ListingsPageInput): string {
   const pages = query.page > 1 || input.hasNext ? `<nav class="suite" aria-label="Pages">${previous}${next}</nav>` : '';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(pageTitle)}</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>` +
+    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>${publicSearchEntry()}` +
     `<p class="controle">Mandats vérifiés le ${when(input.checkedAt)}. Un bien sans mandat en vigueur à cette heure n'apparaît pas ici.</p>` +
     `${filters}${list}${pages}<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
   );
