@@ -63,6 +63,8 @@ export interface DatesTickReport {
   postponed: number;
   /** Places laissées par un passage coupé net, fermées avec le message qu'il avait déjà rangé : aucun second message [R05]. */
   recovered: number;
+  /** Dates attendues : la personne a déjà eu ce jour son message de scénario, un seul message automatique par jour [R402]. */
+  sameDay: number;
   /** Dates du jour laissées sans message : pas d'accord en vigueur, personne exclue, ou aucun canal permis à la fois écrit et joignable [R404]. */
   withoutConsent: number;
 }
@@ -209,7 +211,7 @@ export class DatesClients {
    * (la nuit, le dimanche), il ne prépare rien [R01, R405].
    */
   async tick(networkId: string): Promise<DatesTickReport> {
-    const report: DatesTickReport = { closed: false, messagesInTrial: 0, refused: 0, postponed: 0, withoutConsent: 0, recovered: 0 };
+    const report: DatesTickReport = { closed: false, messagesInTrial: 0, refused: 0, postponed: 0, withoutConsent: 0, recovered: 0, sameDay: 0 };
     const now = this.now();
     if (afterSendingTime(now, 0, this.settings.window).getTime() > now.getTime()) return { ...report, closed: true };
     const local = localTime(now, this.settings.window.timeZone);
@@ -315,6 +317,19 @@ export class DatesClients {
       if (others) {
         await this.finish(networkId, d, year, 'refuse', 'R405', null);
         report.refused += 1;
+        continue;
+      }
+      // Un message de scénario a déjà la place du jour de la personne, fiches réunies comprises : un seul message
+      // automatique par jour. Prise avant de regarder, la place de l'année fait aussi refuser un scénario venu en même
+      // temps. Elle est reportée, reprise au passage suivant du même jour si le scénario rend la sienne, jamais un jour
+      // plus tard [R402, R405, RC09].
+      const scenarioHeld = await this.db.first<{ n: number }>(
+        `SELECT 1 AS n FROM automation_daily_messages WHERE network_id = ? AND day = ? AND run_id IS NOT NULL AND person_id IN (${marks(members.length)}) LIMIT 1`,
+        [networkId, local.date, ...members],
+      );
+      if (scenarioHeld) {
+        await this.db.run("UPDATE client_date_messages SET status = 'reporte' WHERE network_id = ? AND person_id = ? AND kind = ? AND year = ? AND status = 'en_cours'", [networkId, d.root, d.kind, year]);
+        report.sameDay += 1;
         continue;
       }
       let result;
