@@ -95,7 +95,7 @@ globalThis.AIMMO_RECHERCHE = function (t) {
     form.appendChild(input);
     var out = el('div');
     /* La recherche montrée : sa phrase et ses gestes ; ranger range exactement ce qui est montré. */
-    var shown = null, turn = 0, saving = false;
+    var shown = null, turn = 0, saving = false, pending = false;
     function phraseOf() {
       var v = String(input.value || '').trim();
       return v.length === 0 || v.length > MAX ? null : v;
@@ -119,7 +119,7 @@ globalThis.AIMMO_RECHERCHE = function (t) {
         proposed.forEach(function (n) {
           if (!n || !text(n.commune)) return;
           out.appendChild(button('Ajouter ' + n.commune + ' (voisine de ' + text(n.of) + ')', function () {
-            run(phrase, steps.concat([{ acceptNeighbour: n.commune }]));
+            gesture(phrase, steps.concat([{ acceptNeighbour: n.commune }]));
           }));
         });
         list(near, steps, phrase);
@@ -160,7 +160,7 @@ globalThis.AIMMO_RECHERCHE = function (t) {
             if (!FEATURES[feature.value]) return;
             step.feature = feature.value;
           }
-          run(phrase, steps.concat([step]));
+          gesture(phrase, steps.concat([step]));
         }));
         li.appendChild(d);
         ul.appendChild(li);
@@ -178,6 +178,7 @@ globalThis.AIMMO_RECHERCHE = function (t) {
       done.setAttribute('role', 'status');
       part.appendChild(button('Ranger cette recherche', function () {
         if (saving || !shown) return;
+        if (pending) { done.textContent = WAIT; return; }
         var project = pick ? pick.value : projects[0].id;
         if (!labels[project]) return;
         saving = true;
@@ -200,10 +201,19 @@ globalThis.AIMMO_RECHERCHE = function (t) {
       out.appendChild(part);
     }
     /* Seule la dernière recherche dessine : une réponse arrivée après une autre demande ne montre rien. */
+    var WAIT = 'Une recherche est en cours : attendez sa réponse, puis recommencez.';
+    /* Un geste à la fois : un refus ou une voisine pendant une recherche en cours ne part pas, sinon le geste d'avant
+       serait perdu [R424]. Une nouvelle phrase, elle, remplace la recherche en cours. */
+    function gesture(phrase, steps) {
+      if (pending) { state.textContent = WAIT; return; }
+      run(phrase, steps);
+    }
     function run(phrase, steps) {
       var mine = ++turn;
+      pending = true;
       state.textContent = 'Recherche…';
       return t.send('/v1/recherche/phrase', 'POST', { phrase: phrase, steps: steps }).then(function (res) {
+        if (mine === turn) pending = false;
         if (res.gone || mine !== turn) return false;
         if (!res.ok || !res.body || !res.body.data) { state.textContent = why(res, 'La recherche ne répond pas pour le moment.'); return false; }
         state.textContent = '';

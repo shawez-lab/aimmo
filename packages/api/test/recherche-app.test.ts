@@ -274,6 +274,27 @@ describe('BR40 · la recherche en langage courant depuis la fiche de l’acquér
     expect(t.section()!.all().some((e) => e.tagName === 'img')).toBe(false);
   });
 
+  it('[R424] un geste à la fois : un second refus pendant la recherche d’un premier ne part pas, ni le rangement, et aucun geste n’est perdu', async () => {
+    const t = await opened();
+    await t.open();
+    await t.search('Une maison à Dijon');
+    let release: (r: Response) => void = () => {};
+    t.table['POST /v1/recherche/phrase'] = () => new Promise<Response>((r) => (release = r));
+    await t.click('Écarter la réf. R-002');
+    await t.click('Écarter la réf. R-001');
+    await t.click('Ranger cette recherche');
+    expect(t.posts()).toHaveLength(2);
+    expect(t.status()).toContain('Une recherche est en cours');
+    const after = { ...RESULTS, results: [result('b1', 'R-001')] };
+    release(Response.json({ ok: true, data: after }));
+    await tick();
+    t.table['POST /v1/recherche/phrase'] = ok({ ...after, results: [] });
+    await t.click('Écarter la réf. R-001');
+    expect(t.posts()[2]!.body.steps).toEqual([{ refuse: 'b2', reason: 'trop_cher' }, { refuse: 'b1', reason: 'trop_cher' }]);
+    await t.click('Ranger cette recherche');
+    expect(t.posts().at(-1)!.body.steps).toEqual([{ refuse: 'b2', reason: 'trop_cher' }, { refuse: 'b1', reason: 'trop_cher' }]);
+  });
+
   it('deux recherches de suite : seule la dernière dessine', async () => {
     const t = await opened();
     await t.open();
