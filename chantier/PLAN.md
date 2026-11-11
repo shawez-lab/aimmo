@@ -1277,6 +1277,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : `buyer_search` est dans la liste fermée, égal à `SEARCH_CONSENT_PURPOSE` [R03] (test) ; accord noté par l'agent : la recherche se range ; retiré : refusée R422 `sans_accord` [R422] (test) ; un autre agent ne peut pas le noter, refus au journal [R16] (test) ; tous les tests de AC01, HX28 et BR40 restent verts.
 - Attend : rien.
 
+### RC14 · Une actualité perdue par une coupure se relit dans « Déjà vues »
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX09, BR20
+- Cahier : Phase 3, « Mes actualités » ; R269, R16, R13.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX09 (« une actualité réservée puis perdue par une coupure avant d'être rendue n'est pas remontrée »). Aujourd'hui le fil réserve chaque actualité en base avant de la rendre, pour ne jamais la montrer deux fois : si la réponse se perd (coupure du réseau, Worker arrêté), elle est marquée vue et l'agent ne la lit jamais. Le fil ne la rend pas deux fois (R269 inchangé) ; l'agent relit en revanche, par `Actualites.seen`, les actualités déjà montrées à lui seul, encore en vigueur (ni retirées, ni publiées depuis plus de 60 jours), les plus récemment montrées d'abord, chacune avec le jour où elle lui a été montrée et ses dossiers concernés relus dans la base au moment de relire, par le chemin des droits (au journal). Relire ne réserve rien et ne change pas le fil. Mêmes refus que le fil (agent en activité seul, refus au journal). Aucune migration ni règle nouvelle : R269 complétée. Change seulement `packages/core/src/actualites/actualites.ts`, son test et R269 dans `docs/REGLES.md`. Route et écran : voie 1.
+- Objectif : aucune actualité ne se perd : celle dont la réponse s'est perdue se relit.
+- Critères : réservée puis réponse perdue, elle n'est plus dans le fil mais se relit dans « Déjà vues » [R269] (test) ; relire ne la remet jamais dans le fil et ne réserve rien [R269] (test) ; seules les siennes, jamais celles montrées à un autre agent [R16] (test) ; retirée ou publiée depuis plus de 60 jours : plus relue [R269] (test) ; dossiers concernés relus au moment de relire, lecture au journal [R16] (test) ; direction, agent inactif ou parti du jour refusés, refus au journal [R16, R86] (test) ; journal sans donnée personnelle [R13] (test) ; tous les tests de HX09 et BR20 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
