@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, LETTER_CSS, LettresQuartier, Mandats, RegistreMandats, SqlJournalStore, applyMigrations, checkLetterText, distanceM, fromSyncSqlite, letterFallback, type Geocoder, type LetterDrafter, type SqlDatabase } from '../src/index.ts';
+import { Acces, FicheClient, FicheUnique, LETTER_CSS, LETTER_STREET_TYPES, LettresQuartier, Mandats, RegistreMandats, SqlJournalStore, applyMigrations, checkLetterText, distanceM, fromSyncSqlite, letterFallback, type Geocoder, type LetterDrafter, type SqlDatabase } from '../src/index.ts';
+import { ROAD_TITLE_TYPES } from '../src/veille-dpe/titre-voie.ts';
 import { htmlProblems, screenCssProblems } from '../src/design/audit.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -25,6 +26,12 @@ const PLACES: Record<string, { lat: number; lon: number; label?: string; score?:
   '4 place du Maréchal Essai 21000 Dijon': { lat: 47.3215, lon: 5.0415 },
   '7 avenue du Président Essai 21000 Dijon': { lat: 47.323, lon: 5.0415 },
   '2 rue Saint-Essai 21000 Dijon': { lat: 47.3218, lon: 5.0415 },
+  '3 faubourg du Docteur Essai 21000 Dijon': { lat: 47.3221, lon: 5.0415 },
+  '5 mail du Président Essai 21000 Dijon': { lat: 47.3223, lon: 5.0415 },
+  '6 cité du Maréchal Essai 21000 Dijon': { lat: 47.3224, lon: 5.0415 },
+  '9 ruelle du Docteur Essai 21000 Dijon': { lat: 47.3226, lon: 5.0415 },
+  '11 sentier de la Mère Essai 21000 Dijon': { lat: 47.3227, lon: 5.0415 },
+  '13 lieu-dit Mademoiselle Essai 21000 Dijon': { lat: 47.3228, lon: 5.0415 },
 };
 const geocoder: Geocoder = {
   geocode: async (address) => {
@@ -165,6 +172,36 @@ describeWithSqlite('G06 · lettres de quartier, adressées sans nom', () => {
       { number: '12', street: 'rue des Tilleuls Essai Docteur Martin', postcode: '21000', city: 'Dijon' },
       { number: '12', street: 'rue du Docteur Essai', postcode: '21000', city: 'Docteur Dijon' },
       { number: 'Dr 12', street: 'rue du Docteur Essai', postcode: '21000', city: 'Dijon' },
+    ];
+    for (const a of named) expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [a] })), JSON.stringify(a)).toEqual({ ok: false, rule: 'R140', code: 'name_in_address', index: 0 });
+  });
+
+  it('[R140] un titre après un faubourg, un mail, une cité, une ruelle, un sentier, un lieu-dit n’est pas une personne (RC06)', async () => {
+    // Chaque type de voie accepté par la lettre reconnaît le titre qui le suit : les deux listes ne divergent plus.
+    for (const type of LETTER_STREET_TYPES) expect(ROAD_TITLE_TYPES, type).toContain(type);
+    const t = await setup();
+    await t.signMandate();
+    const titled = [
+      { number: '3', street: 'faubourg du Docteur Essai', postcode: '21000', city: 'Dijon' },
+      { number: '5', street: 'mail du Président Essai', postcode: '21000', city: 'Dijon' },
+      { number: '6', street: 'cité du Maréchal Essai', postcode: '21000', city: 'Dijon' },
+      { number: '9', street: 'ruelle du Docteur Essai', postcode: '21000', city: 'Dijon' },
+      { number: '11', street: 'sentier de la Mère Essai', postcode: '21000', city: 'Dijon' },
+      { number: '13', street: 'lieu-dit Mademoiselle Essai', postcode: '21000', city: 'Dijon' },
+    ];
+    const r = await t.lettres.createCampaign(t.agent(), t.input({ addresses: titled }));
+    expect(r).toEqual({ ok: true, value: { campaignId: expect.any(String), letters: 6, textBy: 'secours' } });
+    if (!r.ok) return;
+    const printed = await t.lettres.printable(t.agent(), r.value.campaignId);
+    expect(printed.ok && printed.value.html.match(/Au propriétaire<br>/g)).toHaveLength(6);
+    // Une abréviation de civilité, une civilité en plus du titre, ou un titre sans type de voie devant : toujours refusé.
+    const named = [
+      { number: '3', street: 'faubourg Mme Essai', postcode: '21000', city: 'Dijon' },
+      { number: '3', street: 'mail Mlle Essai', postcode: '21000', city: 'Dijon' },
+      { number: '3', street: 'cité Mr Essai', postcode: '21000', city: 'Dijon' },
+      { number: '3', street: 'faubourg du Docteur Essai chez Martin', postcode: '21000', city: 'Dijon' },
+      { number: '3', street: 'mail du Président Essai Docteur Martin', postcode: '21000', city: 'Dijon' },
+      { number: '3', street: 'Mademoiselle Essai', postcode: '21000', city: 'Dijon' },
     ];
     for (const a of named) expect(await t.lettres.createCampaign(t.agent(), t.input({ addresses: [a] })), JSON.stringify(a)).toEqual({ ok: false, rule: 'R140', code: 'name_in_address', index: 0 });
   });

@@ -427,4 +427,40 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     await expect(t.db.run('DELETE FROM social_posts')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE social_posts SET text = 'autre texte public'")).rejects.toThrow(/ne change plus/);
   });
+  it('[R110] un commerce ne passe jamais par les publications du studio, pour aucun événement (RC07)', async () => {
+    const t = await setup();
+    const events = { available: ['nouveau_bien', 'visite'], under_offer: ['visite', 'offre'], sold: ['vente'] } as const;
+    for (const kind of ['business', 'business_walls', 'commercial'] as const) {
+      for (const [status, list] of Object.entries(events)) {
+        await t.db.run('UPDATE properties SET kind = ?, status = ? WHERE id = ?', [kind, status, t.p.id]);
+        for (const event of list) {
+          for (const viewer of [t.alexV, t.as('direction', t.sam.id)]) {
+            expect(await t.pubs.prepare(viewer, t.p.id, { event, visuals: [photo(t.p.id, 1)] }), `${kind} ${event}`).toEqual({ ok: false, rule: 'R110', code: 'commerce_discret' });
+          }
+        }
+      }
+    }
+    expect(await t.db.all('SELECT id FROM social_posts')).toEqual([]);
+    const refus = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.publication.refuse'");
+    expect(refus.length).toBe(30);
+    for (const r of refus) expect(JSON.parse(r.data)).toEqual({ rule: 'R110', code: 'commerce_discret' });
+    // Un logement garde son parcours.
+    await t.db.run("UPDATE properties SET kind = 'home', status = 'available' WHERE id = ?", [t.p.id]);
+    expect(await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] })).toMatchObject({ ok: true });
+  });
+
+  it('[R110] une publication rangée pour un bien devenu commerce n’est ni validée ni envoyée (RC07)', async () => {
+    const t = await setup();
+    const prep = await t.pubs.prepare(t.alexV, t.p.id, { event: 'nouveau_bien', visuals: [photo(t.p.id, 1)] });
+    if (!prep.ok) throw new Error(prep.code);
+    await t.pubs.checkVisual(t.alexV, prep.value.id, { ref: photo(t.p.id, 1), addressVisible: false, personVisible: false });
+    const validated = await t.ready();
+    await t.db.run("UPDATE properties SET kind = 'business' WHERE id = ?", [t.p.id]);
+    expect(await t.pubs.validate(t.alexV, prep.value.id)).toEqual({ ok: false, rule: 'R110', code: 'commerce_discret' });
+    expect(await t.pubs.publish(t.alexV, validated, [{ channel: 'instagram', account: 'agent' }])).toEqual({ ok: false, rule: 'R110', code: 'commerce_discret' });
+    expect(t.received).toEqual([]);
+    expect(await t.db.all('SELECT post_id FROM social_post_attempts')).toEqual([]);
+    const after = await t.pubs.read(t.alexV, prep.value.id);
+    expect(after).toMatchObject({ ok: true, value: { validated: null } });
+  });
 });

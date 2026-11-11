@@ -34,7 +34,7 @@ const BILAN = 'Bilan inventé de l’exercice 2026. Total du bilan : 812 300 €
 const OPEN_CODE = '987654';
 const CONSENT = { consentProof: 'accord donné au rendez-vous du 7 septembre' };
 
-async function setup(options: { maxOpens?: number } = {}) {
+async function setup(options: { maxOpens?: number; newToken?: () => string } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = TUESDAY_10H;
@@ -59,7 +59,7 @@ async function setup(options: { maxOpens?: number } = {}) {
       return files.get(ref) ?? null;
     },
   };
-  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => (lastCode = String(900_000 + (codes += 1))), ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}) });
+  const dossier = new DossierCommerce(db, journal, fiches, conf, storage, { now, newCode: () => (lastCode = String(900_000 + (codes += 1))), ...(options.maxOpens ? { maxOpens: options.maxOpens } : {}), ...(options.newToken ? { newToken: options.newToken } : {}) });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const samAgent = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Agent' });
@@ -112,7 +112,7 @@ async function setup(options: { maxOpens?: number } = {}) {
 
 describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
   describe('CE23 · une panne de stockage à l’ouverture', () => {
-    const pret = async (options: { maxOpens?: number } = {}) => {
+    const pret = async (options: { maxOpens?: number; newToken?: () => string } = {}) => {
       const t = await setup(options);
       const b = await t.buyer(true);
       await t.dossier.send(t.acces, t.alex, t.shop.id, b.id, CONSENT);
@@ -134,6 +134,17 @@ describeWithSqlite('CE05 · dossier protégé d’un commerce', () => {
       if (again.ok) expect(again.value.pages.map((p) => p.title)).toContain('Bilan 2026');
       // Servi, le code est consommé : il ne rouvre pas une seconde fois.
       expect(await t.dossier.open(token, b.email, code)).toMatchObject({ ok: false, code: 'autre_lecteur' });
+    });
+
+    it('[R06] [RC08] un jeton tiré qui commence par « gpt » part, et le même code rouvre le dossier', async () => {
+      const { t, b, token } = await pret({ newToken: () => 'gptrobotassistantchatbotqzkwxvjrtlmnbpqz' });
+      expect(token).toBe('gptrobotassistantchatbotqzkwxvjrtlmnbpqz');
+      expect((await t.dossier.requestCode(token, b.email)).ok).toBe(true);
+      const code = t.lastCode();
+      t.setPanne(true);
+      expect(await t.dossier.open(token, b.email, code)).toEqual({ ok: false, rule: null, code: 'stockage_indisponible' });
+      t.setPanne(false);
+      expect((await t.dossier.open(token, b.email, code)).ok).toBe(true);
     });
 
     it('[R114] l’ouverture n’est comptée qu’une fois servie : plusieurs pannes n’épuisent pas le lien', async () => {

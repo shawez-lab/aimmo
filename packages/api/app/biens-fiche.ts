@@ -1,7 +1,8 @@
 /**
  * Les blocs « Nom du client » (SV07) et « Biens du client » (SV06) de la fiche [R16, R201], servi à part (`/app/biens-fiche.js`) et chargé à l'ouverture
  * d'une fiche, pour garder le budget de l'application. Le serveur décide qui peut créer : l'écran n'a rien à vérifier
- * de plus que les chiffres saisis. Aucun envoi.
+ * de plus que les chiffres saisis. Aucun envoi. Il ouvre aussi la préparation d'une séquence de prospection (BR34), dont
+ * le script `/app/sequence-fiche.js` n'est chargé qu'au geste.
  */
 export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
   home: 'Maison ou appartement',
@@ -140,6 +141,37 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       });
     });
   }
+  var seqTool = null, seqBusy = false;
+  function sequenceBlock(box, personId) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Séquence de prospection'));
+    var inner = el('div');
+    var state = t.cState();
+    section.appendChild(inner);
+    section.appendChild(state);
+    box.appendChild(section);
+    var open = el('button', 'Préparer une séquence');
+    open.setAttribute('type', 'button');
+    function show() { inner.removeChild(open); state.textContent = ''; seqTool(inner, personId); }
+    open.addEventListener('click', function () {
+      if (seqTool) return show();
+      if (seqBusy) return;
+      seqBusy = true;
+      state.textContent = 'Chargement…';
+      var s = el('script');
+      s.setAttribute('src', '/app/sequence-fiche.js');
+      s.addEventListener('load', function () {
+        seqBusy = false;
+        var make = globalThis.AIMMO_SEQUENCE_FICHE;
+        if (typeof make !== 'function') { state.textContent = 'Pas de réseau. Réessayez dans un moment.'; return; }
+        seqTool = make(t);
+        show();
+      });
+      s.addEventListener('error', function () { seqBusy = false; state.textContent = 'Pas de réseau. Réessayez dans un moment.'; });
+      section.appendChild(s);
+    });
+    inner.appendChild(open);
+  }
   return function (box, personId, f) {
     // La direction corrige ce qui est écrit ; une fiche sans aucun nom se remplit, avec ou sans elle.
     if (f && f.nameCorrectable === true && (f.firstName || f.lastName)) correctionBlock(box, personId, f);
@@ -196,6 +228,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       if (!res.ok) { state.textContent = 'La liste des biens n’a pas pu être lue.'; return; }
       (res.body.data || []).forEach(add);
     });
+    // La séquence de prospection (BR34) : seulement pour une personne joignable [R301].
+    if (f && f.contact && f.contact.allowed === true) sequenceBlock(box, personId);
   };
 };
 `;

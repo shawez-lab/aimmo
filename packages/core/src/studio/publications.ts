@@ -14,6 +14,9 @@
  * réseau, chaque réseau derrière une interface, toujours en mode essai : aucun canal réel n'est accepté [R26, R134]. La
  * porte de diffusion (D05) est relue à la préparation, à la validation et juste avant l'envoi [R42].
  *
+ * Un commerce n'y passe jamais (RC07) : son prix et ses faits ne sont pas publics, sa présentation a son propre chemin
+ * (M16, CE03) [R110]. Relu à la préparation, à la validation et juste avant l'envoi.
+ *
  * Au journal : les issues et les règles, jamais le texte [R13].
  */
 import type { Acces } from '../acces/acces.ts';
@@ -26,6 +29,7 @@ import type { JournalStore } from '../journal/types.ts';
 import type { CertifiedPhoto } from './certificats.ts';
 import { galleryProblems } from '../medias/amenagement.ts';
 import { agentGone } from '../reseau/depart.ts';
+import { BUSINESS_KINDS } from '../commerces/fiche.ts';
 
 export const SOCIAL_EVENTS = ['nouveau_bien', 'visite', 'offre', 'vente'] as const;
 export type SocialEvent = (typeof SOCIAL_EVENTS)[number];
@@ -104,7 +108,7 @@ function stagingProblems(refs: readonly string[], certified: readonly CertifiedP
   return galleryProblems(refs.map((r) => ({ ref: r, overlay: byRef.get(r)?.overlay ?? null })), twins);
 }
 
-export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493'; code: string };
+export type PostResult<T> = { ok: true; value: T } | { ok: false; rule: 'R16' | 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R110' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493'; code: string };
 
 export interface PostsDeps {
   /** Les faits du bien, ceux de l'annonce de M07. */
@@ -193,7 +197,8 @@ export class Publications {
     const seen = await this.full(viewer, propertyId);
     if (!seen.ok) return seen;
     const actor = `${viewer.role}:${viewer.userId}`;
-    const bad = (rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R130' | 'R493', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
+    const bad = (rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R110' | 'R130' | 'R493', code: string) => this.bad<SocialPost>(actor, `property:${propertyId}`, rule, code);
+    if (await this.isBusiness(propertyId)) return bad('R110', 'commerce_discret');
     if (!(SOCIAL_EVENTS as readonly unknown[]).includes(input.event)) return bad('R10', 'evenement_inconnu');
     const event = input.event as SocialEvent;
     if (!EVENT_STATUSES[event].includes(seen.value.status)) return bad('R10', 'evenement_sans_fondement');
@@ -305,6 +310,7 @@ export class Publications {
     const subject = `property:${post.value.property_id}`;
     const current = (await this.view(postId))!;
     if (current.validated) return { ok: true, value: current };
+    if (await this.isBusiness(post.value.property_id)) return this.bad(actor, subject, 'R110', 'commerce_discret');
     if (current.visuals.some((v) => v.check !== 'admis')) return this.bad(actor, subject, 'R132', 'visuel_non_controle');
     const stale = await this.stale(post.value);
     if (stale) return this.bad(actor, subject, stale.rule, stale.code);
@@ -334,6 +340,7 @@ export class Publications {
       if (!wanted.some((w) => w.channel === channel && w.account === account)) wanted.push({ channel: channel as SocialChannelName, account: account as SocialAccount });
     }
     const current = (await this.view(postId))!;
+    if (await this.isBusiness(post.value.property_id)) return this.bad(actor, subject, 'R110', 'commerce_discret');
     if (!current.validated) return this.bad(actor, subject, 'R134', 'non_validee');
     if (wanted.some((w) => !this.channels.has(w.channel))) return this.bad(actor, subject, 'R26', 'canal_hors_service');
     if (!(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) return this.bad(actor, subject, 'R42', 'bien_non_diffusable');
@@ -529,7 +536,13 @@ export class Publications {
     return { ok: true, value: { networkId: read.value.network_id, status: read.value.status } };
   }
 
-  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493', code: string): Promise<PostResult<T>> {
+  /** Un commerce, quelle que soit sa sorte : un bien introuvable n'en est pas un, les autres gardes le refusent. */
+  private async isBusiness(propertyId: string): Promise<boolean> {
+    const row = await this.db.first<{ kind: string }>('SELECT kind FROM properties WHERE id = ?', [propertyId]);
+    return row !== null && row !== undefined && (BUSINESS_KINDS as readonly string[]).includes(row.kind);
+  }
+
+  private async bad<T>(actor: string, subject: string, rule: 'R10' | 'R42' | 'R43' | 'R46' | 'R47' | 'R86' | 'R110' | 'R130' | 'R132' | 'R134' | 'R26' | 'R156' | 'R493', code: string): Promise<PostResult<T>> {
     await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule, code } }, this.now);
     return { ok: false, rule, code };
   }
