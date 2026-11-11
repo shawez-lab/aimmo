@@ -1144,6 +1144,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : une page publique servie compte une vue de son contenu, un robot jamais, un HEAD jamais, la page de l'API seule jamais [R285] (test) ; rien du visiteur n'est rangé ni écrit au journal [R285, R156] (test) ; une panne du compteur ne change pas la page servie, l'échec est au journal (test) ; la direction lit tout le réseau, l'agent ses seules pages, un autre rôle ou un agent inactif refusés, refus au journal [R16, R286] (test) ; la prochaine page dit ses chiffres [R287] (test) ; une période hors de 7 à 365 jours ou un paramètre non prévu refusés 400 (test).
 - Attend : rien.
 
+### BR42 · Écran « Gérer mon site » : quelle page amène des vendeurs, et la prochaine à écrire
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR41
+- Cahier : M01, « Gérer mon site » ; R285 à R287, R16, R201.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR41 (« écran Gérer mon site »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Script neuf servi à part, `/app/site.js` (`packages/api/app/site.ts`), chargé au geste depuis l'écran « Gagner des mandats » (partie « Mon site »), `app.js` inchangé. L'écran ne lit que `/v1/site/statistiques` et `/v1/site/prochaine-page`, avec le seul paramètre `jours` (30, 90 ou 365) ; il n'écrit rien, ne calcule ni ne trie rien : l'ordre et les chiffres sont ceux du serveur, les compteurs sont les longueurs des listes d'identifiants reçues. La phrase de la prochaine page est celle du code [R287]. La recherche dans le cahier ne trouve pas « Gérer mon site » : l'écran suit HX15 et `docs/API.md`. L'entrée de la direction dans « Attirer » (tout le réseau) viendra à part.
+- Objectif : l'agent ouvre « Mon site », choisit la période, lit la prochaine page à écrire avec ses chiffres, puis chaque page de son site avec ses vues, ses demandes, ses vendeurs, ses mandats et ses vendeurs pour 1 000 vues, chaque chiffre vérifiable par les identifiants de ses messages.
+- Jamais vu : chaque chiffre dit quelle page amène des vendeurs, prouvé par ses messages, et l'appli dit la prochaine page à écrire.
+- Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; l'écran ne fait que lire `/v1/site`, la clé dans l'en-tête seul, rien d'écrit [R16] (test) ; chaque page dans l'ordre reçu, avec ses chiffres et les identifiants de ses messages, aucun nom [R286] (test) ; la prochaine page dit la phrase et les chiffres du code, ou sa raison en mots quand rien n'est proposé [R287] (test) ; changer de période relit avec `jours`, seule la dernière lecture dessine (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
