@@ -1268,12 +1268,22 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC13 · L'agent note l'accord de ranger une recherche dans la fiche acquéreur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#512, `8cfa948c`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5580 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC01, HX28, BR40
 - Cahier : M08 Acquéreurs et visites, recherche en langage courant ; Conformité, accord préalable ; R422, R03.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de BR40 (« la prise de l'accord `buyer_search` à l'écran, sujet absent de `AGENT_CONSENT_LABELS` »). Aujourd'hui rien ne range jamais l'accord `buyer_search` : la recherche en langage courant refuse donc toujours de ranger (R422, `sans_accord`), en production. La finalité n'est pas rangée par son module au moment du geste (AC01 l'admet donc à sa liste fermée) : elle rejoint `AGENT_CONSENT_LABELS` (« Recherche rangée dans la fiche acquéreur »), avec les mêmes règles que les autres (preuve écrite, date jamais future, exclusion, retrait, fiches réunies). Le formulaire d'accord de la fiche lit déjà cette liste : il la propose sans changement d'écran. Change seulement `packages/core/src/acces/accords.ts` et les tests.
 - Objectif : l'agent qui suit l'acquéreur peut noter l'accord, puis ranger la recherche ; le retrait referme le rangement.
 - Critères : `buyer_search` est dans la liste fermée, égal à `SEARCH_CONSENT_PURPOSE` [R03] (test) ; accord noté par l'agent : la recherche se range ; retiré : refusée R422 `sans_accord` [R422] (test) ; un autre agent ne peut pas le noter, refus au journal [R16] (test) ; tous les tests de AC01, HX28 et BR40 restent verts.
+- Attend : rien.
+
+### RC14 · Une actualité perdue par une coupure se relit dans « Déjà vues »
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX09, BR20
+- Cahier : Phase 3, « Mes actualités » ; R269, R16, R13.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX09 (« une actualité réservée puis perdue par une coupure avant d'être rendue n'est pas remontrée »). Aujourd'hui le fil réserve chaque actualité en base avant de la rendre, pour ne jamais la montrer deux fois : si la réponse se perd (coupure du réseau, Worker arrêté), elle est marquée vue et l'agent ne la lit jamais. Le fil ne la rend pas deux fois (R269 inchangé) ; l'agent relit en revanche, par `Actualites.seen`, les actualités déjà montrées à lui seul, encore en vigueur (ni retirées, ni publiées depuis plus de 60 jours), les plus récemment montrées d'abord, chacune avec le jour où elle lui a été montrée et ses dossiers concernés relus dans la base au moment de relire, par le chemin des droits (au journal). Relire ne réserve rien et ne change pas le fil. Mêmes refus que le fil (agent en activité seul, refus au journal). Aucune migration ni règle nouvelle : R269 complétée. Change seulement `packages/core/src/actualites/actualites.ts`, son test et R269 dans `docs/REGLES.md`. Route et écran : voie 1.
+- Objectif : aucune actualité ne se perd : celle dont la réponse s'est perdue se relit.
+- Critères : réservée puis réponse perdue, elle n'est plus dans le fil mais se relit dans « Déjà vues » [R269] (test) ; relire ne la remet jamais dans le fil et ne réserve rien [R269] (test) ; seules les siennes, jamais celles montrées à un autre agent [R16] (test) ; retirée ou publiée depuis plus de 60 jours : plus relue [R269] (test) ; dossiers concernés relus au moment de relire, lecture au journal [R16] (test) ; direction, agent inactif ou parti du jour refusés, refus au journal [R16, R86] (test) ; journal sans donnée personnelle [R13] (test) ; tous les tests de HX09 et BR20 restent verts.
 - Attend : rien.
 
 ## Phase 1 : le socle

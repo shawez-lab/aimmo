@@ -4,6 +4,7 @@ import { ALERT_PURPOSE } from '../src/acquereurs/alertes.ts';
 import { RENTAL_UPDATE_PURPOSE } from '../src/location/branchement.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
 import { OFFER_PURPOSE } from '../src/offres/transmission.ts';
+import { SEARCH_CONSENT_PURPOSE } from '../src/recherche/langage-courant.ts';
 import { ROUTE_SHARE_PURPOSE } from '../src/rendezvous/tournee.ts';
 import { VALUATION_PURPOSE } from '../src/reprise/reprise.ts';
 import { SELLER_UPDATE_PURPOSE } from '../src/visites/compte-rendu.ts';
@@ -45,7 +46,7 @@ async function setup() {
 describeWithSqlite('AC01 · l’agent note et retire un accord', () => {
   it('[R03] chaque finalité ouverte à l’agent est bien celle que son module demande, et rien que ce qu’il peut noter', () => {
     expect([...AGENT_CONSENT_PURPOSES].sort()).toEqual(
-      [ALERT_PURPOSE, OFFER_PURPOSE, RENTAL_UPDATE_PURPOSE, ROUTE_SHARE_PURPOSE, SELLER_UPDATE_PURPOSE, VALUATION_PURPOSE, VALUE_TRACKING_PURPOSE, 'prospecting', 'rappel_demande'].sort(),
+      [ALERT_PURPOSE, OFFER_PURPOSE, RENTAL_UPDATE_PURPOSE, ROUTE_SHARE_PURPOSE, SELLER_UPDATE_PURPOSE, VALUATION_PURPOSE, VALUE_TRACKING_PURPOSE, SEARCH_CONSENT_PURPOSE, 'prospecting', 'rappel_demande'].sort(),
     );
     expect([...AGENT_CONSENT_CHANNELS].sort()).toEqual(['email', 'phone', 'sms', 'whatsapp']);
   });
