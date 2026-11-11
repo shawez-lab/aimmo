@@ -90,8 +90,10 @@ export interface SimulationReport {
   tasks: number;
   /** Messages que le contrôle central aurait refusés, par règle. */
   refused: Record<string, number>;
-  /** Messages qui seraient tombés le même jour qu'un autre message de scénario à la même personne [R402]. */
+  /** Messages qui seraient tombés le même jour qu'un autre message de scénario ou de date à la même personne [R402]. */
   sameDayTwice: number;
+  /** Parmi eux, ceux qui tombent le jour d'un message de date remis ou en préparation, fiches réunies comprises [R402, RC10]. */
+  sameDayAsDate: number;
   /** Peut être allumé : aucun double du même jour. */
   canSwitchOn: boolean;
 }
@@ -422,10 +424,20 @@ export class ScenariosAutomatiques {
     }
     const taken = new Set(others.map((p) => `${p.personId}|${this.day(p.dueAt)}`));
     let sameDayTwice = 0;
+    let sameDayAsDate = 0;
     for (const p of [...allowed].sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime() || a.ref.localeCompare(b.ref))) {
-      const key = `${p.personId}|${this.day(p.dueAt)}`;
-      if (taken.has(key)) sameDayTwice += 1;
-      else taken.add(key);
+      const day = this.day(p.dueAt);
+      const key = `${p.personId}|${day}`;
+      const scenarioTwice = taken.has(key);
+      taken.add(key);
+      // Un message de date remis ou en préparation ce jour-là tient la place du jour : allumé, le scénario aurait été
+      // refusé, ou passé le premier et fait perdre la date de l'année. Fiches réunies d'aujourd'hui comprises. Regardé
+      // même quand un autre scénario tient déjà le jour, pour que la direction voie la date ; le message n'est compté
+      // qu'une fois dans les doubles [R402, RC10].
+      const members = await this.fiche.membersOf(await this.fiche.rootOf(p.personId));
+      const dateTwice = await this.dateMessageOn(viewer.networkId, day, members);
+      if (dateTwice) sameDayAsDate += 1;
+      if (scenarioTwice || dateTwice) sameDayTwice += 1;
     }
     const persons = new Set(allowed.map((p) => p.personId)).size;
     const id = this.newId();
@@ -436,12 +448,12 @@ export class ScenariosAutomatiques {
     );
     await appendEvent(
       this.journal,
-      { type: 'automatismes.essai', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule: 'R400', version: current.version, simulation: id, messages: allowed.length, persons, tasks, sameDayTwice, sent: false } },
+      { type: 'automatismes.essai', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule: 'R400', version: current.version, simulation: id, messages: allowed.length, persons, tasks, sameDayTwice, sameDayAsDate, sent: false } },
       this.now,
     );
     return {
       ok: true,
-      value: { simulationId: id, scenarioId, version: current.version, from: from.toISOString(), to: to.toISOString(), messages: allowed.length, persons, tasks, refused: refusedBy, sameDayTwice, canSwitchOn: sameDayTwice === 0 },
+      value: { simulationId: id, scenarioId, version: current.version, from: from.toISOString(), to: to.toISOString(), messages: allowed.length, persons, tasks, refused: refusedBy, sameDayTwice, sameDayAsDate, canSwitchOn: sameDayTwice === 0 },
     };
   }
 
