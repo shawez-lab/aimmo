@@ -1176,12 +1176,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR45 · La recherche avec ses mots, depuis l'accueil et la liste des biens du site
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#522, `9ab266e8`), `publicSearchEntry` dans `packages/core/src/recherche/page-publique.ts`, porté par `accueil-site.ts` et `liste-biens.ts` ; aucune règle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5662 tests). Rien ne reste.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR44
 - Cahier : M08, recherche de biens ; M01, site ; R420, R220, R153.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR44 (« un lien vers `/chercher` depuis l'accueil et la liste des biens du site »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Un petit formulaire sans script (`GET /chercher`, champ `q`, même longueur maximale que la page) en tête de l'accueil et de la liste des biens, sur le site du réseau et sur celui de chaque agent ; `/chercher` n'entre ni dans `sitePaths`, ni dans le plan du site : elle reste non indexée.
 - Objectif : le visiteur trouve la recherche avec ses mots là où il arrive, sans chercher le lien.
 - Critères : l'accueil et la liste des biens, sur les deux sites, portent un formulaire `role="search"` vers `/chercher`, champ `q` limité à la longueur de la page, avec son étiquette, et la page qu'il ouvre répond (test) ; `/chercher` n'est jamais dans le plan du site ni dans les chemins de l'accueil [R153] (test).
+- Attend : rien.
+
+### BR46 · Route de la remise d'un trousseau à un partenaire de l'annuaire
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC15, BR21
+- Cahier : M18 Partenaires (annuaire) ; HX10 « Les clés des biens » ; R665, R271, R272, R16.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de RC15 (« routes et écran de la remise à un partenaire (voie 1) ») et de BR44. L'armoire des clés n'a pas encore d'écran (BR21 n'a fait que les routes) : cette tâche fait la route seule, l'écran de l'armoire viendra avec elle. `POST /v1/trousseaux/<id>/remise-partenaire` (`partnerId`, `purpose`, `dueAt`) dans `trousseaux.ts`, par `Cles.handToPartner` ; un champ non prévu passe d'abord sans corps par les droits, puis 400 `champ_inconnu`. Le retour passe par `rendu` et `perdu`, déjà servis.
+- Objectif : un partenaire qui entre seul se note par l'application, sans qu'un agent prenne la clé à son nom.
+- Critères : remise valable, plus aucune sortie ni seconde remise, l'agent qui remet la voit à rendre et note le retour, un autre agent non [R665, R271, R272, R16] (test) ; métier hors liste, sans justificatif, raison de visite, plus de 12 h refusés 409, partenaire inconnu 404, champ en trop 400 [R665] (test) ; autre agent et conformité 403 au journal, même avec un corps mal formé ou un champ en trop ; la direction remet, l'agent du bien en répond [R16] (test) ; le nom du partenaire n'est pas au journal [R13] (test).
 - Attend : rien.
 
 ## Restes du cœur des groupes HX

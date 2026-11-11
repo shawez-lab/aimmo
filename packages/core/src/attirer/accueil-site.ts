@@ -6,6 +6,8 @@
  * chaque lien. Le recrutement et la preuve ne vivent que sur le site du réseau ; le recrutement seulement quand les
  * candidatures vont bien à ce réseau, car `/rejoindre` répond 503 sinon.
  *
+ * L'entrée de la recherche avec ses mots (BR45) est en tête ; `/chercher` n'est pas dans `sitePaths`, qui fait le plan du site.
+ *
  * Le site d'un agent ne dit le nom de son agent qu'avec ses mentions, et ne mène à sa page que si elle est publiable [R152].
  */
 import { THEME_COLOR } from '../design/systeme.ts';
@@ -13,6 +15,7 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { SITE_CSS, listingCard, when } from './liste-biens.ts';
 import { mentionsLine, type AgentMentions } from './page-agent.ts';
 import type { PublishedListing } from './referencement.ts';
+import { PUBLIC_SEARCH_ENTRY_CSS, publicSearchEntry } from '../recherche/page-publique.ts';
 
 /** Le nombre de biens montrés sur l'accueil : la liste montre les autres. */
 export const HOME_LISTINGS = 6;
@@ -45,6 +48,7 @@ export function sitePaths(kind: 'reseau' | 'agent', recruiting: boolean): SitePa
 
 const CSS =
   SITE_CSS +
+  PUBLIC_SEARCH_ENTRY_CSS +
   '.statut{max-width:38rem}' +
   '.chemins{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:var(--e-4);margin:var(--e-5) 0;padding:0;list-style:none}' +
   '.chemins a{display:block;font-weight:700;min-height:44px}.chemins span{display:block}';
@@ -70,7 +74,7 @@ export function renderSiteHome(input: SiteHomeInput): string {
   const list = listings.length > 0 ? `<ul class="biens">${listings.map(listingCard).join('')}</ul>` : '<p class="doux">Aucun bien en vente en ce moment.</p>';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1>${who}` +
+    `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1>${who}${publicSearchEntry()}` +
     `<h2>Les derniers biens</h2><p class="controle">Mandats vérifiés le ${when(input.checkedAt)}. Un bien sans mandat en vigueur à cette heure n'apparaît pas ici.</p>${list}` +
     `<h2>Sur ce site</h2><ul class="chemins">${paths.map((p) => `<li><a href="${escapeHtml(p.path)}">${escapeHtml(p.label)}</a><span class="doux">${escapeHtml(p.text)}</span></li>`).join('')}</ul>` +
     `<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
