@@ -423,6 +423,8 @@ Sous `/v1/veille-dpe` : chaque route dit les rôles qu'elle admet, contrôlés a
 
 Le planificateur passe chaque jour à 7 h (`veille_dpe.passage`) : pour chaque code postal suivi, la base ouverte de l'ADEME (`dpe03existant`) est lue sur 7 jours ; seuls le code postal et le jour partent. Chaque diagnostic est rangé une seule fois par réseau, dans l'alerte du jour de chaque secteur de sa commune [R288, R289]. Le texte de la lettre attend la relecture de l'avocat (H60).
 
+À l'écran (BR36) : dans « Gagner des mandats », la partie « Veille des diagnostics énergétiques » a un bouton « Ouvrir la veille » qui charge `/app/veille-dpe.js`. Il lit `GET /secteurs`, `GET /alertes` et `GET /carte` (avec `classes=F,G` quand l'agent le demande), et n'écrit que par `POST /secteurs`, `POST /secteurs/<id>/fermeture` et `POST /diagnostics/<id>/lettre`. La commune et le code postal sont contrôlés avant tout appel, le serveur refait tout. Les diagnostics sont regroupés par commune dans l'ordre reçu, sans aucun nom ; la lettre préparée est montrée puis téléchargée à imprimer par `GET /lettres/<id>`, la clé dans l'en-tête seul. Rien n'est envoyé. Un refus se dit en mots, jamais par son code.
+
 ## Score de vente par adresse (BR27)
 
 Sous `/v1/score-adresse` : chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; un refus est écrit au journal [R16]. Corps de 2 ko au plus ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger. Aucune civilité ni nom n'est demandé, rangé ni rendu [R292] ; aucune donnée de personne rendue par une source ne sort [R291]. Rien n'est envoyé.
