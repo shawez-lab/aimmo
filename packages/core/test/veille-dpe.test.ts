@@ -297,6 +297,46 @@ describeWithSqlite('HX16 · veille des nouveaux diagnostics énergétiques', () 
     await expect(t.db.run("UPDATE dpe_letters SET body = 'x'")).rejects.toThrow();
   });
 
+  it('[R290] [R16] RC11 · la carte et l’alerte disent si la lettre est celle de l’agent qui lit', async () => {
+    const t = await setup();
+    // Alex et Sam couvrent tous deux Talant ; chacun suit le secteur.
+    await t.zone(t.sam.id, 'Talant');
+    await t.veille.watch(t.agentAlex, { commune: 'Talant', postcode: '21240' });
+    await t.veille.watch(t.agentSam, { commune: 'Talant', postcode: '21240' });
+    t.source.set('21240', [row({ etiquette_dpe: 'G' }), row({ etiquette_dpe: 'F' }), row({ etiquette_dpe: 'D' })]);
+    await t.veille.run();
+    const before = await t.veille.map(t.agentAlex);
+    if (!before.ok) throw new Error('carte');
+    // Sans lettre : faux partout.
+    expect(before.points.map((p) => p.letterMine)).toEqual([false, false, false]);
+    const id = (c: string) => before.points.find((p) => p.energyClass === c)!.diagnosisId;
+    const g = await t.veille.prepareLetter(t.agentAlex, id('G'));
+    const f = await t.veille.prepareLetter(t.agentSam, id('F'));
+    if (!g.ok || !f.ok) throw new Error('lettres');
+    const mine = (points: readonly { diagnosisId: string; letterId: string | null; letterMine: boolean }[]) =>
+      Object.fromEntries(points.map((p) => [p.diagnosisId, [p.letterId, p.letterMine]]));
+    // La carte de chacun : sa lettre est à lui, celle de l'autre existe mais n'est pas la sienne.
+    const alexMap = await t.veille.map(t.agentAlex);
+    const samMap = await t.veille.map(t.agentSam);
+    if (!alexMap.ok || !samMap.ok) throw new Error('carte');
+    expect(mine(alexMap.points)).toEqual({ [id('G')]: [g.letterId, true], [id('F')]: [f.letterId, false], [id('D')]: [null, false] });
+    expect(mine(samMap.points)).toEqual({ [id('G')]: [g.letterId, false], [id('F')]: [f.letterId, true], [id('D')]: [null, false] });
+    // L'alerte du jour dit la même chose.
+    const alexAlert = await t.veille.alerts(t.agentAlex);
+    const samAlert = await t.veille.alerts(t.agentSam);
+    if (!alexAlert.ok || !samAlert.ok) throw new Error('alerte');
+    expect(mine(alexAlert.alerts.flatMap((a) => a.items))).toEqual(mine(alexMap.points));
+    expect(mine(samAlert.alerts.flatMap((a) => a.items))).toEqual(mine(samMap.points));
+    // La direction lit tout le réseau, mais ne signe aucune lettre : faux pour chacune.
+    const direction = await t.veille.map(t.direction);
+    if (!direction.ok) throw new Error('carte');
+    expect(direction.points.filter((p) => p.letterId !== null)).toHaveLength(2);
+    expect(direction.points.every((p) => p.letterMine === false)).toBe(true);
+    // Ce que dit le point tient à l'impression : la lettre de l'autre reste refusée [R16].
+    expect(await t.veille.printLetter(t.agentAlex, f.letterId)).toMatchObject({ ok: false, rule: 'R16', code: 'pas_sa_lettre' });
+    expect(await t.veille.printLetter(t.agentAlex, g.letterId)).toMatchObject({ ok: true });
+  });
+
   it('[R288, R13] aucun nom ni coordonnée de propriétaire rangé ; le journal ne porte aucune adresse', async () => {
     const t = await setup();
     await t.veille.watch(t.agentAlex, { commune: 'Talant', postcode: '21240' });

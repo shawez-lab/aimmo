@@ -85,6 +85,11 @@ export interface DpePoint {
   rentBanFrom: string | null;
   /** La lettre « Au propriétaire » déjà préparée dans le réseau, ou `null`. */
   letterId: string | null;
+  /**
+   * Vrai seulement quand une lettre existe et que celui qui lit est l'agent qui l'a préparée : lui seul peut la
+   * télécharger parmi les agents. Faux sans lettre, pour la lettre d'un autre agent, et pour la direction [R290, R16].
+   */
+  letterMine: boolean;
 }
 
 export interface DpeAlert {
@@ -228,15 +233,17 @@ interface DiagnosisRow {
   lat: number | null;
   lon: number | null;
   letter_id: string | null;
+  letter_agent_id: string | null;
 }
 
 const DIAGNOSIS_SELECT = `
   SELECT d.id, d.network_id, d.number, d.kind, d.energy_class, d.ghg_class, d.surface_m2, d.diagnosed_on, d.received_on,
-         d.street_number, d.street, d.postcode, d.commune, d.commune_slug, d.lat, d.lon, l.id AS letter_id
+         d.street_number, d.street, d.postcode, d.commune, d.commune_slug, d.lat, d.lon, l.id AS letter_id, l.agent_id AS letter_agent_id
     FROM dpe_diagnoses d
     LEFT JOIN dpe_letters l ON l.diagnosis_id = d.id AND l.network_id = d.network_id`;
 
-const pointOf = (r: DiagnosisRow): DpePoint => ({
+/** Un point lu par `viewer` : `letterMine` ne vaut que pour l'agent qui a préparé la lettre [R290]. */
+const pointOf = (viewer: Viewer) => (r: DiagnosisRow): DpePoint => ({
   diagnosisId: r.id,
   number: r.number,
   kind: r.kind,
@@ -249,6 +256,7 @@ const pointOf = (r: DiagnosisRow): DpePoint => ({
   position: r.lat === null || r.lon === null ? null : { lat: Number(r.lat), lon: Number(r.lon) },
   rentBanFrom: banDate(r.energy_class),
   letterId: r.letter_id,
+  letterMine: viewer.role === 'agent' && r.letter_id !== null && r.letter_agent_id === viewer.userId,
 });
 
 const shiftDay = (day: string, days: number): string => new Date(Date.parse(`${day}T12:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -468,7 +476,7 @@ export class VeilleDpe {
           ORDER BY d.energy_class DESC, d.received_on DESC, d.number`,
         [s.id, day, viewer.networkId, s.commune_slug],
       );
-      if (rows.length > 0) alerts.push({ sectorId: s.id, commune: s.commune, postcode: s.postcode, day, items: rows.map(pointOf) });
+      if (rows.length > 0) alerts.push({ sectorId: s.id, commune: s.commune, postcode: s.postcode, day, items: rows.map(pointOf(viewer)) });
     }
     return { ok: true, alerts };
   }
@@ -502,7 +510,7 @@ export class VeilleDpe {
         ORDER BY d.received_on DESC, d.number`,
       [viewer.networkId, from, ...slugs, ...classes],
     );
-    return { ok: true, points: rows.map(pointOf) };
+    return { ok: true, points: rows.map(pointOf(viewer)) };
   }
 
   /**
