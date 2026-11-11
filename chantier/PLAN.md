@@ -1145,7 +1145,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR42 · Écran « Gérer mon site » : quelle page amène des vendeurs, et la prochaine à écrire
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#515, `8a6e8cff`), `packages/api/app/site.ts`, `/app/site.js`, chargé au geste depuis « Gagner des mandats » (partie « Mon site »), `app.js` inchangé ; aucune règle nouvelle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5595 tests). Reste : l'entrée de la direction (tout le réseau) dans « Attirer ».
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR41
 - Cahier : M01, « Gérer mon site » ; R285 à R287, R16, R201.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR41 (« écran Gérer mon site »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Script neuf servi à part, `/app/site.js` (`packages/api/app/site.ts`), chargé au geste depuis l'écran « Gagner des mandats » (partie « Mon site »), `app.js` inchangé. L'écran ne lit que `/v1/site/statistiques` et `/v1/site/prochaine-page`, avec le seul paramètre `jours` (30, 90 ou 365) ; il n'écrit rien, ne calcule ni ne trie rien : l'ordre et les chiffres sont ceux du serveur, les compteurs sont les longueurs des listes d'identifiants reçues. La phrase de la prochaine page est celle du code [R287]. La recherche dans le cahier ne trouve pas « Gérer mon site » : l'écran suit HX15 et `docs/API.md`. L'entrée de la direction dans « Attirer » (tout le réseau) viendra à part.
