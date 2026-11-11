@@ -206,6 +206,13 @@ describe('BR34 · préparer une séquence de prospection depuis la fiche', () =>
     t.controls('textarea', '-texte')[0]!.value = 'x'.repeat(1001);
     await t.click('Préparer la séquence');
     expect(say()).toBe(`Étape 2 : ${SEQUENCE_REFUSALS.text}`);
+    // Huit textes permis un à un, mais trop lourds ensemble pour la route (16 ko en UTF-8) : dit avant tout appel.
+    for (let i = 0; i < 6; i++) await t.click('Ajouter une étape');
+    for (let i = 0; i < 8; i++) t.setChannel(i, 'sms');
+    t.controls('input', '-jour').forEach((d, i) => (d.value = String(i)));
+    for (const x of t.controls('textarea', '-texte')) x.value = 'é'.repeat(1000);
+    await t.click('Préparer la séquence');
+    expect(say()).toBe(SEQUENCE_REFUSALS.invalid_body);
     expect(t.posts()).toEqual([]);
   });
 

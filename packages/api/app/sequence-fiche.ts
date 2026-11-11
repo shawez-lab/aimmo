@@ -31,6 +31,7 @@ export const SEQUENCE_REFUSALS: Readonly<Record<string, string>> = Object.freeze
   agent_inactive: 'Votre compte d’agent n’est pas actif : la séquence n’est pas préparée.',
   role: 'Ce geste n’est pas dans vos droits.',
   unknown: 'Cette fiche n’existe plus.',
+  invalid_body: 'Vos textes sont trop longs ensemble pour une seule séquence : raccourcissez-les, puis réessayez.',
 });
 
 export const SEQUENCE_FICHE_SCRIPT = `'use strict';
@@ -38,7 +39,8 @@ globalThis.AIMMO_SEQUENCE_FICHE = function (t) {
   var el = t.el;
   var LABELS = ${JSON.stringify(SEQUENCE_CHANNEL_LABELS)};
   var REFUSALS = ${JSON.stringify(SEQUENCE_REFUSALS)};
-  var MAX = 8, LAST_DAY = 90, MAX_TEXT = 1000;
+  var MAX = 8, LAST_DAY = 90, MAX_TEXT = 1000, MAX_BYTES = 16384;
+  function bytes(x) { return encodeURIComponent(x).replace(/%[0-9A-F]{2}/g, 'x').length; }
   var LOST = 'La réponse n’est pas arrivée : la séquence est peut-être préparée. Réessayer ne la doublera pas, une seconde serait refusée.';
   function written(c) { return c === 'email' || c === 'sms'; }
   function input(box, id, label, tag) {
@@ -132,8 +134,10 @@ globalThis.AIMMO_SEQUENCE_FICHE = function (t) {
     form.appendChild(t.accordButton('Préparer la séquence', function () {
       var steps = read();
       if (typeof steps === 'string') { state.textContent = steps; return Promise.resolve(false); }
+      var payload = { personId: personId, steps: steps };
+      if (bytes(JSON.stringify(payload)) > MAX_BYTES) { state.textContent = REFUSALS.invalid_body; return Promise.resolve(false); }
       state.textContent = 'Préparation…';
-      return t.send('/v1/sequences', 'POST', { personId: personId, steps: steps }).then(function (res) {
+      return t.send('/v1/sequences', 'POST', payload).then(function (res) {
         if (res.gone) return false;
         if (res.ok) {
           while (box.firstChild) box.removeChild(box.firstChild);
