@@ -44,7 +44,9 @@ describeWithSqlite('A03 · fiche du client dans l’application', () => {
     if (!r.ok) return;
     const f = r.value;
     expect(f).toMatchObject({ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple', contact: { allowed: true, reasons: [] }, call: 'tel:+33600000001', callRefusal: null });
-    expect(f.projects).toEqual([{ kind: 'sell', stage: 'new', deadline: null, budgetMinEur: 200000, budgetMaxEur: 230000 }]);
+    // BR40 : l'identifiant du projet, pour ranger une recherche dans le bon.
+    const project = await w.db.first<{ id: string }>('SELECT id FROM projects WHERE person_id = ?', [w.lea.id]);
+    expect(f.projects).toEqual([{ id: project!.id, kind: 'sell', stage: 'new', deadline: null, budgetMinEur: 200000, budgetMaxEur: 230000 }]);
     expect(f.sources).toEqual([{ channel: 'site', detail: 'formulaire test', occurredAt: '2026-10-01T10:00:00.000Z' }]);
     expect(f.consents).toEqual([{ id: expect.any(String), purpose: 'valuation_follow_up', channel: 'email', givenAt: '2026-10-01T10:00:00.000Z', withdrawnAt: null }, { id: expect.any(String), purpose: 'reply', channel: 'phone', givenAt: '2026-10-02T10:00:00.000Z', withdrawnAt: null }]);
     expect(f.messages).toHaveLength(10);
