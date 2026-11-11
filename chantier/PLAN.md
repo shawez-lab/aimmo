@@ -1074,6 +1074,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; aucun envoi, l'écran dit que mails et SMS partent seuls par le contrôle central [R300, R26] (test) ; une fiche exclue ou arrêtée n'a pas le bouton [R301] (test) ; saisie fausse refusée avant tout appel (test) ; chaque refus connu a ses mots, aucun code montré (test) ; tout texte reçu est posé en texte (test) ; décrit dans `docs/API.md`.
 - Attend : rien (H61 reste à part).
 
+### BR35 · L'écran de la carte des opportunités et de la tournée du jour
+- Statut : en cours
+- Qui : Claude, relecture normale · Dépend de : BR28
+- Partie du cahier : Phase 3, « Carte des opportunités et tournée de prospection » ; R297 à R299, R16, R201.
+- Décidé (2026-11-11, voie 1) : ajoutée parce que BR28 laisse « écran de la carte et de la tournée » ; #496 (BR34) reste ouverte, fusion refusée par le contrôle des permissions, pas de second essai. Rien ne change dans `app.js`. Script neuf servi à part, `/app/tournee.js` (`packages/api/app/tournee.ts`), chargé au premier geste depuis l'écran « Gagner des mandats » (partie « Ma tournée de prospection », bouton « Ouvrir ma tournée »), comme la pige. L'écran ne lit que par `GET /v1/tournee` et `GET /v1/tournee/carte`, avec le seul paramètre `date` ; il ne calcule, ne trie ni ne réserve rien. La tournée : chaque arrêt dans l'ordre reçu, heure de Paris, sorte en mots, commune, adresses, détail, route ; les rendez-vous déjà pris dits « fixe » ; ce qui ne tient pas, avec sa raison en mots ; les minutes de route du jour ; ce qui est hors des zones, en nombre seul ; l'agenda personnel pas encore relié, dit. La carte : les opportunités regroupées par commune dans l'ordre reçu, sans fond de carte venu d'ailleurs (budget, aucune ressource extérieure). Le lien de la vue des rues n'est posé que s'il a exactement la forme attendue (position seule), ouvert dans un nouvel onglet sans référent ; sinon « position inconnue ». Un refus se dit en mots, jamais par son code.
+- Objectif : l'agent lit sa tournée de prospection d'un jour et sa carte des opportunités depuis son téléphone.
+- Critères : le script est servi à part, chargé seulement au geste, tient le budget d'une page ; l'application tient le sien, `app.js` inchangé [R201] (test) ; l'écran ne lit que `/v1/tournee`, la clé dans l'en-tête seul, aucune écriture [R16, R298] (test) ; les arrêts dans l'ordre reçu, rendez-vous dits fixes, ce qui ne tient pas avec sa raison en mots [R298] (test) ; hors zone : un nombre, jamais une adresse [R297] (test) ; lien de la vue des rues posé seulement à la forme attendue, sans référent [R299] (test) ; date choisie transmise telle quelle, date vide refusée avant tout appel (test) ; chaque refus connu a ses mots, aucun code montré ; tout texte reçu posé en texte (test) ; seule la dernière lecture dessine (test) ; décrit dans `docs/API.md`.
+- Attend : rien (agenda relié V03 et position des biens restent à part).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
