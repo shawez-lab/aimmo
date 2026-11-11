@@ -1194,6 +1194,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : remise valable, plus aucune sortie ni seconde remise, l'agent qui remet la voit à rendre et note le retour, un autre agent non [R665, R271, R272, R16] (test) ; métier hors liste, sans justificatif, raison de visite, plus de 12 h refusés 409, partenaire inconnu 404, champ en trop 400 [R665] (test) ; autre agent et conformité 403 au journal, même avec un corps mal formé ou un champ en trop ; la direction remet, l'agent du bien en répond [R16] (test) ; le nom du partenaire n'est pas au journal [R13] (test).
 - Attend : rien.
 
+### BR47 · Les actualités déjà vues, par la route
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC14, BR20
+- Cahier : Phase 3, « Mes actualités » ; R269, R16.
+- Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de RC14 (« route « Déjà vues » à côté du fil dans `reseau-utile.ts`, et l'écran »). Les actualités n'ont pas encore d'écran (BR20 n'a fait que les routes) : la route seule, `GET /v1/actualites/deja-vues`, par `Actualites.seen` ; l'écran viendra avec celui du fil.
+- Objectif : une actualité dont la réponse s'est perdue se relit par l'application.
+- Critères : montrée une fois, elle n'est plus au fil mais se relit, avec le jour où elle a été montrée, autant de fois qu'on veut [R269] (test) ; un autre agent ne la relit pas et son fil la montre encore [R16] (test) ; retirée, plus relue [R269] (test) ; la direction est refusée en 403, au journal [R16] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
