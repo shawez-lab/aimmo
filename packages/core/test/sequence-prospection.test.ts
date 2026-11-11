@@ -636,7 +636,7 @@ describeWithSqlite('HX20 · séquence de prospection sur plusieurs canaux', () =
     const lines = JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('sequence.')));
     expect(lines).toContain('sequence.preparee');
     expect(lines).toContain('sequence.etape');
-    expect(lines).not.toMatch(/agent du quartier|lea@|06 00 00|0600000|Léa/);
+    expect(lines).not.toMatch(/agent du quartier|lea@|0600|Léa/);
   });
 
   it('addDays compte au calendrier, changement d’heure compris', () => {
