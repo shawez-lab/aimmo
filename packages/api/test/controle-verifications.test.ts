@@ -14,6 +14,39 @@ const reels = () => ({
   deploiement: lire('.github/workflows/deployer-api.yml'),
   attente: lire('scripts/attendre-verifications.mjs'),
 });
+describe('CI · déploiement automatique après les vérifications du même workflow', () => {
+  const changed = (change: (text: string) => string) => {
+    const files = reels();
+    return controleVerifications({ ...files, verifications: change(files.verifications) }).join('\n');
+  };
+
+  it('garde la dépendance, le filtre main et les deux groupes de concurrence', () => {
+    const text = reels().verifications;
+    expect(text).toContain('needs: verifier');
+    expect(text).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verifier.result == 'success'");
+    expect(text).toContain('group: verifications-');
+    expect(text).toContain('group: deployer-api');
+    expect(text).not.toContain('deployment-scope');
+    expect(text).not.toContain('deploy_required');
+    expect(text).not.toContain('paths-ignore:');
+    expect(text).not.toContain('workflow_run:');
+    expect(text).not.toContain('pull_request_target:');
+    expect(reels().deploiement).not.toMatch(/^  push:/m);
+  });
+
+  it.each([
+    ['push chantier ignoré', (t: string) => t.replace('    branches: [main]\n', "    branches: [main]\n    paths-ignore:\n      - 'chantier/**'\n")],
+    ['dépendance manquante', (t: string) => t.replace('    needs: verifier\n', '')],
+    ['succès non requis', (t: string) => t.replace(" && needs.verifier.result == 'success'", '')],
+    ['PR autorisée', (t: string) => t.replace("github.event_name == 'push' && github.ref", "github.event_name == 'pull_request' && github.ref")],
+    ['annulation du déploiement', (t: string) => t.replace('group: deployer-api\n      cancel-in-progress: false', 'group: deployer-api\n      cancel-in-progress: true')],
+    ['ref de checkout flottante', (t: string) => t.replace('ref: ${{ github.sha }}', 'ref: main')],
+    ['garde main retirée', (t: string) => t.replace('run: node scripts/require-current-main.mjs', 'run: echo ready')],
+    ['garde avant mutation retirée', (t: string) => t.replace('node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"\n', '')],
+  ])('refuse %s', (_label, change) => {
+    expect(changed(change)).not.toBe('');
+  });
+});
 const avec = (verifications: (texte: string) => string) => {
   const fichiers = reels();
   return controleVerifications({ ...fichiers, verifications: verifications(fichiers.verifications) }).join('\n');
