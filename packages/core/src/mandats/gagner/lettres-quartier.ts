@@ -18,6 +18,7 @@ import { plain } from '../../envoi/texte.ts';
 import type { Geocoder } from '../../estimation/collecte.ts';
 import { appendEvent } from '../../journal/journal.ts';
 import type { JournalStore } from '../../journal/types.ts';
+import { withoutRoadTitles } from '../../veille-dpe/titre-voie.ts';
 import { FORBIDDEN_SOURCES, isForbiddenSource } from '../source.ts';
 import { agentBlocked } from './etat-agent.ts';
 
@@ -114,7 +115,8 @@ function readAddress(raw: unknown): { ok: true; value: { number: string; street:
   if (Object.keys(a).some((k) => !(ADDRESS_FIELDS as readonly string[]).includes(k))) return { ok: false, rule: 'R140', code: 'unknown_field' };
   const { number, street, postcode, city } = a;
   if (typeof number !== 'string' || typeof street !== 'string' || typeof postcode !== 'string' || typeof city !== 'string') return { ok: false, rule: null, code: 'bad_address' };
-  for (const v of [number, street, city]) if (PERSON_MARKERS.test(` ${words(v)} `)) return { ok: false, rule: 'R140', code: 'name_in_address' };
+  // Le titre d'une voie (« rue du Docteur Chaussier ») n'est pas une personne ; toute autre civilité refuse l'adresse [R140].
+  for (const v of [number, withoutRoadTitles(words(street)), city]) if (PERSON_MARKERS.test(` ${words(v)} `)) return { ok: false, rule: 'R140', code: 'name_in_address' };
   if (!NUMBER.test(number.trim())) return { ok: false, rule: null, code: 'bad_number' };
   const s = street.trim();
   if (s.length < 3 || s.length > 80 || !STREET_TYPES.test(words(s))) return { ok: false, rule: null, code: 'bad_street' };
