@@ -286,6 +286,29 @@ describeWithSqlite('RC14 · une actualité perdue par une coupure se relit dans 
     expect(Number(shown!.n)).toBe(2);
   });
 
+  it('[R269] retirée pendant que « Déjà vues » se prépare : elle n’est pas relue', async () => {
+    const t = await setup();
+    await t.property('REF-G-1', 'G');
+    const id = await t.add({ target: { energyClasses: ['G'] } });
+    const kept = await t.add({ topic: 'marche', title: 'Taux de crédit de test' });
+    await t.feed();
+    // Le retrait arrive pendant la lecture des dossiers de l'agent, après la liste des actualités déjà vues.
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver);
+        if (key !== 'all') return typeof v === 'function' ? v.bind(target) : v;
+        return async (sql: string, params?: unknown[]) => {
+          if (sql.includes('FROM properties p')) await t.actu.withdraw(t.direction, id, 'Texte abrogé');
+          return target.all(sql, params as never);
+        };
+      },
+    });
+    const racing = new Actualites(db, t.acces, t.journal, { now: t.now });
+    const r = await racing.seen(t.agent);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.map((i) => i.id)).toEqual([kept]);
+  });
+
   it('[R16] seules les siennes : jamais une actualité montrée à un autre agent', async () => {
     const t = await setup();
     const id = await t.add();

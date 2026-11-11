@@ -457,6 +457,14 @@ export class Actualites {
       const concerned = await this.concernedOf(viewer, v.target, dossiers);
       items.push({ ...v, concerned, shownOn: localTime(new Date(shownAt), 'Europe/Paris').date });
     }
+    // Retirée pendant la lecture de ses dossiers : le retrait est relu juste avant de rendre, elle n'est pas relue.
+    if (items.length > 0) {
+      const ids = items.map((i) => i.id);
+      const gone = new Set(
+        (await this.db.all<{ news_id: string }>(`SELECT news_id FROM network_news_withdrawals WHERE news_id IN (${ids.map(() => '?').join(', ')})`, ids)).map((w) => w.news_id),
+      );
+      if (gone.size > 0) items.splice(0, items.length, ...items.filter((i) => !gone.has(i.id)));
+    }
     await appendEvent(this.journal, { type: 'actualite.relue', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R269', count: items.length } }, this.now);
     return { ok: true, value: items };
   }
