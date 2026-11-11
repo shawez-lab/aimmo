@@ -1137,6 +1137,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : « rue du Docteur », « place du Maréchal », « avenue du Président », « rue Saint- » acceptées, lettres « Au propriétaire » [R140] (test) ; titre sans type de voie, civilité en plus du titre, titre au numéro ou à la commune refusés [R140] (test) ; tous les tests de G06, HX16 et HX17 restent verts.
 - Attend : rien.
 
+### RC06 · Une voie au titre d'une personne dans un faubourg, un mail, une cité
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC05
+- Cahier : M20 Gagner des mandats, lettres de quartier ; Phase 3, « Veille des nouveaux diagnostics énergétiques » ; R140, R288, R292.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC05. La lettre de quartier accepte comme voie « faubourg », « mail », « cité », « ruelle », « sentier », « venelle », « clos », « hameau », « lieu-dit », « lotissement », « montée », « parvis », « traverse », « voie », mais le titre d'une personne juste après l'un de ces types (« faubourg du Docteur », « mail du Président ») n'est pas reconnu : l'adresse est refusée, et la veille écarte le diagnostic. Les types de `withoutRoadTitles` (`veille-dpe/titre-voie.ts`) deviennent exactement ceux de la lettre, plus ceux qu'il avait déjà ; « mademoiselle » rejoint les titres (« madame » y est déjà). Les abréviations (« Mme », « Mr », « Mlle ») et toute autre civilité refusent toujours. Change seulement `titre-voie.ts` et les tests des lettres et de la veille.
+- Objectif : un logement F ou G au « 3 faubourg du Docteur … » remonte à la veille, et l'agent peut y adresser une lettre « Au propriétaire ».
+- Critères : chaque type de voie de la lettre suivi d'un titre accepté dans une lettre [R140] (test) ; les mêmes lus par la veille [R288] (test) ; « Mme », « Mlle », « chez », titre sans type de voie toujours refusés [R140, R288] (test) ; chaque type de voie de la lettre est dans `withoutRoadTitles`, relevé par test pour qu'ils ne divergent plus (test) ; tous les tests de G06, HX16, HX17, RC04 et RC05 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
