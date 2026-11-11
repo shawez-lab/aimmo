@@ -944,3 +944,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-11 13:41 · VOIE 2 : relance refusée, question 2 du plafond (la séance voie 2 de 11:33 n'a produit qu'une correction du plan, des notes)
 - 2026-11-11 13:41 · VOIE 2 : RC11, b22a7dd1 (#508, fusionnée), relancé non
 - 2026-11-11 14:32 · BR40 · fusionnée (#510, ae9c9e01) : la recherche en langage courant depuis la fiche de l'acquéreur (phrase, raisons et mots, voisines par le geste, refus avec raison, rangement dans le projet) ; Codex 1 P0 corrigé (un geste à la fois), puis rien à signaler ; vérification locale verte (5572 tests), GitHub Actions bloqué (facturation) · prochaine : à choisir (accord `buyer_search` notable par l'agent, ou un autre reste HX)
+- 2026-11-11 14:33 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
