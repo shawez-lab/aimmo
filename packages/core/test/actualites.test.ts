@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Actualites, normaliseSourceUrl, parseTarget, type NewsInput } from '../src/actualites/actualites.ts';
 import { FicheBien } from '../src/annonces/index.ts';
+import type { JournalStore } from '../src/journal/types.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -43,7 +44,12 @@ async function setup() {
     if (!r.ok) throw new Error(r.code);
     return r.value;
   };
-  return { ...t, actu, add, base, property, feed };
+  const seen = async (viewer = t.agent) => {
+    const r = await actu.seen(viewer);
+    if (!r.ok) throw new Error(r.code);
+    return r.value;
+  };
+  return { ...t, actu, add, base, property, feed, seen };
 }
 
 describe('HX09 · adresse de la source', () => {
@@ -239,5 +245,157 @@ describeWithSqlite('HX09 · actualités utiles', () => {
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
     expect(await t.actu.feed(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     expect(await t.actu.feed(t.direction)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+  });
+});
+
+describeWithSqlite('RC14 · une actualité perdue par une coupure se relit dans « Déjà vues »', () => {
+  it('[R269] réservée puis réponse perdue : plus dans le fil, mais relue dans « Déjà vues », avec le jour où elle a été montrée', async () => {
+    const t = await setup();
+    const id = await t.add();
+    // La réponse se perd juste après la réservation : le journal tombe, rien n'est rendu à l'écran.
+    const cut: JournalStore = {
+      append: async () => { throw new Error('coupure'); },
+      last: () => t.journal.last(),
+      all: () => t.journal.all(),
+      bySubject: (s) => t.journal.bySubject(s),
+      byPeriod: (a, b) => t.journal.byPeriod(a, b),
+    };
+    const broken = new Actualites(t.db, t.acces, cut, { now: t.now });
+    await expect(broken.feed(t.agent)).rejects.toThrow('coupure');
+    expect(await t.feed()).toEqual([]);
+    const relues = await t.seen();
+    expect(relues.map((i) => [i.id, i.shownOn, i.source.url])).toEqual([[id, '2027-02-12', 'https://exemple.test/textes/1']]);
+    // Le lendemain, toujours relue, montrée le 12.
+    t.setClock(new Date('2027-02-13T09:00:00.000Z'));
+    expect((await t.seen()).map((i) => i.shownOn)).toEqual(['2027-02-12']);
+  });
+
+  it('[R269] relire ne réserve rien et ne remet jamais l’actualité dans le fil ; les plus récemment montrées d’abord', async () => {
+    const t = await setup();
+    expect(await t.seen()).toEqual([]);
+    const first = await t.add();
+    await t.feed();
+    t.setClock(new Date('2027-02-12T11:00:00.000Z'));
+    const second = await t.add({ topic: 'marche', title: 'Taux de crédit de test' });
+    // Pas encore montrée : pas dans « Déjà vues », et relire ne la réserve pas.
+    expect((await t.seen()).map((i) => i.id)).toEqual([first]);
+    expect((await t.feed()).map((i) => i.id)).toEqual([second]);
+    expect((await t.seen()).map((i) => i.id)).toEqual([second, first]);
+    expect(await t.feed()).toEqual([]);
+    const shown = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM network_news_deliveries');
+    expect(Number(shown!.n)).toBe(2);
+  });
+
+  it('[R269] retirée pendant que « Déjà vues » se prépare : elle n’est pas relue', async () => {
+    const t = await setup();
+    await t.property('REF-G-1', 'G');
+    const id = await t.add({ target: { energyClasses: ['G'] } });
+    const kept = await t.add({ topic: 'marche', title: 'Taux de crédit de test' });
+    await t.feed();
+    // Le retrait arrive pendant la lecture des dossiers de l'agent, après la liste des actualités déjà vues.
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver);
+        if (key !== 'all') return typeof v === 'function' ? v.bind(target) : v;
+        return async (sql: string, params?: unknown[]) => {
+          if (sql.includes('FROM properties p')) await t.actu.withdraw(t.direction, id, 'Texte abrogé');
+          return target.all(sql, params as never);
+        };
+      },
+    });
+    const racing = new Actualites(db, t.acces, t.journal, { now: t.now });
+    const r = await racing.seen(t.agent);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.map((i) => i.id)).toEqual([kept]);
+  });
+
+  it('[R269] plus de 100 actualités déjà vues se relisent, toujours en peu de paramètres par requête', async () => {
+    const t = await setup();
+    for (let i = 0; i < 105; i++) await t.add();
+    await t.feed();
+    let most = 0;
+    const db = new Proxy(t.db, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver);
+        if (key !== 'all' && key !== 'first' && key !== 'run') return typeof v === 'function' ? v.bind(target) : v;
+        return async (sql: string, params?: unknown[]) => {
+          most = Math.max(most, params?.length ?? 0);
+          return (v as (s: string, p?: unknown[]) => Promise<unknown>).call(target, sql, params);
+        };
+      },
+    });
+    const r = await new Actualites(db, t.acces, t.journal, { now: t.now }).seen(t.agent);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.length).toBe(105);
+    expect(most).toBeLessThanOrEqual(10);
+  });
+
+  it('[R16] seules les siennes : jamais une actualité montrée à un autre agent', async () => {
+    const t = await setup();
+    const id = await t.add();
+    await t.feed(t.sam);
+    expect(await t.seen()).toEqual([]);
+    expect((await t.seen(t.sam)).map((i) => i.id)).toEqual([id]);
+  });
+
+  it('[R269] retirée ou publiée depuis plus de 60 jours : plus relue', async () => {
+    const t = await setup();
+    const kept = await t.add();
+    const gone = await t.add();
+    await t.feed();
+    expect((await t.seen()).map((i) => i.id).sort()).toEqual([kept, gone].sort());
+    expect(await t.actu.withdraw(t.direction, gone, 'Texte abrogé')).toEqual({ ok: true });
+    expect((await t.seen()).map((i) => i.id)).toEqual([kept]);
+    t.setClock(new Date('2027-04-13T10:00:00.000Z'));
+    expect((await t.seen()).map((i) => i.id)).toEqual([kept]);
+    t.setClock(new Date('2027-04-14T10:00:00.000Z'));
+    expect(await t.seen()).toEqual([]);
+  });
+
+  it('[R269] [R16] dossiers concernés relus au moment de relire, par le chemin des droits, lecture au journal', async () => {
+    const t = await setup();
+    const g = await t.property('REF-G-1', 'G');
+    const id = await t.add({ target: { energyClasses: ['G'] } });
+    const whole = await t.add({ topic: 'marche', title: 'Taux de crédit de test' });
+    await t.feed();
+    // Un second bien classé G après la montrée : relu, il compte aussi.
+    const g2 = await t.property('REF-G-2', 'G');
+    const readsOf = async () => (await t.db.all<{ subject: string }>("SELECT subject FROM journal WHERE type = 'bien.lu' ORDER BY rowid")).map((r) => r.subject);
+    const before = (await readsOf()).length;
+    const relues = await t.seen();
+    const targeted = relues.find((i) => i.id === id)!;
+    expect(targeted.concerned.map((c) => c.propertyId).sort()).toEqual([g, g2].sort());
+    expect(relues.find((i) => i.id === whole)!.concerned).toEqual([]);
+    expect((await readsOf()).slice(before).sort()).toEqual([`property:${g}`, `property:${g2}`].sort());
+  });
+
+  it('[R16] [R86] direction, agent inactif ou parti du jour : refusés, refus au journal', async () => {
+    const t = await setup();
+    await t.add();
+    await t.feed();
+    const refusals = async () => Number((await t.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM journal WHERE type = 'acces.refuse'"))!.n);
+    const before = await refusals();
+    expect(await t.actu.seen(t.direction)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    await t.db.run(
+      "INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-1', ?, ?, '2027-01-12', '2027-02-13', 'demission_agent', 1, 'direction:direction-1', '2027-01-12T10:00:00.000Z')",
+      [t.network.id, t.alexId],
+    );
+    t.setClock(new Date('2027-02-12T23:30:00.000Z'));
+    expect(await t.actu.seen(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alexId]);
+    expect(await t.actu.seen(t.agent)).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
+    expect(await refusals()).toBe(before + 3);
+  });
+
+  it('[R13] relire n’écrit au journal que des identifiants et des nombres', async () => {
+    const t = await setup();
+    await t.property('REF-G-1', 'G');
+    await t.add({ target: { energyClasses: ['G'] } });
+    await t.feed();
+    await t.seen();
+    const rows = await t.db.all<{ data: string; subject: string }>("SELECT data, subject FROM journal WHERE type = 'actualite.relue'");
+    expect(rows.length).toBe(1);
+    expect(JSON.parse(rows[0]!.data)).toEqual({ rule: 'R269', count: 1 });
+    expect(rows[0]!.subject).toBe(`agent:${t.alexId}`);
   });
 });

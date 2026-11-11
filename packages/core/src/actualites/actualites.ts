@@ -11,6 +11,8 @@
  *   dossiers ne lui est pas montrée : c'est du bruit pour lui. Une actualité sans cible va à tout le réseau [R269].
  * - Une actualité n'est montrée qu'une fois à chaque agent, jamais deux, même quand deux écrans demandent le fil en même
  *   temps ; elle n'est plus montrée 60 jours après sa publication, ni après un retrait [R269].
+ * - Une actualité déjà montrée se relit dans « Déjà vues », sans jamais revenir dans le fil : celle dont la réponse
+ *   s'est perdue (coupure, Worker arrêté) après sa réservation n'est donc jamais perdue pour l'agent [R269].
  * - Rien ne part : aucun message, aucune notification. L'agent lit son fil dans l'application.
  * - Aucune donnée personnelle au journal : seulement des identifiants internes et des nombres [R13].
  */
@@ -77,6 +79,11 @@ export interface ConcernedDossier {
 export interface FeedItem extends NewsView {
   /** Les dossiers de l'agent concernés ; vide pour une actualité de tout le réseau. */
   concerned: ConcernedDossier[];
+}
+
+export interface SeenItem extends FeedItem {
+  /** Le jour de Paris où elle lui a été montrée. */
+  shownOn: string;
 }
 
 export interface CatalogueItem extends NewsView {
@@ -368,6 +375,21 @@ export class Actualites {
     return line.charAt(0).toUpperCase() + line.slice(1) + '.';
   }
 
+  /** Les dossiers de l'agent que touche une cible, chacun lu par le chemin des droits ; vide sans cible. */
+  private async concernedOf(viewer: Viewer, target: Target, dossiers: Dossier[]): Promise<ConcernedDossier[]> {
+    const concerned: ConcernedDossier[] = [];
+    if (isWholeNetwork(target)) return concerned;
+    for (const d of dossiers) {
+      const why = Actualites.match(target, d);
+      if (!why) continue;
+      // Lu par le chemin des droits, qui écrit la lecture du bien au journal avant de rendre quoi que ce soit [R16].
+      const read = await this.acces.readProperty(viewer, d.id);
+      if (!read.ok || read.view !== 'full' || read.value.agent_id !== viewer.userId) continue;
+      concerned.push({ propertyId: d.id, reference: d.reference, why });
+    }
+    return concerned;
+  }
+
   /**
    * Le fil de l'agent : les actualités qu'il n'a jamais vues, en vigueur, chacune avec ses dossiers concernés ; une
    * actualité ciblée qui ne touche aucun de ses dossiers n'est pas montrée. Ce qui est rendu est marqué vu, une fois
@@ -389,19 +411,9 @@ export class Actualites {
     const items: FeedItem[] = [];
     for (const r of rows) {
       const v = toView(r);
-      const concerned: ConcernedDossier[] = [];
-      if (!isWholeNetwork(v.target)) {
-        for (const d of dossiers) {
-          const why = Actualites.match(v.target, d);
-          if (!why) continue;
-          // Lu par le chemin des droits, qui écrit la lecture du bien au journal avant de rendre quoi que ce soit [R16].
-          const read = await this.acces.readProperty(viewer, d.id);
-          if (!read.ok || read.view !== 'full' || read.value.agent_id !== viewer.userId) continue;
-          concerned.push({ propertyId: d.id, reference: d.reference, why });
-        }
-        // Ciblée, et aucun de ses dossiers n'est touché : du bruit pour lui, pas montrée (elle pourra l'être plus tard).
-        if (concerned.length === 0) continue;
-      }
+      const concerned = await this.concernedOf(viewer, v.target, dossiers);
+      // Ciblée, et aucun de ses dossiers n'est touché : du bruit pour lui, pas montrée (elle pourra l'être plus tard).
+      if (!isWholeNetwork(v.target) && concerned.length === 0) continue;
       // Réservée avant d'être rendue : deux fils demandés en même temps ne la montrent qu'une fois.
       // Retirée entre-temps : la réservation relit le retrait dans la même instruction, et rien n'est montré.
       const res = await this.db.run(
@@ -416,6 +428,51 @@ export class Actualites {
     // Celles qui touchent ses dossiers d'abord, puis les plus récentes.
     items.sort((a, b) => Number(b.concerned.length > 0) - Number(a.concerned.length > 0));
     await appendEvent(this.journal, { type: 'actualite.montree', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R269', count: items.length, concerned: items.filter((i) => i.concerned.length > 0).length } }, this.now);
+    return { ok: true, value: items };
+  }
+
+  /**
+   * « Déjà vues » : les actualités déjà montrées à cet agent, et à lui seul, encore en vigueur (ni retirées, ni publiées
+   * depuis plus de 60 jours), les plus récemment montrées d'abord. Celle dont la réponse s'est perdue après sa réservation
+   * se relit ici. Relire ne réserve rien : elle ne revient jamais dans le fil. Les dossiers concernés sont relus au moment
+   * de relire, dans la base, par le chemin des droits ; une actualité ciblée qui n'en touche plus aucun reste relue, sans
+   * dossier [R269].
+   */
+  async seen(viewer: Viewer): Promise<{ ok: true; value: SeenItem[] } | Refusal> {
+    if (!(await this.activeAgent(viewer))) return this.refuse(viewer, `agent:${viewer.userId}`, viewer.role === 'agent' ? 'agent_inactive' : 'role');
+    const today = this.today();
+    const rows = await this.db.all<Row & { shown_at: string }>(
+      `SELECT n.id, n.topic, n.title, n.impact, n.source_name, n.source_url, n.source_date, n.target, n.published_on, d.shown_at
+         FROM network_news_deliveries d
+         JOIN network_news n ON n.id = d.news_id AND n.network_id = d.network_id
+        WHERE d.agent_id = ? AND d.network_id = ? AND n.published_on >= ? AND n.published_on <= ?
+          AND NOT EXISTS (SELECT 1 FROM network_news_withdrawals w WHERE w.news_id = n.id)
+        ORDER BY d.shown_at DESC, n.published_on DESC, n.id`,
+      [viewer.userId, viewer.networkId, addDays(today, -NEWS_WINDOW_DAYS), today],
+    );
+    const views = rows.map((r) => ({ v: toView(r), shownAt: r.shown_at }));
+    const dossiers = views.some(({ v }) => !isWholeNetwork(v.target)) ? await this.dossiersOf(viewer.networkId, viewer.userId) : [];
+    const items: SeenItem[] = [];
+    for (const { v, shownAt } of views) {
+      const concerned = await this.concernedOf(viewer, v.target, dossiers);
+      items.push({ ...v, concerned, shownOn: localTime(new Date(shownAt), 'Europe/Paris').date });
+    }
+    // Retirée pendant la lecture de ses dossiers : le retrait est relu juste avant de rendre, elle n'est pas relue.
+    if (items.length > 0) {
+      // Deux paramètres seulement, quel que soit le nombre d'actualités déjà vues (D1 en limite le nombre par requête).
+      const gone = new Set(
+        (
+          await this.db.all<{ news_id: string }>(
+            `SELECT w.news_id FROM network_news_withdrawals w
+               JOIN network_news_deliveries d ON d.news_id = w.news_id
+              WHERE d.agent_id = ? AND d.network_id = ?`,
+            [viewer.userId, viewer.networkId],
+          )
+        ).map((w) => w.news_id),
+      );
+      if (gone.size > 0) items.splice(0, items.length, ...items.filter((i) => !gone.has(i.id)));
+    }
+    await appendEvent(this.journal, { type: 'actualite.relue', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R269', count: items.length } }, this.now);
     return { ok: true, value: items };
   }
 }
