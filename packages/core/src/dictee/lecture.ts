@@ -4,9 +4,10 @@
  *
  * Aucun champ n'est inventé [R260] : chaque champ vient d'une seule phrase de la dictée, avec le passage exact qui le
  * porte. Le code lit, aucune IA ne propose de valeur. Un champ dit deux fois avec deux valeurs différentes n'est pas
- * proposé ; un nombre dit en lettres, une surface à virgule, un prix sans « prix » ni « vend » dans sa phrase ne le sont
- * pas non plus : l'agent les saisira lui-même. Un bien n'est lu que si sa sorte est dite, et jamais pour un acquéreur ;
- * un rendez-vous n'est lu que d'une seule phrase qui dit sa sorte, son jour et son heure.
+ * proposé ; un nombre dit en lettres qui ne se lit pas d'une seule façon, une surface à virgule, un prix sans « prix »
+ * ni « vend » dans sa phrase ne le sont pas non plus : l'agent les saisira lui-même. Un nombre en lettres qui se lit
+ * d'une seule façon (RC01, `nombres.ts`) vaut le même nombre en chiffres, avec ses mots pour passage. Un bien n'est
+ * lu que si sa sorte est dite, et jamais pour un acquéreur ; un rendez-vous n'est lu que d'une seule phrase qui dit sa sorte, son jour et son heure.
  *
  * Décidé, lecture prudente : un jour de la semaine dit (« mardi ») est le prochain, jamais aujourd'hui ; une date sans
  * année est la prochaine à venir ; une heure dite sans minutes est pile.
@@ -16,6 +17,7 @@ import { normalizeIdentifier } from '../fiche/normalize.ts';
 import { DEFAULT_COMMUNES } from '../qualification/regles.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { AGENDA_TIME_ZONE, parisInstant, type AppointmentKind } from '../rendezvous/creneaux.ts';
+import { DIGITS_BEFORE, NUMBER_BEFORE, NUMBER_RUN, WORD, WORD_AFTER, parseNumberWords, readNumberRun } from './nombres.ts';
 
 export type DictationTarget = 'contact' | 'bien' | 'rendezvous';
 
@@ -79,7 +81,8 @@ function fold(text: string): { folded: string; index: number[] } {
   let folded = '';
   const index: number[] = [];
   for (let i = 0; i < text.length; i += 1) {
-    const f = text[i]!.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    // Le trait d'union typographique (insécable compris) vaut le trait d'union : « quatre‑vingt‑cinq » est un nombre.
+    const f = text[i]!.replace(/[\u2010\u2011]/u, '-').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
     for (const ch of f) {
       folded += ch;
       index.push(i);
@@ -117,16 +120,45 @@ function hits(sentence: string, pattern: RegExp, read: (m: RegExpExecArray) => s
 
 const has = (sentence: string, pattern: RegExp): boolean => pattern.test(fold(sentence).folded);
 
+/**
+ * Chaque nombre dit en lettres suivi de `after` (RC01) : la suite de mots doit se lire d'une seule façon, et ne pas
+ * finir un autre nombre (un chiffre, « virgule », un autre mot de nombre juste avant) [R260]. Le passage commence au
+ * nombre, article laissé hors de lui, et finit avec `after`. `mustBefore`, s'il est donné, doit finir le texte d'avant.
+ */
+function wordHits(sentence: string, after: string, read: (n: number, m: RegExpExecArray) => string | number | null, mustBefore?: RegExp): Hit[] {
+  const { folded, index } = fold(sentence);
+  const re = new RegExp(`(${NUMBER_RUN})${after}`, 'gu');
+  const out: Hit[] = [];
+  for (let m = re.exec(folded); m !== null; m = re.exec(folded)) {
+    const run = readNumberRun(m[1]!);
+    if (run === null) continue;
+    const before = folded.slice(0, m.index);
+    if (NUMBER_BEFORE.test(before) || (mustBefore && !mustBefore.test(before))) continue;
+    const value = read(run.value, m);
+    if (value === null) continue;
+    const at = index[m.index + run.skip]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value, quote: sentence.slice(at, end).trim(), at, end });
+  }
+  return out;
+}
+
 // Les expressions s'appliquent au texte sans accents et en minuscules.
 const PHONE = /(?<![\d+])(?:\+33[\s.-]?|0)[1-9](?:[\s.-]?\d{2}){4}(?!\d)/;
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/;
 const SURFACE = /(?<![\d.,]|\d[\s\u00a0\u202f])(\d{1,6})\s?(?:m²|m2|metres? carres?)(?![\p{L}\d])/u;
-const ROOMS = /(?<![\d.,]|\d[\s\u00a0\u202f])(\d{1,2})\s?pieces?\b|\b[tf](\d{1,2})\b/u;
+const ROOMS = /(?<![\d.,]|\d[\s\u00a0\u202f])(\d{1,2})\s?pieces?\b(?!\s+et demie?\b)|\b[tf](\d{1,2})\b/u;
 const PRICE = /(?<![\d.,])(\d{1,3}(?:[\s.  ]\d{3})+|\d{1,10})\s?(?:€|euros?\b|(k€|k euros?\b|mille euros?\b))/u;
 const PRICE_CONTEXT = /\b(?:prix|vend|vendre|vendu|mise? en vente|mettre en vente|demande|affiche)\b/;
-const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite|remise|rabais|baisse|baisser|negoci\w*|paye|payee|achete|achetee|achat|acquis|acquise|marge)\b/;
+const NOT_A_PRICE = /\b(?:budget|honoraires?|frais|commission|travaux|charges?|taxe|loyer|estim\w*|offre|apport|pret|credit|mensualite|remise|rabais|baisse|baisser|negoci\w*|paye|payee|achete|achetee|achat|acquis|acquise|marge)\b|\b(?:au|le|du|par) (?:metres? carres?|m2|m²)/u;
 /** Le prix demandé suit de près « prix », « vend » ou « demande », sans autre nombre entre eux. */
 const PRICE_LEAD = /\b(?:prix|vend\w*|demande|affiche)\b[^\d]{0,30}$/;
+/** Ce qui suit un nombre en lettres de pièces, de surface ou de prix (RC01). Une surface « et demie » n'est pas lue. */
+const ROOMS_AFTER = '\\s+pieces?(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
+const SURFACE_AFTER = '\\s+(?:m²|m2|metres? carres?)(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
+const PRICE_AFTER = '\\s+euros?(?![\\p{L}\\d])(?!\\s+et demie?\\b)';
+/** Un montant « et demi » ne se lit pas, en chiffres non plus. */
+const HALF_AFTER = /^\s+et demie?\b/u;
 const POSTAL = /(?<![\d.,]|\d[\s\u00a0\u202f])\b((?:0[1-9]|[1-8]\d|9[0-5]|97)\d{3})\b(?![.,]?\d)(?!\s?(?:€|euros?\b|k€|m²|m2|metres?\b|pieces?\b))/u;
 
 const KINDS: readonly [RegExp, PropertyKind][] = [
@@ -157,9 +189,128 @@ const APPOINTMENT_KINDS_READ: readonly [RegExp, AppointmentKind][] = [
 ];
 const WEEKDAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const MONTHS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
-const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?)\\b`);
+/** Une année dite après le jour et le mois, qui n'est pas lue (en lettres, ou autre que 20xx) : le jour est refusé. */
+/** Deux chiffres suivis de « h » ou « heures » disent l'heure, pas l'année (Codex sur #486). */
+const YEAR_NOT_READ = `(?!\\s+(?:\\d{2}(?:\\d{2})?(?!\\d)(?!\\s?(?:h|heures?)(?![\\p{L}]))|${NUMBER_RUN}(?!\\s+heures?(?![\\p{L}\\d]))))`;
+const DAY = new RegExp(`\\b(?:(apres-demain|apres demain|demain)|(${WEEKDAY_NAMES.join('|')})(?: prochain)?|(?:le )?(1er|[1-9]|[12]\\d|3[01]) (${MONTHS.join('|')})(?: (20\\d{2}))?\\b${YEAR_NOT_READ})\\b`, 'u');
+/** Le jour du mois en lettres (RC01) : « le douze janvier », « le premier mai ». */
+const DAY_WORDS_AFTER = `\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`;
+const FIRST_OF_MONTH = new RegExp(`\\bpremier\\s+(${MONTHS.join('|')})(?![\\p{L}\\d])${YEAR_NOT_READ}`, 'u');
+/**
+ * L'heure en lettres (RC01) : « quinze heures », « quinze heures trente ». Les minutes se lisent d'une seule façon,
+ * de 1 à 59, sinon rien ; « et » (« et demie », « et trente minutes »), « minutes », « moins » ou un chiffre
+ * derrière : rien.
+ */
+const TIME_WORDS_AFTER = `\\s+heures?(?:\\s+(${NUMBER_RUN}))?(?![\\p{L}\\d])(?!\\s*(?:\\d|et\\s+(?:demie?|quart|des\\b|\\d|${WORD})|minutes?\\b|moins\\b))`;
+/**
+ * Une heure en lettres ne se lit qu'après « à » ou « vers » (« il y a deux heures » est une durée), de 8 h à 23 h :
+ * « à deux heures » se dit pour 14 h comme pour 2 h. Suivie de « du matin », « du soir » ou « de l'après-midi », elle
+ * n'est pas lue non plus.
+ */
+const TIME_WORDS_BEFORE = /(?<![\p{L}\d])(?:a|vers)\s+$/u;
+const DURATION_YA = /(?<![\p{L}\d])y\s+a\s+$/u;
+/**
+ * Une autre heure dite dans la phrase, même non lue (« à dix heures ou onze heures », « à dix heures, non onze
+ * heures », « de dix heures à onze heures ») : le rendez-vous n'est pas lu. Seule une heure qui suit un mot de
+ * durée ne compte pas ; « de » n'en est pas un, il ouvre aussi une plage.
+ */
+const DURATION_BEFORE = /(?:(?<![\p{L}\d])(?:dans|pendant|durant|pour|depuis|en|prevoir|prevu|y\s+a)|(?<![\p{L}\d])d['’])\s*$/u;
+const TIME_QUALIFIER = /^\s+(?:du (?:matin|soir)|de l['’ ]\s*apres[- ]midi)/u;
+/** Ce qui suit des minutes en lettres : la fin de la phrase ou une ponctuation, sinon elles ont pu prendre un autre mot. */
+const MINUTES_END = /^\s*(?:[,.;:!?)]|$)/u;
 /** Une heure entière : suivie d'un chiffre ou de « et demie », « et quart », « moins », elle n'est pas lue. */
-const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et (?:demie?|quart)\b|moins\b))/u;
+const TIME = /\b(?:(midi)|([01]?\d|2[0-3])\s?(?:h|heures?)(?:\s?([0-5]\d))?)(?![\p{L}\d])(?!\s*(?:\d|et\s+(?:(?:demie?|quart|des)\b|\d)|et\s+(?:un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|vingt|trente|quarante|cinquante)(?![\p{L}\d])|minutes?\b|moins\b))/u;
+/**
+ * Toute heure dite, lue ou non (RC01) : un nombre en chiffres ou en lettres suivi de « h », « heure » ou « heures »,
+ * quoi qu'il y ait derrière, et midi et minuit. Cette recherche ne reprend pas le motif qui lit l'heure : une heure
+ * que la lecture refuse (« dix heures et demie ») compte quand même comme une autre heure dite.
+ */
+const HOUR_MENTION = new RegExp(`(?<![\\p{L}\\d])(?:\\d{1,2}\\s?(?:h|heures?)(?![\\p{L}])|(?:${NUMBER_RUN})\\s+heures?(?![\\p{L}\\d])|midi(?![\\p{L}\\d])|minuit(?![\\p{L}\\d]))`, 'gu');
+/**
+ * Un nombre nu collé à l'heure lue dit une autre heure sans « h » (RC01, relecture) : « 14-15 h », « 15 h 30 ou 45 »,
+ * « 15 h, sinon 16 », « 15 h, non seize », « 15 h, 16 au plus tard ». Après l'heure, le nombre compte dès qu'il suit un
+ * mot de correction ou de choix (ou, non, sinon, voire, plutôt, enfin, pardon, disons), même plus loin dans la
+ * phrase, ou s'il la finit : « 15 h, un couple » ou « 15 h, 12 rue … » se lisent. Dans le doute, rien.
+ */
+const CORRECTION_WORD = '(?:ou(?:\\s+(?:bien|plutot|alors|sinon|meme|encore|eventuellement|peut[\\s-]etre))?|non|sinon|voire|plutot|enfin|pardon|disons|eventuellement|peut[\\s-]etre|je veux dire|au plus (?:tard|tot))(?![\\p{L}\\d])';
+/** Un mot de correction ou de choix, puis un nombre, n'importe où après l'heure : « non seize », « ou à 16 », « enfin 16 ». */
+const BARE_NUMBER_AFTER = new RegExp(`(?:^\\s*-|(?<![\\p{L}\\d])${CORRECTION_WORD})[\\s,]*(?:a\\s+|vers\\s+)?(?:\\d{1,2}(?!\\d)|${WORD})|^\\s*,?\\s*(?:a\\s+)?(?:\\d{1,2}|${WORD})\\s*(?:[.;!?)]|$|au plus (?:tard|tot)(?![\\p{L}\\d]))`, 'u');
+/** Un nombre, puis un mot de correction ou de choix, juste avant l'heure : « seize, non quinze heures », « 14 ou 15 h ». */
+const BARE_NUMBER_BEFORE = new RegExp(`(?:(?<![\\d.,])\\d{1,2}|(?<![\\p{L}\\d])${WORD})\\s*,?\\s*(?:(?<![\\p{L}\\d])${CORRECTION_WORD}|-|,|a)?\\s*(?:a\\s+|vers\\s+)?$`, 'u');
+/**
+ * Un choix ou une correction entre deux nombres, cherché sur toute la phrase (RC01, Codex sur #486) : un nombre, son
+ * unité facultative (un mois, « pièces », « m² », « euros »), un mot de choix ou de correction (« ou », « ou bien »,
+ * « ou plutôt », « ou alors », « non », « voire »…), un article facultatif, puis un autre nombre : « le douze ou le
+ * treize janvier », « trois ou bien quatre pièces », « trois pièces, non quatre ». Sans unité, « et » et « à » suivis
+ * d'un article comptent aussi (« le 12 et le 13 janvier », « du 12 au 13 janvier ») ; « et » ou « à » seuls restent
+ * l'affaire de `NUMBER_BEFORE` et de `DIGITS_BEFORE` (« vingt et un » est un nombre). « un » ou « une » seuls après le
+ * mot de choix sont l'article (« un trois pièces ou une maison »). Jour, pièces, surface ou prix qui touchent ce
+ * passage : le champ est refusé, l'agent le saisira.
+ */
+const CHOICE_UNIT = `(?:\\s+(?:${MONTHS.join('|')}|pieces?|m²|m2|metres? carres?|euros?|€|k€)(?![\\p{L}\\d]))`;
+const CHOICE_NUMBER = `(?:(?<![\\p{L}\\d.,])\\d+(?:[\\s.\u00a0\u202f]\\d{3})*(?:[.,]\\d+)?(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+const CHOICE_SECOND = `(?:(?<![\\p{L}\\d.,])\\d+(?![\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d])|(?!une?(?![\\p{L}\\d])(?![\\s-]+${WORD})(?!\\s*(?:[.,;:!?)]|$))(?!${CHOICE_UNIT}))${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+/** « et », « à », « au » ne disent un choix qu'entre deux nombres simples, le second suivi de son unité : « du 12 au 13
+ * janvier », pas « un T3 au 2 rue Monge » ni « 65 m2 au 1er étage » (relecture forte). */
+const CHOICE_PLAIN = `(?:(?<![\\p{L}\\d.,])\\d{1,3}(?![\\d.,]\\d)|${NUMBER_RUN}|(?<![\\p{L}\\d])(?:premier|1er)(?![\\p{L}\\d]))`;
+const CHOICE_ARTICLE = `(?:(?:le|la|les|un|une|des|du|de|au|aux)\\s+|l['’]\\s*)`;
+/** Les mêmes mots de choix et de correction que pour l'heure (Codex sur #486). */
+const CHOICE_WORD = `(?<![\\p{L}\\d])${CORRECTION_WORD}`;
+const CHOICE = new RegExp(
+  `${CHOICE_NUMBER}${CHOICE_UNIT}?\\s*,?\\s*${CHOICE_WORD}[\\s,]*${CHOICE_ARTICLE}?${CHOICE_SECOND}|${CHOICE_PLAIN}\\s+(?:et\\s+${CHOICE_ARTICLE}|a\\s+${CHOICE_ARTICLE}?|(?:au|aux)\\s+)${CHOICE_SECOND}${CHOICE_UNIT}|(?<![\\p{L}\\d.,])\\d{1,3}\\s*[/-]\\s*\\d{1,3}(?![\\d])${CHOICE_UNIT}`,
+  'gu',
+);
+/**
+ * Toute mention d'un nombre suivi de son unité, avant les filtres qui écartent un nombre collé à un autre (Codex sur
+ * #486) : « quatre ou cinq pièces » n'est pas lu, mais le choix doit quand même faire refuser un « trois pièces »
+ * dit plus tôt.
+ */
+const RAW_UNITS = {
+  rooms: `(?:${CHOICE_NUMBER}\\s*pieces?(?![\\p{L}\\d])|(?<![\\p{L}\\d])[tf]\\d{1,2}(?![\\p{L}\\d]))`,
+  surfaceM2: `${CHOICE_NUMBER}\\s*(?:m²|m2|metres? carres?)(?![\\p{L}\\d])`,
+  priceEur: `${CHOICE_NUMBER}\\s*(?:€|k€|euros?(?![\\p{L}\\d])|k euros?(?![\\p{L}\\d])|mille euros?(?![\\p{L}\\d]))`,
+} as const;
+const rawMentions = (sentence: string, key: keyof typeof RAW_UNITS): Hit[] => hits(sentence, new RegExp(RAW_UNITS[key], 'u'), () => 0);
+/** Le jour dit avant son mois, sans aucun filtre : « quinze janvier » dans « quatorze ou quinze janvier » (Codex sur #486). */
+const RAW_DAY = new RegExp(`${CHOICE_NUMBER}\\s+(?:${MONTHS.join('|')})(?![\\p{L}\\d])`, 'u');
+const rawDays = (sentence: string): Hit[] => hits(sentence, RAW_DAY, () => 0);
+/** Un jour suivi d'une année ancienne n'est pas un rendez-vous : « rue du 8 mai 1945 », « construit le 3 juin 1990 ». */
+const OLD_YEAR_AFTER = /^\s+1\d{3}(?!\d)/u;
+/**
+ * Un jour dit sans son mois après « le » : « le 14 à 10 h », « le quatorze ou le quinze » (relecture forte de RC01).
+ * « le premier » et « le 2e » n'en sont pas ; une heure (« le 10 h ») ni un nombre suivi de son unité (« le trois pièces », Codex sur #486) non plus ; un jour suivi de son mois est vu par `RAW_DAY`.
+ */
+const RAW_BARE_DAY = new RegExp(`(?<![\\p{L}\\d])le\\s+(?:\\d{1,2}(?![\\p{L}\\d.,:])|${NUMBER_RUN}(?![\\s-]+(?:et[\\s-]+)?${WORD}))(?!\\s*(?:h(?![\\p{L}])|heures?(?![\\p{L}])|${MONTHS.join('|')}|pieces?(?![\\p{L}])|m²|m2(?![\\p{L}\\d])|metres?(?![\\p{L}])|euros?(?![\\p{L}])|€|k€|etages?(?![\\p{L}])|chambres?(?![\\p{L}])))`, 'u');
+/** Les passages de la phrase où deux nombres se disputent un champ. */
+function choices(sentence: string): Hit[] {
+  const { folded, index } = fold(sentence);
+  const out: Hit[] = [];
+  CHOICE.lastIndex = 0;
+  for (let m = CHOICE.exec(folded); m !== null; m = CHOICE.exec(folded)) {
+    const at = index[m.index]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value: 0, quote: sentence.slice(at, end).trim(), at, end });
+    // Le second nombre peut ouvrir un autre choix : « trois, ou quatre, ou cinq pièces ».
+    CHOICE.lastIndex = m.index + 1;
+  }
+  return out;
+}
+function crowded(sentence: string, h: Hit): boolean {
+  return BARE_NUMBER_AFTER.test(fold(sentence.slice(h.end)).folded) || BARE_NUMBER_BEFORE.test(fold(sentence.slice(0, h.at)).folded);
+}
+/** Les heures dites dans la phrase, hors de celles qui suivent un mot de durée. */
+function hourMentions(sentence: string): Hit[] {
+  const { folded, index } = fold(sentence);
+  const out: Hit[] = [];
+  HOUR_MENTION.lastIndex = 0;
+  for (let m = HOUR_MENTION.exec(folded); m !== null; m = HOUR_MENTION.exec(folded)) {
+    if (DURATION_BEFORE.test(folded.slice(0, m.index))) continue;
+    const at = index[m.index]!;
+    const end = index[m.index + m[0].length] ?? sentence.length;
+    out.push({ value: 0, quote: sentence.slice(at, end).trim(), at, end });
+  }
+  return out;
+}
 
 const addDays = (date: string, n: number): string => {
   const d = new Date(`${date}T12:00:00.000Z`);
@@ -175,8 +326,11 @@ function dayOf(m: RegExpExecArray, today: { date: string; weekday: number }): st
     const ahead = ((target - today.weekday + 7) % 7) || 7;
     return addDays(today.date, ahead);
   }
-  const day = m[3] === '1er' ? 1 : Number(m[3]);
-  const month = MONTHS.indexOf(m[4]!) + 1;
+  return dateOf(m[3] === '1er' ? 1 : Number(m[3]), MONTHS.indexOf(m[4]!) + 1, m[5] ? Number(m[5]) : null, today);
+}
+
+/** Le jour et le mois dits, l'année dite ou la prochaine à venir ; null s'il n'existe pas ou est passé. */
+function dateOf(day: number, month: number, year: number | null, today: { date: string }): string | null {
   const pad = (n: number) => String(n).padStart(2, '0');
   const thisYear = Number(today.date.slice(0, 4));
   const build = (y: number): string | null => {
@@ -184,8 +338,8 @@ function dayOf(m: RegExpExecArray, today: { date: string; weekday: number }): st
     const d = new Date(`${iso}T12:00:00.000Z`);
     return d.getUTCMonth() + 1 === month && d.getUTCDate() === day ? iso : null;
   };
-  if (m[5]) {
-    const date = build(Number(m[5]));
+  if (year !== null) {
+    const date = build(year);
     return date !== null && date >= today.date ? date : null;
   }
   const date = build(thisYear);
@@ -282,6 +436,13 @@ function readCity(sentence: string, communes: readonly string[]): Hit[] {
   return out;
 }
 
+/**
+ * Un nombre en chiffres qui finit un nombre en lettres, ou l'un des termes d'un choix (« deux cent 50 000 euros »,
+ * « 3 ou 4 pièces ») n'est pas lu [R260] ; une heure suivie d'un mot de nombre (« 15 heures trente ») non plus.
+ */
+const digitsAlone = (sentence: string, opts: { wordAfter?: boolean } = {}) => (h: Hit): boolean =>
+  !DIGITS_BEFORE.test(fold(sentence.slice(0, h.at)).folded) && !(opts.wordAfter && WORD_AFTER.test(fold(sentence.slice(h.end)).folded));
+
 const overlaps = (h: Hit, others: readonly Hit[]) => others.some((o) => h.at < o.end && h.end > o.at);
 
 /**
@@ -315,31 +476,70 @@ export function readDictation(dictation: string, options: { now: Date; communes?
     for (const [re, kind] of KINDS) for (const h of hits(s, re, () => kind)) if (!overlaps(h, kinds)) kinds.push(h);
     if (kinds.length > 0) kindSeen = true;
     add('bien', 'kind', i, kinds);
-    add('bien', 'surfaceM2', i, hits(s, SURFACE, (m) => Number(m[1])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
-    add('bien', 'rooms', i, hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    const inRange = (lo: number, hi: number) => (n: number) => (n >= lo && n <= hi ? n : null);
+    const surfaceWords = wordHits(s, SURFACE_AFTER, inRange(1, 999_999));
+    const contested = choices(s);
+    // Un champ qu'un choix ou une correction entre deux nombres touche est refusé, l'agent le saisira (Codex sur #486).
+    const addOrRefuse = (target: DictationTarget, key: keyof typeof RAW_UNITS, list: readonly Hit[]) => {
+      if ([...list, ...rawMentions(s, key)].some((h) => overlaps(h, contested))) found.push({ target, key, value: '', sentence: i, quote: '' });
+      else add(target, key, i, list);
+    };
+    addOrRefuse('bien', 'surfaceM2', [...hits(s, SURFACE, (m) => Number(m[1])).filter(digitsAlone(s)), ...surfaceWords].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    addOrRefuse('bien', 'rooms', [...hits(s, ROOMS, (m) => Number(m[1] ?? m[2])).filter(digitsAlone(s)), ...wordHits(s, ROOMS_AFTER, inRange(1, 99))].filter((h) => !overlaps(h, contacts) && (h.value as number) >= 1));
+    const priceWords = wordHits(s, PRICE_AFTER, inRange(1, 1_000_000_000));
     if (has(s, PRICE_CONTEXT) && !has(s, NOT_A_PRICE)) {
-      add(
+      addOrRefuse(
         'bien',
         'priceEur',
-        i,
-        hits(s, PRICE, (m) => {
+        [...priceWords, ...hits(s, PRICE, (m) => {
           const n = Number(m[1]!.replace(/[\s.  ]/g, ''));
           const v = m[2] ? n * 1000 : n;
           return Number.isInteger(v) && v >= 1 && v <= 1_000_000_000 ? v : null;
-        }).filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
+        }).filter((h) => digitsAlone(s)(h) && !HALF_AFTER.test(fold(s.slice(h.end)).folded))].filter((h) => !overlaps(h, contacts) && PRICE_LEAD.test(fold(s.slice(0, h.at)).folded)),
       );
     }
-    const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0)];
+    const numbers = [...contacts, ...hits(s, PRICE, () => 0), ...hits(s, SURFACE, () => 0), ...priceWords, ...surfaceWords];
     add('bien', 'postalCode', i, hits(s, POSTAL, (m) => m[1]!).filter((h) => !overlaps(h, numbers)));
     add('bien', 'city', i, readCity(s, communes));
 
     // Le rendez-vous : sa sorte, son jour et son heure, dans la même phrase.
     if (has(s, APPOINTMENT_WORDS)) {
-      const days = hits(s, DAY, (m) => dayOf(m, today));
-      const times = hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter((h) => !overlaps(h, numbers));
+      const days = [
+        ...hits(s, DAY, (m) => dayOf(m, today)).filter(digitsAlone(s)),
+        ...wordHits(s, DAY_WORDS_AFTER, (n, m) => (n >= 1 && n <= 31 ? dateOf(n, MONTHS.indexOf(m[2]!) + 1, null, today) : null)),
+        ...hits(s, FIRST_OF_MONTH, (m) => dateOf(1, MONTHS.indexOf(m[1]!) + 1, null, today)).filter((h) => digitsAlone(s)(h) && !NUMBER_BEFORE.test(fold(s.slice(0, h.at)).folded)),
+      ];
+      // Les jours sont pris avant leurs filtres : un jour déjà écarté par un autre motif fait aussi refuser.
+      const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...rawDays(s), ...hits(s, FIRST_OF_MONTH, () => '')];
+      // Un jour dit que la lecture écarte (« quatorze et quinze janvier », « quatorze, quinze janvier », « le 14 » sans mois) :
+      // l'agent a dit un jour qu'on ne sait pas lire, le rendez-vous n'est pas lu, même si une phrase d'avant en disait un.
+      const daysDropped = [...rawDays(s).filter((h) => !OLD_YEAR_AFTER.test(fold(s.slice(h.end)).folded)), ...hits(s, RAW_BARE_DAY, () => 0).filter((h) => !overlaps(h, numbers))].some((h) => !overlaps(h, days));
+      if (daysDropped || [...days, ...anyDays].some((h) => overlaps(h, contested))) {
+        // Deux jours qui se disputent le rendez-vous : il n'est pas lu.
+        found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
+        return;
+      }
+      const timeWords = wordHits(
+        s,
+        TIME_WORDS_AFTER,
+        (h, m) => {
+          const rest = m.input.slice(m.index + m[0].length);
+          if (h < 8 || h > 23 || TIME_QUALIFIER.test(rest)) return null;
+          // Un mot de nombre derrière l'heure, non pris pour minutes (« quinze heures trente minutes ») : rien.
+          if (m[2] === undefined) return WORD_AFTER.test(rest) ? null : h * 60;
+          if (!MINUTES_END.test(rest)) return null;
+          const minutes = parseNumberWords(m[2]);
+          return minutes !== null && minutes >= 1 && minutes <= 59 ? h * 60 + minutes : null;
+        },
+        TIME_WORDS_BEFORE,
+      ).filter((h) => !DURATION_YA.test(fold(s.slice(0, h.at)).folded));
+      const times = [...hits(s, TIME, (m) => (m[1] ? 12 * 60 : Number(m[2]) * 60 + Number(m[3] ?? 0))).filter(digitsAlone(s, { wordAfter: true })), ...timeWords].filter((h) => !overlaps(h, numbers));
       const sorts: Hit[] = [];
       for (const [re, kind] of APPOINTMENT_KINDS_READ) for (const h of hits(s, re, () => kind)) sorts.push(h);
-      if (days.length === 1 && times.length === 1) {
+      const crowdedTimes = times.filter((h) => crowded(s, h));
+      const mentions = hourMentions(s).filter((h) => !overlaps(h, numbers) || overlaps(h, times));
+      const otherTimes = mentions.filter((h) => !overlaps(h, times));
+      if (days.length === 1 && times.length === 1 && otherTimes.length === 0 && mentions.length === 1 && crowdedTimes.length === 0) {
         const day = days[0]!;
         const time = times[0]!;
         const start = parisInstant(day.value as string, time.value as number);
@@ -349,7 +549,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
           found.push({ target: 'rendezvous', key: 'start', value: start.toISOString(), sentence: i, quote: s.slice(a, b).trim() });
           add('rendezvous', 'appointmentKind', i, sorts);
         }
-      } else if (days.length >= 1 && times.length >= 1) {
+      } else if (days.length >= 1 && times.length + mentions.length >= 1) {
         // Deux jours ou deux heures dans la phrase : le rendez-vous n'est pas lu, l'agent le prendra lui-même.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
       }
