@@ -108,6 +108,8 @@ describeWithSqlite('BR46 · la remise d’un trousseau à un partenaire, par la 
       ['sam', { ...body, note: 'x' }],
       ['sam', undefined, 'pas du json'],
       ['conformite', body],
+      ['conformite', { ...body, note: 'x' }],
+      ['conformite', undefined, 'pas du json'],
     ];
     for (const [who, b, raw] of cases) {
       const before = (await t.refusals()).length;
