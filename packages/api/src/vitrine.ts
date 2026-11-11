@@ -23,6 +23,7 @@ import { withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { journalError } from './app.ts';
 import { syncAnnonces } from './annonces.ts';
 import { listingPresence, type ListingReference } from './attirer.ts';
+import { countPublicView } from './statistiques-site.ts';
 
 export const PAGE_PATH = /^\/biens\/([A-Za-z0-9_-]{1,64})(\/fiche)?$/;
 /** Les médias rangés par la fiche du bien : `biens/<bien>/<uuid>.<ext>`. */
@@ -101,6 +102,8 @@ export async function handleVitrine(request: Request, db: SqlDatabase, media: Me
     const framed = ref ? withReference(html, ref) : html;
     // Sur un site du réseau, la page du bien mène aux pages légales ; pas sa fiche imprimable, ni l'adresse de l'API.
     const body = !page[2] && presence.kind !== 'hors_site' ? withLegalLinks(framed) : framed;
+    // La page du bien servie sur un site du réseau compte une vue (BR41) ; ni sa fiche imprimable, ni la page à l'adresse de l'API [R285].
+    if (!page[2] && presence.kind !== 'hors_site') await countPublicView({ db, journal: new SqlJournalStore(db), now }, request, network, 'bien', propertyId);
     return new Response(request.method === 'HEAD' ? null : body, { status: 200, headers: { ...headers('text/html; charset=utf-8'), ...cache, ...(ref ? { link: ref.link } : {}) } });
   }
   // Une photo n'est servie que si la dernière version publiée la porte, et tant que l'annonce n'est pas retirée.
