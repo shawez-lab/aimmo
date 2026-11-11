@@ -1176,7 +1176,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR45 · La recherche avec ses mots, depuis l'accueil et la liste des biens du site
-- Statut : en cours
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#522, `9ab266e8`), `publicSearchEntry` dans `packages/core/src/recherche/page-publique.ts`, porté par `accueil-site.ts` et `liste-biens.ts` ; aucune règle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5662 tests). Rien ne reste.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR44
 - Cahier : M08, recherche de biens ; M01, site ; R420, R220, R153.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de BR44 (« un lien vers `/chercher` depuis l'accueil et la liste des biens du site »). Plus aucune tâche libre : B04, C09 et SV05 attendent un humain. Un petit formulaire sans script (`GET /chercher`, champ `q`, même longueur maximale que la page) en tête de l'accueil et de la liste des biens, sur le site du réseau et sur celui de chaque agent ; `/chercher` n'entre ni dans `sitePaths`, ni dans le plan du site : elle reste non indexée.
