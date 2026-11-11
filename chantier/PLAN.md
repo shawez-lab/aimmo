@@ -1085,8 +1085,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (agenda relié V03 et position des biens restent à part).
 
 ### BR36 · L'écran de la veille des diagnostics énergétiques : secteurs, alerte du jour, carte et lettre
-- Statut : en cours
-- Reste : proposition #501 prête (676baea0) : Codex 2 P2 corrigés (lettre préparée sur chaque copie du diagnostic ; lettre d'un autre agent dite telle), puis rien à signaler ; vérification locale verte (5507 tests, paquet du Worker), commentée sur la proposition. GitHub Actions bloqué (facturation) ; la fusion a été refusée le 2026-11-11 par le contrôle des permissions de la séance : pas de second essai, la proposition attend que Shawez la fusionne (H69) ou que GitHub Actions reprenne. Reste du cœur (voie 2) : la carte et l'alerte ne disent pas si la lettre est celle de l'agent (`letterMine`), le téléchargement d'une lettre d'un autre agent est refusé en mots.
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#501, `adaf177e`) le 2026-11-11 par la séance de 07:25, après mise à jour avec main et vérification locale verte (5538 tests) ; Codex 2 P2 corrigés, puis rien à signaler. Reste du cœur (voie 2) : la carte et l'alerte ne disent pas si la lettre est celle de l'agent (`letterMine`), le téléchargement d'une lettre d'un autre agent est refusé en mots.
 - Qui : Claude, relecture normale · Dépend de : BR26
 - Partie du cahier : Phase 3, « Veille des nouveaux diagnostics énergétiques » ; M15, date d'interdiction de louer ; R288 à R290, R16, R201.
 - Décidé (2026-11-11, voie 1) : ajoutée parce que BR26 laisse « écran de la veille (carte et alerte) » ; #496 (BR34) reste ouverte, fusion refusée deux fois par le contrôle des permissions, pas de troisième essai. Rien ne change dans `app.js`. Script neuf servi à part, `/app/veille-dpe.js` (`packages/api/app/veille-dpe.ts`), chargé au premier geste depuis l'écran « Gagner des mandats » (partie « Veille des diagnostics énergétiques », bouton « Ouvrir la veille »). L'écran ne lit et n'écrit que par `/v1/veille-dpe` ; il ne calcule ni ne trie rien, l'ordre reçu est gardé. Secteurs : la liste, ouvrir (commune et code postal, contrôlés avant tout appel, le serveur refait tout), arrêter. Alerte du jour et carte des 90 jours, regroupées par commune ; « Seulement F et G » demande `classes=F,G`. Chaque diagnostic : classe énergie et climat, sorte, surface, adresse du logement, dates, et la date d'interdiction de louer quand elle existe [R100]. Pour un F ou un G sans lettre : « Préparer la lettre « Au propriétaire » » ; le texte rendu est montré, puis téléchargé à imprimer, la clé dans l'en-tête seul ; rien n'est envoyé [R290]. Aucun nom de propriétaire n'est demandé ni montré [R288]. Un refus se dit en mots, jamais par son code ; une réponse perdue se dit « rien n'est sûr », et la seconde lettre serait refusée.
@@ -1105,7 +1105,9 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR38 · Écran des communes à pourvoir pour la direction
-- Statut : à faire
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#507, `a39fd9e7`) : `packages/api/app/communes.ts`, `/app/communes.js`, chargé au geste depuis « Phases et régions » (`phases.ts`), `app.js` inchangé ; douze derniers mois finis de Paris, ordre du serveur gardé, aucun nom [R14]. Relecture forte 1 P1 corrigé (script chargé sans écran : bloc vide) ; Codex 2 P2 corrigés (mois relu après une décision), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5550 tests).
+- Décidé (2026-11-11, voie 1) : l'entrée est dans « Phases et régions » et non dans « Candidatures », dont le test [R81] interdit tout autre bouton ou champ ; l'application n'a plus de marge. Après une décision, le mois choisi à l'instant est relu.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR37
 - Cahier : M14 ; Le produit, système de design ; R201.
 - Objectif : sur l'écran du réseau, la direction choisit un mois fini, lit commune par commune les clients allés à la direction faute d'agent, les agents qui la couvrent, « à ouvrir » et « à fermer », et ouvre ou ferme une commune avec sa raison, en un geste.
@@ -1207,7 +1209,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC10 · L'essai d'un scénario compte les messages de date
-- Statut : en cours (voie 2)
+- Statut : proposition #506 prête, fusion en attente (H69)
+- Reste : vérification locale verte sur d04a3e05 (5533 tests) ; GitHub Actions bloqué (facturation). Codex 1 P0 (la date n'était pas dite quand un scénario allumé tenait déjà le jour) corrigé, puis rien à signaler. Fusion par l'API refusée par le contrôle des permissions, un essai, pas de contournement.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC09
 - Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R400, R402.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC09. Depuis RC09, un message de date tient la place du jour : un scénario allumé qui tombe le jour d'un anniversaire déjà remis est refusé, ou fait perdre l'anniversaire de l'année s'il passe le premier. L'essai (R400) ne le montre pas : il ne compare qu'aux autres scénarios. Désormais un message prévu par l'essai qui tombe, ce jour de Paris, sur un message de date remis à la boîte d'essai ou en préparation pour la même personne (fiches réunies comprises, même lecture que `dateMessageOn`) compte comme un double du même jour : l'allumage est refusé, comme pour deux scénarios. Le compte rendu le dit à part (`sameDayAsDate`, compris dans `sameDayTwice`), sans colonne ni migration. Un message de date reporté ou refusé ne compte pas. Changent seulement `automatismes/scenarios.ts` et son test.

@@ -366,6 +366,36 @@ globalThis.AIMMO_PHASES = function (t) {
       return true;
     });
   }
+  /* BR38 · les communes à pourvoir : script servi à part (\`/app/communes.js\`), chargé au premier geste [R201]. */
+  var communesScreen = null;
+  function renderCommunes() {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h4', 'Communes à pourvoir'));
+    box.appendChild(el('p', 'Où des clients sont restés sans agent un mois fini, et où ouvrir ou fermer le recrutement. La page de candidature ne dit que les noms des communes ouvertes, sans aucun chiffre.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir les communes à pourvoir', function () {
+      if (b.disabled) return;
+      if (communesScreen) { communesScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/communes.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_COMMUNES;
+        try { delete globalThis.AIMMO_COMMUNES; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        communesScreen = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, session: t.session });
+        communesScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', OFFLINE, 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
+  }
   function show(message) {
     var mine = t.session();
     var turn = ++showing;
@@ -384,6 +414,7 @@ globalThis.AIMMO_PHASES = function (t) {
       else bad.push(why(pl, 'Agents pilotes indisponibles pour le moment.'));
       if (p1.ok && p1.body && p1.body.data && Array.isArray(p1.body.data.days)) renderPhase1(body, p1.body.data);
       else bad.push(why(p1, 'Phase 1 indisponible pour le moment.'));
+      body.appendChild(renderCommunes());
       state([message].concat(bad).filter(function (x, i, all) { return x && all.indexOf(x) === i; }).join(' '));
       return bad.length === 0;
     });

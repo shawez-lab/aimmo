@@ -35,6 +35,8 @@ import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
 import { PIGE_SCRIPT } from '../app/pige.ts';
 import { TOURNEE_SCRIPT } from '../app/tournee.ts';
+import { VEILLE_DPE_SCRIPT } from '../app/veille-dpe.ts';
+import { COMMUNES_SCRIPT } from '../app/communes.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { BASCULE_SCRIPT } from '../app/bascule.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
@@ -137,6 +139,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/pige.js': { body: PIGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La tournée de prospection et la carte des opportunités (BR35), chargées depuis « Gagner des mandats », jamais gardées [R201].
   '/app/tournee.js': { body: TOURNEE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/veille-dpe.js': { body: VEILLE_DPE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La bascule sur l'écran du réseau (B05), chargée au premier geste, jamais gardée sur l'appareil [R201].
@@ -156,6 +159,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // Les engagements de service pour la direction (G15), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les communes à pourvoir pour la direction (BR38), chargées depuis « Phases et régions », jamais gardées [R201].
+  '/app/communes.js': { body: COMMUNES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/licences.js': { body: LICENCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La clé de cet appareil et la preuve d'une action (BR18), chargées au premier geste, jamais gardées [R201].
   '/app/cles.js': { body: CLES_SCRIPT, type: 'text/javascript; charset=utf-8' },

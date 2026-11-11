@@ -170,7 +170,7 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
     expect(t.els.gagner!.hidden).toBe(false);
     expect(t.els.accueil!.hidden).toBe(true);
     const titles = t.body().children.filter((e) => e.tagName === 'section').map((e) => e.children[0]!.textContent);
-    expect(titles).toEqual(['Mes estimations à venir (2)', 'Recommandations à appeler (1)', 'Relances à valider (1)', 'Lettres de quartier (1)', 'Annonces de particuliers', 'Ma tournée de prospection']);
+    expect(titles).toEqual(['Mes estimations à venir (2)', 'Recommandations à appeler (1)', 'Relances à valider (1)', 'Lettres de quartier (1)', 'Annonces de particuliers', 'Ma tournée de prospection', 'Veille des diagnostics énergétiques']);
     const text = t.body().textContent;
     // L'ordre reçu du serveur est gardé : r2 puis r1, sans retri.
     expect(text.indexOf('Bien T-9')).toBeLessThan(text.indexOf(`Bien ${INJECTED}`));
