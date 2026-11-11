@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
 import { banDate, dayInFrench } from '../src/location/logement.ts';
 import { checkLetterText } from '../src/mandats/gagner/lettres-quartier.ts';
-import { ADEME_FIELDS, AdemeDiagnosisFeed, VeilleDpe, checkOwnerLetter, dpeWatchJob, ownerLetterText, readDiagnosis, type DiagnosisFeed } from '../src/veille-dpe/veille.ts';
+import { addressCarriesPerson as scoreAddressCarriesPerson } from '../src/score-adresse/score.ts';
+import { ADEME_FIELDS, AdemeDiagnosisFeed, addressCarriesPerson, VeilleDpe, checkOwnerLetter, dpeWatchJob, ownerLetterText, readDiagnosis, type DiagnosisFeed } from '../src/veille-dpe/veille.ts';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -95,6 +96,26 @@ it('[R288] une adresse qui porte une civilité ou un nom est écartée entière 
   // Sans numéro de voie ni position : lisible, sans rien deviner.
   const r = readDiagnosis(row({ numero_voie_ban: null, _geopoint: 'nulle part', surface_habitable_logement: 'grand' }), '21240');
   expect(r).toMatchObject({ ok: true, value: { streetNumber: null, lat: null, lon: null, surfaceM2: null } });
+});
+
+it('[R288] une voie au titre d’une personne n’écarte plus le diagnostic ; toute autre marque de personne l’écarte toujours (RC04)', () => {
+  for (const street of ['Rue du Docteur Chaussier', 'Place du Maréchal Leclerc', 'Avenue du Président Wilson', 'Boulevard Docteur Petitjean', 'Rue de la Sainte Chapelle']) {
+    const r = readDiagnosis(row({ nom_rue_ban: street }), '21240');
+    expect(r, street).toMatchObject({ ok: true, value: { street } });
+  }
+  for (const street of [
+    'Docteur Chaussier',
+    'Rue du Docteur Chaussier chez Martin',
+    'Mme Essai Rue du Docteur Chaussier',
+    'Famille Test Rue du Maréchal Leclerc',
+    'Rue des Essais Monsieur Test',
+    'Rue du Docteur Chaussier Docteur Essai',
+  ]) expect(readDiagnosis(row({ nom_rue_ban: street }), '21240'), street).toEqual({ ok: false, code: 'nom_dans_adresse' });
+  expect(readDiagnosis(row({ nom_commune_ban: 'Chez Martin' }), '21240')).toEqual({ ok: false, code: 'nom_dans_adresse' });
+  // Le score par adresse lit la même fonction, sans rien changer [R292].
+  expect(scoreAddressCarriesPerson).toBe(addressCarriesPerson);
+  expect(addressCarriesPerson('12 rue du Docteur Chaussier, Dijon')).toBe(false);
+  expect(addressCarriesPerson('M. Dupont 7 rue des Essais')).toBe(true);
 });
 
 it('[R290] la lettre est écrite par le code : la classe, la date d’interdiction de M15, aucun autre chiffre, aucun nom', () => {
