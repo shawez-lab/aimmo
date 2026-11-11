@@ -1348,6 +1348,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : dossier avant la visite, confirmation de rendez-vous (réservation et passage des rappels), rappel de la veille et du jour, demande d'avis avec lien de satisfaction : aucun jeton en clair dans `messages` ni dans le journal, le canal (boîte d'essai) reçoit le lien entier [HX61, R13] (tests) ; le lien reçu ouvre toujours ce qu'il ouvrait (test) ; sans lien réglé, rien ne change (test) ; tous les tests de HX44, V03, V04, F02, F05 et HX61 restent verts.
 - Attend : rien.
 
+### RC17 · La route de la remise d'une clé à un partenaire de l'annuaire
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC15, BR21
+- Cahier : M06 Mandats et documents, armoire des clés ; M18 Partenaires, annuaire ; R665, R271, R272, R16.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans le « Reste » de RC15 (« routes et écran de la remise à un partenaire ») ; la voie 1 est sur BR45 (`attirer.ts`), aucun fichier commun. Exception au groupe : une route, pas le cœur, mais dans le fichier des routes de l'armoire déjà branché (`packages/api/src/trousseaux.ts`, BR21), sans toucher `app.ts`, le socle ni le cœur. `POST /v1/trousseaux/:id/partenaire`, corps `{ partnerId, purpose, dueAt }`, passe par `Cles.handToPartner` ; le retour (rendu ou perdu) passe déjà par `/rendu` et `/perdu` (`giveBack` reconnaît une remise à un partenaire), et l'agent qui en répond voit le trousseau dans `/a-rendre`. Aucune règle nouvelle ni migration. L'écran reste à la voie 1.
+- Objectif : la remise d'un trousseau à un diagnostiqueur, un photographe, un artisan ou un géomètre se fait depuis l'API, sans qu'un agent prenne la clé à son nom.
+- Critères : remise acceptée, l'agent qui remet la voit à rendre, retour noté par `/rendu`, puis le trousseau ressort [R665, R272] (test) ; trousseau déjà chez un partenaire ou un agent refusé en 409 [R271] (test) ; métier non admis, justificatif échu, partenaire d'un autre réseau, raison ou heure hors liste refusés en 409 [R665] (test) ; mauvais rôle ou agent d'un autre bien en 403 au journal, corps mal formé compris [R16] (test) ; corps mal formé refusé en 400 à qui tient l'armoire (test) ; « perdu » noté par l'agent qui en répond retire le trousseau [R271] (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
