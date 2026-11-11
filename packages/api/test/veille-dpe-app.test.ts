@@ -189,7 +189,7 @@ describe('BR36 · écran de la veille des diagnostics énergétiques', () => {
     const prepare = t.buttons(t.part(), 'Préparer la lettre « Au propriétaire »');
     // d1 dans l'alerte et sur la carte, d4 (F) : jamais pour d2 (C), ni pour d3 qui a déjà sa lettre.
     expect(prepare).toHaveLength(3);
-    expect(t.part().textContent).toContain('Lettre « Au propriétaire » déjà préparée dans le réseau.');
+    expect(t.part().textContent).toContain('Lettre « Au propriétaire » déjà préparée dans le réseau : seul l’agent qui l’a préparée peut l’imprimer.');
     await t.click(t.buttons(t.part(), 'Télécharger la lettre à imprimer')[0]);
     expect(t.downloads).toEqual(['lettre-dpe-l9.html']);
     await t.click(prepare[0]);

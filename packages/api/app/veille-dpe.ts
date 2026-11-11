@@ -141,7 +141,8 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
     note.setAttribute('role', 'status');
     function letter(id) { return button('Télécharger la lettre à imprimer', function () { download('/v1/veille-dpe/lettres/' + encodeURIComponent(id), 'lettre-dpe-' + id + '.html'); }); }
     if (isId(p.letterId)) {
-      li.appendChild(el('p', 'Lettre « Au propriétaire » déjà préparée dans le réseau.', 'doux'));
+      // La carte ne dit pas qui l'a préparée : seul cet agent, ou la direction, peut l'imprimer [R290].
+      li.appendChild(el('p', 'Lettre « Au propriétaire » déjà préparée dans le réseau : seul l’agent qui l’a préparée peut l’imprimer.', 'doux'));
       li.appendChild(letter(p.letterId));
       return li;
     }
@@ -167,7 +168,7 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
       switched = true;
       li.removeChild(b);
       li.insertBefore(letter(id), note);
-      note.textContent = 'Lettre « Au propriétaire » déjà préparée dans le réseau.';
+      note.textContent = 'Lettre préparée : à imprimer et déposer, rien n’est envoyé.';
     });
     return li;
   }
