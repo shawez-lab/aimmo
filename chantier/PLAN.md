@@ -1268,7 +1268,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC13 · L'agent note l'accord de ranger une recherche dans la fiche acquéreur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#512, `8cfa948c`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5580 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC01, HX28, BR40
 - Cahier : M08 Acquéreurs et visites, recherche en langage courant ; Conformité, accord préalable ; R422, R03.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de BR40 (« la prise de l'accord `buyer_search` à l'écran, sujet absent de `AGENT_CONSENT_LABELS` »). Aujourd'hui rien ne range jamais l'accord `buyer_search` : la recherche en langage courant refuse donc toujours de ranger (R422, `sans_accord`), en production. La finalité n'est pas rangée par son module au moment du geste (AC01 l'admet donc à sa liste fermée) : elle rejoint `AGENT_CONSENT_LABELS` (« Recherche rangée dans la fiche acquéreur »), avec les mêmes règles que les autres (preuve écrite, date jamais future, exclusion, retrait, fiches réunies). Le formulaire d'accord de la fiche lit déjà cette liste : il la propose sans changement d'écran. Change seulement `packages/core/src/acces/accords.ts` et les tests.
