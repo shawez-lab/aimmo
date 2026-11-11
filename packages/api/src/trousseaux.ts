@@ -3,7 +3,8 @@
  *
  * Chaque route passe par les droits de la couche métier [R16], qui écrivent chaque refus au journal : l'agent du bien en
  * activité ou la direction tiennent l'armoire ; l'agent qui a un trousseau peut le dire perdu ; chaque agent lit ce qu'il
- * a à rendre [R272]. Le numéro est donné par le code [R270] ; un trousseau n'est jamais chez deux personnes [R271].
+ * a à rendre [R272]. Le numéro est donné par le code [R270] ; un trousseau n'est jamais chez deux personnes [R271]. Une
+ * remise à un partenaire de l'annuaire suit R665 ; son retour passe par les mêmes routes `rendu` et `perdu`.
  * Un corps absent ou mal formé ne passe jamais avant les droits : la même demande, sans corps, est d'abord soumise à la
  * couche métier, et seul un appelant admis reçoit le 400. Rien n'est envoyé.
  */
@@ -112,6 +113,13 @@ export function trousseauxRoutes(): TrousseauxRoute[] {
       handle: withBody(async (s, v, [keyId], b) =>
         cles(s).handOut(v, keyId!, { holderAgentId: b.holderAgentId, purpose: b.purpose, appointmentId: b.appointmentId, dueAt: b.dueAt }),
       ),
+    },
+    // Vers un partenaire de l'annuaire qui entre seul (RC17) : l'agent qui remet en répond [R665].
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/${ID}/partenaire$`),
+      name: 'trousseaux.partenaire',
+      handle: withBody(async (s, v, [keyId], b) => cles(s).handToPartner(v, keyId!, { partnerId: b.partnerId, purpose: b.purpose, dueAt: b.dueAt })),
     },
     // Sans corps : le geste est dans l'adresse, rien à lire avant les droits.
     {
