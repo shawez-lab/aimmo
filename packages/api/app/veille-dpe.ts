@@ -43,7 +43,7 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
   var POSTCODE = ${POSTCODE.toString()};
   var DAY = /^\\d{4}-\\d{2}-\\d{2}$/;
   var CLASS = /^[A-G]$/;
-  var root = null, load = 0, onlyFG = false;
+  var root = null, load = 0, onlyFG = false, copies = {};
   function isId(x) { return typeof x === 'string' && ID.test(x); }
   function said(res, fallback) {
     if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.';
@@ -139,9 +139,10 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
     if ((energy !== 'F' && energy !== 'G') || !isId(p.diagnosisId)) return li;
     var note = el('p', '', 'etat');
     note.setAttribute('role', 'status');
+    function letter(id) { return button('Télécharger la lettre à imprimer', function () { download('/v1/veille-dpe/lettres/' + encodeURIComponent(id), 'lettre-dpe-' + id + '.html'); }); }
     if (isId(p.letterId)) {
       li.appendChild(el('p', 'Lettre « Au propriétaire » déjà préparée dans le réseau.', 'doux'));
-      li.appendChild(button('Télécharger la lettre à imprimer', function () { download('/v1/veille-dpe/lettres/' + encodeURIComponent(p.letterId), 'lettre-dpe-' + p.letterId + '.html'); }));
+      li.appendChild(letter(p.letterId));
       return li;
     }
     var b = button('Préparer la lettre « Au propriétaire »', function () {
@@ -152,15 +153,22 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
         if (r.gone) { b.disabled = false; return; }
         var v = r.ok && r.body.data;
         if (!v || !isId(v.letterId)) { b.disabled = false; note.textContent = said(r, 'La lettre n’a pas pu être préparée.'); return; }
-        li.removeChild(b);
+        // Le même diagnostic peut être dans l'alerte et sur la carte : chaque copie passe au téléchargement.
+        (copies[p.diagnosisId] || []).forEach(function (f) { f(v.letterId); });
         note.textContent = 'Lettre préparée : à imprimer et déposer, rien n’est envoyé.';
-        var text = el('pre', str(v.body));
-        li.appendChild(text);
-        li.appendChild(button('Télécharger la lettre à imprimer', function () { download('/v1/veille-dpe/lettres/' + encodeURIComponent(v.letterId), 'lettre-dpe-' + v.letterId + '.html'); }));
+        li.appendChild(el('pre', str(v.body)));
       });
     });
     li.appendChild(b);
     li.appendChild(note);
+    var switched = false;
+    (copies[p.diagnosisId] = copies[p.diagnosisId] || []).push(function (id) {
+      if (switched) return;
+      switched = true;
+      li.removeChild(b);
+      li.insertBefore(letter(id), note);
+      note.textContent = 'Lettre « Au propriétaire » déjà préparée dans le réseau.';
+    });
     return li;
   }
   /** Les diagnostics regroupés par commune, dans l'ordre reçu. */
@@ -205,6 +213,7 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
     if (!root) return Promise.resolve(false);
     var box = root, mine = ++load;
     clear(box);
+    copies = {};
     box.appendChild(el('p', 'Les diagnostics publiés par l’ADEME dans vos communes : aucun nom de propriétaire, rien n’est envoyé. La lettre s’imprime et se dépose.', 'doux'));
     var note = el('p', 'Chargement…', 'etat');
     note.setAttribute('role', 'status');

@@ -200,6 +200,12 @@ describe('BR36 · écran de la veille des diagnostics énergétiques', () => {
     // Le bouton de la lettre préparée vient dans l'alerte, avant celui de la carte.
     await t.click(t.buttons(t.part(), 'Télécharger la lettre à imprimer')[0]);
     expect(t.downloads).toEqual(['lettre-dpe-l9.html', 'lettre-dpe-l1.html']);
+    // Le même diagnostic sur la carte passe aussi au téléchargement : plus de bouton qui serait refusé.
+    expect(t.buttons(t.part(), 'Préparer la lettre « Au propriétaire »')).toHaveLength(1);
+    expect(t.buttons(t.part(), 'Télécharger la lettre à imprimer')).toHaveLength(3);
+    await t.click(t.buttons(t.part(), 'Télécharger la lettre à imprimer')[1]);
+    expect(t.downloads).toEqual(['lettre-dpe-l9.html', 'lettre-dpe-l1.html', 'lettre-dpe-l1.html']);
+    expect(t.mine().filter((c) => c.method === 'POST')).toHaveLength(1);
     const l1 = t.mine().find((c) => c.url === '/v1/veille-dpe/lettres/l1')!;
     expect(l1.auth).toBe(`Bearer ${KEY}`);
     // Aucun envoi : le script n'a aucune route d'envoi, d'impression à distance ni de mail.
