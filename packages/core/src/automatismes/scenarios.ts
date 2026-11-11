@@ -428,18 +428,16 @@ export class ScenariosAutomatiques {
     for (const p of [...allowed].sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime() || a.ref.localeCompare(b.ref))) {
       const day = this.day(p.dueAt);
       const key = `${p.personId}|${day}`;
-      if (taken.has(key)) {
-        sameDayTwice += 1;
-        continue;
-      }
+      const scenarioTwice = taken.has(key);
       taken.add(key);
       // Un message de date remis ou en préparation ce jour-là tient la place du jour : allumé, le scénario aurait été
-      // refusé, ou passé le premier et fait perdre la date de l'année. Fiches réunies d'aujourd'hui comprises [R402, RC10].
+      // refusé, ou passé le premier et fait perdre la date de l'année. Fiches réunies d'aujourd'hui comprises. Regardé
+      // même quand un autre scénario tient déjà le jour, pour que la direction voie la date ; le message n'est compté
+      // qu'une fois dans les doubles [R402, RC10].
       const members = await this.fiche.membersOf(await this.fiche.rootOf(p.personId));
-      if (await this.dateMessageOn(viewer.networkId, day, members)) {
-        sameDayTwice += 1;
-        sameDayAsDate += 1;
-      }
+      const dateTwice = await this.dateMessageOn(viewer.networkId, day, members);
+      if (dateTwice) sameDayAsDate += 1;
+      if (scenarioTwice || dateTwice) sameDayTwice += 1;
     }
     const persons = new Set(allowed.map((p) => p.personId)).size;
     const id = this.newId();

@@ -119,6 +119,23 @@ describeWithSqlite('RC10 · l’essai d’un scénario compte les messages de da
     expect((await t.trial()).report).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 1, sameDayAsDate: 1, canSwitchOn: false } });
   });
 
+  it('[R402] un scénario allumé tient déjà le jour : la date est dite quand même, le message compté une seule fois', async () => {
+    const t = await setup();
+    // Un scénario des projets d'achat est allumé avant les faits.
+    const buy = await t.scenarios.compose(t.direction, { ...PROJECT, name: 'Nouveau projet d’achat', projectKind: 'buy', message: { channel: 'email', text: 'Bonjour {prenom}, votre recherche est bien notée.' } });
+    if (!buy.ok) throw new Error('compose');
+    await t.scenarios.simulate(t.direction, buy.value.scenarioId);
+    expect(await t.scenarios.switchOn(t.direction, buy.value.scenarioId)).toMatchObject({ ok: true });
+    t.setClock(TUE_10H - HOUR);
+    const ines = await t.person('Inès');
+    t.setClock(TUE_10H);
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+    t.setClock(TUE_10H + 5 * MINUTE);
+    await t.store.createProject({ networkId: t.network.id, agentId: null, personId: ines, kind: 'buy' });
+    await t.project(ines);
+    expect((await t.trial()).report).toMatchObject({ ok: true, value: { messages: 1, sameDayTwice: 1, sameDayAsDate: 1, canSwitchOn: false } });
+  });
+
   it('[R402] message de date d’un autre jour, reporté ou refusé : rien n’est compté', async () => {
     const t = await setup();
     // Anniversaire le 11 octobre, souhaité le lundi ; le projet arrive le mardi.
