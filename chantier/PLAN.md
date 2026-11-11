@@ -1203,6 +1203,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : montrée une fois, elle n'est plus au fil mais se relit, avec le jour où elle a été montrée, autant de fois qu'on veut [R269] (test) ; un autre agent ne la relit pas et son fil la montre encore [R16] (test) ; retirée, plus relue [R269] (test) ; la direction est refusée en 403, au journal [R16] (test).
 - Attend : rien.
 
+### BR48 · Le test du journal de HX20 sans faux échec
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX20
+- Cahier : R13.
+- Décidé (2026-11-12, voie 1) : vu en vérifiant BR46. Le test « [R13] le journal ne garde ni texte ni coordonnée » de `packages/core/test/sequence-prospection.test.ts` échoue parfois : son motif `0600` attrape un identifiant tiré au hasard dans le journal, pas le numéro inventé (`06 00 00 00 01`). Retiré de BR46 à la demande de Codex (hors tâche). Le motif cherche le numéro lui-même (`06 00 00`, `0600000`) ; aucun code ne change.
+- Objectif : la vérification locale ne tombe plus au hasard sur ce test.
+- Critères : le test cherche le numéro inventé sous ses deux formes, et ne dépend plus des identifiants tirés [R13] (test) ; le test reste rouge si le numéro entre au journal (essai à la main, noté dans la proposition).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
