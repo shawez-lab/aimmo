@@ -1249,7 +1249,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC12 · Les robots ne comptent pas dans les vues du site
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-11)
+- Reste : fusionnée (#511, `24fd047d`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5564 tests). Reste pour la voie 1 : au branchement de `countView` dans les pages publiques (`app.ts`), passer l'en-tête `User-Agent` de la requête.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX15
 - Cahier : Phase 3, « Gérer mon site » ; R285.
 - Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de HX15 (« filtre des robots »). Aujourd'hui chaque appel de `countView` monte le compteur : un moteur de recherche, un aperçu de lien (WhatsApp, Facebook, LinkedIn), un outil de mesure ou un script gonfle les vues, et le rapport « vendeurs par vue » de R287 propose alors la mauvaise page. `countView` reçoit désormais, en plus du code, le navigateur annoncé par la visite (`{ userAgent }`, obligatoire pour que le Worker ne puisse pas l'oublier) ; il le lit seulement pour décider, ne le range nulle part et ne l'écrit pas au journal [R285]. Une visite sans navigateur, ou dont le navigateur porte une marque d'une liste fermée (robots, aperçus de liens, outils de mesure, navigateurs sans écran, bibliothèques de script), ne compte pas : réponse `{ ok: true, counted: false }`. Un code inconnu reste refusé d'abord. Le téléphone Cubot n'est pas un robot. Fichier neuf `statistiques-site/robots.ts` ; changent aussi `statistiques.ts`, l'index du module, son test et R285 dans `docs/REGLES.md`. Ni route, ni écran (voie 1), ni migration.
