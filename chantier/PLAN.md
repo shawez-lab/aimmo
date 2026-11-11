@@ -1258,6 +1258,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : vue d'un navigateur de téléphone ou d'ordinateur comptée (test) ; Googlebot, Bingbot, GPTBot, aperçu WhatsApp et Facebook, Lighthouse, Chrome sans écran, curl, python-requests : rien compté [R285] (test) ; navigateur vide ou absent : rien compté [R285] (test) ; le navigateur n'est rangé dans aucune table ni au journal [R285] (test) ; Cubot compté (test) ; code inconnu toujours refusé, robot ou non (test) ; tous les tests de HX15 restent verts.
 - Attend : rien.
 
+### RC13 · L'agent note l'accord de ranger une recherche dans la fiche acquéreur
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC01, HX28, BR40
+- Cahier : M08 Acquéreurs et visites, recherche en langage courant ; Conformité, accord préalable ; R422, R03.
+- Décidé (2026-11-11, voie 2), lecture prudente : relevé dans les « Restent » de BR40 (« la prise de l'accord `buyer_search` à l'écran, sujet absent de `AGENT_CONSENT_LABELS` »). Aujourd'hui rien ne range jamais l'accord `buyer_search` : la recherche en langage courant refuse donc toujours de ranger (R422, `sans_accord`), en production. La finalité n'est pas rangée par son module au moment du geste (AC01 l'admet donc à sa liste fermée) : elle rejoint `AGENT_CONSENT_LABELS` (« Recherche rangée dans la fiche acquéreur »), avec les mêmes règles que les autres (preuve écrite, date jamais future, exclusion, retrait, fiches réunies). Le formulaire d'accord de la fiche lit déjà cette liste : il la propose sans changement d'écran. Change seulement `packages/core/src/acces/accords.ts` et les tests.
+- Objectif : l'agent qui suit l'acquéreur peut noter l'accord, puis ranger la recherche ; le retrait referme le rangement.
+- Critères : `buyer_search` est dans la liste fermée, égal à `SEARCH_CONSENT_PURPOSE` [R03] (test) ; accord noté par l'agent : la recherche se range ; retiré : refusée R422 `sans_accord` [R422] (test) ; un autre agent ne peut pas le noter, refus au journal [R16] (test) ; tous les tests de AC01, HX28 et BR40 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
