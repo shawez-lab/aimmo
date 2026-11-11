@@ -905,3 +905,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-10 23:50 · VOIE 2 : RC03, a3a491db (#494, fusionnée), relancé oui
 - 2026-11-11 00:43 · BR33 · fusionnée (#495, 6d7319cb) : écran de la pige, de la file au bien créé, servi à part depuis « Gagner des mandats » ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5466 tests) · prochaine : à choisir (écran de préparation d'une séquence, ou carte et tournée)
 - 2026-11-11 00:43 · voie 1 · relance immédiate refusée par le contrôle des permissions, un essai ; pas de contournement, le passage planifié reprendra · prochaine : à choisir
+- 2026-11-11 01:31 · RC01 · fusionnée (#486, a3c2778a) : jour dit que la lecture écarte (avec son mois ou « le 14 » sans mois) fait refuser le rendez-vous, par une mention brute des jours ; relecture forte 1 P0 et 1 P1 corrigés, Codex 3 P2 corrigés puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5475 tests) · prochaine : un nouveau reste HX du cœur
+- 2026-11-11 01:31 · VOIE 2 : plafond vérifié, trois oui (1 séance voie 2 depuis minuit ; commits et tâches terminées à 22:32, 23:50 et cette séance ; RC01 différente de RC03 et RC02)
+- 2026-11-11 01:31 · VOIE 2 : RC01, a3c2778a (#486, fusionnée), relancé oui
