@@ -513,7 +513,7 @@ export function readDictation(dictation: string, options: { now: Date; communes?
       const anyDays = [...hits(s, DAY, (m) => dayOf(m, today) ?? ''), ...rawDays(s), ...hits(s, FIRST_OF_MONTH, () => '')];
       // Un jour dit que la lecture écarte (« quatorze et quinze janvier », « quatorze, quinze janvier », « le 14 » sans mois) :
       // l'agent a dit un jour qu'on ne sait pas lire, le rendez-vous n'est pas lu, même si une phrase d'avant en disait un.
-      const daysDropped = [...rawDays(s).filter((h) => !OLD_YEAR_AFTER.test(fold(s.slice(h.end)).folded)), ...hits(s, RAW_BARE_DAY, () => 0)].some((h) => !overlaps(h, days));
+      const daysDropped = [...rawDays(s).filter((h) => !OLD_YEAR_AFTER.test(fold(s.slice(h.end)).folded)), ...hits(s, RAW_BARE_DAY, () => 0).filter((h) => !overlaps(h, numbers))].some((h) => !overlaps(h, days));
       if (daysDropped || [...days, ...anyDays].some((h) => overlaps(h, contested))) {
         // Deux jours qui se disputent le rendez-vous : il n'est pas lu.
         found.push({ target: 'rendezvous', key: 'start', value: '', sentence: i, quote: '' });
