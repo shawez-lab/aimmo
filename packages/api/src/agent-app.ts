@@ -33,6 +33,7 @@ import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
 import { PIGE_SCRIPT } from '../app/pige.ts';
+import { TOURNEE_SCRIPT } from '../app/tournee.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { BASCULE_SCRIPT } from '../app/bascule.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
@@ -131,6 +132,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/gagner.js': { body: GAGNER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La pige des annonces de particuliers (BR33), chargée depuis l'écran « Gagner des mandats », jamais gardée [R201].
   '/app/pige.js': { body: PIGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La tournée de prospection et la carte des opportunités (BR35), chargées depuis « Gagner des mandats », jamais gardées [R201].
+  '/app/tournee.js': { body: TOURNEE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La bascule sur l'écran du réseau (B05), chargée au premier geste, jamais gardée sur l'appareil [R201].
