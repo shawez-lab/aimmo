@@ -5,6 +5,7 @@ import { sha256Hex } from '../src/index.ts';
 import { runListingSync } from '../src/vitrine.ts';
 import { DELAY_END, MIN, setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
+import { htmlProblems, screenCssProblems } from '../../core/src/design/audit.ts';
 import { PHRASE_MAX_LENGTH, type PhraseResult, type PhraseResults } from '../../core/src/recherche/langage-courant.ts';
 import { PUBLIC_NEIGHBOURS_MAX, PUBLIC_SEARCH_LIMIT, keepPublished, parsePublicSearchQuery, publicSearchSteps } from '../../core/src/recherche/page-publique.ts';
 
@@ -104,7 +105,11 @@ describeWithSqlite('BR44 · la recherche en langage courant sur le site public',
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(res.headers.get('x-robots-tag')).toBe('noindex, nofollow');
     expect(res.headers.get('content-security-policy')).toContain("form-action 'self'");
-    expect(await res.text()).toContain('<meta name="robots" content="noindex, nofollow">');
+    const html = await res.text();
+    expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
+    // Le système de design d'AIMMO : la feuille part de la base, la page est lisible et accessible [R201].
+    expect(htmlProblems(html)).toEqual([]);
+    expect(screenCssProblems(/<style>([^<]*)<\/style>/.exec(html)![1]!)).toEqual([]);
     for (const ua of ['Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'python-requests/2.31.0', 'curl/8.4.0', '', null]) {
       const robot = await t.search(NET, { q: PHRASE }, { ua });
       expect(robot.status).toBe(200);

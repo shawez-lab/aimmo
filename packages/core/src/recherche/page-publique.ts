@@ -103,6 +103,8 @@ export type PublicSearchPageInput =
     };
 
 const CSS =
+  DESIGN_CSS +
+  PUBLIC_PAGE_CSS +
   '.biens{list-style:none;padding:0;display:grid;gap:var(--e-4)}.biens li{display:grid;gap:var(--e-1)}' +
   '.biens a{display:flex;justify-content:space-between;gap:var(--e-3);flex-wrap:wrap}.prix{font-weight:700;white-space:nowrap}' +
   '.raisons{margin:0;padding-left:1.2rem}.voisines{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}' +
@@ -170,7 +172,7 @@ function body(input: PublicSearchPageInput): string {
 /** La page de la recherche ; jamais indexée. */
 export function renderPublicSearchPage(input: PublicSearchPageInput): string {
   return (
-    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex, nofollow"><meta name="theme-color" content="${THEME_COLOR}"><title>Chercher un bien avec vos mots</title><style>${DESIGN_CSS}${PUBLIC_PAGE_CSS}${CSS}</style></head>` +
+    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex, nofollow"><meta name="theme-color" content="${THEME_COLOR}"><title>Chercher un bien avec vos mots</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><div class="carte"><h1>Chercher un bien avec vos mots</h1>${body(input)}</div></main></body></html>`
   );
 }
