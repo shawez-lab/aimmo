@@ -1235,6 +1235,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : rien n'est lu avant le geste [R201] (test) ; chaque trousseau dit son texte, son heure de retour, « en retard » une fois l'heure passée, dans l'ordre du serveur [R272] (test) ; « Perdu » ne part qu'au second appui, et un autre geste annule la demande [R271] (test) ; après un retour noté, la liste est relue (test) ; une écriture sans réponse est dite incertaine, la liste à relire (test) ; un seul envoi à la fois (test) ; chaque refus dit en mots, jamais par un code [R16] (test) ; texte reçu posé en texte, script chargé au geste, budget tenu [R201] (test).
 - Attend : rien.
 
+### BR51 · L'armoire d'un bien dans l'écran du bien : lire, ranger, mouvements, retours
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR21, BR50
+- Cahier : M06 Mandats et documents, armoire des clés ; R270, R271, R16, R201.
+- Décidé (2026-11-12, voie 1), lecture prudente : relevé dans le « Restent » de BR50 (« l'armoire d'un bien dans sa fiche »). Tâche coupée pour tenir une journée : celle-ci fait la lecture de l'armoire, le rangement d'un trousseau, ses mouvements et ses retours ; la sortie vers un agent (avec son rendez-vous) et la remise à un partenaire viennent par BR52, la vue du vendeur par une autre. Un bloc « Armoire des clés » dans l'écran « Mettre en vente » du bien, ouvert au geste (`GET /v1/trousseaux/biens/<id>`) ; ranger (`POST` même adresse, libellé) ; pour chaque trousseau, son numéro, son libellé, où il est (à l'agence, chez un agent ou un partenaire et jusqu'à quand, rendu au propriétaire ou perdu) ; « Mouvements » (`GET /v1/trousseaux/<id>/mouvements`) ; sorti : « Rendu à l'agence » et « Perdu » (second appui) ; à l'agence : « Rendu au propriétaire » (second appui, il ne sort plus). Script servi à part, `/app/armoire.js` (`packages/api/app/armoire.ts`). Aucune route, règle ni migration.
+- Objectif : l'agent du bien et la direction tiennent enfin l'armoire d'un bien depuis l'application.
+- Critères : rien n'est lu avant le geste, script chargé au geste, budget tenu [R201] (test) ; chaque trousseau dit son numéro, son libellé et où il est, dans l'ordre du serveur [R271] (test) ; ranger envoie le libellé, un libellé refusé le dit en mots (chiffre, adresse, code) [R270] (test) ; mouvements dits du plus ancien au plus récent, avec qui, pour quoi, quand et le retour [R271] (test) ; « Perdu » et « Rendu au propriétaire » ne partent qu'au second appui, un autre geste annule [R271] (test) ; après une écriture, l'armoire est relue ; une écriture sans réponse est dite incertaine (test) ; un seul envoi à la fois (test) ; chaque refus dit en mots [R16] (test) ; texte reçu posé en texte (test).
+- Attend : rien.
+
+### BR52 · Sortir un trousseau vers un agent ou le remettre à un partenaire, depuis l'armoire du bien
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR51, RC17
+- Cahier : M06 Mandats et documents, armoire des clés ; M18 Partenaires ; R271, R665, R16, R201.
+- Objectif : depuis l'armoire du bien (BR51), sortir un trousseau à l'agence vers un agent du réseau (raison de la liste fermée, rendez-vous prévu du bien pour une visite ou une estimation, sinon heure de retour dans les 12 heures) ou le remettre à un partenaire de l'annuaire admis (`POST /v1/trousseaux/<id>/sortie`, `/partenaire`).
+- Critères : raisons de la liste fermée seules [R271] (test) ; visite ou estimation : rendez-vous demandé, sinon heure de retour dans les 12 heures [R271] (test) ; partenaire : raisons admises seules, refus dits en mots (métier non admis, justificatif échu) [R665] (test) ; un seul envoi à la fois, réponse perdue dite incertaine (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
