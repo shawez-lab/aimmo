@@ -1186,7 +1186,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR46 · Route de la remise d'un trousseau à un partenaire de l'annuaire
-- Statut : en cours
+- Statut : bloquée : doublon de RC17 (#521, `e41950c5`), fusionnée par la voie 2 pendant la proposition #524, fermée sans fusion (branche gardée)
+- Reste : la route est sur main par RC17 (`POST /v1/trousseaux/<id>/partenaire`). La voie 1 et la voie 2 ont pris le même « Reste » de RC15 : le reste de RC15 était marqué « voie 1 », la voie 2 l'a pris quand même. Restent : l'écran de l'armoire des clés.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC15, BR21
 - Cahier : M18 Partenaires (annuaire) ; HX10 « Les clés des biens » ; R665, R271, R272, R16.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de RC15 (« routes et écran de la remise à un partenaire (voie 1) ») et de BR44. L'armoire des clés n'a pas encore d'écran (BR21 n'a fait que les routes) : cette tâche fait la route seule, l'écran de l'armoire viendra avec elle. `POST /v1/trousseaux/<id>/remise-partenaire` (`partnerId`, `purpose`, `dueAt`) dans `trousseaux.ts`, par `Cles.handToPartner` ; un champ non prévu passe d'abord sans corps par les droits, puis 400 `champ_inconnu`. Le retour passe par `rendu` et `perdu`, déjà servis.
@@ -1195,7 +1196,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR47 · Les actualités déjà vues, par la route
-- Statut : en cours
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#525, `f184969e`), route `actualites.deja_vues` dans `packages/api/src/reseau-utile.ts` ; aucune règle ni migration. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5669 tests). Restent : l'écran des actualités.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC14, BR20
 - Cahier : Phase 3, « Mes actualités » ; R269, R16.
 - Décidé (2026-11-11, voie 1), lecture prudente : relevé dans les « Restent » de RC14 (« route « Déjà vues » à côté du fil dans `reseau-utile.ts`, et l'écran »). Les actualités n'ont pas encore d'écran (BR20 n'a fait que les routes) : la route seule, `GET /v1/actualites/deja-vues`, par `Actualites.seen` ; l'écran viendra avec celui du fil.
@@ -1204,7 +1206,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR48 · Le test du journal de HX20 sans faux échec
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX20
 - Cahier : R13.
 - Décidé (2026-11-12, voie 1) : vu en vérifiant BR46. Le test « [R13] le journal ne garde ni texte ni coordonnée » de `packages/core/test/sequence-prospection.test.ts` échoue parfois : son motif `0600` attrape un identifiant tiré au hasard dans le journal, pas le numéro inventé (`06 00 00 00 01`). Retiré de BR46 à la demande de Codex (hors tâche). Le motif cherche le numéro lui-même (`06 00 00`, `0600000`) ; aucun code ne change.
