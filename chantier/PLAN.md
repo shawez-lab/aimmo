@@ -1215,6 +1215,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le test cherche le numéro inventé sous ses deux formes, et ne dépend plus des identifiants tirés [R13] (test) ; le test reste rouge si le numéro entre au journal (essai à la main, noté dans la proposition).
 - Attend : rien.
 
+### BR49 · « Mes actualités » sur l'accueil de l'agent : le fil et les déjà vues
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR20, BR47
+- Cahier : Phase 3, « Mes actualités » ; R269, R268, R16, R201.
+- Décidé (2026-11-12, voie 1), lecture prudente : relevé dans les « Restent » de BR20 et BR47 (« l'écran du fil », « l'écran des actualités »). Un bloc « Mes actualités » sur l'accueil, deux gestes : « Lire les nouvelles » (`GET /v1/actualites`) et « Déjà vues » (`GET /v1/actualites/deja-vues`). Le fil n'est jamais lu au chargement de l'accueil : ce qu'il rend est marqué vu pour toujours, il ne l'est qu'au geste de l'agent. Script servi à part, `/app/actualites.js` (`packages/api/app/actualites.ts`). Aucune route, règle ni migration.
+- Objectif : l'agent lit enfin ses actualités dans l'application, et n'en perd jamais une.
+- Critères : le fil n'est demandé qu'au geste [R269] (test) ; chaque actualité dit sa source datée avec un lien https seul, ce qu'elle change, les dossiers touchés et pourquoi, dans l'ordre reçu [R268, R269] (test) ; « Déjà vues » dit le jour montré, se relit autant de fois qu'on veut [R269] (test) ; une réponse du fil perdue renvoie vers « Déjà vues » [R269] (test) ; refus dit en mots [R16] (test) ; texte reçu posé en texte, script chargé au geste, budget tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
