@@ -1226,7 +1226,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR50 · « Mes clés à rendre » sur l'accueil de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#531, `c9a09823`). Pour tenir le budget de l'application (32 octets restaient après BR49), `app.js` est servi sans l'indentation de ses lignes (`trimIndent`, `agent-app.ts`) : 1,2 Ko compressé gagné, 983 octets restent. Codex 2 P1 et 3 P2 corrigés (retour, lecture ou chargement coupés par un changement d'écran ; « Perdu » annulé par tout clic de l'écran ou un changement d'écran ; génération des envois), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5718 tests). Restent : l'armoire d'un bien dans sa fiche (ranger, sortir, remettre à un partenaire, mouvements), la vue du vendeur dans son espace.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR21, RC17
 - Cahier : M06 Mandats et documents, armoire des clés ; R272, R271, R665, R16, R201.
 - Décidé (2026-11-12, voie 1), lecture prudente : relevé dans les « Restent » de HX10, BR21 et BR46 (« écrans de l'armoire »). Tâche coupée pour tenir une journée : celle-ci fait l'accueil de l'agent (ce qu'il a à rendre et le retour) ; l'armoire d'un bien (ranger, sortir, remettre à un partenaire, mouvements) viendra dans la fiche du bien par une tâche à part, la vue du vendeur dans son espace par une autre. Un bloc « Mes clés à rendre », lu au geste (`GET /v1/trousseaux/a-rendre`) ; pour chaque trousseau, le texte du serveur, l'heure du retour, « en retard » quand elle est passée, et deux gestes : « Rendu à l'agence » (`POST /v1/trousseaux/<id>/rendu`) et « Perdu » (`POST /v1/trousseaux/<id>/perdu`), confirmé par un second appui car un trousseau perdu ne sort plus [R271]. Script servi à part, `/app/cles-a-rendre.js` (`packages/api/app/cles-a-rendre.ts`). Aucune route, règle ni migration.
