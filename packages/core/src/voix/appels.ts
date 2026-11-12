@@ -249,12 +249,31 @@ export function citeFields(q: Qualified, segments: readonly CallSegment[], commu
   return out;
 }
 
+/** Un arrêt se lit sur quatre passages de l'appelant à la suite au plus. */
+const STOP_SPAN = 4;
+
 /**
- * Le premier passage dit par l'appelant qui demande l'arrêt, lu comme un message reçu [R04] : dans le doute, c'est un
- * arrêt. Les paroles de l'agent ne comptent jamais.
+ * Le premier arrêt demandé par l'appelant, lu comme un message reçu [R04] : dans le doute, c'est un arrêt. Le
+ * transcripteur peut couper une phrase en plusieurs passages (« Ne m'appelez » puis « plus. ») : les passages de
+ * l'appelant qui se suivent sans parole de l'agent entre eux sont lus ensemble, jusqu'à quatre. Le texte rendu est le
+ * plus court qui demande l'arrêt, avec l'heure de son premier passage. Les paroles de l'agent ne comptent jamais, ni
+ * seules ni collées à celles de l'appelant.
  */
-export function stopSegment(segments: readonly CallSegment[]): CallSegment | null {
-  return segments.find((s) => s.speaker === 'appelant' && isStopRequest(s.text)) ?? null;
+export function stopSegment(segments: readonly CallSegment[]): { text: string; startS: number } | null {
+  let run: CallSegment[] = [];
+  for (const segment of segments) {
+    if (segment.speaker !== 'appelant') {
+      run = [];
+      continue;
+    }
+    run.push(segment);
+    // Le passage qui vient d'arriver termine la phrase : du plus court au plus long en remontant.
+    for (let start = run.length - 1; start >= Math.max(0, run.length - STOP_SPAN); start -= 1) {
+      const text = run.slice(start).map((s) => s.text).join(' ');
+      if (isStopRequest(text)) return { text, startS: run[start]!.startS };
+    }
+  }
+  return null;
 }
 
 const SUMMARY_ORDER: readonly CitedField['key'][] = ['city', 'priceEur', 'budgetMinEur', 'budgetMaxEur', 'deadline', 'financing', 'criterion'];

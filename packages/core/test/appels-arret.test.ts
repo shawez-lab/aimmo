@@ -91,6 +91,27 @@ describeWithSqlite('RC20 · une demande d’arrêt dite au téléphone arrête t
     }
   });
 
+  it('[R04] un arrêt coupé en plusieurs passages de l’appelant qui se suivent est lu ensemble, à l’heure de son début', async () => {
+    const split: CallSegment[] = [
+      { speaker: 'appelant', startS: 6, endS: 8, text: 'Oui, d’accord.' },
+      { speaker: 'appelant', startS: 9, endS: 12, text: 'Ne m’appelez' },
+      { speaker: 'appelant', startS: 12, endS: 14, text: 'plus,' },
+      { speaker: 'appelant', startS: 14, endS: 16, text: 's’il vous plaît.' },
+    ];
+    expect(stopSegment(split)).toEqual({ text: 'Ne m’appelez plus,', startS: 9 });
+    const t = await setup(transcriber(split));
+    const r = await t.appels.receive(t.network.id, call({ callId: 'COUPE' }));
+    if (!r.ok) throw new Error('refusé');
+    expect((await t.stops()).map((e) => e.noted_at)).toEqual([at(9).toISOString()]);
+    expect((await t.appels.get(t.network.id, r.callId))?.stop).toEqual({ quote: 'Ne m’appelez plus,', atS: 9 });
+    // Les paroles de l'agent ne sont jamais collées à celles de l'appelant.
+    const withAgent: CallSegment[] = [
+      { speaker: 'agent', startS: 0, endS: 3, text: 'Je note : ne m’appelez' },
+      { speaker: 'appelant', startS: 3, endS: 5, text: 'plus tard, oui.' },
+    ];
+    expect(stopSegment(withAgent)).toBeNull();
+  });
+
   it('[R242] sans accord à l’enregistrement, rien n’est lu ni rangé', async () => {
     const tr = transcriber(STOP_SAID);
     const t = await setup(tr);
