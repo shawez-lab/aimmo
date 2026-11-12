@@ -6,6 +6,7 @@
  * `Authorization`, jamais dans une adresse ni au journal [R13].
  */
 
+import { ACTUALITES_SCRIPT } from '../app/actualites.ts';
 import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
@@ -94,6 +95,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/sequences-jour.js': { body: SEQUENCES_JOUR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Ce qu'il y a à tenir sur les ventes (W26), chargé seulement s'il y en a, jamais gardé sur l'appareil [R201].
   '/app/a-tenir.js': { body: A_TENIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // « Mes actualités » sur l'accueil (BR49), chargées au premier geste, jamais gardées sur l'appareil [R201].
+  '/app/actualites.js': { body: ACTUALITES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].
