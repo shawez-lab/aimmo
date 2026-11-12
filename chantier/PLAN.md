@@ -1398,6 +1398,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : les deux déclencheurs acceptés, sans type de projet [R403] (test) ; l'essai compte seulement les visites honorées, pour l'acquéreur, dans le réseau et la période [R400] (test) ; l'essai compte seulement les mandats inscrits, jamais retirés, pour le mandant [R400, R39] (test) ; allumé, une visite faite ensuite envoie au seul acquéreur, une fois, en essai [R401] (test) ; un mandat retiré avant le passage n'envoie rien et ne donne aucune tâche, le passage reste annulé [R401, R17] (test) ; tous les tests de HX24, RC09 et RC10 restent verts.
 - Attend : rien.
 
+### RC19 · Le passage des scénarios relit les faits depuis le dernier rangé
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX24, RC18
+- Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R401.
+- Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX24 (« balayage des faits depuis le dernier passage quand le volume grandira »). Aujourd'hui chaque passage relit tous les faits depuis l'allumage du scénario, et cherche la fiche de tête de chacun : le coût grandit chaque heure, sans fin. Sans migration : le passage relit à partir du fait le plus récent déjà rangé pour ce scénario depuis son allumage, moins une marge réglable (24 h par défaut), jamais avant l'allumage ; sans passage rangé, depuis l'allumage. La marge rattrape un fait daté juste avant le dernier rangé et écrit après lui. Un fait daté de plus d'une marge avant le dernier rangé, qui n'apparaît qu'après coup (fiche dont la réunion est défaite, par exemple), ne déclenche plus rien : un message d'accueil des semaines après le fait n'a plus de sens, c'est plus prudent. L'essai (R400) ne change pas. Seul `packages/core/src/automatismes/scenarios.ts` change, avec un test neuf.
+- Objectif : un scénario allumé depuis un an coûte au passage ce que coûtent les faits du dernier jour, pas toute l'année.
+- Critères : sans passage rangé, la lecture part de l'allumage [R401] (test) ; après un passage rangé, elle part du fait le plus récent moins la marge, jamais avant l'allumage (test) ; un fait daté dans la marge et écrit après coup est rangé une fois [R401] (test) ; un fait daté avant la marge et écrit après coup ne déclenche rien [R401] (test) ; marge réglable (test) ; tous les tests de HX24, RC09, RC10 et RC18 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
