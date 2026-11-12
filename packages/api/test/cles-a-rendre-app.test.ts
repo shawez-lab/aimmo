@@ -340,6 +340,55 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     expect(u.status()).toBe('');
   });
 
+  it('une réponse d’avant la sortie ne libère jamais l’envoi d’après', async () => {
+    // Le module seul, avec ses outils : la sortie (wipe), puis un nouvel envoi, avant la réponse du premier.
+    const { els, document } = fakeDocument(['cles-rendre-etat', 'cles-rendre-corps']);
+    const pending: (() => void)[] = [];
+    const posts: string[] = [];
+    const context: Record<string, unknown> = { document };
+    runInNewContext(CLES_A_RENDRE_SCRIPT, context);
+    const el = (tag: string, text?: string | null, cls?: string) => {
+      const n = document.createElement(tag);
+      if (text !== undefined && text !== null) n.textContent = String(text);
+      if (cls) n.className = cls;
+      return n;
+    };
+    const screen = (context.AIMMO_CLES_A_RENDRE as (t: unknown) => { show: () => Promise<boolean>; wipe: () => void })({
+      $: (id: string) => els[id],
+      el,
+      clear: (n: FakeElement) => (n.textContent = ''),
+      button: (text: string, onClick: () => void) => {
+        const b = el('button', text);
+        b.addEventListener('click', onClick);
+        return b;
+      },
+      date: () => '02/03/2027',
+      hour: () => '10:30',
+      session: () => 1,
+      send: (url: string, method: string) => {
+        if (method === 'GET') return Promise.resolve({ status: 200, ok: true, body: { ok: true, data: [LATE, LATER] } });
+        posts.push(url);
+        return new Promise((r) => pending.push(() => r({ status: 200, ok: true, body: { ok: true, data: null } })));
+      },
+    });
+    const rows = () => els['cles-rendre-corps']!.all().filter((e) => e.tagName === 'li');
+    const back = (i: number) => rows()[i]!.all().find((e) => e.tagName === 'button' && e.textContent === 'Rendu à l’agence')!;
+    await screen.show();
+    back(0).listeners.click!({});
+    screen.wipe();
+    await screen.show();
+    back(1).listeners.click!({});
+    expect(posts).toEqual(['/v1/trousseaux/k1/rendu', '/v1/trousseaux/k2/rendu']);
+    // La réponse du premier arrive : l'envoi du second reste seul en cours.
+    pending[0]!();
+    await settle();
+    back(0).listeners.click!({});
+    expect(posts).toHaveLength(2);
+    pending[1]!();
+    await settle();
+    expect(els['cles-rendre-etat']!.textContent).toContain('Trousseau n° 3 noté rendu à l’agence.');
+  });
+
   it('[R13] la sortie efface le bloc ; une réponse arrivée après ne montre rien', async () => {
     let release: () => void = () => undefined;
     const t = await run();

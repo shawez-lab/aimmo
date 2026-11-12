@@ -86,7 +86,7 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
   var CONFIRM = ${JSON.stringify(CLES_A_RENDRE_CONFIRM)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var ID = /^[A-Za-z0-9_-]{1,64}$/;
-  var reading = 0, writing = false, armed = null, armedIn = -1;
+  var reading = 0, writing = false, writes = 0, armed = null, armedIn = -1;
   var CUT = ${JSON.stringify(CLES_A_RENDRE_CUT)};
   /* Tout clic ailleurs que sur « Confirmer : perdu », dans tout l'écran, annule la demande : il est vu avant le geste. */
   document.addEventListener('click', function (e) { if (armed && (!e || e.target !== armed)) disarm(); }, true);
@@ -148,9 +148,12 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
   function write(r, outcome) {
     if (writing) return Promise.resolve(false);
     writing = true;
+    /* Une réponse d'avant la sortie ne libère jamais l'envoi d'après. */
+    var gen = writes;
     var turn = ++reading;
     say('Envoi…');
     return send('/v1/trousseaux/' + encodeURIComponent(r.keyId) + '/' + outcome, 'POST').then(function (res) {
+      if (gen !== writes) return false;
       writing = false;
       if (turn !== reading) return false;
       /* Sans réponse, ou coupée par un changement d'écran : le retour a pu être noté, les gestes d'avant sont retirés. */
@@ -163,9 +166,9 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
         return false;
       }
       return show(outcome === 'perdu' ? 'Trousseau ' + number(r) + ' noté perdu : il ne sortira plus.' : 'Trousseau ' + number(r) + ' noté rendu à l’agence.');
-    }, function () { writing = false; if (turn === reading) { clear($('cles-rendre-corps')); say(UNSURE); } return false; });
+    }, function () { if (gen !== writes) return false; writing = false; if (turn === reading) { clear($('cles-rendre-corps')); say(UNSURE); } return false; });
   }
-  function wipe() { reading += 1; writing = false; armed = null; clear($('cles-rendre-corps')); say(''); }
+  function wipe() { reading += 1; writes += 1; writing = false; armed = null; clear($('cles-rendre-corps')); say(''); }
   return { show: function () { return show(''); }, wipe: wipe };
 };
 `;
