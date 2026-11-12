@@ -35,7 +35,7 @@ async function setup(settings?: Partial<ScenarioSettings>) {
   /** Les bornes de chaque lecture des nouveaux contacts par le passage. */
   const reads: string[] = [];
   const all = db.all.bind(db);
-  vi.spyOn(db, 'all').mockImplementation(((sql: string, params?: unknown[]) => {
+  vi.spyOn(db, 'all').mockImplementation(((sql: string, params?: Parameters<typeof db.all>[1]) => {
     if (sql.includes('FROM persons p') && params) reads.push(String(params[1]));
     return all(sql, params);
   }) as typeof db.all);
