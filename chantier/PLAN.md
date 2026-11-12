@@ -237,7 +237,7 @@ Réservé le 2026-11-06 par la voie 2. Règles R400 à R419 et migrations à par
 
 ### HX24 · Scénarios automatiques réglables, essayés avant d'être allumés
 - Statut : fait (2026-11-06)
-- Reste : fusionnée (#386), migration `1900`, R400 à R403. Décidé, lecture prudente : le « journal du mois passé » est lu dans les faits datés de la base (fiches et projets nouveaux), jamais une fiche reprise ni réunie ; texte fixe de la direction, jamais de l'IA, prénom une fois, aucun chiffre ; accord « automatismes » exigé par le contrôle central ; un message de scénario parti par personne et par jour ; dans l'essai, les messages prévus des scénarios allumés tiennent leur journée même s'ils avaient pu être refusés. Codex : 12 P0 et 1 P1 corrigés en 8 tours, dernière version sans remarque. Restent : branchement au planificateur et au Worker, routes et écran de la direction (voie 1, `app.ts`) ; d'autres déclencheurs (visite faite, mandat signé) ; balayage des faits depuis le dernier passage quand le volume grandira.
+- Reste : fusionnée (#386), migration `1900`, R400 à R403. Décidé, lecture prudente : le « journal du mois passé » est lu dans les faits datés de la base (fiches et projets nouveaux), jamais une fiche reprise ni réunie ; texte fixe de la direction, jamais de l'IA, prénom une fois, aucun chiffre ; accord « automatismes » exigé par le contrôle central ; un message de scénario parti par personne et par jour ; dans l'essai, les messages prévus des scénarios allumés tiennent leur journée même s'ils avaient pu être refusés. Codex : 12 P0 et 1 P1 corrigés en 8 tours, dernière version sans remarque. Restent : branchement au planificateur et au Worker, routes et écran de la direction (voie 1, `app.ts`) ; d'autres déclencheurs (visite faite, mandat signé : RC18) ; balayage des faits depuis le dernier passage (RC19).
 - Objectif : comme Automator d'Apimo et Mission Builder de Modelo : la direction compose ses propres scénarios, un déclencheur, une attente, un message, une tâche. Jamais vu : avant d'être allumé, chaque scénario est rejoué sur le journal du mois passé et dit combien de messages il aurait envoyés et à combien de personnes ; il ne peut envoyer que par le contrôle central.
 - Critères : un scénario allumé passe toujours par le contrôle central (test) ; la simulation sur le passé n'envoie rien (test) ; un scénario qui enverrait deux fois à la même personne le même jour est refusé (test).
 
@@ -1206,12 +1206,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR48 · Le test du journal de HX20 sans faux échec
-- Statut : en cours
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#526, `33e26d4d`) ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte sur main avec BR47 et RC17 (5675 tests). Rien ne reste.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX20
 - Cahier : R13.
 - Décidé (2026-11-12, voie 1) : vu en vérifiant BR46. Le test « [R13] le journal ne garde ni texte ni coordonnée » de `packages/core/test/sequence-prospection.test.ts` échoue parfois : son motif `0600` attrape un identifiant tiré au hasard dans le journal, pas le numéro inventé (`06 00 00 00 01`). Retiré de BR46 à la demande de Codex (hors tâche). Le motif cherche le numéro lui-même (`06 00 00`, `0600000`) ; aucun code ne change.
 - Objectif : la vérification locale ne tombe plus au hasard sur ce test.
 - Critères : le test cherche le numéro inventé sous ses deux formes, et ne dépend plus des identifiants tirés [R13] (test) ; le test reste rouge si le numéro entre au journal (essai à la main, noté dans la proposition).
+- Attend : rien.
+
+### BR49 · « Mes actualités » sur l'accueil de l'agent : le fil et les déjà vues
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR20, BR47
+- Cahier : Phase 3, « Mes actualités » ; R269, R268, R16, R201.
+- Décidé (2026-11-12, voie 1), lecture prudente : relevé dans les « Restent » de BR20 et BR47 (« l'écran du fil », « l'écran des actualités »). Un bloc « Mes actualités » sur l'accueil, deux gestes : « Lire les nouvelles » (`GET /v1/actualites`) et « Déjà vues » (`GET /v1/actualites/deja-vues`). Le fil n'est jamais lu au chargement de l'accueil : ce qu'il rend est marqué vu pour toujours, il ne l'est qu'au geste de l'agent. Script servi à part, `/app/actualites.js` (`packages/api/app/actualites.ts`). Aucune route, règle ni migration.
+- Objectif : l'agent lit enfin ses actualités dans l'application, et n'en perd jamais une.
+- Critères : le fil n'est demandé qu'au geste [R269] (test) ; chaque actualité dit sa source datée avec un lien https seul, ce qu'elle change, les dossiers touchés et pourquoi, dans l'ordre reçu [R268, R269] (test) ; « Déjà vues » dit le jour montré, se relit autant de fois qu'on veut [R269] (test) ; une réponse du fil perdue renvoie vers « Déjà vues » [R269] (test) ; refus dit en mots [R16] (test) ; texte reçu posé en texte, script chargé au geste, budget tenu [R201] (test).
 - Attend : rien.
 
 ## Restes du cœur des groupes HX
@@ -1399,12 +1409,22 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC19 · Le passage des scénarios relit les faits depuis le dernier rangé
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#527, ba25ce96) ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5683 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX24, RC18
 - Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R401.
 - Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX24 (« balayage des faits depuis le dernier passage quand le volume grandira »). Aujourd'hui chaque passage relit tous les faits depuis l'allumage du scénario, et cherche la fiche de tête de chacun : le coût grandit chaque heure, sans fin. Sans migration : le passage relit à partir du fait le plus récent déjà rangé pour ce scénario depuis son allumage, moins une marge réglable (24 h par défaut), jamais avant l'allumage ; sans passage rangé, depuis l'allumage. La marge rattrape un fait daté juste avant le dernier rangé et écrit après lui. Un fait daté de plus d'une marge avant le dernier rangé, qui n'apparaît qu'après coup (fiche dont la réunion est défaite, par exemple), ne déclenche plus rien : un message d'accueil des semaines après le fait n'a plus de sens, c'est plus prudent. L'essai (R400) ne change pas. Seul `packages/core/src/automatismes/scenarios.ts` change, avec un test neuf.
 - Objectif : un scénario allumé depuis un an coûte au passage ce que coûtent les faits du dernier jour, pas toute l'année.
 - Critères : sans passage rangé, la lecture part de l'allumage [R401] (test) ; après un passage rangé, elle part du fait le plus récent moins la marge, jamais avant l'allumage (test) ; un fait daté dans la marge et écrit après coup est rangé une fois [R401] (test) ; un fait daté avant la marge et écrit après coup ne déclenche rien [R401] (test) ; marge réglable (test) ; tous les tests de HX24, RC09, RC10 et RC18 restent verts.
+- Attend : rien.
+
+### RC20 · Une demande d'arrêt dite au téléphone arrête tous les envois
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX21, S05
+- Cahier : Conformité, demande d'arrêt ; HX21 « Appels entrants résumés et rangés dans la fiche » ; R04, R242, R13.
+- Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX21 (« demande d'arrêt dite au téléphone (R04) »). Aujourd'hui un appelant qui dit « ne m'appelez plus » pendant un appel enregistré voit sa phrase rangée dans la transcription, mais rien ne l'arrête : les relances, scénarios et messages de date continuent. Quand un appel est transcrit (accord rangé, R242), chaque passage dit par l'appelant est lu par la même lecture que les messages reçus (`isStopRequest` de S05, dans le doute c'est un arrêt) ; le premier qui demande l'arrêt range l'exclusion « stop » sur tous les canaux, par `DecisionEnvoi.recordStopRequest`, datée de l'heure du passage dans l'appel, avant de ranger l'appel fini (une coupure entre les deux : la livraison suivante reprend l'appel et ne double pas l'exclusion). Les paroles de l'agent ne comptent jamais. Sans accord ni transcription, rien n'est lu : l'agent note l'arrêt lui-même. La fiche montre le passage qui a demandé l'arrêt ; le journal de l'appel dit seulement « arrêt demandé », sans le texte [R13]. Seuls `packages/core/src/voix/appels.ts` et son test changent ; aucune migration ni règle nouvelle. L'assistant vocal (HX22) suivra à part.
+- Objectif : « ne m'appelez plus » dit au téléphone vaut autant qu'un « STOP » écrit.
+- Critères : un arrêt dit par l'appelant range l'exclusion « stop » sur tous les canaux, à l'heure du passage [R04] (test) ; le même arrêt dit par l'agent, ou une phrase sans arrêt, ne range rien (test) ; sans accord à l'enregistrement, rien n'est lu ni rangé [R242] (test) ; l'appel livré deux fois ne double pas l'exclusion, un arrêt déjà en cours n'est pas doublé [R18] (test) ; la vue de l'appel montre le passage, le journal ne dit que « arrêt demandé », sans texte [R13] (test) ; tous les tests de HX21 et S05 restent verts.
 - Attend : rien.
 
 ## Phase 1 : le socle
