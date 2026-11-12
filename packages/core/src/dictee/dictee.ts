@@ -28,7 +28,26 @@ import { checkReport, redactNames, type ComptesRendus, type VisitReport } from '
 import type { Visites } from '../visites/visites.ts';
 import { DICTATION_KEYS, DICTATION_MAX_CHARS, fieldOf, readDictation, unproposedNames, type DictatedField, type DictatedKey, type DictationDraft, type DictationTarget } from './lecture.ts';
 
-export type DictationRefusal = { ok: false; rule: string | null; code: string; keys?: string[] };
+/**
+ * Ce qu'une validation a déjà rangé quand le créneau est pris entre la vérification et la réservation (RC22) : rien
+ * n'est effacé, le refus le dit pour que l'agent ne redicte pas ce qui existe [R261].
+ */
+export interface DictationKept {
+  personId: string | null;
+  contact: 'created' | 'matched' | null;
+  propertyId: string | null;
+}
+
+export type DictationRefusal = {
+  ok: false;
+  rule: string | null;
+  code: string;
+  keys?: string[];
+  /** Ce qui est déjà rangé pour cette demande, s'il y a quelque chose. */
+  kept?: DictationKept;
+  /** Jusqu'à trois créneaux libres de la même sorte, les plus proches, jamais passés (instants ISO). */
+  freeSlots?: string[];
+};
 
 export interface DicteeDeps {
   acces: Acces;
@@ -74,6 +93,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY_MS = 86_400_000;
 /** Une lecture plus ancienne se refait : le jour dit et les créneaux ont pu changer. */
 const READ_VALID_MS = 12 * 3_600_000;
+/** Les créneaux proposés quand celui dicté est pris entre-temps. */
+const PROPOSED_SLOTS = 3;
 
 export class Dictee {
   private readonly now: () => Date;
@@ -232,7 +253,11 @@ export class Dictee {
       const existing = await this.bookedFor(viewer, personId, kind, start, bien ? input.requestId : (counterVisit?.property_id ?? null), counterVisit?.project_id ?? null);
       if (!existing) {
         const free = await this.deps.rendezVous.freeSlotsFor(viewer.userId, kind, new Date(start.getTime() - DAY_MS), new Date(start.getTime() + DAY_MS));
-        if (!free.some((s) => s.start.getTime() === start.getTime())) return { ok: false, rule: 'R32', code: 'slot_not_free' };
+        if (!free.some((s) => s.start.getTime() === start.getTime())) {
+          // Rejouée après un créneau pris entre-temps : refusée avant d'écrire, en nommant ce qui est déjà rangé (RC22).
+          const earlier = await this.leftBy(viewer, input.requestId, personId, contactState);
+          return { ok: false, rule: 'R32', code: 'slot_not_free', ...(earlier ? { kept: earlier } : {}) };
+        }
       }
     }
 
@@ -264,12 +289,12 @@ export class Dictee {
         if (counterVisit && this.deps.visites) {
           // La contre-visite : même bien, même projet d'achat, avec son bon de visite ; aucune confirmation.
           const r = await this.deps.visites.schedule(viewer, { propertyId: counterVisit.property_id, projectId: counterVisit.project_id, start, channel: null });
-          if (!r.ok) return r;
+          if (!r.ok) return this.takenMeanwhile(viewer, input.requestId, { personId: null, contact: null, propertyId: null }, kind, start, r);
           booked = r.visit.appointment.id;
         } else {
           // Aucune confirmation ne part : le contact n'a rien demandé par message.
           const r = await this.deps.rendezVous.book({ networkId: viewer.networkId, agentId: viewer.userId, personId, propertyId, kind, start, source: 'agent', channel: null });
-          if (!r.ok) return { ok: false, rule: r.rule, code: r.code };
+          if (!r.ok) return this.takenMeanwhile(viewer, input.requestId, { personId: contact ? personId : null, contact: contactState, propertyId }, kind, start, r);
           booked = r.appointment.id;
         }
       }
@@ -309,6 +334,71 @@ export class Dictee {
       this.now,
     );
     return { ok: true, personId, contact: contactState, propertyId, appointmentId: booked, report: delivery };
+  }
+
+  /**
+   * Le créneau pris entre la vérification et la réservation (RC22) : la fiche et le bien déjà rangés restent, jamais
+   * effacés ; le refus les nomme et propose les créneaux libres les plus proches. Le compte rendu n'est pas validé : la
+   * même demande rejouée sans le rendez-vous le validera, sans rien doubler [R261]. Au journal, des identifiants
+   * seulement [R13].
+   */
+  private async takenMeanwhile(
+    viewer: Viewer,
+    requestId: string,
+    kept: DictationKept,
+    kind: AppointmentKind,
+    start: Date,
+    refusal: { rule: string | null; code: string },
+  ): Promise<DictationRefusal> {
+    const slotRefusal = refusal.rule === 'R32' || refusal.rule === 'R33';
+    const stored = kept.personId !== null || kept.propertyId !== null;
+    if (stored) {
+      await appendEvent(
+        this.journal,
+        {
+          type: 'dictee.creneau_pris',
+          actor: this.actor(viewer),
+          subject: kept.personId ? `person:${kept.personId}` : `property:${kept.propertyId}`,
+          data: {
+            rule: 'R261',
+            request: requestId,
+            refusal: refusal.code,
+            contact: kept.contact ?? 'none',
+            ...(kept.personId ? { person: kept.personId } : {}),
+            ...(kept.propertyId ? { property: kept.propertyId } : {}),
+          },
+        },
+        this.now,
+      );
+    }
+    const out: DictationRefusal = { ok: false, rule: refusal.rule, code: slotRefusal ? 'slot_taken_meanwhile' : refusal.code };
+    if (stored) out.kept = kept;
+    if (slotRefusal) out.freeSlots = await this.nearestFree(viewer, kind, start);
+    return out;
+  }
+
+  /** Les créneaux libres de la même sorte dans les 24 heures autour de celui dicté, les plus proches, jamais passés. */
+  private async nearestFree(viewer: Viewer, kind: AppointmentKind, start: Date): Promise<string[]> {
+    const now = this.now().getTime();
+    const free = await this.deps.rendezVous.freeSlotsFor(viewer.userId, kind, new Date(start.getTime() - DAY_MS), new Date(start.getTime() + DAY_MS));
+    return free
+      .map((s) => s.start.getTime())
+      .filter((t) => t > now && t !== start.getTime())
+      .sort((a, b) => Math.abs(a - start.getTime()) - Math.abs(b - start.getTime()) || a - b)
+      .slice(0, PROPOSED_SLOTS)
+      .sort((a, b) => a - b)
+      .map((t) => new Date(t).toISOString());
+  }
+
+  /**
+   * Ce qu'une tentative d'avant de la même demande a rangé : la fiche créée sous son identifiant, le bien créé sous son
+   * identifiant (avec la fiche à qui il est). Rien : `null`.
+   */
+  private async leftBy(viewer: Viewer, requestId: string, personId: string | null, contactState: DictationOutcome['contact']): Promise<DictationKept | null> {
+    const person = contactState === 'created' && (await this.db.first('SELECT 1 AS ok FROM persons WHERE id = ? AND network_id = ? AND agent_id = ?', [requestId, viewer.networkId, viewer.userId]));
+    const property = await this.db.first('SELECT 1 AS ok FROM properties WHERE id = ? AND network_id = ? AND agent_id = ?', [requestId, viewer.networkId, viewer.userId]);
+    if (!person && !property) return null;
+    return { personId, contact: contactState, propertyId: property ? requestId : null };
   }
 
   /**
