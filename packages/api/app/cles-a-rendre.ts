@@ -82,7 +82,8 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
   var CONFIRM = ${JSON.stringify(CLES_A_RENDRE_CONFIRM)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var ID = /^[A-Za-z0-9_-]{1,64}$/;
-  var reading = 0, writing = false, armed = null;
+  var reading = 0, writing = false, armed = null, armedIn = -1;
+  var CUT = 'Vous avez changé d’écran avant la réponse : rouvrez la liste.';
   function say(m) { $('cles-rendre-etat').textContent = m; }
   function text(v) { return typeof v === 'string' ? v : ''; }
   function when(iso) { var d = date(iso), h = hour(iso); return d ? d + (h ? ' à ' + h : '') : ''; }
@@ -97,7 +98,8 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
     else li.appendChild(el('p', due ? 'À rendre au plus tard le ' + due + '.' : 'Heure du retour non dite.', 'doux'));
     if (!ID.test(text(r.keyId))) return li;
     var lost = button('Perdu', function () {
-      if (armed !== lost) { disarm(); armed = lost; lost.textContent = 'Confirmer : perdu'; say(CONFIRM); return; }
+      /* Une demande faite avant un changement d'écran ne vaut plus : il faut la refaire. */
+      if (armed !== lost || armedIn !== t.session()) { disarm(); armed = lost; armedIn = t.session(); lost.textContent = 'Confirmer : perdu'; say(CONFIRM); return; }
       armed = null;
       write(r, 'perdu');
     });
@@ -126,7 +128,9 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
     clear($('cles-rendre-corps'));
     say('Chargement…');
     return send('/v1/trousseaux/a-rendre', 'GET').then(function (res) {
-      if (turn !== reading || res.gone) return false;
+      if (turn !== reading) return false;
+      /* Coupée par un changement d'écran : jamais « Chargement… » ni une liste d'avant laissés à l'accueil. */
+      if (res.gone) { clear($('cles-rendre-corps')); say(CUT); return false; }
       if (res.offline || !res.body || res.status >= 500) { say(OFFLINE); return false; }
       if (!res.ok || !Array.isArray(res.body.data)) { say(REFUSALS[(res.body || {}).code] || 'Les clés à rendre ne se lisent pas pour le moment.'); return false; }
       render(res.body.data);
@@ -142,8 +146,9 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
     say('Envoi…');
     return send('/v1/trousseaux/' + encodeURIComponent(r.keyId) + '/' + outcome, 'POST').then(function (res) {
       writing = false;
-      if (turn !== reading || res.gone) return false;
-      if (res.offline || !res.body || res.status >= 500) { clear($('cles-rendre-corps')); say(UNSURE); return false; }
+      if (turn !== reading) return false;
+      /* Sans réponse, ou coupée par un changement d'écran : le retour a pu être noté, les gestes d'avant sont retirés. */
+      if (res.gone || res.offline || !res.body || res.status >= 500) { clear($('cles-rendre-corps')); say(UNSURE); return false; }
       if (!res.ok) {
         var code = (res.body || {}).code;
         var said = REFUSALS[code] || 'Le retour n’a pas pu être noté. Réessayez dans un moment.';

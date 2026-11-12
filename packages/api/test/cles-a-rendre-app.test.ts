@@ -249,6 +249,50 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     expect(u.status()).toBe('Indisponible pour le moment. Réessayez dans un moment.');
   });
 
+  it('un retour coupé par un changement d’écran est dit incertain, ses gestes retirés ; une lecture coupée le dit aussi', async () => {
+    let release: () => void = () => undefined;
+    const slow: Answer = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: null }))));
+    const t = await run({ 'POST /v1/trousseaux/k1/rendu': slow });
+    await t.open();
+    await t.tap(t.items()[0]!, 'Rendu à l’agence');
+    expect(t.status()).toBe('Envoi…');
+    // L'agent ouvre ses mises en relation avant la réponse, puis revient à l'accueil.
+    t.els['partenaires-ouvrir']!.listeners.click!({});
+    await settle();
+    release();
+    await settle();
+    expect(t.status()).toBe(CLES_A_RENDRE_UNSURE);
+    expect(t.items()).toHaveLength(0);
+    // Le geste suivant repart.
+    await t.open(false);
+    expect(t.items()).toHaveLength(2);
+
+    const u = await run();
+    await u.open();
+    u.table['GET /v1/trousseaux/a-rendre'] = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: [LATE] }))));
+    await u.open(false);
+    u.els['partenaires-ouvrir']!.listeners.click!({});
+    await settle();
+    release();
+    await settle();
+    expect(u.status()).toBe('Vous avez changé d’écran avant la réponse : rouvrez la liste.');
+    expect(u.items()).toHaveLength(0);
+  });
+
+  it('[R271] un « Perdu » demandé avant un changement d’écran ne vaut plus : il faut le redemander', async () => {
+    const t = await run();
+    await t.open();
+    const [a] = t.items();
+    await t.tap(a!, 'Perdu');
+    t.els['partenaires-ouvrir']!.listeners.click!({});
+    await settle();
+    await t.tap(a!, 'Confirmer : perdu');
+    expect(t.count('POST', '/v1/trousseaux/k1/perdu')).toBe(0);
+    expect(t.status()).toBe(CLES_A_RENDRE_CONFIRM);
+    await t.tap(a!, 'Confirmer : perdu');
+    expect(t.count('POST', '/v1/trousseaux/k1/perdu')).toBe(1);
+  });
+
   it('[R13] la sortie efface le bloc ; une réponse arrivée après ne montre rien', async () => {
     let release: () => void = () => undefined;
     const t = await run();
