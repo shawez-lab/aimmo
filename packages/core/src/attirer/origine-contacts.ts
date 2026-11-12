@@ -375,7 +375,8 @@ export class OrigineContacts {
   /**
    * La mesure d'un mois (`AAAA-MM`, heure de Paris), comptée depuis la base : un contact est une conversation, comptée le
    * mois de son premier message lisible ; elle a une origine quand l'un de ses messages a un contenu connu, et c'est le
-   * premier de ceux-là qui la classe. Réservée à la direction [R16].
+   * premier de ceux-là qui la classe. Les appels rangés comptent aussi, une conversation par fiche (RC23). Réservée à
+   * la direction [R16].
    */
   async measure(viewer: Viewer, month: unknown): Promise<MeasureResult> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
@@ -398,6 +399,19 @@ export class OrigineContacts {
        HAVING min(m.received_at) >= ? AND min(m.received_at) < ?`,
       [viewer.networkId, from, to],
     );
+    // Les appels rangés (HX21) sont des contacts du canal téléphone : les appels d'une même fiche forment une seule
+    // conversation, comptée le mois de son premier appel ; un numéro masqué, sans fiche, est un contact à lui seul. Leur
+    // origine est celle rangée par le code de contenu porté par l'appel, sinon inconnue, jamais devinée [R245, R156] (RC23).
+    const calls = await this.db.all<{ first_at: string; known: string | null }>(
+      `SELECT min(coalesce(c.started_at, c.created_at)) AS first_at,
+              min(CASE WHEN c.origin_content_id IS NOT NULL THEN coalesce(c.started_at, c.created_at) || '|' || c.id || '|' || c.origin_content_id END) AS known
+         FROM calls c
+        WHERE c.network_id = ? AND c.status <> 'en_cours'
+        GROUP BY coalesce('fiche:' || c.person_id, 'appel:' || c.id)
+       HAVING min(coalesce(c.started_at, c.created_at)) >= ? AND min(coalesce(c.started_at, c.created_at)) < ?`,
+      [viewer.networkId, from, to],
+    );
+    rows.push(...calls);
     const counts = new Map<string, number>();
     let withOrigin = 0;
     for (const r of rows) {
