@@ -1216,8 +1216,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR49 · « Mes actualités » sur l'accueil de l'agent : le fil et les déjà vues
-- Statut : en cours
-- Reste : proposition #529 prête le 2026-11-12 à 03:40 (`1d815953`) : Codex 2 P2 corrigés (double geste sur le fil ; fil coupé par un changement d'écran, renvoyé vers « Déjà vues »), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5686 tests sur la fusion avec main, puis le fichier de l'écran, 13 tests, sur le dernier commit). Fusion refusée par le contrôle des permissions de la séance (« CI Bypass »), un essai : la séance suivante la fusionne à l'étape 3 (H69).
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#529, bc067b38) par la voie 2 à l'étape 3 de sa séance de 03:53, après vérification locale sur la fusion avec main et RC20 (5699 tests verts ; seul échec, le statut de RC20 au plan, corrigé sur main par af4d274c). Avant : proposition #529 prête le 2026-11-12 à 03:40 (`1d815953`) : Codex 2 P2 corrigés (double geste sur le fil ; fil coupé par un changement d'écran, renvoyé vers « Déjà vues »), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5686 tests sur la fusion avec main, puis le fichier de l'écran, 13 tests, sur le dernier commit). Fusion refusée par le contrôle des permissions de la séance (« CI Bypass »), un essai : la séance suivante la fusionne à l'étape 3 (H69).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR20, BR47
 - Cahier : Phase 3, « Mes actualités » ; R269, R268, R16, R201.
 - Décidé (2026-11-12, voie 1), lecture prudente : relevé dans les « Restent » de BR20 et BR47 (« l'écran du fil », « l'écran des actualités »). Un bloc « Mes actualités » sur l'accueil, deux gestes : « Lire les nouvelles » (`GET /v1/actualites`) et « Déjà vues » (`GET /v1/actualites/deja-vues`). Le fil n'est jamais lu au chargement de l'accueil : ce qu'il rend est marqué vu pour toujours, il ne l'est qu'au geste de l'agent. Script servi à part, `/app/actualites.js` (`packages/api/app/actualites.ts`). Aucune route, règle ni migration.
