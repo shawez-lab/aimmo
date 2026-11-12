@@ -201,6 +201,8 @@ globalThis.AIMMO_ARMOIRE = function (t) {
       });
     }));
     box.appendChild(state);
+    /* Toujours là : après un échec ou une réponse perdue, on relit sans rien écrire ni quitter l'écran. */
+    box.appendChild(plain('Relire l’armoire', function () { return read(''); }));
     box.appendChild(list);
     box.appendChild(form);
     return read('');

@@ -232,6 +232,22 @@ describe('BR51 · L’armoire d’un bien dans l’écran « Mettre en vente »'
     await settle();
     expect(t.status()).toBe(ARMOIRE_UNSURE);
     expect(t.items()).toHaveLength(0);
+    // Relire sans rien écrire ni quitter l'écran.
+    const posts = t.calls.filter((c) => c.method === 'POST').length;
+    await t.press(t.byText(t.vente(), 'Relire l’armoire'));
+    expect(t.calls.filter((c) => c.method === 'POST').length).toBe(posts);
+    expect(t.items()).toHaveLength(4);
+  });
+
+  it('une armoire qui ne se lit pas se relit d’un geste, sans rouvrir l’écran', async () => {
+    const t = await run({ 'GET /v1/trousseaux/biens/b1': offline });
+    await t.openVente();
+    await t.openArmoire();
+    expect(t.status()).toBe('Pas de réseau. Réessayez dans un moment.');
+    t.table['GET /v1/trousseaux/biens/b1'] = ok([AT_AGENCY]);
+    await t.press(t.byText(t.vente(), 'Relire l’armoire'));
+    expect(t.items()).toHaveLength(1);
+    expect(t.status()).toBe('1 trousseau, tous à l’agence ou retirés.');
   });
 
   it('[R16] chaque refus se dit en mots, jamais par un code ; un état changé ailleurs fait relire l’armoire', async () => {
