@@ -421,6 +421,10 @@ describeWithSqlite('RC21 · une demande d’arrêt dite à l’assistant vocal a
     expect(await stops(t.db)).toEqual([]);
     expect(stopAsked('Je ne veux pas être enregistré, et ne m’appelez plus.')).toBe(true);
     expect(stopAsked('Je ne veux plus être contacté.')).toBe(true);
+    // La négation partagée garde l'arrêt : « ni recevoir vos messages » n'est pas un refus d'enregistrement.
+    expect(stopAsked('Je ne veux plus être enregistré ni recevoir vos messages.')).toBe(true);
+    expect(stopAsked('Je ne veux pas être enregistré ni appelé.')).toBe(true);
+    expect(stopAsked('Je ne veux pas être enregistré, merci.')).toBe(false);
     expect(stopAsked('Plus de messages, merci.')).toBe(true);
   });
 

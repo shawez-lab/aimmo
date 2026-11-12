@@ -292,13 +292,20 @@ export function chosenSlot(utterance: string, offered: readonly string[]): strin
 /** Un refus d'être enregistré, qui ne dit rien des envois : « je ne veux pas être enregistré », « pas d'enregistrement ». */
 const RECORDING_REFUSAL = /\b(?:(?:je |nous )?ne (?:veux|voulons|souhaite|souhaitons|desire) (?:pas|plus) |pas |sans |surtout pas )(?:etre |d'etre |d'|de |l'|qu'on m'|que vous m')?(?:enregistr|registr)\w*/g;
 
+/** Un mot qui parle d'un contact ou d'un envoi : s'il reste après le refus d'enregistrement, la phrase est un arrêt. */
+const CONTACT_WORD = /\b(?:stop|arret\w*|appel\w*|rappel\w*|contact\w*|recontact\w*|ecri\w*|relanc\w*|recevoir|recu|envo\w*|messages?|sms|mails?|courriels?|derang\w*|tranquille|desinscri\w*|supprim\w*|effac\w*|retir\w*|coordonnees|numero|donnees)\b/;
+
 /**
- * Une demande d'arrêt dite à l'assistant, lue comme un message reçu [R04] : dans le doute, c'est un arrêt. Seul un refus
- * d'être enregistré est retiré avant la lecture, car il répond à l'annonce de l'enregistrement et ne parle pas des envois ;
- * le reste de la phrase est lu (« je ne veux pas être enregistré, ne m'appelez plus » est un arrêt).
+ * Une demande d'arrêt dite à l'assistant, lue comme un message reçu [R04] : dans le doute, c'est un arrêt. Une phrase
+ * n'échappe à l'arrêt que si elle n'est qu'un refus d'être enregistré, qui répond à l'annonce et ne parle pas des envois :
+ * dès qu'un mot de contact ou d'envoi reste à côté (« je ne veux plus être enregistré ni recevoir vos messages », « je ne
+ * veux pas être enregistré, ne m'appelez plus »), c'est un arrêt.
  */
 export function stopAsked(utterance: string): boolean {
-  return isStopRequest(plain(utterance).replace(RECORDING_REFUSAL, ' '));
+  const p = plain(utterance);
+  if (!isStopRequest(p)) return false;
+  const rest = p.replace(RECORDING_REFUSAL, ' ');
+  return rest === p || isStopRequest(rest) || CONTACT_WORD.test(rest);
 }
 
 export class AssistantVocal {
