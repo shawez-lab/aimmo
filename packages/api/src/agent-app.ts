@@ -7,6 +7,7 @@
  */
 
 import { ACTUALITES_SCRIPT } from '../app/actualites.ts';
+import { CLES_A_RENDRE_SCRIPT } from '../app/cles-a-rendre.ts';
 import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
@@ -85,10 +86,20 @@ export function stripCommentLines(js: string): string {
     .join('\n');
 }
 
+/**
+ * Le script servi sans l'indentation de ses lignes (BR50) : le script de l'application n'a ni gabarit à accents graves
+ * ni chaîne coupée en fin de ligne, l'espace en tête de ligne n'y change donc rien ; le retirer garde l'application dans
+ * son budget [R201]. Si l'une de ces deux formes y apparaît un jour, le script reste tel quel.
+ */
+export function trimIndent(js: string): string {
+  if (js.includes('`') || /\\\n/.test(js)) return js;
+  return js.replace(/^[ \t]+/gm, '');
+}
+
 const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.freeze({
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
-  '/app/app.js': { body: stripCommentLines(APP_JS), type: 'text/javascript; charset=utf-8' },
+  '/app/app.js': { body: trimIndent(stripCommentLines(APP_JS)), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les étapes du jour des séquences (BR32), chargées seulement s'il y en a au plan, jamais gardées sur l'appareil [R201].
@@ -97,6 +108,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/a-tenir.js': { body: A_TENIR_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // « Mes actualités » sur l'accueil (BR49), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/actualites.js': { body: ACTUALITES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // « Mes clés à rendre » sur l'accueil (BR50), chargées au premier geste, jamais gardées sur l'appareil [R201].
+  '/app/cles-a-rendre.js': { body: CLES_A_RENDRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].
