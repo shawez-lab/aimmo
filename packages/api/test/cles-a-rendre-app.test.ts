@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { CLES_A_RENDRE_CONFIRM, CLES_A_RENDRE_REFUSALS, CLES_A_RENDRE_SCRIPT, CLES_A_RENDRE_UNSURE } from '../app/cles-a-rendre.ts';
+import { CLES_A_RENDRE_CONFIRM, CLES_A_RENDRE_CUT, CLES_A_RENDRE_REFUSALS, CLES_A_RENDRE_SCRIPT, CLES_A_RENDRE_UNSURE } from '../app/cles-a-rendre.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp, trimIndent } from '../src/agent-app.ts';
 import { APP_JS } from '../app/fichiers.ts';
 import { fakeDocument, pageIds, type FakeElement } from './fake-dom.ts';
@@ -52,8 +52,10 @@ async function run(answers: Record<string, Answer> = {}) {
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
+  const capture = (e: { target: unknown }) => (listeners as Record<string, ((e: unknown) => void) | undefined>).click?.(e);
   const scripts = () => els.accueil!.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/cles-a-rendre.js');
   const open = async (load = true) => {
+    capture({ target: els['cles-rendre-ouvrir'] });
     els['cles-rendre-ouvrir']!.listeners.click!({});
     await settle();
     const s = scripts();
@@ -68,12 +70,20 @@ async function run(answers: Record<string, Answer> = {}) {
   const body = () => els['cles-rendre-corps']!;
   const items = () => body().all().filter((e) => e.tagName === 'li');
   const gesture = (item: FakeElement, label: string) => item.all().find((e) => e.tagName === 'button' && e.textContent === label);
+  // Un clic passe d'abord par l'écoute de tout l'écran (phase de capture), puis par le bouton.
+  const press = async (target: FakeElement) => {
+    capture({ target });
+    target.listeners.click!({});
+    await settle();
+  };
   const tap = async (item: FakeElement, label: string) => {
-    gesture(item, label)!.listeners.click!({});
+    const b = gesture(item, label)!;
+    capture({ target: b });
+    b.listeners.click!({});
     await settle();
   };
   const count = (method: string, url: string) => calls.filter((c) => c.method === method && c.url === url).length;
-  return { els, calls, table, context, scripts, open, status, body, items, gesture, tap, count };
+  return { els, calls, table, context, scripts, open, status, body, items, gesture, tap, press, count };
 }
 
 describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () => {
@@ -275,7 +285,7 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     await settle();
     release();
     await settle();
-    expect(u.status()).toBe('Vous avez changé d’écran avant la réponse : rouvrez la liste.');
+    expect(u.status()).toBe(CLES_A_RENDRE_CUT);
     expect(u.items()).toHaveLength(0);
   });
 
@@ -291,6 +301,43 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     expect(t.status()).toBe(CLES_A_RENDRE_CONFIRM);
     await t.tap(a!, 'Confirmer : perdu');
     expect(t.count('POST', '/v1/trousseaux/k1/perdu')).toBe(1);
+  });
+
+  it('[R271] tout autre geste de l’écran, même dans un autre bloc, annule un « Perdu » demandé', async () => {
+    const t = await run();
+    await t.open();
+    const [a] = t.items();
+    await t.tap(a!, 'Perdu');
+    await t.press(t.els['actualites-vues']!);
+    expect(t.gesture(a!, 'Confirmer : perdu')).toBeUndefined();
+    expect(t.gesture(a!, 'Perdu')).toBeDefined();
+    await t.tap(a!, 'Perdu');
+    expect(t.count('POST', '/v1/trousseaux/k1/perdu')).toBe(0);
+    await t.tap(a!, 'Confirmer : perdu');
+    expect(t.count('POST', '/v1/trousseaux/k1/perdu')).toBe(1);
+  });
+
+  it('un chargement du script coupé par un changement d’écran ne laisse jamais « Chargement… »', async () => {
+    for (const end of ['load', 'error'] as const) {
+      const t = await run();
+      await t.open(false);
+      expect(t.status()).toBe('Chargement…');
+      t.els['partenaires-ouvrir']!.listeners.click!({});
+      await settle();
+      if (end === 'load') runInNewContext(CLES_A_RENDRE_SCRIPT, t.context);
+      t.scripts()[0]!.listeners[end]!({});
+      await settle();
+      expect(t.status()).toBe(CLES_A_RENDRE_CUT);
+      expect(t.calls.some((c) => c.url.startsWith('/v1/trousseaux'))).toBe(false);
+    }
+    // La sortie avant la fin du chargement : rien n'est dit.
+    const u = await run();
+    await u.open(false);
+    u.els.sortir!.listeners.click!({});
+    await settle();
+    u.scripts()[0]!.listeners.error!({});
+    await settle();
+    expect(u.status()).toBe('');
   });
 
   it('[R13] la sortie efface le bloc ; une réponse arrivée après ne montre rien', async () => {

@@ -23,6 +23,9 @@ export const CLES_A_RENDRE_REFUSALS: Readonly<Record<string, string>> = Object.f
 /** Une écriture partie sans réponse : le retour a pu être noté, la liste le dira. */
 export const CLES_A_RENDRE_UNSURE = 'La réponse n’est pas arrivée : le retour a peut-être été noté. Relisez la liste avant de recommencer.';
 
+/** Une lecture coupée par un changement d'écran : la liste se rouvre. */
+export const CLES_A_RENDRE_CUT = 'Vous avez changé d’écran avant la réponse : rouvrez la liste.';
+
 /** Le second appui demandé avant « Perdu » : un trousseau perdu ne sort plus [R271]. */
 export const CLES_A_RENDRE_CONFIRM = 'Un trousseau perdu ne sort plus jamais de l’armoire. Appuyez sur « Confirmer : perdu » pour le noter.';
 
@@ -38,7 +41,7 @@ export const CLES_A_RENDRE_HOME_HTML = `<section class="bloc" aria-labelledby="t
 /** Le chargeur, dans l'application : le script n'arrive qu'au premier geste, jamais gardé sur l'appareil. */
 export const CLES_A_RENDRE_JS = `
   /* ---------- HX10 : « Mes clés à rendre » (BR50), chargé au premier geste [R201, R272]. ---------- */
-  var keysScreen = null, keysLoading = false;
+  var keysScreen = null, keysLoading = false, CLES_CUT = ${JSON.stringify(CLES_A_RENDRE_CUT)};
   function wipeClesARendre() {
     if (keysScreen) keysScreen.wipe();
     clear($('cles-rendre-corps'));
@@ -58,14 +61,15 @@ export const CLES_A_RENDRE_JS = `
         keysLoading = false;
         var make = globalThis.AIMMO_CLES_A_RENDRE;
         try { delete globalThis.AIMMO_CLES_A_RENDRE; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('cles-rendre-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        keysScreen = make({ $: $, el: el, clear: clear, send: send, button: button, date: date, hour: hour, session: function () { return session; } });
+        if (typeof make === 'function') keysScreen = make({ $: $, el: el, clear: clear, send: send, button: button, date: date, hour: hour, session: function () { return session; } });
+        /* Coupé par un changement d'écran : jamais « Chargement… » laissé à l'accueil ; la sortie a déjà tout effacé. */
+        if (mine !== session) { if (currentKey) $('cles-rendre-etat').textContent = CLES_CUT; resolve(false); return; }
+        if (!keysScreen) { $('cles-rendre-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
         resolve(keysScreen.show());
       });
       s.addEventListener('error', function () {
         keysLoading = false;
-        if (mine === session) $('cles-rendre-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
+        if (currentKey) $('cles-rendre-etat').textContent = mine === session ? 'Pas de réseau. Réessayez dans un moment.' : CLES_CUT;
         resolve(false);
       });
       $('accueil').appendChild(s);
@@ -83,7 +87,9 @@ globalThis.AIMMO_CLES_A_RENDRE = function (t) {
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var ID = /^[A-Za-z0-9_-]{1,64}$/;
   var reading = 0, writing = false, armed = null, armedIn = -1;
-  var CUT = 'Vous avez changé d’écran avant la réponse : rouvrez la liste.';
+  var CUT = ${JSON.stringify(CLES_A_RENDRE_CUT)};
+  /* Tout clic ailleurs que sur « Confirmer : perdu », dans tout l'écran, annule la demande : il est vu avant le geste. */
+  document.addEventListener('click', function (e) { if (armed && (!e || e.target !== armed)) disarm(); }, true);
   function say(m) { $('cles-rendre-etat').textContent = m; }
   function text(v) { return typeof v === 'string' ? v : ''; }
   function when(iso) { var d = date(iso), h = hour(iso); return d ? d + (h ? ' à ' + h : '') : ''; }
