@@ -206,16 +206,34 @@ describe('BR49 · « Mes actualités » sur l’accueil de l’agent', () => {
     expect(u.status()).toBe('Indisponible pour le moment. Réessayez dans un moment.');
   });
 
-  it('seule la dernière lecture dessine : une réponse du fil arrivée après un geste « Déjà vues » ne remplace rien', async () => {
+  it('[R269] pendant qu’un fil est demandé, aucun autre geste ne part : un double geste ne fait jamais jeter des actualités marquées vues', async () => {
     let release: () => void = () => undefined;
     const slow: Answer = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: [TARGETED] }))));
     const t = await run({ 'GET /v1/actualites': slow });
     await t.click('actualites-ouvrir');
+    await t.click('actualites-ouvrir');
     await t.click('actualites-vues');
+    expect(t.reads('/v1/actualites')).toBe(1);
+    expect(t.reads('/v1/actualites/deja-vues')).toBe(0);
     release();
     await settle();
+    expect(t.body().textContent).toContain('Titre n1');
+    // Le fil arrivé, les gestes repartent.
+    await t.click('actualites-vues');
+    expect(t.reads('/v1/actualites/deja-vues')).toBe(1);
     expect(t.body().textContent).toContain('Déjà vues');
-    expect(t.body().textContent).not.toContain('Titre n1');
+  });
+
+  it('seule la dernière lecture dessine : une relecture de « Déjà vues » arrivée en retard ne remplace pas le fil', async () => {
+    let release: () => void = () => undefined;
+    const slow: Answer = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: SEEN }))));
+    const t = await run({ 'GET /v1/actualites/deja-vues': slow });
+    await t.click('actualites-vues');
+    await t.click('actualites-ouvrir');
+    release();
+    await settle();
+    expect(t.body().textContent).toContain('Nouvelles');
+    expect(t.body().textContent).not.toContain('Titre n4');
   });
 
   it('[R13] la sortie efface le bloc', async () => {

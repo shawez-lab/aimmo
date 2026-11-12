@@ -124,12 +124,24 @@ globalThis.AIMMO_ACTUALITES = function (t) {
     out.appendChild(ul);
     say(seen ? count(list.length, 'actualité déjà vue', 'actualités déjà vues') + ', les plus récemment montrées d’abord.' : count(list.length, 'nouvelle actualité', 'nouvelles actualités') + ' : elles ne reviendront plus ici, elles se relisent dans « Déjà vues ».');
   }
-  /* Seule la dernière lecture dessine ; une réponse arrivée après la sortie ne montre rien. */
+  /* Seule la dernière lecture dessine ; une réponse arrivée après la sortie ne montre rien. Pendant qu'un fil est
+     demandé, aucun autre geste ne part : le fil marque vu ce qu'il rend, une seconde demande ou une autre lecture
+     ferait jeter une réponse dont les actualités ne reviendraient jamais au fil [R269]. */
+  var feeding = null;
   function show(kind) {
+    if (feeding && feeding.session === t.session()) return feeding.promise;
     var seen = kind === 'vues';
     var turn = ++reading, mine = t.session();
     clear($('actualites-corps'));
     say('Chargement…');
+    var p = read(seen, turn, mine);
+    if (seen) return p;
+    var mark = { session: mine, promise: null };
+    feeding = mark;
+    mark.promise = p.then(function (done) { if (feeding === mark) feeding = null; return done; });
+    return mark.promise;
+  }
+  function read(seen, turn, mine) {
     return send(seen ? '/v1/actualites/deja-vues' : '/v1/actualites', 'GET').then(function (res) {
       if (res.gone || turn !== reading || mine !== t.session()) return false;
       if (res.offline || !res.body || res.status >= 500) { say(seen ? OFFLINE : LOST); return false; }
@@ -142,7 +154,7 @@ globalThis.AIMMO_ACTUALITES = function (t) {
       return true;
     }, function () { if (turn === reading) say(seen ? OFFLINE : LOST); return false; });
   }
-  function wipe() { reading += 1; clear($('actualites-corps')); say(''); }
+  function wipe() { reading += 1; feeding = null; clear($('actualites-corps')); say(''); }
   return { show: show, wipe: wipe };
 };
 `;
