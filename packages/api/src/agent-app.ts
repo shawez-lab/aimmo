@@ -8,6 +8,7 @@
 
 import { ACTUALITES_SCRIPT } from '../app/actualites.ts';
 import { CLES_A_RENDRE_SCRIPT } from '../app/cles-a-rendre.ts';
+import { ARMOIRE_SCRIPT } from '../app/armoire.ts';
 import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
@@ -110,6 +111,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/actualites.js': { body: ACTUALITES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // « Mes clés à rendre » sur l'accueil (BR50), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/cles-a-rendre.js': { body: CLES_A_RENDRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'armoire des clés d'un bien (BR51), chargée au geste depuis « Mettre en vente », jamais gardée [R201].
+  '/app/armoire.js': { body: ARMOIRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].

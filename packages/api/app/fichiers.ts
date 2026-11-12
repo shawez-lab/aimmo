@@ -1198,6 +1198,37 @@ export const APP_JS = `'use strict';
     box.appendChild(open);
     box.appendChild(zone);
   }
+  /* BR51 · L'armoire des clés du bien, chargée au premier geste [R201, R271]. */
+  var armoire = null;
+  function venteArmoire(body, propertyId) {
+    var box = section('Armoire des clés');
+    var zone = el('div');
+    var mine = currentVente, loading = false;
+    var open = button('Ouvrir l’armoire', function () {
+      if (armoire) { open.hidden = true; return armoire.open(zone, propertyId); }
+      if (loading) return;
+      loading = true;
+      clear(zone);
+      zone.appendChild(el('p', 'Chargement…', 'doux'));
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/armoire.js');
+      s.addEventListener('load', function () {
+        loading = false;
+        var make = globalThis.AIMMO_ARMOIRE;
+        try { delete globalThis.AIMMO_ARMOIRE; } catch (e) { /* rien */ }
+        if (typeof make === 'function') armoire = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, hour: hour });
+        if (mine !== currentVente) return;
+        if (!armoire) { clear(zone); zone.appendChild(el('p', 'L’armoire n’a pas pu se charger. Réessayez dans un moment.', 'alerte')); return; }
+        open.hidden = true;
+        armoire.open(zone, propertyId);
+      });
+      s.addEventListener('error', function () { loading = false; clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
+      zone.appendChild(s);
+    });
+    box.appendChild(open);
+    box.appendChild(zone);
+    body.appendChild(box);
+  }
   /* X18 · Le texte de l'agent passe le même contrôle que celui de l'IA [R47] : refusé, il reste à l'écran avec ses phrases en cause. */
   function venteCorrection(box, base, draft) {
     var zone = el('div');
@@ -1299,6 +1330,7 @@ export const APP_JS = `'use strict';
       pub.appendChild(ch);
     }
     body.appendChild(pub);
+    venteArmoire(body, propertyId);
   }
   /* ---------- M11 : après la vente (F07). ---------- */
   var SIDES = { vendeur: 'Vendeur', acquereur: 'Acquéreur' };
