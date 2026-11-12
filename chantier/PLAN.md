@@ -1225,6 +1225,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : le fil n'est demandé qu'au geste [R269] (test) ; chaque actualité dit sa source datée avec un lien https seul, ce qu'elle change, les dossiers touchés et pourquoi, dans l'ordre reçu [R268, R269] (test) ; « Déjà vues » dit le jour montré, se relit autant de fois qu'on veut [R269] (test) ; une réponse du fil perdue renvoie vers « Déjà vues » [R269] (test) ; refus dit en mots [R16] (test) ; texte reçu posé en texte, script chargé au geste, budget tenu [R201] (test).
 - Attend : rien.
 
+### BR50 · « Mes clés à rendre » sur l'accueil de l'agent
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR21, RC17
+- Cahier : M06 Mandats et documents, armoire des clés ; R272, R271, R665, R16, R201.
+- Décidé (2026-11-12, voie 1), lecture prudente : relevé dans les « Restent » de HX10, BR21 et BR46 (« écrans de l'armoire »). Tâche coupée pour tenir une journée : celle-ci fait l'accueil de l'agent (ce qu'il a à rendre et le retour) ; l'armoire d'un bien (ranger, sortir, remettre à un partenaire, mouvements) viendra dans la fiche du bien par une tâche à part, la vue du vendeur dans son espace par une autre. Un bloc « Mes clés à rendre », lu au geste (`GET /v1/trousseaux/a-rendre`) ; pour chaque trousseau, le texte du serveur, l'heure du retour, « en retard » quand elle est passée, et deux gestes : « Rendu à l'agence » (`POST /v1/trousseaux/<id>/rendu`) et « Perdu » (`POST /v1/trousseaux/<id>/perdu`), confirmé par un second appui car un trousseau perdu ne sort plus [R271]. Script servi à part, `/app/cles-a-rendre.js` (`packages/api/app/cles-a-rendre.ts`). Aucune route, règle ni migration.
+- Objectif : l'agent voit enfin, depuis son accueil, chaque clé qu'il doit rapporter et la note rendue ou perdue en un geste.
+- Critères : rien n'est lu avant le geste [R201] (test) ; chaque trousseau dit son texte, son heure de retour, « en retard » une fois l'heure passée, dans l'ordre du serveur [R272] (test) ; « Perdu » ne part qu'au second appui, et un autre geste annule la demande [R271] (test) ; après un retour noté, la liste est relue (test) ; une écriture sans réponse est dite incertaine, la liste à relire (test) ; un seul envoi à la fois (test) ; chaque refus dit en mots, jamais par un code [R16] (test) ; texte reçu posé en texte, script chargé au geste, budget tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
