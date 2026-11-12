@@ -131,6 +131,13 @@ export function reseauUtileRoutes(): ReseauUtileRoute[] {
       name: 'actualites.fil',
       handle: async (s, v) => reply(await actualites(s).feed(v)),
     },
+    // Les actualités déjà montrées à l'agent lui seul, encore en vigueur : rien n'est réservé, le fil ne change pas (BR47) [R269].
+    {
+      method: 'GET',
+      pattern: /^\/actualites\/deja-vues$/,
+      name: 'actualites.deja_vues',
+      handle: async (s, v) => reply(await actualites(s).seen(v)),
+    },
     {
       method: 'GET',
       pattern: /^\/actualites\/catalogue$/,
