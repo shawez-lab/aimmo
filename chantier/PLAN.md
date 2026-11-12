@@ -1387,7 +1387,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC18 · Une visite faite et un mandat signé déclenchent un scénario
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-12)
+- Reste : fusionnée (#523, baf4cf61) ; Codex 1 P2 corrigé (relecture du mandat dans le bloc de reprise, test de panne ajouté), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5674 tests). Reste pour la voie 1 : proposer les deux déclencheurs à l'écran de composition des scénarios.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX24, T04, V06, D01
 - Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R403, R400, R401, R39.
 - Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX24 (« d'autres déclencheurs (visite faite, mandat signé) »). Seul `packages/core/src/automatismes/scenarios.ts` change, avec son test ; aucune migration (le déclencheur vit dans la définition en JSON). Visite faite : une visite (rendez-vous `visite` relié à un bien et à un projet d'achat, table `visits`) notée honorée ; le fait est l'instant noté (`updated_at`, le statut final ne change plus), la personne est l'acquéreur ; absente, annulée, ou une estimation honorée : rien. Mandat signé : un mandat inscrit au registre (comme R210) ; le fait est l'inscription, la personne est le mandant ; signé et pas inscrit : rien ; annulé au registre, quelle qu'en soit la raison (résiliation comprise, un message de remerciement n'a plus de sens), ou rétracté : rien, et un passage déjà rangé est annulé au moment de passer, sans message ni tâche, jamais effacé [R17]. Pas de type de projet avec ces déclencheurs.
