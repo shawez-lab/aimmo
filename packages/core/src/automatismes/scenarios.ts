@@ -19,7 +19,8 @@
  * [R400, R402].
  *
  * Allumé, un scénario ne regarde que les faits venus après son allumage, jamais le passé ; un fait ne le déclenche
- * qu'une fois. Son message ne part que par le contrôle central des envois, en mode essai : rien ne part vraiment
+ * qu'une fois. Le passage relit les faits depuis le dernier rangé, moins une marge, pas toute l'histoire depuis
+ * l'allumage [RC19]. Son message ne part que par le contrôle central des envois, en mode essai : rien ne part vraiment
  * [R401, R26]. Une personne ne reçoit qu'un message de scénario par jour, tous scénarios confondus, message de date compris [R402]. Le journal
  * ne garde ni texte ni coordonnée [R13]. Rien ne s'efface [R17].
  */
@@ -65,6 +66,11 @@ export interface ScenarioSettings {
   simulationValidHours: number;
   maxWaitHours: number;
   maxTaskDays: number;
+  /**
+   * Marge du passage, en heures : il relit les faits à partir du plus récent déjà rangé pour le scénario, moins cette
+   * marge, jamais avant l'allumage [R401, RC19].
+   */
+  rescanHours: number;
   window: SendingWindow;
 }
 
@@ -73,6 +79,7 @@ export const DEFAULT_SCENARIO_SETTINGS: ScenarioSettings = Object.freeze({
   simulationValidHours: 24,
   maxWaitHours: 90 * 24,
   maxTaskDays: 30,
+  rescanHours: 24,
   window: Object.freeze({
     timeZone: DEFAULT_SEND_SETTINGS.timeZone,
     initiativeFrom: DEFAULT_SEND_SETTINGS.initiativeFrom,
@@ -570,8 +577,9 @@ export class ScenariosAutomatiques {
     const lit = await this.litScenarios(networkId);
     for (const s of lit) {
       const def = await this.definitionOf(s.scenarioId, s.version);
-      // Jamais le passé : seulement les faits venus après l'allumage [R401].
-      for (const fact of await this.facts(networkId, def, new Date(s.since), new Date(now.getTime() + 1))) {
+      // Jamais le passé : seulement les faits venus après l'allumage [R401]. Et pas toute l'histoire depuis l'allumage à
+      // chaque passage : à partir du dernier fait rangé, moins la marge [RC19].
+      for (const fact of await this.facts(networkId, def, await this.scanFrom(s), new Date(now.getTime() + 1))) {
         // Rangé seulement si l'allumage lu est encore le dernier état du scénario, dans la même écriture : un arrêt, ou
         // un arrêt suivi d'un nouvel allumage, venu entre-temps ne laisse naître aucun passage d'avant [R401].
         const inserted = await this.db.run(
@@ -629,6 +637,19 @@ export class ScenariosAutomatiques {
       }
     }
     return report;
+  }
+
+  /**
+   * D'où le passage relit les faits d'un scénario allumé : du fait le plus récent déjà rangé pour lui depuis l'allumage,
+   * moins la marge, jamais avant l'allumage ; sans passage rangé, de l'allumage. Un fait daté de plus d'une marge avant
+   * le dernier rangé, qui n'apparaît qu'après coup, ne déclenche plus rien : c'est plus prudent [R401, RC19].
+   */
+  private async scanFrom(s: { scenarioId: string; since: string }): Promise<Date> {
+    const since = Date.parse(s.since);
+    const last = await this.db.first<{ at: string | null }>('SELECT MAX(triggered_at) AS at FROM automation_runs WHERE scenario_id = ? AND triggered_at >= ?', [s.scenarioId, s.since]);
+    const lastAt = last?.at ? Date.parse(last.at) : Number.NaN;
+    if (!Number.isFinite(lastAt)) return new Date(since);
+    return new Date(Math.max(since, lastAt - this.settings.rescanHours * HOUR));
   }
 
   /** Le fait tient encore : seul un mandat peut être retiré après coup (annulé au registre ou rétracté) [RC18]. */
