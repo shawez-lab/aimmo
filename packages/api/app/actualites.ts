@@ -18,6 +18,9 @@ export const ACTUALITES_REFUSALS: Readonly<Record<string, string>> = Object.free
 /** Le fil a pu réserver des actualités sans que la réponse arrive : elles ne sont jamais perdues, elles sont dans « Déjà vues ». */
 export const ACTUALITES_LOST = 'La réponse n’est pas arrivée : si des actualités vous ont été montrées, elles se relisent dans « Déjà vues ».';
 
+/** Un changement d'écran a coupé la lecture du fil : elle ne reste jamais « Chargement… », elle renvoie vers « Déjà vues ». */
+export const ACTUALITES_CUT = 'La lecture a été interrompue par un changement d’écran : les actualités qui vous ont été montrées se relisent dans « Déjà vues ».';
+
 export const ACTUALITES_HOME_HTML = `<section class="bloc" aria-labelledby="titre-actualites">
 <h3 id="titre-actualites">Mes actualités</h3>
 <p class="etat">Le juridique et le marché qui touchent vos dossiers, chacun avec sa source. Une actualité n’est montrée qu’une fois, puis se relit dans « Déjà vues ».</p>
@@ -71,6 +74,7 @@ globalThis.AIMMO_ACTUALITES = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, date = t.date;
   var REFUSALS = ${JSON.stringify(ACTUALITES_REFUSALS)};
   var LOST = ${JSON.stringify(ACTUALITES_LOST)};
+  var CUT = ${JSON.stringify(ACTUALITES_CUT)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var TOPICS = { juridique: 'Juridique', marche: 'Marché' };
   var DAY = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -143,7 +147,9 @@ globalThis.AIMMO_ACTUALITES = function (t) {
   }
   function read(seen, turn, mine) {
     return send(seen ? '/v1/actualites/deja-vues' : '/v1/actualites', 'GET').then(function (res) {
-      if (res.gone || turn !== reading || mine !== t.session()) return false;
+      if (turn !== reading) return false;
+      /* Coupée par un changement d'écran : le fil a pu marquer vu ce qu'il rendait, la lecture le redit [R269]. */
+      if (res.gone || mine !== t.session()) { say(seen ? '' : CUT); return false; }
       if (res.offline || !res.body || res.status >= 500) { say(seen ? OFFLINE : LOST); return false; }
       if (!res.ok || !Array.isArray(res.body.data)) {
         var b = res.body || {};

@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { ACTUALITES_LOST, ACTUALITES_REFUSALS, ACTUALITES_SCRIPT } from '../app/actualites.ts';
+import { ACTUALITES_CUT, ACTUALITES_LOST, ACTUALITES_REFUSALS, ACTUALITES_SCRIPT } from '../app/actualites.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -234,6 +234,24 @@ describe('BR49 · « Mes actualités » sur l’accueil de l’agent', () => {
     await settle();
     expect(t.body().textContent).toContain('Nouvelles');
     expect(t.body().textContent).not.toContain('Titre n4');
+  });
+
+  it('[R269] un fil coupé par un changement d’écran ne reste jamais « Chargement… » : il renvoie vers « Déjà vues »', async () => {
+    let release: () => void = () => undefined;
+    const slow: Answer = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: [TARGETED] }))));
+    const t = await run({ 'GET /v1/actualites': slow });
+    await t.click('actualites-ouvrir');
+    expect(t.status()).toBe('Chargement…');
+    // L'agent ouvre ses mises en relation avant la réponse, puis revient.
+    t.els['partenaires-ouvrir']!.listeners.click!({});
+    await settle();
+    release();
+    await settle();
+    expect(t.status()).toBe(ACTUALITES_CUT);
+    expect(t.body().textContent).not.toContain('Titre n1');
+    // Le geste suivant repart : le fil coupé ne bloque rien.
+    await t.click('actualites-vues');
+    expect(t.reads('/v1/actualites/deja-vues')).toBe(1);
   });
 
   it('[R13] la sortie efface le bloc', async () => {
