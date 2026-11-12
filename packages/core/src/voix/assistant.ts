@@ -21,6 +21,12 @@
  * lues par des règles fixes, sans IA, et ce que dit l'appelant n'est envoyé à aucune IA par l'assistant [R15]. Un « non »
  * ou un « pas », ou une question, dans le choix d'un créneau ne réserve jamais rien : le créneau désigné est répété, et
  * seul un oui franc le réserve. L'accord à l'enregistrement n'est, lui aussi, qu'un oui sans réserve. Rien de ce qui est dit au journal [R13].
+ *
+ * Une demande d'arrêt dite à l'assistant (« ne m'appelez plus », « stop ») vaut un « STOP » écrit, à tout moment de
+ * l'appel, avec ou sans accord d'enregistrement : elle est lue par la même lecture que les messages reçus (dans le doute,
+ * c'est un arrêt), rien n'est réservé ensuite, l'assistant le confirme et raccroche, et l'exclusion « stop » est rangée
+ * sur tous les canaux de la fiche de l'appelant à la fin de l'appel, datée de l'instant dit [R04] (RC21). Seul l'instant
+ * est gardé, jamais la phrase [R13] ; un numéro masqué n'a pas de fiche, rien n'est rangé [R244].
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -28,6 +34,7 @@ import type { PropertySheet } from '../annonces/fiche-bien.ts';
 import { FicheBien } from '../annonces/fiche-bien.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Property } from '../db/types.ts';
+import { isStopRequest } from '../envoi/service.ts';
 import { numbersIn, plain } from '../envoi/texte.ts';
 import { normalizePhone } from '../fiche/normalize.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -93,6 +100,8 @@ export interface AssistantState {
   turns: number;
   unanswered: Topic[];
   booked: { kind: AppointmentKind; start: string } | null;
+  /** L'instant où l'appelant a demandé l'arrêt [R04], sans sa phrase ; absent ou null sinon. */
+  stopAt?: string | null;
 }
 
 export interface Turn {
@@ -118,6 +127,8 @@ export interface Handoff {
   appointment: { kind: AppointmentKind; start: string } | null;
   /** Les sujets que la fiche ne couvrait pas, à reprendre par l'agent ; vide sans accord d'enregistrement. */
   unanswered: Topic[];
+  /** L'appelant a demandé l'arrêt pendant l'appel ; l'exclusion « stop » est rangée sur sa fiche, s'il en a une [R04]. */
+  stop: boolean;
   already: boolean;
 }
 
@@ -278,6 +289,18 @@ export function chosenSlot(utterance: string, offered: readonly string[]): strin
   return picks.size === 1 ? offered[[...picks][0]!]! : null;
 }
 
+/** Un refus d'être enregistré, qui ne dit rien des envois : « je ne veux pas être enregistré », « pas d'enregistrement ». */
+const RECORDING_REFUSAL = /\b(?:(?:je |nous )?ne (?:veux|voulons|souhaite|souhaitons|desire) (?:pas|plus) |pas |sans |surtout pas )(?:etre |d'etre |d'|de |l'|qu'on m'|que vous m')?(?:enregistr|registr)\w*/g;
+
+/**
+ * Une demande d'arrêt dite à l'assistant, lue comme un message reçu [R04] : dans le doute, c'est un arrêt. Seul un refus
+ * d'être enregistré est retiré avant la lecture, car il répond à l'annonce de l'enregistrement et ne parle pas des envois ;
+ * le reste de la phrase est lu (« je ne veux pas être enregistré, ne m'appelez plus » est un arrêt).
+ */
+export function stopAsked(utterance: string): boolean {
+  return isStopRequest(plain(utterance).replace(RECORDING_REFUSAL, ' '));
+}
+
 export class AssistantVocal {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -389,6 +412,12 @@ export class AssistantVocal {
     if (state.phase === 'done') return { state, say: [], done: true };
     state.turns += 1;
     const text = typeof utterance === 'string' ? utterance.slice(0, 1000) : '';
+    // L'arrêt passe avant tout, même au-delà du nombre de tours, et ne réserve jamais le créneau en attente [R04].
+    if (stopAsked(text)) {
+      state.stopAt = this.now().toISOString();
+      state.pending = null;
+      return this.close(state, [state.from === null ? 'C’est noté : aucune coordonnée de vous n’est gardée.' : 'C’est noté : vous ne recevrez plus ni appel ni message de notre part.']);
+    }
     if (state.turns > MAX_TURNS) return this.close(state, []);
 
     if (state.phase === 'consent') {
@@ -459,6 +488,7 @@ export class AssistantVocal {
    * l'agent. Une seule fois par appel, même livré plusieurs fois [R18].
    */
   async finish(state: AssistantState, end: { endedAt: Date; recordingRef: string | null }): Promise<Handoff> {
+    const stopWanted = typeof state.stopAt === 'string' && Number.isFinite(Date.parse(state.stopAt));
     const existing = await this.db.first<{ call_row_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; unanswered: string | null }>(
       'SELECT call_row_id, appointment_kind, appointment_start, unanswered FROM voice_assistant_calls WHERE network_id = ? AND provider = ? AND call_id = ?',
       [state.networkId, state.provider, state.callId],
@@ -468,6 +498,7 @@ export class AssistantVocal {
         call: existing.call_row_id ? await this.appels.get(state.networkId, existing.call_row_id) : null,
         appointment: existing.appointment_kind && existing.appointment_start ? { kind: existing.appointment_kind, start: existing.appointment_start } : null,
         unanswered: existing.unanswered ? (JSON.parse(existing.unanswered) as Topic[]) : [],
+        stop: stopWanted,
         already: true,
       };
     }
@@ -483,6 +514,12 @@ export class AssistantVocal {
       originCode: state.originCode,
     });
     const callRowId = received.ok ? received.callId : null;
+    // L'arrêt est rangé avant le passage de main : une coupure entre les deux, la livraison suivante le refait sans le
+    // doubler [R04, R18]. Tant qu'une autre livraison range encore l'appel, rien n'est rangé ici : à refaire.
+    if (stopWanted && callRowId !== null && state.from !== null) {
+      const noted = await this.appels.recordSpokenStop(state.networkId, callRowId, new Date(state.stopAt!));
+      if (noted === 'en_cours') throw new Error('Appel encore en cours de rangement : passage de main à refaire.');
+    }
     // Sans accord d'enregistrement, ou pour un numéro masqué, rien de ce qui a été dit n'est gardé, pas même les sujets [R242, R244].
     const unanswered = state.consentAt && state.from !== null ? state.unanswered.filter((t) => TOPICS.includes(t)) : [];
     try {
@@ -497,13 +534,14 @@ export class AssistantVocal {
     }
     await appendEvent(
       this.journal,
-      { type: 'voix.assistant_passage', actor: 'system', subject: `agent:${state.agentId}`, data: { rule: 'R248', appointment: state.booked !== null, unanswered: unanswered.length, recorded: state.consentAt !== null } },
+      { type: 'voix.assistant_passage', actor: 'system', subject: `agent:${state.agentId}`, data: { rule: 'R248', appointment: state.booked !== null, unanswered: unanswered.length, recorded: state.consentAt !== null, stop: stopWanted } },
       this.now,
     );
     return {
       call: callRowId ? await this.appels.get(state.networkId, callRowId) : null,
       appointment: state.booked,
       unanswered,
+      stop: stopWanted,
       already: false,
     };
   }

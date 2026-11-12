@@ -5,7 +5,7 @@ import { numbersIn } from '../src/envoi/texte.ts';
 import { ReservationEnLigne } from '../src/rendezvous/en-ligne.ts';
 import { appointmentWhen } from '../src/rendezvous/reservation.ts';
 import { Appels, type CallSegment, type CallTranscriber } from '../src/voix/appels.ts';
-import { AssistantVocal, chosenSlot, figuresFromSheet, propertyFacts, saysYes, topicsIn, type AssistantState, type ForwardedCall, type Turn } from '../src/voix/assistant.ts';
+import { AssistantVocal, chosenSlot, figuresFromSheet, propertyFacts, saysYes, stopAsked, topicsIn, type AssistantState, type ForwardedCall, type Turn } from '../src/voix/assistant.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -346,6 +346,99 @@ describeWithSqlite('HX22 · assistant vocal quand l’agent ne peut pas répondr
     expect(h3.call).toMatchObject({ status: 'masque' });
     const rows = await t.db.all<{ unanswered: string | null }>('SELECT unanswered FROM voice_assistant_calls ORDER BY created_at');
     expect(rows.map((r) => r.unanswered)).toEqual(['["autre"]', null, null]);
+  });
+});
+
+describeWithSqlite('RC21 · une demande d’arrêt dite à l’assistant vocal arrête tous les envois', () => {
+  const STOP_SAID = 'C’est noté : vous ne recevrez plus ni appel ni message de notre part.';
+  const stops = (db: SqlDatabase) =>
+    db.all<{ person_id: string; reason: string; channel: string | null; noted_at: string; lifted_at: string | null }>("SELECT person_id, reason, channel, noted_at, lifted_at FROM exclusions WHERE reason = 'stop'");
+  const endOf = (state: AssistantState, ref: string | null = 'REC-ARRET') => ({ endedAt: new Date(Date.parse(state.startedAt) + 120_000), recordingRef: ref });
+
+  it('[R04] un arrêt dit après l’accord range l’exclusion « stop » sur tous les canaux, à l’instant dit, et raccroche', async () => {
+    const t = await setup();
+    const { state, turns } = await t.talk(t.call(), ['oui', 'Quel est le prix ?', 'Ne m’appelez plus, s’il vous plaît.']);
+    const last = turns[turns.length - 1]!;
+    expect(last.done).toBe(true);
+    expect(last.say).toEqual([STOP_SAID, 'Au revoir, et bonne journée.']);
+    expect(state.stopAt).not.toBeNull();
+    expect(await stops(t.db)).toEqual([]);
+    const h = await t.assistant.finish(state, endOf(state));
+    expect(h.stop).toBe(true);
+    const rows = await stops(t.db);
+    expect(rows).toEqual([{ person_id: expect.any(String), reason: 'stop', channel: null, noted_at: state.stopAt, lifted_at: null }]);
+    const caller = await t.db.first<{ person_id: string }>('SELECT person_id FROM calls WHERE call_id = ?', [state.callId]);
+    expect(rows[0]!.person_id).toBe(caller!.person_id);
+  });
+
+  it('[R04] [R242] sans accord d’enregistrement, l’arrêt dit est rangé quand même ; rien de ce qui est dit n’est gardé', async () => {
+    const t = await setup();
+    const { state, said } = await t.talk(t.call(), ['Non. Et ne m’appelez plus.']);
+    expect(state.consentAt).toBeNull();
+    expect(state.phase).toBe('done');
+    expect(said).toContain(STOP_SAID);
+    const h = await t.assistant.finish(state, endOf(state));
+    expect(h.call).toMatchObject({ status: 'sans_enregistrement', recordingRef: null, transcript: [] });
+    expect(t.transcriber.calls).toBe(0);
+    expect(await stops(t.db)).toHaveLength(1);
+  });
+
+  it('[R04] [R248] un arrêt dit pendant la confirmation d’un créneau ne réserve rien', async () => {
+    const t = await setup();
+    const { state } = await t.talk(t.call(), ['oui', 'je voudrais visiter', 'le deuxième', 'stop']);
+    expect(state.booked).toBeNull();
+    expect(state.pending).toBeNull();
+    expect(await appointments(t.db)).toHaveLength(0);
+    // Au-delà du nombre de tours, l'arrêt se lit encore.
+    const long = await t.talk(t.call(), ['oui']);
+    const late = await t.assistant.hear({ ...long.state, turns: 30 }, 'Ne m’appelez plus.');
+    expect(late.state.stopAt).not.toBeNull();
+    expect(late.say[0]).toBe(STOP_SAID);
+  });
+
+  it('[R04] [R18] livré deux fois, un seul arrêt ; un arrêt déjà en cours n’est pas doublé', async () => {
+    const t = await setup();
+    const first = await t.talk(t.call(), ['oui', 'stop']);
+    await t.assistant.finish(first.state, endOf(first.state));
+    const again = await t.assistant.finish(first.state, endOf(first.state));
+    expect(again).toMatchObject({ already: true, stop: true });
+    const second = await t.talk(t.call(), ['Je ne veux plus être contacté.']);
+    await t.assistant.finish(second.state, endOf(second.state));
+    expect(await stops(t.db)).toHaveLength(1);
+  });
+
+  it('[R04] un refus d’être enregistré, un « non merci » ou une question ne sont pas des arrêts', async () => {
+    const t = await setup();
+    for (const answer of ['Je ne veux pas être enregistré.', 'non, pas d’enregistrement', 'Sans enregistrement, merci.']) {
+      const { state } = await t.talk(t.call(), [answer, 'Quel est le prix ?']);
+      expect(state.stopAt ?? null, answer).toBeNull();
+      expect(state.phase, answer).toBe('ask');
+    }
+    const { state } = await t.talk(t.call(), ['oui', 'Le prix est négociable ?', 'je voudrais visiter', 'non merci, au revoir']);
+    expect(state.stopAt ?? null).toBeNull();
+    const h = await t.assistant.finish(state, endOf(state));
+    expect(h.stop).toBe(false);
+    expect(await stops(t.db)).toEqual([]);
+    expect(stopAsked('Je ne veux pas être enregistré, et ne m’appelez plus.')).toBe(true);
+    expect(stopAsked('Je ne veux plus être contacté.')).toBe(true);
+    expect(stopAsked('Plus de messages, merci.')).toBe(true);
+  });
+
+  it('[R244] [R13] un numéro masqué ne range rien ; le journal ne dit que l’arrêt, jamais la phrase', async () => {
+    const t = await setup();
+    const masked = await t.talk(t.call({ from: null }), ['oui', 'Ne m’appelez plus.']);
+    expect(masked.said).toContain('C’est noté : aucune coordonnée de vous n’est gardée.');
+    const h = await t.assistant.finish(masked.state, endOf(masked.state));
+    expect(h.call).toMatchObject({ status: 'masque' });
+    expect(await stops(t.db)).toEqual([]);
+
+    const said = await t.talk(t.call(), ['oui', 'Laissez-moi tranquille, ne m’appelez plus.']);
+    await t.assistant.finish(said.state, endOf(said.state));
+    const events = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal");
+    const all = JSON.stringify(events);
+    expect(all).not.toMatch(/tranquille|appelez/i);
+    const passages = events.filter((e) => e.type === 'voix.assistant_passage').map((e) => JSON.parse(e.data) as { stop: boolean });
+    expect(passages.map((d) => d.stop)).toEqual([true, true]);
   });
 });
 

@@ -445,6 +445,24 @@ export class Appels {
   }
 
   /** Les appels d'une fiche, du plus récent au plus ancien, fiches réunies comprises. */
+  /**
+   * Range l'arrêt demandé de vive voix pendant un appel déjà rangé, par l'assistant vocal par exemple (RC21) : exclusion
+   * « stop » sur tous les canaux de la fiche de l'appelant, datée de l'instant dit [R04]. Une exclusion déjà en cours
+   * n'est pas doublée [R18]. Rend « sans_fiche » pour un numéro masqué (aucune fiche, rien à arrêter [R244]) et
+   * « en_cours » tant qu'une autre livraison range encore l'appel : à refaire ensuite.
+   */
+  async recordSpokenStop(networkId: string, callRowId: string, at: Date): Promise<'rangé' | 'sans_fiche' | 'en_cours'> {
+    const row = await this.db.first<{ status: CallStatus; person_id: string | null; ended_at: string | null }>(
+      'SELECT status, person_id, ended_at FROM calls WHERE id = ? AND network_id = ?',
+      [callRowId, networkId],
+    );
+    if (!row || row.status === 'en_cours') return 'en_cours';
+    if (row.person_id === null) return 'sans_fiche';
+    const said = row.ended_at && Date.parse(row.ended_at) < at.getTime() ? new Date(row.ended_at) : at;
+    await new DecisionEnvoi(this.db, this.store, this.fiche, { now: this.now, newId: this.newId }).recordStopRequest({ networkId, agentId: null, personId: row.person_id, at: said });
+    return 'rangé';
+  }
+
   async forPerson(networkId: string, personId: string): Promise<CallView[]> {
     const root = await this.fiche.rootOf(personId);
     const rows = await this.db.all<CallRow>(
