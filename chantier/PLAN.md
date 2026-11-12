@@ -1409,6 +1409,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : sans passage rangé, la lecture part de l'allumage [R401] (test) ; après un passage rangé, elle part du fait le plus récent moins la marge, jamais avant l'allumage (test) ; un fait daté dans la marge et écrit après coup est rangé une fois [R401] (test) ; un fait daté avant la marge et écrit après coup ne déclenche rien [R401] (test) ; marge réglable (test) ; tous les tests de HX24, RC09, RC10 et RC18 restent verts.
 - Attend : rien.
 
+### RC20 · Une demande d'arrêt dite au téléphone arrête tous les envois
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX21, S05
+- Cahier : Conformité, demande d'arrêt ; HX21 « Appels entrants résumés et rangés dans la fiche » ; R04, R242, R13.
+- Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX21 (« demande d'arrêt dite au téléphone (R04) »). Aujourd'hui un appelant qui dit « ne m'appelez plus » pendant un appel enregistré voit sa phrase rangée dans la transcription, mais rien ne l'arrête : les relances, scénarios et messages de date continuent. Quand un appel est transcrit (accord rangé, R242), chaque passage dit par l'appelant est lu par la même lecture que les messages reçus (`isStopRequest` de S05, dans le doute c'est un arrêt) ; le premier qui demande l'arrêt range l'exclusion « stop » sur tous les canaux, par `DecisionEnvoi.recordStopRequest`, datée de l'heure du passage dans l'appel, avant de ranger l'appel fini (une coupure entre les deux : la livraison suivante reprend l'appel et ne double pas l'exclusion). Les paroles de l'agent ne comptent jamais. Sans accord ni transcription, rien n'est lu : l'agent note l'arrêt lui-même. La fiche montre le passage qui a demandé l'arrêt ; le journal de l'appel dit seulement « arrêt demandé », sans le texte [R13]. Seuls `packages/core/src/voix/appels.ts` et son test changent ; aucune migration ni règle nouvelle. L'assistant vocal (HX22) suivra à part.
+- Objectif : « ne m'appelez plus » dit au téléphone vaut autant qu'un « STOP » écrit.
+- Critères : un arrêt dit par l'appelant range l'exclusion « stop » sur tous les canaux, à l'heure du passage [R04] (test) ; le même arrêt dit par l'agent, ou une phrase sans arrêt, ne range rien (test) ; sans accord à l'enregistrement, rien n'est lu ni rangé [R242] (test) ; l'appel livré deux fois ne double pas l'exclusion, un arrêt déjà en cours n'est pas doublé [R18] (test) ; la vue de l'appel montre le passage, le journal ne dit que « arrêt demandé », sans texte [R13] (test) ; tous les tests de HX21 et S05 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
