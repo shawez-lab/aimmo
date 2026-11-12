@@ -1467,7 +1467,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC22 · Un créneau pris pendant la validation d'une dictée : le refus dit ce qui est rangé
-- Statut : en cours (voie 2) : proposition #532 prête (38058b86), à fusionner
+- Statut : en cours (voie 2)
 - Reste : proposition #532 prête le 2026-11-12 vers 06:50 : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5712 tests) ; fusion refusée par le contrôle des permissions de la séance (« CI Bypass »), un essai : une séance suivante la fusionne à l'étape 3 (H69). Ensuite : R261 complétée sur main par la fusion. Reste l'écran de dictée (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX06, RC01
 - Cahier : M05 Rendez-vous ; HX06 « Création d'un bien et d'un contact à la voix » ; R32, R33, R260, R261, R13.
