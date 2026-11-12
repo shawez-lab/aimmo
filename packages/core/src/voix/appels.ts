@@ -8,6 +8,9 @@
  * seul n'est pas rangé [R243]. La provenance ne vient que d'un code de contenu de AT05 porté par l'appel (bouton d'appel
  * marqué du site), jamais d'un second numéro ni d'un rapprochement par l'heure : sinon elle est « inconnue » [R245, R156].
  *
+ * Une demande d'arrêt dite par l'appelant dans un appel transcrit (« ne m'appelez plus ») vaut un « STOP » écrit : elle
+ * est lue par la même lecture que les messages reçus et range l'exclusion « stop » sur tous les canaux [R04] (RC20).
+ *
  * Un numéro masqué ne crée aucune fiche : rien n'est gardé de l'appel que son heure, et l'agent est prévenu [R244].
  * Ni texte, ni numéro, ni référence d'enregistrement au journal [R13]. Le transcripteur ne reçoit que la référence de
  * l'enregistrement ; l'IA de qualification, que les paroles de l'appelant sans coordonnées [R15].
@@ -15,6 +18,7 @@
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Person } from '../db/types.ts';
+import { DecisionEnvoi, isStopRequest } from '../envoi/service.ts';
 import { maskIban } from '../envoi/texte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey, normalizePhone } from '../fiche/normalize.ts';
@@ -138,6 +142,8 @@ export interface CallView {
   route: Route | null;
   summary: SummaryLine[];
   transcript: CallSegment[];
+  /** Le passage où l'appelant a demandé l'arrêt [R04], s'il y en a un. */
+  stop: { quote: string; atS: number } | null;
   origin: { contentId: string | null; kind: string };
 }
 
@@ -243,6 +249,33 @@ export function citeFields(q: Qualified, segments: readonly CallSegment[], commu
   return out;
 }
 
+/** Un arrêt se lit sur quatre passages de l'appelant à la suite au plus. */
+const STOP_SPAN = 4;
+
+/**
+ * Le premier arrêt demandé par l'appelant, lu comme un message reçu [R04] : dans le doute, c'est un arrêt. Le
+ * transcripteur peut couper une phrase en plusieurs passages (« Ne m'appelez » puis « plus. ») : les passages de
+ * l'appelant qui se suivent sans parole de l'agent entre eux sont lus ensemble, jusqu'à quatre. Le texte rendu est le
+ * plus court qui demande l'arrêt, avec l'heure de son premier passage. Les paroles de l'agent ne comptent jamais, ni
+ * seules ni collées à celles de l'appelant.
+ */
+export function stopSegment(segments: readonly CallSegment[]): { text: string; startS: number } | null {
+  let run: CallSegment[] = [];
+  for (const segment of segments) {
+    if (segment.speaker !== 'appelant') {
+      run = [];
+      continue;
+    }
+    run.push(segment);
+    // Le passage qui vient d'arriver termine la phrase : du plus court au plus long en remontant.
+    for (let start = run.length - 1; start >= Math.max(0, run.length - STOP_SPAN); start -= 1) {
+      const text = run.slice(start).map((s) => s.text).join(' ');
+      if (isStopRequest(text)) return { text, startS: run[start]!.startS };
+    }
+  }
+  return null;
+}
+
 const SUMMARY_ORDER: readonly CitedField['key'][] = ['city', 'priceEur', 'budgetMinEur', 'budgetMaxEur', 'deadline', 'financing', 'criterion'];
 
 export class Appels {
@@ -314,6 +347,18 @@ export class Appels {
         if (typeof outcome === 'string') {
           update = { ...base, status: 'impossible', failure: outcome, person_id: person.id, attach, recording_ref: recordingRef };
         } else {
+          // L'arrêt est rangé avant l'appel fini : une coupure entre les deux, la livraison suivante reprend l'appel et
+          // l'exclusion déjà en cours n'est pas doublée [R04, R18].
+          const stop = stopSegment(outcome.segments);
+          if (stop) {
+            const said = Math.min(call.startedAt.getTime() + stop.startS * 1000, call.endedAt.getTime());
+            await new DecisionEnvoi(this.db, this.store, this.fiche, { now: this.now, newId: this.newId }).recordStopRequest({
+              networkId,
+              agentId: null,
+              personId: person.id,
+              at: new Date(said),
+            });
+          }
           const { qualified, source } = await this.qualify(outcome.segments, person);
           const fields = citeFields(qualified, outcome.segments, this.communes);
           update = {
@@ -391,6 +436,8 @@ export class Appels {
           failure: row.failure,
           attach: row.attach,
           origin: row.origin_kind,
+          // Seulement « arrêt demandé », jamais la phrase [R13].
+          stop: row.transcript ? stopSegment(JSON.parse(row.transcript) as CallSegment[]) !== null : false,
         },
       },
       this.now,
@@ -428,6 +475,7 @@ export class Appels {
       .map((f) => ({ key: f.key, value: f.value, quote: transcript[f.segment]!.text, atS: transcript[f.segment]!.startS }))
       .sort((a, b) => SUMMARY_ORDER.indexOf(a.key) - SUMMARY_ORDER.indexOf(b.key));
     const durationS = row.started_at && row.ended_at ? (Date.parse(row.ended_at) - Date.parse(row.started_at)) / 1000 : null;
+    const stop = stopSegment(transcript);
     return {
       id: row.id,
       startedAt: row.started_at,
@@ -441,6 +489,7 @@ export class Appels {
       route: row.route,
       summary,
       transcript,
+      stop: stop ? { quote: stop.text, atS: stop.startS } : null,
       origin: { contentId: row.origin_content_id, kind: row.origin_kind ?? 'inconnue' },
     };
   }
