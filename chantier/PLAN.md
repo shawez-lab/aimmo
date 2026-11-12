@@ -1476,6 +1476,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : créneau pris entre la vérification et la réservation : refus `slot_taken_meanwhile` qui nomme la fiche et le bien rangés et propose jusqu'à trois créneaux libres, jamais passés [R261, R32] (test) ; rien n'est doublé, aucun rendez-vous pris, aucun compte rendu validé (test) ; au journal, des identifiants seulement [R13] (test) ; rejouée créneau encore pris : refus avant écriture qui nomme ce qui est rangé (test) ; rejouée sans le rendez-vous : même fiche, même bien (test) ; rejouée créneau libéré : un seul rendez-vous [R261] (test) ; contre-visite prise entre-temps : même refus, rien validé (test) ; tous les tests de HX06 et RC01 restent verts.
 - Attend : rien.
 
+### RC23 · Les appels entrants comptent dans la mesure de l'origine des contacts
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT05, HX21
+- Cahier : M01 Attirer, point 6 « Origine des contacts » ; critère « 95 % » ; HX21 ; R156, R245, R16.
+- Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX21 (« appels dans la mesure mensuelle de AT05 »). Aujourd'hui la mesure mensuelle ne compte que les messages reçus : un appel venu du bouton d'appel marqué d'une page de bien n'est jamais compté, et la part des contacts à origine connue est fausse dès que les clients appellent. Un appel rangé (pas `en_cours`) est un contact du canal téléphone : les appels d'une même fiche forment une seule conversation, comptée le mois de son premier appel, heure de Paris, comme un fil de messages ; un numéro masqué, sans fiche, est un contact à lui seul. Son origine est celle que HX21 a rangée par le code de contenu [R245] : le premier appel à contenu connu classe la fiche ; sinon « inconnue », jamais devinée ni rapprochée d'un message par l'heure ou le numéro [R156]. Un appel compte même sans enregistrement : l'origine ne dépend pas de l'accord. Un appel et un message de la même personne restent deux contacts, comme deux canaux écrits aujourd'hui. Change seulement `packages/core/src/attirer/origine-contacts.ts` et son test ; aucune migration ni règle nouvelle.
+- Objectif : la part des contacts à origine connue dit vrai, appels compris.
+- Critères : un appel au code d'un contenu compte pour ce contenu, un appel sans code compte « inconnue » [R245, R156] (test) ; les appels d'une même fiche comptent une fois, le mois du premier, heure de Paris ; deux numéros masqués comptent deux (test) ; un appel en cours, d'un autre réseau ou d'un autre mois ne compte pas (test) ; un appel sans enregistrement compte avec son origine (test) ; la mesure reste réservée à la direction [R16] (test) ; tous les tests de AT05 et HX21 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
