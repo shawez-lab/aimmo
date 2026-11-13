@@ -244,14 +244,16 @@ globalThis.AIMMO_SCENARIOS = function (t) {
       var texts = areas.map(function (x) { return String(x.value || '').trim(); }).filter(function (x) { return x; });
       if (!texts.length) { say(DATE_REFUSALS.bad_texts); return; }
       if (texts.some(function (x) { return x.split(SLOT).length !== 2; })) { say(REFUSALS.first_name_slot); return; }
+      /* Ce qui part est figé : un choix changé pendant l'envoi ne change pas ce qui est dit rangé. */
+      var k = kind.value, c = channel.value;
       return once(function () {
         var mine = t.session();
         say('Envoi…');
-        return send('/v1/dates-clients/textes', 'POST', { kind: kind.value, channel: channel.value, texts: texts }).then(function (res) {
+        return send('/v1/dates-clients/textes', 'POST', { kind: k, channel: c, texts: texts }).then(function (res) {
           if (res.gone || mine !== t.session()) return false;
           if (lost(res)) { say(LOST); return false; }
           if (!res.ok) { var b = res.body || {}; say(own(DATE_REFUSALS, b.code) || why(res, 'Les textes ne sont pas rangés.')); return false; }
-          say(count(texts.length, 'texte rangé', 'textes rangés') + ' pour ' + DATE_KINDS[kind.value].toLowerCase() + ' par ' + CHANNELS[channel.value] + '.');
+          say(count(texts.length, 'texte rangé', 'textes rangés') + ' pour ' + DATE_KINDS[k].toLowerCase() + ' par ' + CHANNELS[c] + '.');
           return true;
         });
       });

@@ -161,8 +161,10 @@ describe('BR58 · l’anniversaire ou la fête rangé depuis la fiche', () => {
     await press(b);
     await press(b);
     expect(posts(b)).toHaveLength(1);
+    // Un choix changé pendant l'envoi ne change pas ce qui est dit rangé.
+    fill(b, { sorte: '', mois: '9', jour: '1' });
     release();
     await b.tick();
-    expect(state(b)).toContain('Date rangée');
+    expect(state(b)).toBe('Date rangée : anniversaire le 3 mars. La dernière date rangée compte.');
   });
 });

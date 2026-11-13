@@ -93,11 +93,11 @@ globalThis.AIMMO_FIN_DE_BAIL = function (t) {
       if (!(m >= 1 && m <= 12) || !/^[0-9]{1,2}$/.test(d) || Number(d) < 1 || Number(d) > DAYS[m - 1]) { state.textContent = DATE_REFUSALS.bad_date; return; }
       var p = String(proof.value || '').trim();
       if (!p || p.length > 200) { state.textContent = DATE_REFUSALS.no_proof; return; }
-      var mine = t.session();
+      var mine = t.session(), k = kind.value;
       sending = true;
       go.disabled = true;
       state.textContent = 'Envoi…';
-      return send('/v1/dates-clients', 'POST', { personId: personId, kind: kind.value, month: m, day: Number(d), proof: p }).then(function (x) {
+      return send('/v1/dates-clients', 'POST', { personId: personId, kind: k, month: m, day: Number(d), proof: p }).then(function (x) {
         if (x.gone || mine !== t.session()) return false;
         sending = false;
         go.disabled = false;
@@ -107,7 +107,7 @@ globalThis.AIMMO_FIN_DE_BAIL = function (t) {
           state.textContent = own(DATE_REFUSALS, b.code) || (typeof b.message === 'string' && b.message && b.message.length < 300 ? b.message : 'La date n’est pas rangée.');
           return false;
         }
-        state.textContent = 'Date rangée : ' + KINDS[kind.value].toLowerCase() + ' le ' + Number(d) + ' ' + MONTHS[m - 1] + '. La dernière date rangée compte.';
+        state.textContent = 'Date rangée : ' + KINDS[k].toLowerCase() + ' le ' + Number(d) + ' ' + MONTHS[m - 1] + '. La dernière date rangée compte.';
         return true;
       });
     });

@@ -352,6 +352,16 @@ describe('BR58 · les textes des messages de date, chez la direction', () => {
     await t.press();
     expect(t.posts().map((c) => [c.url, c.body])).toEqual([[TEXTS, { kind: 'anniversaire', channel: 'sms', texts: ['Bon anniversaire {prenom} !', 'Belle journée {prenom} !'] }]]);
     expect(t.status()).toBe('2 textes rangés pour anniversaire par SMS.');
+    // Un choix changé pendant l'envoi ne change pas ce qui est dit rangé.
+    let release: () => void = () => undefined;
+    t.table[`POST ${TEXTS}`] = () => new Promise<Response>((r) => (release = () => r(Response.json({ ok: true, mode: 'essai', data: { seq: 2 } }))));
+    t.set({ sorte: 'fete', canal: 'email' });
+    await t.press();
+    t.set({ sorte: '', canal: 'whatsapp' });
+    release();
+    await settle();
+    expect(t.posts()[1]!.body).toMatchObject({ kind: 'fete', channel: 'email' });
+    expect(t.status()).toBe('2 textes rangés pour fête par Mail.');
   });
 
   it('[R16] droits et contrôles du serveur dits en mots ; une réponse perdue est dite incertaine', async () => {
