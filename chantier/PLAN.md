@@ -1332,6 +1332,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Objectif : l'agent lit pourquoi l'offre n'entre pas au registre, et ce qu'elle attend.
 - Critères : la route rend 409, règle R505, code `remote_slip_unsigned`, rien au registre [R505] (test) ; l'écran dit la phrase, sans identifiant ni code interne, et un nouvel essai garde la même clé d'envoi (test) ; budget tenu [R201] (test).
 - Attend : rien.
+### BR61 · Les appels reçus, relus dans la fiche
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX21, RC20
+- Cahier : HX21 « Appels entrants résumés et rangés dans la fiche » (demande de Shawez du 2026-11-06) ; R243, R244, R04, R16, R13, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX21 (« routes avec R16 et écran de la fiche »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Appels.forPerson` existe mais aucune route ni écran ne le lit, et il ne contrôle aucun droit. Une lecture au cœur sous droits (`Acces.readFiche`, fiches réunies comprises, refus au journal), une route `GET /v1/fiches/<id>/appels-recus` dans `packages/api/src/appels.ts` (déjà branchée, sans toucher `app.ts`), et un bloc « Appels reçus » sur la fiche, script servi à part (`/app/appels-recus.js`) chargé au geste. La référence de l'enregistrement n'est jamais rendue, seulement s'il y en a un ; l'écoute attend le vrai service (H52). Le branchement de la réception au Worker attend H52.
+- Objectif : l'agent relit sur la fiche chaque appel reçu : quand, combien de temps, ce qui a été compris avec la phrase dite qui le porte, la demande d'arrêt s'il y en a une, et ce qu'il doit faire quand rien n'a pu être résumé.
+- Jamais vu : chaque ligne du résumé montre la phrase exacte de l'appelant qui la porte.
+- Critères : agent de la fiche ou direction seulement, refus au journal et dit en mots [R16] (test) ; les appels d'une fiche réunie sont relus sur la fiche gardée (test) ; un appel en cours n'est pas montré (test) ; seuls les passages de l'appelant portent une ligne du résumé [R243] (test) ; la référence de l'enregistrement n'est jamais rendue (test) ; le journal ne garde ni phrase ni numéro [R13] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
+- Attend : rien (H52 pour de vrais appels).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
