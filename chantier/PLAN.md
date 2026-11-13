@@ -1246,12 +1246,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR52 · Sortir un trousseau vers un agent ou le remettre à un partenaire, depuis l'armoire du bien
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#535, `831e2c01`). Codex une remarque P2 corrigée (plus de plafond de 20 rendez-vous), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5755 tests). Reste : la vue du vendeur dans son espace (BR53).
 - Décidé (2026-11-13, voie 1), lecture prudente : aucune route ne dit à l'écran qui peut recevoir le trousseau. Une lecture `GET /v1/trousseaux/<id>/choix` (cœur `Cles.choices`, mêmes droits que la sortie, refus au journal [R16]) rend les agents du réseau en activité (prénom et initiale), les rendez-vous prévus et à venir du bien pour une visite ou une estimation (type, début, fin, agent) et les partenaires de l'annuaire qui peuvent entrer seuls aujourd'hui (nom commercial, métier). Pour une visite ou une estimation, l'écran fait choisir le rendez-vous, et l'agent qui reçoit est celui du rendez-vous ; sinon, l'agent et l'heure du retour. Aucune règle ni migration.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR51, RC17
 - Cahier : M06 Mandats et documents, armoire des clés ; M18 Partenaires ; R271, R665, R16, R201.
 - Objectif : depuis l'armoire du bien (BR51), sortir un trousseau à l'agence vers un agent du réseau (raison de la liste fermée, rendez-vous prévu du bien pour une visite ou une estimation, sinon heure de retour dans les 12 heures) ou le remettre à un partenaire de l'annuaire admis (`POST /v1/trousseaux/<id>/sortie`, `/partenaire`).
 - Critères : raisons de la liste fermée seules [R271] (test) ; visite ou estimation : rendez-vous demandé, sinon heure de retour dans les 12 heures [R271] (test) ; partenaire : raisons admises seules, refus dits en mots (métier non admis, justificatif échu) [R665] (test) ; un seul envoi à la fois, réponse perdue dite incertaine (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
+### BR53 · Le vendeur voit les clés de son bien dans son espace
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR52
+- Cahier : M06 Mandats et documents, armoire des clés ; R665, R161, R16, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR52. Le cœur `Cles.forSeller` existe (HX10, RC15) mais aucune route ni aucun écran ne le sert. Une route de l'espace client (`GET` sous les routes de l'espace du vendeur, droits de l'espace [R161]) et un bloc « Clés de mon bien » dans l'espace du vendeur, lu au geste. Aucune règle ni migration.
+- Objectif : le vendeur sait enfin qui a ses clés, pour quoi et jusqu'à quand, sans un nom de personne côté partenaire.
+- Critères : un autre client, un autre bien ou un vendeur sans mandat refusés [R161] (test) ; un partenaire dit par son métier et sa raison sociale, jamais un nom de personne ni un classement [R665] (test) ; rien n'est lu avant le geste, budget tenu [R201] (test) ; chaque refus dit en mots [R16] (test) ; texte reçu posé en texte (test).
 - Attend : rien.
 
 ## Restes du cœur des groupes HX
