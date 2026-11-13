@@ -515,6 +515,15 @@ Sous `/v1/scenarios`, la direction seule : tout autre rôle est refusé avant to
 - `POST /<id>/eteindre` : arrête le scénario ; ses passages en attente sont annulés, jamais effacés.
 
 Le passage `automatismes.scenarios`, au planificateur à chaque heure, pour chaque réseau qui a allumé un scénario : les faits venus depuis l'allumage sont rangés une fois chacun, puis les passages dus sont faits ; un message attend la prochaine heure permise et ne part que par le contrôle central, avec l'accord « automatismes », sur les canaux du mode essai [R401, R402, R05, R26]. Un réseau en panne n'empêche pas les autres.
+## Dates des clients (BR56)
+
+Sous `/v1/dates-clients`. Corps JSON de 16 ko au plus ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; un refus de droits 403 (404 pour une fiche inconnue), un refus de règle 409 avec sa règle. Chaque refus porte `message`, ses mots en français, et chaque refus de droits est écrit au journal [R16]. Aucune route n'envoie rien.
+
+- `POST /` (`{personId, kind, month, day, proof}`) range la date qu'une personne a donnée : `kind` vaut `anniversaire` ou `fete`, `month` et `day` une date qui existe (le 29 février compris), `proof` dit d'où elle vient, en 200 caractères au plus. L'agent qui suit la fiche ou la direction seulement ; tout autre rôle est refusé avant la lecture du corps (`role`), un autre agent par la lecture de la fiche sous droits (`not_assigned`). Sans preuve, une date impossible ou d'une sorte inconnue : 409 R404 (`no_proof`, `bad_date`, `bad_kind`). Une correction est une nouvelle ligne : la dernière compte [R404].
+- `POST /textes` (`{kind, channel, texts}`) : la direction seule (`not_direction`) écrit de un à cinq textes fixes pour une sorte de date et un canal (`email`, `sms`, `whatsapp`), jamais l'IA ; chacun est contrôlé comme celui d'un scénario : `{prenom}` une fois, aucun chiffre (409 `text_R10`), les contrôles du contrôle central (409 R405 `bad_texts`, `first_name_slot`, `text_length`) [R403, R405]. Une nouvelle écriture fait un nouveau jeu, l'ancien reste.
+
+Le passage `automatismes.dates`, au planificateur à chaque heure, inscrit juste après `automatismes.scenarios` : pour chaque réseau qui a rangé une date, les messages du jour sont préparés par le contrôle central, avec l'accord « dates des clients », sur les canaux du mode essai ; une place de scénario prise ce jour fait attendre la date ; hors des heures permises, rien n'est préparé [R402, R404, R405, R26]. Un réseau en panne n'empêche pas les autres.
+
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.
