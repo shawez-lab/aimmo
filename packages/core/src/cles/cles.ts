@@ -125,6 +125,15 @@ export interface KeyReminder {
 }
 
 /** Ce que le vendeur voit : qui a pris la clé de chez lui, quand, pour quoi, et quand elle est revenue [R272]. */
+export interface KeyHandOutChoices {
+  /** Les agents du réseau en activité, prénom et initiale, dans l'ordre des noms. */
+  agents: { agentId: string; name: string }[];
+  /** Les rendez-vous prévus et à venir du bien, pour une visite ou une estimation, du plus proche au plus lointain. */
+  appointments: { appointmentId: string; kind: 'visite' | 'estimation'; startAt: string; endAt: string; agentId: string; name: string }[];
+  /** Les partenaires de l'annuaire qui peuvent entrer seuls aujourd'hui : métier et raison sociale, jamais un nom de personne. */
+  partners: { partnerId: string; trade: KeyPartnerTrade; tradeLabel: string; businessName: string }[];
+}
+
 export interface SellerKeyEntry {
   number: number;
   label: string;
@@ -555,6 +564,65 @@ export class Cles {
     }
     await appendEvent(this.journal, { type: 'cle.armoire_lue', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R271', count: out.length } }, this.now);
     return { ok: true, value: out };
+  }
+
+  /**
+   * Qui peut recevoir ce trousseau, pour l'écran de la sortie (BR52) : mêmes droits que la sortie, refus au journal
+   * [R16]. Rien n'est proposé pour un trousseau qui n'est pas dans l'armoire, ni pour un bien retiré [R271]. Les
+   * partenaires sont ceux dont le métier entre seul et dont les justificatifs sont valides ce jour-là [R665].
+   */
+  async choices(viewer: Viewer, keyId: string): Promise<{ ok: true; value: KeyHandOutChoices } | Refusal | Problem> {
+    const outsider = await this.outsider(viewer, keyId);
+    if (outsider) return outsider;
+    const key = await this.keyRow(viewer.networkId, keyId);
+    if (!key) return { ok: false, rule: null, code: 'unknown_key' };
+    const k = await this.keeper(viewer, key.property_id);
+    if (!k.ok) return k;
+    if (k.status === 'withdrawn') return { ok: false, rule: null, code: 'bien_retire' };
+    const retired = await this.db.first<{ key_id: string }>('SELECT key_id FROM property_key_retirements WHERE key_id = ?', [keyId]);
+    if (retired) return { ok: false, rule: 'R271', code: 'deja_retire' };
+    if ((await this.openLoan(keyId)) || (await this.openPartnerLoan(keyId))) return { ok: false, rule: 'R271', code: 'deja_sorti' };
+    const now = this.now();
+    const people = await this.db.all<{ id: string; first_name: string; last_name: string }>(
+      'SELECT id, first_name, last_name FROM agents WHERE network_id = ? ORDER BY first_name, last_name, id',
+      [viewer.networkId],
+    );
+    const agents: KeyHandOutChoices['agents'] = [];
+    const active = new Map<string, string>();
+    for (const a of people) {
+      if (!(await this.activeAgent(viewer.networkId, a.id))) continue;
+      const name = shortName(a.first_name, a.last_name);
+      active.set(a.id, name);
+      agents.push({ agentId: a.id, name });
+    }
+    const rows = await this.db.all<{ id: string; kind: 'visite' | 'estimation'; start_at: string; end_at: string; agent_id: string }>(
+      `SELECT id, kind, start_at, end_at, agent_id FROM appointments
+        WHERE network_id = ? AND property_id = ? AND status = 'booked' AND kind IN ('visite', 'estimation') AND end_at > ?
+        ORDER BY start_at, id LIMIT 20`,
+      [viewer.networkId, key.property_id, now.toISOString()],
+    );
+    const appointments: KeyHandOutChoices['appointments'] = [];
+    // Un rendez-vous dont l'agent n'est plus en activité ne peut pas recevoir le trousseau : il n'est pas proposé.
+    for (const a of rows) {
+      const name = active.get(a.agent_id);
+      if (name && Date.parse(a.end_at) > now.getTime()) appointments.push({ appointmentId: a.id, kind: a.kind, startAt: a.start_at, endAt: a.end_at, agentId: a.agent_id, name });
+    }
+    const candidates = await this.db.all<{ id: string; trade: KeyPartnerTrade; business_name: string }>(
+      `SELECT id, trade, business_name FROM partners WHERE network_id = ? AND trade IN (${KEY_PARTNER_TRADES.map(() => '?').join(', ')})
+        ORDER BY business_name, id`,
+      [viewer.networkId, ...KEY_PARTNER_TRADES],
+    );
+    const annuaire = new Annuaire(this.db, { has: async () => false }, this.journal, { now: this.now });
+    const partners: KeyHandOutChoices['partners'] = [];
+    for (const p of candidates) {
+      if (await annuaire.proposableOn(viewer.networkId, p.id, now)) partners.push({ partnerId: p.id, trade: p.trade, tradeLabel: tradeLabel(p.trade), businessName: p.business_name });
+    }
+    await appendEvent(
+      this.journal,
+      { type: 'cle.choix_lus', actor: this.actor(viewer), subject: `key:${keyId}`, data: { rule: 'R271', agents: agents.length, appointments: appointments.length, partners: partners.length } },
+      this.now,
+    );
+    return { ok: true, value: { agents, appointments, partners } };
   }
 
   /** Tous les mouvements d'un trousseau, du plus ancien au plus récent : l'agent du bien ou la direction. */
