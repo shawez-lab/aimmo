@@ -5,7 +5,7 @@ import { AUTOMATION_TRIGGERS } from '../../core/src/automatismes/scenarios.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { SCENARIOS_LOST, SCENARIOS_SCRIPT, SCENARIO_PROJECT_LABELS, SCENARIO_TRIGGER_LABELS } from '../app/scenarios.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
-import { SCENARIO_REFUSALS } from '../src/scenarios.ts';
+import { DATE_REFUSALS, SCENARIO_REFUSALS } from '../src/scenarios.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : clé de test, scénarios, textes, dates.
@@ -315,3 +315,61 @@ describe('BR57 · l’écran « Scénarios » de la direction', () => {
     expect(t.els['engagements-corps']!.children).toEqual([]);
   });
 });
+
+describe('BR58 · les textes des messages de date, chez la direction', () => {
+  const TEXTS = '/v1/dates-clients/textes';
+  const setUp = async (answers: Record<string, Answer> = {}) => {
+    const t = await run(answers);
+    await t.open();
+    const set = (v: Record<string, string>) => {
+      for (const [k, value] of Object.entries(v)) t.input(`date-textes-${k}`).value = value;
+    };
+    const press = () => t.click(t.button('Ranger ces textes'));
+    return { ...t, set, press };
+  };
+
+  it('[R405] saisie contrôlée avant l’appel : sorte, canal, un à cinq textes, le prénom une fois ; rien ne part sinon', async () => {
+    const t = await setUp();
+    await t.press();
+    expect(t.status()).toBe(DATE_REFUSALS['bad_kind']);
+    t.set({ sorte: 'anniversaire' });
+    await t.press();
+    expect(t.status()).toBe(SCENARIO_REFUSALS['bad_channel']);
+    t.set({ canal: 'sms' });
+    await t.press();
+    expect(t.status()).toBe(DATE_REFUSALS['bad_texts']);
+    t.set({ '1': 'Bon anniversaire !' });
+    await t.press();
+    expect(t.status()).toBe(SCENARIO_REFUSALS['first_name_slot']);
+    t.set({ '1': 'Bon anniversaire {prenom} !', '3': 'Belle journée {prenom}, {prenom} !' });
+    await t.press();
+    expect(t.status()).toBe(SCENARIO_REFUSALS['first_name_slot']);
+    expect(t.posts()).toHaveLength(0);
+    // Cinq champs, pas un de plus ; les champs vides ne partent pas.
+    expect(t.part().all().filter((e) => e.tagName === 'textarea' && /^date-textes-\d$/.test(e.attributes.id ?? ''))).toHaveLength(5);
+    t.table[`POST ${TEXTS}`] = ok({ seq: 1 });
+    t.set({ '3': 'Belle journée {prenom} !' });
+    await t.press();
+    expect(t.posts().map((c) => [c.url, c.body])).toEqual([[TEXTS, { kind: 'anniversaire', channel: 'sms', texts: ['Bon anniversaire {prenom} !', 'Belle journée {prenom} !'] }]]);
+    expect(t.status()).toBe('2 textes rangés pour anniversaire par SMS.');
+  });
+
+  it('[R16] droits et contrôles du serveur dits en mots ; une réponse perdue est dite incertaine', async () => {
+    const t = await setUp({ [`POST ${TEXTS}`]: no(403, { ok: false, rule: 'R16', code: 'not_direction', message: DATE_REFUSALS['not_direction'] }) });
+    t.set({ sorte: 'fete', canal: 'email', '1': 'Bonne fête {prenom} !' });
+    await t.press();
+    expect(t.status()).toBe(DATE_REFUSALS['not_direction']);
+    const u = await setUp({ [`POST ${TEXTS}`]: no(409, { ok: false, rule: 'R10', code: 'text_R10', message: 'Un texte fixe ne porte aucun chiffre : ni prix, ni surface, ni date, ni remise.' }) });
+    u.set({ sorte: 'fete', canal: 'email', '1': 'Bonne fête {prenom}, -10 % offert !' });
+    await u.press();
+    expect(u.status()).toBe('Un texte fixe ne porte aucun chiffre : ni prix, ni surface, ni date, ni remise.');
+    expect(u.status()).not.toContain('text_R10');
+    for (const answer of [cut, no(500, { ok: false, code: 'internal' })]) {
+      const v = await setUp({ [`POST ${TEXTS}`]: answer });
+      v.set({ sorte: 'fete', canal: 'whatsapp', '1': 'Bonne fête {prenom} !' });
+      await v.press();
+      expect(v.status()).toBe(SCENARIOS_LOST);
+    }
+  });
+});
+

@@ -1,6 +1,8 @@
 import { AUTOMATION_CHANNELS, AUTOMATION_TRIGGERS, DEFAULT_SCENARIO_SETTINGS, FIRST_NAME_SLOT, type AutomationChannel, type AutomationTrigger } from '../../core/src/automatismes/scenarios.ts';
 import { PROJECT_KINDS, type ProjectKind } from '../../core/src/db/types.ts';
-import { SCENARIO_REFUSALS } from '../src/scenarios.ts';
+import { DATE_REFUSALS, SCENARIO_REFUSALS } from '../src/scenarios.ts';
+import { CLIENT_DATE_KINDS } from '../../core/src/automatismes/dates-clients.ts';
+import { CLIENT_DATE_LABELS } from './fin-de-bail.ts';
 
 /**
  * L'écran « Scénarios automatiques » de la direction (BR57, HX24), posé sous « Engagements de service » sur l'écran du
@@ -12,6 +14,10 @@ import { SCENARIO_REFUSALS } from '../src/scenarios.ts';
  * « Allumer » n'existe que sur un essai de la version affichée que le serveur dit valable à l'instant [R400, R402] ;
  * c'est le serveur qui relit tout. Chaque refus est dit en mots, une réponse perdue est dite incertaine [R16]. Tout texte
  * reçu est posé en texte, rien ne reste une fois quitté.
+ *
+ * BR58 : la direction y écrit aussi les textes des messages de date (HX25), de un à cinq par sorte de date et par canal,
+ * jamais par l'IA ; chacun est contrôlé avant l'appel (prénom une fois, aucun chiffre), puis par le serveur comme ceux
+ * d'un scénario [R403, R405].
  */
 
 export const SCENARIO_TRIGGER_LABELS: Readonly<Record<AutomationTrigger, string>> = Object.freeze({
@@ -38,6 +44,8 @@ export const SCENARIOS_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 
 const MAX_WAIT = DEFAULT_SCENARIO_SETTINGS.maxWaitHours;
 const MAX_TASK = DEFAULT_SCENARIO_SETTINGS.maxTaskDays;
+/** De un à cinq textes par sorte de date et par canal [R405]. */
+export const MAX_DATE_TEXTS = 5;
 
 /** Le script servi à part (`/app/scenarios.js`). Il ne lit et n'écrit que `/v1/scenarios` [R16]. */
 export const SCENARIOS_SCRIPT = `'use strict';
@@ -49,6 +57,7 @@ globalThis.AIMMO_SCENARIOS = function (t) {
   var KINDS = ${JSON.stringify(SCENARIO_PROJECT_LABELS)}, KIND_KEYS = ${JSON.stringify(PROJECT_KINDS)};
   var LOST = ${JSON.stringify(SCENARIOS_LOST)}, OFFLINE = ${JSON.stringify(SCENARIOS_OFFLINE)};
   var SLOT = ${JSON.stringify(FIRST_NAME_SLOT)}, MAX_WAIT = ${MAX_WAIT}, MAX_TASK = ${MAX_TASK};
+  var DATE_KINDS = ${JSON.stringify(CLIENT_DATE_LABELS)}, DATE_KEYS = ${JSON.stringify(CLIENT_DATE_KINDS)}, DATE_REFUSALS = ${JSON.stringify(DATE_REFUSALS)}, MAX_TEXTS = ${MAX_DATE_TEXTS};
   var root = null, out = null, status = null, reading = 0, busy = null;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function say(text) { if (status) status.textContent = text; }
@@ -214,6 +223,40 @@ globalThis.AIMMO_SCENARIOS = function (t) {
       });
     }));
   }
+  /* BR58 · les textes des messages de date, écrits par la direction : de un à cinq par sorte et par canal [R405]. */
+  function dateTexts(box) {
+    var d = details(box, 'Textes des messages de date');
+    d.appendChild(el('p', 'Pour un anniversaire ou une fête que la personne a donné. Chaque année prend le premier texte qui ne lui est jamais parti. Les textes rangés ici remplacent les précédents pour cette sorte de date et ce canal.', 'doux'));
+    var dk = {}, ck = {};
+    DATE_KEYS.forEach(function (k) { dk[k] = DATE_KINDS[k]; });
+    CHANNEL_KEYS.forEach(function (k) { ck[k] = CHANNELS[k]; });
+    var kind = select(d, 'date-textes-sorte', 'Sorte de date', Object.assign({ '': 'Choisir' }, dk), '');
+    var channel = select(d, 'date-textes-canal', 'Canal', Object.assign({ '': 'Choisir' }, ck), '');
+    var areas = [];
+    for (var i = 1; i <= MAX_TEXTS; i++) {
+      var a = field(d, 'date-textes-' + i, 'Texte ' + i + (i === 1 ? ', avec ' + SLOT + ' une fois, sans aucun chiffre' : ' (facultatif)'), 'textarea');
+      a.setAttribute('maxlength', '4000');
+      areas.push(a);
+    }
+    d.appendChild(button('Ranger ces textes', function () {
+      if (!own(DATE_KINDS, kind.value)) { say(DATE_REFUSALS.bad_kind); return; }
+      if (!own(CHANNELS, channel.value)) { say(REFUSALS.bad_channel); return; }
+      var texts = areas.map(function (x) { return String(x.value || '').trim(); }).filter(function (x) { return x; });
+      if (!texts.length) { say(DATE_REFUSALS.bad_texts); return; }
+      if (texts.some(function (x) { return x.split(SLOT).length !== 2; })) { say(REFUSALS.first_name_slot); return; }
+      return once(function () {
+        var mine = t.session();
+        say('Envoi…');
+        return send('/v1/dates-clients/textes', 'POST', { kind: kind.value, channel: channel.value, texts: texts }).then(function (res) {
+          if (res.gone || mine !== t.session()) return false;
+          if (lost(res)) { say(LOST); return false; }
+          if (!res.ok) { var b = res.body || {}; say(own(DATE_REFUSALS, b.code) || why(res, 'Les textes ne sont pas rangés.')); return false; }
+          say(count(texts.length, 'texte rangé', 'textes rangés') + ' pour ' + DATE_KINDS[kind.value].toLowerCase() + ' par ' + CHANNELS[channel.value] + '.');
+          return true;
+        });
+      });
+    }));
+  }
   function show(box, message) {
     if (root !== box) {
       root = box;
@@ -236,6 +279,7 @@ globalThis.AIMMO_SCENARIOS = function (t) {
       out.appendChild(ul);
       var add = details(out, 'Composer un scénario');
       form(add, 'scenario-nouveau', {}, 'Ranger ce scénario', '/v1/scenarios');
+      dateTexts(out);
       say(message || '');
       return true;
     });

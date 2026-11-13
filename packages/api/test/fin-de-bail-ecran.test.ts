@@ -77,7 +77,7 @@ describe('G15 · la fin de bail notée depuis la fiche', () => {
   const scripts = (a: A) => a.els.fiche!.children.filter((e) => e.attributes.src === '/app/fin-de-bail.js');
   const open = async (answers: Record<string, () => Promise<Response>> = {}) => {
     const a = await openedFiche(FICHE, { [PATH]: ok([]), ...answers });
-    a.named(a.body, 'Fin de bail connue')[0]!.listeners.click!({});
+    a.named(a.body, 'Dates connues')[0]!.listeners.click!({});
     await a.tick();
     runInNewContext(FIN_DE_BAIL_SCRIPT, a.context);
     scripts(a)[0]!.listeners.load!({});
@@ -148,12 +148,12 @@ describe('G15 · la fin de bail notée depuis la fiche', () => {
 
   it('[R10] un script manquant est dit, et un nouvel appui réessaie', async () => {
     const a = await openedFiche(FICHE);
-    a.named(a.body, 'Fin de bail connue')[0]!.listeners.click!({});
+    a.named(a.body, 'Dates connues')[0]!.listeners.click!({});
     await a.tick();
     scripts(a)[0]!.listeners.error!({});
     await a.tick();
     expect(said(a)).toBe('Pas de réseau. Réessayez dans un moment.');
-    a.named(a.body, 'Fin de bail connue')[0]!.listeners.click!({});
+    a.named(a.body, 'Dates connues')[0]!.listeners.click!({});
     await a.tick();
     expect(scripts(a)).toHaveLength(2);
   });
