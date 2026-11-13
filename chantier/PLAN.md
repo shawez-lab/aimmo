@@ -1277,7 +1277,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR55 · Routes des scénarios automatiques, et leur passage au planificateur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX24, RC09, RC10, RC18, RC19
 - Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R400 à R403, R16, R05.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX24 (« branchement au planificateur et au Worker, routes et écran de la direction (voie 1, `app.ts`) ») et de RC18 (« proposer les deux déclencheurs à l'écran »). `ScenariosAutomatiques` n'est ni exporté ni branché. Routes dans un fichier neuf `packages/api/src/scenarios.ts`, direction seule, rôles avant le corps, refus au journal [R16] : composer (`POST /v1/scenarios`, nouvelle version `POST /v1/scenarios/<id>`), essayer sur le mois passé (`POST /<id>/essai`), allumer, éteindre ; une lecture de la liste des scénarios du réseau avec leur version, leur état et leur dernier essai (méthode de lecture ajoutée au cœur si elle manque, sans migration). `tick` au planificateur pour chaque réseau, en essai seulement, par le contrôle central. Aucune règle nouvelle ni migration.
