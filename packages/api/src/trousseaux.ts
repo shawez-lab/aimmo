@@ -106,6 +106,13 @@ export function trousseauxRoutes(): TrousseauxRoute[] {
       name: 'trousseaux.mouvements',
       handle: async (s, v, [keyId]) => reply(await cles(s).history(v, keyId!)),
     },
+    // Qui peut recevoir le trousseau, pour l'écran de la sortie (BR52) : mêmes droits que la sortie [R16, R271, R665].
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/${ID}/choix$`),
+      name: 'trousseaux.choix',
+      handle: async (s, v, [keyId]) => reply(await cles(s).choices(v, keyId!)),
+    },
     {
       method: 'POST',
       pattern: new RegExp(`${P}/${ID}/sortie$`),
