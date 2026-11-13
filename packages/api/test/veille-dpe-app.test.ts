@@ -29,6 +29,7 @@ const point = (id: string, energyClass: string, commune: string, extra: Record<s
   position: null,
   rentBanFrom: energyClass === 'G' ? '2025-01-01' : energyClass === 'F' ? '2028-01-01' : null,
   letterId: null,
+  letterMine: false,
   ...extra,
 });
 const SECTORS = [
@@ -39,7 +40,7 @@ const ALERTS = [{ sectorId: 's1', commune: 'Commune Une', postcode: '99000', day
 const MAP = [
   point('d1', 'G', 'Commune Une'),
   point('d2', 'C', 'Commune Deux', { kind: 'house', ghgClass: null }),
-  point('d3', 'F', 'Commune Une', { letterId: 'l9' }),
+  point('d3', 'F', 'Commune Une', { letterId: 'l9', letterMine: true }),
   point('d4', 'F', INJECTED, { address: { streetNumber: null, street: INJECTED, postcode: '99000', commune: INJECTED } }),
 ];
 const LETTER = 'Au propriétaire,\nVotre logement est classé G : il ne peut plus être loué depuis le 01/01/2025.';
@@ -189,7 +190,7 @@ describe('BR36 · écran de la veille des diagnostics énergétiques', () => {
     const prepare = t.buttons(t.part(), 'Préparer la lettre « Au propriétaire »');
     // d1 dans l'alerte et sur la carte, d4 (F) : jamais pour d2 (C), ni pour d3 qui a déjà sa lettre.
     expect(prepare).toHaveLength(3);
-    expect(t.part().textContent).toContain('Lettre « Au propriétaire » déjà préparée dans le réseau : seul l’agent qui l’a préparée peut l’imprimer.');
+    expect(t.part().textContent).toContain('Vous avez déjà préparé la lettre « Au propriétaire » de ce logement.');
     await t.click(t.buttons(t.part(), 'Télécharger la lettre à imprimer')[0]);
     expect(t.downloads).toEqual(['lettre-dpe-l9.html']);
     await t.click(prepare[0]);
@@ -210,6 +211,27 @@ describe('BR36 · écran de la veille des diagnostics énergétiques', () => {
     expect(l1.auth).toBe(`Bearer ${KEY}`);
     // Aucun envoi : le script n'a aucune route d'envoi, d'impression à distance ni de mail.
     expect(VEILLE_DPE_SCRIPT).not.toMatch(/envoyer|\/envoi|mailto:|sms:/i);
+  });
+
+  it('[R290] BR54 · une lettre préparée par un autre agent du réseau se dit, sans bouton pour la télécharger', async () => {
+    const other = [
+      point('d3', 'F', 'Commune Une', { letterId: 'l9', letterMine: true }),
+      point('d6', 'G', 'Commune Une', { letterId: 'l7', letterMine: false }),
+      point('d7', 'G', 'Commune Une', { letterId: 'l8' }),
+      point('d8', 'F', 'Commune Une', { letterId: 'l6', letterMine: 'true' }),
+    ];
+    delete (other[2] as Record<string, unknown>).letterMine;
+    const t = await run({ 'GET /v1/veille-dpe/carte': ok(other), 'GET /v1/veille-dpe/alertes': ok([]) });
+    await t.openVeille();
+    const text = t.part().textContent;
+    expect(text.split('Vous avez déjà préparé la lettre « Au propriétaire » de ce logement.')).toHaveLength(2);
+    // Lettre d'un autre, champ absent ou mal formé : jamais tenue pour la sienne.
+    expect(text.split('Lettre « Au propriétaire » déjà préparée par un autre agent du réseau : seul lui peut l’imprimer.')).toHaveLength(4);
+    expect(t.buttons(t.part(), 'Télécharger la lettre à imprimer')).toHaveLength(1);
+    expect(t.buttons(t.part(), 'Préparer la lettre « Au propriétaire »')).toHaveLength(0);
+    await t.click(t.buttons(t.part(), 'Télécharger la lettre à imprimer')[0]);
+    expect(t.downloads).toEqual(['lettre-dpe-l9.html']);
+    expect(t.mine().some((c) => /\/lettres\/l[678]/.test(c.url))).toBe(false);
   });
 
   it('suivre une commune : saisie fausse refusée avant tout appel ; juste, envoyée puis relue', async () => {
