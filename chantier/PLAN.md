@@ -1342,6 +1342,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Jamais vu : chaque ligne du résumé montre la phrase exacte de l'appelant qui la porte.
 - Critères : agent de la fiche ou direction seulement, refus au journal et dit en mots [R16] (test) ; les appels d'une fiche réunie sont relus sur la fiche gardée (test) ; un appel en cours n'est pas montré (test) ; seuls les passages de l'appelant portent une ligne du résumé [R243] (test) ; la référence de l'enregistrement n'est jamais rendue (test) ; le journal ne garde ni phrase ni numéro [R13] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien (H52 pour de vrais appels).
+### BR62 · Les notes vocales, relues dans la fiche
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX23, BR61
+- Cahier : HX23 « Messages vocaux transcrits et traités » (demande de Shawez du 2026-11-06) ; R240, R16, R13, R15, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX23 et de BR61 (« branchement à l'écran de la fiche »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Aujourd'hui une note vocale transcrite arrive sur la fiche comme un message écrit : l'agent ne peut pas savoir qu'il lit une transcription. Une lecture au cœur sous droits (`Acces.readFiche`, fiches réunies comprises, refus au journal), une route `GET /v1/fiches/<id>/notes-vocales` dans `packages/api/src/appels.ts` (déjà branchée, sans toucher `app.ts`), et un bloc « Notes vocales » sur la fiche, script servi à part (`/app/notes-vocales.js`) chargé au geste. La référence de l'audio chez le canal n'est jamais rendue, seulement qu'il est gardé ; l'écoute attend le vrai service (H52). Une note illisible n'a pas de fiche (rangée illisible, sans personne) : elle reste dans les messages à regarder.
+- Objectif : l'agent relit sur la fiche chaque note vocale reçue : quand, sur quel canal, le texte transcrit marqué comme tel, la langue parlée et la sûreté de la transcription.
+- Jamais vu : chaque note dit en mots qu'elle est une transcription automatique, dans quelle langue la personne a parlé et à quel point la transcription est sûre ; un IBAN dicté reste masqué.
+- Critères : agent de la fiche ou direction seulement, refus au journal et dit en mots [R16] (test) ; les notes d'une fiche réunie sont relues sur la fiche gardée (test) ; une note en cours ou impossible n'est pas montrée (test) ; la référence de l'audio n'est jamais rendue [R15] (test) ; le journal ne garde ni texte ni identifiant du canal [R13] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
+- Attend : rien (H52 pour de vraies notes).
 
 ## Restes du cœur des groupes HX
 
