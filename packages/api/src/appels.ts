@@ -3,11 +3,13 @@
  *
  *   POST /v1/fiches/<id>/appels   { outcome: 'called' | 'refused' } : note un appel ou le refus de la personne
  *   GET  /v1/fiches/<id>/appels-recus : les appels reçus et rangés de la fiche, fiches réunies comprises (BR61, HX21)
+ *   GET  /v1/fiches/<id>/notes-vocales : les notes vocales transcrites de la fiche, fiches réunies comprises (BR62, HX23)
  *
  * Le rôle est contrôlé avant de lire le corps, et son refus va au journal [R16]. Rien n'est envoyé d'ici.
  */
 import { AppelsFiche, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { callsOfFiche, type CallView } from '../../core/src/voix/appels.ts';
+import { voiceNotesOfFiche } from '../../core/src/voix/notes-vocales.ts';
 
 export const MAX_APPEL_BODY_BYTES = 1024;
 const ID = '([A-Za-z0-9_-]{1,64})';
@@ -64,6 +66,19 @@ const recu = (v: CallView): AppelRecu => {
 const refuseRecus = (status: number, rule: string | null, code: string): Response =>
   json(status, { ok: false, rule, code, message: APPELS_RECUS_REFUSALS[code] ?? 'Les appels reçus ne se lisent pas.' });
 
+/** Chaque refus de la lecture des notes vocales, dit en mots [R16]. */
+export const NOTES_VOCALES_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  role: 'Les notes vocales se relisent par l’agent de la fiche ou la direction.',
+  not_assigned: 'Les notes vocales sont réservées à l’agent de cette fiche.',
+  other_network: 'Cette fiche n’est pas dans votre réseau.',
+  agent_file_incomplete: 'Votre dossier d’agent n’est pas complet : les fiches clients restent fermées.',
+  unknown: 'Cette fiche n’existe pas.',
+  unexpected_field: 'Cette lecture ne prend aucun paramètre.',
+});
+
+const refuseNotes = (status: number, rule: string | null, code: string): Response =>
+  json(status, { ok: false, rule, code, message: NOTES_VOCALES_REFUSALS[code] ?? 'Les notes vocales ne se lisent pas.' });
+
 export function appelsRoutes(): AppelsRoute[] {
   return [
     {
@@ -98,6 +113,22 @@ export function appelsRoutes(): AppelsRoute[] {
         const r = await callsOfFiche(s.db, s.acces, viewer, id!);
         if (!r.ok) return refuseRecus(r.code === 'unknown' ? 404 : 403, r.rule, r.code);
         return json(200, { ok: true, data: r.value.map(recu) });
+      },
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/fiches/${ID}/notes-vocales$`),
+      name: 'fiche.notes_vocales.lire',
+      // BR62 · sous les droits de la fiche, refus au journal [R16] ; ni texte ni identifiant du canal au journal [R13].
+      handle: async (s, viewer, [id], request) => {
+        if (!ROLES.includes(viewer.role)) {
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), code: 'role' } }, s.now);
+          return refuseNotes(403, 'R16', 'role');
+        }
+        if ([...new URL(request.url).searchParams.keys()].length > 0) return refuseNotes(400, null, 'unexpected_field');
+        const r = await voiceNotesOfFiche(s.db, s.acces, viewer, id!);
+        if (!r.ok) return refuseNotes(r.code === 'unknown' ? 404 : 403, r.rule, r.code);
+        return json(200, { ok: true, data: r.value });
       },
     },
   ];
