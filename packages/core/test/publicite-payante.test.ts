@@ -462,6 +462,36 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
   });
 
+  it('[R588] un solde coupé avant de ranger l’échec reprend au passage suivant, la pause reste demandée', async () => {
+    const lost = lostPlatform();
+    const { t, c } = await lostLaunch(lost);
+    // Coupure : la réponse « échec » ne s'écrit pas au premier essai, et la plateforme ne confirme pas la pause.
+    const run = t.db.run.bind(t.db);
+    let cut = true;
+    t.db.run = (async (sql: string, params?: unknown[]) => {
+      if (cut && sql.startsWith('INSERT INTO ad_campaign_launches')) {
+        cut = false;
+        throw new Error('coupure');
+      }
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    lost.setDown(true);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await expect(t.pub.runChecks(t.network.id)).rejects.toThrow('coupure');
+    // L'arrêt est rangé, la campagne ne dépense plus sans pause demandée, rien ne se relance.
+    expect(await t.db.first('SELECT reason, paused_at FROM ad_campaign_stops')).toEqual({ reason: 'echec_lancement', paused_at: null });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false });
+    lost.setDown(false);
+    await t.pub.runChecks(t.network.id);
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
+    expect(await t.db.first('SELECT count(*) AS n FROM ad_campaign_stops WHERE paused_at IS NULL')).toEqual({ n: 0 });
+    expect(await t.db.first('SELECT count(*) AS n FROM ad_campaign_repauses WHERE paused_at IS NULL')).toEqual({ n: 0 });
+    expect(await t.events('publicite.lancement_sans_reponse')).toHaveLength(1);
+    expect(lost.log.filter((x) => x === 'pause').length).toBeGreaterThan(0);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+  });
+
   it('[R588] une dépense lue passe aussi le contrôle : le lancement perdu y est soldé', async () => {
     const lost = lostPlatform();
     const { t, c } = await lostLaunch(lost);

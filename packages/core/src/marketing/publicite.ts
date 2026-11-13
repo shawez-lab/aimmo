@@ -395,8 +395,9 @@ export class PublicitePayante {
       await this.platforms[c.platform].start(launch);
       await this.launched(a.id, 'lancee');
     } catch {
-      await this.launched(a.id, 'echec');
+      // L'arrêt d'abord : coupé avant la réponse rangée, le lancement est soldé au passage suivant, rien n'est perdu.
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
+      await this.launched(a.id, 'echec');
       return { ok: false, rule: 'R587', code: 'echec_lancement' };
     }
     // Arrêtée pendant que la plateforme lançait : la pause a pu passer avant le lancement, elle est redemandée.
@@ -428,9 +429,15 @@ export class PublicitePayante {
       [c.id, before],
     );
     for (const l of lost) {
-      if (!(await this.launched(l.approval_id, 'echec'))) continue;
-      await appendEvent(this.journal, { type: 'publicite.lancement_sans_reponse', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R587', minutes: LAUNCH_ANSWER_MINUTES } }, this.now);
-      if (!(await this.stopApproval(c, l.approval_id, 'echec_lancement', 'system:publicite'))) await this.pause(c, l.approval_id, true);
+      // L'arrêt, ou la pause redemandée, est rangé avant l'échec : coupé entre les deux, le passage suivant reprend
+      // (le lancement est encore sans réponse) et la pause non confirmée reste redemandée [R588].
+      if (!(await this.stopApproval(c, l.approval_id, 'echec_lancement', 'system:publicite'))) {
+        await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [l.approval_id, this.now().toISOString()]);
+        await this.pause(c, l.approval_id, true);
+      }
+      if (await this.launched(l.approval_id, 'echec')) {
+        await appendEvent(this.journal, { type: 'publicite.lancement_sans_reponse', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R587', minutes: LAUNCH_ANSWER_MINUTES } }, this.now);
+      }
     }
   }
 
