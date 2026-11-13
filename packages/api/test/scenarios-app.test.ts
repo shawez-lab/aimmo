@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AUTOMATION_TRIGGERS } from '../../core/src/automatismes/scenarios.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
-import { SCENARIOS_LOST, SCENARIOS_SCRIPT, SCENARIO_PROJECT_LABELS, SCENARIO_TRIGGER_LABELS } from '../app/scenarios.ts';
+import { SCENARIOS_LOST, SCENARIOS_OFFLINE, SCENARIOS_SCRIPT, SCENARIO_PROJECT_LABELS, SCENARIO_TRIGGER_LABELS } from '../app/scenarios.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { DATE_REFUSALS, SCENARIO_REFUSALS } from '../src/scenarios.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -383,3 +383,58 @@ describe('BR58 · les textes des messages de date, chez la direction', () => {
   });
 });
 
+
+describe('BR59 · les textes en service, relus par la direction', () => {
+  const TEXTS = '/v1/dates-clients/textes';
+  const shown = (t: Awaited<ReturnType<typeof run>>) => t.part().all().find((e) => e.className === 'textes-en-service')!;
+  const reads = (t: Awaited<ReturnType<typeof run>>) => t.calls.filter((c) => c.method === 'GET' && c.url === TEXTS);
+
+  it('[R201] rien n’est lu avant le geste ; le budget tient', async () => {
+    const t = await run({ [`GET ${TEXTS}`]: ok([]) });
+    await t.open();
+    expect(reads(t)).toHaveLength(0);
+    expect(shown(t).children).toHaveLength(0);
+    await t.click(t.button('Relire les textes en service'));
+    expect(reads(t)).toHaveLength(1);
+    expect(shown(t).textContent).toBe('Aucun texte en service : aucun message de date ne peut partir.');
+    expect(budgetProblems({ html: '', js: SCENARIOS_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+
+  it('[R405] chaque sorte et canal dit avec ses textes, posés en texte ; un champ mal formé n’est pas dit', async () => {
+    const t = await run({
+      [`GET ${TEXTS}`]: ok([
+        { kind: 'anniversaire', channel: 'email', texts: ['Joyeux anniversaire {prenom} !', INJECTED], seq: 2, writtenAt: '2027-03-09T08:00:00.000Z' },
+        { kind: 'fete', channel: 'sms', texts: ['Bonne fête {prenom} !'], seq: 1, writtenAt: '2027-03-09T08:00:00.000Z' },
+        { kind: 'noel', channel: 'sms', texts: ['Joyeux Noël {prenom}'], seq: 1 },
+        { kind: 'fete', channel: 'courrier', texts: ['Bonne fête {prenom}'], seq: 1 },
+        { kind: 'fete', channel: 'email', texts: 'pas une liste', seq: 1 },
+        null,
+      ]),
+    });
+    await t.open();
+    await t.click(t.button('Relire les textes en service'));
+    const box = shown(t);
+    expect(box.all().filter((e) => e.tagName === 'h5').map((e) => e.textContent)).toEqual(['Anniversaire par Mail : 2 textes en service', 'Fête par SMS : 1 texte en service']);
+    expect(box.all().filter((e) => e.tagName === 'li').map((e) => e.textContent)).toEqual(['Joyeux anniversaire {prenom} !', INJECTED, 'Bonne fête {prenom} !']);
+    expect(box.all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(SCENARIOS_SCRIPT).not.toContain('innerHTML');
+  });
+
+  it('[R16] relus après chaque écriture ; un refus ou une coupure dits en mots', async () => {
+    const t = await run({ [`POST ${TEXTS}`]: ok({ seq: 1 }), [`GET ${TEXTS}`]: ok([{ kind: 'fete', channel: 'email', texts: ['Bonne fête {prenom} !'], seq: 1 }]) });
+    await t.open();
+    for (const [k, v] of Object.entries({ sorte: 'fete', canal: 'email', '1': 'Bonne fête {prenom} !' })) t.input(`date-textes-${k}`).value = v;
+    await t.click(t.button('Ranger ces textes'));
+    expect(reads(t)).toHaveLength(1);
+    expect(shown(t).textContent).toContain('Fête par Mail : 1 texte en service');
+    for (const [answer, words] of [
+      [no(403, { ok: false, rule: 'R16', code: 'not_direction' }), 'Les textes en service ne se lisent pas pour le moment.'],
+      [cut, SCENARIOS_OFFLINE],
+    ] as const) {
+      const u = await run({ [`GET ${TEXTS}`]: answer });
+      await u.open();
+      await u.click(u.button('Relire les textes en service'));
+      expect(shown(u).textContent).toBe(words);
+    }
+  });
+});

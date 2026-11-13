@@ -7,6 +7,9 @@
  * BR58 : le même bloc, « Dates connues », range aussi l'anniversaire ou la fête que la personne a donné, avec d'où vient
  * la date (HX25) : saisie contrôlée avant l'appel, le serveur refait tout [R404, R405] ; chaque refus est dit en mots, une
  * réponse perdue est dite incertaine [R16]. Aucun message ne part d'ici.
+ *
+ * BR59 : le bloc relit, au geste qui l'ouvre et après chaque date rangée, la date retenue de chaque sorte, d'où elle
+ * vient et combien elle en remplace [R404, R17] ; un champ reçu mal formé n'est pas dit, tout texte reçu est posé en texte.
  */
 import { CLIENT_DATE_KINDS } from '../../core/src/automatismes/dates-clients.ts';
 import { DATE_REFUSALS } from '../src/scenarios.ts';
@@ -54,7 +57,7 @@ export const FIN_DE_BAIL_JS = `
   }
 `;
 
-/** Le script servi à part. Il ne lit et n'écrit que la route de la fin de bail de cette fiche [R16]. */
+/** Le script servi à part. Il ne lit et n'écrit que les routes de la fin de bail et des dates de cette fiche [R16]. */
 export const FIN_DE_BAIL_SCRIPT = `'use strict';
 globalThis.AIMMO_FIN_DE_BAIL = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field;
@@ -77,6 +80,8 @@ globalThis.AIMMO_FIN_DE_BAIL = function (t) {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h4', 'Anniversaire ou fête'));
     box.appendChild(el('p', 'Seulement une date que la personne vous a donnée, jamais devinée ni lue sur une pièce d’identité. Une correction se range comme une nouvelle date : la dernière compte. Rien ne part sans son accord pour les messages de date.', 'doux'));
+    var known = el('div', null, 'dates-retenues');
+    box.appendChild(known);
     var kind = choices(box, 'date-client-sorte', 'Sorte de date', [['', 'Choisir']].concat(KIND_KEYS.map(function (k) { return [k, KINDS[k]]; })));
     var month = choices(box, 'date-client-mois', 'Mois', [['', 'Choisir']].concat(MONTHS.map(function (m, i) { return [String(i + 1), m]; })));
     var day = field(box, 'date-client-jour', 'Jour du mois');
@@ -85,6 +90,33 @@ globalThis.AIMMO_FIN_DE_BAIL = function (t) {
     proof.setAttribute('maxlength', '200');
     var state = el('p', null, 'etat');
     state.setAttribute('role', 'status');
+    /* BR59 · les dates retenues, relues au geste qui ouvre ce bloc, puis après chaque date rangée [R404, R201]. */
+    var reading = 0;
+    function reread() {
+      var mine = t.session(), at = ++reading;
+      clear(known);
+      known.appendChild(el('p', 'Lecture des dates rangées…', 'doux'));
+      return send('/v1/dates-clients?personId=' + encodeURIComponent(personId), 'GET').then(function (x) {
+        if (x.gone || mine !== t.session() || at !== reading) return false;
+        clear(known);
+        if (!x.ok || !x.body || !Array.isArray(x.body.data)) {
+          known.appendChild(el('p', x.offline ? OFFLINE : x.status === 403 ? 'Dates rangées : réservées à l’agent de cette fiche.' : 'Les dates rangées ne se lisent pas pour le moment.', 'doux'));
+          return false;
+        }
+        var shown = 0;
+        x.body.data.forEach(function (d) {
+          if (!d || !own(KINDS, d.kind) || !(d.month >= 1 && d.month <= 12) || !(d.day >= 1 && d.day <= DAYS[d.month - 1]) || Math.floor(d.day) !== d.day || Math.floor(d.month) !== d.month) return;
+          var line = KINDS[d.kind] + ' retenu' + (d.kind === 'fete' ? 'e' : '') + ' : le ' + d.day + ' ' + MONTHS[d.month - 1] + '.';
+          if (typeof d.proof === 'string' && d.proof && d.proof.length <= 200) line += ' D’où vient la date : ' + d.proof;
+          var r = typeof d.replaced === 'number' && d.replaced >= 1 ? Math.floor(d.replaced) : 0;
+          if (r) line += ' (remplace ' + r + (r > 1 ? ' dates plus anciennes, gardées)' : ' date plus ancienne, gardée)');
+          known.appendChild(el('p', line));
+          shown += 1;
+        });
+        if (!shown) known.appendChild(el('p', 'Aucune date rangée pour cette personne.', 'doux'));
+        return true;
+      });
+    }
     var sending = false;
     var go = button('Ranger cette date', function () {
       if (sending) return;
@@ -108,12 +140,14 @@ globalThis.AIMMO_FIN_DE_BAIL = function (t) {
           return false;
         }
         state.textContent = 'Date rangée : ' + KINDS[k].toLowerCase() + ' le ' + Number(d) + ' ' + MONTHS[m - 1] + '. La dernière date rangée compte.';
+        reread();
         return true;
       });
     });
     box.appendChild(go);
     box.appendChild(state);
     corps.appendChild(box);
+    reread();
   }
   function open(personId, corps, said, message) {
     var path = '/v1/gagner/fiches/' + encodeURIComponent(personId) + '/fin-de-bail';

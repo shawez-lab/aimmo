@@ -4,7 +4,7 @@ import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { runScheduler } from '../src/planificateur.ts';
 import { DATES_JOB, DATE_REFUSALS, SCENARIOS_JOB, dateRefusalWords, datesRoutes } from '../src/scenarios.ts';
-import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../../core/src/index.ts';
+import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../../core/src/index.ts';
 import { AUTOMATION_PURPOSE } from '../../core/src/automatismes/scenarios.ts';
 import { DATES_PURPOSE } from '../../core/src/automatismes/dates-clients.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
@@ -70,7 +70,8 @@ async function setup() {
   const count = async (table: string) => (await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table}`))!.n;
   const outbox = async () => (await db.all<{ person_id: string; body: string }>('SELECT m.person_id, m.body FROM trial_outbox o JOIN messages m ON m.id = o.message_id ORDER BY m.rowid')).map((r) => [r.person_id, r.body.includes('anniversaire') ? 'date' : 'scenario']);
   const date = (personId: string, extra: Record<string, unknown> = {}) => ({ personId, kind: 'anniversaire', month: 10, day: 12, proof: 'dit au téléphone (test)', ...extra });
-  return { db, journal, net, http, person, refusals, count, outbox, date, now, at: (t: number) => { clock = t; } };
+  const unique = new FicheUnique(db, store, { now });
+  return { db, journal, net, store, unique, alex, http, person, refusals, count, outbox, date, now, at: (t: number) => { clock = t; } };
 }
 
 describeWithSqlite('BR56 · routes des dates des clients, et leur passage au planificateur', () => {
@@ -209,9 +210,98 @@ describeWithSqlite('BR56 · routes des dates des clients, et leur passage au pla
     const doc = readFileSync(new URL('../../../docs/API.md', import.meta.url), 'utf8');
     expect(doc).toContain('## Dates des clients (BR56)');
     const section = doc.slice(doc.indexOf('## Dates des clients (BR56)'));
-    const written = ['`POST /`', '`POST /textes`'];
+    const written = ['`POST /`', '`POST /textes`', '`GET /?personId=<id>`', '`GET /textes`'];
     expect(written.length).toBe(datesRoutes().length);
     for (const w of written) expect(section, w).toContain(w);
     expect(section).toContain(DATES_JOB);
+  });
+});
+
+describeWithSqlite('BR59 · relire les dates rangées et les textes en service', () => {
+  it('[R16] lire les dates d’une fiche : l’agent qui la suit et la direction ; chaque refus au journal, en mots', async () => {
+    const t = await setup();
+    const lea = await t.person('Léa');
+    const role = await t.http('conformite', 'GET', `/dates-clients?personId=${lea}`);
+    expect(role.status).toBe(403);
+    expect(role.body).toMatchObject({ ok: false, rule: 'R16', code: 'role', message: DATE_REFUSALS['role'] });
+    expect((await t.http('bea', 'GET', `/dates-clients?personId=${lea}`)).body).toMatchObject({ rule: 'R16', code: 'not_assigned', message: DATE_REFUSALS['not_assigned'] });
+    expect((await t.http('ailleurs', 'GET', `/dates-clients?personId=${lea}`)).body.code).toBe('other_network');
+    const unknown = await t.http('alex', 'GET', '/dates-clients?personId=personne-inconnue');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.message).toBe(DATE_REFUSALS['unknown']);
+    expect((await t.refusals()).map((e) => e.data.code)).toEqual(['role', 'not_assigned', 'other_network', 'unknown']);
+    expect((await t.refusals())[0]!.data).toMatchObject({ kind: 'client_date', gesture: 'read' });
+    // Paramètre manquant, doublé, mal formé ou non prévu : rien n'est lu.
+    for (const q of ['', '?personId=', '?personId=a%20b', `?personId=${lea}&personId=${lea}`]) {
+      expect((await t.http('alex', 'GET', `/dates-clients${q}`)).body, q).toMatchObject({ rule: 'R404', code: 'bad_person', message: DATE_REFUSALS['bad_person'] });
+    }
+    expect((await t.http('alex', 'GET', `/dates-clients?personId=${lea}&x=1`)).body).toMatchObject({ code: 'unknown_field', field: 'x' });
+    for (const who of ['alex', 'direction'] as const) {
+      const ok = await t.http(who, 'GET', `/dates-clients?personId=${lea}`);
+      expect(ok.status, who).toBe(200);
+      expect(ok.body).toMatchObject({ ok: true, mode: 'essai', data: [] });
+    }
+  });
+
+  it('[R404] [R17] la dernière date rangée de chaque sorte compte, fiches réunies comprises ; les anciennes sont comptées, gardées', async () => {
+    const t = await setup();
+    const lea = await t.person('Léa');
+    const double = await t.person('Léa');
+    expect((await t.http('alex', 'POST', '/dates-clients', t.date(lea, { month: 3, day: 4, proof: 'dite au téléphone (test)' }))).status).toBe(200);
+    t.at(TUE_10H + 60_000);
+    expect((await t.http('alex', 'POST', '/dates-clients', t.date(double, { month: 3, day: 5, proof: 'corrigée en rendez-vous (test)' }))).status).toBe(200);
+    expect((await t.http('direction', 'POST', '/dates-clients', t.date(lea, { kind: 'fete', month: 12, day: 6, proof: 'donnée par mail (test)' }))).status).toBe(200);
+    // Avant la réunion, chaque fiche ne dit que ses propres dates.
+    expect((await t.http('alex', 'GET', `/dates-clients?personId=${double}`)).body.data).toEqual([
+      { kind: 'anniversaire', month: 3, day: 5, proof: 'corrigée en rendez-vous (test)', recordedAt: new Date(TUE_10H + 60_000).toISOString(), replaced: 0 },
+    ]);
+    await t.unique.merge({ survivorId: lea, mergedId: double, reason: 'même personne, test' });
+    for (const id of [lea, double]) {
+      const r = await t.http('alex', 'GET', `/dates-clients?personId=${id}`);
+      expect(r.body.data, id).toEqual([
+        { kind: 'anniversaire', month: 3, day: 5, proof: 'corrigée en rendez-vous (test)', recordedAt: new Date(TUE_10H + 60_000).toISOString(), replaced: 1 },
+        { kind: 'fete', month: 12, day: 6, proof: 'donnée par mail (test)', recordedAt: new Date(TUE_10H + 60_000).toISOString(), replaced: 0 },
+      ]);
+    }
+    expect(await t.count('client_dates')).toBe(3);
+  });
+
+  it('[R405] [R16] les textes en service : la direction seule ; seul le dernier jeu de chaque sorte et canal', async () => {
+    const t = await setup();
+    for (const who of ['alex', 'conformite'] as const) {
+      const r = await t.http(who, 'GET', '/dates-clients/textes');
+      expect(r.status, who).toBe(403);
+      expect(r.body).toMatchObject({ rule: 'R16', code: 'not_direction', message: DATE_REFUSALS['not_direction'] });
+    }
+    expect((await t.refusals()).map((e) => e.data.gesture)).toEqual(['read_texts', 'read_texts']);
+    expect((await t.http('direction', 'GET', '/dates-clients/textes')).body).toMatchObject({ ok: true, data: [] });
+    expect((await t.http('direction', 'GET', '/dates-clients/textes?kind=fete')).body).toMatchObject({ code: 'unknown_field', field: 'kind' });
+    const SMS = 'Bonne fête {prenom} !';
+    expect((await t.http('direction', 'POST', '/dates-clients/textes', { kind: 'anniversaire', channel: 'email', texts: ['Ancien texte {prenom}.'] })).status).toBe(200);
+    t.at(TUE_10H + 60_000);
+    expect((await t.http('direction', 'POST', '/dates-clients/textes', { kind: 'anniversaire', channel: 'email', texts: [BIRTHDAY_TEXT, 'Bel anniversaire {prenom}.'] })).status).toBe(200);
+    expect((await t.http('direction', 'POST', '/dates-clients/textes', { kind: 'fete', channel: 'sms', texts: [SMS] })).status).toBe(200);
+    // La direction d'un autre réseau ne lit pas ces textes.
+    expect((await t.http('ailleurs', 'GET', '/dates-clients/textes')).body.data).toEqual([]);
+    const at = new Date(TUE_10H + 60_000).toISOString();
+    expect((await t.http('direction', 'GET', '/dates-clients/textes')).body.data).toEqual([
+      { kind: 'anniversaire', channel: 'email', texts: [BIRTHDAY_TEXT, 'Bel anniversaire {prenom}.'], seq: 2, writtenAt: at },
+      { kind: 'fete', channel: 'sms', texts: [SMS], seq: 1, writtenAt: at },
+    ]);
+  });
+
+  it('[R13] le journal garde la lecture de la fiche, jamais la date, sa preuve ni un texte', async () => {
+    const t = await setup();
+    const lea = await t.person('Léa');
+    await t.http('alex', 'POST', '/dates-clients', t.date(lea, { proof: 'confiée en visite (test)' }));
+    await t.http('direction', 'POST', '/dates-clients/textes', { kind: 'anniversaire', channel: 'email', texts: [BIRTHDAY_TEXT] });
+    const before = (await t.journal.all()).length;
+    await t.http('alex', 'GET', `/dates-clients?personId=${lea}`);
+    await t.http('direction', 'GET', '/dates-clients/textes');
+    const read = (await t.journal.all()).slice(before);
+    expect(read.map((e) => e.type)).toContain('fiche.lue');
+    const events = JSON.stringify(await t.journal.all());
+    expect(events).not.toContain('confiée en visite');
+    expect(events).not.toContain('joyeux');
   });
 });
