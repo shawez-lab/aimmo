@@ -2,7 +2,8 @@ import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
 import type { ClientSide, GestesAcquereur, SourcesAcquereur, SourcesProprietaire, SourcesVendeur } from '../../core/src/espaces/index.ts';
-import { ESPACE_PATH, SESSION_COOKIE, espacesRoutes, frenchDate, handleEspacePublic, type EspacesServices } from '../src/espaces.ts';
+import type { SellerKeyEntry } from '../../core/src/cles/cles.ts';
+import { ESPACE_PATH, MAX_KEY_ENTRIES, SESSION_COOKIE, espacesRoutes, frenchDate, handleEspacePublic, type EspacesServices } from '../src/espaces.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { enClair } from '../../core/test/boite-essai.ts';
@@ -277,6 +278,75 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
       expect(p.headers.get('content-security-policy')).toContain("default-src 'none'");
       expect(p.text).not.toMatch(/<script/i);
     }
+  });
+
+  it('[R272] [R665] [R16] [R201] BR53 · les clés du bien : lues au lien, partenaire par son métier, refus en mots, texte échappé, budget tenu', async () => {
+    const t = await setup();
+    const seller = await t.client('vendeur');
+    const cookie = await t.enter(seller.token);
+    const bien = `bien-${seller.ref}`;
+    // Sans suivi des clés branché : aucun lien, et la page le dit en mots.
+    expect((await t.pub('GET', ESPACE_PATH, { cookie })).text).not.toContain('cles?bien=');
+    const off = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie });
+    expect(off.status).toBe(503);
+    expect(off.text).toContain('Le suivi des clés n’est pas encore disponible');
+    const entries: SellerKeyEntry[] = [
+      { number: 2, label: 'Garage <b>', agent: 'Alex E.', purpose: 'Diagnostic', takenAt: '2027-06-07T08:00:00.000Z', appointment: null, returnedAt: null, lost: false, partner: { trade: 'Diagnostiqueur', businessName: 'Diag & Co <script>' } },
+      { number: 1, label: 'Porte d’entrée', agent: 'Alex E.', purpose: 'Visite', takenAt: '2027-06-05T13:30:00.000Z', appointment: { start: '2027-06-05T14:00:00.000Z', end: '2027-06-05T15:00:00.000Z', state: 'fait' }, returnedAt: '2027-06-05T15:20:00.000Z', lost: false },
+      { number: 3, label: 'Cave', agent: 'Alex E.', purpose: 'Photos du bien', takenAt: '2027-06-01T08:00:00.000Z', appointment: null, returnedAt: null, lost: true },
+    ];
+    const asked: string[] = [];
+    t.s.cles = {
+      forSeller: async (viewer, propertyId) => {
+        asked.push(`${viewer.personId}:${propertyId}`);
+        return propertyId === bien && viewer.personId === seller.id ? { ok: true, value: entries } : { ok: false, rule: 'R161', code: 'unknown' };
+      },
+    };
+    // Rien n'est lu avant le geste : l'accueil donne seulement le lien [R201].
+    const home = await t.pub('GET', ESPACE_PATH, { cookie });
+    expect(home.text).toContain(`href="${ESPACE_PATH}cles?bien=${bien}"`);
+    expect(asked).toEqual([]);
+    const page = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie });
+    expect(page.status).toBe(200);
+    expect(asked).toEqual([`${seller.id}:${bien}`]);
+    // Le partenaire : son métier et sa raison sociale, sous la responsabilité de l'agent ; jamais une balise reçue [R665].
+    expect(page.text).toContain('Remis à Diag &amp; Co &lt;script&gt; (diagnostiqueur), sous la responsabilité de Alex E.');
+    expect(page.text).toContain('Garage &lt;b&gt;');
+    expect(page.text).toContain('Rendez-vous du 5 juin 2027 à 16 h 00 au 5 juin 2027 à 17 h 00 · fait');
+    expect(page.text).toContain('Rendu le 5 juin 2027 à 17 h 20');
+    expect(page.text).toContain('Déclaré perdu');
+    expect(page.text).toContain('Pas encore rendu');
+    // Dans l'ordre reçu, le plus récent d'abord.
+    expect(page.text.indexOf('n° 2')).toBeLessThan(page.text.indexOf('n° 1'));
+    expect(page.text.indexOf('n° 1')).toBeLessThan(page.text.indexOf('n° 3'));
+    expect(page.text).not.toMatch(/<script|<b>/i);
+    // Un autre bien, un identifiant mal formé : refusés en mots, la même page [R161, R16].
+    for (const other of ['bien-autre', 'x%27%3E', '']) {
+      const r = await t.pub('GET', `${ESPACE_PATH}cles?bien=${other}`, { cookie });
+      expect(r.status).toBe(403);
+      expect(r.text).toContain('Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur');
+    }
+    // Aucune sortie : dit en mots.
+    entries.length = 0;
+    expect((await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie })).text).toContain('Aucune clé de ce bien n’est sortie');
+    // Beaucoup de sorties : les plus récentes seulement, le reste compté ; la page tient son budget [R201].
+    for (let i = 0; i < MAX_KEY_ENTRIES + 7; i += 1)
+      entries.push({ number: i + 1, label: `Trousseau d’essai ${i}`, agent: 'Alex E.', purpose: 'Visite', takenAt: new Date(Date.parse('2027-06-07T08:00:00.000Z') - i * 3_600_000).toISOString(), appointment: { start: '2027-06-05T14:00:00.000Z', end: '2027-06-05T15:00:00.000Z', state: 'prevu' }, returnedAt: '2027-06-05T15:20:00.000Z', lost: false, partner: { trade: 'Diagnostiqueur', businessName: 'Diagnostics de Bourgogne' } });
+    const big = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie });
+    expect(big.text).toContain(`Trousseau d’essai ${MAX_KEY_ENTRIES - 1}<`);
+    expect(big.text).not.toContain(`Trousseau d’essai ${MAX_KEY_ENTRIES}<`);
+    expect(big.text).toContain('Et 7 sorties plus anciennes');
+    for (const p of [big, page, off]) {
+      expect(htmlProblems(p.text)).toEqual([]);
+      expect(budgetProblems({ html: p.text }, BUDGETS.page)).toEqual([]);
+      expect(p.headers.get('content-security-policy')).toContain("default-src 'none'");
+    }
+    // Sans séance : renvoyé à la demande de lien.
+    const none = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`);
+    expect(none.status).toBe(303);
+    // Un identifiant mal formé ne va jamais jusqu’à la lecture.
+    expect(asked.length).toBe(4);
+    expect(asked.every((a) => a.endsWith(`:${bien}`) || a.endsWith(":bien-autre"))).toBe(true);
   });
 
   it('les dates sont dites à l’heure de Paris, en français', () => {
