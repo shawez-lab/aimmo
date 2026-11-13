@@ -1307,7 +1307,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR58 · Les dates des clients dans la fiche, et leurs textes chez la direction
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#546, `f58723be`). Décidé : la fiche range la date depuis le bloc « Fin de bail connue », renommé « Dates connues », dans son script déjà servi à part ; la direction écrit les textes sur l'écran « Scénarios automatiques » (BR57). Rien d'ajouté au script de l'application [R201]. Codex 1 P1 corrigé (choix figés pendant l'envoi) puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5811 tests). Reste pour la voie 1 : aucune route ne relit une date rangée ni les textes en service ; l'écran dit ce qui vient d'être rangé, pas l'état. Une route de lecture (`GET /v1/dates-clients?personId=`, `GET /v1/dates-clients/textes`) et son affichage feraient une tâche BR à part.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR56
 - Cahier : HX25 ; R404, R405, R16, R201.
 - Objectif : l'agent range une date depuis la fiche du client ; la direction écrit les textes de chaque sorte de date.
