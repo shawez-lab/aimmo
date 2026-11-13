@@ -111,6 +111,35 @@ export interface SimulationReport {
   canSwitchOn: boolean;
 }
 
+/** Un scénario du réseau, lu par la direction : sa dernière version, son état et le dernier essai de cette version. */
+export interface ScenarioSummary {
+  scenarioId: string;
+  /** La dernière version composée. */
+  version: number;
+  definition: ScenarioDefinition;
+  composedAt: string;
+  /** Allumé : la version allumée, peut-être plus ancienne que la dernière composée. */
+  litVersion: number | null;
+  litSince: string | null;
+  /** Le dernier essai de la dernière version, ou `null` : sans lui, rien ne s'allume [R400]. */
+  lastSimulation: {
+    simulationId: string;
+    at: string;
+    from: string;
+    to: string;
+    messages: number;
+    persons: number;
+    tasks: number;
+    refused: Record<string, number>;
+    sameDayTwice: number;
+    /** L'allumage passerait sur cet essai, lu à l'instant : récent, après le dernier allumage du réseau, sans double [R400, R402]. */
+    canSwitchOn: boolean;
+  } | null;
+}
+
+/** Au plus tant de scénarios lus par la direction, les plus anciens d'abord. */
+export const MAX_LISTED_SCENARIOS = 200;
+
 export interface TickReport {
   created: number;
   messagesInTrial: number;
@@ -516,7 +545,7 @@ export class ScenariosAutomatiques {
     if (!current) return { ok: false, rule: 'R16', code: 'unknown' };
     const now = this.now();
     const sim = await this.db.first<{ id: string; same_day_twice: number; lit_revision: number; created_at: string }>(
-      'SELECT id, same_day_twice, lit_revision, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+      'SELECT id, same_day_twice, lit_revision, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, id DESC LIMIT 1',
       [scenarioId, current.version],
     );
     const refuse = async (rule: string, code: string): Promise<ScenarioResult<{ version: number }>> => {
@@ -565,6 +594,57 @@ export class ScenariosAutomatiques {
     );
     await appendEvent(this.journal, { type: 'automatismes.eteint', actor: this.actor(viewer), subject: `scenario:${scenarioId}`, data: { rule: 'R401', cancelled: cancelled.changes } }, this.now);
     return { ok: true, value: { cancelled: cancelled.changes } };
+  }
+
+  /**
+   * Les scénarios du réseau, pour la direction seule : la dernière version de chacun, son état, et le dernier essai de
+   * cette version avec ce que l'allumage en dirait à l'instant. Rien n'est écrit, hors le refus d'un autre rôle [R16, R400].
+   */
+  async list(viewer: Viewer): Promise<ScenarioResult<ScenarioSummary[]>> {
+    const refused = await this.refuseUnlessDirection(viewer, 'list');
+    if (refused) return refused;
+    const now = this.now().getTime();
+    const rows = await this.db.all<{ id: string; version: number; definition: string; created_at: string }>(
+      `SELECT s.id, s.version, s.definition, s.created_at FROM automation_scenarios s
+       WHERE s.network_id = ? AND s.version = (SELECT MAX(version) FROM automation_scenarios WHERE id = s.id)
+       ORDER BY (SELECT MIN(created_at) FROM automation_scenarios WHERE id = s.id), s.id LIMIT ?`,
+      [viewer.networkId, MAX_LISTED_SCENARIOS],
+    );
+    const lit = new Map((await this.litScenarios(viewer.networkId)).map((l) => [l.scenarioId, l]));
+    const revision = await this.litRevision(viewer.networkId);
+    const out: ScenarioSummary[] = [];
+    for (const r of rows) {
+      const sim = await this.db.first<{ id: string; created_at: string; period_from: string; period_to: string; messages: number; reached: number; tasks: number; refused: string; same_day_twice: number; lit_revision: number }>(
+        `SELECT id, created_at, period_from, period_to, messages, reached, tasks, refused, same_day_twice, lit_revision FROM automation_simulations
+         WHERE scenario_id = ? AND version = ? AND network_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [r.id, r.version, viewer.networkId],
+      );
+      const on = lit.get(r.id) ?? null;
+      out.push({
+        scenarioId: r.id,
+        version: r.version,
+        definition: JSON.parse(r.definition) as ScenarioDefinition,
+        composedAt: r.created_at,
+        litVersion: on ? on.version : null,
+        litSince: on ? on.since : null,
+        lastSimulation: sim
+          ? {
+              simulationId: sim.id,
+              at: sim.created_at,
+              from: sim.period_from,
+              to: sim.period_to,
+              messages: sim.messages,
+              persons: sim.reached,
+              tasks: sim.tasks,
+              refused: JSON.parse(sim.refused) as Record<string, number>,
+              sameDayTwice: sim.same_day_twice,
+              // Les mêmes conditions que l'allumage, dans le même ordre [R400, R402].
+              canSwitchOn: now - Date.parse(sim.created_at) <= this.settings.simulationValidHours * HOUR && sim.lit_revision === revision && sim.same_day_twice === 0,
+            }
+          : null,
+      });
+    }
+    return { ok: true, value: out };
   }
 
   /**

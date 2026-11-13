@@ -502,6 +502,19 @@ Sous `/v1/sequences`, l'agent en activité seul : tout autre rôle est refusé a
 
 Le passage `sequences.passage`, au planificateur de 9 h à 19 h du lundi au samedi : chaque séquence en cours est arrêtée si elle doit l'être (réponse, exclusion, accord retiré, refus d'appel, changement ou départ de l'agent, fiches réunies), puis ses mails et SMS dus sont remis au contrôle central, qui redécide heures, plafond et doublons [R01, R11, R05]. Les canaux sont ceux du mode essai : rien ne part vers une personne [R26].
 
+
+## Scénarios automatiques (BR55)
+
+Sous `/v1/scenarios`, la direction seule : tout autre rôle est refusé avant toute lecture du corps, au journal (403, `not_direction`) [R16, R403]. Corps JSON de 16 ko au plus, vide ou objet ; un corps illisible, un champ ou un paramètre de requête non prévu : 400 (`invalid_body`, `unknown_field`) sans rien ranger ; un refus de règle 409 avec sa règle ; un scénario d'un autre réseau 404 (`unknown`). Chaque refus porte `message`, ses mots en français. Aucune route n'envoie rien [R401].
+
+- `GET /` : les scénarios du réseau (200 au plus, les plus anciens d'abord), chacun avec sa dernière version et sa définition, `litVersion` et `litSince` s'il est allumé (la version allumée peut être plus ancienne que la dernière), et `lastSimulation`, le dernier essai de la dernière version : messages, personnes, tâches, refus par règle, doubles du même jour, et `canSwitchOn`, lu à l'instant comme l'allumage le lirait [R400, R402].
+- `POST /` (`{name, trigger, projectKind?, waitHours, message?: {channel, text}, task?: {title, dueInDays}}`) compose un scénario, version 1. Déclencheurs : `nouveau_contact`, `nouveau_projet` (avec `projectKind`, ou tous les types), `visite_faite`, `mandat_signe` ; un autre est refusé (409 R403, `bad_trigger`). Canal `email`, `sms` ou `whatsapp` ; le texte est fixe, porte `{prenom}` une fois, aucun chiffre, et passe déjà les contrôles du contrôle central (409 avec la règle, `text_R10` par exemple) [R403].
+- `POST /<id>` : une nouvelle version du scénario, même corps ; l'ancienne reste, jamais changée [R17].
+- `POST /<id>/essai` : rejoue la dernière version sur les faits datés des 30 derniers jours et dit ce que le contrôle central aurait laissé partir ; rien n'est envoyé, aucun passage ni tâche rangé [R400].
+- `POST /<id>/allumer` : allume la dernière version, seulement sur son propre essai de moins de 24 heures, fait après le dernier allumage du réseau, sans double du même jour (409 R400 `not_simulated`, `simulation_too_old`, `simulation_before_last_switch_on` ; R402 `same_day_twice`).
+- `POST /<id>/eteindre` : arrête le scénario ; ses passages en attente sont annulés, jamais effacés.
+
+Le passage `automatismes.scenarios`, au planificateur à chaque heure, pour chaque réseau qui a allumé un scénario : les faits venus depuis l'allumage sont rangés une fois chacun, puis les passages dus sont faits ; un message attend la prochaine heure permise et ne part que par le contrôle central, avec l'accord « automatismes », sur les canaux du mode essai [R401, R402, R05, R26]. Un réseau en panne n'empêche pas les autres.
 ## Seuils du passage à PostgreSQL (BR25)
 
 Sous `/v1/postgresql`, la direction du réseau qui exploite la plateforme seule (variable `PLATFORM_NETWORK_ID`) : les nombres couvrent toute la base. Tout autre rôle est refusé (403, `role`), la direction d'un autre réseau aussi (403, `autre_reseau`), et tout le monde tant que `PLATFORM_NETWORK_ID` n'est pas réglée ; chaque refus est écrit au journal [R16]. Rien n'est envoyé, rien ne bascule seul. Corps JSON de 8 ko au plus ; un corps illisible ou un champ non prévu répond 400 sans rien ranger, un refus de règle 409 avec sa règle.

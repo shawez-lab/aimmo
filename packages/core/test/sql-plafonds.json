@@ -278,8 +278,7 @@
     "rowid": 3
   },
   "packages/core/src/automatismes/scenarios.ts": {
-    "insert_or": 3,
-    "rowid": 1
+    "insert_or": 3
   },
   "packages/core/src/bascule/paliers.ts": {
     "insert_or": 1
