@@ -18,6 +18,9 @@ import { CLIENT_DATE_LABELS } from './fin-de-bail.ts';
  * BR58 : la direction y écrit aussi les textes des messages de date (HX25), de un à cinq par sorte de date et par canal,
  * jamais par l'IA ; chacun est contrôlé avant l'appel (prénom une fois, aucun chiffre), puis par le serveur comme ceux
  * d'un scénario [R403, R405].
+ *
+ * BR59 : elle y relit, au geste puis après chaque écriture, les textes en service de chaque sorte et de chaque canal,
+ * le seul jeu qu'un passage prend [R405] ; un champ reçu mal formé n'est pas dit, tout texte reçu est posé en texte.
  */
 
 export const SCENARIO_TRIGGER_LABELS: Readonly<Record<AutomationTrigger, string>> = Object.freeze({
@@ -47,7 +50,7 @@ const MAX_TASK = DEFAULT_SCENARIO_SETTINGS.maxTaskDays;
 /** De un à cinq textes par sorte de date et par canal [R405]. */
 export const MAX_DATE_TEXTS = 5;
 
-/** Le script servi à part (`/app/scenarios.js`). Il ne lit et n'écrit que `/v1/scenarios` [R16]. */
+/** Le script servi à part (`/app/scenarios.js`). Il ne lit et n'écrit que `/v1/scenarios` et `/v1/dates-clients/textes` [R16]. */
 export const SCENARIOS_SCRIPT = `'use strict';
 globalThis.AIMMO_SCENARIOS = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, select = t.select, details = t.details, date = t.date;
@@ -230,6 +233,33 @@ globalThis.AIMMO_SCENARIOS = function (t) {
     var dk = {}, ck = {};
     DATE_KEYS.forEach(function (k) { dk[k] = DATE_KINDS[k]; });
     CHANNEL_KEYS.forEach(function (k) { ck[k] = CHANNELS[k]; });
+    /* BR59 · les textes en service, relus au geste puis après chaque écriture : le dernier jeu de chaque sorte et canal [R405]. */
+    var inForce = el('div', null, 'textes-en-service'), readingTexts = 0;
+    function reread() {
+      var mine = t.session(), at = ++readingTexts;
+      clear(inForce);
+      inForce.appendChild(el('p', 'Lecture des textes en service…', 'doux'));
+      return send('/v1/dates-clients/textes', 'GET').then(function (res) {
+        if (res.gone || mine !== t.session() || at !== readingTexts) return false;
+        clear(inForce);
+        if (!res.ok || !res.body || !Array.isArray(res.body.data)) { inForce.appendChild(el('p', res.offline ? OFFLINE : 'Les textes en service ne se lisent pas pour le moment.', 'doux')); return false; }
+        var shown = 0;
+        res.body.data.forEach(function (x) {
+          if (!x || !own(DATE_KINDS, x.kind) || !own(CHANNELS, x.channel) || !Array.isArray(x.texts)) return;
+          var texts = x.texts.filter(function (y) { return typeof y === 'string' && y; });
+          if (!texts.length) return;
+          inForce.appendChild(el('h5', DATE_KINDS[x.kind] + ' par ' + CHANNELS[x.channel] + ' : ' + count(texts.length, 'texte', 'textes') + ' en service'));
+          var ol = el('ol');
+          texts.forEach(function (y) { ol.appendChild(el('li', y)); });
+          inForce.appendChild(ol);
+          shown += 1;
+        });
+        if (!shown) inForce.appendChild(el('p', 'Aucun texte en service : aucun message de date ne peut partir.', 'doux'));
+        return true;
+      });
+    }
+    d.appendChild(button('Relire les textes en service', function () { return reread(); }));
+    d.appendChild(inForce);
     var kind = select(d, 'date-textes-sorte', 'Sorte de date', Object.assign({ '': 'Choisir' }, dk), '');
     var channel = select(d, 'date-textes-canal', 'Canal', Object.assign({ '': 'Choisir' }, ck), '');
     var areas = [];
@@ -254,6 +284,7 @@ globalThis.AIMMO_SCENARIOS = function (t) {
           if (lost(res)) { say(LOST); return false; }
           if (!res.ok) { var b = res.body || {}; say(own(DATE_REFUSALS, b.code) || why(res, 'Les textes ne sont pas rangés.')); return false; }
           say(count(texts.length, 'texte rangé', 'textes rangés') + ' pour ' + DATE_KINDS[k].toLowerCase() + ' par ' + CHANNELS[c] + '.');
+          reread();
           return true;
         });
       });

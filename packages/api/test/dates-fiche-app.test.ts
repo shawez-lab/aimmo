@@ -168,3 +168,52 @@ describe('BR58 · l’anniversaire ou la fête rangé depuis la fiche', () => {
     expect(state(b)).toBe('Date rangée : anniversaire le 3 mars. La dernière date rangée compte.');
   });
 });
+
+describe('BR59 · les dates retenues, relues sur la fiche', () => {
+  const READ = `${DATES}?personId=p-1`;
+  const known = (a: A) => part(a).all().find((e) => e.className === 'dates-retenues')!;
+  const reads = (a: A) => a.calls.filter((c) => c.method === 'GET' && c.url === READ);
+
+  it('[R201] lues au geste qui ouvre le bloc, jamais avant ; le budget tient', async () => {
+    const a = await openedFiche(FICHE, { [PATH]: ok([]), [READ]: ok([]) });
+    expect(reads(a)).toHaveLength(0);
+    const b = await open({ [READ]: ok([]) });
+    expect(reads(b)).toHaveLength(1);
+    expect(known(b).textContent).toBe('Aucune date rangée pour cette personne.');
+    expect(budgetProblems({ html: '', js: FIN_DE_BAIL_SCRIPT }, BUDGETS.page)).toEqual([]);
+  });
+
+  it('[R404] [R17] la date retenue de chaque sorte, d’où elle vient et ce qu’elle remplace, posées en texte ; un champ mal formé n’est pas dit', async () => {
+    const INJECTED = '<img src=x onerror="alert(1)">';
+    const a = await open({
+      [READ]: ok([
+        { kind: 'anniversaire', month: 3, day: 5, proof: 'Corrigée en rendez-vous', recordedAt: '2026-11-10T10:00:00.000Z', replaced: 1 },
+        { kind: 'fete', month: 12, day: 6, proof: INJECTED, recordedAt: '2026-11-10T10:00:00.000Z', replaced: 0 },
+        { kind: 'mariage', month: 6, day: 1, proof: 'x', replaced: 0 },
+        { kind: 'fete', month: 2, day: 30, proof: 'x', replaced: 0 },
+        { kind: 'fete', month: 1, day: 1.5, proof: 'x', replaced: 0 },
+        null,
+      ]),
+    });
+    expect(known(a).children.map((e) => e.textContent)).toEqual([
+      'Anniversaire retenu : le 5 mars. D’où vient la date : Corrigée en rendez-vous (remplace 1 date plus ancienne, gardée)',
+      `Fête retenue : le 6 décembre. D’où vient la date : ${INJECTED}`,
+    ]);
+    expect(known(a).all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(FIN_DE_BAIL_SCRIPT).not.toContain('innerHTML');
+  });
+
+  it('[R16] relues après une date rangée ; un refus ou une coupure dits en mots, la saisie reste possible', async () => {
+    let n = 0;
+    const a = await open({ [DATES]: ok({ dateId: 'd1' }), [READ]: async () => Response.json({ ok: true, data: n++ === 0 ? [] : [{ kind: 'fete', month: 12, day: 6, proof: 'Donnée en rendez-vous', replaced: 0 }] }) });
+    fill(a, { sorte: 'fete', mois: '12', jour: '6', source: 'Donnée en rendez-vous' });
+    await press(a);
+    expect(reads(a)).toHaveLength(2);
+    expect(known(a).textContent).toBe('Fête retenue : le 6 décembre. D’où vient la date : Donnée en rendez-vous');
+    const b = await open({ [READ]: async () => Response.json({ ok: false, rule: 'R16', code: 'not_assigned' }, { status: 403 }) });
+    expect(known(b).textContent).toBe('Dates rangées : réservées à l’agent de cette fiche.');
+    expect(part(b).all().some((e) => e.tagName === 'button' && e.textContent === 'Ranger cette date')).toBe(true);
+    const c = await open();
+    expect(known(c).textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+});
