@@ -1625,6 +1625,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : publication prise ailleurs entre le choix et la réservation : le rang est rempli par un autre bien prêt, aucun doublon, la rotation reste stricte [R580, R581] (test) ; rang pris par l'autre planification : rien n'est réservé en double, le rang suivant est rempli [R581] (test) ; plus aucune publication prête : le rang reste vide, la planification finit [R581] (test) ; tous les tests de HX52 restent verts.
 - Attend : rien.
 
+### RC30 · Un lancement de publicité resté sans réponse ne bloque plus la campagne
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX54
+- Cahier : M07 Commercialiser et M20 Gagner des mandats (« Mesure ») ; HX54 « Publicité payante mesurée au mandat » ; R587, R588, R13.
+- Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX54 (« un lancement interrompu sans réponse de la plateforme bloque la campagne (côté prudent) »). Aujourd'hui, si le Worker s'arrête entre le lancement rangé et la réponse de la plateforme, la campagne reste « lancement en cours » pour toujours : la direction ne peut ni la valider de nouveau ni la relancer, et une pause n'est jamais redemandée alors que la plateforme a peut-être lancé. Désormais, au passage du contrôle (`runChecks`, ou une dépense lue), un lancement sans réponse depuis 15 minutes est soldé : rangé comme un échec (une fois, par la base : si la vraie réponse arrive avant, rien n'est soldé), la validation arrêtée pour `echec_lancement` et la pause demandée à la plateforme, redemandée jusqu'à sa confirmation, comme tout arrêt [R588]. Si la direction l'avait déjà arrêtée, la pause est redemandée quand même (la plateforme a pu lancer après). Relancer demande une validation nouvelle [R587]. Si le lancement d'origine finit plus tard, sa réponse ne change rien et la pause est redemandée. Au journal, l'issue et la règle, jamais une personne [R13]. Aucune migration : les tables de HX54 suffisent. Changent seulement `marketing/publicite.ts`, son test et le texte de R587.
+- Objectif : une coupure pendant un lancement ne fige plus jamais une campagne, et rien ne dépense sans pause demandée.
+- Critères : lancement sans réponse depuis 15 minutes : soldé en échec au passage, campagne arrêtée `echec_lancement`, pause demandée, nouvelle validation puis lancement possibles [R587, R588] (test) ; moins de 15 minutes : rien ne change, toujours `lancement_en_cours` (test) ; pause refusée par la plateforme : redemandée à chaque passage, aucun lancement nouveau tant qu'elle n'est pas confirmée [R588] (test) ; arrêtée par la direction pendant le lancement perdu : soldée, pause redemandée [R588] (test) ; réponse d'origine arrivée après le solde : rien ne change, pause redemandée (test) ; tous les tests de HX54 restent verts.
+- Attend : rien (vraies plateformes : H63).
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
