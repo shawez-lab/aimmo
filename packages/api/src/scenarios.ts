@@ -1,6 +1,7 @@
 /**
  * Les routes des scénarios automatiques (HX24, RC18, RC19), sous `/v1/scenarios`, et leur passage au planificateur
- * (BR55). Les routes des dates des clients (HX25), sous `/v1/dates-clients`, et leur passage juste après (BR56).
+ * (BR55). Les routes des dates des clients (HX25), sous `/v1/dates-clients`, et leur passage juste après (BR56) ;
+ * leurs lectures, la date retenue d'une fiche et les textes en service (BR59).
  *
  * Chaque route est réservée à la direction, contrôlée avant toute lecture du corps ; un refus est écrit au journal
  * [R16, R403]. La couche métier refait ses propres contrôles : listes fermées, texte fixe, essai de la version exacte
@@ -226,8 +227,8 @@ export function scenariosJob(db: SqlDatabase, journal: JournalStore, options: { 
 
 /** Les refus des dates des clients, dits en mots [R16, R404, R405]. Les contrôles du texte sont ceux d'un scénario. */
 export const DATE_REFUSALS: Readonly<Record<string, string>> = {
-  role: 'Seuls l’agent qui suit la fiche et la direction rangent la date d’un client.',
-  not_direction: 'Seule la direction écrit les textes des messages de date.',
+  role: 'Seuls l’agent qui suit la fiche et la direction rangent et relisent la date d’un client.',
+  not_direction: 'Seule la direction écrit et relit les textes des messages de date.',
   unknown: 'Cette fiche n’existe pas.',
   other_network: 'Cette fiche appartient à un autre réseau.',
   not_assigned: 'Seul l’agent qui suit cette fiche peut y ranger une date.',
@@ -292,6 +293,33 @@ export function datesRoutes(): ScenariosRoute[] {
       name: 'dates_clients.textes',
       // La direction seule écrit les textes, jamais l'IA ; chacun contrôlé comme ceux d'un scénario [R403, R405].
       handle: route('texts', (v) => v.role === 'direction', 'not_direction', DATE_TEXT_FIELDS, async (s, v, b) => datesOf(s.db, s.journal, s.now).setTexts(v, { kind: b['kind'], channel: b['channel'], texts: b['texts'] })),
+    },
+    {
+      method: 'GET',
+      pattern: /^\/dates-clients$/,
+      name: 'dates_clients.lire',
+      // BR59 · les dates retenues d'une fiche : sous les mêmes droits que pour les ranger, fiche lue sous droits [R16, R404].
+      handle: async (s, v, _params, request) => {
+        if (v.role !== 'agent' && v.role !== 'direction') return refuseDateRole(s, v, 'role', 'read');
+        const query = new URL(request.url).searchParams;
+        const extra = [...query.keys()].find((k) => k !== 'personId');
+        if (extra !== undefined) return unknownField(extra, DATE_REFUSALS['unknown_field']);
+        const personId = query.getAll('personId');
+        if (personId.length !== 1 || !/^[A-Za-z0-9_-]{1,64}$/.test(personId[0]!)) return reply({ ok: false, rule: 'R404', code: 'bad_person' }, dateRefusalWords);
+        return reply(await datesOf(s.db, s.journal, s.now).datesOf(v, personId[0]!), dateRefusalWords);
+      },
+    },
+    {
+      method: 'GET',
+      pattern: /^\/dates-clients\/textes$/,
+      name: 'dates_clients.textes_lire',
+      // BR59 · les textes en service, la direction seule [R16, R405].
+      handle: async (s, v, _params, request) => {
+        if (v.role !== 'direction') return refuseDateRole(s, v, 'not_direction', 'read_texts');
+        const extra = extraQuery(request);
+        if (extra !== null) return unknownField(extra, DATE_REFUSALS['unknown_field']);
+        return reply(await datesOf(s.db, s.journal, s.now).textsInForce(v), dateRefusalWords);
+      },
     },
   ];
 }

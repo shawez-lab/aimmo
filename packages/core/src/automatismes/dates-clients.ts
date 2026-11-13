@@ -69,6 +69,27 @@ export interface DatesTickReport {
   withoutConsent: number;
 }
 
+/** Une date retenue, telle que la fiche la relit (BR59). */
+export interface KnownClientDate {
+  kind: ClientDateKind;
+  month: number;
+  day: number;
+  /** D'où vient la date, comme l'agent l'a écrit [R404]. */
+  proof: string;
+  recordedAt: string;
+  /** Les dates plus anciennes de la même sorte, gardées, que celle-ci remplace [R17]. */
+  replaced: number;
+}
+
+/** Le jeu de textes en service pour une sorte de date et un canal (BR59). */
+export interface DateTextsInForce {
+  kind: ClientDateKind;
+  channel: AutomationChannel;
+  texts: string[];
+  seq: number;
+  writtenAt: string;
+}
+
 interface DateRow {
   id: string;
   person_id: string;
@@ -199,6 +220,49 @@ export class DatesClients {
     ]);
     await appendEvent(this.journal, { type: 'dates.textes', actor: this.actor(viewer), subject: null, data: { rule: 'R405', kind: input.kind, channel: input.channel, seq, count: texts.length } }, this.now);
     return { ok: true, value: { seq } };
+  }
+
+  /**
+   * Les dates retenues d'une personne (BR59) : pour chaque sorte, la dernière rangée sur l'une des fiches réunies, avec
+   * d'où elle vient et le nombre de dates qu'elle remplace [R404]. Lue sous les mêmes droits que pour la ranger : l'agent
+   * qui suit la fiche ou la direction ; la lecture de la fiche va au journal, sans aucune date [R16, R13].
+   */
+  async datesOf(viewer: Viewer, personId: string): Promise<ScenarioResult<KnownClientDate[]>> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'role', 'read');
+    const read = await this.acces.readFiche(viewer, personId);
+    if (!read.ok) return { ok: false, rule: read.rule, code: read.code };
+    const members = read.value.members.map((m) => m.id);
+    if (members.length === 0) return { ok: true, value: [] };
+    const rows = await this.db.all<{ kind: string; month: number; day: number; proof: string; created_at: string }>(
+      `SELECT kind, month, day, proof, created_at FROM client_dates WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, rowid`,
+      [read.value.person.network_id, ...members],
+    );
+    const out: KnownClientDate[] = [];
+    for (const kind of CLIENT_DATE_KINDS) {
+      const mine = rows.filter((r) => r.kind === kind);
+      const last = mine[mine.length - 1];
+      if (last) out.push({ kind, month: last.month, day: last.day, proof: last.proof, recordedAt: last.created_at, replaced: mine.length - 1 });
+    }
+    return { ok: true, value: out };
+  }
+
+  /**
+   * Les textes en service (BR59) : pour chaque sorte de date et chaque canal, le dernier jeu écrit par la direction, le
+   * seul qu'un passage prend [R405]. La direction seule les relit [R16].
+   */
+  async textsInForce(viewer: Viewer): Promise<ScenarioResult<DateTextsInForce[]>> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'not_direction', 'read_texts');
+    const out: DateTextsInForce[] = [];
+    for (const kind of CLIENT_DATE_KINDS) {
+      for (const channel of AUTOMATION_CHANNELS) {
+        const row = await this.db.first<{ texts: string; seq: number; created_at: string }>(
+          'SELECT texts, seq, created_at FROM client_date_texts WHERE network_id = ? AND kind = ? AND channel = ? ORDER BY seq DESC LIMIT 1',
+          [viewer.networkId, kind, channel],
+        );
+        if (row) out.push({ kind, channel, texts: JSON.parse(row.texts) as string[], seq: row.seq, writtenAt: row.created_at });
+      }
+    }
+    return { ok: true, value: out };
   }
 
   private async textsOf(networkId: string, kind: ClientDateKind, channel: AutomationChannel): Promise<string[] | null> {
