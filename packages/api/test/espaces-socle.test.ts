@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import type { SqlDatabase } from '@aimmo/core';
+import { FicheUnique, type SqlDatabase } from '@aimmo/core';
+import { Cles } from '../../core/src/cles/index.ts';
 import { handleRequest, sha256Hex, type ApiConfig } from '../src/index.ts';
 import { espaceBase, releveKeys } from '../src/app.ts';
 import { ESPACE_PATH, SESSION_COOKIE } from '../src/espaces.ts';
@@ -93,6 +94,45 @@ describeWithSqlite('EC07 · branchement des espaces dans le socle', () => {
     expect((await t.pub('GET', ESPACE_PATH, { cookie: seller })).text).not.toContain('REF-T-1');
     // Rien n'est parti hors de la boîte d'essai [R26].
     expect(await t.db.all("SELECT 1 FROM messages m WHERE m.body LIKE '%lien de votre espace%' AND m.id NOT IN (SELECT message_id FROM trial_outbox)")).toHaveLength(0);
+  });
+
+  it('[R161] [R272] BR53 · par le socle, le vendeur ouvre les clés de son bien ; l’acquéreur, un autre bien ou sans séance : refusés', async () => {
+    const t = await setup();
+    const cles = new Cles(t.db, t.acces, new FicheUnique(t.db, t.store, { now: t.now }), t.journal, { now: t.now });
+    const key = await cles.register(t.agent, t.propertyId, 'Porte d’entrée');
+    expect(key).toMatchObject({ ok: true });
+    if (!key.ok) return;
+    const dueAt = new Date(t.now().getTime() + 2 * 3_600_000).toISOString();
+    expect(await cles.handOut(t.agent, key.keyId, { holderAgentId: t.alexId, purpose: 'photos', dueAt })).toMatchObject({ ok: true });
+    const seller = await t.enter(t.personId);
+    const buyer = await t.enter(t.buyerId);
+    // Rien n'est lu avant le geste : la page d'accueil donne le lien, sans lire les clés [R201].
+    const before = (await t.db.all("SELECT 1 FROM journal WHERE type = 'cle.vue_vendeur'")).length;
+    const home = await t.pub('GET', ESPACE_PATH, { cookie: seller });
+    expect(home.text).toContain(`${ESPACE_PATH}cles?bien=${t.propertyId}`);
+    expect(await t.db.all("SELECT 1 FROM journal WHERE type = 'cle.vue_vendeur'")).toHaveLength(before);
+    const seen = await t.pub('GET', `${ESPACE_PATH}cles?bien=${t.propertyId}`, { cookie: seller });
+    expect(seen.status).toBe(200);
+    expect(seen.text).toContain('Trousseau n° 1');
+    expect(seen.text).toContain('Porte d’entrée');
+    expect(seen.text).toContain('Pas encore rendu');
+    expect(await t.db.all("SELECT 1 FROM journal WHERE type = 'cle.vue_vendeur'")).toHaveLength(before + 1);
+    // L'acquéreur, un bien inconnu : la même page de refus, en mots, au journal [R161, R16].
+    for (const [cookie, bien] of [[buyer, t.propertyId], [seller, 'bien-inconnu'], [seller, 'x%27%3E']] as const) {
+      const r = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie });
+      expect(r.status).toBe(403);
+      expect(r.text).toContain('Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur');
+      expect(r.text).not.toContain('Trousseau');
+    }
+    const refused = (await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'acces.refuse'")).map((e) => JSON.parse(e.data) as { kind?: string });
+    expect(refused.filter((e) => e.kind === 'cles')).toHaveLength(3);
+    const subjects = (await t.db.all<{ subject: string }>("SELECT subject FROM journal WHERE type = 'acces.refuse'")).map((e) => e.subject);
+    expect(subjects).toContain('property:?');
+    expect(subjects.join()).not.toContain("x'>");
+    // Sans séance : renvoyé à la demande de lien, rien n'est lu.
+    const none = await t.pub('GET', `${ESPACE_PATH}cles?bien=${t.propertyId}`);
+    expect(none.status).toBe(303);
+    expect(await t.db.all("SELECT 1 FROM journal WHERE type = 'cle.vue_vendeur'")).toHaveLength(before + 1);
   });
 
   it('[R165] une offre écrite depuis l’espace passe par le registre de M09 : refusée sans offre signée au stockage, rangée avec elle', async () => {
