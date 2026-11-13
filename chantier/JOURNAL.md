@@ -1047,3 +1047,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-13 20:30 · voie 1 · fin de séance : BR59 fusionnée ; verrou libéré, relance · prochaine : à choisir
 - 2026-11-13 21:11 · BR60 · fusionnée (#549, 6c452289) : l'écran « Offres » dit en mots une offre arrêtée par le bon de la visite à distance non signé, sans identifiant ni code ; la route rend 409 R505, rien au registre [R505, R201] ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5831 tests) · prochaine : à choisir (un reste de la voie 1)
 - 2026-11-13 21:11 · voie 1 · fin de séance : BR60 fusionnée ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-13 21:13 · voie 1 · relance refusée par le contrôle des permissions, un essai, pas de deuxième ; le passage planifié reprendra
