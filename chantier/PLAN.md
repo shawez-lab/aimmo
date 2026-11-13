@@ -1323,6 +1323,14 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Objectif : l'agent voit sur la fiche la date retenue de chaque sorte et d'où elle vient ; la direction relit les textes en service de chaque sorte et de chaque canal.
 - Critères : droits de chaque lecture, refus au journal, en mots [R16] (test) ; la dernière date rangée compte, fiches réunies comprises [R404] (test) ; seul le dernier jeu de textes de chaque sorte et canal est dit en service [R405] (test) ; le journal ne garde ni date, ni preuve, ni texte [R13] (test) ; rien n'est lu avant le geste, budget tenu, texte reçu posé en texte [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien.
+### BR60 · Une offre arrêtée par le bon de la visite à distance, dite en mots à l'écran
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC25, O10
+- Cahier : M09 Offre ; HX44 visite à distance ; R505, R16, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de RC25. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La route rend déjà 409 `remote_slip_unsigned` [R505] ; l'écran « Offres » (`packages/api/app/offres.ts`) ne connaît pas ce code et tombe sur son message générique. Il gagne la phrase « Le bon de la visite à distance n'est pas encore signé : l'offre attend sa signature. » ; l'identifiant du rendez-vous n'est jamais montré. Aucune route, règle ni migration.
+- Objectif : l'agent lit pourquoi l'offre n'entre pas au registre, et ce qu'elle attend.
+- Critères : la route rend 409, règle R505, code `remote_slip_unsigned`, rien au registre [R505] (test) ; l'écran dit la phrase, sans identifiant ni code interne, et un nouvel essai garde la même clé d'envoi (test) ; budget tenu [R201] (test).
+- Attend : rien.
 ## Restes du cœur des groupes HX
 
 Voie : 2
