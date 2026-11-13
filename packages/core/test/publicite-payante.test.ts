@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { FORBIDDEN_TARGETING, PublicitePayante, readTargeting, trialAdPlatform, type AdPlatform } from '../src/marketing/index.ts';
+import { FORBIDDEN_TARGETING, LAUNCH_ANSWER_MINUTES, PublicitePayante, readTargeting, trialAdPlatform, type AdPlatform } from '../src/marketing/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -48,7 +48,10 @@ async function setup(platforms?: { google_ads: AdPlatform; meta: AdPlatform }) {
     if (!s.ok) throw new Error(s.code);
     return c.value;
   };
-  return { db, journal, store, fiche, pub, google, meta, network, alex, dir, agent, person, mandate, events, running };
+  const advance = (ms: number) => {
+    clock += ms;
+  };
+  return { db, journal, store, fiche, pub, google, meta, network, alex, dir, agent, person, mandate, events, running, advance };
 }
 
 describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
@@ -336,5 +339,136 @@ describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
     // La base ne range ni rayon trop petit ni zone vide.
     await expect(t.db.run("INSERT INTO ad_campaigns (id, network_id, platform, name, code, communes, radius_km, created_by, created_at) VALUES ('c', ?, 'meta', 'Nom', 'ABCDEFGHIJKL', '[\"21231\"]', 5, 'direction:d', 'x')", [t.network.id])).rejects.toThrow();
     await expect(t.db.run("INSERT INTO ad_campaigns (id, network_id, platform, name, code, communes, radius_km, created_by, created_at) VALUES ('c', ?, 'meta', 'Nom', 'ABCDEFGHIJKL', '[]', NULL, 'direction:d', 'x')", [t.network.id])).rejects.toThrow();
+  });
+});
+
+describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne bloque plus la campagne', () => {
+  /** Une plateforme dont le lancement ne répond jamais (Worker arrêté pendant l'appel), puis répond si on la libère. */
+  const lostPlatform = () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    let down = false;
+    const log: string[] = [];
+    let first = true;
+    const p: AdPlatform = {
+      mode: 'essai',
+      start: async () => {
+        log.push('start');
+        if (first) {
+          first = false;
+          await gate;
+        }
+      },
+      pause: async () => {
+        if (down) {
+          log.push('pause_echec');
+          throw new Error('panne');
+        }
+        log.push('pause');
+      },
+    };
+    return { p, log, release: () => release(), setDown: (v: boolean) => (down = v) };
+  };
+  const lostLaunch = async (lost: ReturnType<typeof lostPlatform>) => {
+    const t = await setup({ google_ads: lost.p, meta: trialAdPlatform() });
+    const c = await t.pub.create(t.dir, { platform: 'google_ads', name: 'Vendeurs Dijon', targeting: TARGET });
+    if (!c.ok) throw new Error(c.code);
+    await t.pub.approve(t.dir, c.value.id, BUDGET);
+    const starting = t.pub.start(t.dir, c.value.id);
+    await new Promise((r) => setTimeout(r, 20));
+    return { t, c: c.value, starting };
+  };
+
+  it('[R587] [R588] sans réponse depuis 15 minutes : soldé en échec, arrêté, pause demandée, puis relance possible', async () => {
+    const lost = lostPlatform();
+    const { t, c } = await lostLaunch(lost);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R587' });
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause']);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
+    expect(await t.events('publicite.lancement_sans_reponse')).toEqual([{ rule: 'R587', minutes: 15 }]);
+    expect(await t.events('publicite.arretee')).toEqual([{ rule: 'R588', reason: 'echec_lancement', spendCents: 0, contacts: 0 }]);
+    // Au journal, aucune personne ni aucun code [R13].
+    const raw = await t.db.all<{ actor: string; data: string }>("SELECT actor, data FROM journal WHERE type LIKE 'publicite.%'");
+    for (const e of raw) expect(e.data).not.toContain(c.code);
+    // Rien ne se solde deux fois.
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause']);
+    // Une validation nouvelle, puis un lancement nouveau, sont possibles [R587].
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(lost.log).toEqual(['start', 'pause', 'start']);
+  });
+
+  it('[R587] moins de 15 minutes sans réponse : rien ne change, le lancement reste en cours', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000 - 60_000);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start']);
+    expect(await t.db.first('SELECT count(*) AS n FROM ad_campaign_launches')).toEqual({ n: 0 });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R587' });
+    lost.release();
+    expect(await starting).toMatchObject({ ok: true });
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'en_cours' });
+  });
+
+  it('[R588] pause refusée par la plateforme : redemandée à chaque passage, rien ne se relance avant sa confirmation', async () => {
+    const lost = lostPlatform();
+    const { t, c } = await lostLaunch(lost);
+    lost.setDown(true);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause_echec']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause_echec', 'pause_echec']);
+    lost.setDown(false);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause_echec', 'pause_echec', 'pause']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+  });
+
+  it('[R588] arrêtée par la direction pendant le lancement perdu : soldée, la pause est redemandée', async () => {
+    const lost = lostPlatform();
+    const { t, c } = await lostLaunch(lost);
+    expect(await t.pub.stop(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(lost.log).toEqual(['start', 'pause']);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    // La plateforme a pu lancer après la première pause : elle est redemandée une fois.
+    expect(lost.log).toEqual(['start', 'pause', 'pause']);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'direction' });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+  });
+
+  it('[R587] la réponse d’origine arrivée après le solde ne change rien, la pause est redemandée', async () => {
+    const lost = lostPlatform();
+    const { t, starting } = await lostLaunch(lost);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    lost.release();
+    expect(await starting).toMatchObject({ ok: false, rule: 'R588', code: 'arretee_au_lancement' });
+    expect(lost.log).toEqual(['start', 'pause', 'pause']);
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
+    expect(await t.events('publicite.lancee')).toEqual([]);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
+  });
+
+  it('[R588] une dépense lue passe aussi le contrôle : le lancement perdu y est soldé', async () => {
+    const lost = lostPlatform();
+    const { t, c } = await lostLaunch(lost);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    expect(await t.pub.recordSpend(t.network.id, c.id, '2027-10-11', 0)).toMatchObject({ ok: true });
+    expect(lost.log).toEqual(['start', 'pause']);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
   });
 });
