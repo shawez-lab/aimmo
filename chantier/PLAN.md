@@ -1500,7 +1500,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC24 · La réponse à une note vocale suit la langue reconnue
-- Statut : en cours (voie 2) : proposition #537 prête (`7c835e1e`), à fusionner
+- Statut : en cours (voie 2)
 - Reste : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5760 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : la séance suivante la fusionne à l'étape 3 (H69), puis passe la tâche à « fait ».
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX23, C04
 - Cahier : M02 Capter ; HX23 « Messages vocaux transcrits et traités » ; R240, R15.
