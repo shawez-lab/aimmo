@@ -1479,7 +1479,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC23 · Les appels entrants comptent dans la mesure de l'origine des contacts
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#534, `21db079b`) par la voie 2 ; Codex rien à signaler sur 1e82a124 ; GitHub Actions bloqué (facturation), vérification locale verte sur la fusion avec main (5742 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT05, HX21
 - Cahier : M01 Attirer, point 6 « Origine des contacts » ; critère « 95 % » ; HX21 ; R156, R245, R16.
 - Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX21 (« appels dans la mesure mensuelle de AT05 »). Aujourd'hui la mesure mensuelle ne compte que les messages reçus : un appel venu du bouton d'appel marqué d'une page de bien n'est jamais compté, et la part des contacts à origine connue est fausse dès que les clients appellent. Un appel rangé (pas `en_cours`) est un contact du canal téléphone : les appels d'une même fiche forment une seule conversation, comptée le mois de son premier appel, heure de Paris, comme un fil de messages ; un numéro masqué, sans fiche, est un contact à lui seul. Son origine est celle que HX21 a rangée par le code de contenu [R245] : le premier appel à contenu connu classe la fiche ; sinon « inconnue », jamais devinée ni rapprochée d'un message par l'heure ou le numéro [R156]. Un appel compte même sans enregistrement : l'origine ne dépend pas de l'accord. Un appel et un message de la même personne restent deux contacts, comme deux canaux écrits aujourd'hui. Change seulement `packages/core/src/attirer/origine-contacts.ts` et son test ; aucune migration ni règle nouvelle.
