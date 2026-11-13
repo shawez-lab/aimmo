@@ -333,6 +333,22 @@ export class NotesVocales {
 }
 
 /**
+ * La langue parlée d'un message reçu qui était une note transcrite, réduite à son code court (`en-GB` → `en`), ou null
+ * si ce message n'était pas une note transcrite, si la langue n'a pas été reconnue, ou s'il vient d'un autre réseau.
+ * Une note rangée « transcrite » a passé le seuil de confiance [R241] : sa langue est celle que la personne a parlée.
+ */
+export async function voiceNoteLanguage(db: SqlDatabase, networkId: string, inboundId: string): Promise<string | null> {
+  const [row] = await db.all<{ language: string | null }>(
+    `SELECT v.language FROM voice_notes v JOIN inbound_messages i
+       ON i.network_id = v.network_id AND i.channel = v.channel AND i.external_id = v.external_id
+     WHERE i.network_id = ? AND i.id = ? AND v.status = 'transcrite'`,
+    [networkId, inboundId],
+  );
+  const language = row?.language;
+  return typeof language === 'string' && LANGUAGE.test(language) ? language.split('-')[0]!.toLowerCase() : null;
+}
+
+/**
  * La chaîne de captation qui comprend les notes vocales : la notification passe par `NotesVocales.prepare`, puis par la
  * chaîne telle quelle ; les notes non transcrites sont rangées illisibles et signalées à l'agent, sans réponse [R241].
  */
