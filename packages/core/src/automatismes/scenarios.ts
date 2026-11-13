@@ -616,7 +616,7 @@ export class ScenariosAutomatiques {
     for (const r of rows) {
       const sim = await this.db.first<{ id: string; created_at: string; period_from: string; period_to: string; messages: number; reached: number; tasks: number; refused: string; same_day_twice: number; lit_revision: number }>(
         `SELECT id, created_at, period_from, period_to, messages, reached, tasks, refused, same_day_twice, lit_revision FROM automation_simulations
-         WHERE scenario_id = ? AND version = ? AND network_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+         WHERE scenario_id = ? AND version = ? AND network_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
         [r.id, r.version, viewer.networkId],
       );
       const on = lit.get(r.id) ?? null;
