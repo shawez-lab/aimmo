@@ -119,6 +119,27 @@ describeWithSqlite('O08 · routes de M09', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('[R505] une offre d’un acquéreur qui a visité à distance sans signer son bon : 409 en mots, rien au registre', async () => {
+    const t = await setup();
+    const start = '2027-02-26T09:00:00.000Z';
+    const end = '2027-02-26T09:45:00.000Z';
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: t.buyerId, kind: 'buy', note: '' });
+    await t.db.run(
+      "INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'visite', ?, ?, 'honored', ?, 'agent', ?, ?)",
+      ['rdv-distance-br60', t.network.id, t.alexId, t.buyerId, t.propertyId, start, end, 'jeton-br60', start, start],
+    );
+    await t.db.run('INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+      'rdv-distance-br60', t.network.id, t.propertyId, project.id, t.buyerId, t.alexId, 'test', start,
+    ]);
+    await t.db.run('INSERT INTO remote_visits (appointment_id, network_id, property_id, person_id, started_by, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      'rdv-distance-br60', t.network.id, t.propertyId, t.buyerId, `agent:${t.alexId}`, start, end,
+    ]);
+    const res = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId, { requestKey: 'cle-envoi-br60-0001' }));
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ ok: false, rule: 'R505', code: 'remote_slip_unsigned' });
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM offer_register WHERE property_id = ?', [t.propertyId]))!.n).toBe(0);
+  });
+
   it('le passage quotidien signale les offres non transmises et range les échéances', async () => {
     const t = await setup();
     await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId, { validUntil: '2027-03-03' }));
