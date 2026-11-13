@@ -1667,7 +1667,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (vraies plateformes : H63).
 
 ### RC31 · Le SQL non standard compté aussi dans les routes de l'API
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#553, `41de6511`). Codex 1 P1 corrigé (lien `node_modules` ajouté par erreur, retiré), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5858 tests), puis sur la fusion avec BR62 : check, garde-fous et tests touchés verts. Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX67
 - Cahier : Architecture technique, « Pour que ce passage soit simple, le code n'utilise dès le départ que du SQL standard » ; R633.
 - Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX67 (« compter aussi `packages/api/src/` »). Aujourd'hui le compte du SQL non standard ne lit que `db/migrations/` et `packages/core/src/` : une route de l'API qui écrirait `INSERT OR IGNORE`, `GLOB` ou `json_extract` dans sa requête passerait sans rien dire, et le passage à PostgreSQL trouverait la surprise le jour venu. Désormais les chaînes des fichiers de `packages/api/src/` sont comptées comme celles du cœur ; leur compte est zéro aujourd'hui, donc aucun plafond n'est ajouté et toute forme non standard y fait échouer la vérification avec le fichier et la ligne. `packages/api/app/` n'est pas compté : ce sont les scripts de l'écran, écrits dans des chaînes, qui n'ouvrent jamais la base (un `new Date(a, b, c)` y serait lu à tort comme une date de SQLite) ; un test vérifie que ces fichiers ne touchent pas la base. Changent seulement `packages/core/test/sql-standard.test.ts`, la phrase de la carte dans `sql-standard.ts`, la carte `docs/PASSAGE-POSTGRESQL.md` et le texte de R633. Attention voie 1 : une requête non standard dans une route de `packages/api/src/` fait désormais échouer `sql-standard.test.ts`.

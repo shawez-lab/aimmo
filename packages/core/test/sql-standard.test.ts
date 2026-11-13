@@ -13,6 +13,12 @@ const ceilingsPath = fileURLToPath(new URL('./sql-plafonds.json', import.meta.ur
 const mapPath = join(root, 'docs/PASSAGE-POSTGRESQL.md');
 /** Le fichier qui décrit les sortes les cite dans ses textes : il n'est pas compté. */
 const SELF = 'packages/core/src/passage-postgresql/sql-standard.ts';
+/**
+ * RC31 : les chaînes du cœur et des routes de l'API sont comptées. Les scripts de l'écran (`packages/api/app/`) ne le
+ * sont pas : écrits dans des chaînes, ils n'ouvrent jamais la base, et leur JavaScript y serait lu comme du SQL.
+ */
+const COUNTED_SOURCES = ['packages/core/src', 'packages/api/src'] as const;
+const SCREEN_SCRIPTS = 'packages/api/app';
 
 function walk(dir: string, ext: string): string[] {
   const out: string[] = [];
@@ -27,9 +33,11 @@ function walk(dir: string, ext: string): string[] {
 function scanRepository(): Record<string, NonStandardHit[]> {
   const found: Record<string, NonStandardHit[]> = {};
   for (const path of walk(join(root, 'db/migrations'), '.sql')) found[relative(root, path)] = findNonStandard(readFileSync(path, 'utf8'), 'sql');
-  for (const path of walk(join(root, 'packages/core/src'), '.ts')) {
-    const rel = relative(root, path);
-    if (rel !== SELF) found[rel] = findNonStandard(readFileSync(path, 'utf8'), 'ts');
+  for (const source of COUNTED_SOURCES) {
+    for (const path of walk(join(root, source), '.ts')) {
+      const rel = relative(root, path);
+      if (rel !== SELF) found[rel] = findNonStandard(readFileSync(path, 'utf8'), 'ts');
+    }
   }
   return found;
 }
@@ -167,7 +175,36 @@ describe('HX67 · plafonds par fichier', () => {
     expect(lowerCeilings(found, ceilings)).toEqual(ceilings);
   });
 
+  it('[R633] chaque fichier des routes de l\'API est lu, et aucun ne porte de SQL non standard', () => {
+    const found = scanRepository();
+    const routes = walk(join(root, 'packages/api/src'), '.ts').map((path) => relative(root, path));
+    expect(routes.length).toBeGreaterThan(0);
+    for (const rel of routes) expect(found[rel], rel).toBeDefined();
+    expect(routes).toContain('packages/api/src/app.ts');
+    const ceilings = JSON.parse(readFileSync(ceilingsPath, 'utf8')) as Ceilings;
+    // Compte zéro au départ : aucun plafond, donc toute forme ajoutée dans une route fait échouer.
+    expect(Object.keys(ceilings).filter((file) => file.startsWith('packages/api/'))).toEqual([]);
+    expect(routes.filter((rel) => found[rel]!.some((h) => h.kind !== 'declencheur' && h.kind !== 'raise'))).toEqual([]);
+  });
+
+  it('[R633] une requête non standard ajoutée dans une route fait échouer avec le fichier et la ligne', () => {
+    const route = "export async function liste(db: D1Database) {\n  return db.prepare('SELECT id FROM x WHERE a GLOB ?').all();\n}\n";
+    const found = { 'packages/api/src/neuve.ts': findNonStandard(route, 'ts') };
+    expect(excesses(found, {})).toEqual([{ file: 'packages/api/src/neuve.ts', kind: 'glob', ceiling: 0, count: 1, lines: [2] }]);
+  });
+
+  it('[R633] les scripts de l\'écran ne sont pas comptés, et aucun n\'ouvre la base', () => {
+    const found = scanRepository();
+    const screens = walk(join(root, SCREEN_SCRIPTS), '.ts').map((path) => relative(root, path));
+    expect(screens.length).toBeGreaterThan(0);
+    expect(Object.keys(found).filter((file) => file.startsWith(`${SCREEN_SCRIPTS}/`))).toEqual([]);
+    // Les constantes du cœur et des routes (textes, système de design) sont permises ; une requête à la base, non.
+    const opensBase = /\bD1Database\b|\.prepare\s*\(|\benv\.DB\b|\b(?:SELECT|INSERT|UPDATE|DELETE)\s+(?:\*|\w+\s*,|INTO|FROM|\w+\s+SET)\b/;
+    expect(screens.filter((rel) => opensBase.test(readFileSync(join(root, rel), 'utf8')))).toEqual([]);
+  });
+
   it('[R633] la carte du passage est celle que donne le compte', () => {
     expect(readFileSync(mapPath, 'utf8')).toBe(renderMap(scanRepository()));
+    for (const place of ['`db/migrations/`', '`packages/core/src/`', '`packages/api/src/`']) expect(readFileSync(mapPath, 'utf8')).toContain(place);
   });
 });

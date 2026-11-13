@@ -2,7 +2,7 @@
 
 Écrite par le test `packages/core/test/sql-standard.test.ts` (HX67, R633) : ne pas la modifier à la main. Pour la refaire après une baisse : `ECRIRE_CARTE_SQL=1 npx vitest run packages/core/test/sql-standard.test.ts`.
 
-Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, compté dans `db/migrations/` et `packages/core/src/`, commentaires exclus. Chaque compte peut baisser, jamais monter : une forme ajoutée fait échouer le test avec son fichier et sa ligne.
+Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, compté dans `db/migrations/`, `packages/core/src/` et les routes de l’API (`packages/api/src/`), commentaires exclus. Chaque compte peut baisser, jamais monter : une forme ajoutée fait échouer le test avec son fichier et sa ligne.
 
 | Sorte | Occurrences | Fichiers | À la place, sous PostgreSQL |
 | --- | ---: | ---: | --- |
