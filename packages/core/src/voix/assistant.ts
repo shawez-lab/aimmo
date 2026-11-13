@@ -675,9 +675,11 @@ const APPOINTMENT_STATES: Record<string, HandoffAppointmentState> = { booked: 'p
 export async function handoffsOfCalls(db: SqlDatabase, viewer: Viewer, networkId: string, callRowIds: readonly string[]): Promise<Map<string, HandoffView>> {
   const out = new Map<string, HandoffView>();
   if (callRowIds.length === 0) return out;
-  const rows = await db.all<{ call_row_id: string; agent_id: string; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; unanswered: string | null; created_at: string }>(
-    `SELECT call_row_id, agent_id, property_id, appointment_kind, appointment_start, unanswered, created_at FROM voice_assistant_calls
-     WHERE network_id = ? AND call_row_id IN (${callRowIds.map(() => '?').join(', ')})`,
+  // La personne de l'appel : le rendez-vous suivi est le sien, jamais celui d'un autre appelant sur le même créneau libéré.
+  const rows = await db.all<{ call_row_id: string; agent_id: string; person_id: string | null; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; unanswered: string | null; created_at: string }>(
+    `SELECT v.call_row_id, v.agent_id, c.person_id, v.property_id, v.appointment_kind, v.appointment_start, v.unanswered, v.created_at
+     FROM voice_assistant_calls v JOIN calls c ON c.id = v.call_row_id
+     WHERE v.network_id = ? AND v.call_row_id IN (${callRowIds.map(() => '?').join(', ')})`,
     [networkId, ...callRowIds],
   );
   for (const row of rows) {
@@ -702,16 +704,17 @@ export async function handoffsOfCalls(db: SqlDatabase, viewer: Viewer, networkId
 async function followAppointment(
   db: SqlDatabase,
   networkId: string,
-  row: { agent_id: string; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; created_at: string },
+  row: { agent_id: string; person_id: string | null; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; created_at: string },
 ): Promise<HandoffView['appointment']> {
   if (!row.appointment_kind || !row.appointment_start || !Number.isFinite(Date.parse(row.appointment_start))) return null;
+  if (!row.person_id) return { kind: row.appointment_kind, start: new Date(row.appointment_start).toISOString(), state: 'introuvable', current: new Date(row.appointment_start).toISOString() };
   const start = new Date(row.appointment_start).toISOString();
   type Row = { id: string; start_at: string; status: string };
   const found = await db.first<Row>(
     `SELECT id, start_at, status FROM appointments
-     WHERE network_id = ? AND agent_id = ? AND source = 'assistant' AND kind = ? AND start_at = ? AND replaces_id IS NULL AND property_id IS ? AND created_at <= ?
+     WHERE network_id = ? AND agent_id = ? AND person_id = ? AND source = 'assistant' AND kind = ? AND start_at = ? AND replaces_id IS NULL AND property_id IS ? AND created_at <= ?
      ORDER BY created_at DESC, id DESC LIMIT 1`,
-    [networkId, row.agent_id, row.appointment_kind, start, row.property_id, row.created_at],
+    [networkId, row.agent_id, row.person_id, row.appointment_kind, start, row.property_id, row.created_at],
   );
   // Jamais deviné : un rendez-vous qu'on ne retrouve pas dans l'agenda est dit tel.
   if (!found) return { kind: row.appointment_kind, start, state: 'introuvable', current: start };

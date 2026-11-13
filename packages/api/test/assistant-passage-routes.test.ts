@@ -105,6 +105,20 @@ describeWithSqlite('BR63 · le passage de main de l’assistant vocal, relu dans
     expect((await t.read(t.asPaul)).body.data[0].assistant.appointment.state).toBe('introuvable');
   });
 
+  it('[R248] le créneau libéré puis repris par un autre appelant ne remplace pas le rendez-vous de cet appel', async () => {
+    const t = await setup();
+    const h = await t.talk(['oui', 'Je voudrais visiter', 'le premier', 'oui']);
+    const mine = await t.db.first<{ id: string; created_at: string }>("SELECT id, created_at FROM appointments WHERE source = 'assistant'");
+    await t.rdv.cancelFromAgenda(mine!.id);
+    // Un autre appelant prend le même créneau, rangé comme s'il l'avait été avant le passage de main de cet appel.
+    const reservation = new ReservationEnLigne(t.db, t.journal, { now: t.now, linkBase: 'https://essai.example.test/' });
+    const other = await reservation.book({ networkId: t.network.id, agentId: t.paul.id, kind: 'visite', start: new Date(h.appointment!.start), source: 'assistant', phone: '06 00 00 03 99', propertyId: t.property.id, consentProof: 'oui dit à l’assistant (test)' });
+    if (!other.ok) throw new Error(other.code);
+    const theirs = await t.db.first<{ id: string }>("SELECT id FROM appointments WHERE source = 'assistant' AND status = 'booked'");
+    await t.db.run('UPDATE appointments SET created_at = ? WHERE id = ?', [mine!.created_at, theirs!.id]);
+    expect((await t.read(t.asPaul)).body.data[0].assistant.appointment).toMatchObject({ state: 'annule', current: h.appointment!.start });
+  });
+
   it('[R242] sans accord d’enregistrement, aucun sujet n’est rendu', async () => {
     const t = await setup();
     await t.talk(['non', 'Quel est le prix ?', 'Je voudrais visiter', 'le premier', 'oui']);
