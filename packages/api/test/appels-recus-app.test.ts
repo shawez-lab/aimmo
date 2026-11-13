@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { APPELS_RECUS_SCRIPT, APPELS_RECUS_STATES } from '../app/appels-recus.ts';
+import { APPELS_RECUS_QUOTE_MAX, APPELS_RECUS_SCRIPT, APPELS_RECUS_STATES, APPELS_RECUS_STOP_MAX } from '../app/appels-recus.ts';
 import { APPELS_RECUS_REFUSALS } from '../src/appels.ts';
 import { describe, expect, it } from 'vitest';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
@@ -170,6 +170,17 @@ describe('BR61 · les appels reçus dans la fiche', () => {
     expect(said(c)).toBe('Aucun appel reçu pour cette personne.');
     const d = await open(async () => new Response('panne', { status: 500 }));
     expect(said(d)).toBe('Les appels reçus ne se lisent pas pour le moment.');
+  });
+
+  it('[R243] une phrase longue que le cœur admet est dite, une demande d’arrêt sur plusieurs passages aussi', async () => {
+    const long = 'a'.repeat(APPELS_RECUS_QUOTE_MAX);
+    const stop = 'b'.repeat(APPELS_RECUS_STOP_MAX);
+    const a = await open(ok([{ ...CALL, summary: [{ key: 'city', value: 'Talant', quote: long, atS: 1 }], stop: { quote: stop, atS: 2 } }]));
+    const all = texts(a);
+    expect(all).toContain('Commune : Talant — dit : « ' + long + ' »');
+    expect(all.some((x) => x.includes(stop))).toBe(true);
+    const b = await open(ok([{ ...CALL, summary: [{ key: 'city', value: 'Talant', quote: long + 'a', atS: 1 }] }]));
+    expect(texts(b)).toContain('Rien de précis n’a été compris : lisez la transcription.');
   });
 
   it('[R201] un texte reçu est posé en texte', async () => {

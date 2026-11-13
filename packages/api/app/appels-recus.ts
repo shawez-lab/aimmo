@@ -5,7 +5,12 @@
  * doit faire quand rien n'a pu être résumé. Tout texte reçu est posé en texte ; un champ mal formé n'est pas dit. Chaque
  * refus est dit en mots [R16]. Aucun envoi d'ici.
  */
+import { MAX_SEGMENT_TEXT, STOP_SPAN } from '../../core/src/voix/appels.ts';
 import { CATEGORY_LABELS } from './classement.ts';
+
+/** Les longueurs que le cœur admet : un passage, et une demande d'arrêt faite de plusieurs passages qui se suivent. */
+export const APPELS_RECUS_QUOTE_MAX = MAX_SEGMENT_TEXT;
+export const APPELS_RECUS_STOP_MAX = STOP_SPAN * MAX_SEGMENT_TEXT + STOP_SPAN - 1;
 
 export const APPELS_RECUS_LABELS = Object.freeze({
   city: 'Commune',
@@ -63,6 +68,7 @@ globalThis.AIMMO_APPELS_RECUS = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button;
   var LABELS = ${JSON.stringify(APPELS_RECUS_LABELS)}, DEADLINES = ${JSON.stringify(APPELS_RECUS_DEADLINES)};
   var FINANCINGS = ${JSON.stringify(APPELS_RECUS_FINANCINGS)}, STATES = ${JSON.stringify(APPELS_RECUS_STATES)}, CATS = ${JSON.stringify(CATEGORY_LABELS)};
+  var QUOTE = ${APPELS_RECUS_QUOTE_MAX}, STOP = ${APPELS_RECUS_STOP_MAX};
   var turn = 0;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function text(v, max) { return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null; }
@@ -83,14 +89,14 @@ globalThis.AIMMO_APPELS_RECUS = function (t) {
     var d = count(c.durationS);
     box.appendChild(el('h4', at + (d !== null ? ', ' + length(d) : '')));
     if (c.ambiguous === true) box.appendChild(el('p', 'Ce numéro est sur plusieurs fiches : vérifiez que l’appel est bien de cette personne.', 'alerte'));
-    var stop = c.stop && text(c.stop.quote, 1000);
+    var stop = c.stop && text(c.stop.quote, STOP);
     if (stop) box.appendChild(el('p', 'Demande d’arrêt dite par l’appelant : « ' + stop + ' ». L’arrêt de tous les envois est rangé.', 'alerte'));
     if (c.status === 'traite') {
       var cat = own(CATS, c.category);
       if (cat) box.appendChild(el('p', 'Demande comprise : ' + cat + '.'));
       var shown = 0;
       (Array.isArray(c.summary) ? c.summary : []).forEach(function (l) {
-        var label = l && own(LABELS, l.key), v = label && value(l.key, l.value), q = l && text(l.quote, 1000);
+        var label = l && own(LABELS, l.key), v = label && value(l.key, l.value), q = l && text(l.quote, QUOTE);
         if (!v || !q) return;
         var p = el('p', label + ' : ' + v);
         p.appendChild(el('span', ' — dit : « ' + q + ' »', 'doux'));
@@ -103,7 +109,7 @@ globalThis.AIMMO_APPELS_RECUS = function (t) {
     }
     if (c.hasRecording === true) box.appendChild(el('p', 'L’enregistrement est gardé.', 'doux'));
     if (c.originKind !== 'inconnue' && text(c.originKind, 40)) box.appendChild(el('p', 'Appel venu d’un bouton d’appel du site.', 'doux'));
-    var lines = (Array.isArray(c.transcript) ? c.transcript : []).filter(function (s) { return s && (s.speaker === 'appelant' || s.speaker === 'agent') && text(s.text, 2000) && count(s.startS) !== null; });
+    var lines = (Array.isArray(c.transcript) ? c.transcript : []).filter(function (s) { return s && (s.speaker === 'appelant' || s.speaker === 'agent') && text(s.text, QUOTE) && count(s.startS) !== null; });
     if (lines.length) {
       var shownT = el('div');
       var b = button('Lire la transcription', function () {

@@ -172,7 +172,7 @@ const CALL_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const CODE = /^[a-z2-7]{12}$/;
 const LANGUAGE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
 const MAX_SEGMENTS = 400;
-const MAX_SEGMENT_TEXT = 2000;
+export const MAX_SEGMENT_TEXT = 2000;
 /** Un appel de plus de 4 heures n'est pas un appel lisible. */
 const MAX_CALL_MS = 4 * 3600_000;
 
@@ -252,7 +252,7 @@ export function citeFields(q: Qualified, segments: readonly CallSegment[], commu
 }
 
 /** Un arrêt se lit sur quatre passages de l'appelant à la suite au plus. */
-const STOP_SPAN = 4;
+export const STOP_SPAN = 4;
 
 /**
  * Le premier arrêt demandé par l'appelant, lu comme un message reçu [R04] : dans le doute, c'est un arrêt. Le
