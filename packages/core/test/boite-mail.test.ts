@@ -485,3 +485,120 @@ describeWithSqlite('RC27 · l’agent choisit le dossier des pièces en attente'
     expect(await t.boite.fileWaiting(t.me, t.mailId, ivyProject.id, t.read)).toMatchObject({ ok: true, value: { projectId: ivyProject.id, range: 1 } });
   });
 });
+
+describeWithSqlite('RC28 · les mails envoyés par l’agent lui-même', () => {
+  const sentMail = (t: Awaited<ReturnType<typeof setup>>, to: string[], body: string, attachments: MailAttachmentIn[] = [], extra: Partial<MailIn> = {}): MailIn =>
+    t.mail('alex.agent@example.test', body, attachments, { direction: 'out', to, ...extra });
+
+  it('[R408] un mail envoyé par l’agent entre dans la fiche de son destinataire, comme message sortant de l’agent, dans son fil ; rien ne part', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    const mail = sentMail(t, ['NOA@example.test', 'notaire.inconnu@example.test'], 'Bonjour Noa, voici le compte rendu de la visite. Arrêtez-moi si besoin, je ne veux plus vous déranger.');
+    const r = await t.boite.sort(me, mail);
+    expect(r).toMatchObject({ ok: true, value: { outcome: 'rattache', personId: noa, projectId: project.id, draftId: null } });
+    const messages = await t.db.all<{ direction: string; author_kind: string; conversation_id: string; channel: string; project_id: string }>('SELECT direction, author_kind, conversation_id, channel, project_id FROM messages WHERE person_id = ?', [noa]);
+    expect(messages).toEqual([{ direction: 'out', author_kind: 'agent', conversation_id: `email:gmail:${mail.threadId}`, channel: 'email', project_id: project.id }]);
+    // Les mots de l'agent ne sont jamais une demande d'arrêt de la personne [R04] ; aucune réponse préparée, rien ne part.
+    expect(await t.db.all('SELECT id FROM exclusions WHERE person_id = ?', [noa])).toHaveLength(0);
+    expect(await t.db.all('SELECT id FROM mailbox_drafts')).toHaveLength(0);
+    expect(await t.outbox()).toHaveLength(0);
+    expect(await t.db.all('SELECT id FROM send_log')).toHaveLength(0);
+    // Au journal : le sens, jamais une adresse [R13].
+    const journal = await t.journalText();
+    expect(journal).toContain('"sens":"envoye"');
+    for (const s of ['noa@example.test', 'NOA@', 'notaire.inconnu', 'alex.agent']) expect(journal).not.toContain(s);
+    // Lu deux fois, il n'est rangé qu'une fois [R18].
+    expect(await t.boite.sort(me, mail)).toMatchObject({ ok: true, value: { outcome: null } });
+    expect(await t.db.all('SELECT id FROM messages WHERE person_id = ?', [noa])).toHaveLength(1);
+  });
+
+  it('[R409] la réponse préparée d’un fil où l’agent a répondu lui-même ne part plus [R21]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    const received = t.mail('noa@example.test', 'Pouvez-vous me rappeler ?');
+    const r = await t.boite.sort(me, received);
+    if (!r.ok || !r.value.draftId) throw new Error('réponse attendue');
+    // L'agent répond lui-même dans le fil, depuis sa boîte.
+    t.setClock(TUE_10H + 30 * MIN);
+    expect(await t.boite.sort(me, sentMail(t, ['noa@example.test'], 'Je vous appelle à 11 h.', [], { threadId: received.threadId }))).toMatchObject({ ok: true, value: { outcome: 'rattache', draftId: null } });
+    expect(await t.boite.validate(me, r.value.draftId)).toMatchObject({ ok: true, value: { status: 'refuse', rule: 'R21' } });
+    expect(await t.outbox()).toHaveLength(0);
+  });
+
+  it('[R408] sans une seule fiche visible parmi les destinataires, rien n’est gardé ; un mail mal formé est refusé [R16, R13]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const lou = await t.person('Lou', 'lou@example.test');
+    await t.person('Ivy', 'ivy@example.test', t.lea.id);
+    // Inconnu : ni fiche créée, ni adresse, ni texte gardés.
+    const unknown = await t.boite.sort(me, sentMail(t, ['personne@example.test'], 'Texte secret de l’agent'));
+    expect(unknown).toMatchObject({ ok: true, value: { outcome: 'inconnu', personId: null } });
+    // La fiche d'une autre agente n'est jamais prise [R16] : seule celle de Noa reste.
+    expect(await t.boite.sort(me, sentMail(t, ['ivy@example.test', 'noa@example.test'], 'Bonjour à vous deux'))).toMatchObject({ ok: true, value: { outcome: 'rattache', personId: noa } });
+    expect(await t.boite.sort(me, sentMail(t, ['ivy@example.test'], 'Bonjour Ivy'))).toMatchObject({ ok: true, value: { outcome: 'inconnu' } });
+    // Deux fiches : l'agent choisit, rien n'est rangé.
+    expect(await t.boite.sort(me, sentMail(t, ['noa@example.test', 'lou@example.test'], 'Bonjour à tous les deux'))).toMatchObject({ ok: true, value: { outcome: 'ambigu', personId: null } });
+    // Trop de destinataires : le mail ne dit pas à qui il parle.
+    const crowd = Array.from({ length: 50 }, (_, i) => `liste${i}@example.test`);
+    expect(await t.boite.sort(me, sentMail(t, [...crowd, 'noa@example.test'], 'Lettre à tous'))).toMatchObject({ ok: true, value: { outcome: 'inconnu' } });
+    expect(await t.db.all('SELECT id FROM messages WHERE person_id IN (?, ?)', [noa, lou])).toHaveLength(1);
+    expect(await t.db.all("SELECT id FROM persons WHERE network_id = ?", [t.network.id])).toHaveLength(3);
+    const all = JSON.stringify(await t.db.all('SELECT * FROM mailbox_mails')) + JSON.stringify(await t.db.all('SELECT * FROM messages')) + (await t.journalText());
+    for (const s of ['personne@example.test', 'Texte secret', 'Bonjour Ivy', 'Bonjour à tous les deux', 'Lettre à tous', 'liste1@']) expect(all).not.toContain(s);
+    // Mal formé : refusé, rien n'est pris.
+    expect(await t.boite.sort(me, sentMail(t, [], 'Sans destinataire'))).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
+    expect(await t.boite.sort(me, t.mail('noa@example.test', 'x', [], { direction: 'out' }))).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
+    expect(await t.boite.sort(me, sentMail(t, [42 as unknown as string], 'x'))).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
+    expect(await t.boite.sort(me, t.mail('noa@example.test', 'x', [], { direction: 'autre' as 'in' }))).toMatchObject({ ok: false, rule: 'R408', code: 'bad_mail' });
+    // Ni une autre agente, ni la direction ne trient la boîte d'Alex.
+    expect(await t.boite.sort(t.direction, sentMail(t, ['noa@example.test'], 'x'))).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R410] les pièces d’un mail envoyé sont rangées une fois dans le dossier ; sans dossier unique, elles attendent le choix de l’agent', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const sell = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    const avis = att('avis-de-valeur.pdf', 'application/pdf', pdf('avis de valeur'));
+    const first = await t.boite.sort(me, sentMail(t, ['noa@example.test'], 'Voici votre avis de valeur', [avis, att('RIB agence.pdf', 'application/pdf', pdf('rib'))]));
+    expect(first).toMatchObject({ ok: true, value: { projectId: sell.id, attachments: ['range', 'interdit'] } });
+    // Renvoyé par Noa sous un autre nom : déjà rangé, une seule fois par empreinte.
+    expect(await t.boite.sort(me, t.mail('noa@example.test', 'Je vous le renvoie signé ?', [att('copie.pdf', 'application/pdf', pdf('avis de valeur'))]))).toMatchObject({ ok: true, value: { attachments: ['deja_range'] } });
+    expect(t.puts).toHaveLength(1);
+    // Deux dossiers ouverts : la pièce attend, puis l'agent la range dans celui qu'il choisit.
+    const buy = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'buy' });
+    const plan = sentMail(t, ['noa@example.test'], 'Le plan', [att('plan.pdf', 'application/pdf', pdf('plan'))]);
+    const sorted = await t.boite.sort(me, plan);
+    expect(sorted).toMatchObject({ ok: true, value: { projectId: null, attachments: ['en_attente'] } });
+    if (!sorted.ok) throw new Error('tri refusé');
+    expect(await t.boite.waiting(me)).toMatchObject({ ok: true, value: [{ mailId: sorted.value.mailId, waiting: 1 }] });
+    expect(await t.boite.fileWaiting(me, sorted.value.mailId, buy.id, plan)).toMatchObject({ ok: true, value: { projectId: buy.id, range: 1, restent: 0 } });
+    expect(t.puts).toHaveLength(2);
+  });
+
+  it('[R408] la lecture de la boîte trie reçus et envoyés dans l’ordre des dates ; fiche réunie comprise ; relue, rien ne double [R18, R82]', async () => {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const ivy = await t.person('Ivy', 'ivy.pro@example.test');
+    await t.unique.merge({ survivorId: noa, mergedId: ivy, reason: 'même personne (test)' });
+    await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    const asked = t.mail('noa@example.test', 'Une question sur le mandat', [], { receivedAt: new Date(TUE_10H - 60 * MIN) });
+    const answered = sentMail(t, ['ivy.pro@example.test'], 'Voici la réponse', [], { threadId: asked.threadId, receivedAt: new Date(TUE_10H - 30 * MIN) });
+    const provider: MailboxProvider = { provider: 'gmail', receivedSince: async () => [answered, asked] };
+    const r = await t.boite.sync(me, provider);
+    expect(r).toMatchObject({ ok: true, value: [{ outcome: 'rattache', personId: noa }, { outcome: 'rattache', personId: noa, draftId: null }] });
+    if (!r.ok) throw new Error('lecture refusée');
+    // La question a sa réponse préparée, mais l'agent a déjà répondu dans le fil : elle ne part pas [R21].
+    expect(await t.boite.validate(me, r.value[0]!.draftId!)).toMatchObject({ ok: true, value: { rule: 'R21' } });
+    expect(await t.boite.sync(me, provider)).toMatchObject({ ok: true });
+    const messages = await t.db.all<{ direction: string }>('SELECT direction FROM messages WHERE person_id IN (?, ?) ORDER BY occurred_at', [noa, ivy]);
+    expect(messages.map((m) => m.direction)).toEqual(['in', 'out']);
+    expect(await t.outbox()).toHaveLength(0);
+  });
+});
