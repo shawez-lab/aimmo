@@ -10,6 +10,7 @@ import { dossiersJob, type PieceStore } from './dossiers.ts';
 import { phase1ReadingJob } from './phases.ts';
 import { postgresReadingJob } from './postgresql.ts';
 import { sequencesJob } from './sequences.ts';
+import { scenariosJob } from './scenarios.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
@@ -155,6 +156,10 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // réponse ou opposition, puis les mails et SMS dus remis au contrôle central, canaux du mode essai seulement ;
       // Bloctel n'est pas branché (H61) [R300, R301, R26].
       sequencesJob(config.db, journal, { now }),
+      // Scénarios automatiques (HX24, BR55), à chaque heure : les faits venus depuis l'allumage rangés une fois, puis les
+      // passages dus ; un message attend l'heure permise et ne part que par le contrôle central, canaux du mode essai
+      // seulement. Les messages de date passeront juste après (BR56) [R401, R402, R26].
+      scenariosJob(config.db, journal, { now }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

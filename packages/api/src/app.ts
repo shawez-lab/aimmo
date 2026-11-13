@@ -104,6 +104,7 @@ import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.t
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
+import { scenariosRoutes, type ScenariosRoute } from './scenarios.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
@@ -1376,6 +1377,16 @@ function sequencesRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes des scénarios automatiques (BR55) : la direction seule, contrôlée avant le corps [R16, R403] ; rien ne part d'une route [R401]. */
+function scenariosRoutesDef(): RouteDef[] {
+  return scenariosRoutes().map((r: ScenariosRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les routes des conditions de passage des phases (BR10) : la direction seule, par la couche métier [R16]. */
 function phasesRoutesDef(): RouteDef[] {
   return phasesRoutes().map((r: PhasesRoute) => ({
@@ -2208,6 +2219,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
+    ...scenariosRoutesDef(),
     ...regionsRoutesDef(),
     ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
