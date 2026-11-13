@@ -1308,14 +1308,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 
 ### BR58 · Les dates des clients dans la fiche, et leurs textes chez la direction
 - Statut : fait (2026-11-13)
-- Reste : fusionnée (#546, `f58723be`). Décidé : la fiche range la date depuis le bloc « Fin de bail connue », renommé « Dates connues », dans son script déjà servi à part ; la direction écrit les textes sur l'écran « Scénarios automatiques » (BR57). Rien d'ajouté au script de l'application [R201]. Codex 1 P1 corrigé (choix figés pendant l'envoi) puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5811 tests). Reste pour la voie 1 : aucune route ne relit une date rangée ni les textes en service ; l'écran dit ce qui vient d'être rangé, pas l'état. Une route de lecture (`GET /v1/dates-clients?personId=`, `GET /v1/dates-clients/textes`) et son affichage feraient une tâche BR à part.
+- Reste : fusionnée (#546, `f58723be`). Décidé : la fiche range la date depuis le bloc « Fin de bail connue », renommé « Dates connues », dans son script déjà servi à part ; la direction écrit les textes sur l'écran « Scénarios automatiques » (BR57). Rien d'ajouté au script de l'application [R201]. Codex 1 P1 corrigé (choix figés pendant l'envoi) puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5811 tests). Reste pour la voie 1 : aucune route ne relit une date rangée ni les textes en service ; l'écran dit ce qui vient d'être rangé, pas l'état. Une route de lecture (`GET /v1/dates-clients?personId=`, `GET /v1/dates-clients/textes`) et son affichage feraient une tâche BR à part. Fait par BR59.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR56
 - Cahier : HX25 ; R404, R405, R16, R201.
 - Objectif : l'agent range une date depuis la fiche du client ; la direction écrit les textes de chaque sorte de date.
 - Critères : saisie contrôlée avant l'appel, le serveur refait tout [R405] (test) ; droits dits en mots [R16] (test) ; budget tenu [R201] (test).
 - Attend : rien.
 ### BR59 · Relire les dates rangées et les textes en service
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#547, `0e793f5a`). Décidé : une seule lecture ordonnée des dates au cœur, partagée par le passage et la fiche, pour ne pas ajouter de SQL non standard (plafonds HX67). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5826 tests).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR58
 - Cahier : HX25 « messages d'anniversaire et de fête » ; R404, R405, R16, R13, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR58. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Deux lectures au cœur (`DatesClients.datesOf`, `DatesClients.textsInForce`), sans migration ni règle nouvelle ; deux routes `GET /v1/dates-clients?personId=` (agent qui suit la fiche ou direction, fiche lue sous droits) et `GET /v1/dates-clients/textes` (direction seule) dans `packages/api/src/scenarios.ts` ; leur affichage dans les deux scripts déjà servis à part (`/app/fin-de-bail.js`, `/app/scenarios.js`). Le journal garde la lecture, jamais la date ni le texte [R13].
