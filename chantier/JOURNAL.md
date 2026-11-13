@@ -1053,3 +1053,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-13 22:45 · VOIE 2 : RC30, 34770880 sur chantier/RC30 (#550, non fusionnée), relancé non
 - 2026-11-13 22:46 · BR61 · fusionnée (#551, db2775ce) : `GET /v1/fiches/<id>/appels-recus` sous les droits de la fiche, fiches réunies comprises, sans référence d'enregistrement ; bloc « Appels reçus » sur la fiche, chargé au geste, chaque ligne du résumé avec la phrase dite [R16, R243, R13, R201] ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5844 tests) · prochaine : notes vocales sur la fiche (reste de HX23), ou à choisir
 - 2026-11-13 22:46 · voie 1 · fin de séance : BR61 fusionnée ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-13 22:47 · voie 1 · relance refusée par le contrôle des permissions, un essai, pas de deuxième ; le passage planifié reprendra
