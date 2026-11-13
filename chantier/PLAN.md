@@ -1676,6 +1676,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : chaque fichier de `packages/api/src/` est lu, compte zéro aujourd'hui [R633] (test) ; une forme non standard ajoutée dans une route fait échouer avec le fichier et la ligne [R633] (test) ; `packages/api/app/` n'est pas lu, et aucun de ses fichiers n'ouvre la base (test) ; la carte dit les trois endroits comptés (test) ; tous les tests de HX67 restent verts.
 - Attend : rien.
 
+### RC32 · Une visite réservée en ligne rattachée à la recherche de l'acquéreur
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : V08, T04
+- Cahier : M05 Rendez-vous (« Réservation en ligne ») et M08 Acquéreurs et visites ; R40, R42, R16.
+- Décidé (2026-11-14, voie 2), lecture prudente : relevé dans T08 (« Reste à faire, hors T08 : rattacher une visite réservée en ligne (V08) à la recherche d'un acquéreur, pour lui ouvrir un dossier de visite »). Aujourd'hui une visite réservée depuis le site, l'assistant ou l'espace n'est qu'un rendez-vous : aucune visite, aucun bon de visite, et rien ne la relie au projet d'achat ; l'agent devait refixer une visite à côté. Désormais `Visites.attachOnline` : l'agent qui voit la fiche en entier, ou la direction, rattache un rendez-vous `visite` encore pris, avec un bien, au projet d'achat de la même personne (fiches réunies comprises) ; mêmes contrôles que `schedule` : droits [R16], bien diffusable [R42], modèle de bon exigé [R40] ; la visite garde l'agent du rendez-vous ; le bon est fait à la date du rendez-vous ; un rendez-vous déjà rattaché (ou décalé d'une visite) n'est jamais rattaché deux fois, même par deux appels en même temps. Rien n'est envoyé. Change seulement `packages/core/src/visites/visites.ts` et son test ; aucune règle nouvelle ni migration. La route et le geste sur la fiche restent à la voie 1.
+- Objectif : une visite réservée en ligne a son dossier de visite et son bon, comme une visite fixée par l'agent.
+- Critères : rattachée : visite rangée sur le projet, bon fait à la date du rendez-vous, au journal [R40] (test) ; deuxième rattachement ou deux en même temps : une seule visite, un seul bon (test) ; projet d'une autre personne, projet qui n'est pas un achat, rendez-vous qui n'est pas une visite, sans bien, annulé : refusés, rien d'écrit (tests) ; agent qui ne suit pas la fiche : refusé [R16] (test) ; bien que la diffusion refuse : refusé [R42] (test) ; sans modèle : refusé [R40] (test) ; fiches réunies : le projet de l'autre fiche est accepté (test) ; tous les tests de T04 et V08 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
