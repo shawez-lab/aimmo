@@ -1314,6 +1314,14 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Objectif : l'agent range une date depuis la fiche du client ; la direction écrit les textes de chaque sorte de date.
 - Critères : saisie contrôlée avant l'appel, le serveur refait tout [R405] (test) ; droits dits en mots [R16] (test) ; budget tenu [R201] (test).
 - Attend : rien.
+### BR59 · Relire les dates rangées et les textes en service
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR58
+- Cahier : HX25 « messages d'anniversaire et de fête » ; R404, R405, R16, R13, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR58. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Deux lectures au cœur (`DatesClients.datesOf`, `DatesClients.textsInForce`), sans migration ni règle nouvelle ; deux routes `GET /v1/dates-clients?personId=` (agent qui suit la fiche ou direction, fiche lue sous droits) et `GET /v1/dates-clients/textes` (direction seule) dans `packages/api/src/scenarios.ts` ; leur affichage dans les deux scripts déjà servis à part (`/app/fin-de-bail.js`, `/app/scenarios.js`). Le journal garde la lecture, jamais la date ni le texte [R13].
+- Objectif : l'agent voit sur la fiche la date retenue de chaque sorte et d'où elle vient ; la direction relit les textes en service de chaque sorte et de chaque canal.
+- Critères : droits de chaque lecture, refus au journal, en mots [R16] (test) ; la dernière date rangée compte, fiches réunies comprises [R404] (test) ; seul le dernier jeu de textes de chaque sorte et canal est dit en service [R405] (test) ; le journal ne garde ni date, ni preuve, ni texte [R13] (test) ; rien n'est lu avant le geste, budget tenu, texte reçu posé en texte [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
+- Attend : rien.
 ## Restes du cœur des groupes HX
 
 Voie : 2
