@@ -1509,8 +1509,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC24 · La réponse à une note vocale suit la langue reconnue
-- Statut : en cours (voie 2)
-- Reste : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5760 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : la séance suivante la fusionne à l'étape 3 (H69), puis passe la tâche à « fait ».
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#537, `57c63079`) par la voie 2 à l'étape 3, vérification locale verte sur la fusion avec main et BR53 (5761 tests). Avant : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5760 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : la séance suivante la fusionne à l'étape 3 (H69), puis passe la tâche à « fait ».
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX23, C04
 - Cahier : M02 Capter ; HX23 « Messages vocaux transcrits et traités » ; R240, R15.
 - Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX23 (« la réponse dans la langue de la personne »). Aujourd'hui la première réponse à une note vocale devine sa langue des mots du texte transcrit (anglais ou français), alors que le transcripteur a reconnu la langue parlée et que cette langue est rangée avec la note. Une note transcrite (donc au-dessus du seuil de confiance) reconnue en français ou en anglais fait répondre dans cette langue, avant la fiche et avant la devinette : c'est la langue que la personne vient de parler. Une autre langue reconnue (arabe, espagnol…) ou aucune : la règle d'aujourd'hui (fiche, puis devinette), car seules les réponses française et anglaise ont des textes de secours relus. Un message écrit ne change pas. La lecture de la langue d'une note est une fonction de `voix/notes-vocales.ts`, appelée par `captation/premiere-reponse.ts` ; rien à brancher, aucune migration ni règle nouvelle (R240 complétée).
