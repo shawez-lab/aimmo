@@ -1267,12 +1267,48 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 
 
 ### BR54 · La veille des diagnostics ne propose que les lettres de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#538, `c7824e74`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5763 tests).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR36, RC11
 - Cahier : Phase 3, veille des nouveaux diagnostics énergétiques (HX16) ; R290, R16, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de RC11. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le serveur dit déjà `letterMine` sur chaque point de la carte et de l'alerte ; l'écran (`packages/api/app/veille-dpe.ts`) proposait le téléchargement de toute lettre préparée, que le serveur refusait ensuite à un autre agent. Seul `letterMine === true` donne le bouton ; un champ absent ou mal formé n'est jamais lu comme vrai. La veille est réservée à l'agent : la direction ne passe pas par cet écran. Aucune route, règle ni migration.
 - Objectif : l'agent ne voit le bouton de téléchargement que pour ses propres lettres ; une lettre d'un autre agent est dite, sans bouton qui serait refusé.
 - Critères : lettre de l'agent : dite « déjà préparée » par lui, téléchargeable [R290] (test) ; lettre d'un autre agent, champ absent ou mal formé : dite préparée par un autre agent, aucun bouton, aucun appel [R290] (test) ; tous les tests de BR36 restent verts, budget tenu [R201] (test).
+- Attend : rien.
+
+### BR55 · Routes des scénarios automatiques, et leur passage au planificateur
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX24, RC09, RC10, RC18, RC19
+- Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R400 à R403, R16, R05.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX24 (« branchement au planificateur et au Worker, routes et écran de la direction (voie 1, `app.ts`) ») et de RC18 (« proposer les deux déclencheurs à l'écran »). `ScenariosAutomatiques` n'est ni exporté ni branché. Routes dans un fichier neuf `packages/api/src/scenarios.ts`, direction seule, rôles avant le corps, refus au journal [R16] : composer (`POST /v1/scenarios`, nouvelle version `POST /v1/scenarios/<id>`), essayer sur le mois passé (`POST /<id>/essai`), allumer, éteindre ; une lecture de la liste des scénarios du réseau avec leur version, leur état et leur dernier essai (méthode de lecture ajoutée au cœur si elle manque, sans migration). `tick` au planificateur pour chaque réseau, en essai seulement, par le contrôle central. Aucune règle nouvelle ni migration.
+- Objectif : la direction compose, essaie, allume et éteint un scénario par l'API, et le passage tourne seul.
+- Critères : chaque route à la direction seule, refus au journal [R16] (test) ; les quatre déclencheurs acceptés, un déclencheur inconnu refusé en mots [R403] (test) ; allumer sans essai de la version refusé [R400] (test) ; le passage du planificateur n'envoie rien hors du contrôle central, en essai [R401, R05] (test) ; `docs/API.md` à jour (test des routes écrites).
+- Attend : rien.
+
+### BR56 · Routes des dates des clients, et leur passage au planificateur
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX25, RC02, RC03, RC09, BR55
+- Cahier : HX25 « messages d'anniversaire et de fête » ; R404, R405, R16.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX25 (« branchement au Worker et à l'écran (voie 1) »). Routes dans `packages/api/src/scenarios.ts` : ranger la date d'un client avec sa preuve (agent de la fiche ou direction), écrire les textes d'une sorte de date (direction seule) ; `tick` au planificateur après celui des scénarios (RC09). Aucune règle nouvelle ni migration.
+- Objectif : l'agent range la date d'un client, la direction écrit les textes, et les messages de date partent seuls, en essai.
+- Critères : droits de chaque route, refus au journal [R16] (test) ; date sans preuve ou impossible refusée en mots [R405] (test) ; textes avec chiffre refusés [R405] (test) ; passage après celui des scénarios, en essai [R402] (test).
+- Attend : rien.
+
+### BR57 · Écran « Scénarios » de la direction : composer, essayer, allumer
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR55
+- Cahier : HX24 ; R400 à R403, R16, R201.
+- Objectif : la direction compose un scénario (les quatre déclencheurs, dont « après chaque visite faite » et « après chaque mandat signé »), lit l'essai sur le mois passé, puis allume ou éteint, depuis l'application.
+- Jamais vu : un scénario ne s'allume qu'après avoir montré, chiffres de la base à l'appui, ce qu'il aurait envoyé le mois passé.
+- Critères : script servi à part, chargé au geste, budget tenu [R201] (test) ; les quatre déclencheurs proposés, type de projet seulement pour un nouveau projet [R403] (test) ; « Allumer » seulement après un essai de la version affichée [R400] (test) ; chaque refus dit en mots, réponse perdue dite incertaine [R16] (test) ; texte reçu posé en texte (test).
+- Attend : rien.
+
+### BR58 · Les dates des clients dans la fiche, et leurs textes chez la direction
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR56
+- Cahier : HX25 ; R404, R405, R16, R201.
+- Objectif : l'agent range une date depuis la fiche du client ; la direction écrit les textes de chaque sorte de date.
+- Critères : saisie contrôlée avant l'appel, le serveur refait tout [R405] (test) ; droits dits en mots [R16] (test) ; budget tenu [R201] (test).
 - Attend : rien.
 ## Restes du cœur des groupes HX
 
