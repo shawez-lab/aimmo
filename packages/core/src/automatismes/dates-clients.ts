@@ -96,6 +96,8 @@ interface DateRow {
   kind: ClientDateKind;
   month: number;
   day: number;
+  proof: string;
+  created_at: string;
 }
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -233,10 +235,7 @@ export class DatesClients {
     if (!read.ok) return { ok: false, rule: read.rule, code: read.code };
     const members = read.value.members.map((m) => m.id);
     if (members.length === 0) return { ok: true, value: [] };
-    const rows = await this.db.all<{ kind: string; month: number; day: number; proof: string; created_at: string }>(
-      `SELECT kind, month, day, proof, created_at FROM client_dates WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, rowid`,
-      [read.value.person.network_id, ...members],
-    );
+    const rows = await this.orderedDates(read.value.person.network_id, members);
     const out: KnownClientDate[] = [];
     for (const kind of CLIENT_DATE_KINDS) {
       const mine = rows.filter((r) => r.kind === kind);
@@ -265,6 +264,15 @@ export class DatesClients {
     return { ok: true, value: out };
   }
 
+  /**
+   * Les dates rangées d'un réseau, ou des seules fiches données, dans l'ordre où elles ont été rangées, même à la même
+   * milliseconde : le numéro de ligne, jamais l'identifiant. La dernière de chaque sorte compte [R404].
+   */
+  private async orderedDates(networkId: string, members?: string[]): Promise<DateRow[]> {
+    const only = members ? ` AND person_id IN (${marks(members.length)})` : '';
+    return this.db.all<DateRow>(`SELECT id, person_id, kind, month, day, proof, created_at FROM client_dates WHERE network_id = ?${only} ORDER BY created_at, rowid`, [networkId, ...(members ?? [])]);
+  }
+
   private async textsOf(networkId: string, kind: ClientDateKind, channel: AutomationChannel): Promise<string[] | null> {
     const row = await this.db.first<{ texts: string }>('SELECT texts FROM client_date_texts WHERE network_id = ? AND kind = ? AND channel = ? ORDER BY seq DESC LIMIT 1', [networkId, kind, channel]);
     return row ? (JSON.parse(row.texts) as string[]) : null;
@@ -281,7 +289,7 @@ export class DatesClients {
     const local = localTime(now, this.settings.window.timeZone);
     const wanted = occasionDays(local.date, this.settings.window);
     // L'ordre où les dates ont été rangées, même à la même milliseconde : le numéro de ligne, jamais l'identifiant [R404].
-    const rows = await this.db.all<DateRow>('SELECT id, person_id, kind, month, day FROM client_dates WHERE network_id = ? ORDER BY created_at, rowid', [networkId]);
+    const rows = await this.orderedDates(networkId);
     // La dernière date rangée compte, par fiche gardée et par sorte : une correction remplace l'ancienne [R404].
     const latest = new Map<string, DateRow & { root: string }>();
     for (const r of rows) {
