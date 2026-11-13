@@ -1333,7 +1333,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : la route rend 409, règle R505, code `remote_slip_unsigned`, rien au registre [R505] (test) ; l'écran dit la phrase, sans identifiant ni code interne, et un nouvel essai garde la même clé d'envoi (test) ; budget tenu [R201] (test).
 - Attend : rien.
 ### BR61 · Les appels reçus, relus dans la fiche
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#551, `db2775ce`). Codex 1 P2 corrigé (phrases jusqu'aux longueurs admises par le cœur), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5844 tests). Restent, pour la voie 1 : les notes vocales (HX23) et le passage de main de l'assistant (HX22) sur la fiche ; l'écoute de l'enregistrement et la réception des vrais appels attendent H52.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX21, RC20
 - Cahier : HX21 « Appels entrants résumés et rangés dans la fiche » (demande de Shawez du 2026-11-06) ; R243, R244, R04, R16, R13, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX21 (« routes avec R16 et écran de la fiche »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Appels.forPerson` existe mais aucune route ni écran ne le lit, et il ne contrôle aucun droit. Une lecture au cœur sous droits (`Acces.readFiche`, fiches réunies comprises, refus au journal), une route `GET /v1/fiches/<id>/appels-recus` dans `packages/api/src/appels.ts` (déjà branchée, sans toucher `app.ts`), et un bloc « Appels reçus » sur la fiche, script servi à part (`/app/appels-recus.js`) chargé au geste. La référence de l'enregistrement n'est jamais rendue, seulement s'il y en a un ; l'écoute attend le vrai service (H52). Le branchement de la réception au Worker attend H52.
