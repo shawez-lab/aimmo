@@ -11,6 +11,12 @@
  * central des envois, en mode essai [R409, R26]. Au journal : ni adresse, ni objet, ni nom de fichier [R13]. Rien ne
  * s'efface [R17].
  *
+ * Un mail envoyé par l'agent lui-même depuis sa boîte (RC28) entre aussi dans la fiche, comme un message sortant de
+ * l'agent, dans le fil de son mail : rattaché par les adresses de ses destinataires, à une seule fiche que l'agent peut
+ * voir, sinon rien n'en est gardé [R408]. Ses mots ne valent jamais demande d'arrêt de la personne, aucune réponse
+ * n'est préparée, et la réponse déjà préparée dans ce fil ne part plus : l'agent y a répondu [R21, R409]. Ses pièces
+ * suivent les mêmes règles que celles d'un mail reçu [R410].
+ *
  * Les vrais accès à Gmail, Outlook et Drive attendent un humain (H05, H55) : d'ici là, `MailboxProvider` et le stockage
  * des pièces sont des interfaces, avec des faux dans les tests.
  */
@@ -42,6 +48,8 @@ export const MAIL_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 export const MAIL_SIGNATURE_IMAGE_MAX_BYTES = 20 * 1024;
 const MAX_BODY = 20_000;
 const MAX_ATTACHMENTS = 20;
+/** Au-delà, un mail envoyé n'est pas rattaché : trop de destinataires pour dire à qui il parle. */
+export const MAIL_MAX_RECIPIENTS = 50;
 const STALE_CLAIM_MS = 10 * 60_000;
 
 /**
@@ -91,13 +99,21 @@ export interface MailIn {
   externalId: string;
   /** Le fil de discussion chez le fournisseur : la conversation de la réponse. */
   threadId: string;
+  /** L'expéditeur d'un mail reçu ; ignoré pour un mail envoyé par l'agent. */
   from: string;
+  /** `out` : envoyé par l'agent lui-même depuis sa boîte (RC28). Absent : reçu. */
+  direction?: 'in' | 'out';
+  /** Les destinataires d'un mail envoyé (à, copie), lus pour trouver la fiche, jamais gardés [R13]. */
+  to?: readonly string[];
   body: string;
   receivedAt: Date;
   attachments: readonly MailAttachmentIn[];
 }
 
-/** La boîte d'un agent chez Gmail ou Outlook (H05, H55) : les mails reçus depuis une date. */
+/**
+ * La boîte d'un agent chez Gmail ou Outlook (H05, H55) : les mails de la boîte depuis une date, ceux que l'agent a
+ * envoyés lui-même compris, marqués `direction: 'out'`, dans un seul ordre de dates.
+ */
 export interface MailboxProvider {
   provider: MailProvider;
   receivedSince(agentId: string, since: Date | null): Promise<MailIn[]>;
@@ -159,6 +175,10 @@ export interface FiledWaiting {
 export interface BoiteMailOptions {
   now?: () => Date;
   newId?: () => string;
+}
+
+function validRecipients(to: unknown): to is readonly string[] {
+  return Array.isArray(to) && to.length > 0 && to.every((a) => typeof a === 'string' && a.length > 0 && a.length <= 320);
 }
 
 const marks = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -264,6 +284,8 @@ export class BoiteMail {
     if (typeof mail.threadId !== 'string' || mail.threadId.length === 0 || mail.threadId.length > 200) return { ok: false, rule: 'R408', code: 'bad_mail' };
     if (!(mail.receivedAt instanceof Date) || Number.isNaN(mail.receivedAt.getTime())) return { ok: false, rule: 'R408', code: 'bad_mail' };
     if (!Array.isArray(mail.attachments)) return { ok: false, rule: 'R408', code: 'bad_mail' };
+    if (mail.direction !== undefined && mail.direction !== 'in' && mail.direction !== 'out') return { ok: false, rule: 'R408', code: 'bad_mail' };
+    if (mail.direction === 'out' && !validRecipients(mail.to)) return { ok: false, rule: 'R408', code: 'bad_mail' };
     const networkId = viewer.networkId;
     const agentId = viewer.userId;
     const now = this.now();
@@ -296,18 +318,25 @@ export class BoiteMail {
   private async sortClaimed(viewer: Viewer, mail: MailIn, mailId: string, now: Date): Promise<SortedMail> {
     const networkId = viewer.networkId;
     const agentId = viewer.userId;
-    // 1. La fiche : l'adresse normalisée, parmi les seules fiches que l'agent peut voir [R16, R408].
-    const candidates = await this.fiche.findByIdentifier(networkId, 'email', mail.from);
+    const sent = mail.direction === 'out';
+    const sens = sent ? 'envoye' : 'recu';
+    // 1. La fiche : l'adresse normalisée de l'expéditeur, ou pour un mail de l'agent celles de ses destinataires, parmi
+    // les seules fiches que l'agent peut voir [R16, R408]. Trop de destinataires : le mail ne dit pas à qui il parle.
+    const addresses = sent ? [...new Set(mail.to!)] : [mail.from];
     const visible: string[] = [];
-    for (const p of candidates) {
-      const read = await this.acces.readFiche(viewer, p.id);
-      if (read.ok) visible.push(read.value.person.id);
+    if (addresses.length <= MAIL_MAX_RECIPIENTS) {
+      for (const address of addresses) {
+        for (const p of await this.fiche.findByIdentifier(networkId, 'email', address)) {
+          const read = await this.acces.readFiche(viewer, p.id);
+          if (read.ok) visible.push(read.value.person.id);
+        }
+      }
     }
     const roots = [...new Set(visible)];
     if (roots.length !== 1) {
       const outcome: MailOutcome = roots.length === 0 ? 'inconnu' : 'ambigu';
       await this.db.run('UPDATE mailbox_mails SET status = ?, done_at = ? WHERE id = ?', [outcome, now.toISOString(), mailId]);
-      await appendEvent(this.journal, { type: 'boite.mail.trie', actor: this.actor(viewer), subject: null, data: { rule: 'R408', outcome, attachments: mail.attachments.length } }, this.now);
+      await appendEvent(this.journal, { type: 'boite.mail.trie', actor: this.actor(viewer), subject: null, data: { rule: 'R408', outcome, sens, attachments: mail.attachments.length } }, this.now);
       return { mailId, outcome, personId: null, projectId: null, attachments: [], draftId: null };
     }
     const personId = roots[0]!;
@@ -315,7 +344,8 @@ export class BoiteMail {
 
     // 2. Une demande d'arrêt, un refus ou « vendu » valent dès la réception, comme pour tout message [R04, R02], avant
     // tout le reste et quoi que portent les pièces jointes : lus dans le texte entier, jamais dans la seule partie gardée.
-    const exclusion = classifyReceived(String(mail.body ?? ''));
+    // Les mots de l'agent ne sont jamais ceux de la personne : son mail envoyé n'exclut personne.
+    const exclusion = sent ? null : classifyReceived(String(mail.body ?? ''));
     if (exclusion) {
       for (const id of members) {
         const m = await this.store.getPerson(id);
@@ -327,7 +357,7 @@ export class BoiteMail {
     const open = await this.openProjects(networkId, members);
     const projectId = open.length === 1 ? open[0]!.id : null;
 
-    // 4. Le mail entre dans la fiche comme un message reçu, IBAN masqué [R15], dans la conversation de son fil ; une
+    // 4. Le mail entre dans la fiche comme un message reçu, ou comme un message sortant de l'agent s'il l'a envoyé, IBAN masqué [R15], dans la conversation de son fil ; une
     // seule fois, même repris après une panne.
     const conversationId = `email:${mail.provider}:${mail.threadId}`;
     let messageId = (await this.db.first<{ message_id: string | null }>('SELECT message_id FROM mailbox_mails WHERE id = ?', [mailId]))?.message_id ?? null;
@@ -336,9 +366,9 @@ export class BoiteMail {
       // Coupé entre le message et son lien : le même texte du même fil, à la même heure, rangé dans la fiche et lié à
       // aucun autre mail de la boîte, est ce message-là. Un autre mail du même fil à la même heure n'est jamais pris pour lui.
       const found = await this.db.first<{ id: string }>(
-        `SELECT id FROM messages m WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND conversation_id = ? AND direction = 'in' AND channel = 'email' AND occurred_at = ? AND body = ?
+        `SELECT id FROM messages m WHERE network_id = ? AND person_id IN (${marks(members.length)}) AND conversation_id = ? AND direction = ? AND author_kind = ? AND channel = 'email' AND occurred_at = ? AND body = ?
            AND NOT EXISTS (SELECT 1 FROM mailbox_mails b WHERE b.message_id = m.id) ORDER BY rowid LIMIT 1`,
-        [networkId, ...members, conversationId, mail.receivedAt.toISOString(), body],
+        [networkId, ...members, conversationId, sent ? 'out' : 'in', sent ? 'agent' : 'person', mail.receivedAt.toISOString(), body],
       );
       if (found) {
         messageId = found.id;
@@ -347,7 +377,7 @@ export class BoiteMail {
     }
     if (messageId === null) {
       const person = await this.store.getPerson(personId);
-      const message = await this.store.recordMessage({ networkId, agentId: person?.agent_id ?? null, personId, projectId, conversationId, channel: 'email', direction: 'in', authorKind: 'person', body, occurredAt: mail.receivedAt });
+      const message = await this.store.recordMessage({ networkId, agentId: person?.agent_id ?? null, personId, projectId, conversationId, channel: 'email', direction: sent ? 'out' : 'in', authorKind: sent ? 'agent' : 'person', body, occurredAt: mail.receivedAt });
       messageId = message.id;
       await this.db.run('UPDATE mailbox_mails SET person_id = ?, project_id = ?, message_id = ? WHERE id = ?', [personId, projectId, messageId, mailId]);
     }
@@ -376,10 +406,11 @@ export class BoiteMail {
       outcomes.push(outcome);
     }
 
-    // 6. La réponse préparée, sauf si la personne a demandé l'arrêt ou est exclue : elle attend la validation [R409].
+    // 6. La réponse préparée, sauf à un mail de l'agent lui-même, ou si la personne a demandé l'arrêt ou est exclue :
+    // elle attend la validation [R409].
     let draftId: string | null = null;
-    const blocked = await this.decisions.decide(personId, { channel: 'email', kind: 'reply', conversationId, at: now });
-    if (!exclusion && !(blocked.allowed === false && (blocked.rule === 'R02' || blocked.rule === 'R04'))) {
+    const blocked = sent ? null : await this.decisions.decide(personId, { channel: 'email', kind: 'reply', conversationId, at: now });
+    if (blocked && !exclusion && !(blocked.allowed === false && (blocked.rule === 'R02' || blocked.rule === 'R04'))) {
       const draft = await this.compose(agentId, members, personId, kept, now);
       await this.db.run(
         "INSERT OR IGNORE INTO mailbox_drafts (id, network_id, mail_id, agent_id, person_id, body, sentences, figures, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepare', ?)",
@@ -396,7 +427,7 @@ export class BoiteMail {
         type: 'boite.mail.trie',
         actor: this.actor(viewer),
         subject: `person:${personId}`,
-        data: { rule: 'R408', outcome: 'rattache', dossier: projectId !== null, range: count('range'), dejaRange: count('deja_range'), enAttente: count('en_attente'), interdit: count('interdit'), inutile: count('inutile'), refuse: count('type_refuse'), trop: count('trop'), reponsePreparee: draftId !== null },
+        data: { rule: 'R408', outcome: 'rattache', sens, dossier: projectId !== null, range: count('range'), dejaRange: count('deja_range'), enAttente: count('en_attente'), interdit: count('interdit'), inutile: count('inutile'), refuse: count('type_refuse'), trop: count('trop'), reponsePreparee: draftId !== null },
       },
       this.now,
     );
