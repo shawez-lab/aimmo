@@ -141,9 +141,13 @@ globalThis.AIMMO_VEILLE_DPE = function (t) {
     note.setAttribute('role', 'status');
     function letter(id) { return button('Télécharger la lettre à imprimer', function () { download('/v1/veille-dpe/lettres/' + encodeURIComponent(id), 'lettre-dpe-' + id + '.html'); }); }
     if (isId(p.letterId)) {
-      // La carte ne dit pas qui l'a préparée : seul cet agent, ou la direction, peut l'imprimer [R290].
-      li.appendChild(el('p', 'Lettre « Au propriétaire » déjà préparée dans le réseau : seul l’agent qui l’a préparée peut l’imprimer.', 'doux'));
-      li.appendChild(letter(p.letterId));
+      // Seul l'agent qui l'a préparée peut l'imprimer [R290] : le bouton ne vient que si le serveur dit qu'elle est la sienne.
+      if (p.letterMine === true) {
+        li.appendChild(el('p', 'Vous avez déjà préparé la lettre « Au propriétaire » de ce logement.', 'doux'));
+        li.appendChild(letter(p.letterId));
+      } else {
+        li.appendChild(el('p', 'Lettre « Au propriétaire » déjà préparée par un autre agent du réseau : seul lui peut l’imprimer.', 'doux'));
+      }
       return li;
     }
     var b = button('Préparer la lettre « Au propriétaire »', function () {
