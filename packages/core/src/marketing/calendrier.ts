@@ -230,18 +230,37 @@ export class CalendrierPublications {
       for (let rank = 0; rank < n; rank++) {
         const due = parisInstant(day, hours[rank]!);
         if (due.getTime() <= this.now().getTime()) continue;
-        const taken = await this.db.first<{ id: string }>('SELECT id FROM social_calendar_slots WHERE rules_id = ? AND day = ? AND channel = ? AND rank = ?', [rules.id, day, channel, rank]);
-        if (taken) continue;
-        const pick = await this.pick(viewer, channel, rules.id);
-        if (!pick) break;
-        await this.db.run(
-          `INSERT INTO social_calendar_slots (id, network_id, agent_id, rules_id, day, channel, rank, post_id, property_id, due_at, booked_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-          [this.newId(), viewer.networkId, viewer.userId, rules.id, day, channel, rank, pick.postId, pick.propertyId, due.toISOString(), this.now().toISOString()],
-        );
+        const booked = await this.book(viewer, rules.id, day, channel, rank, due);
+        if (booked === 'aucun_contenu') break;
       }
     }
     await appendEvent(this.journal, { type: 'marketing.calendrier.jour', actor: `agent:${viewer.userId}`, subject: `agent:${viewer.userId}`, data: { day, version: rules.version, rule: 'R580' } }, this.now);
+  }
+
+  /**
+   * Réserve un rang d'un jour. Deux planifications du même agent peuvent tourner en même temps, sans transaction : une
+   * réservation qui ne change rien est relue. Rang pris par l'autre : rien de plus, aucun doublon. Rang encore libre :
+   * la publication choisie vient d'être réservée ailleurs sous cette version, le choix est refait pour ce même rang,
+   * rotation à jour. Chaque nouvel essai écarte une publication de plus (désormais réservée), la boucle finit donc
+   * toujours [R580, R581].
+   */
+  private async book(viewer: Viewer, rulesId: string, day: string, channel: SocialChannelName, rank: number, due: Date): Promise<'reserve' | 'pris' | 'aucun_contenu'> {
+    for (;;) {
+      const taken = await this.db.first<{ id: string }>('SELECT id FROM social_calendar_slots WHERE rules_id = ? AND day = ? AND channel = ? AND rank = ?', [rulesId, day, channel, rank]);
+      if (taken) return 'pris';
+      const pick = await this.pick(viewer, channel, rulesId);
+      if (!pick) return 'aucun_contenu';
+      const { changes } = await this.db.run(
+        `INSERT INTO social_calendar_slots (id, network_id, agent_id, rules_id, day, channel, rank, post_id, property_id, due_at, booked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        [this.newId(), viewer.networkId, viewer.userId, rulesId, day, channel, rank, pick.postId, pick.propertyId, due.toISOString(), this.now().toISOString()],
+      );
+      if (changes === 1) return 'reserve';
+      // Ni le rang ni la publication pris par l'autre (un identifiant déjà vu) : on n'insiste pas, la planification
+      // suivante remplira ce rang.
+      const elsewhere = await this.db.first<{ id: string }>('SELECT id FROM social_calendar_slots WHERE rules_id = ? AND post_id = ? AND channel = ?', [rulesId, pick.postId, channel]);
+      if (!elsewhere) return 'pris';
+    }
   }
 
   /**
