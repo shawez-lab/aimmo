@@ -1287,7 +1287,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR56 · Routes des dates des clients, et leur passage au planificateur
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : rien ; #543 fusionnée (`39cb80a7`) : `POST /v1/dates-clients` et `POST /v1/dates-clients/textes`, refus en mots, passage `automatismes.dates` juste après `automatismes.scenarios`. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5791 tests).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX25, RC02, RC03, RC09, BR55
 - Cahier : HX25 « messages d'anniversaire et de fête » ; R404, R405, R16.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX25 (« branchement au Worker et à l'écran (voie 1) »). Routes dans `packages/api/src/scenarios.ts` : ranger la date d'un client avec sa preuve (agent de la fiche ou direction), écrire les textes d'une sorte de date (direction seule) ; `tick` au planificateur après celui des scénarios (RC09). Aucune règle nouvelle ni migration.

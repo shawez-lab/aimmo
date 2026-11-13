@@ -104,7 +104,7 @@ import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.t
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
 import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
-import { scenariosRoutes, type ScenariosRoute } from './scenarios.ts';
+import { datesRoutes, scenariosRoutes, type ScenariosRoute } from './scenarios.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
@@ -1377,9 +1377,9 @@ function sequencesRoutesDef(): RouteDef[] {
   }));
 }
 
-/** Les routes des scénarios automatiques (BR55) : la direction seule, contrôlée avant le corps [R16, R403] ; rien ne part d'une route [R401]. */
+/** Les routes des scénarios automatiques (BR55) et des dates des clients (BR56) : la direction seule, contrôlée avant le corps [R16, R403] ; rien ne part d'une route [R401]. */
 function scenariosRoutesDef(): RouteDef[] {
-  return scenariosRoutes().map((r: ScenariosRoute) => ({
+  return [...scenariosRoutes(), ...datesRoutes()].map((r: ScenariosRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
