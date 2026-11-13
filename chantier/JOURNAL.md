@@ -1055,3 +1055,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-13 22:46 · voie 1 · fin de séance : BR61 fusionnée ; verrou libéré, relance · prochaine : à choisir
 - 2026-11-13 22:47 · voie 1 · relance refusée par le contrôle des permissions, un essai, pas de deuxième ; le passage planifié reprendra
 - 2026-11-13 23:44 · RC30 · fusionnée à l'étape 3 (#550, 666741ce) : vérification locale verte sur la fusion avec main, BR60 et BR61 comprises (5855 tests) · prochaine : RC31
+- 2026-11-14 00:20 · BR62 · fusionnée (#552, 01edfed9) : `GET /v1/fiches/<id>/notes-vocales` sous les droits de la fiche, fiches réunies comprises, sans référence de l'audio ; bloc « Notes vocales » sur la fiche, chargé au geste, chaque note dite comme transcription automatique avec sa langue et sa sûreté [R240, R16, R13, R15, R201] ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5857 tests) · prochaine : passage de main de l'assistant sur la fiche (reste de HX22), ou à choisir
+- 2026-11-14 00:20 · voie 1 · fin de séance : BR62 fusionnée ; verrou libéré, relance · prochaine : à choisir
