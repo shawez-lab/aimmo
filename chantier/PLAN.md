@@ -1256,7 +1256,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR53 · Le vendeur voit les clés de son bien dans son espace
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR52
 - Cahier : M06 Mandats et documents, armoire des clés ; R665, R161, R16, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR52. Le cœur `Cles.forSeller` existe (HX10, RC15) mais aucune route ni aucun écran ne le sert. Une route de l'espace client (`GET` sous les routes de l'espace du vendeur, droits de l'espace [R161]) et un bloc « Clés de mon bien » dans l'espace du vendeur, lu au geste. Aucune règle ni migration.
