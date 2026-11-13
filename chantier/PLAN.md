@@ -1277,8 +1277,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR55 · Routes des scénarios automatiques, et leur passage au planificateur
-- Statut : en cours
-- Reste : proposition #540 prête (`b2e4632e`) : routes `/v1/scenarios` (liste, composer, nouvelle version, essai, allumer, éteindre), direction seule, refus en mots ; méthode `list` du cœur ; passage `automatismes.scenarios` à chaque heure. Relecture forte aucun P0 ni P1 ; Codex 1 P2 corrigé (même dernier essai pour la liste et l'allumage, sans `rowid`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5772 tests). Fusion refusée par le contrôle des permissions, un essai : à fusionner à l'étape 3 de la séance suivante.
+- Statut : fait (2026-11-13)
+- Reste : rien ; #540 fusionnée le 2026-11-13 à 15:41 (`9c6b9fa0`). Avant : proposition #540 prête (`b2e4632e`) : routes `/v1/scenarios` (liste, composer, nouvelle version, essai, allumer, éteindre), direction seule, refus en mots ; méthode `list` du cœur ; passage `automatismes.scenarios` à chaque heure. Relecture forte aucun P0 ni P1 ; Codex 1 P2 corrigé (même dernier essai pour la liste et l'allumage, sans `rowid`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5772 tests). Fusion refusée par le contrôle des permissions, un essai : à fusionner à l'étape 3 de la séance suivante.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX24, RC09, RC10, RC18, RC19
 - Cahier : Phase 3, « Scénarios automatiques » (HX24) ; R400 à R403, R16, R05.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX24 (« branchement au planificateur et au Worker, routes et écran de la direction (voie 1, `app.ts`) ») et de RC18 (« proposer les deux déclencheurs à l'écran »). `ScenariosAutomatiques` n'est ni exporté ni branché. Routes dans un fichier neuf `packages/api/src/scenarios.ts`, direction seule, rôles avant le corps, refus au journal [R16] : composer (`POST /v1/scenarios`, nouvelle version `POST /v1/scenarios/<id>`), essayer sur le mois passé (`POST /<id>/essai`), allumer, éteindre ; une lecture de la liste des scénarios du réseau avec leur version, leur état et leur dernier essai (méthode de lecture ajoutée au cœur si elle manque, sans migration). `tick` au planificateur pour chaque réseau, en essai seulement, par le contrôle central. Aucune règle nouvelle ni migration.
@@ -1287,7 +1287,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR56 · Routes des dates des clients, et leur passage au planificateur
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX25, RC02, RC03, RC09, BR55
 - Cahier : HX25 « messages d'anniversaire et de fête » ; R404, R405, R16.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans les « Restent » de HX25 (« branchement au Worker et à l'écran (voie 1) »). Routes dans `packages/api/src/scenarios.ts` : ranger la date d'un client avec sa preuve (agent de la fiche ou direction), écrire les textes d'une sorte de date (direction seule) ; `tick` au planificateur après celui des scénarios (RC09). Aucune règle nouvelle ni migration.
