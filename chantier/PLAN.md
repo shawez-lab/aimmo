@@ -1256,8 +1256,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR53 · Le vendeur voit les clés de son bien dans son espace
-- Statut : en cours
-- Reste : proposition #536 prête (`11fee11f`) : lien « Qui a les clés de ce bien » dans l'espace du vendeur, page `GET /espace/cles?bien=<id>` sans script, au plus 50 sorties ; un identifiant mal formé est lu « ? » et son refus écrit au journal. Codex 1 P0 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5758 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : à fusionner à l'étape 3 de la séance suivante.
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#536, `8f685d8a`) à l'étape 3 de la séance de 07:52, après vérification locale verte sur la fusion avec main (5758 tests). Avant : proposition #536 prête (`11fee11f`) : lien « Qui a les clés de ce bien » dans l'espace du vendeur, page `GET /espace/cles?bien=<id>` sans script, au plus 50 sorties ; un identifiant mal formé est lu « ? » et son refus écrit au journal. Codex 1 P0 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5758 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : à fusionner à l'étape 3 de la séance suivante.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR52
 - Cahier : M06 Mandats et documents, armoire des clés ; R665, R161, R16, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR52. Le cœur `Cles.forSeller` existe (HX10, RC15) mais aucune route ni aucun écran ne le sert. Une route de l'espace client (`GET` sous les routes de l'espace du vendeur, droits de l'espace [R161]) et un bloc « Clés de mon bien » dans l'espace du vendeur, lu au geste. Aucune règle ni migration.
@@ -1265,6 +1265,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : un autre client, un autre bien ou un vendeur sans mandat refusés [R161] (test) ; un partenaire dit par son métier et sa raison sociale, jamais un nom de personne ni un classement [R665] (test) ; rien n'est lu avant le geste, budget tenu [R201] (test) ; chaque refus dit en mots [R16] (test) ; texte reçu posé en texte (test).
 - Attend : rien.
 
+
+### BR54 · La veille des diagnostics ne propose que les lettres de l'agent
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR36, RC11
+- Cahier : Phase 3, veille des nouveaux diagnostics énergétiques (HX16) ; R290, R16, R201.
+- Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de RC11. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le serveur dit déjà `letterMine` sur chaque point de la carte et de l'alerte ; l'écran (`packages/api/app/veille-dpe.ts`) proposait le téléchargement de toute lettre préparée, que le serveur refusait ensuite à un autre agent. Seul `letterMine === true` donne le bouton ; un champ absent ou mal formé n'est jamais lu comme vrai. La veille est réservée à l'agent : la direction ne passe pas par cet écran. Aucune route, règle ni migration.
+- Objectif : l'agent ne voit le bouton de téléchargement que pour ses propres lettres ; une lettre d'un autre agent est dite, sans bouton qui serait refusé.
+- Critères : lettre de l'agent : dite « déjà préparée » par lui, téléchargeable [R290] (test) ; lettre d'un autre agent, champ absent ou mal formé : dite préparée par un autre agent, aucun bouton, aucun appel [R290] (test) ; tous les tests de BR36 restent verts, budget tenu [R201] (test).
+- Attend : rien.
 ## Restes du cœur des groupes HX
 
 Voie : 2
