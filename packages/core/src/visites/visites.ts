@@ -147,6 +147,12 @@ export class Visites {
     return { ok: false, rule: 'R16', code };
   }
 
+  /** Un rattachement refusé pour une raison qui n'est pas un droit : au journal, avec son code, sans personne [R13]. */
+  private async reject(viewer: Viewer, code: string, subject: string): Promise<VisitRefusal> {
+    await appendEvent(this.journal, { type: 'visite.rattachement_refuse', actor: this.actor(viewer), subject, data: { code } }, this.now);
+    return { ok: false, rule: null, code };
+  }
+
   /** Une nouvelle version du modèle de bon de visite, d'essai : par la direction seule. */
   async createSlipTemplate(viewer: Viewer, body: string): Promise<{ ok: true; id: string; version: number } | VisitRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'visit_slip_template', 'role');
@@ -247,6 +253,56 @@ export class Visites {
     );
     const slip = await this.makeSlip(viewer.networkId, appointment, agentId, property, fiche.value.members);
     return { ok: true, visit: { appointment, slip, confirmation: booking.confirmation ? { status: booking.confirmation.status, rule: booking.confirmation.rule } : null } };
+  }
+
+  /**
+   * Rattache une visite réservée en ligne (V08 : site, assistant, espace) au projet d'achat de l'acquéreur, et lui
+   * ouvre son dossier de visite avec son bon (RC32). Mêmes contrôles que `schedule` : l'agent qui voit la fiche en
+   * entier, ou la direction [R16] ; le bien doit pouvoir être diffusé [R42] ; un modèle de bon est exigé [R40]. Le
+   * rendez-vous doit être une visite encore prise, avec un bien ; le projet, un achat de la même personne (fiches
+   * réunies comprises). La visite garde l'agent du rendez-vous. Un rendez-vous déjà rattaché, ou décalé d'une visite,
+   * ne l'est jamais deux fois : la base tranche entre deux appels simultanés. Rien n'est envoyé.
+   */
+  async attachOnline(viewer: Viewer, request: { appointmentId: string; projectId: string }): Promise<{ ok: true; visit: { appointment: Appointment; slip: VisitSlip } } | VisitRefusal> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role', `appointment:${request.appointmentId}`);
+    const subject = `appointment:${request.appointmentId}`;
+    const appointment = await this.rdv.get(request.appointmentId);
+    if (!appointment || appointment.network_id !== viewer.networkId) return this.refuse(viewer, 'visit', 'unknown', subject);
+    const fiche = await this.acces.readFiche(viewer, appointment.person_id);
+    if (!fiche.ok) return { ok: false, rule: 'R16', code: fiche.code };
+    if (fiche.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${appointment.person_id}`);
+    if (appointment.kind !== 'visite') return this.reject(viewer, 'not_a_visit', subject);
+    if (appointment.property_id === null) return this.reject(viewer, 'no_property', subject);
+    if (appointment.status !== 'booked') return this.reject(viewer, 'not_booked', subject);
+    if (await this.visitRow(appointment.id)) return this.reject(viewer, 'already_attached', subject);
+    const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
+    if (!project) return this.reject(viewer, 'unknown_project', `project:${request.projectId}`);
+    // Le projet doit être celui de la personne du rendez-vous, ou d'une fiche réunie avec elle.
+    if (!fiche.value.members.some((m) => m.id === project.person_id)) return this.reject(viewer, 'other_person', `project:${project.id}`);
+    const read = await this.acces.readProperty(viewer, appointment.property_id);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    const property = read.value;
+    const gate = await this.gate.canDiffuse(viewer.networkId, property.id, this.now());
+    if (!gate.allowed) {
+      await appendEvent(this.journal, { type: 'visite.refusee', actor: this.actor(viewer), subject: `property:${property.id}`, data: { rule: 'R42', code: gate.reason } }, this.now);
+      return { ok: false, rule: 'R42', code: gate.reason };
+    }
+    if (!(await this.currentTemplate(viewer.networkId))) return { ok: false, rule: 'R40', code: 'no_template' };
+    const root = fiche.value.person;
+    const { changes } = await this.db.run(
+      `INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      [appointment.id, viewer.networkId, property.id, project.id, root.id, appointment.agent_id, this.actor(viewer), this.now().toISOString()],
+    );
+    // Un autre appel l'a rattaché entre la lecture et l'écriture : le premier l'emporte.
+    if (changes !== 1) return this.reject(viewer, 'already_attached', subject);
+    await appendEvent(
+      this.journal,
+      { type: 'visite.rattachee', actor: this.actor(viewer), subject: `person:${root.id}`, data: { appointment: appointment.id, property: property.id, source: appointment.source } },
+      this.now,
+    );
+    const slip = await this.makeSlip(viewer.networkId, appointment, appointment.agent_id, property, fiche.value.members);
+    return { ok: true, visit: { appointment, slip } };
   }
 
   /** Le bon de visite d'une visite, pour l'agent qui l'a fixée ou la direction [R16]. */

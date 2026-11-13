@@ -51,7 +51,7 @@ async function setup() {
   // Un bien de Sam : le fichier commun le rend visitable par les clients d'Alex.
   const property = (overrides: { surfaceM2?: number } = {}) =>
     store.createProperty({ networkId: network.id, agentId: sam.id, reference: 'B-TALANT', kind: 'home', postalCode: '21240', city: 'Talant', priceEur: 280_000, surfaceM2: overrides.surfaceM2 ?? 95, rooms: 4, status: 'available' });
-  return { db, journal, store, visites, rdv, network, alex, sam, as, buyer, property, blocked };
+  return { db, journal, store, fiche, visites, rdv, network, alex, sam, as, buyer, property, blocked };
 }
 
 describeWithSqlite('T04 · visite et bon de visite', () => {
@@ -209,5 +209,124 @@ describeWithSqlite('T04 · visite et bon de visite', () => {
     expect(entries.filter((e) => e.type === 'acces.refuse').length).toBeGreaterThanOrEqual(3);
     expect(JSON.stringify(entries.filter((e) => e.type.startsWith('bon_visite') || e.type.startsWith('visite')))).not.toMatch(/Inès|Durand|B-TALANT/);
     expect((await verifyChain(entries)).ok).toBe(true);
+  });
+});
+
+describeWithSqlite('RC32 · une visite réservée en ligne rattachée à la recherche de l’acquéreur', () => {
+  // Une visite prise depuis le site (V08) : un rendez-vous seul, sans visite ni bon.
+  const online = async (t: Awaited<ReturnType<typeof setup>>, personId: string, propertyId: string | null, kind: 'visite' | 'estimation' = 'visite') => {
+    const r = await t.rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId, propertyId, kind, start: WEDNESDAY_10H, source: 'site', channel: null });
+    if (!r.ok) throw new Error(r.code);
+    return r.appointment;
+  };
+  const count = async (t: Awaited<ReturnType<typeof setup>>) => ({
+    visits: (await t.db.all('SELECT * FROM visits')).length,
+    slips: (await t.db.all('SELECT * FROM visit_slips')).length,
+  });
+
+  it('rattachée : la visite est rangée sur le projet d’achat, son bon fait à la date du rendez-vous, au journal [R40]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const appt = await online(t, b.person.id, p.id);
+    expect(await count(t)).toEqual({ visits: 0, slips: 0 });
+    const r = await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: appt.id, projectId: b.project.id });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.visit.appointment).toMatchObject({ id: appt.id, source: 'site', status: 'booked' });
+    expect(r.visit.slip).toMatchObject({ appointmentId: appt.id, mode: 'essai', status: 'complet' });
+    expect(r.visit.slip.content).toContain('Inès Durand');
+    expect(r.visit.slip.content).toContain('09/12/2026 à 10 h 00');
+    expect(await t.db.first('SELECT property_id, project_id, person_id, agent_id, created_by FROM visits WHERE appointment_id = ?', [appt.id])).toEqual({
+      property_id: p.id,
+      project_id: b.project.id,
+      person_id: b.person.id,
+      agent_id: t.alex.id,
+      created_by: `agent:${t.alex.id}`,
+    });
+    // Le dossier se lit ensuite comme celui d'une visite fixée par l'agent.
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), appt.id)).toMatchObject({ ok: true, slip: { id: r.visit.slip.id } });
+    const entries = await t.journal.all();
+    expect(entries.filter((e) => e.type === 'visite.rattachee')).toHaveLength(1);
+    expect(JSON.stringify(entries.filter((e) => e.type.startsWith('visite')))).not.toMatch(/Inès|Durand|B-TALANT/);
+    // Rien n'est envoyé par le rattachement.
+    expect(await t.db.all("SELECT * FROM messages WHERE direction = 'out'")).toEqual([]);
+    expect((await verifyChain(entries)).ok).toBe(true);
+  });
+
+  it('jamais deux fois : un second rattachement, ou deux en même temps, laissent une seule visite et un seul bon', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const appt = await online(t, b.person.id, p.id);
+    const both = await Promise.all([
+      t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: appt.id, projectId: b.project.id }),
+      t.visites.attachOnline(t.as('direction', 'd1'), { appointmentId: appt.id, projectId: b.project.id }),
+    ]);
+    expect(both.filter((r) => r.ok)).toHaveLength(1);
+    expect(both.find((r) => !r.ok)).toMatchObject({ ok: false, rule: null, code: 'already_attached' });
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: appt.id, projectId: b.project.id })).toEqual({ ok: false, rule: null, code: 'already_attached' });
+    expect(await count(t)).toEqual({ visits: 1, slips: 1 });
+    // Une visite fixée par l'agent est déjà une visite.
+    const fixed = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: new Date(WEDNESDAY_10H.getTime() + 3 * 3_600_000) });
+    if (!fixed.ok) throw new Error(fixed.code);
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: fixed.visit.appointment.id, projectId: b.project.id })).toMatchObject({ ok: false, code: 'already_attached' });
+  });
+
+  it('projet d’une autre personne ou qui n’est pas un achat, rendez-vous qui n’est pas une visite, sans bien ou annulé : refusés, rien d’écrit', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const other = await t.buyer('Hugo');
+    const p = await t.property();
+    const alex = t.as('agent', t.alex.id);
+    const appt = await online(t, b.person.id, p.id);
+    expect(await t.visites.attachOnline(alex, { appointmentId: appt.id, projectId: other.project.id })).toEqual({ ok: false, rule: null, code: 'other_person' });
+    const sell = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: b.person.id, kind: 'sell' });
+    expect(await t.visites.attachOnline(alex, { appointmentId: appt.id, projectId: sell.id })).toEqual({ ok: false, rule: null, code: 'unknown_project' });
+    expect(await t.visites.attachOnline(alex, { appointmentId: 'inconnu', projectId: b.project.id })).toMatchObject({ ok: false, rule: 'R16', code: 'unknown' });
+    const later = new Date(WEDNESDAY_10H.getTime() + 2 * 3_600_000);
+    const estimation = await t.rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId: b.person.id, propertyId: p.id, kind: 'estimation', start: later, source: 'site', channel: null });
+    if (!estimation.ok) throw new Error(estimation.code);
+    expect(await t.visites.attachOnline(alex, { appointmentId: estimation.appointment.id, projectId: b.project.id })).toEqual({ ok: false, rule: null, code: 'not_a_visit' });
+    const bare = await t.rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId: b.person.id, propertyId: null, kind: 'visite', start: new Date(later.getTime() + 2 * 3_600_000), source: 'assistant', channel: null });
+    if (!bare.ok) throw new Error(bare.code);
+    expect(await t.visites.attachOnline(alex, { appointmentId: bare.appointment.id, projectId: b.project.id })).toEqual({ ok: false, rule: null, code: 'no_property' });
+    expect(await t.rdv.cancelAsAgent(alex, appt.id)).toMatchObject({ ok: true });
+    expect(await t.visites.attachOnline(alex, { appointmentId: appt.id, projectId: b.project.id })).toEqual({ ok: false, rule: null, code: 'not_booked' });
+    expect(await count(t)).toEqual({ visits: 0, slips: 0 });
+  });
+
+  it('un agent qui ne suit pas la fiche est refusé [R16] ; un bien que la diffusion refuse [R42] ; sans modèle [R40]', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const appt = await online(t, b.person.id, p.id);
+    const req = { appointmentId: appt.id, projectId: b.project.id };
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), req)).toEqual({ ok: false, rule: 'R40', code: 'no_template' });
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    expect(await t.visites.attachOnline(t.as('agent', t.sam.id), req)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.visites.attachOnline(t.as('compliance', 'c1'), req)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    t.blocked.add(p.id);
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), req)).toEqual({ ok: false, rule: 'R42', code: 'withdrawal_period' });
+    expect(await count(t)).toEqual({ visits: 0, slips: 0 });
+    t.blocked.delete(p.id);
+    expect(await t.visites.attachOnline(t.as('direction', 'd1'), req)).toMatchObject({ ok: true });
+  });
+
+  it('fiches réunies : le projet d’achat de l’autre fiche est accepté, la visite va à la fiche gardée', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    // La personne a réservé sur le site avec un autre mail : une fiche neuve, réunie ensuite par l'agent.
+    const fresh = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès' });
+    const appt = await online(t, fresh.id, p.id);
+    await t.fiche.merge({ survivorId: b.person.id, mergedId: fresh.id, reason: 'même personne' });
+    const r = await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: appt.id, projectId: b.project.id });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.visit.slip.content).toContain('Inès Durand');
+    expect(await t.db.first('SELECT project_id, person_id FROM visits WHERE appointment_id = ?', [appt.id])).toEqual({ project_id: b.project.id, person_id: b.person.id });
   });
 });
