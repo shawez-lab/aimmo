@@ -491,6 +491,15 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(lost.log).toEqual(['start', 'pause']);
     expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
     expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    // La plateforme lance finalement, après le délai, alors qu'une validation nouvelle a été lancée : elle est arrêtée,
+    // la pause redemandée, rien ne reste compté comme en cours [R588].
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+    lost.release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lost.log).toEqual(['start', 'pause', 'start', 'pause']);
+    expect(await t.events('publicite.reponse_tardive')).toEqual([{ rule: 'R588', stopped: 1 }]);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
     // Le délai reste sous celui du solde.
     expect(() => new PublicitePayante(t.db, t.journal, { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, { launchTimeoutMs: LAUNCH_ANSWER_MINUTES * 60_000 })).toThrow();
   });
@@ -523,6 +532,21 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(lost.log.filter((x) => x === 'pause').length).toBeGreaterThan(0);
     expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
     expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+  });
+
+  it('[R588] un lancement réussi après le délai, sans relance : la pause est redemandée jusqu’à confirmation', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
+    expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
+    lost.setDown(true);
+    lost.release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lost.log).toEqual(['start', 'pause', 'pause_echec']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
+    lost.setDown(false);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause', 'pause_echec', 'pause']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
   });
 
   it('[R588] une dépense lue passe aussi le contrôle : le lancement perdu y est soldé', async () => {

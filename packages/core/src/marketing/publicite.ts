@@ -41,6 +41,7 @@ export const LAUNCH_ANSWER_MINUTES = 15;
  * lancement vivant a toujours fini avant d'être soldé, et une réponse tardive ne peut plus suivre un solde.
  */
 export const LAUNCH_TIMEOUT_MS = 5 * 60_000;
+const LAUNCH_TIMED_OUT = new Error('lancement sans réponse dans le délai');
 
 /** Les seuls critères de ciblage admis [R589]. */
 export const ALLOWED_TARGETING = ['communes', 'rayonKm'] as const;
@@ -402,13 +403,21 @@ export class PublicitePayante {
     if (changes !== 1) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
     const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
     let answered = false;
+    const call = this.platforms[c.platform].start(launch);
     try {
-      await this.withinTimeout(this.platforms[c.platform].start(launch));
+      await this.withinTimeout(call);
       answered = await this.launched(a.id, 'lancee');
-    } catch {
+    } catch (e) {
       // L'arrêt d'abord : coupé avant la réponse rangée, le lancement est soldé au passage suivant, rien n'est perdu.
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
       await this.launched(a.id, 'echec');
+      // Délai passé, l'appel continue chez la plateforme : s'il réussit plus tard, il est traité en réponse tardive.
+      if (e === LAUNCH_TIMED_OUT) {
+        void call.then(
+          () => this.lateAnswer(c).catch(() => undefined),
+          () => undefined,
+        );
+      }
       return { ok: false, rule: 'R587', code: 'echec_lancement' };
     }
     if (!answered) return this.lateAnswer(c);
@@ -426,7 +435,7 @@ export class PublicitePayante {
   private async withinTimeout(call: Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('lancement sans réponse')), this.launchTimeoutMs);
+      timer = setTimeout(() => reject(LAUNCH_TIMED_OUT), this.launchTimeoutMs);
     });
     try {
       await Promise.race([call, late]);
@@ -436,8 +445,8 @@ export class PublicitePayante {
   }
 
   /**
-   * Une réponse arrivée après le solde du lancement (garde, que le délai de lancement rend impossible) : l'état de la
-   * plateforme n'est plus sûr. Toute validation lancée depuis est arrêtée, sa pause redemandée jusqu'à confirmation ;
+   * Une réponse arrivée après le délai de lancement, ou après le solde : l'état de la plateforme n'est plus sûr (le
+   * lancement tardif a pu remplacer celui d'une validation plus récente). Toute validation lancée depuis est arrêtée, sa pause redemandée jusqu'à confirmation ;
    * sinon la pause est redemandée [R588].
    */
   private async lateAnswer(c: CampaignRow): Promise<AdResult<{ approvalId: string }>> {
