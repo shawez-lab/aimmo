@@ -1352,6 +1352,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Jamais vu : chaque note dit en mots qu'elle est une transcription automatique, dans quelle langue la personne a parlé et à quel point la transcription est sûre ; un IBAN dicté reste masqué.
 - Critères : agent de la fiche ou direction seulement, refus au journal et dit en mots [R16] (test) ; les notes d'une fiche réunie sont relues sur la fiche gardée (test) ; une note en cours ou impossible n'est pas montrée (test) ; la référence de l'audio n'est jamais rendue [R15] (test) ; le journal ne garde ni texte ni identifiant du canal [R13] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien (H52 pour de vraies notes).
+### BR63 · Le passage de main de l'assistant vocal, relu dans la fiche
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX22, BR61
+- Cahier : HX22 « Assistant vocal quand l'agent ne peut pas répondre » (demande de Shawez du 2026-11-06) ; R248, R242, R244, R16, R13, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de HX22 (« écran du passage de main ») et de BR62. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le passage de main (`voice_assistant_calls`) est rangé mais rien ne le lit. Pas de nouvelle route : la lecture des appels reçus de BR61 gagne, pour un appel pris par l'assistant, le rendez-vous pris, où il en est aujourd'hui, et les sujets restés sans réponse. Lecture au cœur dans `packages/core/src/voix/assistant.ts`, sans migration ; le bloc « Appels reçus » le dit. La référence du bien n'est rendue qu'à l'agent du bien ou à la direction [R16].
+- Objectif : sur la fiche, l'agent voit qu'un appel a été pris par son assistant, le rendez-vous réservé et les questions de l'appelant que la fiche du bien ne couvrait pas, à reprendre.
+- Jamais vu : le rendez-vous pris par l'assistant est suivi jusqu'à aujourd'hui : toujours prévu, décalé (avec sa nouvelle heure), annulé, tenu ou personne venue.
+- Critères : un appel pris par l'assistant est dit tel, avec le rendez-vous et les sujets sans réponse [R248] (test) ; un rendez-vous décalé puis annulé est suivi jusqu'au bout (test) ; sans accord d'enregistrement, aucun sujet n'est rendu [R242] (test) ; la référence du bien seulement à l'agent du bien ou à la direction [R16] (test) ; un appel pris sans l'assistant ne change pas (test) ; le journal ne garde rien de plus [R13] (test) ; l'écran : texte posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour.
+- Attend : rien (H52 pour de vrais appels).
 
 ## Restes du cœur des groupes HX
 
