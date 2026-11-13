@@ -133,6 +133,29 @@ export interface SortedMail {
   draftId: string | null;
 }
 
+/** Un mail dont des pièces attendent le choix du dossier par l'agent [R410]. */
+export interface WaitingMail {
+  mailId: string;
+  provider: MailProvider;
+  /** La clé du mail chez le fournisseur, pour le relire. */
+  externalId: string;
+  personId: string;
+  receivedAt: string;
+  /** Le nombre de pièces en attente. */
+  waiting: number;
+  /** Les dossiers ouverts de la fiche, fiches réunies comprises : les seuls choix possibles. */
+  projects: { id: string; kind: string; stage: string }[];
+}
+
+export interface FiledWaiting {
+  mailId: string;
+  projectId: string;
+  range: number;
+  dejaRange: number;
+  /** Les pièces encore en attente : absentes du mail relu ou plus utiles. */
+  restent: number;
+}
+
 export interface BoiteMailOptions {
   now?: () => Date;
   newId?: () => string;
@@ -301,9 +324,7 @@ export class BoiteMail {
     }
 
     // 3. Le dossier : le seul projet ouvert de la fiche, fiches réunies comprises ; sinon l'agent choisit.
-    const open = (await this.db.all<{ id: string; stage: string }>(`SELECT id, stage FROM projects WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, id`, [networkId, ...members])).filter(
-      (p) => !CLOSED_PROJECT_STAGES.includes(p.stage),
-    );
+    const open = await this.openProjects(networkId, members);
     const projectId = open.length === 1 ? open[0]!.id : null;
 
     // 4. Le mail entre dans la fiche comme un message reçu, IBAN masqué [R15], dans la conversation de son fil ; une
@@ -346,23 +367,9 @@ export class BoiteMail {
       if (!judged.ok) outcome = judged.outcome;
       else if (projectId === null) outcome = 'en_attente';
       else {
-        const lookup = () => this.db.first<{ id: string; first_mail_id: string }>('SELECT id, first_mail_id FROM mailbox_attachments WHERE network_id = ? AND project_id = ? AND sha256 = ?', [networkId, projectId, sha]);
-        let row = await lookup();
-        if (!row) {
-          const id = this.newId();
-          const ref = `boite/${projectId}/${sha}.${judged.ext}`;
-          await this.files.put(ref, a.bytes, judged.type);
-          // Deux tris en même temps du même fichier : la contrainte d'unicité n'en garde qu'un [R18, R410].
-          await this.db.run(
-            'INSERT OR IGNORE INTO mailbox_attachments (id, network_id, project_id, sha256, ref, content_type, size, first_mail_id, stored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, networkId, projectId, sha, ref, judged.type, a.bytes.length, mailId, now.toISOString()],
-          );
-          row = await lookup();
-        }
-        if (!row) throw new Error('pièce jointe introuvable après son rangement');
-        // Rangée par ce mail-ci, au premier essai ou à la reprise : « rangée » ; par un autre mail : « déjà rangée ».
-        outcome = row.first_mail_id === mailId ? 'range' : 'deja_range';
-        attachmentId = row.id;
+        const stored = await this.storeAttachment(networkId, projectId, mailId, sha, judged, a.bytes, now);
+        outcome = stored.outcome;
+        attachmentId = stored.attachmentId;
       }
       await this.db.run('INSERT OR IGNORE INTO mailbox_attachment_links (mail_id, sha256, outcome, attachment_id, created_at) VALUES (?, ?, ?, ?, ?)', [mailId, sha, outcome, attachmentId, now.toISOString()]);
       if (attachmentId) kept.push(attachmentId);
@@ -394,6 +401,116 @@ export class BoiteMail {
       this.now,
     );
     return { mailId, outcome: 'rattache', personId, projectId, attachments: outcomes, draftId };
+  }
+
+  /**
+   * Range une pièce jugée utile dans un dossier, une seule fois par empreinte [R410] : rangée par ce mail-ci, au premier
+   * essai ou à la reprise, elle est « rangée » ; déjà là par un autre mail, « déjà rangée ».
+   */
+  private async storeAttachment(networkId: string, projectId: string, mailId: string, sha: string, judged: { type: string; ext: string }, bytes: Uint8Array, now: Date): Promise<{ outcome: 'range' | 'deja_range'; attachmentId: string }> {
+    const lookup = () => this.db.first<{ id: string; first_mail_id: string }>('SELECT id, first_mail_id FROM mailbox_attachments WHERE network_id = ? AND project_id = ? AND sha256 = ?', [networkId, projectId, sha]);
+    let row = await lookup();
+    if (!row) {
+      const id = this.newId();
+      const ref = `boite/${projectId}/${sha}.${judged.ext}`;
+      await this.files.put(ref, bytes, judged.type);
+      // Deux tris en même temps du même fichier : la contrainte d'unicité n'en garde qu'un [R18, R410].
+      await this.db.run(
+        'INSERT OR IGNORE INTO mailbox_attachments (id, network_id, project_id, sha256, ref, content_type, size, first_mail_id, stored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, networkId, projectId, sha, ref, judged.type, bytes.length, mailId, now.toISOString()],
+      );
+      row = await lookup();
+    }
+    if (!row) throw new Error('pièce jointe introuvable après son rangement');
+    return { outcome: row.first_mail_id === mailId ? 'range' : 'deja_range', attachmentId: row.id };
+  }
+
+  /** Les dossiers ouverts d'une fiche, fiches réunies comprises, les plus anciens d'abord. */
+  private async openProjects(networkId: string, members: readonly string[]): Promise<{ id: string; kind: string; stage: string }[]> {
+    const rows = await this.db.all<{ id: string; kind: string; stage: string }>(`SELECT id, kind, stage FROM projects WHERE network_id = ? AND person_id IN (${marks(members.length)}) ORDER BY created_at, id`, [networkId, ...members]);
+    return rows.filter((p) => !CLOSED_PROJECT_STAGES.includes(p.stage));
+  }
+
+  /**
+   * Les mails de la boîte dont des pièces attendent que l'agent choisisse le dossier [R410] : la fiche doit être encore
+   * à lui [R16], et seuls ses dossiers ouverts sont proposés. Ni adresse, ni nom de fichier : la clé du mail chez le
+   * fournisseur sert à le relire.
+   */
+  async waiting(viewer: Viewer): Promise<ScenarioResult<WaitingMail[]>> {
+    if (!(await this.ownAgent(viewer))) return this.refuse(viewer, 'not_mailbox_agent', 'waiting', 'R410');
+    const rows = await this.db.all<{ id: string; provider: MailProvider; external_id: string; person_id: string; received_at: string; waiting: number }>(
+      `SELECT b.id, b.provider, b.external_id, b.person_id, b.received_at, COUNT(l.sha256) AS waiting
+         FROM mailbox_mails b JOIN mailbox_attachment_links l ON l.mail_id = b.id AND l.outcome = 'en_attente'
+        WHERE b.network_id = ? AND b.agent_id = ? AND b.status = 'rattache' AND b.person_id IS NOT NULL
+        GROUP BY b.id ORDER BY b.received_at, b.id`,
+      [viewer.networkId, viewer.userId],
+    );
+    const out: WaitingMail[] = [];
+    for (const r of rows) {
+      const read = await this.acces.readFiche(viewer, r.person_id);
+      if (!read.ok) continue;
+      const personId = read.value.person.id;
+      const members = await this.fiche.membersOf(personId);
+      const projects = await this.openProjects(viewer.networkId, members);
+      out.push({ mailId: r.id, provider: r.provider, externalId: r.external_id, personId, receivedAt: r.received_at, waiting: Number(r.waiting), projects });
+    }
+    return { ok: true, value: out };
+  }
+
+  /**
+   * L'agent de la boîte choisit le dossier des pièces en attente d'un mail [R410]. Le mail, relu chez le fournisseur, doit
+   * être celui du tri ; seules ses pièces restées « en attente » sont rangées, reconnues par leur empreinte, jamais une
+   * autre ; le dossier doit être un dossier ouvert de la fiche du mail, fiches réunies comprises, et la fiche encore à
+   * l'agent [R16]. Une fois choisi, le dossier du mail ne change plus. Deux choix en même temps ne rangent qu'une fois [R18].
+   */
+  async fileWaiting(viewer: Viewer, mailId: string, projectId: string, mail: MailIn): Promise<ScenarioResult<FiledWaiting>> {
+    if (!(await this.ownAgent(viewer))) return this.refuse(viewer, 'not_mailbox_agent', 'file_waiting', 'R410');
+    const row = typeof mailId === 'string'
+      ? await this.db.first<{ id: string; network_id: string; agent_id: string; provider: string; external_id: string; status: string; person_id: string | null; project_id: string | null }>('SELECT id, network_id, agent_id, provider, external_id, status, person_id, project_id FROM mailbox_mails WHERE id = ?', [mailId])
+      : null;
+    if (!row || row.network_id !== viewer.networkId || row.agent_id !== viewer.userId) return this.refuse(viewer, 'not_mailbox_agent', 'file_waiting', 'R410');
+    if (row.status !== 'rattache' || row.person_id === null) return { ok: false, rule: 'R410', code: 'nothing_waiting' };
+    if (!mail || mail.provider !== row.provider || mail.externalId !== row.external_id || !Array.isArray(mail.attachments)) return { ok: false, rule: 'R410', code: 'mail_mismatch' };
+    const read = await this.acces.readFiche(viewer, row.person_id);
+    if (!read.ok) return this.refuse(viewer, 'not_your_fiche', 'file_waiting');
+    const personId = read.value.person.id;
+    const members = await this.fiche.membersOf(personId);
+    const open = await this.openProjects(viewer.networkId, members);
+    if (typeof projectId !== 'string' || !open.some((p) => p.id === projectId)) return { ok: false, rule: 'R410', code: 'project_not_open' };
+    if (row.project_id !== null && row.project_id !== projectId) return { ok: false, rule: 'R410', code: 'other_project' };
+    const waitingShas = new Set((await this.db.all<{ sha256: string }>("SELECT sha256 FROM mailbox_attachment_links WHERE mail_id = ? AND outcome = 'en_attente'", [row.id])).map((l) => l.sha256));
+    if (waitingShas.size === 0) return { ok: false, rule: 'R410', code: 'nothing_waiting' };
+
+    // Le dossier du mail : choisi une fois, par le premier choix [R18].
+    await this.db.run('UPDATE mailbox_mails SET project_id = ? WHERE id = ? AND project_id IS NULL', [projectId, row.id]);
+    const fixed = await this.db.first<{ project_id: string | null }>('SELECT project_id FROM mailbox_mails WHERE id = ?', [row.id]);
+    if (fixed?.project_id !== projectId) return { ok: false, rule: 'R410', code: 'other_project' };
+
+    const now = this.now();
+    let range = 0;
+    let dejaRange = 0;
+    const done = new Set<string>();
+    for (const a of mail.attachments) {
+      if (!a || !(a.bytes instanceof Uint8Array)) continue;
+      const sha = await sha256Hex(a.bytes);
+      if (!waitingShas.has(sha) || done.has(sha)) continue;
+      done.add(sha);
+      // Jugée utile au tri ; relue, elle doit l'être encore : sinon elle reste en attente.
+      const judged = judgeAttachment(a);
+      if (!judged.ok) continue;
+      const stored = await this.storeAttachment(viewer.networkId, projectId, row.id, sha, judged, a.bytes, now);
+      const won = await this.db.run("UPDATE mailbox_attachment_links SET outcome = ?, attachment_id = ? WHERE mail_id = ? AND sha256 = ? AND outcome = 'en_attente'", [stored.outcome, stored.attachmentId, row.id, sha]);
+      if (won.changes !== 1) continue;
+      if (stored.outcome === 'range') range += 1;
+      else dejaRange += 1;
+    }
+    const restent = (await this.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM mailbox_attachment_links WHERE mail_id = ? AND outcome = 'en_attente'", [row.id]))?.n ?? 0;
+    await appendEvent(
+      this.journal,
+      { type: 'boite.pieces.rangees', actor: this.actor(viewer), subject: `person:${personId}`, data: { rule: 'R410', mail: row.id, project: projectId, range, dejaRange, restent: Number(restent) } },
+      this.now,
+    );
+    return { ok: true, value: { mailId: row.id, projectId, range, dejaRange, restent: Number(restent) } };
   }
 
   /** Les phrases fixes de la réponse, chacune avec la ligne du dossier qu'elle reprend [R411]. Jamais d'IA. */
