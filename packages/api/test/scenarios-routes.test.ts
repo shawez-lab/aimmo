@@ -4,7 +4,7 @@ import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { runScheduler } from '../src/planificateur.ts';
 import { SCENARIOS_JOB, refusalWords, scenariosJob, scenariosRoutes } from '../src/scenarios.ts';
-import { FicheClient, Planificateur, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../../core/src/index.ts';
+import { FicheClient, Planificateur, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type SqlValue } from '../../core/src/index.ts';
 import { AUTOMATION_PURPOSE } from '../../core/src/automatismes/scenarios.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -249,7 +249,7 @@ describeWithSqlite('BR55 · routes des scénarios automatiques, et leur passage 
     const db = new Proxy(t.db, {
       get(target, prop, receiver) {
         if (prop === 'all') {
-          return async (sql: string, params: unknown[] = []) => {
+          return async (sql: string, params: readonly SqlValue[] = []) => {
             if (/DISTINCT network_id FROM automation_switches/.test(sql)) {
               calls.push('networks');
               return [{ network_id: 'reseau-en-panne' }, { network_id: t.net.id }];
@@ -263,7 +263,7 @@ describeWithSqlite('BR55 · routes des scénarios automatiques, et leur passage 
     }) as SqlDatabase;
     t.at(TUE_10H + HOUR);
     const job = scenariosJob(db, t.journal, { now: t.now });
-    await expect(job.run()).rejects.toThrow('panne de test');
+    await expect(job.run({ job: SCENARIOS_JOB, slot: 'essai', at: t.now() })).rejects.toThrow('panne de test');
     expect(calls).toEqual(['networks']);
     expect(await t.outbox()).toEqual([{ person_id: lea, channel: 'email' }]);
   });
