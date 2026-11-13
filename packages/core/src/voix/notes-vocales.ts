@@ -11,6 +11,8 @@
  * fiche ni les coordonnées de la personne [R15]. La chaîne, les adaptateurs et la réception ne changent pas : la note est
  * réécrite dans la notification brute avant qu'elle ne la lise.
  */
+import type { Acces, AccessResult } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
 import type { ChaineCaptation, ChainHooks, ChainResult } from '../captation/chaine.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { maskIban } from '../envoi/texte.ts';
@@ -79,7 +81,8 @@ export interface NotesVocalesOptions {
   minConfidence?: number;
 }
 
-const MAX_TEXT = 4000;
+/** Un texte transcrit plus long n'est pas rangé ; masquer un IBAN ne l'allonge jamais. */
+export const MAX_TEXT = 4000;
 const LANGUAGE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
 
 type Json = Record<string, unknown>;
@@ -346,6 +349,53 @@ export async function voiceNoteLanguage(db: SqlDatabase, networkId: string, inbo
   );
   const language = row?.language;
   return typeof language === 'string' && LANGUAGE.test(language) ? language.split('-')[0]!.toLowerCase() : null;
+}
+
+/** Ce que la fiche relit d'une note vocale transcrite (BR62) : jamais la référence de l'audio chez le canal [R15]. */
+export interface VoiceNoteOfFiche {
+  id: string;
+  receivedAt: string;
+  channel: VoiceChannel;
+  /** Le texte transcrit, un IBAN dicté masqué [R15]. */
+  transcript: string;
+  /** Code court de la langue parlée (`en-GB` → `en`), ou null. */
+  language: string | null;
+  confidence: number;
+  /** L'audio d'origine reste chez le canal : la fiche dit seulement qu'il est gardé. */
+  hasAudio: boolean;
+}
+
+/**
+ * BR62 · Les notes vocales transcrites d'une fiche, sous les droits de la fiche : l'agent qui la suit ou la direction,
+ * refus au journal par `Acces.readFiche` [R16]. Les notes des fiches réunies se relisent sur la fiche gardée ; une note en
+ * cours ou impossible n'est pas montrée (une note impossible n'a pas de fiche). Rien de plus au journal que la lecture de
+ * la fiche : ni texte, ni identifiant du canal [R13].
+ */
+export async function voiceNotesOfFiche(db: SqlDatabase, acces: Acces, viewer: Viewer, personId: string): Promise<AccessResult<VoiceNoteOfFiche[]>> {
+  const read = await acces.readFiche(viewer, personId);
+  if (!read.ok) return read;
+  const members = read.value.members.map((m) => m.id);
+  if (members.length === 0) return { ok: true, view: read.view, value: [] };
+  const rows = await db.all<VoiceNoteRow & { received_at: string }>(
+    `SELECT v.*, i.received_at FROM voice_notes v JOIN inbound_messages i
+       ON i.network_id = v.network_id AND i.channel = v.channel AND i.external_id = v.external_id
+     WHERE v.network_id = ? AND v.status = 'transcrite' AND i.person_id IN (${members.map(() => '?').join(', ')})
+     ORDER BY i.received_at DESC, v.id`,
+    [read.value.person.network_id, ...members],
+  );
+  return {
+    ok: true,
+    view: read.view,
+    value: rows.map((r) => ({
+      id: r.id,
+      receivedAt: r.received_at,
+      channel: r.channel,
+      transcript: r.transcript!,
+      language: typeof r.language === 'string' && LANGUAGE.test(r.language) ? r.language.split('-')[0]!.toLowerCase() : null,
+      confidence: r.confidence!,
+      hasAudio: r.media_ref !== null,
+    })),
+  };
 }
 
 /**
