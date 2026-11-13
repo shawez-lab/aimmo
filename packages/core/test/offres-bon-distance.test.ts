@@ -140,3 +140,14 @@ describeWithSqlite('RC25 · une offre sans le bon de la visite à distance', () 
     expect(await count(t)).toBe(1);
   });
 });
+
+describeWithSqlite('RC25 · une base d\'avant les visites à distance', () => {
+  it('[R505] sans les tables de la migration 2304, aucune visite à distance n\'existe : rien n\'est refusé, toute autre erreur remonte', async () => {
+    const t = await setupOffre();
+    const missing = (table: string): SqlDatabase => Object.create(t.db, { first: { value: async () => Promise.reject(new Error(`no such table: ${table}`)) } });
+    expect(await remoteSlipMissing(missing('remote_visits'), t.network.id, t.propertyId, t.buyerId)).toBeNull();
+    expect(await remoteSlipMissing(missing('remote_slip_signatures'), t.network.id, t.propertyId, t.buyerId)).toBeNull();
+    await expect(remoteSlipMissing(missing('person_merges'), t.network.id, t.propertyId, t.buyerId)).rejects.toThrow(/person_merges/);
+    await expect(remoteSlipMissing(missing('remote_visits_bis'), t.network.id, t.propertyId, t.buyerId)).rejects.toThrow(/remote_visits_bis/);
+  });
+});

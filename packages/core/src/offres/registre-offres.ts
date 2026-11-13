@@ -159,19 +159,26 @@ const REMOTE_SLIP_TRIGGER = /bon de la visite à distance non signé/;
  * d'abord. La base reste la vraie barrière : cette lecture ne sert qu'à dire le refus en mots.
  */
 export async function remoteSlipMissing(db: SqlDatabase, networkId: string, propertyId: string, buyerPersonId: string): Promise<string | null> {
-  const row = await db.first<{ appointment_id: string }>(
-    `SELECT rv.appointment_id FROM remote_visits rv
-      WHERE rv.network_id = ? AND rv.property_id = ?
-        AND NOT EXISTS (SELECT 1 FROM remote_slip_signatures s WHERE s.appointment_id = rv.appointment_id AND s.status = 'signee')
-        AND EXISTS (
-          WITH RECURSIVE
-            acheteur(id) AS (SELECT ? UNION SELECT pm.survivor_id FROM person_merges pm JOIN acheteur ON pm.merged_id = acheteur.id WHERE pm.undone_at IS NULL),
-            visiteur(id) AS (SELECT rv.person_id UNION SELECT pm.survivor_id FROM person_merges pm JOIN visiteur ON pm.merged_id = visiteur.id WHERE pm.undone_at IS NULL)
-          SELECT 1 FROM acheteur JOIN visiteur ON acheteur.id = visiteur.id
-        )
-      ORDER BY rv.started_at, rv.appointment_id LIMIT 1`,
-    [networkId, propertyId, buyerPersonId],
-  );
+  let row: { appointment_id: string } | null;
+  try {
+    row = await db.first<{ appointment_id: string }>(
+      `SELECT rv.appointment_id FROM remote_visits rv
+        WHERE rv.network_id = ? AND rv.property_id = ?
+          AND NOT EXISTS (SELECT 1 FROM remote_slip_signatures s WHERE s.appointment_id = rv.appointment_id AND s.status = 'signee')
+          AND EXISTS (
+            WITH RECURSIVE
+              acheteur(id) AS (SELECT ? UNION SELECT pm.survivor_id FROM person_merges pm JOIN acheteur ON pm.merged_id = acheteur.id WHERE pm.undone_at IS NULL),
+              visiteur(id) AS (SELECT rv.person_id UNION SELECT pm.survivor_id FROM person_merges pm JOIN visiteur ON pm.merged_id = visiteur.id WHERE pm.undone_at IS NULL)
+            SELECT 1 FROM acheteur JOIN visiteur ON acheteur.id = visiteur.id
+          )
+        ORDER BY rv.started_at, rv.appointment_id LIMIT 1`,
+      [networkId, propertyId, buyerPersonId],
+    );
+  } catch (error) {
+    // Une base d'avant la migration `2304` n'a ni ces tables ni leur garde : aucune visite à distance n'y existe.
+    if (/no such table: (remote_visits|remote_slip_signatures)\b/.test(String(error))) return null;
+    throw error;
+  }
   return row ? row.appointment_id : null;
 }
 
