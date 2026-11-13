@@ -146,7 +146,41 @@ type Problem =
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
   | { ok: false; rule: null; code: 'buyer_is_seller'; field: 'buyerPersonId' }
   | { ok: false; rule: 'R42'; code: 'not_on_sale' }
+  | { ok: false; rule: 'R505'; code: 'remote_slip_unsigned'; appointmentId: string }
   | { ok: false; rule: 'R56'; code: 'request_key_reused' };
+
+/** Le texte du déclencheur `offer_register_bon_distance_signe` de la migration `2304` [R505]. */
+const REMOTE_SLIP_TRIGGER = /bon de la visite à distance non signé/;
+
+/**
+ * Le rendez-vous d'une visite à distance de cet acquéreur sur ce bien dont le bon n'est pas encore signé en ligne, ou null
+ * (RC25) [R505]. Même requête que la garde de la base (`offer_register_bon_distance_signe`) : les deux fiches remontent la
+ * suite entière de leurs réunions en cours et se rejoignent si elles ont la même fiche de tête ; la plus ancienne visite
+ * d'abord. La base reste la vraie barrière : cette lecture ne sert qu'à dire le refus en mots.
+ */
+export async function remoteSlipMissing(db: SqlDatabase, networkId: string, propertyId: string, buyerPersonId: string): Promise<string | null> {
+  let row: { appointment_id: string } | null;
+  try {
+    row = await db.first<{ appointment_id: string }>(
+      `SELECT rv.appointment_id FROM remote_visits rv
+        WHERE rv.network_id = ? AND rv.property_id = ?
+          AND NOT EXISTS (SELECT 1 FROM remote_slip_signatures s WHERE s.appointment_id = rv.appointment_id AND s.status = 'signee')
+          AND EXISTS (
+            WITH RECURSIVE
+              acheteur(id) AS (SELECT ? UNION SELECT pm.survivor_id FROM person_merges pm JOIN acheteur ON pm.merged_id = acheteur.id WHERE pm.undone_at IS NULL),
+              visiteur(id) AS (SELECT rv.person_id UNION SELECT pm.survivor_id FROM person_merges pm JOIN visiteur ON pm.merged_id = visiteur.id WHERE pm.undone_at IS NULL)
+            SELECT 1 FROM acheteur JOIN visiteur ON acheteur.id = visiteur.id
+          )
+        ORDER BY rv.started_at, rv.appointment_id LIMIT 1`,
+      [networkId, propertyId, buyerPersonId],
+    );
+  } catch (error) {
+    // Une base d'avant la migration `2304` n'a ni ces tables ni leur garde : aucune visite à distance n'y existe.
+    if (/no such table: (remote_visits|remote_slip_signatures)\b/.test(String(error))) return null;
+    throw error;
+  }
+  return row ? row.appointment_id : null;
+}
 
 const toOffer = (r: Row): Offer => ({
   id: r.id,
@@ -183,6 +217,15 @@ export class RegistreOffres {
 
   private actor(viewer: Viewer): string {
     return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  /**
+   * Le bon de la visite à distance manque (RC25) [R505] : le refus nomme le rendez-vous, écrit au journal sous la visite,
+   * que lit l'acquéreur lui-même et jamais le vendeur [R96], avec des identifiants seulement [R13].
+   */
+  private async slipMissing(viewer: Viewer, propertyId: string, appointmentId: string): Promise<Problem> {
+    await appendEvent(this.journal, { type: 'offre.bon_distance_manquant', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { rule: 'R505', property: propertyId } }, this.now);
+    return { ok: false, rule: 'R505', code: 'remote_slip_unsigned', appointmentId };
   }
 
   private async refuse(viewer: Viewer, subject: string, code: string): Promise<Refusal> {
@@ -253,6 +296,9 @@ export class RegistreOffres {
     const status = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [propertyId]);
     // Vendu, loué ou retiré de la vente : plus d'offre, même si le mandat court encore.
     if (!sale.allowed || !status || ['sold', 'rented', 'withdrawn'].includes(status.status)) return { ok: false, rule: 'R42', code: 'not_on_sale' };
+    // Une visite faite à distance dont le bon n'est pas signé : refus dit en mots, avant de prendre un rang [R505].
+    const missing = await remoteSlipMissing(this.db, g.networkId, propertyId, buyer.value.person.id);
+    if (missing !== null) return this.slipMissing(viewer, propertyId, missing);
 
     // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
     await this.resumeAnchors(viewer, propertyId);
@@ -301,6 +347,11 @@ export class RegistreOffres {
         if (twin) return replay(twin);
         // Un autre enregistrement a pris ce rang : on recommence avec le suivant.
         if (/UNIQUE|ajout seul/i.test(String(error))) continue;
+        // Une visite à distance finie entre la lecture et l'écriture : la base a refusé, le refus est dit en mots [R505].
+        if (REMOTE_SLIP_TRIGGER.test(String(error))) {
+          const late = await remoteSlipMissing(this.db, g.networkId, propertyId, buyer.value.person.id);
+          if (late !== null) return this.slipMissing(viewer, propertyId, late);
+        }
         throw error;
       }
       // L'ancre au journal : le rang et l'empreinte en lettres ; ni montant, ni nom [R13].
