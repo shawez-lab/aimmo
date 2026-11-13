@@ -1607,7 +1607,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (vrais accès Gmail et Outlook : H05, H55).
 
 ### RC29 · Deux planifications simultanées du calendrier ne laissent aucun créneau vide
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#548, `14c39cff`) ; Codex rien à signaler sur 842e136 ; GitHub Actions bloqué (facturation), vérification locale verte (5813 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX52
 - Cahier : M07 Commercialiser et M19 Studio ; HX52 « Calendrier de publication sur tous les réseaux » ; R580, R581.
 - Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX52 (« deux planifications simultanées du même agent sans transaction (doublon refusé par la base) »). Aujourd'hui, quand deux planifications du même agent tournent en même temps (l'écran et le travail de la semaine, deux onglets), l'une peut choisir pour un rang une publication que l'autre vient de réserver à un autre rang : la base refuse le doublon (une publication une fois par version et par réseau), l'écriture ne change rien, et le rang reste vide jusqu'à la prochaine planification, alors que d'autres biens étaient prêts. Le nombre réglé n'est pas tenu ce jour-là [R581]. Désormais, une réservation qui ne change rien est relue : si le rang est pris (par l'autre planification), on passe au suivant, sans doublon ; s'il est encore libre, c'est la publication qui a été prise ailleurs, et le choix est refait pour ce même rang, avec la rotation à jour [R580]. Chaque nouvel essai écarte une publication de plus (elle est désormais réservée sous cette version), donc la boucle finit toujours. Aucune transaction ni migration : la base reste la barrière. Change seulement `packages/core/src/marketing/calendrier.ts` et son test.
