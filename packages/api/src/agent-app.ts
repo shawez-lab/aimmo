@@ -55,6 +55,7 @@ import { LICENCES_SCRIPT } from '../app/licences.ts';
 import { CLES_SCRIPT } from '../app/cles.ts';
 import { PHASES_SCRIPT } from '../app/phases.ts';
 import { GUIDES_PHOTO_SCRIPT } from '../app/guides-photo.ts';
+import { SCENARIOS_SCRIPT } from '../app/scenarios.ts';
 import { FIN_DE_BAIL_SCRIPT } from '../app/fin-de-bail.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
@@ -182,6 +183,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/bibliotheque.js': { body: BIBLIOTHEQUE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les engagements de service pour la direction (G15), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/engagements.js': { body: ENGAGEMENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les scénarios automatiques de la direction (BR57), chargés depuis « Engagements de service », jamais gardés [R201].
+  '/app/scenarios.js': { body: SCENARIOS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les communes à pourvoir pour la direction (BR38), chargées depuis « Phases et régions », jamais gardées [R201].
   '/app/communes.js': { body: COMMUNES_SCRIPT, type: 'text/javascript; charset=utf-8' },
