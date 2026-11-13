@@ -14,6 +14,7 @@ import type { ControleEnvois, SendOrder, SendResult } from '../envoi/controle.ts
 import { plain } from '../envoi/texte.ts';
 import type { InboundRow, Reception } from '../reception/reception.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
+import { voiceNoteLanguage } from '../voix/notes-vocales.ts';
 
 export type SkipCode = 'not_attached' | 'no_channel' | 'already_replied';
 export type NextStep = 'visit' | 'callback' | 'valuation';
@@ -97,8 +98,13 @@ const VALUATION = /\b(?:estim|vendre|vend|valeur|combien vaut|avis de valeur|sel
 const ENGLISH = /\b(?:hello|hi|is it|still available|price|please|thanks|could|would|visit|viewing|interested)\b/;
 const FRENCH = /\b(?:bonjour|merci|est-ce|disponible|prix|visite|je|vous|svp|bonsoir)\b/;
 
-/** Langue du client : celle de sa fiche si elle n'est pas le français, sinon devinée du message. */
-export function replyLanguage(person: Pick<Person, 'language'> | null, text: string): ReplyLanguage {
+/**
+ * Langue du client : celle qu'il vient de parler dans une note vocale, si le transcripteur l'a reconnue en français ou
+ * en anglais [R240] ; sinon celle de sa fiche si elle n'est pas le français ; sinon devinée du message. Une autre langue
+ * parlée ne change rien : seules les réponses française et anglaise ont des textes de secours relus.
+ */
+export function replyLanguage(person: Pick<Person, 'language'> | null, text: string, spoken: string | null = null): ReplyLanguage {
+  if (spoken === 'fr' || spoken === 'en') return spoken;
   if (person?.language === 'en') return 'en';
   const p = plain(text);
   return ENGLISH.test(p) && !FRENCH.test(p) ? 'en' : 'fr';
@@ -252,7 +258,7 @@ export class PremiereReponse {
     const firstName = view.members.map((p) => p.first_name).find((n) => n) ?? null;
     const brief: ReplyBrief = {
       channel,
-      language: replyLanguage(view.person, row.body),
+      language: replyLanguage(view.person, row.body, await voiceNoteLanguage(this.db, row.network_id, inboundId)),
       informal: channel === 'instagram',
       firstName: channel === 'instagram' ? null : firstName,
       received: withoutContactDetails(row.body),

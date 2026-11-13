@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { ChaineVocale, NotesVocales, type Transcriber, type VoiceAudio } from '../src/voix/notes-vocales.ts';
+import { ChaineVocale, NotesVocales, voiceNoteLanguage, type Transcriber, type VoiceAudio } from '../src/voix/notes-vocales.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -274,5 +274,80 @@ describeWithSqlite('HX23 · notes vocales transcrites et traitées', () => {
 describe('HX23 · rien sans base', () => {
   it('le module se charge sans base', () => {
     expect(typeof NotesVocales).toBe('function');
+  });
+});
+
+describeWithSqlite('RC24 · la réponse à une note vocale suit la langue reconnue', () => {
+  const spoken = (text: string, language: string | null) => fakeTranscriber(() => ({ text, language, confidence: 0.9 }));
+  const replyTo = async (db: SqlDatabase, externalId: string): Promise<string> => {
+    const row = await first<{ body: string }>(
+      db,
+      `SELECT m.body FROM messages m JOIN inbound_messages i ON i.person_id = m.person_id WHERE i.external_id = '${externalId}' AND m.direction = 'out' ORDER BY m.rowid DESC`,
+    );
+    expect(row, externalId).toBeDefined();
+    return row!.body;
+  };
+  // Aucun mot de la petite liste d'anglais : seule la langue reconnue par le transcripteur dit « anglais ».
+  const NO_KEYWORD = 'Good morning, my family wants to sell our house in Talant soon.';
+
+  it('[R240] une note reconnue en anglais reçoit sa réponse en anglais, même sans mot de la liste', async () => {
+    const t = await setup(spoken(NO_KEYWORD, 'en-GB'));
+    const [r] = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.L1'));
+    expect(r).toMatchObject({ status: 'replied' });
+    expect(await replyTo(t.db, 'wamid.L1')).toMatch(/\n\nHello\b/);
+    // Le même texte écrit garde la règle d'aujourd'hui : devinée des mots, ici le français.
+    const [w] = await t.vocale.receive(t.network.id, 'whatsapp', waText('wamid.L1w', NO_KEYWORD, '33600000209'));
+    expect(w).toMatchObject({ status: 'replied' });
+    expect(await replyTo(t.db, 'wamid.L1w')).toMatch(/\n\nBonjour\b/);
+  });
+
+  it('[R240] une note reconnue en français fait répondre en français, même à une fiche marquée anglaise', async () => {
+    const t = await setup(spoken(SELL, 'fr'));
+    const [w] = await t.vocale.receive(t.network.id, 'whatsapp', waText('wamid.L2a', 'Hello, is it still available?'));
+    expect(w).toMatchObject({ status: 'replied' });
+    await t.db.run("UPDATE persons SET language = 'en'");
+    const [v] = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.L2'));
+    expect(v).toMatchObject({ status: 'replied' });
+    expect(await replyTo(t.db, 'wamid.L2')).toMatch(/\n\nBonjour\b/);
+  });
+
+  it('[R240] une autre langue reconnue, ou aucune, garde la règle d’aujourd’hui (fiche, puis mots du message)', async () => {
+    const cases: [string, string, string | null, boolean, RegExp][] = [
+      ['espagnol, fiche française', 'Quiero vender mi casa en Talant pronto.', 'es', false, /\n\nBonjour\b/],
+      ['espagnol, fiche anglaise', 'Quiero vender mi casa en Talant pronto.', 'es', true, /\n\nHello\b/],
+      ['sans langue, mots anglais', 'Hello, I would like to sell my house in Talant please.', null, false, /\n\nHello\b/],
+      ['langue hors format', NO_KEYWORD, 'english', false, /\n\nBonjour\b/],
+    ];
+    for (const [label, text, language, englishFile, expected] of cases) {
+      const t = await setup(spoken(text, language));
+      if (englishFile) {
+        await t.vocale.receive(t.network.id, 'whatsapp', waText('wamid.L3a', 'Hello, is it still available?'));
+        await t.db.run("UPDATE persons SET language = 'en'");
+      }
+      const [v] = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.L3'));
+      expect(v, label).toMatchObject({ status: 'replied' });
+      expect(await replyTo(t.db, 'wamid.L3'), label).toMatch(expected);
+    }
+  });
+
+  it('la langue d’une note n’est lue que pour une note transcrite du même réseau', async () => {
+    const t = await setup(spoken(NO_KEYWORD, 'EN'));
+    const [r] = await t.vocale.receive(t.network.id, 'whatsapp', waVoice('wamid.L4'));
+    // « EN » n'est pas un code de langue rangé : la note n'a pas de langue.
+    expect(await voiceNoteLanguage(t.db, t.network.id, r!.inboundId)).toBeNull();
+    const u = await setup(spoken(NO_KEYWORD, 'en'));
+    const [ok1] = await u.vocale.receive(u.network.id, 'whatsapp', waVoice('wamid.L5'));
+    expect(await voiceNoteLanguage(u.db, u.network.id, ok1!.inboundId)).toBe('en');
+    const other = await u.captation.store.createNetwork('Autre réseau');
+    expect(await voiceNoteLanguage(u.db, other.id, ok1!.inboundId)).toBeNull();
+    // Un message écrit n'a pas de langue parlée.
+    const [w] = await u.vocale.receive(u.network.id, 'whatsapp', waText('wamid.L5w', NO_KEYWORD, '33600000210'));
+    expect(await voiceNoteLanguage(u.db, u.network.id, w!.inboundId)).toBeNull();
+    // Une note impossible (incertaine) ne rend jamais de langue, et ne reçoit aucune réponse [R241].
+    const v = await setup(fakeTranscriber(() => ({ text: NO_KEYWORD, language: 'en', confidence: 0.2 })));
+    const [bad] = await v.vocale.receive(v.network.id, 'whatsapp', waVoice('wamid.L6'));
+    expect(bad).toMatchObject({ status: 'unreadable' });
+    expect(await voiceNoteLanguage(v.db, v.network.id, bad!.inboundId)).toBeNull();
+    expect((await v.db.all('SELECT * FROM messages')).length).toBe(0);
   });
 });
