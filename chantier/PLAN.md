@@ -1565,6 +1565,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : bon non signé : refus `remote_slip_unsigned` [R505] qui nomme le rendez-vous, aucune ligne au registre (test) ; fiche réunie, de tête ou du milieu de la suite : même refus [R505] (test) ; bon signé, ou autre acquéreur : l'offre entre (test) ; bon manquant apparu entre la lecture et l'écriture : même refus, pas d'erreur interne (test) ; au journal, des identifiants seulement [R13] (test) ; un rejeu d'une offre déjà rangée avec sa clé reste rendu tel quel [R56] (test) ; tous les tests de O01 et HX44 restent verts.
 - Attend : rien.
 
+### RC26 · Un scénario qui croise un message de date en préparation attend le lendemain
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC09, RC10
+- Cahier : HX24 et HX25, scénarios automatiques et messages de date ; R402, R405.
+- Décidé (2026-11-13, voie 2), lecture prudente : relevé dans le « Restent » de RC09 (« deux passages exactement simultanés peuvent refuser les deux, la date reprise le même jour, le scénario perdu »). Aujourd'hui, quand un passage de scénario trouve un message de date en cours de préparation ce jour pour la même personne, il rend sa place et finit refusé R402 : si le passage des dates, venu en même temps, a lui aussi vu la place du scénario, il se reporte, repart plus tard le même jour, et le message du scénario est perdu pour toujours. Désormais un passage de scénario qui cède à un message de date encore en préparation (pas encore remis) rend sa place et attend le lendemain, à la même heure ou à la prochaine heure permise [R01] : le message de date garde le jour, le scénario part le jour suivant, jamais deux messages automatiques le même jour [R402]. Compté dans `postponed`, rien n'est écrit au journal ni au contrôle central. Un message de date déjà remis ce jour reste la règle de RC09 (refusé R402, rien ne part). Le passage reporté repasse par toutes les vérifications le lendemain (accord, exclusion, place du jour, date). La partie de `scenarios.ts` touchée (`execute`, `dateMessageOn`) n'est pas celle de BR55 (#540, voie 1, routes) : aucun conflit. Changent seulement `automatismes/scenarios.ts` et `test/date-et-scenario.test.ts`.
+- Objectif : de deux passages simultanés, la date part ce jour et le scénario le lendemain ; aucun des deux n'est perdu.
+- Critères : date en préparation ce jour, scénario dû : rien ne part, place rendue, passage remis au lendemain, compté `postponed` [R402] (test) ; la date reportée part au passage suivant du jour, puis le scénario part le lendemain : deux messages, deux jours [R402, R405] (test) ; un passage remis au lendemain un samedi soir attend la prochaine heure permise [R01] (test) ; date déjà remise ce jour : refusé R402 comme avant [R402] (test existant) ; fiche réunie comprise (test) ; tous les tests de HX24, HX25, RC09 et RC10 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
