@@ -356,4 +356,86 @@ describeWithSqlite('origine des contacts', () => {
     const empty = await origine.measure(direction, '2026-11');
     expect(empty.ok && empty.measure).toMatchObject({ contacts: 0, percent: 0, meetsTarget: false, byKind: [], byContent: [] });
   });
+
+  it('[R245] [R156] compte les appels rangés, une conversation par fiche, avec l’origine de leur code (RC23)', async () => {
+    const { db, origine, inbound } = await setup();
+    const bien = await origine.contentFor('net-1', 'bien', 'bien-1');
+    const video = await origine.contentFor('net-1', 'video', 'studio-vid-7');
+    if (!bien.ok || !video.ok) throw new Error('contenu');
+    for (const [id, net] of [
+      ['p-1', 'net-1'],
+      ['p-2', 'net-1'],
+      ['p-3', 'net-1'],
+      ['p-4', 'net-1'],
+      ['p-9', 'net-2'],
+    ] as const) {
+      await db.run("INSERT INTO persons (id, network_id, created_at, updated_at) VALUES (?, ?, 'x', 'x')", [id, net]);
+    }
+    let k = 0;
+    const call = (o: { person?: string | null; status?: string; at?: string; content?: string | null; network?: string }) => {
+      const status = o.status ?? 'sans_enregistrement';
+      const at = o.at ?? '2026-10-15T10:00:00.000Z';
+      const content = o.content ?? null;
+      return db.run(
+        `INSERT INTO calls (id, network_id, provider, call_id, status, failure, person_id, attach, started_at, ended_at, consent_announced_at, consent_given_at, origin_content_id, origin_kind, created_at)
+         VALUES (?, ?, 'essai', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `call-${++k}`,
+          o.network ?? 'net-1',
+          `appel-${k}`,
+          status,
+          status === 'impossible' ? 'echec' : null,
+          status === 'masque' || status === 'en_cours' ? null : (o.person ?? null),
+          status === 'masque' || status === 'en_cours' ? null : 'matched',
+          status === 'en_cours' ? null : at,
+          status === 'en_cours' ? null : at,
+          status === 'impossible' ? at : null,
+          status === 'impossible' ? at : null,
+          content,
+          status === 'en_cours' ? null : content === bien.contentId ? 'bien' : content === video.contentId ? 'video' : 'inconnue',
+          at,
+        ],
+      );
+    };
+    // p-1 appelle deux fois : sans code, puis du bouton marqué de la page du bien. Une seule conversation, classée par le bien.
+    await call({ person: 'p-1', at: '2026-10-03T09:00:00.000Z' });
+    await call({ person: 'p-1', at: '2026-10-20T09:00:00.000Z', content: bien.contentId });
+    // p-2 sans enregistrement, venu de la vidéo : son origine compte quand même.
+    await call({ person: 'p-2', content: video.contentId });
+    // p-3 : la transcription a échoué, l'appel est rangé, sans code : « inconnue ».
+    await call({ person: 'p-3', status: 'impossible' });
+    // Deux numéros masqués : deux contacts, l'un venu du bien.
+    await call({ status: 'masque', content: bien.contentId });
+    await call({ status: 'masque' });
+    // Ce qui ne compte pas : un appel en cours, un autre réseau, une fiche dont le premier appel est de septembre.
+    await call({ status: 'en_cours', at: '2026-10-10T09:00:00.000Z' });
+    await call({ person: 'p-9', network: 'net-2', content: null });
+    await call({ person: 'p-4', at: '2026-09-30T21:00:00.000Z' });
+    await call({ person: 'p-4', at: '2026-10-05T09:00:00.000Z', content: bien.contentId });
+    // Le 31 octobre à 23 h 30 UTC, il est 0 h 30 le 1er novembre à Paris : cet appel est de novembre.
+    await call({ status: 'masque', at: '2026-10-31T23:30:00.000Z', content: video.contentId });
+    // Un message écrit de p-1 reste un contact à part, sur son canal : l'appel ne lui donne pas d'origine.
+    await inbound();
+
+    const r = await origine.measure(direction, '2026-10');
+    if (!r.ok) throw new Error('mesure');
+    // Compte fait à la main : p-1, p-2, p-3, deux masqués, le message = 6, dont 3 à origine connue.
+    expect(r.measure).toMatchObject({ month: '2026-10', contacts: 6, withOrigin: 3, percent: 50, meetsTarget: false });
+    expect(r.measure.byKind).toEqual([
+      { kind: 'inconnue', contacts: 3 },
+      { kind: 'bien', contacts: 2 },
+      { kind: 'video', contacts: 1 },
+    ]);
+    expect(r.measure.byContent.map((c) => [c.kind, c.title, c.contacts])).toEqual([
+      ['bien', 'REF-1', 2],
+      ['video', 'non retrouvée', 1],
+    ]);
+    const sept = await origine.measure(direction, '2026-09');
+    // p-4 compte en septembre, classée par son appel d'octobre venu du bien, comme un fil classé par son second message.
+    expect(sept.ok && sept.measure).toMatchObject({ contacts: 1, withOrigin: 1, byKind: [{ kind: 'bien', contacts: 1 }] });
+    const nov = await origine.measure(direction, '2026-11');
+    expect(nov.ok && nov.measure).toMatchObject({ contacts: 1, withOrigin: 1, byKind: [{ kind: 'video', contacts: 1 }] });
+    // Réservée à la direction, appels compris [R16].
+    expect(await origine.measure({ role: 'agent', userId: 'ag-1', networkId: 'net-1' }, '2026-10')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+  });
 });
