@@ -54,6 +54,7 @@ describeWithSqlite('BR21 · routes de l’armoire des clés', () => {
       ['conformite', 'POST', `/trousseaux/biens/${t.propertyId}`, { label: 'Garage' }],
       ['conformite', 'GET', `/trousseaux/${keyId}/mouvements`],
       ['conformite', 'POST', `/trousseaux/${keyId}/sortie`, out],
+      ['conformite', 'GET', `/trousseaux/${keyId}/choix`],
       ['conformite', 'POST', `/trousseaux/${keyId}/rendu`],
       ['conformite', 'POST', `/trousseaux/${keyId}/perdu`],
       ['conformite', 'POST', `/trousseaux/${keyId}/rendu-au-proprietaire`],
@@ -66,6 +67,7 @@ describeWithSqlite('BR21 · routes de l’armoire des clés', () => {
       ['sam', 'POST', `/trousseaux/biens/${t.propertyId}`, undefined, 'pas du json'],
       ['sam', 'GET', `/trousseaux/${keyId}/mouvements`],
       ['sam', 'POST', `/trousseaux/${keyId}/sortie`, out],
+      ['sam', 'GET', `/trousseaux/${keyId}/choix`],
       ['sam', 'POST', `/trousseaux/${keyId}/sortie`, undefined, 'x'.repeat(5_000)],
       ['sam', 'POST', `/trousseaux/${keyId}/rendu-au-proprietaire`],
     ];
@@ -155,5 +157,22 @@ describeWithSqlite('BR21 · routes de l’armoire des clés', () => {
     expect((await t.http('alex', 'POST', '/trousseaux/inconnu-1/sortie', undefined, 'pas du json')).status).toBe(404);
     expect((await t.http('alex', 'POST', '/trousseaux/inconnu-1/rendu')).status).toBe(404);
     expect((await t.http('alex', 'GET', '/trousseaux/biens/inconnu-1')).status).toBe(404);
+  });
+});
+
+describeWithSqlite('BR52 · la route de qui peut recevoir un trousseau', () => {
+  it('[R271] l’agent du bien lit les agents en activité ; un trousseau sorti n’a rien à proposer, en 409 ; inconnu en 404', async () => {
+    const t = await setup();
+    const { keyId } = await t.register();
+    const r = await t.http('alex', 'GET', `/trousseaux/${keyId}/choix`);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, mode: 'essai' });
+    expect(r.body.data.agents).toEqual(expect.arrayContaining([{ agentId: t.sam.userId, name: expect.any(String) }]));
+    expect(Array.isArray(r.body.data.appointments) && Array.isArray(r.body.data.partners)).toBe(true);
+    expect((await t.http('alex', 'POST', `/trousseaux/${keyId}/sortie`, { holderAgentId: t.sam.userId, purpose: 'photos', dueAt: IN_2H })).status).toBe(200);
+    const out = await t.http('direction', 'GET', `/trousseaux/${keyId}/choix`);
+    expect(out.status).toBe(409);
+    expect(out.body).toMatchObject({ ok: false, rule: 'R271', code: 'deja_sorti' });
+    expect((await t.http('alex', 'GET', '/trousseaux/inconnu-1/choix')).status).toBe(404);
   });
 });

@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { ARMOIRE_CONFIRM, ARMOIRE_REFUSALS, ARMOIRE_SCRIPT, ARMOIRE_UNSURE } from '../app/armoire.ts';
+import { ARMOIRE_CONFIRM, ARMOIRE_HOURS, ARMOIRE_REFUSALS, ARMOIRE_SCRIPT, ARMOIRE_UNSURE } from '../app/armoire.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { fakeDocument, pageIds, type FakeElement } from './fake-dom.ts';
 
@@ -41,6 +41,18 @@ const MOVES = [
   { loanId: 'l2', holder: { agentId: 'a1', name: 'Alex D.' }, purpose: 'diagnostic', appointmentId: null, outAt: '2027-02-05T09:00:00.000Z', dueAt: '2027-02-05T15:00:00.000Z', returned: null, partner: { partnerId: 'pa1', trade: 'diagnostiqueur', businessName: 'Diag Inventé' } },
 ];
 
+const CHOICES = {
+  agents: [
+    { agentId: 'a1', name: 'Alex D.' },
+    { agentId: 'a2', name: 'Lou M.' },
+  ],
+  appointments: [
+    { appointmentId: 'r1', kind: 'visite', startAt: '2027-03-03T09:00:00.000Z', endAt: '2027-03-03T10:00:00.000Z', agentId: 'a2', name: 'Lou M.' },
+    { appointmentId: 'r2', kind: 'estimation', startAt: '2027-03-04T13:00:00.000Z', endAt: '2027-03-04T14:00:00.000Z', agentId: 'a1', name: 'Alex D.' },
+  ],
+  partners: [{ partnerId: 'pa1', trade: 'diagnostiqueur', tradeLabel: 'Diagnostiqueur', businessName: 'Diag Inventé' }],
+};
+
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -61,6 +73,9 @@ async function run(answers: Record<string, Answer> = {}) {
     'POST /v1/trousseaux/c2/rendu': ok(null),
     'POST /v1/trousseaux/c2/perdu': ok(null),
     'POST /v1/trousseaux/c3/rendu': ok(null),
+    'GET /v1/trousseaux/c1/choix': ok(CHOICES),
+    'POST /v1/trousseaux/c1/sortie': ok(null, { loanId: 'l9', dueAt: '2027-03-03T10:00:00.000Z' }),
+    'POST /v1/trousseaux/c1/partenaire': ok(null, { loanId: 'l8', dueAt: '2027-03-02T14:00:00.000Z', responsibleAgentId: 'a1' }),
     ...answers,
   };
   const context: Record<string, unknown> = {
@@ -138,7 +153,7 @@ describe('BR51 · L’armoire d’un bien dans l’écran « Mettre en vente »'
     expect(t.item(6).textContent).toContain('Remis à Diag Inventé (Diagnostiqueur) par Alex D., qui en répond, le 02/03/2027 à 11:00, pour « Diagnostics ».');
     expect(t.item(2).textContent).toContain('Perdu, noté le 20/02/2027 à 11:00 : il ne sort plus.');
     const gestures = (n: number) => t.item(n).children.filter((e) => e.tagName === 'button').map((b) => b.textContent);
-    expect(gestures(4)).toEqual(['Mouvements', 'Rendu au propriétaire']);
+    expect(gestures(4)).toEqual(['Mouvements', 'Sortir ou remettre', 'Rendu au propriétaire']);
     expect(gestures(5)).toEqual(['Mouvements', 'Rendu à l’agence', 'Perdu']);
     expect(gestures(2)).toEqual(['Mouvements']);
     expect(t.status()).toBe('4 trousseaux, dont 2 dehors.');
@@ -296,5 +311,132 @@ describe('BR51 · L’armoire d’un bien dans l’écran « Mettre en vente »'
     expect(t.scripts()).toHaveLength(0);
     expect(t.count('GET', '/v1/trousseaux/biens/b1')).toBe(1);
     expect(t.items()).toHaveLength(4);
+  });
+});
+
+describe('BR52 · Sortir un trousseau vers un agent ou le remettre à un partenaire, depuis l’armoire du bien', () => {
+  const opened = async (answers: Record<string, Answer> = {}) => {
+    const t = await run(answers);
+    await t.openVente();
+    await t.openArmoire();
+    const pick = async () => t.press(t.byText(t.item(4), 'Sortir ou remettre'));
+    const choices = () => t.item(4).all().filter((e) => e.tagName === 'button').map((b) => b.textContent).filter((x) => !['Mouvements', 'Sortir ou remettre', 'Rendu au propriétaire'].includes(x));
+    return { ...t, pick, choices };
+  };
+
+  it('[R201] rien n’est lu avant le geste ; seul un trousseau à l’agence propose la sortie ; le budget tient', async () => {
+    expect(budgetProblems({ html: '', js: ARMOIRE_SCRIPT }, BUDGETS.page)).toEqual([]);
+    const t = await opened();
+    expect(t.count('GET', '/v1/trousseaux/c1/choix')).toBe(0);
+    expect(t.byText(t.item(5), 'Sortir ou remettre')).toBeUndefined();
+    expect(t.byText(t.item(2), 'Sortir ou remettre')).toBeUndefined();
+    await t.pick();
+    expect(t.count('GET', '/v1/trousseaux/c1/choix')).toBe(1);
+  });
+
+  it('[R271] les raisons de la liste fermée seules ; visite : un rendez-vous prévu du bien, et le trousseau va à l’agent du rendez-vous', async () => {
+    const t = await opened();
+    await t.pick();
+    expect(t.item(4).textContent).toContain('Trousseau n° 4 : pour quoi sort-il ?');
+    expect(t.choices()).toEqual(['Visite', 'Estimation', 'Photos du bien', 'Diagnostics', 'Travaux ou artisan', 'Annuler']);
+    await t.press(t.byText(t.item(4), 'Visite'));
+    expect(t.choices()).toEqual(['le 03/03/2027 à 10:00, avec Lou M.', 'Annuler']);
+    await t.press(t.byText(t.item(4), 'le 03/03/2027 à 10:00, avec Lou M.'));
+    expect(t.calls.filter((c) => c.method === 'POST')).toEqual([{ method: 'POST', url: '/v1/trousseaux/c1/sortie', body: { holderAgentId: 'a2', purpose: 'visite', appointmentId: 'r1' } }]);
+    expect(t.status()).toBe('Trousseau n° 4 sorti pour Lou M., à rendre au plus tard le 03/03/2027 à 11:00. 4 trousseaux, dont 2 dehors.');
+    expect(t.count('GET', '/v1/trousseaux/biens/b1')).toBe(2);
+  });
+
+  it('[R271] sans rendez-vous prévu, rien ne part et l’écran le dit ; « Annuler » referme', async () => {
+    const t = await opened({ 'GET /v1/trousseaux/c1/choix': ok({ ...CHOICES, appointments: [] }) });
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Estimation'));
+    expect(t.item(4).textContent).toContain('Aucun rendez-vous prévu de ce bien pour « Estimation » : prenez-le d’abord, la clé suivra.');
+    expect(t.choices()).toEqual(['Annuler']);
+    await t.press(t.byText(t.item(4), 'Annuler'));
+    expect(t.choices()).toEqual([]);
+    expect(t.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  });
+
+  it('[R271] sans rendez-vous : à qui, puis le retour dans les 12 heures, compté depuis le geste', async () => {
+    const t = await opened();
+    expect(Math.max(...ARMOIRE_HOURS)).toBeLessThan(12);
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Photos du bien'));
+    expect(t.choices()).toEqual(['Alex D.', 'Lou M.', 'Diag Inventé (Diagnostiqueur)', 'Annuler']);
+    await t.press(t.byText(t.item(4), 'Lou M.'));
+    expect(t.choices()).toEqual([...ARMOIRE_HOURS.map((h) => `${h} h`), 'Annuler']);
+    const before = Date.now();
+    await t.press(t.byText(t.item(4), '3 h'));
+    const sent = t.calls.find((c) => c.method === 'POST')!;
+    expect(sent.url).toBe('/v1/trousseaux/c1/sortie');
+    const body = sent.body as { holderAgentId: string; purpose: string; dueAt: string };
+    expect(body).toMatchObject({ holderAgentId: 'a2', purpose: 'photos' });
+    expect(Date.parse(body.dueAt) - before).toBeGreaterThanOrEqual(3 * 3_600_000);
+    expect(Date.parse(body.dueAt) - Date.now()).toBeLessThanOrEqual(3 * 3_600_000);
+    expect(t.status()).toBe('Trousseau n° 4 sorti pour Lou M., à rendre au plus tard le 03/03/2027 à 11:00. 4 trousseaux, dont 2 dehors.');
+  });
+
+  it('[R665] un partenaire admis reçoit le trousseau pour une raison admise ; refusé, la raison est dite en mots', async () => {
+    const t = await opened();
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Diagnostics'));
+    await t.press(t.byText(t.item(4), 'Diag Inventé (Diagnostiqueur)'));
+    await t.press(t.byText(t.item(4), '4 h'));
+    const sent = t.calls.find((c) => c.method === 'POST')!;
+    expect(sent.url).toBe('/v1/trousseaux/c1/partenaire');
+    expect(sent.body).toMatchObject({ partnerId: 'pa1', purpose: 'diagnostic' });
+    expect(t.status()).toBe('Trousseau n° 4 remis à Diag Inventé (Diagnostiqueur), à rendre au plus tard le 02/03/2027 à 15:00. 4 trousseaux, dont 2 dehors.');
+    // Une visite ou une estimation ne va jamais à un partenaire : il n'est pas proposé.
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Visite'));
+    expect(t.choices().some((x) => x.includes('Diag Inventé'))).toBe(false);
+    for (const code of ['justificatif_non_valable', 'metier_non_admis']) {
+      const u = await opened({ 'POST /v1/trousseaux/c1/partenaire': no(409, { ok: false, rule: 'R665', code }) });
+      await u.pick();
+      await u.press(u.byText(u.item(4), 'Travaux ou artisan'));
+      await u.press(u.byText(u.item(4), 'Diag Inventé (Diagnostiqueur)'));
+      await u.press(u.byText(u.item(4), '2 h'));
+      expect(u.status()).toBe(ARMOIRE_REFUSALS[code]);
+      expect(u.status()).not.toMatch(/R665|409|_/);
+    }
+  });
+
+  it('un seul envoi à la fois ; une réponse perdue est dite incertaine', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const t = await opened({ 'POST /v1/trousseaux/c1/sortie': () => new Promise<Response>((r) => (release = r)) });
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Visite'));
+    const go = t.byText(t.item(4), 'le 03/03/2027 à 10:00, avec Lou M.')!;
+    await t.press(go);
+    await t.press(go);
+    expect(t.count('POST', '/v1/trousseaux/c1/sortie')).toBe(1);
+    release(new Response('panne', { status: 502 }));
+    await settle();
+    expect(t.status()).toBe(ARMOIRE_UNSURE);
+    expect(t.items()).toHaveLength(0);
+  });
+
+  it('[R16] les choix refusés se disent en mots ; un trousseau sorti ailleurs fait relire l’armoire ; sans réseau, on le dit', async () => {
+    const t = await opened({ 'GET /v1/trousseaux/c1/choix': no(409, { ok: false, rule: 'R271', code: 'deja_sorti' }) });
+    await t.pick();
+    expect(t.status()).toBe(`${ARMOIRE_REFUSALS.deja_sorti} 4 trousseaux, dont 2 dehors.`);
+    expect(t.count('GET', '/v1/trousseaux/biens/b1')).toBe(2);
+    const u = await opened({ 'GET /v1/trousseaux/c1/choix': no(403, { ok: false, rule: 'R16', code: 'pas_son_bien' }) });
+    await u.pick();
+    expect(u.item(4).textContent).toContain(ARMOIRE_REFUSALS.pas_son_bien);
+    const v = await opened({ 'GET /v1/trousseaux/c1/choix': offline });
+    await v.pick();
+    expect(v.item(4).textContent).toContain('Pas de réseau. Réessayez dans un moment.');
+  });
+
+  it('un texte reçu est posé en texte ; un identifiant douteux n’offre aucun geste', async () => {
+    const t = await opened({
+      'GET /v1/trousseaux/c1/choix': ok({ agents: [{ agentId: 'a1', name: INJECTED }, { agentId: 'mauvais id !', name: 'Douteux' }], appointments: [], partners: [{ partnerId: 'pa1', businessName: INJECTED, tradeLabel: 'Photographe' }] }),
+    });
+    await t.pick();
+    await t.press(t.byText(t.item(4), 'Photos du bien'));
+    expect(t.choices()).toEqual([INJECTED, `${INJECTED} (Photographe)`, 'Annuler']);
+    expect(t.vente().all().some((e) => e.tagName === 'img')).toBe(false);
   });
 });
