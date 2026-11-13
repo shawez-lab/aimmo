@@ -1236,7 +1236,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR51 · L'armoire d'un bien dans l'écran du bien : lire, ranger, mouvements, retours
-- Statut : en cours
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#533, `61883e5c`). Codex : une remarque corrigée (relire l'armoire sans rien écrire), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte sur la fusion avec main et RC22 (5741 tests). Restent : la sortie vers un agent et la remise à un partenaire (BR52), la vue du vendeur dans son espace.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR21, BR50
 - Cahier : M06 Mandats et documents, armoire des clés ; R270, R271, R16, R201.
 - Décidé (2026-11-12, voie 1), lecture prudente : relevé dans le « Restent » de BR50 (« l'armoire d'un bien dans sa fiche »). Tâche coupée pour tenir une journée : celle-ci fait la lecture de l'armoire, le rangement d'un trousseau, ses mouvements et ses retours ; la sortie vers un agent (avec son rendez-vous) et la remise à un partenaire viennent par BR52, la vue du vendeur par une autre. Un bloc « Armoire des clés » dans l'écran « Mettre en vente » du bien, ouvert au geste (`GET /v1/trousseaux/biens/<id>`) ; ranger (`POST` même adresse, libellé) ; pour chaque trousseau, son numéro, son libellé, où il est (à l'agence, chez un agent ou un partenaire et jusqu'à quand, rendu au propriétaire ou perdu) ; « Mouvements » (`GET /v1/trousseaux/<id>/mouvements`) ; sorti : « Rendu à l'agence » et « Perdu » (second appui) ; à l'agence : « Rendu au propriétaire » (second appui, il ne sort plus). Script servi à part, `/app/armoire.js` (`packages/api/app/armoire.ts`). Aucune route, règle ni migration.
@@ -1245,7 +1246,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR52 · Sortir un trousseau vers un agent ou le remettre à un partenaire, depuis l'armoire du bien
-- Statut : à faire
+- Statut : en cours
+- Décidé (2026-11-13, voie 1), lecture prudente : aucune route ne dit à l'écran qui peut recevoir le trousseau. Une lecture `GET /v1/trousseaux/<id>/choix` (cœur `Cles.choices`, mêmes droits que la sortie, refus au journal [R16]) rend les agents du réseau en activité (prénom et initiale), les rendez-vous prévus et à venir du bien pour une visite ou une estimation (type, début, fin, agent) et les partenaires de l'annuaire qui peuvent entrer seuls aujourd'hui (nom commercial, métier). Pour une visite ou une estimation, l'écran fait choisir le rendez-vous, et l'agent qui reçoit est celui du rendez-vous ; sinon, l'agent et l'heure du retour. Aucune règle ni migration.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR51, RC17
 - Cahier : M06 Mandats et documents, armoire des clés ; M18 Partenaires ; R271, R665, R16, R201.
 - Objectif : depuis l'armoire du bien (BR51), sortir un trousseau à l'agence vers un agent du réseau (raison de la liste fermée, rendez-vous prévu du bien pour une visite ou une estimation, sinon heure de retour dans les 12 heures) ou le remettre à un partenaire de l'annuaire admis (`POST /v1/trousseaux/<id>/sortie`, `/partenaire`).
@@ -1467,8 +1469,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC22 · Un créneau pris pendant la validation d'une dictée : le refus dit ce qui est rangé
-- Statut : en cours (voie 2)
-- Reste : proposition #532 prête le 2026-11-12 vers 06:50 : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5712 tests) ; fusion refusée par le contrôle des permissions de la séance (« CI Bypass »), un essai : une séance suivante la fusionne à l'étape 3 (H69). Ensuite : R261 complétée sur main par la fusion. Reste l'écran de dictée (voie 1).
+- Statut : fait (2026-11-13)
+- Reste : fusionnée par la voie 1 à l'étape 3 (#532, `f669db87`), vérification locale verte sur la fusion avec main et BR51 (5741 tests). Avant : proposition #532 prête le 2026-11-12 vers 06:50 : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5712 tests) ; fusion refusée par le contrôle des permissions de la séance (« CI Bypass »), un essai : une séance suivante la fusionne à l'étape 3 (H69). Ensuite : R261 complétée sur main par la fusion. Reste l'écran de dictée (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX06, RC01
 - Cahier : M05 Rendez-vous ; HX06 « Création d'un bien et d'un contact à la voix » ; R32, R33, R260, R261, R13.
 - Décidé (2026-11-12, voie 2), lecture prudente : relevé dans les « Restent » de HX06 (« une course entre la vérification du créneau et la réservation laisse la fiche et le bien, la même demande rejouée reprend sans doubler »). Aujourd'hui, si le créneau est pris par une autre réservation entre la vérification et la réservation, la validation rend un refus nu alors que la fiche et le bien sont déjà rangés : l'agent croit que rien n'est fait et redicte, le bien double. Rien n'est effacé (jamais de suppression) : le refus `slot_taken_meanwhile` (règle du refus de la réservation, R32 ou R33) nomme ce qui est rangé (fiche, sorte du contact, bien) et propose au plus trois créneaux libres de la même sorte, les plus proches dans les 24 heures autour, jamais passés ; le compte rendu d'une visite n'est pas validé. Au journal, `dictee.creneau_pris` avec des identifiants seulement [R13]. La même demande rejouée avec le créneau encore pris est refusée avant toute écriture, en nommant ce qu'une tentative d'avant a rangé ; rejouée sans le rendez-vous, elle rend la même fiche et le même bien sans rien doubler ; rejouée quand le créneau s'est libéré, le rendez-vous est pris une fois. Change seulement `packages/core/src/dictee/dictee.ts`, son test et le texte de R261 ; aucune migration ni règle nouvelle.
