@@ -1257,6 +1257,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 
 ### BR53 · Le vendeur voit les clés de son bien dans son espace
 - Statut : en cours
+- Reste : proposition #536 prête (`11fee11f`) : lien « Qui a les clés de ce bien » dans l'espace du vendeur, page `GET /espace/cles?bien=<id>` sans script, au plus 50 sorties ; un identifiant mal formé est lu « ? » et son refus écrit au journal. Codex 1 P0 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5758 tests). Fusion refusée par le contrôle des permissions de la séance, un essai : à fusionner à l'étape 3 de la séance suivante.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR52
 - Cahier : M06 Mandats et documents, armoire des clés ; R665, R161, R16, R201.
 - Décidé (2026-11-13, voie 1), lecture prudente : relevé dans le « Reste » de BR52. Le cœur `Cles.forSeller` existe (HX10, RC15) mais aucune route ni aucun écran ne le sert. Une route de l'espace client (`GET` sous les routes de l'espace du vendeur, droits de l'espace [R161]) et un bloc « Clés de mon bien » dans l'espace du vendeur, lu au geste. Aucune règle ni migration.
