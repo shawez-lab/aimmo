@@ -29,8 +29,9 @@
  *   suffit à ouvrir le registre des offres, comme le bon papier d'une visite sur place ;
  * - les fiches réunies d'une même personne comptent pour une seule, dans le code et dans la base.
  *
- * Le branchement au Worker (`app.ts`), l'appel vidéo, les écrans et le refus propre dans le registre des offres
- * (`offres/registre-offres.ts` appelle `bonDistanceManquant`) sont des tâches de la voie 1 : ici, ni `app.ts` ni le socle.
+ * Le branchement au Worker (`app.ts`), l'appel vidéo et les écrans sont des tâches de la voie 1 : ici, ni `app.ts` ni le
+ * socle. Le registre des offres dit le refus en mots par sa propre lecture, la même que la garde de la base
+ * (`remoteSlipMissing`, RC25).
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
