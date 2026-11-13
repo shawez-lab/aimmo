@@ -545,7 +545,7 @@ export class ScenariosAutomatiques {
     if (!current) return { ok: false, rule: 'R16', code: 'unknown' };
     const now = this.now();
     const sim = await this.db.first<{ id: string; same_day_twice: number; lit_revision: number; created_at: string }>(
-      'SELECT id, same_day_twice, lit_revision, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+      'SELECT id, same_day_twice, lit_revision, created_at FROM automation_simulations WHERE scenario_id = ? AND version = ? ORDER BY created_at DESC, id DESC LIMIT 1',
       [scenarioId, current.version],
     );
     const refuse = async (rule: string, code: string): Promise<ScenarioResult<{ version: number }>> => {

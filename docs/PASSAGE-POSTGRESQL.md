@@ -13,7 +13,7 @@ Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, com
 | Fonctions de date de SQLite (`datetime`, `julianday`, `strftime`, `unixepoch`, et `date` ou `time` avec `'now'` ou un modificateur) | 12 | 5 | `now()`, `to_char`, `extract`, `interval` |
 | `AUTOINCREMENT` | 2 | 2 | `GENERATED ALWAYS AS IDENTITY` |
 | `PRAGMA` et fonctions `pragma_…` | 9 | 4 | le catalogue (`pg_catalog`, `information_schema`) ou un réglage de la base |
-| `rowid` et `last_insert_rowid()` | 157 | 56 | une clé déclarée et `RETURNING` |
+| `rowid` et `last_insert_rowid()` | 156 | 55 | une clé déclarée et `RETURNING` |
 | `group_concat` | 0 | 0 | `string_agg` |
 | Fonctions JSON de SQLite (`json_extract`, `json_each`, `json_group_array`…) | 141 | 56 | opérateurs `->`, `->>` et `jsonb_array_elements`, `jsonb_agg` |
 | `IFNULL` | 0 | 0 | `COALESCE` |
@@ -22,7 +22,7 @@ Ce que SQLite et Cloudflare D1 lisent et que PostgreSQL ne lit pas tel quel, com
 | `char(…)` pour un caractère par son code | 3 | 2 | `chr(…)` |
 | `printf` en SQL | 0 | 0 | `format` ou `to_char` |
 
-En tout, hors sortes tolérées : 396 occurrences dans 144 fichiers.
+En tout, hors sortes tolérées : 395 occurrences dans 144 fichiers.
 
 Les déclencheurs et leur `RAISE` sont la garde des tables (R17) : chaque migration nouvelle en porte, ils sont tolérés sans plafond et seront réécrits en fonctions `plpgsql` au passage.
 
