@@ -1297,7 +1297,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR57 · Écran « Scénarios » de la direction : composer, essayer, allumer
-- Statut : à faire
+- Statut : fait (2026-11-13)
+- Reste : fusionnée (#545, `e0cc904f`). Décidé : l'entrée est posée sous « Engagements de service » sur l'écran du réseau (comme les communes sous « Phases et régions »), pour ne rien ajouter au script de l'application, à 600 octets de son budget. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5805 tests).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR55
 - Cahier : HX24 ; R400 à R403, R16, R201.
 - Objectif : la direction compose un scénario (les quatre déclencheurs, dont « après chaque visite faite » et « après chaque mandat signé »), lit l'essai sur le mois passé, puis allume ou éteint, depuis l'application.
@@ -1306,7 +1307,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR58 · Les dates des clients dans la fiche, et leurs textes chez la direction
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR56
 - Cahier : HX25 ; R404, R405, R16, R201.
 - Objectif : l'agent range une date depuis la fiche du client ; la direction écrit les textes de chaque sorte de date.
