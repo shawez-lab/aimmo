@@ -374,3 +374,114 @@ describeWithSqlite('HX26 · tri de la boîte mail de l’agent', () => {
     expect(await t.boite.validate(me, r.value.draftId)).toMatchObject({ ok: true, value: { status: 'parti' } });
   });
 });
+
+describeWithSqlite('RC27 · l’agent choisit le dossier des pièces en attente', () => {
+  // Un mail rattaché à une fiche qui a deux dossiers ouverts : sa pièce attend le choix de l'agent.
+  async function waitingMail() {
+    const t = await setup();
+    const me = t.asAgent(t.alex.id);
+    const noa = await t.person('Noa', 'noa@example.test');
+    const sell = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'sell' });
+    const buy = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: noa, kind: 'buy' });
+    const plan = att('plan-maison.pdf', 'application/pdf', pdf('plan de la maison'));
+    const logo = att('logo.png', 'image/png', png(2_000));
+    const mail = t.mail('noa@example.test', 'Voici le plan', [plan, logo]);
+    const sorted = await t.boite.sort(me, mail);
+    expect(sorted).toMatchObject({ ok: true, value: { outcome: 'rattache', projectId: null, attachments: ['en_attente', 'inutile'] } });
+    if (!sorted.ok) throw new Error('tri refusé');
+    return { ...t, me, noa, sell, buy, plan, logo, read: mail, mailId: sorted.value.mailId };
+  }
+
+  it('[R410] la pièce en attente est rangée dans le dossier ouvert choisi, relue chez le fournisseur et reconnue par son empreinte', async () => {
+    const t = await waitingMail();
+    const before = await t.boite.waiting(t.me);
+    expect(before).toMatchObject({ ok: true, value: [{ mailId: t.mailId, provider: 'gmail', externalId: t.read.externalId, personId: t.noa, waiting: 1 }] });
+    if (!before.ok) throw new Error('liste refusée');
+    expect(before.value[0]!.projects.map((p) => p.id).sort()).toEqual([t.sell.id, t.buy.id].sort());
+
+    const r = await t.boite.fileWaiting(t.me, t.mailId, t.buy.id, t.read);
+    expect(r).toEqual({ ok: true, value: { mailId: t.mailId, projectId: t.buy.id, range: 1, dejaRange: 0, restent: 0 } });
+    expect(t.puts.map((p) => p.key)).toEqual([expect.stringMatching(new RegExp(`^boite/${t.buy.id}/[0-9a-f]{64}\\.pdf$`))]);
+    const stored = await t.db.all<{ project_id: string; first_mail_id: string }>('SELECT project_id, first_mail_id FROM mailbox_attachments');
+    expect(stored).toEqual([{ project_id: t.buy.id, first_mail_id: t.mailId }]);
+    const links = await t.db.all<{ outcome: string; attachment_id: string | null }>('SELECT outcome, attachment_id FROM mailbox_attachment_links WHERE mail_id = ? ORDER BY outcome', [t.mailId]);
+    expect(links.map((l) => l.outcome)).toEqual(['inutile', 'range']);
+    expect((await t.db.first<{ project_id: string }>('SELECT project_id FROM mailbox_mails WHERE id = ?', [t.mailId]))?.project_id).toBe(t.buy.id);
+    // Plus rien n'attend ; la petite image de signature n'est jamais rangée.
+    expect(await t.boite.waiting(t.me)).toEqual({ ok: true, value: [] });
+
+    // Le même choix rejoué ne range rien deux fois [R18] ; un autre dossier est refusé : le dossier du mail est choisi.
+    expect(await t.boite.fileWaiting(t.me, t.mailId, t.buy.id, t.read)).toEqual({ ok: false, rule: 'R410', code: 'nothing_waiting' });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, t.sell.id, t.read)).toEqual({ ok: false, rule: 'R410', code: 'other_project' });
+    expect(t.puts).toHaveLength(1);
+
+    // Au journal, des identifiants seulement : ni adresse, ni nom de fichier [R13].
+    const text = await t.journalText();
+    expect(text).toContain('boite.pieces.rangees');
+    for (const s of ['noa@example.test', 'plan-maison', 'logo.png', 'Voici le plan']) expect(text).not.toContain(s);
+  });
+
+  it('[R410] seul un dossier ouvert de la fiche du mail peut être choisi ; jamais par un autre que l’agent de la boîte [R16]', async () => {
+    const t = await waitingMail();
+    const closed = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: t.noa, kind: 'valuation', stage: 'abandonne' });
+    const other = await t.person('Sam', 'sam@example.test');
+    const samProject = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: other, kind: 'sell' });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, closed.id, t.read)).toEqual({ ok: false, rule: 'R410', code: 'project_not_open' });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, samProject.id, t.read)).toEqual({ ok: false, rule: 'R410', code: 'project_not_open' });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, 'inconnu', t.read)).toEqual({ ok: false, rule: 'R410', code: 'project_not_open' });
+
+    // Un autre agent, la direction : la boîte n'est pas la leur.
+    expect(await t.boite.fileWaiting(t.asAgent(t.lea.id), t.mailId, t.buy.id, t.read)).toMatchObject({ ok: false, code: 'not_mailbox_agent' });
+    expect(await t.boite.fileWaiting(t.direction, t.mailId, t.buy.id, t.read)).toMatchObject({ ok: false, code: 'not_mailbox_agent' });
+    expect(await t.boite.waiting(t.direction)).toMatchObject({ ok: false, code: 'not_mailbox_agent' });
+    expect(await t.boite.waiting(t.asAgent(t.lea.id))).toEqual({ ok: true, value: [] });
+
+    // Le mail relu doit être celui du tri.
+    expect(await t.boite.fileWaiting(t.me, t.mailId, t.buy.id, { ...t.read, externalId: 'msg-autre' })).toEqual({ ok: false, rule: 'R410', code: 'mail_mismatch' });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, t.buy.id, { ...t.read, provider: 'outlook' })).toEqual({ ok: false, rule: 'R410', code: 'mail_mismatch' });
+
+    // Rien n'a été rangé, et la pièce attend toujours.
+    expect(t.puts).toHaveLength(0);
+    expect(await t.db.all("SELECT sha256 FROM mailbox_attachment_links WHERE outcome = 'en_attente'")).toHaveLength(1);
+    expect((await t.db.first<{ project_id: string | null }>('SELECT project_id FROM mailbox_mails WHERE id = ?', [t.mailId]))?.project_id).toBeNull();
+  });
+
+  it('[R410] seules les pièces restées en attente sont rangées : une pièce ajoutée ou absente du mail relu ne change rien ; déjà au dossier, « déjà rangée »', async () => {
+    const t = await waitingMail();
+    // Le même plan, déjà rangé dans le dossier de vente par un autre mail.
+    await t.db.run("UPDATE projects SET stage = 'abandonne' WHERE id = ?", [t.buy.id]);
+    const other = await t.boite.sort(t.me, t.mail('noa@example.test', 'Le plan, encore', [t.plan]));
+    expect(other).toMatchObject({ ok: true, value: { projectId: t.sell.id, attachments: ['range'] } });
+    await t.db.run("UPDATE projects SET stage = 'new' WHERE id = ?", [t.buy.id]);
+
+    // Relu sans sa pièce : rien n'est rangé, elle reste en attente.
+    const empty = await t.boite.fileWaiting(t.me, t.mailId, t.sell.id, { ...t.read, attachments: [] });
+    expect(empty).toEqual({ ok: true, value: { mailId: t.mailId, projectId: t.sell.id, range: 0, dejaRange: 0, restent: 1 } });
+
+    // Relu avec une pièce qui n'était pas en attente : jamais rangée.
+    const extra = att('autre.pdf', 'application/pdf', pdf('autre document'));
+    const r = await t.boite.fileWaiting(t.me, t.mailId, t.sell.id, { ...t.read, attachments: [extra, t.plan, t.plan] });
+    expect(r).toEqual({ ok: true, value: { mailId: t.mailId, projectId: t.sell.id, range: 0, dejaRange: 1, restent: 0 } });
+    expect(t.puts).toHaveLength(1);
+    expect(await t.db.all('SELECT id FROM mailbox_attachments')).toHaveLength(1);
+  });
+
+  it('[R410] une fiche passée à un autre agent n’est plus proposée ni rangeable [R16] ; une fiche réunie offre ses dossiers', async () => {
+    const t = await waitingMail();
+    // Fiches réunies : le dossier de la fiche réunie est un choix possible.
+    const ivy = await t.person('Noa bis', 'noa.pro@example.test');
+    const ivyProject = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: ivy, kind: 'rent_out' });
+    await t.unique.merge({ survivorId: t.noa, mergedId: ivy, reason: 'même personne (test)' });
+    const listed = await t.boite.waiting(t.me);
+    if (!listed.ok) throw new Error('liste refusée');
+    expect(listed.value[0]!.projects.map((p) => p.id).sort()).toEqual([t.sell.id, t.buy.id, ivyProject.id].sort());
+
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id IN (?, ?)', [t.lea.id, t.noa, ivy]);
+    expect(await t.boite.waiting(t.me)).toEqual({ ok: true, value: [] });
+    expect(await t.boite.fileWaiting(t.me, t.mailId, ivyProject.id, t.read)).toMatchObject({ ok: false, rule: 'R16', code: 'not_your_fiche' });
+    expect(t.puts).toHaveLength(0);
+
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id IN (?, ?)', [t.alex.id, t.noa, ivy]);
+    expect(await t.boite.fileWaiting(t.me, t.mailId, ivyProject.id, t.read)).toMatchObject({ ok: true, value: { projectId: ivyProject.id, range: 1 } });
+  });
+});
