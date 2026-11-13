@@ -190,3 +190,59 @@ describe('BR61 · les appels reçus dans la fiche', () => {
     expect(part(a).all().some((e) => e.tagName === 'img' || e.tagName === 'b')).toBe(false);
   });
 });
+
+describe('BR63 · le passage de main de l’assistant vocal, dans la fiche', () => {
+  const HANDOFF = { appointment: { kind: 'visite', start: '2026-12-09T13:00:00.000Z', state: 'prevu', current: '2026-12-09T13:00:00.000Z' }, unanswered: ['prix', 'autre'], propertyReference: 'REF-V-7' };
+
+  it('[R248] un appel pris par l’assistant est dit tel, avec le bien, le rendez-vous et les sujets à reprendre', async () => {
+    const a = await open(ok([{ ...CALL, assistant: HANDOFF }]));
+    const all = texts(a);
+    expect(all).toContain('Pris par votre assistant vocal, pendant que vous ne pouviez pas répondre.');
+    expect(all).toContain('Bien de l’appel : REF-V-7.');
+    expect(all.some((x) => /^Rendez-vous réservé par l’assistant : une visite le .+ à .+, toujours prévu\.$/.test(x))).toBe(true);
+    expect(all).toContain('À reprendre avec l’appelant, la fiche du bien n’y répondait pas : le prix, une question que la fiche du bien ne couvre pas.');
+  });
+
+  it('[R248] le rendez-vous est suivi : décalé avec sa nouvelle heure, annulé, tenu, introuvable', async () => {
+    const a = await open(
+      ok([
+        { ...CALL, id: 'd1', assistant: { ...HANDOFF, appointment: { ...HANDOFF.appointment, state: 'decale', current: '2026-12-10T08:00:00.000Z' } } },
+        { ...CALL, id: 'd2', assistant: { ...HANDOFF, appointment: { ...HANDOFF.appointment, state: 'annule' } } },
+        { ...CALL, id: 'd3', assistant: { ...HANDOFF, appointment: { ...HANDOFF.appointment, state: 'introuvable' } } },
+      ]),
+    );
+    const all = texts(a);
+    expect(all.some((x) => /^Rendez-vous réservé par l’assistant : une visite le .+, décalé depuis : le .+ à .+\.$/.test(x))).toBe(true);
+    expect(all.some((x) => /, annulé depuis\.$/.test(x))).toBe(true);
+    expect(all.some((x) => /, introuvable dans l’agenda : vérifiez-le\.$/.test(x))).toBe(true);
+  });
+
+  it('[R242] sans sujet ni bien ni rendez-vous, seule la prise par l’assistant est dite ; un appel sans assistant ne change pas', async () => {
+    const a = await open(ok([{ ...CALL, assistant: { appointment: null, unanswered: [], propertyReference: null } }, { ...CALL, id: 'c9', assistant: null }]));
+    const all = texts(a);
+    expect(all.filter((x) => x.startsWith('Pris par votre assistant'))).toHaveLength(1);
+    expect(all.some((x) => x.startsWith('Bien de l’appel') || x.startsWith('Rendez-vous réservé') || x.startsWith('À reprendre'))).toBe(false);
+  });
+
+  it('[R201] un champ mal formé est tu ; un texte reçu est posé en texte', async () => {
+    const a = await open(
+      ok([
+        {
+          ...CALL,
+          assistant: {
+            appointment: { kind: 'diner', start: 'pas une date', state: 'prevu', current: 'x' },
+            unanswered: ['inconnu', 42, 'prix', 'prix'],
+            propertyReference: '<img src=x onerror=alert(1)>',
+          },
+        },
+        { ...CALL, id: 'c8', assistant: { ...HANDOFF, appointment: { ...HANDOFF.appointment, state: 'perdu' }, propertyReference: 'r'.repeat(65) } },
+      ]),
+    );
+    const all = texts(a);
+    expect(all).toContain('Bien de l’appel : <img src=x onerror=alert(1)>.');
+    expect(part(a).all().some((e) => e.tagName === 'img')).toBe(false);
+    expect(all.some((x) => x.startsWith('Rendez-vous réservé'))).toBe(false);
+    expect(all.filter((x) => x === 'À reprendre avec l’appelant, la fiche du bien n’y répondait pas : le prix.')).toHaveLength(1);
+    expect(all.some((x) => x.includes('rrrrr'))).toBe(false);
+  });
+});

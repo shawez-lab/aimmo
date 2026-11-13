@@ -652,3 +652,75 @@ export class AssistantVocal {
     return { facts: propertyFacts({ ...p, price_eur: published }, sheet.ok ? sheet.value.sheet : null), underOffer: p.status === 'under_offer', propertyId };
   }
 }
+
+/** Où en est aujourd'hui le rendez-vous pris par l'assistant : suivi par ses décalages jusqu'au dernier. */
+export type HandoffAppointmentState = 'prevu' | 'decale' | 'annule' | 'tenu' | 'absent' | 'introuvable';
+
+/** Ce que la fiche montre d'un appel pris par l'assistant (BR63). */
+export interface HandoffView {
+  appointment: { kind: AppointmentKind; start: string; state: HandoffAppointmentState; current: string } | null;
+  /** Les sujets que la fiche du bien ne couvrait pas, à reprendre ; vide sans accord d'enregistrement [R242]. */
+  unanswered: Topic[];
+  /** La référence du bien de l'appel, seulement pour l'agent du bien ou la direction [R16]. */
+  propertyReference: string | null;
+}
+
+const MAX_MOVES = 50;
+const APPOINTMENT_STATES: Record<string, HandoffAppointmentState> = { booked: 'prevu', cancelled: 'annule', honored: 'tenu', absent: 'absent' };
+
+/**
+ * BR63 · Le passage de main de l'assistant pour des appels déjà lus sous les droits de la fiche (BR61) : le rendez-vous
+ * pris, suivi par ses décalages jusqu'à aujourd'hui, et les sujets restés sans réponse. Rien n'est écrit, rien au journal [R13].
+ */
+export async function handoffsOfCalls(db: SqlDatabase, viewer: Viewer, networkId: string, callRowIds: readonly string[]): Promise<Map<string, HandoffView>> {
+  const out = new Map<string, HandoffView>();
+  if (callRowIds.length === 0) return out;
+  const rows = await db.all<{ call_row_id: string; agent_id: string; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; unanswered: string | null; created_at: string }>(
+    `SELECT call_row_id, agent_id, property_id, appointment_kind, appointment_start, unanswered, created_at FROM voice_assistant_calls
+     WHERE network_id = ? AND call_row_id IN (${callRowIds.map(() => '?').join(', ')})`,
+    [networkId, ...callRowIds],
+  );
+  for (const row of rows) {
+    let unanswered: Topic[] = [];
+    try {
+      const parsed: unknown = row.unanswered ? JSON.parse(row.unanswered) : [];
+      if (Array.isArray(parsed)) unanswered = parsed.filter((t): t is Topic => TOPICS.includes(t as Topic));
+    } catch {
+      unanswered = [];
+    }
+    let propertyReference: string | null = null;
+    if (row.property_id) {
+      const p = await db.first<{ reference: string; agent_id: string }>('SELECT reference, agent_id FROM properties WHERE id = ? AND network_id = ?', [row.property_id, networkId]);
+      if (p && (viewer.role === 'direction' || (viewer.role === 'agent' && p.agent_id === viewer.userId))) propertyReference = p.reference;
+    }
+    out.set(row.call_row_id, { appointment: await followAppointment(db, networkId, row), unanswered, propertyReference });
+  }
+  return out;
+}
+
+/** Le rendez-vous réservé par l'assistant, puis chacun de ses décalages, jusqu'au dernier. */
+async function followAppointment(
+  db: SqlDatabase,
+  networkId: string,
+  row: { agent_id: string; property_id: string | null; appointment_kind: AppointmentKind | null; appointment_start: string | null; created_at: string },
+): Promise<HandoffView['appointment']> {
+  if (!row.appointment_kind || !row.appointment_start || !Number.isFinite(Date.parse(row.appointment_start))) return null;
+  const start = new Date(row.appointment_start).toISOString();
+  type Row = { id: string; start_at: string; status: string };
+  let current = await db.first<Row>(
+    `SELECT id, start_at, status FROM appointments
+     WHERE network_id = ? AND agent_id = ? AND source = 'assistant' AND kind = ? AND start_at = ? AND replaces_id IS NULL AND property_id IS ? AND created_at <= ?
+     ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [networkId, row.agent_id, row.appointment_kind, start, row.property_id, row.created_at],
+  );
+  // Jamais deviné : un rendez-vous qu'on ne retrouve pas dans l'agenda est dit tel.
+  if (!current) return { kind: row.appointment_kind, start, state: 'introuvable', current: start };
+  const first = current.id;
+  for (let i = 0; i < MAX_MOVES; i += 1) {
+    const next = await db.first<Row>('SELECT id, start_at, status FROM appointments WHERE replaces_id = ? AND network_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', [current.id, networkId]);
+    if (!next) break;
+    current = next;
+  }
+  const state = APPOINTMENT_STATES[current.status] ?? 'introuvable';
+  return { kind: row.appointment_kind, start, state: state === 'prevu' && current.id !== first ? 'decale' : state, current: current.start_at };
+}
