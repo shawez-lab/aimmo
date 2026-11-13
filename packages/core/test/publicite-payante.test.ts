@@ -9,7 +9,7 @@ const START = Date.parse('2027-10-11T08:00:00.000Z');
 const TARGET = { communes: ['21231', '21166'], rayonKm: 20 };
 const BUDGET = { dailyBudgetCents: 2_000, totalBudgetCents: 30_000, maxCostPerContactCents: 1_500 };
 
-async function setup(platforms?: { google_ads: AdPlatform; meta: AdPlatform }) {
+async function setup(platforms?: { google_ads: AdPlatform; meta: AdPlatform }, options: { launchTimeoutMs?: number } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = START;
@@ -19,7 +19,7 @@ async function setup(platforms?: { google_ads: AdPlatform; meta: AdPlatform }) {
   const fiche = new FicheUnique(db, store, { now });
   const google = trialAdPlatform();
   const meta = trialAdPlatform();
-  const pub = new PublicitePayante(db, journal, platforms ?? { google_ads: google, meta }, { now });
+  const pub = new PublicitePayante(db, journal, platforms ?? { google_ads: google, meta }, { now, ...options });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alexandrine', lastName: 'Fictive' });
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
@@ -369,8 +369,8 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     };
     return { p, log, release: () => release(), setDown: (v: boolean) => (down = v) };
   };
-  const lostLaunch = async (lost: ReturnType<typeof lostPlatform>) => {
-    const t = await setup({ google_ads: lost.p, meta: trialAdPlatform() });
+  const lostLaunch = async (lost: ReturnType<typeof lostPlatform>, options: { launchTimeoutMs?: number } = {}) => {
+    const t = await setup({ google_ads: lost.p, meta: trialAdPlatform() }, options);
     const c = await t.pub.create(t.dir, { platform: 'google_ads', name: 'Vendeurs Dijon', targeting: TARGET });
     if (!c.ok) throw new Error(c.code);
     await t.pub.approve(t.dir, c.value.id, BUDGET);
@@ -448,18 +448,51 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
   });
 
-  it('[R587] la réponse d’origine arrivée après le solde ne change rien, la pause est redemandée', async () => {
+  it('[R588] une réponse d’origine arrivée après le solde ne relance rien, la pause est redemandée', async () => {
     const lost = lostPlatform();
     const { t, starting } = await lostLaunch(lost);
     t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
     await t.pub.runChecks(t.network.id);
     lost.release();
-    expect(await starting).toMatchObject({ ok: false, rule: 'R588', code: 'arretee_au_lancement' });
+    expect(await starting).toMatchObject({ ok: false, rule: 'R588', code: 'reponse_tardive' });
     expect(lost.log).toEqual(['start', 'pause', 'pause']);
     expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
     expect(await t.events('publicite.lancee')).toEqual([]);
+    expect(await t.events('publicite.reponse_tardive')).toEqual([{ rule: 'R588', stopped: 0 }]);
     const r = await t.pub.report(t.dir);
     expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
+  });
+
+  it('[R588] une réponse tardive après une relance : la validation relancée est arrêtée, sa pause tenue jusqu’à confirmation', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost);
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+    // L'ancienne réponse arrive, la pause échoue : elle reste à confirmer, rien ne repart avant.
+    lost.setDown(true);
+    lost.release();
+    expect(await starting).toMatchObject({ ok: false, rule: 'R588', code: 'reponse_tardive' });
+    expect(await t.events('publicite.reponse_tardive')).toEqual([{ rule: 'R588', stopped: 1 }]);
+    const r = await t.pub.report(t.dir);
+    expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
+    lost.setDown(false);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log.at(-1)).toBe('pause');
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 3 } });
+  });
+
+  it('[R587] une plateforme muette au-delà du délai de lancement : le lancement finit en échec, arrêté, pause demandée', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
+    expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
+    expect(lost.log).toEqual(['start', 'pause']);
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+    // Le délai reste sous celui du solde.
+    expect(() => new PublicitePayante(t.db, t.journal, { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, { launchTimeoutMs: LAUNCH_ANSWER_MINUTES * 60_000 })).toThrow();
   });
 
   it('[R588] un solde coupé avant de ranger l’échec reprend au passage suivant, la pause reste demandée', async () => {

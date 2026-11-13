@@ -36,6 +36,11 @@ export const MAX_RADIUS_KM = 80;
 export const MAX_COMMUNES = 30;
 /** Au-delà, un lancement sans réponse de la plateforme est tenu pour perdu et soldé au passage suivant [R587]. */
 export const LAUNCH_ANSWER_MINUTES = 15;
+/**
+ * Une plateforme qui n'a pas répondu au lancement en 5 minutes est tenue en échec par le lancement lui-même : ainsi un
+ * lancement vivant a toujours fini avant d'être soldé, et une réponse tardive ne peut plus suivre un solde.
+ */
+export const LAUNCH_TIMEOUT_MS = 5 * 60_000;
 
 /** Les seuls critères de ciblage admis [R589]. */
 export const ALLOWED_TARGETING = ['communes', 'rayonKm'] as const;
@@ -147,6 +152,8 @@ export interface PubliciteOptions {
   now?: () => Date;
   newId?: () => string;
   newCode?: () => string;
+  /** Le temps laissé à la plateforme pour répondre au lancement, bien en deçà de `LAUNCH_ANSWER_MINUTES`. */
+  launchTimeoutMs?: number;
 }
 
 interface CampaignRow {
@@ -204,6 +211,7 @@ export class PublicitePayante {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly newCode: () => string;
+  private readonly launchTimeoutMs: number;
   private readonly fiche: FicheUnique;
 
   constructor(
@@ -219,6 +227,8 @@ export class PublicitePayante {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.newCode = options.newCode ?? randomContentCode;
+    this.launchTimeoutMs = options.launchTimeoutMs ?? LAUNCH_TIMEOUT_MS;
+    if (!(this.launchTimeoutMs > 0 && this.launchTimeoutMs < LAUNCH_ANSWER_MINUTES * 60_000)) throw new Error('launchTimeoutMs : sous LAUNCH_ANSWER_MINUTES');
     this.fiche = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
   }
 
@@ -391,15 +401,17 @@ export class PublicitePayante {
     // Déjà lancée, arrêtée ou remplacée : la base refuse, rien ne part [R587].
     if (changes !== 1) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
     const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
+    let answered = false;
     try {
-      await this.platforms[c.platform].start(launch);
-      await this.launched(a.id, 'lancee');
+      await this.withinTimeout(this.platforms[c.platform].start(launch));
+      answered = await this.launched(a.id, 'lancee');
     } catch {
       // L'arrêt d'abord : coupé avant la réponse rangée, le lancement est soldé au passage suivant, rien n'est perdu.
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
       await this.launched(a.id, 'echec');
       return { ok: false, rule: 'R587', code: 'echec_lancement' };
     }
+    if (!answered) return this.lateAnswer(c);
     // Arrêtée pendant que la plateforme lançait : la pause a pu passer avant le lancement, elle est redemandée.
     const stoppedMeanwhile = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_stops WHERE approval_id = ?', [a.id]);
     if (Number(stoppedMeanwhile?.n) > 0) {
@@ -408,6 +420,35 @@ export class PublicitePayante {
     }
     await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: 'essai', version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
     return { ok: true, value: { approvalId: a.id } };
+  }
+
+  /** La réponse de la plateforme, ou une erreur passé le délai de lancement. */
+  private async withinTimeout(call: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('lancement sans réponse')), this.launchTimeoutMs);
+    });
+    try {
+      await Promise.race([call, late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Une réponse arrivée après le solde du lancement (garde, que le délai de lancement rend impossible) : l'état de la
+   * plateforme n'est plus sûr. Toute validation lancée depuis est arrêtée, sa pause redemandée jusqu'à confirmation ;
+   * sinon la pause est redemandée [R588].
+   */
+  private async lateAnswer(c: CampaignRow): Promise<AdResult<{ approvalId: string }>> {
+    let stopped = 0;
+    for (const r of await this.runningApprovals(c.id)) if (await this.stopApproval(c, r.id, 'echec_lancement', 'system:publicite')) stopped += 1;
+    if (stopped === 0) {
+      const last = await this.db.first<{ approval_id: string }>('SELECT approval_id FROM ad_campaign_stops WHERE campaign_id = ? ORDER BY stopped_at DESC, approval_id DESC LIMIT 1', [c.id]);
+      if (last) await this.pause(c, last.approval_id, true);
+    }
+    await appendEvent(this.journal, { type: 'publicite.reponse_tardive', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588', stopped } }, this.now);
+    return { ok: false, rule: 'R588', code: 'reponse_tardive' };
   }
 
   /** La réponse de la plateforme au lancement, rangée une fois : tant qu'elle manque, rien d'autre ne se lance. */
@@ -429,12 +470,10 @@ export class PublicitePayante {
       [c.id, before],
     );
     for (const l of lost) {
-      // L'arrêt, ou la pause redemandée, est rangé avant l'échec : coupé entre les deux, le passage suivant reprend
-      // (le lancement est encore sans réponse) et la pause non confirmée reste redemandée [R588].
-      if (!(await this.stopApproval(c, l.approval_id, 'echec_lancement', 'system:publicite'))) {
-        await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [l.approval_id, this.now().toISOString()]);
-        await this.pause(c, l.approval_id, true);
-      }
+      // L'arrêt, ou la pause redemandée, passe avant l'échec rangé : coupé entre les deux, le lancement est encore sans
+      // réponse et le passage suivant reprend ; une pause non confirmée reste redemandée [R588].
+      // Déjà arrêtée par la direction : la pause est redemandée ; en échec, elle reste à confirmer.
+      if (!(await this.stopApproval(c, l.approval_id, 'echec_lancement', 'system:publicite'))) await this.pause(c, l.approval_id, true);
       if (await this.launched(l.approval_id, 'echec')) {
         await appendEvent(this.journal, { type: 'publicite.lancement_sans_reponse', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R587', minutes: LAUNCH_ANSWER_MINUTES } }, this.now);
       }
