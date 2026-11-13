@@ -102,6 +102,16 @@ describeWithSqlite('BR52 · qui peut recevoir un trousseau', () => {
     expect((await t.cles.handOut(t.agentSam, key.keyId, { holderAgentId: t.alex.id, purpose: 'visite', appointmentId: soon })).ok).toBe(true);
   });
 
+  it('[R271] tous les rendez-vous à venir sont proposés, sans plafond', async () => {
+    const t = await setup();
+    const key = await t.register();
+    for (let i = 0; i < 25; i++) await appointment(t, t.alex.id, 'visite', MONDAY_9H + (i + 1) * HOUR);
+    const last = await appointment(t, t.alex.id, 'estimation', MONDAY_9H + 30 * HOUR);
+    const r = await t.cles.choices(t.agentSam, key.keyId);
+    expect(r.ok && r.value.appointments).toHaveLength(26);
+    expect(r.ok && r.value.appointments.at(-1)!.appointmentId).toBe(last);
+  });
+
   it('[R665] seuls les partenaires du réseau au métier qui entre seul et aux justificatifs valides ce jour-là, sans nom de personne', async () => {
     const t = await setup();
     const key = await t.register();

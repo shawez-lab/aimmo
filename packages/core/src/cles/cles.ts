@@ -598,10 +598,11 @@ export class Cles {
     const rows = await this.db.all<{ id: string; kind: 'visite' | 'estimation'; start_at: string; end_at: string; agent_id: string }>(
       `SELECT id, kind, start_at, end_at, agent_id FROM appointments
         WHERE network_id = ? AND property_id = ? AND status = 'booked' AND kind IN ('visite', 'estimation') AND end_at > ?
-        ORDER BY start_at, id LIMIT 20`,
+        ORDER BY start_at, id`,
       [viewer.networkId, key.property_id, now.toISOString()],
     );
     const appointments: KeyHandOutChoices['appointments'] = [];
+    // Tous les rendez-vous à venir, sans plafond : un rendez-vous valable ne doit jamais manquer à l'écran.
     // Un rendez-vous dont l'agent n'est plus en activité ne peut pas recevoir le trousseau : il n'est pas proposé.
     for (const a of rows) {
       const name = active.get(a.agent_id);
