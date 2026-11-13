@@ -143,8 +143,10 @@ describeWithSqlite('RC09 · un message de date tient la place du jour des scéna
     ]);
     t.setClock(TUE_10H);
     await t.project(ines);
-    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 1 });
-    expect(await t.runs()).toEqual([{ status: 'fait', message_status: 'refuse', message_rule: 'R402' }]);
+    // Depuis RC26, le scénario n'est plus perdu : il rend sa place et attend le lendemain [R402].
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 0, postponed: 1 });
+    expect(await t.runs()).toEqual([{ status: 'a_faire', message_status: null, message_rule: null }]);
+    expect(await t.places()).toEqual([{ person_id: ines, run_id: null }]);
     expect(await t.outbox()).toEqual([]);
   });
 
@@ -212,5 +214,104 @@ describeWithSqlite('RC09 · un message de date tient la place du jour des scéna
       [ines, 'date'],
       [ines, 'scenario'],
     ]);
+  });
+});
+
+describeWithSqlite('RC26 · un scénario qui croise un message de date en préparation attend le lendemain', () => {
+  const dueAt = async (t: Awaited<ReturnType<typeof setup>>) => (await t.db.first<{ due_at: string }>('SELECT due_at FROM automation_runs'))!.due_at;
+  const inFlightDate = async (t: Awaited<ReturnType<typeof setup>>, personId: string, at: number) => {
+    const dateId = (await t.db.first<{ id: string }>('SELECT id FROM client_dates WHERE person_id = ?', [personId]))!.id;
+    await t.db.run("INSERT INTO client_date_messages (network_id, person_id, kind, year, date_id, status, created_at) VALUES (?, ?, 'anniversaire', 2027, ?, 'en_cours', ?)", [
+      t.network.id,
+      personId,
+      dateId,
+      new Date(at).toISOString(),
+    ]);
+  };
+
+  it('[R402] date en préparation ce jour : rien ne part, place rendue, passage remis au lendemain à la même heure', async () => {
+    const t = await setup();
+    t.setClock(TUE_10H - HOUR);
+    const ines = await t.person('Inès');
+    await inFlightDate(t, ines, TUE_10H - 2 * MINUTE);
+    t.setClock(TUE_10H);
+    await t.project(ines);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ created: 1, messagesInTrial: 0, messagesRefused: 0, postponed: 1 });
+    expect(await t.runs()).toEqual([{ status: 'a_faire', message_status: null, message_rule: null }]);
+    expect(await dueAt(t)).toBe(new Date(TUE_10H + DAY).toISOString());
+    expect(await t.places()).toEqual([{ person_id: ines, run_id: null }]);
+    // Le scénario n'a rien demandé au contrôle central, rien au journal des envois.
+    expect((await t.db.all('SELECT 1 FROM send_log')).length).toBe(0);
+    // Un passage plus tard le même jour ne fait rien : le passage n'est pas encore dû.
+    t.setClock(TUE_10H + 2 * HOUR);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 0, postponed: 0 });
+  });
+
+  it('[R402] [R405] deux passages simultanés : la date part ce jour, le scénario le lendemain, aucun des deux perdu', async () => {
+    const t = await setup();
+    t.setClock(TUE_10H - HOUR);
+    const ines = await t.person('Inès');
+    t.setClock(TUE_10H);
+    await t.project(ines);
+    // Les deux passages prennent leur place avant de regarder l'autre : la date en préparation, le scénario aussi.
+    await inFlightDate(t, ines, TUE_10H);
+    // Le passage des scénarios range le fait, prend sa place, voit la date en préparation : il attend le lendemain.
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, postponed: 1 });
+    // Le passage des dates, venu en même temps, avait vu la place du scénario : il se reporte au même jour.
+    await t.db.run("UPDATE client_date_messages SET status = 'reporte' WHERE person_id = ?", [ines]);
+    t.setClock(TUE_10H + HOUR);
+    expect(await t.dates.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, sameDay: 0 });
+    expect(await t.dateStatus()).toEqual([{ person_id: ines, status: 'essai', rule: null }]);
+    // Le lendemain, le scénario part : deux messages, deux jours.
+    t.setClock(TUE_10H + DAY);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1, messagesRefused: 0, postponed: 0 });
+    expect(await t.runs()).toEqual([{ status: 'fait', message_status: 'essai', message_rule: null }]);
+    expect(await t.outbox()).toEqual([
+      [ines, 'date'],
+      [ines, 'scenario'],
+    ]);
+    const days = await t.db.all<{ day: string; run_id: string | null }>('SELECT day, run_id FROM automation_daily_messages ORDER BY day');
+    expect(days.map((d) => [d.day, d.run_id !== null])).toEqual([
+      ['2027-10-12', false],
+      ['2027-10-13', true],
+    ]);
+  });
+
+  it('[R01] remis au lendemain un samedi soir : le passage attend la prochaine heure permise, jamais le dimanche', async () => {
+    const t = await setup();
+    // Samedi 16 octobre 2027, 19 h 30 à Paris.
+    const SAT_19H30 = Date.parse('2027-10-16T17:30:00.000Z');
+    t.setClock(SAT_19H30 - HOUR);
+    const ines = await t.person('Inès', { month: 10, day: 16 });
+    await inFlightDate(t, ines, SAT_19H30 - MINUTE);
+    t.setClock(SAT_19H30);
+    await t.project(ines);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ postponed: 1 });
+    const due = Date.parse(await dueAt(t));
+    // Pas le dimanche : au plus tôt le lundi 18 octobre.
+    expect(due).toBeGreaterThanOrEqual(Date.parse('2027-10-17T22:00:00.000Z'));
+    expect(new Date(due).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long' })).toBe('lundi');
+    t.setClock(due);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 1 });
+  });
+
+  it('[R402] fiche réunie : une date en préparation sous l’autre fiche fait aussi attendre le scénario', async () => {
+    const t = await setup();
+    t.setClock(TUE_10H - HOUR);
+    const kept = await t.person('Eli');
+    const other = (await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Eli' })).id;
+    await t.unique.merge({ survivorId: kept, mergedId: other, reason: 'même personne (test)' });
+    // La place de l'année a été prise sous l'autre fiche, avant la réunion.
+    const dateId = (await t.db.first<{ id: string }>('SELECT id FROM client_dates WHERE person_id = ?', [kept]))!.id;
+    await t.db.run("INSERT INTO client_date_messages (network_id, person_id, kind, year, date_id, status, created_at) VALUES (?, ?, 'anniversaire', 2027, ?, 'en_cours', ?)", [
+      t.network.id,
+      other,
+      dateId,
+      new Date(TUE_10H - MINUTE).toISOString(),
+    ]);
+    t.setClock(TUE_10H);
+    await t.project(kept);
+    expect(await t.scenarios.tick(t.network.id)).toMatchObject({ messagesInTrial: 0, messagesRefused: 0, postponed: 1 });
+    expect(await t.outbox()).toEqual([]);
   });
 });

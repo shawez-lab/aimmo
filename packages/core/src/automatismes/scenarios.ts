@@ -382,14 +382,24 @@ export class ScenariosAutomatiques {
    * pas [R402, R405].
    */
   private async dateMessageOn(networkId: string, day: string, members: string[]): Promise<boolean> {
+    return (await this.dateMessageStateOn(networkId, day, members)) !== null;
+  }
+
+  /**
+   * Comme `dateMessageOn`, en disant lequel : `essai` si un message de date a été remis ce jour, sinon `en_cours` s'il
+   * est encore en préparation, sinon `null` [R402, RC26].
+   */
+  private async dateMessageStateOn(networkId: string, day: string, members: string[]): Promise<'essai' | 'en_cours' | null> {
     const rows = await this.db.all<{ status: string; created_at: string; done_at: string | null }>(
       `SELECT status, created_at, done_at FROM client_date_messages WHERE network_id = ? AND status IN ('en_cours', 'essai') AND person_id IN (${members.map(() => '?').join(', ')})`,
       [networkId, ...members],
     );
-    return rows.some((r) => {
+    const today = rows.filter((r) => {
       const at = r.status === 'essai' ? r.done_at : r.created_at;
       return at !== null && this.day(new Date(at)) === day;
     });
+    if (today.some((r) => r.status === 'essai')) return 'essai';
+    return today.length > 0 ? 'en_cours' : null;
   }
 
   /**
@@ -672,6 +682,7 @@ export class ScenariosAutomatiques {
     let messageStatus: 'essai' | 'refuse' | null = null;
     let messageRule: string | null = null;
     let messageId: string | null = null;
+    let dateState: 'essai' | 'en_cours' | null = null;
     const subject = `scenario:${run.scenario_id}:${run.trigger_ref}`;
     // Repris après une panne, un message déjà remis à la boîte d'essai l'est resté : il garde sa place du jour, rien ne
     // repart [R05, R402]. Un sujet rangé sans remise n'en est pas un : le contrôle central le refusera, place rendue.
@@ -704,11 +715,22 @@ export class ScenariosAutomatiques {
         await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
         messageStatus = 'refuse';
         messageRule = 'R402';
-      } else if (await this.dateMessageOn(networkId, day, members)) {
+      } else if ((dateState = await this.dateMessageStateOn(networkId, day, members)) !== null) {
         // Un message de date remis ce jour, ou en cours de préparation, tient la place du jour : rien ne part, la place
         // prise est rendue. Prise avant de regarder, la place fait aussi attendre un message de date venu en même temps :
         // de deux passages simultanés, au plus un message part, jamais deux [R402, RC09].
         await this.db.run('UPDATE automation_daily_messages SET run_id = NULL WHERE network_id = ? AND person_id = ? AND day = ? AND run_id = ?', [networkId, root, day, run.id]);
+        if (dateState === 'en_cours') {
+          // Encore en préparation : le passage des dates venu en même temps a pu voir la place du scénario et se reporter
+          // au même jour. Le message de date garde le jour ; le scénario attend le lendemain, à la même heure ou à la
+          // prochaine heure permise, et repasse alors par toutes les vérifications : aucun des deux n'est perdu [R402, R01, RC26].
+          await this.db.run("UPDATE automation_runs SET status = 'a_faire', due_at = ? WHERE id = ? AND status = 'en_cours'", [
+            afterSendingTime(new Date(now.getTime() + DAY), 0, this.settings.window).toISOString(),
+            run.id,
+          ]);
+          report.postponed += 1;
+          return;
+        }
         messageStatus = 'refuse';
         messageRule = 'R402';
       } else {
