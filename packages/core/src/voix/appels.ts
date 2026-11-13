@@ -15,6 +15,8 @@
  * Ni texte, ni numéro, ni référence d'enregistrement au journal [R13]. Le transcripteur ne reçoit que la référence de
  * l'enregistrement ; l'IA de qualification, que les paroles de l'appelant sans coordonnées [R15].
  */
+import type { Acces, AccessResult } from '../acces/acces.ts';
+import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Person } from '../db/types.ts';
@@ -486,30 +488,7 @@ export class Appels {
   }
 
   private view(row: CallRow): CallView {
-    const transcript: CallSegment[] = row.transcript ? (JSON.parse(row.transcript) as CallSegment[]) : [];
-    const fields: CitedField[] = row.fields ? (JSON.parse(row.fields) as CitedField[]) : [];
-    const summary = fields
-      .filter((f) => transcript[f.segment]?.speaker === 'appelant')
-      .map((f) => ({ key: f.key, value: f.value, quote: transcript[f.segment]!.text, atS: transcript[f.segment]!.startS }))
-      .sort((a, b) => SUMMARY_ORDER.indexOf(a.key) - SUMMARY_ORDER.indexOf(b.key));
-    const durationS = row.started_at && row.ended_at ? (Date.parse(row.ended_at) - Date.parse(row.started_at)) / 1000 : null;
-    const stop = stopSegment(transcript);
-    return {
-      id: row.id,
-      startedAt: row.started_at,
-      durationS,
-      status: row.status as Exclude<CallStatus, 'en_cours'>,
-      failure: row.failure,
-      needsAgent: row.status !== 'traite',
-      ambiguous: row.attach === 'ambiguous',
-      recordingRef: row.recording_ref,
-      category: row.category,
-      route: row.route,
-      summary,
-      transcript,
-      stop: stop ? { quote: stop.text, atS: stop.startS } : null,
-      origin: { contentId: row.origin_content_id, kind: row.origin_kind ?? 'inconnue' },
-    };
+    return callView(row);
   }
 
   private find(networkId: string, call: IncomingCall): Promise<CallRow | null> {
@@ -605,4 +584,51 @@ export class Appels {
       clearTimeout(timer);
     }
   }
+}
+
+/** Ce que la fiche montre d'un appel rangé. */
+export function callView(row: CallRow): CallView {
+  const transcript: CallSegment[] = row.transcript ? (JSON.parse(row.transcript) as CallSegment[]) : [];
+  const fields: CitedField[] = row.fields ? (JSON.parse(row.fields) as CitedField[]) : [];
+  const summary = fields
+    .filter((f) => transcript[f.segment]?.speaker === 'appelant')
+    .map((f) => ({ key: f.key, value: f.value, quote: transcript[f.segment]!.text, atS: transcript[f.segment]!.startS }))
+    .sort((a, b) => SUMMARY_ORDER.indexOf(a.key) - SUMMARY_ORDER.indexOf(b.key));
+  const durationS = row.started_at && row.ended_at ? (Date.parse(row.ended_at) - Date.parse(row.started_at)) / 1000 : null;
+  const stop = stopSegment(transcript);
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    durationS,
+    status: row.status as Exclude<CallStatus, 'en_cours'>,
+    failure: row.failure,
+    needsAgent: row.status !== 'traite',
+    ambiguous: row.attach === 'ambiguous',
+    recordingRef: row.recording_ref,
+    category: row.category,
+    route: row.route,
+    summary,
+    transcript,
+    stop: stop ? { quote: stop.text, atS: stop.startS } : null,
+    origin: { contentId: row.origin_content_id, kind: row.origin_kind ?? 'inconnue' },
+  };
+}
+
+
+/**
+ * BR61 · Les appels reçus d'une fiche, sous les droits de la fiche : l'agent qui la suit ou la direction, refus au
+ * journal par `Acces.readFiche` [R16]. Les appels des fiches réunies se relisent sur la fiche gardée ; un appel en cours
+ * n'est pas montré. Rien de plus au journal que la lecture de la fiche : ni phrase, ni numéro [R13].
+ */
+export async function callsOfFiche(db: SqlDatabase, acces: Acces, viewer: Viewer, personId: string): Promise<AccessResult<CallView[]>> {
+  const read = await acces.readFiche(viewer, personId);
+  if (!read.ok) return read;
+  const members = read.value.members.map((m) => m.id);
+  if (members.length === 0) return { ok: true, view: read.view, value: [] };
+  const rows = await db.all<CallRow>(
+    `SELECT * FROM calls WHERE network_id = ? AND status <> 'en_cours' AND person_id IN (${members.map(() => '?').join(', ')})
+     ORDER BY started_at DESC, id`,
+    [read.value.person.network_id, ...members],
+  );
+  return { ok: true, view: read.view, value: rows.map(callView) };
 }
