@@ -496,3 +496,122 @@ describeWithSqlite('HX06 · en sortant d’une visite : la fiche, l’avis de vi
     expect(await t.toSeller()).toEqual([]);
   });
 });
+
+/**
+ * RC22 : une autre réservation prend le créneau juste après sa vérification, avant la réservation de la dictée. La
+ * course est jouée par une prise de rendez-vous glissée dans la première lecture des créneaux libres.
+ */
+function racing(t: Awaited<ReturnType<typeof setup>>, start: string, kind: 'estimation' | 'visite' = 'estimation') {
+  let raced = false;
+  let competing: string | null = null;
+  const rendezVous = {
+    freeSlotsFor: async (...args: Parameters<RendezVous['freeSlotsFor']>) => {
+      const free = await t.rdv.freeSlotsFor(...args);
+      if (!raced) {
+        raced = true;
+        const someone = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Autre' });
+        const other = await t.rdv.book({ networkId: t.network.id, agentId: t.alexId, personId: someone.id, kind, start: new Date(start), source: 'agent' });
+        if (!other.ok) throw new Error(other.code);
+        competing = other.appointment.id;
+      }
+      return free;
+    },
+    book: (...args: Parameters<RendezVous['book']>) => t.rdv.book(...args),
+  } as unknown as RendezVous;
+  const voix = new Dictee(t.db, t.journal, { acces: new Acces(t.db, t.store, t.fiche, t.journal, { now: t.now }), store: t.store, fiche: t.fiche, biens: new NouveauBien(t.db, new Acces(t.db, t.store, t.fiche, t.journal, { now: t.now }), t.journal, { now: t.now }), rendezVous, visites: t.visites, comptes: t.comptes }, { now: t.now });
+  return { voix, competing: () => competing };
+}
+
+describeWithSqlite('RC22 · un créneau pris pendant la validation : le refus dit ce qui est rangé', () => {
+  const TUESDAY_10H = '2026-12-08T09:00:00.000Z';
+
+  it('[R261] [R32] le refus nomme la fiche et le bien rangés et propose jusqu’à trois créneaux libres, jamais passés', async () => {
+    const t = await setup();
+    const race = racing(t, TUESDAY_10H);
+    const r = await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect(r).toMatchObject({ ok: false, rule: 'R32', code: 'slot_taken_meanwhile', kept: { personId: key(1), contact: 'created', propertyId: key(1) } });
+    if (r.ok) return;
+    expect(r.freeSlots!.length).toBeGreaterThan(0);
+    expect(r.freeSlots!.length).toBeLessThanOrEqual(3);
+    // Chacun libre, de la même sorte, à venir, jamais celui qui vient d'être pris.
+    const free = (await t.rdv.freeSlotsFor(t.alexId, 'estimation', new Date(Date.parse(TUESDAY_10H) - 86_400_000), new Date(Date.parse(TUESDAY_10H) + 86_400_000))).map((s) => s.start.toISOString());
+    for (const s of r.freeSlots!) {
+      expect(free).toContain(s);
+      expect(Date.parse(s)).toBeGreaterThan(t.now().getTime());
+    }
+    expect(r.freeSlots).not.toContain(TUESDAY_10H);
+    expect([...r.freeSlots!].sort()).toEqual(r.freeSlots);
+  });
+
+  it('[R261] rien n’est doublé : une fiche, un bien, aucun rendez-vous pour la dictée ; au journal des identifiants seulement [R13]', async () => {
+    const t = await setup();
+    const race = racing(t, TUESDAY_10H);
+    await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect(await t.db.all('SELECT id FROM properties')).toEqual([{ id: key(1) }]);
+    expect(await t.db.all('SELECT id FROM appointments WHERE person_id = ?', [key(1)])).toEqual([]);
+    expect(await t.db.all('SELECT id FROM appointments')).toEqual([{ id: race.competing() }]);
+    const events = (await t.journal.all()).filter((e) => e.type === 'dictee.creneau_pris');
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toEqual({ rule: 'R261', request: key(1), refusal: 'taken', contact: 'created', person: key(1), property: key(1) });
+    expect((await t.journal.all()).filter((e) => e.type === 'dictee.validee')).toEqual([]);
+    const all = JSON.stringify(await t.journal.all()).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32,}/g, '');
+    for (const secret of ['Claire', 'Exemple', '+33612345678', 'example.test', 'Talant', '320000']) expect(all, secret).not.toContain(secret);
+    expect((await verifyChain(await t.journal.all())).ok).toBe(true);
+  });
+
+  it('[R261] rejouée, créneau encore pris : refusée avant toute écriture, en nommant ce qui est rangé ; sans le rendez-vous : la même fiche et le même bien', async () => {
+    const t = await setup();
+    const race = racing(t, TUESDAY_10H);
+    await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    const after = await t.counts();
+    const entries = (await t.journal.all()).length;
+    expect(await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toEqual({
+      ok: false, rule: 'R32', code: 'slot_not_free', kept: { personId: key(1), contact: 'created', propertyId: key(1) },
+    });
+    expect(await t.counts()).toEqual(after);
+    expect((await t.journal.all()).length).toBe(entries);
+    // Sans le rendez-vous : rien de plus, les mêmes identifiants.
+    const again = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: { contact: KEEP_ALL.contact, bien: KEEP_ALL.bien } });
+    expect(again).toMatchObject({ ok: true, personId: key(1), contact: 'created', propertyId: key(1), appointmentId: null });
+    expect(await t.counts()).toEqual(after);
+  });
+
+  it('[R261] rejouée quand le créneau s’est libéré : le rendez-vous est pris une seule fois', async () => {
+    const t = await setup();
+    const race = racing(t, TUESDAY_10H);
+    await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect((await t.rdv.cancelAsAgent(t.alex, race.competing()!)).ok).toBe(true);
+    const a = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect(a).toMatchObject({ ok: true, personId: key(1), propertyId: key(1) });
+    const b = await t.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    if (a.ok && b.ok) expect(b.appointmentId).toBe(a.appointmentId);
+    expect(await t.db.all("SELECT start_at FROM appointments WHERE person_id = ? AND status = 'booked'", [key(1)])).toEqual([{ start_at: TUESDAY_10H }]);
+    expect((await t.counts()).properties).toBe(1);
+    expect((await t.counts()).persons).toBe(2);
+  });
+
+  it('[R262] une fiche retrouvée par son numéro : le refus la nomme « retrouvée »', async () => {
+    const t = await setup();
+    const known = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Clara' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: known.id, kind: 'phone', value: '+33612345678' });
+    const race = racing(t, TUESDAY_10H);
+    expect(await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL })).toMatchObject({
+      ok: false, code: 'slot_taken_meanwhile', kept: { personId: known.id, contact: 'matched', propertyId: key(1) },
+    });
+  });
+
+  it('[R261] une contre-visite prise entre-temps : même refus, rien n’est rangé ni validé, rien ne part au vendeur', async () => {
+    const t = await withVisit({ write: async () => GOOD });
+    const race = racing(t, '2026-12-05T09:00:00.000Z', 'visite');
+    const entries = (await t.journal.all()).length;
+    const r = await race.voix.validate(t.alex, { readAt: t.now().toISOString(), requestId: key(9), dictation: AFTER_VISIT, appointmentId: t.visitId, keep: { rendezvous: ['appointmentKind', 'start'] }, report: GOOD });
+    expect(r).toMatchObject({ ok: false, rule: 'R32', code: 'slot_taken_meanwhile' });
+    if (r.ok) return;
+    expect(r.kept).toBeUndefined();
+    expect(r.freeSlots).not.toContain('2026-12-05T09:00:00.000Z');
+    expect(await t.db.first('SELECT status FROM visit_reports WHERE appointment_id = ?', [t.visitId])).toBeNull();
+    expect(await t.toSeller()).toEqual([]);
+    expect((await t.journal.all()).filter((e) => e.type.startsWith('dictee.'))).toEqual([]);
+    expect((await t.journal.all()).length).toBeGreaterThanOrEqual(entries);
+  });
+});
