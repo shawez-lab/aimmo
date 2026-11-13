@@ -1498,6 +1498,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : un appel au code d'un contenu compte pour ce contenu, un appel sans code compte « inconnue » [R245, R156] (test) ; les appels d'une même fiche comptent une fois, le mois du premier, heure de Paris ; deux numéros masqués comptent deux (test) ; un appel en cours, d'un autre réseau ou d'un autre mois ne compte pas (test) ; un appel sans enregistrement compte avec son origine (test) ; la mesure reste réservée à la direction [R16] (test) ; tous les tests de AT05 et HX21 restent verts.
 - Attend : rien.
 
+### RC24 · La réponse à une note vocale suit la langue reconnue
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX23, C04
+- Cahier : M02 Capter ; HX23 « Messages vocaux transcrits et traités » ; R240, R15.
+- Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX23 (« la réponse dans la langue de la personne »). Aujourd'hui la première réponse à une note vocale devine sa langue des mots du texte transcrit (anglais ou français), alors que le transcripteur a reconnu la langue parlée et que cette langue est rangée avec la note. Une note transcrite (donc au-dessus du seuil de confiance) reconnue en français ou en anglais fait répondre dans cette langue, avant la fiche et avant la devinette : c'est la langue que la personne vient de parler. Une autre langue reconnue (arabe, espagnol…) ou aucune : la règle d'aujourd'hui (fiche, puis devinette), car seules les réponses française et anglaise ont des textes de secours relus. Un message écrit ne change pas. La lecture de la langue d'une note est une fonction de `voix/notes-vocales.ts`, appelée par `captation/premiere-reponse.ts` ; rien à brancher, aucune migration ni règle nouvelle (R240 complétée).
+- Objectif : une personne qui laisse une note vocale en anglais reçoit sa réponse en anglais, même si ses mots ne ressemblent pas à la petite liste de mots anglais.
+- Critères : note reconnue `en` sans mot de la liste : réponse en anglais [R240] (test) ; note reconnue `fr` d'une fiche marquée `en` : réponse en français [R240] (test) ; note reconnue dans une autre langue ou sans langue : règle d'aujourd'hui [R240] (test) ; la langue d'une note d'un autre réseau ou d'une note impossible n'est jamais lue (test) ; le transcripteur ne reçoit toujours que la référence de l'audio [R15] (test existant) ; tous les tests de HX23 et C04 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
