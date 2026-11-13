@@ -410,11 +410,13 @@ export class PublicitePayante {
     } catch (e) {
       // L'arrêt d'abord : coupé avant la réponse rangée, le lancement est soldé au passage suivant, rien n'est perdu.
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
-      await this.launched(a.id, 'echec');
-      // Délai passé, l'appel continue chez la plateforme : s'il réussit plus tard, il est traité en réponse tardive.
-      if (e === LAUNCH_TIMED_OUT) {
+      if (e !== LAUNCH_TIMED_OUT) {
+        await this.launched(a.id, 'echec');
+      } else {
+        // Délai passé, l'appel continue peut-être chez la plateforme : la réponse reste à venir, donc rien ne se valide
+        // ni ne se relance avant elle ou avant le solde, qui redemandera la pause [R587, R588].
         void call.then(
-          () => this.lateAnswer(c).catch(() => undefined),
+          () => this.answeredLate(c, a.id).catch(() => undefined),
           () => undefined,
         );
       }
@@ -445,7 +447,17 @@ export class PublicitePayante {
   }
 
   /**
-   * Une réponse arrivée après le délai de lancement, ou après le solde : l'état de la plateforme n'est plus sûr (le
+   * La plateforme a lancé après le délai, la validation déjà arrêtée : la pause à redemander est rangée d'abord, puis
+   * la réponse. Avant le solde, une coupure ici laisse le lancement sans réponse et le solde redemande la pause.
+   */
+  private async answeredLate(c: CampaignRow, approvalId: string): Promise<void> {
+    await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [approvalId, this.now().toISOString()]);
+    if (await this.launched(approvalId, 'lancee')) await this.pause(c, approvalId, true);
+    else await this.lateAnswer(c);
+  }
+
+  /**
+   * Une réponse arrivée après le solde : l'état de la plateforme n'est plus sûr (le
    * lancement tardif a pu remplacer celui d'une validation plus récente). Toute validation lancée depuis est arrêtée, sa pause redemandée jusqu'à confirmation ;
    * sinon la pause est redemandée [R588].
    */
@@ -454,7 +466,11 @@ export class PublicitePayante {
     for (const r of await this.runningApprovals(c.id)) if (await this.stopApproval(c, r.id, 'echec_lancement', 'system:publicite')) stopped += 1;
     if (stopped === 0) {
       const last = await this.db.first<{ approval_id: string }>('SELECT approval_id FROM ad_campaign_stops WHERE campaign_id = ? ORDER BY stopped_at DESC, approval_id DESC LIMIT 1', [c.id]);
-      if (last) await this.pause(c, last.approval_id, true);
+      if (last) {
+        // La pause à redemander est rangée avant d'être demandée : une coupure ne la perd pas.
+        await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [last.approval_id, this.now().toISOString()]);
+        await this.pause(c, last.approval_id, true);
+      }
     }
     await appendEvent(this.journal, { type: 'publicite.reponse_tardive', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588', stopped } }, this.now);
     return { ok: false, rule: 'R588', code: 'reponse_tardive' };

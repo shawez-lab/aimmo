@@ -484,24 +484,63 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 3 } });
   });
 
-  it('[R587] une plateforme muette au-delà du délai de lancement : le lancement finit en échec, arrêté, pause demandée', async () => {
+  it('[R587] une plateforme muette au-delà du délai de lancement : arrêtée, pause demandée, rien ne repart avant le solde', async () => {
     const lost = lostPlatform();
     const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
     expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
     expect(lost.log).toEqual(['start', 'pause']);
-    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
-    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
-    // La plateforme lance finalement, après le délai, alors qu'une validation nouvelle a été lancée : elle est arrêtée,
-    // la pause redemandée, rien ne reste compté comme en cours [R588].
-    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
-    lost.release();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(lost.log).toEqual(['start', 'pause', 'start', 'pause']);
-    expect(await t.events('publicite.reponse_tardive')).toEqual([{ rule: 'R588', stopped: 1 }]);
+    // La réponse reste à venir : ni validation ni lancement nouveaux avant elle ou avant le solde.
+    expect(await t.db.first('SELECT count(*) AS n FROM ad_campaign_launches')).toEqual({ n: 0 });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R587', code: 'lancement_en_cours' });
     const r = await t.pub.report(t.dir);
     expect(r.ok && r.value[0]).toMatchObject({ state: 'arretee', stopReason: 'echec_lancement' });
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    // Au solde, la pause est redemandée : la plateforme a pu lancer après la première.
+    expect(lost.log).toEqual(['start', 'pause', 'pause']);
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'echec' });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
     // Le délai reste sous celui du solde.
     expect(() => new PublicitePayante(t.db, t.journal, { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, { launchTimeoutMs: LAUNCH_ANSWER_MINUTES * 60_000 })).toThrow();
+  });
+
+  it('[R588] un lancement réussi après le délai : la réponse est rangée, la pause redemandée jusqu’à confirmation', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
+    expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
+    lost.setDown(true);
+    lost.release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lost.log).toEqual(['start', 'pause', 'pause_echec']);
+    expect(await t.db.first('SELECT outcome FROM ad_campaign_launches')).toEqual({ outcome: 'lancee' });
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
+    lost.setDown(false);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause', 'pause_echec', 'pause']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
+  });
+
+  it('[R588] une coupure au moment de la réponse tardive : la pause est redemandée au solde', async () => {
+    const lost = lostPlatform();
+    const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
+    expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
+    const run = t.db.run.bind(t.db);
+    let cut = true;
+    t.db.run = (async (sql: string, params?: unknown[]) => {
+      if (cut && sql.startsWith('INSERT INTO ad_campaign_repauses')) {
+        cut = false;
+        throw new Error('coupure');
+      }
+      return run(sql, params as never);
+    }) as typeof t.db.run;
+    lost.release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lost.log).toEqual(['start', 'pause']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R587', code: 'lancement_en_cours' });
+    t.advance(LAUNCH_ANSWER_MINUTES * 60_000);
+    await t.pub.runChecks(t.network.id);
+    expect(lost.log).toEqual(['start', 'pause', 'pause']);
+    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
   });
 
   it('[R588] un solde coupé avant de ranger l’échec reprend au passage suivant, la pause reste demandée', async () => {
@@ -532,21 +571,6 @@ describeWithSqlite('RC30 · un lancement de publicité resté sans réponse ne b
     expect(lost.log.filter((x) => x === 'pause').length).toBeGreaterThan(0);
     expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
     expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
-  });
-
-  it('[R588] un lancement réussi après le délai, sans relance : la pause est redemandée jusqu’à confirmation', async () => {
-    const lost = lostPlatform();
-    const { t, c, starting } = await lostLaunch(lost, { launchTimeoutMs: 50 });
-    expect(await starting).toMatchObject({ ok: false, rule: 'R587', code: 'echec_lancement' });
-    lost.setDown(true);
-    lost.release();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(lost.log).toEqual(['start', 'pause', 'pause_echec']);
-    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, rule: 'R588', code: 'pause_en_attente' });
-    lost.setDown(false);
-    await t.pub.runChecks(t.network.id);
-    expect(lost.log).toEqual(['start', 'pause', 'pause_echec', 'pause']);
-    expect(await t.pub.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: true, value: { version: 2 } });
   });
 
   it('[R588] une dépense lue passe aussi le contrôle : le lancement perdu y est soldé', async () => {
