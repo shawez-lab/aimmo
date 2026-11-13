@@ -1518,6 +1518,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : note reconnue `en` sans mot de la liste : réponse en anglais [R240] (test) ; note reconnue `fr` d'une fiche marquée `en` : réponse en français [R240] (test) ; note reconnue dans une autre langue ou sans langue : règle d'aujourd'hui [R240] (test) ; la langue d'une note d'un autre réseau ou d'une note impossible n'est jamais lue (test) ; le transcripteur ne reçoit toujours que la référence de l'audio [R15] (test existant) ; tous les tests de HX23 et C04 restent verts.
 - Attend : rien.
 
+### RC25 · Une offre sans le bon de la visite à distance : un refus propre
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX44, O01
+- Cahier : M09 Offre ; M08 Acquéreurs et visites (HX44 « visite à distance et son bon ») ; R505, R56, R13, R16.
+- Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX44 (« `offres/registre-offres.ts` appelle `VisiteDistance.bonDistanceManquant` pour un refus propre »). Aujourd'hui, une offre d'un acquéreur qui a visité le bien à distance sans signer son bon est arrêtée par le déclencheur de la base, mais l'erreur remonte telle quelle : l'API répond une erreur interne, l'agent ne sait pas pourquoi, rien n'est écrit au journal. Le registre lit d'abord, par la même requête que la garde de la base (suite entière des réunions de fiches, des deux côtés), la visite à distance au bon non signé : refus `remote_slip_unsigned` (règle R505) qui nomme le rendez-vous en cause (identifiant seul), écrit au journal `offre.bon_distance_manquant` avec des identifiants seulement [R13], rien n'entre au registre, aucun rang n'est pris. Si le bon manque entre la lecture et l'écriture (visite finie entre-temps), l'erreur du déclencheur est reconnue et rend le même refus, jamais une erreur interne. La requête vit dans le registre des offres (aucune dépendance nouvelle au constructeur, donc rien à brancher dans `app.ts`) ; la garde de la base reste la vraie barrière. Le texte de l'écran « Offres » pour ce refus est à la voie 1. Change seulement `packages/core/src/offres/registre-offres.ts`, ses tests et le commentaire de `medias/visite-distance.ts` ; aucune migration ni règle nouvelle.
+- Objectif : l'agent qui range l'offre d'un visiteur à distance sait aussitôt que le bon reste à signer, et lequel.
+- Critères : bon non signé : refus `remote_slip_unsigned` [R505] qui nomme le rendez-vous, aucune ligne au registre (test) ; fiche réunie, de tête ou du milieu de la suite : même refus [R505] (test) ; bon signé, ou autre acquéreur : l'offre entre (test) ; bon manquant apparu entre la lecture et l'écriture : même refus, pas d'erreur interne (test) ; au journal, des identifiants seulement [R13] (test) ; un rejeu d'une offre déjà rangée avec sa clé reste rendu tel quel [R56] (test) ; tous les tests de O01 et HX44 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
