@@ -707,17 +707,18 @@ async function followAppointment(
   if (!row.appointment_kind || !row.appointment_start || !Number.isFinite(Date.parse(row.appointment_start))) return null;
   const start = new Date(row.appointment_start).toISOString();
   type Row = { id: string; start_at: string; status: string };
-  let current = await db.first<Row>(
+  const found = await db.first<Row>(
     `SELECT id, start_at, status FROM appointments
      WHERE network_id = ? AND agent_id = ? AND source = 'assistant' AND kind = ? AND start_at = ? AND replaces_id IS NULL AND property_id IS ? AND created_at <= ?
      ORDER BY created_at DESC, id DESC LIMIT 1`,
     [networkId, row.agent_id, row.appointment_kind, start, row.property_id, row.created_at],
   );
   // Jamais deviné : un rendez-vous qu'on ne retrouve pas dans l'agenda est dit tel.
-  if (!current) return { kind: row.appointment_kind, start, state: 'introuvable', current: start };
-  const first = current.id;
+  if (!found) return { kind: row.appointment_kind, start, state: 'introuvable', current: start };
+  let current: Row = found;
+  const first = found.id;
   for (let i = 0; i < MAX_MOVES; i += 1) {
-    const next = await db.first<Row>('SELECT id, start_at, status FROM appointments WHERE replaces_id = ? AND network_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', [current.id, networkId]);
+    const next: Row | null = await db.first<Row>('SELECT id, start_at, status FROM appointments WHERE replaces_id = ? AND network_id = ? ORDER BY created_at DESC, id DESC LIMIT 1', [current.id, networkId]);
     if (!next) break;
     current = next;
   }
