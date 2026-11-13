@@ -15,6 +15,7 @@ const REFUSALS = {
   not_assigned: 'Ce bien ou ce contact n’est pas dans vos droits.',
   unknown_buyer: 'Ce contact n’existe plus : rouvrez cet écran.',
   buyer_is_seller: 'Le vendeur de ce bien ne peut pas en être l’acquéreur.',
+  remote_slip_unsigned: 'Le bon de la visite à distance n’est pas encore signé : l’offre attend sa signature.',
   busy: 'Le registre est occupé : réessayez dans un moment.',
   request_key_reused: 'Cette offre a déjà été rangée autrement : rouvrez cet écran avant de recommencer.',
   already_transmitted: 'Cette offre a déjà été transmise.',

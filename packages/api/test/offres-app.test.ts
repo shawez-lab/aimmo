@@ -260,6 +260,37 @@ describe('O10 · écran des offres', () => {
     expect(text).not.toContain('reste');
   });
 
+  it('[R505] une offre arrêtée par le bon de la visite à distance se dit en mots, sans identifiant, et se renvoie avec la même clé', async () => {
+    const ref = 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000002.pdf';
+    const t = await run({
+      [SUIVI]: ok(board([])),
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'p1', firstName: 'Acheteur', lastName: 'Exemple' }], more: false }),
+      'POST /v1/offres/biens/b1/fichiers/signee': ok({ ref }),
+      'POST /v1/offres/biens/b1': no(409, 'remote_slip_unsigned', { rule: 'R505', appointmentId: 'rdv-distance-42' }),
+    });
+    await t.open();
+    await t.click(t.byText('Enregistrer une offre reçue'));
+    t.input('of-acquereur').value = 'p1';
+    t.input('of-montant').value = '205000';
+    t.input('of-apport').value = '205000';
+    t.input('of-pret').value = '0';
+    t.input('of-recue').value = '2027-03-01T09:00';
+    t.input('of-validite').value = '2027-03-10';
+    t.input('of-signee').files = [pdf()];
+    await t.click(t.byText('Inscrire au registre'));
+    expect(t.state()).toBe('Le bon de la visite à distance n’est pas encore signé : l’offre attend sa signature.');
+    expect(t.state()).not.toContain('rdv-distance-42');
+    expect(t.body().textContent).not.toContain('rdv-distance-42');
+    expect(t.body().textContent).not.toContain('remote_slip_unsigned');
+    t.table['POST /v1/offres/biens/b1'] = ok({ offer: { id: 'o1' }, lines: [] });
+    t.table[SUIVI] = ok(board([OFFER]));
+    await t.click(t.byText('Inscrire au registre'));
+    const both = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(both).toHaveLength(2);
+    expect((both[1]!.body as { requestKey: string }).requestKey).toBe((both[0]!.body as { requestKey: string }).requestKey);
+    expect(t.state()).toContain('Offre inscrite au registre');
+  });
+
   it('[R59] une offre échue garde son geste, et dit ce qui se range encore', async () => {
     const t = await run({ [SUIVI]: ok(board([{ ...OFFER, state: 'echue', next: 'reponse_vendeur', daysLeft: null }])) });
     await t.open();
