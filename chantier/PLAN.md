@@ -1597,6 +1597,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : mail envoyé rattaché à la fiche du destinataire, message sortant de l'agent dans son fil, aucune exclusion, aucune réponse préparée, rien ne part, relu une fois [R408, R18] (test) ; réponse préparée d'un fil où l'agent a répondu : refusée R21 [R409] (test) ; destinataire inconnu, fiche d'un autre agent, deux fiches, trop de destinataires : rien gardé ; mail mal formé refusé `bad_mail` [R408, R16, R13] (test) ; pièces rangées une fois, en attente puis rangées au choix de l'agent [R410] (test) ; lecture de la boîte avec reçus et envoyés, fiche réunie comprise [R18, R82] (test) ; tous les tests de HX26 et RC27 restent verts.
 - Attend : rien (vrais accès Gmail et Outlook : H05, H55).
 
+### RC29 · Deux planifications simultanées du calendrier ne laissent aucun créneau vide
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX52
+- Cahier : M07 Commercialiser et M19 Studio ; HX52 « Calendrier de publication sur tous les réseaux » ; R580, R581.
+- Décidé (2026-11-13, voie 2), lecture prudente : relevé dans les « Restent » de HX52 (« deux planifications simultanées du même agent sans transaction (doublon refusé par la base) »). Aujourd'hui, quand deux planifications du même agent tournent en même temps (l'écran et le travail de la semaine, deux onglets), l'une peut choisir pour un rang une publication que l'autre vient de réserver à un autre rang : la base refuse le doublon (une publication une fois par version et par réseau), l'écriture ne change rien, et le rang reste vide jusqu'à la prochaine planification, alors que d'autres biens étaient prêts. Le nombre réglé n'est pas tenu ce jour-là [R581]. Désormais, une réservation qui ne change rien est relue : si le rang est pris (par l'autre planification), on passe au suivant, sans doublon ; s'il est encore libre, c'est la publication qui a été prise ailleurs, et le choix est refait pour ce même rang, avec la rotation à jour [R580]. Chaque nouvel essai écarte une publication de plus (elle est désormais réservée sous cette version), donc la boucle finit toujours. Aucune transaction ni migration : la base reste la barrière. Change seulement `packages/core/src/marketing/calendrier.ts` et son test.
+- Objectif : le nombre réglé par réseau et par jour est tenu même quand deux planifications se croisent.
+- Critères : publication prise ailleurs entre le choix et la réservation : le rang est rempli par un autre bien prêt, aucun doublon, la rotation reste stricte [R580, R581] (test) ; rang pris par l'autre planification : rien n'est réservé en double, le rang suivant est rempli [R581] (test) ; plus aucune publication prête : le rang reste vide, la planification finit [R581] (test) ; tous les tests de HX52 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
