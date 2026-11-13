@@ -1,6 +1,6 @@
 /**
  * Les routes des scénarios automatiques (HX24, RC18, RC19), sous `/v1/scenarios`, et leur passage au planificateur
- * (BR55).
+ * (BR55). Les routes des dates des clients (HX25), sous `/v1/dates-clients`, et leur passage juste après (BR56).
  *
  * Chaque route est réservée à la direction, contrôlée avant toute lecture du corps ; un refus est écrit au journal
  * [R16, R403]. La couche métier refait ses propres contrôles : listes fermées, texte fixe, essai de la version exacte
@@ -8,6 +8,7 @@
  * contrôle central, qui ne reçoit que les canaux du mode essai [R401, R26].
  */
 import type { JournalStore, ScheduledJob, SqlDatabase, Viewer } from '@aimmo/core';
+import { DatesClients } from '../../core/src/automatismes/dates-clients.ts';
 import { ScenariosAutomatiques, type ScenarioResult } from '../../core/src/automatismes/scenarios.ts';
 import { appendEvent } from '../../core/src/journal/journal.ts';
 
@@ -80,17 +81,17 @@ export function refusalWords(code: string, rule: string | null): string {
 }
 
 /** 200 ; 403 pour un refus de droits ; 404 inconnu ; 409 pour une règle ; 400 sinon. Toujours avec ses mots. */
-function reply(result: ScenarioResult<unknown>): Response {
+function reply(result: ScenarioResult<unknown>, words: (code: string, rule: string | null) => string = refusalWords): Response {
   if (result.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: result.value ?? null });
   const { rule, code } = result;
-  const body = { ok: false, rule, code, message: refusalWords(code, rule) };
+  const body = { ok: false, rule, code, message: words(code, rule) };
   if (rule === 'R16' && code === 'unknown') return json(404, body);
   if (rule === 'R16') return json(403, body);
   return json(rule ? 409 : 400, body);
 }
 
 const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
-const unknownField = (field: string): Response => json(400, { ok: false, rule: null, code: 'unknown_field', field, message: SCENARIO_REFUSALS['unknown_field'] });
+const unknownField = (field: string, message = SCENARIO_REFUSALS['unknown_field']): Response => json(400, { ok: false, rule: null, code: 'unknown_field', field, message });
 
 /** Le corps : vide, il vaut `{}` ; sinon un objet JSON de taille bornée, ou null. */
 async function readBody(request: Request): Promise<Record<string, unknown> | null> {
@@ -213,6 +214,107 @@ export function scenariosJob(db: SqlDatabase, journal: JournalStore, options: { 
       for (const n of await db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM automation_switches WHERE lit = 1 ORDER BY network_id')) {
         try {
           await scenarios.tick(n.network_id);
+        } catch (error) {
+          failure ??= error;
+        }
+      }
+      if (failure !== null) throw failure;
+    },
+  };
+}
+
+
+/** Les refus des dates des clients, dits en mots [R16, R404, R405]. Les contrôles du texte sont ceux d'un scénario. */
+export const DATE_REFUSALS: Readonly<Record<string, string>> = {
+  role: 'Seuls l’agent qui suit la fiche et la direction rangent la date d’un client.',
+  not_direction: 'Seule la direction écrit les textes des messages de date.',
+  unknown: 'Cette fiche n’existe pas.',
+  other_network: 'Cette fiche appartient à un autre réseau.',
+  not_assigned: 'Seul l’agent qui suit cette fiche peut y ranger une date.',
+  agent_inactive: 'Votre compte d’agent n’est pas actif : rien n’est rangé.',
+  agent_file_incomplete: 'Votre dossier d’agent n’est pas complet : aucune fiche client avant.',
+  bad_person: 'La fiche attendue est un identifiant.',
+  bad_kind: 'Cette sorte de date n’existe pas : anniversaire ou fête.',
+  bad_date: 'Cette date n’existe pas : un mois de 1 à 12 et un jour qui existe dans ce mois.',
+  no_proof: 'Dites d’où vient la date, en 200 caractères au plus : la personne l’a donnée, jamais devinée ni tirée d’une pièce d’identité.',
+  bad_texts: 'Écrivez de un à cinq textes pour cette sorte de date et ce canal.',
+  unknown_field: 'Un champ n’est pas prévu pour une date de client.',
+};
+
+export function dateRefusalWords(code: string, rule: string | null): string {
+  return DATE_REFUSALS[code] ?? refusalWords(code, rule);
+}
+
+const DATE_FIELDS = ['personId', 'kind', 'month', 'day', 'proof'] as const;
+const DATE_TEXT_FIELDS = ['kind', 'channel', 'texts'] as const;
+
+/** Le module des dates : lui aussi bâtit son contrôle central sur les seuls canaux du mode essai [R26]. */
+export const datesOf = (db: SqlDatabase, journal: JournalStore, now: () => Date): DatesClients => new DatesClients(db, journal, { now });
+
+/** Un refus de rôle des dates, au journal comme ceux de la couche métier, avant que le corps soit lu [R16]. */
+async function refuseDateRole(s: ScenariosServices, viewer: Viewer, code: string, gesture: string): Promise<Response> {
+  await appendEvent(
+    s.journal,
+    { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'client_date', code, gesture } },
+    s.now,
+  );
+  return reply({ ok: false, rule: 'R16', code }, dateRefusalWords);
+}
+
+/** Les routes de `/v1/dates-clients`, à ajouter à celles de `app.ts` (BR56). Aucune n'envoie rien [R405, R26]. */
+export function datesRoutes(): ScenariosRoute[] {
+  const route =
+    (gesture: string, allowed: (v: Viewer) => boolean, code: string, fields: readonly string[], fn: (s: ScenariosServices, v: Viewer, body: Record<string, unknown>) => Promise<ScenarioResult<unknown>>): ScenariosRoute['handle'] =>
+    async (s, v, _params, request) => {
+      if (!allowed(v)) return refuseDateRole(s, v, code, gesture);
+      const extra = extraQuery(request);
+      if (extra !== null) return unknownField(extra, DATE_REFUSALS['unknown_field']);
+      const body = await readBody(request);
+      if (!body) return badBody();
+      const field = Object.keys(body).find((k) => !fields.includes(k));
+      if (field !== undefined) return unknownField(field, DATE_REFUSALS['unknown_field']);
+      return reply(await fn(s, v, body), dateRefusalWords);
+    };
+  return [
+    {
+      method: 'POST',
+      pattern: /^\/dates-clients$/,
+      name: 'dates_clients.ranger',
+      // L'agent qui suit la fiche ou la direction ; la couche métier relit la fiche sous droits [R16, R404].
+      handle: route('record', (v) => v.role === 'agent' || v.role === 'direction', 'role', DATE_FIELDS, async (s, v, b) => {
+        if (typeof b['personId'] !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(b['personId'])) return { ok: false, rule: 'R404', code: 'bad_person' };
+        return datesOf(s.db, s.journal, s.now).recordDate(v, { personId: b['personId'], kind: b['kind'], month: b['month'], day: b['day'], proof: b['proof'] });
+      }),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/dates-clients\/textes$/,
+      name: 'dates_clients.textes',
+      // La direction seule écrit les textes, jamais l'IA ; chacun contrôlé comme ceux d'un scénario [R403, R405].
+      handle: route('texts', (v) => v.role === 'direction', 'not_direction', DATE_TEXT_FIELDS, async (s, v, b) => datesOf(s.db, s.journal, s.now).setTexts(v, { kind: b['kind'], channel: b['channel'], texts: b['texts'] })),
+    },
+  ];
+}
+
+/** Le nom du passage des dates des clients, sans donnée. */
+export const DATES_JOB = 'automatismes.dates';
+
+/**
+ * Le passage des dates des clients (HX25, BR56), à chaque heure, inscrit juste après celui des scénarios : une place de
+ * scénario prise ce jour fait attendre la date [R402]. Pour chaque réseau qui a rangé une date, les messages du jour
+ * sont préparés par le contrôle central, en mode essai ; hors des heures permises, rien n'est préparé [R404, R405, R26].
+ * Un réseau en panne n'empêche pas les autres ; la première erreur remonte au planificateur [R13].
+ */
+export function datesJob(db: SqlDatabase, journal: JournalStore, options: { now: () => Date }): ScheduledJob {
+  return {
+    name: DATES_JOB,
+    hours: Array.from({ length: 24 }, (_, h) => h),
+    run: async () => {
+      const dates = datesOf(db, journal, options.now);
+      let failure: unknown = null;
+      for (const n of await db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM client_dates ORDER BY network_id')) {
+        try {
+          await dates.tick(n.network_id);
         } catch (error) {
           failure ??= error;
         }
