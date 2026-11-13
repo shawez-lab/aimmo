@@ -418,10 +418,12 @@ export async function handleEspacePublic(request: Request, s: EspacesServices): 
     if (!viewer) return redirect(ESPACE_PATH);
     const back = `<p><a href="${ESPACE_PATH}">Revenir à votre espace</a></p>`;
     if (!s.cles) return page(503, 'Suivi des clés indisponible', `<p>Le suivi des clés n’est pas encore disponible dans votre espace. Votre agent peut vous dire qui a vos clés.</p>${back}`);
-    const property = url.searchParams.get('bien') ?? '';
-    const r = /^[A-Za-z0-9_-]{1,64}$/.test(property) ? await s.cles.forSeller(viewer, property) : null;
+    const asked = url.searchParams.get('bien') ?? '';
+    // Un identifiant mal formé n'entre jamais au journal tel quel : il est lu comme « ? », qu'aucun bien ne porte, et
+    // son refus est écrit comme les autres [R16].
+    const r = await s.cles.forSeller(viewer, /^[A-Za-z0-9_-]{1,64}$/.test(asked) ? asked : '?');
     // Un bien qui n'est pas le sien, ou plus depuis son mandat : la même réponse, rien sur le bien [R161].
-    if (!r || !r.ok) return page(403, 'Clés non visibles', `<p>Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur, depuis votre mandat.</p>${back}`);
+    if (!r.ok) return page(403, 'Clés non visibles', `<p>Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur, depuis votre mandat.</p>${back}`);
     return page(200, 'Les clés de mon bien', `${keysHtml(r.value)}${back}`);
   }
 

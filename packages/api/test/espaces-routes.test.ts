@@ -344,9 +344,9 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     // Sans séance : renvoyé à la demande de lien.
     const none = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`);
     expect(none.status).toBe(303);
-    // Un identifiant mal formé ne va jamais jusqu’à la lecture.
-    expect(asked.length).toBe(4);
-    expect(asked.every((a) => a.endsWith(`:${bien}`) || a.endsWith(":bien-autre"))).toBe(true);
+    // Un identifiant mal formé passe par la lecture sous « ? », pour que son refus soit écrit au journal [R16].
+    expect(asked.length).toBe(6);
+    expect(asked.filter((a) => a.endsWith(':?'))).toHaveLength(2);
   });
 
   it('les dates sont dites à l’heure de Paris, en français', () => {

@@ -118,14 +118,17 @@ describeWithSqlite('EC07 · branchement des espaces dans le socle', () => {
     expect(seen.text).toContain('Pas encore rendu');
     expect(await t.db.all("SELECT 1 FROM journal WHERE type = 'cle.vue_vendeur'")).toHaveLength(before + 1);
     // L'acquéreur, un bien inconnu : la même page de refus, en mots, au journal [R161, R16].
-    for (const [cookie, bien] of [[buyer, t.propertyId], [seller, 'bien-inconnu']] as const) {
+    for (const [cookie, bien] of [[buyer, t.propertyId], [seller, 'bien-inconnu'], [seller, 'x%27%3E']] as const) {
       const r = await t.pub('GET', `${ESPACE_PATH}cles?bien=${bien}`, { cookie });
       expect(r.status).toBe(403);
       expect(r.text).toContain('Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur');
       expect(r.text).not.toContain('Trousseau');
     }
     const refused = (await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'acces.refuse'")).map((e) => JSON.parse(e.data) as { kind?: string });
-    expect(refused.filter((e) => e.kind === 'cles')).toHaveLength(2);
+    expect(refused.filter((e) => e.kind === 'cles')).toHaveLength(3);
+    const subjects = (await t.db.all<{ subject: string }>("SELECT subject FROM journal WHERE type = 'acces.refuse'")).map((e) => e.subject);
+    expect(subjects).toContain('property:?');
+    expect(subjects.join()).not.toContain("x'>");
     // Sans séance : renvoyé à la demande de lien, rien n'est lu.
     const none = await t.pub('GET', `${ESPACE_PATH}cles?bien=${t.propertyId}`);
     expect(none.status).toBe(303);
