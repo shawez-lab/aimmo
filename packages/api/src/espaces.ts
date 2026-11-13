@@ -13,7 +13,10 @@
  *   - `GET /espace/releve` : le relevé prouvé, en texte (EC05) ; `GET|POST /espace/verifier` : sa vérification, pour
  *     tout le monde, qui ne dit que « intact, fait le … » ou « modifié » [R164] ;
  *   - `POST /espace/api/visite|offre|piece|alertes` : les gestes du client en JSON, chacun passé au module qui le tient
- *     [R165].
+ *     [R165] ;
+ *   - `GET /espace/cles?bien=<id>` : les clés d'un bien du vendeur (BR53), lues seulement quand il ouvre ce lien : qui
+ *     les a prises, pour quoi, jusqu'à quand, et leur retour ; un partenaire dit par son métier et sa raison sociale,
+ *     jamais un nom de personne [R272, R665, R161].
  * - Toute écriture du client vérifie que la requête vient de la page elle-même (`Origin` présent et égal) ; les
  *   gestes en JSON exigent en plus l'en-tête `x-aimmo-espace: 1`.
  * - La page suit le système de design, sans script, sans ressource extérieure, sous 14 Ko compressés [R201].
@@ -35,6 +38,7 @@ import {
   type SourcesProprietaire,
   type SourcesVendeur,
 } from '../../core/src/espaces/index.ts';
+import type { SellerKeyEntry } from '../../core/src/cles/cles.ts';
 
 export const ESPACE_PATH = '/espace/';
 export const SESSION_COOKIE = '__Host-aimmo_espace';
@@ -56,6 +60,8 @@ export interface EspacesServices {
   proprietaire: SourcesProprietaire;
   acquereur: SourcesAcquereur;
   gestes: GestesAcquereur;
+  /** Les clés des biens du vendeur (BR53) ; absent : le suivi des clés n'est pas montré. */
+  cles?: { forSeller(viewer: ClientViewer, propertyId: string): Promise<{ ok: true; value: SellerKeyEntry[] } | { ok: false; rule: 'R161'; code: string }> };
   /** Les clés du relevé ; vide : relevé indisponible [R164]. */
   releveKeys: readonly ReleveKey[];
   /** L'adresse de l'espace, en https, sans chiffre, terminée par `/espace/`. */
@@ -229,10 +235,10 @@ function shown(f: unknown, money = false): string {
 const row = (label: string, value: string): string => `<dt>${escape(label)}</dt><dd>${value}</dd>`;
 const list = (title: string, items: string[], empty: string): string => `<h3>${escape(title)}</h3>${items.length === 0 ? `<p class="doux">${escape(empty)}</p>` : `<ul>${items.join('')}</ul>`}`;
 
-function sellerHtml(biens: Extract<Awaited<ReturnType<EspaceVendeur['vue']>>, { ok: true }>['value']): string {
+function sellerHtml(biens: Extract<Awaited<ReturnType<EspaceVendeur['vue']>>, { ok: true }>['value'], keys: boolean): string {
   return biens
     .map(
-      (b) => `<section><h2>${escape(b.reference)} · ${escape(b.city)}</h2><dl>${row('Statut', shown(b.status))}${row('Prix du mandat', shown(b.price, true))}${row('Acte au plus tôt', shown(b.deed.date))}${row('Ce qui le retient', shown(b.deed.holds))}</dl>
+      (b) => `<section><h2>${escape(b.reference)} · ${escape(b.city)}</h2>${keys ? `<p><a href="${ESPACE_PATH}cles?bien=${encodeURIComponent(b.propertyId)}">Qui a les clés de ce bien</a></p>` : ''}<dl>${row('Statut', shown(b.status))}${row('Prix du mandat', shown(b.price, true))}${row('Acte au plus tôt', shown(b.deed.date))}${row('Ce qui le retient', shown(b.deed.holds))}</dl>
 ${list('Visites', b.visits.map((v) => `<li>${shown(v.at)} · ${shown(v.state)}<br>${shown(v.report)}</li>`), 'Aucune visite pour l’instant.')}
 ${list('Offres', b.offers.map((o) => `<li>${shown(o.amount, true)} · net vendeur ${shown(o.netSeller, true)} · ${shown(o.state)}<br>Conditions : ${shown(o.conditions)} · valable jusqu’au ${shown(o.validUntil)}</li>`), 'Aucune offre pour l’instant.')}
 ${list('Documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.signature)}</li>`), 'Aucun document.')}
@@ -271,6 +277,28 @@ ${list('Vos dossiers', v.files.map((f) => `<li>Acte au plus tôt : ${shown(f.dee
 ${v.rentals.length > 0 ? list('Vos candidatures', v.rentals.map((r) => `<li>${escape(r.reference)} à ${escape(r.city)} · ${shown(r.state)}</li>`), '') : ''}</section>`;
 }
 
+/** Au plus tant de sorties dans la page, les plus récentes : la page tient son budget [R201]. */
+export const MAX_KEY_ENTRIES = 50;
+
+const APPOINTMENT_STATE: Record<NonNullable<SellerKeyEntry['appointment']>['state'], string> = { prevu: 'prévu', fait: 'fait', absent: 'personne n’est venu', annule: 'annulé' };
+
+/** Les clés d'un bien, dites au vendeur : jamais le nom d'un visiteur ni d'une personne chez un partenaire [R272, R665]. */
+function keysHtml(entries: readonly SellerKeyEntry[]): string {
+  if (entries.length === 0) return '<p>Aucune clé de ce bien n’est sortie de l’agence depuis votre mandat.</p>';
+  const items = entries.slice(0, MAX_KEY_ENTRIES).map((e) => {
+    const who = e.partner
+      ? `Remis à ${escape(e.partner.businessName)} (${escape(e.partner.trade.toLowerCase())}), sous la responsabilité de ${escape(e.agent)}`
+      : `Pris par ${escape(e.agent)}`;
+    const rdv = e.appointment ? `<br>Rendez-vous du ${escape(frenchDate(e.appointment.start))} au ${escape(frenchDate(e.appointment.end))} · ${APPOINTMENT_STATE[e.appointment.state]}` : '';
+    const back = e.lost ? '<strong>Déclaré perdu</strong>' : e.returnedAt ? `Rendu le ${escape(frenchDate(e.returnedAt))}` : '<strong>Pas encore rendu</strong>';
+    return `<li><strong>Trousseau n° ${e.number}</strong> · ${escape(e.label)}<br>${who}, le ${escape(frenchDate(e.takenAt))}, pour : ${escape(e.purpose)}${rdv}<br>${back}</li>`;
+  });
+  const older = entries.length - MAX_KEY_ENTRIES;
+  return `<p>Chaque sortie d’une clé depuis votre mandat, de la plus récente à la plus ancienne. Le nom d’un visiteur n’est jamais montré.</p><ul>${items.join('')}</ul>${
+    older > 0 ? `<p class="doux">Et ${older} sortie${older > 1 ? 's' : ''} plus ancienne${older > 1 ? 's' : ''}, que votre agent peut vous détailler.</p>` : ''
+  }`;
+}
+
 const requestForm = (message = ''): string =>
   `${message}<p>Recevez par mail un lien personnel pour entrer dans votre espace. Il est valable 30 minutes et ne sert qu’une fois.</p><form method="post" action="${ESPACE_PATH}demande"><label for="adresse">Votre adresse mail</label><input id="adresse" name="adresse" type="email" autocomplete="email" required maxlength="254"><button type="submit">Recevoir mon lien</button></form><p><a href="${ESPACE_PATH}verifier">Vérifier un relevé</a></p>`;
 
@@ -283,7 +311,7 @@ async function spaceHtml(s: EspacesServices, viewer: ClientViewer): Promise<{ ht
     const r = await c.vendeur.vue(viewer);
     if (r.ok) {
       views.vente = r.value;
-      html += sellerHtml(r.value);
+      html += sellerHtml(r.value, !!s.cles);
     }
   }
   if (viewer.sides.some((x) => x === 'proprietaire' || x === 'bailleur')) {
@@ -383,6 +411,18 @@ export async function handleEspacePublic(request: Request, s: EspacesServices): 
     return result.status === 'intact'
       ? page(200, 'Relevé intact', `<p>Ce relevé est intact. Il a été fait le ${escape(frenchDate(result.madeAt))}.</p>`)
       : page(200, 'Relevé modifié', '<p>Ce relevé ne correspond pas à celui que le réseau a fait : il a été modifié, ou ce n’est pas un relevé d’AIMMO.</p>');
+  }
+
+  if (path === 'cles' && (method === 'GET' || method === 'HEAD')) {
+    const viewer = await session();
+    if (!viewer) return redirect(ESPACE_PATH);
+    const back = `<p><a href="${ESPACE_PATH}">Revenir à votre espace</a></p>`;
+    if (!s.cles) return page(503, 'Suivi des clés indisponible', `<p>Le suivi des clés n’est pas encore disponible dans votre espace. Votre agent peut vous dire qui a vos clés.</p>${back}`);
+    const property = url.searchParams.get('bien') ?? '';
+    const r = /^[A-Za-z0-9_-]{1,64}$/.test(property) ? await s.cles.forSeller(viewer, property) : null;
+    // Un bien qui n'est pas le sien, ou plus depuis son mandat : la même réponse, rien sur le bien [R161].
+    if (!r || !r.ok) return page(403, 'Clés non visibles', `<p>Vous voyez seulement les clés d’un bien dont vous êtes aujourd’hui le vendeur, depuis votre mandat.</p>${back}`);
+    return page(200, 'Les clés de mon bien', `${keysHtml(r.value)}${back}`);
   }
 
   const geste = /^api\/(visite|offre|piece|alertes)$/.exec(path);

@@ -133,6 +133,7 @@ import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
+import { Cles } from '../../core/src/cles/index.ts';
 import { ESPACE_PATH, espacesRoutes, handleEspacePublic, type EspacesRoute, type EspacesServices } from './espaces.ts';
 import { investirCore } from './investir.ts';
 import { EstimationEnLigne, Visites, dossiers as m10core, offres as m09core } from '@aimmo/core';
@@ -1786,6 +1787,8 @@ function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, n
       },
       { now },
     ),
+    // Les clés des biens du vendeur, lues quand il ouvre leur lien (BR53) [R272, R161].
+    cles: new Cles(db, acces, fiche, journal, { now }),
     releveKeys: releveKeys(config.espaces?.releveKeys),
   };
 }
