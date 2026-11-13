@@ -82,6 +82,8 @@ async function setup() {
     },
   };
   const cal = new CalendrierPublications(db, journal, { gate, diffusion, links }, { now });
+  /** Le même calendrier sur une autre base (une base qui fait passer une autre planification au bon moment). */
+  const calOn = (other: SqlDatabase) => new CalendrierPublications(other, journal, { gate, diffusion, links }, { now });
   const as = (userId: string) => ({ role: 'agent', userId, networkId: network.id }) as never;
   const alexV = as(alex.id);
   let n = 0;
@@ -99,7 +101,7 @@ async function setup() {
     return p.id;
   };
   const setClock = (iso: string) => (clock = Date.parse(iso));
-  return { db, journal, pubs, cal, network, alex, sam, alexV, as, property, state, received, calls, setClock };
+  return { db, journal, pubs, cal, calOn, network, alex, sam, alexV, as, property, state, received, calls, setClock };
 }
 
 describeWithSqlite('HX52 · calendrier de publication', () => {
@@ -379,6 +381,101 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
     expect(parisInstant('2027-01-15', '09:00').toISOString()).toBe('2027-01-15T08:00:00.000Z');
     expect(parisInstant('2027-07-15', '09:00').toISOString()).toBe('2027-07-15T07:00:00.000Z');
     expect(parisInstant('2027-10-31', '09:00').toISOString()).toBe('2027-10-31T08:00:00.000Z');
+  });
+});
+
+describeWithSqlite('RC29 · deux planifications simultanées du calendrier', () => {
+  const SLOT = /INSERT INTO social_calendar_slots/;
+  /**
+   * Une base où, juste avant la première réservation d'un créneau, une autre planification du même agent passe :
+   * `other` reçoit les valeurs de la réservation qui allait être écrite.
+   */
+  function crossed(db: SqlDatabase, other: (params: readonly unknown[]) => Promise<void>): SqlDatabase & { crossed: number } {
+    let pending: typeof other | null = other;
+    const wrapped = {
+      crossed: 0,
+      exec: (sql: string) => db.exec(sql),
+      all: <T,>(sql: string, params?: readonly never[]) => db.all<T>(sql, params),
+      first: <T,>(sql: string, params?: readonly never[]) => db.first<T>(sql, params),
+      run: async (sql: string, params?: readonly never[]) => {
+        if (pending && SLOT.test(sql)) {
+          const go = pending;
+          pending = null;
+          wrapped.crossed++;
+          await go(params ?? []);
+        }
+        return db.run(sql, params);
+      },
+    };
+    return wrapped as never;
+  }
+  /** Réserve à la main, comme l'autre planification, la publication choisie à un autre rang du même jour. */
+  const bookElsewhere = (t: Awaited<ReturnType<typeof setup>>, rank: number, hour: string) => async (p: readonly unknown[]) => {
+    const [, networkId, agentId, rulesId, day, channel, , postId, propertyId] = p as string[];
+    await t.db.run(
+      'INSERT INTO social_calendar_slots (id, network_id, agent_id, rules_id, day, channel, rank, post_id, property_id, due_at, booked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [crypto.randomUUID(), networkId!, agentId!, rulesId!, day!, channel!, rank, postId!, propertyId!, parisInstant(day!, hour).toISOString(), START],
+    );
+  };
+  const strict = (slots: { channel: string; propertyId: string }[], props: string[], channel: string) => {
+    const all = slots.filter((s) => s.channel === channel);
+    for (let i = 0; i < all.length; i++) {
+      const before = all.slice(0, i);
+      const count = (p: string) => before.filter((s) => s.propertyId === p).length;
+      expect(count(all[i]!.propertyId)).toBe(Math.min(...props.map(count)));
+    }
+  };
+
+  it('[R581] [R580] une publication prise ailleurs entre le choix et la réservation : le rang est rempli par un autre bien prêt', async () => {
+    const t = await setup();
+    const props: string[] = [];
+    for (let i = 0; i < 7; i++) props.push(await t.property(2));
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 2, facebook: 1 }, hours: ['09:00', '18:00'] });
+    // Lundi 9 h : l'autre planification réserve à 18 h la publication que celle-ci allait mettre à 9 h.
+    const db = crossed(t.db, bookElsewhere(t, 1, '18:00'));
+    const w = await t.calOn(db).planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    expect(db.crossed).toBe(1);
+    for (let d = 11; d <= 17; d++) {
+      const day = `2027-10-${d}`;
+      expect(w.value.filter((s) => s.day === day && s.channel === 'instagram'), day).toHaveLength(2);
+      expect(w.value.filter((s) => s.day === day && s.channel === 'facebook'), day).toHaveLength(1);
+    }
+    // Lundi : 9 h au deuxième bien le plus récent, 18 h au plus récent (pris par l'autre) ; aucun doublon.
+    const monday = w.value.filter((s) => s.day === '2027-10-11' && s.channel === 'instagram');
+    expect(monday.map((s) => s.propertyId)).toEqual([props[5], props[6]]);
+    expect(new Set(w.value.filter((s) => s.channel === 'instagram').map((s) => s.postId)).size).toBe(14);
+    strict(w.value, props, 'instagram');
+    strict(w.value, props, 'facebook');
+  });
+
+  it('[R581] le rang pris par l’autre planification : rien en double, les rangs suivants sont remplis', async () => {
+    const t = await setup();
+    const props: string[] = [];
+    for (let i = 0; i < 7; i++) props.push(await t.property(2));
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 2, facebook: 1 }, hours: ['09:00', '18:00'] });
+    // L'autre planification passe en entier juste avant la première réservation de celle-ci.
+    const db = crossed(t.db, async () => {
+      expect(await t.cal.planWeek(t.alexV, '2027-10-11')).toMatchObject({ ok: true });
+    });
+    const w = await t.calOn(db).planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    expect(db.crossed).toBe(1);
+    expect(w.value).toHaveLength(21);
+    expect((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM social_calendar_slots'))!.n).toBe(21);
+    expect(await t.cal.slots(t.alexV, '2027-10-11', '2027-10-17')).toEqual(w);
+    strict(w.value, props, 'instagram');
+  });
+
+  it('[R581] plus aucune publication prête : le rang reste vide et la planification finit', async () => {
+    const t = await setup();
+    const only = await t.property(1);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 2 }, hours: ['09:00', '18:00'] });
+    const db = crossed(t.db, bookElsewhere(t, 1, '18:00'));
+    const w = await t.calOn(db).planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    expect(db.crossed).toBe(1);
+    expect(w.value.map((s) => [s.day, s.rank, s.propertyId])).toEqual([['2027-10-11', 1, only]]);
   });
 });
 
