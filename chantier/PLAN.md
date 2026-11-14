@@ -1745,6 +1745,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : correction du nom « à la demande de la personne » après la réception : `rectifiedOn` à son jour, alertes qui le disent [R96] (test) ; correction avant la réception, ou pour un autre motif : rien (test) ; fiches réunies : la correction de l'autre fiche compte (test) ; réponse notée : son empreinte change avec les corrections, celle d'une opposition ne change pas (test) ; demande d'une autre sorte : `rectifiedOn` nul (test) ; aucun nom dans la demande, les alertes ni le journal [R13] (test) ; tous les tests de L07 et SV10 restent verts.
 - Attend : rien.
 
+### RC36 · Un signalement sur un mandat ou une offre fige aussi la vente qui en découle
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : L05, HX57, SV12
+- Cahier : M12 Conformité (« déclare un soupçon ») ; R94, R17, R16.
+- Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de SV12 (« un signalement sur une offre ou un mandat ne fige pas le dossier lié »). Aujourd'hui un dossier de vente fige son offre, les mandats du bien et le vendeur, mais pas l'inverse : un signalement sur un mandat ne fige ni les offres reçues sur le bien ni les dossiers de vente, et un signalement sur une offre ne fige pas le dossier de vente ouvert depuis cette offre. Le responsable ne verrait pas qu'une offre ou une étape de la vente a été changée de force après le signalement. Désormais le périmètre d'un mandat comprend les offres du même bien, leurs dossiers de vente et leurs acquéreurs (fiches réunies et bénéficiaires effectifs compris) ; celui d'une offre comprend les dossiers de vente ouverts depuis elle. Le périmètre reste celui du jour du signalement : une offre arrivée après est une ligne ajoutée, pas un changement. Le contrôle du gel des avoirs (HX57) partage ce périmètre : il contrôle aussi ces parties, plus prudent. Change seulement `conformite/dossier-fige.ts` et ses tests ; aucune règle nouvelle ni migration.
+- Objectif : un dossier signalé est figé avec toute la vente qui en découle.
+- Critères : signalement sur un mandat : l'offre du bien, son dossier de vente et la pièce du coffre de l'acquéreur changés ou effacés de force sont vus [R94, R17] (test) ; signalement sur une offre : son dossier de vente changé de force est vu (test) ; l'offre d'un autre bien n'entre pas dans le périmètre (test) ; une offre arrivée après le signalement est ajoutée, la copie reste intacte (test) ; le gel des avoirs contrôle aussi l'acquéreur d'une offre sur un mandat (test) ; tous les tests de L05 et HX57 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
