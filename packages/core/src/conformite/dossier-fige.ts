@@ -84,15 +84,33 @@ const PARTS: Part[] = [
 
 export const unique = (values: (string | null | undefined)[]): string[] => [...new Set(values.filter((v): v is string => typeof v === 'string'))].sort();
 
-/** Le dossier et toutes ses parties : l'acquéreur, et le vendeur de chaque mandat du bien. `null` s'il est inconnu. */
-export async function caseScopeOf(db: SqlDatabase, fiches: FicheUnique, networkId: string, kind: 'mandate' | 'offer' | 'sale_file', id: string): Promise<{ personId: string; scope: CaseScope } | null> {
+/**
+ * Le dossier et toutes ses parties : l'acquéreur, et le vendeur de chaque mandat du bien ; pour un mandat, les offres du
+ * bien et leurs acquéreurs ; pour une offre, ses dossiers de vente, avec `withSale` (RC36 : le signalement fige la vente
+ * qui en découle ; le gel des avoirs contrôle chaque offre et chaque dossier de vente comme un dossier à part). `null` s'il
+ * est inconnu.
+ */
+export async function caseScopeOf(
+  db: SqlDatabase,
+  fiches: FicheUnique,
+  networkId: string,
+  kind: 'mandate' | 'offer' | 'sale_file',
+  id: string,
+  options: { withSale?: boolean } = {},
+): Promise<{ personId: string; scope: CaseScope } | null> {
   const scope: CaseScope = { mandates: [], offers: [], saleFiles: [], persons: [], caseRefs: [] };
   let personId: string;
   if (kind === 'mandate') {
-    const row = await db.first<{ network_id: string; person_id: string }>('SELECT network_id, person_id FROM mandates WHERE id = ?', [id]);
+    const row = await db.first<{ network_id: string; person_id: string; property_id: string | null }>('SELECT network_id, person_id, property_id FROM mandates WHERE id = ?', [id]);
     if (!row || row.network_id !== networkId) return null;
     personId = row.person_id;
     scope.mandates = [id];
+    // La vente qui en découle (RC36) : les offres reçues sur le même bien, leurs dossiers de vente et leurs acquéreurs.
+    if (options.withSale && row.property_id) {
+      const offers = await db.all<{ id: string; buyer_person_id: string }>('SELECT id, buyer_person_id FROM offer_register WHERE network_id = ? AND property_id = ?', [networkId, row.property_id]);
+      scope.offers = unique(offers.map((o) => o.id));
+      scope.persons = unique(offers.map((o) => o.buyer_person_id));
+    }
   } else {
     let offerId = id;
     if (kind === 'sale_file') {
@@ -108,6 +126,11 @@ export async function caseScopeOf(db: SqlDatabase, fiches: FicheUnique, networkI
     const mandates = await db.all<{ id: string; person_id: string }>('SELECT id, person_id FROM mandates WHERE network_id = ? AND property_id = ?', [networkId, offer.property_id]);
     scope.mandates = unique(mandates.map((m) => m.id));
     scope.persons = unique(mandates.map((m) => m.person_id));
+  }
+  // Les dossiers de vente ouverts depuis chaque offre du périmètre (RC36) : une offre signalée fige aussi sa vente.
+  if (options.withSale && scope.offers.length > 0) {
+    const files = await db.all<{ id: string }>(`SELECT id FROM sale_files WHERE network_id = ? AND offer_id IN (${scope.offers.map(() => '?').join(', ')})`, [networkId, ...scope.offers]);
+    scope.saleFiles = unique([...scope.saleFiles, ...files.map((f) => f.id)]);
   }
   // Chaque partie avec ses fiches réunies (S04), puis les bénéficiaires effectifs d'une société, avec les leurs : leur
   // identité fait partie de l'identification du client.
