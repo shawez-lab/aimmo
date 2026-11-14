@@ -22,6 +22,7 @@ import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { ControleEnvois } from '../envoi/controle.ts';
 import { localTime } from '../envoi/horaires.ts';
 import type { AgentPushPayload } from '../envoi/notifications-agents.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -159,6 +160,18 @@ export interface NotificationsOptions {
   now?: () => Date;
   newId?: () => string;
   timeZone?: string;
+  /** La fenêtre du rattrapage : les faits plus vieux ne notifient plus rien (RC33). 15 minutes par défaut. */
+  catchUpWindowMs?: number;
+}
+
+/** Le rattrapage de chaque passage ne relit que les faits de ces dernières minutes (RC33). */
+export const CATCH_UP_WINDOW_MS = 15 * MIN;
+
+/** Ce qu'un rattrapage a fait : les notifications rangées, et les faits relus. */
+export interface CatchUpResult {
+  hotContacts: number;
+  inbound: number;
+  notified: number;
 }
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -170,6 +183,7 @@ export class Notifications {
   private readonly store: FicheClient;
   private readonly fiche: FicheUnique;
   private readonly acces: Acces;
+  private readonly catchUpWindowMs: number;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -180,6 +194,7 @@ export class Notifications {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.timeZone = options.timeZone ?? TIME_ZONE;
+    this.catchUpWindowMs = options.catchUpWindowMs ?? CATCH_UP_WINDOW_MS;
     this.store = new FicheClient(db, { now: this.now });
     this.fiche = new FicheUnique(db, this.store, { now: this.now });
     this.acces = new Acces(db, this.store, this.fiche, journal, { now: this.now });
@@ -290,14 +305,7 @@ export class Notifications {
     }
     const at = this.now();
     // Un message de la personne déjà dit par son contact chaud, il y a peu ou encore à partir, n'est pas redit [R412].
-    if (input.kind === 'client_ecrit') {
-      const hot = await this.db.first<{ n: number }>(
-        `SELECT count(*) AS n FROM agent_notifications WHERE agent_id = ? AND kind = 'contact_chaud' AND person_id IN (${placeholders(members.length)})
-         AND (created_at >= ? OR sent_at >= ? OR status IN ('a_envoyer', 'en_envoi'))`,
-        [agent.id, ...members, new Date(at.getTime() - JUST_WROTE_MS).toISOString(), new Date(at.getTime() - JUST_WROTE_MS).toISOString()],
-      );
-      if (Number(hot?.n ?? 0) > 0) return { ok: true, value: null, reason: 'deja_dit' };
-    }
+    if (input.kind === 'client_ecrit' && (await this.toldByHot(agent.id, members, at))) return { ok: true, value: null, reason: 'deja_dit' };
     const { changes } = await this.db.run(
       `INSERT INTO agent_notifications (id, network_id, agent_id, person_id, kind, urgency, dedup_key, status, push_id, created_at, sent_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'a_envoyer', NULL, ?, NULL) ON CONFLICT (dedup_key) DO NOTHING`,
@@ -318,6 +326,92 @@ export class Notifications {
       }
     }
     return { ok: true, value: (await this.db.first<NotificationRow>('SELECT * FROM agent_notifications WHERE id = ?', [row.id])) ?? row };
+  }
+
+  /**
+   * Le rattrapage du passage de chaque minute, à appeler juste avant `flush()` (RC33) : relit dans chaque réseau les
+   * tâches « rappeler » encore ouvertes et les messages reçus d'une personne de la fenêtre (15 minutes par défaut), et
+   * notifie ce qui ne l'est pas encore, par `notify`, sous les mêmes règles [R412, R16]. Ainsi un contact chaud ou un
+   * message n'attend plus qu'on ait appelé `hotContact` ou `inbound`. Un fait déjà notifié, ou qui ne le serait pas
+   * (agent parti, dossier d'agent incomplet, sorte coupée, personne exclue, déjà dit par un contact chaud), est écarté
+   * avant toute lecture de la fiche : le journal ne reçoit pas une lecture à chaque passage [R13]. Un fait plus vieux que
+   * la fenêtre ne notifie plus rien ; un message daté dans le futur attend.
+   */
+  async catchUp(): Promise<CatchUpResult> {
+    const at = this.now();
+    const from = new Date(at.getTime() - this.catchUpWindowMs).toISOString();
+    const to = at.toISOString();
+    const result: CatchUpResult = { hotContacts: 0, inbound: 0, notified: 0 };
+    const networks = await this.db.all<{ id: string }>('SELECT id FROM networks ORDER BY id');
+    for (const network of networks) {
+      const tasks = await this.db.all<{ id: string; person_id: string }>(
+        'SELECT id, person_id FROM callback_tasks WHERE network_id = ? AND done_at IS NULL AND created_at >= ? AND created_at <= ? ORDER BY created_at, id',
+        [network.id, from, to],
+      );
+      for (const task of tasks) {
+        result.hotContacts += 1;
+        for (const agentId of await this.agentsOf(task.person_id)) {
+          if (await this.wouldNotify(agentId, task.person_id, 'contact_chaud', `callback:${task.id}`, at)) {
+            const r = await this.notify({ agentId, personId: task.person_id, kind: 'contact_chaud', sourceKey: `callback:${task.id}` });
+            if (r.ok && r.value) result.notified += 1;
+          }
+        }
+      }
+      const messages = await this.db.all<{ id: string; agent_id: string | null; person_id: string }>(
+        `SELECT id, agent_id, person_id FROM messages WHERE network_id = ? AND direction = 'in' AND author_kind = 'person'
+         AND occurred_at >= ? AND occurred_at <= ? ORDER BY occurred_at, id`,
+        [network.id, from, to],
+      );
+      for (const m of messages) {
+        result.inbound += 1;
+        // L'agent du message s'il suit encore la fiche ; sinon ceux qui la suivent.
+        const followers = await this.agentsOf(m.person_id);
+        const agents = m.agent_id && followers.includes(m.agent_id) ? [m.agent_id] : followers;
+        for (const agentId of agents) {
+          if (await this.wouldNotify(agentId, m.person_id, 'client_ecrit', `message:${m.id}`, at)) {
+            const r = await this.notify({ agentId, personId: m.person_id, kind: 'client_ecrit', sourceKey: `message:${m.id}` });
+            if (r.ok && r.value) result.notified += 1;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Avant toute lecture de la fiche : le fait n'est pas déjà notifié à cet agent, l'agent est en activité avec un
+   * dossier complet et suit la fiche, la sorte n'est pas coupée, la personne n'est pas exclue, et un contact chaud ne
+   * l'a pas déjà dit (RC33). Ce que `notify` contrôle encore ensuite (droits [R16]) reste à lui.
+   */
+  private async wouldNotify(agentId: string, personId: string, kind: NotificationKind, sourceKey: string, at: Date): Promise<boolean> {
+    const done = await this.db.first<{ id: string }>('SELECT id FROM agent_notifications WHERE dedup_key = ?', [`${agentId}:${kind}:${sourceKey}`]);
+    if (done) return false;
+    const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [agentId]);
+    if (!agent || agent.status !== 'active') return false;
+    if ((await agentState(this.db, agent.network_id, agentId, at)) !== 'actif') return false;
+    const members = await this.fiche.membersOf(personId);
+    if (members.length === 0) return false;
+    const follows = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM persons WHERE id IN (${placeholders(members.length)}) AND network_id = ? AND agent_id = ?`,
+      [...members, agent.network_id, agentId],
+    );
+    if (Number(follows?.n ?? 0) === 0) return false;
+    if (kind !== 'contact_chaud') {
+      if ((await this.settings(agentId)).levels[kind as SettableKind] === 'coupee') return false;
+      if (kind === 'client_ecrit' && (await this.toldByHot(agentId, members, at))) return false;
+    }
+    return !(await this.excluded(members));
+  }
+
+  /** Un contact chaud de la même personne, créé ou parti depuis 30 minutes au plus, ou encore à partir [R412]. */
+  private async toldByHot(agentId: string, members: readonly string[], at: Date): Promise<boolean> {
+    const since = new Date(at.getTime() - JUST_WROTE_MS).toISOString();
+    const hot = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM agent_notifications WHERE agent_id = ? AND kind = 'contact_chaud' AND person_id IN (${placeholders(members.length)})
+       AND (created_at >= ? OR sent_at >= ? OR status IN ('a_envoyer', 'en_envoi'))`,
+      [agentId, ...members, since, since],
+    );
+    return Number(hot?.n ?? 0) > 0;
   }
 
   /**
@@ -512,8 +606,11 @@ export class Notifications {
 
   /** Les agents qui suivent la fiche, fiches réunies comprises. */
   private async agentsOf(personId: string): Promise<string[]> {
-    const view = await this.fiche.view(personId);
-    return [...new Set(view.members.map((p) => p.agent_id).filter((a): a is string => typeof a === 'string'))];
+    const members = await this.fiche.membersOf(personId);
+    if (members.length === 0) return [];
+    const rows = await this.db.all<{ id: string; agent_id: string | null }>(`SELECT id, agent_id FROM persons WHERE id IN (${placeholders(members.length)})`, members);
+    const byId = new Map(rows.map((r) => [r.id, r.agent_id]));
+    return [...new Set(members.map((id) => byId.get(id)).filter((a): a is string => typeof a === 'string'))];
   }
 
   private async excluded(ids: readonly string[]): Promise<boolean> {
