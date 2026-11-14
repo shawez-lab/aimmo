@@ -15,7 +15,7 @@ import {
 import { PrixRegroupes, type LatLon } from '../src/attirer/index.ts';
 import type { EstimatedKind, Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
-import { MAGAZINE_TITLE, euros, LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
+import { MAGAZINE_TITLE, euros, LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, withoutCompoundPlaces, type LetterContent } from '../src/marketing/index.ts';
 import type { PublicCell } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -453,6 +453,63 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(ok.ok).toBe(true);
     expect(ok.ok && ok.html.includes('Dupontel')).toBe(false);
     expect(ok.ok && ok.html.split('<body>')[1]!.includes('@')).toBe(false);
+  });
+
+  /** Le magazine tiré avec ces communes de biens et ces personnes du réseau. */
+  const tirer = async (cities: string[], people: { firstName: string; lastName?: string }[]) => {
+    const t = await setup();
+    for (const [i, city] of cities.entries()) await t.property(`B${i + 1}`, { ...MAISON, city });
+    for (const p of people) await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, ...p });
+    return t.lettre.magazine(t.direction);
+  };
+  const REFUSED = { ok: false, rule: 'R09', code: 'texte' };
+
+  it('[R09] RC38 : un prénom ou un nom pris dans un nom de commune composé ne bloque plus le magazine', async () => {
+    const pierre = await tirer(['Pierre-de-Bresse'], [{ firstName: 'Pierre', lastName: 'Dupontel' }]);
+    expect(pierre.ok && pierre.html.includes('Pierre-de-Bresse')).toBe(true);
+    const martin = await tirer(['Saint-Martin-du-Mont', 'Talant'], [{ firstName: 'Mila', lastName: 'Martin' }]);
+    expect(martin).toMatchObject({ ok: true, properties: 2 });
+    expect(martin.ok && martin.html.includes('Saint-Martin-du-Mont')).toBe(true);
+  });
+
+  it('[R09] RC38 : une commune égale au nom d’une personne reste refusée', async () => {
+    expect(await tirer(['Dupontel'], [{ firstName: 'Mila', lastName: 'Dupontel' }])).toEqual(REFUSED);
+    expect(await tirer(['Jean-Pierre'], [{ firstName: 'Jean-Pierre', lastName: 'Dupontel' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : un lieu sans trait d’union reste refusé, côté prudent', async () => {
+    expect(await tirer(['Saint Pierre'], [{ firstName: 'Pierre' }])).toEqual(REFUSED);
+    expect(await tirer(['Pierre Dupontel'], [{ firstName: 'Pierre', lastName: 'Dupontel' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : les mêmes lieux sans personne de ce nom sortent, c’est bien le nom qui refuse', async () => {
+    for (const city of ['Dupontel', 'Jean-Pierre', 'Saint Pierre', 'Pierre Dupontel']) expect(await tirer([city], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
+  });
+
+  it('[R09] RC38 : un lieu composé à côté ne couvre ni un nom seul ni un nom composé plus long', async () => {
+    expect(await tirer(['Saint-Pierre', 'Pierre'], [{ firstName: 'Pierre' }])).toEqual(REFUSED);
+    expect(await tirer(['Saint-Martin-du-Mont', 'Saint-Martin'], [{ firstName: 'Mila', lastName: 'Saint-Martin-du-Mont' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : un nom de plusieurs mots, accents décomposés compris, garde ses mots composés', async () => {
+    expect(await tirer(['La Roche-sur-Yon'], [{ firstName: 'Mila', lastName: 'La Roche-sur-Yon' }])).toEqual(REFUSED);
+    expect(await tirer(['La Roche-sur-Yon'], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
+    expect(await tirer(['La Ferté-sous-Jouarre'], [{ firstName: 'Mila', lastName: 'La Ferté-sous-Jouarre'.normalize('NFD') }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : un quartier composé de la base ne bloque pas non plus', () => {
+    const text = 'Les prix au m² de Talant et de ses quartiers :\n- Saint-Martin, maison\n- Martin, maison';
+    expect(withoutCompoundPlaces(text, ['Talant', 'Saint-Martin'], ['Martin'])).toBe('Les prix au m² de Talant et de ses quartiers :\n-  , maison\n- Martin, maison');
+    expect(withoutCompoundPlaces('Saint-Martin', ['Saint-Martin'], ['Saint-Martin'])).toBe('Saint-Martin');
+    expect(withoutCompoundPlaces('Pont-de-Pany et Mâlain', ['Pont-de-Pany', 'Mâlain'], [])).toBe('  et Mâlain');
+    // Un lieu plus court ne masque pas le début d'un nom plus long que la base protège (remarque P0 de Codex).
+    expect(withoutCompoundPlaces('Saint-Martin-du-Mont et Saint-Martin', ['Saint-Martin-du-Mont', 'Saint-Martin'], ['Saint-Martin-du-Mont'])).toBe('Saint-Martin-du-Mont et  ');
+    // Un nom de plusieurs mots garde ses mots composés : la commune égale à ce nom reste visible (remarque P0 de Codex).
+    expect(withoutCompoundPlaces('Maison à La Roche-sur-Yon', ['La Roche-sur-Yon'], ['La Roche-sur-Yon'])).toBe('Maison à La Roche-sur-Yon');
+    expect(withoutCompoundPlaces('Maison à La Ferté-sous-Jouarre', ['La Ferté-sous-Jouarre'], ['La Ferté-sous-Jouarre'.normalize('NFD')])).toBe('Maison à La Ferté-sous-Jouarre');
+    expect(withoutCompoundPlaces('Maison à La Ferté-sous-Jouarre'.normalize('NFD'), ['La Ferté-sous-Jouarre'], [])).toBe('Maison à La '.normalize('NFD') + ' ');
+    // Un mot composé qui n'est pas un lieu de la base reste.
+    expect(withoutCompoundPlaces('Jean-Luc à Talant', ['Talant'], [])).toBe('Jean-Luc à Talant');
   });
 
   it('[R586] seule la direction ouvre une édition ; le journal porte l’issue et sa règle, jamais le texte ni le mail', async () => {
