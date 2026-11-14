@@ -305,6 +305,37 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(await pages(make('/Font 12'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
   });
 
+  it('[R12] sans encodage : seule une police standard au nom exact et non incorporée est lue', async () => {
+    const make = (font: string, extra: Obj[] = []) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        font,
+        { dict: '', data: 'BT /F1 12 Tf (Prix 100000) Tj ET' },
+        ...extra,
+      ]);
+    expect(textOf(await pages(make('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')))).toEqual(['Prix 100000']);
+    expect(await pages(make('<< /Type /Font /Subtype /Type1 /BaseFont /HelveticaNeue >>'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(await pages(make('<< /Type /Font /Subtype /TrueType /BaseFont /CourierPrime >>'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    const embedded = make('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FontDescriptor 6 0 R >>', ['<< /Type /FontDescriptor /FontName /Helvetica /FontFile 7 0 R >>', { dict: '', data: 'police' }]);
+    expect(await pages(embedded)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('une table ToUnicode aux plages démesurées compte dans le travail de lecture : refusé en mots', async () => {
+    const ranges = Array.from({ length: 200 }, (_, i) => `<${(i * 256).toString(16).padStart(4, '0')}00> <${(i * 256).toString(16).padStart(4, '0')}FF> <0041>`).join('\n');
+    const cmap = `begincmap\n1 begincodespacerange\n<000000> <FFFFFF>\nendcodespacerange\n200 beginbfrange\n${ranges}\nendbfrange\nendcmap`;
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 6 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf (A) Tj ET' },
+      { dict: '', data: cmap, flate: true },
+    ]);
+    expect(await pdfPagesText(bytes, { maxWork: 10_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+  });
+
   it('des formulaires répétés et imbriqués ne font pas travailler sans fin : refusé en mots', async () => {
     const calls = Array.from({ length: 20 }, () => '/Fm Do').join(' ');
     const bytes = pdf([

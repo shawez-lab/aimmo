@@ -522,7 +522,8 @@ function glyph(name: string): string | null {
   return null;
 }
 
-const STANDARD_FONTS = /^(Helvetica|Times|Courier|Arial|TimesNewRoman)/;
+/** Les polices standard, nom exact : seules elles, non incorporées et sans encodage, sont lues au codage standard. */
+const STANDARD_FONTS = /^(Helvetica(-Bold|-Oblique|-BoldOblique)?|Times-(Roman|Bold|Italic|BoldItalic)|Courier(-Bold|-Oblique|-BoldOblique)?|Arial(MT)?(,(Bold|Italic|BoldItalic))?|TimesNewRoman(PSMT)?(,(Bold|Italic|BoldItalic))?)$/;
 
 interface FontDecoder {
   /** Le texte d'une chaîne, ou null s'il ne se décode pas avec certitude. */
@@ -549,7 +550,7 @@ interface CMap {
   map: Map<string, string>;
 }
 
-function parseCMap(data: string): CMap | null {
+function parseCMap(data: string, work: Work): CMap | null {
   const lx = new Lexer(data);
   const ranges: CMap['ranges'] = [];
   const map = new Map<string, string>();
@@ -558,6 +559,7 @@ function parseCMap(data: string): CMap | null {
     for (;;) {
       const t = lx.next();
       if (t === undefined) break;
+      work.charge(1);
       if (!(t instanceof Op)) {
         stack.push(t);
         continue;
@@ -569,6 +571,7 @@ function parseCMap(data: string): CMap | null {
           if (lo instanceof Str && hi instanceof Str && lo.v.length === hi.v.length && lo.v.length >= 1 && lo.v.length <= 4) ranges.push({ len: lo.v.length, lo: codeOf(lo.v), hi: codeOf(hi.v) });
         }
       } else if (t.v === 'endbfchar') {
+        work.charge(stack.length);
         for (let i = 0; i + 1 < stack.length; i += 2) {
           const src = stack[i];
           const dst = stack[i + 1];
@@ -585,6 +588,7 @@ function parseCMap(data: string): CMap | null {
           const a = codeOf(lo.v);
           const b = codeOf(hi.v);
           if (b < a || b - a > 65_535) continue;
+          work.charge(b - a + 1);
           for (let c = a; c <= b; c++) {
             let u: string | null = null;
             if (Array.isArray(dst)) {
@@ -600,7 +604,8 @@ function parseCMap(data: string): CMap | null {
       }
       stack.length = 0;
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof TooComplex) throw error;
     return null;
   }
   return { ranges, map };
@@ -645,7 +650,8 @@ function simpleTable(file: PdfFile, font: Dict): ((code: number) => string | nul
     if (name === 'WinAnsiEncoding') return winAnsi;
     if (name === 'StandardEncoding') return standardAscii;
     if (name === 'MacRomanEncoding') return (code) => (code >= 0x20 && code <= 0x7e ? String.fromCharCode(code) : null);
-    if (name === null) return embedded && !STANDARD_FONTS.test(base) ? null : standardAscii;
+    // Sans encodage : une police incorporée garde son propre codage, inconnu ici ; seule une police standard non incorporée est lue.
+    if (name === null) return !embedded && STANDARD_FONTS.test(base) ? standardAscii : null;
     return null;
   };
   if (enc === undefined || enc === null) return baseTable(null);
@@ -680,7 +686,7 @@ async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise
     // Une table donnée mais illisible ne cède jamais au codage de base : le texte pourrait différer du document.
     if (!(tu instanceof Stream)) return NO_DECODER;
     const data = await file.decode(tu);
-    const cmap = data === null ? null : parseCMap(data);
+    const cmap = data === null ? null : parseCMap(data, file.work);
     if (!cmap || cmap.map.size === 0) return NO_DECODER;
     return cmapDecoder(cmap, composite ? 2 : 1, fallback);
   }
