@@ -1343,6 +1343,7 @@ export const APP_JS = `'use strict';
     }
     body.appendChild(pub);
     venteArmoire(body, propertyId);
+    body.appendChild(lazyBlock('Remises du moment', '/app/remises.js', 'AIMMO_REMISES', propertyId));
   }
   /* ---------- M11 : après la vente (F07). ---------- */
   var SIDES = { vendeur: 'Vendeur', acquereur: 'Acquéreur' };

@@ -151,9 +151,10 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
     });
     body.appendChild(renderScenarios());
     body.appendChild(renderReclamations());
+    body.appendChild(subScreen('Remises négociées', 'Les remises obtenues pour les agents et leurs clients, chacune avec sa source et sa date de fin, proposées à l’agent au bon moment du dossier.', 'Ouvrir les remises', '/app/remises.js', 'AIMMO_REMISES'));
   }
   /* Un écran de la direction posé sous les engagements, servi à part et chargé au premier geste [R201] :
-     les scénarios automatiques (BR57, \`/app/scenarios.js\`), le réglage des réclamations (BR70, \`/app/reclamations-reglage.js\`). */
+     les scénarios automatiques (BR57, \`/app/scenarios.js\`), le réglage des réclamations (BR70, \`/app/reclamations-reglage.js\`), les remises négociées (BR73, \`/app/remises.js\`). */
   var screens = {};
   function subScreen(title, intro, label, src, name) {
     var box = el('section', null, 'bloc');
