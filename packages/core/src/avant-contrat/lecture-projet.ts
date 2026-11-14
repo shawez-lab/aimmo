@@ -69,9 +69,44 @@ const NEVER_SENT = /\biban\b|\bbic\b|\brib\b|\bswift\b|\bFR\d{2}(?:[  ]?[0-9A-Z
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.\p{L}{2,}/gu;
 const PHONE = /(?:\+|00)\s?\d{2,3}(?:[\s.-]?\d{1,4}){3,6}|\b0\d(?:[\s.-]?\d{2}){4}\b/g;
 
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const MONTHS_WORDS = MONTHS.join(' ');
+
 const normalize = (s: string): string => s.replace(/[   ]/g, ' ');
 
-/** Les extraits envoyés au lecteur : lignes utiles, sans ce qui ne doit pas sortir, mails et téléphones masqués [R15]. */
+/**
+ * Les seuls mots qui passent au lecteur : le vocabulaire des termes comparés par R511. Tout autre mot (nom, prénom,
+ * rue, commune, nom d'étude) devient « … » : aucune personne ni adresse ne sort, même dans une ligne utile [R15].
+ */
+const ALLOWED_WORDS = new Set(
+  (
+    'prix vente vend vendu consentie consenti moyennant payable payé payée comptant euros euro eur ' +
+    'condition conditions suspensive suspensives suspensif obtention obtenir prêt prêts pret prets emprunt emprunts financement montant maximum minimum ' +
+    'durée taux an ans mois jour jours ' +
+    'dépôt depot garantie séquestre sequestre acompte indemnité immobilisation somme versée versé verse versera verser remise remis remettra mains ' +
+    'notaire notaires notarial office maître agence agent immobilier mandataire vendeur vendeurs cédant acquéreur acquéreurs acquereur ' +
+    'acte authentique signature réitération reitération réitérée réitérer date limite plus tard tard avant après au aux à le la les l de du des d ' +
+    'un une sur en par pour entre et ou soit qui que dont sera seront devra devront aura auront est sont lieu ' +
+    'permis construire certificat urbanisme autre bien biens préalable prealable er ' +
+    MONTHS_WORDS
+  ).split(' '),
+);
+
+const PERSON_DIGITS = /\d{11,}/g;
+
+/** Une ligne utile, réduite au vocabulaire des termes, aux nombres et à la ponctuation [R15]. */
+function skeleton(line: string): string {
+  return line
+    .replace(EMAIL, ' … ')
+    .replace(PHONE, ' … ')
+    .replace(PERSON_DIGITS, '…')
+    .replace(/\p{L}+/gu, (w) => (ALLOWED_WORDS.has(w.toLowerCase()) ? w : '…'))
+    .replace(/…(?:[\s'’.,-]*…)+/g, '…')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Les extraits envoyés au lecteur : lignes utiles, sans ce qui ne doit pas sortir, réduites au vocabulaire des termes [R15]. */
 export function excerptsOf(pages: string[]): DraftExcerpt[] {
   const out: DraftExcerpt[] = [];
   pages.forEach((text, i) => {
@@ -79,14 +114,13 @@ export function excerptsOf(pages: string[]): DraftExcerpt[] {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l.length > 0 && USEFUL.test(l) && !NEVER_SENT.test(l))
-      .map((l) => l.replace(EMAIL, '[mail masqué]').replace(PHONE, '[téléphone masqué]').slice(0, MAX_LINE_CHARS))
+      .map((l) => skeleton(l).slice(0, MAX_LINE_CHARS))
       .slice(0, MAX_LINES_PER_PAGE);
     if (lines.length > 0) out.push({ page: i + 1, lines });
   });
   return out;
 }
 
-const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const SEP = '[ .  ]?';
 
 /** Un montant entier en euros, écrit avec ou sans séparateur de milliers, jamais pris dans un nombre plus long. */
@@ -205,6 +239,13 @@ export function verifyReading(pages: string[], raw: unknown): { proposal: DraftP
   } else {
     toRead.add('depot_garantie.montant');
     toRead.add('depot_garantie.detenteur');
+  }
+
+  // Une condition dont les mots sont dans le projet, mais que le lecteur ne rend pas : son absence n'est pas vérifiée.
+  const whole = normalize(pages.join('\n'));
+  for (const kind of CONDITION_KINDS) {
+    const words = CONDITION_WORDS[kind];
+    if (words && words.test(whole) && !conditions.some((c) => c.kind === kind)) toRead.add('conditions');
   }
 
   return { proposal: { priceEur, conditions, loanDeadline, deedBy, deposit }, toRead: ALL_TERMS.filter((t) => toRead.has(t)) };

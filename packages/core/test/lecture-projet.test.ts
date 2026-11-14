@@ -102,6 +102,15 @@ describe('RC39 · lire un terme sur sa page', () => {
     const one = verifyReading(PAGES, { ...EXACT, priceEur: { value: 205000, page: 3 } });
     expect(one.toRead).toEqual(['prix']);
     expect(one.proposal.deedBy).toEqual({ value: '2027-06-15', page: 7 });
+    // Le lecteur ne rend aucune condition, ou en oublie une, alors que ses mots sont dans le projet : à lire.
+    expect(verifyReading(PAGES, { ...EXACT, conditions: [] }).toRead).toEqual(['conditions']);
+    const two = [...PAGES];
+    two[3] = `${PAGES[3]}\nCondition suspensive de la vente préalable d'un autre bien.`;
+    expect(verifyReading(two, EXACT).toRead).toEqual(['conditions']);
+    expect(verifyReading(two, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'vente_autre_bien', page: 4 }] }).toRead).toEqual([]);
+    // Un projet sans aucun mot de condition, et un lecteur qui n'en rend aucune : rien à lire de ce côté.
+    const cash = PAGES.map((p, i) => (i === 3 ? 'Paiement comptant.' : p));
+    expect(verifyReading(cash, { ...EXACT, conditions: [], loanDeadline: null }).toRead).toEqual(['date_limite_pret']);
   });
 
   it('[R512] le destinataire du dépôt n’est proposé que si la ligne du montant le nomme, et lui seul', () => {
@@ -126,9 +135,13 @@ describe('RC39 · lire un terme sur sa page', () => {
     expect(sent).not.toMatch(/1970|Beaune|Paul|rue des Essais/);
     expect(sent).not.toContain('libre');
     expect(ex.map((e) => e.page)).toEqual([2, 4, 5, 7]);
-    expect(ex.find((e) => e.page === 5)!.lines).toEqual(['DÉPÔT DE GARANTIE', "L'acquéreur verse la somme de 10 000 € entre les mains du notaire soussigné, séquestre."]);
-    const masked = excerptsOf(['Prix payé comptant, contact du notaire : etude@notaires.test ou +33 3 80 00 00 00 ou 03.80.11.22.33']);
-    expect(masked[0]!.lines[0]).toBe('Prix payé comptant, contact du notaire : [mail masqué] ou [téléphone masqué] ou [téléphone masqué]');
+    expect(ex.find((e) => e.page === 5)!.lines).toEqual(['DÉPÔT DE GARANTIE', "L'acquéreur verse la somme de 10 000 € entre les mains du notaire …, séquestre."]);
+    expect(ex.find((e) => e.page === 4)!.lines[1]).toBe("Condition suspensive d'obtention d'un prêt de 150 000 € sur une durée de 20 ans au taux maximum de 4 %.");
+    // Une ligne utile qui nomme une personne ou une adresse : ni le nom, ni la rue, ni la commune ne sortent.
+    const named = excerptsOf(['Prix de vente de 205 000 € pour le bien situé 4 rue des Essais à Dijon, vendu par M. Paul Exemple à Mme Jeanne Essai, Maître Durand notaire.']);
+    expect(named[0]!.lines[0]).toBe('Prix de vente de 205 000 € pour le bien … 4 … des … à …, vendu par … à …, Maître … notaire.');
+    const masked = excerptsOf(['Prix payé comptant, contact du notaire : etude@notaires.test ou +33 3 80 00 00 00 ou 03.80.11.22.33, dossier 12345678901234']);
+    expect(masked[0]!.lines[0]).toBe('Prix payé comptant, … du notaire : … ou … ou …');
   });
 });
 
