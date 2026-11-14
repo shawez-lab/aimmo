@@ -24,7 +24,7 @@ import { ROLES, decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { runBatch } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
-import { mandateFeeAt } from '../dossiers/acte.ts';
+import { mandateFeeAt, saleAgentAt } from '../dossiers/acte.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -287,6 +287,8 @@ export class Commissions {
     for (const f of files) {
       let row = await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]);
       if (!row) {
+        // L'agent qui tenait le bien le jour du compromis, même parti depuis : la commission reste la sienne (RC37).
+        f.agent_id = await saleAgentAt(this.db, networkId, f.property_id, f.day);
         if (!f.agent_id) {
           await this.waiting(f.id, 'commission.attente', 'no_agent');
           continue;
