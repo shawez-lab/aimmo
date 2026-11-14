@@ -455,32 +455,46 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(ok.ok && ok.html.split('<body>')[1]!.includes('@')).toBe(false);
   });
 
-  it('[R09] RC38 : un nom de lieu composé ne bloque plus le magazine, un nom de personne seul toujours', async () => {
-    const tirer = async (cities: string[], people: { firstName: string; lastName?: string }[]) => {
-      const t = await setup();
-      for (const [i, city] of cities.entries()) await t.property(`B${i + 1}`, { ...MAISON, city });
-      for (const p of people) await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, ...p });
-      return t.lettre.magazine(t.direction);
-    };
-    // Un prénom ou un nom pris dans un nom de commune composé : le magazine sort, la commune y est.
+  /** Le magazine tiré avec ces communes de biens et ces personnes du réseau. */
+  const tirer = async (cities: string[], people: { firstName: string; lastName?: string }[]) => {
+    const t = await setup();
+    for (const [i, city] of cities.entries()) await t.property(`B${i + 1}`, { ...MAISON, city });
+    for (const p of people) await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, ...p });
+    return t.lettre.magazine(t.direction);
+  };
+  const REFUSED = { ok: false, rule: 'R09', code: 'texte' };
+
+  it('[R09] RC38 : un prénom ou un nom pris dans un nom de commune composé ne bloque plus le magazine', async () => {
     const pierre = await tirer(['Pierre-de-Bresse'], [{ firstName: 'Pierre', lastName: 'Dupontel' }]);
     expect(pierre.ok && pierre.html.includes('Pierre-de-Bresse')).toBe(true);
     const martin = await tirer(['Saint-Martin-du-Mont', 'Talant'], [{ firstName: 'Mila', lastName: 'Martin' }]);
     expect(martin).toMatchObject({ ok: true, properties: 2 });
     expect(martin.ok && martin.html.includes('Saint-Martin-du-Mont')).toBe(true);
-    // Une commune qui est le nom d'une personne, un mot composé égal à son prénom composé, un lieu sans trait
-    // d'union : refusé, côté prudent.
-    expect(await tirer(['Dupontel'], [{ firstName: 'Mila', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    expect(await tirer(['Jean-Pierre'], [{ firstName: 'Jean-Pierre', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    expect(await tirer(['Saint Pierre'], [{ firstName: 'Pierre' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    expect(await tirer(['Pierre Dupontel'], [{ firstName: 'Pierre', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    // Les mêmes lieux sans personne de ce nom sortent : c'est bien le nom qui refuse.
+  });
+
+  it('[R09] RC38 : une commune égale au nom d’une personne reste refusée', async () => {
+    expect(await tirer(['Dupontel'], [{ firstName: 'Mila', lastName: 'Dupontel' }])).toEqual(REFUSED);
+    expect(await tirer(['Jean-Pierre'], [{ firstName: 'Jean-Pierre', lastName: 'Dupontel' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : un lieu sans trait d’union reste refusé, côté prudent', async () => {
+    expect(await tirer(['Saint Pierre'], [{ firstName: 'Pierre' }])).toEqual(REFUSED);
+    expect(await tirer(['Pierre Dupontel'], [{ firstName: 'Pierre', lastName: 'Dupontel' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : les mêmes lieux sans personne de ce nom sortent, c’est bien le nom qui refuse', async () => {
     for (const city of ['Dupontel', 'Jean-Pierre', 'Saint Pierre', 'Pierre Dupontel']) expect(await tirer([city], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
-    // Un lieu composé à côté ne couvre pas le nom seul cité ailleurs.
-    expect(await tirer(['Saint-Pierre', 'Pierre'], [{ firstName: 'Pierre' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    expect(await tirer(['Saint-Martin-du-Mont', 'Saint-Martin'], [{ firstName: 'Mila', lastName: 'Saint-Martin-du-Mont' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
-    expect(await tirer(['La Roche-sur-Yon'], [{ firstName: 'Mila', lastName: 'La Roche-sur-Yon' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+  });
+
+  it('[R09] RC38 : un lieu composé à côté ne couvre ni un nom seul ni un nom composé plus long', async () => {
+    expect(await tirer(['Saint-Pierre', 'Pierre'], [{ firstName: 'Pierre' }])).toEqual(REFUSED);
+    expect(await tirer(['Saint-Martin-du-Mont', 'Saint-Martin'], [{ firstName: 'Mila', lastName: 'Saint-Martin-du-Mont' }])).toEqual(REFUSED);
+  });
+
+  it('[R09] RC38 : un nom de plusieurs mots, accents décomposés compris, garde ses mots composés', async () => {
+    expect(await tirer(['La Roche-sur-Yon'], [{ firstName: 'Mila', lastName: 'La Roche-sur-Yon' }])).toEqual(REFUSED);
     expect(await tirer(['La Roche-sur-Yon'], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
+    expect(await tirer(['La Ferté-sous-Jouarre'], [{ firstName: 'Mila', lastName: 'La Ferté-sous-Jouarre'.normalize('NFD') }])).toEqual(REFUSED);
   });
 
   it('[R09] RC38 : un quartier composé de la base ne bloque pas non plus', () => {
@@ -492,6 +506,8 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(withoutCompoundPlaces('Saint-Martin-du-Mont et Saint-Martin', ['Saint-Martin-du-Mont', 'Saint-Martin'], ['Saint-Martin-du-Mont'])).toBe('Saint-Martin-du-Mont et  ');
     // Un nom de plusieurs mots garde ses mots composés : la commune égale à ce nom reste visible (remarque P0 de Codex).
     expect(withoutCompoundPlaces('Maison à La Roche-sur-Yon', ['La Roche-sur-Yon'], ['La Roche-sur-Yon'])).toBe('Maison à La Roche-sur-Yon');
+    expect(withoutCompoundPlaces('Maison à La Ferté-sous-Jouarre', ['La Ferté-sous-Jouarre'], ['La Ferté-sous-Jouarre'.normalize('NFD')])).toBe('Maison à La Ferté-sous-Jouarre');
+    expect(withoutCompoundPlaces('Maison à La Ferté-sous-Jouarre'.normalize('NFD'), ['La Ferté-sous-Jouarre'], [])).toBe('Maison à La '.normalize('NFD') + ' ');
     // Un mot composé qui n'est pas un lieu de la base reste.
     expect(withoutCompoundPlaces('Jean-Luc à Talant', ['Talant'], [])).toBe('Jean-Luc à Talant');
   });

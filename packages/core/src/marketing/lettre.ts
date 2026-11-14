@@ -238,7 +238,8 @@ function figuresOf(content: LetterContent): (string | number)[] {
 export function withoutCompoundPlaces(text: string, places: readonly string[], names: readonly string[]): string {
   // Chaque mot composé est lu entier, d'un bout à l'autre du texte : « Saint-Martin » ne masque jamais le début de
   // « Saint-Martin-du-Mont ».
-  const compound = /[\p{L}'’]+(?:-[\p{L}'’]+)+/gu;
+  // Les accents décomposés (NFD) font partie du mot : `\p{M}` avec `\p{L}`.
+  const compound = /[\p{L}\p{M}'’]+(?:-[\p{L}\p{M}'’]+)+/gu;
   // Un nom de personne protège aussi chaque mot composé qu'il contient : « La Roche-sur-Yon » garde « Roche-sur-Yon ».
   const known = new Set(names.flatMap((n) => [plain(n).trim(), ...(n.match(compound) ?? []).map((w) => plain(w))]));
   const fromPlaces = new Set(places.flatMap((p) => p.match(compound) ?? []).map((w) => plain(w)));
