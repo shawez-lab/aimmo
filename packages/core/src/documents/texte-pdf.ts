@@ -854,6 +854,8 @@ interface TextState {
   wordSpacing: number;
   scale: number;
   leading: number;
+  /** La montée du texte au-dessus de sa ligne de base (`Ts`). */
+  rise: number;
   /** La transformation courante vers la page (`cm`), gardée et rendue par `q` et `Q`. */
   ctm: number[];
 }
@@ -907,7 +909,7 @@ function inlineImageEnd(lx: Lexer): number {
   return start + length + m[0].length;
 }
 
-const INITIAL_TEXT_STATE: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, ctm: [1, 0, 0, 1, 0, 0] };
+const INITIAL_TEXT_STATE: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, rise: 0, ctm: [1, 0, 0, 1, 0, 0] };
 
 async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>, initial: TextState): Promise<void> {
   const fonts = resources ? file.dict(resources.get('Font')) : null;
@@ -939,8 +941,10 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
    */
   const geometry = (): { along: number; across: number; dir: [number, number] } => {
     const c = ts.ctm;
-    const x = c[0]! * tm[4]! + c[2]! * tm[5]! + c[4]!;
-    const y = c[1]! * tm[4]! + c[3]! * tm[5]! + c[5]!;
+    const tx = tm[2]! * ts.rise + tm[4]!;
+    const ty = tm[3]! * ts.rise + tm[5]!;
+    const x = c[0]! * tx + c[2]! * ty + c[4]!;
+    const y = c[1]! * tx + c[3]! * ty + c[5]!;
     const m = multiply(tm, c);
     const n = Math.hypot(m[0]!, m[1]!) || 1;
     const u: [number, number] = [m[0]! / n, m[1]! / n];
@@ -1056,6 +1060,12 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
       case 'TL':
         if (last !== undefined) ts.leading = last;
         break;
+      case 'Ts':
+        if (last !== undefined) {
+          ts.rise = last;
+          st.moved = true;
+        }
+        break;
       case 'gs': {
         // Un état graphique peut choisir la police : elle est appliquée, ou la page est illisible.
         const n = operands[operands.length - 1];
@@ -1152,14 +1162,13 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           break;
         }
         forms.add(x);
-        if (st.line !== '') newline();
+        // Le formulaire écrit dans l'espace de la page, comme la page : les positions décident des lignes et des espaces.
+        st.moved = true;
         const fm = file.get(x.dict.get('Matrix'));
         const matrix = Array.isArray(fm) && fm.length === 6 && fm.every((v) => typeof v === 'number') ? (fm as number[]) : [1, 0, 0, 1, 0, 0];
         await readContent(file, data, file.dict(x.dict.get('Resources')) ?? resources, st, depth + 1, forms, { ...ts, ctm: multiply(matrix, ts.ctm) });
         forms.delete(x);
-        if (st.line !== '') newline();
-        st.lineY = null;
-        st.endX = null;
+        st.moved = true;
         break;
       }
       default:

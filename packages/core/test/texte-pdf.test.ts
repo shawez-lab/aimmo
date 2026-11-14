@@ -248,6 +248,19 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: 'BT /F1 10 Tf 0 700 Td (Prix : 1) Tj ET BT /F1 10 Tf 120 700 Td (00000) Tj ET' },
     ]);
     expect(textOf(await pages(form))).toEqual(['Prix : 100000']);
+    // Un formulaire qui continue la ligne de la page : la position décide, pas l'appel.
+    const continued = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 6 0 R >> >> /Contents 5 0 R >>',
+      mono,
+      { dict: '', data: 'BT /F1 10 Tf 0 100 Td (Prix : 1) Tj ET /Fm Do BT /F1 10 Tf 110 100 Td (euros) Tj ET' },
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: 'BT /F1 10 Tf 40 100 Td (00000) Tj ET' },
+    ]);
+    expect(textOf(await pages(continued))).toEqual(['Prix : 100000 euros']);
+    // Une montée du texte (Ts) le sort de la ligne.
+    expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm (Prix : 1) Tj 100 Ts (00000) Tj ET')))).toEqual(['Prix : 1\n00000']);
+    expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm (Prix : 1) Tj 0.5 Ts (00000) Tj ET')))).toEqual(['Prix : 100000']);
     // Un recul en fin de TJ compte encore pour le texte suivant, avec ou sans largeurs connues.
     expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td [(Prix : 1) -1000] TJ (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
     expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -1000] TJ (00000) Tj ET'])))).toEqual(['Prix : 1 00000']);
