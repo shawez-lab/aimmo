@@ -1383,7 +1383,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (vrai service : H57).
 
 ### BR66 · Les réglages et la liste des notifications, par les routes
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#560, `006ee23f`). Codex 1 P2 corrigé (le détail d'un envoi est lu par l'envoi, `Notifications.listForPush`, hors de la liste bornée à 200), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5935 tests). Reste pour la voie 1 : l'écran des réglages et de la liste des notifications dans l'application, et la page du lien `/notifications/<envoi>` ; vrai service : H57.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX27, BR65
 - Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R415, R16, R13.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de HX27 (« aux routes et à l'écran des réglages ») et de BR65. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Notifications.settings`, `setSettings` et `listFor` existent mais aucune route ne les appelle, et le lien d'une notification (`/notifications/<envoi>`) ne mène nulle part. Quatre routes sous `/v1/notifications`, dans `packages/api/src/notifications.ts`, réservées à l'agent en activité, pour lui seul : lire et ranger ses réglages (heures calmes, niveau de chaque sorte, le contact chaud jamais réglable), lire ses notifications (fiches qu'il voit en entier seulement), et le détail d'un envoi. L'écran viendra ensuite. Aucune règle nouvelle ni migration.
