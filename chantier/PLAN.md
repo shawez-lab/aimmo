@@ -1499,7 +1499,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR77 · Les programmes neufs au plan du site du réseau et signalés aux moteurs
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#578, `d256cb0d`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6091 tests). Restent : la grille dans les annonces, les écrans du neuf et du viager.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR76
 - Cahier : M01 (référencement, plan du site) ; Phase 3, « Programmes neufs et viager » (HX48) ; R153, R543, R26.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR76 (« le plan du site »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Seul `packages/core/src/attirer/referencement.ts` change, sans route ni migration ni règle nouvelle. La page `/neuf/:programme` n'entre qu'au plan du site du réseau, sa seule page de référence [R153], et seulement quand sa grille publiée a au moins un lot : une page qui dit « aucun lot disponible » n'est pas donnée aux moteurs. Sa date est le jour de confirmation le plus récent de ses lots publiés. Le passage du signalement (IndexNow) la traite comme les autres pages : publiée, modifiée quand sa grille publiée change (lot, prix, frais), retirée quand son dernier lot ne l'est plus ; en essai rien ne part [R26].
