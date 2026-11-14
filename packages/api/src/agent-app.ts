@@ -65,6 +65,7 @@ import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
+import { NOTIFICATIONS_SCRIPT } from '../app/notifications.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
@@ -213,6 +214,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/fiche-google.js': { body: FICHE_GOOGLE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les écrans de M14, « Mon intégration », « Académie » et « Candidatures » (J14), chargés à leur première ouverture [R201].
   '/app/integration.js': { body: INTEGRATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les notifications de l'agent (BR67), chargées au geste ou par le lien d'une notification [R201].
+  '/app/notifications.js': { body: NOTIFICATIONS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/sw.js': { body: SW_JS, type: 'text/javascript; charset=utf-8' },
   '/app/manifest.webmanifest': { body: MANIFEST, type: 'application/manifest+json; charset=utf-8' },
   '/app/icon.svg': { body: ICON_SVG, type: 'image/svg+xml' },
@@ -221,9 +224,22 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
 /** Les fichiers de l'application, pour les tests. */
 export const AGENT_APP_FILES: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(Object.entries(FILES).map(([k, v]) => [k, v.body])));
 
+/**
+ * Le lien d'une notification (BR67, R415) : `/notifications/<envoi>` renvoie vers l'application, qui ouvre le détail de
+ * l'envoi une fois l'agent entré. Rien n'est lu ici : ni clé, ni base ; un identifiant mal formé n'est pas à elle.
+ */
+export const NOTIFICATION_LINK = /^\/notifications\/([A-Za-z0-9_-]{1,64})$/;
+
 /** Sert un fichier de l'application, ou null si l'adresse n'est pas à elle. */
 export function handleAgentApp(request: Request): Response | null {
   const url = new URL(request.url);
+  const link = NOTIFICATION_LINK.exec(url.pathname);
+  if (link && (request.method === 'GET' || request.method === 'HEAD')) {
+    return new Response(null, {
+      status: 302,
+      headers: { location: `${AGENT_APP_PATH}/#envoi=${link[1]}`, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' },
+    });
+  }
   if (url.pathname !== AGENT_APP_PATH && !url.pathname.startsWith(`${AGENT_APP_PATH}/`)) return null;
   const headers: Record<string, string> = {
     'content-security-policy': AGENT_APP_CSP,

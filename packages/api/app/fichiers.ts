@@ -10,6 +10,7 @@ import { COMMERCES_HOME_HTML, COMMERCES_HTML, COMMERCES_JS } from './commerces.t
 import { AVIS_HTML, AVIS_JS } from './avis.ts';
 import { ACTUALITES_HOME_HTML, ACTUALITES_JS } from './actualites.ts';
 import { CLES_A_RENDRE_HOME_HTML, CLES_A_RENDRE_JS } from './cles-a-rendre.ts';
+import { NOTIFICATIONS_HOME_HTML, NOTIFICATIONS_JS } from './notifications.ts';
 import { A_TENIR_HOME_HTML, A_TENIR_JS } from './a-tenir.ts';
 import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
@@ -119,7 +120,7 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
-${ACTUALITES_HOME_HTML}${CLES_A_RENDRE_HOME_HTML}${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
+${ACTUALITES_HOME_HTML}${CLES_A_RENDRE_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
@@ -720,6 +721,7 @@ export const APP_JS = `'use strict';
     wipeIntegration();
     wipeActualites();
     wipeClesARendre();
+    wipeNotifications();
   }
   /* ---------- M08 : l'écran de la visite et l'écran des acquéreurs d'un bien (T08). ---------- */
   function button(text, onClick) {
@@ -2049,7 +2051,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECOMMANDATION_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -2170,7 +2172,7 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { return true; });
+      return day(key, mine).then(function () { if (mine === session) notifLink(); return true; });
     }, function () {
       if (mine !== session) return false;
       return refuse('Pas de réseau. Réessayez dans un moment.');
@@ -2219,6 +2221,7 @@ ${LOUER_JS}
     $('actualites-ouvrir').addEventListener('click', function () { openActualites('fil'); });
     $('actualites-vues').addEventListener('click', function () { openActualites('vues'); });
     $('cles-rendre-ouvrir').addEventListener('click', openClesARendre);
+    $('notifications-ouvrir').addEventListener('click', openNotifications);
     $('louer-retour').addEventListener('click', function () { if (louerId) openLouer(''); else home(); });
     $('louer-ouvrir').addEventListener('click', function () { openLouer('', 0); });
     $('louer-modeles-ouvrir').addEventListener('click', function () { openModeles('louer-modeles'); });
