@@ -337,6 +337,8 @@ class PdfFile {
 
   scan(): void {
     const src = this.src;
+    // Les flux dont la longueur est un autre objet : relus une fois tous les objets connus.
+    const indirect: { num: number; stream: Stream; start: number; length: Ref }[] = [];
     const re = /(\d+)\s+(\d+)\s+obj\b/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
@@ -363,11 +365,19 @@ class PdfFile {
             if (src[end - 1] === '\n') end--;
             if (src[end - 1] === '\r') end--;
           }
-          v = new Stream(v, src.slice(start, end));
+          const stream = new Stream(v, src.slice(start, end));
+          if (len instanceof Ref) indirect.push({ num: Number(m[1]), stream, start, length: len });
+          v = stream;
           re.lastIndex = end;
         } else re.lastIndex = lx.pos;
       } else re.lastIndex = lx.pos;
       this.objects.set(Number(m[1]), v);
+    }
+    for (const p of indirect) {
+      const len = this.get(p.length);
+      if (this.objects.get(p.num) !== p.stream || typeof len !== 'number' || !Number.isInteger(len) || len < 0 || p.start + len > src.length) continue;
+      if (!/^\s*endstream/.test(src.slice(p.start + len, p.start + len + 20))) continue;
+      this.objects.set(p.num, new Stream(p.stream.dict, src.slice(p.start, p.start + len)));
     }
     const tr = /trailer\s*<</g;
     while ((m = tr.exec(src))) {

@@ -429,6 +429,17 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
   });
 
+  it('un flux dont la longueur est un autre objet est lu jusqu’à sa vraie fin, même si « endstream » est écrit dedans', async () => {
+    const data = 'BT /F1 12 Tf 0 700 Td (Prix : 100000) Tj\n% endstream est un mot dans un commentaire\n0 -14 Td (Depot : 20000 euros) Tj ET';
+    const bytes = concat([
+      enc('%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n'),
+      enc(`3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n4 0 obj\n${HELV}\nendobj\n`),
+      enc(`5 0 obj\n<< /Length 6 0 R >>\nstream\n${data}\nendstream\nendobj\n6 0 obj\n${data.length}\nendobj\n`),
+      enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n'),
+    ]);
+    expect(textOf(await pages(bytes))).toEqual(['Prix : 100000\nDepot : 20000 euros']);
+  });
+
   it('lit les objets rangés dans un flux d’objets (PDF 1.5), sans table de références classique', async () => {
     const inner = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', HELV];
     let body = '';
