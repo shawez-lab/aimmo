@@ -578,6 +578,14 @@ export class AnnoncesTraduites {
     }
     return null;
   }
+
+  /**
+   * L'annonce à joindre à la première réponse d'un acheteur (C04, RC34) [R259] : dans la langue de sa fiche, sinon de
+   * l'écriture de son message, sinon en anglais ; rien s'il écrit en français ou si aucune traduction n'est à jour.
+   */
+  async forBuyerMessage(networkId: string, propertyId: string, personLanguage: string | null, text: string) {
+    return this.forBuyer(networkId, propertyId, buyerLanguage(personLanguage, text));
+  }
 }
 
 const ON_PORTALS = new Set(['en_vente', 'sous_offre']);

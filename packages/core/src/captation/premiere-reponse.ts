@@ -61,6 +61,41 @@ export interface FirstReplyOutcome {
   skipped: string | null;
   /** Le motif, en code : `not_attached`, `no_channel` ou `already_replied`. */
   skipCode: SkipCode | null;
+  /** L'annonce traduite partie avec la réponse (RC34) [R259] : sa langue, sa version, en entier ou son titre seul. */
+  translation?: { language: string; version: number; part: 'complete' | 'title' } | null;
+}
+
+/** L'annonce d'un bien traduite et validée par son agent, à la dernière version publiée (HX05). */
+export interface BuyerListingTranslation {
+  language: string;
+  title: string;
+  body: string;
+  priceEur: number;
+  mentions: string;
+  version: number;
+}
+
+/**
+ * Où lire l'annonce dans la langue de l'acheteur (HX05, `AnnoncesTraduites.forBuyerMessage`) : la langue de sa fiche,
+ * sinon celle de l'écriture de son message, sinon l'anglais ; rien pour un acheteur qui écrit en français, ni pour un
+ * bien sans traduction validée et à jour [R259].
+ */
+export interface BuyerTranslations {
+  forBuyerMessage(networkId: string, propertyId: string, personLanguage: string | null, text: string): Promise<BuyerListingTranslation | null>;
+}
+
+/**
+ * La réponse suivie de l'annonce traduite (RC34) [R259] : d'abord en entier (titre, texte, mentions françaises de la
+ * version publiée), puis le titre seul, puis la réponse d'aujourd'hui ; le premier texte que le contrôle central laisse
+ * passer part (longueur du canal, parenthèse…). Le texte validé part tel quel, jamais réécrit.
+ */
+export function withTranslation(texts: readonly string[], t: Pick<BuyerListingTranslation, 'title' | 'body' | 'mentions'>): string[] {
+  // Les mentions légales gardent chaque mot ; seules leurs parenthèses, refusées dans un message [R08], deviennent des
+  // virgules (« (abonnements compris) » → « , abonnements compris »).
+  const mentions = t.mentions.trim().replace(/\s*\(([^()]*)\)/g, ', $1');
+  const complete = texts.map((x) => `${x}\n\n${t.title.trim()}\n\n${t.body.trim()}\n\n${mentions}`);
+  const title = texts.map((x) => `${x}\n\n${t.title.trim()}`);
+  return [...new Set([...complete, ...title, ...texts])];
 }
 
 const KIND_FR: Record<PropertyKind, string> = {
@@ -203,6 +238,8 @@ export interface PremiereReponseOptions {
   writer?: ReplyWriter;
   /** La porte de toute diffusion (D05) : absente, le statut du bien est lu tel quel. */
   diffusion?: { canDiffuse(networkId: string, propertyId: string): Promise<{ allowed: boolean }> };
+  /** L'annonce dans la langue de l'acheteur (HX05) : absente, la réponse ne porte jamais d'annonce traduite [R259]. */
+  translations?: BuyerTranslations;
 }
 
 type LastCheck = (networkId: string, conversationId: string) => Promise<{ allowed: boolean; rule: string; reason: string }>;
@@ -256,9 +293,20 @@ export class PremiereReponse {
     const property = closing ? null : notSent;
     const facts = property ? await this.facts(property) : null;
     const firstName = view.members.map((p) => p.first_name).find((n) => n) ?? null;
+    const spoken = await voiceNoteLanguage(this.db, row.network_id, inboundId);
+    // L'annonce dans la langue de l'acheteur, pour un bien qu'on peut encore visiter, au prix que la réponse dit, et
+    // jamais à qui vient de parler français [R259, RC24]. Un prix de l'annonce différent : rien, pour ne jamais dire deux prix.
+    // Le français est la langue d'une fiche par défaut : il ne dit rien de l'acheteur, l'écriture du message décide,
+    // comme pour la langue de la réponse.
+    const found =
+      property && facts && (facts.status === 'available' || facts.status === 'under_offer') && spoken !== 'fr' && this.options.translations
+        ? await this.options.translations.forBuyerMessage(row.network_id, property.id, view.person.language === 'fr' ? null : view.person.language, row.body)
+        : null;
+    const translation = found && found.priceEur === facts?.priceEur ? found : null;
     const brief: ReplyBrief = {
       channel,
-      language: replyLanguage(view.person, row.body, await voiceNoteLanguage(this.db, row.network_id, inboundId)),
+      // Seules les réponses française et anglaise ont des textes relus : avec une annonce traduite, l'anglais [R259].
+      language: translation ? 'en' : replyLanguage(view.person, row.body, spoken),
       informal: channel === 'instagram',
       firstName: channel === 'instagram' ? null : firstName,
       received: withoutContactDetails(row.body),
@@ -270,8 +318,9 @@ export class PremiereReponse {
     // Un vendeur qui porte le prénom de la personne : le prénom n'est permis que dans la salutation des textes de
     // secours, et l'IA ne rédige pas, pour que ce prénom ne puisse jamais désigner le vendeur [R19].
     const sharedName = recipient !== null && sellers.some((n) => plain(n) === recipient);
-    // Sans bien reconnu, l'IA ne rédige pas : seul le texte simple et honnête part [R20].
-    const writer = property && !sharedName ? this.options.writer : undefined;
+    // Sans bien reconnu, l'IA ne rédige pas : seul le texte simple et honnête part [R20]. Avec une annonce traduite non
+    // plus : le texte validé par l'agent part tel quel, derrière la réponse du code [R259].
+    const writer = property && !sharedName && !translation ? this.options.writer : undefined;
     const conversationKey = `${row.channel}:${row.conversation_ref ?? `${row.kind}:${row.external_id}`}`;
     const order: SendOrder = {
       networkId: row.network_id,
@@ -283,9 +332,10 @@ export class PremiereReponse {
       ...(this.beforeSend ? { stillAllowed: () => this.beforeSend!(row.network_id, conversationKey) } : {}),
       ...(property ? { propertyIds: [property.id] } : {}),
       ...(writer ? { compose: () => writer.write(brief) } : {}),
-      fallbackTexts: fallbackTexts(brief),
+      fallbackTexts: translation ? withTranslation(fallbackTexts(brief), translation) : fallbackTexts(brief),
       rolloutRef: inboundId,
-      figures: figuresOf(facts),
+      // Les chiffres de l'annonce traduite sont ceux de la version publiée, contrôlés à la traduction [R10, R257].
+      figures: translation ? [...figuresOf(facts), translation.priceEur, translation.title, translation.body, translation.mentions] : figuresOf(facts),
       sellerNames: sellers.filter((n) => plain(n) !== recipient),
       maxQuestions: brief.nextStep === null ? 0 : 1,
     };
@@ -308,7 +358,17 @@ export class PremiereReponse {
     // Seule une réponse partie garde sa réservation : un refus ou une panne laissent réessayer plus tard,
     // et le contrôle central réexamine tout à chaque essai.
     if (result.status !== 'sent') await this.releaseClaim(claimId, result.status === 'failed' ? 'panne' : 'refus');
-    return { inboundId, recognition: recognition.status, nextStep: brief.nextStep, result, skipped: null, skipCode: null };
+    const body = result.status === 'sent' ? (result.body ?? '') : '';
+    const part = translation && body.includes(`\n\n${translation.title.trim()}`) ? (body.includes(translation.body.trim()) ? 'complete' : 'title') : null;
+    return {
+      inboundId,
+      recognition: recognition.status,
+      nextStep: brief.nextStep,
+      result,
+      skipped: null,
+      skipCode: null,
+      translation: translation && part ? { language: translation.language, version: translation.version, part } : null,
+    };
   }
 
   /** Avec un palier, un message resté dans la boîte d'essai n'est pas parti (C09b). */

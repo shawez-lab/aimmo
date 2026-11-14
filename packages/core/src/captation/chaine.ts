@@ -4,6 +4,7 @@
  * central (S06) → canal. En mode essai, le canal est la boîte d'essai : rien ne part.
  */
 import { Acces } from '../acces/acces.ts';
+import { AnnoncesTraduites } from '../annonces/traductions.ts';
 import { ReconnaissanceBien } from '../biens/reconnaissance.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -219,6 +220,8 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
   const premiere = new PremiereReponse(db, fiche, reception, new ReconnaissanceBien(db), controle, {
     ...(options.writer ? { writer: options.writer } : {}),
     diffusion: new Diffusion(db, acces, journal, { now }),
+    // L'annonce validée dans la langue d'un acheteur étranger suit sa première réponse (RC34) [R259].
+    translations: new AnnoncesTraduites(db, acces, journal, { now }),
   });
   const relais = new ConversationRelais(db, store, fiche, reception, premiere, acces, { now });
   const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, {
