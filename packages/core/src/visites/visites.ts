@@ -289,13 +289,19 @@ export class Visites {
     }
     if (!(await this.currentTemplate(viewer.networkId))) return { ok: false, rule: 'R40', code: 'no_template' };
     const root = fiche.value.person;
+    // La base tranche : le rendez-vous doit être encore pris au moment de l'écriture (annulé ou décalé pendant les
+    // contrôles : rien n'est rangé), et un seul rattachement passe.
     const { changes } = await this.db.run(
       `INSERT INTO visits (appointment_id, network_id, property_id, project_id, person_id, agent_id, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-      [appointment.id, viewer.networkId, property.id, project.id, root.id, appointment.agent_id, this.actor(viewer), this.now().toISOString()],
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? FROM appointments WHERE id = ? AND status = 'booked' ON CONFLICT DO NOTHING`,
+      [appointment.id, viewer.networkId, property.id, project.id, root.id, appointment.agent_id, this.actor(viewer), this.now().toISOString(), appointment.id],
     );
-    // Un autre appel l'a rattaché entre la lecture et l'écriture : le premier l'emporte.
-    if (changes !== 1) return this.reject(viewer, 'already_attached', subject);
+    if (changes !== 1) {
+      const still = await this.rdv.get(appointment.id);
+      if (still?.status !== 'booked') return this.reject(viewer, 'not_booked', subject);
+      // Un autre appel l'a rattaché entre la lecture et l'écriture : le premier l'emporte.
+      return this.reject(viewer, 'already_attached', subject);
+    }
     await appendEvent(
       this.journal,
       { type: 'visite.rattachee', actor: this.actor(viewer), subject: `person:${root.id}`, data: { appointment: appointment.id, property: property.id, source: appointment.source } },

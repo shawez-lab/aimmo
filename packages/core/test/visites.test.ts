@@ -298,6 +298,25 @@ describeWithSqlite('RC32 · une visite réservée en ligne rattachée à la rech
     expect(await count(t)).toEqual({ visits: 0, slips: 0 });
   });
 
+  it('annulé pendant les contrôles : rien n’est rangé, le refus dit « not_booked »', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const appt = await online(t, b.person.id, p.id);
+    const alex = t.as('agent', t.alex.id);
+    // Le client annule par son lien pendant que la diffusion est relue.
+    const gate: DiffusionGate = {
+      canDiffuse: async () => {
+        expect(await t.rdv.cancelAsAgent(alex, appt.id)).toMatchObject({ ok: true });
+        return { allowed: true, reason: 'allowed' };
+      },
+    };
+    const visites = new Visites(t.db, t.journal, new Acces(t.db, t.store, t.fiche, t.journal), { diffusion: gate, rendezVous: t.rdv });
+    expect(await visites.attachOnline(alex, { appointmentId: appt.id, projectId: b.project.id })).toEqual({ ok: false, rule: null, code: 'not_booked' });
+    expect(await count(t)).toEqual({ visits: 0, slips: 0 });
+  });
+
   it('un agent qui ne suit pas la fiche est refusé [R16] ; un bien que la diffusion refuse [R42] ; sans modèle [R40]', async () => {
     const t = await setup();
     const b = await t.buyer('Inès');
