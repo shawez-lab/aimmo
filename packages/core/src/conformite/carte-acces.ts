@@ -180,6 +180,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'avant_contrat.dates_bloquees': 'partage',
   'avant_contrat.depot': 'partage',
   'avant_contrat.depot_refuse': 'partage',
+  // RC39 : la prélecture du projet par l'IA, que les deux parties peuvent connaître ; le journal n'en porte que la source et des noms de termes.
+  'avant_contrat.prelecture': 'partage',
   'dossier.recommande_prepare': 'partage',
   'dossier.recommande_envoye': 'partage',
   'dossier.recommande_essai': 'partage',
