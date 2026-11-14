@@ -236,11 +236,12 @@ function figuresOf(content: LetterContent): (string | number)[] {
  * trait d'union aussi : côté prudent.
  */
 export function withoutCompoundPlaces(text: string, places: readonly string[], names: readonly string[]): string {
+  // Chaque mot composé est lu entier, d'un bout à l'autre du texte : « Saint-Martin » ne masque jamais le début de
+  // « Saint-Martin-du-Mont ».
+  const compound = /[\p{L}'’]+(?:-[\p{L}'’]+)+/gu;
   const known = new Set(names.map((n) => plain(n).trim()));
-  const masked = (place: string): string =>
-    place.replace(/[\p{L}'’]+(?:-[\p{L}'’]+)+/gu, (word) => (known.has(plain(word)) ? word : ' '));
-  const unique = [...new Set(places.map((p) => p.trim()).filter((p) => p.includes('-')))].sort((a, b) => b.length - a.length);
-  return unique.reduce((out, place) => out.split(place).join(masked(place)), text);
+  const fromPlaces = new Set(places.flatMap((p) => p.match(compound) ?? []).map((w) => plain(w)));
+  return text.replace(compound, (word) => (fromPlaces.has(plain(word)) && !known.has(plain(word)) ? ' ' : word));
 }
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -478,6 +478,7 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     for (const city of ['Dupontel', 'Jean-Pierre', 'Saint Pierre', 'Pierre Dupontel']) expect(await tirer([city], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
     // Un lieu composé à côté ne couvre pas le nom seul cité ailleurs.
     expect(await tirer(['Saint-Pierre', 'Pierre'], [{ firstName: 'Pierre' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+    expect(await tirer(['Saint-Martin-du-Mont', 'Saint-Martin'], [{ firstName: 'Mila', lastName: 'Saint-Martin-du-Mont' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
   });
 
   it('[R09] RC38 : un quartier composé de la base ne bloque pas non plus', () => {
@@ -485,6 +486,10 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(withoutCompoundPlaces(text, ['Talant', 'Saint-Martin'], ['Martin'])).toBe('Les prix au m² de Talant et de ses quartiers :\n-  , maison\n- Martin, maison');
     expect(withoutCompoundPlaces('Saint-Martin', ['Saint-Martin'], ['Saint-Martin'])).toBe('Saint-Martin');
     expect(withoutCompoundPlaces('Pont-de-Pany et Mâlain', ['Pont-de-Pany', 'Mâlain'], [])).toBe('  et Mâlain');
+    // Un lieu plus court ne masque pas le début d'un nom plus long que la base protège (remarque P0 de Codex).
+    expect(withoutCompoundPlaces('Saint-Martin-du-Mont et Saint-Martin', ['Saint-Martin-du-Mont', 'Saint-Martin'], ['Saint-Martin-du-Mont'])).toBe('Saint-Martin-du-Mont et  ');
+    // Un mot composé qui n'est pas un lieu de la base reste.
+    expect(withoutCompoundPlaces('Jean-Luc à Talant', ['Talant'], [])).toBe('Jean-Luc à Talant');
   });
 
   it('[R586] seule la direction ouvre une édition ; le journal porte l’issue et sa règle, jamais le texte ni le mail', async () => {
