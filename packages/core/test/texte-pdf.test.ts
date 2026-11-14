@@ -143,14 +143,14 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       '<< /Type /Page /Parent 2 0 R /Contents [5 0 R 6 0 R] >>',
       HELV,
       { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Troisieme page,) Tj ET' },
-      { dict: '', data: 'BT /F1 12 Tf 72 720 Td (meme ligne) Tj ET', flate: true },
+      { dict: '', data: 'BT /F1 12 Tf 72 706 Td (ligne suivante) Tj ET', flate: true },
       '<< /Type /Page /Parent 9 0 R /Contents 8 0 R >>',
       { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Premiere page) Tj ET' },
       '<< /Type /Pages /Parent 2 0 R /Kids [7 0 R 10 0 R] /Count 2 >>',
       '<< /Type /Page /Parent 9 0 R /Contents 11 0 R >>',
       { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Deuxieme page) Tj ET' },
     ]);
-    expect(textOf(await pages(bytes))).toEqual(['Premiere page', 'Deuxieme page', 'Troisieme page, meme ligne']);
+    expect(textOf(await pages(bytes))).toEqual(['Premiere page', 'Deuxieme page', 'Troisieme page,\nligne suivante']);
   });
 
   it('lit le texte d’un formulaire imbriqué, et refuse une boucle de formulaires', async () => {
@@ -197,6 +197,61 @@ describe('RC40 · le texte des pages d’un PDF', () => {
   it('lit une police composite par sa table ToUnicode (bfchar, bfrange), accents et euro compris', async () => {
     const content = `BT /F2 11 Tf 72 720 Td ${cid('Prix de vente 245000 €')} Tj 0 -14 Td [${cid('Acte pr')} -10 ${cid('évu')}] TJ ET`;
     expect(textOf(await pages(composite(content)))).toEqual(['Prix de vente 245000 €\nActe prévu']);
+  });
+
+  it('l’espace entre deux textes d’une ligne se lit sur leur position et la largeur des glyphes, jamais inventé', async () => {
+    // Largeurs d'Helvetica pour les codes 32 à 120 utiles ici.
+    const W: Record<string, number> = { ' ': 278, ':': 278, '0': 556, '1': 556, P: 667, r: 333, i: 222, x: 500 };
+    const widths = Array.from({ length: 89 }, (_, k) => W[String.fromCharCode(32 + k)] ?? 500).join(' ');
+    const make = (x: string, font = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 120 /Widths [${widths}] >>`) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        font,
+        { dict: '', data: `BT /F1 12 Tf 1 0 0 1 72 720 Tm (Prix : 1) Tj 1 0 0 1 ${x} 720 Tm (00000) Tj ET` },
+      ]);
+    expect(textOf(await pages(make('109.344')))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(make('115')))).toEqual(['Prix : 1 00000']);
+    expect(textOf(await pages(make('40')))).toEqual(['Prix : 1\n00000']);
+    expect(await pages(make('109.344', HELV))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    const cidContent = (x: number) => `BT /F2 10 Tf 1 0 0 1 72 720 Tm ${cid('Prix')} Tj 1 0 0 1 ${x} 720 Tm ${cid('245')} Tj ET`;
+    expect(textOf(await pages(composite(cidContent(112))))).toEqual(['Prix245']);
+    expect(textOf(await pages(composite(cidContent(120))))).toEqual(['Prix 245']);
+  });
+
+  it('[R12] un objet invoqué introuvable ou d’un genre non lu rend la page illisible ; une image non', async () => {
+    const make = (xobjects: string, extra: Obj[] = []) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> ${xobjects} >> /Contents 5 0 R >>`,
+        HELV,
+        { dict: '', data: 'BT /F1 12 Tf (Prix :) Tj ET /Fm Do' },
+        ...extra,
+      ]);
+    expect(await pages(make('/XObject << /Fm 9 0 R >>'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(await pages(make(''))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(await pages(make('/XObject << /Fm 6 0 R >>', [{ dict: '/Subtype /PS', data: 'x' }]))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(textOf(await pages(make('/XObject << /Fm 6 0 R >>', [{ dict: '/Subtype /Image /Width 1 /Height 1', data: 'x' }])))).toEqual(['Prix :']);
+  });
+
+  it('un flux d’objets démesuré compte dans le travail de lecture : refusé en mots', async () => {
+    const n = 20_000;
+    const header = Array.from({ length: n }, (_, i) => `${i + 10} ${i * 5}`).join(' ') + '\n';
+    const body = 'null\n'.repeat(n);
+    const data = new Uint8Array(deflateSync(enc(header + body)));
+    const bytes = concat([
+      simple(['BT /F1 12 Tf (Texte) Tj ET']).subarray(0, 9),
+      enc(`9 0 obj\n<< /Type /ObjStm /N ${n} /First ${header.length} /Filter /FlateDecode /Length ${data.length} >>\nstream\n`),
+      data,
+      enc('\nendstream\nendobj\n'),
+      simple(['BT /F1 12 Tf (Texte) Tj ET']).subarray(9),
+    ]);
+    const started = Date.now();
+    expect(await pdfPagesText(bytes, { maxWork: 10_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    expect(textOf(await pages(bytes))).toEqual(['Texte']);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 
   it('[R12] une police composite sans ToUnicode : page illisible, jamais un texte deviné', async () => {

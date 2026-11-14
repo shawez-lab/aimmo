@@ -392,6 +392,7 @@ class PdfFile {
       const pairs: [number, number][] = [];
       try {
         for (let i = 0; i < n; i++) {
+          this.work.charge(1);
           const num = head.value();
           const off = head.value();
           if (typeof num !== 'number' || typeof off !== 'number') break;
@@ -400,9 +401,12 @@ class PdfFile {
       } catch {
         continue;
       }
-      const sorted = [...pairs].sort((a, b) => a[1] - b[1]);
+      this.work.charge(pairs.length);
+      const offsets = [...new Set(pairs.map((p) => p[1]))].sort((a, b) => a - b);
+      const nextOf = new Map<number, number>();
+      offsets.forEach((o, i) => nextOf.set(o, offsets[i + 1] ?? data.length));
       for (const [num, off] of pairs) {
-        const next = sorted.find((p) => p[1] > off)?.[1] ?? data.length;
+        const next = nextOf.get(off)!;
         const text = data.slice(first + off, first + next).trim();
         const seen = packed.get(num);
         // Deux versions d'un même objet, l'une en clair et l'autre compressée, ou dans deux flux différents : sans la
@@ -525,12 +529,79 @@ function glyph(name: string): string | null {
 /** Les polices standard, nom exact : seules elles, non incorporées et sans encodage, sont lues au codage standard. */
 const STANDARD_FONTS = /^(Helvetica(-Bold|-Oblique|-BoldOblique)?|Times-(Roman|Bold|Italic|BoldItalic)|Courier(-Bold|-Oblique|-BoldOblique)?|Arial(MT)?(,(Bold|Italic|BoldItalic))?|TimesNewRoman(PSMT)?(,(Bold|Italic|BoldItalic))?)$/;
 
+interface Decoded {
+  text: string;
+  /** La somme des largeurs des glyphes, en millièmes de corps ; null si une largeur est inconnue. */
+  width: number | null;
+  glyphs: number;
+  /** Les espaces codés sur un octet, auxquels s'ajoute l'espacement des mots. */
+  spaces: number;
+}
+
 interface FontDecoder {
-  /** Le texte d'une chaîne, ou null s'il ne se décode pas avec certitude. */
-  decode(bytes: string): string | null;
+  /** Le texte d'une chaîne et sa largeur, ou null s'il ne se décode pas avec certitude. */
+  decode(bytes: string): Decoded | null;
 }
 
 const NO_DECODER: FontDecoder = { decode: () => null };
+
+/** La largeur d'un code, en millièmes de corps, ou null si elle est inconnue. */
+type WidthOf = (code: number) => number | null;
+
+function simpleWidths(file: PdfFile, font: Dict): WidthOf {
+  const first = file.get(font.get('FirstChar'));
+  const widths = file.get(font.get('Widths'));
+  const descriptor = file.dict(font.get('FontDescriptor'));
+  const missing = descriptor ? file.get(descriptor.get('MissingWidth')) : undefined;
+  const fallback = typeof missing === 'number' ? missing : null;
+  if (typeof first !== 'number' || !Array.isArray(widths)) return () => null;
+  const list = widths.map((w) => file.get(w));
+  return (code) => {
+    const w = list[code - first];
+    return typeof w === 'number' ? w : fallback;
+  };
+}
+
+function compositeWidths(file: PdfFile, font: Dict): WidthOf {
+  // Seul l'encodage Identity fait du code le numéro du glyphe ; sinon la largeur reste inconnue.
+  const encoding = file.name(font.get('Encoding'));
+  const descendants = file.get(font.get('DescendantFonts'));
+  const cid = Array.isArray(descendants) ? file.dict(descendants[0]) : null;
+  if ((encoding !== 'Identity-H' && encoding !== 'Identity-V') || !cid) return () => null;
+  const dw = file.get(cid.get('DW'));
+  const byCode = new Map<number, number>();
+  const ranges: [number, number, number][] = [];
+  const w = file.get(cid.get('W'));
+  if (Array.isArray(w)) {
+    let i = 0;
+    while (i < w.length) {
+      const a = file.get(w[i]);
+      const b = file.get(w[i + 1]);
+      if (typeof a !== 'number') return () => null;
+      if (Array.isArray(b)) {
+        file.work.charge(b.length);
+        b.forEach((x, k) => {
+          const v = file.get(x);
+          if (typeof v === 'number') byCode.set(a + k, v);
+        });
+        i += 2;
+      } else {
+        const c = file.get(w[i + 2]);
+        if (typeof b !== 'number' || typeof c !== 'number') return () => null;
+        ranges.push([a, b, c]);
+        i += 3;
+      }
+    }
+  }
+  file.work.charge(ranges.length);
+  const def = typeof dw === 'number' ? dw : 1000;
+  return (code) => {
+    const v = byCode.get(code);
+    if (v !== undefined) return v;
+    for (const [a, b, c] of ranges) if (code >= a && code <= b) return c;
+    return def;
+  };
+}
 
 function utf16be(bytes: string): string | null {
   if (bytes.length % 2) return null;
@@ -611,11 +682,14 @@ function parseCMap(data: string, work: Work): CMap | null {
   return { ranges, map };
 }
 
-function cmapDecoder(cmap: CMap, defaultLen: number, fallback: ((code: number) => string | null) | null): FontDecoder {
+function cmapDecoder(cmap: CMap, defaultLen: number, fallback: ((code: number) => string | null) | null, widthOf: WidthOf): FontDecoder {
   const lens = [...new Set(cmap.ranges.map((r) => r.len))].sort((a, b) => a - b);
   return {
     decode(bytes) {
       let out = '';
+      let width: number | null = 0;
+      let glyphs = 0;
+      let spaces = 0;
       let i = 0;
       while (i < bytes.length) {
         let len = 0;
@@ -633,9 +707,13 @@ function cmapDecoder(cmap: CMap, defaultLen: number, fallback: ((code: number) =
         const u = cmap.map.get(`${len}:${code}`) ?? (len === 1 && fallback ? fallback(code) : null);
         if (u === null) return null;
         out += u;
+        const w = widthOf(code);
+        width = width === null || w === null ? null : width + w;
+        glyphs++;
+        if (len === 1 && code === 32) spaces++;
         i += len;
       }
-      return out;
+      return { text: out, width, glyphs, spaces };
     },
   };
 }
@@ -681,6 +759,7 @@ async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise
   const composite = subtype === 'Type0';
   if (subtype === 'Type3') return NO_DECODER;
   const fallback = composite ? null : simpleTable(file, font);
+  const widthOf = composite ? compositeWidths(file, font) : simpleWidths(file, font);
   const tu = font.get('ToUnicode') === undefined ? undefined : file.get(font.get('ToUnicode'));
   if (tu !== undefined) {
     // Une table donnée mais illisible ne cède jamais au codage de base : le texte pourrait différer du document.
@@ -688,18 +767,24 @@ async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise
     const data = await file.decode(tu);
     const cmap = data === null ? null : parseCMap(data, file.work);
     if (!cmap || cmap.map.size === 0) return NO_DECODER;
-    return cmapDecoder(cmap, composite ? 2 : 1, fallback);
+    return cmapDecoder(cmap, composite ? 2 : 1, fallback, widthOf);
   }
   if (composite || !fallback) return NO_DECODER;
   return {
     decode(bytes) {
       let out = '';
+      let width: number | null = 0;
+      let spaces = 0;
       for (let i = 0; i < bytes.length; i++) {
-        const u = fallback(bytes.charCodeAt(i));
+        const code = bytes.charCodeAt(i);
+        const u = fallback(code);
         if (u === null) return null;
         out += u;
+        const w = widthOf(code);
+        width = width === null || w === null ? null : width + w;
+        if (code === 32) spaces++;
       }
-      return out;
+      return { text: out, width, glyphs: bytes.length, spaces };
     },
   };
 }
@@ -709,21 +794,38 @@ async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise
 interface PageState {
   lines: string[];
   line: string;
+  /** La ligne de base du texte en cours, null au début d'une ligne nouvelle. */
   lineY: number | null;
+  /** Où finit le dernier texte montré sur la ligne, null si sa largeur est inconnue. */
+  endX: number | null;
+  /** La taille du corps du dernier texte montré, dans l'espace de la page. */
+  em: number;
   moved: boolean;
-  shown: number;
+  /** La position du texte est sûre : donnée par un déplacement, ou avancée de largeurs connues. */
+  posKnown: boolean;
   undecodable: boolean;
 }
 
 const MAX_FORM_DEPTH = 4;
+/** Un écart d'au moins cette part du corps entre deux textes d'une même ligne est un espace. */
+const SPACE_GAP = 0.18;
+
+interface TextState {
+  font: FontDecoder;
+  size: number;
+  charSpacing: number;
+  wordSpacing: number;
+  scale: number;
+  leading: number;
+}
 
 async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>): Promise<void> {
   const fonts = resources ? file.dict(resources.get('Font')) : null;
   const xobjects = resources ? file.dict(resources.get('XObject')) : null;
   const states = resources ? file.dict(resources.get('ExtGState')) : null;
   const decoders = new Map<string, FontDecoder>();
-  let font: FontDecoder = NO_DECODER;
-  const saved: FontDecoder[] = [];
+  let ts: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0 };
+  const saved: TextState[] = [];
   let tm = [1, 0, 0, 1, 0, 0];
   let lm = [1, 0, 0, 1, 0, 0];
   const lx = new Lexer(content);
@@ -732,33 +834,59 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   const newline = () => {
     st.lines.push(st.line);
     st.line = '';
+    st.lineY = null;
+    st.endX = null;
     st.moved = false;
   };
+  const space = () => {
+    if (st.line !== '' && !st.line.endsWith(' ')) st.line += ' ';
+  };
+  /** Avant un texte : nouvelle ligne, espace ou rien, d'après la position ; jamais un espace inventé. */
   const place = () => {
+    const x = tm[4]!;
     const y = tm[5]!;
-    if (st.lineY !== null && Math.abs(y - st.lineY) > 1) newline();
-    else if (st.moved && st.line !== '' && !st.line.endsWith(' ')) st.line += ' ';
+    if (st.lineY === null || Math.abs(y - st.lineY) > 1) {
+      if (st.line !== '') newline();
+    } else if (st.moved && st.line !== '') {
+      if (st.endX === null) st.undecodable = true;
+      else {
+        const gap = x - st.endX;
+        if (gap > SPACE_GAP * st.em) space();
+        else if (gap < -0.5 * st.em) newline();
+      }
+    }
     st.lineY = y;
     st.moved = false;
   };
+  const advance = (d: number) => {
+    tm = [tm[0]!, tm[1]!, tm[2]!, tm[3]!, tm[4]! + d * tm[0]!, tm[5]! + d * tm[1]!];
+  };
   const show = (s: Str) => {
-    const t = font.decode(s.v);
-    st.shown++;
-    if (t === null) {
+    const d = ts.font.decode(s.v);
+    if (d === null) {
       st.undecodable = true;
       return;
     }
-    file.work.charge(t.length);
-    st.line += t;
+    file.work.charge(d.text.length + 1);
+    st.line += d.text;
+    st.em = Math.abs(ts.size) * Math.hypot(tm[0]!, tm[1]!);
+    if (d.width === null) {
+      st.endX = null;
+      st.posKnown = false;
+      return;
+    }
+    advance(((d.width / 1000) * ts.size + ts.charSpacing * d.glyphs + ts.wordSpacing * d.spaces) * ts.scale);
+    st.endX = st.posKnown ? tm[4]! : null;
   };
   const moveTo = (tx: number, ty: number) => {
     lm = [lm[0]!, lm[1]!, lm[2]!, lm[3]!, tx * lm[0]! + ty * lm[2]! + lm[4]!, tx * lm[1]! + ty * lm[3]! + lm[5]!];
     tm = [...lm];
     st.moved = true;
+    st.posKnown = true;
   };
   const nextLine = () => {
+    moveTo(0, -ts.leading);
     newline();
-    st.lineY = null;
   };
 
   for (;;) {
@@ -771,27 +899,42 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
       continue;
     }
     const nums = operands.filter((o): o is number => typeof o === 'number');
+    const last = nums[nums.length - 1];
     switch (t.v) {
       case 'q':
         if (saved.length > 256) throw new Broken();
-        saved.push(font);
+        saved.push({ ...ts });
         break;
       case 'Q':
-        font = saved.pop() ?? font;
+        ts = saved.pop() ?? ts;
         break;
       case 'BT':
         tm = [1, 0, 0, 1, 0, 0];
         lm = [1, 0, 0, 1, 0, 0];
         st.moved = true;
+        st.posKnown = true;
         break;
       case 'Tf': {
         const n = operands.find((o): o is Name => o instanceof Name);
         if (n) {
           if (!decoders.has(n.v)) decoders.set(n.v, await fontDecoder(file, fonts?.get(n.v)));
-          font = decoders.get(n.v)!;
-        } else font = NO_DECODER;
+          ts.font = decoders.get(n.v)!;
+        } else ts.font = NO_DECODER;
+        if (last !== undefined) ts.size = last;
         break;
       }
+      case 'Tc':
+        if (last !== undefined) ts.charSpacing = last;
+        break;
+      case 'Tw':
+        if (last !== undefined) ts.wordSpacing = last;
+        break;
+      case 'Tz':
+        if (last !== undefined) ts.scale = last / 100;
+        break;
+      case 'TL':
+        if (last !== undefined) ts.leading = last;
+        break;
       case 'gs': {
         // Un état graphique peut choisir la police : elle est appliquée, ou la page est illisible.
         const n = operands[operands.length - 1];
@@ -802,18 +945,26 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         const arr = file.get(f);
         const key = `gs:${(n as Name).v}`;
         if (!decoders.has(key)) decoders.set(key, Array.isArray(arr) && arr.length >= 1 ? await fontDecoder(file, arr[0]) : NO_DECODER);
-        font = decoders.get(key)!;
+        ts.font = decoders.get(key)!;
+        const size = Array.isArray(arr) ? file.get(arr[1]) : undefined;
+        if (typeof size === 'number') ts.size = size;
         break;
       }
       case 'Td':
-      case 'TD':
         if (nums.length >= 2) moveTo(nums[nums.length - 2]!, nums[nums.length - 1]!);
+        break;
+      case 'TD':
+        if (nums.length >= 2) {
+          ts.leading = -nums[nums.length - 1]!;
+          moveTo(nums[nums.length - 2]!, nums[nums.length - 1]!);
+        }
         break;
       case 'Tm':
         if (nums.length >= 6) {
           lm = nums.slice(-6);
           tm = [...lm];
           st.moved = true;
+          st.posKnown = true;
         }
         break;
       case 'T*':
@@ -830,6 +981,10 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
       case "'":
       case '"': {
         const s = operands[operands.length - 1];
+        if (t.v === '"' && nums.length >= 2) {
+          ts.wordSpacing = nums[nums.length - 2]!;
+          ts.charSpacing = nums[nums.length - 1]!;
+        }
         nextLine();
         if (s instanceof Str) {
           place();
@@ -843,7 +998,12 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           place();
           for (const e of arr) {
             if (e instanceof Str) show(e);
-            else if (typeof e === 'number' && e < -200 && st.line !== '' && !st.line.endsWith(' ')) st.line += ' ';
+            else if (typeof e === 'number') {
+              // Un recul en millièmes de corps : assez grand, c'est un espace ; le texte suivant se place d'autant.
+              if (-e / 1000 > SPACE_GAP) space();
+              advance((-e / 1000) * ts.size * ts.scale);
+              if (st.posKnown) st.endX = tm[4]!;
+            }
           }
         }
         break;
@@ -862,11 +1022,12 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         break;
       }
       case 'Do': {
+        // Une image ne porte pas de texte ; un formulaire est lu ; tout autre objet, ou un objet introuvable, rend la page illisible.
         const n = operands[operands.length - 1];
-        if (!(n instanceof Name) || !xobjects) break;
-        const x = file.get(xobjects.get(n.v));
-        if (!(x instanceof Stream) || file.name(x.dict.get('Subtype')) !== 'Form') break;
-        if (depth >= MAX_FORM_DEPTH || forms.has(x)) {
+        const x = n instanceof Name && xobjects ? file.get(xobjects.get(n.v)) : undefined;
+        const subtype = x instanceof Stream ? file.name(x.dict.get('Subtype')) : null;
+        if (subtype === 'Image') break;
+        if (!(x instanceof Stream) || subtype !== 'Form' || depth >= MAX_FORM_DEPTH || forms.has(x)) {
           st.undecodable = true;
           break;
         }
@@ -876,11 +1037,12 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           break;
         }
         forms.add(x);
-        const saved = st.lineY;
+        if (st.line !== '') newline();
         await readContent(file, data, file.dict(x.dict.get('Resources')) ?? resources, st, depth + 1, forms);
         forms.delete(x);
-        st.lineY = saved;
-        st.moved = true;
+        if (st.line !== '') newline();
+        st.lineY = null;
+        st.endX = null;
         break;
       }
       default:
@@ -908,7 +1070,7 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
     if (d === null) return { page: n, text: null, reason: 'undecodable' };
     chunks.push(d);
   }
-  const st: PageState = { lines: [], line: '', lineY: null, moved: false, shown: 0, undecodable: false };
+  const st: PageState = { lines: [], line: '', lineY: null, endX: null, em: 0, moved: false, posKnown: true, undecodable: false };
   if (file.touchedAmbiguous) return { page: n, text: null, reason: 'undecodable' };
   try {
     await readContent(file, chunks.join('\n'), resources, st, 0, new Set());
