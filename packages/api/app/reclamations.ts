@@ -1,7 +1,7 @@
 /**
  * BR69 · Les réclamations dans la fiche (HX58, routes de BR01). Le bloc « Réclamations » se charge au geste, par le
  * chargeur commun, dans son script servi à part (`/app/reclamations.js`) [R201] : rien n'est lu avant. Il montre les
- * réclamations rangées sur cette fiche, l'échéance écrite par la base et jamais calculée ici [R606], la réponse notée une
+ * réclamations rangées sur cette fiche ou sur une fiche qui lui est réunie (BR71, dites comme telles), l'échéance écrite par la base et jamais calculée ici [R606], la réponse notée une
  * seule fois, et la proposition du médiateur : envoyée, à remettre (texte mot pour mot et bouton « Remise au client »)
  * ou remise [R607]. Tout texte reçu est posé en texte ; un champ mal formé n'est pas dit. Chaque refus est dit en mots
  * [R16] ; une écriture sans réponse est dite incertaine et la liste est relue. Rien n'est envoyé d'ici.
@@ -30,6 +30,8 @@ export const RECLAMATIONS_REFUSALS = Object.freeze({
   nothing_to_hand: 'Il n’y a plus de proposition du médiateur à remettre.',
   unknown_complaint: 'Cette réclamation n’existe plus.',
   invalid_body: 'La saisie n’est pas lisible.',
+  bad_fiche: 'Cette fiche n’est pas lisible.',
+  unexpected_field: 'Cette lecture n’est pas lisible.',
 });
 
 /** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun : le moins possible [R201]. */
@@ -106,6 +108,7 @@ globalThis.AIMMO_RECLAMATIONS = function (t) {
     if (!ID.test(c.complaintId || '') || !via || !on || !summary || !day(c.dueOn)) return null;
     var box = el('article', null, 'bloc');
     box.appendChild(el('h4', 'Réclamation reçue le ' + on + ' par ' + via));
+    if (c.personId !== ctx.personId) box.appendChild(el('p', 'Rangée sur une fiche réunie à celle-ci.', 'doux'));
     box.appendChild(el('p', '« ' + summary + ' »'));
     var a = c.answer && typeof c.answer === 'object' ? c.answer : null;
     if (c.status === 'ouverte' && !a) box.appendChild(due(c));
@@ -157,12 +160,13 @@ globalThis.AIMMO_RECLAMATIONS = function (t) {
     var mine = t.session(), at = ctx.corps.aimmoTurn = (ctx.corps.aimmoTurn || 0) + 1;
     clear(ctx.corps);
     ctx.said.textContent = 'Lecture des réclamations…';
-    return send('/v1/securite/reclamations', 'GET').then(function (x) {
+    return send('/v1/securite/reclamations?fiche=' + encodeURIComponent(ctx.personId), 'GET').then(function (x) {
       if (x.gone || mine !== t.session() || at !== ctx.corps.aimmoTurn) return false;
       if (x.offline) { ctx.said.textContent = note === LOST ? LOST : OFFLINE; return false; }
       if (!x.ok || !x.body || !Array.isArray(x.body.data)) { ctx.said.textContent = note === LOST ? LOST : refusal(x); return false; }
       x.body.data.forEach(function (c) {
-        var b = c && typeof c === 'object' && c.personId === ctx.personId ? item(c, ctx) : null;
+        // Le serveur ne rend que le groupe des fiches réunies à celle-ci (BR71).
+        var b = c && typeof c === 'object' && typeof c.personId === 'string' && ID.test(c.personId) ? item(c, ctx) : null;
         if (b) ctx.corps.appendChild(b);
       });
       var none = ctx.corps.children.length === 0;

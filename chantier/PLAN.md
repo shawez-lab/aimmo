@@ -1435,7 +1435,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien. Le vrai médiateur viendra avec H09.
 
 ### BR71 · Une réclamation se voit sur la fiche réunie
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#570, `f936a01b`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5988 tests). Rien d'autre.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR69, S04
 - Cahier : Conformité, réclamations et médiateur (HX58) ; Architecture technique, fiche client unique ; R606, R607, R16, R17, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR69 (« une réclamation rangée sur une fiche réunie ne se voit que sur la fiche où elle a été rangée »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Une fusion relie les fiches sans déplacer aucune ligne (S04) : la réclamation garde sa fiche d'origine, jamais réécrite [R17]. La lecture `GET /v1/securite/reclamations` prend un paramètre facultatif `fiche` : la couche métier ne rend alors que les réclamations rangées sur une fiche du même groupe de fiches réunies (`membersOf`), avec les mêmes droits et le même journal. L'écran du bloc « Réclamations » demande ce groupe et dit, pour une réclamation rangée sur une autre fiche du groupe, « Rangée sur une fiche réunie à celle-ci. ». Une fusion défaite rend chaque réclamation à sa seule fiche. Aucune règle nouvelle ni migration ; rien n'est envoyé.

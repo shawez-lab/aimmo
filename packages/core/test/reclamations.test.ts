@@ -257,6 +257,65 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(l.ok && l.value.map((c) => c.complaintId)).toEqual([r.value.complaintId]);
   });
 
+  it('[R17] [R16] BR71 · avec `fiche`, les réclamations de tout le groupe des fiches réunies, et seulement elles ; une fusion défaite les rend chacune à sa fiche', async () => {
+    const t = await setup();
+    const a = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Ancienne' });
+    const b = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Intermédiaire' });
+    const other = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Étrangère' });
+    const ra = await t.reclamations.record(t.direction, a.id, { receivedOn: '2027-03-01', receivedBy: 'oral', summary: 'Ancienne fiche.' });
+    const rb = await t.reclamations.record(t.direction, b.id, { receivedOn: '2027-03-02', receivedBy: 'courrier', summary: 'Fiche intermédiaire.' });
+    const rk = await t.record({ receivedOn: '2027-03-03', receivedBy: 'mail', summary: 'Fiche gardée.' });
+    const ro = await t.reclamations.record(t.direction, other.id, { receivedOn: '2027-03-04', receivedBy: 'oral', summary: 'Autre personne.' });
+    if (!ra.ok || !rb.ok || !ro.ok) throw new Error('rangement');
+    const ids = async (v: Viewer, fiche: string) => {
+      const l = await t.reclamations.list(v, { fiche });
+      if (!l.ok) throw new Error(l.code);
+      return l.value.map((c) => [c.complaintId, c.personId]);
+    };
+    // Avant toute fusion, chaque fiche ne voit que les siennes.
+    expect(await ids(t.agent, t.personId)).toEqual([[rk.complaintId, t.personId]]);
+    expect(await ids(t.direction, a.id)).toEqual([[ra.value.complaintId, a.id]]);
+    const unique = new FicheUnique(t.db, t.store, { now: t.now });
+    await unique.merge({ survivorId: b.id, mergedId: a.id, reason: 'même mail' });
+    const m2 = await unique.merge({ survivorId: t.personId, mergedId: b.id, reason: 'même téléphone' });
+    const before = await t.db.all<{ id: string; person_id: string; due_on: string }>('SELECT id, person_id, due_on FROM complaints ORDER BY id');
+    const group = [
+      [ra.value.complaintId, a.id],
+      [rb.value.complaintId, b.id],
+      [rk.complaintId, t.personId],
+    ];
+    // Depuis la fiche gardée comme depuis une fiche réunie : tout le groupe, la fiche d'origine dite, jamais l'autre personne.
+    expect(await ids(t.agent, t.personId)).toEqual(group);
+    expect(await ids(t.agent, a.id)).toEqual(group);
+    expect(await ids(t.direction, b.id)).toEqual(group);
+    expect(await ids(t.direction, other.id)).toEqual([[ro.value.complaintId, other.id]]);
+    // La fusion n'a réécrit aucune ligne : fiche d'origine et échéance intactes [R17].
+    expect(await t.db.all('SELECT id, person_id, due_on FROM complaints ORDER BY id')).toEqual(before);
+    // L'agent règle depuis la fiche gardée la réclamation venue de la fiche réunie.
+    expect(await t.reclamations.answer(t.agent, ra.value.complaintId, { outcome: 'reglee', note: 'Rappel fait.' })).toMatchObject({ ok: true, value: { status: 'reglee', personId: a.id } });
+    // Fusion défaite : la fiche intermédiaire et l'ancienne repartent ensemble, la fiche gardée ne garde que la sienne.
+    await unique.undoMerge(m2.id, { journal: t.journal, actor: 'direction:test' });
+    expect(await ids(t.agent, t.personId)).toEqual([[rk.complaintId, t.personId]]);
+    expect(await ids(t.direction, b.id)).toEqual(group.slice(0, 2));
+  });
+
+  it('[R16] BR71 · `fiche` : l’agent qui ne suit pas la fiche ne lit rien, refus au journal ; fiche inconnue ou mal formée refusée', async () => {
+    const t = await setup();
+    await t.record({ receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Motif.' });
+    const before = (await t.journal.all()).length;
+    expect(await t.reclamations.list(t.sam, { fiche: t.personId })).toMatchObject({ ok: false, rule: 'R16' });
+    const refused = (await t.journal.all()).slice(before);
+    expect(refused.map((e) => e.type)).toEqual(['acces.refuse']);
+    expect(JSON.stringify(refused)).not.toContain('Motif');
+    expect(await t.reclamations.list(t.compliance, { fiche: t.personId })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.reclamations.list(t.direction, { fiche: 'inconnue' })).toEqual({ ok: false, rule: null, code: 'unknown_person' });
+    for (const fiche of ['', 'a b', 'x'.repeat(65), 12, null, ['p']]) expect(await t.reclamations.list(t.direction, { fiche })).toEqual({ ok: false, rule: null, code: 'bad_fiche' });
+    // La lecture de la fiche demandée est écrite au journal avant que rien ne soit rendu.
+    const at = (await t.journal.all()).length;
+    expect((await t.reclamations.list(t.agent, { fiche: t.personId })).ok).toBe(true);
+    expect((await t.journal.all()).slice(at).map((e) => e.type)).toEqual(['fiche.lue', 'fiche.lue']);
+  });
+
   it('[R606] [R16] seuls l’agent qui suit la fiche et la direction rangent et lisent ; le journal ne garde que des codes', async () => {
     const t = await setup();
     for (const v of [t.sam, t.compliance, t.partner]) {
