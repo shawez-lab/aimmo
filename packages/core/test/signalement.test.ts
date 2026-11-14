@@ -201,7 +201,7 @@ describeWithSqlite('L05 · signaler au responsable', () => {
     expect(max).toBeLessThanOrEqual(100);
     // La dernière offre, au-delà du premier lot, changée de force : vue.
     for (const trigger of (await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'offer_register'"))) await t.db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
-    await t.db.run('UPDATE offer_register SET amount_eur = 100000 WHERE id = ?', [offers[119]]);
+    await t.db.run('UPDATE offer_register SET amount_eur = 100000 WHERE id = ?', [offers[119]!]);
     expect(await s.checkFrozen(t.conformite, id)).toMatchObject({ ok: true, value: { intact: false, changed: [{ table: 'offer_register', key: offers[119] }] } });
   });
 
