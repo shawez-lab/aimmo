@@ -1434,6 +1434,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : lecture réservée à la direction, refus au journal [R16] (test) ; sans réglage : rien d'inventé, 30 jours dits, les réclamations en attente comptées [R606, R607] (test) ; avec réglage : version, délai, nom, site et texte du code rendus (test) ; script servi à part, chargé au geste, budgets tenus, sans innerHTML [R201] (test) ; le texte montré avant de ranger est celui du code [R607] (test) ; saisie illisible arrêtée avant l'appel, chaque refus dit en mots, réponse perdue dite incertaine et le réglage relu (test) ; texte reçu posé en texte, champ mal formé tu (test).
 - Attend : rien. Le vrai médiateur viendra avec H09.
 
+### BR71 · Une réclamation se voit sur la fiche réunie
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR69, S04
+- Cahier : Conformité, réclamations et médiateur (HX58) ; Architecture technique, fiche client unique ; R606, R607, R16, R17, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR69 (« une réclamation rangée sur une fiche réunie ne se voit que sur la fiche où elle a été rangée »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Une fusion relie les fiches sans déplacer aucune ligne (S04) : la réclamation garde sa fiche d'origine, jamais réécrite [R17]. La lecture `GET /v1/securite/reclamations` prend un paramètre facultatif `fiche` : la couche métier ne rend alors que les réclamations rangées sur une fiche du même groupe de fiches réunies (`membersOf`), avec les mêmes droits et le même journal. L'écran du bloc « Réclamations » demande ce groupe et dit, pour une réclamation rangée sur une autre fiche du groupe, « Rangée sur une fiche réunie à celle-ci. ». Une fusion défaite rend chaque réclamation à sa seule fiche. Aucune règle nouvelle ni migration ; rien n'est envoyé.
+- Objectif : une réclamation rangée sur une fiche se voit, se suit et se règle depuis toute fiche qui lui est réunie, et seulement tant que la fusion tient.
+- Jamais vu : l'agent qui ouvre la fiche gardée après une fusion voit, mot pour mot, que la réclamation venait de l'autre fiche, avec son échéance intacte.
+- Critères : avec `fiche`, les réclamations de toutes les fiches réunies sont rendues, et seulement elles (test) ; fusion défaite : chacune revient à sa seule fiche (test) ; la fiche d'origine n'est jamais réécrite [R17] (test) ; un agent ne voit rien d'une fiche qu'il ne suit pas, refus au journal [R16] (test) ; paramètre mal formé ou inconnu refusé en mots (test) ; l'écran demande le groupe, montre la mention « fiche réunie », budgets tenus, sans innerHTML [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
