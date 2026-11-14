@@ -102,6 +102,11 @@ describe('S06 · contrôle du texte', () => {
       'Au 6 place au Bois.',
       'Au 8 place à l’Huile.',
       'Au 9 place en Ville.',
+      'Appartement au 12 place Couverte.',
+      'Au 3 place Double.',
+      'Au 4 place Libre, deuxième étage.',
+      'Au 5 Place de la République.',
+      'AU 6 PLACE COUVERTE.',
     ]) {
       expect(rules(text, { audience: 'public' }), text).toContain('R09');
       expect(rules(text, client('email')), text).toContain('R09');
