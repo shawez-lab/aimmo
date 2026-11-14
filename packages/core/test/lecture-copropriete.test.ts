@@ -84,7 +84,12 @@ describe('RC42 · ce qui part au lecteur', () => {
     expect(skeletonOf('Vote de Ana.').masked).toBe(true);
     expect(skeletonOf('Vote contre : Porte.').masked).toBe(true);
     expect(skeletonOf('Résolution n° 7 : Travaux votés.').masked).toBe(true);
-    expect(skeletonOf('Résolution n° 7. Travaux votés.').masked).toBe(false);
+    expect(skeletonOf('Résolution n° 7. Travaux votés.').masked).toBe(true);
+    expect(skeletonOf('3) Travaux votés.').masked).toBe(false);
+    // Un nom de famille qui est aussi un mot de la liste : après « M. » ou en tête de ligne, masqué.
+    expect(skeletonOf('M. Porte est débiteur de 3 200 € de charges impayées.')).toEqual({ text: '… est débiteur de 3 200 € de charges impayées.', masked: true });
+    expect(skeletonOf('Porte vote contre.').masked).toBe(true);
+    expect(skeletonOf('Mme Lacour, travaux. Cour vote contre.').text).not.toMatch(/Cour|Lacour/);
   });
 });
 
@@ -194,7 +199,7 @@ describeWithSqlite('RC42 · prélecture des documents de la copropriété', () =
   it('[R448] documents mal formés refusés avant tout appel au lecteur', async () => {
     const reader = new FakeReader(async () => EXACT);
     const t = await setup(reader);
-    for (const documents of [[], 'pv', [{ ...PV, kind: 'bail' }], [{ ...PV, meetingDay: undefined }], [{ ...PV, meetingDay: '2030-01-01' }], [{ ...FICHE, meetingDay: '2027-01-15' }], [{ ...PV, pages: [] }]]) {
+    for (const documents of [[], 'pv', [{ ...PV, kind: 'bail' }], [{ ...PV, meetingDay: undefined }], [{ ...PV, meetingDay: '2030-01-01' }], [{ ...PV, meetingDay: '2027-13-01' }], [{ ...PV, meetingDay: '2027-01-32' }], [{ ...FICHE, meetingDay: '2027-01-15' }], [{ ...PV, pages: [] }]]) {
       expect(await t.lc.preRead(t.agent, t.fileId, { documents })).toEqual({ ok: false, rule: null, code: 'bad_documents' });
     }
     expect(reader.seen).toHaveLength(0);

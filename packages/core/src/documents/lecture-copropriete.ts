@@ -133,6 +133,16 @@ export const COPRO_WORDS: ReadonlySet<string> = new Set(
   ).split(/\s+/),
 );
 
+/** Les mots qui ouvrent une ligne de procès-verbal, admis avec une capitale en tête de ligne seulement. */
+const HEAD_WORDS = new Set(
+  (
+    'le la les l un une des du de d en au aux à il elle ils elles ce cette ces aucun aucune après avant suite selon pour ' +
+    'résolution résolutions procès assemblée vote travaux ravalement réfection rénovation remplacement étude devis ' +
+    'procédure procédures montant appel appels fonds charges budget cotisation zone zones article servitude servitudes ' +
+    'secteur fiche document règlement'
+  ).split(' '),
+);
+
 /** Des sigles admis en capitales. */
 const ACRONYMS = new Set(['ttc', 'ht', 'tva', 'plu', 'plui', 'rnu', 'eur', 'dpe']);
 /** Un code de zone d'urbanisme (« UA », « 1AUb », « Nh »), seulement juste après « zone », « secteur » ou « article ». */
@@ -150,12 +160,11 @@ function wordPasses(word: string, before: string): boolean {
   if (word.length > 1 && word === word.toUpperCase() && ACRONYMS.has(lower)) return true;
   if (!COPRO_WORDS.has(lower)) return false;
   if (word === lower) return true;
-  // Une capitale (ou un titre en capitales, « TRAVAUX ») en tête de phrase seulement : début de ligne, après un point
-  // ou un numéro (« 3) Travaux »). Après un deux-points (« Vote contre : Porte »), une virgule ou au milieu d'une
-  // phrase, c'est peut-être un nom : masqué.
+  // Une capitale (ou un titre en capitales, « TRAVAUX ») seulement en tête de ligne (après un numéro : « 3) Travaux »)
+  // et pour un mot qui ouvre une ligne de procès-verbal, jamais un nom de famille possible (« Porte », « Lacour »).
+  // Ailleurs, après « M. », un deux-points, une virgule ou un point, c'est peut-être un nom : masqué.
   const head = word.slice(1) === lower.slice(1) || word === word.toUpperCase();
-  const tail = before.replace(/[\s\d°()«»"'’-]+$/u, '');
-  return head && (tail === '' || /[.!?]$/.test(tail));
+  return head && HEAD_WORDS.has(lower) && before.replace(/[\s\d°()-]+/gu, '') === '';
 }
 
 /** Une ligne réduite au vocabulaire, et si elle a dû être masquée [R15]. */
@@ -303,7 +312,8 @@ export class LectureCopropriete {
       if (!isRecord(d) || !(DOCUMENT_KINDS as readonly string[]).includes(d.kind) || typeof d.ref !== 'string' || d.ref.trim().length === 0 || d.ref.length > 300) return null;
       if (!Array.isArray(d.pages) || d.pages.length < 1 || d.pages.length > MAX_PAGES || !d.pages.every((p) => typeof p === 'string' && p.length <= MAX_PAGE_CHARS)) return null;
       const day = d.meetingDay;
-      const validDay = typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) && new Date(`${day}T12:00:00Z`).toISOString().slice(0, 10) === day;
+      const parsed = typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(`${day}T12:00:00Z`) : null;
+      const validDay = parsed !== null && !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
       if (d.kind === 'pv_assemblee' ? !validDay || day > today : day !== undefined) return null;
     }
     return docs as SourceDocument[];
