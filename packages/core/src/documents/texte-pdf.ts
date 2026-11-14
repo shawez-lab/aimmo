@@ -1010,12 +1010,14 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
     tm = [tm[0]!, tm[1]!, tm[2]!, tm[3]!, tm[4]! + d * tm[0]!, tm[5]! + d * tm[1]!];
   };
   const show = (s: Str) => {
+    // Le décodage coûte ses octets, qu'il réussisse ou non.
+    file.work.charge(s.v.length + 1);
     const d = ts.font.decode(s.v);
     if (d === null) {
       st.undecodable = true;
       return;
     }
-    file.work.charge(d.text.length + 1);
+    file.work.charge(d.text.length);
     st.line += d.text;
     const m = multiply(tm, ts.ctm);
     st.em = Math.abs(ts.size) * Math.hypot(m[0]!, m[1]!);
@@ -1040,6 +1042,8 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   };
 
   for (;;) {
+    // Une page déjà illisible n'a plus rien à lire.
+    if (st.undecodable) return;
     const t = lx.next();
     if (t === undefined) break;
     // Un tableau ou un dictionnaire coûte chacun de ses éléments, à chaque lecture.

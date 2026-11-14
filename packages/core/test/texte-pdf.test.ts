@@ -510,7 +510,7 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       HELV,
       { dict: '/Subtype /Form /Resources << /XObject << /Fm 6 0 R >> >>', data: calls },
       { dict: '/Subtype /Form /Resources << /XObject << /Fm 7 0 R >> >>', data: calls },
-      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'x'.repeat(1000)}) Tj ET`, flate: true },
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'x'.repeat(1000)}) ' ET`, flate: true },
       { dict: '', data: calls },
     ]);
     const started = Date.now();
@@ -522,7 +522,7 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
       HELV,
-      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf [(a) ${zeros} (b)] TJ ET`, flate: true },
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf T* [(a) ${zeros} (b)] TJ ET`, flate: true },
       { dict: '', data: Array(100).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(big, { maxWork: 300_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
@@ -536,6 +536,19 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(wide, { maxWork: 50_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    // Un texte qui échoue à se décoder compte aussi, et arrête la lecture de la page.
+    const failing = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
+      HELV,
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'a'.repeat(200_000)}\x01) Tj ET`, flate: true },
+      { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
+    ]);
+    expect(await pdfPagesText(failing, { maxWork: 3000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    const t1 = Date.now();
+    expect(await pages(failing)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(Date.now() - t1).toBeLessThan(1000);
     const t0 = Date.now();
     expect((await pdfPagesText(wide)).ok).toBe(true);
     expect(Date.now() - t0).toBeLessThan(3000);
