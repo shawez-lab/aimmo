@@ -1489,7 +1489,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR76 · La grille d'un programme neuf publiée sur le site du réseau
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#576, `a9d173a3`). Codex 1 P0 corrigé (frais de l'ancien et hypothèse de chaque chiffre affichés), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6049 tests). Restent : la grille dans les annonces, le plan du site, les écrans du neuf et du viager.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48, BR75
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M01 (pages publiques) ; R543, R544, R153, R10.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR75 (« la grille publiée sur le site »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Page publique `GET /neuf/:programme` sur le seul site du réseau, comme les pages de prix : une seule page de référence [R153]. Rendu dans `packages/core/src/neuf-viager/page-publique.ts`, servi par `handleAttirerPublic`. Aucun nom d'agent ni de client : le lien de contact mène à la page de l'agent du programme si elle est publiable [R152], sinon à la liste des agents. Pas de migration, aucune règle nouvelle, aucun compte de vue (la sorte de vue n'existe pas en base). Restent : la grille dans les annonces, le plan du site, les écrans du neuf et du viager.
