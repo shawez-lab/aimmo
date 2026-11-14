@@ -23,7 +23,7 @@ function fetcherOf(answers: { zones?: unknown; town?: unknown; status?: number }
   };
 }
 
-const collect = (answers: Parameters<typeof fetcherOf>[0], seen: string[] = [], timeoutMs?: number) => new GpuUrbanism(fetcherOf(answers, seen), { now: NOW, timeoutMs }).collect(POINT);
+const collect = (answers: Parameters<typeof fetcherOf>[0], seen: string[] = []) => new GpuUrbanism(fetcherOf(answers, seen), { now: NOW }).collect(POINT);
 
 describe('RC43 · la zone du plan d’urbanisme lue au Géoportail', () => {
   it('[R449] la zone au point, son libellé, le type du document et le jour de son approbation', async () => {
