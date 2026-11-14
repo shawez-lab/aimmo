@@ -3,6 +3,9 @@ name: Parcours du mois
 # SV04 · Chaque mois, le parcours complet fictif, du premier message à l'après-vente : un scénario inventé, sur une base
 # en mémoire, à travers les vrais modules. Aucun secret, aucune base réelle, aucun envoi. Une étape cassée se nomme dans le
 # compte rendu du test, et le travail passe au rouge.
+# BR72 · Puis, sur main seulement, un second travail range le reçu dans la base `aimmo` : réussi ou raté, et l'étape
+# cassée. Il ne lit que le résultat du premier et l'étape qu'il a dite. S'il ne tourne pas, l'écran de la direction dit
+# « manquant ».
 
 on:
   schedule:
@@ -17,6 +20,8 @@ jobs:
     name: Parcours complet fictif
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      etape: ${{ steps.jouer.outputs.etape }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,4 +29,44 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npx vitest run packages/core/test/parcours-complet.test.ts
+      - id: jouer
+        run: PARCOURS_SORTIE="$GITHUB_OUTPUT" npx vitest run packages/core/test/parcours-complet.test.ts
+
+  recu:
+    name: Ranger le reçu
+    needs: parcours
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Base D1 trouvée par son nom
+        id: base
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          aimmo="$(npx -y wrangler@4.149.0 d1 list --json | node -e '
+            let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+              const d = JSON.parse(s).find((d) => d.name === "aimmo");
+              process.stdout.write(d ? d.uuid : "");
+            });')"
+          if ! printf '%s' "$aimmo" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo introuvable."
+            exit 1
+          fi
+          echo "aimmo=$aimmo" >> "$GITHUB_OUTPUT"
+      - name: Reçu
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PARCOURS_BASE_AIMMO: ${{ steps.base.outputs.aimmo }}
+          PARCOURS_RESULTAT: ${{ needs.parcours.result }}
+          PARCOURS_ETAPE: ${{ needs.parcours.outputs.etape }}
+        run: node --experimental-transform-types --no-warnings packages/api/outils/parcours-du-mois.ts

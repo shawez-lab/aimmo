@@ -152,7 +152,8 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 `;
 const COPIES_ENTRY_HTML = stateAndBody('copies', 'La copie de la base', 'Se relit avec le rapport du matin. Chaque nuit, une copie chiffrée, gardée à part.');
 const RESTAURATION_ENTRY_HTML = stateAndBody('restauration', 'La preuve de restauration, ce mois-ci', 'Chaque mois, la dernière copie est vraiment restaurée, hors de la production, en moins d’une heure.');
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + MANQUES_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML;
+const PARCOURS_MOIS_ENTRY_HTML = stateAndBody('parcours-mois', 'Le parcours complet, ce mois-ci', 'Chaque mois, un client inventé traverse tout le logiciel, du premier message à l’après-vente.');
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + MANQUES_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML + PARCOURS_MOIS_ENTRY_HTML;
 
 export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
@@ -230,7 +231,7 @@ export const FINANCES_JS = `
       $('rapport-' + who + '-etat').textContent = '';
       $('rapport-' + who + '-jour').value = '';
     });
-    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'engagements-manques', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'temps-agent'].forEach(function (id) {
+    ['preuve', 'zones', 'indicateurs', 'engagements-tenus', 'engagements-manques', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'parcours-mois', 'temps-agent'].forEach(function (id) {
       clear($(id + '-corps'));
       $(id + '-etat').textContent = '';
     });
@@ -317,7 +318,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var body = $('rapport-' + who + '-corps'), state = $('rapport-' + who + '-etat');
     var chosen = $('rapport-' + who + '-jour').value;
     clear(body);
-    if (who === 'direction') { proof(''); indicators(); promises(); missedPromises(''); networkTime(); availability(); copies(); restoration(); } else { zones(); myTime(''); }
+    if (who === 'direction') { proof(''); indicators(); promises(); missedPromises(''); networkTime(); availability(); copies(); restoration(); journey(); } else { zones(); myTime(''); }
     if (chosen && !/^\\d{4}-\\d{2}-\\d{2}$/.test(chosen)) { state.textContent = 'Choisissez un jour.'; return Promise.resolve(false); }
     state.textContent = 'Chargement…';
     return send('/v1/pilotage/rapport-matin' + (chosen ? '?jour=' + chosen : ''), 'GET').then(function (res) {
@@ -635,6 +636,16 @@ globalThis.AIMMO_FINANCES = function (t) {
       if (v.state === 'reussi') return 'Restauration de ' + monthName(r.month) + ' prouvée, le ' + copyDay(r.testedAt) + '.';
       if (v.state === 'echec') return 'Restauration de ' + monthName(r.month) + ' ratée : ' + (RESTORE_WHY[r.reason] || 'le test a échoué') + '.';
       return 'Aucune preuve de restauration pour ' + monthName(v.expectedMonth) + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussie' ? ', réussi.' : ', raté.') : '');
+    });
+  }
+  /* BR72 : le parcours complet fictif du mois. Les étapes du reçu, dans l'ordre et avec leurs mots. */
+  var JOURNEY_STEP = { premier_message: 'le premier message du vendeur', qualification: 'le classement et l’attribution du contact', rendez_vous: 'le rendez-vous d’estimation', estimation: 'l’avis de valeur', mandat: 'le mandat et le registre', annonce: 'l’annonce', acquereur: 'le message de l’acquéreur', visite: 'la visite et son bon', offre: 'l’offre', compromis_acte: 'le compromis et l’acte', apres_vente: 'l’après-vente' };
+  function journey() {
+    return readBlock('parcours-mois', '/v1/pilotage/parcours-du-mois', function (v) {
+      var r = v.receipt;
+      if (v.state === 'reussi') return 'Parcours de ' + monthName(r.month) + ' réussi, le ' + copyDay(r.ranAt) + ' : toutes les étapes ont passé.';
+      if (v.state === 'echec') return 'Parcours de ' + monthName(r.month) + ' raté, le ' + copyDay(r.ranAt) + ' : ' + (typeof r.step === 'string' && Object.prototype.hasOwnProperty.call(JOURNEY_STEP, r.step) ? 'il s’arrête à ' + JOURNEY_STEP[r.step] : 'l’étape cassée n’est pas connue') + '.';
+      return 'Aucun parcours prouvé pour ' + monthName(v.expectedMonth) + '.' + (r ? ' Dernier reçu : ' + monthName(r.month) + (r.outcome === 'reussi' ? ', réussi.' : ', raté.') : '');
     });
   }
   /* Un seul geste en vol par session : refaire un geste déjà noté ne changerait rien, mais on ne l'envoie pas deux fois. */

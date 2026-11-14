@@ -979,6 +979,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
 export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = {
+  journey_receipts: 'Reçu du parcours complet fictif de chaque mois : un instant, un mois, réussi ou raté, et l\'étape cassée, prise dans une liste fermée.',
   send_quota_slots: 'Créneaux du quota d\'envois par jour : un compteur, sans personne ni message.',
   scheduled_runs: 'Passages du planificateur : nom de la tâche et créneau.',
   automation_rollouts: 'Palier de chaque automatisation du site : des nombres et des dates, ni personne ni envoi.',
@@ -1228,6 +1229,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_on_sale: ['property_id', 'network_id', 'mandate_id', 'on_sale_at', 'noted_at'],
   base_copy_alerts: ['night', 'last_success_at', 'created_at'],
   base_restore_receipts: ['id', 'tested_at', 'month', 'outcome', 'duration_ms', 'tables_count', 'rows_count', 'digest'],
+  journey_receipts: ['id', 'ran_at', 'month', 'outcome', 'step'],
   sale_files_recopie: ['done_at', 'rows_copied', 'complete'],
   base_copy_runs: ['id', 'started_at', 'finished_at', 'outcome', 'tables_count', 'rows_count', 'parts_count'],
   alert_unsubscribe_tokens: ['token_hash', 'network_id', 'created_at', 'used_at'],

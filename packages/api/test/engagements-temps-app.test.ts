@@ -31,6 +31,7 @@ const NET = `GET /v1/pilotage/temps-gagne/reseau?semaine=${WEEK}`;
 const DISPO = 'GET /v1/pilotage/disponibilite?mois=2027-02';
 const COPIES = 'GET /v1/pilotage/copies';
 const RESTORE = 'GET /v1/pilotage/copies/restauration';
+const JOURNEY = 'GET /v1/pilotage/parcours-du-mois';
 const MINE = `GET /v1/pilotage/temps-gagne?semaine=${WEEK}`;
 const DECLARE = 'POST /v1/pilotage/temps-gagne';
 const nothing = { numerator: 0, denominator: 0, bp: null };
@@ -65,6 +66,7 @@ async function run(role: 'agent' | 'direction', answers: Record<string, Answer> 
     [NET]: ok({ week: WEEK, declared: 2, notDeclared: 1, minutes: 150, withoutGesture: 1 }),
     [DISPO]: ok(NOT_CONNECTED),
     [RESTORE]: ok({ state: 'manquant', expectedMonth: '2027-02', receipt: null }),
+    [JOURNEY]: ok({ state: 'manquant', expectedMonth: '2027-02', receipt: null }),
     [COPIES]: ok({ state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [] }),
     [MINE]: ok({ week: WEEK, minutes: null, version: null, gestures: 4 }),
     ...answers,
@@ -163,6 +165,26 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(notSame.texts('restauration')).not.toContain('restaurée en');
     const down = await run('direction', { [RESTORE]: no(503, {}) });
     expect(down.state('restauration')).toContain('Indisponible');
+  });
+
+  it('BR72 · le parcours du mois : réussi, raté à son étape, ou manquant ; jamais un vert sans reçu, ni sur une panne de lecture', async () => {
+    const none = await run('direction');
+    expect(none.state('parcours-mois')).toBe('Aucun parcours prouvé pour février 2027.');
+    const good = await run('direction', { [JOURNEY]: ok({ state: 'reussi', expectedMonth: '2027-03', receipt: { id: 'a', ranAt: '2027-03-03T03:23:00.000Z', month: '2027-03', outcome: 'reussi' } }) });
+    expect(good.state('parcours-mois')).toMatch(/^Parcours de mars 2027 réussi, le 3 mars 2027 .* : toutes les étapes ont passé\.$/);
+    const bad = await run('direction', { [JOURNEY]: ok({ state: 'echec', expectedMonth: '2027-03', receipt: { id: 'b', ranAt: '2027-03-03T03:23:00.000Z', month: '2027-03', outcome: 'rate', step: 'offre' } }) });
+    expect(bad.state('parcours-mois')).toMatch(/^Parcours de mars 2027 raté, le 3 mars 2027 .* : il s’arrête à l’offre\.$/);
+    for (const step of [null, 'inventee', 'constructor', '__proto__']) {
+      const unknown = await run('direction', { [JOURNEY]: ok({ state: 'echec', expectedMonth: '2027-03', receipt: { id: 'c', ranAt: '2027-03-03T03:23:00.000Z', month: '2027-03', outcome: 'rate', step } }) });
+      expect(unknown.state('parcours-mois')).toMatch(/l’étape cassée n’est pas connue\.$/);
+    }
+    const old = await run('direction', { [JOURNEY]: ok({ state: 'manquant', expectedMonth: '2027-03', receipt: { id: 'd', ranAt: '2027-02-03T03:23:00.000Z', month: '2027-02', outcome: 'rate', step: 'mandat' } }) });
+    expect(old.state('parcours-mois')).toBe('Aucun parcours prouvé pour mars 2027. Dernier reçu : février 2027, raté.');
+    const down = await run('direction', { [JOURNEY]: no(503, {}) });
+    expect(down.state('parcours-mois')).toContain('Indisponible');
+    expect(down.state('parcours-mois')).not.toContain('réussi');
+    const agent = await run('agent');
+    expect(agent.calls.some((c) => c.url === '/v1/pilotage/parcours-du-mois')).toBe(false);
   });
 
   it('[R230] sans copie : « non sauvegardé » ; à jour : la date ; une nuit manquée et sa raison se lisent ; une panne de lecture ne dit jamais « à jour »', async () => {
