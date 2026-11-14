@@ -132,6 +132,7 @@ import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from 
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
+import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
 import { CERTIFICATE_PAGE_PATH, certificatePageError, handleCertificatePage } from './certificat-photo.ts';
 import { Cles } from '../../core/src/cles/index.ts';
@@ -1609,6 +1610,16 @@ function appelsFicheRoutes(): RouteDef[] {
   }));
 }
 
+/** Les notifications de l'agent (BR66) : l'agent en activité seul, pour lui seul, contrôlé avant le corps [R16, R412]. */
+function notificationsRoutesDef(): RouteDef[] {
+  return notificationsRoutes().map((r: NotificationsRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   return gagnerRoutes().map((r: GagnerRoute) => ({
     method: r.method,
@@ -2237,6 +2248,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
     ...appelsFicheRoutes(),
+    ...notificationsRoutesDef(),
     ...m01Routes(config),
     ...avisRoutes(config),
     ...repriseRoutes(),
