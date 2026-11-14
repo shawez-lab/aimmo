@@ -16,6 +16,8 @@
  *   GET  /visites/:visite/bon                           le bon de visite
  *   POST /visites/:visite/bon/signature                 le bon signé sur papier
  *   POST /visites/:visite/annulation                    annuler la visite
+ *   GET  /fiches/:fiche/visites-en-ligne                les visites réservées en ligne qui attendent (BR64)
+ *   POST /visites/:rendez-vous/rattachement             { projectId } : la rattacher à la recherche, avec son bon (BR64)
  *   POST /visites/:visite/code                          le code envoyé au visiteur [R54]
  *   POST /visites/:visite/confirmation                  code et nom du visiteur [R54]
  *   POST /visites/:visite/compte-rendu/dictee           la dictée de l'agent
@@ -196,6 +198,18 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       return reply(await visites(s).recordPaperSignature(v, a!, { signedAt: new Date(signedAt), scanRef }));
     }),
     post('visites.annulation', `/visites/${ID}/annulation`, async (s, v, [a]) => reply(await visites(s).cancel(v, a!))),
+    // BR64 · Les visites réservées en ligne d'une fiche, puis leur rattachement à la recherche [R16, R40, R42].
+    get('visites.en_ligne', `/fiches/${ID}/visites-en-ligne`, async (s, v, [f], request) => {
+      if ([...new URL(request.url).searchParams.keys()].length > 0) return failure(400, 'unexpected_field', 'Cette lecture ne prend aucun paramètre.');
+      return reply(await visites(s).onlineToAttach(v, f!));
+    }),
+    post('visites.rattachement', `/visites/${ID}/rattachement`, async (s, v, [a], body) => {
+      const { projectId } = body;
+      if (typeof projectId !== 'string' || !new RegExp(`^${ID}$`).test(projectId) || Object.keys(body).length !== 1) return failure(400, 'invalid_project', 'projectId : le projet d’achat.');
+      const r = await visites(s).attachOnline(v, { appointmentId: a!, projectId });
+      // Seuls le rendez-vous et le bon sont rendus : jamais l'empreinte du lien du client.
+      return reply(r.ok ? { ok: true, value: { appointmentId: r.visit.appointment.id, slip: r.visit.slip } } : r);
+    }),
     post('visites.code', `/visites/${ID}/code`, async (s, v, [a], body) => reply(await securite(s).sendCode(v, a!, { consentProof: typeof body.consentProof === 'string' ? body.consentProof : '' }))),
     post('visites.confirmation', `/visites/${ID}/confirmation`, async (s, v, [a], body) => {
       const { code, lastName } = body;
