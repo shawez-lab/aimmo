@@ -151,6 +151,8 @@ const ROUTES: NeufViagerRoute[] = [
     roles: DIRECTION,
     handle: withBody(async (s, v, _p, b) => reply(await core(s).neuf.setFeeScale(v, { kind: b.kind, rateBp: b.rateBp, source: b.source, validFrom: b.validFrom }))),
   },
+  /* BR79 : les barèmes rangés, celui qui fait foi ce jour, ceux à venir et ceux remplacés, pour la direction seule. */
+  { method: 'GET', pattern: /^\/neuf\/baremes$/, name: 'neuf.baremes', roles: DIRECTION, handle: async (s, v) => reply(await core(s).neuf.listFeeScales(v)) },
   { method: 'GET', pattern: /^\/neuf\/programmes$/, name: 'neuf.programmes', roles: WRITERS, handle: async (s, v) => reply(await programs(s, v)) },
   {
     method: 'POST',
