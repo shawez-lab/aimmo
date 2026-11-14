@@ -198,7 +198,8 @@ export class Reclamations {
   /**
    * Le réglage en service, pour la direction seule (BR70) : la version, le délai appliqué (30 jours sans réglage), le
    * médiateur ou rien, jamais inventé ; le texte de la proposition tel que le code l'écrit ; et le nombre de réclamations
-   * qui attendent un médiateur pour que la proposition parte [R606, R607]. Ni nom de client, ni motif [R13].
+   * qui attendent un médiateur pour que la proposition parte, comme le passage les choisit : une réclamation réglée à
+   * l'échéance n'en attend plus [R606, R607]. Ni nom de client, ni motif [R13].
    */
   async currentSettings(viewer: Viewer): Promise<{ ok: true; value: ComplaintSettingsView } | ComplaintRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'role');
@@ -209,7 +210,8 @@ export class Reclamations {
     const waiting = await this.db.first<{ n: number }>(
       `SELECT count(*) AS n FROM complaints c
        WHERE c.network_id = ? AND EXISTS (SELECT 1 FROM complaint_alerts a WHERE a.complaint_id = c.id AND a.kind = 'mediateur_manquant')
-       AND NOT EXISTS (SELECT 1 FROM complaint_mediator_offers o WHERE o.complaint_id = c.id)`,
+       AND NOT EXISTS (SELECT 1 FROM complaint_mediator_offers o WHERE o.complaint_id = c.id)
+       AND NOT EXISTS (SELECT 1 FROM complaint_answers r WHERE r.complaint_id = c.id AND r.outcome = 'reglee' AND r.answered_on <= c.due_on)`,
       [viewer.networkId],
     );
     return {

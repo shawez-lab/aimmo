@@ -207,6 +207,15 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     await t.reclamations.tick(t.network.id);
     await t.reclamations.tick(t.network.id);
     expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { mediator: null, offerText: null, waitingForMediator: 1 } });
+    // Une seconde, réglée le jour de l'échéance après l'alerte, ne recevra pas de proposition : elle n'attend plus.
+    t.setClock(at('2027-03-10'));
+    const d = await t.record({ receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Retard.' });
+    t.setClock(at('2027-04-08', '11:00'));
+    await t.reclamations.tick(t.network.id);
+    expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { waitingForMediator: 2 } });
+    expect(await t.reclamations.answer(t.agent, d.complaintId, { outcome: 'reglee', note: 'Visite avancée, client d’accord.' })).toMatchObject({ ok: true });
+    expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { waitingForMediator: 1 } });
+    t.setClock(at('2027-04-08'));
     for (const v of [t.agent, t.compliance, t.partner]) {
       const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
       expect(await t.reclamations.currentSettings(v)).toEqual({ ok: false, rule: 'R16', code: 'role' });
