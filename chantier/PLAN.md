@@ -1393,7 +1393,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR67 · L'écran des notifications : réglages, liste, et la page du lien
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#563, `4a5c99a9`). Codex 1 P2 corrigé (l'envoi du lien reste en mémoire jusqu'à ce que son détail soit montré), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5948 tests). L'application tient son budget de justesse (49 025 octets compressés sur 49 152) : un prochain bloc de l'accueil devra en libérer. Reste : vrai service Web Push (H57).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR66
 - Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R415, R16, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de BR66. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Un bloc « Mes notifications » sur l'accueil de l'agent ; son script est servi à part (`/app/notifications.js`) et chargé au geste ; l'application tient son budget. Le lien d'une notification (`/notifications/<envoi>`) renvoie vers `/app/#envoi=<envoi>`, sans rien lire ; l'application, une fois l'agent entré, ouvre le bloc sur cet envoi et retire l'envoi de la barre d'adresse. Aucune règle nouvelle ni migration ; rien n'est envoyé.
