@@ -135,6 +135,16 @@ describe('RC39 · lire un terme sur sa page', () => {
     // Deux destinataires sur la même ligne : à lire.
     pages[4] = "L'acquéreur verse la somme de 10 000 € au notaire, qui la remettra au vendeur.";
     expect(verifyReading(pages, EXACT).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
+    // Le destinataire nié sur la ligne du montant, ou un autre nommé ailleurs sur la page pour la garde de la somme : à lire.
+    pages[4] = 'Dépôt de garantie : 10 000 €, qui ne seront pas confiés au notaire.\nCette somme sera conservée par le vendeur.';
+    const negated = verifyReading(pages, EXACT);
+    expect(negated.proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
+    expect(negated.toRead).toEqual(['depot_garantie.detenteur']);
+    pages[4] = 'Dépôt de garantie : 10 000 € versés au notaire.\nCette somme sera ensuite remise au vendeur.';
+    expect(verifyReading(pages, EXACT).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
+    // Le lecteur dit « vendeur » sur une ligne qui le nie : à lire aussi.
+    pages[4] = "Dépôt de garantie : 10 000 €, jamais remis au vendeur.";
+    expect(verifyReading(pages, { ...EXACT, deposit: { eur: 10000, holder: 'vendeur', page: 5 } }).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
   });
 
   it('[R15] seules les lignes utiles partent au lecteur ; IBAN, BIC, pièce d’identité et naissance jamais, mails et téléphones masqués', () => {

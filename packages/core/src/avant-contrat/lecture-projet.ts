@@ -165,6 +165,9 @@ const CONDITION_WORDS: Record<ConditionKind, RegExp | null> = {
 /** Une ligne qui nie ou écarte ce qu'elle nomme. */
 const NEGATION = /\bne\b|\bn['’]|\bpas\b|\bsans\b|\baucune?\b|\bnon\b|\bni\b|\bjamais\b|renon[cç]|\bexclu/i;
 
+/** Une ligne qui parle de la garde de la somme versée par l'acquéreur. */
+const CUSTODY = /d[ée]p[oô]t|s[ée]questre|\bsomme|conserv|\bremi[st]e?\b|remettr|\bvers[ée]e?s?\b|\bverse(?:ra|ront)?\b|confi[ée]|entre les mains|d[ée]tenu|garde/i;
+
 const HOLDER_WORDS: Record<DepositHolder, RegExp> = {
   notaire: /notaire|office notarial/i,
   agence: /\bagence\b|agent immobilier|mandataire/i,
@@ -236,12 +239,18 @@ export function verifyReading(pages: string[], raw: unknown): { proposal: DraftP
   const d = r.deposit;
   const depositText = isRecord(d) ? pageOf(d.page) : null;
   if (isRecord(d) && depositText !== null && isInt(d.eur, 0, 1_000_000_000) && amountOn(depositText, d.eur)) {
-    // Le destinataire : seulement si une ligne qui porte le montant le nomme, et ne nomme aucun autre.
+    // Le destinataire : seulement si chaque ligne qui porte le montant le nomme, sans le nier ni en nommer un autre, et
+    // qu'aucune autre ligne de la page sur la garde de la somme ne nomme un autre destinataire ou ne nie [R512].
     let holder: DepositHolder | null = null;
     if ((DEPOSIT_HOLDERS as readonly unknown[]).includes(d.holder) && d.holder !== 'autre') {
       const named = d.holder as DepositHolder;
-      const lines = normalize(depositText).split(/\r?\n/).filter((l) => amountOn(l, d.eur as number));
-      const ok = lines.length > 0 && lines.every((l) => HOLDER_WORDS[named].test(l) && DEPOSIT_HOLDERS.every((h) => h === named || !HOLDER_WORDS[h].test(l)));
+      const all = normalize(depositText).split(/\r?\n/);
+      const amountLines = all.filter((l) => amountOn(l, d.eur as number));
+      const custody = all.filter((l) => amountOn(l, d.eur as number) || CUSTODY.test(l));
+      const ok =
+        amountLines.length > 0 &&
+        amountLines.every((l) => HOLDER_WORDS[named].test(l)) &&
+        custody.every((l) => !NEGATION.test(l) && DEPOSIT_HOLDERS.every((h) => h === named || !HOLDER_WORDS[h].test(l)));
       if (ok) holder = named;
     }
     if (holder === null) toRead.add('depot_garantie.detenteur');
