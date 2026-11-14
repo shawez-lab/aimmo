@@ -72,7 +72,7 @@ async function openedFiche(fiche: Record<string, unknown>, answers: Record<strin
 
 
 
-const LIST = '/v1/securite/reclamations';
+const LIST = '/v1/securite/reclamations?fiche=p-1';
 const RECORD = '/v1/securite/fiches/p-1/reclamations';
 type A = Awaited<ReturnType<typeof openedFiche>>;
 const scripts = (a: A) => a.els.fiche!.children.filter((e) => e.attributes.src === '/app/reclamations.js');
@@ -130,14 +130,33 @@ describe('BR69 · les réclamations dans la fiche', () => {
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);
   });
 
-  it('seules les réclamations de cette fiche sont montrées ; l’échéance est celle de la base, avec les jours qui restent', async () => {
-    const a = await open({ [LIST]: ok([C(), C({ complaintId: 'r2', personId: 'p-2', summary: 'Autre fiche' }), C({ complaintId: 'r3', dueOn: parisDay(1), summary: 'Panneau abîmé' })]) });
+  it('BR71 · le groupe des fiches réunies est demandé au serveur ; une réclamation d’une fiche réunie est dite comme telle ; un champ mal formé est tu', async () => {
+    const a = await open({ [LIST]: ok([C(), C({ complaintId: 'r2', personId: 'p-2', summary: 'Fiche réunie' }), C({ complaintId: 'r4', personId: '<b>', summary: 'Mal formée' })]) });
+    expect(a.calls.filter((c) => c.url.startsWith('/v1/securite')).map((c) => [c.url, c.method])).toEqual([[LIST, 'GET']]);
+    const all = texts(a);
+    expect(all).toContain('« Fiche réunie »');
+    expect(all.filter((x) => x === 'Rangée sur une fiche réunie à celle-ci.').length).toBe(1);
+    const reunie = part(a).all().filter((e) => e.tagName === 'article')[1]!;
+    expect(reunie.all().map((e) => e.textContent)).toContain('Rangée sur une fiche réunie à celle-ci.');
+    expect(all.some((x) => x.includes('Mal formée'))).toBe(false);
+    expect(part(a).all().filter((e) => e.tagName === 'article').length).toBe(2);
+  });
+
+  it('BR71 · une fiche inconnue ou mal formée : le refus est dit en mots, jamais un code', async () => {
+    for (const [code, words] of [['unknown_person', 'Cette fiche n’existe plus.'], ['bad_fiche', 'Cette fiche n’est pas lisible.'], ['unexpected_field', 'Cette lecture n’est pas lisible.']]) {
+      const a = await open({ [LIST]: async () => Response.json({ ok: false, rule: null, code }, { status: code === 'unknown_person' ? 404 : 400 }) });
+      expect(said(a)).toBe(words);
+    }
+  });
+
+  it('l’échéance est celle de la base, avec les jours qui restent', async () => {
+    const a = await open({ [LIST]: ok([C(), C({ complaintId: 'r3', dueOn: parisDay(1), summary: 'Panneau abîmé' })]) });
     const all = texts(a);
     expect(all).toContain(`Réclamation reçue le ${fr(parisDay(-3))} par mail`);
     expect(all).toContain('« Le compte rendu de visite n’est jamais arrivé. »');
     expect(all).toContain(`Réponse attendue au plus tard le ${fr(parisDay(10))} : il reste 10 jours.`);
     expect(all).toContain(`Réponse attendue au plus tard le ${fr(parisDay(1))} : il reste 1 jour.`);
-    expect(all.some((x) => x.includes('Autre fiche'))).toBe(false);
+    expect(all).not.toContain('Rangée sur une fiche réunie à celle-ci.');
     expect(part(a).all().filter((e) => e.tagName === 'article').length).toBe(2);
     expect(said(a)).toBe('');
   });

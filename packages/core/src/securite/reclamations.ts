@@ -38,6 +38,8 @@ import type { JournalStore } from '../journal/types.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** L'identifiant d'une fiche, tel que les routes l'admettent. */
+const FICHE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Le délai de réponse sans réglage, en jours. */
 export const DEFAULT_COMPLAINT_RESPONSE_DAYS = 30;
@@ -448,12 +450,30 @@ export class Reclamations {
     };
   }
 
-  /** Les réclamations : la direction voit celles du réseau, l'agent celles des fiches qu'il suit ; l'échéance la plus proche d'abord. */
-  async list(viewer: Viewer): Promise<{ ok: true; value: Complaint[] } | ComplaintRefusal> {
+  /**
+   * Les réclamations : la direction voit celles du réseau, l'agent celles des fiches qu'il suit ; l'échéance la plus
+   * proche d'abord. Avec `fiche` (BR71), seulement celles rangées sur une fiche du même groupe de fiches réunies : une
+   * fusion ne déplace aucune ligne [R17], la réclamation garde sa fiche d'origine, et une fusion défaite la lui rend seule.
+   */
+  async list(viewer: Viewer, options: { fiche?: unknown } = {}): Promise<{ ok: true; value: Complaint[] } | ComplaintRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'role');
+    let group: string[] | null = null;
+    if (options.fiche !== undefined) {
+      if (typeof options.fiche !== 'string' || !FICHE_ID.test(options.fiche)) return { ok: false, rule: null, code: 'bad_fiche' };
+      // La lecture de la fiche demandée est écrite au journal, ou son refus [R16].
+      const read = await this.acces.readFiche(viewer, options.fiche);
+      if (!read.ok) return read.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_person' } : { ok: false, rule: 'R16', code: read.code };
+      if (viewer.role === 'agent' && read.view !== 'full') return this.refuse(viewer, 'not_assigned');
+      group = read.value.members.map((m) => m.id);
+    }
     // Un agent : seulement les réclamations des fiches qu'il suit, tout le groupe des fiches réunies compris, pour ne
     // jamais tenter de lire celles d'un autre ; la lecture est ensuite revérifiée et écrite au journal.
-    const all = await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId]);
+    const all = group
+      ? await this.db.all<ComplaintRow>(
+          `SELECT * FROM complaints WHERE network_id = ? AND person_id IN (${group.map(() => '?').join(', ')}) ORDER BY due_on, id`,
+          [viewer.networkId, ...group],
+        )
+      : await this.db.all<ComplaintRow>('SELECT * FROM complaints WHERE network_id = ? ORDER BY due_on, id', [viewer.networkId]);
     let rows = all;
     if (viewer.role === 'agent') {
       rows = [];

@@ -86,7 +86,14 @@ export function securiteRoutes(): SecuriteRoute[] {
       method: 'GET',
       pattern: new RegExp(`${R}$`),
       name: 'securite.reclamations',
-      handle: async (s, v) => reply(await reclamations(s).list(v)),
+      handle: async (s, v, _p, request) => {
+        // Un seul paramètre admis, `fiche` (BR71) : le groupe des fiches réunies à celle-ci.
+        const params = new URL(request.url).searchParams;
+        const keys = [...params.keys()];
+        if (keys.some((k) => k !== 'fiche') || params.getAll('fiche').length > 1) return json(400, { ok: false, rule: null, code: 'unexpected_field' });
+        const fiche = params.get('fiche');
+        return reply(await reclamations(s).list(v, fiche === null ? {} : { fiche }));
+      },
     },
     {
       method: 'GET',
