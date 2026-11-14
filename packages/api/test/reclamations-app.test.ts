@@ -240,6 +240,10 @@ describe('BR69 · les réclamations dans la fiche', () => {
     await click(d, 'Ranger la réclamation');
     expect(said(d)).toBe('La réponse n’est pas arrivée : rien n’est sûr. Relisez la liste avant de recommencer.');
     expect(d.calls.filter((x) => x.url === LIST).length).toBe(2);
+    const p = await open({ [LIST]: ok([]), [RECORD]: async () => new Response('panne', { status: 500 }) });
+    await click(p, 'Ranger la réclamation');
+    expect(said(p)).toBe('La réponse n’est pas arrivée : rien n’est sûr. Relisez la liste avant de recommencer.');
+    expect(p.calls.filter((x) => x.url === LIST).length).toBe(2);
     const e = await open({ [LIST]: async () => Promise.reject(new TypeError('hors ligne')) });
     expect(said(e)).toBe('Pas de réseau. Réessayez dans un moment.');
     for (const code of Object.keys(RECLAMATIONS_REFUSALS)) expect(RECLAMATIONS_REFUSALS[code as keyof typeof RECLAMATIONS_REFUSALS]).not.toMatch(/_/);
@@ -259,5 +263,35 @@ describe('BR69 · les réclamations dans la fiche', () => {
     expect(part(a).all().filter((e) => e.tagName === 'article').length).toBe(1);
     expect(part(a).all().find((e) => e.textContent === '« <img src=x onerror=alert(1)> »')).toBeDefined();
     expect(part(a).all().some((e) => e.tagName === 'img')).toBe(false);
+  });
+
+  it('une écriture finie sur une fiche n’arrête pas la lecture d’une autre fiche', async () => {
+    let finish: (r: Response) => void = () => undefined;
+    let release: (r: Response) => void = () => undefined;
+    let reads = 0;
+    const a = await open({
+      [LIST]: () => {
+        reads += 1;
+        if (reads === 2) return new Promise<Response>((r) => (release = r));
+        return Promise.resolve(Response.json({ ok: true, data: [] }));
+      },
+      [RECORD]: () => new Promise<Response>((r) => (finish = r)),
+    });
+    const first = part(a);
+    a.named(first, 'Ranger la réclamation')[0]!.listeners.click!({});
+    await a.tick();
+    // La fiche est rouverte : un nouveau bloc lit pendant que l'écriture de l'ancien attend.
+    a.named(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    expect(part(a)).not.toBe(first);
+    a.named(part(a), 'Réclamations')[0]!.listeners.click!({});
+    await a.tick();
+    expect(reads).toBe(2);
+    finish(Response.json({ ok: true, data: null }));
+    await a.tick();
+    release(Response.json({ ok: true, data: [C()] }));
+    await a.tick();
+    expect(said(a)).toBe('');
+    expect(texts(a)).toContain('« Le compte rendu de visite n’est jamais arrivé. »');
   });
 });

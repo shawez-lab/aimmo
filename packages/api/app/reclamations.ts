@@ -47,7 +47,6 @@ globalThis.AIMMO_RECLAMATIONS = function (t) {
   var DENIED = 'Réservé à l’agent qui suit cette fiche et à la direction.';
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez la liste avant de recommencer.';
   var DAY = /^\\d{4}-\\d{2}-\\d{2}$/, ID = /^[A-Za-z0-9_-]{1,64}$/;
-  var turn = 0, busy = false;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function text(v, max) { return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null; }
   function day(d) { return typeof d === 'string' && DAY.test(d) ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : null; }
@@ -137,26 +136,29 @@ globalThis.AIMMO_RECLAMATIONS = function (t) {
     return box;
   }
   function act(b, path, body, ctx, done) {
-    if (busy) return Promise.resolve(false);
+    var c = ctx.corps;
+    if (c.aimmoBusy) return Promise.resolve(false);
     var mine = t.session();
-    busy = true;
+    c.aimmoBusy = true;
     b.disabled = true;
     ctx.said.textContent = 'Envoi…';
     return send(path, 'POST', body).then(function (x) {
-      busy = false;
+      c.aimmoBusy = false;
       b.disabled = false;
       if (x.gone || mine !== t.session()) return false;
-      if (x.offline) return load(ctx, LOST);
+      // Sans réponse lisible, ou une panne du serveur : la réclamation a pu être rangée quand même.
+      if (x.offline || !x.body || x.status >= 500) return load(ctx, LOST);
       if (!x.ok) { ctx.said.textContent = refusal(x); return false; }
       return load(ctx, done);
     });
   }
   function load(ctx, note) {
-    var mine = t.session(), at = ++turn;
+    // Chaque bloc compte ses lectures : une écriture finie sur une autre fiche n'arrête pas celle-ci.
+    var mine = t.session(), at = ctx.corps.aimmoTurn = (ctx.corps.aimmoTurn || 0) + 1;
     clear(ctx.corps);
     ctx.said.textContent = 'Lecture des réclamations…';
     return send('/v1/securite/reclamations', 'GET').then(function (x) {
-      if (x.gone || mine !== t.session() || at !== turn) return false;
+      if (x.gone || mine !== t.session() || at !== ctx.corps.aimmoTurn) return false;
       if (x.offline) { ctx.said.textContent = note === LOST ? LOST : OFFLINE; return false; }
       if (!x.ok || !x.body || !Array.isArray(x.body.data)) { ctx.said.textContent = note === LOST ? LOST : refusal(x); return false; }
       x.body.data.forEach(function (c) {
