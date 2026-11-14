@@ -424,4 +424,25 @@ describeWithSqlite('BR64 · les visites réservées en ligne qui attendent sur l
     expect(r.value).toHaveLength(20);
     expect(new Set(r.value.map((v) => v.property.reference))).toEqual(new Set(['B-TALANT']));
   });
+
+  it('une visite en ligne rattachée puis décalée n’est pas proposée de nouveau : son remplaçant est déjà une visite', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const appt = await book(t, b.person.id, p.id, at(0), 'site');
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: appt.id, projectId: b.project.id })).toMatchObject({ ok: true });
+    const moved = await t.rdv.moveFromAgenda(appt.id, at(2));
+    if (!moved.ok) throw new Error(moved.code);
+    expect(moved.appointment).toMatchObject({ source: 'site', replaces_id: appt.id, status: 'booked' });
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: moved.appointment.id, projectId: b.project.id })).toMatchObject({ ok: false, code: 'already_attached' });
+    const r = await t.visites.onlineToAttach(t.as('agent', t.alex.id), b.person.id);
+    expect(r).toEqual({ ok: true, value: [] });
+    // Une visite en ligne décalée sans avoir été rattachée reste proposée.
+    const loose = await book(t, b.person.id, p.id, at(24), 'espace');
+    const again = await t.rdv.moveFromAgenda(loose.id, at(26));
+    if (!again.ok) throw new Error(again.code);
+    const r2 = await t.visites.onlineToAttach(t.as('agent', t.alex.id), b.person.id);
+    expect(r2.ok && r2.value.map((v) => v.appointmentId)).toEqual([again.appointment.id]);
+  });
 });

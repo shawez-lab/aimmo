@@ -349,6 +349,8 @@ export class Visites {
       );
       for (const row of rows) {
         if (value.length >= ONLINE_TO_ATTACH_MAX) break;
+        // Le remplaçant d'une visite déjà rattachée puis décalée est déjà une visite : jamais proposé de nouveau.
+        if (await this.attachedEarlier(row.id)) continue;
         const read = await this.acces.readProperty(viewer, row.property_id);
         if (!read.ok) continue;
         value.push({
@@ -417,6 +419,17 @@ export class Visites {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refuse(viewer, 'visit', 'not_assigned', `visit:${appointmentId}`);
     return { ok: true, agentId: v.agent_id };
+  }
+
+  /** Un rendez-vous qui en remplace un autre déjà rattaché, en remontant ses décalages ; lecture seule, rien au journal. */
+  private async attachedEarlier(appointmentId: string): Promise<boolean> {
+    let id: string | null = appointmentId;
+    for (let depth = 0; id !== null && depth < 20; depth += 1) {
+      const appt: { replaces_id: string | null } | null = await this.db.first<{ replaces_id: string | null }>('SELECT replaces_id FROM appointments WHERE id = ?', [id]);
+      id = appt?.replaces_id ?? null;
+      if (id !== null && (await this.db.first('SELECT 1 AS hit FROM visits WHERE appointment_id = ?', [id]))) return true;
+    }
+    return false;
   }
 
   private async visitRow(appointmentId: string): Promise<{ network_id: string; agent_id: string; person_id: string } | null> {
