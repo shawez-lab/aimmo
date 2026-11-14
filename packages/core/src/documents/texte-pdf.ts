@@ -658,6 +658,7 @@ function parseCMap(data: string, work: Work): CMap | null {
           const src = stack[i];
           const dst = stack[i + 1];
           if (!(src instanceof Str) || !(dst instanceof Str)) continue;
+          work.charge(dst.v.length);
           const u = utf16be(dst.v);
           if (u !== null) map.set(`${src.v.length}:${codeOf(src.v)}`, u);
         }
@@ -670,16 +671,16 @@ function parseCMap(data: string, work: Work): CMap | null {
           const a = codeOf(lo.v);
           const b = codeOf(hi.v);
           if (b < a || b - a > 65_535) continue;
-          work.charge(b - a + 1);
+          // Chaque code rangé coûte la longueur de sa destination.
+          const base = dst instanceof Str ? utf16be(dst.v) : null;
+          work.charge((b - a + 1) * (base === null ? 1 : base.length + 1));
           for (let c = a; c <= b; c++) {
             let u: string | null = null;
             if (Array.isArray(dst)) {
               const d = dst[c - a];
+              if (d instanceof Str) work.charge(d.v.length);
               u = d instanceof Str ? utf16be(d.v) : null;
-            } else if (dst instanceof Str) {
-              const base = utf16be(dst.v);
-              if (base !== null && base.length >= 1) u = base.slice(0, -1) + String.fromCharCode(base.charCodeAt(base.length - 1) + (c - a));
-            }
+            } else if (base !== null && base.length >= 1) u = base.slice(0, -1) + String.fromCharCode(base.charCodeAt(base.length - 1) + (c - a));
             if (u !== null) map.set(`${lo.v.length}:${c}`, u);
           }
         }
@@ -835,6 +836,8 @@ interface PageState {
   moved: boolean;
   /** Les reculs de TJ depuis le dernier texte montré, en part du corps. */
   pending: number;
+  /** La direction de la ligne de base du texte en cours. */
+  dir: [number, number];
   /** La position du texte est sûre : donnée par un déplacement, ou avancée de largeurs connues. */
   posKnown: boolean;
   undecodable: boolean;
@@ -904,12 +907,15 @@ function inlineImageEnd(lx: Lexer): number {
   return start + length + m[0].length;
 }
 
-async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>, ctm: number[]): Promise<void> {
+const INITIAL_TEXT_STATE: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, ctm: [1, 0, 0, 1, 0, 0] };
+
+async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>, initial: TextState): Promise<void> {
   const fonts = resources ? file.dict(resources.get('Font')) : null;
   const xobjects = resources ? file.dict(resources.get('XObject')) : null;
   const states = resources ? file.dict(resources.get('ExtGState')) : null;
   const decoders = new Map<string, FontDecoder>();
-  let ts: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, ctm };
+  // Un formulaire hérite de l'état de qui l'appelle ; ce qu'il change reste chez lui.
+  let ts: TextState = { ...initial };
   const saved: TextState[] = [];
   let tm = [1, 0, 0, 1, 0, 0];
   let lm = [1, 0, 0, 1, 0, 0];
@@ -927,10 +933,18 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   const space = () => {
     if (st.line !== '' && !st.line.endsWith(' ')) st.line += ' ';
   };
-  /** L'origine du texte, dans l'espace de la page. */
-  const origin = (): [number, number] => {
+  /**
+   * L'origine du texte dans l'espace de la page, projetée sur la direction de sa ligne de base : `along` le long de la
+   * ligne, `across` en travers. Un texte tourné se lit donc comme un texte droit.
+   */
+  const geometry = (): { along: number; across: number; dir: [number, number] } => {
     const c = ts.ctm;
-    return [c[0]! * tm[4]! + c[2]! * tm[5]! + c[4]!, c[1]! * tm[4]! + c[3]! * tm[5]! + c[5]!];
+    const x = c[0]! * tm[4]! + c[2]! * tm[5]! + c[4]!;
+    const y = c[1]! * tm[4]! + c[3]! * tm[5]! + c[5]!;
+    const m = multiply(tm, c);
+    const n = Math.hypot(m[0]!, m[1]!) || 1;
+    const u: [number, number] = [m[0]! / n, m[1]! / n];
+    return { along: x * u[0] + y * u[1], across: y * u[0] - x * u[1], dir: u };
   };
   /**
    * Avant un texte : nouvelle ligne, espace ou rien. L'écart se lit entre la fin du texte précédent et le début de
@@ -938,8 +952,12 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
    * page illisible : jamais un espace inventé, jamais deux morceaux collés au hasard.
    */
   const place = () => {
-    const [x, y] = origin();
-    if (st.lineY === null || Math.abs(y - st.lineY) > 1) {
+    const g = geometry();
+    const x = g.along;
+    const y = g.across;
+    const turned = Math.abs(g.dir[0] * st.dir[0] + g.dir[1] * st.dir[1] - 1) > 1e-3;
+    st.dir = g.dir;
+    if (st.lineY === null || turned || Math.abs(y - st.lineY) > 1) {
       if (st.line !== '') newline();
     } else if (st.line !== '') {
       if (st.endX !== null && st.posKnown) {
@@ -964,14 +982,15 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
     }
     file.work.charge(d.text.length + 1);
     st.line += d.text;
-    st.em = Math.abs(ts.size) * Math.hypot(tm[0]!, tm[1]!) * Math.hypot(ts.ctm[0]!, ts.ctm[1]!);
+    const m = multiply(tm, ts.ctm);
+    st.em = Math.abs(ts.size) * Math.hypot(m[0]!, m[1]!);
     if (d.width === null) {
       st.endX = null;
       st.posKnown = false;
       return;
     }
     advance(((d.width / 1000) * ts.size + ts.charSpacing * d.glyphs + ts.wordSpacing * d.spaces) * ts.scale);
-    st.endX = st.posKnown ? origin()[0] : null;
+    st.endX = st.posKnown ? geometry().along : null;
   };
   const moveTo = (tx: number, ty: number) => {
     lm = [lm[0]!, lm[1]!, lm[2]!, lm[3]!, tx * lm[0]! + ty * lm[2]! + lm[4]!, tx * lm[1]! + ty * lm[3]! + lm[5]!];
@@ -1136,7 +1155,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         if (st.line !== '') newline();
         const fm = file.get(x.dict.get('Matrix'));
         const matrix = Array.isArray(fm) && fm.length === 6 && fm.every((v) => typeof v === 'number') ? (fm as number[]) : [1, 0, 0, 1, 0, 0];
-        await readContent(file, data, file.dict(x.dict.get('Resources')) ?? resources, st, depth + 1, forms, multiply(matrix, ts.ctm));
+        await readContent(file, data, file.dict(x.dict.get('Resources')) ?? resources, st, depth + 1, forms, { ...ts, ctm: multiply(matrix, ts.ctm) });
         forms.delete(x);
         if (st.line !== '') newline();
         st.lineY = null;
@@ -1168,10 +1187,10 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
     if (d === null) return { page: n, text: null, reason: 'undecodable' };
     chunks.push(d);
   }
-  const st: PageState = { lines: [], line: '', lineY: null, endX: null, em: 0, moved: false, pending: 0, posKnown: true, undecodable: false };
+  const st: PageState = { lines: [], line: '', lineY: null, endX: null, em: 0, moved: false, pending: 0, dir: [1, 0], posKnown: true, undecodable: false };
   if (file.touchedAmbiguous) return { page: n, text: null, reason: 'undecodable' };
   try {
-    await readContent(file, chunks.join('\n'), resources, st, 0, new Set(), [1, 0, 0, 1, 0, 0]);
+    await readContent(file, chunks.join('\n'), resources, st, 0, new Set(), INITIAL_TEXT_STATE);
   } catch (error) {
     if (error instanceof TooBig || error instanceof TooComplex) throw error;
     return { page: n, text: null, reason: 'undecodable' };
