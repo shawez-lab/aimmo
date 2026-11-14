@@ -291,6 +291,37 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(textOf(await pages(bytes))).toEqual(['Prix :91']);
   });
 
+  it('une police choisie par un état graphique (gs) est appliquée ; mal formée, la page est illisible', async () => {
+    const make = (gsFont: string) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /ExtGState << /GS2 << /Type /ExtGState ${gsFont} >> /GS3 << /LW 2 >> >> >> /Contents 6 0 R >>`,
+        HELV,
+        '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /BaseEncoding /WinAnsiEncoding /Differences [49 /nine] >> >>',
+        { dict: '', data: 'BT /F1 12 Tf /GS3 gs (Prix :1) Tj /GS2 gs (11) Tj ET' },
+      ]);
+    expect(textOf(await pages(make('/Font [5 0 R 12]')))).toEqual(['Prix :199']);
+    expect(await pages(make('/Font 12'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('des formulaires répétés et imbriqués ne font pas travailler sans fin : refusé en mots', async () => {
+    const calls = Array.from({ length: 20 }, () => '/Fm Do').join(' ');
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 5 0 R >> >> /Contents 8 0 R >>',
+      HELV,
+      { dict: '/Subtype /Form /Resources << /XObject << /Fm 6 0 R >> >>', data: calls },
+      { dict: '/Subtype /Form /Resources << /XObject << /Fm 7 0 R >> >>', data: calls },
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'x'.repeat(1000)}) Tj ET`, flate: true },
+      { dict: '', data: calls },
+    ]);
+    const started = Date.now();
+    expect(await pdfPagesText(bytes, { maxWork: 1_000_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
   it('[R12] une table ToUnicode donnée mais illisible ne cède pas au codage de base : page illisible', async () => {
     const bytes = pdf([
       '<< /Type /Catalog /Pages 2 0 R >>',

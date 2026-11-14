@@ -18,13 +18,16 @@ export interface PdfLimits {
   maxPages: number;
   /** Total des octets décompressés pour tout le fichier : au-delà, le fichier est refusé (bombe de décompression). */
   maxInflatedBytes: number;
+
+  /** Total des éléments de contenu lus pour tout le fichier, formulaires répétés compris : au-delà, le fichier est refusé. */
+  maxWork: number;
 }
 
-export const PDF_LIMITS: PdfLimits = { maxBytes: 25 * 1024 * 1024, maxPages: 300, maxInflatedBytes: 80 * 1024 * 1024 };
+export const PDF_LIMITS: PdfLimits = { maxBytes: 25 * 1024 * 1024, maxPages: 300, maxInflatedBytes: 80 * 1024 * 1024, maxWork: 5_000_000 };
 
 export type PdfPageText = { page: number; text: string } | { page: number; text: null; reason: 'no_text' | 'undecodable' };
 
-export const PDF_TEXT_REFUSALS = ['not_pdf', 'encrypted', 'too_large', 'too_many_pages', 'inflate_limit', 'unreadable'] as const;
+export const PDF_TEXT_REFUSALS = ['not_pdf', 'encrypted', 'too_large', 'too_many_pages', 'inflate_limit', 'too_complex', 'unreadable'] as const;
 export type PdfTextRefusalCode = (typeof PDF_TEXT_REFUSALS)[number];
 export type PdfTextRefusal = { ok: false; rule: null; code: PdfTextRefusalCode };
 
@@ -35,6 +38,7 @@ export const PDF_TEXT_REFUSAL_TEXT: Record<PdfTextRefusalCode, string> = {
   too_large: 'Ce PDF est trop gros pour être lu ici. Lisez-le vous-même.',
   too_many_pages: 'Ce PDF a trop de pages pour être lu ici. Lisez-le vous-même.',
   inflate_limit: 'Ce PDF se décompresse en un volume démesuré : il n’est pas lu. Lisez-le vous-même.',
+  too_complex: 'Ce PDF répète ses contenus de façon démesurée : il n’est pas lu. Lisez-le vous-même.',
   unreadable: 'Ce PDF est abîmé ou d’un format non pris en charge : son texte ne peut pas être lu. Lisez-le vous-même.',
 };
 
@@ -82,6 +86,7 @@ type Value = null | boolean | number | Name | Str | Ref | Value[] | Dict | Strea
 
 class Broken extends Error {}
 class TooBig extends Error {}
+class TooComplex extends Error {}
 
 const WS = new Set([0x00, 0x09, 0x0a, 0x0c, 0x0d, 0x20]);
 const DELIM = new Set('()<>[]{}/%'.split('').map((c) => c.charCodeAt(0)));
@@ -275,6 +280,16 @@ class Budget {
   constructor(readonly max: number) {}
 }
 
+/** Le travail de lecture du fichier : chaque élément de contenu lu, et chaque caractère rendu, le compte. */
+class Work {
+  used = 0;
+  constructor(readonly max: number) {}
+  charge(n: number): void {
+    this.used += n;
+    if (this.used > this.max) throw new TooComplex();
+  }
+}
+
 /** Décompresse un flux Flate, dans la limite du budget du fichier ; null si le flux est abîmé. */
 async function inflate(raw: string, budget: Budget): Promise<string | null> {
   const ds = new DecompressionStream('deflate');
@@ -313,6 +328,7 @@ class PdfFile {
   constructor(
     readonly src: string,
     readonly budget: Budget,
+    readonly work: Work,
   ) {}
 
   scan(): void {
@@ -698,6 +714,7 @@ const MAX_FORM_DEPTH = 4;
 async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>): Promise<void> {
   const fonts = resources ? file.dict(resources.get('Font')) : null;
   const xobjects = resources ? file.dict(resources.get('XObject')) : null;
+  const states = resources ? file.dict(resources.get('ExtGState')) : null;
   const decoders = new Map<string, FontDecoder>();
   let font: FontDecoder = NO_DECODER;
   const saved: FontDecoder[] = [];
@@ -725,6 +742,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
       st.undecodable = true;
       return;
     }
+    file.work.charge(t.length);
     st.line += t;
   };
   const moveTo = (tx: number, ty: number) => {
@@ -740,6 +758,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   for (;;) {
     const t = lx.next();
     if (t === undefined) break;
+    file.work.charge(1);
     if (!(t instanceof Op)) {
       operands.push(t);
       if (operands.length > 64) operands = operands.slice(-64);
@@ -765,6 +784,19 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           if (!decoders.has(n.v)) decoders.set(n.v, await fontDecoder(file, fonts?.get(n.v)));
           font = decoders.get(n.v)!;
         } else font = NO_DECODER;
+        break;
+      }
+      case 'gs': {
+        // Un état graphique peut choisir la police : elle est appliquée, ou la page est illisible.
+        const n = operands[operands.length - 1];
+        const g = n instanceof Name && states ? file.dict(states.get(n.v)) : null;
+        if (!g) break;
+        const f = g.get('Font');
+        if (f === undefined) break;
+        const arr = file.get(f);
+        const key = `gs:${(n as Name).v}`;
+        if (!decoders.has(key)) decoders.set(key, Array.isArray(arr) && arr.length >= 1 ? await fontDecoder(file, arr[0]) : NO_DECODER);
+        font = decoders.get(key)!;
         break;
       }
       case 'Td':
@@ -875,7 +907,7 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
   try {
     await readContent(file, chunks.join('\n'), resources, st, 0, new Set());
   } catch (error) {
-    if (error instanceof TooBig) throw error;
+    if (error instanceof TooBig || error instanceof TooComplex) throw error;
     return { page: n, text: null, reason: 'undecodable' };
   }
   st.lines.push(st.line);
@@ -926,7 +958,7 @@ export async function pdfPagesText(bytes: Uint8Array, limits: Partial<PdfLimits>
   const headAt = latin1(bytes.subarray(0, 1024)).indexOf('%PDF-');
   if (headAt < 0) return refuse('not_pdf');
   try {
-    const file = new PdfFile(latin1(bytes), new Budget(lim.maxInflatedBytes));
+    const file = new PdfFile(latin1(bytes), new Budget(lim.maxInflatedBytes), new Work(lim.maxWork));
     file.scan();
     if (file.encrypted()) return refuse('encrypted');
     await file.unpackObjectStreams();
@@ -947,6 +979,7 @@ export async function pdfPagesText(bytes: Uint8Array, limits: Partial<PdfLimits>
     return { ok: true, value: { pages } };
   } catch (error) {
     if (error instanceof TooBig) return refuse('inflate_limit');
+    if (error instanceof TooComplex) return refuse('too_complex');
     if (error instanceof TooManyPages) return refuse('too_many_pages');
     return refuse('unreadable');
   }
