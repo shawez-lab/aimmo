@@ -1498,6 +1498,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : la page montre les seuls lots disponibles confirmés depuis 14 jours au plus ; un lot vendu, en option, réservé ou trop ancien n'y est pas [R543] (test) ; chaque frais porte sa source et sa date, sans barème aucun frais n'est écrit et la page le dit [R544, R10] (test) ; aucun nom d'agent, de client ni d'auteur de version [R543] (test) ; servie sur le site du réseau seul, 404 sur le site d'un agent, pour un programme inconnu ou d'un autre réseau [R153] (test) ; GET et HEAD seulement, non indexée en essai (test) ; un programme sans lot publié dit qu'aucun lot n'est disponible (test) ; tout texte venu de la base est échappé (test).
 - Attend : rien.
 
+### BR77 · Les programmes neufs au plan du site du réseau et signalés aux moteurs
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR76
+- Cahier : M01 (référencement, plan du site) ; Phase 3, « Programmes neufs et viager » (HX48) ; R153, R543, R26.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR76 (« le plan du site »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Seul `packages/core/src/attirer/referencement.ts` change, sans route ni migration ni règle nouvelle. La page `/neuf/:programme` n'entre qu'au plan du site du réseau, sa seule page de référence [R153], et seulement quand sa grille publiée a au moins un lot : une page qui dit « aucun lot disponible » n'est pas donnée aux moteurs. Sa date est le jour de confirmation le plus récent de ses lots publiés. Le passage du signalement (IndexNow) la traite comme les autres pages : publiée, modifiée quand sa grille publiée change (lot, prix, frais), retirée quand son dernier lot ne l'est plus ; en essai rien ne part [R26].
+- Objectif : un moteur trouve la grille à jour d'un programme neuf dès qu'elle a un lot, et l'oublie dès qu'elle n'en a plus.
+- Critères : le plan du site du réseau donne `/neuf/<programme>` avec le jour de confirmation le plus récent ; jamais au plan du site d'un agent [R153] (test) ; un programme sans lot publié (vendu, en option, réservé ou confirmé depuis plus de 14 jours) n'y est pas [R543] (test) ; un programme d'un autre réseau n'y est pas (test) ; le signalement range la page publiée, puis modifiée quand un prix change, puis retirée quand le dernier lot est vendu, en essai sans appeler le service [R26] (test) ; tous les tests du référencement restent verts.
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
