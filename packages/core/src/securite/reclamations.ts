@@ -63,6 +63,16 @@ export interface Complaint {
   mediator: { cause: 'echeance' | 'non_reglee'; status: 'envoye' | 'a_remettre' | 'remis'; text: string; createdOn: string; sendRule: string | null } | null;
 }
 
+/** Le réglage en service, lu par la direction (BR70). */
+export interface ComplaintSettingsView {
+  version: number | null;
+  setAt: string | null;
+  responseDays: number;
+  mediator: { name: string; site: string } | null;
+  offerText: string | null;
+  waitingForMediator: number;
+}
+
 export type ComplaintRefusal = { ok: false; rule: 'R16' | 'R606' | 'R607' | null; code: string };
 
 /** Le texte de la proposition du médiateur : écrit par le code, sans IA, sans chiffre ni date ; « sans frais », jamais « gratuit » [R07]. */
@@ -183,6 +193,38 @@ export class Reclamations {
     );
     await appendEvent(this.journal, { type: 'reclamation.reglage', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R607', version, days } }, this.now);
     return { ok: true, version };
+  }
+
+  /**
+   * Le réglage en service, pour la direction seule (BR70) : la version, le délai appliqué (30 jours sans réglage), le
+   * médiateur ou rien, jamais inventé ; le texte de la proposition tel que le code l'écrit ; et le nombre de réclamations
+   * qui attendent un médiateur pour que la proposition parte, comme le passage les choisit : une réclamation réglée à
+   * l'échéance n'en attend plus [R606, R607]. Ni nom de client, ni motif [R13].
+   */
+  async currentSettings(viewer: Viewer): Promise<{ ok: true; value: ComplaintSettingsView } | ComplaintRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'role');
+    const s = await this.db.first<Settings & { set_at: string }>(
+      'SELECT version, response_days, mediator_name, mediator_site, set_at FROM complaint_settings WHERE network_id = ? ORDER BY version DESC LIMIT 1',
+      [viewer.networkId],
+    );
+    const waiting = await this.db.first<{ n: number }>(
+      `SELECT count(*) AS n FROM complaints c
+       WHERE c.network_id = ? AND EXISTS (SELECT 1 FROM complaint_alerts a WHERE a.complaint_id = c.id AND a.kind = 'mediateur_manquant')
+       AND NOT EXISTS (SELECT 1 FROM complaint_mediator_offers o WHERE o.complaint_id = c.id)
+       AND NOT EXISTS (SELECT 1 FROM complaint_answers r WHERE r.complaint_id = c.id AND r.outcome = 'reglee' AND r.answered_on <= c.due_on)`,
+      [viewer.networkId],
+    );
+    return {
+      ok: true,
+      value: {
+        version: s?.version ?? null,
+        setAt: s?.set_at ?? null,
+        responseDays: s?.response_days ?? DEFAULT_COMPLAINT_RESPONSE_DAYS,
+        mediator: s ? { name: s.mediator_name, site: s.mediator_site } : null,
+        offerText: s ? mediatorOfferText({ name: s.mediator_name, site: s.mediator_site }) : null,
+        waitingForMediator: waiting?.n ?? 0,
+      },
+    };
   }
 
   /** L'agent qui suit la fiche (vue complète), ou la direction, range une réclamation. */
