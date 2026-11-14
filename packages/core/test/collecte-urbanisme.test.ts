@@ -14,10 +14,10 @@ const zone = (o: Record<string, unknown> = {}) => ({
   properties: { libelle: 'UA', libelong: 'Zone urbaine centrale', typezone: 'U', idurba: '21231_PLU_20190101', datappro: '20191216', partition: 'DU_21231', ...o },
 });
 
-function fetcherOf(answers: { zones?: unknown; town?: unknown; status?: number }, seen: string[] = []): Fetcher {
+function fetcherOf(answers: { zones?: unknown; sectors?: unknown; town?: unknown; status?: number }, seen: string[] = []): Fetcher {
   return async (url) => {
     seen.push(url);
-    const body = url.includes('/zone-urba') ? answers.zones : answers.town;
+    const body = url.includes('/zone-urba') ? answers.zones : url.includes('/secteur-cc') ? answers.sectors : answers.town;
     const status = answers.status ?? (body === undefined ? 404 : 200);
     return { ok: status >= 200 && status < 300, status, json: async () => body };
   };
@@ -36,18 +36,26 @@ describe('RC43 · la zone du plan d’urbanisme lue au Géoportail', () => {
     });
     const plui = await collect({ zones: { features: [zone({ idurba: '242100410_PLUI_20200227', datappro: '2020-02-27', libelong: null, typezone: 'AUc', libelle: '1AUc' })] } });
     expect(plui).toMatchObject({ ok: true, dataDate: '2020-02-27', value: { documentType: 'PLUi', zone: '1AUc', label: 'Zone à urbaniser' } });
-    const cc = await collect({ zones: { features: [zone({ idurba: '21231_CC_20100512', datappro: '20100512', libelong: '', typezone: 'ZC', libelle: 'ZC' })] } });
-    expect(cc).toMatchObject({ ok: true, value: { documentType: 'carte_communale', zone: 'ZC', label: 'Secteur constructible' } });
+    // Une carte communale : son secteur se lit à part (`secteur-cc`, `typesect`), quand aucune zone n'est au point.
+    const sector = (o: Record<string, unknown> = {}) => ({ properties: { libelle: 'ZC', libelong: '', typesect: '01', idurba: '21231_CC_20100512', datappro: '20100512', ...o } });
+    const cc = await collect({ zones: { features: [] }, sectors: { features: [sector()] } });
+    expect(cc).toMatchObject({ ok: true, dataDate: '2010-05-12', value: { documentType: 'carte_communale', zone: 'ZC', label: 'Secteur ouvert à la construction' } });
+    expect(await collect({ zones: { features: [] }, sectors: { features: [sector({ typesect: '03', libelle: 'ZNC' })] } })).toMatchObject({ ok: true, value: { label: 'Secteur non constructible' } });
+    // Un document lu à la mauvaise couche n'est pas cru.
+    expect(await collect({ zones: { features: [zone({ idurba: '21231_CC_20100512' })] } })).toMatchObject({ ok: false, reason: 'introuvable' });
+    expect(await collect({ zones: { features: [] }, sectors: { features: [sector({ idurba: '21231_PLU_20190101' })] } })).toMatchObject({ ok: false, reason: 'introuvable' });
+    expect(await collect({ zones: { features: [] }, sectors: { features: [sector({ idurba: '21054_CC_20100512' })] } })).toMatchObject({ ok: false, reason: 'introuvable' });
     // La même zone rendue deux fois (deux morceaux du même polygone) reste une seule zone.
     expect(await collect({ zones: { features: [zone(), zone()] } })).toMatchObject({ ok: true, value: { zone: 'UA' } });
   });
 
   it('[R15] seules la position et la commune partent, jamais l’adresse', async () => {
     const seen: string[] = [];
-    await collect({ zones: { features: [] }, town: { features: [{ properties: { insee: '21231', is_rnu: true } }] } }, seen);
-    expect(seen).toHaveLength(2);
+    await collect({ zones: { features: [] }, sectors: { features: [] }, town: { features: [{ properties: { insee: '21231', is_rnu: true } }] } }, seen);
+    expect(seen).toHaveLength(3);
     expect(decodeURIComponent(seen[0]!)).toBe('https://apicarto.ign.fr/api/gpu/zone-urba?geom={"type":"Point","coordinates":[5.0415,47.3216]}');
-    expect(seen[1]).toBe('https://apicarto.ign.fr/api/gpu/municipality?insee=21231');
+    expect(decodeURIComponent(seen[1]!)).toBe('https://apicarto.ign.fr/api/gpu/secteur-cc?geom={"type":"Point","coordinates":[5.0415,47.3216]}');
+    expect(seen[2]).toBe('https://apicarto.ign.fr/api/gpu/municipality?insee=21231');
   });
 
   it('[R450] jamais deviné : limite de zone, autre commune, POS, date future ou mal formée, zone mal formée', async () => {

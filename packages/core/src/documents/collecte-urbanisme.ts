@@ -10,6 +10,8 @@
  * - jamais deviné, toujours « introuvable » [R450] : deux zones différentes au même point (une limite de zone), un
  *   document qui n'est pas celui de la commune du bien, un type de document hors de la liste admise (POS, PSMV…), une
  *   date mal formée ou postérieure à la collecte, une zone mal formée ;
+ * - les zones d'un PLU ou d'un PLUi se lisent à `zone-urba`, les secteurs d'une carte communale à `secteur-cc` (avec
+ *   `typesect`) : un document lu à la mauvaise couche n'est pas cru ;
  * - une commune au règlement national d'urbanisme n'a pas de zone : « RNU », daté du jour de la collecte, car c'est
  *   l'état lu ce jour-là ;
  * - une réponse en erreur, illisible ou trop lente : « panne », jamais une erreur pour l'agent [R12].
@@ -20,6 +22,7 @@ import { PUBLIC_SOURCES, type PublicFact, type UrbanismValue } from './coproprie
 
 export const GPU_URLS = {
   zones: 'https://apicarto.ign.fr/api/gpu/zone-urba',
+  sectors: 'https://apicarto.ign.fr/api/gpu/secteur-cc',
   municipality: 'https://apicarto.ign.fr/api/gpu/municipality',
 } as const;
 
@@ -33,7 +36,7 @@ export interface UrbanismPoint {
 export interface GpuOptions {
   now?: () => Date;
   timeoutMs?: number;
-  urls?: { zones: string; municipality: string };
+  urls?: { zones: string; sectors: string; municipality: string };
 }
 
 const TIME_ZONE = 'Europe/Paris';
@@ -47,8 +50,15 @@ const ZONE_TYPES: Record<string, string> = {
   AUS: 'Zone à urbaniser',
   A: 'Zone agricole',
   N: 'Zone naturelle et forestière',
-  ZC: 'Secteur constructible',
-  ZCA: 'Secteur constructible pour les activités',
+};
+
+/** Le libellé d'un type de secteur de carte communale (`typesect`), quand le document n'en donne pas. */
+const SECTOR_TYPES: Record<string, string> = {
+  '01': 'Secteur ouvert à la construction',
+  '02': 'Secteur réservé aux activités',
+  '03': 'Secteur non constructible',
+  ZC: 'Secteur ouvert à la construction',
+  ZCA: 'Secteur réservé aux activités',
   ZNC: 'Secteur non constructible',
 };
 
@@ -80,11 +90,15 @@ export function documentOf(idurba: unknown): { documentType: Exclude<UrbanismVal
   return { documentType: kind === 'PLUI' ? 'PLUi' : kind === 'PLU' ? 'PLU' : 'carte_communale', owner: m[1]!.toUpperCase() };
 }
 
-/** Une zone lue dans une entité de la réponse, ou null si elle n'est pas recevable. */
-function zoneOf(feature: unknown, inseeCode: string): { value: UrbanismValue; dataDate: string } | null {
+type Layer = 'zones' | 'sectors';
+
+/** Une zone (PLU, PLUi) ou un secteur (carte communale) lu dans une entité de la réponse, ou null s'il n'est pas recevable. */
+function zoneOf(feature: unknown, inseeCode: string, layer: Layer): { value: UrbanismValue; dataDate: string } | null {
   const p = obj(obj(feature)['properties']);
   const doc = documentOf(p['idurba']);
   if (!doc) return null;
+  // Les zones viennent d'un PLU ou d'un PLUi, les secteurs d'une carte communale : rien d'autre n'est cru.
+  if ((layer === 'sectors') !== (doc.documentType === 'carte_communale')) return null;
   // Un PLU ou une carte communale porte le code de sa commune : celui d'une autre commune n'est pas celui du bien.
   // Un PLUi porte le SIREN de l'intercommunalité, qu'on ne peut pas recouper ici : le point suffit.
   if (doc.owner.length === 5 && doc.owner !== inseeCode) return null;
@@ -94,7 +108,7 @@ function zoneOf(feature: unknown, inseeCode: string): { value: UrbanismValue; da
   const dataDate = approvalDay(p['datappro']);
   if (!dataDate) return null;
   const long = str(p['libelong']);
-  const fallback = ZONE_TYPES[(str(p['typezone']) ?? '').toUpperCase()] ?? null;
+  const fallback = layer === 'zones' ? (ZONE_TYPES[(str(p['typezone']) ?? '').toUpperCase()] ?? null) : (SECTOR_TYPES[(str(p['typesect']) ?? '').toUpperCase()] ?? null);
   const label = long && long.length <= 200 && ![...long].some((c) => c.charCodeAt(0) < 32) ? long : fallback;
   if (!label) return null;
   return { value: { documentType: doc.documentType, zone, label }, dataDate };
@@ -104,7 +118,7 @@ function zoneOf(feature: unknown, inseeCode: string): { value: UrbanismValue; da
 export class GpuUrbanism {
   private readonly now: () => Date;
   private readonly timeoutMs: number;
-  private readonly urls: { zones: string; municipality: string };
+  private readonly urls: { zones: string; sectors: string; municipality: string };
 
   constructor(
     private readonly fetcher: Fetcher,
@@ -128,18 +142,26 @@ export class GpuUrbanism {
     return Array.isArray(f) ? f : [];
   }
 
+  /** La zone d'une couche au point : undefined si la couche n'a rien, null si ce qu'elle a n'est pas recevable. */
+  private async layer(layer: Layer, geom: string, point: UrbanismPoint, collectedOn: string): Promise<{ value: UrbanismValue; dataDate: string } | null | undefined> {
+    const features = this.features(await this.json(`${this.urls[layer]}?geom=${encodeURIComponent(geom)}`));
+    if (features.length === 0) return undefined;
+    const zones = features.map((f) => zoneOf(f, point.inseeCode, layer));
+    if (zones.some((z) => z === null)) return null;
+    const first = zones[0]!;
+    // Une limite de zone : deux zones différentes au même point, aucune n'est choisie.
+    const same = zones.every((z) => z!.value.zone === first.value.zone && z!.value.documentType === first.value.documentType && z!.dataDate === first.dataDate);
+    if (!same || first.dataDate > collectedOn) return null;
+    return first;
+  }
+
   private async read(point: UrbanismPoint, collectedOn: string): Promise<{ value: UrbanismValue; dataDate: string } | null> {
     const geom = JSON.stringify({ type: 'Point', coordinates: [point.lon, point.lat] });
-    const features = this.features(await this.json(`${this.urls.zones}?geom=${encodeURIComponent(geom)}`));
-    if (features.length > 0) {
-      const zones = features.map((f) => zoneOf(f, point.inseeCode));
-      if (zones.some((z) => z === null)) return null;
-      const first = zones[0]!;
-      // Une limite de zone : deux zones différentes au même point, aucune n'est choisie.
-      const same = zones.every((z) => z!.value.zone === first.value.zone && z!.value.documentType === first.value.documentType && z!.dataDate === first.dataDate);
-      if (!same || first.dataDate > collectedOn) return null;
-      return first;
-    }
+    // Un PLU ou un PLUi d'abord ; sans zone, le secteur d'une carte communale ; sans secteur, le RNU.
+    const zone = await this.layer('zones', geom, point, collectedOn);
+    if (zone !== undefined) return zone;
+    const sector = await this.layer('sectors', geom, point, collectedOn);
+    if (sector !== undefined) return sector;
     const town = this.features(await this.json(`${this.urls.municipality}?insee=${encodeURIComponent(point.inseeCode)}`));
     const rnu = town.length === 1 && obj(obj(town[0])['properties'])['is_rnu'] === true && obj(obj(town[0])['properties'])['insee'] === point.inseeCode;
     return rnu ? { value: { documentType: 'RNU', zone: 'RNU', label: "Règlement national d'urbanisme" }, dataDate: collectedOn } : null;
