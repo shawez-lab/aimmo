@@ -83,8 +83,23 @@ const FORBIDDEN_WORDS: [RegExp, string][] = [
 ];
 const FORMAL = /\b(?:vous|votre|vos)\b/;
 const INFORMAL = /\b(?:tu|te|toi|ton|ta|tes)\b|\bt'/;
-const ADDRESS =
-  /\b\d{1,4}\s?(?:bis|ter)?,?\s+(?:rue|avenue|av\.?|boulevard|bd|place|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond-point|residence|lotissement)\b/;
+const STREET =
+  /\b\d{1,4}\s?(?:bis|ter)?,?\s+(rue|avenue|av\.?|boulevard|bd|place|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond-point|residence|lotissement)\b/gi;
+// « 1 place de stationnement », « 1 place couverte », « il reste 1 place libre » : pas une adresse (BR68).
+// Lu sur le texte tel qu'écrit, en minuscules seulement : une vraie place se nomme avec une capitale
+// (« place Couverte », « place Double », « place Darcy ») ou un article (« place de la Libération »,
+// « place aux Herbes ») ; « au » et « en » n'écartent que « au sous-sol » et ses pareils.
+const PARKING_SPACE =
+  /^(?:\s*(?:[.,;:!?)]|$)|\s+(?:de\s+|d')?(?:stationnement|parking|garage|velo|moto|voiture|box)\b|\s+(?:couverte|privative|privee|exterieure|interieure|souterraine|attitree|numerotee|nominative|double|libre|disponible|pour|dans|et|ou|(?:en|au)\s+(?:sous-sol|exterieur|interieur|rez-de-chaussee))(?![\p{L}\p{N}-]))/u;
+
+/** Une adresse exacte dans le texte [R09] : un numéro suivi d'une voie, sauf une place de stationnement. */
+function hasAddress(text: string): boolean {
+  const t = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’`]/g, "'").replace(/[\u00a0\u202f]/g, ' ');
+  for (const m of t.matchAll(STREET)) {
+    if (m[1]!.toLowerCase() !== 'place' || !PARKING_SPACE.test(t.slice(m.index + m[0].length))) return true;
+  }
+  return false;
+}
 
 /** Les nombres d'un texte, sans séparateurs : « 250 000 € » → 250000, « 82,5 m² » → 82.5. */
 export function numbersIn(text: string): string[] {
@@ -127,7 +142,7 @@ export function checkText(text: string, context: TextContext, settings: TextSett
     problems.push({ rule: 'R08', reason: 'Pas de formule administrative.' });
   }
 
-  if (ADDRESS.test(p)) problems.push({ rule: 'R09', reason: 'Jamais d’adresse exacte.' });
+  if (hasAddress(text)) problems.push({ rule: 'R09', reason: 'Jamais d’adresse exacte.' });
   const mentions = (names: readonly string[] | undefined): boolean =>
     (names ?? [])
       .map((n) => plain(n).trim())
