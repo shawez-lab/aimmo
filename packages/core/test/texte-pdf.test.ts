@@ -526,6 +526,19 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       { dict: '', data: Array(100).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(big, { maxWork: 300_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    // Une police à très grande table de largeurs, choisie à chaque appel d'un formulaire : lue une fois, comptée.
+    const wide = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
+      `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /FirstChar 0 /Widths [${Array(100_000).fill(500).join(' ')}] >>`,
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: 'BT /F1 12 Tf 0 700 Td (a) Tj ET' },
+      { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
+    ]);
+    expect(await pdfPagesText(wide, { maxWork: 50_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    const t0 = Date.now();
+    expect((await pdfPagesText(wide)).ok).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(3000);
     expect(Date.now() - started).toBeLessThan(5000);
   });
 

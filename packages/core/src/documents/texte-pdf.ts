@@ -323,6 +323,8 @@ class PdfFile {
   readonly ambiguous = new Set<number>();
   /** Vrai dès qu'une lecture a suivi une référence vers un objet ambigu. */
   touchedAmbiguous = false;
+  /** Les polices déjà lues. */
+  readonly fonts = new Map<Dict, { decoder: FontDecoder; ambiguous: boolean }>();
   private readonly decoded = new Map<Stream, string | null>();
 
   constructor(
@@ -555,6 +557,7 @@ function simpleWidths(file: PdfFile, font: Dict): WidthOf {
   const missing = descriptor ? file.get(descriptor.get('MissingWidth')) : undefined;
   const fallback = typeof missing === 'number' ? missing : null;
   if (typeof first !== 'number' || !Array.isArray(widths)) return () => null;
+  file.work.charge(widths.length);
   const list = widths.map((w) => file.get(w));
   return (code) => {
     const w = list[code - first];
@@ -785,9 +788,27 @@ function simpleTable(file: PdfFile, font: Dict): ((code: number) => string | nul
   return null;
 }
 
+/** Une police n'est lue qu'une fois par fichier ; une police lue à travers un objet ambigu le reste à chaque usage. */
 async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise<FontDecoder> {
   const font = file.dict(fontValue);
   if (!font) return NO_DECODER;
+  const hit = file.fonts.get(font);
+  if (hit) {
+    if (hit.ambiguous) file.touchedAmbiguous = true;
+    return hit.decoder;
+  }
+  const before = file.touchedAmbiguous;
+  file.touchedAmbiguous = false;
+  try {
+    const decoder = await buildDecoder(file, font);
+    file.fonts.set(font, { decoder, ambiguous: file.touchedAmbiguous });
+    return decoder;
+  } finally {
+    file.touchedAmbiguous = before || file.touchedAmbiguous;
+  }
+}
+
+async function buildDecoder(file: PdfFile, font: Dict): Promise<FontDecoder> {
   const subtype = file.name(font.get('Subtype'));
   const composite = subtype === 'Type0';
   if (subtype === 'Type3') return NO_DECODER;
