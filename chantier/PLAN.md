@@ -1412,6 +1412,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : « 1 place de stationnement », « de parking », « de garage », « couverte », « en sous-sol », « 1 place libre », « 1 place. » passent [R09] (test) ; « 12 place de la Libération », « 3 place du Théâtre », « 1 place Darcy », « 4 place d'Arcy », « 2 place des Cordeliers », « 5 place Saint-Michel » restent refusées [R09] (test) ; l'annonce traduite qui garde « 1 place de stationnement » part en entier avec la première réponse (test RC34 sans contournement).
 - Attend : rien.
 
+### BR69 · Les réclamations dans la fiche : ranger, suivre l'échéance, répondre, remettre le médiateur
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX58, BR01
+- Cahier : Conformité, réclamations et médiateur (HX58) ; R606, R607, R16, R13, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR01 (« Écran à faire »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Aujourd'hui les routes `/v1/securite/reclamations` existent mais aucun écran ne les appelle : un agent ne peut ni ranger une réclamation reçue, ni voir son échéance, ni noter la réponse, ni dire qu'il a remis la proposition du médiateur. Un bloc « Réclamations » sur la fiche, script servi à part (`/app/reclamations.js`), chargé au geste. Il lit la liste et ne garde que les réclamations rangées sur cette fiche. L'application est à 127 octets de son budget : les chargeurs des blocs « Appels reçus » et « Notes vocales » passent par un chargeur commun, que le nouveau bloc reprend. Le réglage du délai et du médiateur par la direction reste à faire. Aucune règle nouvelle ni migration ; rien n'est envoyé.
+- Objectif : l'agent range sur la fiche une réclamation reçue, voit son échéance écrite par la base, note la réponse une fois, et dit qu'il a remis la proposition du médiateur quand elle n'a pas pu partir.
+- Jamais vu : chaque réclamation dit en mots combien de jours restent pour répondre, et la proposition du médiateur à remettre est montrée mot pour mot, avec son bouton « Remise au client ».
+- Critères : chargé au geste, budget de l'application et de la page tenus, sans innerHTML [R201] (test) ; ranger : date, voie et motif envoyés, l'échéance lue dans la réponse, jamais calculée à l'écran [R606] (test) ; seules les réclamations de cette fiche sont montrées (test) ; réponse une seule fois, le formulaire disparaît ensuite, « en retard » dit (test) ; médiateur « à remettre » : texte et bouton, « remis » ensuite ; « envoyé » dit sans bouton [R607] (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine, la liste relue (test) ; texte reçu posé en texte, champ mal formé tu (test) ; les blocs « Appels reçus » et « Notes vocales » marchent comme avant (leurs tests).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
