@@ -1678,7 +1678,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC32 · Une visite réservée en ligne rattachée à la recherche de l'acquéreur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#555, `8488cb00`). Codex 1 P2 corrigé (rendez-vous annulé pendant les contrôles : l'écriture ne passe que s'il est encore pris dans la base, refus `not_booked`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5876 tests). Reste pour la voie 1 : la route et le geste « rattacher à sa recherche » sur la fiche (`Visites.attachOnline`).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : V08, T04
 - Cahier : M05 Rendez-vous (« Réservation en ligne ») et M08 Acquéreurs et visites ; R40, R42, R16.
 - Décidé (2026-11-14, voie 2), lecture prudente : relevé dans T08 (« Reste à faire, hors T08 : rattacher une visite réservée en ligne (V08) à la recherche d'un acquéreur, pour lui ouvrir un dossier de visite »). Aujourd'hui une visite réservée depuis le site, l'assistant ou l'espace n'est qu'un rendez-vous : aucune visite, aucun bon de visite, et rien ne la relie au projet d'achat ; l'agent devait refixer une visite à côté. Désormais `Visites.attachOnline` : l'agent qui voit la fiche en entier, ou la direction, rattache un rendez-vous `visite` encore pris, avec un bien, au projet d'achat de la même personne (fiches réunies comprises) ; mêmes contrôles que `schedule` : droits [R16], bien diffusable [R42], modèle de bon exigé [R40] ; la visite garde l'agent du rendez-vous ; le bon est fait à la date du rendez-vous ; un rendez-vous déjà rattaché (ou décalé d'une visite) n'est jamais rattaché deux fois, même par deux appels en même temps. Rien n'est envoyé. Change seulement `packages/core/src/visites/visites.ts` et son test ; aucune règle nouvelle ni migration. La route et le geste sur la fiche restent à la voie 1.
@@ -2749,7 +2750,7 @@ Décidé, lecture prudente : M08 se construit en mode essai, sans aucun envoi r�
 
 ### T08 · Routes et écrans « Acquéreurs » et « Visite » de l'application de l'agent
 - Statut : fait (2026-10-27)
-- Décidé (2026-10-27) : la dictée passe par le micro du clavier du téléphone, sans reconnaissance vocale dans le navigateur (elle enverrait la dictée à un service extérieur) ; le lien WhatsApp ne sert qu'une fois et expire au bout de deux minutes ; en mode essai l'écran dit que la direction n'est pas prévenue par message et donne le 112. Reste à faire, hors T08 : rattacher une visite réservée en ligne (V08) à la recherche d'un acquéreur, pour lui ouvrir un dossier de visite.
+- Décidé (2026-10-27) : la dictée passe par le micro du clavier du téléphone, sans reconnaissance vocale dans le navigateur (elle enverrait la dictée à un service extérieur) ; le lien WhatsApp ne sert qu'une fois et expire au bout de deux minutes ; en mode essai l'écran dit que la direction n'est pas prévenue par message et donne le 112. Reste à faire, hors T08 : rattacher une visite réservée en ligne (V08) à la recherche d'un acquéreur, pour lui ouvrir un dossier de visite. Cœur fait par RC32 (`Visites.attachOnline`) ; route et geste à faire (voie 1).
 - Qui : Claude · Relecture : forte · Dépend de : T03, T05, T06, T07
 - Cahier : M08 ; Organisation, exigence de design (protocole, section 9).
 - Objectif : les routes `/v1/acquereurs` (fiche, rapprochement, carte de la demande, alertes), `/v1/visites` (visite, bon, confirmation, alerte, compte rendu) et `/v1/points` ; dans l'application de l'agent, l'écran d'un bien avec ses acquéreurs et sa carte de la demande, et l'écran de visite avec le bouton de dictée, la validation en un geste et l'alerte en un geste.
