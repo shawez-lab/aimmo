@@ -1424,7 +1424,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR70 · Le délai de réponse et le médiateur, réglés par la direction à l'écran
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#568, `e901ec29`). Le chargeur des scénarios dans `engagements.js` devient un chargeur commun (`subScreen`) aux deux écrans ; le script de l'application ne change pas. Codex 1 P2 corrigé (une réclamation réglée à l'échéance n'attend plus de médiateur, comme le passage la choisit) puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5977 tests). Le vrai médiateur viendra avec H09.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX58, BR69
 - Cahier : Conformité, réclamations et médiateur (HX58) ; R606, R607, R16, R13, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR69. Aujourd'hui la route `POST /v1/securite/reclamations/reglage` existe, mais aucune route ne relit le réglage en service et aucun écran ne l'écrit : tant que le médiateur n'est pas réglé (H09), la proposition du médiateur ne part pas [R607]. Une lecture `GET /v1/securite/reclamations/reglage` (direction seule) rend le réglage en service ou rien, le délai appliqué (30 jours sans réglage), le nombre de réclamations qui attendent un médiateur, et le texte de la proposition écrit par le code. L'écran est posé sous « Engagements de service » sur l'écran du réseau, script servi à part (`/app/reclamations-reglage.js`), sans rien ajouter au script de l'application (à 185 octets de son budget). Aucune règle nouvelle ni migration ; rien n'est envoyé.
