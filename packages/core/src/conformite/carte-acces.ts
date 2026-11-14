@@ -172,6 +172,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   // HX35 : le résumé de copropriété et les travaux votés signalés ; le journal n'en porte que des identifiants et des nombres.
   'dossier.copropriete_resumee': 'partage',
   'dossier.travaux_votes_signales': 'partage',
+  // RC42 : la prélecture des documents de la copropriété par l'IA ; le journal n'en porte que la source, des rubriques et des nombres.
+  'dossier.copropriete_prelue': 'partage',
   // HX36 : la lettre recommandée de l'avant-contrat et ses preuves ; le journal n'en porte que des identifiants et des règles.
   // HX45 : note au notaire, projet comparé, dépôt reçu par le notaire, dates reportées ; le journal n'en porte que des noms de termes et des règles.
   'avant_contrat.note': 'partage',
