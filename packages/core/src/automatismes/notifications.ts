@@ -445,6 +445,24 @@ export class Notifications {
       viewer.userId,
       viewer.networkId,
     ]);
+    return this.visibleTo(viewer, rows);
+  }
+
+  /**
+   * Les notifications d'un envoi, pour l'agent qui l'a reçu (BR66) : lues par l'envoi, jamais dans la liste bornée des
+   * dernières, puis gardées sur les seules fiches qu'il voit en entier [R16].
+   */
+  async listForPush(viewer: Viewer, pushId: string): Promise<NotificationRow[]> {
+    if (viewer.role !== 'agent') return [];
+    const rows = await this.db.all<NotificationRow>('SELECT * FROM agent_notifications WHERE push_id = ? AND agent_id = ? AND network_id = ? ORDER BY created_at DESC, id DESC', [
+      pushId,
+      viewer.userId,
+      viewer.networkId,
+    ]);
+    return rows.length === 0 ? [] : this.visibleTo(viewer, rows);
+  }
+
+  private async visibleTo(viewer: Viewer, rows: NotificationRow[]): Promise<NotificationRow[]> {
     const visible = await this.acces.listPersons(viewer);
     if (!visible.ok) return [];
     const allowed = new Set<string>();
