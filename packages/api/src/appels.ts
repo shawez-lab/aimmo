@@ -9,6 +9,7 @@
  */
 import { AppelsFiche, appendEvent, type Acces, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { callsOfFiche, type CallView } from '../../core/src/voix/appels.ts';
+import { handoffsOfCalls, type HandoffView } from '../../core/src/voix/assistant.ts';
 import { voiceNotesOfFiche } from '../../core/src/voix/notes-vocales.ts';
 
 export const MAX_APPEL_BODY_BYTES = 1024;
@@ -56,11 +57,11 @@ export const APPELS_RECUS_REFUSALS: Readonly<Record<string, string>> = Object.fr
 });
 
 /** Ce que la route rend d'un appel : jamais la référence de l'enregistrement, seulement s'il y en a un. */
-export type AppelRecu = Omit<CallView, 'recordingRef' | 'origin'> & { hasRecording: boolean; originKind: string };
+export type AppelRecu = Omit<CallView, 'recordingRef' | 'origin'> & { hasRecording: boolean; originKind: string; assistant: HandoffView | null };
 
-const recu = (v: CallView): AppelRecu => {
+const recu = (v: CallView, assistant: HandoffView | null): AppelRecu => {
   const { recordingRef, origin, ...rest } = v;
-  return { ...rest, hasRecording: recordingRef !== null, originKind: origin.kind };
+  return { ...rest, hasRecording: recordingRef !== null, originKind: origin.kind, assistant };
 };
 
 const refuseRecus = (status: number, rule: string | null, code: string): Response =>
@@ -112,7 +113,9 @@ export function appelsRoutes(): AppelsRoute[] {
         if ([...new URL(request.url).searchParams.keys()].length > 0) return refuseRecus(400, null, 'unexpected_field');
         const r = await callsOfFiche(s.db, s.acces, viewer, id!);
         if (!r.ok) return refuseRecus(r.code === 'unknown' ? 404 : 403, r.rule, r.code);
-        return json(200, { ok: true, data: r.value.map(recu) });
+        // BR63 · un appel pris par l'assistant porte son passage de main : le rendez-vous suivi jusqu'à aujourd'hui, les sujets à reprendre.
+        const handoffs = await handoffsOfCalls(s.db, viewer, viewer.networkId, r.value.map((c) => c.id));
+        return json(200, { ok: true, data: r.value.map((c) => recu(c, handoffs.get(c.id) ?? null)) });
       },
     },
     {

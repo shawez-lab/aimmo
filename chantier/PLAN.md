@@ -1353,7 +1353,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : agent de la fiche ou direction seulement, refus au journal et dit en mots [R16] (test) ; les notes d'une fiche réunie sont relues sur la fiche gardée (test) ; une note en cours ou impossible n'est pas montrée (test) ; la référence de l'audio n'est jamais rendue [R15] (test) ; le journal ne garde ni texte ni identifiant du canal [R13] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, champ mal formé tu [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien (H52 pour de vraies notes).
 ### BR63 · Le passage de main de l'assistant vocal, relu dans la fiche
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#554, `0a1e4978`). Codex 1 P2 corrigé (le rendez-vous suivi est celui de la personne de l'appel, jamais celui d'un autre appelant sur le créneau libéré), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5883 tests). La réception des vrais appels attend H52.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX22, BR61
 - Cahier : HX22 « Assistant vocal quand l'agent ne peut pas répondre » (demande de Shawez du 2026-11-06) ; R248, R242, R244, R16, R13, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de HX22 (« écran du passage de main ») et de BR62. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le passage de main (`voice_assistant_calls`) est rangé mais rien ne le lit. Pas de nouvelle route : la lecture des appels reçus de BR61 gagne, pour un appel pris par l'assistant, le rendez-vous pris, où il en est aujourd'hui, et les sujets restés sans réponse. Lecture au cœur dans `packages/core/src/voix/assistant.ts`, sans migration ; le bloc « Appels reçus » le dit. La référence du bien n'est rendue qu'à l'agent du bien ou à la direction [R16].
