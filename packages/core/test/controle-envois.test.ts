@@ -74,6 +74,35 @@ describe('S06 · contrôle du texte', () => {
     expect(rules('Merci pour votre confiance.', { audience: 'public', clientNames: ['Léa Martin'] })).toEqual([]);
   });
 
+  it('[R09] « 1 place de stationnement » n’est pas une adresse ; une place nommée en est une (BR68)', () => {
+    for (const text of [
+      'Balcon. 1 place de stationnement. Chauffage collectif.',
+      'Avec 1 place de parking en sous-sol.',
+      'Vendu avec 1 place de garage.',
+      'Une cave et 1 place couverte.',
+      '1 place en sous-sol, 2 places extérieures.',
+      'Il reste 1 place libre pour la visite de samedi.',
+      'Il reste 1 place disponible.',
+      'Stationnement : 1 place.',
+      'Stationnement : 1 place',
+    ]) {
+      expect(rules(text, { audience: 'public' }), text).not.toContain('R09');
+      expect(rules(text, client('email')), text).not.toContain('R09');
+    }
+    for (const text of [
+      'La maison du 12 place de la Libération est en vente.',
+      'Rendez-vous au 3 place du Théâtre.',
+      'Un appartement au 1 place Darcy.',
+      'Au 4 place d’Arcy, deuxième étage.',
+      'Au 2 place des Cordeliers.',
+      'Au 5 place Saint-Michel.',
+      'Au 7 bis place de l’Église.',
+    ]) {
+      expect(rules(text, { audience: 'public' }), text).toContain('R09');
+      expect(rules(text, client('email')), text).toContain('R09');
+    }
+  });
+
   it('[R10] chaque chiffre vient des données fournies', () => {
     expect(numbersIn('250 000 €, 82,5 m², 3 pièces, le 12/11')).toEqual(['250000', '82.5', '3', '12', '11']);
     const text = 'Maison de 82,5 m² à 250 000 €, 3 pièces.';

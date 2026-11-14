@@ -83,8 +83,13 @@ const FORBIDDEN_WORDS: [RegExp, string][] = [
 ];
 const FORMAL = /\b(?:vous|votre|vos)\b/;
 const INFORMAL = /\b(?:tu|te|toi|ton|ta|tes)\b|\bt'/;
-const ADDRESS =
-  /\b\d{1,4}\s?(?:bis|ter)?,?\s+(?:rue|avenue|av\.?|boulevard|bd|place|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond-point|residence|lotissement)\b/;
+// « 1 place de stationnement », « 1 place couverte », « il reste 1 place libre » : pas une adresse (BR68).
+// Une vraie place se nomme : « place Darcy », « place de la Libération », « place du Théâtre », « place d'Arcy ».
+const NOT_A_SQUARE =
+  "(?!\\s*(?:[.,;:!?)]|$)|\\s+(?:de\\s+|d')?(?:stationnement|parking|garage|velo|moto|voiture|box)\\b|\\s+(?:couverte|privative|privee|exterieure|interieure|souterraine|attitree|numerotee|nominative|double|libre|disponible|pour|dans|en|au|aux|a|sur|par|et|ou)\\b)";
+const ADDRESS = new RegExp(
+  `\\b\\d{1,4}\\s?(?:bis|ter)?,?\\s+(?:rue|avenue|av\\.?|boulevard|bd|place${NOT_A_SQUARE}|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond-point|residence|lotissement)\\b`,
+);
 
 /** Les nombres d'un texte, sans séparateurs : « 250 000 € » → 250000, « 82,5 m² » → 82.5. */
 export function numbersIn(text: string): string[] {

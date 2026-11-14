@@ -215,8 +215,8 @@ describeWithSqlite('RC34 · la première réponse porte l’annonce dans la lang
 /** Une IA de test qui rend les repères tels quels, précédés d'une marque. */
 class EchoTranslator implements ListingTranslator {
   async translate(input: { language: ListingLanguage; title: string; body: string }) {
-    // « 1 place de stationnement » se lirait comme une adresse dans un message [R09] : l'anglais n'a pas ce mot.
-    return { title: `EN ${input.title}`, body: `EN ${input.body.replace('place de stationnement', 'parking space')}` };
+    // « 1 place de stationnement » reste tel quel : ce n'est pas une adresse [R09] (BR68).
+    return { title: `EN ${input.title}`, body: `EN ${input.body}` };
   }
 }
 
