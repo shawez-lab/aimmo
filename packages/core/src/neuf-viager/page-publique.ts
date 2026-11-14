@@ -48,7 +48,9 @@ export function sourceText(source: string): string {
 
 function feesLines(l: PublishedLot): string {
   if (!l.fees) return '<li>Frais d’acquisition : non calculés, barème absent</li>';
-  return `<li>Frais d’acquisition : ${eurosOf(l.fees.newFees.value)}</li><li>Économie face à l’ancien, au même prix : ${eurosOf(l.fees.saving.value)}</li>`;
+  // Chaque chiffre avec son hypothèse ; la source et la date de chaque barème sont dites sous la grille [R544].
+  const line = (label: string, f: { value: number; hypothesis: string }) => `<li>${label} : ${eurosOf(f.value)} <span class="doux">(${esc(f.hypothesis)})</span></li>`;
+  return line('Frais d’acquisition du neuf', l.fees.newFees) + line('Frais de l’ancien, au même prix', l.fees.oldFees) + line('Économie face à l’ancien', l.fees.saving);
 }
 
 /** Les barèmes cités sous la grille : une seule fois chacun, avec leur date. */

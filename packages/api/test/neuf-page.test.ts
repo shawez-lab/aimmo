@@ -95,8 +95,9 @@ describeWithSqlite('BR76 · la grille d’un programme neuf sur le site du rése
     const html = await (await t.get(`${NET}/neuf/${t.program}`))!.text();
     expect(html).toContain('250 000 €');
     // 2,5 % de 250 000 € = 6 250 € ; 7,5 % = 18 750 € ; écart 12 500 €.
-    expect(html).toContain('Frais d’acquisition : 6 250 €');
-    expect(html).toContain('Économie face à l’ancien, au même prix : 12 500 €');
+    expect(html).toContain('Frais d’acquisition du neuf : 6\u202f250\u00a0€ <span class="doux">(prix TTC du lot × 250 points de base (barème du neuf))</span>');
+    expect(html).toContain('Frais de l’ancien, au même prix : 18\u202f750\u00a0€ <span class="doux">(même prix × 750 points de base (barème de l’ancien))</span>');
+    expect(html).toContain('Économie face à l’ancien : 12\u202f500\u00a0€ <span class="doux">(frais de l’ancien − frais du neuf, au même prix)</span>');
     expect(html).toContain('Barème du neuf : Barème du neuf inventé, en vigueur depuis le 1er janvier 2027.');
     expect(html).toContain('Barème de l’ancien : Barème de l’ancien inventé, en vigueur depuis le 1er janvier 2027.');
     expect(html).not.toContain('bareme:');
