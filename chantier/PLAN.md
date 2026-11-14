@@ -1953,6 +1953,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : la zone au point, son libellé, le type tiré du document, la date d'approbation, sur des réponses inventées [R449] (test) ; seules la position et la commune partent (test) ; deux zones différentes, document d'une autre commune, POS, date future ou mal formée : introuvable [R450] (test) ; RNU sans zone (test) ; erreur, réponse illisible, délai : panne [R12] (test) ; le fait collecté passe tel quel dans `prepare` de HX35 et se lit au résumé (test).
 - Attend : rien.
 
+### RC44 · Une pièce du coffre n'est remise que si son empreinte est la sienne (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : L01, HX76
+- Cahier : M12, « Coffre » et « Anti-blanchiment » ; R90, R664, R17.
+- Décidé (2026-11-15, voie 2), lecture prudente : relevé dans les « Restent » de HX75 et HX76 (« le contenu des pièces quand un stockage sera branché »). Le stockage du coffre existe (`R2VaultStorage.read`), mais la route qui ouvre une pièce rend les octets lus sans jamais recalculer l'empreinte rangée au dépôt : une pièce changée ou remplacée au stockage partirait comme la vraie, et le dossier de l'agence (HX76) promet une empreinte que rien ne contrôle. Le cœur gagne `CoffreConformite.read` : mêmes droits que `open` (responsable de la conformité du réseau seul, refus au journal) ; il lit les octets par une interface (`VaultReader`), recalcule l'empreinte SHA-256 et la taille, et ne rend le contenu que s'ils sont ceux du dépôt. Sinon : « altérée », au journal avec la seule empreinte attendue, jamais le contenu ; pièce absente du stockage : « absente ». La lecture n'est écrite « ouverte » au journal qu'une fois la pièce vérifiée. Changent seulement `conformite/coffre.ts` et son test ; ni règle nouvelle, ni migration ; la route `/coffre/<id>` passera par `read` : voie 1.
+- Jamais vu : un octet changé au stockage, et la pièce n'est jamais remise ; ce qui sort du coffre est prouvé être ce qui y est entré.
+- Critères : la pièce lue est rendue avec son type et son empreinte quand octets et taille sont ceux du dépôt [R90] (test) ; un octet changé, un octet de plus ou de moins : refus « altérée », rien rendu, au journal l'empreinte attendue seule, aucun « ouvert » [R90] (test) ; pièce absente du stockage ou lecteur en panne : refus « absente », rien rendu [R90] (test) ; autre rôle, autre réseau, pièce inconnue : mêmes refus que `open`, le stockage n'est jamais lu [R90, R16] (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
