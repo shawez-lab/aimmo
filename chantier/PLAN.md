@@ -1467,6 +1467,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : un seul script servi à part, chargé au geste par les deux portes, budgets de l'application et de la page tenus, sans innerHTML [R201] (test) ; catalogue lu et dit en mots (catégorie, fournisseur, pour qui, moment, fin) (test) ; ranger : tous les champs envoyés, la source et la date de fin exigées avant l'appel, diagnostiqueur, déménageur et artisan pour le client seul à l'écran comme au serveur [R266, R76] (test) ; partenaire choisi dans l'annuaire, son identifiant envoyé [R73] (test) ; retirer : deux appuis et une raison, puis le catalogue relu [R266] (test) ; bloc du bien : moment dit, remises de l'agent puis du client dans l'ordre reçu, « ordre tiré au sort » dit [R267, R75] (test) ; aucun moment sûr : « rien à proposer maintenant » (test) ; écarter : le bloc relu, la remise n'y est plus [R267] (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine et relue (test) ; texte reçu posé en texte, champ mal formé tu (test).
 - Attend : rien.
 
+### BR74 · Mes remises de tous les jours, sur l'accueil de l'agent
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR73, HX08
+- Cahier : Phase 3, « Remises négociées pour les agents du réseau » (HX08) ; R266, R267, R16, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR73 (« le catalogue des remises « toujours » de l'agent, sur son accueil »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Une remise « toujours » pour l'agent n'est jamais proposée dans un dossier : aujourd'hui l'agent ne la voit nulle part. Un bloc « Mes remises négociées » sur l'accueil, par le chargeur commun et le même script `/app/remises.js` (troisième porte, `open('')`), refait à chaque retour à l'accueil et vidé à la sortie. Il lit `GET /v1/remises` (agent actif) et ne montre en entier que les remises « toujours » pour l'agent ; celles du client ne sont pas montrées hors du bien, seulement comptées par moment du dossier [R267]. L'application tient son budget en libérant les octets qu'il faut.
+- Objectif : l'agent voit sur son accueil les remises négociées qui lui servent tous les jours, avec leurs conditions et leur fin, et sait que les autres viendront sur la page du bien au bon moment.
+- Jamais vu : l'accueil dit, moment par moment du dossier, combien de remises négociées attendent ses clients, sans en pousser aucune hors du bon moment.
+- Critères : chargé au geste par le chargeur commun, budgets de l'application et de la page tenus, sans innerHTML [R201] (test) ; seules les remises « toujours » pour l'agent sont montrées en entier, avec fournisseur, titre, conditions, source et date de fin (test) ; celles du client ne sont que comptées par moment, jamais montrées (test) ; une remise mal formée n'est pas dite (test) ; un refus (agent sorti, direction) est dit en mots [R16] (test) ; le bloc est refait à chaque retour à l'accueil et vidé à la sortie (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
