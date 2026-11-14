@@ -1766,6 +1766,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : signalement sur un mandat : l'offre du bien, son dossier de vente et la pièce du coffre de l'acquéreur changés ou effacés de force sont vus [R94, R17] (test) ; signalement sur une offre : son dossier de vente changé de force est vu (test) ; l'offre d'un autre bien n'entre pas dans le périmètre (test) ; une offre arrivée après le signalement laisse la copie intacte (test) ; le gel des avoirs garde son périmètre (tests de HX57 inchangés) ; tous les tests de L05 et HX57 restent verts.
 - Attend : rien.
 
+### RC37 · La vente reste à l'agent du compromis, même parti avant l'acte
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : K01, K04, N06, J11
+- Cahier : M13 Pilotage et finances (tableau de l'agent, commissions) ; M14 « Départ d'un agent » ; R69, R86.
+- Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de K04 (« si M14 réattribue les biens d'un agent parti, rattacher la vente à l'agent du compromis (K01) »). Aujourd'hui l'acte (N06) range la vente au nom de l'agent qui tient le bien le jour de l'acte : un agent parti entre le compromis et l'acte voit sa vente comptée à son successeur dans le tableau de l'agent (K04), alors que sa commission prévue (K01) et le solde de son départ (J11) restent à lui. Et si le passage des commissions n'a pas tourné avant le départ, la commission prévue part au successeur, ou attend sans fin quand le bien est dans la file de la direction. Désormais l'agent de la vente est celui de la commission prévue s'il y en a une, sinon celui qui tenait le bien le jour du compromis : le premier passage du bien rangé par un départ dont le jour vient après le compromis dit qui le tenait ; sans passage après ce jour, c'est l'agent d'aujourd'hui. Un départ le jour même du compromis ou avant ne garde rien. Un bien sans agent au compromis : la commission attend, l'acte refuse `no_agent` au lieu d'une erreur de la base. Change seulement `dossiers/acte.ts` (`saleAgentAt`), `pilotage/commissions.ts` et un test neuf ; aucune règle nouvelle ni migration.
+- Objectif : la vente et sa commission restent à l'agent qui l'a faite, même parti avant l'acte.
+- Critères : commission prévue avant le départ : acte, commission et tableau disent l'agent parti, pas son successeur [R69] (test) ; passage des commissions fait après le départ : la commission va à l'agent du compromis [R69] (test) ; sans passage, l'acte lit seul l'agent du jour du compromis (test) ; départ le jour du compromis ou avant : l'agent qui tient le bien (test) ; deux départs de suite (test) ; bien dans la file au compromis : aucun agent, la commission attend (test) ; sans départ rien ne change (test) ; tous les tests de K01, K04, N06 et J11 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
