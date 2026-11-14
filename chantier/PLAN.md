@@ -1468,7 +1468,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR74 · Mes remises de tous les jours, sur l'accueil de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#573, `c63a43a5`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6034 tests). Décidé en cours de route : un agent sorti (`agent_inactive`) est déjà refusé par l'application entière, le bloc vidé ; le script servi retire aussi les commentaires de bloc sur plusieurs lignes, l'application pèse 49 042 octets compressés sur 49 152. Rien d'autre.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR73, HX08
 - Cahier : Phase 3, « Remises négociées pour les agents du réseau » (HX08) ; R266, R267, R16, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR73 (« le catalogue des remises « toujours » de l'agent, sur son accueil »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Une remise « toujours » pour l'agent n'est jamais proposée dans un dossier : aujourd'hui l'agent ne la voit nulle part. Un bloc « Mes remises négociées » sur l'accueil, par le chargeur commun et le même script `/app/remises.js` (troisième porte, `open('')`), refait à chaque retour à l'accueil et vidé à la sortie. Il lit `GET /v1/remises` (agent actif) et ne montre en entier que les remises « toujours » pour l'agent ; celles du client ne sont pas montrées hors du bien, seulement comptées par moment du dossier [R267]. L'application tient son budget en libérant les octets qu'il faut.
