@@ -179,6 +179,16 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(textOf(await pages(simple([content])))).toEqual(['Acte prévu le 15/09/2027 (au plus tard)\nMontant du dépôt : 12 250 €\nLigne suivante\nEncore une']);
   });
 
+  it('MacRoman et le codage standard : la partie ASCII seulement, un octet haut rend la page illisible', async () => {
+    const font = (e: string) => `<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman${e} >>`;
+    const one = (f: string, text: string) =>
+      pdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', f, { dict: '', data: `BT /F1 12 Tf (${text}) Tj ET` }]);
+    expect(textOf(await pages(one(font(' /Encoding /MacRomanEncoding'), "l'acte")))).toEqual(["l'acte"]);
+    expect(textOf(await pages(one(font(''), "l'acte")))).toEqual(['l’acte']);
+    expect(await pages(one(font(' /Encoding /MacRomanEncoding'), 'pr\\216vu'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    expect(await pages(one(font(''), 'pr\\351vu'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
   it('saute une image en ligne sans lire ses octets comme du texte', async () => {
     const content = 'BT /F1 12 Tf 72 720 Td (Avant) Tj ET BI /W 2 /H 1 /BPC 8 /CS /G ID \x28\x29\xff\x00 EI BT /F1 12 Tf 72 700 Td (Apres) Tj ET';
     expect(textOf(await pages(simple([content])))).toEqual(['Avant\nApres']);

@@ -610,7 +610,8 @@ function simpleTable(file: PdfFile, font: Dict): ((code: number) => string | nul
   const embedded = descriptor !== null && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => descriptor.get(k) !== undefined);
   const baseTable = (name: string | null): ((code: number) => string | null) | null => {
     if (name === 'WinAnsiEncoding') return winAnsi;
-    if (name === 'StandardEncoding' || name === 'MacRomanEncoding') return standardAscii;
+    if (name === 'StandardEncoding') return standardAscii;
+    if (name === 'MacRomanEncoding') return (code) => (code >= 0x20 && code <= 0x7e ? String.fromCharCode(code) : null);
     if (name === null) return embedded && !STANDARD_FONTS.test(base) ? null : standardAscii;
     return null;
   };
