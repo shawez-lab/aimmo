@@ -96,7 +96,7 @@ const services = (s: PilotageServices) => ({
   disponibilite: new pilotage.DisponibiliteService(s.journal, { now: s.now, supervision: s.supervision ?? null }),
   copies: new SuiviCopies(s.db, s.journal, { now: s.now }),
   restauration: new RecusRestauration(s.db, s.journal, { now: s.now }),
-  parcours: new RecusParcours(s.db, s.journal, { now: s.now }),
+  parcoursDuMois: new RecusParcours(s.db, s.journal, { now: s.now }),
   preuve: new pilotage.CompteurPreuve(s.db, s.journal, { now: s.now }),
   sceaux: new pilotage.SceauxPreuve(s.db, s.journal, { now: s.now }),
 });
@@ -142,7 +142,7 @@ export function pilotageRoutes(): PilotageRoute[] {
     { method: 'POST', pattern: new RegExp(`${P}/engagements-manques/${ID}/fait$`), name: 'pilotage.engagement_manque_fait', handle: withBody(async (s, v, [id], body) => reply(await services(s).manques.close(v, id!, body.outcome))) },
     { method: 'GET', pattern: new RegExp(`${P}/disponibilite$`), name: 'pilotage.disponibilite', handle: async (s, v, _p, r) => reply(await services(s).disponibilite.ofMonth(v, query(r, 'mois'))) },
     { method: 'GET', pattern: new RegExp(`${P}/copies/restauration$`), name: 'pilotage.copies_restauration', handle: async (s, v) => reply(await services(s).restauration.status(v)) },
-    { method: 'GET', pattern: new RegExp(`${P}/parcours-du-mois$`), name: 'pilotage.parcours_du_mois', handle: async (s, v) => reply(await services(s).parcours.status(v)) },
+    { method: 'GET', pattern: new RegExp(`${P}/parcours-du-mois$`), name: 'pilotage.parcours_du_mois', handle: async (s, v) => reply(await services(s).parcoursDuMois.status(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/copies$`), name: 'pilotage.copies', handle: async (s, v) => reply(await services(s).copies.status(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/reseau$`), name: 'pilotage.reseau', handle: async (s, v, _p, r) => reply(await services(s).reseau.of(v, { from: query(r, 'du'), to: query(r, 'au') })) },
     {

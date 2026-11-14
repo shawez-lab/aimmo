@@ -133,6 +133,10 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.direction, 'GET', '/pilotage/copies/restauration')).body).toMatchObject({ ok: true, data: { state: 'manquant', receipt: null } });
     expect((await t.call(t.agent, 'GET', '/pilotage/copies/restauration')).status).toBe(403);
     expect((await t.call(t.compliance, 'GET', '/pilotage/copies/restauration')).status).toBe(403);
+    // BR72 : le parcours complet fictif du mois, la direction seule.
+    expect((await t.call(t.direction, 'GET', '/pilotage/parcours-du-mois')).body).toMatchObject({ ok: true, data: { state: 'manquant', receipt: null } });
+    expect((await t.call(t.agent, 'GET', '/pilotage/parcours-du-mois')).status).toBe(403);
+    expect((await t.call(t.compliance, 'GET', '/pilotage/parcours-du-mois')).status).toBe(403);
   });
 
   it('[R230] le passage du planificateur porte bien la surveillance : une nuit sans copie se lit à l’écran', async () => {

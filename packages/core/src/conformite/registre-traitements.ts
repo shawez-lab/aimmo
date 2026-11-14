@@ -979,6 +979,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
 
 /** Les tables sans aucune donnée personnelle, chacune avec sa raison. */
 export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = {
+  journey_receipts: 'Reçu du parcours complet fictif de chaque mois : un instant, un mois, réussi ou raté, et l\'étape cassée, prise dans une liste fermée.',
   send_quota_slots: 'Créneaux du quota d\'envois par jour : un compteur, sans personne ni message.',
   scheduled_runs: 'Passages du planificateur : nom de la tâche et créneau.',
   automation_rollouts: 'Palier de chaque automatisation du site : des nombres et des dates, ni personne ni envoi.',
