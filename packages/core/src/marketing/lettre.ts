@@ -232,14 +232,15 @@ function figuresOf(content: LetterContent): (string | number)[] {
 /**
  * Le texte où chaque nom de lieu de la base cité perd ses mots composés à trait d'union (« Saint-Pierre-de-Varennes »,
  * « Pierre-de-Bresse ») : un prénom pris dans un nom de lieu composé n'est pas le nom d'une personne [R09]. Un mot
- * composé égal au prénom, au nom ou au nom complet d'une personne (« Jean-Pierre ») reste, un nom seul ou écrit sans
- * trait d'union aussi : côté prudent.
+ * composé égal au prénom, au nom ou au nom complet d'une personne (« Jean-Pierre »), ou à un mot composé de l'un d'eux
+ * (« Roche-sur-Yon » de « La Roche-sur-Yon »), reste ; un nom seul ou écrit sans trait d'union aussi : côté prudent.
  */
 export function withoutCompoundPlaces(text: string, places: readonly string[], names: readonly string[]): string {
   // Chaque mot composé est lu entier, d'un bout à l'autre du texte : « Saint-Martin » ne masque jamais le début de
   // « Saint-Martin-du-Mont ».
   const compound = /[\p{L}'’]+(?:-[\p{L}'’]+)+/gu;
-  const known = new Set(names.map((n) => plain(n).trim()));
+  // Un nom de personne protège aussi chaque mot composé qu'il contient : « La Roche-sur-Yon » garde « Roche-sur-Yon ».
+  const known = new Set(names.flatMap((n) => [plain(n).trim(), ...(n.match(compound) ?? []).map((w) => plain(w))]));
   const fromPlaces = new Set(places.flatMap((p) => p.match(compound) ?? []).map((w) => plain(w)));
   return text.replace(compound, (word) => (fromPlaces.has(plain(word)) && !known.has(plain(word)) ? ' ' : word));
 }
