@@ -61,6 +61,7 @@ import { APPELS_RECUS_SCRIPT } from '../app/appels-recus.ts';
 import { NOTES_VOCALES_SCRIPT } from '../app/notes-vocales.ts';
 import { RECLAMATIONS_SCRIPT } from '../app/reclamations.ts';
 import { RECLAMATIONS_REGLAGE_SCRIPT } from '../app/reclamations-reglage.ts';
+import { REMISES_SCRIPT } from '../app/remises.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
@@ -193,6 +194,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/scenarios.js': { body: SCENARIOS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le délai de réponse aux réclamations et le médiateur (BR70), chargés depuis « Engagements de service », jamais gardés [R201].
   '/app/reclamations-reglage.js': { body: RECLAMATIONS_REGLAGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les remises négociées (BR73), chargées depuis « Engagements de service » ou « Mettre en vente », jamais gardées [R201].
+  '/app/remises.js': { body: REMISES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les communes à pourvoir pour la direction (BR38), chargées depuis « Phases et régions », jamais gardées [R201].
   '/app/communes.js': { body: COMMUNES_SCRIPT, type: 'text/javascript; charset=utf-8' },

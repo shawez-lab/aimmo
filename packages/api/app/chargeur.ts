@@ -3,7 +3,7 @@
  * script pose (retiré aussitôt lu) et, s'il le faut, la classe de son état ; l'outil fait est une fonction, ou a `open`.
  * Rien n'est lu avant le geste. Le script est chargé une fois pour toute la session : les fiches suivantes reprennent
  * l'outil déjà fait. Passent par lui : « Appels reçus » (BR61), « Notes vocales » (BR62), « Réclamations » (BR69),
- * « Dates connues » (G15) et « Recommandation d'un proche » (X22), pour que l'application tienne son budget.
+ * « Dates connues » (G15), « Recommandation d’un proche » (X22) et « Remises du moment » (BR73), pour que l'application tienne son budget.
  */
 export const CHARGEUR_JS = `
   var lazyTools = {};
