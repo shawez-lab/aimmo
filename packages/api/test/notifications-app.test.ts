@@ -217,6 +217,20 @@ describe('BR67 · « Mes notifications » sur l’accueil de l’agent', () => {
     expect(bad.replaced).toEqual(['/app/']);
   });
 
+  it('[R415] un réseau coupé à l’ouverture du lien ne perd pas l’envoi : le geste suivant le montre', async () => {
+    const t = await run({ 'GET /v1/notifications/envois/e1': offline }, '#envoi=e1');
+    await t.load();
+    expect(t.status()).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.replaced).toEqual(['/app/']);
+    t.table['GET /v1/notifications/envois/e1'] = ok([HOT]);
+    await t.open(false);
+    expect(t.count('GET', '/v1/notifications/envois/e1')).toBe(2);
+    expect(t.body().all().find((e) => e.tagName === 'h4')!.textContent).toBe('Cette notification');
+    // Montré une fois, il n'est plus relu.
+    await t.open(false);
+    expect(t.count('GET', '/v1/notifications/envois/e1')).toBe(2);
+  });
+
   it('[R415] le lien /notifications/<envoi> renvoie vers l’application sans rien lire ; un identifiant mal formé est inconnu', async () => {
     const r = handleAgentApp(new Request('https://x.test/notifications/e1-ab_C'))!;
     expect(r.status).toBe(302);

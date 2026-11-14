@@ -110,7 +110,7 @@ globalThis.AIMMO_NOTIFICATIONS = function (t) {
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var SETTABLE = ['client_ecrit', 'rendez_vous', 'piece_recue', 'tache', 'info'];
   var ID = /^[A-Za-z0-9_-]{1,64}$/, HM = /^(\\d{2}):(\\d{2})$/;
-  var round = 0, saving = false;
+  var round = 0, saving = false, pending = null;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function say(m) { $('notifications-etat').textContent = m; }
   function body() { return $('notifications-corps'); }
@@ -203,7 +203,10 @@ globalThis.AIMMO_NOTIFICATIONS = function (t) {
     return !!v && typeof v === 'object' && minute(v.quietStart) && minute(v.quietEnd) && !!v.levels && typeof v.levels === 'object';
   }
   function show() {
-    var mine = ++round, push = linked();
+    var mine = ++round, link = linked();
+    /* L'envoi du lien reste en mémoire jusqu'à ce que son détail soit montré : un réseau coupé ne le perd pas. */
+    if (link !== null) pending = link;
+    var push = pending;
     clear(body());
     say('Lecture…');
     var asks = [send('/v1/notifications/reglages', 'GET'), send('/v1/notifications', 'GET')];
@@ -218,6 +221,7 @@ globalThis.AIMMO_NOTIFICATIONS = function (t) {
         var rows = r[2] && r[2].ok && r[2].body ? r[2].body.data : null;
         p.appendChild(push && Array.isArray(rows) ? list(rows, REFUSALS.unknown) : el('p', REFUSALS.unknown, 'doux'));
         out.appendChild(p);
+        pending = null;
       }
       if (settingsOk(r[0].body.data)) out.appendChild(settingsBlock(r[0].body.data));
       else out.appendChild(el('p', 'Vos réglages ne se lisent pas pour le moment.', 'doux'));
@@ -228,6 +232,6 @@ globalThis.AIMMO_NOTIFICATIONS = function (t) {
       return true;
     }, function () { if (mine === round) say(OFFLINE); return false; });
   }
-  return { show: show, wipe: function () { round += 1; saving = false; } };
+  return { show: show, wipe: function () { round += 1; saving = false; pending = null; } };
 };
 `;
