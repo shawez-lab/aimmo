@@ -108,6 +108,13 @@ describe('RC39 · lire un terme sur sa page', () => {
     two[3] = `${PAGES[3]}\nCondition suspensive de la vente préalable d'un autre bien.`;
     expect(verifyReading(two, EXACT).toRead).toEqual(['conditions']);
     expect(verifyReading(two, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'vente_autre_bien', page: 4 }] }).toRead).toEqual([]);
+    // Une condition écartée par le projet n'est jamais proposée, même si le lecteur la rend ; la négation passe au lecteur.
+    const denied = [...PAGES];
+    denied[3] = `${PAGES[3]}\nLa vente n'est pas soumise à l'obtention d'un permis de construire.`;
+    const rd = verifyReading(denied, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'permis_construire', page: 4 }] });
+    expect(rd.proposal.conditions).toEqual([{ kind: 'pret', amountEur: 150000, durationMonths: 240, page: 4 }]);
+    expect(rd.toRead).toEqual(['conditions']);
+    expect(excerptsOf([denied[3]!])[0]!.lines.at(-1)).toBe("La vente n'est pas soumise à l'obtention d'un permis de construire.");
     // Un projet sans aucun mot de condition, et un lecteur qui n'en rend aucune : rien à lire de ce côté.
     const cash = PAGES.map((p, i) => (i === 3 ? 'Paiement comptant.' : p));
     expect(verifyReading(cash, { ...EXACT, conditions: [], loanDeadline: null }).toRead).toEqual(['date_limite_pret']);

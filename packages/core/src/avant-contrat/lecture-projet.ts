@@ -88,6 +88,8 @@ const ALLOWED_WORDS = new Set(
     'acte authentique signature réitération reitération réitérée réitérer date limite plus tard tard avant après au aux à le la les l de du des d ' +
     'un une sur en par pour entre et ou soit qui que dont sera seront devra devront aura auront est sont lieu ' +
     'permis construire certificat urbanisme autre bien biens préalable prealable er ' +
+    // La négation passe toujours : « n'est pas soumise à », « sans recours à », « renonce à » changent tout.
+    'ne n pas sans aucun aucune non ni jamais renonce renoncent renonçant renonciation exclu exclue exclus soumis soumise sous déclare déclarent recours ' +
     MONTHS_WORDS
   ).split(' '),
 );
@@ -157,6 +159,9 @@ const CONDITION_WORDS: Record<ConditionKind, RegExp | null> = {
   autre: null,
 };
 
+/** Une ligne qui nie ou écarte ce qu'elle nomme. */
+const NEGATION = /\bne\b|\bn['’]|\bpas\b|\bsans\b|\baucune?\b|\bnon\b|\bni\b|\bjamais\b|renon[cç]|\bexclu/i;
+
 const HOLDER_WORDS: Record<DepositHolder, RegExp> = {
   notaire: /notaire|office notarial/i,
   agence: /\bagence\b|agent immobilier|mandataire/i,
@@ -200,7 +205,9 @@ export function verifyReading(pages: string[], raw: unknown): { proposal: DraftP
     const kind = c.kind as ConditionKind;
     const text = pageOf(c.page);
     const words = CONDITION_WORDS[kind];
-    if (text === null || words === null || !words.test(normalize(text)) || conditions.some((x) => x.kind === kind)) {
+    // Une condition se lit sur une ligne qui la nomme sans la nier ; niée partout sur la page, elle est à lire.
+    const stated = text !== null && words !== null && normalize(text).split(/\r?\n/).some((l) => words.test(l) && !NEGATION.test(l));
+    if (!stated || conditions.some((x) => x.kind === kind)) {
       toRead.add('conditions');
       continue;
     }
