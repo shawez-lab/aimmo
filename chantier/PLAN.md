@@ -1446,7 +1446,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR72 · Le parcours du mois rangé, et dit à l'écran de la direction
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#571, `83cb8ac5`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6006 tests). Décidé en cours de route : la table, sans aucune personne, est au registre parmi les tables sans donnée personnelle et à la carte de reprise, pas à la carte des accès. Le premier reçu réel viendra au passage du 3 décembre.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : SV04, SV03
 - Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente » ; R13, R16, R26.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de SV04 (« Un échec du travail mensuel n'alerte que par GitHub, rien à l'écran de la direction »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme le reçu de la restauration (SV03) : le travail « Parcours du mois » garde son premier travail sans secret ni accès à la base, qui ne fait que jouer le parcours et dire l'étape cassée ; un second travail, sur main seulement, range un reçu dans la base `aimmo` (table neuve, ni réécrite ni effacée) : le mois, réussi ou raté, et l'identifiant de l'étape cassée pris dans une liste fermée, rien d'autre. L'écran « Rapport » de la direction gagne le bloc « Le parcours complet, ce mois-ci » : réussi, raté à telle étape, ou manquant, jamais vert par défaut. Aucune règle nouvelle ; une migration.
