@@ -1488,6 +1488,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : chaque route refuse un autre rôle en 403 avec le refus au journal, même sans corps lisible [R16] (test) ; un lot vendu ne revient jamais, 409 [R543] (test) ; la grille de l'agent ne montre aux autres agents rien, 403 (test) ; les frais d'un lot portent leur source, sans barème aucun chiffre [R544] (test) ; une table d'espérance avec une colonne de sexe est refusée, 409 [R541] (test) ; un bouquet plus haut que la valeur occupée refusé, 409 [R542] (test) ; un calcul se relit et se rejoue à l'identique, par son auteur ou la direction, jamais par un autre agent [R540, R16] (test) ; l'expert du viager passe par la mise en relation, fermé sans stockage [R542] (test) ; corps invalide refusé sans rien ranger (test) ; les routes passent par le routeur de `app.ts` (test).
 - Attend : rien.
 
+### BR76 · La grille d'un programme neuf publiée sur le site du réseau
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48, BR75
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M01 (pages publiques) ; R543, R544, R153, R10.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR75 (« la grille publiée sur le site »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Page publique `GET /neuf/:programme` sur le seul site du réseau, comme les pages de prix : une seule page de référence [R153]. Rendu dans `packages/core/src/neuf-viager/page-publique.ts`, servi par `handleAttirerPublic`. Aucun nom d'agent ni de client : le lien de contact mène à la page de l'agent du programme si elle est publiable [R152], sinon à la liste des agents. Pas de migration, aucune règle nouvelle, aucun compte de vue (la sorte de vue n'existe pas en base). Restent : la grille dans les annonces, le plan du site, les écrans du neuf et du viager.
+- Objectif : un visiteur lit sur le site du réseau la grille à jour d'un programme neuf : les seuls lots disponibles confirmés depuis 14 jours au plus, leur prix, et les frais du neuf comparés à ceux de l'ancien avec leur source.
+- Critères : la page montre les seuls lots disponibles confirmés depuis 14 jours au plus ; un lot vendu, en option, réservé ou trop ancien n'y est pas [R543] (test) ; chaque frais porte sa source et sa date, sans barème aucun frais n'est écrit et la page le dit [R544, R10] (test) ; aucun nom d'agent, de client ni d'auteur de version [R543] (test) ; servie sur le site du réseau seul, 404 sur le site d'un agent, pour un programme inconnu ou d'un autre réseau [R153] (test) ; GET et HEAD seulement, non indexée en essai (test) ; un programme sans lot publié dit qu'aucun lot n'est disponible (test) ; tout texte venu de la base est échappé (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
