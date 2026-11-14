@@ -129,6 +129,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   attach_claims: { via: [['inbound_id', 'inbound_messages', 'id']] },
   base_copy_alerts: { hors: 'technique', why: 'Alerte de la copie de chaque nuit, pour la base entière : aucun réseau.' },
   base_copy_runs: { hors: 'technique', why: 'Passage de la copie de chaque nuit, pour la base entière : aucun réseau.' },
+  journey_receipts: { hors: 'technique', why: 'Reçu du parcours complet fictif du mois, pour le logiciel entier : aucun réseau.' },
   base_restore_receipts: { hors: 'technique', why: 'Reçu du test de restauration, pour la base entière : aucun réseau.' },
   call_journal: { via: [['call_id', 'calls', 'id']] },
   client_space_favorite_removals: { via: [['favorite_id', 'client_space_favorites', 'id']] },

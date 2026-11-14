@@ -975,6 +975,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_dossier_accesses: { locate: by('person_id') },
   business_dossier_open_codes: { locate: [via('link_id', 'business_dossier_links')], secrets: ['code_hash'] },
   business_buyer_profiles: { locate: [via('project_id', 'projects')] },
+  journey_receipts: out('sans_client', 'Reçu du parcours complet fictif du mois : un instant, réussi ou raté, et l\'étape cassée, aucune personne.'),
   base_restore_receipts: out('sans_client', 'Reçu d\'un test de restauration : des instants, des comptes et une empreinte de toute la base, aucune personne.'),
   base_copy_runs: out('sans_client', 'Compte rendu d\'une copie de nuit de la base : des instants, des comptes et un code de raison, aucune personne.'),
   business_safeguard_communes: out('sans_client', 'Communes dotées d\'un périmètre de sauvegarde, rangées par la direction : aucune personne.'),

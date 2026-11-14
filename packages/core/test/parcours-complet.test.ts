@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { verifyChain } from '../src/index.ts';
+import { JOURNEY_NONE, JOURNEY_STEPS, verifyChain } from '../src/index.ts';
 import { BUYER_EMAIL, BUYER_LAST_NAME, JOURNEY, SELLER_EMAIL, SELLER_LAST_NAME, journeyWorld, must, runJourney, type JourneyStep } from './parcours-complet.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -23,6 +23,9 @@ const BROKEN_TABLE: Record<string, string> = {
   apres_vente: 'owner_booklets',
 };
 
+/** Ce que le travail du mois transmet : `aucune`, ou l'identifiant de l'étape cassée, jamais sa raison. */
+const journeyOutput = (r: Awaited<ReturnType<typeof runJourney>>): string => (r.ok ? JOURNEY_NONE : r.failed.step);
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -32,6 +35,8 @@ describeWithSqlite('SV04 · le parcours complet fictif, du premier message à l�
   it('toutes les étapes passent, chacune vérifiée par ses données et son journal, et la chaîne du journal tient', async () => {
     const w = await journeyWorld();
     const result = await runJourney(w, JOURNEY);
+    // BR72 : le travail du mois dit l'étape cassée, et rien d'autre, au second travail qui range le reçu.
+    if (process.env.PARCOURS_SORTIE) appendFileSync(process.env.PARCOURS_SORTIE, `etape=${journeyOutput(result)}\n`);
     // En cas de panne, le message de ce test nomme l'étape et sa raison.
     expect(result).toEqual({ ok: true, done: ALL });
     expect(ALL[0]).toBe(FIRST);
@@ -64,6 +69,21 @@ describeWithSqlite('SV04 · le parcours complet fictif, du premier message à l�
     expect((await runJourney(w, JOURNEY)).ok).toBe(true);
     const text = JSON.stringify(await w.readEntries());
     for (const secret of [SELLER_EMAIL, BUYER_EMAIL, SELLER_LAST_NAME, BUYER_LAST_NAME]) expect(text).not.toContain(secret);
+  });
+
+  it('BR72 · les étapes du reçu sont exactement celles du parcours, dans l’ordre', () => {
+    expect(ALL).toEqual([...JOURNEY_STEPS]);
+  });
+
+  it('BR72 · le travail du mois ne transmet que l’étape cassée, jamais sa raison', async () => {
+    expect(journeyOutput({ ok: true, done: ALL })).toBe('aucune');
+    const w = await journeyWorld();
+    const result = await runJourney(w, JOURNEY, {
+      beforeStep: async (step) => {
+        if (step === 'mandat') await w.db.run("CREATE TRIGGER parcours_panne BEFORE INSERT ON mandates BEGIN SELECT RAISE(ABORT, 'panne lea.vendeuse@example.test'); END");
+      },
+    });
+    expect(journeyOutput(result)).toBe('mandat');
   });
 
   it('le parcours ne dépend pas de la date du jour : il tient encore dans plusieurs années', async () => {
@@ -128,12 +148,26 @@ describe('SV04 · il tourne aussi chaque mois', () => {
   it('un travail mensuel joue ce parcours, sans secret ni accès à la base', () => {
     expect(existsSync(FILE)).toBe(true);
     const yml = readFileSync(FILE, 'utf8');
+    const [head, second] = yml.split('\n  recu:\n');
+    expect(second).toBeDefined();
     expect(yml).toMatch(/schedule:\n\s+- cron: '\d+ \d+ \d+ \* \*'/);
     expect(yml).toContain('workflow_dispatch');
-    expect(yml).toContain('node-version-file: .nvmrc');
-    expect(yml).toContain('npx vitest run packages/core/test/parcours-complet.test.ts');
+    expect(head).toContain('node-version-file: .nvmrc');
+    expect(head).toContain('PARCOURS_SORTIE="$GITHUB_OUTPUT" npx vitest run packages/core/test/parcours-complet.test.ts');
     expect(existsSync('packages/core/test/parcours-complet.test.ts')).toBe(true);
     expect(yml).toMatch(/permissions:\n\s+contents: read/);
-    expect(yml).not.toMatch(/secrets\.|wrangler|CLOUDFLARE/);
+    // [R26] Le premier travail, qui joue le parcours, n'a ni secret ni base.
+    expect(head).not.toMatch(/secrets\.|wrangler|CLOUDFLARE/);
+  });
+
+  it('BR72 · le second travail range le reçu sur main seulement, même quand le parcours casse, et ne lit que deux mots du premier', () => {
+    const second = readFileSync(FILE, 'utf8').split('\n  recu:\n')[1]!;
+    expect(second).toContain('needs: parcours');
+    expect(second).toContain("if: always() && github.ref == 'refs/heads/main'");
+    expect(second).toContain('PARCOURS_RESULTAT: ${{ needs.parcours.result }}');
+    expect(second).toContain('PARCOURS_ETAPE: ${{ needs.parcours.outputs.etape }}');
+    expect(second.match(/needs\.parcours\./g)).toHaveLength(2);
+    expect(second).toContain('node --experimental-transform-types --no-warnings packages/api/outils/parcours-du-mois.ts');
+    expect(second).not.toMatch(/vitest|upload-artifact|download-artifact|d1 execute|d1 export|migrations apply/);
   });
 });
