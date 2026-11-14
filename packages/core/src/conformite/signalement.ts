@@ -102,7 +102,7 @@ export class SignalementSoupcon {
     const m = typeof caseRef === 'string' ? CASE_REF.exec(caseRef) : null;
     if (!m) return { ok: false, rule: null, code: 'bad_case' };
     if (typeof input.note !== 'string' || input.note.trim() === '' || input.note.length > 4000) return { ok: false, rule: null, code: 'bad_note' };
-    const found = await caseScopeOf(this.db, this.unique, viewer.networkId, m[1] as 'mandate' | 'offer' | 'sale_file', m[2]!);
+    const found = await caseScopeOf(this.db, this.unique, viewer.networkId, m[1] as 'mandate' | 'offer' | 'sale_file', m[2]!, { withSale: true });
     if (!found) return { ok: false, rule: null, code: 'unknown_case' };
     const { personId, scope } = found;
     const read = await this.acces.readFiche(viewer, personId);

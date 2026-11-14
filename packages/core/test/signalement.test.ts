@@ -113,6 +113,98 @@ describeWithSqlite('L05 · signaler au responsable', () => {
     expect(check.ok && check.value.missing).toContainEqual({ table: 'compliance_vault_pieces', key: sellerPiece });
   });
 
+  it('[R94] [R17] RC36 · un mandat fige les offres du bien, leurs dossiers de vente et leurs acquéreurs ; une offre fige sa vente', async () => {
+    const t = await setup();
+    const registre = new RegistreOffres(t.db, t.acces, t.journal, { now: t.now });
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
+    const buyerPiece = await identiteAuCoffre(t, t.agent, buyer.id, { piece: 'carte_identite', seenAt: NOW });
+    if (!buyerPiece.ok) throw new Error(buyerPiece.code);
+    const offerOn = async (propertyId: string, personId: string, n: number) => {
+      const r = await registre.record(t.agent, propertyId, {
+        buyerPersonId: personId, amountEur: 195000, conditions: [], validUntil: '2027-03-20', downPaymentEur: 195000, loanEur: 0,
+        signedRef: `offres/0b6f1d2e-1111-4a2b-8c3d-00000000000${n}.pdf`, receivedAt: '2027-03-09T08:00:00.000Z',
+      });
+      if (!r.ok) throw new Error(r.code);
+      return r.value.id;
+    };
+    const offerId = await offerOn(t.propertyId, buyer.id, 1);
+    // L'offre d'un autre bien du même agent, avec un autre acquéreur : hors du dossier du mandat.
+    const other = await t.store.createProperty({ networkId: t.network.id, agentId: t.alexId, reference: 'REF-T-2', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 40, rooms: 2, priceEur: 150000 });
+    const stranger = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Autre', lastName: 'Exemple' });
+    const otherOffer = '0b6f1d2e-2222-4a2b-8c3d-000000000002';
+    await t.db.run(
+      "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES (?, ?, ?, 1, ?, 140000, '[]', '2027-03-20', 140000, 0, 'offres/autre.pdf', ?, ?, ?, ?, 'genese', 'empreinte-autre-bien')",
+      [otherOffer, t.network.id, other.id, stranger.id, NOW.toISOString(), t.alexId, NOW.toISOString(), `agent:${t.alexId}`],
+    );
+    const fileId = '0b6f1d2e-9999-4a2b-8c3d-000000000009';
+    await t.db.run(
+      'INSERT INTO sale_files (id, network_id, property_id, offer_id, buyer_person_id, amount_eur, opened_at, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [fileId, t.network.id, t.propertyId, offerId, buyer.id, 195000, NOW.toISOString(), `agent:${t.alexId}`],
+    );
+    for (const ref of [t.mandateRef, `offer:${offerId}`]) expect(await t.signalement.report(t.agent, ref, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });
+    const list = await t.signalement.list(t.conformite);
+    if (!list.ok) throw new Error(list.code);
+    const onMandate = list.value.find((r) => r.caseRef === t.mandateRef)!;
+    const onOffer = list.value.find((r) => r.caseRef === `offer:${offerId}`)!;
+    for (const r of [onMandate, onOffer]) expect(await t.signalement.checkFrozen(t.conformite, r.reportId)).toEqual({ ok: true, value: { intact: true, changed: [], missing: [], added: [] } });
+    // Une offre arrivée après le signalement n'est pas dans le périmètre de ce jour : la copie figée reste intacte.
+    await offerOn(t.propertyId, buyer.id, 3);
+    expect(await t.signalement.checkFrozen(t.conformite, onMandate.reportId)).toEqual({ ok: true, value: { intact: true, changed: [], missing: [], added: [] } });
+    // Le dossier de vente changé de force : le mandat et l'offre le voient.
+    await t.db.exec('DROP TRIGGER IF EXISTS sale_files_sans_modification');
+    for (const trigger of (await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'sale_files'"))) await t.db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
+    await t.db.run('UPDATE sale_files SET amount_eur = 150000 WHERE id = ?', [fileId]);
+    for (const r of [onMandate, onOffer]) {
+      expect(await t.signalement.checkFrozen(t.conformite, r.reportId)).toMatchObject({ ok: true, value: { intact: false, changed: [{ table: 'sale_files', key: fileId }] } });
+    }
+    // La pièce du coffre de l'acquéreur effacée de force : le mandat le voit.
+    await t.db.exec('DROP TRIGGER IF EXISTS compliance_vault_pieces_sans_effacement');
+    await t.db.run('DELETE FROM compliance_vault_pieces WHERE id = ?', [buyerPiece.id]);
+    const check = await t.signalement.checkFrozen(t.conformite, onMandate.reportId);
+    expect(check.ok && check.value.missing).toContainEqual({ table: 'compliance_vault_pieces', key: buyerPiece.id });
+    // L'offre de l'autre bien changée de force : ni le mandat ni l'offre ne le voient.
+    for (const trigger of (await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'offer_register'"))) await t.db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
+    await t.db.run('UPDATE offer_register SET amount_eur = 100000 WHERE id = ?', [otherOffer]);
+    for (const r of [onMandate, onOffer]) {
+      const c = await t.signalement.checkFrozen(t.conformite, r.reportId);
+      if (!c.ok) throw new Error(c.code);
+      expect([...c.value.changed, ...c.value.missing, ...c.value.added].map((l) => l.key)).not.toContain(otherOffer);
+    }
+  });
+
+  it('[R94] RC36 · un bien aux 120 offres se fige en lots de 100 valeurs au plus (limite de D1)', async () => {
+    const t = await setup();
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
+    const offers = Array.from({ length: 120 }, (_, i) => `0b6f1d2e-3333-4a2b-8c3d-${String(i).padStart(12, '0')}`);
+    for (const [i, id] of offers.entries()) {
+      await t.db.run(
+        "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES (?, ?, ?, ?, ?, 190000, '[]', '2027-03-20', 190000, 0, 'offres/lot.pdf', ?, ?, ?, ?, 'genese', ?)",
+        [id, t.network.id, t.propertyId, i + 1, buyer.id, NOW.toISOString(), t.alexId, NOW.toISOString(), `agent:${t.alexId}`, `empreinte-${i}`],
+      );
+    }
+    let max = 0;
+    const strict = Object.create(t.db) as typeof t.db;
+    const guard = (params: readonly unknown[] | undefined) => {
+      max = Math.max(max, params?.length ?? 0);
+      if ((params?.length ?? 0) > 100) throw new Error('too many SQL variables');
+    };
+    strict.all = async (sql, params) => (guard(params), t.db.all(sql, params));
+    strict.first = async (sql, params) => (guard(params), t.db.first(sql, params));
+    strict.run = async (sql, params) => (guard(params), t.db.run(sql, params));
+    const s = new conformite.SignalementSoupcon(strict, t.acces, t.journal, { now: t.now });
+    expect(await s.report(t.agent, t.mandateRef, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });
+    const list = await s.list(t.conformite);
+    if (!list.ok) throw new Error(list.code);
+    expect(list.value[0]!.lines).toBeGreaterThan(120);
+    const id = list.value[0]!.reportId;
+    expect(await s.checkFrozen(t.conformite, id)).toEqual({ ok: true, value: { intact: true, changed: [], missing: [], added: [] } });
+    expect(max).toBeLessThanOrEqual(100);
+    // La dernière offre, au-delà du premier lot, changée de force : vue.
+    for (const trigger of (await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'offer_register'"))) await t.db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
+    await t.db.run('UPDATE offer_register SET amount_eur = 100000 WHERE id = ?', [offers[119]!]);
+    expect(await s.checkFrozen(t.conformite, id)).toMatchObject({ ok: true, value: { intact: false, changed: [{ table: 'offer_register', key: offers[119] }] } });
+  });
+
   it('[R94] [R17] pour une société, l’identité de chaque bénéficiaire effectif est figée aussi', async () => {
     const t = await setup();
     const owner = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Associé', lastName: 'Exemple' });
