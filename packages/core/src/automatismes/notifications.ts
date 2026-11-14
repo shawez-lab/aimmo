@@ -454,7 +454,7 @@ export class Notifications {
    */
   async listForPush(viewer: Viewer, pushId: string): Promise<NotificationRow[]> {
     if (viewer.role !== 'agent') return [];
-    const rows = await this.db.all<NotificationRow>('SELECT * FROM agent_notifications WHERE push_id = ? AND agent_id = ? AND network_id = ? ORDER BY created_at DESC, rowid DESC', [
+    const rows = await this.db.all<NotificationRow>('SELECT * FROM agent_notifications WHERE push_id = ? AND agent_id = ? AND network_id = ? ORDER BY created_at DESC, id DESC', [
       pushId,
       viewer.userId,
       viewer.networkId,
