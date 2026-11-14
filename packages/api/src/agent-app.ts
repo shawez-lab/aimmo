@@ -62,6 +62,7 @@ import { NOTES_VOCALES_SCRIPT } from '../app/notes-vocales.ts';
 import { RECLAMATIONS_SCRIPT } from '../app/reclamations.ts';
 import { RECLAMATIONS_REGLAGE_SCRIPT } from '../app/reclamations-reglage.ts';
 import { REMISES_SCRIPT } from '../app/remises.ts';
+import { NEUF_SCRIPT } from '../app/neuf.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
@@ -185,6 +186,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // La tournée de prospection et la carte des opportunités (BR35), chargées depuis « Gagner des mandats », jamais gardées [R201].
   '/app/tournee.js': { body: TOURNEE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/site.js': { body: SITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La grille de mes programmes neufs (BR78), chargée depuis « Gagner des mandats », jamais gardée [R201].
+  '/app/neuf.js': { body: NEUF_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/veille-dpe.js': { body: VEILLE_DPE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
