@@ -9,7 +9,7 @@ import { LETTER_RECIPIENT_LABELS } from '../../core/src/mandats/gagner/lettres-q
  * (G07), les recommandations à appeler (G08), les relances d'anciens contacts à valider (G09), les lettres de quartier
  * à préparer, imprimer et noter déposées (G06) ; puis l'entrée de la pige (BR33), dont le script `/app/pige.js` est
  * servi à part et lit `/v1/pige`, et celle de la tournée (BR35), `/app/tournee.js`, qui lit `/v1/tournee`, et celle de la veille des diagnostics (BR36),
- * `/app/veille-dpe.js`, qui lit `/v1/veille-dpe`, et celle de « Mon site » (BR42), `/app/site.js`, qui lit `/v1/site`. L'écran lui-même ne lit et n'écrit que par les routes `/v1/gagner` [R16] ; il ne
+ * `/app/veille-dpe.js`, qui lit `/v1/veille-dpe`, et celle de « Mon site » (BR42), `/app/site.js`, qui lit `/v1/site`, et celle des programmes neufs (BR78), `/app/neuf.js`, qui lit `/v1/neuf`. L'écran lui-même ne lit et n'écrit que par les routes `/v1/gagner` [R16] ; il ne
  * calcule rien, ne trie rien et ne décide rien : il montre ce que le code a décidé, dans l'ordre reçu. Aucun texte ne
  * promet de mandats [R145]. Tout texte reçu est posé avec `textContent`.
  */
@@ -196,6 +196,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       body.appendChild(renderTournee());
       body.appendChild(renderVeille());
       body.appendChild(renderSite());
+      body.appendChild(renderNeuf());
       state(message || '');
       return true;
     });
@@ -304,6 +305,34 @@ globalThis.AIMMO_GAGNER = function (t) {
         if (mine !== t.session() || typeof make !== 'function') return;
         siteScreen = make({ el: el, clear: clear, send: send, button: button });
         siteScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
+  }
+  /* BR78 · la grille de mes programmes neufs : script servi à part, chargé à l'ouverture [R201]. */
+  var neufScreen = null;
+  function renderNeuf() {
+    var box = part('Programmes neufs');
+    box.appendChild(el('p', 'Les programmes que la direction vous confie : la grille publiée, ses frais sourcés, et l’état de chaque lot.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir mes programmes', function () {
+      if (b.disabled) return;
+      if (neufScreen) { neufScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/neuf.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_NEUF;
+        try { delete globalThis.AIMMO_NEUF; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session() || typeof make !== 'function') return;
+        neufScreen = make({ el: el, clear: clear, send: send, button: button });
+        neufScreen.show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
