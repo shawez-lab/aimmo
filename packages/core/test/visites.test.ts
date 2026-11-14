@@ -405,4 +405,23 @@ describeWithSqlite('BR64 · les visites réservées en ligne qui attendent sur l
     expect(refused.length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(refused)).not.toMatch(/Inès|Durand|B-TALANT/);
   });
+
+  it('des biens hors des droits en tête ne cachent pas les visites suivantes : jusqu’à 20 visites lisibles', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const hidden = await t.store.createProperty({ networkId: t.network.id, agentId: t.sam.id, reference: 'B-CACHE', kind: 'home', postalCode: '21000', city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, status: 'draft' });
+    // 60 visites sur le bien caché d'abord, puis 22 sur le bien lisible, une par demi-journée ouvrée.
+    const slots: Date[] = [];
+    for (let day = 0; slots.length < 82; day++) {
+      const d = new Date(WEDNESDAY_10H.getTime() + day * 86_400_000);
+      if (new Date(d.getTime() + 3_600_000).getUTCDay() === 0) continue;
+      slots.push(d, new Date(d.getTime() + 4 * 3_600_000));
+    }
+    for (const [i, start] of slots.slice(0, 82).entries()) await book(t, b.person.id, i < 60 ? hidden.id : p.id, start);
+    const r = await t.visites.onlineToAttach(t.as('agent', t.alex.id), b.person.id);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value).toHaveLength(20);
+    expect(new Set(r.value.map((v) => v.property.reference))).toEqual(new Set(['B-TALANT']));
+  });
 });
