@@ -82,6 +82,14 @@ const PARTS: Part[] = [
   { table: 'vigilance_decisions', over: 'persons', sql: (q) => `SELECT id AS k, * FROM vigilance_decisions WHERE alert_id IN (SELECT id FROM vigilance_alerts WHERE person_id IN (${q}))` },
 ];
 
+/** D1 refuse plus de 100 valeurs liées par requête : les listes sont lues par lots. */
+const D1_MAX_PARAMS = 100;
+const chunks = <T>(values: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+};
+
 export const unique = (values: (string | null | undefined)[]): string[] => [...new Set(values.filter((v): v is string => typeof v === 'string'))].sort();
 
 /**
@@ -129,8 +137,12 @@ export async function caseScopeOf(
   }
   // Les dossiers de vente ouverts depuis chaque offre du périmètre (RC36) : une offre signalée fige aussi sa vente.
   if (options.withSale && scope.offers.length > 0) {
-    const files = await db.all<{ id: string }>(`SELECT id FROM sale_files WHERE network_id = ? AND offer_id IN (${scope.offers.map(() => '?').join(', ')})`, [networkId, ...scope.offers]);
-    scope.saleFiles = unique([...scope.saleFiles, ...files.map((f) => f.id)]);
+    const files: string[] = [];
+    for (const part of chunks(scope.offers, D1_MAX_PARAMS - 1)) {
+      const rows = await db.all<{ id: string }>(`SELECT id FROM sale_files WHERE network_id = ? AND offer_id IN (${part.map(() => '?').join(', ')})`, [networkId, ...part]);
+      files.push(...rows.map((f) => f.id));
+    }
+    scope.saleFiles = unique([...scope.saleFiles, ...files]);
   }
   // Chaque partie avec ses fiches réunies (S04), puis les bénéficiaires effectifs d'une société, avec les leurs : leur
   // identité fait partie de l'identification du client.
@@ -138,11 +150,13 @@ export async function caseScopeOf(
   for (let round = 0; round < 10; round++) {
     const members: string[] = [];
     for (const p of persons) members.push(...(await fiches.membersOf(p)));
-    const marks = members.map(() => '?').join(', ');
-    const owners = members.length === 0 ? [] : await db.all<{ owner_person_id: string }>(
-      `SELECT owner_person_id FROM beneficial_owners WHERE declaration_id IN (SELECT id FROM client_identifications WHERE person_id IN (${marks}))`,
-      members,
-    );
+    const owners: { owner_person_id: string }[] = [];
+    for (const part of chunks(unique(members), D1_MAX_PARAMS)) {
+      owners.push(...(await db.all<{ owner_person_id: string }>(
+        `SELECT owner_person_id FROM beneficial_owners WHERE declaration_id IN (SELECT id FROM client_identifications WHERE person_id IN (${part.map(() => '?').join(', ')}))`,
+        part,
+      )));
+    }
     const next = unique([...persons, ...members, ...owners.map((o) => o.owner_person_id)]);
     if (next.length === persons.length) break;
     persons = next;
@@ -158,13 +172,18 @@ export async function caseSnapshotOf(db: SqlDatabase, scope: CaseScope): Promise
   for (const part of PARTS) {
     const ids = scope[part.over];
     const lines: { key: string; sha256: string }[] = [];
-    if (ids.length > 0) {
-      const sql = part.sql(ids.map(() => '?').join(', '));
-      const repeats = (sql.match(/\?/g) ?? []).length / ids.length;
+    // Combien de fois la requête lie la liste (une partie la lie deux fois), pour tenir sous la limite de D1.
+    const repeats = (part.sql('?').match(/\?/g) ?? []).length;
+    const seen = new Set<string>();
+    for (const batch of chunks(ids, Math.floor(D1_MAX_PARAMS / repeats))) {
+      const sql = part.sql(batch.map(() => '?').join(', '));
       const params: SqlValue[] = [];
-      for (let i = 0; i < repeats; i++) params.push(...ids);
+      for (let i = 0; i < repeats; i++) params.push(...batch);
       for (const row of await db.all<Record<string, unknown> & { k: unknown }>(sql, params)) {
         const { k, ...rest } = row;
+        // Une ligne liée à deux lots (une pièce de deux mandats) n'est comptée qu'une fois.
+        if (seen.has(String(k))) continue;
+        seen.add(String(k));
         lines.push({ key: String(k), sha256: await sha256Hex(JSON.stringify(canonical(rest))) });
       }
     }

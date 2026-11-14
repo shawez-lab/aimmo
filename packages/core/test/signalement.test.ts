@@ -172,6 +172,39 @@ describeWithSqlite('L05 · signaler au responsable', () => {
     }
   });
 
+  it('[R94] RC36 · un bien aux 120 offres se fige en lots de 100 valeurs au plus (limite de D1)', async () => {
+    const t = await setup();
+    const buyer = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Acheteur', lastName: 'Exemple' });
+    const offers = Array.from({ length: 120 }, (_, i) => `0b6f1d2e-3333-4a2b-8c3d-${String(i).padStart(12, '0')}`);
+    for (const [i, id] of offers.entries()) {
+      await t.db.run(
+        "INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash) VALUES (?, ?, ?, ?, ?, 190000, '[]', '2027-03-20', 190000, 0, 'offres/lot.pdf', ?, ?, ?, ?, 'genese', ?)",
+        [id, t.network.id, t.propertyId, i + 1, buyer.id, NOW.toISOString(), t.alexId, NOW.toISOString(), `agent:${t.alexId}`, `empreinte-${i}`],
+      );
+    }
+    let max = 0;
+    const strict = Object.create(t.db) as typeof t.db;
+    const guard = (params: readonly unknown[] | undefined) => {
+      max = Math.max(max, params?.length ?? 0);
+      if ((params?.length ?? 0) > 100) throw new Error('too many SQL variables');
+    };
+    strict.all = async (sql, params) => (guard(params), t.db.all(sql, params));
+    strict.first = async (sql, params) => (guard(params), t.db.first(sql, params));
+    strict.run = async (sql, params) => (guard(params), t.db.run(sql, params));
+    const s = new conformite.SignalementSoupcon(strict, t.acces, t.journal, { now: t.now });
+    expect(await s.report(t.agent, t.mandateRef, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });
+    const list = await s.list(t.conformite);
+    if (!list.ok) throw new Error(list.code);
+    expect(list.value[0]!.lines).toBeGreaterThan(120);
+    const id = list.value[0]!.reportId;
+    expect(await s.checkFrozen(t.conformite, id)).toEqual({ ok: true, value: { intact: true, changed: [], missing: [], added: [] } });
+    expect(max).toBeLessThanOrEqual(100);
+    // La dernière offre, au-delà du premier lot, changée de force : vue.
+    for (const trigger of (await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'offer_register'"))) await t.db.exec(`DROP TRIGGER IF EXISTS ${trigger.name}`);
+    await t.db.run('UPDATE offer_register SET amount_eur = 100000 WHERE id = ?', [offers[119]]);
+    expect(await s.checkFrozen(t.conformite, id)).toMatchObject({ ok: true, value: { intact: false, changed: [{ table: 'offer_register', key: offers[119] }] } });
+  });
+
   it('[R94] [R17] pour une société, l’identité de chaque bénéficiaire effectif est figée aussi', async () => {
     const t = await setup();
     const owner = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Associé', lastName: 'Exemple' });
