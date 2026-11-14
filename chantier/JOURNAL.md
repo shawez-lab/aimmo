@@ -1062,3 +1062,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-14 00:31 · VOIE 2 : RC31 (et fusion de RC30), 41de6511 (#553), 666741ce (#550), relancé non
 - 2026-11-14 01:27 · BR63 · fusionnée (#554, 0a1e4978) : la lecture des appels reçus porte le passage de main de l'assistant vocal ; rendez-vous suivi par ses décalages jusqu'à aujourd'hui (prévu, décalé, annulé, tenu, absent, introuvable), sujets à reprendre (vides sans accord), référence du bien pour son agent ou la direction [R248, R242, R16, R13, R201] ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5883 tests) · prochaine : à choisir
 - 2026-11-14 01:27 · voie 1 · fin de séance : BR63 fusionnée ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-14 01:27 · voie 1 · relance refusée par le contrôle des permissions, un essai, pas de deuxième ; le passage planifié reprendra
