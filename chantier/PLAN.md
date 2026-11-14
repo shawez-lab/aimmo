@@ -1392,6 +1392,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : seul l'agent en activité, pour lui seul ; la direction refusée, refus au journal et dit en mots [R16] (test) ; réglages rangés puis relus ; contact chaud non réglable, minute hors du jour refusée, en mots [R412, R413] (test) ; la liste ne rend que les fiches que l'agent voit en entier [R16] (test) ; le détail d'un envoi ne rend que les notifications de cet envoi pour cet agent, un envoi d'un autre agent dit inconnu (test) ; champ inattendu refusé, corps trop gros refusé (test) ; le journal ne garde ni texte ni personne de plus [R13] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien.
 
+### BR67 · L'écran des notifications : réglages, liste, et la page du lien
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR66
+- Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R415, R16, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de BR66. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Un bloc « Mes notifications » sur l'accueil de l'agent ; son script est servi à part (`/app/notifications.js`) et chargé au geste ; l'application tient son budget. Le lien d'une notification (`/notifications/<envoi>`) renvoie vers `/app/#envoi=<envoi>`, sans rien lire ; l'application, une fois l'agent entré, ouvre le bloc sur cet envoi et retire l'envoi de la barre d'adresse. Aucune règle nouvelle ni migration ; rien n'est envoyé.
+- Objectif : l'agent règle ses heures calmes et le niveau de chaque sorte, relit ses notifications et ouvre la fiche en un geste, et le lien d'une notification mène à ce qu'elle annonce.
+- Critères : chargé au geste, budget de l'application et de la page tenus, sans innerHTML [R201] (test) ; heures calmes dites en heures et rangées en minutes du jour, chaque sorte réglable, le contact chaud dit « toujours tout de suite » et jamais envoyé [R412, R413] (test) ; la liste dit sorte, état et date en mots, et ouvre la fiche (test) ; le lien `/notifications/<envoi>` renvoie vers l'application sans rien lire, un identifiant mal formé est inconnu (test) ; ouvert par le lien, le bloc montre l'envoi et l'adresse est nettoyée (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine (test) ; texte reçu posé en texte, un champ mal formé n'est pas dit (test) ; `docs/API.md` à jour (test).
+- Attend : rien (vrai service : H57).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
