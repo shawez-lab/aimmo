@@ -909,6 +909,16 @@ function inlineImageEnd(lx: Lexer): number {
   return start + length + m[0].length;
 }
 
+function weight(v: Value): number {
+  if (Array.isArray(v)) return v.reduce<number>((n, x) => n + weight(x), 1);
+  if (v instanceof Dict) {
+    let n = 1;
+    for (const x of v.m.values()) n += weight(x);
+    return n;
+  }
+  return 1;
+}
+
 const INITIAL_TEXT_STATE: TextState = { font: NO_DECODER, size: 0, charSpacing: 0, wordSpacing: 0, scale: 1, leading: 0, rise: 0, ctm: [1, 0, 0, 1, 0, 0] };
 
 async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>, initial: TextState): Promise<void> {
@@ -1011,7 +1021,8 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   for (;;) {
     const t = lx.next();
     if (t === undefined) break;
-    file.work.charge(1);
+    // Un tableau ou un dictionnaire coûte chacun de ses éléments, à chaque lecture.
+    file.work.charge(t instanceof Op ? 1 : weight(t));
     if (!(t instanceof Op)) {
       operands.push(t);
       if (operands.length > 64) operands = operands.slice(-64);

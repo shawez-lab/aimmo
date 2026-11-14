@@ -515,6 +515,17 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     ]);
     const started = Date.now();
     expect(await pdfPagesText(bytes, { maxWork: 1_000_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    // Un grand tableau TJ lu à chaque appel d'un formulaire compte chacun de ses éléments.
+    const zeros = Array(100_000).fill('0').join(' ');
+    const big = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
+      HELV,
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf [(a) ${zeros} (b)] TJ ET`, flate: true },
+      { dict: '', data: Array(100).fill('/Fm Do').join(' ') },
+    ]);
+    expect(await pdfPagesText(big, { maxWork: 300_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
