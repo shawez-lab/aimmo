@@ -106,6 +106,7 @@ import type { ScoreServices } from '../../core/src/score-adresse/index.ts';
 import { phasesRoutes, type PhasesRoute } from './phases.ts';
 import { datesRoutes, scenariosRoutes, type ScenariosRoute } from './scenarios.ts';
 import { regionsRoutes, type RegionsRoute } from './regions.ts';
+import { neufViagerRoutes, type NeufViagerRoute } from './neuf-viager.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
@@ -127,6 +128,7 @@ import {
   type PartnerUploadStore,
 } from './partenaires.ts';
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
+import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
@@ -1398,6 +1400,24 @@ function phasesRoutesDef(): RouteDef[] {
   }));
 }
 
+/**
+ * Les routes du neuf et du viager (BR75) : le rôle contrôlé avant le corps, refus au journal [R16] ; l'expert du viager
+ * passe par la mise en relation de M18, avec le stockage des fichiers des partenaires, et n'est jamais proposé sans
+ * lui [R542].
+ */
+function neufViagerRoutesDef(partenaires: PartenairesOptions | null): RouteDef[] {
+  return neufViagerRoutes().map((r: NeufViagerRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => {
+      const files = partenaires?.files ?? null;
+      const relation = files ? new MiseEnRelation(s.db, new Annuaire(s.db, files, s.journal, { now: s.now }), files, s.journal, { now: s.now }) : null;
+      return r.handle({ db: s.db, journal: s.journal, now: s.now, relation }, viewer, params, request);
+    },
+  }));
+}
+
 /** Les routes de l'ouverture région par région (BR12) : la direction seule, par la couche métier [R16]. */
 function regionsRoutesDef(): RouteDef[] {
   return regionsRoutes().map((r: RegionsRoute) => ({
@@ -2232,6 +2252,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...phasesRoutesDef(),
     ...scenariosRoutesDef(),
     ...regionsRoutesDef(),
+    ...neufViagerRoutesDef(config.partenaires ?? null),
     ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
