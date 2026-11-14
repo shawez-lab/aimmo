@@ -1,0 +1,336 @@
+import { readFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
+import { describe, expect, it } from 'vitest';
+import { excerptsOf, verifyReading } from '../src/avant-contrat/lecture-projet.ts';
+import { PDF_TEXT_REFUSALS, PDF_TEXT_REFUSAL_TEXT, pagesForReading, pagesToRead, pdfPagesText, type PdfPageText } from '../src/documents/texte-pdf.ts';
+
+// Des PDF inventés, écrits à la main : aucune vraie personne, aucun vrai bien.
+
+type Obj = string | { dict: string; data: Uint8Array | string; flate?: boolean };
+
+const enc = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** Un PDF : l'objet i porte le numéro i + 1. */
+function pdf(objects: Obj[], opts: { trailer?: string; root?: number; xref?: boolean } = {}): Uint8Array {
+  const parts: Uint8Array[] = [enc('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n')];
+  const offsets: number[] = [];
+  let at = parts[0]!.length;
+  objects.forEach((o, i) => {
+    offsets.push(at);
+    let chunk: Uint8Array;
+    if (typeof o === 'string') chunk = enc(`${i + 1} 0 obj\n${o}\nendobj\n`);
+    else {
+      const raw = typeof o.data === 'string' ? enc(o.data) : o.data;
+      const data = o.flate ? new Uint8Array(deflateSync(raw)) : raw;
+      const filter = o.flate ? ' /Filter /FlateDecode' : '';
+      chunk = concat([enc(`${i + 1} 0 obj\n<< ${o.dict}${filter} /Length ${data.length} >>\nstream\n`), data, enc('\nendstream\nendobj\n')]);
+    }
+    parts.push(chunk);
+    at += chunk.length;
+  });
+  if (opts.xref !== false) {
+    let x = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const o of offsets) x += `${String(o).padStart(10, '0')} 00000 n \n`;
+    x += `trailer\n<< /Size ${objects.length + 1} /Root ${opts.root ?? 1} 0 R ${opts.trailer ?? ''} >>\nstartxref\n${at}\n%%EOF\n`;
+    parts.push(enc(x));
+  }
+  return concat(parts);
+}
+
+const HELV = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+
+/** Catalogue, arbre d'une page par contenu, police Helvetica en WinAnsi. */
+function simple(contents: string[], opts: { flate?: boolean } = {}): Uint8Array {
+  const n = contents.length;
+  const kids = contents.map((_, i) => `${4 + i * 2} 0 R`).join(' ');
+  const objs: Obj[] = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${kids}] /Count ${n} >>`, HELV];
+  contents.forEach((c, i) => {
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`);
+    objs.push({ dict: '', data: c, flate: opts.flate ?? false });
+  });
+  return pdf(objs);
+}
+
+const textOf = (pages: PdfPageText[]) => pages.map((p) => p.text);
+
+async function pages(bytes: Uint8Array) {
+  const r = await pdfPagesText(bytes);
+  if (!r.ok) throw new Error(`refusé : ${r.code}`);
+  return r.value.pages;
+}
+
+/** Une table ToUnicode : bfchar et bfrange, codes sur deux octets. */
+const TO_UNICODE = `/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Adobe-Identity-UCS def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+3 beginbfchar
+<0003> <0020>
+<0010> <00E9>
+<0011> <20AC>
+endbfchar
+2 beginbfrange
+<0024> <003D> <0041>
+<0044> <005D> <0061>
+endbfrange
+1 beginbfrange
+<0060> <0069> <0030>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end`;
+
+/** Encode un texte dans les codes de la table ci-dessus. */
+function cid(text: string): string {
+  let hex = '';
+  for (const ch of text) {
+    let code: number;
+    if (ch === ' ') code = 0x03;
+    else if (ch === 'é') code = 0x10;
+    else if (ch === '€') code = 0x11;
+    else if (ch >= 'A' && ch <= 'Z') code = 0x24 + ch.charCodeAt(0) - 65;
+    else if (ch >= 'a' && ch <= 'z') code = 0x44 + ch.charCodeAt(0) - 97;
+    else if (ch >= '0' && ch <= '9') code = 0x60 + ch.charCodeAt(0) - 48;
+    else throw new Error(ch);
+    hex += code.toString(16).padStart(4, '0');
+  }
+  return `<${hex}>`;
+}
+
+function composite(content: string, opts: { toUnicode?: boolean } = {}): Uint8Array {
+  const tu = opts.toUnicode === false ? '' : ' /ToUnicode 6 0 R';
+  return pdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [4 0 R] /Count 1 >>',
+    `<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+NotoSans /Encoding /Identity-H /DescendantFonts [7 0 R]${tu} >>`,
+    '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F2 3 0 R >> >> /Contents 5 0 R >>',
+    { dict: '', data: content, flate: true },
+    { dict: '', data: TO_UNICODE, flate: true },
+    '<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEF+NotoSans /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> >>',
+  ]);
+}
+
+describe('RC40 · le texte des pages d’un PDF', () => {
+  it('lit une page en clair, ligne par ligne', async () => {
+    const p = await pages(simple(['BT /F1 12 Tf 72 720 Td (Projet de compromis de vente) Tj 0 -14 Td (Prix : 245 000 euros) Tj ET']));
+    expect(p).toEqual([{ page: 1, text: 'Projet de compromis de vente\nPrix : 245 000 euros' }]);
+  });
+
+  it('lit un flux compressé et plusieurs pages', async () => {
+    const p = await pages(simple(['BT /F1 12 Tf 72 720 Td (Page un) Tj ET', 'BT /F1 12 Tf 72 720 Td (Page deux) Tj ET'], { flate: true }));
+    expect(textOf(p)).toEqual(['Page un', 'Page deux']);
+    expect(p.map((x) => x.page)).toEqual([1, 2]);
+  });
+
+  it('suit l’ordre de l’arbre des pages, pas celui des numéros d’objets, avec ressources héritées et tableau de contenus', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [9 0 R 3 0 R] /Count 3 /Resources << /Font << /F1 4 0 R >> >> >>',
+      '<< /Type /Page /Parent 2 0 R /Contents [5 0 R 6 0 R] >>',
+      HELV,
+      { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Troisieme page,) Tj ET' },
+      { dict: '', data: 'BT /F1 12 Tf 72 720 Td (meme ligne) Tj ET', flate: true },
+      '<< /Type /Page /Parent 9 0 R /Contents 8 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Premiere page) Tj ET' },
+      '<< /Type /Pages /Parent 2 0 R /Kids [7 0 R 10 0 R] /Count 2 >>',
+      '<< /Type /Page /Parent 9 0 R /Contents 11 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf 72 720 Td (Deuxieme page) Tj ET' },
+    ]);
+    expect(textOf(await pages(bytes))).toEqual(['Premiere page', 'Deuxieme page', 'Troisieme page, meme ligne']);
+  });
+
+  it('lit le texte d’un formulaire imbriqué, et refuse une boucle de formulaires', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm1 6 0 R >> >> /Contents 5 0 R >>',
+      HELV,
+      { dict: '', data: 'BT /F1 12 Tf 72 760 Td (En-tete) Tj ET q /Fm1 Do Q' },
+      { dict: '/Type /XObject /Subtype /Form /BBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >>', data: 'BT /F1 12 Tf 72 700 Td (Dans le formulaire) Tj ET', flate: true },
+    ]);
+    expect(textOf(await pages(bytes))).toEqual(['En-tete\nDans le formulaire']);
+    const loop = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm1 6 0 R >> >> /Contents 5 0 R >>',
+      HELV,
+      { dict: '', data: 'BT /F1 12 Tf (Texte) Tj ET /Fm1 Do' },
+      { dict: '/Type /XObject /Subtype /Form /Resources << /XObject << /Fm1 6 0 R >> >>', data: '/Fm1 Do' },
+    ]);
+    expect(await pages(loop)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('lit WinAnsi, les chaînes échappées, les espaces de TJ et les opérateurs de ligne', async () => {
+    const content = String.raw`BT /F1 12 Tf 72 720 Td (Acte pr\351vu le 15/09/2027 \(au plus tard\)) Tj T* [(Montant)-300(du d)20(\351p\364t : 12 250 \200)] TJ (Ligne suivante) ' 1 2 (Encore une) " ET`;
+    expect(textOf(await pages(simple([content])))).toEqual(['Acte prévu le 15/09/2027 (au plus tard)\nMontant du dépôt : 12 250 €\nLigne suivante\nEncore une']);
+  });
+
+  it('saute une image en ligne sans lire ses octets comme du texte', async () => {
+    const content = 'BT /F1 12 Tf 72 720 Td (Avant) Tj ET BI /W 2 /H 1 /BPC 8 /CS /G ID \x28\x29\xff\x00 EI BT /F1 12 Tf 72 700 Td (Apres) Tj ET';
+    expect(textOf(await pages(simple([content])))).toEqual(['Avant\nApres']);
+  });
+
+  it('lit une police composite par sa table ToUnicode (bfchar, bfrange), accents et euro compris', async () => {
+    const content = `BT /F2 11 Tf 72 720 Td ${cid('Prix de vente 245000 €')} Tj 0 -14 Td [${cid('Acte pr')} -10 ${cid('évu')}] TJ ET`;
+    expect(textOf(await pages(composite(content)))).toEqual(['Prix de vente 245000 €\nActe prévu']);
+  });
+
+  it('[R12] une police composite sans ToUnicode : page illisible, jamais un texte deviné', async () => {
+    const content = `BT /F2 11 Tf 72 720 Td ${cid('Prix 245000')} Tj ET`;
+    expect(await pages(composite(content, { toUnicode: false }))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('[R12] un code absent de la table ToUnicode : page illisible', async () => {
+    const content = 'BT /F2 11 Tf 72 720 Td <00440045FFF0> Tj ET';
+    expect(await pages(composite(content))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('[R12] une police incorporée sans encodage, ou un glyphe inconnu : page illisible ; les autres pages restent lues', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R 8 0 R 10 0 R] /Count 3 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /TrueType /BaseFont /QWERTY+Calibri /FontDescriptor 6 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf (\x01\x02\x03) Tj ET' },
+      '<< /Type /FontDescriptor /FontName /QWERTY+Calibri /FontFile2 7 0 R >>',
+      { dict: '', data: 'fausse police' },
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 9 0 R >> >> /Contents 11 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /BaseEncoding /WinAnsiEncoding /Differences [65 /g12 /eacute] >> >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 9 0 R >> >> /Contents 12 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf (zAz) Tj ET' },
+      { dict: '', data: 'BT /F1 12 Tf (pr) Tj (Bvu) Tj ET' },
+    ]);
+    const p = await pages(bytes);
+    expect(p).toEqual([
+      { page: 1, text: null, reason: 'undecodable' },
+      { page: 2, text: null, reason: 'undecodable' },
+      { page: 3, text: 'prévu' },
+    ]);
+    expect(pagesToRead(p)).toEqual([1, 2]);
+    expect(pagesForReading(p)).toEqual(['', '', 'prévu']);
+  });
+
+  it('[R12] une page d’image seule (un scan) est dite sans texte, à lire', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>',
+      { dict: '', data: 'q 595 0 0 842 0 0 cm /Im1 Do Q' },
+      { dict: '/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8', data: '\x80' },
+    ]);
+    expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'no_text' }]);
+  });
+
+  it('[R12] un contenu au filtre non lu : page illisible', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`,
+      { dict: '/Filter /LZWDecode', data: 'xyz' },
+      HELV,
+    ]);
+    expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  it('lit les objets rangés dans un flux d’objets (PDF 1.5), sans table de références classique', async () => {
+    const inner = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', HELV];
+    let body = '';
+    const head: string[] = [];
+    inner.forEach((o, i) => {
+      head.push(`${i + 1} ${body.length}`);
+      body += o + '\n';
+    });
+    const header = head.join(' ') + '\n';
+    const bytes = concat([
+      enc('%PDF-1.5\n'),
+      enc(`6 0 obj\n<< /Type /ObjStm /N 4 /First ${header.length} /Filter /FlateDecode /Length 0 >>\nstream\n`),
+      new Uint8Array(deflateSync(enc(header + body))),
+      enc('\nendstream\nendobj\n'),
+      (() => {
+        const data = deflateSync(enc('BT /F1 12 Tf 72 720 Td (Dans un flux d objets) Tj ET'));
+        return concat([enc(`5 0 obj\n<< /Length ${data.length} /Filter /FlateDecode >>\nstream\n`), new Uint8Array(data), enc('\nendstream\nendobj\n')]);
+      })(),
+      enc('7 0 obj\n<< /Type /XRef /Size 8 /Root 1 0 R /W [1 2 1] /Length 0 >>\nstream\n\nendstream\nendobj\nstartxref\n0\n%%EOF\n'),
+    ]);
+    expect(textOf(await pages(bytes))).toEqual(['Dans un flux d objets']);
+  });
+
+  it('refuse en mots, sans exception : chiffré, pas un PDF, trop gros, trop de pages, bombe de décompression, abîmé', async () => {
+    const one = simple(['BT /F1 12 Tf (Texte) Tj ET']);
+    const encrypted = pdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [] /Count 0 >>', '<< /Filter /Standard /V 2 /R 3 >>'], { trailer: '/Encrypt 3 0 R' });
+    expect(await pdfPagesText(encrypted)).toEqual({ ok: false, rule: null, code: 'encrypted' });
+    expect(await pdfPagesText(enc('Bonjour, ceci est un texte.'))).toEqual({ ok: false, rule: null, code: 'not_pdf' });
+    expect(await pdfPagesText(one, { maxBytes: 100 })).toEqual({ ok: false, rule: null, code: 'too_large' });
+    expect(await pdfPagesText(simple(['BT ET', 'BT ET', 'BT ET']), { maxPages: 2 })).toEqual({ ok: false, rule: null, code: 'too_many_pages' });
+    const bomb = simple(['BT /F1 12 Tf (' + 'a'.repeat(2_000_000) + ') Tj ET'], { flate: true });
+    expect(bomb.length).toBeLessThan(20_000);
+    expect(await pdfPagesText(bomb, { maxInflatedBytes: 1_000_000 })).toEqual({ ok: false, rule: null, code: 'inflate_limit' });
+    expect(await pdfPagesText(enc('%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R\nendobj\n%%EOF'))).toEqual({ ok: false, rule: null, code: 'unreadable' });
+    expect(await pdfPagesText(one.subarray(0, 60))).toEqual({ ok: false, rule: null, code: 'unreadable' });
+    const cycle = pdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Pages /Kids [2 0 R] /Count 1 >>']);
+    expect(await pdfPagesText(cycle)).toEqual({ ok: false, rule: null, code: 'unreadable' });
+    expect(await pdfPagesText('pas des octets' as unknown as Uint8Array)).toEqual({ ok: false, rule: null, code: 'not_pdf' });
+    for (const code of PDF_TEXT_REFUSALS) expect(PDF_TEXT_REFUSAL_TEXT[code]).toMatch(/\.$/);
+  });
+
+  it('un flux compressé abîmé rend la page illisible, pas le fichier', async () => {
+    const bad = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+      { dict: '/Filter /FlateDecode', data: 'pas du tout compressé' },
+      HELV,
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf (Lisible) Tj ET' },
+    ]);
+    expect(await pages(bad)).toEqual([
+      { page: 1, text: null, reason: 'undecodable' },
+      { page: 2, text: 'Lisible' },
+    ]);
+  });
+
+  it('[R511] le texte tiré du PDF suffit à la prélecture : un prix retrouvé sur sa page est proposé, une page illisible reste à lire', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>',
+      HELV,
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>',
+      { dict: '', data: 'BT /F1 11 Tf 72 720 Td (Compromis de vente) Tj 0 -14 Td (Le prix de vente est fix\\351 \\340 245 000 euros.) Tj ET', flate: true },
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F2 7 0 R >> >> /Contents 8 0 R >>',
+      '<< /Type /Font /Subtype /Type0 /BaseFont /Inconnue /Encoding /Identity-H >>',
+      { dict: '', data: 'BT /F2 11 Tf <00440045> Tj ET' },
+    ]);
+    const r = await pdfPagesText(bytes);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const texts = pagesForReading(r.value.pages);
+    expect(excerptsOf(texts).map((e) => e.page)).toEqual([1]);
+    const read = verifyReading(texts, { priceEur: { value: 245000, page: 1 } });
+    expect(read.proposal.priceEur).toEqual({ value: 245000, page: 1 });
+    expect(verifyReading(texts, { priceEur: { value: 245000, page: 2 } }).proposal.priceEur).toBeNull();
+    expect(pagesToRead(r.value.pages)).toEqual([2]);
+  });
+
+  it('ne range rien et n’écrit rien : une fonction pure, sans base ni journal', async () => {
+    expect(pdfPagesText.length).toBe(1);
+    const a = await pdfPagesText(simple(['BT /F1 12 Tf (Texte) Tj ET']));
+    const b = await pdfPagesText(simple(['BT /F1 12 Tf (Texte) Tj ET']));
+    expect(a).toEqual(b);
+    const source = readFileSync(new URL('../src/documents/texte-pdf.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/^import /m);
+  });
+});
