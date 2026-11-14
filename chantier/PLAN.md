@@ -1413,7 +1413,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR69 · Les réclamations dans la fiche : ranger, suivre l'échéance, répondre, remettre le médiateur
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#566, `12832bbb`). Codex 2 P2 corrigés (une panne du serveur ou une réponse illisible dite incertaine, la liste relue ; les lectures comptées par bloc, pour qu'une écriture finie sur une autre fiche n'arrête pas celle-ci), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5966 tests). L'application pèse 48 967 octets compressés sur 49 152 : un prochain bloc de la fiche passe par `lazyBlock`. Restent : l'écran du réglage du délai et du médiateur par la direction ; une réclamation rangée sur une fiche réunie ne se voit que sur la fiche où elle a été rangée.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX58, BR01
 - Cahier : Conformité, réclamations et médiateur (HX58) ; R606, R607, R16, R13, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR01 (« Écran à faire »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Aujourd'hui les routes `/v1/securite/reclamations` existent mais aucun écran ne les appelle : un agent ne peut ni ranger une réclamation reçue, ni voir son échéance, ni noter la réponse, ni dire qu'il a remis la proposition du médiateur. Un bloc « Réclamations » sur la fiche, script servi à part (`/app/reclamations.js`), chargé au geste. Il lit la liste et ne garde que les réclamations rangées sur cette fiche. L'application est à 127 octets de son budget : les chargeurs des blocs « Appels reçus » et « Notes vocales » passent par un chargeur commun, que le nouveau bloc reprend. Le réglage du délai et du médiateur par la direction reste à faire. Aucune règle nouvelle ni migration ; rien n'est envoyé.
