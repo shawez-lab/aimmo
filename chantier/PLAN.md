@@ -1903,7 +1903,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC41 · Nom de glyphe hérité jamais lu, chaîne vide sans séparateur
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#577, `2379dd8d`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6078 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC40
 - Cahier : M10 Compromis et acte ; Intelligence artificielle (secours sans IA) ; R12.
 - Décidé (2026-11-14, voie 2) : deux remarques de Codex sur le dernier commit relu de #574, vues seulement après la fusion de RC40. P1 : `/constructor` dans les Differences était lu comme un glyphe connu (propriété héritée) et rendait un texte inventé ; la table des glyphes n'est plus lue que par ses propres noms. P2 : une chaîne vide ne place ni espace ni ligne. Changent seulement `documents/texte-pdf.ts` et son test.
