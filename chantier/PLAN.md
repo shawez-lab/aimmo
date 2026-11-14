@@ -1372,6 +1372,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : la lecture rend seulement les visites en ligne prises, avec un bien lisible, pas encore rattachées, fiches réunies comprises (test) ; agent qui ne suit pas la fiche refusé, refus au journal [R16] (test) ; le rattachement par la route range la visite et son bon, un second est refusé en mots [R40] (test) ; un bien que la diffusion refuse : refusé en mots [R42] (test) ; l'écran : chargé au geste, budget tenu, texte reçu posé en texte, chaque refus dit en mots, sans code ni identifiant [R201] (test) ; `docs/API.md` à jour (test des routes écrites).
 - Attend : rien.
 
+### BR65 · Les notifications aux agents passent chaque minute
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX27, SV15, RC33
+- Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R414, R225, R26, R13.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de RC33 et les « Restent » de HX27 (« branchement au planificateur de chaque minute ») et de SV15 (« construire `ControleEnvois` avec `AgentPushTrialBox` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Aujourd'hui `Notifications` n'est construit nulle part : aucune notification rangée ne part, même vers la boîte d'essai, et le contact chaud « en moins d'une minute » [R412] ne peut pas tenir avec un déclencheur au quart d'heure. Le déclencheur du Worker passe à chaque minute (toujours un seul) ; à chaque minute, en mode essai, le passage des notifications (`packages/api/src/notifications.ts`) rattrape (`catchUp`) puis envoie (`flush`), par un contrôle central qui n'a que la boîte d'essai des notifications et aucun canal vers une personne [R225, R26]. Le planificateur horaire et la publication ne passent qu'aux minutes 0, 15, 30 et 45, comme avant. Une erreur du passage est écrite au journal et n'empêche pas le planificateur. Aucune règle nouvelle ni migration.
+- Objectif : un contact chaud ou un message reçu arrive à l'agent dans la minute, en mode essai dans la boîte d'essai, et les notifications groupées partent à leur heure.
+- Critères : un contact chaud rangé est envoyé au passage de la minute suivante, une seule fois [R412] (test) ; heures calmes tenues par le passage [R413] (test) ; seule la boîte d'essai reçoit, rien ne part vers un téléphone [R225, R26] (test) ; hors mode essai, rien ne passe (test) ; le planificateur et la publication ne passent qu'aux quarts d'heure, et le passage des notifications à chaque minute (test) ; une panne du passage est au journal et le planificateur passe quand même [R13] (test) ; un seul déclencheur, chaque minute (test).
+- Attend : rien (vrai service : H57).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
