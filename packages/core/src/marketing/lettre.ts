@@ -35,7 +35,7 @@ import { ControleEnvois } from '../envoi/controle.ts';
 import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
-import { checkText } from '../envoi/texte.ts';
+import { checkText, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -227,6 +227,20 @@ function figuresOf(content: LetterContent): (string | number)[] {
   const cells = [...content.prices.flatMap((p) => p.cells), ...(content.valueTracking ? [content.valueTracking.cell] : [])];
   for (const c of cells) out.push(c.median, c.q1, c.q3, c.sales, euros(c.median), euros(c.q1), euros(c.q3), c.dvfLastSale, c.source);
   return out;
+}
+
+/**
+ * Le texte où chaque nom de lieu de la base cité perd ses mots composés à trait d'union (« Saint-Pierre-de-Varennes »,
+ * « Pierre-de-Bresse ») : un prénom pris dans un nom de lieu composé n'est pas le nom d'une personne [R09]. Un mot
+ * composé égal au prénom, au nom ou au nom complet d'une personne (« Jean-Pierre ») reste, un nom seul ou écrit sans
+ * trait d'union aussi : côté prudent.
+ */
+export function withoutCompoundPlaces(text: string, places: readonly string[], names: readonly string[]): string {
+  const known = new Set(names.map((n) => plain(n).trim()));
+  const masked = (place: string): string =>
+    place.replace(/[\p{L}'’]+(?:-[\p{L}'’]+)+/gu, (word) => (known.has(plain(word)) ? word : ' '));
+  const unique = [...new Set(places.map((p) => p.trim()).filter((p) => p.includes('-')))].sort((a, b) => b.length - a.length);
+  return unique.reduce((out, place) => out.split(place).join(masked(place)), text);
 }
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -527,8 +541,14 @@ export class LettreInformation {
     // Aucun nom de personne du réseau dans un contenu public [R09, R15].
     const people = await this.db.all<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM persons WHERE network_id = ?', [viewer.networkId]);
     const clientNames = people.flatMap((x) => [x.first_name, x.last_name, x.first_name && x.last_name ? `${x.first_name} ${x.last_name}` : null]).filter((x): x is string => typeof x === 'string' && x.trim().length > 1);
+    // Les noms se cherchent sur le texte où les lieux composés de la base sont mis à part (« Saint-Pierre », RC38) ;
+    // tout le reste du contrôle lit le texte entier.
+    const placeNames = [...properties.flatMap((p) => (p.city ? [p.city] : [])), ...prices.flatMap((p) => [p.commune, ...p.cells.map((c) => c.zone.name)])];
+    const forNames = withoutCompoundPlaces(withoutMentions, placeNames, clientNames);
+    const nameProblems = (names: readonly string[]): number => checkText(forNames, { audience: 'public', clientNames: names }).filter((p) => p.rule === 'R09').length;
     const problem =
-      checkText(withoutMentions, { audience: 'public', figures: figuresOf(content), clientNames }).find((p) => p.rule !== 'length') ??
+      checkText(withoutMentions, { audience: 'public', figures: figuresOf(content) }).find((p) => p.rule !== 'length') ??
+      (nameProblems(clientNames) > nameProblems([]) ? { rule: 'R09' } : undefined) ??
       checkText(withoutMentions, { audience: 'client', channel: 'email' }).find((p) => p.rule === 'R06');
     if (problem) return { ok: false, rule: problem.rule, code: 'texte' };
     await appendEvent(this.journal, { type: 'lettre.magazine', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { properties: properties.length, communes: prices.length } }, this.now);

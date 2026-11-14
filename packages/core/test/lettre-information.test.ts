@@ -15,7 +15,7 @@ import {
 import { PrixRegroupes, type LatLon } from '../src/attirer/index.ts';
 import type { EstimatedKind, Sale, SalesCoverage, SalesSource } from '../src/estimation/fourchette.ts';
 import { VALUE_TRACKING_PURPOSE } from '../src/mandats/suivi-valeur.ts';
-import { MAGAZINE_TITLE, euros, LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, type LetterContent } from '../src/marketing/index.ts';
+import { MAGAZINE_TITLE, euros, LETTER_FOOTER_ROOM, LETTER_MENTION_ROOM, LETTER_MAX_LENGTH, LETTER_PURPOSE, LettreInformation, euroAmounts, fitLetter, letterText, pricesFromBase, withoutCompoundPlaces, type LetterContent } from '../src/marketing/index.ts';
 import type { PublicCell } from '../src/attirer/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -453,6 +453,38 @@ describeWithSqlite('HX53 · lettre d’information et magazine des biens, en mod
     expect(ok.ok).toBe(true);
     expect(ok.ok && ok.html.includes('Dupontel')).toBe(false);
     expect(ok.ok && ok.html.split('<body>')[1]!.includes('@')).toBe(false);
+  });
+
+  it('[R09] RC38 : un nom de lieu composé ne bloque plus le magazine, un nom de personne seul toujours', async () => {
+    const tirer = async (cities: string[], people: { firstName: string; lastName?: string }[]) => {
+      const t = await setup();
+      for (const [i, city] of cities.entries()) await t.property(`B${i + 1}`, { ...MAISON, city });
+      for (const p of people) await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, ...p });
+      return t.lettre.magazine(t.direction);
+    };
+    // Un prénom ou un nom pris dans un nom de commune composé : le magazine sort, la commune y est.
+    const pierre = await tirer(['Pierre-de-Bresse'], [{ firstName: 'Pierre', lastName: 'Dupontel' }]);
+    expect(pierre.ok && pierre.html.includes('Pierre-de-Bresse')).toBe(true);
+    const martin = await tirer(['Saint-Martin-du-Mont', 'Talant'], [{ firstName: 'Mila', lastName: 'Martin' }]);
+    expect(martin).toMatchObject({ ok: true, properties: 2 });
+    expect(martin.ok && martin.html.includes('Saint-Martin-du-Mont')).toBe(true);
+    // Une commune qui est le nom d'une personne, un mot composé égal à son prénom composé, un lieu sans trait
+    // d'union : refusé, côté prudent.
+    expect(await tirer(['Dupontel'], [{ firstName: 'Mila', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+    expect(await tirer(['Jean-Pierre'], [{ firstName: 'Jean-Pierre', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+    expect(await tirer(['Saint Pierre'], [{ firstName: 'Pierre' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+    expect(await tirer(['Pierre Dupontel'], [{ firstName: 'Pierre', lastName: 'Dupontel' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+    // Les mêmes lieux sans personne de ce nom sortent : c'est bien le nom qui refuse.
+    for (const city of ['Dupontel', 'Jean-Pierre', 'Saint Pierre', 'Pierre Dupontel']) expect(await tirer([city], [{ firstName: 'Mila', lastName: 'Noël' }])).toMatchObject({ ok: true, properties: 1 });
+    // Un lieu composé à côté ne couvre pas le nom seul cité ailleurs.
+    expect(await tirer(['Saint-Pierre', 'Pierre'], [{ firstName: 'Pierre' }])).toEqual({ ok: false, rule: 'R09', code: 'texte' });
+  });
+
+  it('[R09] RC38 : un quartier composé de la base ne bloque pas non plus', () => {
+    const text = 'Les prix au m² de Talant et de ses quartiers :\n- Saint-Martin, maison\n- Martin, maison';
+    expect(withoutCompoundPlaces(text, ['Talant', 'Saint-Martin'], ['Martin'])).toBe('Les prix au m² de Talant et de ses quartiers :\n-  , maison\n- Martin, maison');
+    expect(withoutCompoundPlaces('Saint-Martin', ['Saint-Martin'], ['Saint-Martin'])).toBe('Saint-Martin');
+    expect(withoutCompoundPlaces('Pont-de-Pany et Mâlain', ['Pont-de-Pany', 'Mâlain'], [])).toBe('  et Mâlain');
   });
 
   it('[R586] seule la direction ouvre une édition ; le journal porte l’issue et sa règle, jamais le texte ni le mail', async () => {
