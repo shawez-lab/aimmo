@@ -279,6 +279,90 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(textOf(await pages(bytes))).toEqual(['Dans un flux d objets']);
   });
 
+  it('police changée dans q … Q : la police d’avant revient après Q', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+      HELV,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /BaseEncoding /WinAnsiEncoding /Differences [49 /nine] >> >>',
+      { dict: '', data: 'BT /F1 12 Tf (Prix :) Tj q /F2 12 Tf (1) Tj Q (1) Tj ET' },
+    ]);
+    expect(textOf(await pages(bytes))).toEqual(['Prix :91']);
+  });
+
+  it('[R12] une table ToUnicode donnée mais illisible ne cède pas au codage de base : page illisible', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 6 0 R >>',
+      { dict: '', data: 'BT /F1 12 Tf (Prix : 100000) Tj ET' },
+      { dict: '/Filter /LZWDecode', data: 'illisible' },
+    ]);
+    expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    const empty = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode /Identity-H >>',
+      { dict: '', data: 'BT /F1 12 Tf (Prix : 100000) Tj ET' },
+    ]);
+    expect(await pages(empty)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
+  describe('versions d’un objet (fichier modifié par ajouts)', () => {
+    /** Un flux d'objets qui range les objets donnés, par numéro. */
+    function objStm(num: number, objs: [number, string][]): Uint8Array {
+      let body = '';
+      const head: string[] = [];
+      for (const [n, o] of objs) {
+        head.push(`${n} ${body.length}`);
+        body += o + '\n';
+      }
+      const header = head.join(' ') + '\n';
+      const data = new Uint8Array(deflateSync(enc(header + body)));
+      return concat([enc(`${num} 0 obj\n<< /Type /ObjStm /N ${objs.length} /First ${header.length} /Filter /FlateDecode /Length ${data.length} >>\nstream\n`), data, enc('\nendstream\nendobj\n')]);
+    }
+    const stream = (num: number, text: string) => enc(`${num} 0 obj\n<< /Length ${text.length} >>\nstream\n${text}\nendstream\nendobj\n`);
+    const PAGE = (contents: number) => `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 3 0 R >> >> /Contents ${contents} 0 R >>`;
+    const base = () => [
+      enc('%PDF-1.5\n'),
+      enc('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 >>\nendobj\n'),
+      enc(`3 0 obj\n${HELV}\nendobj\n`),
+      stream(5, 'BT /F1 12 Tf (Prix : 100000) Tj ET'),
+      stream(6, 'BT /F1 12 Tf (Prix : 200000) Tj ET'),
+    ];
+
+    it('deux versions en clair : la dernière écrite, celle de l’ajout, est lue', async () => {
+      const bytes = concat([...base(), enc(`4 0 obj\n${PAGE(5)}\nendobj\n`), enc('%%EOF\n'), enc(`4 0 obj\n${PAGE(6)}\nendobj\n`), enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n')]);
+      expect(textOf(await pages(bytes))).toEqual(['Prix : 200000']);
+    });
+
+    it('une version en clair et une compressée : la page est illisible, jamais l’ancien prix', async () => {
+      const bytes = concat([...base(), enc(`4 0 obj\n${PAGE(5)}\nendobj\n`), objStm(7, [[4, PAGE(6)]]), enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n')]);
+      expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    });
+
+    it('deux versions dans deux flux d’objets : illisible si elles diffèrent, lue si elles sont identiques', async () => {
+      const differ = concat([...base(), objStm(7, [[4, PAGE(5)]]), objStm(8, [[4, PAGE(6)]]), enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n')]);
+      expect(await pages(differ)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+      const same = concat([...base(), objStm(7, [[4, PAGE(6)]]), objStm(8, [[4, PAGE(6)]]), enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n')]);
+      expect(textOf(await pages(same))).toEqual(['Prix : 200000']);
+    });
+
+    it('une liste de pages en deux versions ambiguës : refusée', async () => {
+      const bytes = concat([
+        enc('%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 >>\nendobj\n'),
+        enc(`3 0 obj\n${HELV}\nendobj\n4 0 obj\n${PAGE(5)}\nendobj\n`),
+        stream(5, 'BT /F1 12 Tf (Texte) Tj ET'),
+        objStm(7, [[2, '<< /Type /Pages /Kids [] /Count 0 >>']]),
+        enc('trailer\n<< /Root 1 0 R >>\n%%EOF\n'),
+      ]);
+      expect(await pdfPagesText(bytes)).toEqual({ ok: false, rule: null, code: 'unreadable' });
+    });
+  });
+
   it('refuse en mots, sans exception : chiffré, pas un PDF, trop gros, trop de pages, bombe de décompression, abîmé', async () => {
     const one = simple(['BT /F1 12 Tf (Texte) Tj ET']);
     const encrypted = pdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [] /Count 0 >>', '<< /Filter /Standard /V 2 /R 3 >>'], { trailer: '/Encrypt 3 0 R' });

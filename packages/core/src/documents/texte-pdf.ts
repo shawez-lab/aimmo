@@ -304,6 +304,10 @@ async function inflate(raw: string, budget: Budget): Promise<string | null> {
 class PdfFile {
   readonly objects = new Map<number, Value>();
   readonly trailers: Dict[] = [];
+  /** Les objets en plusieurs versions dont aucune ne peut être dite en vigueur. */
+  readonly ambiguous = new Set<number>();
+  /** Vrai dès qu'une lecture a suivi une référence vers un objet ambigu. */
+  touchedAmbiguous = false;
   private readonly decoded = new Map<Stream, string | null>();
 
   constructor(
@@ -359,6 +363,8 @@ class PdfFile {
 
   /** Les objets rangés dans les flux d'objets ; un objet écrit en clair garde la priorité. */
   async unpackObjectStreams(): Promise<void> {
+    const direct = new Set(this.objects.keys());
+    const packed = new Map<number, string>();
     for (const v of [...this.objects.values()]) {
       if (!(v instanceof Stream) || this.name(v.dict.get('Type')) !== 'ObjStm') continue;
       const data = await this.decode(v);
@@ -378,8 +384,18 @@ class PdfFile {
       } catch {
         continue;
       }
+      const sorted = [...pairs].sort((a, b) => a[1] - b[1]);
       for (const [num, off] of pairs) {
-        if (this.objects.has(num)) continue;
+        const next = sorted.find((p) => p[1] > off)?.[1] ?? data.length;
+        const text = data.slice(first + off, first + next).trim();
+        const seen = packed.get(num);
+        // Deux versions d'un même objet, l'une en clair et l'autre compressée, ou dans deux flux différents : sans la
+        // table des références, rien ne dit laquelle est en vigueur. Lecture prudente : l'objet est ambigu.
+        if (direct.has(num) || (seen !== undefined && seen !== text)) {
+          this.ambiguous.add(num);
+          continue;
+        }
+        packed.set(num, text);
         try {
           this.objects.set(num, new Lexer(data, first + off).value());
         } catch {
@@ -392,6 +408,7 @@ class PdfFile {
   get(v: Value | undefined, depth = 0): Value | undefined {
     if (v instanceof Ref) {
       if (depth > 16) return undefined;
+      if (this.ambiguous.has(v.n)) this.touchedAmbiguous = true;
       return this.get(this.objects.get(v.n), depth + 1);
     }
     return v;
@@ -642,11 +659,14 @@ async function fontDecoder(file: PdfFile, fontValue: Value | undefined): Promise
   const composite = subtype === 'Type0';
   if (subtype === 'Type3') return NO_DECODER;
   const fallback = composite ? null : simpleTable(file, font);
-  const tu = file.get(font.get('ToUnicode'));
-  if (tu instanceof Stream) {
+  const tu = font.get('ToUnicode') === undefined ? undefined : file.get(font.get('ToUnicode'));
+  if (tu !== undefined) {
+    // Une table donnée mais illisible ne cède jamais au codage de base : le texte pourrait différer du document.
+    if (!(tu instanceof Stream)) return NO_DECODER;
     const data = await file.decode(tu);
     const cmap = data === null ? null : parseCMap(data);
-    if (cmap && cmap.map.size > 0) return cmapDecoder(cmap, composite ? 2 : 1, fallback);
+    if (!cmap || cmap.map.size === 0) return NO_DECODER;
+    return cmapDecoder(cmap, composite ? 2 : 1, fallback);
   }
   if (composite || !fallback) return NO_DECODER;
   return {
@@ -680,6 +700,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   const xobjects = resources ? file.dict(resources.get('XObject')) : null;
   const decoders = new Map<string, FontDecoder>();
   let font: FontDecoder = NO_DECODER;
+  const saved: FontDecoder[] = [];
   let tm = [1, 0, 0, 1, 0, 0];
   let lm = [1, 0, 0, 1, 0, 0];
   const lx = new Lexer(content);
@@ -726,6 +747,13 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
     }
     const nums = operands.filter((o): o is number => typeof o === 'number');
     switch (t.v) {
+      case 'q':
+        if (saved.length > 256) throw new Broken();
+        saved.push(font);
+        break;
+      case 'Q':
+        font = saved.pop() ?? font;
+        break;
       case 'BT':
         tm = [1, 0, 0, 1, 0, 0];
         lm = [1, 0, 0, 1, 0, 0];
@@ -843,6 +871,7 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
     chunks.push(d);
   }
   const st: PageState = { lines: [], line: '', lineY: null, moved: false, shown: 0, undecodable: false };
+  if (file.touchedAmbiguous) return { page: n, text: null, reason: 'undecodable' };
   try {
     await readContent(file, chunks.join('\n'), resources, st, 0, new Set());
   } catch (error) {
@@ -850,7 +879,7 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
     return { page: n, text: null, reason: 'undecodable' };
   }
   st.lines.push(st.line);
-  if (st.undecodable) return { page: n, text: null, reason: 'undecodable' };
+  if (st.undecodable || file.touchedAmbiguous) return { page: n, text: null, reason: 'undecodable' };
   const text = tidy(st.lines);
   if (text === '') return { page: n, text: null, reason: 'no_text' };
   return { page: n, text };
@@ -858,22 +887,33 @@ async function pageText(file: PdfFile, page: Dict, resources: Dict | null, n: nu
 
 class TooManyPages extends Error {}
 
-function collectPages(file: PdfFile, node: Dict, resources: Dict | null, out: { page: Dict; resources: Dict | null }[], seen: Set<Dict>, max: number, depth: number): void {
+interface FoundPage {
+  page: Dict;
+  resources: Dict | null;
+  /** La page, ou ses ressources héritées, lues à travers un objet ambigu. */
+  ambiguous: boolean;
+}
+
+function collectPages(file: PdfFile, node: Dict, resources: Dict | null, inherited: boolean, out: FoundPage[], seen: Set<Dict>, max: number, depth: number): void {
   if (seen.has(node) || depth > 64) throw new Broken();
   seen.add(node);
+  file.touchedAmbiguous = false;
   const res = file.dict(node.get('Resources')) ?? resources;
   const kids = file.get(node.get('Kids'));
   const type = file.name(node.get('Type'));
+  const ambiguous = inherited || file.touchedAmbiguous;
   if (type === 'Page' || (type === null && !Array.isArray(kids))) {
-    out.push({ page: node, resources: res });
+    out.push({ page: node, resources: res, ambiguous });
     if (out.length > max) throw new TooManyPages();
     return;
   }
-  if (!Array.isArray(kids)) throw new Broken();
+  // Une liste de pages lue à travers un objet ambigu ne dit pas quelles pages sont en vigueur : refusé.
+  if (!Array.isArray(kids) || ambiguous) throw new Broken();
   for (const k of kids) {
+    file.touchedAmbiguous = false;
     const d = file.dict(k);
     if (!d) throw new Broken();
-    collectPages(file, d, res, out, seen, max, depth + 1);
+    collectPages(file, d, res, ambiguous || file.touchedAmbiguous, out, seen, max, depth + 1);
   }
 }
 
@@ -894,11 +934,16 @@ export async function pdfPagesText(bytes: Uint8Array, limits: Partial<PdfLimits>
     const catalog = file.catalog();
     const root = catalog ? file.dict(catalog.get('Pages')) : null;
     if (!root) return refuse('unreadable');
-    const found: { page: Dict; resources: Dict | null }[] = [];
-    collectPages(file, root, null, found, new Set(), lim.maxPages, 0);
+    if (file.touchedAmbiguous) return refuse('unreadable');
+    const found: FoundPage[] = [];
+    collectPages(file, root, null, false, found, new Set(), lim.maxPages, 0);
     if (found.length === 0) return refuse('unreadable');
     const pages: PdfPageText[] = [];
-    for (let i = 0; i < found.length; i++) pages.push(await pageText(file, found[i]!.page, found[i]!.resources, i + 1));
+    for (let i = 0; i < found.length; i++) {
+      const f = found[i]!;
+      file.touchedAmbiguous = false;
+      pages.push(f.ambiguous ? { page: i + 1, text: null, reason: 'undecodable' } : await pageText(file, f.page, f.resources, i + 1));
+    }
     return { ok: true, value: { pages } };
   } catch (error) {
     if (error instanceof TooBig) return refuse('inflate_limit');
