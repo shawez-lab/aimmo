@@ -150,29 +150,31 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
       save({ code: measure.value + '_' + fresh(), label: label, measure: measure.value, delayHours: h, active: active }, 'Engagement ajouté.');
     });
     body.appendChild(renderScenarios());
+    body.appendChild(renderReclamations());
   }
-  /* BR57 · les scénarios automatiques : script servi à part (\`/app/scenarios.js\`), chargé au premier geste [R201]. */
-  var scenariosScreen = null;
-  function renderScenarios() {
+  /* Un écran de la direction posé sous les engagements, servi à part et chargé au premier geste [R201] :
+     les scénarios automatiques (BR57, \`/app/scenarios.js\`), le réglage des réclamations (BR70, \`/app/reclamations-reglage.js\`). */
+  var screens = {};
+  function subScreen(title, intro, label, src, name) {
     var box = el('section', null, 'bloc');
-    box.appendChild(el('h4', 'Scénarios automatiques'));
-    box.appendChild(el('p', 'Un message ou une tâche après un nouveau contact, un nouveau projet, une visite faite ou un mandat signé. Chaque version s’essaie sur le mois passé avant de s’allumer.', 'doux'));
+    box.appendChild(el('h4', title));
+    box.appendChild(el('p', intro, 'doux'));
     var inner = el('div');
-    var b = button('Ouvrir les scénarios', function () {
+    var b = button(label, function () {
       if (b.disabled) return;
-      if (scenariosScreen) { scenariosScreen.show(inner); return; }
+      if (screens[src]) { screens[src].show(inner); return; }
       b.disabled = true;
       var mine = t.session();
       var s = el('script');
-      s.setAttribute('src', '/app/scenarios.js');
+      s.setAttribute('src', src);
       s.addEventListener('load', function () {
-        var make = globalThis.AIMMO_SCENARIOS;
-        try { delete globalThis.AIMMO_SCENARIOS; } catch (e) { /* rien */ }
+        var make = globalThis[name];
+        try { delete globalThis[name]; } catch (e) { /* rien */ }
         b.disabled = false;
         if (mine !== t.session()) return;
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
-        scenariosScreen = make({ el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, date: date, session: t.session });
-        scenariosScreen.show(inner);
+        screens[src] = make({ el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, date: date, session: t.session });
+        screens[src].show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', OFFLINE, 'etat')); } });
       box.appendChild(s);
@@ -180,6 +182,12 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
     box.appendChild(b);
     box.appendChild(inner);
     return box;
+  }
+  function renderScenarios() {
+    return subScreen('Scénarios automatiques', 'Un message ou une tâche après un nouveau contact, un nouveau projet, une visite faite ou un mandat signé. Chaque version s’essaie sur le mois passé avant de s’allumer.', 'Ouvrir les scénarios', '/app/scenarios.js', 'AIMMO_SCENARIOS');
+  }
+  function renderReclamations() {
+    return subScreen('Réclamations : délai et médiateur', 'Le délai pour répondre à une réclamation, et le médiateur de la consommation proposé au client quand elle n’est pas réglée.', 'Ouvrir le réglage', '/app/reclamations-reglage.js', 'AIMMO_RECLAMATIONS_REGLAGE');
   }
   function show(message) {
     var mine = t.session();
