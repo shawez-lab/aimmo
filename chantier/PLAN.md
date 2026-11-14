@@ -1509,7 +1509,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR78 · La grille de mes programmes neufs, à l'écran de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#580, `a6e2a578`). Codex 1 P0 corrigé (un écart de frais négatif, frais du neuf plus hauts que l'ancien, est dit avec son signe), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6099 tests). Restent : l'écran de la direction (barèmes, ouverture d'un programme, table d'espérance), l'écran du viager, la grille dans les annonces.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR75
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M16 ; M18 ; R543, R544, R16, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR77 (« les écrans du neuf et du viager »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Découpé en trois : l'écran de l'agent (cette tâche), celui de la direction (barèmes, ouverture d'un programme, table d'espérance) et celui du viager, chacun une tâche à part. L'application pèse déjà 49 042 octets compressés sur 49 152 : aucune porte dans `app.js`. Un script servi à part, `/app/neuf.js` (`AIMMO_NEUF`), chargé au geste depuis l'écran « Gagner des mandats » (script servi à part), partie « Programmes neufs », comme la pige et « Mon site ». Il lit `GET /v1/neuf/programmes` et `GET /v1/neuf/programmes/<id>`, et écrit par `POST /v1/neuf/programmes/<id>/lots` ; il ne calcule aucun frais, ne trie rien : il met en forme les chiffres reçus (centimes en euros, centièmes de m² en m²). Aucune règle nouvelle ni migration.
