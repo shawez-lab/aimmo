@@ -80,6 +80,11 @@ const USEFUL =
   /travaux|ravalement|toiture|fa[çc]ade|ascenseur|r[ée]fection|r[ée]novation|isolation|[ée]tanch[ée]it[ée]|chaudi[èe]re|chauffage|remplacement|mise aux normes|devis|[ée]tude|proc[ée]dure|contentieux|tribunal|assignation|litige|expertise|impay[ée]|arri[ée]r[ée]|d[ée]biteur|recouvrement|charges|budget|appel de fonds|appels de fonds|fonds de travaux|syndic|zone|servitude|pr[ée]emption|alignement|secteur|monument|emplacement r[ée]serv[ée]|\bvot[ée]|adopt[ée]|approuv[ée]|d[ée]cide/i;
 /** Une ligne qui porte de quoi identifier une personne ou un compte ne part jamais au lecteur [R15]. */
 const NEVER_SENT = /\biban\b|\bbic\b|\brib\b|\bswift\b|\bFR\d{2}(?:[  ]?[0-9A-Z]{4}){2,}|passeport|carte (?:nationale )?d.identit[ée]|titre de s[ée]jour|permis de conduire|\bn[ée]e?s? (?:le|à|a)\b|date de naissance|lieu de naissance|s[ée]curit[ée] sociale|num[ée]ro fiscal/i;
+/**
+ * Une adresse : un numéro suivi d'un type de voie (« 12 rue du centre », « lot 4, 3 bis place … »), ou un code postal
+ * qui n'est pas un montant. La ligne n'est jamais envoyée ni citée : l'adresse d'un copropriétaire ne sort pas [R15].
+ */
+const ADDRESS = /(?<![\p{L}\d])\d{1,4}\s*(?:bis|ter|quater)?\s*,?\s*(?:rue|avenue|av|boulevard|bd|place|cour|cours|all[ée]e|impasse|chemin|quai|route|square|passage|cit[ée]|faubourg|mail|promenade|voie|sentier|r[ée]sidence|lotissement|hameau|lieu-dit|parvis|ruelle|venelle|clos|mont[ée]e|traverse|esplanade|rond-point)(?![\p{L}])|(?<!\d)(?<!\d[\s.,\u00a0\u202f])(?:0[1-9]|[1-8]\d|9[0-5]|2[AB])\d{3}(?![\d.,]|\s*(?:€|euros?|eur\b|ttc\b|ht\b|\d))/iu;
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.\p{L}{2,}/gu;
 /** Un téléphone, un numéro de compte ou de personne : 9 chiffres ou plus coupés de séparateurs, ou précédé de « + ». */
 const LONG_NUMBER = /\+\s?\(?\d[\d\s.\/()-]*\d|\(?\d[\d\s.\/()-]*\d\)?/g;
@@ -202,7 +207,7 @@ export function coproExcerptsOf(docs: readonly SourceDocument[]): CoproExcerpt[]
       linesOf(page).forEach((raw, i) => {
         const l = raw.trim();
         if (lines.length >= MAX_LINES_PER_PAGE || total + lines.length >= MAX_LINES) return;
-        if (l.length === 0 || !USEFUL.test(l) || NEVER_SENT.test(l)) return;
+        if (l.length === 0 || !USEFUL.test(l) || NEVER_SENT.test(l) || ADDRESS.test(l)) return;
         const text = skeletonOf(l).text.slice(0, MAX_LINE_CHARS);
         if (/\p{L}{2,}|\d/u.test(text.replace(/…/g, ''))) lines.push({ line: i + 1, text });
       });
@@ -226,7 +231,7 @@ function quotableLine(docs: readonly SourceDocument[], document: unknown, page: 
   const lines = linesOf(doc.pages[page - 1]!);
   if (!isInt(line, 1, lines.length)) return null;
   const l = lines[line - 1]!.trim();
-  if (l.length === 0 || l.length > MAX_QUOTE_CHARS || NEVER_SENT.test(l) || skeletonOf(l).masked) return null;
+  if (l.length === 0 || l.length > MAX_QUOTE_CHARS || NEVER_SENT.test(l) || ADDRESS.test(l) || skeletonOf(l).masked) return null;
   return l;
 }
 

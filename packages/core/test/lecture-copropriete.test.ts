@@ -14,6 +14,9 @@ const PV: SourceDocument = {
       "Procès-verbal de l'assemblée générale ordinaire du 15 janvier 2027.",
       'Étaient présents : M. Paul Exemple (lot 4), Mme Jeanne Essai (lot 7), joignable au 06 11 22 33 44, jeanne@exemple.test.',
       'M. Paul Exemple est débiteur de 3 200 € de charges impayées.',
+      'Charges impayées du lot 4 au 12 rue du centre : 3 200 €.',
+      'Charges impayées du lot 9, 3 bis, place de la cour : 1 100 €.',
+      'Charges impayées du lot 2 à 21000 : 900 €.',
     ].join('\n'),
     [
       "Résolution n° 7 : l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000 € TTC, exigible le 1er septembre 2027.",
@@ -67,7 +70,7 @@ async function setup(reader: CoproReader | null, o: { timeoutMs?: number } = {})
 describe('RC42 · ce qui part au lecteur', () => {
   it('[R15] aucun nom, aucune civilité, aucun mail ni téléphone ; une ligne à IBAN ou à naissance jamais envoyée', () => {
     const sent = JSON.stringify(coproExcerptsOf(DOCS));
-    for (const leak of ['Paul', 'Exemple', 'Jeanne', 'Essai', 'Porte', 'exemple.test', '06 11', '22 33 44', 'IBAN', 'FR76', '1970', 'Mme', 'M.']) expect(sent).not.toContain(leak);
+    for (const leak of ['12 rue', 'rue du centre', 'place de la cour', '21000', 'Paul', 'Exemple', 'Jeanne', 'Essai', 'Porte', 'exemple.test', '06 11', '22 33 44', 'IBAN', 'FR76', '1970', 'Mme', 'M.']) expect(sent).not.toContain(leak);
     expect(sent).not.toMatch(/\bM\b/);
     // Ce qui sert passe : la décision, son montant et son échéance.
     expect(sent).toContain("l'assemblée décide le ravalement de la façade sur rue pour un montant de 48 000 € TTC, exigible le 1er septembre 2027.");
@@ -112,6 +115,10 @@ describe('RC42 · ce que rend le lecteur', () => {
     const bad = [
       // La ligne porte un nom : elle ne peut pas servir d'extrait.
       { topic: 'impayes', text: 'Des charges impayées de 3 200 €', document: 0, page: 1, line: 3 },
+      // La ligne porte une adresse, écrite en mots de la liste : jamais citée.
+      { topic: 'impayes', text: 'Des charges impayées de 3 200 €', document: 0, page: 1, line: 4 },
+      { topic: 'impayes', text: 'Des charges impayées de 1 100 €', document: 0, page: 1, line: 5 },
+      { topic: 'impayes', text: 'Des charges impayées de 900 €', document: 0, page: 1, line: 6 },
       { topic: 'travaux_votes', text: 'Des travaux de peinture sont votés', document: 0, page: 2, line: 6 },
       { topic: 'procedures', text: 'Vote contre', document: 0, page: 2, line: 3 },
       // Un nom inventé dans la phrase.
@@ -133,7 +140,7 @@ describe('RC42 · ce que rend le lecteur', () => {
     const r = verifyCoproReading(DOCS, { sentences: [...EXACT.sentences, EXACT.sentences[0], ...bad] });
     expect(r.sentences).toHaveLength(8);
     expect(r.dropped).toBe(bad.length + 1);
-    expect(JSON.stringify(r.sentences)).not.toMatch(/Essai|Exemple|Porte|Dupont|IBAN/);
+    expect(JSON.stringify(r.sentences)).not.toMatch(/Essai|Exemple|Porte|Dupont|IBAN|rue du centre|21000/);
   });
 
   it('[R448] un montant ou une échéance qui ne se lisent pas dans la ligne sont retirés, la phrase reste', () => {
