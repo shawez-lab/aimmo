@@ -1945,7 +1945,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC43 · La zone du plan d'urbanisme lue au Géoportail, jamais devinée
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-15) : fusionnée par la voie 1 (#581, `4f171a73`)
 - Reste : proposition #581 prête (`92c3f09c`). Codex 1 P1 corrigé (les secteurs d'une carte communale se lisent à `secteur-cc`, avec `typesect`, pas à `zone-urba`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6108 tests). Fusion refusée par le contrôle des permissions, un essai : à fusionner à l'étape 3 de la séance suivante si main n'a pas changé le code touché. Reste pour la voie 1 : brancher `GpuUrbanism` au Worker avec la position et le code INSEE de la collecte E03, et passer le fait à `prepare`.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX35
 - Cahier : M10 et M06, « copropriété et urbanisme résumés » (HX35) ; R449, R450, R15.
