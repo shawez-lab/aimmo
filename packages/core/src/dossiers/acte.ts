@@ -71,6 +71,23 @@ export function feeFrom(facts: Pick<DocumentFacts, 'feeEur'> | null): number | n
 }
 
 /**
+ * L'agent de la vente : celui qui tenait le bien le jour du compromis (RC37). Un agent parti après ce jour garde sa
+ * vente, même si le bien est passé depuis à la file de la direction ou à un autre agent (J11) : le premier passage du
+ * bien rangé par un départ dont le jour vient après le compromis dit qui le tenait ; sans passage après ce jour, c'est
+ * l'agent d'aujourd'hui. Lu par l'acte (N06) et par la commission prévue (K01), pour qu'ils disent le même agent.
+ */
+export async function saleAgentAt(db: SqlDatabase, networkId: string, propertyId: string, compromisOn: string): Promise<string | null> {
+  const handed = await db.first<{ from_agent_id: string }>(
+    `SELECT h.from_agent_id FROM agent_departure_handovers h JOIN agent_departures d ON d.id = h.departure_id
+     WHERE h.network_id = ? AND h.kind = 'property' AND h.subject_id = ? AND d.leaves_on > ?
+     ORDER BY d.leaves_on, h.at LIMIT 1`,
+    [networkId, propertyId, compromisOn],
+  );
+  if (handed) return handed.from_agent_id;
+  return (await db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]))?.agent_id ?? null;
+}
+
+/**
  * Les honoraires du mandat en vigueur le jour du compromis, tels qu'au document signé [R63], partagés par l'acte (N06)
  * et la commission prévue (K01). Un mandat encore dans son délai de rétractation sans demande écrite du vendeur n'est
  * pas en vigueur ; un mandat signé après le compromis non plus (loi Hoguet : le mandat écrit précède la négociation).
@@ -111,7 +128,7 @@ export interface Closing {
 }
 
 export type ActProblem =
-  | { ok: false; rule: null; code: 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'compromis_missing' | 'before_compromis' | 'already_closed' | 'not_under_offer' }
+  | { ok: false; rule: null; code: 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'compromis_missing' | 'before_compromis' | 'already_closed' | 'not_under_offer' | 'no_agent' }
   | { ok: false; rule: 'R58'; code: 'compromis_not_started' }
   | { ok: false; rule: 'R60'; code: 'incomplete'; missing: Piece[]; expired: Piece[]; unknown: string[]; identity: string }
   | { ok: false; rule: 'R63'; code: 'no_mandate_in_force' | 'fee_unknown' };
@@ -208,6 +225,12 @@ export class ActeVente {
     const fee = await mandateFeeAt(this.db, this.diffusion, g.file.network_id, g.file.property_id, compromis);
     if (!fee.ok) return blocked({ ok: false, rule: 'R63', code: fee.code });
     const decision = { mandateId: fee.mandateId };
+    // L'agent de la vente : celui de la commission prévue au compromis (K01) s'il y en a une, sinon celui qui tenait le
+    // bien le jour du compromis ; jamais le successeur d'un agent parti après ce jour (RC37).
+    const planned = await this.db.first<{ agent_id: string }>('SELECT agent_id FROM commissions WHERE file_id = ?', [fileId]);
+    const saleAgent = planned?.agent_id ?? (await saleAgentAt(this.db, g.file.network_id, g.file.property_id, compromis));
+    // Un bien encore dans la file de la direction, sans agent au compromis : l'acte attend sa réattribution.
+    if (!saleAgent) return blocked({ ok: false, rule: null, code: 'no_agent' });
     const facts = { feeCharge: fee.feeCharge };
     const iso = this.now().toISOString();
     // Tout ou rien (N13) : clôture, commission et bien vendu ensemble, car l'écran ne sait reprendre qu'un dossier
@@ -217,7 +240,7 @@ export class ActeVente {
       { sql: "INSERT INTO sale_file_closings (file_id, network_id, signed_on, proof_ref, aftersale, at, by) VALUES (?, ?, ?, ?, 'a_demarrer', ?, ?) ON CONFLICT (file_id) DO NOTHING", params: [fileId, g.file.network_id, signedOn, input.proofRef, iso, actorOf(viewer)] },
       {
         sql: "INSERT INTO sale_commissions (file_id, network_id, mandate_id, agent_id, fee_eur, fee_charge, due_on, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'due', ?) ON CONFLICT (file_id) DO NOTHING",
-        params: [fileId, g.file.network_id, decision.mandateId, property.agent_id, fee.feeEur, facts.feeCharge, earlier?.signed_on ?? signedOn, iso],
+        params: [fileId, g.file.network_id, decision.mandateId, saleAgent, fee.feeEur, facts.feeCharge, earlier?.signed_on ?? signedOn, iso],
       },
       // Le bien est vendu : la publication le montre ainsi au passage suivant (M07).
       { sql: "UPDATE properties SET status = 'sold', updated_at = ? WHERE id = ? AND status = 'under_offer'", params: [iso, g.file.property_id] },
