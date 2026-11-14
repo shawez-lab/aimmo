@@ -196,6 +196,45 @@ describeWithSqlite('HX58 · réclamations des clients et médiateur', () => {
     expect(await one(t, c.complaintId)).toMatchObject({ mediator: { cause: 'echeance', status: 'a_remettre' } });
   });
 
+  it('[R607] BR70 · la direction seule relit le réglage en service : rien d’inventé sans réglage, les réclamations en attente comptées', async () => {
+    const t = await setup();
+    expect(await t.reclamations.currentSettings(t.direction)).toEqual({
+      ok: true,
+      value: { version: null, setAt: null, responseDays: 30, mediator: null, offerText: null, waitingForMediator: 0 },
+    });
+    const c = await t.record({ receivedOn: '2027-03-09', receivedBy: 'courrier', summary: 'Visites trop rares.' });
+    t.setClock(at('2027-04-08'));
+    await t.reclamations.tick(t.network.id);
+    await t.reclamations.tick(t.network.id);
+    expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { mediator: null, offerText: null, waitingForMediator: 1 } });
+    for (const v of [t.agent, t.compliance, t.partner]) {
+      const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
+      expect(await t.reclamations.currentSettings(v)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+      expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse').length).toBe(before + 1);
+    }
+    await t.reclamations.configure(t.direction, { ...MEDIATOR, responseDays: 21 });
+    const read = await t.reclamations.currentSettings(t.direction);
+    expect(read).toEqual({
+      ok: true,
+      value: {
+        version: 1,
+        setAt: at('2027-04-08').toISOString(),
+        responseDays: 21,
+        mediator: { name: 'Médiation Exemple', site: 'https://mediation.example.test' },
+        offerText: mediatorOfferText({ name: 'Médiation Exemple', site: 'https://mediation.example.test' }),
+        waitingForMediator: 1,
+      },
+    });
+    // Ni motif ni nom de client dans la lecture [R13].
+    expect(JSON.stringify(read)).not.toContain('Visites');
+    // Le passage fait la proposition : plus rien n'attend.
+    await t.reclamations.tick(t.network.id);
+    expect((await one(t, c.complaintId)).mediator).not.toBeNull();
+    expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { waitingForMediator: 0 } });
+    await t.reclamations.configure(t.direction, { responseDays: 45, mediatorName: 'Médiation 21 Exemple', mediatorSite: 'https://mediation2.example.test' });
+    expect(await t.reclamations.currentSettings(t.direction)).toMatchObject({ ok: true, value: { version: 2, responseDays: 45, mediator: { name: 'Médiation 21 Exemple' } } });
+  });
+
   it('[R16] une réclamation d’une fiche réunie, même par plusieurs fusions, est dans la liste de l’agent du groupe', async () => {
     const t = await setup();
     const a = await t.store.createPerson({ networkId: t.network.id, firstName: 'Fiche', lastName: 'Ancienne' });

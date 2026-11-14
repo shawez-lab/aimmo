@@ -47,6 +47,8 @@ describeWithSqlite('BR01 · routes des réclamations et du gel des avoirs', () =
     const cases: [Who, string, string, unknown?][] = [
       ['conformite', 'GET', '/securite/reclamations'],
       ['alex', 'POST', '/securite/reclamations/reglage', MEDIATOR],
+      ['alex', 'GET', '/securite/reclamations/reglage'],
+      ['conformite', 'GET', '/securite/reclamations/reglage'],
       ['conformite', 'POST', `/securite/fiches/${t.personId}/reclamations`, { receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Retard.' }],
       ['sam', 'POST', `/securite/fiches/${t.personId}/reclamations`, { receivedOn: '2027-03-09', receivedBy: 'oral', summary: 'Retard.' }],
       ['alex', 'POST', '/securite/gel/registre', { publishedAt: '2027-03-01T00:00:00Z', entries: REGISTRE }],
@@ -74,6 +76,20 @@ describeWithSqlite('BR01 · routes des réclamations et du gel des avoirs', () =
     }
     const after = (await t.http('direction', 'GET', '/securite/reclamations')).body.data.find((c: { complaintId: string }) => c.complaintId === id);
     expect(after).toMatchObject({ status: 'ouverte', mediator: { status: 'a_remettre' } });
+  });
+
+  it('[R607] BR70 · la direction relit le réglage en service par la route', async () => {
+    const t = await setup();
+    expect((await t.http('direction', 'GET', '/securite/reclamations/reglage')).body).toEqual({
+      ok: true,
+      mode: 'essai',
+      data: { version: null, setAt: null, responseDays: 30, mediator: null, offerText: null, waitingForMediator: 0 },
+    });
+    await t.http('direction', 'POST', '/securite/reclamations/reglage', MEDIATOR);
+    const r = await t.http('direction', 'GET', '/securite/reclamations/reglage');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ version: 1, responseDays: 30, mediator: { name: 'Médiation Exemple', site: 'https://mediation.example.test' } });
+    expect(r.body.data.offerText).toContain('sans frais');
   });
 
   it('[R606] [R607] une réclamation rangée par la route a son échéance de la base ; le médiateur reste à remettre, rien ne part [R26]', async () => {

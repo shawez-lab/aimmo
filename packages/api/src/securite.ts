@@ -89,6 +89,12 @@ export function securiteRoutes(): SecuriteRoute[] {
       handle: async (s, v) => reply(await reclamations(s).list(v)),
     },
     {
+      method: 'GET',
+      pattern: new RegExp(`${R}/reglage$`),
+      name: 'securite.reclamations.reglage_lu',
+      handle: async (s, v) => reply(await reclamations(s).currentSettings(v)),
+    },
+    {
       method: 'POST',
       pattern: new RegExp(`${R}/reglage$`),
       name: 'securite.reclamations.reglage',

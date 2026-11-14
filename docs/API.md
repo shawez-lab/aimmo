@@ -275,6 +275,7 @@ La page publique de candidature est servie à `/rejoindre`, sans clé ni script 
 Sous `/v1/securite`, chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé : la proposition du médiateur passe par le contrôle central et les seuls canaux du mode essai, elle reste « à remettre » par l'agent [R26, R607].
 
 - `GET /reclamations` : la direction lit celles du réseau, l'agent celles des fiches qu'il suit, l'échéance la plus proche d'abord, avec leurs alertes et le médiateur.
+- `GET /reclamations/reglage` : la direction seule lit le réglage en service : `version` et `setAt` (ou `null`), `responseDays` (30 sans réglage), `mediator` (`{name, site}` ou `null`, jamais inventé), `offerText` (le texte de la proposition écrit par le code, ou `null`) et `waitingForMediator` (les réclamations qui attendent un médiateur) [R606, R607] (BR70).
 - `POST /reclamations/reglage` (`{responseDays, mediatorName, mediatorSite}`) : la direction règle le délai de réponse (1 à 60 jours) et le médiateur, par une nouvelle version [R607].
 - `POST /fiches/<id>/reclamations` (`{receivedOn: AAAA-MM-JJ, receivedBy: mail | courrier | message | oral, summary, reply?: {channel, conversationId}}`) : l'agent qui suit la fiche, ou la direction, range une réclamation ; l'échéance est écrite par la base et ne change plus [R606].
 - `POST /reclamations/<id>/reponse` (`{outcome: reglee | non_reglee, note}`) : la réponse, une fois. `POST /reclamations/<id>/mediateur-remis` : la proposition du médiateur remise au client.
