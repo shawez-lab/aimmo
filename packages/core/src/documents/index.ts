@@ -8,3 +8,4 @@ export * from './avenants.ts';
 export * from './conditions.ts';
 export * from './chronologie.ts';
 export * from './signature-en-ligne.ts';
+export * from './texte-pdf.ts';
