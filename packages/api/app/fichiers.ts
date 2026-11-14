@@ -122,6 +122,7 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
 <button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
 </section>
+<div id="remises-accueil"></div>
 ${ACTUALITES_HOME_HTML}${CLES_A_RENDRE_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
 <h3 id="titre-chiffres-accueil">Mes chiffres</h3>
 <p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
@@ -681,6 +682,9 @@ export const APP_JS = `'use strict';
   }
   function loadPlan(key, mine) { return part('plan', api('/v1/plan-du-jour', key), renderPlan, mine); }
   function day(key, mine) {
+    var ra = $('remises-accueil');
+    clear(ra);
+    ra.appendChild(lazyBlock('Mes remises négociées', '/app/remises.js', 'AIMMO_REMISES', ''));
     return Promise.all([
       // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
       loadPlan(key, mine).then(function (done) {
@@ -701,6 +705,7 @@ export const APP_JS = `'use strict';
   }
   function wipe() {
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    clear($('remises-accueil'));
     wipeFiche();
     wipeM08();
     wipeApres();

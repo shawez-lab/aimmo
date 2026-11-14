@@ -85,14 +85,28 @@ const SW_JS = swJs(AGENT_APP_CACHE, AGENT_APP_SHELL);
 
 /**
  * Le script servi sans ses lignes de commentaire (J14) : une ligne qui n'est qu'un commentaire, de ligne ou de bloc,
- * ne change rien à ce que le script fait ; la retirer garde l'application dans son budget [R201]. Rien d'autre n'est
- * touché : ni chaîne, ni code, ni commentaire en bout de ligne.
+ * ne change rien à ce que le script fait ; la retirer garde l'application dans son budget [R201]. Un commentaire de bloc
+ * sur plusieurs lignes, ouvert en tête de ligne et fermé en bout de ligne, part aussi (BR74) ; un bloc jamais fermé reste.
+ * Rien d'autre n'est touché : ni chaîne, ni code, ni commentaire en bout de ligne.
  */
 export function stripCommentLines(js: string): string {
-  return js
-    .split('\n')
-    .filter((line) => !/^\s*\/\/.*$/.test(line) && !/^\s*\/\*.*\*\/\s*$/.test(line))
-    .join('\n');
+  const lines = js.split('\n');
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^\s*\/\/.*$/.test(line) || /^\s*\/\*.*\*\/\s*$/.test(line)) continue;
+    // BR74 : un commentaire de bloc sur plusieurs lignes, ouvert seul en tête de ligne et fermé seul en bout de ligne.
+    if (/^\s*\/\*/.test(line) && !line.includes('*/')) {
+      let end = i + 1;
+      while (end < lines.length && !lines[end]!.includes('*/')) end++;
+      if (end < lines.length && /\*\/\s*$/.test(lines[end]!) && lines[end]!.indexOf('*/') === lines[end]!.lastIndexOf('*/')) {
+        i = end;
+        continue;
+      }
+    }
+    kept.push(line);
+  }
+  return kept.join('\n');
 }
 
 /**

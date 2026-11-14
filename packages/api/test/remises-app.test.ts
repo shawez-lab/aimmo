@@ -2,8 +2,8 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
-import { REMISES_CONFIRM, REMISES_LOST, REMISES_NONE_NOW, REMISES_RANDOM, REMISES_REFUSALS, REMISES_SCRIPT } from '../app/remises.ts';
-import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
+import { REMISES_CONFIRM, REMISES_ELSEWHERE, REMISES_LOST, REMISES_NONE_NOW, REMISES_NONE_TODAY, REMISES_RANDOM, REMISES_REFUSALS, REMISES_SCRIPT } from '../app/remises.ts';
+import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp, stripCommentLines } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : clé, fournisseurs, partenaires, bien, dates.
@@ -386,5 +386,137 @@ describe('BR73 · les remises négociées à l’écran', () => {
     const bad = await bien({ 'GET /v1/remises/biens/b1': ok({ propertyId: 'b1', moment: 'toujours', forAgent: [], forClient: [] }) });
     await bad.open();
     expect(bad.status()).toBe('Les remises ne se lisent pas pour le moment.');
+  });
+});
+
+/** L'agent, sur son accueil. */
+async function accueil(answers: Record<string, Answer> = {}) {
+  const { els, listeners, document } = fakeDocument(pageIds(HTML));
+  const calls: { method: string; url: string; body: Record<string, unknown> | null }[] = [];
+  const table: Record<string, Answer> = { 'GET /v1/remises': ok([ALWAYS, PHOTO, DEMENAGEUR, ARTISAN, { ...DEMENAGEUR, id: 'd7', moment: 'acte' }]), ...answers };
+  const ctx = context('agent', table, calls, document);
+  runInNewContext(JS, ctx);
+  listeners.DOMContentLoaded!();
+  await settle();
+  const block = () => els['remises-accueil']!.children.find((e) => e.tagName === 'section')!;
+  const press = async (b: FakeElement | undefined) => {
+    if (!b) throw new Error('bouton absent');
+    b.listeners.click!({});
+    await settle();
+  };
+  const open = async () => {
+    await press(btn(block(), 'Mes remises négociées'));
+    const s = scriptsOf(els.fiche!, '/app/remises.js');
+    if (s.length === 1 && !ctx.loaded) {
+      runInNewContext(REMISES_SCRIPT, ctx);
+      ctx.loaded = true;
+      s[0]!.listeners.load!({});
+      await settle();
+    }
+  };
+  const gets = () => calls.filter((c) => c.method === 'GET' && c.url.startsWith('/v1/remises'));
+  return { els, calls, block, open, press, gets, status: () => statusOf(block()), texts: () => block().textContent };
+}
+const ALWAYS = { ...PHOTO, id: 'd8', category: 'outil', supplier: 'Logiciel Inventé', title: 'Abonnement à prix réseau', terms: '30 % la première année.', source: 'Contrat du 4 janvier', moment: 'toujours' };
+
+describe('BR74 · mes remises de tous les jours, sur l’accueil de l’agent', () => {
+  it('[R201] le bloc de l’accueil passe par le chargeur commun et le même script ; rien n’est lu avant le geste ; budgets tenus', async () => {
+    expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
+    expect(budgetProblems({ html: '', js: REMISES_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(JS).not.toContain('/v1/remises');
+    expect(REMISES_SCRIPT).not.toContain('innerHTML');
+    const a = await accueil();
+    expect(a.block()).toBeDefined();
+    expect(a.gets()).toHaveLength(0);
+    await a.open();
+    expect(a.gets()).toEqual([{ method: 'GET', url: '/v1/remises', body: null }]);
+    await a.open();
+    expect(scriptsOf(a.els.fiche!, '/app/remises.js')).toHaveLength(1);
+    expect(a.gets()).toHaveLength(2);
+  });
+
+  it('[R266] seules les remises « toujours » pour l’agent sont montrées en entier : fournisseur, titre, conditions, source, fin', async () => {
+    const a = await accueil();
+    await a.open();
+    const articles = a.block().all().filter((e) => e.tagName === 'article');
+    expect(articles).toHaveLength(1);
+    const text = articles[0]!.textContent;
+    expect(text).toContain('Logiciel Inventé');
+    expect(text).toContain('Abonnement à prix réseau');
+    expect(text).toContain('30 % la première année.');
+    expect(text).toContain('Source : Contrat du 4 janvier');
+    expect(text).toContain('Jusqu’au 31/12/2027.');
+    expect(a.block().all().filter((e) => e.tagName === 'h5').map((e) => e.textContent)).toEqual(['Pour vous, tous les jours', 'Outil · Logiciel Inventé', 'Sur la page du bien, au bon moment']);
+    // Aucun bouton d'écart ici : rien ne s'écarte hors d'un bien.
+    expect(btn(a.block(), 'Écarter pour ce bien')).toBeUndefined();
+  });
+
+  it('[R267] Jamais vu : celles d’un moment du dossier ne sont que comptées, par moment, jamais montrées', async () => {
+    const a = await accueil();
+    await a.open();
+    const text = a.texts();
+    expect(text).toContain(REMISES_ELSEWHERE);
+    const items = a.block().all().filter((e) => e.tagName === 'li').map((e) => e.textContent);
+    expect(items).toEqual(['Mandat inscrit au registre : 1 pour vous, 2 pour vos clients.', 'Acte signé depuis moins de 90 jours : 1 pour vos clients.']);
+    expect(text).not.toContain('Photo Inventée');
+    expect(text).not.toContain('Cartons Inventés');
+    expect(text).not.toContain('Artisan Inventé');
+    // Une remise « toujours » marquée pour le client (rangée par erreur) n'est ni montrée ni comptée.
+    const odd = await accueil({ 'GET /v1/remises': ok([{ ...ALWAYS, beneficiary: 'client' }]) });
+    await odd.open();
+    expect(odd.block().all().some((e) => e.tagName === 'article' || e.tagName === 'li')).toBe(false);
+    expect(odd.status()).toBe(REMISES_NONE_TODAY);
+  });
+
+  it('aucune remise : dit en mots ; une remise mal formée n’est pas dite ; texte reçu posé en texte', async () => {
+    const empty = await accueil({ 'GET /v1/remises': ok([]) });
+    await empty.open();
+    expect(empty.status()).toBe(REMISES_NONE_TODAY);
+    const a = await accueil({ 'GET /v1/remises': ok([{ ...ALWAYS, supplier: INJECTED }, { ...ALWAYS, id: 'mal formé' }, { ...ALWAYS, id: 'd9', validUntil: 'demain' }, { ...PHOTO, id: 'd10', moment: 'inconnu' }, null, 'texte']) });
+    await a.open();
+    const articles = a.block().all().filter((e) => e.tagName === 'article');
+    expect(articles).toHaveLength(1);
+    expect(articles[0]!.textContent).toContain(INJECTED);
+    expect(a.block().all().some((e) => e.tagName === 'img' || e.tagName === 'li')).toBe(false);
+  });
+
+  it('[R16] un refus est dit en mots, jamais son code ; sans réseau, dit aussi', async () => {
+    const out = await accueil({ 'GET /v1/remises': no(403, { ok: false, rule: 'R16', code: 'agent_inactive' }) });
+    await out.open();
+    // Un agent sorti : la clé est refusée par l'application entière, le bloc vidé, rien de lu ne reste.
+    expect(out.els['remises-accueil']!.children).toHaveLength(0);
+    expect(out.els.erreur!.textContent).toBe('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.');
+    const role = await accueil({ 'GET /v1/remises': no(403, { ok: false, rule: 'R16', code: 'role' }) });
+    await role.open();
+    expect(role.status()).toBe(REMISES_REFUSALS.role);
+    const odd = await accueil({ 'GET /v1/remises': no(403, { ok: false, rule: 'R16', code: 'autre_chose' }) });
+    await odd.open();
+    expect(odd.status()).toBe('Les remises ne se lisent pas pour le moment.');
+    const off = await accueil({ 'GET /v1/remises': cut });
+    await off.open();
+    expect(off.status()).toBe('Pas de réseau. Réessayez dans un moment.');
+  });
+
+  it('le bloc est refait à chaque retour à l’accueil et vidé à la sortie', async () => {
+    const a = await accueil();
+    await a.open();
+    expect(a.texts()).toContain('Logiciel Inventé');
+    // Retour à la journée depuis une fiche : un bloc neuf, fermé, sans rien de lu.
+    a.els.retour!.listeners.click!({});
+    await settle();
+    expect(a.els['remises-accueil']!.children).toHaveLength(1);
+    expect(a.texts()).not.toContain('Logiciel Inventé');
+    expect(btn(a.block(), 'Mes remises négociées')).toBeDefined();
+    // Le script déjà chargé sert de nouveau, sans le recharger.
+    await a.open();
+    expect(scriptsOf(a.els.fiche!, '/app/remises.js')).toHaveLength(1);
+    expect(a.texts()).toContain('Logiciel Inventé');
+  });
+
+  it('[R201] un commentaire de bloc sur plusieurs lignes est retiré du script servi ; un bloc jamais fermé reste', () => {
+    expect(stripCommentLines('a();\n  /**\n   * doc\n   */\nb();')).toBe('a();\nb();');
+    expect(stripCommentLines('a();\n  /* ouvert\n  b(); /* x */ c();')).toBe('a();\n  /* ouvert\n  b(); /* x */ c();');
+    expect(stripCommentLines('a();\n  /* ouvert\n  b(); */ c();')).toBe('a();\n  /* ouvert\n  b(); */ c();');
+    expect(JS).not.toMatch(/^\s*\/\*\*?\s*$/m);
   });
 });
