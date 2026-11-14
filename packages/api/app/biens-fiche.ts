@@ -3,7 +3,8 @@
  * d'une fiche, pour garder le budget de l'application. Le serveur décide qui peut créer : l'écran n'a rien à vérifier
  * de plus que les chiffres saisis. Aucun envoi. Il ouvre aussi la préparation d'une séquence de prospection (BR34), dont
  * le script `/app/sequence-fiche.js` n'est chargé qu'au geste, et la recherche en langage courant d'un acquéreur (BR40),
- * dont le script `/app/recherche.js` n'est chargé qu'au geste.
+ * dont le script `/app/recherche.js` n'est chargé qu'au geste, et les visites réservées en ligne à rattacher (BR64), dont
+ * le script `/app/visites-en-ligne.js` n'est chargé qu'au geste.
  */
 export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
   home: 'Maison ou appartement',
@@ -204,6 +205,37 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     });
     inner.appendChild(open);
   }
+  var onlineTool = null, onlineBusy = false;
+  function onlineBlock(box, personId, projects) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Visites réservées en ligne'));
+    var inner = el('div');
+    var state = t.cState();
+    section.appendChild(inner);
+    section.appendChild(state);
+    box.appendChild(section);
+    var open = el('button', 'Voir les visites à rattacher');
+    open.setAttribute('type', 'button');
+    function show() { inner.removeChild(open); state.textContent = ''; onlineTool(inner, personId, projects); }
+    open.addEventListener('click', function () {
+      if (onlineTool) return show();
+      if (onlineBusy) return;
+      onlineBusy = true;
+      state.textContent = 'Chargement…';
+      var s = el('script');
+      s.setAttribute('src', '/app/visites-en-ligne.js');
+      s.addEventListener('load', function () {
+        onlineBusy = false;
+        var make = globalThis.AIMMO_VISITES_EN_LIGNE;
+        if (typeof make !== 'function') { state.textContent = 'Pas de réseau. Réessayez dans un moment.'; return; }
+        onlineTool = make(t);
+        show();
+      });
+      s.addEventListener('error', function () { onlineBusy = false; state.textContent = 'Pas de réseau. Réessayez dans un moment.'; });
+      section.appendChild(s);
+    });
+    inner.appendChild(open);
+  }
   return function (box, personId, f) {
     // La direction corrige ce qui est écrit ; une fiche sans aucun nom se remplit, avec ou sans elle.
     if (f && f.nameCorrectable === true && (f.firstName || f.lastName)) correctionBlock(box, personId, f);
@@ -265,6 +297,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     // La recherche en langage courant (BR40) : seulement sur un projet d'achat, pour le ranger au bon endroit.
     var buying = (f && Array.isArray(f.projects) ? f.projects : []).filter(function (p) { return p && p.kind === 'buy' && /^[A-Za-z0-9_-]{1,64}$/.test(String(p.id)); });
     if (buying.length) searchBlock(box, buying);
+    // Les visites réservées en ligne, rattachées à la recherche (BR64) : seulement avec un projet d'achat.
+    if (buying.length) onlineBlock(box, personId, buying);
   };
 };
 `;
