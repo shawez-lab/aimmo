@@ -32,6 +32,8 @@ import { PHASES_ENTRY_HTML, PHASES_JS } from './phases.ts';
 import { GUIDES_PHOTO_ENTRY_HTML, GUIDES_PHOTO_JS } from './guides-photo.ts';
 import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
 import { APPELS_RECUS_JS } from './appels-recus.ts';
+import { CHARGEUR_JS } from './chargeur.ts';
+import { RECLAMATIONS_JS } from './reclamations.ts';
 import { NOTES_VOCALES_JS } from './notes-vocales.ts';
 import { RECOMMANDATION_JS } from './recommandation.ts';
 import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
@@ -569,6 +571,8 @@ export const APP_JS = `'use strict';
     body.appendChild(appelsRecusBlock(personId));
     // Les notes vocales transcrites, relues au geste (BR62) [R16, R240].
     body.appendChild(notesVocalesBlock(personId));
+    // Les réclamations de la fiche : ranger, échéance, réponse, médiateur (BR69) [R16, R606, R607].
+    body.appendChild(reclamationsBlock(personId));
     // Le dépôt d'une pièce au coffre par l'agent de la fiche (L10) [R90].
     body.appendChild(coffreBlock(personId));
     // La fin de bail connue, raison écrite d'une relance d'ancien contact (G15) [R143].
@@ -2051,7 +2055,7 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
-${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECOMMANDATION_JS}${FINANCES_JS}
+${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${CHARGEUR_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECLAMATIONS_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });

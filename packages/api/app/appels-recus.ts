@@ -57,35 +57,9 @@ export const APPELS_RECUS_RDV_STATES = Object.freeze({
   introuvable: 'introuvable dans l’agenda : vérifiez-le.',
 });
 
-/** Le bloc de la fiche et son chargeur, posés dans le script de l'application : le moins possible [R201]. */
+/** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun (BR69) : le moins possible [R201]. */
 export const APPELS_RECUS_JS = `
-  var appelsRecus = null;
-  function appelsRecusBlock(personId) {
-    var box = el('section', null, 'bloc'), said = el('p', null, 'etat'), corps = el('div');
-    said.setAttribute('role', 'status');
-    var b = button('Appels reçus', function () {
-      if (appelsRecus) return appelsRecus(personId, corps, said);
-      var mine = session, s = document.createElement('script');
-      b.disabled = true;
-      said.textContent = 'Chargement…';
-      s.setAttribute('src', '/app/appels-recus.js');
-      s.addEventListener('load', function () {
-        b.disabled = false;
-        var make = globalThis.AIMMO_APPELS_RECUS;
-        if (mine !== session) return;
-        if (typeof make !== 'function') { said.textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; return; }
-        appelsRecus = make({ el: el, clear: clear, send: send, button: button, date: date, hour: hour, session: function () { return session; } });
-        appelsRecus(personId, corps, said);
-      });
-      s.addEventListener('error', function () { b.disabled = false; if (mine === session) said.textContent = 'Pas de réseau. Réessayez dans un moment.'; });
-      $('fiche').appendChild(s);
-    });
-    b.className = 'secondaire';
-    box.appendChild(b);
-    box.appendChild(said);
-    box.appendChild(corps);
-    return box;
-  }
+  function appelsRecusBlock(personId) { return lazyBlock('Appels reçus', '/app/appels-recus.js', 'AIMMO_APPELS_RECUS', personId); }
 `;
 
 /** Le script servi à part. Il ne lit que la route des appels reçus de cette fiche [R16]. */

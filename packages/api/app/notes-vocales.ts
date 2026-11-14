@@ -30,35 +30,9 @@ export const NOTES_VOCALES_LANGUAGES = Object.freeze({
   ro: 'roumain',
 });
 
-/** Le bloc de la fiche et son chargeur, posés dans le script de l'application : le moins possible [R201]. */
+/** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun (BR69) : le moins possible [R201]. */
 export const NOTES_VOCALES_JS = `
-  var notesVocales = null;
-  function notesVocalesBlock(personId) {
-    var box = el('section', null, 'bloc'), said = el('p', null, 'etat'), corps = el('div');
-    said.setAttribute('role', 'status');
-    var b = button('Notes vocales', function () {
-      if (notesVocales) return notesVocales(personId, corps, said);
-      var mine = session, s = document.createElement('script');
-      b.disabled = true;
-      said.textContent = 'Chargement…';
-      s.setAttribute('src', '/app/notes-vocales.js');
-      s.addEventListener('load', function () {
-        b.disabled = false;
-        var make = globalThis.AIMMO_NOTES_VOCALES;
-        if (mine !== session) return;
-        if (typeof make !== 'function') { said.textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; return; }
-        notesVocales = make({ el: el, clear: clear, send: send, date: date, hour: hour, session: function () { return session; } });
-        notesVocales(personId, corps, said);
-      });
-      s.addEventListener('error', function () { b.disabled = false; if (mine === session) said.textContent = 'Pas de réseau. Réessayez dans un moment.'; });
-      $('fiche').appendChild(s);
-    });
-    b.className = 'secondaire';
-    box.appendChild(b);
-    box.appendChild(said);
-    box.appendChild(corps);
-    return box;
-  }
+  function notesVocalesBlock(personId) { return lazyBlock('Notes vocales', '/app/notes-vocales.js', 'AIMMO_NOTES_VOCALES', personId); }
 `;
 
 /** Le script servi à part. Il ne lit que la route des notes vocales de cette fiche [R16]. */
