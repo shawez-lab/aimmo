@@ -1796,6 +1796,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : commission prévue avant le départ : acte, commission et tableau disent l'agent parti, pas son successeur [R69] (test) ; passage des commissions fait après le départ : la commission va à l'agent du compromis [R69] (test) ; sans passage, l'acte lit seul l'agent du jour du compromis (test) ; départ le jour du compromis ou avant : l'agent qui tient le bien (test) ; deux départs de suite (test) ; bien dans la file au compromis : aucun agent, la commission attend (test) ; sans départ rien ne change (test) ; tous les tests de K01, K04, N06 et J11 restent verts.
 - Attend : rien.
 
+### RC38 · Un nom de lieu composé ne bloque plus le magazine
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX53
+- Cahier : M07 Commercialiser (magazine des biens) ; R09, R15, R585.
+- Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de HX53 (« un nom de lieu proche d'un prénom en base (Saint-Pierre et Pierre) bloque le magazine, côté prudent »). Aujourd'hui une seule personne du réseau prénommée Pierre ou nommée Martin, et un bien à Saint-Pierre-de-Varennes ou à Saint-Martin-du-Mont suffit à refuser tout le magazine (R09) : le réseau ne peut plus jamais l'imprimer. Désormais, pour la seule recherche des noms de personnes, chaque nom de lieu de la base cité par le magazine (commune d'un bien, commune et quartiers des prix) voit ses mots composés à trait d'union (« Saint-Pierre-de-Varennes ») mis à part, sauf quand le mot composé entier est lui-même le prénom, le nom ou le nom complet d'une personne du réseau (« Jean-Pierre »). Un nom seul (« Pierre », « Dupontel ») ou écrit sans trait d'union (« Saint Pierre », « Pierre Dupontel ») reste refusé, côté prudent. Les autres contrôles du texte (adresse, chiffres, vocabulaire, IA) lisent le texte entier, comme avant. Change seulement `marketing/lettre.ts` et son test ; ni règle nouvelle, ni migration ; le contrôle du texte du socle ne change pas.
+- Objectif : un nom de commune ou de quartier composé n'empêche plus d'imprimer le magazine, sans jamais laisser passer le nom d'une personne.
+- Critères : bien à Pierre-de-Bresse et personne prénommée Pierre : magazine tiré, la commune y figure [R09] (test) ; quartier ou commune « Saint-Martin-du-Mont » et personne nommée Martin : tiré (test) ; commune égale au nom d'une personne : refusé R09 (test) ; mot composé égal au prénom composé d'une personne (« Jean-Pierre ») : refusé (test) ; lieu écrit sans trait d'union (« Saint Pierre ») : refusé (test) ; un second bien dont la commune est le nom seul : refusé même avec un lieu composé à côté (test) ; tous les tests de HX53 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
