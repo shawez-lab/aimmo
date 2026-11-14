@@ -1479,7 +1479,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR75 · Routes du neuf et du viager
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#575, `4e161273`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6040 tests). Décidé en cours de route : un agent sorti (`left`) est déjà refusé par l'application entière (`agent_inactive`) ; la liste des programmes refuse aussi l'agent parti dès son jour. Restent : la grille publiée sur le site et les annonces, et les écrans du neuf et du viager.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M16 ; M18 ; R540 à R544, R16.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent (voie 1) » de HX48 (« routes, écrans, branchement au Worker »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Fichier neuf `packages/api/src/neuf-viager.ts`, sous `/v1/neuf` et `/v1/viager`, au routeur de `app.ts`, décrit dans `docs/API.md` ; aucune règle nouvelle ni migration. Le rôle est contrôlé avant le corps, refus au journal [R16]. Le rejeu d'un calcul ne se lit qu'après sa relecture sous les mêmes droits. L'expert du viager passe par la mise en relation de M18 avec le stockage des fichiers des partenaires ; sans lui, refus `relation_absente` [R542]. La grille publiée sur le site et les annonces, et les écrans, restent à faire.
