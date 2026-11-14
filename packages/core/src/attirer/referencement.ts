@@ -13,6 +13,9 @@
  * Chaque page publiée, modifiée ou retirée est signalée aux moteurs (IndexNow) derrière une interface. En mode essai,
  * rien ne part : la ligne est rangée « essai » [R26]. Une page déjà signalée dans le même état ne l'est pas de nouveau ;
  * un échec est rangé, puis signalé de nouveau au passage suivant.
+ *
+ * La grille d'un programme neuf n'a qu'une page de référence, sur le site du réseau ; elle n'est donnée aux moteurs que
+ * tant qu'elle a au moins un lot publié, et signalée modifiée dès que sa grille publiée change (BR77) [R153, R543].
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -21,6 +24,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { sitePaths } from './accueil-site.ts';
 import { LEGAL_PATHS, MentionsSite } from './mentions-site.ts';
 import { PageAgent } from './page-agent.ts';
+import { ProgrammesNeufs } from '../neuf-viager/neuf.ts';
 
 export const SITE_KINDS = ['reseau', 'agent'] as const;
 export type SiteKind = (typeof SITE_KINDS)[number];
@@ -43,7 +47,7 @@ export interface SitemapEntry {
   loc: string;
   /** Le jour de la dernière version publiée, `AAAA-MM-JJ`, quand il est connu. */
   lastmod: string | null;
-  kind: 'page' | 'bien' | 'agent' | 'prix';
+  kind: 'page' | 'bien' | 'agent' | 'prix' | 'neuf';
 }
 
 /** Le service des moteurs (IndexNow) : un appel par hôte, avec ses adresses. Un faux service dans les tests. */
@@ -369,9 +373,28 @@ export class Referencement {
   }
 
   /**
+   * Les grilles publiées des programmes neufs du réseau qui ont au moins un lot publié, avec le jour de confirmation le
+   * plus récent et l'empreinte de ce que la page montre (BR77) [R543]. Une grille vide n'est pas donnée aux moteurs.
+   */
+  private async newBuildPages(networkId: string): Promise<{ path: string; day: string; fingerprint: string }[]> {
+    const programs = await this.db.all<{ id: string }>('SELECT id FROM new_programs WHERE network_id = ? ORDER BY id', [networkId]);
+    const neuf = new ProgrammesNeufs(this.db, this.journal, { now: this.now });
+    const pages: { path: string; day: string; fingerprint: string }[] = [];
+    for (const p of programs) {
+      if (!ID.test(p.id)) continue;
+      const grid = await neuf.publishedGrid(networkId, p.id);
+      if (!grid || grid.lots.length === 0) continue;
+      const day = grid.lots.reduce((d, l) => (l.confirmedOn > d ? l.confirmedOn : d), grid.lots[0]!.confirmedOn);
+      const { programId, name, city, postalCode, promoter, lots } = grid;
+      pages.push({ path: `/neuf/${encodeURIComponent(p.id)}`, day, fingerprint: await sha256(`neuf:${JSON.stringify({ programId, name, city, postalCode, promoter, lots })}`) });
+    }
+    return pages;
+  }
+
+  /**
    * Le plan d'un site en service : son accueil et les pages où il mène (RS02) ; ses biens publiés, chacun par sa page de
-   * référence ; la page de chaque agent publiable qu'il montre ; et, pour le site du réseau, les pages de prix montrables.
-   * Rien d'autre [R153, R152, R150].
+   * référence ; la page de chaque agent publiable qu'il montre ; et, pour le site du réseau, les pages de prix montrables
+   * et les grilles des programmes neufs qui ont un lot publié (BR77). Rien d'autre [R153, R152, R150, R543].
    */
   async sitemap(networkId: string, siteId: string): Promise<{ ok: true; entries: SitemapEntry[]; xml: string } | { ok: false; code: 'unknown_site' }> {
     const sites = await this.sites(networkId);
@@ -395,6 +418,8 @@ export class Referencement {
       entries.push({ loc: `${site.baseUrl}/agents/${encodeURIComponent(a)}`, lastmod: null, kind: 'agent' });
     }
     if (site.kind === 'reseau') for (const p of await this.pricePaths(networkId)) entries.push({ loc: `${site.baseUrl}${p.path}`, lastmod: p.day, kind: 'prix' });
+    // La grille d'un programme neuf : sur le seul site du réseau, et seulement avec au moins un lot publié [R153, R543].
+    if (site.kind === 'reseau') for (const p of await this.newBuildPages(networkId)) entries.push({ loc: `${site.baseUrl}${p.path}`, lastmod: p.day, kind: 'neuf' });
     return { ok: true, entries, xml: renderSitemap(entries) };
   }
 
@@ -418,6 +443,7 @@ export class Referencement {
     if (network) {
       const version = await this.db.first<{ id: string }>("SELECT id FROM price_versions WHERE network_id = ? AND status = 'complet' ORDER BY completed_at DESC, rowid DESC LIMIT 1", [networkId]);
       for (const p of await this.pricePaths(networkId)) pages.set(`${network.baseUrl}${p.path}`, await sha256(`prix:${version?.id ?? ''}`));
+      for (const p of await this.newBuildPages(networkId)) pages.set(`${network.baseUrl}${p.path}`, p.fingerprint);
     }
     return pages;
   }
