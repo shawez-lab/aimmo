@@ -81,6 +81,7 @@ describe('S06 · contrôle du texte', () => {
       'Vendu avec 1 place de garage.',
       'Une cave et 1 place couverte.',
       '1 place en sous-sol, 2 places extérieures.',
+      'Une place au sous-sol : 1 place au sous-sol.',
       'Il reste 1 place libre pour la visite de samedi.',
       'Il reste 1 place disponible.',
       'Stationnement : 1 place.',
@@ -97,6 +98,10 @@ describe('S06 · contrôle du texte', () => {
       'Au 2 place des Cordeliers.',
       'Au 5 place Saint-Michel.',
       'Au 7 bis place de l’Église.',
+      'Appartement au 12 place aux Tilleuls.',
+      'Au 6 place au Bois.',
+      'Au 8 place à l’Huile.',
+      'Au 9 place en Ville.',
     ]) {
       expect(rules(text, { audience: 'public' }), text).toContain('R09');
       expect(rules(text, client('email')), text).toContain('R09');

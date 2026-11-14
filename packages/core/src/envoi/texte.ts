@@ -84,9 +84,10 @@ const FORBIDDEN_WORDS: [RegExp, string][] = [
 const FORMAL = /\b(?:vous|votre|vos)\b/;
 const INFORMAL = /\b(?:tu|te|toi|ton|ta|tes)\b|\bt'/;
 // « 1 place de stationnement », « 1 place couverte », « il reste 1 place libre » : pas une adresse (BR68).
-// Une vraie place se nomme : « place Darcy », « place de la Libération », « place du Théâtre », « place d'Arcy ».
+// Une vraie place se nomme : « place Darcy », « place de la Libération », « place du Théâtre », « place d'Arcy »,
+// « place aux Herbes », « place au Bois » : « au » et « aux » n'écartent que « au sous-sol » et ses pareils.
 const NOT_A_SQUARE =
-  "(?!\\s*(?:[.,;:!?)]|$)|\\s+(?:de\\s+|d')?(?:stationnement|parking|garage|velo|moto|voiture|box)\\b|\\s+(?:couverte|privative|privee|exterieure|interieure|souterraine|attitree|numerotee|nominative|double|libre|disponible|pour|dans|en|au|aux|a|sur|par|et|ou)\\b)";
+  "(?!\\s*(?:[.,;:!?)]|$)|\\s+(?:de\\s+|d')?(?:stationnement|parking|garage|velo|moto|voiture|box)\\b|\\s+(?:couverte|privative|privee|exterieure|interieure|souterraine|attitree|numerotee|nominative|double|libre|disponible|pour|dans|et|ou|(?:en|au)\\s+(?:sous-sol|exterieur|interieur|rez-de-chaussee))\\b)";
 const ADDRESS = new RegExp(
   `\\b\\d{1,4}\\s?(?:bis|ter)?,?\\s+(?:rue|avenue|av\\.?|boulevard|bd|place${NOT_A_SQUARE}|chemin|allee|impasse|route|quai|cours|square|passage|faubourg|rond-point|residence|lotissement)\\b`,
 );
