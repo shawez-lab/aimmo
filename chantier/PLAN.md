@@ -1423,6 +1423,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : chargé au geste, budget de l'application et de la page tenus, sans innerHTML [R201] (test) ; ranger : date, voie et motif envoyés, l'échéance lue dans la réponse, jamais calculée à l'écran [R606] (test) ; seules les réclamations de cette fiche sont montrées (test) ; réponse une seule fois, le formulaire disparaît ensuite, « en retard » dit (test) ; médiateur « à remettre » : texte et bouton, « remis » ensuite ; « envoyé » dit sans bouton [R607] (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine, la liste relue (test) ; texte reçu posé en texte, champ mal formé tu (test) ; les blocs « Appels reçus » et « Notes vocales » marchent comme avant (leurs tests).
 - Attend : rien.
 
+### BR70 · Le délai de réponse et le médiateur, réglés par la direction à l'écran
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX58, BR69
+- Cahier : Conformité, réclamations et médiateur (HX58) ; R606, R607, R16, R13, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR69. Aujourd'hui la route `POST /v1/securite/reclamations/reglage` existe, mais aucune route ne relit le réglage en service et aucun écran ne l'écrit : tant que le médiateur n'est pas réglé (H09), la proposition du médiateur ne part pas [R607]. Une lecture `GET /v1/securite/reclamations/reglage` (direction seule) rend le réglage en service ou rien, le délai appliqué (30 jours sans réglage), le nombre de réclamations qui attendent un médiateur, et le texte de la proposition écrit par le code. L'écran est posé sous « Engagements de service » sur l'écran du réseau, script servi à part (`/app/reclamations-reglage.js`), sans rien ajouter au script de l'application (à 185 octets de son budget). Aucune règle nouvelle ni migration ; rien n'est envoyé.
+- Objectif : la direction lit le réglage en service, puis range une nouvelle version du délai de réponse et du médiateur.
+- Jamais vu : avant de ranger, la direction lit mot pour mot le texte que le client recevra avec ce médiateur, et combien de réclamations attendent ce réglage pour que la proposition parte.
+- Critères : lecture réservée à la direction, refus au journal [R16] (test) ; sans réglage : rien d'inventé, 30 jours dits, les réclamations en attente comptées [R606, R607] (test) ; avec réglage : version, délai, nom, site et texte du code rendus (test) ; script servi à part, chargé au geste, budgets tenus, sans innerHTML [R201] (test) ; le texte montré avant de ranger est celui du code [R607] (test) ; saisie illisible arrêtée avant l'appel, chaque refus dit en mots, réponse perdue dite incertaine et le réglage relu (test) ; texte reçu posé en texte, champ mal formé tu (test).
+- Attend : rien. Le vrai médiateur viendra avec H09.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
