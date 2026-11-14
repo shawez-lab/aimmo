@@ -82,6 +82,9 @@ describe('RC42 · ce qui part au lecteur', () => {
     expect(skeletonOf('Travaux votés : DUPONT contre.').masked).toBe(true);
     expect(skeletonOf('Zone 1AUb du plan.').masked).toBe(false);
     expect(skeletonOf('Vote de Ana.').masked).toBe(true);
+    expect(skeletonOf('Vote contre : Porte.').masked).toBe(true);
+    expect(skeletonOf('Résolution n° 7 : Travaux votés.').masked).toBe(true);
+    expect(skeletonOf('Résolution n° 7. Travaux votés.').masked).toBe(false);
   });
 });
 

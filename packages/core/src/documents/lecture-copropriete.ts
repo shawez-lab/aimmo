@@ -150,11 +150,12 @@ function wordPasses(word: string, before: string): boolean {
   if (word.length > 1 && word === word.toUpperCase() && ACRONYMS.has(lower)) return true;
   if (!COPRO_WORDS.has(lower)) return false;
   if (word === lower) return true;
-  // Une capitale (ou un titre en capitales, « TRAVAUX ») en tête de phrase seulement : début de ligne, après un point,
-  // un deux-points, un point-virgule, ou un numéro (« 3) Travaux »). Ailleurs, c'est peut-être un nom.
+  // Une capitale (ou un titre en capitales, « TRAVAUX ») en tête de phrase seulement : début de ligne, après un point
+  // ou un numéro (« 3) Travaux »). Après un deux-points (« Vote contre : Porte »), une virgule ou au milieu d'une
+  // phrase, c'est peut-être un nom : masqué.
   const head = word.slice(1) === lower.slice(1) || word === word.toUpperCase();
   const tail = before.replace(/[\s\d°()«»"'’-]+$/u, '');
-  return head && (tail === '' || /[.!?:;]$/.test(tail));
+  return head && (tail === '' || /[.!?]$/.test(tail));
 }
 
 /** Une ligne réduite au vocabulaire, et si elle a dû être masquée [R15]. */
