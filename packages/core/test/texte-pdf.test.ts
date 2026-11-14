@@ -226,6 +226,41 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     expect(textOf(await pages(composite(cidContent(120))))).toEqual(['Prix 245']);
   });
 
+  it('positions comparées dans l’espace de la page : la transformation cm compte, q et Q la rendent', async () => {
+    const mono = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [${Array(95).fill(500).join(' ')}] >>`;
+    const make = (content: string) =>
+      pdf(['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', mono, { dict: '', data: content }]);
+    expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td (Prix : 1) Tj ET BT /F1 10 Tf 40 700 Td (00000) Tj ET')))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td (Prix : 1) Tj ET 1 0 0 1 100 0 cm BT /F1 10 Tf 40 700 Td (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
+    expect(textOf(await pages(make('q 1 0 0 1 100 0 cm BT /F1 10 Tf 0 700 Td (Prix : 1) Tj ET Q BT /F1 10 Tf 140 700 Td (00000) Tj ET')))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(make('q 1 0 0 1 100 0 cm Q BT /F1 10 Tf 0 700 Td (Prix : 1) Tj ET BT /F1 10 Tf 40 700 Td (00000) Tj ET')))).toEqual(['Prix : 100000']);
+    // Un recul en fin de TJ compte encore pour le texte suivant, avec ou sans largeurs connues.
+    expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td [(Prix : 1) -1000] TJ (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
+    expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -1000] TJ (00000) Tj ET'])))).toEqual(['Prix : 1 00000']);
+    expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -1000 (00000)] TJ ET'])))).toEqual(['Prix : 1 00000']);
+  });
+
+  it('une table ToUnicode à très nombreuses plages de codes se lit sans balayage répété, chevauchements refusés', async () => {
+    const n = 20_000;
+    const spaces = Array.from({ length: n }, (_, i) => `<${(i * 2).toString(16).padStart(4, '0')}> <${(i * 2).toString(16).padStart(4, '0')}>`).join('\n');
+    const last = ((n - 1) * 2).toString(16).padStart(4, '0');
+    const cmap = (ranges: string) => `begincmap\n${n} begincodespacerange\n${ranges}\nendcodespacerange\n1 beginbfchar\n<${last}> <0041>\nendbfchar\nendcmap`;
+    const make = (ranges: string) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+        '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F2 4 0 R >> >> /Contents 5 0 R >>',
+        '<< /Type /Font /Subtype /Type0 /BaseFont /Inconnue /Encoding /Identity-H /ToUnicode 6 0 R >>',
+        { dict: '', data: `BT /F2 10 Tf <${last.repeat(n)}> Tj ET`, flate: true },
+        { dict: '', data: cmap(ranges), flate: true },
+      ]);
+    const started = Date.now();
+    const r = await pages(make(spaces));
+    expect(r[0]!.text).toBe('A'.repeat(n));
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(await pages(make(spaces + '\n<0000> <0010>'))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+  });
+
   it('dans TJ, seuls les reculs nets entre deux textes font un espace', async () => {
     expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -300 300 (00000)] TJ ET'])))).toEqual(['Prix : 100000']);
     expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix :) -150 -150 (1)] TJ ET'])))).toEqual(['Prix : 1']);
