@@ -1457,7 +1457,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR73 · Les remises négociées à l'écran : la direction les range, l'agent les voit au bon moment du bien
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#572, `fe99e512`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6017 tests). L'application pèse 49 092 octets compressés sur 49 152. Reste pour la voie 1 : le catalogue des remises « toujours » de l'agent, sur son accueil.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX08, BR20
 - Cahier : Phase 3, « Remises négociées pour les agents du réseau » (HX08) ; R266, R267, R73, R75, R76, R16, R201.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de BR20 (« Écrans des remises et du fil à faire » ; le fil est fait par BR49) et de HX08 (« écran des remises »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Les routes `/v1/remises` existent, aucun écran ne les appelle : la direction ne peut ranger ni retirer une remise, et l'agent ne voit jamais celle du moment de son bien. Un seul script servi à part, `/app/remises.js` (`AIMMO_REMISES`), chargé au geste, par deux portes : sous « Engagements de service » de l'écran du réseau (comme BR57 et BR70), « Remises négociées » : le catalogue du jour, ranger une remise avec sa source et ses dates, le partenaire de l'annuaire cherché par métier et code postal (et domaine pour un diagnostiqueur), retirer avec sa raison en deux appuis ; dans l'écran « Mettre en vente » du bien, par le chargeur commun, « Remises du moment » : le moment du dossier lu dans la base, les remises pour l'agent, celles pour le client dans l'ordre tiré au sort par le serveur, jamais retrié à l'écran, chacune avec sa raison, et « Écarter pour ce bien ». Rien n'est envoyé, ni au fournisseur ni au client. Aucune règle nouvelle ni migration.
