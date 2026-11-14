@@ -23,7 +23,7 @@ export interface PdfLimits {
   maxWork: number;
 }
 
-export const PDF_LIMITS: PdfLimits = { maxBytes: 25 * 1024 * 1024, maxPages: 300, maxInflatedBytes: 80 * 1024 * 1024, maxWork: 5_000_000 };
+export const PDF_LIMITS: PdfLimits = { maxBytes: 25 * 1024 * 1024, maxPages: 300, maxInflatedBytes: 80 * 1024 * 1024, maxWork: 50_000_000 };
 
 export type PdfPageText = { page: number; text: string } | { page: number; text: null; reason: 'no_text' | 'undecodable' };
 
@@ -1042,7 +1042,10 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
   for (;;) {
     // Une page déjà illisible n'a plus rien à lire.
     if (st.undecodable) return;
+    // Chaque octet lu coûte, commentaires et blancs compris, à chaque lecture d'un formulaire, fin de texte comprise.
+    const before = lx.pos;
     const t = lx.next();
+    file.work.charge(lx.pos - before + 1);
     if (t === undefined) break;
     // Un tableau ou un dictionnaire coûte chacun de ses éléments, à chaque lecture.
     file.work.charge(t instanceof Op ? 1 : weight(t));

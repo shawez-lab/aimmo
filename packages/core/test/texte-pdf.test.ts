@@ -544,6 +544,16 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(wide, { maxWork: 50_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    // Un long commentaire relu à chaque appel d'un formulaire compte ses octets.
+    const commented = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
+      HELV,
+      { dict: '/Subtype /Form', data: `%${'c'.repeat(200_000)}`, flate: true },
+      { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
+    ]);
+    expect(await pdfPagesText(commented, { maxWork: 1000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
     // Un texte qui échoue à se décoder compte aussi, et arrête la lecture de la page.
     const failing = pdf([
       '<< /Type /Catalog /Pages 2 0 R >>',
