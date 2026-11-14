@@ -83,9 +83,9 @@ describe('RC39 · lire un terme sur sa page', () => {
         conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240, page: 4 }],
         loanDeadline: { value: '2027-04-30', page: 4 },
         deedBy: { value: '2027-06-15', page: 7 },
-        deposit: { eur: 10000, page: 5, holder: 'notaire' },
+        deposit: { eur: 10000, page: 5, holder: null },
       },
-      toRead: [],
+      toRead: ['depot_garantie.detenteur'],
     });
   });
 
@@ -103,48 +103,41 @@ describe('RC39 · lire un terme sur sa page', () => {
     expect(verifyReading(PAGES, 'le prix est de 205 000 €')).toEqual({ proposal: { priceEur: null, conditions: [], loanDeadline: null, deedBy: null, deposit: null }, toRead: [...ALL_TERMS] });
     // Un terme faux n'emporte pas les autres.
     const one = verifyReading(PAGES, { ...EXACT, priceEur: { value: 205000, page: 3 } });
-    expect(one.toRead).toEqual(['prix']);
+    expect(one.toRead).toEqual(['prix', 'depot_garantie.detenteur']);
     expect(one.proposal.deedBy).toEqual({ value: '2027-06-15', page: 7 });
     // Le lecteur ne rend aucune condition, ou en oublie une, alors que ses mots sont dans le projet : à lire.
-    expect(verifyReading(PAGES, { ...EXACT, conditions: [] }).toRead).toEqual(['conditions']);
+    expect(verifyReading(PAGES, { ...EXACT, conditions: [] }).toRead).toEqual(['conditions', 'depot_garantie.detenteur']);
     const two = [...PAGES];
     two[3] = `${PAGES[3]}\nCondition suspensive de la vente préalable d'un autre bien.`;
-    expect(verifyReading(two, EXACT).toRead).toEqual(['conditions']);
-    expect(verifyReading(two, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'vente_autre_bien', page: 4 }] }).toRead).toEqual([]);
+    expect(verifyReading(two, EXACT).toRead).toEqual(['conditions', 'depot_garantie.detenteur']);
+    expect(verifyReading(two, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'vente_autre_bien', page: 4 }] }).toRead).toEqual(['depot_garantie.detenteur']);
     // Une condition écartée par le projet n'est jamais proposée, même si le lecteur la rend ; la négation passe au lecteur.
     const denied = [...PAGES];
     denied[3] = `${PAGES[3]}\nLa vente n'est pas soumise à l'obtention d'un permis de construire.`;
     const rd = verifyReading(denied, { ...EXACT, conditions: [...EXACT.conditions, { kind: 'permis_construire', page: 4 }] });
     expect(rd.proposal.conditions).toEqual([{ kind: 'pret', amountEur: 150000, durationMonths: 240, page: 4 }]);
-    expect(rd.toRead).toEqual(['conditions']);
+    expect(rd.toRead).toEqual(['conditions', 'depot_garantie.detenteur']);
     expect(excerptsOf([denied[3]!])[0]!.lines.at(-1)).toBe("La vente n'est pas soumise à l'obtention d'un permis de construire.");
     // Un projet sans aucun mot de condition, et un lecteur qui n'en rend aucune : rien à lire de ce côté.
     const cash = PAGES.map((p, i) => (i === 3 ? 'Paiement comptant.' : p));
-    expect(verifyReading(cash, { ...EXACT, conditions: [], loanDeadline: null }).toRead).toEqual(['date_limite_pret']);
+    expect(verifyReading(cash, { ...EXACT, conditions: [], loanDeadline: null }).toRead).toEqual(['date_limite_pret', 'depot_garantie.detenteur']);
   });
 
-  it('[R512] le destinataire du dépôt n’est proposé que si la ligne du montant le nomme, et lui seul', () => {
+  it('[R512] le destinataire du dépôt n’est jamais proposé : toujours à lire, quelle que soit la page', () => {
     const pages = [...PAGES];
-    // Le lecteur dit « notaire », la ligne dit « agence » : le montant est proposé, le destinataire est à lire.
-    pages[4] = "DÉPÔT DE GARANTIE\nL'acquéreur verse la somme de 10 000 € à l'agence, qui la conserve.\nLe notaire sera informé.";
-    const r = verifyReading(pages, EXACT);
-    expect(r.proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
-    expect(r.toRead).toEqual(['depot_garantie.detenteur']);
-    // La ligne nomme l'agence : proposé tel quel, la comparaison le dira bloquant.
-    expect(verifyReading(pages, { ...EXACT, deposit: { eur: 10000, holder: 'agence', page: 5 } }).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: 'agence' });
-    // Deux destinataires sur la même ligne : à lire.
-    pages[4] = "L'acquéreur verse la somme de 10 000 € au notaire, qui la remettra au vendeur.";
-    expect(verifyReading(pages, EXACT).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
-    // Le destinataire nié sur la ligne du montant, ou un autre nommé ailleurs sur la page pour la garde de la somme : à lire.
-    pages[4] = 'Dépôt de garantie : 10 000 €, qui ne seront pas confiés au notaire.\nCette somme sera conservée par le vendeur.';
-    const negated = verifyReading(pages, EXACT);
-    expect(negated.proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
-    expect(negated.toRead).toEqual(['depot_garantie.detenteur']);
-    pages[4] = 'Dépôt de garantie : 10 000 € versés au notaire.\nCette somme sera ensuite remise au vendeur.';
-    expect(verifyReading(pages, EXACT).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
-    // Le lecteur dit « vendeur » sur une ligne qui le nie : à lire aussi.
-    pages[4] = "Dépôt de garantie : 10 000 €, jamais remis au vendeur.";
-    expect(verifyReading(pages, { ...EXACT, deposit: { eur: 10000, holder: 'vendeur', page: 5 } }).proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
+    for (const text of [
+      PAGES[4]!,
+      "DÉPÔT DE GARANTIE\nL'acquéreur verse la somme de 10 000 € à l'agence, qui la conserve.",
+      'Dépôt de garantie : 10 000 €, qui ne seront pas confiés au notaire.\nCette somme sera conservée par le vendeur.',
+      'Dépôt de garantie : 10 000 € confiés à un tiers désigné par le notaire.',
+    ]) {
+      pages[4] = text;
+      for (const holder of ['notaire', 'agence', 'vendeur', 'autre']) {
+        const r = verifyReading(pages, { ...EXACT, deposit: { eur: 10000, holder, page: 5 } });
+        expect(r.proposal.deposit).toEqual({ eur: 10000, page: 5, holder: null });
+        expect(r.toRead).toEqual(['depot_garantie.detenteur']);
+      }
+    }
   });
 
   it('[R15] seules les lignes utiles partent au lecteur ; IBAN, BIC, pièce d’identité et naissance jamais, mails et téléphones masqués', () => {
@@ -175,13 +168,15 @@ describeWithSqlite('RC39 · le projet du notaire prélu, chaque terme retrouvé 
     const r = await t.lp.preRead(t.agent, t.fileId, { documentRef: t.doc(), pages: PAGES });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.source).toBe('ia');
-    expect(r.value.toRead).toEqual([]);
+    expect(r.value.toRead).toEqual(['depot_garantie.detenteur']);
     expect(reader.seen).toHaveLength(1);
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM notary_drafts WHERE file_id = ?', [t.fileId])).toEqual({ n: 0 });
-    // Ce que l'agent confirme passe tel quel dans recordDraft, et la comparaison ne voit rien.
+    // Ce que l'agent confirme passe tel quel dans recordDraft, avec le destinataire qu'il a lu lui-même ; la comparaison ne voit rien.
     await t.ac.prepare(t.agent, t.fileId, { depositEur: 10000, loanDeadline: '2027-04-30', deedBy: '2027-06-15' });
     const p = r.value.proposal;
-    const rec = await t.ac.recordDraft(t.agent, t.fileId, { documentRef: t.doc(), priceEur: p.priceEur, conditions: p.conditions, loanDeadline: p.loanDeadline, deedBy: p.deedBy, deposit: p.deposit });
+    const rec = await t.ac.recordDraft(t.agent, t.fileId, { documentRef: t.doc(), priceEur: p.priceEur, conditions: p.conditions, loanDeadline: p.loanDeadline, deedBy: p.deedBy, deposit: { ...p.deposit!, holder: 'notaire' } });
+    // Sans destinataire lu par l'agent, le projet ne se range pas.
+    expect(await t.ac.recordDraft(t.agent, t.fileId, { documentRef: t.doc(), priceEur: p.priceEur, conditions: p.conditions, loanDeadline: p.loanDeadline, deedBy: p.deedBy, deposit: p.deposit })).toMatchObject({ ok: false, code: 'bad_deposit' });
     expect(rec).toMatchObject({ ok: true, value: { differences: [] } });
   });
 
@@ -210,7 +205,7 @@ describeWithSqlite('RC39 · le projet du notaire prélu, chaque terme retrouvé 
     const t = await setup(new FakeReader(async () => ({ ...EXACT, priceEur: { value: 210000, page: 2 } })));
     await t.lp.preRead(t.agent, t.fileId, { documentRef: t.doc(), pages: PAGES });
     const ev = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'avant_contrat.prelecture').at(-1)!;
-    expect(ev.data).toEqual({ rule: 'R511', source: 'ia', proposed: ['condition.pret', 'date_limite_pret', 'acte_prevu', 'depot_garantie.montant', 'depot_garantie.detenteur'], toRead: ['prix'] });
+    expect(ev.data).toEqual({ rule: 'R511', source: 'ia', proposed: ['condition.pret', 'date_limite_pret', 'acte_prevu', 'depot_garantie.montant'], toRead: ['prix', 'depot_garantie.detenteur'] });
     expect(JSON.stringify(ev.data)).not.toMatch(/2027|205|210|150|240|10 ?000/);
   });
 

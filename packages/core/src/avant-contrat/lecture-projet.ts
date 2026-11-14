@@ -8,7 +8,7 @@
  *
  * « Jamais vu » : ce que le lecteur rend n'est pas cru. Chaque montant, date, durée et condition n'est proposé que si le
  * code le retrouve sur la page que le lecteur cite, dans le texte entier de cette page ; le destinataire du dépôt
- * seulement si la ligne du montant le nomme, et lui seul. Tout le reste est dit « à lire vous-même ». Une valeur
+ * n'est jamais proposé : l'agent le lit lui-même [R512]. Tout le reste est dit « à lire vous-même ». Une valeur
  * inventée par l'IA ne peut donc jamais entrer dans la comparaison de R511.
  *
  * La prélecture ne range rien : seul `AvantContrat.recordDraft`, avec ce que l'agent confirme, range le projet [R511].
@@ -23,7 +23,6 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { CONDITION_KINDS, type ConditionKind } from '../offres/registre-offres.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
-import { DEPOSIT_HOLDERS, type DepositHolder } from './avant-contrat.ts';
 
 /** Ce que reçoit le lecteur : des extraits de pages, jamais une page entière. */
 export interface DraftExcerpt {
@@ -44,7 +43,8 @@ export interface DraftProposal {
   conditions: { kind: ConditionKind; page: number; amountEur?: number; durationMonths?: number }[];
   loanDeadline: Paged<string> | null;
   deedBy: Paged<string> | null;
-  deposit: { eur: number; page: number; holder: DepositHolder | null } | null;
+  /** Le montant seul : le destinataire est toujours à lire par l'agent [R512]. */
+  deposit: { eur: number; page: number; holder: null } | null;
 }
 
 export interface DraftPreReading {
@@ -165,16 +165,6 @@ const CONDITION_WORDS: Record<ConditionKind, RegExp | null> = {
 /** Une ligne qui nie ou écarte ce qu'elle nomme. */
 const NEGATION = /\bne\b|\bn['’]|\bpas\b|\bsans\b|\baucune?\b|\bnon\b|\bni\b|\bjamais\b|renon[cç]|\bexclu/i;
 
-/** Une ligne qui parle de la garde de la somme versée par l'acquéreur. */
-const CUSTODY = /d[ée]p[oô]t|s[ée]questre|\bsomme|conserv|\bremi[st]e?\b|remettr|\bvers[ée]e?s?\b|\bverse(?:ra|ront)?\b|confi[ée]|entre les mains|d[ée]tenu|garde/i;
-
-const HOLDER_WORDS: Record<DepositHolder, RegExp> = {
-  notaire: /notaire|office notarial/i,
-  agence: /\bagence\b|agent immobilier|mandataire/i,
-  vendeur: /\bvendeur|\bc[ée]dant/i,
-  autre: /$^/,
-};
-
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const validDay = (v: unknown): v is string => {
@@ -239,22 +229,10 @@ export function verifyReading(pages: string[], raw: unknown): { proposal: DraftP
   const d = r.deposit;
   const depositText = isRecord(d) ? pageOf(d.page) : null;
   if (isRecord(d) && depositText !== null && isInt(d.eur, 0, 1_000_000_000) && amountOn(depositText, d.eur)) {
-    // Le destinataire : seulement si chaque ligne qui porte le montant le nomme, sans le nier ni en nommer un autre, et
-    // qu'aucune autre ligne de la page sur la garde de la somme ne nomme un autre destinataire ou ne nie [R512].
-    let holder: DepositHolder | null = null;
-    if ((DEPOSIT_HOLDERS as readonly unknown[]).includes(d.holder) && d.holder !== 'autre') {
-      const named = d.holder as DepositHolder;
-      const all = normalize(depositText).split(/\r?\n/);
-      const amountLines = all.filter((l) => amountOn(l, d.eur as number));
-      const custody = all.filter((l) => amountOn(l, d.eur as number) || CUSTODY.test(l));
-      const ok =
-        amountLines.length > 0 &&
-        amountLines.every((l) => HOLDER_WORDS[named].test(l)) &&
-        custody.every((l) => !NEGATION.test(l) && DEPOSIT_HOLDERS.every((h) => h === named || !HOLDER_WORDS[h].test(l)));
-      if (ok) holder = named;
-    }
-    if (holder === null) toRead.add('depot_garantie.detenteur');
-    deposit = { eur: d.eur, page: d.page as number, holder };
+    // Le destinataire n'est jamais proposé : qui garde la somme décide de R512 (un tiers, une négation, une remise
+    // ultérieure le changent), l'agent le lit lui-même dans le projet.
+    toRead.add('depot_garantie.detenteur');
+    deposit = { eur: d.eur, page: d.page as number, holder: null };
   } else {
     toRead.add('depot_garantie.montant');
     toRead.add('depot_garantie.detenteur');
@@ -324,7 +302,6 @@ export class LectureProjet {
       value.proposal.loanDeadline && 'date_limite_pret',
       value.proposal.deedBy && 'acte_prevu',
       value.proposal.deposit && 'depot_garantie.montant',
-      value.proposal.deposit?.holder && 'depot_garantie.detenteur',
     ].filter((x): x is string => typeof x === 'string');
     // Au journal : la source et les noms des termes, aucun montant ni date [R13].
     await appendEvent(this.journal, { type: 'avant_contrat.prelecture', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R511', source: value.source, proposed, toRead: value.toRead } }, this.now);
