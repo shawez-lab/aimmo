@@ -10,6 +10,9 @@
  *   d'accès (`carte-acces.ts`), pour toutes les fiches réunies de la personne (S04) et rien d'une autre. Chaque table
  *   vient avec la finalité, la base légale, la durée et les destinataires de son traitement (article 15). La réponse a
  *   son empreinte ; la base ne garde que l'empreinte, jamais une copie.
+ * - Rectification : la demande dit le jour où la direction a corrigé le nom « à la demande de la personne » sur l'une
+ *   de ses fiches réunies, le jour de la réception ou après (SV10), et la réponse notée garde ces corrections dans son
+ *   empreinte. La demande n'est pas close seule : une rectification peut porter sur autre chose qu'un nom (RC35).
  * - Opposition : l'arrêt est posé aussitôt sur tous les canaux, par la même voie qu'un « stop » reçu [R04].
  * - Effacement : la procédure de M12 garde ce que la loi oblige à garder (registre des mandats et documents signés,
  *   lutte contre le blanchiment, factures, journal). Tant que le responsable et l'avocat ne l'ont pas validée (H29),
@@ -446,6 +449,8 @@ export interface PersonRequest {
   answeredOn: string | null;
   answerSha256: string | null;
   late: boolean | null;
+  /** Rectification seulement : le jour (Paris) de la première correction du nom faite à la demande de la personne depuis la réception. */
+  rectifiedOn: string | null;
 }
 
 export interface PersonRequestAlert {
@@ -518,6 +523,23 @@ export class DemandesPersonnes {
     return this.db.first<RequestRow>('SELECT * FROM person_requests WHERE id = ? AND network_id = ?', [requestId, viewer.networkId]);
   }
 
+  /**
+   * Les corrections du nom faites « à la demande de la personne » sur ses fiches réunies, le jour de la réception ou
+   * après, de la plus ancienne à la plus récente : leur identifiant et leur jour, jamais un nom [R13].
+   */
+  private async rectifications(row: RequestRow): Promise<{ id: string; day: string }[]> {
+    if (row.kind !== 'rectification') return [];
+    const ids = await this.fiche.membersOf(row.person_id);
+    if (ids.length === 0) return [];
+    const rows = await this.db.all<{ id: string; created_at: string }>(
+      `SELECT id, created_at FROM person_name_corrections WHERE network_id = ? AND reason = 'demande_de_la_personne' AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY created_at, id`,
+      [row.network_id, ...ids],
+    );
+    return rows
+      .map((r) => ({ id: r.id, day: localTime(new Date(r.created_at), TIME_ZONE).date }))
+      .filter((r) => r.day >= row.received_on);
+  }
+
   private async view(row: RequestRow): Promise<PersonRequest> {
     const answer = await this.db.first<{ answered_on: string; answer_sha256: string; late: number }>(
       'SELECT answered_on, answer_sha256, late FROM person_request_answers WHERE request_id = ?',
@@ -535,6 +557,7 @@ export class DemandesPersonnes {
       answeredOn: answer?.answered_on ?? null,
       answerSha256: answer?.answer_sha256 ?? null,
       late: answer ? answer.late === 1 : null,
+      rectifiedOn: (await this.rectifications(row))[0]?.day ?? null,
     };
   }
 
@@ -643,6 +666,10 @@ export class DemandesPersonnes {
       );
       if (!output) return { ok: false, rule: 'R96', code: 'not_prepared' };
       sha = output.output_sha256;
+    } else if (row.kind === 'rectification') {
+      // La preuve garde les corrections du nom faites à la demande de la personne, par leur seul identifiant.
+      const corrections = (await this.rectifications(row)).filter((c) => c.day <= input.answeredOn).map((c) => c.id);
+      sha = await sha256Of({ request: row.id, kind: row.kind, exclusion: row.exclusion_id, answeredOn: input.answeredOn, corrections });
     } else {
       sha = await sha256Of({ request: row.id, kind: row.kind, exclusion: row.exclusion_id, answeredOn: input.answeredOn });
     }
@@ -705,17 +732,26 @@ export class DemandesPersonnes {
     );
     const fr = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
     const label: Record<PersonRequestKind, string> = { acces: 'd\'accès', rectification: 'de rectification', effacement: 'd\'effacement', opposition: 'd\'opposition' };
+    // Le jour de la correction du nom, relu une fois par demande de rectification.
+    const rectified = new Map<string, string | null>();
+    for (const r of rows) {
+      if (r.request_kind !== 'rectification' || rectified.has(r.request_id)) continue;
+      const request = await this.requestOf(viewer, r.request_id);
+      rectified.set(r.request_id, request ? ((await this.rectifications(request))[0]?.day ?? null) : null);
+    }
     return {
       ok: true,
-      value: rows.map((r) => ({
-        requestId: r.request_id,
-        kind: r.kind,
-        dueOn: r.due_on,
-        createdAt: r.created_at,
-        text: r.kind === 'rappel'
-          ? `Demande ${label[r.request_kind]} à traiter avant le ${fr(r.due_on)}.`
-          : `Demande ${label[r.request_kind]} : l'échéance du ${fr(r.due_on)} est arrivée, la réponse n'est pas notée.`,
-      })),
+      value: rows.map((r) => {
+        const on = rectified.get(r.request_id) ?? null;
+        const text = on
+          ? r.kind === 'rappel'
+            ? `Demande de rectification : nom corrigé le ${fr(on)}, la réponse à la personne reste à noter avant le ${fr(r.due_on)}.`
+            : `Demande de rectification : nom corrigé le ${fr(on)}, l'échéance du ${fr(r.due_on)} est arrivée, la réponse n'est pas notée.`
+          : r.kind === 'rappel'
+            ? `Demande ${label[r.request_kind]} à traiter avant le ${fr(r.due_on)}.`
+            : `Demande ${label[r.request_kind]} : l'échéance du ${fr(r.due_on)} est arrivée, la réponse n'est pas notée.`;
+        return { requestId: r.request_id, kind: r.kind, dueOn: r.due_on, createdAt: r.created_at, text };
+      }),
     };
   }
 }

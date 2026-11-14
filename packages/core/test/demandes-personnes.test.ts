@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DecisionEnvoi, FicheUnique, applyMigrations, conformite, fromSyncSqlite, verifyChain, type SqlDatabase, type SqlValue, type Viewer } from '../src/index.ts';
+import { CorrigerNom, DecisionEnvoi, FicheUnique, applyMigrations, conformite, fromSyncSqlite, verifyChain, type SqlDatabase, type SqlValue, type Viewer } from '../src/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -709,5 +709,101 @@ describeWithSqlite('L07 · demandes des personnes en moins d’un mois, avec pre
     // Aucun envoi : rien n'est parti vers la personne.
     expect(after.send_log).toBe(before.send_log);
     expect(after.messages).toBe(before.messages);
+  });
+});
+
+describeWithSqlite('RC35 · une demande de rectification voit le nom corrigé à la demande de la personne', () => {
+  const setupRectif = async () => {
+    const t = await setup();
+    const nom = new CorrigerNom(t.db, t.acces, t.journal, { now: t.now });
+    const correct = async (personId: string, reason: 'demande_de_la_personne' | 'faute_de_frappe', lastName: string) => {
+      const r = await nom.correct(t.direction, personId, { lastName, reason });
+      if (!r.ok) throw new Error(r.code);
+    };
+    const one = async (id: string) => {
+      const list = await t.demandes.list(t.responsable);
+      if (!list.ok) throw new Error(list.code);
+      return list.value.find((r) => r.id === id)!;
+    };
+    return { ...t, correct, one };
+  };
+
+  it('[R96] la correction du nom faite à la demande de la personne après la réception : son jour, et les alertes le disent', async () => {
+    const t = await setupRectif();
+    const request = await t.record('rectification', t.personId, '2027-01-28');
+    expect(request.rectifiedOn).toBeNull();
+    // Le 3 février, la direction corrige le nom à la demande de la personne.
+    t.setClock(new Date('2027-02-03T09:00:00.000Z'));
+    await t.correct(t.personId, 'demande_de_la_personne', 'Rectifiée');
+    t.setClock(new Date('2027-02-05T09:00:00.000Z'));
+    await t.correct(t.personId, 'demande_de_la_personne', 'Rectifiéebis');
+    expect((await t.one(request.id)).rectifiedOn).toBe('2027-02-03');
+    // Rappel puis échéance : le texte dit la correction, la réponse reste à noter.
+    t.setClock(new Date('2027-02-28T09:00:00.000Z'));
+    expect(await t.demandes.run(t.network.id)).toBe(2);
+    const alerts = await t.demandes.alerts(t.responsable);
+    expect(alerts.ok && alerts.value.map((a) => a.text)).toEqual([
+      'Demande de rectification : nom corrigé le 03/02/2027, la réponse à la personne reste à noter avant le 28/02/2027.',
+      "Demande de rectification : nom corrigé le 03/02/2027, l'échéance du 28/02/2027 est arrivée, la réponse n'est pas notée.",
+    ]);
+    // La demande n'est pas close seule.
+    expect((await t.one(request.id)).answeredOn).toBeNull();
+    // Aucun nom dans la demande, les alertes ni le journal [R13].
+    const text = JSON.stringify([await t.demandes.list(t.responsable), alerts, await t.journal.all()]);
+    for (const name of ['Rectifiée', 'Rectifiéebis']) expect(text).not.toContain(name);
+  });
+
+  it('[R96] une correction avant la réception, ou pour un autre motif, ne compte pas ; une autre sorte de demande non plus', async () => {
+    const t = await setupRectif();
+    t.setClock(new Date('2027-01-20T09:00:00.000Z'));
+    await t.correct(t.personId, 'demande_de_la_personne', 'Avant');
+    t.setClock(NOW);
+    const request = await t.record('rectification', t.personId, '2027-02-01');
+    const access = await t.record('acces', t.personId, '2027-01-25');
+    await t.correct(t.personId, 'faute_de_frappe', 'Frappe');
+    expect((await t.one(request.id)).rectifiedOn).toBeNull();
+    expect((await t.one(access.id)).rectifiedOn).toBeNull();
+    // Le jour même de la réception compte.
+    await t.correct(t.personId, 'demande_de_la_personne', 'Pendant');
+    expect((await t.one(request.id)).rectifiedOn).toBe('2027-02-01');
+    expect((await t.one(access.id)).rectifiedOn).toBeNull();
+  });
+
+  it('[R96] fiches réunies : la correction faite sur l’autre fiche compte', async () => {
+    const t = await setupRectif();
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Léa', lastName: 'Exemple' });
+    const request = await t.record('rectification', twin.id, '2027-02-01');
+    // Correction sur la fiche d'origine, encore à part : la demande de l'autre ne la voit pas.
+    await t.correct(t.personId, 'demande_de_la_personne', 'Réunie');
+    expect((await t.one(request.id)).rectifiedOn).toBeNull();
+    await t.fiche.merge({ survivorId: t.personId, mergedId: twin.id, reason: 'même personne' });
+    expect((await t.one(request.id)).rectifiedOn).toBe('2027-02-01');
+  });
+
+  it('[R96] la réponse notée garde les corrections dans son empreinte ; celle d’une opposition ne change pas', async () => {
+    const answerOf = async (withCorrection: boolean, kind: 'rectification' | 'opposition') => {
+      const t = await setupRectif();
+      const request = await t.record(kind, t.personId, '2027-02-01');
+      if (withCorrection) await t.correct(t.personId, 'demande_de_la_personne', 'Empreinte');
+      const r = await t.demandes.answer(t.responsable, request.id, { answeredOn: '2027-02-01' });
+      if (!r.ok) throw new Error(r.code);
+      // Avec un identifiant de demande fixé, pour comparer deux bases.
+      return { sha: r.value.answerSha256, request, t };
+    };
+    const without = await answerOf(false, 'rectification');
+    const withC = await answerOf(true, 'rectification');
+    const expected = async (id: string, corrections: string[]) =>
+      conformite.sha256Of({ request: id, kind: 'rectification', exclusion: null, answeredOn: '2027-02-01', corrections });
+    expect(without.sha).toBe(await expected(without.request.id, []));
+    const ids = (await withC.t.db.all<{ id: string }>("SELECT id FROM person_name_corrections WHERE reason = 'demande_de_la_personne'")).map((r) => r.id);
+    expect(ids).toHaveLength(1);
+    expect(withC.sha).toBe(await expected(withC.request.id, ids));
+    // L'opposition garde l'empreinte d'avant, avec ou sans correction.
+    for (const c of [false, true]) {
+      const o = await answerOf(c, 'opposition');
+      expect(o.sha).toBe(await conformite.sha256Of({ request: o.request.id, kind: 'opposition', exclusion: o.request.exclusionId, answeredOn: '2027-02-01' }));
+    }
+    // Au journal de la réponse : l'empreinte, aucun nom [R13].
+    expect(JSON.stringify(await withC.t.journal.all())).not.toContain('Empreinte');
   });
 });
