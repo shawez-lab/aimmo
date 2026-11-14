@@ -1478,6 +1478,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : chargé au geste par le chargeur commun, budgets de l'application et de la page tenus, sans innerHTML [R201] (test) ; seules les remises « toujours » pour l'agent sont montrées en entier, avec fournisseur, titre, conditions, source et date de fin (test) ; celles du client ne sont que comptées par moment, jamais montrées (test) ; une remise mal formée n'est pas dite (test) ; un refus (agent sorti, direction) est dit en mots [R16] (test) ; le bloc est refait à chaque retour à l'accueil et vidé à la sortie (test).
 - Attend : rien.
 
+### BR75 · Routes du neuf et du viager
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M16 ; M18 ; R540 à R544, R16.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent (voie 1) » de HX48 (« routes, écrans, branchement au Worker »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Fichier neuf `packages/api/src/neuf-viager.ts`, sous `/v1/neuf` et `/v1/viager`, au routeur de `app.ts`, décrit dans `docs/API.md` ; aucune règle nouvelle ni migration. Le rôle est contrôlé avant le corps, refus au journal [R16]. Le rejeu d'un calcul ne se lit qu'après sa relecture sous les mêmes droits. L'expert du viager passe par la mise en relation de M18 avec le stockage des fichiers des partenaires ; sans lui, refus `relation_absente` [R542]. La grille publiée sur le site et les annonces, et les écrans, restent à faire.
+- Objectif : la direction range les barèmes des frais, ouvre un programme et importe la table d'espérance de vie ; l'agent du programme tient ses lots ; l'agent ou la direction calcule, relit et rejoue un viager et propose l'expert du viager, tout cela par des routes.
+- Critères : chaque route refuse un autre rôle en 403 avec le refus au journal, même sans corps lisible [R16] (test) ; un lot vendu ne revient jamais, 409 [R543] (test) ; la grille de l'agent ne montre aux autres agents rien, 403 (test) ; les frais d'un lot portent leur source, sans barème aucun chiffre [R544] (test) ; une table d'espérance avec une colonne de sexe est refusée, 409 [R541] (test) ; un bouquet plus haut que la valeur occupée refusé, 409 [R542] (test) ; un calcul se relit et se rejoue à l'identique, par son auteur ou la direction, jamais par un autre agent [R540, R16] (test) ; l'expert du viager passe par la mise en relation, fermé sans stockage [R542] (test) ; corps invalide refusé sans rien ranger (test) ; les routes passent par le routeur de `app.ts` (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
