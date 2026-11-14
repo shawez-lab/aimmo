@@ -10,3 +10,4 @@ export * from './chronologie.ts';
 export * from './signature-en-ligne.ts';
 export * from './texte-pdf.ts';
 export * from './lecture-copropriete.ts';
+export * from './collecte-urbanisme.ts';
