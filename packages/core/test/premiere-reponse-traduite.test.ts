@@ -196,6 +196,17 @@ describeWithSqlite('RC34 · la première réponse porte l’annonce dans la lang
     expect(t.translations!.asked).toEqual([]);
   });
 
+  it('[R259] [R05] un bien déjà envoyé à l’acheteur : la seconde réponse ne cite plus le bien, ni son annonce traduite', async () => {
+    const t = await setup();
+    const first = await t.run(msg('email', 'direct', 'samir@example.test', 'مرحبا، هل الشقة متاحة؟'));
+    expect(first.translation).toMatchObject({ language: 'ar', part: 'complete' });
+    const second = await t.run(msg('email', 'direct', 'samir@example.test', 'مرحبا، هل يمكنني الزيارة؟'));
+    expect(second.result?.status).toBe('sent');
+    expect(second.translation).toBeNull();
+    expect(t.translations!.asked).toHaveLength(1);
+    expect(t.sent('email')[1]).not.toContain(AR.title);
+  });
+
   it('[R259] withTranslation : complet, puis titre seul, puis la réponse d’aujourd’hui, sans doublon', () => {
     expect(withTranslation(['A', 'A'], { title: ' T ', body: 'B', mentions: 'M (n) et (p).' })).toEqual(['A\n\nT\n\nB\n\nM, n et, p.', 'A\n\nT', 'A']);
   });
