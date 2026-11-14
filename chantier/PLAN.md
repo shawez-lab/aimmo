@@ -1736,7 +1736,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (IA réelle : H13).
 
 ### RC35 · Une demande de rectification voit le nom corrigé à la demande de la personne
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#561, `b4f22adf`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5932 tests). Rien à brancher : la route des demandes rend déjà `PersonRequest`, avec `rectifiedOn` en plus.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : L07, SV10
 - Cahier : M12 Conformité (« demandes des personnes ») ; Conformité, droit de rectification ; R96, R13, R16.
 - Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de SV10 (« Le motif `demande_de_la_personne` ne clôt pas une demande de rectification de la conformité »). Aujourd'hui la direction corrige un nom « à la demande de la personne » (SV10) et le responsable de la conformité suit la demande de rectification (L07) sans rien savoir de cette correction : sa réponse notée n'en garde aucune trace, et ses alertes disent seulement que la demande est à traiter. Désormais une demande de rectification dit `rectifiedOn`, le jour (Paris) de la première correction de nom faite avec ce motif sur l'une des fiches réunies de la personne, le jour de la réception ou après ; la réponse notée garde dans son empreinte les corrections faites ainsi ; les alertes disent « nom corrigé le … » et que la réponse à la personne reste à noter. La demande n'est pas close seule : une rectification peut porter sur autre chose qu'un nom, et la réponse à la personne (article 12) reste au responsable. Aucun nom n'est rendu ni écrit au journal [R13]. Change seulement `conformite/demandes-personnes.ts` et son test ; aucune règle nouvelle ni migration.
