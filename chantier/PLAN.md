@@ -1403,7 +1403,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (vrai service : H57).
 
 ### BR68 · « 1 place de stationnement » n'est plus lue comme une adresse
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#565, `8ab12a2d`). Codex 2 P0 corrigés (« place aux Tilleuls », puis « place Couverte » : l'exemption se lit sur le texte tel qu'écrit, en minuscules seulement ; une place nommée avec une capitale, ou tout en capitales, reste une adresse), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5951 tests). Rien d'autre.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : S06, RC34
 - Cahier : Conformité, contenu public ; R09.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans l'« Observation laissée » de RC34 (« le contrôle du texte lit « 1 place de stationnement » comme une adresse (R09), le texte complet cède alors au titre seul »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le contrôle du texte du socle (`packages/core/src/envoi/texte.ts`, fichier du socle, donc voie 1) refuse tout message qui dit « 1 place de stationnement », « 1 place de parking », « 1 place couverte » ou « il reste 1 place libre » : la fiche d'un bien et les annonces écrites par AIMMO elles-mêmes le disent. Une vraie place se nomme (« place Darcy », « place de la Libération », « place du Théâtre », « place d'Arcy ») ; « place » suivi d'un mot de stationnement, d'un adjectif courant ou d'une fin de phrase n'est plus une adresse. Aucune autre voie ne change ; aucune règle nouvelle ni migration.
