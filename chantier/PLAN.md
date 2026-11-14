@@ -1735,6 +1735,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : message en arabe sur un bien avec traduction arabe validée : réponse en anglais suivie du titre et du texte arabes et des mentions françaises, rien de l'IA [R259] (test) ; traduction absente ou pas à jour : la réponse d'aujourd'hui, sans traduction [R259] (test) ; acheteur qui écrit en français : rien ne change (test) ; prix de la version publiée différent du prix dit : pas de traduction (test) ; texte complet trop long pour le canal : le titre seul suit la réponse (test) ; bien vendu ou déjà envoyé : aucune traduction (test) ; tous les tests de C04, HX05 et RC24 restent verts.
 - Attend : rien (IA réelle : H13).
 
+### RC35 · Une demande de rectification voit le nom corrigé à la demande de la personne
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : L07, SV10
+- Cahier : M12 Conformité (« demandes des personnes ») ; Conformité, droit de rectification ; R96, R13, R16.
+- Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de SV10 (« Le motif `demande_de_la_personne` ne clôt pas une demande de rectification de la conformité »). Aujourd'hui la direction corrige un nom « à la demande de la personne » (SV10) et le responsable de la conformité suit la demande de rectification (L07) sans rien savoir de cette correction : sa réponse notée n'en garde aucune trace, et ses alertes disent seulement que la demande est à traiter. Désormais une demande de rectification dit `rectifiedOn`, le jour (Paris) de la première correction de nom faite avec ce motif sur l'une des fiches réunies de la personne, le jour de la réception ou après ; la réponse notée garde dans son empreinte les corrections faites ainsi ; les alertes disent « nom corrigé le … » et que la réponse à la personne reste à noter. La demande n'est pas close seule : une rectification peut porter sur autre chose qu'un nom, et la réponse à la personne (article 12) reste au responsable. Aucun nom n'est rendu ni écrit au journal [R13]. Change seulement `conformite/demandes-personnes.ts` et son test ; aucune règle nouvelle ni migration.
+- Objectif : le responsable voit qu'une demande de rectification a été suivie d'une correction, et sa réponse en garde la preuve.
+- Critères : correction du nom « à la demande de la personne » après la réception : `rectifiedOn` à son jour, alertes qui le disent [R96] (test) ; correction avant la réception, ou pour un autre motif : rien (test) ; fiches réunies : la correction de l'autre fiche compte (test) ; réponse notée : son empreinte change avec les corrections, celle d'une opposition ne change pas (test) ; demande d'une autre sorte : `rectifiedOn` nul (test) ; aucun nom dans la demande, les alertes ni le journal [R13] (test) ; tous les tests de L07 et SV10 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
