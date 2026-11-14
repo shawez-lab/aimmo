@@ -1373,13 +1373,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR65 · Les notifications aux agents passent chaque minute
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#559, `418f8a3a`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5917 tests, `wrangler deploy --dry-run` compris). Reste : le vrai service Web Push (H57) ; les routes et l'écran des réglages des notifications (HX27).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX27, SV15, RC33
 - Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R414, R225, R26, R13.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste pour la voie 1 » de RC33 et les « Restent » de HX27 (« branchement au planificateur de chaque minute ») et de SV15 (« construire `ControleEnvois` avec `AgentPushTrialBox` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Aujourd'hui `Notifications` n'est construit nulle part : aucune notification rangée ne part, même vers la boîte d'essai, et le contact chaud « en moins d'une minute » [R412] ne peut pas tenir avec un déclencheur au quart d'heure. Le déclencheur du Worker passe à chaque minute (toujours un seul) ; à chaque minute, en mode essai, le passage des notifications (`packages/api/src/notifications.ts`) rattrape (`catchUp`) puis envoie (`flush`), par un contrôle central qui n'a que la boîte d'essai des notifications et aucun canal vers une personne [R225, R26]. Le planificateur horaire et la publication ne passent qu'aux minutes 0, 15, 30 et 45, comme avant. Une erreur du passage est écrite au journal et n'empêche pas le planificateur. Aucune règle nouvelle ni migration.
 - Objectif : un contact chaud ou un message reçu arrive à l'agent dans la minute, en mode essai dans la boîte d'essai, et les notifications groupées partent à leur heure.
 - Critères : un contact chaud rangé est envoyé au passage de la minute suivante, une seule fois [R412] (test) ; heures calmes tenues par le passage [R413] (test) ; seule la boîte d'essai reçoit, rien ne part vers un téléphone [R225, R26] (test) ; hors mode essai, rien ne passe (test) ; le planificateur et la publication ne passent qu'aux quarts d'heure, et le passage des notifications à chaque minute (test) ; une panne du passage est au journal et le planificateur passe quand même [R13] (test) ; un seul déclencheur, chaque minute (test).
 - Attend : rien (vrai service : H57).
+
+### BR66 · Les réglages et la liste des notifications, par les routes
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX27, BR65
+- Cahier : Phase 3, « Notifications sur le téléphone, réglables » (HX27) ; R412, R413, R415, R16, R13.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de HX27 (« aux routes et à l'écran des réglages ») et de BR65. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Notifications.settings`, `setSettings` et `listFor` existent mais aucune route ne les appelle, et le lien d'une notification (`/notifications/<envoi>`) ne mène nulle part. Quatre routes sous `/v1/notifications`, dans `packages/api/src/notifications.ts`, réservées à l'agent en activité, pour lui seul : lire et ranger ses réglages (heures calmes, niveau de chaque sorte, le contact chaud jamais réglable), lire ses notifications (fiches qu'il voit en entier seulement), et le détail d'un envoi. L'écran viendra ensuite. Aucune règle nouvelle ni migration.
+- Objectif : l'agent règle ses notifications et relit ce qui lui a été notifié, depuis l'API.
+- Critères : seul l'agent en activité, pour lui seul ; la direction refusée, refus au journal et dit en mots [R16] (test) ; réglages rangés puis relus ; contact chaud non réglable, minute hors du jour refusée, en mots [R412, R413] (test) ; la liste ne rend que les fiches que l'agent voit en entier [R16] (test) ; le détail d'un envoi ne rend que les notifications de cet envoi pour cet agent, un envoi d'un autre agent dit inconnu (test) ; champ inattendu refusé, corps trop gros refusé (test) ; le journal ne garde ni texte ni personne de plus [R13] (test) ; `docs/API.md` à jour (test des routes écrites).
+- Attend : rien.
 
 ## Restes du cœur des groupes HX
 
