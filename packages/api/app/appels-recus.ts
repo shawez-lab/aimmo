@@ -31,6 +31,32 @@ export const APPELS_RECUS_STATES = Object.freeze({
   incertaine: 'La transcription n’est pas assez sûre : rien n’est résumé. Rappelez la personne.',
 });
 
+/** BR63 · le passage de main de l'assistant vocal (HX22), dit en mots. */
+export const APPELS_RECUS_TOPICS = Object.freeze({
+  prix: 'le prix',
+  surface: 'la surface',
+  pieces: 'le nombre de pièces',
+  chambres: 'les chambres',
+  etage: 'l’étage',
+  energie: 'le diagnostic énergétique',
+  charges: 'les charges',
+  exterieur: 'l’extérieur',
+  stationnement: 'le stationnement',
+  annee: 'l’année de construction',
+  chauffage: 'le chauffage',
+  commune: 'la commune',
+  autre: 'une question que la fiche du bien ne couvre pas',
+});
+export const APPELS_RECUS_KINDS = Object.freeze({ visite: 'une visite', estimation: 'une estimation', appel: 'un rendez-vous téléphonique' });
+export const APPELS_RECUS_RDV_STATES = Object.freeze({
+  prevu: 'toujours prévu.',
+  decale: 'décalé depuis : ',
+  annule: 'annulé depuis.',
+  tenu: 'tenu.',
+  absent: 'la personne n’est pas venue.',
+  introuvable: 'introuvable dans l’agenda : vérifiez-le.',
+});
+
 /** Le bloc de la fiche et son chargeur, posés dans le script de l'application : le moins possible [R201]. */
 export const APPELS_RECUS_JS = `
   var appelsRecus = null;
@@ -69,6 +95,7 @@ globalThis.AIMMO_APPELS_RECUS = function (t) {
   var LABELS = ${JSON.stringify(APPELS_RECUS_LABELS)}, DEADLINES = ${JSON.stringify(APPELS_RECUS_DEADLINES)};
   var FINANCINGS = ${JSON.stringify(APPELS_RECUS_FINANCINGS)}, STATES = ${JSON.stringify(APPELS_RECUS_STATES)}, CATS = ${JSON.stringify(CATEGORY_LABELS)};
   var QUOTE = ${APPELS_RECUS_QUOTE_MAX}, STOP = ${APPELS_RECUS_STOP_MAX};
+  var TOPICS = ${JSON.stringify(APPELS_RECUS_TOPICS)}, KINDS = ${JSON.stringify(APPELS_RECUS_KINDS)}, RDV = ${JSON.stringify(APPELS_RECUS_RDV_STATES)};
   var turn = 0;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function text(v, max) { return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null; }
@@ -83,11 +110,25 @@ globalThis.AIMMO_APPELS_RECUS = function (t) {
     var n = count(v);
     return n === null ? null : euros(n);
   }
+  function when(v) { return text(v, 40) && !isNaN(Date.parse(v)) ? 'le ' + t.date(v) + ' à ' + t.hour(v) : null; }
+  function assistant(box, a) {
+    box.appendChild(el('p', 'Pris par votre assistant vocal, pendant que vous ne pouviez pas répondre.', 'doux'));
+    var ref = text(a.propertyReference, 64);
+    if (ref) box.appendChild(el('p', 'Bien de l’appel : ' + ref + '.'));
+    var r = a.appointment, kind = r && own(KINDS, r.kind), at = r && when(r.start), st = r && own(RDV, r.state);
+    if (kind && at && st) {
+      var now = r.state === 'decale' ? when(r.current) : '';
+      if (now !== null) box.appendChild(el('p', 'Rendez-vous réservé par l’assistant : ' + kind + ' ' + at + ', ' + st + (r.state === 'decale' ? now + '.' : ''), r.state === 'prevu' || r.state === 'decale' || r.state === 'tenu' ? null : 'alerte'));
+    }
+    var topics = (Array.isArray(a.unanswered) ? a.unanswered : []).map(function (k) { return own(TOPICS, k); }).filter(function (x, i, all) { return x && all.indexOf(x) === i; });
+    if (topics.length) box.appendChild(el('p', 'À reprendre avec l’appelant, la fiche du bien n’y répondait pas : ' + topics.join(', ') + '.', 'alerte'));
+  }
   function call(c) {
     var box = el('article', null, 'bloc');
     var at = text(c.startedAt, 40) && !isNaN(Date.parse(c.startedAt)) ? 'Appel du ' + t.date(c.startedAt) + ' à ' + t.hour(c.startedAt) : 'Appel reçu';
     var d = count(c.durationS);
     box.appendChild(el('h4', at + (d !== null ? ', ' + length(d) : '')));
+    if (c.assistant && typeof c.assistant === 'object') assistant(box, c.assistant);
     if (c.ambiguous === true) box.appendChild(el('p', 'Ce numéro est sur plusieurs fiches : vérifiez que l’appel est bien de cette personne.', 'alerte'));
     var stop = c.stop && text(c.stop.quote, STOP);
     if (stop) box.appendChild(el('p', 'Demande d’arrêt dite par l’appelant : « ' + stop + ' ». L’arrêt de tous les envois est rangé.', 'alerte'));
