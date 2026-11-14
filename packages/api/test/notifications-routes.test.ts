@@ -135,6 +135,13 @@ describeWithSqlite('BR66 · les réglages et la liste des notifications, par les
     const other = await t.call(t.lea, 'GET', `/notifications/envois/${pushId}`);
     expect(other).toMatchObject({ status: 404, body: { ok: false, code: 'unknown', message: NOTIFICATIONS_REFUSALS['unknown'] } });
     expect(await t.call(t.alex, 'GET', '/notifications/envois/inconnu')).toMatchObject({ status: 404, body: { code: 'unknown' } });
+    // Plus de 200 notifications plus récentes : l'envoi ancien se relit encore, en entier.
+    for (let i = 0; i < 205; i++) await t.notifications.notify({ agentId: t.alex.userId, personId: t.noa.id, kind: 'tache', sourceKey: `tache:recent-${i}` });
+    expect((await t.call(t.alex, 'GET', '/notifications')).body.data).toHaveLength(200);
+    expect((await t.call(t.alex, 'GET', `/notifications/envois/${pushId}`)).body.data).toMatchObject([{ kind: 'contact_chaud', pushId }]);
+    // La fiche passe à Léa : l'envoi n'est plus lisible par Alex.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.lea.userId, t.noa.id]);
+    expect(await t.call(t.alex, 'GET', `/notifications/envois/${pushId}`)).toMatchObject({ status: 404, body: { code: 'unknown' } });
   });
 
   it('[R13] aucune route n’envoie rien ; le journal ne garde ni prénom ni coordonnée', async () => {

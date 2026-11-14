@@ -213,7 +213,7 @@ export function notificationsRoutes(): NotificationsRoute[] {
         const denied = await activeAgent(s, viewer);
         if (denied) return refuseViewer(s, viewer, denied);
         if (hasQuery(request)) return refuse(400, null, 'unexpected_field');
-        const rows = (await notificationsOf(s).listFor(viewer)).filter((r) => r.push_id === pushId);
+        const rows = await notificationsOf(s).listForPush(viewer, pushId!);
         if (rows.length === 0) return refuse(404, null, 'unknown');
         return json(200, { ok: true, data: rows.map(view) });
       },
