@@ -1020,7 +1020,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
     file.work.charge(d.text.length);
     st.line += d.text;
     const m = multiply(tm, ts.ctm);
-    st.em = Math.abs(ts.size) * Math.hypot(m[0]!, m[1]!);
+    st.em = Math.abs(ts.size * ts.scale) * Math.hypot(m[0]!, m[1]!);
     if (d.width === null) {
       st.endX = null;
       st.posKnown = false;
@@ -1036,10 +1036,8 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
     st.posKnown = true;
     st.pending = 0;
   };
-  const nextLine = () => {
-    moveTo(0, -ts.leading);
-    newline();
-  };
+  // La ligne suivante est un déplacement de l'interligne : la position décide, comme pour Td.
+  const nextLine = () => moveTo(0, -ts.leading);
 
   for (;;) {
     // Une page déjà illisible n'a plus rien à lire.

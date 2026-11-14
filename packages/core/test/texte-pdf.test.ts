@@ -48,6 +48,8 @@ function pdf(objects: Obj[], opts: { trailer?: string; root?: number; xref?: boo
 }
 
 const HELV = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+/** Helvetica avec une table de largeurs : 500 pour chaque glyphe. */
+const MONO = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [${Array(95).fill(500).join(' ')}] >>`;
 
 /** Catalogue, arbre d'une page par contenu, police Helvetica en WinAnsi. */
 function simple(contents: string[], opts: { flate?: boolean } = {}): Uint8Array {
@@ -175,7 +177,7 @@ describe('RC40 · le texte des pages d’un PDF', () => {
   });
 
   it('lit WinAnsi, les chaînes échappées, les espaces de TJ et les opérateurs de ligne', async () => {
-    const content = String.raw`BT /F1 12 Tf 72 720 Td (Acte pr\351vu le 15/09/2027 \(au plus tard\)) Tj T* [(Montant)-300(du d)20(\351p\364t : 12 250 \200)] TJ (Ligne suivante) ' 1 2 (Encore une) " ET`;
+    const content = String.raw`BT /F1 12 Tf 14 TL 72 720 Td (Acte pr\351vu le 15/09/2027 \(au plus tard\)) Tj T* [(Montant)-300(du d)20(\351p\364t : 12 250 \200)] TJ (Ligne suivante) ' 1 2 (Encore une) " ET`;
     expect(textOf(await pages(simple([content])))).toEqual(['Acte prévu le 15/09/2027 (au plus tard)\nMontant du dépôt : 12 250 €\nLigne suivante\nEncore une']);
   });
 
@@ -261,6 +263,12 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     // Une montée du texte (Ts) le sort de la ligne.
     expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm (Prix : 1) Tj 100 Ts (00000) Tj ET')))).toEqual(['Prix : 1\n00000']);
     expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm (Prix : 1) Tj 0.5 Ts (00000) Tj ET')))).toEqual(['Prix : 100000']);
+    // L'échelle horizontale (Tz) compte dans l'écart, comme la matrice du texte.
+    expect(textOf(await pages(make('BT /F1 10 Tf 10 Tz 0 100 Td (Prix : 1) Tj 5.5 0 Td (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
+    expect(textOf(await pages(make('BT /F1 10 Tf 0.1 0 0 1 0 100 Tm (Prix : 1) Tj 0.1 0 0 1 5.5 100 Tm (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
+    // Sans interligne, la ligne « suivante » reste la même : la position décide.
+    expect(textOf(await pages(make('BT /F1 10 Tf 0 100 Td (Prix : 1) Tj ET BT /F1 10 Tf 40 100 Td 0 TL (00000) \' ET')))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(make('BT /F1 10 Tf 12 TL 0 100 Td (Prix : 1) Tj T* (00000) Tj ET')))).toEqual(['Prix : 1\n00000']);
     // Un recul en fin de TJ compte encore pour le texte suivant, avec ou sans largeurs connues.
     expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td [(Prix : 1) -1000] TJ (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
     expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -1000] TJ (00000) Tj ET'])))).toEqual(['Prix : 1 00000']);
@@ -507,10 +515,10 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       '<< /Type /Catalog /Pages 2 0 R >>',
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 5 0 R >> >> /Contents 8 0 R >>',
-      HELV,
+      MONO,
       { dict: '/Subtype /Form /Resources << /XObject << /Fm 6 0 R >> >>', data: calls },
       { dict: '/Subtype /Form /Resources << /XObject << /Fm 7 0 R >> >>', data: calls },
-      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'x'.repeat(1000)}) ' ET`, flate: true },
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf (${'x'.repeat(1000)}) Tj ET`, flate: true },
       { dict: '', data: calls },
     ]);
     const started = Date.now();
@@ -521,8 +529,8 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       '<< /Type /Catalog /Pages 2 0 R >>',
       '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
       '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Fm 5 0 R >> >> /Contents 6 0 R >>',
-      HELV,
-      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf T* [(a) ${zeros} (b)] TJ ET`, flate: true },
+      MONO,
+      { dict: '/Subtype /Form /Resources << /Font << /F1 4 0 R >> >>', data: `BT /F1 12 Tf [(a) ${zeros} (b)] TJ ET`, flate: true },
       { dict: '', data: Array(100).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(big, { maxWork: 300_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
