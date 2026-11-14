@@ -19,10 +19,11 @@ database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../db/migrations"
 
 [triggers]
-# Un seul déclencheur, tous les quarts d'heure : le planificateur du socle (B02) passe les tâches dues à l'heure de
-# Paris, une fois par heure, et celles qui ont leur minute (le plan du jour à 7 h 30, G02) ; le passage de publication
-# des annonces (P10) passe une fois par quart d'heure.
-crons = ["*/15 * * * *"]
+# Un seul déclencheur, chaque minute (BR65) : le passage des notifications aux agents (HX27) passe à chaque minute ; aux
+# minutes 0, 15, 30 et 45 seulement, le planificateur du socle (B02) passe les tâches dues à l'heure de Paris, une fois
+# par heure, et celles qui ont leur minute (le plan du jour à 7 h 30, G02), et le passage de publication des annonces
+# (P10) passe une fois par quart d'heure.
+crons = ["* * * * *"]
 
 [observability]
 enabled = true
