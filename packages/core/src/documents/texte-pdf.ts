@@ -531,7 +531,8 @@ const GLYPH_NAMES: Record<string, string> = {
 
 function glyph(name: string): string | null {
   if (/^[A-Za-z]$/.test(name)) return name;
-  if (name in GLYPH_NAMES) return GLYPH_NAMES[name]!;
+  // Seuls les noms de la table elle-même, jamais une propriété héritée (« constructor »).
+  if (Object.hasOwn(GLYPH_NAMES, name)) return GLYPH_NAMES[name]!;
   const uni = /^uni([0-9A-F]{4})$/.exec(name);
   if (uni) {
     const c = parseInt(uni[1]!, 16);
@@ -1157,7 +1158,8 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         break;
       case 'Tj': {
         const s = operands[operands.length - 1];
-        if (s instanceof Str) {
+        // Une chaîne vide ne dessine rien : elle ne place ni espace ni ligne.
+        if (s instanceof Str && s.v.length > 0) {
           place();
           show(s);
         }
@@ -1171,7 +1173,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           ts.charSpacing = nums[nums.length - 1]!;
         }
         nextLine();
-        if (s instanceof Str) {
+        if (s instanceof Str && s.v.length > 0) {
           place();
           show(s);
         }
@@ -1184,6 +1186,7 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
           // au-delà du tableau.
           for (const e of arr) {
             if (e instanceof Str) {
+              if (e.v.length === 0) continue;
               place();
               show(e);
             } else if (typeof e === 'number') {

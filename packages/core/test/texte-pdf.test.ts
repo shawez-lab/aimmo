@@ -269,6 +269,9 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     // Sans interligne, la ligne « suivante » reste la même : la position décide.
     expect(textOf(await pages(make('BT /F1 10 Tf 0 100 Td (Prix : 1) Tj ET BT /F1 10 Tf 40 100 Td 0 TL (00000) \' ET')))).toEqual(['Prix : 100000']);
     expect(textOf(await pages(make('BT /F1 10 Tf 12 TL 0 100 Td (Prix : 1) Tj T* (00000) Tj ET')))).toEqual(['Prix : 1\n00000']);
+    // Une chaîne vide, même loin, ne place ni espace ni ligne.
+    expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm (Prix : 1) Tj 1 0 0 1 200 100 Tm () Tj 1 0 0 1 40 100 Tm (00000) Tj ET')))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(make('BT /F1 10 Tf 1 0 0 1 0 100 Tm [(Prix : 1) -20000 () 20000 (00000)] TJ ET')))).toEqual(['Prix : 100000']);
     // Un recul en fin de TJ compte encore pour le texte suivant, avec ou sans largeurs connues.
     expect(textOf(await pages(make('BT /F1 10 Tf 0 700 Td [(Prix : 1) -1000] TJ (00000) Tj ET')))).toEqual(['Prix : 1 00000']);
     expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -1000] TJ (00000) Tj ET'])))).toEqual(['Prix : 1 00000']);
@@ -405,6 +408,17 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     ]);
     expect(pagesToRead(p)).toEqual([1, 2]);
     expect(pagesForReading(p)).toEqual(['', '', 'prévu']);
+  });
+
+  it('[R12] un nom de glyphe hérité de JavaScript (« constructor ») n’est jamais lu : page illisible', async () => {
+    const bytes = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /BaseEncoding /WinAnsiEncoding /Differences [65 /constructor 66 /toString 67 /__proto__] >> >>',
+      { dict: '', data: 'BT /F1 12 Tf (A) Tj ET' },
+    ]);
+    expect(await pages(bytes)).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
   });
 
   it('[R12] une page d’image seule (un scan) est dite sans texte, à lire', async () => {
