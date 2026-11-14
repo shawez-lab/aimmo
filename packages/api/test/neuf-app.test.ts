@@ -202,6 +202,12 @@ describe('BR78 · la grille de mes programmes neufs, à l’écran de l’agent'
     await half.grid();
     expect(half.part().textContent).toContain(NEUF_NO_SCALE);
     expect(half.part().textContent).not.toContain('Écart :');
+    // Des frais du neuf plus hauts que ceux de l'ancien : l'écart reçu, négatif, est dit avec son signe [R544].
+    const up = { newFees: { ...fees.newFees, value: 2_000_000 }, oldFees: { ...fees.oldFees, value: 1_000_000 }, saving: { ...fees.saving, value: -1_000_000 } };
+    const higher = await run({ 'GET /v1/neuf/programmes/pg1': ok({ ...GRID, lots: [{ ...A1, fees: up }] }) });
+    await higher.grid();
+    expect(higher.part().textContent).toContain('Écart : −10\u202f000\u00a0€');
+    expect(higher.part().textContent).not.toContain(NEUF_NO_SCALE);
   });
 
   it('[R543] les lots à reconfirmer à part ; un lot vendu dit « ne revient jamais », sans aucun geste', async () => {

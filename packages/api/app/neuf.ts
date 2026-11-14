@@ -82,6 +82,8 @@ globalThis.AIMMO_NEUF = function (t) {
     var r = c % 100;
     return group((c - r) / 100) + (r ? ',' + (r < 10 ? '0' : '') + r : '') + '\\u00a0€';
   }
+  /** Un écart reçu peut être négatif (frais du neuf plus hauts que ceux de l'ancien) : il est dit avec son signe. */
+  function money(c) { return int(c) && c < 0 ? '−' + euros(-c) : euros(c); }
   /** Des centièmes, écrits sans unité : 6250 donne « 62,5 ». */
   function plain(h) {
     var r = h % 100;
@@ -122,9 +124,9 @@ globalThis.AIMMO_NEUF = function (t) {
   function note(text) { var p = el('p', text, 'etat'); p.setAttribute('role', 'status'); return p; }
   /** Un frais reçu, avec sa source, sa date et son hypothèse ; incomplet, il n'est pas dit [R544]. */
   function fee(ul, label, f) {
-    if (!f || typeof f !== 'object' || !int(f.value) || !str(f.source) || !DAY.test(str(f.asOf)) || !str(f.hypothesis)) return false;
+    if (!f || typeof f !== 'object' || !money(f.value) || !str(f.source) || !DAY.test(str(f.asOf)) || !str(f.hypothesis)) return false;
     var li = el('li');
-    li.appendChild(el('strong', label + ' : ' + euros(f.value)));
+    li.appendChild(el('strong', label + ' : ' + money(f.value)));
     li.appendChild(el('p', f.hypothesis + ' · source : ' + f.source + ' · en vigueur depuis le ' + day(f.asOf), 'doux'));
     ul.appendChild(li);
     return true;
