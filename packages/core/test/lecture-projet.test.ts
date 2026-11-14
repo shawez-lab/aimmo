@@ -149,6 +149,9 @@ describe('RC39 · lire un terme sur sa page', () => {
     expect(named[0]!.lines[0]).toBe('Prix de vente de 205 000 € pour le bien … 4 … des … à …, vendu par … à …, Maître … notaire.');
     const masked = excerptsOf(['Prix payé comptant, contact du notaire : etude@notaires.test ou +33 3 80 00 00 00 ou 03.80.11.22.33, dossier 12345678901234']);
     expect(masked[0]!.lines[0]).toBe('Prix payé comptant, … du notaire : … ou … ou …');
+    const phones = excerptsOf(['Prix de vente : 205 000 €. Contact du notaire : +33 (0)6 11 22 33 44, 06/11/22/33/44 ou (03) 80 11 22 33 ; acte au plus tard le 15/06/2027, prêt de 1 205 000 € sur 240 mois.']);
+    expect(phones[0]!.lines[0]).toBe('Prix de vente : 205 000 €. … du notaire : … ou … ; acte au plus tard le 15/06/2027, prêt de 1 205 000 € sur 240 mois.');
+    expect(phones[0]!.lines[0]).not.toMatch(/33|44/);
   });
 });
 

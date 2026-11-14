@@ -67,7 +67,13 @@ const USEFUL = /\bprix\b|condition|suspensi|\bpr[eê]ts?\b|emprunt|financement|d
 /** Une ligne qui porte de quoi identifier une personne ou un compte ne part jamais au lecteur [R15]. */
 const NEVER_SENT = /\biban\b|\bbic\b|\brib\b|\bswift\b|\bFR\d{2}(?:[  ]?[0-9A-Z]{4}){2,}|passeport|carte (?:nationale )?d.identit[ée]|titre de s[ée]jour|permis de conduire|\bn[ée]e?s? (?:le|à|a)\b|date de naissance|lieu de naissance|s[ée]curit[ée] sociale|num[ée]ro fiscal/i;
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.\p{L}{2,}/gu;
-const PHONE = /(?:\+|00)\s?\d{2,3}(?:[\s.-]?\d{1,4}){3,6}|\b0\d(?:[\s.-]?\d{2}){4}\b/g;
+/**
+ * Une suite de chiffres coupée d'espaces, de points, de barres, de tirets ou de parenthèses, de 9 chiffres ou plus, ou
+ * précédée d'un « + » : un téléphone (« +33 (0)6 11 22 33 44 », « 06/11/22/33/44 ») ou un numéro de personne ou de
+ * compte, jamais un montant ni une date du projet. Masquée en entier [R15].
+ */
+const LONG_NUMBER = /\+\s?\(?\d[\d\s.\/()-]*\d|\(?\d[\d\s.\/()-]*\d\)?/g;
+const digitCount = (s: string): number => s.replace(/\D/g, '').length;
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const MONTHS_WORDS = MONTHS.join(' ');
@@ -94,14 +100,11 @@ const ALLOWED_WORDS = new Set(
   ).split(' '),
 );
 
-const PERSON_DIGITS = /\d{11,}/g;
-
 /** Une ligne utile, réduite au vocabulaire des termes, aux nombres et à la ponctuation [R15]. */
 function skeleton(line: string): string {
   return line
     .replace(EMAIL, ' … ')
-    .replace(PHONE, ' … ')
-    .replace(PERSON_DIGITS, '…')
+    .replace(LONG_NUMBER, (n) => (n.trimStart().startsWith('+') || digitCount(n) >= 9 ? ' … ' : n))
     .replace(/\p{L}+/gu, (w) => (ALLOWED_WORDS.has(w.toLowerCase()) ? w : '…'))
     .replace(/…(?:[\s'’.,-]*…)+/g, '…')
     .replace(/\s+/g, ' ')
