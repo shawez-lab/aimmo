@@ -40,7 +40,7 @@ async function setup(reader: DraftReader | null, o: { timeoutMs?: number } = {})
   await t.startCompromis();
   t.setClock(WED_10H);
   t.storage.refs.add(PROOF);
-  const lp = new LectureProjet(t.db, t.acces, t.journal, t.storage, reader, { now: t.now, timeoutMs: o.timeoutMs });
+  const lp = new LectureProjet(t.db, t.acces, t.journal, t.storage, reader, { now: t.now, ...(o.timeoutMs === undefined ? {} : { timeoutMs: o.timeoutMs }) });
   const ac = new AvantContrat(t.db, t.acces, t.journal, t.storage, { now: t.now });
   const doc = () => {
     refs += 1;
