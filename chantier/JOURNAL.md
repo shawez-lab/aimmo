@@ -1081,3 +1081,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-14 05:41 · VOIE 2 : RC35, b4f22adf (#561, fusionnée), relancé non
 - 2026-11-14 06:06 · BR66 · fusionnée (#560, 006ee23f) : routes des réglages, de la liste et du détail d'un envoi des notifications, pour l'agent en activité seul ; Codex 1 P2 corrigé puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5935 tests) ; l'heure de la ligne BR65 (05:05) est fausse, c'était 04:24 · prochaine : écran des notifications (voie 1)
 - 2026-11-14 06:06 · voie 1 · fin de séance : BR65 et BR66 fusionnées ; verrou libéré, relance · prochaine : à choisir
+- 2026-11-14 06:06 · voie 1 · relance refusée par le contrôle des permissions, un essai, pas de deuxième ; le passage planifié reprendra
