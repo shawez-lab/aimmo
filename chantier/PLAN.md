@@ -1445,6 +1445,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : avec `fiche`, les réclamations de toutes les fiches réunies sont rendues, et seulement elles (test) ; fusion défaite : chacune revient à sa seule fiche (test) ; la fiche d'origine n'est jamais réécrite [R17] (test) ; un agent ne voit rien d'une fiche qu'il ne suit pas, refus au journal [R16] (test) ; paramètre mal formé ou inconnu refusé en mots (test) ; l'écran demande le groupe, montre la mention « fiche réunie », budgets tenus, sans innerHTML [R201] (test).
 - Attend : rien.
 
+### BR72 · Le parcours du mois rangé, et dit à l'écran de la direction
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : SV04, SV03
+- Cahier : Indicateurs et tests, « Chaque mois : un parcours complet fictif, du premier message à l'après-vente » ; R13, R16, R26.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans le « Reste » de SV04 (« Un échec du travail mensuel n'alerte que par GitHub, rien à l'écran de la direction »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme le reçu de la restauration (SV03) : le travail « Parcours du mois » garde son premier travail sans secret ni accès à la base, qui ne fait que jouer le parcours et dire l'étape cassée ; un second travail, sur main seulement, range un reçu dans la base `aimmo` (table neuve, ni réécrite ni effacée) : le mois, réussi ou raté, et l'identifiant de l'étape cassée pris dans une liste fermée, rien d'autre. L'écran « Rapport » de la direction gagne le bloc « Le parcours complet, ce mois-ci » : réussi, raté à telle étape, ou manquant, jamais vert par défaut. Aucune règle nouvelle ; une migration.
+- Objectif : la direction voit chaque mois, sans ouvrir GitHub, si le parcours complet fictif tient encore, et à quelle étape il casse.
+- Jamais vu : le réseau montre à sa direction, chaque mois, la preuve datée qu'un client fictif traverse vraiment tout le logiciel, du premier message à l'après-vente, et l'étape exacte où il s'arrête sinon.
+- Critères : un reçu réussi ou raté avec son étape est rangé, jamais réécrit ni effacé (test) ; une étape hors liste ou un résultat illisible est rangé raté sans étape (test) ; sans reçu du mois attendu : « manquant » (test) ; la direction seule lit, refus au journal [R16] (test) ; le premier travail reste sans secret ni base, le second ne lit que le résultat du premier [R26] (test) ; rien de personnel au reçu ni au journal [R13] (test) ; l'écran dit les trois états, sans innerHTML, budgets tenus [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
