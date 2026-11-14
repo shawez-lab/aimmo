@@ -72,8 +72,8 @@ describeWithSqlite('P10 · branchement de M07 dans le socle', () => {
     expect(quarterSlot(new Date('2027-02-24T23:15:00.000Z'))).toBe('2027-02-24T23:15Z');
     // L'heure qui revient au changement d'heure d'automne garde ses propres créneaux.
     expect(quarterSlot(new Date('2027-10-31T00:00:00.000Z'))).not.toBe(quarterSlot(new Date('2027-10-31T01:00:00.000Z')));
-    // Le Worker n'a qu'un déclencheur, tous les quarts d'heure.
-    expect(readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8')).toMatch(/^crons = \["\*\/15 \* \* \* \*"\]$/m);
+    // Le Worker n'a qu'un déclencheur, chaque minute ; la publication ne passe qu'aux quarts d'heure (BR65).
+    expect(readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8')).toMatch(/^crons = \["\* \* \* \* \*"\]$/m);
   });
 
   it('[R46] la page publique ne montre qu’une version publiée, sans adresse ni nom du vendeur ; la fiche imprimable aussi ; jamais indexée', async () => {

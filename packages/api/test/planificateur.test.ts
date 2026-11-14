@@ -153,14 +153,15 @@ describeWithSqlite('B02 · planificateur du socle', () => {
     const w = await world();
     vi.useFakeTimers({ now: WINTER_18H, toFake: ['Date'] });
     try {
-      await worker.scheduled({}, { DB: w.d1, MODE: 'essai', RDV_LINK_BASE: 'https://rdv.example.test/r/' } as Env);
+      // Le déclencheur de 18 h à Paris (17 h UTC), appelé avec quelques minutes de retard (BR65).
+      await worker.scheduled({ scheduledTime: Date.parse('2026-11-10T17:00:00.000Z') }, { DB: w.d1, MODE: 'essai', RDV_LINK_BASE: 'https://rdv.example.test/r/' } as Env);
     } finally {
       vi.useRealTimers();
     }
     expect((await w.passages()).map((e) => e.data.job)).toEqual(['reseau.passage', 'site.rappels_visite', 'site.courriers_vendeur', 'estimation.relance_vendeur', 'rdv.rappels', 'rdv.briefs', 'mandats.suivi_valeur', 'acquereurs.alertes', 'acquereurs.mises_en_vente', 'visites.comptes_rendus', 'visites.point_semaine', 'apres_vente.demandes_avis', 'apres_vente.remerciements', 'apres_vente.relances', 'pilotage.passage', 'location.envois', 'conformite.fuites', 'partenaires.suivi', 'partenaires.envois', 'investir.alertes', 'securite.gel_avoirs', 'securite.reclamations', 'sequences.passage', 'automatismes.scenarios', 'automatismes.dates']);
   });
 
-  it('un seul déclencheur, tous les quarts d’heure : tâches horaires une fois par heure, plan du jour à 7 h 30, publication une fois par quart d’heure (P10)', async () => {
+  it('aux quarts d’heure du déclencheur (BR65) : tâches horaires une fois par heure, plan du jour à 7 h 30, publication une fois par quart d’heure (P10)', async () => {
     const w = await world();
     // 7 h 00, 7 h 05, 7 h 15, 7 h 30 et 7 h 45 à Paris, en hiver.
     for (const minute of [0, 5, 15, 30, 45]) {

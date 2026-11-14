@@ -2,6 +2,7 @@ import { TRIAL_MODE, handleRequest } from './app.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
+import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
 import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
@@ -162,8 +163,15 @@ export default {
       },
     });
   },
-  /** Déclencheur horaire (wrangler.toml, `[triggers]`) : le planificateur du socle (B02). */
-  async scheduled(_controller: unknown, env: Env): Promise<void> {
+  /**
+   * Déclencheur de chaque minute (wrangler.toml, `[triggers]`, BR65) : le passage des notifications aux agents à chaque
+   * minute ; le planificateur du socle (B02) et la publication (P10) aux seuls quarts d'heure, comme avant. Une panne du
+   * passage des notifications est écrite au journal et n'empêche pas le planificateur.
+   */
+  async scheduled(controller: { scheduledTime?: number } | undefined, env: Env): Promise<void> {
+    await runNotificationsPass({ db: fromD1(env.DB), mode: env.MODE });
+    const at = typeof controller?.scheduledTime === 'number' ? new Date(controller.scheduledTime) : new Date();
+    if (!isQuarterMinute(at)) return;
     const estimation = estimationServices(env);
     await runScheduler({
       db: fromD1(env.DB),

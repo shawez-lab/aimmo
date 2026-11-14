@@ -179,7 +179,7 @@ Une clé d'agent peut porter `"scope": "mcp"` (agent seulement ; une autre port�
 
 ## Planificateur (B02)
 
-- Le Worker a un déclencheur horaire (`[triggers]` de `wrangler.toml`, à la 7e minute de chaque heure UTC) : il passe les tâches à heure fixe dues à l'heure de Paris, été comme hiver. Plus aucune tâche du système ne doit être planifiée ailleurs, ni dans GitHub Actions, ni dans une application (bascule de `taches.yml` en B04).
+- Le Worker a un seul déclencheur, chaque minute (`[triggers]` de `wrangler.toml`, BR65). À chaque minute, en mode essai, le passage des notifications aux agents rattrape les contacts chauds et les messages reçus, puis envoie ce qui est dû, par le contrôle central et la seule boîte d'essai des notifications : rien ne part vers un téléphone (H57). Aux minutes 0, 15, 30 et 45 seulement, il passe les tâches à heure fixe dues à l'heure de Paris, été comme hiver, et la publication des annonces. Plus aucune tâche du système ne doit être planifiée ailleurs, ni dans GitHub Actions, ni dans une application (bascule de `taches.yml` en B04).
 - Une tâche ne passe qu'une fois par créneau (date et heure de Paris), même si le déclencheur repasse ou si l'heure revient au changement d'heure ; la table `scheduled_runs` le garantit et ne s'efface jamais.
 - Chaque passage est écrit au journal (`planificateur.passage` : tâche, créneau, issue, nom de l'erreur seulement) ; une tâche en erreur n'arrête pas les autres.
 - En mode essai, les tâches du site (`site.rappels_visite` de 18 h à 21 h, `site.courriers_vendeur` de 8 h à 21 h) notent leur passage et n'appellent rien [R26]. Hors mode essai, rien ne passe.
