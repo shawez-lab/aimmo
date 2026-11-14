@@ -554,6 +554,18 @@ describe('RC40 · le texte des pages d’un PDF', () => {
       { dict: '', data: Array(200).fill('/Fm Do').join(' ') },
     ]);
     expect(await pdfPagesText(commented, { maxWork: 1000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    // Une table ToUnicode à long commentaire, partagée par de nombreuses polices : lue une fois, ses octets comptés.
+    const fontsDict = Array.from({ length: 200 }, (_, i) => `/F${i} << /Type /Font /Subtype /Type0 /BaseFont /Inconnue${i} /Encoding /Identity-H /ToUnicode 5 0 R >>`).join(' ');
+    const shared = pdf([
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << ${fontsDict} >> >> /Contents 6 0 R >>`,
+      '<< /Type /Font /Subtype /Type0 /BaseFont /Inconnue /Encoding /Identity-H /ToUnicode 5 0 R >>',
+      { dict: '', data: `%${'c'.repeat(200_000)}\n${TO_UNICODE}`, flate: true },
+      { dict: '', data: `BT 0 700 Td ${Array.from({ length: 200 }, (_, i) => `/F${i} 10 Tf T*`).join(' ')} /F0 10 Tf ${cid('Prix')} Tj ET` },
+    ]);
+    expect(await pdfPagesText(shared, { maxWork: 20_000 })).toEqual({ ok: false, rule: null, code: 'too_complex' });
+    expect(textOf(await pages(shared))).toEqual(['Prix']);
     // Un texte qui échoue à se décoder compte aussi, et arrête la lecture de la page.
     const failing = pdf([
       '<< /Type /Catalog /Pages 2 0 R >>',

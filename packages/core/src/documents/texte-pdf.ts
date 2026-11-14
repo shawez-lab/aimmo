@@ -323,6 +323,8 @@ class PdfFile {
   readonly ambiguous = new Set<number>();
   /** Vrai dès qu'une lecture a suivi une référence vers un objet ambigu. */
   touchedAmbiguous = false;
+  /** Les tables ToUnicode déjà lues. */
+  readonly cmaps = new Map<Stream, CMap | null>();
   /** Les polices déjà lues. */
   readonly fonts = new Map<Dict, { decoder: FontDecoder; ambiguous: boolean }>();
   private readonly decoded = new Map<Stream, string | null>();
@@ -642,9 +644,10 @@ function parseCMap(data: string, work: Work): CMap | null {
   const stack: (Value | Op)[] = [];
   try {
     for (;;) {
+      const before = lx.pos;
       const t = lx.next();
+      work.charge(lx.pos - before + 1);
       if (t === undefined) break;
-      work.charge(1);
       if (!(t instanceof Op)) {
         stack.push(t);
         continue;
@@ -818,8 +821,12 @@ async function buildDecoder(file: PdfFile, font: Dict): Promise<FontDecoder> {
   if (tu !== undefined) {
     // Une table donnée mais illisible ne cède jamais au codage de base : le texte pourrait différer du document.
     if (!(tu instanceof Stream)) return NO_DECODER;
-    const data = await file.decode(tu);
-    const cmap = data === null ? null : parseCMap(data, file.work);
+    // Une table partagée par plusieurs polices n'est lue qu'une fois.
+    if (!file.cmaps.has(tu)) {
+      const data = await file.decode(tu);
+      file.cmaps.set(tu, data === null ? null : parseCMap(data, file.work));
+    }
+    const cmap = file.cmaps.get(tu)!;
     if (!cmap || cmap.map.size === 0) return NO_DECODER;
     return cmapDecoder(cmap, composite ? 2 : 1, fallback, widthOf);
   }
