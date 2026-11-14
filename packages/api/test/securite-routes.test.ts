@@ -113,6 +113,13 @@ describeWithSqlite('BR01 · routes des réclamations et du gel des avoirs', () =
     expect((await t.http('alex', 'GET', '/securite/reclamations')).body.data).toHaveLength(2);
     expect((await t.http('sam', 'GET', '/securite/reclamations')).body.data).toHaveLength(0);
     expect((await t.http('direction', 'GET', '/securite/reclamations')).body.data).toHaveLength(2);
+    // BR71 : le groupe d'une fiche, par le paramètre `fiche`, et lui seul.
+    expect((await t.http('alex', 'GET', `/securite/reclamations?fiche=${t.personId}`)).body.data).toHaveLength(2);
+    expect(await t.http('sam', 'GET', `/securite/reclamations?fiche=${t.personId}`)).toMatchObject({ status: 403, body: { ok: false, rule: 'R16' } });
+    expect(await t.http('direction', 'GET', '/securite/reclamations?fiche=inconnue')).toMatchObject({ status: 404, body: { code: 'unknown_person' } });
+    expect(await t.http('direction', 'GET', '/securite/reclamations?fiche=a%20b')).toMatchObject({ status: 400, body: { code: 'bad_fiche' } });
+    expect(await t.http('direction', 'GET', `/securite/reclamations?fiche=${t.personId}&fiche=x`)).toMatchObject({ status: 400, body: { code: 'unexpected_field' } });
+    expect(await t.http('direction', 'GET', '/securite/reclamations?autre=1')).toMatchObject({ status: 400, body: { code: 'unexpected_field' } });
     expect(await t.http('alex', 'GET', '/securite/reclamations/inconnue/reponse')).toMatchObject({ status: 405 });
     expect(await t.http('alex', 'POST', '/securite/reclamations/inconnue/reponse', { outcome: 'reglee', note: 'x' })).toMatchObject({ status: 404, body: { code: 'unknown_complaint' } });
   });
