@@ -1499,12 +1499,23 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR77 · Les programmes neufs au plan du site du réseau et signalés aux moteurs
-- Statut : en cours
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#578, `d256cb0d`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6091 tests). Restent : la grille dans les annonces, les écrans du neuf et du viager.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR76
 - Cahier : M01 (référencement, plan du site) ; Phase 3, « Programmes neufs et viager » (HX48) ; R153, R543, R26.
 - Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR76 (« le plan du site »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Seul `packages/core/src/attirer/referencement.ts` change, sans route ni migration ni règle nouvelle. La page `/neuf/:programme` n'entre qu'au plan du site du réseau, sa seule page de référence [R153], et seulement quand sa grille publiée a au moins un lot : une page qui dit « aucun lot disponible » n'est pas donnée aux moteurs. Sa date est le jour de confirmation le plus récent de ses lots publiés. Le passage du signalement (IndexNow) la traite comme les autres pages : publiée, modifiée quand sa grille publiée change (lot, prix, frais), retirée quand son dernier lot ne l'est plus ; en essai rien ne part [R26].
 - Objectif : un moteur trouve la grille à jour d'un programme neuf dès qu'elle a un lot, et l'oublie dès qu'elle n'en a plus.
 - Critères : le plan du site du réseau donne `/neuf/<programme>` avec le jour de confirmation le plus récent ; jamais au plan du site d'un agent [R153] (test) ; un programme sans lot publié (vendu, en option, réservé ou confirmé depuis plus de 14 jours) n'y est pas [R543] (test) ; un programme d'un autre réseau n'y est pas (test) ; le signalement range la page publiée, puis modifiée quand un prix change, puis retirée quand le dernier lot est vendu, en essai sans appeler le service [R26] (test) ; tous les tests du référencement restent verts.
+- Attend : rien.
+
+### BR78 · La grille de mes programmes neufs, à l'écran de l'agent
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR75
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M16 ; M18 ; R543, R544, R16, R201.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans les « Restent » de BR77 (« les écrans du neuf et du viager »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Découpé en trois : l'écran de l'agent (cette tâche), celui de la direction (barèmes, ouverture d'un programme, table d'espérance) et celui du viager, chacun une tâche à part. L'application pèse déjà 49 042 octets compressés sur 49 152 : aucune porte dans `app.js`. Un script servi à part, `/app/neuf.js` (`AIMMO_NEUF`), chargé au geste depuis l'écran « Gagner des mandats » (script servi à part), partie « Programmes neufs », comme la pige et « Mon site ». Il lit `GET /v1/neuf/programmes` et `GET /v1/neuf/programmes/<id>`, et écrit par `POST /v1/neuf/programmes/<id>/lots` ; il ne calcule aucun frais, ne trie rien : il met en forme les chiffres reçus (centimes en euros, centièmes de m² en m²). Aucune règle nouvelle ni migration.
+- Objectif : l'agent d'un programme neuf voit ses programmes, la grille publiée avec les frais sourcés, les lots à reconfirmer, et range à l'écran l'état d'un lot confirmé par le promoteur.
+- Jamais vu : un lot vendu n'offre plus aucun geste à l'écran, et chaque frais du neuf montre sa source, sa date et son calcul en mots, sans aucun chiffre quand le barème manque.
+- Critères : un seul script servi à part, chargé au seul geste depuis « Gagner des mandats », budgets de l'application et des pages tenus, sans innerHTML [R201] (test) ; programmes de l'agent listés dans l'ordre reçu, aucun : dit en mots (test) ; grille : lots publiés avec prix, surface, étage, date de confirmation, frais du neuf, de l'ancien et écart chacun avec source, date et hypothèse ; sans barème, aucun chiffre de frais et la raison dite [R544] (test) ; lots à reconfirmer dits à part [R543] (test) ; un lot vendu : dit « vendu, ne revient jamais », aucun bouton [R543] (test) ; ranger un lot : tous les champs envoyés en entiers (centimes, centièmes), champ manquant refusé avant l'appel, puis grille relue (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine et relue (test) ; texte reçu posé en texte, entrée mal formée tue (test).
 - Attend : rien.
 
 ## Restes du cœur des groupes HX
