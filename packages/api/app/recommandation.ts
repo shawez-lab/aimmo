@@ -8,42 +8,7 @@
 
 /** Le bloc de la fiche et son chargeur, posés dans le script de l'application. */
 export const RECOMMANDATION_JS = `
-  /* ---------- Recommander un proche depuis la fiche (X22), chargé au premier geste [R03, R16, R66, R142, R201]. ---------- */
-  var recoTools = null, recoLoading = false;
-  function recommandationBlock(personId) {
-    var box = el('section', null, 'bloc');
-    var said = el('p', null, 'etat reco');
-    said.setAttribute('role', 'status');
-    var corps = el('div');
-    var open = button('Recommandation d’un proche', function () {
-      if (recoTools) { recoTools.open(personId, corps, said); return; }
-      if (recoLoading) return;
-      recoLoading = true;
-      var mine = session;
-      said.textContent = 'Chargement…';
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/recommandation.js');
-      s.addEventListener('load', function () {
-        recoLoading = false;
-        var make = globalThis.AIMMO_RECOMMANDATION;
-        try { delete globalThis.AIMMO_RECOMMANDATION; } catch (e) { /* rien */ }
-        if (mine !== session) return;
-        if (typeof make !== 'function') { said.textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; return; }
-        recoTools = make({ el: el, clear: clear, send: send, button: button, field: field, checkbox: checkbox, projects: PROJECTS, session: function () { return session; } });
-        recoTools.open(personId, corps, said);
-      });
-      s.addEventListener('error', function () {
-        recoLoading = false;
-        if (mine === session) said.textContent = 'Pas de réseau. Réessayez dans un moment.';
-      });
-      $('fiche').appendChild(s);
-    });
-    open.className = 'secondaire';
-    box.appendChild(open);
-    box.appendChild(said);
-    box.appendChild(corps);
-    return box;
-  }
+  function recommandationBlock(personId) { return lazyBlock('Recommandation d’un proche', '/app/recommandation.js', 'AIMMO_RECOMMANDATION', personId, 'reco'); }
 `;
 
 /** Le script servi à part. Il ne lit et n'écrit que les recommandations de cette fiche [R16]. */

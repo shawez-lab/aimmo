@@ -19,42 +19,7 @@ export const CLIENT_DATE_LOST = 'La réponse n’est pas arrivée : rien n’est
 
 /** Le bloc de la fiche et son chargeur, posés dans le script de l'application. */
 export const FIN_DE_BAIL_JS = `
-  /* ---------- La fin de bail notée sur la fiche (G15), chargée au premier geste [R16, R143, R201]. ---------- */
-  var finDeBailTools = null, finDeBailLoading = false;
-  function finDeBailBlock(personId) {
-    var box = el('section', null, 'bloc');
-    var said = el('p', null, 'etat fin-bail');
-    said.setAttribute('role', 'status');
-    var corps = el('div');
-    var open = button('Dates connues', function () {
-      if (finDeBailTools) { finDeBailTools.open(personId, corps, said); return; }
-      if (finDeBailLoading) return;
-      finDeBailLoading = true;
-      var mine = session;
-      said.textContent = 'Chargement…';
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/fin-de-bail.js');
-      s.addEventListener('load', function () {
-        finDeBailLoading = false;
-        var make = globalThis.AIMMO_FIN_DE_BAIL;
-        try { delete globalThis.AIMMO_FIN_DE_BAIL; } catch (e) { /* rien */ }
-        if (mine !== session) return;
-        if (typeof make !== 'function') { said.textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; return; }
-        finDeBailTools = make({ el: el, clear: clear, send: send, button: button, field: field, session: function () { return session; } });
-        finDeBailTools.open(personId, corps, said);
-      });
-      s.addEventListener('error', function () {
-        finDeBailLoading = false;
-        if (mine === session) said.textContent = 'Pas de réseau. Réessayez dans un moment.';
-      });
-      $('fiche').appendChild(s);
-    });
-    open.className = 'secondaire';
-    box.appendChild(open);
-    box.appendChild(said);
-    box.appendChild(corps);
-    return box;
-  }
+  function finDeBailBlock(personId) { return lazyBlock('Dates connues', '/app/fin-de-bail.js', 'AIMMO_FIN_DE_BAIL', personId, 'fin-bail'); }
 `;
 
 /** Le script servi à part. Il ne lit et n'écrit que les routes de la fin de bail et des dates de cette fiche [R16]. */
