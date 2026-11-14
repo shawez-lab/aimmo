@@ -71,6 +71,9 @@ describe('RC39 · lire un terme sur sa page', () => {
     expect(monthsOn('sur une durée de 20 ans', 240)).toBe(true);
     expect(monthsOn('sur 240 mois', 240)).toBe(true);
     expect(monthsOn('sur 25 ans', 240)).toBe(false);
+    expect(monthsOn('sur une durée de 20,5 ans', 60)).toBe(false);
+    expect(monthsOn('sur 1.5 ans', 60)).toBe(false);
+    expect(monthsOn('sur 240,5 mois', 6)).toBe(false);
   });
 
   it('[R511] un lecteur exact : chaque terme proposé avec sa page, rien à lire', () => {

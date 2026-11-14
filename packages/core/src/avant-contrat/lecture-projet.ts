@@ -149,8 +149,8 @@ export function dayOn(text: string, day: string): boolean {
 /** Une durée en mois, écrite en mois, ou en années quand elle tombe juste. */
 export function monthsOn(text: string, n: number): boolean {
   const t = normalize(text);
-  if (new RegExp(`(?<!\\d)${n} ?mois\\b`, 'i').test(t)) return true;
-  return n % 12 === 0 && new RegExp(`(?<!\\d)${n / 12} ?ans?\\b`, 'i').test(t);
+  if (new RegExp(`(?<![\\d.,])${n} ?mois\\b`, 'i').test(t)) return true;
+  return n % 12 === 0 && new RegExp(`(?<![\\d.,])${n / 12} ?ans?\\b`, 'i').test(t);
 }
 
 const CONDITION_WORDS: Record<ConditionKind, RegExp | null> = {
