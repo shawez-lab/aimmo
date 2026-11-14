@@ -22,6 +22,7 @@
  *   GET /preuve, /preuve.json                      le compte public de la preuve à Dijon, sur le site du réseau [R213]
  *   GET /sitemap.xml, /robots.txt                  le plan du site et ses consignes aux moteurs [R153]
  *   GET /chercher                                  la recherche en langage courant, sans connexion, jamais gardée (BR44) [R420, R421, R423]
+ *   GET /neuf/:programme                           la grille publiée d'un programme neuf, sur le site du réseau (BR76) [R543, R544, R153]
  * Une adresse inconnue, un site hors service, une page non publiable : 404, sans rien dire de plus. Tant que le
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
@@ -35,6 +36,7 @@ import { countPublicView, type CountedKind } from './statistiques-site.ts';
 import { RechercheLangage } from '../../core/src/recherche/langage-courant.ts';
 import { keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
 import { isRobotVisit } from '../../core/src/statistiques-site/robots.ts';
+import { ProgrammesNeufs, renderNewBuildGrid } from '../../core/src/neuf-viager/index.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 16_000;
@@ -292,6 +294,7 @@ export const PUBLIC_PATHS = {
   plan: /^\/sitemap\.xml$/,
   robots: /^\/robots\.txt$/,
   chercher: /^\/chercher$/,
+  neuf: new RegExp(`^/neuf/${ID}$`),
 };
 
 /** La page de la recherche publique : jamais en cache, jamais indexée, et son formulaire ne mène qu'à elle-même. */
@@ -512,6 +515,19 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
         understood: found.search.criteria.length,
         checkedAt: s.now(),
       });
+    }
+    case 'neuf': {
+      // Une seule page de référence : le site du réseau, comme les prix [R153]. Seuls les lots publiables y sont [R543].
+      if (site.kind !== 'reseau') return notFound();
+      const grid = await new ProgrammesNeufs(s.db, s.journal, { now: s.now }).publishedGrid(networkId, m[1]!);
+      if (!grid) return notFound();
+      // Le contact mène à la page de l'agent du programme si elle est publiable [R152], jamais à son nom sur la grille.
+      const owner = await s.db.first<{ agent_id: string }>('SELECT agent_id FROM new_programs WHERE id = ? AND network_id = ?', [grid.programId, networkId]);
+      const own = owner ? await svc.pageAgent.inputFor(networkId, owner.agent_id) : null;
+      const contactHref = own?.ok ? `/agents/${encodeURIComponent(owner!.agent_id)}` : '/agents';
+      const page = renderNewBuildGrid({ grid, contactHref });
+      // Un lot vendu ne survit qu'une minute en cache [R543].
+      return liveHtml(renderPublicPage({ title: page.title, kicker: 'Programme neuf', body: page.body, robots: mode === 'essai' ? 'noindex' : 'index' }));
     }
     case 'robots': {
       // En essai, rien n'est indexé ; le plan est toujours déclaré, celui du site lui-même [R153].
