@@ -58,6 +58,18 @@ const fmt = (n: number): string => number.format(n).replace(/ | /g, ' ');
 
 export type VisitRefusal = { ok: false; rule: string | null; code: string };
 
+/** Au plus tant de visites en ligne proposées à la fois sur une fiche (BR64). */
+export const ONLINE_TO_ATTACH_MAX = 20;
+
+/** Une visite réservée en ligne qui attend d'être rattachée à la recherche (BR64). */
+export interface OnlineVisitToAttach {
+  appointmentId: string;
+  start: string;
+  end: string;
+  source: 'site' | 'assistant' | 'espace';
+  property: { reference: string; city: string | null };
+}
+
 export interface VisitSlip {
   id: string;
   appointmentId: string;
@@ -309,6 +321,41 @@ export class Visites {
     );
     const slip = await this.makeSlip(viewer.networkId, appointment, appointment.agent_id, property, fiche.value.members);
     return { ok: true, visit: { appointment, slip } };
+  }
+
+  /**
+   * BR64 · Les visites réservées en ligne d'une fiche qui attendent d'être rattachées à sa recherche : rendez-vous
+   * `visite` encore pris, venus du site, de l'assistant ou de l'espace, avec un bien, sans visite rangée ; fiches réunies
+   * comprises. Pour qui voit la fiche en entier [R16]. Un bien qui ne se lit pas sous les droits du lecteur n'est pas
+   * proposé : son rattachement serait refusé. Le bien est dit par sa référence et sa commune, jamais son adresse [R19].
+   */
+  async onlineToAttach(viewer: Viewer, personId: string): Promise<{ ok: true; value: OnlineVisitToAttach[] } | VisitRefusal> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'person', 'role', `person:${personId}`);
+    const fiche = await this.acces.readFiche(viewer, personId);
+    if (!fiche.ok) return { ok: false, rule: 'R16', code: fiche.code };
+    if (fiche.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${personId}`);
+    const ids = fiche.value.members.map((m) => m.id);
+    const rows = await this.db.all<{ id: string; property_id: string; start_at: string; end_at: string; source: string }>(
+      `SELECT a.id, a.property_id, a.start_at, a.end_at, a.source FROM appointments a
+       WHERE a.network_id = ? AND a.person_id IN (${ids.map(() => '?').join(', ')}) AND a.kind = 'visite' AND a.status = 'booked'
+         AND a.property_id IS NOT NULL AND a.source IN ('site', 'assistant', 'espace')
+         AND NOT EXISTS (SELECT 1 FROM visits v WHERE v.appointment_id = a.id)
+       ORDER BY a.start_at, a.id LIMIT ${ONLINE_TO_ATTACH_MAX}`,
+      [viewer.networkId, ...ids],
+    );
+    const value: OnlineVisitToAttach[] = [];
+    for (const row of rows) {
+      const read = await this.acces.readProperty(viewer, row.property_id);
+      if (!read.ok) continue;
+      value.push({
+        appointmentId: row.id,
+        start: row.start_at,
+        end: row.end_at,
+        source: row.source as OnlineVisitToAttach['source'],
+        property: { reference: read.value.reference, city: read.value.city },
+      });
+    }
+    return { ok: true, value };
   }
 
   /** Le bon de visite d'une visite, pour l'agent qui l'a fixée ou la direction [R16]. */

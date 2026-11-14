@@ -349,3 +349,60 @@ describeWithSqlite('RC32 · une visite réservée en ligne rattachée à la rech
     expect(await t.db.first('SELECT project_id, person_id FROM visits WHERE appointment_id = ?', [appt.id])).toEqual({ project_id: b.project.id, person_id: b.person.id });
   });
 });
+
+describeWithSqlite('BR64 · les visites réservées en ligne qui attendent sur la fiche', () => {
+  const at = (h: number) => new Date(WEDNESDAY_10H.getTime() + h * 3_600_000);
+  const book = async (t: Awaited<ReturnType<typeof setup>>, personId: string, propertyId: string | null, start: Date, source: 'site' | 'assistant' | 'espace' | 'agent' = 'site', kind: 'visite' | 'estimation' = 'visite') => {
+    const r = await t.rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId, propertyId, kind, start, source, channel: null });
+    if (!r.ok) throw new Error(r.code);
+    return r.appointment;
+  };
+
+  it('seulement les visites en ligne prises, avec un bien lisible, pas encore rattachées, fiches réunies comprises, sans adresse', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const fresh = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès' });
+    const site = await book(t, b.person.id, p.id, at(0), 'site');
+    const merged = await book(t, fresh.id, p.id, at(2), 'espace');
+    await t.fiche.merge({ survivorId: b.person.id, mergedId: fresh.id, reason: 'même personne' });
+    // Écartés : fixée par l'agent, une estimation, sans bien, annulée, déjà rattachée, bien hors des droits.
+    await book(t, b.person.id, p.id, at(4), 'agent');
+    await book(t, b.person.id, p.id, at(6), 'site', 'estimation');
+    await book(t, b.person.id, null, at(8), 'assistant');
+    const cancelled = await book(t, b.person.id, p.id, at(24), 'site');
+    expect(await t.rdv.cancelAsAgent(t.as('agent', t.alex.id), cancelled.id)).toMatchObject({ ok: true });
+    const attached = await book(t, b.person.id, p.id, at(26), 'assistant');
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: attached.id, projectId: b.project.id })).toMatchObject({ ok: true });
+    const hidden = await t.store.createProperty({ networkId: t.network.id, agentId: t.sam.id, reference: 'B-CACHE', kind: 'home', postalCode: '21000', city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, status: 'draft' });
+    await book(t, b.person.id, hidden.id, at(28), 'site');
+
+    const r = await t.visites.onlineToAttach(t.as('agent', t.alex.id), fresh.id);
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value).toEqual([
+      { appointmentId: site.id, start: site.start_at, end: site.end_at, source: 'site', property: { reference: 'B-TALANT', city: 'Talant' } },
+      { appointmentId: merged.id, start: merged.start_at, end: merged.end_at, source: 'espace', property: { reference: 'B-TALANT', city: 'Talant' } },
+    ]);
+    // La direction voit aussi le bien de Sam en brouillon.
+    const d = await t.visites.onlineToAttach(t.as('direction', 'd1'), b.person.id);
+    expect(d.ok && d.value.map((v) => v.property.reference)).toEqual(['B-TALANT', 'B-TALANT', 'B-CACHE']);
+    // Une fois rattachée, elle n'attend plus.
+    expect(await t.visites.attachOnline(t.as('agent', t.alex.id), { appointmentId: site.id, projectId: b.project.id })).toMatchObject({ ok: true });
+    const after = await t.visites.onlineToAttach(t.as('agent', t.alex.id), b.person.id);
+    expect(after.ok && after.value.map((v) => v.appointmentId)).toEqual([merged.id]);
+  });
+
+  it('un agent qui ne suit pas la fiche, ou un autre rôle, est refusé et le refus va au journal [R16]', async () => {
+    const t = await setup();
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    await book(t, b.person.id, p.id, at(0));
+    expect(await t.visites.onlineToAttach(t.as('agent', t.sam.id), b.person.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.visites.onlineToAttach(t.as('compliance', 'c1'), b.person.id)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.visites.onlineToAttach(t.as('agent', t.alex.id), 'inconnu')).toMatchObject({ ok: false, rule: 'R16', code: 'unknown' });
+    const refused = (await t.journal.all()).filter((e) => e.actor === `agent:${t.sam.id}` || e.actor === 'compliance:c1');
+    expect(refused.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(refused)).not.toMatch(/Inès|Durand|B-TALANT/);
+  });
+});
