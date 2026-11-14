@@ -3,12 +3,14 @@ import { CLIENT_ONLY, DISCOUNT_CATEGORIES } from '../../core/src/remises/remises
 
 /**
  * BR73 · Les remises négociées à l'écran (HX08, routes de BR20). Un seul script servi à part (`/app/remises.js`),
- * chargé au premier geste par deux portes, sans rien ajouter au script de l'application que l'appel du chargeur commun
+ * chargé au premier geste par trois portes, sans rien ajouter au script de l'application que l'appel du chargeur commun
  * [R201] :
  *
  * - sous « Engagements de service » de l'écran du réseau (`show`) : la direction lit le catalogue du jour, range une
  *   remise avec sa source et ses dates [R266], le partenaire cherché dans l'annuaire par métier et code postal [R73],
  *   et retire une remise en deux appuis, avec sa raison ; elle n'est jamais effacée [R17] ;
+ * - sur l'accueil de l'agent (BR74, `open('')`) : ses remises « toujours » en entier, avec source et fin ; les autres,
+ *   qui ne servent qu'au bon moment d'un bien, seulement comptées par moment du dossier, jamais montrées [R267] ;
  * - dans l'écran « Mettre en vente » du bien (`open`, par le chargeur commun) : l'agent du bien lit les remises du
  *   moment du dossier, lu dans la base et jamais déclaré, chacune avec sa raison, et en écarte une pour ce bien [R267].
  *   Celles du client restent dans l'ordre tiré au sort par le serveur, jamais retriées ici [R75].
@@ -19,6 +21,9 @@ import { CLIENT_ONLY, DISCOUNT_CATEGORIES } from '../../core/src/remises/remises
  *
  * Jamais vu : sur la page de son bien, l'agent voit la remise négociée qui sert maintenant, avec la raison lue dans le
  * dossier, et celles du client dans un ordre tiré au sort, dit comme tel.
+ *
+ * Jamais vu (BR74) : l'accueil dit, moment par moment du dossier, combien de remises négociées attendent l'agent et ses
+ * clients, sans en pousser aucune hors du bon moment.
  */
 
 export const REMISES_CATEGORIES: Readonly<Record<string, string>> = Object.freeze(Object.fromEntries(DISCOUNT_CATEGORIES.map((c) => [c.category, c.label])));
@@ -78,6 +83,8 @@ export const REMISES_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 export const REMISES_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. La liste est relue, vérifiez-la avant de recommencer.';
 export const REMISES_RANDOM = 'Ordre tiré au sort, aucun classement : le client choisit son professionnel avec vous.';
 export const REMISES_NONE_NOW = 'Aucun moment sûr dans le dossier de ce bien : rien à proposer maintenant.';
+export const REMISES_ELSEWHERE = 'Les autres remises viennent sur la page du bien, au moment du dossier lu dans la base : aucune n’est montrée ici.';
+export const REMISES_NONE_TODAY = 'Aucune remise négociée en vigueur aujourd’hui.';
 export const REMISES_CONFIRM = 'Une remise retirée ne revient plus : une correction se range comme une nouvelle remise. Dites pourquoi, puis appuyez sur « Retirer pour de bon ».';
 
 /** Le script servi à part. Il ne lit et n'écrit que sous `/v1/remises`, et ne lit que l'annuaire [R16]. */
@@ -89,6 +96,7 @@ globalThis.AIMMO_REMISES = function (t) {
   var REFUSALS = ${JSON.stringify(REMISES_REFUSALS)};
   var OFFLINE = ${JSON.stringify(REMISES_OFFLINE)}, LOST = ${JSON.stringify(REMISES_LOST)}, RANDOM = ${JSON.stringify(REMISES_RANDOM)};
   var NONE_NOW = ${JSON.stringify(REMISES_NONE_NOW)}, CONFIRM = ${JSON.stringify(REMISES_CONFIRM)};
+  var ELSEWHERE = ${JSON.stringify(REMISES_ELSEWHERE)}, NONE_TODAY = ${JSON.stringify(REMISES_NONE_TODAY)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, CP = /^\\d{5}$/;
   var busy = false;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
@@ -340,7 +348,52 @@ globalThis.AIMMO_REMISES = function (t) {
       return true;
     });
   }
+  /* ---------- L'agent, sur son accueil : ses remises de tous les jours ; les autres seulement comptées [R267]. ---------- */
+  function homeLoad(ctx) {
+    var mine = t.session(), me = ctx.corps.aimmoTurn = (ctx.corps.aimmoTurn || 0) + 1;
+    clear(ctx.corps);
+    ctx.said.textContent = 'Lecture de vos remises…';
+    return send('/v1/remises', 'GET').then(function (x) {
+      if (x.gone || mine !== t.session() || me !== ctx.corps.aimmoTurn) return false;
+      if (!x.ok || !x.body || !Array.isArray(x.body.data)) { ctx.said.textContent = refusal(x, 'Les remises ne se lisent pas pour le moment.'); return false; }
+      var always = [], counts = {}, n = 0;
+      x.body.data.forEach(function (d) {
+        var r = read(d);
+        if (!r) return;
+        if (r.moment === MOMENTS.toujours) { if (r.who === FOR.agent) always.push(r); return; }
+        var c = counts[r.moment] = counts[r.moment] || { agent: 0, client: 0 };
+        c[r.who === FOR.agent ? 'agent' : 'client']++;
+        n++;
+      });
+      if (always.length) {
+        ctx.corps.appendChild(el('h5', 'Pour vous, tous les jours'));
+        always.forEach(function (r) {
+          ctx.corps.appendChild(card(r, function (box) {
+            box.appendChild(el('p', 'Source : ' + r.source, 'doux'));
+            box.appendChild(el('p', 'Jusqu’au ' + r.until + '.', 'doux'));
+          }));
+        });
+      }
+      if (n) {
+        ctx.corps.appendChild(el('h5', 'Sur la page du bien, au bon moment'));
+        ctx.corps.appendChild(el('p', ELSEWHERE, 'doux'));
+        var ul = el('ul', null, 'liste');
+        Object.keys(MOMENTS).forEach(function (k) {
+          var c = counts[MOMENTS[k]];
+          if (!c) return;
+          var parts = [];
+          if (c.agent) parts.push(c.agent + ' pour vous');
+          if (c.client) parts.push(c.client + ' pour vos clients');
+          ul.appendChild(el('li', MOMENTS[k] + ' : ' + parts.join(', ') + '.'));
+        });
+        ctx.corps.appendChild(ul);
+      }
+      ctx.said.textContent = always.length + n ? '' : NONE_TODAY;
+      return true;
+    });
+  }
   function open(propertyId, corps, said) {
+    if (propertyId === '') return homeLoad({ corps: corps, said: said });
     if (!ID.test(propertyId || '')) { said.textContent = REFUSALS.unknown_property; return Promise.resolve(false); }
     return propLoad({ id: propertyId, corps: corps, said: said });
   }
