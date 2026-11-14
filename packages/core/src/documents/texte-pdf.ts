@@ -594,11 +594,22 @@ function compositeWidths(file: PdfFile, font: Dict): WidthOf {
     }
   }
   file.work.charge(ranges.length);
+  ranges.sort((x, y) => x[0] - y[0]);
+  // Des plages qui se chevauchent ne disent pas une largeur sûre.
+  for (let k = 1; k < ranges.length; k++) if (ranges[k]![0] <= ranges[k - 1]![1]) return () => null;
   const def = typeof dw === 'number' ? dw : 1000;
   return (code) => {
     const v = byCode.get(code);
     if (v !== undefined) return v;
-    for (const [a, b, c] of ranges) if (code >= a && code <= b) return c;
+    let lo = 0;
+    let hi = ranges.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const [a, b, c] = ranges[mid]!;
+      if (code < a) hi = mid - 1;
+      else if (code > b) lo = mid + 1;
+      else return c;
+    }
     return def;
   };
 }
@@ -819,6 +830,44 @@ interface TextState {
   leading: number;
 }
 
+const COMPONENTS: Record<string, number> = { G: 1, DeviceGray: 1, RGB: 3, DeviceRGB: 3, CMYK: 4, DeviceCMYK: 4, I: 1, Indexed: 1 };
+
+/** La position juste après le `EI` d'une image en ligne dont le `BI` vient d'être lu. */
+function inlineImageEnd(lx: Lexer): number {
+  const d = new Map<string, Value>();
+  for (;;) {
+    const k = lx.next();
+    if (k instanceof Op && k.v === 'ID') break;
+    if (!(k instanceof Name)) throw new Broken();
+    d.set(k.v, lx.value());
+  }
+  const start = lx.pos + 1;
+  const num = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = d.get(k);
+      if (typeof v === 'number' && Number.isInteger(v) && v >= 0) return v;
+    }
+    return null;
+  };
+  let length = num('L', 'Length');
+  if (length === null) {
+    const filter = d.get('F') ?? d.get('Filter');
+    if (filter !== undefined && !(Array.isArray(filter) && filter.length === 0)) throw new Broken();
+    const w = num('W', 'Width');
+    const h = num('H', 'Height');
+    const mask = d.get('IM') === true || d.get('ImageMask') === true;
+    const bpc = mask ? 1 : num('BPC', 'BitsPerComponent');
+    const cs = d.get('CS') ?? d.get('ColorSpace');
+    const comps = mask ? 1 : cs instanceof Name ? (COMPONENTS[cs.v] ?? null) : Array.isArray(cs) && cs[0] instanceof Name && (cs[0].v === 'I' || cs[0].v === 'Indexed') ? 1 : null;
+    if (w === null || h === null || bpc === null || comps === null) throw new Broken();
+    length = Math.ceil((w * bpc * comps) / 8) * h;
+  }
+  const after = lx.s.slice(start + length, start + length + 32);
+  const m = /^[\0\t\n\f\r ]*EI(?=[\0\t\n\f\r ]|$)/.exec(after);
+  if (!m) throw new Broken();
+  return start + length + m[0].length;
+}
+
 async function readContent(file: PdfFile, content: string, resources: Dict | null, st: PageState, depth: number, forms: Set<Stream>): Promise<void> {
   const fonts = resources ? file.dict(resources.get('Font')) : null;
   const xobjects = resources ? file.dict(resources.get('XObject')) : null;
@@ -996,11 +1045,15 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         const arr = operands[operands.length - 1];
         if (Array.isArray(arr)) {
           place();
+          // Les reculs entre deux textes s'additionnent : seul l'écart net, assez grand, est un espace.
+          let pending = 0;
           for (const e of arr) {
-            if (e instanceof Str) show(e);
-            else if (typeof e === 'number') {
-              // Un recul en millièmes de corps : assez grand, c'est un espace ; le texte suivant se place d'autant.
-              if (-e / 1000 > SPACE_GAP) space();
+            if (e instanceof Str) {
+              if (-pending / 1000 > SPACE_GAP) space();
+              pending = 0;
+              show(e);
+            } else if (typeof e === 'number') {
+              pending += e;
               advance((-e / 1000) * ts.size * ts.scale);
               if (st.posKnown) st.endX = tm[4]!;
             }
@@ -1009,16 +1062,9 @@ async function readContent(file: PdfFile, content: string, resources: Dict | nul
         break;
       }
       case 'BI': {
-        // Image en ligne : ses octets ne sont pas du contenu.
-        const id = /\sID[\s]/g;
-        id.lastIndex = lx.pos;
-        const m = id.exec(content);
-        if (!m) throw new Broken();
-        const ei = /\sEI(?=[\s]|$)/g;
-        ei.lastIndex = m.index + m[0].length;
-        const e = ei.exec(content);
-        if (!e) throw new Broken();
-        lx.pos = e.index + e[0].length;
+        // Image en ligne : ses octets ne sont jamais lus comme du contenu. Sa longueur vient de son dictionnaire ;
+        // sans elle (image compressée sans longueur dite), la fin ne se trouve pas avec certitude : page illisible.
+        lx.pos = inlineImageEnd(lx);
         break;
       }
       case 'Do': {

@@ -190,8 +190,14 @@ describe('RC40 · le texte des pages d’un PDF', () => {
   });
 
   it('saute une image en ligne sans lire ses octets comme du texte', async () => {
-    const content = 'BT /F1 12 Tf 72 720 Td (Avant) Tj ET BI /W 2 /H 1 /BPC 8 /CS /G ID \x28\x29\xff\x00 EI BT /F1 12 Tf 72 700 Td (Apres) Tj ET';
+    const content = 'BT /F1 12 Tf 72 720 Td (Avant) Tj ET BI /W 4 /H 1 /BPC 8 /CS /G ID \x28\x29\xff\x00 EI BT /F1 12 Tf 72 700 Td (Apres) Tj ET';
     expect(textOf(await pages(simple([content])))).toEqual(['Avant\nApres']);
+    // Les octets de l'image contiennent « EI » puis du texte : ils ne sont jamais lus.
+    const pixels = ' EI BT /F1 12 Tf (Prix : 100000) Tj ET '.padEnd(60, ' ');
+    expect(await pages(simple([`BI /W 60 /H 1 /BPC 8 /CS /G ID ${pixels} EI`]))).toEqual([{ page: 1, text: null, reason: 'no_text' }]);
+    expect(textOf(await pages(simple([`BI /W 6 /H 1 /BPC 1 /IM true ID \x01 EI BI /L 3 /F /AHx ID 4E> EI BT /F1 12 Tf (Texte) Tj ET`])))).toEqual(['Texte']);
+    // Image compressée sans longueur dite : sa fin n'est pas sûre, la page est illisible.
+    expect(await pages(simple([`BT /F1 12 Tf (Texte) Tj ET BI /W 2 /H 1 /BPC 8 /CS /G /F /AHx ID 4E4F> EI`]))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
   });
 
   it('lit une police composite par sa table ToUnicode (bfchar, bfrange), accents et euro compris', async () => {
@@ -218,6 +224,34 @@ describe('RC40 · le texte des pages d’un PDF', () => {
     const cidContent = (x: number) => `BT /F2 10 Tf 1 0 0 1 72 720 Tm ${cid('Prix')} Tj 1 0 0 1 ${x} 720 Tm ${cid('245')} Tj ET`;
     expect(textOf(await pages(composite(cidContent(112))))).toEqual(['Prix245']);
     expect(textOf(await pages(composite(cidContent(120))))).toEqual(['Prix 245']);
+  });
+
+  it('dans TJ, seuls les reculs nets entre deux textes font un espace', async () => {
+    expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix : 1) -300 300 (00000)] TJ ET'])))).toEqual(['Prix : 100000']);
+    expect(textOf(await pages(simple(['BT /F1 12 Tf [(Prix :) -150 -150 (1)] TJ ET'])))).toEqual(['Prix : 1']);
+  });
+
+  it('largeurs d’une police composite : plages lues par recherche, chevauchements jamais crus', async () => {
+    const withW = (w: string, content: string) =>
+      pdf([
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [4 0 R] /Count 1 >>',
+        '<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+NotoSans /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode 6 0 R >>',
+        '<< /Type /Page /Parent 2 0 R /Resources << /Font << /F2 3 0 R >> >> /Contents 5 0 R >>',
+        { dict: '', data: content, flate: true },
+        { dict: '', data: TO_UNICODE, flate: true },
+        `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEF+NotoSans /W ${w} >>`,
+      ]);
+    const two = (x: number) => `BT /F2 10 Tf 1 0 0 1 72 720 Tm ${cid('Prix')} Tj 1 0 0 1 ${x} 720 Tm ${cid('245')} Tj ET`;
+    // P r i x : quatre glyphes de 500, soit 20 au corps 10.
+    expect(textOf(await pages(withW('[51 51 500 76 76 500 85 85 500 91 91 500]', two(92))))).toEqual(['Prix245']);
+    expect(await pages(withW('[36 87 500 60 70 600]', two(92)))).toEqual([{ page: 1, text: null, reason: 'undecodable' }]);
+    const many = Array.from({ length: 20_000 }, (_, i) => `${1000 + i * 2} ${1000 + i * 2} 500`).join(' ');
+    const glyphs = '<' + '0024'.repeat(20_000) + '>';
+    const started = Date.now();
+    const r = await pdfPagesText(withW(`[${many} 36 87 500]`, `BT /F2 10 Tf 72 720 Td ${glyphs} Tj ET`));
+    expect(r.ok).toBe(true);
+    expect(Date.now() - started).toBeLessThan(3000);
   });
 
   it('[R12] un objet invoqué introuvable ou d’un genre non lu rend la page illisible ; une image non', async () => {
