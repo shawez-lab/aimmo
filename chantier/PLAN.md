@@ -1402,6 +1402,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : chargé au geste, budget de l'application et de la page tenus, sans innerHTML [R201] (test) ; heures calmes dites en heures et rangées en minutes du jour, chaque sorte réglable, le contact chaud dit « toujours tout de suite » et jamais envoyé [R412, R413] (test) ; la liste dit sorte, état et date en mots, et ouvre la fiche (test) ; le lien `/notifications/<envoi>` renvoie vers l'application sans rien lire, un identifiant mal formé est inconnu (test) ; ouvert par le lien, le bloc montre l'envoi et l'adresse est nettoyée (test) ; chaque refus dit en mots, jamais un code ; une écriture sans réponse dite incertaine (test) ; texte reçu posé en texte, un champ mal formé n'est pas dit (test) ; `docs/API.md` à jour (test).
 - Attend : rien (vrai service : H57).
 
+### BR68 · « 1 place de stationnement » n'est plus lue comme une adresse
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : S06, RC34
+- Cahier : Conformité, contenu public ; R09.
+- Décidé (2026-11-14, voie 1), lecture prudente : relevé dans l'« Observation laissée » de RC34 (« le contrôle du texte lit « 1 place de stationnement » comme une adresse (R09), le texte complet cède alors au titre seul »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le contrôle du texte du socle (`packages/core/src/envoi/texte.ts`, fichier du socle, donc voie 1) refuse tout message qui dit « 1 place de stationnement », « 1 place de parking », « 1 place couverte » ou « il reste 1 place libre » : la fiche d'un bien et les annonces écrites par AIMMO elles-mêmes le disent. Une vraie place se nomme (« place Darcy », « place de la Libération », « place du Théâtre », « place d'Arcy ») ; « place » suivi d'un mot de stationnement, d'un adjectif courant ou d'une fin de phrase n'est plus une adresse. Aucune autre voie ne change ; aucune règle nouvelle ni migration.
+- Objectif : un message qui dit le stationnement d'un bien passe le contrôle, et une adresse sur une vraie place reste refusée.
+- Critères : « 1 place de stationnement », « de parking », « de garage », « couverte », « en sous-sol », « 1 place libre », « 1 place. » passent [R09] (test) ; « 12 place de la Libération », « 3 place du Théâtre », « 1 place Darcy », « 4 place d'Arcy », « 2 place des Cordeliers », « 5 place Saint-Michel » restent refusées [R09] (test) ; l'annonce traduite qui garde « 1 place de stationnement » part en entier avec la première réponse (test RC34 sans contournement).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
@@ -1757,8 +1766,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC36 · Un signalement sur un mandat ou une offre fige aussi la vente qui en découle
-- Statut : en cours (voie 2)
-- Reste : proposition #562 prête (`2c38a07`). Codex 1 P1 (critère du gel de la première version du plan, déjà corrigé sur main : pas un P1) et 1 P2 corrigé (lecture par lots de 100 valeurs au plus, limite de D1, test à 120 offres), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5934 tests). Fusion refusée par le contrôle des permissions, un essai : à fusionner à l'étape 3 si main n'a pas changé le code touché.
+- Statut : fait (2026-11-14)
+- Reste : fusionnée (#562, `f047c9c8`) par la voie 1 à l'étape 3 de sa séance de 08:26. Avant : proposition #562 prête (`2c38a07`). Codex 1 P1 (critère du gel de la première version du plan, déjà corrigé sur main : pas un P1) et 1 P2 corrigé (lecture par lots de 100 valeurs au plus, limite de D1, test à 120 offres), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5934 tests). Fusion refusée par le contrôle des permissions, un essai : à fusionner à l'étape 3 si main n'a pas changé le code touché.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : L05, HX57, SV12
 - Cahier : M12 Conformité (« déclare un soupçon ») ; R94, R17, R16.
 - Décidé (2026-11-14, voie 2), lecture prudente : relevé dans le « Reste » de SV12 (« un signalement sur une offre ou un mandat ne fige pas le dossier lié »). Aujourd'hui un dossier de vente fige son offre, les mandats du bien et le vendeur, mais pas l'inverse : un signalement sur un mandat ne fige ni les offres reçues sur le bien ni les dossiers de vente, et un signalement sur une offre ne fige pas le dossier de vente ouvert depuis cette offre. Le responsable ne verrait pas qu'une offre ou une étape de la vente a été changée de force après le signalement. Désormais le périmètre d'un mandat comprend les offres du même bien, leurs dossiers de vente et leurs acquéreurs (fiches réunies et bénéficiaires effectifs compris) ; celui d'une offre comprend les dossiers de vente ouverts depuis elle. Le périmètre reste celui du jour du signalement : une offre arrivée après n'y entre pas et ne change pas la copie. Le contrôle du gel des avoirs (HX57) garde son périmètre (option `withSale` au seul signalement) : il contrôle déjà chaque offre et chaque dossier de vente comme un dossier à part, et ses tests le fixent. Change seulement `conformite/dossier-fige.ts`, `conformite/signalement.ts` (un argument) et le test du signalement ; aucune règle nouvelle ni migration.
