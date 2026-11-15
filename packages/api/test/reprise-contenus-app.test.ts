@@ -221,7 +221,7 @@ describe('BR83 · le contenu des fichiers de l’agence sous licence tiré à l�
     expect(t.texts()).not.toContain('aimmo-0-salon.jpg');
     expect(t.texts()).toContain('aimmo-3-plan.pdf : 13 o, empreinte refaite sur cet appareil : identique.');
     expect(t.statusOf()).toBe('Tous les fichiers sont passés : 2 vérifiées, 1 absentes, 1 masquées, 1 à tirer en tranches, 0 altérées. Enregistrez les pièces de ce lot, puis le reçu.');
-    expect(t.find('Tirer le lot suivant')!.disabled).toBe(true);
+    expect((t.find('Tirer le lot suivant') as unknown as { disabled: boolean }).disabled).toBe(true);
     const n = t.posts().length;
     await t.click(t.find('Tirer le lot suivant'));
     expect(t.posts().length).toBe(n);
