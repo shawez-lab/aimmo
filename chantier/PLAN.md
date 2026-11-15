@@ -1619,7 +1619,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H13 pour le lecteur IA de la prélecture).
 
 ### BR88 · Copropriété et urbanisme relus à l'écran du dossier, chaque phrase avec sa page et la zone avec sa source (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#602, `0266733c`). Codex 2 P2 corrigés (les travaux de l'acquéreur doivent venir du même résumé que celui montré, sinon « rouvrez le bloc » ; le jour de préparation lu à Paris depuis l'instant entier) et 1 P1 corrigé (le registre trouvé testé, source et dates comprises), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6261 tests). Reste (voie 1) : la préparation du résumé à l'écran, depuis le PDF déposé, après RC53 (BR89, à découper).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR87
 - Cahier : M10 et M06, « copropriété et urbanisme résumés » (HX35) ; R448, R449, R450, R451, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR87 (« l'écran du dossier pour la prélecture et le résumé »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La prélecture et la préparation du résumé à l'écran attendent la route du PDF (RC53, voie 2, en cours sur `copropriete.ts`) : sans elle, l'agent devrait recopier le texte de chaque page. Cette tâche fait donc la lecture seule : sur l'écran « Dossier de vente », un bloc « Copropriété et urbanisme » charge au premier geste un script servi à part, `/app/copropriete.js` [R201], qui lit `GET …/copropriete/resume` et `GET …/copropriete/acquereur`. Elle ne touche ni `copropriete.ts`, ni le cœur, ni `app.ts` : seulement `app/dossier.ts`, un fichier neuf `app/copropriete.ts`, `src/agent-app.ts` et des tests. La préparation à l'écran viendra après RC53 (BR89, à découper).
