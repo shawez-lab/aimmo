@@ -159,14 +159,13 @@ const PDF_REF = /\.pdf$/;
  * pas lire est nommée, jamais devinée [R12] ; puis la prélecture de RC39, qui ne range rien.
  */
 async function preReadPdf(s: AvantContratServices, v: Viewer, fileId: string, request: Request): Promise<Response> {
+  const c = avantContratCore(s);
+  // Le dossier d'abord, avant même la référence : tout refus est écrit au journal et ne lit jamais le PDF [R16].
+  const g = await gateSaleFile({ db: s.db, acces: c.acces, journal: s.journal, now: s.now }, v, fileId, true, 'pre_contract');
+  if (!g.ok) return reply(g);
   const documentRef = new URL(request.url).searchParams.get('documentRef');
   if (documentRef === null || !PROOF_REF.test(documentRef) || !PDF_REF.test(documentRef))
     return json(400, { ok: false, rule: null, code: 'bad_document', message: 'Déposez d’abord le projet en PDF au dossier, puis donnez sa référence.' });
-
-  const c = avantContratCore(s);
-  // Le dossier d'abord : un refus ne lit jamais le PDF [R16].
-  const g = await gateSaleFile({ db: s.db, acces: c.acces, journal: s.journal, now: s.now }, v, fileId, true, 'pre_contract');
-  if (!g.ok) return reply(g);
 
   const type = (request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
   if (type !== 'application/pdf') return json(415, { ok: false, rule: null, code: 'not_pdf_body', message: 'Déposez le projet en PDF.' });

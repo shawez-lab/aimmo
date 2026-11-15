@@ -281,7 +281,11 @@ describeWithSqlite('RC54 · le projet du notaire servi par l’API, prélu depui
       expect((await t.post(t.sam, `${t.base}/${path}`, enc('{pas du json'))).status).toBe(403);
       expect((await t.post(t.agent, `/dossiers/inconnu/avant-contrat/${path}`, enc('{pas du json'))).status).toBe(404);
     }
-    expect((await t.journalText()).split('acces.refuse').length).toBeGreaterThanOrEqual(refusals + 4);
+    // Le PDF sans référence ou à référence mal formée : le dossier d'abord, refus au journal (remarque de Codex).
+    expect((await t.post(t.sam, `${t.base}/pdf`, PROJET, '', 'application/pdf')).status).toBe(403);
+    expect((await t.post(t.sam, `${t.base}/pdf`, PROJET, '?documentRef=preuves/projet.pdf', 'application/pdf')).status).toBe(403);
+    expect((await t.post(t.agent, '/dossiers/inconnu/avant-contrat/pdf', PROJET, '', 'application/pdf')).status).toBe(404);
+    expect((await t.journalText()).split('acces.refuse').length).toBeGreaterThanOrEqual(refusals + 6);
     expect(t.bodyRead()).toBe(0);
     expect((await t.get(t.sam, t.base)).status).toBe(403);
     expect(await t.journalText()).toContain('acces.refuse');
