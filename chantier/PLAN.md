@@ -2221,7 +2221,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC56 · La grille d'un programme neuf écrite pour les annonces, qui dit jusqu'à quel jour elle tient (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#606, `194cb5ff`). Codex 1 P0 corrigé (les lots comptés sans ligne, « et N autres lots », sont gardés dans `lots` avec `written: false`, bornent `validUntil` et sont relus par `listingStillHolds`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6304 tests). Reste pour la voie 1 : envoyer le titre et le texte aux portails, et un passage quotidien qui retire l'annonce dès que `listingStillHolds` ne tient plus.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX48, BR76
 - Cahier : M16 et M17, programmes neufs (grille des lots, frais réduits) ; M07 Commercialiser (textes des portails, 160 et 4000 signes) ; R543, R544, R10.
 - Décidé (2026-11-15, voie 2), lecture prudente : relevé dans les « Restent » de BR76, BR77, BR80, BR81 et BR84 (« la grille dans les annonces »). Aujourd'hui la grille des lots n'existe qu'en page HTML du site (`renderNewBuildGrid`) : une annonce de portail d'un programme neuf doit être retapée à la main, avec le risque d'y laisser un lot vendu ou un prix ancien. Fichier neuf du cœur `packages/core/src/neuf-viager/annonce.ts`, exporté par `neuf-viager/index.ts` seul : `newBuildListing(grid)` rend, depuis `ProgrammesNeufs.publishedGrid`, le titre (160 signes au plus) et le texte brut (4000 au plus) d'une annonce, sans HTML, un lot par ligne du moins cher au plus cher, chaque frais avec son barème cité une fois et son hypothèse [R544] ; un lot n'est jamais coupé : ceux qui ne tiennent pas sont comptés, « et N autres lots ». Aucune route, aucun écran, aucune migration : l'envoi aux portails reste à la voie 1.
