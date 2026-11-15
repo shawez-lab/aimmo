@@ -58,6 +58,26 @@ export const FREEZE_NATURES: readonly FreezeNature[] = ['personne_physique', 'pe
 export type FreezeResult = 'aucune' | 'correspondance' | 'nom_manquant';
 export type FreezeReason = 'demande' | 'mise_a_jour' | 'passage';
 export type FreezeDecisionKind = 'fausse_correspondance' | 'correspondance_confirmee';
+
+/**
+ * BR86 · Au-delà de ce nombre de jours après sa date de publication, le registre en service est dit « à mettre à
+ * jour ». Décidé, lecture prudente : le cahier ne fixe pas de fréquence ; la DG Trésor publie à chaque changement.
+ */
+export const FREEZE_REGISTRY_STALE_DAYS = 7;
+
+/** BR86 · Le registre qui sert aux contrôles, tel que le responsable le lit : jamais une entrée ni un nom. */
+export interface FreezeRegistryInService {
+  versionId: string;
+  publishedAt: string;
+  importedAt: string;
+  entries: number;
+  sha256: string;
+  /** Les dossiers contrôlés au moins une fois contre cette version. */
+  checkedCases: number;
+  /** Les jours entiers écoulés depuis la date de publication. */
+  ageDays: number;
+  stale: boolean;
+}
 export const FREEZE_DECISIONS: readonly FreezeDecisionKind[] = ['fausse_correspondance', 'correspondance_confirmee'];
 
 export interface FreezeRegistryEntry {
@@ -435,6 +455,23 @@ export class ControleGels {
     const out: FreezeCheck[] = [];
     for (const row of rows) out.push(await this.toCheck(row));
     return { ok: true, value: out };
+  }
+
+  /**
+   * BR86 · Le registre en service : la version scellée la plus récente, celle des contrôles, avec son âge et les
+   * dossiers contrôlés contre elle ; `null` quand aucune n'est importée. Le responsable seul [R16, R605].
+   */
+  async registryInService(viewer: Viewer): Promise<{ ok: true; value: FreezeRegistryInService | null } | FreezeRefusal> {
+    if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const v = await this.latestVersion(viewer.networkId);
+    if (!v) return { ok: true, value: null };
+    const row = (await this.db.first<{ entries: number; imported_at: string }>('SELECT entries, imported_at FROM freeze_registry_versions WHERE id = ?', [v.id]))!;
+    const n = (await this.db.first<{ n: number }>('SELECT count(DISTINCT case_ref) AS n FROM freeze_checks WHERE network_id = ? AND version_id = ?', [viewer.networkId, v.id]))!.n;
+    const ageDays = Math.max(0, Math.floor((this.now().getTime() - Date.parse(v.published_at)) / 86_400_000));
+    return {
+      ok: true,
+      value: { versionId: v.id, publishedAt: v.published_at, importedAt: row.imported_at, entries: Number(row.entries), sha256: v.sha256, checkedCases: Number(n), ageDays, stale: ageDays > FREEZE_REGISTRY_STALE_DAYS },
+    };
   }
 
   /** Les dossiers dont une fiche n'a pas de nom, au dernier contrôle de chacun : le responsable seul. */

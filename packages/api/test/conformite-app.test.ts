@@ -486,12 +486,14 @@ describe('BR85 · le registre des gels sur l’écran du responsable', () => {
     const scripts = part.all().filter((e) => e.tagName === 'script');
     expect(scripts.map((e) => e.attributes.src)).toEqual(['/app/gel-registre.js']);
     runInNewContext(GEL_REGISTRE_SCRIPT, t.context);
+    // BR86 : à l'ouverture, le registre en service est lu, et rien d'autre.
+    t.table['GET /v1/securite/gel/registre'] = ok(null);
     scripts[0]!.listeners.load!({});
     await new Promise((r) => setTimeout(r, 0));
-    expect(t.calls.length).toBe(before);
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/securite/gel/registre']);
     t.table['POST /v1/securite/gel/registre/dgtresor'] = ok({ versionId: 'v1', entries: 2, sha256: 'a'.repeat(64), checked: 0, publishedAt: '2027-03-01T09:00:00.000Z', vessels: 0 });
     await t.click(t.byText(part, 'Importer le registre du jour'));
-    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['POST /v1/securite/gel/registre/dgtresor']);
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/securite/gel/registre', 'POST /v1/securite/gel/registre/dgtresor', 'GET /v1/securite/gel/registre']);
     expect(part.textContent).toContain('2 personnes ou sociétés lues, 0 navire laissé à part');
     // Rouvrir ne recharge pas le script.
     await t.click(t.byText(part, 'Ouvrir l’import du registre'));

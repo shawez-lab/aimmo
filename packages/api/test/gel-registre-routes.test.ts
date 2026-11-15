@@ -139,6 +139,32 @@ describeWithSqlite('BR85 · le registre des gels importé depuis le fichier de l
   });
 });
 
+describeWithSqlite('BR86 · le registre en service, lu par la route', () => {
+  it('[R16] [R605] au seul responsable : aucun registre, puis celui importé, avec son âge et ses dossiers contrôlés ; autre rôle refusé au journal', async () => {
+    const t = await setup();
+    expect(await t.http('conformite', 'GET', '/securite/gel/registre')).toMatchObject({ status: 200, body: { ok: true, data: null } });
+    const imported = await t.http('conformite', 'POST', '/securite/gel/registre/fichier', JSON.stringify(fichier()));
+    const r = await t.http('conformite', 'GET', '/securite/gel/registre');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toEqual({
+      versionId: imported.body.data.versionId,
+      publishedAt: '2027-03-01T09:00:00.000Z',
+      importedAt: NOW.toISOString(),
+      entries: 3,
+      sha256: imported.body.data.sha256,
+      checkedCases: 1,
+      ageDays: 8,
+      stale: true,
+    });
+    for (const who of ['alex', 'direction'] as Who[]) {
+      const before = (await t.refusals()).length;
+      const refused = await t.http(who, 'GET', '/securite/gel/registre');
+      expect(refused).toEqual({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });
+      expect((await t.refusals()).length).toBe(before + 1);
+    }
+  });
+});
+
 it('le Worker lit l’adresse https de la configuration, sinon celle de la documentation de la DG Trésor', () => {
   expect(registreGelsUrl(undefined)).toBe(REGISTRE_GELS_URL);
   expect(registreGelsUrl('http://registre.example.test/x.json')).toBe(REGISTRE_GELS_URL);

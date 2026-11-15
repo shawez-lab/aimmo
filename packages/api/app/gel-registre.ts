@@ -12,6 +12,12 @@
  * Jamais vu : en un appui, le registre du jour est téléchargé, lu entier ou refusé entier, puis chaque dossier en cours
  * est recontrôlé contre lui ; l'écran dit la date publiée, les personnes lues, les navires laissés à part et les
  * dossiers recontrôlés.
+ *
+ * BR86 : à l'ouverture, et de nouveau après chaque import, le bloc lit le registre en service
+ * (`GET /v1/securite/gel/registre`, relu aussi après un refus ou une réponse perdue) et le dit en mots : date publiée, date d'import, entrées, dossiers contrôlés contre
+ * lui, son âge en jours, « à mettre à jour » passé 7 jours, et son empreinte SHA-256 en groupes de huit, à comparer au
+ * reçu de l'import. Aucun registre : « aucun contrôle n'est possible ». Une lecture arrivée après une plus récente, ou
+ * après la sortie de l'écran, est jetée.
  */
 
 /** La taille admise par la route du dépôt (`MAX_DGTRESOR_BYTES`), en octets. */
@@ -42,15 +48,22 @@ export const GEL_REGISTRE_OFFLINE = 'Pas de réseau. Réessayez dans un moment.'
 /** Une panne du serveur : le registre a pu être rangé avant elle, l'écran ne dit jamais que rien n'est importé. */
 export const GEL_REGISTRE_FAILED = 'L’import s’est arrêté en route : il a pu se faire, en tout ou en partie. Recommencez dans un moment : un registre déjà importé est refusé, et vos contrôles disent ce qui est en service.';
 
-/** Le script servi à part. Il n'appelle que les deux routes d'import de `/v1/securite/gel/registre` [R16]. */
+/** BR86 : ce que dit le bloc du registre en service. */
+export const GEL_REGISTRE_NONE = 'Aucun registre n’est importé : aucun contrôle n’est possible. Importez le registre du jour.';
+export const GEL_REGISTRE_STALE = 'Plus de 7 jours : importez le registre du jour.';
+export const GEL_REGISTRE_STATE_LOST = 'Le registre en service n’a pas pu être lu. Rouvrez l’écran dans un moment.';
+export const GEL_REGISTRE_STATE_ROLE = 'Ce n’est pas dans vos droits : seul le responsable de la conformité lit le registre en service.';
+
+/** Le script servi à part. Il n'appelle que la lecture et les deux routes d'import de `/v1/securite/gel/registre` [R16]. */
 export const GEL_REGISTRE_SCRIPT = `'use strict';
 globalThis.AIMMO_GEL_REGISTRE = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field;
   var REFUSALS = ${JSON.stringify(GEL_REGISTRE_REFUSALS)};
   var MAX = ${GEL_REGISTRE_MAX_BYTES};
-  var FROM_DGT = '/v1/securite/gel/registre/dgtresor', FROM_FILE = '/v1/securite/gel/registre/fichier';
+  var FROM_DGT = '/v1/securite/gel/registre/dgtresor', FROM_FILE = '/v1/securite/gel/registre/fichier', IN_SERVICE = '/v1/securite/gel/registre';
+  var NONE = ${JSON.stringify(GEL_REGISTRE_NONE)}, STALE = ${JSON.stringify(GEL_REGISTRE_STALE)}, STATE_LOST = ${JSON.stringify(GEL_REGISTRE_STATE_LOST)}, STATE_ROLE = ${JSON.stringify(GEL_REGISTRE_STATE_ROLE)};
   var LOST = ${JSON.stringify(GEL_REGISTRE_LOST)}, OFFLINE = ${JSON.stringify(GEL_REGISTRE_OFFLINE)}, FAILED = ${JSON.stringify(GEL_REGISTRE_FAILED)};
-  var box = null, status = null, result = null, pick = null, busy = false;
+  var box = null, status = null, result = null, pick = null, busy = false, current = null, reads = 0;
   function own(o, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null; }
   function count(v) { return typeof v === 'number' && Math.floor(v) === v && v >= 0 ? v : null; }
   function plural(n, one, many) { return n + ' ' + (n <= 1 ? one : many); }
@@ -77,6 +90,28 @@ globalThis.AIMMO_GEL_REGISTRE = function (t) {
     result.appendChild(el('p', 'Registre publié le ' + when + ' : ' + plural(entries, 'personne ou société lue', 'personnes ou sociétés lues') + ', ' + plural(vessels, 'navire laissé à part', 'navires laissés à part') + '.'));
     result.appendChild(el('p', plural(checked, 'dossier en cours recontrôlé', 'dossiers en cours recontrôlés') + ' contre ce registre. Une correspondance éventuelle apparaît dans vos contrôles, et nulle part ailleurs.'));
   }
+  function age(n) { return n === 0 ? 'Publié aujourd’hui.' : n === 1 ? 'Publié hier.' : 'Publié il y a ' + n + ' jours.'; }
+  function groups(h) { return h.match(/.{8}/g).join(' '); }
+  function shown(d) {
+    clear(current);
+    if (d === null) { current.appendChild(el('p', NONE)); return; }
+    var entries = d && count(d.entries), checked = d && count(d.checkedCases), days = d && count(d.ageDays);
+    var when = d && day(d.publishedAt), got = d && day(d.importedAt);
+    var sha = d && typeof d.sha256 === 'string' && /^[0-9a-f]{64}$/.test(d.sha256) ? d.sha256 : null;
+    if (entries === null || checked === null || days === null || when === null || got === null || sha === null || typeof d.stale !== 'boolean') { current.appendChild(el('p', STATE_LOST)); return; }
+    current.appendChild(el('p', 'Registre en service : publié le ' + when + ', importé le ' + got + '. ' + plural(entries, 'personne ou société', 'personnes ou sociétés') + ', ' + plural(checked, 'dossier contrôlé', 'dossiers contrôlés') + ' contre lui.'));
+    current.appendChild(el('p', d.stale ? age(days) + ' ' + STALE : age(days), d.stale ? 'etat' : 'doux'));
+    current.appendChild(el('p', 'Empreinte SHA-256 : ' + groups(sha), 'doux'));
+  }
+  function load() {
+    var mine = t.session(), n = ++reads;
+    send(IN_SERVICE, 'GET').then(function (res) {
+      if (res.gone || mine !== t.session() || n !== reads) return;
+      clear(current);
+      if (res.ok && res.body && Object.prototype.hasOwnProperty.call(res.body, 'data')) shown(res.body.data);
+      else current.appendChild(el('p', !res.offline && res.body && res.body.code === 'role' ? STATE_ROLE : STATE_LOST));
+    });
+  }
   function run(path, body, waiting) {
     if (busy) return;
     busy = true;
@@ -87,6 +122,8 @@ globalThis.AIMMO_GEL_REGISTRE = function (t) {
       busy = false;
       if (res.gone || mine !== t.session()) return;
       if (res.ok) done(res.body.data); else say(refusal(res));
+      /* Relu après toute réponse, perdue ou refusée comprise : l'import a pu se faire (déjà importé, panne après le sceau). */
+      load();
     });
   }
   function fromFile() {
@@ -108,6 +145,10 @@ globalThis.AIMMO_GEL_REGISTRE = function (t) {
   }
   function render(inner) {
     box = el('div', null, 'gel-registre');
+    current = el('div', null, 'registre-en-service');
+    current.setAttribute('aria-live', 'polite');
+    current.appendChild(el('p', 'Lecture du registre en service…', 'doux'));
+    box.appendChild(current);
     box.appendChild(el('p', 'Le registre national des gels est téléchargé chez la DG Trésor, lu entier ou refusé entier, puis chaque dossier en cours est recontrôlé contre lui.', 'doux'));
     box.appendChild(button('Importer le registre du jour', function () { run(FROM_DGT, undefined, 'Téléchargement et lecture du registre…'); }));
     status = el('p', null, 'etat');
@@ -128,6 +169,7 @@ globalThis.AIMMO_GEL_REGISTRE = function (t) {
     show: function (inner) {
       clear(inner);
       render(inner);
+      load();
     },
   };
 };

@@ -247,6 +247,13 @@ export function securiteRoutes(): SecuriteRoute[] {
       handle: withBody(async (s, v, _p, b) => reply(await gels(s).importRegistry(v, { publishedAt: b.publishedAt, entries: b.entries })), MAX_REGISTRY_BYTES),
     },
     {
+      // BR86 : le registre en service, son âge et son empreinte, au seul responsable.
+      method: 'GET',
+      pattern: new RegExp(`${G}/registre$`),
+      name: 'securite.gel.registre_lu',
+      handle: async (s, v) => reply(await gels(s).registryInService(v)),
+    },
+    {
       // BR85 : le fichier du jour téléchargé par le serveur, en un appui du responsable.
       method: 'POST',
       pattern: new RegExp(`${G}/registre/dgtresor$`),
