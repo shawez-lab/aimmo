@@ -405,6 +405,36 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     if (data.prospects) body.appendChild(cProspects(data.prospects));
     if (data.fuites) body.appendChild(cBreaches(data.fuites));
     if (data.registre) body.appendChild(cRegistry(data.registre));
+    body.appendChild(cGels());
+  }
+  /* BR85 : l'import du registre des gels, script servi à part et chargé au premier geste [R201]. */
+  var gelScreen = null;
+  function cGels() {
+    var box = section('Registre des gels');
+    box.appendChild(el('p', 'Le registre national des gels de la DG Trésor, importé en un appui ; chaque dossier en cours est recontrôlé aussitôt.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir l’import du registre', function () {
+      if (b.disabled) return;
+      if (gelScreen) { gelScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/gel-registre.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_GEL_REGISTRE;
+        try { delete globalThis.AIMMO_GEL_REGISTRE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        gelScreen = make({ el: el, clear: clear, send: send, button: button, field: field, session: t.session });
+        gelScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
   }
   // Les alertes rangées par les passages du planificateur : leur phrase est celle du code, posée en texte.
   function cAlerts(data) {

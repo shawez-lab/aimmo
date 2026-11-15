@@ -2,6 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { COFFRE_JS, CONFORMITE_SCRIPT } from '../app/conformite.ts';
+import { GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -469,6 +470,32 @@ describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
       expect(t.els['fiche-corps']!.children).toEqual([]);
       expect(t.els['fiche-nom']!.textContent).toBe('');
     }
+  });
+});
+
+describe('BR85 · le registre des gels sur l’écran du responsable', () => {
+  it('[R201] l’import se charge au premier geste, une seule fois, et appelle la route du téléchargement', async () => {
+    const t = await run(COMPLIANCE);
+    await t.loadScript();
+    const part = t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Registre des gels'))!;
+    expect(part).toBeDefined();
+    const before = t.calls.length;
+    // Rien n'est chargé ni appelé tant que le responsable n'a pas ouvert l'import.
+    expect(part.all().some((e) => e.tagName === 'script')).toBe(false);
+    await t.click(t.byText(part, 'Ouvrir l’import du registre'));
+    const scripts = part.all().filter((e) => e.tagName === 'script');
+    expect(scripts.map((e) => e.attributes.src)).toEqual(['/app/gel-registre.js']);
+    runInNewContext(GEL_REGISTRE_SCRIPT, t.context);
+    scripts[0]!.listeners.load!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.calls.length).toBe(before);
+    t.table['POST /v1/securite/gel/registre/dgtresor'] = ok({ versionId: 'v1', entries: 2, sha256: 'a'.repeat(64), checked: 0, publishedAt: '2027-03-01T09:00:00.000Z', vessels: 0 });
+    await t.click(t.byText(part, 'Importer le registre du jour'));
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['POST /v1/securite/gel/registre/dgtresor']);
+    expect(part.textContent).toContain('2 personnes ou sociétés lues, 0 navire laissé à part');
+    // Rouvrir ne recharge pas le script.
+    await t.click(t.byText(part, 'Ouvrir l’import du registre'));
+    expect(part.all().filter((e) => e.tagName === 'script')).toHaveLength(1);
   });
 });
 
