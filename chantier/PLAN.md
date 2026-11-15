@@ -2244,6 +2244,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : titre et texte rendus depuis la grille, chaque prix et chaque frais celui de la grille [R10, R544] (test) ; sans barème, aucun frais écrit et le texte le dit [R544] (test) ; grille vide ou lot confirmé hors des 14 jours : aucun texte, refus en mots [R543] (test) ; 4000 signes tenus sans couper un lot, les lots absents comptés (test) ; nom trop long pour 160 signes : refus, jamais un nom coupé (test) ; retours à la ligne et balises d'un nom rendus inoffensifs (test) ; `validUntil` juste, et le lendemain l'annonce ne tient plus (test) ; lot vendu, prix changé : nommés, l'annonce ne tient plus [R543] (test) ; tous les tests de HX48 et BR76 restent verts.
 - Attend : rien.
 
+### RC57 · Une exclusion ou une note d'appel rangée juste après une fusion défaite suit aussi l'autre fiche
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC08, AC12
+- Cahier : Conformité (opposition, démarchage téléphonique) ; R02, R04, R204, R17.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de AC12 (« une note écrite juste après le lot d'`undoMerge` n'est pas recopiée, même fenêtre que les exclusions (AC08) »). Une demande qui a lu les fiches réunies juste avant le lot de `undoMerge` range son arrêt ou sa note sur la fiche gardée seulement, après le lot : l'autre fiche ne l'a jamais, et ses envois ou ses appels repartent. Dans `packages/core/src/fiche/fusion.ts` seul : les couples séparés sont lus tels qu'ils étaient à l'instant de la fusion défaite (fusions actives à cette date), et `catchUpUndoneMerge(id)` recopie, sans doublon et sans rien effacer, les exclusions et notes rangées jusqu'à 2 minutes après cet instant ; `catchUpUndoneMerges()` le fait pour les fusions défaites depuis 10 minutes. Une exclusion ou une note rangée dans ces 2 minutes pour une seule des deux personnes vaut aussi pour l'autre : plus prudent. Aucune route, aucun écran, aucune migration ; aucun appelant de `undoMerge` en production aujourd'hui.
+- Objectif : un arrêt ou un refus noté pendant qu'on défait une fusion ne se perd jamais pour l'une des deux personnes.
+- Critères : exclusion rangée sur la fiche gardée après le lot, datée avant la fusion défaite : recopiée par le rattrapage, plus aucun envoi sur l'autre fiche [R02, R04] (test) ; même chose pour une note de refus : appel fermé des deux côtés [R204] (test) ; rangée plus de 2 minutes après : ne bouge pas (test) ; rattrapage rappelé : rien de doublé, rien d'effacé [R17] (test) ; fusion pas défaite : rien (test) ; `catchUpUndoneMerges` ne relit que les fusions défaites depuis 10 minutes (test) ; une copie écrite au journal avec ses identifiants (test) ; tous les tests de AC05, AC08 et AC12 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
