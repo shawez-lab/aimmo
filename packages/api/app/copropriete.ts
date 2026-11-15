@@ -417,7 +417,10 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
         }
         var read = el('div');
         after.appendChild(read);
-        return show(read, fileId);
+        /* La relecture qui suit appartient à cette préparation : elle reste ouverte pour corriger (remarque de Codex). */
+        var reading = show(read, fileId);
+        gen = reads;
+        return reading;
       });
     });
     return true;

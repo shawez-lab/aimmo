@@ -264,6 +264,12 @@ describe('BR90 · le résumé de copropriété préparé à l’écran depuis le
     expect(t.calls.map((c) => `${c.method} ${c.path}`)).toEqual([`PDF ${PDF_PV}`, `POST ${RESUME}`, `GET ${RESUME}`, `GET ${BUYER}`]);
     expect(t.box.textContent).toContain('Résumé, version 3, préparé le 11 mars 2027.');
     expect(t.box.textContent).toContain('Travaux votés en assemblée du 10/02/2027 : ravalement.');
+    // La préparation reste ouverte : l'agent décoche la phrase écartée et prépare de nouveau.
+    t.boxes()[1]!.checked = false;
+    await t.click('Préparer le résumé');
+    expect(t.sent('POST')).toHaveLength(2);
+    expect((t.sent('POST')[1]!.body as { sentences: unknown[] }).sentences).toEqual([SENTENCE]);
+    expect(t.box.all().filter((e) => e.tagName === 'p' && e.textContent.startsWith('Résumé, version 3, préparé'))).toHaveLength(1);
   });
 
   it('[R16] refus de droits, dossier arrêté, préparation simultanée, réponse perdue : dits en mots, jamais un code', async () => {
