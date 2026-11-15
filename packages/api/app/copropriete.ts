@@ -72,7 +72,11 @@ export const COPRO_PDF_FAILED = 'Ce PDF n’a pas pu être lu. Réessayez, ou li
 export const COPRO_PDF_TWICE = 'Ce fichier est déjà déposé : il ne compte qu’une fois.';
 export const COPRO_NO_DOC = 'Déposez au moins un document avant de préparer le résumé.';
 export const COPRO_MANUAL = 'Aucune phrase proposée pour ce document : lisez-le et ajoutez vos phrases.';
-export const COPRO_TOO_BIG = 'Trop de texte pour un seul résumé : retirez un document, ou déposez-le en plusieurs parties.';
+export const COPRO_TOO_BIG = 'Trop de texte pour un seul résumé : décochez des phrases, ou préparez un autre résumé.';
+/** Un document qui ne tient plus dans le résumé n'est pas gardé : rien ne bloque ensuite la préparation (remarque de Codex). */
+export const COPRO_DOC_TOO_BIG = 'Ce document ne tient plus dans ce résumé, avec ceux déjà déposés : déposez-le en plusieurs parties, ou préparez-le dans un autre résumé.';
+/** La place laissée aux phrases et à l'adresse dans le corps de `POST …/resume`. */
+export const COPRO_SENTENCES_ROOM = 256 * 1024;
 /** Le plafond du corps de `POST …/resume` (`MAX_COPROPRIETE_BODY_BYTES`, testé égal). */
 export const COPRO_PREP_MAX_BYTES = 4 * 1024 * 1024;
 export const COPRO_MAX_DOCS = 30;
@@ -105,7 +109,7 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
   var NONE = ${JSON.stringify(COPRO_NONE)}, NO_WORKS = ${JSON.stringify(COPRO_NO_WORKS)}, ROLE = ${JSON.stringify(COPRO_ROLE)}, OFFLINE = ${JSON.stringify(COPRO_OFFLINE)}, FAILED = ${JSON.stringify(COPRO_FAILED)}, CHANGED = ${JSON.stringify(COPRO_CHANGED)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, reads = 0;
   var P_ROLE = ${JSON.stringify(COPRO_PREP_ROLE)}, P_STOPPED = ${JSON.stringify(COPRO_PREP_STOPPED)}, P_BUSY = ${JSON.stringify(COPRO_PREP_BUSY)}, P_FAILED = ${JSON.stringify(COPRO_PREP_FAILED)}, PDF_FAILED = ${JSON.stringify(COPRO_PDF_FAILED)};
-  var TWICE = ${JSON.stringify(COPRO_PDF_TWICE)}, NO_DOC = ${JSON.stringify(COPRO_NO_DOC)}, MANUAL = ${JSON.stringify(COPRO_MANUAL)}, TOO_BIG = ${JSON.stringify(COPRO_TOO_BIG)}, REJECTED = ${JSON.stringify(COPRO_REJECTED)};
+  var TWICE = ${JSON.stringify(COPRO_PDF_TWICE)}, NO_DOC = ${JSON.stringify(COPRO_NO_DOC)}, MANUAL = ${JSON.stringify(COPRO_MANUAL)}, TOO_BIG = ${JSON.stringify(COPRO_TOO_BIG)}, DOC_TOO_BIG = ${JSON.stringify(COPRO_DOC_TOO_BIG)}, ROOM = ${COPRO_SENTENCES_ROOM}, REJECTED = ${JSON.stringify(COPRO_REJECTED)};
   var MAX_BYTES = ${COPRO_PREP_MAX_BYTES}, MAX_DOCS = ${COPRO_MAX_DOCS}, TOPIC_ORDER = ${JSON.stringify(COPRO_TOPIC_ORDER)}, KIND_ORDER = ${JSON.stringify(COPRO_KIND_ORDER)}, uid = 0;
   function own(o, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null; }
   function text(v) { return typeof v === 'string' && v.length > 0 ? v : null; }
@@ -242,6 +246,7 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
     if (pdf && said && (res.status === 413 || res.status === 415 || res.status === 422)) return said;
     return pdf ? PDF_FAILED : P_FAILED;
   }
+  function bytes(v) { var j = JSON.stringify(v); return typeof TextEncoder === 'function' ? new TextEncoder().encode(j).length : j.length * 3; }
   function citeLine(s, d) { return docName(d) + ', page ' + s.page + ' : « ' + s.quote + ' »'; }
   function topicNames(list) { return (Array.isArray(list) ? list : []).map(function (k) { return own(TOPICS, k); }).filter(Boolean); }
   function prepare(box, fileId) {
@@ -317,6 +322,7 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
         if (docs.some(function (x) { return x.ref === d.ref; })) { depState.textContent = TWICE; return false; }
         var doc = { kind: d.kind, ref: d.ref, pages: pages };
         if (k === 'pv_assemblee') doc.meetingDay = d.meetingDay;
+        if (bytes({ documents: docs.concat([doc]) }) > MAX_BYTES - ROOM) { depState.textContent = DOC_TOO_BIG; return false; }
         var at = docs.push(doc) - 1;
         list.appendChild(el('li', docName(doc) + ', ' + pages.length + (pages.length > 1 ? ' pages' : ' page')));
         var said = [];
@@ -387,8 +393,7 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
       var body = { documents: docs, sentences: chosen };
       var where = (address.value || '').trim();
       if (where) body.address = where.slice(0, 200);
-      var size = JSON.stringify(body);
-      if ((typeof TextEncoder === 'function' ? new TextEncoder().encode(size).length : size.length) > MAX_BYTES) { state.textContent = TOO_BIG; return; }
+      if (bytes(body) > MAX_BYTES) { state.textContent = TOO_BIG; return; }
       busy = true;
       state.textContent = 'Préparation…';
       return send(base + '/resume', 'POST', body).then(function (res) {

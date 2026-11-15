@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { DOCUMENT_KINDS, TOPICS } from '../../core/src/documents/copropriete-urbanisme.ts';
 import {
+  COPRO_DOC_TOO_BIG,
   COPRO_KIND_ORDER,
   COPRO_MANUAL,
   COPRO_NO_DOC,
@@ -15,6 +16,7 @@ import {
   COPRO_PREP_ROLE,
   COPRO_PREP_STOPPED,
   COPRO_REJECTED,
+  COPRO_SENTENCES_ROOM,
   COPRO_TOO_BIG,
   COPRO_TOPIC_ORDER,
   COPROPRIETE_SCRIPT,
@@ -301,14 +303,36 @@ describe('BR90 · le résumé de copropriété préparé à l’écran depuis le
     expect(u.box.all().some((e) => e.tagName === 'button')).toBe(false);
   });
 
-  it('trop de texte pour un résumé : dit en mots, rien n’est envoyé', async () => {
-    const big = { ...PV, pages: ['x'.repeat(COPRO_PREP_MAX_BYTES)] };
-    const t = mount({ [`PDF ${PDF_PV}`]: async () => read(big) });
+  it('un document qui ne tient plus dans le résumé n’est pas gardé ; trop de phrases cochées : dit en mots, rien n’est envoyé', async () => {
+    const half = { ...PV, pages: ['x'.repeat((COPRO_PREP_MAX_BYTES - COPRO_SENTENCES_ROOM) / 2)] };
+    const t = mount({
+      [`PDF ${PDF_PV}`]: async () => read(half),
+      [`PDF ${PDF_FICHE}`]: async () => read({ ...FICHE, pages: ['y'.repeat((COPRO_PREP_MAX_BYTES - COPRO_SENTENCES_ROOM) / 2)] }),
+      [`POST ${RESUME}`]: async () => ok(SUMMARY),
+    });
     t.open();
     await t.deposit('pv_assemblee', pdfFile(), '2027-02-10');
+    await t.deposit('fiche_synthetique', pdfFile('fiche.pdf'));
+    expect(t.states()[0]).toBe(COPRO_DOC_TOO_BIG);
+    expect(t.box.textContent).not.toContain('fiche synthétique, 1 page');
+    // La préparation reste possible avec ce qui a été gardé.
     await t.click('Préparer le résumé');
-    expect(t.states()[2]).toBe(COPRO_TOO_BIG);
-    expect(t.sent('POST')).toEqual([]);
+    expect((t.sent('POST')[0]!.body as { documents: { ref: string }[] }).documents.map((d) => d.ref)).toEqual([REF_A]);
+
+    const u = mount({ [`PDF ${PDF_PV}`]: async () => read({ ...PV, pages: ['Résolution : ' + 'z'.repeat(COPRO_PREP_MAX_BYTES - COPRO_SENTENCES_ROOM - 2000)] }) });
+    u.open();
+    await u.deposit('pv_assemblee', pdfFile(), '2027-02-10');
+    u.byLabel('Rubrique').value = 'charges';
+    u.byLabel('Document').value = '0';
+    u.byLabel('Page').value = '1';
+    for (let i = 0; i < 3; i++) {
+      u.byLabel('Extrait, tel qu’il se lit dans la page').value = 'z'.repeat(100_000);
+      u.byLabel('Votre phrase, une seule').value = 'Les charges sont dites.';
+      await u.click('Ajouter la phrase');
+    }
+    await u.click('Préparer le résumé');
+    expect(u.states()[2]).toBe(COPRO_TOO_BIG);
+    expect(u.sent('POST')).toEqual([]);
   });
 
   it('[R201] les plafonds, les sortes et les rubriques sont ceux du serveur ; chaque raison d’écart a ses mots ; budgets tenus', () => {
