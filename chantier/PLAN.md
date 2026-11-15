@@ -1530,6 +1530,24 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : `GET /v1/neuf/baremes` pour la direction seule, autre rôle refusé au journal [R16] (test) ; pour chaque sorte le barème en vigueur, ceux à venir et ceux remplacés, un même premier jour départagé par le dernier rangé comme les frais, un long historique ne cache jamais le barème en vigueur [R544] (test) ; un seul script servi à part, chargé au geste sous les engagements, budgets tenus, sans innerHTML [R201] (test) ; ranger un barème : taux tapé en pourcentage envoyé en points de base entiers, vrai champ de date, source et premier jour exigés avant l'appel, puis l'écran relu [R544] (test) ; aucun barème : dit en mots (test) ; ouvrir un programme : promoteur choisi dans l'annuaire par code postal, son identifiant envoyé [R73] (test) ; agent choisi parmi les agents en activité (test) ; programmes listés avec le nom de leur agent (test) ; chaque refus dit en mots ; écriture sans réponse dite incertaine et relue (test) ; texte reçu posé en texte, champ mal formé tu (test).
 - Attend : rien.
 
+### BR80 · La table d'espérance de vie du viager, importée à l'écran de la direction (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48, BR79
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 (investir) ; R541, R540, R16, R201.
+- Décidé (2026-11-15, voie 1), lecture prudente : relevé dans les « Restent » de BR79 (« l'écran du viager avec l'import de la table d'espérance, à découper »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Découpé en deux : l'import de la table par la direction (cette tâche), puis l'écran du calcul de viager de l'agent (BR81), qui ne calcule rien sans table. La table s'importe dans le script déjà servi à part, `/app/neuf-direction.js`, sous un troisième bloc : `app.js` ne change pas. Une seule route nouvelle, `GET /v1/viager/tables` (direction), qui liste les tables importées sans leurs lignes et dit celle qui sert aux calculs ce jour : la plus récemment importée, la même requête que le calcul. Le fichier CSV (deux colonnes : âge, espérance en années) est relu sur l'appareil avant tout envoi ; le serveur garde ses propres contrôles. Pas de migration, aucune règle nouvelle.
+- Objectif : la direction importe le fichier de la table d'espérance de vie (ensemble des deux sexes) avec son millésime et sa source, et voit quelle table sert aux calculs de viager.
+- Jamais vu : avant tout envoi, l'écran relit le fichier ligne à ligne et le refuse entier, en disant le numéro de la ligne fautive, s'il porte une colonne de plus (le sexe), un âge en double ou une espérance douteuse ; puis il dit quelle table sert à chaque calcul ce jour, avec sa source et son millésime, et qu'une table importée ne change jamais.
+- Critères : `GET /v1/viager/tables` pour la direction seule, autre rôle refusé au journal [R16] (test) ; tables listées sans leurs lignes, la plus récemment importée dite en service, même choix que le calcul [R541] (test) ; l'import part du seul fichier choisi, en lignes `{ age, expectancyTenths }` entières, millésime et source exigés avant l'appel (test) ; une colonne de plus, un âge en double ou hors de 0 à 120, une espérance illisible ou à plus d'une décimale : rien ne part, la ligne fautive dite par son numéro [R541] (test) ; un millésime déjà importé ou un refus du serveur dits en mots, jamais par leur code (test) ; budgets tenus, sans innerHTML, `app.js` sans `/v1/viager` [R201] (test).
+- Attend : rien.
+
+### BR81 · Le calcul de viager à l'écran de l'agent
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR80
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 ; M18 (mise en relation de l'expert) ; R540, R542, R16, R201.
+- Objectif : l'agent calcule un viager pour un bien qu'il voit, lit bouquet et rente avec la source et l'hypothèse de chaque chiffre, rejoue le calcul et propose l'expert du viager de l'annuaire.
+- Critères : un seul script servi à part, chargé au seul geste, budgets tenus, sans innerHTML [R201] (test) ; chaque chiffre dit avec sa source, sa date et son hypothèse, la mention « ni offre ni conseil » toujours affichée [R540, R542] (test) ; sans table d'espérance, aucun chiffre et la raison dite [R541] (test) ; un bouquet plus grand que la valeur occupée refusé en mots [R542] (test) ; le rejeu dit « identique » ou l'écart (test) ; l'expert proposé par la mise en relation, jamais écrit à sa place (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
