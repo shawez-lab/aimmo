@@ -65,7 +65,7 @@ const LOT = { lotRef: 'A01', typology: 't3', livingAreaHundredths: 6500, floor: 
 
 it('BR75 · chaque route nomme ses rôles, sous /neuf et /viager', () => {
   const routes = neufViagerRoutes();
-  expect(routes.length).toBe(10);
+  expect(routes.length).toBe(11);
   for (const r of routes) {
     expect(r.name).toMatch(/^(neuf|viager)\./);
     expect(r.roles.length).toBeGreaterThan(0);

@@ -76,7 +76,28 @@ export interface AgentGrid extends PublishedGrid {
   toConfirm: string[];
 }
 
-export type NeufRefusal = { ok: false; rule: 'R16' | 'R543' | 'R544' | null; code: string };
+export interface FeeScale {
+  scaleId: string;
+  rateBp: number;
+  source: string;
+  validFrom: string;
+  setAt: string;
+}
+
+export interface FeeScaleKind {
+  /** Celui qui fait foi ce jour ; `null` : aucun frais de cette sorte n'est calculé [R544]. */
+  current: FeeScale | null;
+  upcoming: FeeScale[];
+  replaced: FeeScale[];
+}
+
+export interface FeeScaleBoard {
+  day: string;
+  neuf: FeeScaleKind;
+  ancien: FeeScaleKind;
+}
+
+export type NeufRefusal ={ ok: false; rule: 'R16' | 'R543' | 'R544' | null; code: string };
 export type NeufOutcome<T> = { ok: true; value: T } | NeufRefusal;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -172,6 +193,33 @@ export class ProgrammesNeufs {
       this.now,
     );
     return { ok: true, value: { id } };
+  }
+
+  /**
+   * Les barèmes rangés, pour la direction seule (BR79) : pour le neuf et pour l'ancien, celui qui fait foi ce jour (le
+   * même que celui des frais), ceux qui viendront, du plus proche au plus lointain, et ceux qu'il remplace, du plus
+   * récent au plus ancien. Chacun garde sa source et son premier jour : aucun taux sans son origine [R544, R16].
+   */
+  async listFeeScales(viewer: Viewer): Promise<NeufOutcome<FeeScaleBoard>> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
+    const day = parisDay(this.now());
+    // Chaque sorte se lit à part : celui qui fait foi par la même requête que les frais, puis les autres, chacune
+    // bornée seule, pour qu'un long historique d'une sorte ne cache jamais le barème en vigueur de l'autre.
+    const board = async (kind: FeeKind): Promise<FeeScaleKind> => {
+      const cols = 'SELECT id, rate_bp, source, valid_from, set_at FROM acquisition_fee_scales WHERE network_id = ? AND kind = ?';
+      const as = (r: ScaleRow & { set_at: string }): FeeScale => ({ scaleId: r.id, rateBp: r.rate_bp, source: r.source, validFrom: r.valid_from, setAt: r.set_at });
+      const now = await this.scaleOn(viewer.networkId, kind, day);
+      const current = now ? await this.db.first<ScaleRow & { set_at: string }>(`${cols} AND id = ?`, [viewer.networkId, kind, now.id]) : null;
+      const upcoming = await this.db.all<ScaleRow & { set_at: string }>(`${cols} AND valid_from > ? ORDER BY valid_from ASC, set_at ASC, id ASC LIMIT 100`, [viewer.networkId, kind, day]);
+      const replaced = await this.db.all<ScaleRow & { set_at: string }>(`${cols} AND valid_from <= ? AND id <> ? ORDER BY valid_from DESC, set_at DESC, id DESC LIMIT 100`, [
+        viewer.networkId,
+        kind,
+        day,
+        now?.id ?? '',
+      ]);
+      return { current: current ? as(current) : null, upcoming: upcoming.map(as), replaced: replaced.map(as) };
+    };
+    return { ok: true, value: { day, neuf: await board('neuf'), ancien: await board('ancien') } };
   }
 
   /** Le barème qui fait foi ce jour : le dernier commencé, et pour un même premier jour, le dernier rangé. */
