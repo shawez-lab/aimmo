@@ -175,9 +175,40 @@ globalThis.AIMMO_DOSSIER = function (t) {
       drawPieces(all[1].body.data, live, stale);
       drawSchedule(all[2].body.data, live);
       drawFinancing(all[4].body.data, live);
+      drawCopro();
       if (live) { drawAct(all[2].body.data); drawStop(); }
       return true;
     });
+  }
+  /* BR88 : la copropriété et l'urbanisme résumés, script servi à part et chargé au premier geste [R201]. */
+  var copro = null;
+  function drawCopro() {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h3', 'Copropriété et urbanisme'));
+    var inner = el('div');
+    var id = cur.id;
+    var b = button('Lire le résumé de copropriété et d’urbanisme', function () {
+      if (b.disabled) return;
+      if (copro) { copro.show(inner, id); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/copropriete.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_COPROPRIETE;
+        try { delete globalThis.AIMMO_COPROPRIETE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        copro = make({ el: el, clear: clear, send: send, session: t.session });
+        copro.show(inner, id);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    body().appendChild(box);
   }
   function itemName(item) { return PIECES[item] || DEADLINES[item] || ITEMS[item] || ''; }
   function lineText(l, identity) {
