@@ -1630,7 +1630,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR89 · L'avant-contrat branché à l'API, le projet du notaire prélu depuis le PDF déposé au dossier (Jamais vu)
-- Statut : en cours
+- Statut : prête, non fusionnée (#603, 005b6d0)
+- Reste : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6285 tests) ; fusion refusée par le contrôle des permissions, un essai, pas de nouvel essai (H69). Reste (voie 1) : l'écran du dossier pour l'avant-contrat (déposer le projet, prélire, confirmer et ranger par `…/projet`) ; la préparation du résumé de copropriété à l'écran (BR90, à découper) ; le lecteur IA attend H13.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC54
 - Cahier : M10 Compromis et acte (note au notaire, projet comparé, dépôt de garantie) ; Intelligence artificielle (secours sans IA) ; R510, R511, R512, R513, R12, R13, R16.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC54 (« brancher `avantContratRoutes()` dans `app.ts` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme BR87 pour la copropriété : `avantContratRoutesDef` dans `app.ts`, sur le stockage des pièces de M10 (`config.pieces`) ; sans stockage, 503 `pieces_not_configured` comme les dossiers ; lecteur IA par une option neuve `avantContrat` d'`ApiConfig`, absent tant que H13, et tout est à lire [R12]. Le Worker ne change pas : `pieces` y est déjà branché. `avant-contrat.ts` et le cœur ne changent pas. L'écran du dossier viendra à part.
