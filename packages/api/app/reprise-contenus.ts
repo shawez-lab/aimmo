@@ -51,7 +51,7 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Recommencez ce lot.';
   var HEX = new RegExp('^[0-9a-f]{64}$');
-  var box = null, stateEl = null, listEl = null, busy = false;
+  var stateEl = null, listEl = null, busy = false;
   /* Ce qui est tiré dans la séance : la place suivante, le reçu (sans contenu), les comptes. */
   var doc = null, owner = null, suite = 0, recu = null;
   function say(text) { if (stateEl) stateEl.textContent = text; }
@@ -110,8 +110,17 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
       });
     });
   }
+  /* Une pièce dite une seule fois au reçu : une pièce tirée en tranches remplace sa ligne « en_tranches ». */
   function note(p, statut, sha, taille) {
-    recu.pieces.push({ index: p.index, table: p.table, colonne: p.colonne, ref: p.ref, statut: statut, sha256: sha, taille: taille });
+    var entry = { index: p.index, table: p.table, colonne: p.colonne, ref: p.ref, statut: statut, sha256: sha, taille: taille };
+    for (var i = 0; i < recu.pieces.length; i++) {
+      if (recu.pieces[i].index !== p.index) continue;
+      recu.comptes[recu.pieces[i].statut] -= 1;
+      recu.pieces[i] = entry;
+      recu.comptes[statut] = (recu.comptes[statut] || 0) + 1;
+      return;
+    }
+    recu.pieces.push(entry);
     recu.comptes[statut] = (recu.comptes[statut] || 0) + 1;
   }
   function line(p, text) {
@@ -238,26 +247,29 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
     save([JSON.stringify(r)], 'aimmo-reprise-recu-' + r.faitLe.slice(0, 10) + '.json', 'application/json');
     say('Reçu enregistré sur cet appareil : ' + recu.pieces.length + ' pièces dites, sans aucun contenu.');
   }
-  /* L'écran, sur le fichier de reprise tiré dans la séance ; un autre fichier recommence à zéro. */
+  /* L'écran, sur le fichier de reprise tiré dans la séance ; un autre fichier recommence à zéro. Rouvert sur le même
+     fichier, il garde le lot à l'écran, ses pièces à enregistrer et ses tranches à tirer. */
+  var panel = null;
   function show(where, held) {
+    clear(where);
     if (!held || typeof held !== 'object' || typeof held.licenceId !== 'string') {
-      clear(where);
       where.appendChild(el('p', 'Tirez d’abord le fichier de vos données : le contenu se tire sur lui.', 'etat'));
       return false;
     }
-    if (held !== doc || stale()) { doc = held; owner = t.session(); suite = 0; busy = false; recu = { fingerprint: null, lots: [], pieces: [], comptes: {} }; }
-    box = where;
-    clear(box);
-    box.appendChild(el('p', 'Chaque pièce arrive avec son empreinte, refaite sur cet appareil avant d’être offerte. Chaque lot demande la preuve de la clé de cet appareil.', 'doux'));
-    var b = button(suite === 0 ? 'Tirer le premier lot' : 'Tirer le lot suivant', function () { lot(b).then(function () { if (recu.lots.length) b.textContent = 'Tirer le lot suivant'; }); });
-    if (suite === null) b.disabled = true;
-    box.appendChild(b);
-    box.appendChild(button('Enregistrer le reçu', receipt));
-    stateEl = el('p', '', 'etat');
-    stateEl.setAttribute('role', 'status');
-    box.appendChild(stateEl);
-    listEl = el('ul');
-    box.appendChild(listEl);
+    if (held !== doc || stale() || !panel) {
+      doc = held; owner = t.session(); suite = 0; busy = false; recu = { fingerprint: null, lots: [], pieces: [], comptes: {} };
+      panel = el('div');
+      panel.appendChild(el('p', 'Chaque pièce arrive avec son empreinte, refaite sur cet appareil avant d’être offerte. Chaque lot demande la preuve de la clé de cet appareil.', 'doux'));
+      var b = button('Tirer le premier lot', function () { lot(b).then(function () { if (recu.lots.length) b.textContent = 'Tirer le lot suivant'; }); });
+      panel.appendChild(b);
+      panel.appendChild(button('Enregistrer le reçu', receipt));
+      stateEl = el('p', '', 'etat');
+      stateEl.setAttribute('role', 'status');
+      panel.appendChild(stateEl);
+      listEl = el('ul');
+      panel.appendChild(listEl);
+    }
+    where.appendChild(panel);
     return true;
   }
   return { show: show };

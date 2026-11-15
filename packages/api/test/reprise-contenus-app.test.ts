@@ -275,7 +275,7 @@ describe('BR83 · le contenu des fichiers de l’agence sous licence tiré à l�
     expect(a.statusOf()).toBe('Cette pièce est absente : rien n’est enregistré.');
   });
 
-  it('le reçu enregistré porte l’empreinte du fichier, les manifestes et chaque pièce, sans aucun contenu', async () => {
+  it('le reçu enregistré porte l’empreinte du fichier, les manifestes et chaque pièce, sans aucun contenu', { timeout: 30_000 }, async () => {
     const t = await run();
     await t.open();
     await t.click(t.find('Enregistrer le reçu'));
@@ -299,6 +299,30 @@ describe('BR83 · le contenu des fichiers de l’agence sous licence tiré à l�
     expect(text).not.toContain(b64(PHOTO));
     expect(text).not.toContain('contenu');
     expect(t.statusOf()).toBe('Reçu enregistré sur cet appareil : 5 pièces dites, sans aucun contenu.');
+    // Une pièce tirée ensuite en tranches remplace sa ligne : chaque pièce dite une seule fois.
+    await t.click(t.find('Tirer en tranches aimmo-4-video.mp4'));
+    await t.click(t.find('Enregistrer le reçu'));
+    const r2 = JSON.parse(await t.saved.at(-1)!.blob.text());
+    expect(r2.pieces.map((p: any) => [p.index, p.statut])).toEqual([[0, 'verifiee'], [1, 'absente'], [2, 'masquee'], [3, 'verifiee'], [4, 'verifiee']]);
+    expect(r2.pieces[4]).toMatchObject({ sha256: sha(BIG), taille: BIG.length });
+    expect(r2.comptes).toEqual({ verifiee: 3, absente: 1, masquee: 1, en_tranches: 0 });
+  });
+
+  it('rouvert sur le même fichier, l’écran garde le lot, ses pièces à enregistrer et ses tranches à tirer', async () => {
+    const t = await run();
+    await t.open();
+    await t.click(t.find('Tirer le premier lot'));
+    await t.click(t.find('Tirer le lot suivant'));
+    await t.click(t.find('Tirer le contenu de mes fichiers'));
+    expect(t.find('Enregistrer aimmo-3-plan.pdf')).toBeDefined();
+    expect(t.find('Tirer en tranches aimmo-4-video.mp4')).toBeDefined();
+    expect(t.statusOf()).toMatch(/^Tous les fichiers sont passés/);
+    expect(t.posts().filter((c) => c.url === '/v1/export/agence/contenus')).toHaveLength(2);
+    // Un nouveau fichier de reprise recommence à zéro.
+    await t.click(t.find('Tirer le fichier de mes données'));
+    await t.click(t.find('Tirer le contenu de mes fichiers'));
+    expect(t.find('Tirer le premier lot')).toBeDefined();
+    expect(t.find('Enregistrer aimmo-3-plan.pdf')).toBeUndefined();
   });
 
   it('chaque refus et le stockage non branché dits en mots ; une réponse perdue dite incertaine ; le script absent dit', async () => {
