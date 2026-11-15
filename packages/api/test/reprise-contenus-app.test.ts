@@ -308,6 +308,34 @@ describe('BR83 · le contenu des fichiers de l’agence sous licence tiré à l�
     expect(r2.comptes).toEqual({ verifiee: 3, absente: 1, masquee: 1, en_tranches: 0 });
   });
 
+  it('une réponse d’un fichier de reprise précédent est jetée : elle ne touche ni l’écran, ni le reçu, ni la suite', { timeout: 30_000 }, async () => {
+    let release: (r: Response) => void = () => undefined;
+    let first = true;
+    const t = await run({
+      'POST /v1/export/agence/contenus': async (b) => {
+        if (first) {
+          first = false;
+          return new Promise<Response>((r) => (release = r));
+        }
+        return Response.json({ ok: true, data: b.depuis === 0 ? LOT0 : LOT3 });
+      },
+    });
+    await t.open();
+    await t.click(t.find('Tirer le premier lot'));
+    // Un nouveau fichier de reprise, pendant que le premier lot de l'ancien est en route.
+    await t.click(t.find('Tirer le fichier de mes données'));
+    await t.click(t.find('Tirer le contenu de mes fichiers'));
+    release(Response.json({ ok: true, data: { ...LOT3, depuis: 0 } }));
+    await t.click(t.find('Enregistrer le reçu'));
+    expect(t.texts()).not.toContain('aimmo-3-plan.pdf');
+    expect(t.statusOf()).toBe('Tirez d’abord un lot.');
+    expect((t.find('Tirer le premier lot') as unknown as { disabled: boolean }).disabled).not.toBe(true);
+    await t.click(t.find('Tirer le premier lot'));
+    expect(t.posts().filter((c) => c.url === '/v1/export/agence/contenus').map((c) => c.body.depuis)).toEqual([0, 0]);
+    expect(t.texts()).toContain('aimmo-0-salon.jpg');
+    expect(t.statusOf()).toBe('Lot tiré : 3 pièces. Enregistrez-les avant le lot suivant, qui les remplace à l’écran.');
+  });
+
   it('rouvert sur le même fichier, l’écran garde le lot, ses pièces à enregistrer et ses tranches à tirer', async () => {
     const t = await run();
     await t.open();

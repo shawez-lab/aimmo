@@ -52,6 +52,8 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Recommencez ce lot.';
   var HEX = new RegExp('^[0-9a-f]{64}$');
   var stateEl = null, listEl = null, busy = false;
+  /* Chaque fichier de reprise ouvert a sa génération : une réponse d'un fichier précédent est jetée. */
+  var gen = 0;
   /* Ce qui est tiré dans la séance : la place suivante, le reçu (sans contenu), les comptes. */
   var doc = null, owner = null, suite = 0, recu = null;
   function say(text) { if (stateEl) stateEl.textContent = text; }
@@ -60,7 +62,7 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
     return REFUSALS[(x.body || {}).code] || fallback;
   }
   function lost(x) { return x.offline || !x.body || x.status >= 500 && !(x.body && REFUSALS[x.body.code]); }
-  function stale() { return owner !== t.session(); }
+  function stale(g) { return owner !== t.session() || g !== gen; }
   function hex(buf) {
     var b = new Uint8Array(buf), s = '';
     for (var i = 0; i < b.length; i++) s += (b[i] < 16 ? '0' : '') + b[i].toString(16);
@@ -96,14 +98,14 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
     setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
   }
   /* Une preuve de la clé de cet appareil, puis l'appel : une preuve par appel [R601]. */
-  function call(path, payload) {
+  function call(path, payload, g) {
     return prove('export_complet', 'licence:' + String(doc.licenceId)).then(function (p) {
-      if (p.gone || stale()) return { gone: true };
+      if (p.gone || stale(g)) return { gone: true };
       if (!p.ok) return { refused: p.text };
       var body = { document: doc, stepUpId: p.stepUpId };
       for (var k in payload) body[k] = payload[k];
       return send(path, 'POST', body).then(function (x) {
-        if (x.gone || stale()) return { gone: true };
+        if (x.gone || stale(g)) return { gone: true };
         if (lost(x)) return { refused: LOST };
         if (!x.ok) return { refused: why(x, 'Le contenu n’est pas tiré.') };
         return { data: x.body.data || {} };
@@ -130,10 +132,11 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
     return li;
   }
   /* Une pièce remise : refaite ici, offerte seulement si elle concorde [R666]. */
-  function remise(p) {
+  function remise(p, g) {
     var bytes = bytesOf(p.contenu);
     if (!bytes || !HEX.test(String(p.sha256))) { note(p, 'alteree', null, null); line(p, 'altérée en route : non enregistrée.'); return Promise.resolve(); }
     return digest(bytes).then(function (h) {
+      if (stale(g)) return;
       if (h !== p.sha256 || bytes.length !== p.taille) { note(p, 'alteree', h, bytes.length); line(p, 'altérée en route : son empreinte refaite ici n’est pas celle qu’AIMMO a dite. Non enregistrée.'); return; }
       note(p, 'verifiee', h, bytes.length);
       var li = line(p, size(bytes.length) + ', empreinte refaite sur cet appareil : identique.');
@@ -143,12 +146,14 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
   /* Une pièce trop grosse : tranche par tranche, chacune avec l'empreinte attendue ; un écart arrête tout [R667]. */
   function enTranches(p, li, b) {
     if (busy) return Promise.resolve(false);
+    var g = gen;
     busy = true;
     b.disabled = true;
-    function stop(text) { busy = false; b.disabled = false; say(text); return false; }
+    function stop(text) { if (stale(g)) return false; busy = false; b.disabled = false; say(text); return false; }
+    function gone() { if (g === gen) busy = false; return false; }
     say('Empreinte de la pièce…');
-    return call('/v1/export/agence/contenus/piece', { index: p.index }).then(function (r) {
-      if (r.gone) { busy = false; return false; }
+    return call('/v1/export/agence/contenus/piece', { index: p.index }, g).then(function (r) {
+      if (r.gone) return gone();
       if (r.refused) return stop(r.refused);
       var e = r.data;
       if (e.statut === 'absente') return stop('Cette pièce est absente : rien n’est enregistré.');
@@ -160,12 +165,13 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
         if (i >= tranches.length) return finish();
         var d = tranches[i];
         say('Tranche ' + (i + 1) + ' sur ' + tranches.length + ' : preuve de la clé de cet appareil…');
-        return call('/v1/export/agence/contenus/tranche', { index: p.index, debut: d.debut, attendue: d.sha256 }).then(function (x) {
-          if (x.gone) { busy = false; return false; }
+        return call('/v1/export/agence/contenus/tranche', { index: p.index, debut: d.debut, attendue: d.sha256 }, g).then(function (x) {
+          if (x.gone) return gone();
           if (x.refused) return stop(x.refused + ' Rien n’est enregistré.');
           var bytes = x.data.statut === 'remise' ? bytesOf(x.data.contenu) : null;
           if (!bytes) return stop('La tranche ' + (i + 1) + ' a changé ou manque : tout s’arrête, rien n’est enregistré.');
           return digest(bytes).then(function (h) {
+            if (stale(g)) return gone();
             if (h !== d.sha256 || bytes.length !== d.taille || x.data.debut !== d.debut) return stop('La tranche ' + (i + 1) + ' refaite ici n’est pas celle qu’AIMMO a dite : tout s’arrête, rien n’est enregistré.');
             parts.push(bytes);
             i++;
@@ -181,7 +187,7 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
           ? new Blob(parts).arrayBuffer().then(digest).then(function (h) { return h === e.sha256 ? 'empreinte entière refaite sur cet appareil : identique' : null; })
           : Promise.resolve('vérifiée tranche par tranche (' + parts.length + ' tranches)');
         return whole.then(function (said) {
-          if (stale()) { busy = false; return false; }
+          if (stale(g)) return gone();
           if (!said) return stop('La pièce recomposée n’a pas l’empreinte dite : rien n’est enregistré.');
           busy = false;
           note(p, 'verifiee', e.sha256, total);
@@ -195,8 +201,8 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
       return next();
     });
   }
-  function piece(p) {
-    if (p.statut === 'remise') return remise(p);
+  function piece(p, g) {
+    if (p.statut === 'remise') return remise(p, g);
     if (p.statut === 'absente') { note(p, 'absente', null, null); line(p, 'absente.'); }
     else if (p.statut === 'masquee') { note(p, 'masquee', null, null); line(p, 'masquée dans le fichier : non lue.'); }
     else if (p.statut === 'trop_grosse') {
@@ -213,11 +219,12 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
   }
   function lot(b) {
     if (busy || suite === null) return Promise.resolve(false);
+    var g = gen;
     busy = true;
     b.disabled = true;
     say('Preuve de la clé de cet appareil…');
-    return call('/v1/export/agence/contenus', { depuis: suite }).then(function (r) {
-      if (r.gone) { busy = false; return false; }
+    return call('/v1/export/agence/contenus', { depuis: suite }, g).then(function (r) {
+      if (r.gone) { if (g === gen) busy = false; return false; }
       b.disabled = false;
       if (r.refused) { busy = false; say(r.refused); return false; }
       var d = r.data;
@@ -226,10 +233,10 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
       recu.lots.push({ depuis: d.depuis, manifeste: d.manifeste });
       clear(listEl);
       var chain = Promise.resolve();
-      d.pieces.forEach(function (p) { chain = chain.then(function () { return stale() ? null : piece(p); }); });
+      d.pieces.forEach(function (p) { chain = chain.then(function () { return stale(g) ? null : piece(p, g); }); });
       return chain.then(function () {
+        if (stale(g)) return false;
         busy = false;
-        if (stale()) return false;
         suite = typeof d.suite === 'number' ? d.suite : null;
         if (suite === null) {
           b.disabled = true;
@@ -256,7 +263,8 @@ globalThis.AIMMO_REPRISE_CONTENUS = function (t) {
       where.appendChild(el('p', 'Tirez d’abord le fichier de vos données : le contenu se tire sur lui.', 'etat'));
       return false;
     }
-    if (held !== doc || stale() || !panel) {
+    if (held !== doc || owner !== t.session() || !panel) {
+      gen++;
       doc = held; owner = t.session(); suite = 0; busy = false; recu = { fingerprint: null, lots: [], pieces: [], comptes: {} };
       panel = el('div');
       panel.appendChild(el('p', 'Chaque pièce arrive avec son empreinte, refaite sur cet appareil avant d’être offerte. Chaque lot demande la preuve de la clé de cet appareil.', 'doux'));
