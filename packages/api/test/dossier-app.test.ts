@@ -1,5 +1,6 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { COPROPRIETE_SCRIPT } from '../app/copropriete.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
@@ -91,7 +92,7 @@ async function run(answers: Record<string, Answer> = {}) {
     s[0]!.listeners.load!({});
     await settle();
   };
-  return { els, calls, table, body, state, click, find, input, open, posts: () => calls.filter((c) => c.method === 'POST') };
+  return { els, calls, table, body, state, click, find, input, open, context, settle, posts: () => calls.filter((c) => c.method === 'POST') };
 }
 
 describe('N12 · écran du dossier de vente', () => {
@@ -362,3 +363,32 @@ describe('N13 · faire avancer le dossier depuis l’écran', () => {
     expect(u.body().textContent).toContain('Dossier complet.');
   });
 });
+
+describe('BR88 · la copropriété et l’urbanisme, depuis le dossier', () => {
+  it('[R201] le bloc se charge au premier geste, une seule fois, et ne fait que lire', async () => {
+    const t = await run({
+      'GET /v1/dossiers/f1/copropriete/resume': no(404, 'no_summary'),
+      'GET /v1/dossiers/f1/copropriete/acquereur': no(404, 'no_summary'),
+    });
+    await t.open();
+    const part = t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Copropriété et urbanisme'))!;
+    expect(part).toBeDefined();
+    const before = t.calls.length;
+    expect(part.all().some((e) => e.tagName === 'script')).toBe(false);
+    await t.click(t.find(part, 'Lire le résumé de copropriété et d’urbanisme'));
+    const scripts = part.all().filter((e) => e.tagName === 'script');
+    expect(scripts.map((e) => e.attributes.src)).toEqual(['/app/copropriete.js']);
+    expect(t.calls.length).toBe(before);
+    runInNewContext(COPROPRIETE_SCRIPT, t.context);
+    scripts[0]!.listeners.load!({});
+    await t.settle();
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/dossiers/f1/copropriete/resume', 'GET /v1/dossiers/f1/copropriete/acquereur']);
+    expect(part.textContent).toContain('Aucun résumé de copropriété et d’urbanisme n’est encore préparé pour ce dossier.');
+    // Relire ne recharge pas le script ; rien n'est jamais envoyé.
+    await t.click(t.find(part, 'Lire le résumé de copropriété et d’urbanisme'));
+    expect(part.all().filter((e) => e.tagName === 'script')).toHaveLength(1);
+    expect(t.calls.slice(before)).toHaveLength(4);
+    expect(t.posts()).toEqual([]);
+  });
+});
+
