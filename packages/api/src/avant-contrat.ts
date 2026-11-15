@@ -115,9 +115,15 @@ const guarded =
   async (s: AvantContratServices, v: Viewer, [fileId]: string[], request: Request): Promise<Response> =>
     roles.includes(v.role) ? fn(s, v, fileId!, request) : refuseRole(s, v, fileId!);
 
+/**
+ * Le dossier est contrôlé avant de lire le corps : un autre agent ou un dossier inconnu est refusé, au journal, même
+ * avec un corps abîmé ou trop gros, et le corps n'est jamais lu [R16] (remarque de Codex).
+ */
 const withBody =
   (fn: (s: AvantContratServices, v: Viewer, fileId: string, body: Record<string, unknown>) => Promise<Response>) =>
   async (s: AvantContratServices, v: Viewer, fileId: string, request: Request): Promise<Response> => {
+    const g = await gateSaleFile({ db: s.db, acces: avantContratCore(s).acces, journal: s.journal, now: s.now }, v, fileId, true, 'pre_contract');
+    if (!g.ok) return reply(g);
     const body = await readJson(request);
     return body ? fn(s, v, fileId, body) : badBody();
   };

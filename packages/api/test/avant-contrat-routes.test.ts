@@ -275,6 +275,13 @@ describeWithSqlite('RC54 · le projet du notaire servi par l’API, prélu depui
     expect(await t.post(t.direction, `${t.base}/note`, { depositEur: 10000 })).toMatchObject({ status: 403, body: { rule: 'R16' } });
     expect(await t.post(t.compliance, `${t.base}/projet`, {})).toMatchObject({ status: 403, body: { rule: 'R16' } });
     expect((await t.post(t.agent, '/dossiers/inconnu/avant-contrat/pdf', PROJET, `?documentRef=${ref}`, 'application/pdf')).status).toBe(404);
+    // Les routes à corps JSON aussi : le dossier est contrôlé avant le corps, même abîmé (remarque de Codex).
+    const refusals = (await t.journalText()).split('acces.refuse').length;
+    for (const path of ['note', 'projet', 'depot', 'prelecture']) {
+      expect((await t.post(t.sam, `${t.base}/${path}`, enc('{pas du json'))).status).toBe(403);
+      expect((await t.post(t.agent, `/dossiers/inconnu/avant-contrat/${path}`, enc('{pas du json'))).status).toBe(404);
+    }
+    expect((await t.journalText()).split('acces.refuse').length).toBeGreaterThanOrEqual(refusals + 4);
     expect(t.bodyRead()).toBe(0);
     expect((await t.get(t.sam, t.base)).status).toBe(403);
     expect(await t.journalText()).toContain('acces.refuse');
