@@ -107,6 +107,21 @@ describe('BR88 · la copropriété et l’urbanisme relus à l’écran du dossi
     }
   });
 
+  it('[R449] le registre trouvé dit sa fiche, sa source, la date de la donnée et le jour de sa lecture ; le nom d’un syndic bénévole jamais repris', async () => {
+    const source = 'Registre national des copropriétés (ANAH)';
+    const found = (syndicType: string, syndicName: string | null) => ({ found: true, value: { immatriculation: 'AA1234567', lots: 24, syndicType, syndicName, constructionPeriod: null }, source, collectedOn: '2027-03-11', dataDate: '2027-01-15' });
+    const pro = mount({ [`GET ${RESUME}`]: async () => ok({ ...SUMMARY, registry: found('professionnel', 'Syndic Exemple SAS') }), [`GET ${BUYER}`]: async () => ok({ summaryId: 's1', lines: [], works: [] }) });
+    await pro.show();
+    expect(pro.box.textContent).toContain('Registre des copropriétés : AA1234567, 24 lots, syndic Syndic Exemple SAS. Source : Registre national des copropriétés (ANAH), donnée du 15 janvier 2027, lue par le serveur le 11 mars 2027.');
+    const volunteer = mount({ [`GET ${RESUME}`]: async () => ok({ ...SUMMARY, registry: found('benevole', 'Camille Inventé') }), [`GET ${BUYER}`]: async () => ok({ summaryId: 's1', lines: [], works: [] }) });
+    await volunteer.show();
+    expect(volunteer.box.textContent).toContain('Registre des copropriétés : AA1234567, 24 lots, syndic bénévole. Source : Registre national des copropriétés (ANAH), donnée du 15 janvier 2027');
+    expect(volunteer.box.textContent).not.toContain('Camille');
+    const broken = mount({ [`GET ${RESUME}`]: async () => ok({ ...SUMMARY, registry: { ...found('professionnel', 'X'), dataDate: 'hier' } }), [`GET ${BUYER}`]: async () => ok({ summaryId: 's1', lines: [], works: [] }) });
+    await broken.show();
+    expect(broken.box.textContent).toContain('Registre des copropriétés : illisible.');
+  });
+
   it('[R449] aucun champ, aucun envoi : la zone ne se tape jamais à l’écran', async () => {
     const t = mount({ [`GET ${RESUME}`]: async () => ok(SUMMARY), [`GET ${BUYER}`]: async () => ok({ summaryId: 's1', lines: [WORKS_LINE], works: [] }) });
     await t.show();
