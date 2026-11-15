@@ -14,7 +14,7 @@
  * dossiers recontrôlés.
  *
  * BR86 : à l'ouverture, et de nouveau après chaque import, le bloc lit le registre en service
- * (`GET /v1/securite/gel/registre`) et le dit en mots : date publiée, date d'import, entrées, dossiers contrôlés contre
+ * (`GET /v1/securite/gel/registre`, relu aussi après un refus ou une réponse perdue) et le dit en mots : date publiée, date d'import, entrées, dossiers contrôlés contre
  * lui, son âge en jours, « à mettre à jour » passé 7 jours, et son empreinte SHA-256 en groupes de huit, à comparer au
  * reçu de l'import. Aucun registre : « aucun contrôle n'est possible ». Une lecture arrivée après une plus récente, ou
  * après la sortie de l'écran, est jetée.
@@ -121,7 +121,9 @@ globalThis.AIMMO_GEL_REGISTRE = function (t) {
     send(path, 'POST', body).then(function (res) {
       busy = false;
       if (res.gone || mine !== t.session()) return;
-      if (res.ok) { done(res.body.data); load(); } else say(refusal(res));
+      if (res.ok) done(res.body.data); else say(refusal(res));
+      /* Relu après toute réponse, perdue ou refusée comprise : l'import a pu se faire (déjà importé, panne après le sceau). */
+      load();
     });
   }
   function fromFile() {

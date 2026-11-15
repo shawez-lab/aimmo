@@ -193,6 +193,14 @@ describe('BR86 · le registre en service, dit à l’ouverture du bloc', () => {
     await settle();
     expect(t.current()).toContain('Publié aujourd’hui.');
     expect(t.current()).not.toContain(GEL_REGISTRE_NONE);
+    // Une réponse perdue, un « déjà importé » ou une panne : l'import a pu se faire, le registre en service est relu.
+    for (const res of [{ offline: true }, { ok: false, status: 400, body: { ok: false, code: 'already_imported' } }, { ok: false, status: 500, body: null }] as Res[]) {
+      const u = mount(async () => res, async () => stateOk(IN_SERVICE));
+      await settle();
+      await u.press('Importer le registre du jour');
+      expect(u.reads).toHaveLength(2);
+      expect(u.current()).toContain('Registre en service : publié le 1 mars 2027');
+    }
     // Sortie de l'écran : la lecture qui arrive ensuite ne change rien.
     t.screen.show(t.inner);
     expect(t.reads).toHaveLength(3);
