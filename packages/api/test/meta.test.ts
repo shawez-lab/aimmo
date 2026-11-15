@@ -396,6 +396,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               'registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },',
               // La base ouverte des diagnostics de l'ADEME pour la veille (HX16, BR26), en lecture seule : seuls le code
               // postal et le jour partent, jamais un envoi.
+              // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),
+              // lus en GET au seul appui de l'agent du bien, jamais un envoi.
+              'copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },',
               'dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),',
             ]
           : [],
