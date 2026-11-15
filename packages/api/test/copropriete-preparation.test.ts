@@ -77,7 +77,7 @@ function mount(table: Record<string, () => Promise<Res>> = {}) {
   const context: Record<string, unknown> = { Date, JSON, Object, String, Number, isNaN, Promise, Math, Array, encodeURIComponent, TextEncoder };
   context.globalThis = context;
   runInNewContext(COPROPRIETE_SCRIPT, context);
-  const make = context.AIMMO_COPROPRIETE as (t: unknown) => { prepare: (box: FakeElement, id: string) => boolean };
+  const make = context.AIMMO_COPROPRIETE as (t: unknown) => { compose: (box: FakeElement, id: string) => boolean };
   const screen = make({
     el,
     clear,
@@ -106,7 +106,7 @@ function mount(table: Record<string, () => Promise<Res>> = {}) {
     await click('Déposer et prélire');
   };
   const sent = (method: string) => calls.filter((c) => c.method === method);
-  return { calls, box, screen, byLabel, click, states, boxes, deposit, sent, leave: () => (session += 1), open: (id = 'f1') => screen.prepare(box, id) };
+  return { calls, box, screen, byLabel, click, states, boxes, deposit, sent, leave: () => (session += 1), open: (id = 'f1') => screen.compose(box, id) };
 }
 
 describe('BR90 · le résumé de copropriété préparé à l’écran depuis les PDF déposés', () => {
@@ -307,7 +307,7 @@ describe('BR90 · le résumé de copropriété préparé à l’écran depuis le
     expect(t.calls).toHaveLength(1);
 
     const u = mount();
-    expect(u.screen.prepare(u.box, '../f1')).toBe(false);
+    expect(u.screen.compose(u.box, '../f1')).toBe(false);
     expect(u.box.all().some((e) => e.tagName === 'button')).toBe(false);
   });
 

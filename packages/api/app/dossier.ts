@@ -210,7 +210,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
       box.appendChild(s);
     }
     var b = button('Lire le résumé de copropriété et d’urbanisme', function () { withCopro(b, function (c) { c.show(inner, id); }); });
-    var p = button('Préparer un nouveau résumé depuis les PDF', function () { withCopro(p, function (c) { c.prepare(inner, id); }); });
+    var p = button('Préparer un nouveau résumé depuis les PDF', function () { withCopro(p, function (c) { c.compose(inner, id); }); });
     box.appendChild(b);
     box.appendChild(p);
     box.appendChild(inner);

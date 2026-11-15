@@ -15,7 +15,7 @@
  * Jamais vu : la zone du plan d'urbanisme se lit avec sa source, la date de la donnée et le jour où le serveur l'a lue
  * au point du bien ; l'écran n'offre aucun moyen de la taper.
  *
- * BR90 · La préparation, second geste du bloc (`prepare`), pour l'agent du bien : chaque PDF part tel quel à
+ * BR90 · La préparation, second geste du bloc (`compose`), pour l'agent du bien : chaque PDF part tel quel à
  * `POST …/copropriete/pdf` (sorte et jour d'assemblée dans l'adresse) ; le serveur en tire le texte sans IA et rend le
  * document sous l'empreinte du fichier, les phrases proposées et ce qui reste à lire [R12, R450]. Aucune phrase proposée
  * n'est cochée d'avance : seules celles que l'agent coche partent [R448] ; il peut ajouter la sienne (rubrique,
@@ -425,6 +425,6 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
     });
     return true;
   }
-  return { show: show, prepare: prepare };
+  return { show: show, compose: prepare };
 };
 `;
