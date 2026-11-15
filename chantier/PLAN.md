@@ -2082,6 +2082,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : un fichier de deux personnes physiques, une morale et un navire : trois entrées, noms « Nom Prénoms » et alias, navire compté à part, date de publication reprise [R605] (test) ; le résultat passe tel quel par `importRegistry` et une partie au nom d'un alias est trouvée [R603] (test) ; nature inconnue, entrée sans nom, identifiant en double ou mal formé, date absente ou fichier d'une autre forme : refus du fichier entier, avec la raison et l'identifiant, jamais un nom [R13] (test) ; une entrée de 60 alias s'importe (test) ; tous les tests de HX57 restent verts.
 - Attend : rien (format du jour à relire sur le vrai fichier au branchement, voie 1).
 
+### RC50 · Un texte refusé pour un caractère coupé, le caractère montré à l'agent dans sa zone de texte (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC48
+- Cahier : M16 Commerces et entreprises (dossier du commerce) ; R201.
+- Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de RC48 (« le texte du refus `content_malformed` à l'écran (`packages/api/app/commerces-textes.ts`), avec la place (`at`) dite en mots »), marqué voie 1 ; la voie 1 a sept restes de branchement en attente, celui-ci ne touche que `packages/api/app/commerces-textes.ts` et son test, ni `app.ts`, ni le socle, ni le cœur. Aujourd'hui l'agent qui colle un texte où un émoji a été coupé lit « Le document n'est pas rangé. » sans savoir pourquoi ni où. Le script dit en mots le caractère fautif et sa place, puis sélectionne ce caractère dans la zone de texte et y met le curseur (place comptée comme le serveur, en caractères, convertie pour la zone de texte), et le même contrôle tourne avant l'envoi : rien ne part tant qu'un caractère est coupé (Jamais vu : aucun outil ne montre où un copier-coller a abîmé un texte). Le titre fautif (`title`) le dit aussi.
+- Objectif : l'agent retrouve et corrige en un geste le caractère coupé qui empêche de ranger un document du dossier.
+- Critères : refus `content_malformed` du serveur : message en mots avec la place, caractère sélectionné dans la zone de texte, même pour une place après un émoji entier (test) ; texte coupé repéré avant l'envoi, aucun appel, même message et même sélection (test) ; titre coupé : refusé avant l'envoi avec son message (test) ; texte sain : envoyé comme avant (test) ; budget de la page tenu [R201] (test) ; tous les tests de l'écran du commerce restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
