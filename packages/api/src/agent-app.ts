@@ -52,6 +52,7 @@ import { PROSPECTION_SCRIPT } from '../app/prospection.ts';
 import { BIBLIOTHEQUE_SCRIPT } from '../app/bibliotheque.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { LICENCES_SCRIPT } from '../app/licences.ts';
+import { REPRISE_CONTENUS_SCRIPT } from '../app/reprise-contenus.ts';
 import { CLES_SCRIPT } from '../app/cles.ts';
 import { PHASES_SCRIPT } from '../app/phases.ts';
 import { GUIDES_PHOTO_SCRIPT } from '../app/guides-photo.ts';
@@ -223,6 +224,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // Les communes à pourvoir pour la direction (BR38), chargées depuis « Phases et régions », jamais gardées [R201].
   '/app/communes.js': { body: COMMUNES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/licences.js': { body: LICENCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le contenu des fichiers de la reprise (BR83), chargé depuis « Reprendre mes données », jamais gardé [R201].
+  '/app/reprise-contenus.js': { body: REPRISE_CONTENUS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La clé de cet appareil et la preuve d'une action (BR18), chargées au premier geste, jamais gardées [R201].
   '/app/cles.js': { body: CLES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les guides photo à valider pour la direction (X23), chargés au premier geste, jamais gardés sur l'appareil [R201].
