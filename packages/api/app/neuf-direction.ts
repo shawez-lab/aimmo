@@ -12,6 +12,12 @@
  *   promoteur est choisi dans l'annuaire par code postal [R73], l'agent dans la liste des agents en activité ; aucun
  *   identifiant n'est tapé.
  *
+ * - BR80 · La table d'espérance de vie du viager : les tables importées, lues par `GET /v1/viager/tables`, sans leurs
+ *   lignes, celle qui sert aux calculs ce jour dite à part [R541]. Une table s'importe par `POST /v1/viager/tables` depuis
+ *   le seul fichier choisi (deux colonnes : âge, espérance en années), relu ligne à ligne sur l'appareil avant tout
+ *   envoi : une colonne de plus (le sexe), un âge en double ou hors de 0 à 120, une espérance illisible, et rien ne part,
+ *   la ligne fautive dite par son numéro. Le serveur garde ses propres contrôles.
+ *
  * Il ne calcule aucun frais. Chaque refus est dit en mots, jamais par son code [R16] ; une écriture sans réponse est
  * dite incertaine et l'écran relu. Tout texte reçu est posé en texte ; un champ mal formé n'est pas dit. Rien n'est
  * gardé sur l'appareil, rien n'est envoyé au promoteur ni à l'agent.
@@ -36,6 +42,23 @@ export const NEUF_DIRECTION_REFUSALS: Readonly<Record<string, string>> = Object.
   invalid_body: 'La saisie n’est pas lisible.',
 });
 
+/** Les refus de l'import d'une table d'espérance, dits à la direction (BR80) [R541]. */
+export const NEUF_DIRECTION_TABLE_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  role: 'Les tables d’espérance de vie ne sont pas dans vos droits.',
+  millesime: 'Le millésime : l’année de la table (2024) ou ses années (2020-2022).',
+  source: 'Dites d’où vient la table (INSEE, titre, date), de 5 à 300 caractères.',
+  lignes: 'Le serveur n’a pas lu les âges de ce fichier : rien n’est importé.',
+  colonnes: 'Le serveur a trouvé une autre colonne que l’âge et l’espérance : rien n’est importé.',
+  deja_importee: 'Une table de ce millésime est déjà importée : elle ne change jamais. Une correction s’importe sous un autre millésime.',
+  invalid_body: 'Ce fichier n’a pas pu être envoyé : rien n’est importé.',
+});
+
+export const NEUF_DIRECTION_NO_TABLE = 'Aucune table importée : un calcul de viager n’a pas d’espérance de vie et reste incomplet, sans rente ni droit d’usage.';
+export const NEUF_DIRECTION_TABLE_NOTE = 'Le calcul prend toujours la dernière table importée. Une table importée ne change jamais : une correction s’importe sous un autre millésime.';
+export const NEUF_DIRECTION_TABLE_MISSING = 'Choisissez le fichier, puis remplissez le millésime et la source (5 caractères au moins) avant d’importer.';
+/** Le poids admis d'un fichier de table : 121 âges tiennent en bien moins. */
+export const NEUF_DIRECTION_TABLE_MAX_BYTES = 64 * 1024;
+
 export const NEUF_DIRECTION_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 export const NEUF_DIRECTION_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. L’écran est relu, vérifiez-le avant de recommencer.';
 export const NEUF_DIRECTION_NO_SCALE = 'Aucun barème en vigueur : aucun de ces frais n’est calculé, ni à l’écran de l’agent ni sur le site.';
@@ -52,15 +75,18 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
   var OFFLINE = ${JSON.stringify(NEUF_DIRECTION_OFFLINE)}, LOST = ${JSON.stringify(NEUF_DIRECTION_LOST)}, NO_SCALE = ${JSON.stringify(NEUF_DIRECTION_NO_SCALE)};
   var NO_PROGRAM = ${JSON.stringify(NEUF_DIRECTION_NO_PROGRAM)}, SCALE_MISSING = ${JSON.stringify(NEUF_DIRECTION_SCALE_MISSING)};
   var PROGRAM_MISSING = ${JSON.stringify(NEUF_DIRECTION_PROGRAM_MISSING)}, LEFT = ${JSON.stringify(NEUF_DIRECTION_LEFT)};
+  var TABLE_REFUSALS = ${JSON.stringify(NEUF_DIRECTION_TABLE_REFUSALS)}, NO_TABLE = ${JSON.stringify(NEUF_DIRECTION_NO_TABLE)};
+  var TABLE_NOTE = ${JSON.stringify(NEUF_DIRECTION_TABLE_NOTE)}, TABLE_MISSING = ${JSON.stringify(NEUF_DIRECTION_TABLE_MISSING)};
+  var TABLE_MAX = ${NEUF_DIRECTION_TABLE_MAX_BYTES}, VINTAGE = /^\\d{4}(?:-\\d{4})?$/;
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, CP = /^\\d{5}$/;
   var root = null, turn = 0, busy = false;
   function own(map, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function str(v, max) { return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null; }
   function int(x) { return typeof x === 'number' && isFinite(x) && Math.floor(x) === x; }
   function day(d) { return typeof d === 'string' && DAY.test(d) ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : null; }
-  function refusal(x, fallback) {
+  function refusal(x, fallback, map) {
     if (x.offline) return OFFLINE;
-    return own(REFUSALS, x.body && x.body.code) || fallback;
+    return own(map || REFUSALS, x.body && x.body.code) || fallback;
   }
   function note() { var p = el('p', '', 'etat'); p.setAttribute('role', 'status'); return p; }
   function choice(box, id, label, map, empty) {
@@ -97,7 +123,7 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
     return li;
   }
   /* Une écriture : une à la fois ; sans réponse lisible, ou une panne du serveur, elle a pu passer : tout est relu. */
-  function write(b, path, body, said, done, fallback) {
+  function write(b, path, body, said, done, fallback, map) {
     if (busy) return Promise.resolve(false);
     var mine = t.session();
     busy = true;
@@ -108,7 +134,7 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
       b.disabled = false;
       if (x.gone || mine !== t.session()) return false;
       if (x.offline || !x.body || x.status >= 500) { draw(LOST); return false; }
-      if (!x.ok) { said.textContent = refusal(x, fallback); return false; }
+      if (!x.ok) { said.textContent = refusal(x, fallback, map); return false; }
       draw(done);
       return true;
     });
@@ -231,6 +257,84 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
     form.appendChild(said);
     box.appendChild(form);
   }
+  /* ---------- La table d'espérance de vie du viager (BR80) [R541] ---------- */
+  /**
+   * Le fichier relu ligne à ligne : deux colonnes (âge, espérance en années, une décimale au plus), séparées par « ; »,
+   * une tabulation ou « , » (alors la décimale est un point), une ligne de titres permise en tête. Le premier défaut
+   * arrête tout : rien ne part, et sa ligne est dite par son numéro.
+   */
+  function lifeTable(csv) {
+    var lines = String(csv).replace(/^\\ufeff/, '').split(/\\r\\n|\\n|\\r/), rows = [], seen = {}, sep = null, first = true;
+    function bad(i, why) { return { error: 'Ligne ' + (i + 1) + ' : ' + why + ' Rien n’est envoyé.' }; }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.trim()) continue;
+      if (sep === null) sep = line.indexOf(';') >= 0 ? ';' : line.indexOf('\\t') >= 0 ? '\\t' : ',';
+      var cells = line.split(sep).map(function (c) { return c.trim().replace(/^"(.*)"$/, '$1').trim(); });
+      var head = first && !/^\\d/.test(cells[0] || '');
+      first = false;
+      if (/sexe|homme|femme|masculin|f[eé]minin/i.test(line)) return bad(i, 'une colonne de sexe. La table est celle de l’ensemble des deux sexes, sans autre colonne que l’âge et l’espérance.');
+      if (cells.length !== 2) return bad(i, cells.length + ' colonnes. La table n’a que deux colonnes : l’âge, puis l’espérance de vie.');
+      if (head) continue;
+      if (!/^\\d{1,3}$/.test(cells[0]) || Number(cells[0]) > 120) return bad(i, 'l’âge n’est pas lisible (un entier de 0 à 120).');
+      var age = Number(cells[0]);
+      if (Object.prototype.hasOwnProperty.call(seen, age)) return bad(i, 'l’âge ' + age + ' est déjà plus haut, à la ligne ' + seen[age] + '.');
+      var m = (sep === ',' ? /^(\\d{1,3})(?:\\.(\\d))?$/ : /^(\\d{1,3})(?:[.,](\\d))?$/).exec(cells[1]);
+      var tenths = m ? Number(m[1]) * 10 + Number(m[2] || 0) : 0;
+      if (!m || tenths < 1 || tenths > 1200) return bad(i, 'l’espérance de vie n’est pas lisible (des années, une décimale au plus, de 0,1 à 120).');
+      seen[age] = i + 1;
+      rows.push({ age: age, expectancyTenths: tenths });
+      if (rows.length > 121) return bad(i, 'plus de 121 âges : ce n’est pas une table d’espérance de vie.');
+    }
+    if (!rows.length) return { error: 'Aucun âge lu dans ce fichier. Rien n’est envoyé.' };
+    return { rows: rows };
+  }
+  function tableOf(x) {
+    if (!x || typeof x !== 'object' || !ID.test(x.tableId || '')) return null;
+    var r = { vintage: typeof x.vintage === 'string' && VINTAGE.test(x.vintage) ? x.vintage : null, source: str(x.source, 300), at: typeof x.importedAt === 'string' ? day(x.importedAt.slice(0, 10)) : null, count: int(x.rowCount) && x.rowCount > 0 && x.rowCount <= 121 ? x.rowCount : null, inUse: x.inUse === true };
+    return r.vintage && r.source && r.at && r.count ? r : null;
+  }
+  function tables(box, x) {
+    var d = x.ok && x.body && x.body.data && typeof x.body.data === 'object' && Array.isArray(x.body.data.tables) ? x.body.data.tables : null;
+    if (!d) { box.appendChild(el('p', refusal(x, 'Les tables ne se lisent pas pour le moment.', TABLE_REFUSALS), 'doux')); return; }
+    box.appendChild(el('p', TABLE_NOTE, 'doux'));
+    var list = d.map(tableOf).filter(Boolean), used = list.filter(function (r) { return r.inUse; })[0] || null;
+    if (!used) box.appendChild(el('p', NO_TABLE, 'doux'));
+    var ul = el('ul', null, 'liste');
+    list.forEach(function (r) {
+      var li = el('li');
+      li.appendChild(el('strong', (r.inUse ? 'En service pour chaque calcul : millésime ' : 'Plus en service : millésime ') + r.vintage));
+      li.appendChild(el('p', 'Source : ' + r.source + ' · importée le ' + r.at + ' · ' + r.count + (r.count > 1 ? ' âges' : ' âge'), 'doux'));
+      ul.appendChild(li);
+    });
+    if (list.length) box.appendChild(ul);
+    var form = el('section', null, 'bloc');
+    form.appendChild(el('h5', 'Importer une table'));
+    form.appendChild(el('p', 'Le fichier CSV de la table, ensemble des deux sexes : deux colonnes, l’âge puis l’espérance de vie en années. Il est relu ici avant tout envoi.', 'doux'));
+    var f = { file: field(form, 'viager-table-fichier', 'Fichier de la table'), vintage: field(form, 'viager-table-millesime', 'Millésime'), source: field(form, 'viager-table-source', 'Source de la table') };
+    f.file.setAttribute('type', 'file');
+    f.file.setAttribute('accept', '.csv,text/csv,text/plain');
+    f.source.setAttribute('maxlength', '300');
+    var said = note();
+    var go = button('Importer cette table', function () {
+      var files = f.file.files, file = files && files.length === 1 ? files[0] : null;
+      var vintage = String(f.vintage.value || '').trim(), src = String(f.source.value || '').trim();
+      if (busy) return;
+      if (!file || !VINTAGE.test(vintage) || src.length < 5) { said.textContent = TABLE_MISSING; return; }
+      if (!(file.size <= TABLE_MAX)) { said.textContent = 'Ce fichier dépasse 64 Ko : ce n’est pas une table d’espérance de vie. Rien n’est envoyé.'; return; }
+      var mine = t.session();
+      said.textContent = 'Lecture du fichier…';
+      Promise.resolve(file.text()).then(function (csv) {
+        if (mine !== t.session()) return;
+        var r = lifeTable(csv);
+        if (r.error) { said.textContent = r.error; return; }
+        write(go, '/v1/viager/tables', { vintage: vintage, source: src, rows: r.rows }, said, 'Table importée (' + r.rows.length + ' âges) : elle sert désormais à chaque calcul.', 'La table n’a pas été importée.', TABLE_REFUSALS);
+      }, function () { if (mine === t.session()) said.textContent = 'Ce fichier ne se lit pas : rien n’est envoyé.'; });
+    });
+    form.appendChild(go);
+    form.appendChild(said);
+    box.appendChild(form);
+  }
   function draw(message) {
     if (!root) return Promise.resolve(false);
     var box = root, mine = t.session(), me = ++turn;
@@ -238,8 +342,8 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
     var said = note();
     said.textContent = message === LOST ? LOST : 'Chargement…';
     box.appendChild(said);
-    return Promise.all([send('/v1/neuf/baremes', 'GET'), send('/v1/neuf/programmes', 'GET'), send('/v1/gagner/recommandations/agents', 'GET')]).then(function (r) {
-      if (r[0].gone || r[1].gone || r[2].gone || box !== root || mine !== t.session() || me !== turn) return false;
+    return Promise.all([send('/v1/neuf/baremes', 'GET'), send('/v1/neuf/programmes', 'GET'), send('/v1/gagner/recommandations/agents', 'GET'), send('/v1/viager/tables', 'GET')]).then(function (r) {
+      if (r[0].gone || r[1].gone || r[2].gone || r[3].gone || box !== root || mine !== t.session() || me !== turn) return false;
       said.textContent = message || '';
       var a = el('section', null, 'bloc');
       a.appendChild(el('h4', 'Barèmes des frais d’acquisition'));
@@ -252,6 +356,10 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
       programs(b, r[1], agents);
       opening(b, agents);
       box.appendChild(b);
+      var c = el('section', null, 'bloc');
+      c.appendChild(el('h4', 'Table d’espérance de vie du viager'));
+      tables(c, r[3]);
+      box.appendChild(c);
       return true;
     });
   }
