@@ -229,6 +229,7 @@ describeWithSqlite('RC52 · copropriété et urbanisme résumés par la route', 
   it('chaque route dit ses rôles', () => {
     const roles = Object.fromEntries(coproprieteRoutes().map((r) => [r.name, r.roles]));
     expect(roles).toEqual({
+      'copropriete.pdf': ['agent'],
       'copropriete.prelecture': ['agent'],
       'copropriete.preparer': ['agent'],
       'copropriete.resume': ['agent', 'direction', 'compliance'],

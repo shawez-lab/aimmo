@@ -3,6 +3,8 @@
  * `/v1/dossiers/<id>/copropriete`.
  *
  * - `POST …/prelecture` : la prélecture des documents (RC42), rien n'est rangé ; sans lecteur IA, tout est à lire.
+ * - `POST …/pdf?kind=<type>[&meetingDay=AAAA-MM-JJ]` : un PDF déposé tel quel (RC53), son texte tiré sans IA (RC40)
+ *   puis prélu ; la référence du document est l'empreinte du fichier, jamais un nom venu de l'écran, et rien n'est gardé.
  * - `POST …/resume` : le résumé préparé par l'agent du bien (HX35), phrases vérifiées contre leur page [R448].
  * - `GET …/resume` : le dernier résumé, pour qui voit le dossier en entier [R16].
  * - `GET …/acquereur` : les travaux votés à venir, tels qu'ils se disent à l'acquéreur [R451].
@@ -16,8 +18,8 @@
  * Le registre des copropriétés reste « non collecté » : il n'a pas d'API ouverte stable.
  */
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { CoproprieteUrbanisme, PUBLIC_SOURCES, type PublicFact, type UrbanismValue } from '../../core/src/documents/copropriete-urbanisme.ts';
-import { LectureCopropriete, type CoproReader, type UrbanismPoint } from '../../core/src/documents/index.ts';
+import { CoproprieteUrbanisme, DOCUMENT_KINDS, PUBLIC_SOURCES, type PublicFact, type UrbanismValue } from '../../core/src/documents/copropriete-urbanisme.ts';
+import { LectureCopropriete, PDF_LIMITS, PDF_TEXT_REFUSAL_TEXT, pagesForReading, pagesToRead, pdfPagesText, type CoproReader, type UrbanismPoint } from '../../core/src/documents/index.ts';
 import { gateSaleFile } from '../../core/src/dossiers/acces-dossier.ts';
 import type { Geocoder } from '../../core/src/estimation/collecte.ts';
 import { readCapped } from './studio.ts';
@@ -204,8 +206,71 @@ async function preRead(s: CoproprieteServices, v: Viewer, fileId: string, reques
   return reply(await coproprieteCore(s).preReading.preRead(v, fileId, { documents: body.documents }));
 }
 
+/** Le PDF déposé : la limite de la lecture du texte (RC40). */
+export const MAX_COPROPRIETE_PDF_BYTES = PDF_LIMITS.maxBytes;
+/** Le texte d'une page au-delà duquel la prélecture la refuse. */
+const MAX_PAGE_CHARS = 100_000;
+/**
+ * Le texte d'un PDF, une fois rendu, doit pouvoir repartir au résumé avec les autres documents : au-delà de la moitié du
+ * corps de `POST …/resume`, il est refusé ici plutôt que de rendre un document qu'on ne pourrait pas résumer (remarque de Codex).
+ */
+export const MAX_COPROPRIETE_PDF_TEXT_BYTES = MAX_COPROPRIETE_BODY_BYTES / 2;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const hex = (bytes: ArrayBuffer): string => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+const pagesInWords = (pages: number[]): string | null =>
+  pages.length === 0
+    ? null
+    : pages.length === 1
+      ? `La page ${pages[0]} n’a pas pu être lue : lisez-la vous-même.`
+      : `Les pages ${pages.slice(0, -1).join(', ')} et ${pages[pages.length - 1]} n’ont pas pu être lues : lisez-les vous-même.`;
+
+/**
+ * Un PDF de la copropriété ou de l'urbanisme déposé tel quel (RC53). Le dossier est contrôlé avant toute lecture du
+ * corps [R16] ; le texte est tiré sans IA, une page qu'on ne sait pas lire est nommée, jamais devinée [R12] ; la
+ * prélecture reçoit le document sous la référence `sha256:<empreinte du fichier>`. Ni le PDF ni son texte ne sont
+ * gardés ni écrits au journal [R13] : ils sont rendus à l'agent, qui les envoie au résumé.
+ */
+async function preReadPdf(s: CoproprieteServices, v: Viewer, fileId: string, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const kind = url.searchParams.get('kind');
+  const meetingDay = url.searchParams.get('meetingDay');
+  if (kind === null || !(DOCUMENT_KINDS as readonly string[]).includes(kind)) return json(400, { ok: false, rule: null, code: 'bad_kind' });
+  if (kind === 'pv_assemblee' ? meetingDay === null || !DAY.test(meetingDay) : meetingDay !== null) return json(400, { ok: false, rule: null, code: 'bad_meeting_day' });
+
+  const c = coproprieteCore(s);
+  // Le dossier d'abord : un refus ne lit jamais le PDF [R16].
+  const g = await gateSaleFile({ db: s.db, acces: c.acces, journal: s.journal, now: s.now }, v, fileId, true, 'coownership_summary');
+  if (!g.ok) return reply(g);
+
+  const type = (request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  if (type !== 'application/pdf') return json(415, { ok: false, rule: null, code: 'not_pdf_body', message: 'Déposez le document en PDF.' });
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  const tooLarge = () => json(413, { ok: false, rule: null, code: 'too_large', message: PDF_TEXT_REFUSAL_TEXT.too_large });
+  if (Number.isFinite(declared) && declared > MAX_COPROPRIETE_PDF_BYTES) return tooLarge();
+  const bytes = await readCapped(request, MAX_COPROPRIETE_PDF_BYTES);
+  if (!bytes) return tooLarge();
+
+  const read = await pdfPagesText(bytes);
+  if (!read.ok) return json(422, { ok: false, rule: null, code: read.code, message: PDF_TEXT_REFUSAL_TEXT[read.code] });
+  const pages = pagesForReading(read.value.pages);
+  if (pages.length === 0) return json(422, { ok: false, rule: null, code: 'unreadable', message: PDF_TEXT_REFUSAL_TEXT.unreadable });
+  if (pages.some((p) => p.length > MAX_PAGE_CHARS)) return json(422, { ok: false, rule: null, code: 'page_too_long', message: 'Une page de ce PDF porte trop de texte pour être prélue. Lisez-la vous-même.' });
+
+  const ref = `sha256:${hex(await crypto.subtle.digest('SHA-256', bytes))}`;
+  const document = { kind, ref, pages, ...(meetingDay !== null ? { meetingDay } : {}) };
+  if (new TextEncoder().encode(JSON.stringify(document)).byteLength > MAX_COPROPRIETE_PDF_TEXT_BYTES)
+    return json(422, { ok: false, rule: null, code: 'text_too_long', message: 'Ce PDF porte trop de texte pour être résumé d’un seul tenant. Déposez-le en plusieurs parties, ou lisez-le vous-même.' });
+  const r = await c.preReading.preRead(v, fileId, { documents: [document] });
+  if (!r.ok) return reply(r);
+  const unread = pagesToRead(read.value.pages);
+  return reply({ ok: true, value: { document, pagesToRead: unread, pagesToReadText: pagesInWords(unread), reading: r.value } });
+}
+
 export function coproprieteRoutes(): CoproprieteRoute[] {
   return [
+    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/copropriete/pdf$`), name: 'copropriete.pdf', roles: WRITER, handle: guarded(WRITER, preReadPdf) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/copropriete/prelecture$`), name: 'copropriete.prelecture', roles: WRITER, handle: guarded(WRITER, preRead) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/copropriete/resume$`), name: 'copropriete.preparer', roles: WRITER, handle: guarded(WRITER, prepare) },
     {
