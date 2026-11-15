@@ -392,3 +392,37 @@ describe('BR88 · la copropriété et l’urbanisme, depuis le dossier', () => {
   });
 });
 
+
+describe('BR90 · le résumé de copropriété préparé depuis le dossier', () => {
+  it('[R201] [R12] le second geste charge le même script, et le PDF part tel quel, en application/pdf, avec la clé', async () => {
+    const REF = `sha256:${'c'.repeat(64)}`;
+    const URL_PDF = '/v1/dossiers/f1/copropriete/pdf?kind=fiche_synthetique';
+    const t = await run({ [`POST ${URL_PDF}`]: ok({ document: { kind: 'fiche_synthetique', ref: REF, pages: ['Charges : budget voté.'] }, pagesToRead: [], pagesToReadText: null, reading: { source: 'manuel', sentences: [], toRead: [], dropped: 0 } }) });
+    const seen: { headers: Record<string, string>; body: unknown }[] = [];
+    const fetch0 = t.context.fetch as (url: string, init?: { method?: string; headers?: Record<string, string>; body?: unknown }) => Promise<Response>;
+    t.context.fetch = (url: string, init: { method?: string; headers?: Record<string, string>; body?: unknown } = {}) => {
+      if (url === URL_PDF) seen.push({ headers: init.headers ?? {}, body: init.body });
+      return fetch0(url, init);
+    };
+    await t.open();
+    const part = t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Copropriété et urbanisme'))!;
+    const before = t.calls.length;
+    await t.click(t.find(part, 'Préparer un nouveau résumé depuis les PDF'));
+    const scripts = part.all().filter((e) => e.tagName === 'script');
+    expect(scripts.map((e) => e.attributes.src)).toEqual(['/app/copropriete.js']);
+    runInNewContext(COPROPRIETE_SCRIPT, t.context);
+    scripts[0]!.listeners.load!({});
+    await t.settle();
+    expect(t.calls.length).toBe(before);
+    const label = (text: string) => part.all().find((e) => e.attributes.id === part.all().find((l) => l.tagName === 'label' && l.textContent === text)!.attributes.for)! as FakeElement & { files?: unknown[] };
+    label('Sorte du document').value = 'fiche_synthetique';
+    const file = pdf();
+    label('Fichier PDF').files = [file];
+    await t.click(t.find(part, 'Déposer et prélire'));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.body).toBe(file);
+    expect(seen[0]!.headers['content-type']).toBe('application/pdf');
+    expect(seen[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(part.textContent).toContain('fiche synthétique, 1 page');
+  });
+});

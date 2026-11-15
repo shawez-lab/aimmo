@@ -187,10 +187,12 @@ globalThis.AIMMO_DOSSIER = function (t) {
     box.appendChild(el('h3', 'Copropriété et urbanisme'));
     var inner = el('div');
     var id = cur.id;
-    var b = button('Lire le résumé de copropriété et d’urbanisme', function () {
-      if (b.disabled) return;
-      if (copro) { copro.show(inner, id); return; }
+    /* BR90 : le même script lit le résumé ou en prépare un nouveau depuis les PDF déposés. */
+    function withCopro(btn, act) {
+      if (btn.disabled) return;
+      if (copro) { act(copro); return; }
       b.disabled = true;
+      p.disabled = true;
       var mine = t.session();
       var s = el('script');
       s.setAttribute('src', '/app/copropriete.js');
@@ -198,15 +200,19 @@ globalThis.AIMMO_DOSSIER = function (t) {
         var make = globalThis.AIMMO_COPROPRIETE;
         try { delete globalThis.AIMMO_COPROPRIETE; } catch (e) { /* rien */ }
         b.disabled = false;
+        p.disabled = false;
         if (mine !== t.session()) return;
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
-        copro = make({ el: el, clear: clear, send: send, session: t.session });
-        copro.show(inner, id);
+        copro = make({ el: el, clear: clear, send: send, session: t.session, sendPdf: function (url, file) { return sendFile(url, file, { 'content-type': 'application/pdf' }); } });
+        act(copro);
       });
-      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      s.addEventListener('error', function () { b.disabled = false; p.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
-    });
+    }
+    var b = button('Lire le résumé de copropriété et d’urbanisme', function () { withCopro(b, function (c) { c.show(inner, id); }); });
+    var p = button('Préparer un nouveau résumé depuis les PDF', function () { withCopro(p, function (c) { c.prepare(inner, id); }); });
     box.appendChild(b);
+    box.appendChild(p);
     box.appendChild(inner);
     body().appendChild(box);
   }
@@ -451,11 +457,14 @@ globalThis.AIMMO_DOSSIER = function (t) {
     body().appendChild(box);
   }
   function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
-  function upload(path, file, type, sha) {
+  function upload(path, file, type, sha) { return sendFile(base() + path, file, { 'content-type': type, 'x-aimmo-sha256': sha }); }
+  /* Un fichier envoyé tel quel (une pièce ; BR90 : un PDF de la copropriété). */
+  function sendFile(url, file, extra) {
     var key = t.key();
     if (!key) return Promise.resolve({ gone: true });
-    var mine = t.session();
-    return fetch(base() + path, { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': type, 'x-aimmo-sha256': sha }, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+    var mine = t.session(), headers = { authorization: 'Bearer ' + key };
+    Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; });
+    return fetch(url, { method: 'POST', headers: headers, body: file, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
       return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
         if (mine !== t.session()) return { gone: true };
         // Une clé refusée passe par send, qui sait la retirer et le dire.
