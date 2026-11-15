@@ -146,6 +146,9 @@ describe('BR79 · les programmes neufs à l’écran de la direction', () => {
   it('[R544] ranger un barème : pourcentage envoyé en points de base entiers, source et premier jour exigés avant l’appel, puis l’écran relu', async () => {
     const d = await desk();
     await d.open();
+    // Un vrai champ de date, que le navigateur sait remplir.
+    expect([d.input('neuf-bareme-debut').tagName, d.input('neuf-bareme-debut').attributes.type]).toEqual(['input', 'date']);
+    expect(d.input('neuf-bareme-sorte').tagName).toBe('select');
     d.set('neuf-bareme-sorte', 'ancien');
     d.set('neuf-bareme-taux', '7,5');
     d.set('neuf-bareme-source', 'abc');

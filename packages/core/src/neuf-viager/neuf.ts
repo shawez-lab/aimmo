@@ -203,16 +203,23 @@ export class ProgrammesNeufs {
   async listFeeScales(viewer: Viewer): Promise<NeufOutcome<FeeScaleBoard>> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
     const day = parisDay(this.now());
-    const rows = await this.db.all<ScaleRow & { kind: FeeKind; set_at: string }>(
-      'SELECT id, kind, rate_bp, source, valid_from, set_at FROM acquisition_fee_scales WHERE network_id = ? ORDER BY valid_from DESC, set_at DESC, id DESC LIMIT 400',
-      [viewer.networkId],
-    );
-    const board = (kind: FeeKind): FeeScaleKind => {
-      const mine = rows.filter((r) => r.kind === kind).map((r) => ({ scaleId: r.id, rateBp: r.rate_bp, source: r.source, validFrom: r.valid_from, setAt: r.set_at }));
-      const started = mine.filter((r) => r.validFrom <= day);
-      return { current: started[0] ?? null, upcoming: mine.filter((r) => r.validFrom > day).reverse(), replaced: started.slice(1) };
+    // Chaque sorte se lit à part : celui qui fait foi par la même requête que les frais, puis les autres, chacune
+    // bornée seule, pour qu'un long historique d'une sorte ne cache jamais le barème en vigueur de l'autre.
+    const board = async (kind: FeeKind): Promise<FeeScaleKind> => {
+      const cols = 'SELECT id, rate_bp, source, valid_from, set_at FROM acquisition_fee_scales WHERE network_id = ? AND kind = ?';
+      const as = (r: ScaleRow & { set_at: string }): FeeScale => ({ scaleId: r.id, rateBp: r.rate_bp, source: r.source, validFrom: r.valid_from, setAt: r.set_at });
+      const now = await this.scaleOn(viewer.networkId, kind, day);
+      const current = now ? await this.db.first<ScaleRow & { set_at: string }>(`${cols} AND id = ?`, [viewer.networkId, kind, now.id]) : null;
+      const upcoming = await this.db.all<ScaleRow & { set_at: string }>(`${cols} AND valid_from > ? ORDER BY valid_from ASC, set_at ASC, id ASC LIMIT 100`, [viewer.networkId, kind, day]);
+      const replaced = await this.db.all<ScaleRow & { set_at: string }>(`${cols} AND valid_from <= ? AND id <> ? ORDER BY valid_from DESC, set_at DESC, id DESC LIMIT 100`, [
+        viewer.networkId,
+        kind,
+        day,
+        now?.id ?? '',
+      ]);
+      return { current: current ? as(current) : null, upcoming: upcoming.map(as), replaced: replaced.map(as) };
     };
-    return { ok: true, value: { day, neuf: board('neuf'), ancien: board('ancien') } };
+    return { ok: true, value: { day, neuf: await board('neuf'), ancien: await board('ancien') } };
   }
 
   /** Le barème qui fait foi ce jour : le dernier commencé, et pour un même premier jour, le dernier rangé. */

@@ -135,8 +135,10 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
       kind: choice(form, 'neuf-bareme-sorte', 'Sorte', KINDS),
       rate: field(form, 'neuf-bareme-taux', 'Taux des frais (%)'),
       source: field(form, 'neuf-bareme-source', 'Source du taux'),
-      from: field(form, 'neuf-bareme-debut', 'Premier jour', 'date'),
+      from: field(form, 'neuf-bareme-debut', 'Premier jour'),
     };
+    // Le quatrième argument de field() est la balise : le type se pose à part.
+    f.from.setAttribute('type', 'date');
     f.rate.setAttribute('inputmode', 'decimal');
     f.source.setAttribute('maxlength', '300');
     var said = note();

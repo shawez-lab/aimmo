@@ -37,7 +37,7 @@ async function setup() {
   };
   const scale = (kind: string, rateBp: number, source: string, validFrom: string, who: Who | 'autre' = 'dir') => call(who, 'POST', '/neuf/baremes', { kind, rateBp, source, validFrom });
   const events = async (type: string) => (await journal.all()).filter((e) => e.type === type);
-  return { call, scale, events };
+  return { db, network, call, scale, events };
 }
 
 describeWithSqlite('BR79 · les barèmes rangés, lus par la direction', () => {
@@ -84,5 +84,28 @@ describeWithSqlite('BR79 · les barèmes rangés, lus par la direction', () => {
       expect(Object.keys(s).sort()).toEqual(['rateBp', 'scaleId', 'setAt', 'source', 'validFrom']);
     }
     expect(JSON.stringify(d)).not.toContain('autre réseau');
+  });
+  it('[R544] un long historique d’une sorte ne cache jamais le barème en vigueur, ni celui de l’autre sorte', async () => {
+    const t = await setup();
+    expect((await t.scale('ancien', 750, 'Barème de l’ancien inventé', '2027-01-01')).status).toBe(200);
+    expect((await t.scale('neuf', 250, 'Barème du neuf inventé', '2027-01-01')).status).toBe(200);
+    // 450 barèmes du neuf à venir, rangés après : plus que toute borne de lecture.
+    for (let i = 0; i < 450; i++) {
+      const from = new Date(Date.parse('2027-04-01T12:00:00Z') + i * 86_400_000).toISOString().slice(0, 10);
+      await t.db.run('INSERT INTO acquisition_fee_scales (id, network_id, kind, rate_bp, source, valid_from, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        `futur-${i}`,
+        t.network,
+        'neuf',
+        300,
+        'Barème à venir inventé',
+        from,
+        'direction:dir-1',
+        '2027-03-01T11:00:00.000Z',
+      ]);
+    }
+    const d = (await t.call('dir', 'GET', '/neuf/baremes')).body.data;
+    expect(d.neuf.current).toMatchObject({ rateBp: 250, validFrom: '2027-01-01' });
+    expect(d.ancien.current).toMatchObject({ rateBp: 750, validFrom: '2027-01-01' });
+    expect(d.neuf.upcoming[0].validFrom).toBe('2027-04-01');
   });
 });
