@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
-import { sha256Hex } from '../src/index.ts';
+import { runScheduler, sha256Hex } from '../src/index.ts';
 import { ActeVente, Echeancier } from '../../core/src/dossiers/index.ts';
 import { RelancesImpayes, type LecteurFactures, type SupplierInvoiceRead } from '../../core/src/facturation/index.ts';
 import { Commissions, Factures, PlateformeEssai } from '../../core/src/pilotage/index.ts';
@@ -103,6 +103,7 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
       [['agent', 'conformite'], 'GET', '/finances/banque/propositions'],
       [['agent', 'conformite'], 'POST', '/finances/banque/lignes/l-1/rapprochement', { invoiceId: 'f-1' }],
       [['agent', 'conformite'], 'GET', '/finances/banque/rapprochements'],
+      [['agent', 'conformite'], 'GET', '/finances/banque/fraicheur'],
       [['agent', 'conformite'], 'POST', '/finances/banque/factures/f-1/encaissement'],
       [['agent', 'conformite'], 'GET', '/finances/relances'],
       [['agent', 'conformite'], 'POST', '/finances/relances/r-1/validation'],
@@ -222,5 +223,49 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
     expect((await t.http('agent', 'GET', '/finances/rapports')).body.data).toEqual([expect.objectContaining({ id, name: 'Mes mandats' })]);
     expect(await t.http('agent', 'POST', `/finances/rapports/${id}/lecture`, period)).toMatchObject({ status: 200, body: { data: { scope: 'agent' } } });
     expect(await t.http('direction', 'POST', `/finances/rapports/${id}/lecture`, period)).toMatchObject({ status: 404, body: { code: 'unknown_report' } });
+  });
+
+  it('[R553] [R13] BR92 · la fraîcheur du dernier relevé, lue par la direction : jour et âge, jamais un montant (Jamais vu)', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    expect(await t.http('direction', 'GET', '/finances/banque/fraicheur')).toMatchObject({ status: 200, body: { ok: true, data: { lastImportDay: null, ageDays: null, fresh: false, reason: 'aucun_releve', maxAgeDays: 7 } } });
+    expect(await t.statement('2027-07-14;VIR F-2027-00001;10 000,00\n')).toMatchObject({ status: 200, body: { added: 1 } });
+    const today = await t.http('direction', 'GET', '/finances/banque/fraicheur');
+    expect(today).toMatchObject({ status: 200, body: { data: { lastImportDay: '2027-07-15', ageDays: 0, fresh: true, reason: 'frais' } } });
+    // Ni montant, ni libellé, ni ligne : seulement le jour du dépôt et son âge.
+    expect(Object.keys(today.body.data).sort()).toEqual(['ageDays', 'fresh', 'lastImportDay', 'maxAgeDays', 'reason']);
+    expect(JSON.stringify(today.body)).not.toMatch(/1000000|10 000|VIR/);
+    t.setClock(at9('2027-07-22'));
+    expect((await t.http('direction', 'GET', '/finances/banque/fraicheur')).body.data).toMatchObject({ ageDays: 7, fresh: true, reason: 'frais' });
+    t.setClock(at9('2027-07-23'));
+    expect((await t.http('direction', 'GET', '/finances/banque/fraicheur')).body.data).toMatchObject({ lastImportDay: '2027-07-15', ageDays: 8, fresh: false, reason: 'releve_ancien' });
+  });
+
+  it('[R551] [R553] [R26] BR92 · le passage du Worker rapproche seul et prépare les relances ; rien ne part hors du mode essai', async () => {
+    const t = await setup();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      // Le paiement prouvé par le relevé : personne ne rapproche, le passage horaire le fait seul.
+      t.setClock(at9('2027-06-20'));
+      expect(await t.statement('2027-06-20;VIR ETUDE F-2027-00001;10 000,00\n')).toMatchObject({ status: 200, body: { added: 1 } });
+      expect(await t.count('bank_reconciliations')).toBe(0);
+      expect((await runScheduler({ db: t.db, mode: 'essai', now: t.now }))?.ran).toContain('facturation.rapprochement');
+      expect(await t.count('bank_reconciliations')).toBe(1);
+      // Hors mode essai, rien ne passe.
+      expect(await runScheduler({ db: t.db, mode: 'reel', now: t.now })).toBeNull();
+
+      // Une autre vente, impayée, sur un relevé du jour : à 6 h, la relance est préparée, à valider ; rien ne part.
+      const u = await setup();
+      u.setClock(at9('2027-07-10'));
+      expect(await u.statement('2027-07-10;PRLV FOURNISSEUR;-125,75\n')).toMatchObject({ status: 200 });
+      u.setClock(new Date('2027-07-12T04:05:00.000Z'));
+      expect((await runScheduler({ db: u.db, mode: 'essai', now: u.now }))?.ran).toEqual(expect.arrayContaining(['facturation.rapprochement', 'facturation.relances_preparation']));
+      expect(await u.count('invoice_reminders')).toBe(1);
+      expect((await new RelancesImpayes(u.db, u.journal, { now: u.now }).list(u.direction)).ok).toBe(true);
+      expect(await u.count('trial_outbox')).toBe(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
