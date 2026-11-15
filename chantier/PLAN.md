@@ -1653,7 +1653,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H13 pour les phrases proposées par l'IA).
 
 ### BR91 · L'avant-contrat préparé à l'écran du dossier : note, projet du notaire déposé et prélu, confirmé
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR89
 - Cahier : M10 Compromis et acte (note au notaire, projet comparé, dépôt de garantie) ; R510, R511, R512, R513, R12, R16, R201.
 - Objectif : l'agent range la note au notaire, dépose le projet reçu, le fait prélire et confirme le projet, depuis l'écran du dossier de vente, sans recopier le PDF.
