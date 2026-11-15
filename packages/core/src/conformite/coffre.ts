@@ -52,6 +52,11 @@ export interface VaultStorage {
   put(networkId: string, content: Uint8Array, contentType: VaultContentType): Promise<string>;
 }
 
+/** La lecture du stockage du coffre, par la référence rangée au dépôt ; `null` quand rien n'y est (RC44). */
+export interface VaultReader {
+  read(storageRef: string): Promise<Uint8Array | null>;
+}
+
 export interface VaultReceipt {
   pieceId: string;
   kind: VaultPieceKind;
@@ -270,6 +275,44 @@ export class CoffreConformite {
       this.now,
     );
     return { ok: true, storageRef: row.storage_ref, contentType: row.content_type, sha256: row.sha256 };
+  }
+
+  /**
+   * Le contenu d'une pièce, pour le responsable seul (mêmes droits que `open`), rendu seulement s'il est celui du dépôt :
+   * l'empreinte SHA-256 et la taille sont recalculées sur les octets lus au stockage (RC44) [R90]. Une pièce changée au
+   * stockage n'est jamais remise : « altérée », au journal sans empreinte ni contenu [R13] ; une pièce introuvable ou un
+   * stockage en panne : « absente ». La lecture n'est écrite « ouverte » qu'une fois la pièce vérifiée.
+   */
+  async read(
+    viewer: Viewer,
+    pieceId: string,
+    reader: VaultReader,
+  ): Promise<{ ok: true; content: Uint8Array; contentType: VaultContentType; sha256: string } | VaultRefusal> {
+    if (viewer.role !== 'compliance') return this.refuse(viewer, `vault_piece:${pieceId}`, 'role');
+    const row = await this.db.first<PieceRow>('SELECT * FROM compliance_vault_pieces WHERE id = ?', [pieceId]);
+    if (!row || row.network_id !== viewer.networkId) return this.refuse(viewer, `vault_piece:${pieceId}`, 'unknown');
+    let content: Uint8Array | null;
+    try {
+      content = await reader.read(row.storage_ref);
+    } catch {
+      content = null;
+    }
+    const subject = `person:${row.person_id}`;
+    const piece = `vault_piece:${row.id}`;
+    if (!(content instanceof Uint8Array)) {
+      await appendEvent(this.journal, { type: 'coffre.absente', actor: this.actor(viewer), subject, data: { rule: 'R90', piece } }, this.now);
+      return { ok: false, rule: 'R90', code: 'missing' };
+    }
+    // Une copie d'abord : ce qui est vérifié est exactement ce qui est rendu, quoi que le stockage fasse de ses octets.
+    const copy = content.slice();
+    // La taille d'abord : un contenu plus long que le dépôt n'est jamais haché en entier pour rien.
+    const same = copy.byteLength === row.size_bytes && (await sha256Hex(copy)) === row.sha256;
+    if (!same) {
+      await appendEvent(this.journal, { type: 'coffre.altere', actor: this.actor(viewer), subject, data: { rule: 'R90', piece } }, this.now);
+      return { ok: false, rule: 'R90', code: 'altered' };
+    }
+    await appendEvent(this.journal, { type: 'coffre.ouvert', actor: this.actor(viewer), subject, data: { rule: 'R90', piece } }, this.now);
+    return { ok: true, content: copy, contentType: row.content_type, sha256: row.sha256 };
   }
 
   /**

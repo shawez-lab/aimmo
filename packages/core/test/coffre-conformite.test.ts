@@ -97,6 +97,86 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
     expect(await verifyChain(await t.journal.all())).toEqual({ ok: true });
   });
 
+  // RC44 : le stockage relu par le coffre ; `swap` change ce qu'il rend, `fail` le met en panne, `reads` compte ses lectures.
+  const readerOf = (t: Awaited<ReturnType<typeof setup>>, opts: { swap?: (b: Uint8Array) => Uint8Array | null; fail?: boolean } = {}) => {
+    const reads: string[] = [];
+    const reader: conformite.VaultReader = {
+      read: async (ref) => {
+        reads.push(ref);
+        if (opts.fail) throw new Error('stockage en panne');
+        const b = t.vault.blobs.get(ref) ?? null;
+        return b && opts.swap ? opts.swap(b) : b;
+      },
+    };
+    return { reader, reads };
+  };
+
+  it('[R90] la pièce lue au stockage n’est remise que si son empreinte et sa taille sont celles du dépôt', async () => {
+    const t = await setup();
+    const r = await t.coffre.deposit(t.agent, t.person.id, deposit());
+    if (!r.ok) throw new Error(r.code);
+    const { reader } = readerOf(t);
+    const got = await t.coffre.read(t.conformite, r.receipt.pieceId, reader);
+    expect(got).toEqual({ ok: true, content: PDF, contentType: 'application/pdf', sha256: r.receipt.sha256 });
+    // Ce qui est rendu est une copie : le stockage qui change ses octets après coup ne change pas la pièce remise.
+    if (!got.ok) return;
+    [...t.vault.blobs.values()][0]![0] = 0;
+    expect(got.content).toEqual(new TextEncoder().encode('%PDF-test piece inventee'));
+    const types = (await t.journal.all()).map((e) => e.type);
+    expect(types.filter((x) => x === 'coffre.ouvert')).toHaveLength(1);
+  });
+
+  it('[R90] un octet changé, en plus ou en moins : la pièce est dite altérée, rien n’est remis ni écrit ouvert', async () => {
+    const t = await setup();
+    const r = await t.coffre.deposit(t.agent, t.person.id, deposit());
+    if (!r.ok) throw new Error(r.code);
+    const changes: ((b: Uint8Array) => Uint8Array)[] = [
+      (b) => { const c = b.slice(); c[3] = c[3]! ^ 1; return c; },
+      (b) => { const c = new Uint8Array(b.byteLength + 1); c.set(b); return c; },
+      (b) => b.slice(0, b.byteLength - 1),
+      () => new Uint8Array(0),
+    ];
+    for (const swap of changes) {
+      expect(await t.coffre.read(t.conformite, r.receipt.pieceId, readerOf(t, { swap }).reader)).toEqual({ ok: false, rule: 'R90', code: 'altered' });
+    }
+    const events = await t.journal.all();
+    expect(events.filter((e) => e.type === 'coffre.altere')).toHaveLength(4);
+    expect(events.some((e) => e.type === 'coffre.ouvert')).toBe(false);
+    // Au journal, la pièce seule : ni empreinte, ni référence de stockage, ni contenu [R13].
+    const text = JSON.stringify(events);
+    expect(text).not.toContain(r.receipt.sha256);
+    expect(text).not.toContain('coffre/');
+    expect(text).not.toContain('PDF-test');
+    expect(await verifyChain(events)).toEqual({ ok: true });
+  });
+
+  it('[R90] une pièce absente du stockage ou un stockage en panne : refus « absente », rien remis', async () => {
+    const t = await setup();
+    const r = await t.coffre.deposit(t.agent, t.person.id, deposit());
+    if (!r.ok) throw new Error(r.code);
+    expect(await t.coffre.read(t.conformite, r.receipt.pieceId, readerOf(t, { swap: () => null }).reader)).toEqual({ ok: false, rule: 'R90', code: 'missing' });
+    expect(await t.coffre.read(t.conformite, r.receipt.pieceId, readerOf(t, { fail: true }).reader)).toEqual({ ok: false, rule: 'R90', code: 'missing' });
+    const odd: conformite.VaultReader = { read: async () => 'pas des octets' as unknown as Uint8Array };
+    expect(await t.coffre.read(t.conformite, r.receipt.pieceId, odd)).toEqual({ ok: false, rule: 'R90', code: 'missing' });
+    const events = await t.journal.all();
+    expect(events.filter((e) => e.type === 'coffre.absente')).toHaveLength(3);
+    expect(events.some((e) => e.type === 'coffre.ouvert')).toBe(false);
+  });
+
+  it('[R90] [R16] un autre rôle, un autre réseau ou une pièce inconnue : mêmes refus que l’ouverture, le stockage jamais lu', async () => {
+    const t = await setup();
+    const r = await t.coffre.deposit(t.agent, t.person.id, deposit());
+    if (!r.ok) throw new Error(r.code);
+    const { reader, reads } = readerOf(t);
+    for (const viewer of [t.agent, t.sam, t.direction, t.partner]) {
+      expect(await t.coffre.read(viewer, r.receipt.pieceId, reader)).toEqual({ ok: false, rule: 'R90', code: 'role' });
+    }
+    expect(await t.coffre.read(t.foreign, r.receipt.pieceId, reader)).toEqual({ ok: false, rule: 'R90', code: 'unknown' });
+    expect(await t.coffre.read(t.conformite, 'piece-inconnue', reader)).toEqual({ ok: false, rule: 'R90', code: 'unknown' });
+    expect(reads).toEqual([]);
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse' && (e.data as { kind?: string }).kind === 'compliance_vault')).toHaveLength(6);
+  });
+
   it('[R13] le journal du coffre ne porte ni nom, ni empreinte, ni référence de stockage', async () => {
     const t = await setup();
     const r = await t.coffre.deposit(t.agent, t.person.id, deposit());
