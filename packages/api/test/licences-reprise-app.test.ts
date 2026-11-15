@@ -109,7 +109,7 @@ describe('BR19 · l’agence sous licence reprend ses données depuis l’écran
     const t = await run();
     await t.voir();
     expect(t.texts()).toContain('Reprendre mes données');
-    expect(t.buttons()).toEqual(['Tirer le fichier de mes données', 'Vérifier le fichier tiré']);
+    expect(t.buttons()).toEqual(['Tirer le fichier de mes données', 'Vérifier le fichier tiré', 'Tirer le contenu de mes fichiers']);
     const g = await run({}, { grantor: true });
     await g.voir();
     expect(g.texts()).not.toContain('Reprendre mes données');

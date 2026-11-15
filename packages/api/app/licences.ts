@@ -3,7 +3,8 @@
  * vigueur et les licences données, fixe un nouveau tarif, donne une licence, la suspend, la reprend ou la termine, par
  * les routes de BR15 (`/v1/licences`) [R654, R655, R656]. La direction d'une agence sous licence ne lit que la sienne
  * [R657] : le serveur le dit (`agence_licenciee`), et l'écran passe à `/v1/licences/ma-licence`.
- * Script servi à part (`/app/licences.js`), chargé au premier geste [R201]. Chaque état et chaque refus se disent en
+ * Script servi à part (`/app/licences.js`), chargé au premier geste [R201] ; le contenu des fichiers de la reprise (BR83),
+ * `/app/reprise-contenus.js`, chargé au seul geste qui le demande. Chaque état et chaque refus se disent en
  * mots, jamais par un code. Aucun prix ne se saisit pour une licence : celui du tarif en vigueur s'applique [R655].
  * Terminer une licence ne se défait pas : deux appuis [R656]. Une saisie illisible ne part pas. Tout texte reçu est posé
  * en texte.
@@ -344,6 +345,36 @@ globalThis.AIMMO_LICENCES = function (t) {
     body.appendChild(el('p', 'Le fichier complet de votre agence, à tout moment, quel que soit l’état de la licence. Il se tire sur la preuve de la clé de cet appareil et reste sur cet appareil : AIMMO n’en garde que l’empreinte.', 'doux'));
     body.appendChild(button('Tirer le fichier de mes données', function () { takeOut(l); }));
     body.appendChild(button('Vérifier le fichier tiré', function () { check(); }));
+    renderContenus(body);
+  }
+  /* BR83 · le contenu des fichiers, sur le fichier tiré dans la séance : script servi à part, chargé au geste [R201]. */
+  var contenusScreen = null, contenusOwner = null;
+  function renderContenus(body) {
+    body.appendChild(el('h4', 'Le contenu de mes fichiers'));
+    body.appendChild(el('p', 'Photos, pièces et documents déposés, lot par lot : chacun vérifié sur cet appareil avant d’être offert.', 'doux'));
+    var inner = el('div');
+    var b = button('Tirer le contenu de mes fichiers', function () {
+      if (b.disabled) return;
+      var doc = held && heldSession === t.session() ? held : null;
+      if (contenusScreen && contenusOwner === t.session()) { contenusScreen.show(inner, doc); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/reprise-contenus.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_REPRISE_CONTENUS;
+        try { delete globalThis.AIMMO_REPRISE_CONTENUS; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session() || typeof make !== 'function') return;
+        contenusScreen = make({ el: el, clear: clear, send: send, button: button, prove: prove, session: t.session });
+        contenusOwner = mine;
+        contenusScreen.show(inner, held && heldSession === mine ? held : null);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) state(OFFLINE); });
+      body.appendChild(s);
+    });
+    body.appendChild(b);
+    body.appendChild(inner);
   }
   function show(message) {
     var mine = t.session();
