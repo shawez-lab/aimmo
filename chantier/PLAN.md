@@ -1597,8 +1597,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (adresse du fichier à relire au premier vrai import).
 
 ### BR86 · Le registre des gels en service, dit à l'écran du responsable avec son âge et son empreinte (Jamais vu)
-- Statut : en cours : proposition #598 prête (fusion refusée par le contrôle des permissions, H69)
-- Reste : #598, `3acfe153`. Codex 1 P2 corrigé (le registre en service relu aussi après un import incertain ou refusé), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6231 tests, `wrangler deploy --dry-run` compris). À fusionner par une séance qui en a le droit, ou par Shawez.
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#598, `a238b242`) par la séance suivante. Codex 1 P2 corrigé (le registre en service relu aussi après un import incertain ou refusé), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6231 tests, `wrangler deploy --dry-run` compris).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR85, HX57
 - Cahier : Conformité (gel des avoirs) ; M12 ; HX57 ; R605, R13, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR85 (« montrer à l'écran le registre en service (date, empreinte) demande une lecture du cœur (`ControleGels`), à prévoir »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le cahier ne fixe pas la fréquence de mise à jour (recherche « gel des avoirs » sans résultat) : AIMMO dit « à mettre à jour » au-delà de 7 jours après la date de publication, seuil écrit dans le cœur (`FREEZE_REGISTRY_STALE_DAYS`). Une lecture neuve au cœur, `ControleGels.registryInService`, seule à lire les tables (R604 inchangée) ; une route `GET /v1/securite/gel/registre` dans `packages/api/src/securite.ts` ; l'écran est le script déjà servi à part, `/app/gel-registre.js`.
@@ -1606,6 +1606,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Jamais vu : à l'ouverture, l'écran dit le registre en service (date publiée, date d'import, nombre d'entrées, dossiers contrôlés contre lui), son âge en jours, « à mettre à jour » passé 7 jours, et son empreinte SHA-256 en groupes lisibles, à comparer au reçu de l'import ; aucun registre : « aucun contrôle n'est possible » dit en mots.
 - Critères : `registryInService` au seul responsable, autre rôle refusé au journal [R16] (test) ; seule une version scellée, la plus récente, est rendue, avec ses dossiers contrôlés et son âge ; aucune version : `null` [R605] (test) ; la route au seul responsable, autre rôle refusé au journal (test) ; à l'écran, lu à l'ouverture et relu après chaque import, âge et « à mettre à jour » dits en mots, empreinte en groupes, réponse perdue dite incertaine, réponse arrivée après la sortie jetée, jamais un code, sans innerHTML, budget tenu [R201] (test).
 - Attend : rien.
+
+### BR87 · Copropriété et urbanisme branchés au Worker, la zone lue au Géoportail en production (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC52
+- Cahier : M10 et M06, « copropriété et urbanisme résumés » (HX35) ; R448, R449, R451, R13, R16.
+- Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC52 (« brancher `coproprieteRoutes()` dans `app.ts` avec `BanGeocoder` et `GpuUrbanism` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La voie 2 est sur RC53 (`copropriete.ts`) : cette tâche ne touche ni `copropriete.ts` ni le cœur, seulement `app.ts`, `worker.ts`, `docs/API.md` et un test neuf ; toute route que RC53 ajoute à `coproprieteRoutes()` passera seule par le même branchement. Option neuve `copropriete` d'`ApiConfig` (géocodeur, Géoportail, lecteur IA) ; absente, le géocodeur de l'estimation et `GpuUrbanism` sur `fetchPublicData`, sinon rien et la zone est « non collectée ». Le Worker branche la Base adresse nationale et le Géoportail en GET seulement, sans aucun secret ; le lecteur IA reste absent (H13) : tout est à lire. Les routes ne sont pas ouvertes à l'agent au dossier incomplet [R82].
+- Objectif : l'agent prépare le résumé de copropriété et d'urbanisme depuis l'API en service, et la zone du plan d'urbanisme y est lue au Géoportail.
+- Jamais vu : en production, la zone du plan d'urbanisme d'un résumé est lue au Géoportail au point même du bien, au moment du résumé ; aucune zone tapée ou envoyée par l'écran n'est jamais acceptée par l'API en service.
+- Critères : les quatre routes servies par `handleRequest` sous `/v1/dossiers/<id>/copropriete`, clé exigée (401 sans) (test) ; résumé préparé par l'agent du bien, relu par la direction, travaux votés lus par la route de l'acquéreur [R448, R451] (test) ; avec un géocodeur et un Géoportail inventés passés par `copropriete`, la zone est collectée, l'adresse absente du journal [R449, R13] (test) ; sans option, `fetchPublicData` inventé : la BAN puis le Géoportail sont lus en GET seulement [R449] (test) ; sans rien : zone « non collectée », le résumé se prépare (test) ; corps portant `publicData` : 400 [R449] (test) ; autre agent : 403, refus au journal, aucun géocodage [R16] (test) ; agent au dossier incomplet : 403 `agent_file_incomplete` [R82] (test) ; le Worker passe un géocodeur et un Géoportail (test) ; `docs/API.md` décrit les routes (test).
+- Attend : rien (H13 pour le lecteur IA de la prélecture).
 
 ## Restes du cœur des groupes HX
 
