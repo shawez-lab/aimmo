@@ -180,7 +180,11 @@ globalThis.AIMMO_AVANT_CONTRAT = function (t) {
     return send(base + path, 'POST', body).then(function (res) {
       if (res.gone || !live()) return false;
       if (!res.ok) { out.textContent = said(res, true); return false; }
-      return show(box, fileId, done(res.body && res.body.data));
+      var data = res.body && res.body.data, m = done(data);
+      /* Une date écrite à l'échéancier : tout le dossier se relit, pour ne jamais montrer l'ancien échéancier (remarque de Codex). */
+      var dates = path === '/dates' ? data : path === '/projet' ? data && data.dates : null;
+      if (dates && typeof t.refresh === 'function' && Object.keys(dates).some(function (k) { return dates[k] === 'ecrite'; })) return t.refresh(m);
+      return show(box, fileId, m);
     });
   }
 

@@ -202,7 +202,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
         hold(false);
         if (mine !== t.session()) return;
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
-        lazy[name] = make({ el: el, clear: clear, send: send, session: t.session, sendPdf: function (url, file) { return sendFile(url, file, { 'content-type': 'application/pdf' }); }, proof: proofFile });
+        lazy[name] = make({ el: el, clear: clear, send: send, session: t.session, sendPdf: function (url, file) { return sendFile(url, file, { 'content-type': 'application/pdf' }); }, proof: proofFile, refresh: function (m) { return load(m); } });
         act(lazy[name]);
       });
       s.addEventListener('error', function () { hold(false); if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });

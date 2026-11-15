@@ -472,3 +472,20 @@ describe('BR91 · l’avant-contrat, depuis le dossier', () => {
     expect(part.all().filter((e) => e.tagName === 'script')).toHaveLength(1);
   });
 });
+
+describe('BR91 · une date de l’avant-contrat écrite relit tout le dossier', () => {
+  it('[R513] après le report des dates, l’échéancier du dossier est relu (remarque de Codex)', async () => {
+    const FULL = { brief: null, draft: { id: 'd1', fileId: 'f1', version: 1 }, differences: [], texts: [], comparedToEarlierBrief: false, blocked: false, deposit: { expectedEur: null, receivedEur: null, receivedBy: 'notaire', receivedOn: null, status: 'sans_objet' } };
+    const t = await run({ 'GET /v1/dossiers/f1/avant-contrat': ok(FULL), 'POST /v1/dossiers/f1/avant-contrat/dates': ok({ acte_prevu: 'ecrite' }) });
+    await t.open();
+    const part = () => t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Avant-contrat'))!;
+    await t.click(t.find(part(), 'Ouvrir l’avant-contrat : note, projet du notaire, dépôt'));
+    runInNewContext(AVANT_CONTRAT_SCRIPT, t.context);
+    part().all().find((e) => e.tagName === 'script')!.listeners.load!({});
+    await t.settle();
+    const before = t.calls.length;
+    await t.click(t.find(part(), 'Reporter les dates du projet à l’échéancier'));
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toContain('GET /v1/dossiers/f1/echeancier');
+    expect(t.state()).toBe('Date de l’acte : écrite à l’échéancier.');
+  });
+});

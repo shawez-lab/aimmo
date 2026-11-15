@@ -46,7 +46,8 @@ const PROPOSAL = {
 };
 const READ = ok({ documentRef: REF, pageCount: 6, pagesToRead: [5], pagesToReadText: 'La page 5 n’a pas pu être lue : lisez-la vous-même.', reading: { source: 'ia', proposal: PROPOSAL, toRead: ['acte_prevu', 'depot_garantie.detenteur'] } });
 
-function mount(table: Record<string, () => Promise<Res>>, proofs: Res[] = [ok({ ref: REF })]) {
+function mount(table: Record<string, () => Promise<Res>>, proofs: Res[] = [ok({ ref: REF })], withRefresh = false) {
+  const refreshed: string[] = [];
   const calls: { path: string; method: string; body: unknown }[] = [];
   const pdfs: { url: string; file: unknown }[] = [];
   const deposited: unknown[] = [];
@@ -74,6 +75,7 @@ function mount(table: Record<string, () => Promise<Res>>, proofs: Res[] = [ok({ 
     clear,
     send,
     session: () => session,
+    ...(withRefresh ? { refresh: (m: string) => { refreshed.push(m); return Promise.resolve(true); } } : {}),
     proof: (file: unknown) => {
       deposited.push(file);
       return Promise.resolve(proofs.shift() ?? { offline: true });
@@ -99,7 +101,7 @@ function mount(table: Record<string, () => Promise<Res>>, proofs: Res[] = [ok({ 
   };
   const statuses = () => box.all().filter((e) => e.attributes.role === 'status').map((e) => e.textContent);
   const posts = () => calls.filter((c) => c.method === 'POST');
-  return { calls, pdfs, deposited, box, screen, label, find, click, statuses, posts, leave: () => (session += 1), show: async (id = 'f1') => { const r = screen.show(box, id); await settle(); return r; } };
+  return { calls, pdfs, deposited, refreshed, box, screen, label, find, click, statuses, posts, leave: () => (session += 1), show: async (id = 'f1') => { const r = screen.show(box, id); await settle(); return r; } };
 }
 const pdf = () => ({ type: 'application/pdf', size: 1000, name: 'projet.pdf' });
 
@@ -292,6 +294,27 @@ describe('BR91 · l’avant-contrat préparé à l’écran du dossier', () => {
       await u.click('Reporter les dates du projet à l’échéancier');
       expect(u.statuses()).toContain(said);
     }
+  });
+
+  it('[R513] une date écrite à l’échéancier fait relire tout le dossier ; sinon seul le bloc se relit (remarque de Codex)', async () => {
+    const t = mount({ [`GET ${BASE}`]: async () => ok(FULL), [`POST ${BASE}/dates`]: async () => ok({ date_limite_pret: 'ecrite' }) }, [], true);
+    await t.show();
+    await t.click('Reporter les dates du projet à l’échéancier');
+    expect(t.refreshed).toEqual(['Date limite du prêt : écrite à l’échéancier.']);
+    expect(t.calls.filter((c) => c.method === 'GET')).toHaveLength(1);
+    const u = mount({ [`GET ${BASE}`]: async () => ok(FULL), [`POST ${BASE}/dates`]: async () => ok({ acte_prevu: 'deja_la' }) }, [], true);
+    await u.show();
+    await u.click('Reporter les dates du projet à l’échéancier');
+    expect(u.refreshed).toEqual([]);
+    expect(u.calls.filter((c) => c.method === 'GET')).toHaveLength(2);
+    const v = mount({ [`GET ${BASE}`]: async () => ok({ ...EMPTY, brief: BRIEF }), [`PDF ${PDF_URL}`]: async () => READ, [`POST ${BASE}/projet`]: async () => ok({ draft: DRAFT, differences: [], dates: { date_limite_pret: 'ecrite' } }) }, [ok({ ref: REF })], true);
+    await v.show();
+    v.label('Le projet reçu du notaire, en PDF').files = [pdf()];
+    await v.click('Déposer et prélire');
+    v.label('Selon le projet, le dépôt est reçu par').value = 'notaire';
+    await v.click('Relire avant de ranger');
+    await v.click('Confirmer : c’est ce que dit le projet');
+    expect(v.refreshed).toEqual(['Projet rangé, version 1.']);
   });
 
   it('[R512] le dépôt reçu part avec son attestation déposée, reçu par le notaire seul, sans aucun autre choix', async () => {
