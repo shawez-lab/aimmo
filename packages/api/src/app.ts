@@ -84,6 +84,7 @@ import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
 import { coproprieteRoutes, type CoproprieteRoute, type CoproprieteServices } from './copropriete.ts';
+import { avantContratRoutes, type AvantContratRoute, type AvantContratServices } from './avant-contrat.ts';
 import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
 import { GpuUrbanism, conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
@@ -238,6 +239,11 @@ export interface ApiConfig {
    * eux, la zone est « non collectée » ; sans lecteur (H13), tout est à lire [R12]. Rien n'est jamais reçu de l'écran [R449].
    */
   copropriete?: Pick<CoproprieteServices, 'geocoder' | 'urbanism' | 'reader'>;
+  /**
+   * L'avant-contrat et la prélecture du projet du notaire (HX45, RC54, BR89) : le lecteur IA de la prélecture. Absent
+   * (H13), rien n'est proposé et tout est à lire [R12]. Les pièces sont celles de M10 (`pieces`).
+   */
+  avantContrat?: Pick<AvantContratServices, 'reader'>;
   /** Le téléchargement du fichier public du registre des gels (BR85) ; absent, seul le dépôt du fichier est ouvert. */
   registreGels?: RegistreGelsSource | null;
   /** Le lecteur des factures fournisseurs (l'IA, H13, BR04) ; absent, leur lecture est fermée. */
@@ -1257,6 +1263,22 @@ function coproprieteRoutesDef(sources: Pick<CoproprieteServices, 'geocoder' | 'u
   }));
 }
 
+/**
+ * Les routes de l'avant-contrat (HX45, RC54, BR89) sur le stockage des pièces de M10 : sans lui, fermées comme les
+ * dossiers. Rôles contrôlés avant le corps [R16] ; le PDF prélu doit être celui même déposé au dossier par `…/preuves`.
+ */
+function avantContratRoutesDef(pieces: PieceStore | null, options: Pick<AvantContratServices, 'reader'>): RouteDef[] {
+  return avantContratRoutes().map((r: AvantContratRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) =>
+      pieces
+        ? r.handle({ db: s.db, journal: s.journal, now: s.now, pieces, reader: options.reader ?? null }, viewer, params, request)
+        : Promise.resolve(failure(503, 'pieces_not_configured', 'Avant-contrat fermé : aucun stockage des pièces.')),
+  }));
+}
+
 /** Les routes de M12 (L09) : l'arrêt après une opposition passe par le contrôle central des envois [R04]. */
 function m12Routes(coffre: VaultFiles | null): RouteDef[] {
   return conformiteRoutes().map((r: ConformiteRoute) => ({
@@ -2270,6 +2292,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...captationRolloutRoutes(config.captationRollout),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
+    ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),
     ...m12Routes(config.coffre ?? null),
     ...securiteRoutesDef(config.registreGels ?? null),
     ...reseauUtileRoutesDef(),
