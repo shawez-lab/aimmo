@@ -1630,8 +1630,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR89 · L'avant-contrat branché à l'API, le projet du notaire prélu depuis le PDF déposé au dossier (Jamais vu)
-- Statut : en cours
-- Reste : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6285 tests) ; fusion refusée par le contrôle des permissions, un essai, pas de nouvel essai (H69). Reste (voie 1) : l'écran du dossier pour l'avant-contrat (déposer le projet, prélire, confirmer et ranger par `…/projet`) ; la préparation du résumé de copropriété à l'écran (BR90, à découper) ; le lecteur IA attend H13.
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#603, `363b846c`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6285 tests). Reste (voie 1) : la préparation du résumé de copropriété à l'écran (BR90) ; l'écran du dossier pour l'avant-contrat (BR91) ; le lecteur IA attend H13.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC54
 - Cahier : M10 Compromis et acte (note au notaire, projet comparé, dépôt de garantie) ; Intelligence artificielle (secours sans IA) ; R510, R511, R512, R513, R12, R13, R16.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC54 (« brancher `avantContratRoutes()` dans `app.ts` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme BR87 pour la copropriété : `avantContratRoutesDef` dans `app.ts`, sur le stockage des pièces de M10 (`config.pieces`) ; sans stockage, 503 `pieces_not_configured` comme les dossiers ; lecteur IA par une option neuve `avantContrat` d'`ApiConfig`, absent tant que H13, et tout est à lire [R12]. Le Worker ne change pas : `pieces` y est déjà branché. `avant-contrat.ts` et le cœur ne changent pas. L'écran du dossier viendra à part.
@@ -1640,6 +1640,24 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : les routes servies par `handleRequest` sous `/v1/dossiers/<id>/avant-contrat`, clé exigée (401 sans) (test) ; sans stockage des pièces : 503, rien lu (test) ; note rangée puis PDF déposé par `…/preuves` puis prélu par `…/pdf` sous sa référence, sans lecteur : tout à lire [R511, R12] (test) ; un autre PDF sous la même référence : 409 `not_the_deposited_file` (test) ; avec un lecteur inventé passé par `avantContrat`, une proposition est faite (test) ; autre agent : 403, refus au journal [R16] (test) ; `docs/API.md` décrit les routes (test).
 - Attend : rien (H13 pour le lecteur IA).
 
+
+### BR90 · Le résumé de copropriété préparé à l'écran depuis les PDF déposés, chaque phrase cochée par l'agent (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR88, RC53
+- Cahier : M10 et M06, « copropriété et urbanisme résumés » (HX35) ; R448, R449, R450, R451, R12, R16, R201.
+- Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR88 et BR89. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Dans le bloc « Copropriété et urbanisme » (`/app/copropriete.js`), un second geste « Préparer un nouveau résumé » : l'agent dépose chaque PDF (sorte, jour d'assemblée pour un procès-verbal) par `POST …/copropriete/pdf`, lit les phrases proposées et les pages à lire, coche celles qu'il garde, peut ajouter sa phrase (rubrique, document, page, extrait), donne s'il veut l'adresse du bien, puis envoie `POST …/copropriete/resume`. Le PDF part tel quel par `send` (le corps binaire est admis par `api` dans `fichiers.ts`, en-tête du fichier gardé). Sans IA (H13), aucune phrase n'est proposée : tout est à lire, et l'agent ajoute les siennes. Aucun changement du serveur.
+- Objectif : l'agent du bien prépare le résumé de copropriété et d'urbanisme depuis l'écran du dossier, sans recopier une seule page.
+- Jamais vu : le résumé se prépare depuis les PDF déposés sans recopier une page : la référence de chaque document est l'empreinte du fichier calculée par le serveur, aucune phrase ne part sans être cochée par l'agent, et l'écran n'a aucun champ pour la zone ni le registre ; chaque phrase écartée par le serveur revient sous les yeux de l'agent avec sa raison en mots.
+- Critères : PDF déposé en binaire, sorte et jour d'assemblée dans l'adresse, refus du serveur (pas un PDF, trop lourd, illisible) dits en mots [R12] (test) ; un même fichier (même empreinte) jamais compté deux fois (test) ; phrases proposées non cochées par défaut, seules les cochées partent, leur indice de document recalé sur la liste [R448] (test) ; pages et rubriques à lire dites en mots [R450] (test) ; phrase de l'agent ajoutée avec rubrique, document, page, extrait (test) ; corps du résumé sans donnée publique, seule l'adresse part [R449] (test) ; résumé préparé : relu aussitôt, phrases écartées dites avec leur raison en mots (test) ; refus de droits, dossier arrêté, réponse perdue : dits en mots, jamais un code ; session finie : rien envoyé, réponse jetée [R16] (test) ; script servi à part, budgets tenus, sans innerHTML ni fetch [R201] (test).
+- Attend : rien (H13 pour les phrases proposées par l'IA).
+
+### BR91 · L'avant-contrat préparé à l'écran du dossier : note, projet du notaire déposé et prélu, confirmé
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR89
+- Cahier : M10 Compromis et acte (note au notaire, projet comparé, dépôt de garantie) ; R510, R511, R512, R513, R12, R16, R201.
+- Objectif : l'agent range la note au notaire, dépose le projet reçu, le fait prélire et confirme le projet, depuis l'écran du dossier de vente, sans recopier le PDF.
+- Critères : à écrire au début de la tâche, d'après les routes de `packages/api/src/avant-contrat.ts` (test pour chacun).
+- Attend : rien (H13 pour le lecteur IA).
 ## Restes du cœur des groupes HX
 
 Voie : 2
