@@ -1542,7 +1542,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR81 · Le calcul de viager à l'écran de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR80
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 ; M18 (mise en relation de l'expert) ; R540, R542, R16, R201.
 - Objectif : l'agent calcule un viager pour un bien qu'il voit, lit bouquet et rente avec la source et l'hypothèse de chaque chiffre, rejoue le calcul et propose l'expert du viager de l'annuaire.
