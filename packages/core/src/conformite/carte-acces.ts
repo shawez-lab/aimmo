@@ -174,6 +174,8 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.travaux_votes_signales': 'partage',
   // RC42 : la prélecture des documents de la copropriété par l'IA ; le journal n'en porte que la source, des rubriques et des nombres.
   'dossier.copropriete_prelue': 'partage',
+  // RC52 : la zone d'urbanisme collectée au Géoportail ; le journal n'en porte que l'issue et sa raison, jamais l'adresse.
+  'dossier.urbanisme_collecte': 'partage',
   // HX36 : la lettre recommandée de l'avant-contrat et ses preuves ; le journal n'en porte que des identifiants et des règles.
   // HX45 : note au notaire, projet comparé, dépôt reçu par le notaire, dates reportées ; le journal n'en porte que des noms de termes et des règles.
   'avant_contrat.note': 'partage',
