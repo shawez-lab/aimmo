@@ -157,7 +157,7 @@ describeWithSqlite('L09 · routes de M12', () => {
 
     // Un octet changé au stockage : refus en mots, rien de la pièce rendu, aucun « ouvert ».
     const changed = new Uint8Array(PDF);
-    changed[changed.length - 1] ^= 1;
+    changed[changed.length - 1] = changed[changed.length - 1]! ^ 1;
     t.bucket.objects.set(key!, { bytes: changed, type: 'application/pdf' });
     const altered = await t.call(t.compliance, 'GET', `/coffre/${pieceId}`);
     expect(altered).toMatchObject({ status: 409, body: { ok: false, rule: 'R90', code: 'altered' } });
