@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import type { Viewer } from '@aimmo/core';
 import type { CoproExcerpt } from '../../core/src/documents/index.ts';
 import { PDF_TEXT_REFUSAL_TEXT } from '../../core/src/documents/texte-pdf.ts';
-import { MAX_COPROPRIETE_PDF_BYTES, coproprieteRoutes, type CoproprieteServices } from '../src/copropriete.ts';
+import { MAX_COPROPRIETE_PDF_BYTES, MAX_COPROPRIETE_PDF_TEXT_BYTES, coproprieteRoutes, type CoproprieteServices } from '../src/copropriete.ts';
 import { setupDossier } from '../../core/test/dossiers-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
@@ -239,6 +239,16 @@ describeWithSqlite('RC53 · le PDF d’un document de copropriété déposé tel
     expect(t.seen).toEqual([]);
     expect(await t.journalText()).not.toContain('dossier.copropriete_prelue');
   });
+
+  it('un texte trop long pour repartir au résumé est refusé en mots, jamais rendu sans pouvoir être résumé', async () => {
+    const t = await setup({ reader: async () => ({ sentences: [] }) });
+    const page = lines('a'.repeat(95_000));
+    const pages = Math.ceil(MAX_COPROPRIETE_PDF_TEXT_BYTES / 95_000) + 1;
+    const r = await t.call(t.agent, t.path, '?kind=reglement_copropriete', pdf(Array(pages).fill(page)));
+    expect(r).toMatchObject({ status: 422, body: { ok: false, code: 'text_too_long' } });
+    expect(r.body.message).toContain('trop de texte');
+    expect(t.seen).toEqual([]);
+  }, 60_000);
 
   it('type de document inconnu, jour d’assemblée absent, mal formé, futur ou en trop : 400', async () => {
     const t = await setup();

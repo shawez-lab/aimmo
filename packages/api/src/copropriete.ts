@@ -210,6 +210,11 @@ async function preRead(s: CoproprieteServices, v: Viewer, fileId: string, reques
 export const MAX_COPROPRIETE_PDF_BYTES = PDF_LIMITS.maxBytes;
 /** Le texte d'une page au-delà duquel la prélecture la refuse. */
 const MAX_PAGE_CHARS = 100_000;
+/**
+ * Le texte d'un PDF, une fois rendu, doit pouvoir repartir au résumé avec les autres documents : au-delà de la moitié du
+ * corps de `POST …/resume`, il est refusé ici plutôt que de rendre un document qu'on ne pourrait pas résumer (remarque de Codex).
+ */
+export const MAX_COPROPRIETE_PDF_TEXT_BYTES = MAX_COPROPRIETE_BODY_BYTES / 2;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const hex = (bytes: ArrayBuffer): string => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -255,6 +260,8 @@ async function preReadPdf(s: CoproprieteServices, v: Viewer, fileId: string, req
 
   const ref = `sha256:${hex(await crypto.subtle.digest('SHA-256', bytes))}`;
   const document = { kind, ref, pages, ...(meetingDay !== null ? { meetingDay } : {}) };
+  if (new TextEncoder().encode(JSON.stringify(document)).byteLength > MAX_COPROPRIETE_PDF_TEXT_BYTES)
+    return json(422, { ok: false, rule: null, code: 'text_too_long', message: 'Ce PDF porte trop de texte pour être résumé d’un seul tenant. Déposez-le en plusieurs parties, ou lisez-le vous-même.' });
   const r = await c.preReading.preRead(v, fileId, { documents: [document] });
   if (!r.ok) return reply(r);
   const unread = pagesToRead(read.value.pages);
