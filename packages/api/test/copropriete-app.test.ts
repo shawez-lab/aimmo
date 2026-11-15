@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { COPRO_FAILED, COPRO_NO_WORKS, COPRO_NONE, COPRO_OFFLINE, COPRO_ROLE, COPROPRIETE_SCRIPT } from '../app/copropriete.ts';
+import { COPRO_CHANGED, COPRO_FAILED, COPRO_NO_WORKS, COPRO_NONE, COPRO_OFFLINE, COPRO_ROLE, COPROPRIETE_SCRIPT } from '../app/copropriete.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement } from './fake-dom.ts';
@@ -130,6 +130,21 @@ describe('BR88 · la copropriété et l’urbanisme relus à l’écran du dossi
     const lost = mount({ [`GET ${RESUME}`]: async () => ok(SUMMARY) });
     await lost.show();
     expect(lost.box.textContent).toContain('À dire à l’acquéreur' + COPRO_OFFLINE);
+  });
+
+  it('[R451] les travaux d’un autre résumé, préparé pendant la lecture, ne se mélangent jamais au résumé montré', async () => {
+    const t = mount({ [`GET ${RESUME}`]: async () => ok(SUMMARY), [`GET ${BUYER}`]: async () => ok({ summaryId: 's2', lines: [WORKS_LINE], works: [] }) });
+    await t.show();
+    expect(t.box.textContent).toContain(COPRO_CHANGED);
+    expect(t.box.all().filter((e) => e.tagName === 'li').map((e) => e.textContent)).not.toContain(WORKS_LINE);
+    expect(t.box.textContent).not.toContain(COPRO_NO_WORKS);
+  });
+
+  it('le jour de préparation est celui de Paris, même passé minuit à Paris et pas encore en temps universel', async () => {
+    const t = mount({ [`GET ${RESUME}`]: async () => ok({ ...SUMMARY, preparedAt: '2027-03-11T23:30:00.000Z' }), [`GET ${BUYER}`]: async () => ok({ summaryId: 's1', lines: [], works: [] }) });
+    await t.show();
+    expect(t.box.textContent).toContain('préparé le 12 mars 2027.');
+    expect(t.box.textContent).toContain('donnée du 1 décembre 2026, lue par le serveur le 11 mars 2027.');
   });
 
   it('aucun résumé : dit en mots, jamais un résumé vide inventé', async () => {

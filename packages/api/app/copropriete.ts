@@ -53,20 +53,23 @@ export const COPRO_NO_WORKS = 'Aucuns travaux votés à venir à signaler à l�
 export const COPRO_ROLE = 'Ce dossier n’est pas dans vos droits.';
 export const COPRO_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 export const COPRO_FAILED = 'Le résumé n’a pas pu être lu. Rouvrez le bloc dans un moment.';
+/** Un résumé préparé pendant la lecture : rien n'est mélangé, l'agent relit. */
+export const COPRO_CHANGED = 'Un nouveau résumé vient d’être préparé pendant la lecture : rouvrez le bloc pour lire les travaux à dire à l’acquéreur.';
 
 /** Le script servi à part. Il n'appelle que les deux lectures de `/v1/dossiers/<id>/copropriete` [R16]. */
 export const COPROPRIETE_SCRIPT = `'use strict';
 globalThis.AIMMO_COPROPRIETE = function (t) {
   var el = t.el, clear = t.clear, send = t.send;
   var TOPICS = ${JSON.stringify(COPRO_TOPICS)}, DOCS = ${JSON.stringify(COPRO_DOCUMENTS)}, MISSING = ${JSON.stringify(COPRO_MISSING)};
-  var NONE = ${JSON.stringify(COPRO_NONE)}, NO_WORKS = ${JSON.stringify(COPRO_NO_WORKS)}, ROLE = ${JSON.stringify(COPRO_ROLE)}, OFFLINE = ${JSON.stringify(COPRO_OFFLINE)}, FAILED = ${JSON.stringify(COPRO_FAILED)};
+  var NONE = ${JSON.stringify(COPRO_NONE)}, NO_WORKS = ${JSON.stringify(COPRO_NO_WORKS)}, ROLE = ${JSON.stringify(COPRO_ROLE)}, OFFLINE = ${JSON.stringify(COPRO_OFFLINE)}, FAILED = ${JSON.stringify(COPRO_FAILED)}, CHANGED = ${JSON.stringify(COPRO_CHANGED)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, reads = 0;
   function own(o, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : null; }
   function text(v) { return typeof v === 'string' && v.length > 0 ? v : null; }
   function whole(v) { return typeof v === 'number' && Math.floor(v) === v && v >= 0 ? v : null; }
   function day(d) {
-    if (typeof d !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}/.test(d)) return null;
-    var x = new Date(d.slice(0, 10) + 'T12:00:00Z');
+    if (typeof d !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}(T|$)/.test(d)) return null;
+    /* Un jour seul se lit à midi ; un instant garde son heure, pour tomber sur le bon jour de Paris (remarque de Codex). */
+    var x = new Date(d.length === 10 ? d + 'T12:00:00Z' : d);
     if (isNaN(x.getTime())) return null;
     try { return x.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return null; }
   }
@@ -139,9 +142,11 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
     box.appendChild(publicLine('Plan d’urbanisme, lu au point du bien', s.urbanism, urbanism));
     return true;
   }
-  function works(box, res) {
+  function works(box, res, summaryId) {
     box.appendChild(el('h4', 'À dire à l’acquéreur'));
     if (!res.ok) { box.appendChild(el('p', res.offline ? OFFLINE : FAILED, 'etat')); return; }
+    /* Les deux lectures doivent porter sur le même résumé : un résumé préparé entre elles ne se mélange jamais (remarque de Codex). */
+    if (!res.body || !res.body.data || res.body.data.summaryId !== summaryId) { box.appendChild(el('p', CHANGED, 'etat')); return; }
     var lines = (res.body && res.body.data && Array.isArray(res.body.data.lines) ? res.body.data.lines : []).filter(function (l) { return typeof l === 'string' && l.length > 0; });
     if (!lines.length) { box.appendChild(el('p', NO_WORKS, 'doux')); return; }
     var ul = el('ul');
@@ -164,7 +169,7 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
       if (!res.ok) { status.textContent = why(res); return false; }
       status.textContent = '';
       if (!summary(box, got)) return false;
-      works(box, all[1]);
+      works(box, all[1], got.id);
       return true;
     });
   }
