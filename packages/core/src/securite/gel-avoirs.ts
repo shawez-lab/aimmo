@@ -42,8 +42,11 @@ const TIME_ZONE = 'Europe/Paris';
 const CASE_REF = /^(mandate|offer|sale_file):([A-Za-z0-9-]{8,64})$/;
 const ENTRY_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const MAX_ENTRIES = 20000;
-const MAX_NAMES = 30;
-const MAX_NAME_LENGTH = 200;
+// Des entrées du registre public portent des dizaines d'alias (RC49).
+export const FREEZE_MAX_NAMES = 200;
+export const FREEZE_MAX_NAME_LENGTH = 200;
+const MAX_NAMES = FREEZE_MAX_NAMES;
+const MAX_NAME_LENGTH = FREEZE_MAX_NAME_LENGTH;
 // D1 refuse plus de 100 valeurs liées par requête : 25 entrées de 4 valeurs.
 const CHUNK = 25;
 
