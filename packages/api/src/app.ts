@@ -109,6 +109,7 @@ import { regionsRoutes, type RegionsRoute } from './regions.ts';
 import { neufViagerRoutes, type NeufViagerRoute } from './neuf-viager.ts';
 import { postgresqlRoutes, type PostgresqlRoute } from './postgresql.ts';
 import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './licences.ts';
+import type { StockageFichiersPlages } from '../../core/src/licences/index.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
@@ -206,6 +207,8 @@ export interface ApiConfig {
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
   coffre?: VaultFiles | null;
+  /** BR82 : les fichiers déposés de l'agence sous licence (R2 : `MEDIA`, `PIECES`, `COMMERCES`, jamais `COFFRE`) ; absents, leurs routes sont fermées. */
+  fichiersReprise?: StockageFichiersPlages | null;
   /** M18 (U09) : le stockage des preuves et des pièces des partenaires (R2, `PIECES`, sous `partenaires/`) ; absent, les routes de M18 sont fermées. */
   partenaires?: PartenairesOptions;
   /** M17 (Y08) : l'IA de la note d'investissement (absente, le secours sans IA [R126]) et le barème des frais réglé par la direction. */
@@ -1499,12 +1502,12 @@ function financesRoutesDef(lecteur: LecteurFactures | null): RouteDef[] {
 }
 
 /** Les routes des clés d'appareil et de l'export de l'agent (BR05) : rôle contrôlé avant le corps [R16] ; sans site WebAuthn, fermées. */
-function clesRoutesDef(site: ClesConfig | null): RouteDef[] {
+function clesRoutesDef(site: ClesConfig | null, fichiers: StockageFichiersPlages | null): RouteDef[] {
   return clesRoutes().map((r: ClesRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, site }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, site, fichiers }, viewer, params, request),
   }));
 }
 
@@ -2260,7 +2263,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...formationRoutesDef(),
     ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
-    ...clesRoutesDef(config.cles ?? null),
+    ...clesRoutesDef(config.cles ?? null, config.fichiersReprise ?? null),
     ...m18Routes(config.partenaires ?? null),
     ...m17Routes({ ...(config.investir ?? {}), unsubscribeBase: config.alertUnsubscribeBase ?? null }),
     ...m16Routes(config.commerces),

@@ -20,11 +20,16 @@
  * La reprise des données de l'agence sous licence (HX74, BR17), sous `/v1/export/agence` : sa direction seule tire le
  * fichier complet de son réseau, sur une preuve « export_complet » pour `licence:<id>` ; la direction du réseau qui
  * donne les licences n'en a pas [R657, R658, R659, R601].
+ *
+ * Le contenu des fichiers de cette reprise (BR82), sous `/v1/export/agence/contenus` : sa direction seule, sur un
+ * fichier de reprise qu'AIMMO lui a remis et une preuve « export_complet » par appel, reçoit les octets en base64, par
+ * lots de 8 Mo au plus (la mémoire d'un Worker), et les plus grosses pièces tranche par tranche [R666, R667, R663]. Sans
+ * compartiment de fichiers, ces routes sont fermées (503).
  */
 import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { takeSlot } from './assistant.ts';
 import { sha256Hex } from './auth.ts';
-import { RepriseDonneesAgence } from '../../core/src/licences/index.ts';
+import { ContenusRepriseAgence, RepriseDonneesAgence, TRANCHE_OCTETS, type StockageFichiersPlages } from '../../core/src/licences/index.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
 import { ClesAppareil, ClesAssistant, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
@@ -47,6 +52,19 @@ export interface ClesServices {
   now: () => Date;
   /** Le site WebAuthn ; absent, les routes sont fermées. */
   site: ClesConfig | null;
+  /** Les fichiers déposés (R2 : médias, pièces, commerces ; jamais le coffre) ; absents, les routes des contenus sont fermées (BR82). */
+  fichiers?: StockageFichiersPlages | null;
+}
+
+/** Un lot remis par la route : une tranche au plus, pour que ses octets en base64 tiennent dans la mémoire d'un Worker (BR82). */
+export const LOT_ROUTE_OCTETS = TRANCHE_OCTETS;
+
+/** Des octets en base64, par morceaux : jamais une chaîne d'arguments trop longue. */
+export function base64Of(bytes: Uint8Array): string {
+  let out = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) out += String.fromCharCode(...bytes.subarray(i, i + step));
+  return btoa(out);
 }
 
 type Role = Viewer['role'];
@@ -114,6 +132,10 @@ const withBody =
 const cles = (s: ClesServices & { site: ClesConfig }) => new ClesAppareil(s.db, s.journal, { rpId: s.site.rpId, origins: s.site.origins, now: s.now });
 const assistant = (s: ClesServices & { site: ClesConfig }) => new ClesAssistant(s.db, s.journal, cles(s), { now: s.now });
 const AGENT_OR_DIRECTION: readonly Role[] = ['agent', 'direction'];
+/** Le contenu des fichiers de la reprise, sur les seuls compartiments donnés ; sans eux, `null` (BR82). */
+const contenus = (s: ClesServices & { site: ClesConfig }) =>
+  s.fichiers ? new ContenusRepriseAgence(s.db, s.journal, cles(s), s.fichiers, { now: s.now, maxBytes: LOT_ROUTE_OCTETS }) : null;
+const closedFiles = (): Response => json(503, { ok: false, rule: null, code: 'fichiers_non_branches', message: 'Aucun stockage des fichiers branché.' });
 
 const REGISTRATION = ['challengeId', 'credentialId', 'publicKey', 'clientDataJSON', 'authenticatorData', 'label', 'stepUpId'] as const;
 const ASSERTION = ['challengeId', 'credentialId', 'clientDataJSON', 'authenticatorData', 'signature'] as const;
@@ -267,6 +289,57 @@ export function clesRoutes(): ClesRoute[] {
           const sameNetwork = doc !== null && typeof doc === 'object' && (doc as { networkId?: unknown }).networkId === v.networkId;
           if (!sameNetwork) return reply({ ok: true, value: { verified: false, fingerprint: null, complete: false, missing: [] } });
           return reply({ ok: true, value: await new RepriseDonneesAgence(s.db, s.journal, cles(s), { now: s.now }).verify(doc) });
+        },
+        MAX_EXPORT_BYTES,
+      ),
+    },
+    // Le contenu des fichiers de la reprise : un lot, l'empreinte d'une pièce en tranches, une tranche ; une preuve par
+    // appel, jamais de référence ni de contenu au journal [R666, R667, R663, R601, R13].
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/contenus$/,
+      name: 'export.agence.contenus',
+      roles: DIRECTION,
+      handle: withBody(
+        ['document', 'stepUpId', 'depuis'],
+        async (s, v, _p, b) => {
+          const c = contenus(s);
+          if (!c) return closedFiles();
+          const r = await c.remettre(v, b.document, b.stepUpId, b.depuis ?? 0);
+          if (!r.ok) return reply(r);
+          return reply({ ok: true, value: { ...r.value, pieces: r.value.pieces.map((p) => ({ ...p, contenu: p.contenu === null ? null : base64Of(p.contenu) })) } });
+        },
+        MAX_EXPORT_BYTES,
+      ),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/contenus\/piece$/,
+      name: 'export.agence.contenus.piece',
+      roles: DIRECTION,
+      handle: withBody(
+        ['document', 'stepUpId', 'index'],
+        async (s, v, _p, b) => {
+          const c = contenus(s);
+          if (!c) return closedFiles();
+          return reply(await c.empreintePiece(v, b.document, b.stepUpId, b.index));
+        },
+        MAX_EXPORT_BYTES,
+      ),
+    },
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/contenus\/tranche$/,
+      name: 'export.agence.contenus.tranche',
+      roles: DIRECTION,
+      handle: withBody(
+        ['document', 'stepUpId', 'index', 'debut', 'attendue'],
+        async (s, v, _p, b) => {
+          const c = contenus(s);
+          if (!c) return closedFiles();
+          const r = await c.remettreTranche(v, b.document, b.stepUpId, b.index, b.debut, b.attendue);
+          if (!r.ok) return reply(r);
+          return reply({ ok: true, value: { ...r.value, contenu: r.value.contenu === null ? null : base64Of(r.value.contenu) } });
         },
         MAX_EXPORT_BYTES,
       ),
