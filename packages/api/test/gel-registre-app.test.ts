@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
-import { GEL_REGISTRE_LOST, GEL_REGISTRE_REFUSALS, GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
+import { GEL_REGISTRE_FAILED, GEL_REGISTRE_LOST, GEL_REGISTRE_REFUSALS, GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement } from './fake-dom.ts';
 
@@ -66,9 +66,13 @@ describe('BR85 · écran d’import du registre des gels', () => {
       if (entryId === '9105') expect(said).toContain('Entrée en cause : 9105.');
       expect(said).not.toContain(INJECTED);
     }
-    const t = mount(async () => ({ ok: false, status: 500, body: { ok: false, code: 'inconnu_du_code' } }));
-    await t.press('Importer le registre du jour');
-    expect(t.status()).toBe('L’import n’a pas abouti : rien n’est importé. Réessayez dans un moment.');
+    // Une panne du serveur ou une réponse illisible : l'import a pu se faire, jamais « rien n'est importé ».
+    for (const res of [{ ok: false, status: 500, body: { ok: false, code: 'inconnu_du_code' } }, { ok: false, status: 502, body: null }]) {
+      const t = mount(async () => res);
+      await t.press('Importer le registre du jour');
+      expect(t.status()).toBe(GEL_REGISTRE_FAILED);
+      expect(t.status()).not.toMatch(/rien n’est importé/);
+    }
   });
 
   it('réponse perdue dite incertaine ; deux appuis ne lancent qu’un import ; une réponse arrivée après la sortie est jetée', async () => {

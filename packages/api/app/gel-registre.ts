@@ -39,7 +39,8 @@ export const GEL_REGISTRE_REFUSALS = Object.freeze({
 
 export const GEL_REGISTRE_LOST = 'La réponse n’est pas arrivée : l’import a pu se faire. Recommencez sans crainte : un registre déjà importé est refusé.';
 export const GEL_REGISTRE_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
-export const GEL_REGISTRE_FAILED = 'L’import n’a pas abouti : rien n’est importé. Réessayez dans un moment.';
+/** Une panne du serveur : le registre a pu être rangé avant elle, l'écran ne dit jamais que rien n'est importé. */
+export const GEL_REGISTRE_FAILED = 'L’import s’est arrêté en route : il a pu se faire, en tout ou en partie. Recommencez dans un moment : un registre déjà importé est refusé, et vos contrôles disent ce qui est en service.';
 
 /** Le script servi à part. Il n'appelle que les deux routes d'import de `/v1/securite/gel/registre` [R16]. */
 export const GEL_REGISTRE_SCRIPT = `'use strict';
