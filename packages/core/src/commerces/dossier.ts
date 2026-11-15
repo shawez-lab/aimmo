@@ -49,6 +49,26 @@ export const MAX_DOSSIER_TEXT = 1_000_000;
 
 const DEPOSIT_PREFIX = 'commerces/';
 
+/**
+ * La place, à partir de 1 et comptée en caractères, de la première moitié de caractère laissée seule dans un texte
+ * (un demi-émoji coupé par un copier-coller, que JSON laisse passer), ou `null` si le texte s'écrit tel quel en UTF-8.
+ * Le stockage réel écrit en UTF-8, qui remplacerait cette moitié par « � » : le texte relu ne serait plus celui déposé.
+ */
+export function loneHalfAt(text: string): number | null {
+  let place = 0;
+  for (const c of text) {
+    place += 1;
+    const u = c.charCodeAt(0);
+    if (c.length === 1 && u >= 0xd800 && u <= 0xdfff) return place;
+  }
+  return null;
+}
+
+/** Un titre de document : rempli, 120 caractères au plus, et qui s'écrit tel quel. */
+function goodTitle(title: unknown): title is string {
+  return typeof title === 'string' && title.trim() !== '' && title.trim().length <= 120 && loneHalfAt(title) === null;
+}
+
 export const DOSSIER_DOCUMENT_KINDS = ['bilan', 'compte_resultat', 'bail', 'liste_materiel', 'autorisation', 'autre'] as const;
 export type DossierDocumentKind = (typeof DOSSIER_DOCUMENT_KINDS)[number];
 
@@ -87,7 +107,7 @@ export interface DossierLink {
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R113' | 'R114' | string | null; code: string; codes?: string[] };
+type Problem = { ok: false; rule: 'R113' | 'R114' | string | null; code: string; codes?: string[]; at?: number };
 export type DossierResult<T> = { ok: true; value: T } | Refusal | Problem;
 
 // La marque cachée : un début, 48 bits (0 : espace sans largeur, 1 : antiliant sans largeur), une fin.
@@ -295,7 +315,7 @@ export class DossierCommerce {
     if (!g.ok) return g;
     const { kind, title, storageRef } = input;
     if (typeof kind !== 'string' || !(DOSSIER_DOCUMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'kind' };
-    if (typeof title !== 'string' || title.trim() === '' || title.trim().length > 120) return { ok: false, rule: null, code: 'title' };
+    if (!goodTitle(title)) return { ok: false, rule: null, code: 'title' };
     if (typeof storageRef !== 'string' || storageRef.trim() === '' || storageRef.length > 300) return { ok: false, rule: null, code: 'storage_ref' };
     // Une référence du dépôt porte son bien : elle ne fait jamais entrer dans ce dossier le document d'un autre [R16].
     if (storageRef.startsWith(DEPOSIT_PREFIX) && !storageRef.startsWith(`${DEPOSIT_PREFIX}${viewer.networkId}/${propertyId}/`)) return this.refuse(viewer, propertyId, 'autre_bien');
@@ -320,8 +340,12 @@ export class DossierCommerce {
     if (!g.ok) return g;
     const { kind, title, content } = input;
     if (typeof kind !== 'string' || !(DOSSIER_DOCUMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, rule: null, code: 'kind' };
-    if (typeof title !== 'string' || title.trim() === '' || title.trim().length > 120) return { ok: false, rule: null, code: 'title' };
+    if (!goodTitle(title)) return { ok: false, rule: null, code: 'title' };
     if (typeof content !== 'string' || content.trim() === '' || content.length > MAX_DOSSIER_TEXT) return { ok: false, rule: null, code: 'content' };
+    // Un texte qui ne s'écrit pas tel quel n'est jamais rangé : relu, il ne serait plus celui déposé, et chaque nouveau
+    // dépôt se croirait une réparation. La place du premier caractère fautif est dite, pour que l'agent le retrouve.
+    const lone = loneHalfAt(content);
+    if (lone !== null) return { ok: false, rule: null, code: 'content_malformed', at: lone };
     if (!this.storage.write) return { ok: false, rule: null, code: 'stockage_absent' };
     const sum = await sha256(content);
     const had = await this.db.first<{ id: string; storage_ref: string }>('SELECT id, storage_ref FROM business_dossier_documents WHERE network_id = ? AND property_id = ? AND content_sha256 = ? LIMIT 1', [viewer.networkId, propertyId, sum]);
