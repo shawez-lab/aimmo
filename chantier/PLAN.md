@@ -1564,7 +1564,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR83 · Le contenu des fichiers de l'agence sous licence tiré à l'écran, chaque empreinte refaite sur l'appareil (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#590, `96b117d5`). Codex 3 P2 corrigés (le lot gardé à la réouverture du même fichier ; une seule ligne par pièce au reçu, une pièce tirée en tranches remplaçant sa ligne « en_tranches » ; une réponse d'un fichier de reprise précédent jetée, par une génération par fichier), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6193 tests). Rien ne reste pour cette tâche.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR19, BR82
 - Cahier : Feuille de route, phase 5, « licence du logiciel aux agences hors réseau » ; Offre aux agents, « Licence du logiciel » ; Conformité, portabilité ; R666, R667, R663, R601, R201, R16.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR82. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Un script servi à part, `/app/reprise-contenus.js` (`AIMMO_REPRISE_CONTENUS`), chargé au seul geste « Tirer le contenu de mes fichiers » du bloc « Reprendre mes données » (`packages/api/app/licences.ts`), sur le fichier de reprise tiré dans la même séance ; `app.js` ne change pas. Une preuve de la clé de l'appareil par appel, comme le serveur l'exige. Un lot à la fois à l'écran : le suivant remplace le précédent, pour que la mémoire du téléphone tienne. Une pièce trop grosse se tire tranche par tranche, chaque tranche avec l'empreinte attendue ; son SHA-256 entier n'est refait sur l'appareil que jusqu'à 64 Mo, au-delà elle est dite « vérifiée tranche par tranche ».
