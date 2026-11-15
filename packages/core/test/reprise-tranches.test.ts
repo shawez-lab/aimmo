@@ -356,6 +356,43 @@ describeWithSqlite('RC46 · Une pièce trop grosse pour un lot, remise en tranch
     expect([...(await t.events('licences.reprise.piece')), ...(await t.events('licences.reprise.tranche'))]).toEqual([]);
   });
 
+  it('[R667] un stockage qui réutilise un tampon de Node : chaque tranche et chaque pièce gardent leurs propres octets', async () => {
+    const t = await setup();
+    // `Buffer.prototype.slice` partage la mémoire : la copie ne doit jamais passer par lui.
+    const shared = Buffer.alloc(2048);
+    const reuse: StockageFichiersPlages = {
+      async read(ref) {
+        const b = t.store.get(ref);
+        if (b === undefined) return null;
+        shared.set(b);
+        return shared.subarray(0, b.byteLength);
+      },
+      taille: async (ref) => t.store.get(ref)?.byteLength ?? null,
+      async lirePlage(ref, debut, longueur) {
+        const b = t.store.get(ref);
+        if (b === undefined) return null;
+        shared.set(b.subarray(debut, debut + longueur));
+        return shared.subarray(0, longueur);
+      },
+    };
+    const contenus = new ContenusRepriseAgence(t.db, t.journal, t.gate, reuse, { trancheOctets: TRANCHE });
+    const i = t.indexOf('stock/lac/visite.mp4');
+    const e = await contenus.empreintePiece(t.lacDirection, t.copy(), 'preuve-ok', i);
+    if (!e.ok) throw new Error(e.code);
+    const first = await contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', i, 0);
+    const second = await contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', i, 100);
+    if (!first.ok || !second.ok) throw new Error('refus');
+    expect(first.value.contenu).toEqual(VIDEO.subarray(0, 100));
+    expect(await trancheIntacte(e.value, first.value)).toBe(true);
+    expect(await trancheIntacte(e.value, second.value)).toBe(true);
+    // Les pièces d'un lot aussi (RC45).
+    const lot = await contenus.remettre(t.lacDirection, t.copy(), 'preuve-ok');
+    if (!lot.ok) throw new Error(lot.code);
+    const note = lot.value.pieces.find((p) => p.ref === 'stock/lac/note-1.ogg')!;
+    shared.fill(0);
+    expect(note.contenu).toEqual(t.store.get('stock/lac/note-1.ogg'));
+  });
+
   it('[R667] un stockage qui ne lit pas par plages : refus dit, rien lu', async () => {
     const t = await setup();
     const reads: string[] = [];

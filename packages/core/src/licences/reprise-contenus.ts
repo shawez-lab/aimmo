@@ -221,7 +221,7 @@ export class ContenusRepriseAgence {
     try {
       const raw: unknown = await this.storage.lirePlage(ref, debut, longueur);
       // Une copie à soi : le stockage peut réutiliser son tampon.
-      return raw instanceof Uint8Array && raw.byteLength === longueur ? raw.slice() : null;
+      return raw instanceof Uint8Array && raw.byteLength === longueur ? new Uint8Array(raw) : null;
     } catch {
       return null;
     }
@@ -275,7 +275,7 @@ export class ContenusRepriseAgence {
           } catch {
             raw = null;
           }
-          got = !(raw instanceof Uint8Array) ? null : raw.byteLength > this.maxBytes ? { size: raw.byteLength } : { content: raw.slice() };
+          got = !(raw instanceof Uint8Array) ? null : raw.byteLength > this.maxBytes ? { size: raw.byteLength } : { content: new Uint8Array(raw) };
         }
         read.set(f.ref, got);
       }
@@ -295,7 +295,7 @@ export class ContenusRepriseAgence {
       }
       bytes += size;
       // Une copie par pièce : changer les octets d'une pièce remise ne change ni une autre ni ce qui est gardé.
-      const own = got.content.slice();
+      const own = new Uint8Array(got.content);
       pieces.push({ ...base, statut: 'remise', sha256: await sha256Hex(own), taille: size, contenu: own });
     }
     const manifeste = await fingerprintOf(manifesteDe(check.fingerprint, pieces));
