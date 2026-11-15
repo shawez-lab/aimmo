@@ -1596,6 +1596,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : les deux routes au seul responsable, autre rôle refusé au journal sans aucun téléchargement [R16] (test) ; téléchargement avec l'adresse et le `User-Agent` de la configuration, le fichier lu passe par `importRegistry` et une partie au nom d'un alias est trouvée [R603, R605] (test) ; fichier illisible, refus de lecture ou réponse en erreur, coupée ou trop grosse : rien rangé, code et identifiant d'entrée rendus, jamais un nom [R13] (test) ; sans configuration : 503, rien rangé (test) ; fichier déposé : même lecture, corps trop gros refusé (test) ; à l'écran, import en un appui, résultat et refus dits en mots, jamais un code, réponse perdue dite incertaine, deux appuis ne lancent qu'un import, sans innerHTML, budget tenu [R201] (test).
 - Attend : rien (adresse du fichier à relire au premier vrai import).
 
+### BR86 · Le registre des gels en service, dit à l'écran du responsable avec son âge et son empreinte (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR85, HX57
+- Cahier : Conformité (gel des avoirs) ; M12 ; HX57 ; R605, R13, R16, R201.
+- Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR85 (« montrer à l'écran le registre en service (date, empreinte) demande une lecture du cœur (`ControleGels`), à prévoir »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le cahier ne fixe pas la fréquence de mise à jour (recherche « gel des avoirs » sans résultat) : AIMMO dit « à mettre à jour » au-delà de 7 jours après la date de publication, seuil écrit dans le cœur (`FREEZE_REGISTRY_STALE_DAYS`). Une lecture neuve au cœur, `ControleGels.registryInService`, seule à lire les tables (R604 inchangée) ; une route `GET /v1/securite/gel/registre` dans `packages/api/src/securite.ts` ; l'écran est le script déjà servi à part, `/app/gel-registre.js`.
+- Objectif : le responsable sait, dès l'ouverture du bloc, quel registre sert aux contrôles, de quand il date, et s'il faut l'importer de nouveau.
+- Jamais vu : à l'ouverture, l'écran dit le registre en service (date publiée, date d'import, nombre d'entrées, dossiers contrôlés contre lui), son âge en jours, « à mettre à jour » passé 7 jours, et son empreinte SHA-256 en groupes lisibles, à comparer au reçu de l'import ; aucun registre : « aucun contrôle n'est possible » dit en mots.
+- Critères : `registryInService` au seul responsable, autre rôle refusé au journal [R16] (test) ; seule une version scellée, la plus récente, est rendue, avec ses dossiers contrôlés et son âge ; aucune version : `null` [R605] (test) ; la route au seul responsable, autre rôle refusé au journal (test) ; à l'écran, lu à l'ouverture et relu après chaque import, âge et « à mettre à jour » dits en mots, empreinte en groupes, réponse perdue dite incertaine, réponse arrivée après la sortie jetée, jamais un code, sans innerHTML, budget tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
