@@ -192,6 +192,8 @@ const ROUTES: NeufViagerRoute[] = [
     roles: DIRECTION,
     handle: withBody(async (s, v, _p, b) => reply(await core(s).viager.importLifeTable(v, { vintage: b.vintage, source: b.source, rows: b.rows }))),
   },
+  /* BR80 : les tables importées, sans leurs lignes, et celle qui sert aux calculs ce jour, pour la direction seule. */
+  { method: 'GET', pattern: /^\/viager\/tables$/, name: 'viager.tables', roles: DIRECTION, handle: async (s, v) => reply(await core(s).viager.listLifeTables(v)) },
   {
     method: 'POST',
     pattern: /^\/viager\/calculs$/,
