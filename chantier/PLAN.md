@@ -2074,7 +2074,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 
 ### RC48 · Un texte déposé au dossier d'un commerce se relit toujours tel qu'il a été déposé
 - Statut : fait (2026-11-15)
-- Reste : fusionnée (#591, `bc72a956`). Codex 1 P1 corrigé (aucun test ne vérifiait que les dépôts refusés n'écrivent rien au journal du dossier), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6187 tests). Reste pour la voie 1 : le texte du refus `content_malformed` à l'écran (`packages/api/app/commerces-textes.ts`), avec la place (`at`) dite en mots.
+- Reste : fusionnée (#591, `bc72a956`). Codex 1 P1 corrigé (aucun test ne vérifiait que les dépôts refusés n'écrivent rien au journal du dossier), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6187 tests). Reste : le texte du refus `content_malformed` à l'écran, pris par la voie 2 (RC50, fait).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : CE20, CE22
 - Cahier : M16 Commerces et entreprises, dossier protégé ; R114, R16.
 - Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de CE22 (« un caractère isolé invalide ne se relit pas à l'identique, non traité »). Aujourd'hui un texte qui porte une moitié de caractère seule (un demi-émoji coupé par un copier-coller, que JSON laisse passer) est rangé : le stockage réel l'écrit en UTF-8, qui le remplace par « � ». Le texte relu n'est plus celui déposé : chaque nouveau dépôt du même texte se croit « réparé », réécrit la copie et ajoute une ligne au journal, sans fin ; et le lecteur reçoit un caractère que l'agent n'a jamais écrit. Le cœur refuse désormais, avant toute écriture, un texte ou un titre qui ne s'écrit pas tel quel en UTF-8 (`content_malformed`, `title`), et dit la place du premier caractère fautif. Changent seulement `packages/core/src/commerces/dossier.ts` et un test neuf ; ni règle nouvelle, ni migration ; le texte du refus à l'écran (`commerces-textes.ts`) : voie 1.
@@ -2093,12 +2093,22 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (format du jour à relire sur le vrai fichier au branchement, voie 1).
 
 ### RC50 · Un texte refusé pour un caractère coupé, le caractère montré à l'agent dans sa zone de texte (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#594, `b3441a24`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6212 tests). Rien d'autre.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC48
 - Cahier : M16 Commerces et entreprises (dossier du commerce) ; R201.
 - Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de RC48 (« le texte du refus `content_malformed` à l'écran (`packages/api/app/commerces-textes.ts`), avec la place (`at`) dite en mots »), marqué voie 1 ; la voie 1 a sept restes de branchement en attente, celui-ci ne touche que `packages/api/app/commerces-textes.ts` et son test, ni `app.ts`, ni le socle, ni le cœur. Aujourd'hui l'agent qui colle un texte où un émoji a été coupé lit « Le document n'est pas rangé. » sans savoir pourquoi ni où. Le script dit en mots le caractère fautif et sa place, puis sélectionne ce caractère dans la zone de texte et y met le curseur (place comptée comme le serveur, en caractères, convertie pour la zone de texte), et le même contrôle tourne avant l'envoi : rien ne part tant qu'un caractère est coupé (Jamais vu : aucun outil ne montre où un copier-coller a abîmé un texte). Le titre fautif (`title`) le dit aussi.
 - Objectif : l'agent retrouve et corrige en un geste le caractère coupé qui empêche de ranger un document du dossier.
 - Critères : refus `content_malformed` du serveur : message en mots avec la place, caractère sélectionné dans la zone de texte, même pour une place après un émoji entier (test) ; texte coupé repéré avant l'envoi, aucun appel, même message et même sélection (test) ; titre coupé : refusé avant l'envoi avec son message (test) ; texte sain : envoyé comme avant (test) ; budget de la page tenu [R201] (test) ; tous les tests de l'écran du commerce restent verts.
+- Attend : rien.
+
+### RC51 · La pièce du coffre ouverte par la route n'est remise que vérifiée, avec son empreinte (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC44
+- Cahier : M12, « Coffre » ; R90, R13, R16.
+- Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de RC44 (« la route `GET /coffre/<id>` passe par `CoffreConformite.read`, avec `R2VaultStorage` comme lecteur, au lieu de `open` puis `vault.read` »), marqué voie 1 ; la voie 1 est sur BR85 (`securite.ts`), et ce reste ne touche que `packages/api/src/conformite.ts` et son test, ni `app.ts`, ni le socle, ni le cœur. Aujourd'hui la route rend les octets lus au stockage sans recalculer l'empreinte : la vérification de RC44 n'est jamais faite. Désormais la route passe par `read` : pièce changée au stockage, refus 409 `altered` dit en mots, rien rendu ; pièce absente ou stockage en panne, 404 `missing` dit en mots ; une seule ligne « ouvert » au journal, après la vérification. La pièce remise porte son empreinte vérifiée dans l'en-tête `Repr-Digest` (RFC 9530, `sha-256=:<base64>:`), pour que le responsable puisse la refaire sur son appareil.
+- Jamais vu : la pièce d'identité téléchargée du coffre porte la preuve qu'elle est octet pour octet celle déposée, et une pièce changée au stockage ne sort jamais.
+- Critères : pièce intacte rendue octet pour octet, avec son type, en pièce jointe, `Repr-Digest` égal au SHA-256 des octets rendus [R90] (test) ; un octet changé au stockage : 409 `altered`, message en mots, aucun octet de la pièce dans la réponse, aucun « ouvert » au journal [R90, R13] (test) ; pièce absente du stockage : 404 `missing`, message en mots [R90] (test) ; agent ou direction : 403, stockage jamais lu [R16] (test) ; sans stockage : 503 comme avant (test) ; tous les tests du coffre restent verts.
 - Attend : rien.
 
 ## Phase 1 : le socle

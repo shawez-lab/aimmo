@@ -41,6 +41,8 @@ const DOC_REFUSALS = {
   stockage_absent: 'Le stockage des documents n’est pas encore ouvert : rien n’est rangé, votre texte reste ici.',
   autre_bien: 'Ce document appartient à un autre bien.',
   sorte: 'Ce bien n’est pas un commerce.',
+  content_malformed: 'Un caractère du texte est coupé, souvent un émoji collé à moitié : retrouvez-le et effacez-le, puis rangez de nouveau.',
+  title_cut: 'Le titre porte un caractère coupé, souvent un émoji collé à moitié : il est sélectionné, effacez-le.',
 };
 
 export const COMMERCES_TEXTES_SCRIPT = `'use strict';
@@ -48,6 +50,30 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, say = t.say;
   var REFUSALS = ${JSON.stringify(REFUSALS)}, PROBLEMS = ${JSON.stringify(PROBLEMS)};
   function known(map, code) { return Object.prototype.hasOwnProperty.call(map, code) ? map[code] : null; }
+  /* La première moitié de caractère laissée seule, comptée en caractères comme le serveur (un émoji entier compte un). */
+  function cutAt(s) {
+    for (var i = 0, place = 0; i < s.length; i++) {
+      place++;
+      var u = s.charCodeAt(i), n = s.charCodeAt(i + 1);
+      if (u >= 0xd800 && u <= 0xdbff && n >= 0xdc00 && n <= 0xdfff) { i++; continue; }
+      if (u >= 0xd800 && u <= 0xdfff) return { place: place };
+    }
+    return null;
+  }
+  /* Sélectionne dans la zone le caractère à cette place, pour que l'agent l'efface d'un geste. */
+  function pick(box, s, at) {
+    for (var i = 0, place = 0; i < s.length; i++) {
+      place++;
+      var u = s.charCodeAt(i), n = s.charCodeAt(i + 1), w = u >= 0xd800 && u <= 0xdbff && n >= 0xdc00 && n <= 0xdfff ? 2 : 1;
+      if (place === at) {
+        if (typeof box.focus === 'function') box.focus();
+        if (typeof box.setSelectionRange === 'function') box.setSelectionRange(i, i + w);
+        return;
+      }
+      i += w - 1;
+    }
+  }
+  function cutSaid(at) { return 'Un caractère du texte est coupé, au ' + at + (at === 1 ? 'er' : 'e') + ' caractère : souvent un émoji collé à moitié. Il est sélectionné dans le texte : effacez-le, puis rangez de nouveau.'; }
   function fix(box, base, p) {
     clear(box);
     say('');
@@ -127,6 +153,11 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
       if (!kind.value) { say(DOC_REFUSALS.kind); return; }
       if (!nt) { say(DOC_REFUSALS.title); return; }
       if (!body.trim()) { say(DOC_REFUSALS.content); return; }
+      /* Un caractère coupé ne s'écrit pas tel quel : le serveur le refuserait, il est montré avant l'envoi. */
+      var tv = String(title.value || ''), tc = cutAt(tv);
+      if (tc) { pick(title, tv, tc.place); say(DOC_REFUSALS.title_cut); return; }
+      var bc = cutAt(body);
+      if (bc) { pick(text, body, bc.place); say(cutSaid(bc.place)); return; }
       var mine = t.session();
       sending = true;
       go.disabled = true;
@@ -139,6 +170,13 @@ globalThis.AIMMO_CE_TEXTES = function (t) {
         if (res.offline || res.status >= 500 || !res.body) { say('Réponse perdue : le document a peut-être été rangé. Appuyez de nouveau : le même texte ne s’ajoute pas deux fois.'); return false; }
         if (res.ok) return t.reload(!res.body.data || !res.body.data.already ? 'Document rangé.' : res.body.data.repaired ? 'Ce texte était perdu : il est rangé de nouveau.' : 'Ce texte était déjà rangé : rien n’est ajouté.');
         if (res.status === 403 && res.body.code !== 'autre_bien') { say('Ce commerce n’est pas dans vos droits.'); return false; }
+        var at = res.body.at;
+        if (res.body.code === 'content_malformed' && typeof at === 'number' && at >= 1 && Math.floor(at) === at) {
+          /* La place du serveur, en caractères ; le texte n'est sélectionné que s'il est encore celui envoyé. */
+          if (String(text.value || '') === body) pick(text, body, at);
+          say(cutSaid(at));
+          return false;
+        }
         say(known(DOC_REFUSALS, res.body.code) || 'Le document n’est pas rangé.');
         return false;
       });
