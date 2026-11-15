@@ -1531,7 +1531,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR80 · La table d'espérance de vie du viager, importée à l'écran de la direction (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#585, `05bbb780`). Codex 1 P2 corrigé (une première ligne fautive était prise pour des titres et sautée), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6139 tests). Reste : le calcul de viager à l'écran de l'agent (BR81), la grille dans les annonces.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX48, BR79
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 (investir) ; R541, R540, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans les « Restent » de BR79 (« l'écran du viager avec l'import de la table d'espérance, à découper »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Découpé en deux : l'import de la table par la direction (cette tâche), puis l'écran du calcul de viager de l'agent (BR81), qui ne calcule rien sans table. La table s'importe dans le script déjà servi à part, `/app/neuf-direction.js`, sous un troisième bloc : `app.js` ne change pas. Une seule route nouvelle, `GET /v1/viager/tables` (direction), qui liste les tables importées sans leurs lignes et dit celle qui sert aux calculs ce jour : la plus récemment importée, la même requête que le calcul. Le fichier CSV (deux colonnes : âge, espérance en années) est relu sur l'appareil avant tout envoi ; le serveur garde ses propres contrôles. Pas de migration, aucune règle nouvelle.
