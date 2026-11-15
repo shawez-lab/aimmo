@@ -1752,6 +1752,99 @@ describe('CE20 · ranger un document du dossier à l’écran', () => {
     expect(t.state()).toBe('Ce texte était perdu : il est rangé de nouveau.');
   });
 
+  describe('RC50 · un caractère coupé montré dans la zone de texte (Jamais vu)', () => {
+    const HALF = '\ud83d';
+    const EMOJI = '😀';
+    const said = (at: number, n = at === 1 ? 'er' : 'e') => `Un caractère du texte est coupé, au ${at}${n} caractère : souvent un émoji collé à moitié. Il est sélectionné dans le texte : effacez-le, puis rangez de nouveau.`;
+    function watch(e: FakeElement) {
+      const picked: [number, number][] = [];
+      const focused = vi.fn();
+      Object.assign(e, { focus: focused, setSelectionRange: (a: number, b: number) => picked.push([a, b]) });
+      return { picked, focused };
+    }
+
+    it('un refus du serveur dit la place en mots et sélectionne le caractère, même après un émoji entier', async () => {
+      const t = await open({ 'POST /v1/commerces/b1/documents/texte': no(400, { ok: false, rule: null, code: 'content_malformed', at: 14 }) });
+      t.fill();
+      const area = t.input('Texte du document');
+      // Le serveur compte en caractères : l'émoji entier en vaut un, la zone de texte deux.
+      area.value = `${EMOJI} Bail inventé.`;
+      const w = watch(area);
+      // Le contrôle avant l'envoi ne voit rien de coupé ; le serveur, si (un texte que l'écran ne sait pas relire).
+      await t.click(t.byText(SAVE));
+      expect(t.posted()).toHaveLength(1);
+      expect(t.state()).toBe(said(14));
+      expect(w.picked).toEqual([[14, 15]]);
+      expect(w.focused).toHaveBeenCalled();
+      expect(area.value).toBe(`${EMOJI} Bail inventé.`);
+      expect(isOff(t.byText(SAVE))).toBe(false);
+    });
+
+    it('un texte coupé est repéré avant l’envoi : rien ne part, le caractère est sélectionné', async () => {
+      const t = await open({ 'POST /v1/commerces/b1/documents/texte': ok({ id: 'x2', already: false }) });
+      t.fill();
+      const area = t.input('Texte du document');
+      area.value = `${EMOJI} Bail ${HALF} du local.`;
+      const w = watch(area);
+      await t.click(t.byText(SAVE));
+      expect(t.posted()).toHaveLength(0);
+      expect(t.state()).toBe(said(8));
+      expect(w.picked).toEqual([[8, 9]]);
+      area.value = `${HALF}Bail.`;
+      await t.click(t.byText(SAVE));
+      expect(t.state()).toBe(said(1));
+      expect(w.picked.at(-1)).toEqual([0, 1]);
+      // Une seconde moitié seule, en fin de texte.
+      area.value = `Bail.${'\ude00'}`;
+      await t.click(t.byText(SAVE));
+      expect(t.state()).toBe(said(6));
+      expect(w.picked.at(-1)).toEqual([5, 6]);
+      expect(t.posted()).toHaveLength(0);
+      area.value = `Bail ${EMOJI} inventé.`;
+      await t.click(t.byText(SAVE));
+      expect(t.posted()).toHaveLength(1);
+      expect(JSON.parse(t.posted()[0]!.body!).content).toBe(`Bail ${EMOJI} inventé.`);
+      expect(t.state()).toBe('Document rangé.');
+    });
+
+    it('un titre coupé est refusé avant l’envoi, sélectionné dans le titre', async () => {
+      const t = await open();
+      t.fill();
+      const title = t.input('Titre du document');
+      title.value = ` Bail ${HALF}`;
+      const w = watch(title);
+      await t.click(t.byText(SAVE));
+      expect(t.posted()).toHaveLength(0);
+      expect(t.state()).toBe('Le titre porte un caractère coupé, souvent un émoji collé à moitié : il est sélectionné, effacez-le.');
+      expect(w.picked).toEqual([[6, 7]]);
+    });
+
+    it('une place du serveur mal formée, ou un texte changé entre-temps : rien sélectionné, jamais un mauvais caractère', async () => {
+      for (const at of [0, 2.5, '3', null]) {
+        const t = await open({ 'POST /v1/commerces/b1/documents/texte': no(400, { ok: false, rule: null, code: 'content_malformed', at }) });
+        t.fill();
+        const w = watch(t.input('Texte du document'));
+        await t.click(t.byText(SAVE));
+        expect(t.state()).toBe('Un caractère du texte est coupé, souvent un émoji collé à moitié : retrouvez-le et effacez-le, puis rangez de nouveau.');
+        expect(w.picked).toEqual([]);
+      }
+      let release!: () => void;
+      const t = await open({ 'POST /v1/commerces/b1/documents/texte': async () => { await new Promise<void>((r) => { release = r; }); return new Response(JSON.stringify({ ok: false, rule: null, code: 'content_malformed', at: 3 }), { status: 400, headers: { 'content-type': 'application/json' } }); } });
+      t.fill();
+      const area = t.input('Texte du document');
+      const w = watch(area);
+      const clicked = t.click(t.byText(SAVE));
+      await settle();
+      area.value = 'Autre texte.';
+      release();
+      await clicked;
+      await settle();
+      expect(t.state()).toBe(said(3));
+      expect(w.picked).toEqual([]);
+    });
+  });
+
+
   it('[R201] les scripts tiennent le budget d’une page', () => {
     expect(budgetProblems({ html: '', js: COMMERCES_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: '', js: COMMERCES_TEXTES_SCRIPT }, BUDGETS.page)).toEqual([]);
