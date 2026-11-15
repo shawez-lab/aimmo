@@ -1954,7 +1954,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC44 · Une pièce du coffre n'est remise que si son empreinte est la sienne (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#582, `5aa1a168`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6120 tests). Reste pour la voie 1 : la route `GET /coffre/<id>` passe par `CoffreConformite.read`, avec `R2VaultStorage` comme lecteur, au lieu de `open` puis `vault.read`.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : L01, HX76
 - Cahier : M12, « Coffre » et « Anti-blanchiment » ; R90, R664, R17.
 - Décidé (2026-11-15, voie 2), lecture prudente : relevé dans les « Restent » de HX75 et HX76 (« le contenu des pièces quand un stockage sera branché »). Le stockage du coffre existe (`R2VaultStorage.read`), mais la route qui ouvre une pièce rend les octets lus sans jamais recalculer l'empreinte rangée au dépôt : une pièce changée ou remplacée au stockage partirait comme la vraie, et le dossier de l'agence (HX76) promet une empreinte que rien ne contrôle. Le cœur gagne `CoffreConformite.read` : mêmes droits que `open` (responsable de la conformité du réseau seul, refus au journal) ; il lit les octets par une interface (`VaultReader`), recalcule l'empreinte SHA-256 et la taille, et ne rend le contenu que s'ils sont ceux du dépôt. Sinon : « altérée », au journal avec la seule empreinte attendue, jamais le contenu ; pièce absente du stockage : « absente ». La lecture n'est écrite « ouverte » au journal qu'une fois la pièce vérifiée. Changent seulement `conformite/coffre.ts` et son test ; ni règle nouvelle, ni migration ; la route `/coffre/<id>` passera par `read` : voie 1.
