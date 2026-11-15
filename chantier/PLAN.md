@@ -1630,7 +1630,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR89 · L'avant-contrat branché à l'API, le projet du notaire prélu depuis le PDF déposé au dossier (Jamais vu)
-- Statut : prête, non fusionnée (#603, 005b6d0)
+- Statut : en cours
 - Reste : Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6285 tests) ; fusion refusée par le contrôle des permissions, un essai, pas de nouvel essai (H69). Reste (voie 1) : l'écran du dossier pour l'avant-contrat (déposer le projet, prélire, confirmer et ranger par `…/projet`) ; la préparation du résumé de copropriété à l'écran (BR90, à découper) ; le lecteur IA attend H13.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC54
 - Cahier : M10 Compromis et acte (note au notaire, projet comparé, dépôt de garantie) ; Intelligence artificielle (secours sans IA) ; R510, R511, R512, R513, R12, R13, R16.
