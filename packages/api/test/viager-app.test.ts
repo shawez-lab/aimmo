@@ -283,6 +283,21 @@ describe('BR81 · le calcul de viager à l’écran de l’agent', () => {
     expect(tb.status()).toContain(VIAGER_TABLE_CHANGED);
   });
 
+  it('le dernier calcul d’un bien reste lisible et rejouable au retour, sans rien garder sur l’appareil', async () => {
+    const t = await run();
+    await t.compute();
+    await t.click(t.buttons(t.part(), 'Retour aux projets')[0]);
+    expect(t.part().all().some((e) => e.tagName === 'ol')).toBe(false);
+    await t.click(t.buttons(t.part(), 'Viager du bien V-101, Dijon')[0]);
+    expect(t.status()).toContain('Dernier calcul de ce bien, rangé le 10/03/2027.');
+    await t.click(t.buttons(t.part(), 'Rejouer le calcul')[0]);
+    expect(t.status()).toContain(VIAGER_SAME);
+    expect(t.mine().filter((c) => c.method === 'POST' && c.url === '/v1/viager/calculs')).toHaveLength(1);
+    await t.click(t.buttons(t.part(), 'Retour aux projets')[0]);
+    await t.click(t.buttons(t.part(), 'Viager du bien V-102')[0]);
+    expect(t.status()).not.toContain('Dernier calcul');
+  });
+
   it('[R542] l’expert est proposé par la mise en relation, jamais écrit à sa place', async () => {
     const t = await run();
     await t.compute();

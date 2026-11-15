@@ -10,7 +10,8 @@ import { VIAGER_NOTICE } from '../../core/src/neuf-viager/index.ts';
  * d'ici, le client choisit [R542]. Il ne calcule rien : bouquet, rente et chaque ligne viennent du serveur, chacune
  * avec sa source, sa date et son hypothèse [R540] ; l'espérance de vie vient de la table de la direction, jamais
  * saisie, et sans elle aucun chiffre n'est écrit [R541]. La mention « ni offre ni conseil » est toujours à l'écran
- * [R542]. Un refus se dit en mots, jamais par son code ; un calcul sans réponse est dit incertain. Tout texte reçu est
+ * [R542]. Un refus se dit en mots, jamais par son code ; un calcul sans réponse est dit incertain. Le dernier calcul
+ * d'un bien reste en mémoire le temps de l'écran : revenir aux projets puis rouvrir le bien le montre et le rejoue. Tout texte reçu est
  * posé avec `textContent` ; rien n'est gardé sur l'appareil.
  */
 
@@ -55,7 +56,8 @@ export const VIAGER_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
   invalid_body: 'La demande n’a pas pu être lue.',
 });
 export const VIAGER_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
-export const VIAGER_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez le bien pour voir si le calcul a été rangé avant de recommencer.';
+export const VIAGER_LOST =
+  'La réponse n’est pas arrivée : rien n’est sûr, le calcul a peut-être été rangé. Recalculer ne change ni n’envoie rien : un second calcul est rangé à part.';
 export const VIAGER_NONE = 'Aucun projet de vente avec un bien dans vos droits : le viager se calcule sur le bien d’un vendeur que vous suivez.';
 export const VIAGER_NO_TABLE =
   'Aucun chiffre : la table d’espérance de vie en service manque, ou l’âge saisi n’y figure pas. La direction l’importe depuis l’écran du réseau.';
@@ -75,7 +77,7 @@ globalThis.AIMMO_VIAGER = function (t) {
   var NO_TABLE = ${JSON.stringify(VIAGER_NO_TABLE)}, MISSING = ${JSON.stringify(VIAGER_MISSING)}, SAME = ${JSON.stringify(VIAGER_SAME)};
   var TABLE_CHANGED = ${JSON.stringify(VIAGER_TABLE_CHANGED)}, EXPERT_DONE = ${JSON.stringify(VIAGER_EXPERT_DONE)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, CP = /^\\d{5}$/;
-  var root = null, load = 0, page = 0;
+  var root = null, load = 0, page = 0, last = {};
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
   function str(x) { return typeof x === 'string' ? x : ''; }
   function int(x) { return typeof x === 'number' && isFinite(x) && Math.floor(x) === x; }
@@ -285,6 +287,7 @@ globalThis.AIMMO_VIAGER = function (t) {
         if (x.offline || !x.body || x.status >= 500) { said.textContent = LOST; return; }
         var calc = x.ok && x.body.data && typeof x.body.data === 'object' ? x.body.data : null;
         if (!calc) { said.textContent = refusal(x, 'Le calcul n’a pas été fait.'); return; }
+        last[b.propertyId] = calc;
         said.textContent = 'Calcul rangé le ' + day(str(calc.createdAt).slice(0, 10)) + '.';
         result(place, calc, ctx);
       });
@@ -292,6 +295,8 @@ globalThis.AIMMO_VIAGER = function (t) {
     box.appendChild(go);
     box.appendChild(said);
     box.appendChild(place);
+    // Le dernier calcul de ce bien, fait pendant cette ouverture, reste lisible et rejouable au retour : rien n'est gardé sur l'appareil.
+    if (own(last, b.propertyId)) { said.textContent = 'Dernier calcul de ce bien, rangé le ' + day(str(last[b.propertyId].createdAt).slice(0, 10)) + '.'; result(place, last[b.propertyId], ctx); }
   }
   function list() {
     if (!root) return Promise.resolve(false);
