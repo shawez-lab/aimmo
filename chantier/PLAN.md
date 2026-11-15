@@ -2050,6 +2050,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : calculs du bien rendus du plus récent au plus ancien, 50 au plus, ceux d'un autre bien jamais [R16] (test) ; chaque calcul dit « identique » au rejeu, et un écart si sa table citée a changé [R540, R541] (test) ; table plus récente importée après le calcul : « table remplacée », pas avant [R541] (test) ; calcul incomplet sans table : ni identique faussé ni table remplacée (test) ; bien vu en partage : seulement les calculs de l'agent lui-même ; calcul rattaché à un projet dont la fiche n'est pas à l'agent : absent ; direction : tous [R16] (test) ; bien inconnu ou d'un autre réseau, agent parti ou dossier incomplet, autre rôle : refus au journal, rien lu [R16] (test) ; tous les tests de HX48, BR80 et BR81 restent verts.
 - Attend : rien.
 
+### RC48 · Un texte déposé au dossier d'un commerce se relit toujours tel qu'il a été déposé
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : CE20, CE22
+- Cahier : M16 Commerces et entreprises, dossier protégé ; R114, R16.
+- Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de CE22 (« un caractère isolé invalide ne se relit pas à l'identique, non traité »). Aujourd'hui un texte qui porte une moitié de caractère seule (un demi-émoji coupé par un copier-coller, que JSON laisse passer) est rangé : le stockage réel l'écrit en UTF-8, qui le remplace par « � ». Le texte relu n'est plus celui déposé : chaque nouveau dépôt du même texte se croit « réparé », réécrit la copie et ajoute une ligne au journal, sans fin ; et le lecteur reçoit un caractère que l'agent n'a jamais écrit. Le cœur refuse désormais, avant toute écriture, un texte ou un titre qui ne s'écrit pas tel quel en UTF-8 (`content_malformed`, `title`), et dit la place du premier caractère fautif. Changent seulement `packages/core/src/commerces/dossier.ts` et un test neuf ; ni règle nouvelle, ni migration ; le texte du refus à l'écran (`commerces-textes.ts`) : voie 1.
+- Objectif : ce que l'agent dépose est exactement ce que le lecteur du dossier reçoit, et redéposer le même texte n'écrit jamais rien de plus.
+- Critères : texte avec une moitié de caractère seule (début, milieu, fin) refusé `content_malformed`, avec sa place, rien écrit au stockage ni en base, rien au journal (test) ; titre fautif refusé `title`, rien écrit, au dépôt comme à `addDocument` (test) ; émojis entiers, accents, marque d'ordre en tête acceptés, relus à l'identique à travers un stockage qui passe par UTF-8, et redéposés : `already`, jamais `repaired`, aucune écriture de plus (test) ; tous les tests de CE05, CE20 et CE22 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
