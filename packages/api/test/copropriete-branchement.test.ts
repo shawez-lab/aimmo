@@ -55,7 +55,7 @@ function fakePublicData() {
   return { calls, fetcher };
 }
 
-async function setup(over: Partial<ApiConfig> = {}) {
+async function setup(over: Partial<ApiConfig> = {}, inject = true) {
   const t = await setupDossier('appartement');
   const ids: Record<Who, { role: string; userId: string }> = { alex: { role: 'agent', userId: t.agent.userId }, sam: { role: 'agent', userId: t.sam.userId }, direction: { role: 'direction', userId: t.direction.userId } };
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: t.network.id, ...ids[w] }))));
@@ -70,7 +70,7 @@ async function setup(over: Partial<ApiConfig> = {}) {
       },
     },
   };
-  const config: ApiConfig = { db: t.db as SqlDatabase, apiKeys, mode: 'essai', now: t.now, copropriete: injected, ...over };
+  const config: ApiConfig = { db: t.db as SqlDatabase, apiKeys, mode: 'essai', now: t.now, ...(inject ? { copropriete: injected } : {}), ...over };
   const http = async (who: Who | null, method: 'GET' | 'POST', path: string, body?: unknown) => {
     const r = await handleRequest(
       new Request(`${ORIGIN}/v1/dossiers/${t.fileId}/copropriete${path}`, {
@@ -118,7 +118,7 @@ describeWithSqlite('BR87 · copropriété et urbanisme branchés au Worker', () 
 
   it('[R449] sans option : la BAN de l’estimation puis le Géoportail lu par les données publiques, en GET seulement', async () => {
     const { calls, fetcher } = fakePublicData();
-    const { http } = await setup({ copropriete: undefined, estimation: { geocoder: new BanGeocoder(fetcher), sales: {} as never }, fetchPublicData: fetcher });
+    const { http } = await setup({ estimation: { geocoder: new BanGeocoder(fetcher), sales: {} as never }, fetchPublicData: fetcher }, false);
     const r = await http('alex', 'POST', '/resume', BODY);
     expect(r.status).toBe(200);
     expect(r.body.data.urbanism).toMatchObject({ found: true, source: PUBLIC_SOURCES.urbanism, value: { zone: 'UA', documentType: 'PLU' } });
@@ -131,7 +131,7 @@ describeWithSqlite('BR87 · copropriété et urbanisme branchés au Worker', () 
   });
 
   it('sans aucun service : zone « non collectée », le résumé se prépare quand même', async () => {
-    const { http } = await setup({ copropriete: undefined });
+    const { http } = await setup({}, false);
     const r = await http('alex', 'POST', '/resume', BODY);
     expect(r.status).toBe(200);
     expect(r.body.data.urbanism).toMatchObject({ found: false, reason: 'non_collecte' });
