@@ -2051,7 +2051,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC48 · Un texte déposé au dossier d'un commerce se relit toujours tel qu'il a été déposé
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#591, `bc72a956`). Codex 1 P1 corrigé (aucun test ne vérifiait que les dépôts refusés n'écrivent rien au journal du dossier), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6187 tests). Reste pour la voie 1 : le texte du refus `content_malformed` à l'écran (`packages/api/app/commerces-textes.ts`), avec la place (`at`) dite en mots.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : CE20, CE22
 - Cahier : M16 Commerces et entreprises, dossier protégé ; R114, R16.
 - Décidé (2026-11-15, voie 2), lecture prudente : relevé dans le « Reste » de CE22 (« un caractère isolé invalide ne se relit pas à l'identique, non traité »). Aujourd'hui un texte qui porte une moitié de caractère seule (un demi-émoji coupé par un copier-coller, que JSON laisse passer) est rangé : le stockage réel l'écrit en UTF-8, qui le remplace par « � ». Le texte relu n'est plus celui déposé : chaque nouveau dépôt du même texte se croit « réparé », réécrit la copie et ajoute une ligne au journal, sans fin ; et le lecteur reçoit un caractère que l'agent n'a jamais écrit. Le cœur refuse désormais, avant toute écriture, un texte ou un titre qui ne s'écrit pas tel quel en UTF-8 (`content_malformed`, `title`), et dit la place du premier caractère fautif. Changent seulement `packages/core/src/commerces/dossier.ts` et un test neuf ; ni règle nouvelle, ni migration ; le texte du refus à l'écran (`commerces-textes.ts`) : voie 1.
