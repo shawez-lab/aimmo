@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ControleEnvois, DecisionEnvoi, FakeChannel, FicheUnique, SqlSendJournal, verifyChain, type Channel, type Viewer } from '../src/index.ts';
 import { RegistreOffres } from '../src/offres/index.ts';
-import { ControleGels, FREEZE_CHECK_STATUS, nameTokens, namesMatch, type FreezeRegistryEntry } from '../src/securite/index.ts';
+import { ControleGels, FREEZE_CHECK_STATUS, FREEZE_REGISTRY_STALE_DAYS, nameTokens, namesMatch, type FreezeRegistryEntry } from '../src/securite/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -361,6 +361,38 @@ describeWithSqlite('HX57 · contrôle du gel des avoirs', () => {
     const text = JSON.stringify(all);
     for (const word of ['Camille', 'EXEMPLE', 'FICTIF', 'naissance', 'G-2001']) expect(text).not.toContain(word);
     expect(await verifyChain(all)).toMatchObject({ ok: true });
+  });
+});
+
+describeWithSqlite('BR86 · le registre en service, lu par le responsable', () => {
+  it('[R16] [R605] la version scellée la plus récente, son âge, ses dossiers contrôlés ; aucune version : null ; autre rôle refusé au journal', async () => {
+    const t = await setup();
+    expect(await t.gels.registryInService(t.conformite)).toEqual({ ok: true, value: null });
+    const v1 = await t.importAt('2027-03-01T10:00:00.000Z', SANS_LEA);
+    // Le 9 mars à 9 h UTC : 7 jours entiers, pas encore « à mettre à jour ».
+    expect(await t.gels.registryInService(t.conformite)).toEqual({
+      ok: true,
+      value: { versionId: v1.versionId, publishedAt: '2027-03-01T10:00:00.000Z', importedAt: NOW.toISOString(), entries: 2, sha256: v1.sha256, checkedCases: v1.checked, ageDays: 7, stale: false },
+    });
+    expect(v1.checked).toBeGreaterThan(0);
+    t.setClock(new Date('2027-03-09T10:00:00.000Z'));
+    expect(await t.gels.registryInService(t.conformite)).toMatchObject({ ok: true, value: { ageDays: 8, stale: true } });
+    expect(FREEZE_REGISTRY_STALE_DAYS).toBe(7);
+    // Une version plus récente prend la place, ses contrôles comptés à part.
+    const v2 = await t.importAt('2027-03-09T08:00:00.000Z', AVEC_LEA);
+    expect(await t.gels.registryInService(t.conformite)).toMatchObject({ ok: true, value: { versionId: v2.versionId, entries: 3, checkedCases: v2.checked, ageDays: 0, stale: false } });
+    // Une version ouverte, jamais scellée, ne sert pas.
+    await t.db.run('INSERT INTO freeze_registry_versions (id, network_id, published_at, sha256, entries, imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      'ouverte-1', t.network.id, '2027-03-09T09:30:00.000Z', 'b'.repeat(64), 5, 'compliance:conformite-1', NOW.toISOString(),
+    ]);
+    expect(await t.gels.registryInService(t.conformite)).toMatchObject({ ok: true, value: { versionId: v2.versionId } });
+    const before = (await t.journal.all()).length;
+    for (const viewer of [t.agent, t.partner, { ...t.agent, role: 'direction' } as Viewer]) {
+      expect(await t.gels.registryInService(viewer)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    }
+    const refused = (await t.journal.all()).slice(before);
+    expect(refused.map((e) => e.type)).toEqual(['acces.refuse', 'acces.refuse', 'acces.refuse']);
+    expect(JSON.stringify(refused)).not.toContain(v2.sha256);
   });
 });
 
