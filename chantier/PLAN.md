@@ -1574,6 +1574,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : un seul script servi à part, chargé au seul geste, budgets tenus, sans innerHTML [R201] (test) ; sans fichier de reprise tiré dans la séance, rien ne part, dit en mots (test) ; une preuve `export_complet` pour `licence:<id>` avant chaque appel [R601] (test) ; chaque pièce remise refaite sur l'appareil, enregistrable seulement si empreinte et taille concordent, sinon dite altérée [R666] (test) ; absente, masquée dites en mots, sans dire pourquoi elle manque [R663] (test) ; trop grosse tirée tranche par tranche avec l'empreinte attendue, une tranche altérée arrête tout, rien d'enregistré [R667] (test) ; la suite par sa place, la fin dite avec les comptes (test) ; le reçu enregistré porte l'empreinte du fichier, les manifestes et chaque pièce, sans aucun contenu (test) ; chaque refus et le stockage non branché dits en mots, réponse perdue dite incertaine (test).
 - Attend : rien (H25, H38 pour les compartiments réels).
 
+### BR84 · Les calculs de viager d'un bien relus à l'écran de l'agent, chacun dit s'il tient encore (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR81, RC47
+- Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 Investir, viager ; R540, R541, R16, R201.
+- Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC47 (« la route `GET /v1/viager/biens/<id>/calculs` par `Viager.listForProperty` et la liste à l'écran du viager »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La route s'ajoute à `packages/api/src/neuf-viager.ts`, agent et direction, sans corps ; l'écran est le script déjà servi à part, `/app/viager.js` : à l'ouverture d'un bien, la liste de ses calculs rangés, du plus récent au plus ancien ; `app.js` ne change pas.
+- Objectif : l'agent qui rouvre l'écran du viager retrouve chaque calcul déjà fait pour le bien, et sait lequel refaire.
+- Jamais vu : chaque calcul relu dit seul, en mots, s'il tient encore : « identique au rejeu », « écart au rejeu », et « table remplacée » dès que la direction a importé une table d'espérance plus récente.
+- Critères : `GET /v1/viager/biens/<id>/calculs` pour l'agent et la direction, autre rôle refusé au journal avant tout [R16] (test) ; bien inconnu ou d'un autre réseau refusé, rien lu [R16] (test) ; la liste rendue est celle du cœur, du plus récent au plus ancien, avec « identique » ou « écart » et la table remplacée [R540, R541] (test) ; à l'écran, la liste lue à l'ouverture du bien, chaque calcul avec sa date, bouquet et rente, et ses états dits en mots, jamais une couleur seule (test) ; un calcul de la liste se rouvre pour être relu et rejoué (test) ; réponse perdue ou refus dits en mots, une réponse d'un autre bien jetée (test) ; un seul script servi à part, budgets tenus, sans innerHTML [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
