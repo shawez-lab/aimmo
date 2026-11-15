@@ -8,19 +8,39 @@
  * R607]. Les passages restent ceux du planificateur (`securite.reclamations`, `securite.gel_avoirs`).
  */
 import type { Acces, JournalStore, SqlDatabase, Viewer } from '@aimmo/core';
-import { ControleGels, Reclamations } from '../../core/src/securite/index.ts';
+import { ControleGels, lireRegistreDgTresor, Reclamations } from '../../core/src/securite/index.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
 /** Le registre du gel compte quelques milliers de noms : son import seul a droit à un corps plus gros. */
 const MAX_REGISTRY_BYTES = 4_000_000;
 const ID = '([A-Za-z0-9_-]{1,64})';
+/**
+ * Le fichier publié par la DG Trésor porte, pour chaque entrée, tous ses champs (adresses, motifs, dates…) : bien plus
+ * lourd que le registre lu. Au-delà, le téléchargement ou le dépôt est refusé sans rien ranger (BR85).
+ */
+export const MAX_DGTRESOR_BYTES = 40_000_000;
+/** L'adresse du dernier fichier JSON publié, d'après la documentation de l'API de la DG Trésor ; à relire au premier import. */
+export const REGISTRE_GELS_URL = 'https://gels-avoirs.dgtresor.gouv.fr/ApiPublic/api/v1/publication/derniere-publication-fichier-json';
+/** L'API publique refuse un appel sans `User-Agent` : celui d'AIMMO, sans nom ni adresse de personne. */
+export const REGISTRE_GELS_USER_AGENT = 'AIMMO-conformite/1.0 (registre national des gels)';
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/** Le téléchargement du fichier public du registre des gels (BR85) : une lecture en GET, jamais un envoi. */
+export interface RegistreGelsSource {
+  /** La lecture en GET du fichier : `fetch` dans le Worker, une réponse inventée dans les tests. */
+  get: (request: Request) => Promise<Response>;
+  url: string;
+  userAgent: string;
+}
 
 export interface SecuriteServices {
   db: SqlDatabase;
   journal: JournalStore;
   acces: Acces;
   now: () => Date;
+  /** Absent : l'import depuis la DG Trésor est fermé (503), le dépôt du fichier reste ouvert. */
+  registreGels?: RegistreGelsSource | null;
 }
 
 export interface SecuriteRoute {
@@ -68,6 +88,88 @@ const query = (r: Request, name: string): string | null => new URL(r.url).search
 // Sans `send`, les réclamations ne passent que par les canaux du mode essai : rien ne part vraiment [R26, R607].
 const reclamations = (s: SecuriteServices) => new Reclamations(s.db, s.acces, s.journal, { now: s.now });
 const gels = (s: SecuriteServices) => new ControleGels(s.db, s.acces, s.journal, { now: s.now });
+
+/**
+ * Le rôle, relu par le cœur avant tout téléchargement ou lecture du fichier : il écrit lui-même le refus au journal
+ * [R16]. `null` : le responsable de la conformité, qui peut continuer.
+ */
+async function complianceOnly(s: SecuriteServices, v: Viewer): Promise<Response | null> {
+  if (v.role === 'compliance') return null;
+  return reply(await gels(s).importRegistry(v, { publishedAt: null, entries: null }));
+}
+
+/** Le corps d'une réponse, lu morceau par morceau et arrêté au-delà de `limit` : jamais un fichier entier en trop. */
+type Capped = { ok: true; text: string } | { ok: false; why: 'too_big' | 'bad_text' };
+async function readCapped(response: Request | Response, limit: number): Promise<Capped> {
+  const declared = Number(response.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > limit) return { ok: false, why: 'too_big' };
+  if (!response.body) return { ok: true, text: '' };
+  const reader = response.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => undefined);
+      return { ok: false, why: 'too_big' };
+    }
+    parts.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.byteLength;
+  }
+  try {
+    return { ok: true, text: new TextDecoder('utf-8', { fatal: true }).decode(all) };
+  } catch {
+    return { ok: false, why: 'bad_text' };
+  }
+}
+
+/**
+ * Le fichier publié, lu entier ou refusé entier avec sa raison et l'identifiant de l'entrée fautive, jamais un nom
+ * [R13] ; lu, il passe tel quel par `importRegistry`, qui recontrôle aussitôt chaque dossier en cours [R603, R605].
+ */
+async function importPublished(s: SecuriteServices, v: Viewer, text: string): Promise<Response> {
+  let file: unknown;
+  try {
+    file = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch {
+    return json(400, { ok: false, rule: null, code: 'bad_file', entryId: null });
+  }
+  const read = lireRegistreDgTresor(file);
+  if (!read.ok) return json(400, { ok: false, rule: null, code: read.code, entryId: read.entryId });
+  const { publishedAt, entries, vessels } = read.value;
+  const done = await gels(s).importRegistry(v, { publishedAt, entries });
+  if (!done.ok) return reply(done);
+  return reply({ ok: true, value: { ...done.value, publishedAt, vessels } });
+}
+
+/** Le fichier du jour, téléchargé en GET avec l'adresse et le `User-Agent` de la configuration ; rien n'est envoyé. */
+async function download(source: RegistreGelsSource): Promise<{ ok: true; text: string } | { ok: false; code: 'telechargement_echoue' | 'fichier_trop_gros' }> {
+  let response: Response;
+  try {
+    const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) : undefined;
+    response = await source.get(new Request(source.url, { method: 'GET', headers: { accept: 'application/json', 'user-agent': source.userAgent }, ...(signal ? { signal } : {}) }));
+  } catch {
+    return { ok: false, code: 'telechargement_echoue' };
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return { ok: false, code: 'telechargement_echoue' };
+  }
+  try {
+    const read = await readCapped(response, MAX_DGTRESOR_BYTES);
+    if (read.ok) return read;
+    return read.why === 'too_big' ? { ok: false, code: 'fichier_trop_gros' } : { ok: true, text: '' };
+  } catch {
+    return { ok: false, code: 'telechargement_echoue' };
+  }
+}
 
 /** Les routes de `/v1/securite`, à ajouter à celles de `app.ts`. */
 export function securiteRoutes(): SecuriteRoute[] {
@@ -143,6 +245,34 @@ export function securiteRoutes(): SecuriteRoute[] {
       pattern: new RegExp(`${G}/registre$`),
       name: 'securite.gel.registre',
       handle: withBody(async (s, v, _p, b) => reply(await gels(s).importRegistry(v, { publishedAt: b.publishedAt, entries: b.entries })), MAX_REGISTRY_BYTES),
+    },
+    {
+      // BR85 : le fichier du jour téléchargé par le serveur, en un appui du responsable.
+      method: 'POST',
+      pattern: new RegExp(`${G}/registre/dgtresor$`),
+      name: 'securite.gel.registre_dgtresor',
+      handle: async (s, v) => {
+        const refused = await complianceOnly(s, v);
+        if (refused) return refused;
+        if (!s.registreGels) return json(503, { ok: false, rule: null, code: 'telechargement_absent' });
+        const got = await download(s.registreGels);
+        if (!got.ok) return json(502, { ok: false, rule: null, code: got.code });
+        return importPublished(s, v, got.text);
+      },
+    },
+    {
+      // BR85 : le même fichier, déposé tel qu'il est publié quand le téléchargement échoue.
+      method: 'POST',
+      pattern: new RegExp(`${G}/registre/fichier$`),
+      name: 'securite.gel.registre_fichier',
+      handle: async (s, v, _p, request) => {
+        const refused = await complianceOnly(s, v);
+        if (refused) return refused;
+        if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return badBody();
+        const read = await readCapped(request, MAX_DGTRESOR_BYTES).catch((): Capped => ({ ok: false, why: 'bad_text' }));
+        if (!read.ok) return read.why === 'too_big' ? json(413, { ok: false, rule: null, code: 'fichier_trop_gros' }) : json(400, { ok: false, rule: null, code: 'bad_file', entryId: null });
+        return importPublished(s, v, read.text);
+      },
     },
     {
       method: 'POST',

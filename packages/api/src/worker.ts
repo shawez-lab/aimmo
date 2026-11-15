@@ -1,4 +1,5 @@
 import { TRIAL_MODE, handleRequest } from './app.ts';
+import { REGISTRE_GELS_URL, REGISTRE_GELS_USER_AGENT } from './securite.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
@@ -35,6 +36,8 @@ export interface Env {
   META_APP_IDS?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
+  /** L'adresse du fichier JSON du registre des gels (BR85) ; absente, celle de la documentation de la DG Trésor. */
+  REGISTRE_GELS_URL?: string;
   /** Début du lien pour décaler ou annuler un rendez-vous (V04), en https, sans chiffre, terminé par `/`. */
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
@@ -75,6 +78,12 @@ export interface Env {
   ESPACE_BASE?: string;
   /** Secret : les clés du relevé prouvé de l'espace, `nom:secret` séparées par des virgules ; absent, relevé indisponible [R164]. */
   ESPACE_RELEVE_KEYS?: string;
+}
+
+/** L'adresse du registre des gels : une adresse https seule, sinon celle de la documentation de la DG Trésor (BR85). */
+export function registreGelsUrl(value: string | undefined): string {
+  if (typeof value === 'string' && /^https:\/\/[^\s]+$/.test(value.trim())) return value.trim();
+  return REGISTRE_GELS_URL;
 }
 
 /**
@@ -165,6 +174,8 @@ export default {
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
       ...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),
+      // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
+      registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,

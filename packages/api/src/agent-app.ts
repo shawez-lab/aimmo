@@ -62,6 +62,7 @@ import { APPELS_RECUS_SCRIPT } from '../app/appels-recus.ts';
 import { NOTES_VOCALES_SCRIPT } from '../app/notes-vocales.ts';
 import { RECLAMATIONS_SCRIPT } from '../app/reclamations.ts';
 import { RECLAMATIONS_REGLAGE_SCRIPT } from '../app/reclamations-reglage.ts';
+import { GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { REMISES_SCRIPT } from '../app/remises.ts';
 import { NEUF_SCRIPT } from '../app/neuf.ts';
 import { NEUF_DIRECTION_SCRIPT } from '../app/neuf-direction.ts';
@@ -218,6 +219,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/scenarios.js': { body: SCENARIOS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le délai de réponse aux réclamations et le médiateur (BR70), chargés depuis « Engagements de service », jamais gardés [R201].
   '/app/reclamations-reglage.js': { body: RECLAMATIONS_REGLAGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/gel-registre.js': { body: GEL_REGISTRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les remises négociées (BR73), chargées depuis « Engagements de service » ou « Mettre en vente », jamais gardées [R201].
   '/app/remises.js': { body: REMISES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },

@@ -87,7 +87,7 @@ import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type Commerc
 import { conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
-import { securiteRoutes, type SecuriteRoute } from './securite.ts';
+import { securiteRoutes, type RegistreGelsSource, type SecuriteRoute } from './securite.ts';
 import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
@@ -231,6 +231,8 @@ export interface ApiConfig {
    * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
    */
   attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  /** Le téléchargement du fichier public du registre des gels (BR85) ; absent, seul le dépôt du fichier est ouvert. */
+  registreGels?: RegistreGelsSource | null;
   /** Le lecteur des factures fournisseurs (l'IA, H13, BR04) ; absent, leur lecture est fermée. */
   lecteurFactures?: LecteurFactures | null;
   /** Le site WebAuthn des clés d'appareil (BR05, `CLES_RP_ID` et `CLES_ORIGINS`) ; absent, leurs routes sont fermées. */
@@ -1237,12 +1239,12 @@ function m12Routes(coffre: VaultFiles | null): RouteDef[] {
 }
 
 /** Les routes des réclamations et du gel des avoirs (BR01) : droits de la couche métier [R16], mode essai seul [R26]. */
-function securiteRoutesDef(): RouteDef[] {
+function securiteRoutesDef(registreGels: RegistreGelsSource | null): RouteDef[] {
   return securiteRoutes().map((r: SecuriteRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now, registreGels }, viewer, params, request),
   }));
 }
 
@@ -2239,7 +2241,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...captationRolloutRoutes(config.captationRollout),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...m12Routes(config.coffre ?? null),
-    ...securiteRoutesDef(),
+    ...securiteRoutesDef(config.registreGels ?? null),
     ...reseauUtileRoutesDef(),
     ...trousseauxRoutesDef(),
     ...boutiqueRoutesDef(),
