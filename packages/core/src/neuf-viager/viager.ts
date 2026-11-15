@@ -206,6 +206,20 @@ export interface LifeTableRow {
   expectancyTenths: number;
 }
 
+/** Une table importée, sans ses lignes ; `inUse` pour celle qui sert aux calculs ce jour (BR80). */
+export interface LifeTableSummary {
+  tableId: string;
+  vintage: string;
+  source: string;
+  rowCount: number;
+  importedAt: string;
+  inUse: boolean;
+}
+
+export interface LifeTableList {
+  tables: LifeTableSummary[];
+}
+
 export interface StoredViager {
   id: string;
   propertyId: string | null;
@@ -340,6 +354,24 @@ export class Viager {
       this.now,
     );
     return { ok: true, value: { tableId: id } };
+  }
+
+  /**
+   * BR80 : les tables importées du réseau, pour la direction seule, sans leurs lignes. Celle qui sert aux calculs ce
+   * jour est la plus récemment importée, choisie par le même ordre que `expectancies` [R541, R16].
+   */
+  async listLifeTables(viewer: Viewer): Promise<ViagerOutcome<LifeTableList>> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'R16', 'role');
+    const rows = await this.db.all<{ id: string; vintage: string; source: string; row_count: number; imported_at: string }>(
+      'SELECT id, vintage, source, row_count, imported_at FROM life_tables WHERE network_id = ? ORDER BY imported_at DESC, vintage DESC LIMIT 50',
+      [viewer.networkId],
+    );
+    return {
+      ok: true,
+      value: {
+        tables: rows.map((r, i) => ({ tableId: r.id, vintage: r.vintage, source: r.source, rowCount: r.row_count, importedAt: r.imported_at, inUse: i === 0 })),
+      },
+    };
   }
 
   /** La table la plus récemment importée du réseau, et l'espérance à chaque âge demandé ; `null` si un âge y manque. */
