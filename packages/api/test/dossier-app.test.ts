@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { COPROPRIETE_SCRIPT } from '../app/copropriete.ts';
+import { AVANT_CONTRAT_SCRIPT } from '../app/avant-contrat.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
@@ -424,5 +425,50 @@ describe('BR90 · le résumé de copropriété préparé depuis le dossier', () 
     expect(seen[0]!.headers['content-type']).toBe('application/pdf');
     expect(seen[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
     expect(part.textContent).toContain('fiche synthétique, 1 page');
+  });
+});
+
+describe('BR91 · l’avant-contrat, depuis le dossier', () => {
+  it('[R201] [R511] le bloc se charge au premier geste ; le projet part tel quel à …/preuves avec son empreinte, puis le même fichier à …/pdf', async () => {
+    const REF = 'preuves/0b6f1d2e-4444-4a2b-8c3d-000000000009.pdf';
+    const PDF_URL = `/v1/dossiers/f1/avant-contrat/pdf?documentRef=${encodeURIComponent(REF)}`;
+    const EMPTY = { brief: null, draft: null, differences: [], texts: [], comparedToEarlierBrief: false, blocked: false, deposit: { expectedEur: null, receivedEur: null, receivedBy: 'notaire', receivedOn: null, status: 'sans_objet' } };
+    const t = await run({
+      'GET /v1/dossiers/f1/avant-contrat': ok(EMPTY),
+      'POST /v1/dossiers/f1/preuves': ok({ ref: REF }),
+      [`POST ${PDF_URL}`]: ok({ documentRef: REF, pageCount: 1, pagesToRead: [], pagesToReadText: null, reading: { source: 'manuel', proposal: { priceEur: null, conditions: [], loanDeadline: null, deedBy: null, deposit: null }, toRead: ['prix'] } }),
+    });
+    const seen: { url: string; headers: Record<string, string>; body: unknown }[] = [];
+    const fetch0 = t.context.fetch as (url: string, init?: { method?: string; headers?: Record<string, string>; body?: unknown }) => Promise<Response>;
+    t.context.fetch = (url: string, init: { method?: string; headers?: Record<string, string>; body?: unknown } = {}) => {
+      if (init.body && typeof init.body === 'object') seen.push({ url, headers: init.headers ?? {}, body: init.body });
+      return fetch0(url, init);
+    };
+    await t.open();
+    const part = t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Avant-contrat'))!;
+    expect(part).toBeDefined();
+    const before = t.calls.length;
+    expect(part.all().some((e) => e.tagName === 'script')).toBe(false);
+    await t.click(t.find(part, 'Ouvrir l’avant-contrat : note, projet du notaire, dépôt'));
+    const scripts = part.all().filter((e) => e.tagName === 'script');
+    expect(scripts.map((e) => e.attributes.src)).toEqual(['/app/avant-contrat.js']);
+    expect(t.calls.length).toBe(before);
+    runInNewContext(AVANT_CONTRAT_SCRIPT, t.context);
+    scripts[0]!.listeners.load!({});
+    await t.settle();
+    expect(t.calls.slice(before).map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/dossiers/f1/avant-contrat']);
+    expect(part.textContent).toContain('Aucune note au notaire n’est encore rangée.');
+    const label = (text: string) => part.all().find((e) => e.attributes.id === part.all().find((l) => l.tagName === 'label' && l.textContent === text)!.attributes.for)! as FakeElement & { files?: unknown[] };
+    const file = pdf();
+    label('Le projet reçu du notaire, en PDF').files = [file];
+    await t.click(t.find(part, 'Déposer et prélire'));
+    expect(seen.map((s) => s.url)).toEqual(['/v1/dossiers/f1/preuves', PDF_URL]);
+    expect(seen.every((s) => s.body === file && s.headers.authorization === `Bearer ${KEY}`)).toBe(true);
+    expect(seen[0]!.headers['x-aimmo-sha256']).toMatch(/^[0-9a-f]{64}$/);
+    expect(seen[1]!.headers['content-type']).toBe('application/pdf');
+    expect(part.textContent).toContain('À lire vous-même : le prix.');
+    // Rouvrir ne recharge pas le script.
+    await t.click(t.find(part, 'Ouvrir l’avant-contrat : note, projet du notaire, dépôt'));
+    expect(part.all().filter((e) => e.tagName === 'script')).toHaveLength(1);
   });
 });
