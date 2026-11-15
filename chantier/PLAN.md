@@ -1542,7 +1542,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR81 · Le calcul de viager à l'écran de l'agent
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#587, `2cf9b67d`). Codex 1 P2 corrigé (un calcul fait n'était plus relisible au retour aux projets : le dernier calcul d'un bien reste en mémoire le temps de l'écran, et le message d'une réponse perdue ne renvoie plus à une relecture impossible), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6157 tests). Restent : la grille dans les annonces ; une route qui liste les calculs de viager rangés d'un bien, pour les relire d'une ouverture à l'autre.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR80
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 ; M18 (mise en relation de l'expert) ; R540, R542, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : un seul script servi à part, `/app/viager.js` (`AIMMO_VIAGER`), chargé au geste depuis l'écran « Gagner des mandats », partie « Viager », comme le neuf : `app.js` ne change pas. « Un bien qu'il voit » : les biens des projets de vente de l'agent, lus par `GET /v1/partenaires/projets` (seuls les biens dans ses droits y sont rendus) ; le calcul est rattaché au projet et au bien, pour que l'expert puisse être proposé. L'agent dit d'où viennent la valeur, le bouquet et le taux ; la forme et les âges portent une hypothèse fixe « choisi / saisi à l'écran ». Le script ne calcule rien : il met en forme les lignes reçues (unité par unité) et dit la source en mots, sans identifiant de personne ni de table. L'expert passe par `POST /v1/viager/calculs/<id>/expert` (mise en relation de M18), le code postal demandé seulement si le bien n'en a pas. Aucune route, migration ni règle nouvelle.
