@@ -230,6 +230,22 @@ export interface StoredViager {
   createdAt: string;
 }
 
+/**
+ * RC47 : un calcul de viager d'un bien, relu d'une ouverture de l'écran à l'autre. `replay` dit s'il se rejoue au
+ * caractère près depuis ses entrées et la table qu'il cite ; `tableReplaced`, si la table d'espérance qu'il cite n'est
+ * plus celle qui sert aux calculs ce jour : la direction en a importé une plus récente depuis [R540, R541].
+ */
+export interface ViagerOfProperty {
+  calculation: StoredViager;
+  replay: 'identique' | 'ecart';
+  tableReplaced: boolean;
+}
+
+/** Au plus autant de calculs relus pour un bien, du plus récent au plus ancien. */
+export const VIAGER_LIST_LIMIT = 50;
+/** Les calculs d'un bien sont relus par lots de cette taille, jusqu'au plafond des calculs visibles. */
+const VIAGER_SCAN_BATCH = 100;
+
 export type ViagerRefusal = { ok: false; rule: 'R16' | 'R540' | 'R541' | 'R542'; code: string; field?: ViagerInputKey };
 export type ViagerOutcome<T> = { ok: true; value: T } | ViagerRefusal;
 
@@ -260,6 +276,12 @@ const toStored = (row: ViagerRow): StoredViager => ({
   createdBy: row.created_by,
   createdAt: row.created_at,
 });
+
+/** La table d'espérance citée par un calcul, lue dans la source de son espérance ; `null` sans espérance. */
+function citedTable(inputs: ViagerInputs): string | null {
+  if (inputs.expectancies === null) return null;
+  return /^table:([^ ]+) /.exec(inputs.expectancies.source)?.[1] ?? null;
+}
 
 export interface ViagerOptions {
   now?: () => Date;
@@ -470,23 +492,95 @@ export class Viager {
     const row = await this.db.first<ViagerRow>('SELECT * FROM viager_calculations WHERE id = ? AND network_id = ?', [id, viewer.networkId]);
     if (!row) return this.refuse(viewer, 'R16', 'unknown');
     const calc = toStored(row);
-    if (calc.projectId !== null) {
-      const project = await this.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ? AND network_id = ?', [calc.projectId, viewer.networkId]);
-      if (!project) return this.refuse(viewer, 'R16', 'unknown');
-      const read = await acces.readFiche(viewer, project.person_id);
-      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
-      if (read.view !== 'full') return this.refuse(viewer, 'R16', 'not_assigned');
-    }
+    const seen = await this.visible(acces, viewer, calc, new Map());
+    if (seen !== null) return seen.mine ? this.refuse(viewer, 'R16', seen.code) : seen.refusal;
+    return { ok: true, value: calc };
+  }
+
+  /**
+   * Les droits d'un calcul rangé, communs à `read` et `listForProperty` : `null` s'il se lit. Les refus des droits
+   * d'Acces sont journalisés par Acces ; `mine` dit un refus propre au viager, que seul `read` journalise [R16].
+   * `fiches` garde la lecture de la fiche de chaque projet, pour ne la lire qu'une fois par liste.
+   */
+  private async visible(
+    acces: Acces,
+    viewer: Viewer,
+    calc: StoredViager,
+    fiches: Map<string, { ok: true; view: string } | { ok: false; rule: 'R16'; code: string; mine: boolean }>,
+    propertyView?: string,
+  ): Promise<{ refusal: ViagerRefusal; code: string; mine: boolean } | null> {
     const own = viewer.role === 'direction' || calc.createdBy === `${String(viewer.role)}:${viewer.userId}`;
+    const mineRefusal = (code: string) => ({ refusal: { ok: false, rule: 'R16', code } as ViagerRefusal, code, mine: true });
+    if (calc.projectId !== null) {
+      let fiche = fiches.get(calc.projectId);
+      if (!fiche) {
+        const project = await this.db.first<{ person_id: string }>('SELECT person_id FROM projects WHERE id = ? AND network_id = ?', [calc.projectId, viewer.networkId]);
+        if (!project) fiche = { ok: false, rule: 'R16', code: 'unknown', mine: true };
+        else {
+          const read = await acces.readFiche(viewer, project.person_id);
+          fiche = read.ok ? { ok: true, view: read.view } : { ok: false, rule: 'R16', code: read.code, mine: false };
+        }
+        fiches.set(calc.projectId, fiche);
+      }
+      if (!fiche.ok) return fiche.mine ? mineRefusal(fiche.code) : { refusal: { ok: false, rule: 'R16', code: fiche.code }, code: fiche.code, mine: false };
+      if (fiche.view !== 'full') return mineRefusal('not_assigned');
+    }
     if (calc.propertyId !== null) {
-      const read = await acces.readProperty(viewer, calc.propertyId);
-      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      let view = propertyView;
+      if (view === undefined) {
+        const read = await acces.readProperty(viewer, calc.propertyId);
+        if (!read.ok) return { refusal: { ok: false, rule: 'R16', code: read.code }, code: read.code, mine: false };
+        view = read.view;
+      }
       // Un bien du fichier commun se voit en partage, sans donnée du vendeur : le calcul d'un autre (âges, valeur,
       // bouquet) ne se lit que par qui voit le bien en entier [R16].
-      if (read.view !== 'full' && !own) return this.refuse(viewer, 'R16', 'not_assigned');
+      if (view !== 'full' && !own) return mineRefusal('not_assigned');
     }
-    if (calc.projectId === null && calc.propertyId === null && !own) return this.refuse(viewer, 'R16', 'not_assigned');
-    return { ok: true, value: calc };
+    if (calc.projectId === null && calc.propertyId === null && !own) return mineRefusal('not_assigned');
+    return null;
+  }
+
+  /**
+   * RC47 : les calculs rangés d'un bien, pour l'agent qui rouvre l'écran du viager, du plus récent au plus ancien, 50
+   * au plus. Chacun sous les droits de `read` : un calcul que l'appelant ne lirait pas est seulement absent de la liste.
+   * Chacun dit s'il se rejoue à l'identique et si sa table d'espérance a été remplacée depuis [R540, R541, R16].
+   */
+  async listForProperty(acces: Acces, viewer: Viewer, propertyId: unknown): Promise<ViagerOutcome<ViagerOfProperty[]>> {
+    const inactive = await this.activeOrRefuse(viewer);
+    if (inactive) return inactive;
+    if (typeof propertyId !== 'string' || propertyId.length === 0 || propertyId.length > 200) return this.refuse(viewer, 'R16', 'unknown');
+    const read = await acces.readProperty(viewer, propertyId);
+    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+    if (read.value.network_id !== viewer.networkId) return this.refuse(viewer, 'R16', 'unknown');
+    const current = await this.db.first<{ id: string }>('SELECT id FROM life_tables WHERE network_id = ? ORDER BY imported_at DESC, vintage DESC LIMIT 1', [
+      viewer.networkId,
+    ]);
+    const fiches = new Map<string, { ok: true; view: string } | { ok: false; rule: 'R16'; code: string; mine: boolean }>();
+    const out: ViagerOfProperty[] = [];
+    // Le plafond compte les calculs que l'appelant voit : les calculs plus récents d'autres agents, qu'il ne lit pas, ne
+    // cachent jamais les siens. Lus par lots, jusqu'à 50 visibles ou la fin de l'historique du bien.
+    for (let offset = 0; out.length < VIAGER_LIST_LIMIT; offset += VIAGER_SCAN_BATCH) {
+      const rows = await this.db.all<ViagerRow>(
+        'SELECT * FROM viager_calculations WHERE network_id = ? AND property_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
+        [viewer.networkId, propertyId, VIAGER_SCAN_BATCH, offset],
+      );
+      for (const row of rows) {
+        if (out.length >= VIAGER_LIST_LIMIT) break;
+        const calc = toStored(row);
+        if ((await this.visible(acces, viewer, calc, fiches, read.view)) !== null) continue;
+        const replayed = await this.replayRow(row);
+        const cited = citedTable(calc.inputs);
+        out.push({ calculation: calc, replay: replayed.same ? 'identique' : 'ecart', tableReplaced: cited !== null && cited !== (current?.id ?? null) });
+      }
+      if (rows.length < VIAGER_SCAN_BATCH) break;
+    }
+    // Le journal ne garde ni montant ni âge : le bien et le nombre de calculs relus.
+    await appendEvent(
+      this.journal,
+      { type: 'viager.calculs_relus', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `property:${propertyId}`, data: { count: out.length } },
+      this.now,
+    );
+    return { ok: true, value: out };
   }
 
   /**
@@ -496,11 +590,15 @@ export class Viager {
   async replay(networkId: string, id: string): Promise<{ same: boolean; result: ViagerResult } | null> {
     const row = await this.db.first<ViagerRow>('SELECT * FROM viager_calculations WHERE id = ? AND network_id = ?', [id, networkId]);
     if (!row) return null;
+    return this.replayRow(row);
+  }
+
+  private async replayRow(row: ViagerRow): Promise<{ same: boolean; result: ViagerResult }> {
     const inputs = JSON.parse(row.inputs) as ViagerInputs;
     const result = computeViager(inputs, row.created_at);
     let tableSame = true;
     if (inputs.expectancies !== null && inputs.headAges !== null) {
-      const tableId = /^table:([^ ]+) /.exec(inputs.expectancies.source)?.[1] ?? '';
+      const tableId = citedTable(inputs) ?? '';
       for (const [i, age] of inputs.headAges.value.entries()) {
         const r = await this.db.first<{ expectancy_tenths: number }>('SELECT expectancy_tenths FROM life_table_rows WHERE table_id = ? AND age = ?', [tableId, age]);
         if (!r || r.expectancy_tenths !== inputs.expectancies.value[i]) tableSame = false;
