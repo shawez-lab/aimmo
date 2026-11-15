@@ -214,6 +214,20 @@ const ROUTES: NeufViagerRoute[] = [
       return reply(await c.viager.read(c.acces, v, id!));
     },
   },
+  /*
+   * BR84 : les calculs rangés d'un bien, du plus récent au plus ancien, 50 au plus, chacun dit s'il se rejoue à
+   * l'identique et si sa table d'espérance a été remplacée ; sous les droits de la relecture d'un calcul [R540, R541, R16].
+   */
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/viager/biens/${ID}/calculs$`),
+    name: 'viager.bien.calculs',
+    roles: WRITERS,
+    handle: async (s, v, [id]) => {
+      const c = core(s);
+      return reply(await c.viager.listForProperty(c.acces, v, id!));
+    },
+  },
   { method: 'GET', pattern: new RegExp(`^/viager/calculs/${ID}/rejeu$`), name: 'viager.calcul.rejeu', roles: WRITERS, handle: async (s, v, [id]) => reply(await replay(s, v, id!)) },
   {
     method: 'POST',

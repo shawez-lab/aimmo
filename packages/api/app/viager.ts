@@ -13,6 +13,11 @@ import { VIAGER_NOTICE } from '../../core/src/neuf-viager/index.ts';
  * [R542]. Un refus se dit en mots, jamais par son code ; un calcul sans réponse est dit incertain. Le dernier calcul
  * d'un bien reste en mémoire le temps de l'écran : revenir aux projets puis rouvrir le bien le montre et le rejoue. Tout texte reçu est
  * posé avec `textContent` ; rien n'est gardé sur l'appareil.
+ *
+ * BR84 : à l'ouverture d'un bien, ses calculs déjà rangés sont lus par `GET /v1/viager/biens/<id>/calculs`, du plus
+ * récent au plus ancien ; chacun dit en mots s'il se rejoue à l'identique et si la table d'espérance qu'il cite a été
+ * remplacée, et se rouvre pour être relu, rejoué, ou proposé à l'expert [R540, R541]. Une réponse arrivée après qu'un
+ * autre bien a été ouvert est jetée.
  */
 
 /** Le nom de chaque ligne du calcul ; une ligne d'un autre nom n'est pas montrée. */
@@ -67,6 +72,14 @@ export const VIAGER_TABLE_CHANGED = 'Écart : la table d’espérance citée par
 export const VIAGER_EXPERT_DONE =
   'Tirage fait : les experts du viager proposés sont dans l’écran Partenaires, sous ce projet. Montrez-les au vendeur : c’est lui qui choisit, rien ne leur est envoyé.';
 
+/** BR84 : ce que dit chaque calcul rangé d'un bien, relu à l'ouverture : jamais une couleur seule. */
+export const VIAGER_STORED_SAME = 'Identique au rejeu : il redonne chaque chiffre au caractère près.';
+export const VIAGER_STORED_GAP = 'Écart au rejeu : il ne redonne plus les mêmes chiffres. Refaites-le avant de le montrer.';
+export const VIAGER_STORED_REPLACED = 'Table remplacée : la direction a importé depuis une table d’espérance plus récente. Refaites-le pour la suivre.';
+export const VIAGER_STORED_NONE = 'Aucun calcul rangé pour ce bien.';
+export const VIAGER_STORED_LOST = 'Les calculs déjà rangés ne sont pas arrivés : rien n’est sûr. Rouvrez le bien dans un moment.';
+export const VIAGER_STORED_LIMIT = 50;
+
 export const VIAGER_SCRIPT = `'use strict';
 globalThis.AIMMO_VIAGER = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button;
@@ -76,6 +89,8 @@ globalThis.AIMMO_VIAGER = function (t) {
   var OFFLINE = ${JSON.stringify(VIAGER_OFFLINE)}, LOST = ${JSON.stringify(VIAGER_LOST)}, NONE = ${JSON.stringify(VIAGER_NONE)};
   var NO_TABLE = ${JSON.stringify(VIAGER_NO_TABLE)}, MISSING = ${JSON.stringify(VIAGER_MISSING)}, SAME = ${JSON.stringify(VIAGER_SAME)};
   var TABLE_CHANGED = ${JSON.stringify(VIAGER_TABLE_CHANGED)}, EXPERT_DONE = ${JSON.stringify(VIAGER_EXPERT_DONE)};
+  var S_SAME = ${JSON.stringify(VIAGER_STORED_SAME)}, S_GAP = ${JSON.stringify(VIAGER_STORED_GAP)}, S_REPLACED = ${JSON.stringify(VIAGER_STORED_REPLACED)};
+  var S_NONE = ${JSON.stringify(VIAGER_STORED_NONE)}, S_LOST = ${JSON.stringify(VIAGER_STORED_LOST)}, S_LIMIT = ${VIAGER_STORED_LIMIT};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, CP = /^\\d{5}$/;
   var root = null, load = 0, page = 0, last = {};
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -233,6 +248,54 @@ globalThis.AIMMO_VIAGER = function (t) {
     box.appendChild(said);
     return box;
   }
+  /** Montre un calcul dans une seule place à la fois : l'autre est vidée, pour qu'un seul résultat soit à l'écran. */
+  function showIn(ctx, target, calc) {
+    ctx.places.forEach(function (x) { clear(x); });
+    result(target, calc, ctx);
+  }
+  /** BR84 : les calculs déjà rangés du bien, chacun dit s'il tient encore, et se rouvre [R540, R541]. */
+  function stored(box, b, ctx) {
+    var sec = el('section', null, 'bloc');
+    sec.appendChild(el('h4', 'Calculs déjà rangés pour ce bien'));
+    var said = note('');
+    var ul = el('ul', null, 'liste');
+    var place = el('div');
+    ctx.places.push(place);
+    sec.appendChild(said);
+    sec.appendChild(ul);
+    sec.appendChild(place);
+    box.appendChild(sec);
+    var turn = 0;
+    function read() {
+      var mine = ++turn;
+      clear(ul);
+      said.textContent = 'Chargement des calculs rangés…';
+      return send('/v1/viager/biens/' + encodeURIComponent(b.propertyId) + '/calculs', 'GET').then(function (x) {
+        // Une réponse d'un bien quitté, ou d'une lecture plus ancienne, est jetée.
+        if (x.gone || ctx.mine !== load || mine !== turn) return;
+        if (x.offline || !x.body || x.status >= 500) { said.textContent = S_LOST; return; }
+        var d = x.ok && Array.isArray(x.body.data) ? x.body.data : null;
+        if (!d) { said.textContent = refusal(x, 'Les calculs rangés ne se lisent pas pour le moment.'); return; }
+        d.forEach(function (o) {
+          var c = o && typeof o === 'object' && o.calculation && typeof o.calculation === 'object' ? o.calculation : null;
+          var when = c ? day(str(c.createdAt).slice(0, 10)) : '';
+          if (!c || !ID.test(str(c.id)) || c.propertyId !== b.propertyId || !when || (o.replay !== 'identique' && o.replay !== 'ecart') || typeof o.tableReplaced !== 'boolean') return;
+          var r = c.result && typeof c.result === 'object' ? c.result : {};
+          var bq = r.status === 'complet' ? find(r, 'bouquet') : null, rent = r.status === 'complet' ? find(r, 'monthlyRent') : null;
+          var li = el('li');
+          li.appendChild(el('strong', 'Calcul du ' + when));
+          li.appendChild(el('p', bq && rent ? 'Bouquet ' + shown(bq) + ', puis ' + shown(rent) + ' par mois.' : 'Incomplet : aucun chiffre.', 'doux'));
+          li.appendChild(el('p', o.replay === 'identique' ? S_SAME : S_GAP, 'etat'));
+          if (o.tableReplaced) li.appendChild(el('p', S_REPLACED, 'etat'));
+          li.appendChild(button('Relire le calcul du ' + when, function () { showIn(ctx, place, c); }));
+          ul.appendChild(li);
+        });
+        said.textContent = !ul.children.length ? S_NONE : d.length >= S_LIMIT ? 'Les ' + S_LIMIT + ' derniers calculs de ce bien, du plus récent au plus ancien.' : '';
+      });
+    }
+    read();
+    return read;
+  }
   function form(p, b) {
     if (!root) return;
     var box = root, mine = ++load;
@@ -240,7 +303,8 @@ globalThis.AIMMO_VIAGER = function (t) {
     box.appendChild(button('Retour aux projets', function () { list(); }));
     box.appendChild(el('h4', 'Viager du bien ' + b.reference + (str(b.city) ? ', ' + b.city : '')));
     box.appendChild(notice());
-    var ctx = { mine: mine, postcode: b.postcode };
+    var ctx = { mine: mine, postcode: b.postcode, places: [] };
+    var reread = stored(box, b, ctx);
     var f = {
       value: field(box, 'viager-valeur', 'Valeur libre du bien (€)', 'decimal'),
       valueWhy: field(box, 'viager-valeur-source', 'D’où vient cette valeur (avis de valeur, date…)'),
@@ -264,6 +328,7 @@ globalThis.AIMMO_VIAGER = function (t) {
     box.appendChild(el('p', 'L’espérance de vie ne se saisit pas : elle vient de la table importée par la direction.', 'doux'));
     var said = note('');
     var place = el('div');
+    ctx.places.push(place);
     var go = button('Calculer', function () {
       if (go.disabled) return;
       var v = hundredths(f.value.value), bq = hundredths(f.bouquet.value), rt = hundredths(f.rate.value), a1 = age(f.age1.value);
@@ -289,14 +354,15 @@ globalThis.AIMMO_VIAGER = function (t) {
         if (!calc) { said.textContent = refusal(x, 'Le calcul n’a pas été fait.'); return; }
         last[b.propertyId] = calc;
         said.textContent = 'Calcul rangé le ' + day(str(calc.createdAt).slice(0, 10)) + '.';
-        result(place, calc, ctx);
+        showIn(ctx, place, calc);
+        reread();
       });
     });
     box.appendChild(go);
     box.appendChild(said);
     box.appendChild(place);
     // Le dernier calcul de ce bien, fait pendant cette ouverture, reste lisible et rejouable au retour : rien n'est gardé sur l'appareil.
-    if (own(last, b.propertyId)) { said.textContent = 'Dernier calcul de ce bien, rangé le ' + day(str(last[b.propertyId].createdAt).slice(0, 10)) + '.'; result(place, last[b.propertyId], ctx); }
+    if (own(last, b.propertyId)) { said.textContent = 'Dernier calcul de ce bien, rangé le ' + day(str(last[b.propertyId].createdAt).slice(0, 10)) + '.'; showIn(ctx, place, last[b.propertyId]); }
   }
   function list() {
     if (!root) return Promise.resolve(false);

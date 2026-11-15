@@ -65,7 +65,7 @@ const LOT = { lotRef: 'A01', typology: 't3', livingAreaHundredths: 6500, floor: 
 
 it('BR75 · chaque route nomme ses rôles, sous /neuf et /viager', () => {
   const routes = neufViagerRoutes();
-  expect(routes.length).toBe(12);
+  expect(routes.length).toBe(13);
   for (const r of routes) {
     expect(r.name).toMatch(/^(neuf|viager)\./);
     expect(r.roles.length).toBeGreaterThan(0);
@@ -87,6 +87,7 @@ describeWithSqlite('BR75 · routes du neuf et du viager', () => {
       ['conf', 'GET', '/viager/calculs/c-1'],
       ['conf', 'GET', '/viager/calculs/c-1/rejeu'],
       ['conf', 'POST', '/viager/calculs/c-1/expert', {}],
+      ['conf', 'GET', '/viager/biens/b-1/calculs'],
     ];
     for (const [who, method, path, body] of cases) {
       const before = (await t.events('acces.refuse')).length;
@@ -235,5 +236,55 @@ describeWithSqlite('BR75 · routes du neuf et du viager', () => {
     expect(await t.count('messages')).toBe(0);
     // Un autre agent ne propose rien sur le calcul d'Alex.
     expect((await t.call('sam', 'POST', `/viager/calculs/${withProject}/expert`, {})).status).toBe(403);
+  });
+
+  it('BR84 · [R16] [R540] [R541] les calculs rangés d’un bien, du plus récent au plus ancien, chacun dit s’il tient encore', async () => {
+    const t = await setup();
+    await t.call('dir', 'POST', '/viager/tables', TABLE);
+    const first = (await t.call('alex', 'POST', '/viager/calculs', { propertyId: t.property, projectId: t.project, inputs: TYPED })).body.data.id as string;
+    const second = (await t.call('alex', 'POST', '/viager/calculs', { propertyId: t.property, projectId: t.project, inputs: { ...TYPED, bouquet: { value: 2_000_000, hypothesis: 'second essai' } } }))
+      .body.data.id as string;
+    // Un calcul sans bien n'est jamais dans la liste du bien.
+    await t.call('alex', 'POST', '/viager/calculs', { inputs: TYPED });
+
+    const listed = await t.call('alex', 'GET', `/viager/biens/${t.property}/calculs`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.data.map((o: { calculation: { id: string } }) => o.calculation.id)).toEqual([second, first]);
+    for (const o of listed.body.data) expect([o.replay, o.tableReplaced]).toEqual(['identique', false]);
+    expect((await t.call('dir', 'GET', `/viager/biens/${t.property}/calculs`)).body.data).toHaveLength(2);
+    const read = await t.events('viager.calculs_relus');
+    expect(read.at(-1)!.data).toEqual({ count: 2 });
+    expect(JSON.stringify(read)).not.toContain('20000000');
+
+    // Une table plus récente importée : chaque calcul dit « table remplacée » [R541].
+    await t.call('dir', 'POST', '/viager/tables', { ...TABLE, vintage: '2025', source: 'Seconde table inventée, ensemble des deux sexes' });
+    const after = await t.call('alex', 'GET', `/viager/biens/${t.property}/calculs`);
+    for (const o of after.body.data) expect(o.tableReplaced).toBe(true);
+    // Un calcul rangé qui cite une table que le réseau n'a pas : écart au rejeu, jamais « identique » [R540].
+    await t.db.run(
+      `INSERT INTO viager_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
+       SELECT 'calc-br84', network_id, property_id, project_id, replace(inputs, '"table:', '"table:x'), status, result, formula_version, created_by, '2099-01-01T00:00:00.000Z'
+       FROM viager_calculations WHERE id = ?`,
+      [first],
+    );
+    const moved = await t.call('alex', 'GET', `/viager/biens/${t.property}/calculs`);
+    expect(moved.body.data.map((o: { calculation: { id: string }; replay: string }) => [o.calculation.id, o.replay])).toEqual([
+      ['calc-br84', 'ecart'],
+      [second, 'identique'],
+      [first, 'identique'],
+    ]);
+
+    // Un autre agent ne lit pas le bien d'Alex ; un bien inconnu est refusé ; rien de relu n'est journalisé [R16].
+    const before = (await t.events('viager.calculs_relus')).length;
+    const other = await t.call('sam', 'GET', `/viager/biens/${t.property}/calculs`);
+    expect(other.status).toBe(403);
+    expect(other.body.data).toBeUndefined();
+    const unknown = await t.call('alex', 'GET', '/viager/biens/inconnu/calculs');
+    expect([unknown.status, unknown.body.ok]).toEqual([404, false]);
+    expect((await t.call('alex', 'GET', '/viager/biens/a.b/calculs')).status).toBe(404);
+    expect((await t.events('viager.calculs_relus')).length).toBe(before);
+    // Un agent sorti : refusé par l'application entière.
+    await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex]);
+    expect((await t.call('alex', 'GET', `/viager/biens/${t.property}/calculs`)).status).toBe(403);
   });
 });
