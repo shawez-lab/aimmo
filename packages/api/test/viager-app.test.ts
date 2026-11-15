@@ -12,6 +12,11 @@ import {
   VIAGER_REFUSALS,
   VIAGER_SAME,
   VIAGER_SCRIPT,
+  VIAGER_STORED_GAP,
+  VIAGER_STORED_LOST,
+  VIAGER_STORED_NONE,
+  VIAGER_STORED_REPLACED,
+  VIAGER_STORED_SAME,
   VIAGER_TABLE_CHANGED,
 } from '../app/viager.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
@@ -66,6 +71,8 @@ const BASE: Record<string, Answer> = {
   'POST /v1/viager/calculs': ok(CALC),
   'GET /v1/viager/calculs/c1/rejeu': ok({ same: true, result: FULL }),
   'POST /v1/viager/calculs/c1/expert': ok({ referralId: 'r1' }),
+  'GET /v1/viager/biens/b1/calculs': ok([]),
+  'GET /v1/viager/biens/b2/calculs': ok([]),
 };
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
@@ -169,7 +176,7 @@ describe('BR81 · le calcul de viager à l’écran de l’agent', () => {
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
     expect(VIAGER_SCRIPT).not.toMatch(/innerHTML|insertAdjacentHTML|document\.write|localStorage|eval\(/);
     const routes = [...VIAGER_SCRIPT.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
-    expect([...new Set(routes)].sort()).toEqual(['/v1/partenaires/projets', '/v1/viager/calculs', '/v1/viager/calculs/']);
+    expect([...new Set(routes)].sort()).toEqual(['/v1/partenaires/projets', '/v1/viager/biens/', '/v1/viager/calculs', '/v1/viager/calculs/']);
   });
 
   it('[R16] seuls les projets de vente avec un bien rendu sont offerts ; texte reçu posé en texte, entrée mal formée tue ; aucun : dit en mots', async () => {
@@ -326,3 +333,91 @@ describe('BR81 · le calcul de viager à l’écran de l’agent', () => {
     expect(none.status()).toContain(VIAGER_REFUSALS.no_partner);
   });
 });
+
+// BR84 : un calcul plus ancien, rangé une autre fois, et un incomplet ; chacun avec ce que dit son rejeu.
+const OLD = { ...CALC, id: 'c0', createdAt: '2027-02-01T09:00:00Z' };
+const BARE = { ...CALC, id: 'c2', inputs: TYPED(null), result: EMPTY, createdAt: '2027-01-15T09:00:00Z' };
+const STORED = [
+  { calculation: CALC, replay: 'identique', tableReplaced: false },
+  { calculation: OLD, replay: 'ecart', tableReplaced: true },
+  { calculation: BARE, replay: 'identique', tableReplaced: false },
+  // Mal formés : jamais dits.
+  { calculation: { ...CALC, id: '../x' }, replay: 'identique', tableReplaced: false },
+  { calculation: { ...CALC, id: 'c9', propertyId: 'b2' }, replay: 'identique', tableReplaced: false },
+  { calculation: { ...CALC, id: 'c8' }, replay: 'peut-etre', tableReplaced: false },
+  { calculation: { ...CALC, id: 'c7', createdAt: 'hier' }, replay: 'identique', tableReplaced: false },
+];
+
+describe('BR84 · les calculs de viager d’un bien relus à l’écran de l’agent', () => {
+  it('[R540] [R541] à l’ouverture du bien, ses calculs rangés, du plus récent au plus ancien, chacun dit en mots s’il tient encore', async () => {
+    const t = await run({ 'GET /v1/viager/biens/b1/calculs': ok(STORED) });
+    await t.bien();
+    expect(t.mine().map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/partenaires/projets', 'GET /v1/viager/biens/b1/calculs']);
+    const sec = t.part().all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Calculs déjà rangés pour ce bien')!;
+    const items = sec.all().filter((e) => e.tagName === 'ul')[0]!.children;
+    expect(items.map((li) => li.children[0]!.textContent)).toEqual(['Calcul du 10/03/2027', 'Calcul du 01/02/2027', 'Calcul du 15/01/2027']);
+    expect(items[0]!.textContent).toContain('Bouquet 50 000 €, puis');
+    expect(items[0]!.textContent).toContain(VIAGER_STORED_SAME);
+    expect(items[0]!.textContent).not.toContain(VIAGER_STORED_REPLACED);
+    expect(items[1]!.textContent).toContain(VIAGER_STORED_GAP);
+    expect(items[1]!.textContent).toContain(VIAGER_STORED_REPLACED);
+    expect(items[2]!.textContent).toContain('Incomplet : aucun chiffre.');
+    // Chaque état est dit en mots, sur une ligne à lui, jamais par une couleur seule.
+    for (const text of [VIAGER_STORED_SAME, VIAGER_STORED_GAP, VIAGER_STORED_REPLACED]) expect(sec.all().some((e) => e.tagName === 'p' && e.textContent === text)).toBe(true);
+    expect(sec.textContent).not.toContain('agent:alex');
+    expect(sec.textContent).not.toContain('t-1');
+    // Le formulaire reste là, sous la liste : rien n'est calculé à l'ouverture.
+    expect(t.input('viager-valeur')).toBeDefined();
+    expect(t.mine().filter((c) => c.method === 'POST')).toEqual([]);
+  });
+
+  it('[R540] un calcul de la liste se rouvre pour être relu, rejoué et proposé à l’expert ; un seul résultat à l’écran', async () => {
+    const t = await run({ 'GET /v1/viager/biens/b1/calculs': ok(STORED), 'GET /v1/viager/calculs/c0/rejeu': ok({ same: false, result: FULL }) });
+    await t.bien();
+    await t.click(t.buttons(t.part(), 'Relire le calcul du 01/02/2027')[0]);
+    expect(t.part().all().filter((e) => e.tagName === 'h4' && e.textContent === 'Résultat du calcul')).toHaveLength(1);
+    expect(t.part().textContent).toContain('Bouquet : 50 000 €');
+    await t.click(t.buttons(t.part(), 'Rejouer le calcul')[0]);
+    expect(t.mine().some((c) => c.url === '/v1/viager/calculs/c0/rejeu')).toBe(true);
+    expect(t.status()).toContain(VIAGER_TABLE_CHANGED);
+    // Un nouveau calcul prend la place : toujours un seul résultat, et la liste est relue.
+    t.fill();
+    await t.click(t.buttons(t.part(), 'Calculer')[0]);
+    expect(t.part().all().filter((e) => e.tagName === 'h4' && e.textContent === 'Résultat du calcul')).toHaveLength(1);
+    expect(t.mine().filter((c) => c.url === '/v1/viager/biens/b1/calculs')).toHaveLength(2);
+    expect(t.part().all().filter((e) => e.attributes.id === 'viager-cp')).toHaveLength(0);
+    // L'incomplet se relit sans chiffre, et sa raison dite [R541].
+    await t.click(t.buttons(t.part(), 'Relire le calcul du 15/01/2027')[0]);
+    expect(t.status()).toContain(VIAGER_NO_TABLE);
+    expect(t.buttons(t.part(), 'Rejouer le calcul')).toHaveLength(0);
+  });
+
+  it('[R16] aucun calcul, réponse perdue ou refus dits en mots ; la réponse d’un bien quitté est jetée', async () => {
+    const none = await run();
+    await none.bien();
+    expect(none.status()).toContain(VIAGER_STORED_NONE);
+    const lost = await run({ 'GET /v1/viager/biens/b1/calculs': cut });
+    await lost.bien();
+    expect(lost.status()).toContain(VIAGER_STORED_LOST);
+    expect(lost.input('viager-valeur')).toBeDefined();
+    const down = await run({ 'GET /v1/viager/biens/b1/calculs': no(503, { ok: false, code: 'unavailable' }) });
+    await down.bien();
+    expect(down.status()).toContain(VIAGER_STORED_LOST);
+    const refused = await run({ 'GET /v1/viager/biens/b1/calculs': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
+    await refused.bien();
+    expect(refused.status()).toContain(VIAGER_REFUSALS.not_assigned);
+    expect(refused.status()).not.toContain('not_assigned');
+
+    // La liste du premier bien arrive après l'ouverture du second : jetée.
+    let release: (r: Response) => void = () => {};
+    const late = await run({ 'GET /v1/viager/biens/b1/calculs': () => new Promise<Response>((r) => (release = r)) });
+    await late.bien();
+    await late.click(late.buttons(late.part(), 'Retour aux projets')[0]);
+    await late.click(late.buttons(late.part(), 'Viager du bien V-102')[0]);
+    release(Response.json({ ok: true, mode: 'essai', data: STORED }));
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(late.part().textContent).not.toContain('Calcul du 10/03/2027');
+    expect(late.status()).toContain(VIAGER_STORED_NONE);
+  });
+});
+
