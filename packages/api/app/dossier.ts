@@ -176,45 +176,61 @@ globalThis.AIMMO_DOSSIER = function (t) {
       drawSchedule(all[2].body.data, live);
       drawFinancing(all[4].body.data, live);
       drawCopro();
+      drawPreContract();
       if (live) { drawAct(all[2].body.data); drawStop(); }
       return true;
     });
   }
-  /* BR88 : la copropriété et l'urbanisme résumés, script servi à part et chargé au premier geste [R201]. */
-  var copro = null;
-  function drawCopro() {
+  /* BR88, BR90, BR91 : un bloc dont le script est servi à part et chargé au premier geste, une seule fois [R201]. */
+  var lazy = {};
+  function drawLazy(title, src, name, gestures) {
     var box = el('section', null, 'bloc');
-    box.appendChild(el('h3', 'Copropriété et urbanisme'));
+    box.appendChild(el('h3', title));
     var inner = el('div');
-    var id = cur.id;
-    /* BR90 : le même script lit le résumé ou en prépare un nouveau depuis les PDF déposés. */
-    function withCopro(btn, act) {
+    var id = cur.id, buttons = [];
+    function withScript(btn, act) {
       if (btn.disabled) return;
-      if (copro) { act(copro); return; }
-      b.disabled = true;
-      p.disabled = true;
+      if (lazy[name]) { act(lazy[name]); return; }
+      function hold(v) { buttons.forEach(function (x) { x.disabled = v; }); }
+      hold(true);
       var mine = t.session();
       var s = el('script');
-      s.setAttribute('src', '/app/copropriete.js');
+      s.setAttribute('src', src);
       s.addEventListener('load', function () {
-        var make = globalThis.AIMMO_COPROPRIETE;
-        try { delete globalThis.AIMMO_COPROPRIETE; } catch (e) { /* rien */ }
-        b.disabled = false;
-        p.disabled = false;
+        var make = globalThis[name];
+        try { delete globalThis[name]; } catch (e) { /* rien */ }
+        hold(false);
         if (mine !== t.session()) return;
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
-        copro = make({ el: el, clear: clear, send: send, session: t.session, sendPdf: function (url, file) { return sendFile(url, file, { 'content-type': 'application/pdf' }); } });
-        act(copro);
+        lazy[name] = make({ el: el, clear: clear, send: send, session: t.session, sendPdf: function (url, file) { return sendFile(url, file, { 'content-type': 'application/pdf' }); }, proof: proofFile, refresh: function (m) { return load(m); } });
+        act(lazy[name]);
       });
-      s.addEventListener('error', function () { b.disabled = false; p.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      s.addEventListener('error', function () { hold(false); if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     }
-    var b = button('Lire le résumé de copropriété et d’urbanisme', function () { withCopro(b, function (c) { c.show(inner, id); }); });
-    var p = button('Préparer un nouveau résumé depuis les PDF', function () { withCopro(p, function (c) { c.compose(inner, id); }); });
-    box.appendChild(b);
-    box.appendChild(p);
+    gestures.forEach(function (g) {
+      var b = button(g[0], function () { withScript(b, function (c) { c[g[1]](inner, id); }); });
+      buttons.push(b);
+      box.appendChild(b);
+    });
     box.appendChild(inner);
     body().appendChild(box);
+  }
+  function drawCopro() {
+    drawLazy('Copropriété et urbanisme', '/app/copropriete.js', 'AIMMO_COPROPRIETE', [['Lire le résumé de copropriété et d’urbanisme', 'show'], ['Préparer un nouveau résumé depuis les PDF', 'compose']]);
+  }
+  function drawPreContract() {
+    drawLazy('Avant-contrat', '/app/avant-contrat.js', 'AIMMO_AVANT_CONTRAT', [['Ouvrir l’avant-contrat : note, projet du notaire, dépôt', 'show']]);
+  }
+  /* BR91 : une preuve déposée telle quelle au dossier, avec son empreinte ; rend la réponse du serveur, ou { refused } en mots. */
+  function proofFile(file) {
+    var type = String((file && file.type) || '').toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(TYPES, type)) return Promise.resolve({ refused: NO.type_refuse });
+    if (file.size > MAX) return Promise.resolve({ refused: NO.trop_lourd });
+    var mine = t.session();
+    return file.arrayBuffer().then(function (buf) { return crypto.subtle.digest('SHA-256', buf); }).then(function (sum) {
+      return mine !== t.session() ? { gone: true } : upload('/preuves', file, type, hex(sum));
+    }, function () { return { refused: 'Ce fichier ne se lit pas sur ce téléphone.' }; });
   }
   function itemName(item) { return PIECES[item] || DEADLINES[item] || ITEMS[item] || ''; }
   function lineText(l, identity) {

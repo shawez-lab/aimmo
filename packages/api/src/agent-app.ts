@@ -64,6 +64,7 @@ import { RECLAMATIONS_SCRIPT } from '../app/reclamations.ts';
 import { RECLAMATIONS_REGLAGE_SCRIPT } from '../app/reclamations-reglage.ts';
 import { GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { COPROPRIETE_SCRIPT } from '../app/copropriete.ts';
+import { AVANT_CONTRAT_SCRIPT } from '../app/avant-contrat.ts';
 import { REMISES_SCRIPT } from '../app/remises.ts';
 import { NEUF_SCRIPT } from '../app/neuf.ts';
 import { NEUF_DIRECTION_SCRIPT } from '../app/neuf-direction.ts';
@@ -223,6 +224,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/gel-registre.js': { body: GEL_REGISTRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La copropriété et l'urbanisme résumés (BR88), chargés depuis « Dossier de vente », jamais gardés [R201].
   '/app/copropriete.js': { body: COPROPRIETE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // L'avant-contrat (BR91), chargé depuis « Dossier de vente », jamais gardé [R201].
+  '/app/avant-contrat.js': { body: AVANT_CONTRAT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les remises négociées (BR73), chargées depuis « Engagements de service » ou « Mettre en vente », jamais gardées [R201].
   '/app/remises.js': { body: REMISES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/phases.js': { body: PHASES_SCRIPT, type: 'text/javascript; charset=utf-8' },
