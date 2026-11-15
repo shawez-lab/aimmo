@@ -353,6 +353,8 @@ export class ContenusRepriseAgence {
         entiere.update(octets);
         tranches.push({ debut, taille: longueur, sha256: await sha256Hex(octets) });
       }
+      // Une pièce vide a une tranche, vide, à 0 : celle que remet `remettreTranche`.
+      if (total === 0) tranches.push({ debut: 0, taille: 0, sha256: await sha256Hex(new Uint8Array()) });
       // La taille relue à la fin : une pièce changée pendant la lecture n'a pas d'empreinte [R663].
       if ((await this.tailleDe(f.ref)) !== total) return { statut: 'absente', ...none };
       return { statut: 'prete', taille: total, sha256: entiere.hex(), tranches };
@@ -412,6 +414,8 @@ export class ContenusRepriseAgence {
       const longueur = Math.min(this.trancheOctets, total - debut);
       const octets = longueur === 0 ? new Uint8Array() : await this.plage(f.ref, debut, longueur);
       if (octets === null) return { ...base, statut: 'absente', total, ...none };
+      // La taille relue après la lecture : une pièce qui a grandi ou rapetissé pendant ce temps ne remet rien [R663].
+      if ((await this.tailleDe(f.ref)) !== total) return { ...base, statut: 'absente', total: null, ...none };
       const sha256 = await sha256Hex(octets);
       if (attendue !== undefined && sha256 !== attendue) return { ...base, statut: 'alteree', total, ...none };
       const suite = debut + longueur < total ? debut + longueur : null;

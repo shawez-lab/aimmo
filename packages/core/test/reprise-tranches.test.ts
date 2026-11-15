@@ -249,6 +249,18 @@ describeWithSqlite('RC46 · Une pièce trop grosse pour un lot, remise en tranch
     t.storage.rangeShift = 1;
     await absente();
     t.storage.rangeShift = 0;
+    // La pièce change de taille pendant la lecture d'une tranche dont la plage garde sa longueur : rien remis.
+    t.storage.onRange = (_ref, debut) => {
+      if (debut === 200) t.store.set('stock/lac/visite.mp4', concat([VIDEO, new Uint8Array(7)]));
+    };
+    expect(await t.contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', i, 200)).toMatchObject({ ok: true, value: { statut: 'absente', total: null, contenu: null, suite: null } });
+    t.store.set('stock/lac/visite.mp4', VIDEO.subarray(0, 900).slice());
+    t.storage.onRange = (_ref, debut) => {
+      if (debut === 200) t.store.set('stock/lac/visite.mp4', VIDEO.slice());
+    };
+    expect(await t.contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', i, 200)).toMatchObject({ ok: true, value: { statut: 'absente', contenu: null } });
+    t.storage.onRange = undefined;
+    t.store.set('stock/lac/visite.mp4', VIDEO.slice());
     // Le stockage en panne.
     t.storage.broken = true;
     await absente();
@@ -288,11 +300,15 @@ describeWithSqlite('RC46 · Une pièce trop grosse pour un lot, remise en tranch
     const vide = t.indexOf('stock/lac/vide.ogg');
     const e = await t.contenus.empreintePiece(t.lacDirection, t.copy(), 'preuve-ok', vide);
     if (!e.ok) throw new Error(e.code);
-    expect(e.value).toMatchObject({ statut: 'prete', taille: 0, sha256: await hex(new Uint8Array()), tranches: [] });
-    const r = await t.contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', vide, 0);
+    const empty = await hex(new Uint8Array());
+    expect(e.value).toMatchObject({ statut: 'prete', taille: 0, sha256: empty, tranches: [{ debut: 0, taille: 0, sha256: empty }] });
+    const r = await t.contenus.remettreTranche(t.lacDirection, t.copy(), 'preuve-ok', vide, 0, empty);
     if (!r.ok) throw new Error(r.code);
     expect(r.value).toMatchObject({ statut: 'remise', taille: 0, total: 0, suite: null });
-    expect(await pieceRecomposee(e.value, [])).toBe(true);
+    // La pièce vide se vérifie comme les autres : sa tranche vide, puis la pièce recomposée.
+    expect(await trancheIntacte(e.value, r.value)).toBe(true);
+    expect(await pieceRecomposee(e.value, [r.value.contenu!])).toBe(true);
+    expect(await pieceRecomposee(e.value, [])).toBe(false);
   });
 
   it('[R659] place mal formée, hors de la pièce, pas au bord d’une tranche, empreinte attendue mal formée : refus, rien lu', async () => {
