@@ -127,9 +127,11 @@ describe('BR88 · la copropriété et l’urbanisme relus à l’écran du dossi
     await t.show();
     expect(t.box.all().filter((e) => ['input', 'select', 'textarea', 'button'].includes(e.tagName))).toEqual([]);
     expect(t.calls.every((c) => c.method === 'GET' && c.body === undefined)).toBe(true);
-    const routes = [...COPROPRIETE_SCRIPT.matchAll(/'(\/v1\/[^']*|\/resume|\/acquereur|\/copropriete)'/g)].map((m) => m[1]!);
-    expect(new Set(routes)).toEqual(new Set(['/v1/dossiers/', '/copropriete', '/resume', '/acquereur']));
-    expect(COPROPRIETE_SCRIPT).not.toMatch(/'POST'|"POST"/);
+    // BR90 : les seuls envois sont le dépôt d'un PDF et la préparation, sous `/copropriete`, au second geste.
+    const routes = [...COPROPRIETE_SCRIPT.matchAll(/'(\/v1\/[^']*|\/[a-z]+|\/copropriete)'/g)].map((m) => m[1]!);
+    expect(new Set(routes)).toEqual(new Set(['/v1/dossiers/', '/copropriete', '/resume', '/acquereur', '/pdf']));
+    expect([...COPROPRIETE_SCRIPT.matchAll(/'POST'/g)]).toHaveLength(1);
+    expect(COPROPRIETE_SCRIPT).toContain("send(base + '/resume', 'POST', body)");
   });
 
   it('[R451] les travaux votés à dire à l’acquéreur sont les lignes du serveur, posées en texte ; aucun : dit en mots', async () => {
