@@ -1608,7 +1608,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR87 · Copropriété et urbanisme branchés au Worker, la zone lue au Géoportail en production (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#600, `f5b253a3`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6249 tests, `wrangler deploy --dry-run` compris). Restent (voie 1) : l'écran du dossier pour la prélecture et le résumé ; le lecteur IA de la prélecture attend H13.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC52
 - Cahier : M10 et M06, « copropriété et urbanisme résumés » (HX35) ; R448, R449, R451, R13, R16.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC52 (« brancher `coproprieteRoutes()` dans `app.ts` avec `BanGeocoder` et `GpuUrbanism` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La voie 2 est sur RC53 (`copropriete.ts`) : cette tâche ne touche ni `copropriete.ts` ni le cœur, seulement `app.ts`, `worker.ts`, `docs/API.md` et un test neuf ; toute route que RC53 ajoute à `coproprieteRoutes()` passera seule par le même branchement. Option neuve `copropriete` d'`ApiConfig` (géocodeur, Géoportail, lecteur IA) ; absente, le géocodeur de l'estimation et `GpuUrbanism` sur `fetchPublicData`, sinon rien et la zone est « non collectée ». Le Worker branche la Base adresse nationale et le Géoportail en GET seulement, sans aucun secret ; le lecteur IA reste absent (H13) : tout est à lire. Les routes ne sont pas ouvertes à l'agent au dossier incomplet [R82].
