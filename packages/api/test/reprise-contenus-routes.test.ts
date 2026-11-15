@@ -229,7 +229,7 @@ describeWithSqlite('BR82 · routes du contenu des fichiers de la reprise, en lot
     }
     expect(await pieceRecomposee(empreinte, parts)).toBe(true);
     // Un octet changé au stockage après l'empreinte : la tranche est « altérée », rien n'est rendu.
-    t.pieces.objects.get('stock/lac/visite.mp4')![TRANCHE_OCTETS + 3] ^= 0xff;
+    { const v = t.pieces.objects.get('stock/lac/visite.mp4')!; v[TRANCHE_OCTETS + 3] = v[TRANCHE_OCTETS + 3]! ^ 0xff; }
     const altered = await t.http('agence', 'POST', '/export/agence/contenus/tranche', { document: doc, stepUpId: await t.proof(), index: i, debut: TRANCHE_OCTETS, attendue: empreinte.tranches[1]!.sha256 });
     expect(altered).toMatchObject({ status: 200, body: { data: { statut: 'alteree', contenu: null } } });
     // Une place qui n'est pas au bord d'une tranche, une empreinte mal formée : refusées.
