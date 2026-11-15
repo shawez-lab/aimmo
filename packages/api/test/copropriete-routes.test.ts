@@ -133,6 +133,15 @@ describeWithSqlite('RC52 · copropriété et urbanisme résumés par la route', 
     const thrown = await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: DOCS, sentences: SENTENCES, address: ADDRESS }, { urbanism: { collect: async () => Promise.reject(new Error('délai')) } });
     expect(thrown.status).toBe(200);
     expect(thrown.body.data.urbanism).toMatchObject({ found: false, reason: 'panne' });
+    // Un service qui ne répond jamais : panne au bout du délai, le résumé se prépare quand même (remarque de Codex).
+    const never = () => new Promise<never>(() => undefined);
+    const slowBan = await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: DOCS, sentences: SENTENCES, address: ADDRESS }, { timeoutMs: 20, geocoder: { geocode: never } });
+    expect(slowBan.status).toBe(200);
+    expect(slowBan.body.data.urbanism).toMatchObject({ found: false, reason: 'panne' });
+    const slowGpu = await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: DOCS, sentences: SENTENCES, address: ADDRESS }, { timeoutMs: 20, urbanism: { collect: never } });
+    expect(slowGpu.status).toBe(200);
+    expect(slowGpu.body.data.urbanism).toMatchObject({ found: false, reason: 'panne' });
+    expect(await t.journalText()).toContain('geoportail_en_panne');
   });
 
   it('sans adresse ou sans services : zone non collectée', async () => {
@@ -190,6 +199,25 @@ describeWithSqlite('RC52 · copropriété et urbanisme résumés par la route', 
     expect((await t.call(t.agent, 'POST', `${t.base}/resume`, [1, 2])).body.code).toBe('invalid_body');
     const huge = JSON.stringify({ documents: [{ ...PLU, pages: ['x'.repeat(MAX_COPROPRIETE_BODY_BYTES)] }], sentences: [] });
     expect((await t.call(t.agent, 'POST', `${t.base}/resume`, undefined, {}, huge)).body.code).toBe('invalid_body');
+    // Sans longueur annoncée, un flux trop long est coupé au plafond, jamais lu en entier (remarque de Codex).
+    let pulled = 0;
+    const chunk = new Uint8Array(1024 * 1024).fill(32);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        if (pulled > 16 * chunk.byteLength) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const route = coproprieteRoutes().find((r) => r.name === 'copropriete.prelecture')!;
+    const streamed = await route.handle(
+      { db: t.db, journal: t.journal, now: t.now },
+      t.agent,
+      [t.fileId],
+      new Request('https://api.example.test/v1/x', { method: 'POST', body: stream, headers: { 'content-type': 'application/json' }, duplex: 'half' } as RequestInit),
+    );
+    expect(streamed.status).toBe(400);
+    expect(pulled).toBeLessThanOrEqual(MAX_COPROPRIETE_BODY_BYTES + 3 * chunk.byteLength);
     expect((await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: DOCS, sentences: SENTENCES, address: 12 })).body.code).toBe('invalid_address');
     expect((await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: DOCS, sentences: SENTENCES, address: 'x'.repeat(201) })).body.code).toBe('invalid_address');
     expect((await t.call(t.agent, 'POST', `${t.base}/resume`, { documents: 'non', sentences: [] })).body.code).toBe('bad_documents');

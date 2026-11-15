@@ -20,6 +20,7 @@ import { CoproprieteUrbanisme, PUBLIC_SOURCES, type PublicFact, type UrbanismVal
 import { LectureCopropriete, type CoproReader, type UrbanismPoint } from '../../core/src/documents/index.ts';
 import { gateSaleFile } from '../../core/src/dossiers/acces-dossier.ts';
 import type { Geocoder } from '../../core/src/estimation/collecte.ts';
+import { readCapped } from './studio.ts';
 
 export const TRIAL_MODE = 'essai';
 /** Le corps d'une requête : le texte des pages de 30 documents tient largement dans 4 Mo. */
@@ -27,6 +28,8 @@ export const MAX_COPROPRIETE_BODY_BYTES = 4 * 1024 * 1024;
 /** La confiance minimale du géocodage pour demander la zone : en dessous, l'adresse n'est pas sûre. */
 export const MIN_GEOCODE_SCORE = 0.6;
 const MAX_ADDRESS = 200;
+/** Le délai d'un service public (géocodage, Géoportail) : au-delà, il est en panne et le résumé se prépare sans lui. */
+export const PUBLIC_SERVICE_TIMEOUT_MS = 8_000;
 const ID = '([A-Za-z0-9_-]{1,64})';
 
 export interface CoproprieteServices {
@@ -40,6 +43,20 @@ export interface CoproprieteServices {
   geocoder?: Geocoder | null;
   /** Le Géoportail de l'urbanisme (`GpuUrbanism`) ; absent, la zone n'est pas collectée. */
   urbanism?: { collect(point: UrbanismPoint): Promise<PublicFact<UrbanismValue>> } | null;
+  /** Le délai de chaque service public ; `PUBLIC_SERVICE_TIMEOUT_MS` par défaut. */
+  timeoutMs?: number;
+}
+
+const TIMED_OUT = Symbol('délai');
+
+/** La réponse du service, ou `TIMED_OUT` s'il ne répond pas à temps : un service lent ne bloque jamais le résumé. */
+async function within<T>(ms: number, work: () => Promise<T>): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work(), new Promise<typeof TIMED_OUT>((resolve) => (timer = setTimeout(() => resolve(TIMED_OUT), ms)))]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 type Role = Viewer['role'];
@@ -78,10 +95,11 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(declared) && declared > MAX_COPROPRIETE_BODY_BYTES) return null;
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_COPROPRIETE_BODY_BYTES) return null;
+  // Lu par morceaux et coupé dès le plafond, même sans longueur annoncée : jamais tout en mémoire (remarque de Codex).
+  const bytes = await readCapped(request, MAX_COPROPRIETE_BODY_BYTES);
+  if (!bytes) return null;
   try {
-    const value: unknown = JSON.parse(text);
+    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   } catch {
     return null;
@@ -126,19 +144,25 @@ async function collectUrbanism(s: CoproprieteServices, propertyId: string, addre
     why,
   });
   const property = await s.db.first<{ postal_code: string | null }>('SELECT postal_code FROM properties WHERE id = ?', [propertyId]);
+  const timeout = s.timeoutMs ?? PUBLIC_SERVICE_TIMEOUT_MS;
+  const geocoder = s.geocoder;
   let place;
   try {
-    place = await s.geocoder.geocode(address);
+    place = await within(timeout, () => geocoder.geocode(address));
   } catch {
     return failed('panne', 'geocodage_en_panne');
   }
+  if (place === TIMED_OUT) return failed('panne', 'geocodage_en_panne');
   if (!place) return failed('introuvable', 'adresse_introuvable');
   if (!(typeof place.score === 'number' && place.score >= MIN_GEOCODE_SCORE)) return failed('introuvable', 'adresse_incertaine');
   // La zone n'est demandée que dans la commune du bien : une adresse d'ailleurs ne décrit pas ce bien.
   if (!property?.postal_code || place.postalCode !== property.postal_code) return failed('introuvable', 'autre_commune');
   if (!Number.isFinite(place.lat) || !Number.isFinite(place.lon) || typeof place.inseeCode !== 'string') return failed('introuvable', 'adresse_introuvable');
+  const urbanism = s.urbanism;
+  const point = { lat: place.lat, lon: place.lon, inseeCode: place.inseeCode };
   try {
-    const fact = await s.urbanism.collect({ lat: place.lat, lon: place.lon, inseeCode: place.inseeCode });
+    const fact = await within(timeout, () => urbanism.collect(point));
+    if (fact === TIMED_OUT) return failed('panne', 'geoportail_en_panne');
     return { fact, outcome: fact.ok ? 'trouve' : fact.reason, why: null };
   } catch {
     return failed('panne', 'geoportail_en_panne');
