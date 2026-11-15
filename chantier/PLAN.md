@@ -2209,7 +2209,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien (H13 pour le lecteur IA).
 
 ### RC55 · Les passages du rapprochement et des relances d'impayés, jamais une relance sur un relevé de banque ancien (Jamais vu)
-- Statut : en cours (voie 2) : prête, à fusionner (#604)
+- Statut : en cours (voie 2)
 - Reste : prête (#604, `cc6b96ae`), non fusionnée : fusion refusée par le contrôle des permissions, un essai, pas de nouvel essai (H69). Codex 1 P0 corrigé (une relance d'une facture payée, corrigée ou encaissée est fermée à chaque passage avant le contrôle de l'âge du relevé, `closeSettledReminders`), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6287 tests). Reste pour la voie 1 : inscrire `...facturationJobs(config.db, journal, acces, { now })` dans `packages/api/src/planificateur.ts`, et dire `bankStatementFreshness` à l'écran de la direction.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX49, BR04
 - Cahier : M13 Pilotage et finances (rapprochement bancaire, relance des impayés) ; R551, R553, R26, R13.
