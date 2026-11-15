@@ -175,7 +175,7 @@ export default {
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
       ...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),
       // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
-      registreGels: { fetch: (r: Request) => fetch(r), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
+      registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,

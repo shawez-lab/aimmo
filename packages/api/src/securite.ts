@@ -28,7 +28,8 @@ const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** Le téléchargement du fichier public du registre des gels (BR85) : une lecture en GET, jamais un envoi. */
 export interface RegistreGelsSource {
-  fetch: (request: Request) => Promise<Response>;
+  /** La lecture en GET du fichier : `fetch` dans le Worker, une réponse inventée dans les tests. */
+  get: (request: Request) => Promise<Response>;
   url: string;
   userAgent: string;
 }
@@ -153,7 +154,7 @@ async function download(source: RegistreGelsSource): Promise<{ ok: true; text: s
   let response: Response;
   try {
     const signal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) : undefined;
-    response = await source.fetch(new Request(source.url, { method: 'GET', headers: { accept: 'application/json', 'user-agent': source.userAgent }, ...(signal ? { signal } : {}) }));
+    response = await source.get(new Request(source.url, { method: 'GET', headers: { accept: 'application/json', 'user-agent': source.userAgent }, ...(signal ? { signal } : {}) }));
   } catch {
     return { ok: false, code: 'telechargement_echoue' };
   }

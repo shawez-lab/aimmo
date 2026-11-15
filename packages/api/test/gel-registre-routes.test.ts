@@ -38,7 +38,7 @@ async function setup(source: 'none' | ((r: Request) => Promise<Response>) = 'non
   const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), networkId: t.network.id, ...ids[w] }))));
   const asked: Request[] = [];
   const registreGels: RegistreGelsSource | null =
-    source === 'none' ? null : { url: 'https://registre.example.test/derniere.json', userAgent: REGISTRE_GELS_USER_AGENT, fetch: (r) => (asked.push(r), source(r)) };
+    source === 'none' ? null : { url: 'https://registre.example.test/derniere.json', userAgent: REGISTRE_GELS_USER_AGENT, get: (r) => (asked.push(r), source(r)) };
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, registreGels };
   const http = async (who: Who, method: string, path: string, raw?: string) => {
     const headers: Record<string, string> = { authorization: `Bearer ${KEYS[who]}` };
