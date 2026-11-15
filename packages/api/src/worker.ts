@@ -9,6 +9,7 @@ import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
+import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
 import { BanGeocoder, DvfSiteSales, EstimationEnLigne, httpDvfReader } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
@@ -118,6 +119,15 @@ export function mediaUploads(bucket: { put?(key: string, value: Uint8Array, opti
   };
 }
 
+/**
+ * Les fichiers déposés de l'agence sous licence (BR82) : les compartiments des médias, des pièces et des commerces qui
+ * savent `head` et `get`, jamais le coffre [R663] ; aucun : `null`, les routes des contenus sont fermées.
+ */
+export function fichiersReprise(env: Pick<Env, 'MEDIA' | 'PIECES' | 'COMMERCES'>): R2FichiersPlages | null {
+  const buckets = [env.MEDIA, env.PIECES, env.COMMERCES].map(plagesBucket).filter((b) => b !== null);
+  return buckets.length > 0 ? new R2FichiersPlages(buckets) : null;
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -136,6 +146,7 @@ export default {
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
+      fichiersReprise: fichiersReprise(env),
       // M18 (U09) : preuves et pièces des partenaires dans `PIECES`, sous `partenaires/` ; absent, routes fermées.
       platformNetworkId: env.PLATFORM_NETWORK_ID,
       espaces: { networkId: env.ESPACE_NETWORK_ID, baseUrl: env.ESPACE_BASE, releveKeys: env.ESPACE_RELEVE_KEYS },
