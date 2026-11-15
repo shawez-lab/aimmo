@@ -414,6 +414,19 @@ describeWithSqlite('RC46 · Une pièce trop grosse pour un lot, remise en tranch
     // Les petites pièces restent remises entières, avec leur empreinte.
     const note = r.value.pieces.find((p) => p.ref === 'stock/lac/note-1.ogg')!;
     expect([note.statut, note.sha256]).toEqual(['remise', await hex(t.store.get('stock/lac/note-1.ogg')!)]);
+    // Une taille que le stockage ne sait pas dire (panne, réponse mal formée) : absente, la pièce jamais lue entière.
+    const before = t.reads.length;
+    t.storage.taille = async () => {
+      throw new Error('panne');
+    };
+    const panne = await t.contenus.remettre(t.lacDirection, t.copy(), 'preuve-ok');
+    if (!panne.ok) throw new Error(panne.code);
+    expect(panne.value.pieces.filter((p) => p.ref.startsWith('stock/')).map((p) => p.statut)).toEqual(['absente', 'absente', 'absente', 'absente']);
+    t.storage.taille = async () => -1 as number;
+    const malforme = await t.contenus.remettre(t.lacDirection, t.copy(), 'preuve-ok');
+    if (!malforme.ok) throw new Error(malforme.code);
+    expect(malforme.value.pieces.find((p) => p.ref === 'stock/lac/visite.mp4')!.statut).toBe('absente');
+    expect(t.reads.length).toBe(before);
     // Une taille annoncée petite mais des octets trop gros : toujours trop grosse, jamais remise.
     t.storage.taille = async () => 10;
     const menteur = await t.contenus.remettre(t.lacDirection, t.copy(), 'preuve-ok');

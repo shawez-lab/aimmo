@@ -266,8 +266,10 @@ export class ContenusRepriseAgence {
       else if (read.has(f.ref)) got = read.get(f.ref)!;
       else {
         // Un stockage qui dit la taille : une pièce plus grosse qu'un lot n'est jamais lue entière (RC46).
-        const known = await this.tailleDe(f.ref);
-        if (known !== null && known > this.maxBytes) got = { size: known };
+        // Une taille qu'il ne sait pas dire (absente, panne, réponse mal formée) : « absente », jamais une lecture entière.
+        const known = avecPlages(this.storage) ? await this.tailleDe(f.ref) : undefined;
+        if (known === null) got = null;
+        else if (known !== undefined && known > this.maxBytes) got = { size: known };
         else {
           let raw: unknown;
           try {
