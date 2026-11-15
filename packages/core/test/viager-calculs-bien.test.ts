@@ -177,6 +177,22 @@ describeWithSqlite('RC47 · les calculs de viager d’un bien, relus d’une ouv
     expect(JSON.stringify(events)).not.toMatch(/20000000|3000000|\b75\b/);
   });
 
+  it('[R16] le plafond de 50 compte les calculs visibles : 120 calculs plus récents d’un autre ne cachent jamais les siens', async () => {
+    const t = await setup();
+    await t.table('2024');
+    const p = await t.property('REF-RC47-7');
+    const samFirst = await t.compute(t.other, { propertyId: p.id });
+    for (let i = 0; i < 120; i += 1) await t.compute(t.agent, { propertyId: p.id });
+    const samLast = await t.compute(t.other, { propertyId: p.id });
+    // Sam voit le bien en partage : ses deux calculs, même derrière 120 calculs d'Alex qu'il ne lit pas.
+    expect(t.ids(await t.viager.listForProperty(t.acces, t.other, p.id))).toEqual([samLast, samFirst]);
+    // Alex voit tout : les 50 plus récents, dont le dernier de Sam en tête.
+    const forAlex = t.ids(await t.viager.listForProperty(t.acces, t.agent, p.id));
+    expect(forAlex).toHaveLength(50);
+    expect(forAlex[0]).toBe(samLast);
+    expect(forAlex).not.toContain(samFirst);
+  });
+
   it('[R16] bien inconnu ou d’un autre réseau, agent parti ou au dossier incomplet, autre rôle : refus, rien lu', async () => {
     const t = await setup();
     await t.table('2024');

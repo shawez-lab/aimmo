@@ -243,6 +243,8 @@ export interface ViagerOfProperty {
 
 /** Au plus autant de calculs relus pour un bien, du plus récent au plus ancien. */
 export const VIAGER_LIST_LIMIT = 50;
+/** Les calculs d'un bien sont relus par lots de cette taille, jusqu'au plafond des calculs visibles. */
+const VIAGER_SCAN_BATCH = 100;
 
 export type ViagerRefusal = { ok: false; rule: 'R16' | 'R540' | 'R541' | 'R542'; code: string; field?: ViagerInputKey };
 export type ViagerOutcome<T> = { ok: true; value: T } | ViagerRefusal;
@@ -550,21 +552,27 @@ export class Viager {
     const read = await acces.readProperty(viewer, propertyId);
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.value.network_id !== viewer.networkId) return this.refuse(viewer, 'R16', 'unknown');
-    const rows = await this.db.all<ViagerRow>(
-      'SELECT * FROM viager_calculations WHERE network_id = ? AND property_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
-      [viewer.networkId, propertyId, VIAGER_LIST_LIMIT],
-    );
     const current = await this.db.first<{ id: string }>('SELECT id FROM life_tables WHERE network_id = ? ORDER BY imported_at DESC, vintage DESC LIMIT 1', [
       viewer.networkId,
     ]);
     const fiches = new Map<string, { ok: true; view: string } | { ok: false; rule: 'R16'; code: string; mine: boolean }>();
     const out: ViagerOfProperty[] = [];
-    for (const row of rows) {
-      const calc = toStored(row);
-      if ((await this.visible(acces, viewer, calc, fiches, read.view)) !== null) continue;
-      const replayed = await this.replayRow(row);
-      const cited = citedTable(calc.inputs);
-      out.push({ calculation: calc, replay: replayed.same ? 'identique' : 'ecart', tableReplaced: cited !== null && cited !== (current?.id ?? null) });
+    // Le plafond compte les calculs que l'appelant voit : les calculs plus récents d'autres agents, qu'il ne lit pas, ne
+    // cachent jamais les siens. Lus par lots, jusqu'à 50 visibles ou la fin de l'historique du bien.
+    for (let offset = 0; out.length < VIAGER_LIST_LIMIT; offset += VIAGER_SCAN_BATCH) {
+      const rows = await this.db.all<ViagerRow>(
+        'SELECT * FROM viager_calculations WHERE network_id = ? AND property_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?',
+        [viewer.networkId, propertyId, VIAGER_SCAN_BATCH, offset],
+      );
+      for (const row of rows) {
+        if (out.length >= VIAGER_LIST_LIMIT) break;
+        const calc = toStored(row);
+        if ((await this.visible(acces, viewer, calc, fiches, read.view)) !== null) continue;
+        const replayed = await this.replayRow(row);
+        const cited = citedTable(calc.inputs);
+        out.push({ calculation: calc, replay: replayed.same ? 'identique' : 'ecart', tableReplaced: cited !== null && cited !== (current?.id ?? null) });
+      }
+      if (rows.length < VIAGER_SCAN_BATCH) break;
     }
     // Le journal ne garde ni montant ni âge : le bien et le nombre de calculs relus.
     await appendEvent(
