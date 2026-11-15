@@ -472,6 +472,17 @@ Sous `/v1/recherche`, l'agent ou la direction : tout autre rôle est refusé (40
 
 La route publique, sans connexion, et la prise de l'accord `buyer_search` à l'écran viendront à part.
 
+## Copropriété et urbanisme résumés (RC52, BR87)
+
+Sous `/v1/dossiers/<id>/copropriete`, en mode essai. Chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; le dossier est contrôlé avant tout géocodage, un refus est écrit au journal et ne fait partir aucune requête [R16]. Corps JSON de 4 Mo au plus. Un agent au dossier d'agent incomplet est refusé (403 R82). Rien n'est envoyé.
+
+- L'agent du bien : `POST /prelecture` (`{documents}`) la prélecture des documents, rien n'est rangé ; sans lecteur IA branché (H13), aucune phrase n'est proposée et tout est à lire [R12]. `POST /resume` (`{documents, sentences, address?}`) prépare le résumé, chaque phrase vérifiée contre sa page [R448].
+- L'agent, la direction ou la conformité, qui voient le dossier : `GET /resume` le dernier résumé ; `GET /acquereur` les travaux votés à venir, tels qu'ils se disent à l'acquéreur [R451].
+
+Les données publiques ne sont jamais reçues de l'écran : un corps qui porte `publicData`, `registry` ou `urbanism` est refusé (400 R449 `public_data_not_accepted`). La zone du plan d'urbanisme est lue par le serveur : l'adresse tapée (`address`) est géocodée par la Base adresse nationale, et la zone n'est demandée au Géoportail de l'urbanisme que si l'adresse trouvée est sûre et dans la commune du bien ; seuls la position et le code INSEE partent ; l'adresse n'est ni gardée ni écrite au journal [R13]. Sans adresse ou sans services : zone « non collectée », le résumé se prépare quand même.
+
+Sources : `copropriete` de la configuration, sinon la Base adresse nationale de l'estimation et le Géoportail lu par `fetchPublicData`. Le Worker branche la Base adresse nationale et le Géoportail en GET seulement, sans aucun secret.
+
 ## Statistiques du site (BR41)
 
 Sous `/v1/site`, la direction (tout le réseau) ou l'agent actif (sa page et ses biens) : tout autre rôle est refusé (403, `role`) avant toute lecture, au journal [R16] ; un agent inconnu ou inactif, 403 `agent_inactive`. Seul paramètre admis : `jours`, entier de 7 à 365 écrit en chiffres (90 sans lui) ; sinon 400 `bad_period`, et un autre paramètre 400 `unknown_field`. Rien n'est envoyé.

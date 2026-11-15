@@ -83,8 +83,9 @@ import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresV
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
+import { coproprieteRoutes, type CoproprieteRoute, type CoproprieteServices } from './copropriete.ts';
 import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
-import { conformite } from '@aimmo/core';
+import { GpuUrbanism, conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type RegistreGelsSource, type SecuriteRoute } from './securite.ts';
@@ -231,6 +232,12 @@ export interface ApiConfig {
    * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
    */
   attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  /**
+   * La copropriété et l'urbanisme résumés (RC52, BR87) : la Base adresse nationale, le Géoportail de l'urbanisme et le
+   * lecteur IA de la prélecture. Absents, le géocodeur de l'estimation et le Géoportail lu par `fetchPublicData` ; sans
+   * eux, la zone est « non collectée » ; sans lecteur (H13), tout est à lire [R12]. Rien n'est jamais reçu de l'écran [R449].
+   */
+  copropriete?: Pick<CoproprieteServices, 'geocoder' | 'urbanism' | 'reader'>;
   /** Le téléchargement du fichier public du registre des gels (BR85) ; absent, seul le dépôt du fichier est ouvert. */
   registreGels?: RegistreGelsSource | null;
   /** Le lecteur des factures fournisseurs (l'IA, H13, BR04) ; absent, leur lecture est fermée. */
@@ -1225,6 +1232,28 @@ function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'a
       const services: LocationServices = { db: s.db, journal: s.journal, now: s.now, files: pieces, identity: { state: (networkId, personId) => coffre.state(networkId, personId) }, ...options };
       return r.handle(services, viewer, params, request);
     },
+  }));
+}
+
+/** Les services publics du résumé de copropriété : ceux donnés, sinon la BAN de l'estimation et le Géoportail en lecture. */
+function coproprieteSourcesOf(config: ApiConfig): Pick<CoproprieteServices, 'geocoder' | 'urbanism' | 'reader'> {
+  if (config.copropriete !== undefined) return config.copropriete;
+  return {
+    geocoder: config.estimation?.geocoder ?? null,
+    urbanism: config.fetchPublicData ? new GpuUrbanism(config.fetchPublicData) : null,
+  };
+}
+
+/**
+ * Les routes de la copropriété et de l'urbanisme résumés (RC52, BR87) : rôles contrôlés avant le corps [R16], dossier
+ * contrôlé avant tout géocodage ; la zone est lue à sa source, jamais reçue de l'écran [R449].
+ */
+function coproprieteRoutesDef(sources: Pick<CoproprieteServices, 'geocoder' | 'urbanism' | 'reader'>): RouteDef[] {
+  return coproprieteRoutes().map((r: CoproprieteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ...sources }, viewer, params, request),
   }));
 }
 
@@ -2240,6 +2269,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...rolloutRoutes(config.automationRolloutOpen === true),
     ...captationRolloutRoutes(config.captationRollout),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
+    ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...m12Routes(config.coffre ?? null),
     ...securiteRoutesDef(config.registreGels ?? null),
     ...reseauUtileRoutesDef(),
