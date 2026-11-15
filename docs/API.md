@@ -483,6 +483,16 @@ Les données publiques ne sont jamais reçues de l'écran : un corps qui porte `
 
 Sources : `copropriete` de la configuration, sinon la Base adresse nationale de l'estimation et le Géoportail lu par `fetchPublicData`. Le Worker branche la Base adresse nationale et le Géoportail en GET seulement, sans aucun secret.
 
+## Avant-contrat et projet du notaire (HX45, RC54, BR89)
+
+Sous `/v1/dossiers/<id>/avant-contrat`, en mode essai, sur le stockage des pièces des dossiers : sans lui, 503 `pieces_not_configured`. Chaque route dit les rôles qu'elle admet, contrôlés avant toute lecture du corps ; le dossier est contrôlé ensuite, avant le corps ; un refus est écrit au journal [R16]. Rien n'est envoyé.
+
+- L'agent, la direction ou la conformité : `GET …` l'état (note, dernier projet et ses différences, dépôt).
+- L'agent du bien : `POST /note` la note au notaire, prix et conditions repris du dossier et de l'offre acceptée [R510] ; `POST /projet` le projet rangé avec ce que l'agent y lit, comparé à la note [R511] ; `POST /dates` les dates du dernier projet reportées à l'échéancier [R513] ; `POST /depot` le dépôt de garantie, reçu par le notaire seul [R512] ; `POST /prelecture` la prélecture sur le texte des pages fourni, rien n'est rangé.
+- `POST /pdf?documentRef=preuves/<uuid>.pdf` : le PDF du projet, déposé d'abord au dossier par `…/preuves` avec son empreinte ; son texte est tiré sans IA, puis prélu ; les pages illisibles sont dites en mots. Le PDF doit être, octet pour octet, celui déposé sous cette référence : sinon 409 `not_the_deposited_file`, et rien n'est prélu. Ni le PDF, ni son texte, ni son empreinte ne sont gardés par la prélecture [R13].
+
+Sans lecteur IA (`avantContrat.reader` de la configuration, H13), rien n'est proposé et tout est à lire [R12].
+
 ## Statistiques du site (BR41)
 
 Sous `/v1/site`, la direction (tout le réseau) ou l'agent actif (sa page et ses biens) : tout autre rôle est refusé (403, `role`) avant toute lecture, au journal [R16] ; un agent inconnu ou inactif, 403 `agent_inactive`. Seul paramètre admis : `jours`, entier de 7 à 365 écrit en chiffres (90 sans lui) ; sinon 400 `bad_period`, et un autre paramètre 400 `unknown_field`. Rien n'est envoyé.
