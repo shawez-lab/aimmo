@@ -164,10 +164,12 @@ describe('BR90 · le résumé de copropriété préparé à l’écran depuis le
   });
 
   it('[R448] aucune phrase proposée n’est cochée d’avance ; seules les cochées partent, recalées sur leur document (Jamais vu)', async () => {
+    let posts = 0;
     const t = mount({
       [`PDF ${PDF_FICHE}`]: async () => read(FICHE),
       [`PDF ${PDF_PV}`]: async () => read(PV, [SENTENCE, { ...SENTENCE, page: 9 }, { ...SENTENCE, document: 1 }]),
-      [`POST ${RESUME}`]: async () => ok(SUMMARY),
+      // La première préparation est refusée (une autre en cours) : le formulaire reste, l'agent coche et recommence.
+      [`POST ${RESUME}`]: async () => (++posts === 1 ? no(409, 'busy') : ok(SUMMARY)),
       [`GET ${RESUME}`]: async () => ok(SUMMARY),
       [`GET ${BUYER}`]: async () => ok({ summaryId: 's3', lines: [], works: [] }),
     });
@@ -332,6 +334,30 @@ describe('BR90 · le résumé de copropriété préparé à l’écran depuis le
     }
     await u.click('Préparer le résumé');
     expect(u.states()[2]).toBe(COPRO_TOO_BIG);
+    expect(u.sent('POST')).toEqual([]);
+  });
+
+  it('[R16] lire puis préparer, ou préparer puis lire : la réponse de la vue quittée est jetée, rien ne se mélange', async () => {
+    let releaseRead: (r: Res) => void = () => undefined;
+    const t = mount({ [`GET ${RESUME}`]: () => new Promise<Res>((r) => (releaseRead = r)), [`GET ${BUYER}`]: async () => ok({ summaryId: 's3', lines: [], works: [] }) });
+    const showing = (t.screen as unknown as { show: (b: FakeElement, id: string) => Promise<boolean> }).show(t.box, 'f1');
+    t.open();
+    releaseRead(ok(SUMMARY));
+    expect(await showing).toBe(false);
+    await settle();
+    expect(t.box.textContent).not.toContain('Résumé, version 3');
+    expect(t.box.textContent).toContain('Préparer un nouveau résumé');
+
+    let releasePdf: (r: Res) => void = () => undefined;
+    const u = mount({ [`PDF ${PDF_PV}`]: () => new Promise<Res>((r) => (releasePdf = r)), [`GET ${RESUME}`]: async () => ok(SUMMARY), [`GET ${BUYER}`]: async () => ok({ summaryId: 's3', lines: [], works: [] }) });
+    u.open();
+    await u.deposit('pv_assemblee', pdfFile(), '2027-02-10');
+    const other = new FakeElement('div');
+    await (u.screen as unknown as { show: (b: FakeElement, id: string) => Promise<boolean> }).show(other, 'f1');
+    releasePdf(read(PV, [SENTENCE]));
+    await settle();
+    expect(u.boxes()).toEqual([]);
+    await u.click('Préparer le résumé');
     expect(u.sent('POST')).toEqual([]);
   });
 

@@ -250,12 +250,13 @@ globalThis.AIMMO_COPROPRIETE = function (t) {
   function citeLine(s, d) { return docName(d) + ', page ' + s.page + ' : « ' + s.quote + ' »'; }
   function topicNames(list) { return (Array.isArray(list) ? list : []).map(function (k) { return own(TOPICS, k); }).filter(Boolean); }
   function prepare(box, fileId) {
-    var mine = t.session();
+    /* Une lecture encore en route est jetée, et une lecture ouverte ensuite jette cette préparation (remarque de Codex). */
+    var mine = t.session(), gen = ++reads;
     clear(box);
     if (typeof fileId !== 'string' || !ID.test(fileId)) { box.appendChild(el('p', P_FAILED, 'etat')); return false; }
     var base = '/v1/dossiers/' + encodeURIComponent(fileId) + '/copropriete';
     var docs = [], picks = [], busy = false;
-    function live() { return mine === t.session(); }
+    function live() { return mine === t.session() && gen === reads; }
     box.appendChild(el('h4', 'Préparer un nouveau résumé'));
     box.appendChild(el('p', 'Déposez chaque document en PDF : le serveur en lit le texte et le désigne par l’empreinte du fichier. Aucune phrase ne part sans que vous l’ayez cochée.', 'doux'));
     var kind = labelled(box, 'Sorte du document', 'select');
