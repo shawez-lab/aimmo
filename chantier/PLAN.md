@@ -1597,7 +1597,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (adresse du fichier à relire au premier vrai import).
 
 ### BR86 · Le registre des gels en service, dit à l'écran du responsable avec son âge et son empreinte (Jamais vu)
-- Statut : en cours
+- Statut : en cours : proposition #598 prête (fusion refusée par le contrôle des permissions, H69)
+- Reste : #598, `3acfe153`. Codex 1 P2 corrigé (le registre en service relu aussi après un import incertain ou refusé), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6231 tests, `wrangler deploy --dry-run` compris). À fusionner par une séance qui en a le droit, ou par Shawez.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR85, HX57
 - Cahier : Conformité (gel des avoirs) ; M12 ; HX57 ; R605, R13, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de BR85 (« montrer à l'écran le registre en service (date, empreinte) demande une lecture du cœur (`ControleGels`), à prévoir »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Le cahier ne fixe pas la fréquence de mise à jour (recherche « gel des avoirs » sans résultat) : AIMMO dit « à mettre à jour » au-delà de 7 jours après la date de publication, seuil écrit dans le cœur (`FREEZE_REGISTRY_STALE_DAYS`). Une lecture neuve au cœur, `ControleGels.registryInService`, seule à lire les tables (R604 inchangée) ; une route `GET /v1/securite/gel/registre` dans `packages/api/src/securite.ts` ; l'écran est le script déjà servi à part, `/app/gel-registre.js`.
