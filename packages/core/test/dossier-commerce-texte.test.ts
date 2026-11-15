@@ -61,6 +61,8 @@ async function setup() {
   await conf.recordTemplate(direction, NDA_BODY);
   const shop = await store.createProperty({ networkId: network.id, agentId: alexAgent.id, reference: 'CE-1', kind: 'business', status: 'available', city: 'Dijon', postalCode: '21000' });
   await fiches.update(acces, alex, shop.id, SHEET);
+  // Ce que le dossier écrit au journal : la lecture du bien par l'appelant y va aussi, elle ne compte pas ici.
+  const seq = async () => (await journal.all()).filter((e) => e.type.startsWith('commerces.dossier')).length;
   const rows = async () => (await db.all('SELECT id FROM business_dossier_documents')).length;
   /** Un repreneur signé et vérifié, qui reçoit le lien et ouvre le dossier. */
   const reader = async (): Promise<string[]> => {
@@ -84,7 +86,7 @@ async function setup() {
     if (!opened.ok) throw new Error('ouverture du dossier');
     return opened.value.pages.map((page) => page.text);
   };
-  return { acces, alex, direction, shop, dossier, files, writes, rows, reader };
+  return { acces, alex, direction, shop, dossier, files, writes, rows, seq, reader };
 }
 
 describe('RC48 · la place d’une moitié de caractère seule', () => {
@@ -101,6 +103,7 @@ describe('RC48 · la place d’une moitié de caractère seule', () => {
 describeWithSqlite('RC48 · un texte déposé se relit tel qu’il a été déposé', () => {
   it('une moitié de caractère seule, au début, au milieu ou à la fin : refusé avec sa place, rien écrit nulle part', async () => {
     const t = await setup();
+    const before = await t.seq();
     for (const [content, at] of [
       [`${HALF}Bail inventé.`, 1],
       [`Bail inventé ${HALF} du local.`, 14],
@@ -111,18 +114,23 @@ describeWithSqlite('RC48 · un texte déposé se relit tel qu’il a été dépo
     expect(t.writes).toEqual([]);
     expect(t.files.size).toBe(0);
     expect(await t.rows()).toBe(0);
+    expect(await t.seq()).toBe(before);
     expect(await t.dossier.documents(t.acces, t.alex, t.shop.id)).toEqual({ ok: true, value: [] });
   });
 
   it('un titre fautif est refusé, au dépôt comme au rangement par référence, rien écrit', async () => {
     const t = await setup();
+    const before = await t.seq();
     expect(await t.dossier.depositText(t.acces, t.direction, t.shop.id, { kind: 'bail', title: `Bail ${HALF}`, content: 'Bail inventé.' })).toEqual({ ok: false, rule: null, code: 'title' });
     expect(t.writes).toEqual([]);
+    expect(await t.seq()).toBe(before);
     const ok = await t.dossier.depositText(t.acces, t.alex, t.shop.id, { kind: 'bail', title: 'Bail', content: 'Bail inventé.' });
     expect(ok.ok).toBe(true);
     const ref = t.writes[0]!;
+    const kept = await t.seq();
     expect(await t.dossier.addDocument(t.acces, t.alex, t.shop.id, { kind: 'bail', title: `${OTHER_HALF}Bail`, storageRef: ref })).toEqual({ ok: false, rule: null, code: 'title' });
     expect(await t.rows()).toBe(1);
+    expect(await t.seq()).toBe(kept);
   });
 
   it('émojis entiers, accents et marque d’ordre en tête : relus à l’identique, redéposés sans aucune écriture de plus', async () => {
@@ -131,10 +139,12 @@ describeWithSqlite('RC48 · un texte déposé se relit tel qu’il a été dépo
     const first = await t.dossier.depositText(t.acces, t.alex, t.shop.id, { kind: 'bail', title: 'Bail 🏠', content });
     expect(first).toMatchObject({ ok: true, value: { already: false, repaired: false } });
     expect(t.writes).toHaveLength(1);
+    const kept = await t.seq();
     for (let i = 0; i < 3; i += 1) {
       expect(await t.dossier.depositText(t.acces, t.alex, t.shop.id, { kind: 'bail', title: 'Bail 🏠', content })).toMatchObject({ ok: true, value: { already: true, repaired: false } });
     }
     expect(t.writes).toHaveLength(1);
+    expect(await t.seq()).toBe(kept);
     expect(await t.rows()).toBe(1);
     const listed = await t.dossier.documents(t.acces, t.alex, t.shop.id);
     expect(listed).toMatchObject({ ok: true, value: [{ title: 'Bail 🏠', available: true }] });
