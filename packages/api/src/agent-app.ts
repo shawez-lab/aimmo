@@ -64,6 +64,7 @@ import { RECLAMATIONS_REGLAGE_SCRIPT } from '../app/reclamations-reglage.ts';
 import { REMISES_SCRIPT } from '../app/remises.ts';
 import { NEUF_SCRIPT } from '../app/neuf.ts';
 import { NEUF_DIRECTION_SCRIPT } from '../app/neuf-direction.ts';
+import { VIAGER_SCRIPT } from '../app/viager.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
@@ -189,6 +190,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/site.js': { body: SITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La grille de mes programmes neufs (BR78), chargée depuis « Gagner des mandats », jamais gardée [R201].
   '/app/neuf.js': { body: NEUF_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le calcul de viager de l'agent (BR81), chargé depuis « Gagner des mandats », jamais gardé [R201].
+  '/app/viager.js': { body: VIAGER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les programmes neufs de la direction (BR79), chargés sous « Engagements de service », jamais gardés [R201].
   '/app/neuf-direction.js': { body: NEUF_DIRECTION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/veille-dpe.js': { body: VEILLE_DPE_SCRIPT, type: 'text/javascript; charset=utf-8' },
