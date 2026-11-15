@@ -1575,7 +1575,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H25, H38 pour les compartiments réels).
 
 ### BR84 · Les calculs de viager d'un bien relus à l'écran de l'agent, chacun dit s'il tient encore (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-15)
+- Reste : fusionnée (#593, `0c401285`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6202 tests, `wrangler deploy --dry-run` compris). Décidé en cours de route : un seul résultat à l'écran à la fois (le calcul relu et le nouveau calcul partagent leur place, pour ne jamais doubler le champ du code postal) ; la liste est relue après chaque nouveau calcul. Reste : la grille dans les annonces (BR80, BR81).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR81, RC47
 - Cahier : Phase 3, « Programmes neufs et viager » (HX48) ; M17 Investir, viager ; R540, R541, R16, R201.
 - Décidé (2026-11-15, voie 1), lecture prudente : relevé dans le « Reste » de RC47 (« la route `GET /v1/viager/biens/<id>/calculs` par `Viager.listForProperty` et la liste à l'écran du viager »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. La route s'ajoute à `packages/api/src/neuf-viager.ts`, agent et direction, sans corps ; l'écran est le script déjà servi à part, `/app/viager.js` : à l'ouverture d'un bien, la liste de ses calculs rangés, du plus récent au plus ancien ; `app.js` ne change pas.
