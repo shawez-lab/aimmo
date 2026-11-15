@@ -31,11 +31,13 @@ export function listingPlainText(t: string): string {
     .trim();
 }
 
-/** Ce que l'annonce a écrit de chaque lot, pour la relire contre la grille du jour. */
+/** Chaque lot que l'annonce annonce, écrit sur sa ligne ou seulement compté, pour la relire contre la grille du jour. */
 export interface ListedLot {
   lotRef: string;
   priceCents: number;
   confirmedOn: string;
+  /** Faux pour un lot compté dans « et N autres lots » sans ligne à lui : il est annoncé disponible tout de même. */
+  written: boolean;
 }
 
 export interface NewBuildListing {
@@ -44,10 +46,10 @@ export interface NewBuildListing {
   body: string;
   /** Le jour de la grille lue. */
   day: string;
-  /** Le dernier jour où chaque lot écrit est encore confirmé : le lendemain, l'annonce ne tient plus [R543]. */
+  /** Le dernier jour où chaque lot annoncé, écrit ou compté, est encore confirmé : le lendemain, l'annonce ne tient plus [R543]. */
   validUntil: string;
   lots: ListedLot[];
-  /** Les lots publiés qui ne tiennent pas dans les 4000 signes : comptés dans le texte, jamais coupés. */
+  /** Tous les lots annoncés, du moins cher au plus cher : ceux qui ne tiennent pas dans les 4000 signes sont comptés, jamais coupés. */
   omitted: number;
 }
 
@@ -123,7 +125,8 @@ export function newBuildListing(grid: PublishedGrid): NeufOutcome<NewBuildListin
   }
   if (kept.length === 0) return { ok: false, rule: null, code: 'too_long' };
   const body = compose(lines, sorted.length - kept.length, kept.length === sorted.length ? sources : sourcesText(kept));
-  const validUntil = addDays(kept.map((l) => l.confirmedOn).sort()[0]!, LOT_CONFIRMATION_DAYS);
+  // Un lot compté sans ligne est annoncé disponible lui aussi : sa confirmation borne l'annonce comme les autres [R543].
+  const validUntil = addDays(sorted.map((l) => l.confirmedOn).sort()[0]!, LOT_CONFIRMATION_DAYS);
   return {
     ok: true,
     value: {
@@ -132,18 +135,18 @@ export function newBuildListing(grid: PublishedGrid): NeufOutcome<NewBuildListin
       body,
       day: grid.day,
       validUntil,
-      lots: kept.map((l) => ({ lotRef: l.lotRef, priceCents: l.priceCents, confirmedOn: l.confirmedOn })),
+      lots: sorted.map((l, i) => ({ lotRef: l.lotRef, priceCents: l.priceCents, confirmedOn: l.confirmedOn, written: i < kept.length })),
       omitted: sorted.length - kept.length,
     },
   };
 }
 
 export interface ListingCheck {
-  /** Vrai seulement quand chaque lot écrit est encore publié, au même prix, et que l'annonce n'a pas passé son jour. */
+  /** Vrai seulement quand chaque lot annoncé, écrit ou compté, est encore publié, au même prix, et que l'annonce n'a pas passé son jour. */
   holds: boolean;
-  /** Les lots écrits qui ne sont plus dans la grille publiée : vendus, réservés, sous option ou à reconfirmer. */
+  /** Les lots annoncés qui ne sont plus dans la grille publiée : vendus, réservés, sous option ou à reconfirmer. */
   gone: string[];
-  /** Les lots écrits dont le prix a changé depuis. */
+  /** Les lots annoncés dont le prix a changé depuis (un lot compté aussi : il peut devenir le prix « dès » du titre). */
   priceChanged: string[];
   /** Vrai quand le jour de la grille dépasse `validUntil`. */
   expired: boolean;

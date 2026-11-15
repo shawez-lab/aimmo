@@ -81,8 +81,8 @@ describe('RC56 · la grille d’un programme neuf écrite pour les annonces', ()
     expect(a.body).toContain('pas une offre');
     expect(a.body).not.toMatch(/[<>]/);
     expect(a.lots).toEqual([
-      { lotRef: 'A01', priceCents: 18_000_000, confirmedOn: '2027-03-01' },
-      { lotRef: 'B02', priceCents: 32_000_000, confirmedOn: '2027-03-02' },
+      { lotRef: 'A01', priceCents: 18_000_000, confirmedOn: '2027-03-01', written: true },
+      { lotRef: 'B02', priceCents: 32_000_000, confirmedOn: '2027-03-02', written: true },
     ]);
     expect(a.omitted).toBe(0);
     expect(listing(grid([lot('A01', 18_000_000)])).title).toBe('Les Jardins Test, programme neuf à Dijon : 1 lot dès 180 000 €');
@@ -122,19 +122,39 @@ describe('RC56 · la grille d’un programme neuf écrite pour les annonces', ()
     const a = listing(grid(lots));
     expect(a.body.length).toBeLessThanOrEqual(LISTING_MAX_BODY);
     expect(a.omitted).toBeGreaterThan(0);
-    expect(a.lots.length + a.omitted).toBe(60);
+    // Chaque lot annoncé est gardé, écrit ou seulement compté.
+    expect(a.lots).toHaveLength(60);
+    const written = a.lots.filter((l) => l.written);
+    expect(written.length + a.omitted).toBe(60);
     const lines = a.body.split('\n').filter((l) => l.startsWith('• Lot'));
-    expect(lines).toHaveLength(a.lots.length);
+    expect(lines).toHaveLength(written.length);
     for (const l of lines) expect(l).toMatch(/ · confirmé le 1er mars 2027$/);
     // Les moins chers d'abord : les lots écrits sont exactement les moins chers.
-    const cheapest = [...lots].sort((x, y) => x.priceCents - y.priceCents).slice(0, a.lots.length).map((l) => l.lotRef);
-    expect(a.lots.map((l) => l.lotRef)).toEqual(cheapest);
+    const cheapest = [...lots].sort((x, y) => x.priceCents - y.priceCents).slice(0, written.length).map((l) => l.lotRef);
+    expect(written.map((l) => l.lotRef)).toEqual(cheapest);
     expect(a.body).toContain(`Et ${a.omitted} autres lots disponibles, à demander à l’agent du programme.`);
     // Le titre compte tous les lots publiés, et part du moins cher.
     expect(a.title).toBe('Les Jardins Test, programme neuf à Dijon : 60 lots dès 150 000 €');
     // Les barèmes et la mention restent écrits, même texte plein.
     expect(a.body).toContain('D’où viennent les frais');
     expect(a.body).toContain('pas une offre');
+  });
+
+  it('[R543] un lot compté sans ligne compte comme les autres : sa confirmation borne l’annonce, son départ la fait retirer', () => {
+    // Le lot le plus cher, compté sans ligne, est aussi le plus anciennement confirmé.
+    const lots = Array.from({ length: 60 }, (_, i) => lot(`L${String(i).padStart(2, '0')}`, 15_000_000 + i * 100_000, i === 59 ? '2027-02-20' : '2027-03-04'));
+    const a = listing(grid(lots));
+    expect(a.lots.find((l) => l.lotRef === 'L59')).toMatchObject({ written: false });
+    expect(a.validUntil).toBe('2027-03-06');
+    const today = (ls: PublishedLot[]) => grid(ls, { day: '2027-03-05' });
+    expect(listingStillHolds(a, today(lots)).holds).toBe(true);
+    // Tous les lots comptés sans ligne vendus : l'annonce dit encore « 60 lots », elle ne tient plus.
+    const writtenOnly = lots.filter((l) => a.lots.find((x) => x.lotRef === l.lotRef)!.written);
+    const check = listingStillHolds(a, today(writtenOnly));
+    expect(check.holds).toBe(false);
+    expect(check.gone).toHaveLength(a.omitted);
+    // Le prix d'un lot compté baisse : nommé aussi.
+    expect(listingStillHolds(a, today(lots.map((l) => (l.lotRef === 'L59' ? lot('L59', 1_000_000, '2027-02-20') : l)))).priceChanged).toEqual(['L59']);
   });
 
   it('nom trop long pour 160 signes : refus, jamais un nom coupé ; nom ou commune vides refusés', () => {
