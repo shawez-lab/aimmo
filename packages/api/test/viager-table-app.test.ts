@@ -187,6 +187,10 @@ describe('BR80 · la table d’espérance de vie du viager, importée à l’éc
       ['68;17,5\n68;17,4\n', 'Ligne 2 : l’âge 68 est déjà plus haut, à la ligne 1.'],
       ['age;esp\n68;17,5\n121;1\n', 'Ligne 3 : l’âge n’est pas lisible'],
       ['68;17,5\n-1;12\n', 'Ligne 2 : l’âge n’est pas lisible'],
+      // Sans ligne de titres, une première ligne fautive n'est jamais prise pour des titres.
+      ['-1;12\n68;17,5\n', 'Ligne 1 : l’âge n’est pas lisible'],
+      [';12\n68;17,5\n', 'Ligne 1 : l’âge n’est pas lisible'],
+      ['âge;12\n68;17,5\n', 'Ligne 1 : l’âge n’est pas lisible'],
       ['68;17,55\n', 'Ligne 1 : l’espérance de vie n’est pas lisible'],
       ['68;0\n', 'Ligne 1 : l’espérance de vie n’est pas lisible'],
       ['68;dix\n', 'Ligne 1 : l’espérance de vie n’est pas lisible'],

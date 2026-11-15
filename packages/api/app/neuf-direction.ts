@@ -271,7 +271,8 @@ globalThis.AIMMO_NEUF_DIRECTION = function (t) {
       if (!line.trim()) continue;
       if (sep === null) sep = line.indexOf(';') >= 0 ? ';' : line.indexOf('\\t') >= 0 ? '\\t' : ',';
       var cells = line.split(sep).map(function (c) { return c.trim().replace(/^"(.*)"$/, '$1').trim(); });
-      var head = first && !/^\\d/.test(cells[0] || '');
+      // Une ligne de titres seulement si chaque cellule est faite de lettres, sans chiffre : sinon elle est lue comme les autres.
+      var head = first && cells.every(function (c) { return /[A-Za-z\\u00c0-\\u024f]/.test(c) && !/\\d/.test(c); });
       first = false;
       if (/sexe|homme|femme|masculin|f[eé]minin/i.test(line)) return bad(i, 'une colonne de sexe. La table est celle de l’ensemble des deux sexes, sans autre colonne que l’âge et l’espérance.');
       if (cells.length !== 2) return bad(i, cells.length + ' colonnes. La table n’a que deux colonnes : l’âge, puis l’espérance de vie.');
