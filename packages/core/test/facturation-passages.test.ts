@@ -196,6 +196,31 @@ describeWithSqlite('RC55 · passages du rapprochement et des relances d’impay�
     expect(await t.outbox()).toBe(1);
   });
 
+  it('[R553] une facture payée ferme sa relance même quand le relevé est devenu trop ancien pour relancer', async () => {
+    const t = await invoiced();
+    await t.deposit('2027-07-10', t.unrelated('2027-07-10'));
+    t.setClock(at6('2027-07-12'));
+    await t.prepareJob.run(SLOT);
+    const list = await t.relances.list(t.direction);
+    if (!list.ok) throw new Error('list');
+    await t.relances.validate(t.direction, list.value[0]!.id);
+    // Le paiement est déposé le 12 ; le passage d'envoi suivant n'a lieu que le 26, sur un relevé de 14 jours.
+    await t.deposit('2027-07-12', t.payment('2027-07-12'));
+    t.setClock(at9('2027-07-26'));
+    await t.sendJob.run(SLOT);
+    expect(await t.outbox()).toBe(0);
+    expect(await t.reminders()).toEqual([[1, 'close', 'rapprochee']]);
+    // Même chose par le seul passage de préparation, pour une relance encore à valider.
+    const o = await invoiced();
+    await o.deposit('2027-07-10', o.unrelated('2027-07-10'));
+    o.setClock(at6('2027-07-12'));
+    await o.prepareJob.run(SLOT);
+    await o.deposit('2027-07-12', o.payment('2027-07-12'));
+    o.setClock(at6('2027-07-26'));
+    await o.prepareJob.run(SLOT);
+    expect(await o.reminders()).toEqual([[1, 'close', 'rapprochee']]);
+  });
+
   it('[R13] un réseau en panne n’empêche pas les autres ; la première erreur remonte au planificateur', async () => {
     const t = await invoiced();
     await t.deposit('2027-06-20', t.payment('2027-06-20'));

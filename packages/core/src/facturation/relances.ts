@@ -131,6 +131,14 @@ export class RelancesImpayes {
     );
   }
 
+  /**
+   * Ferme les relances en attente des factures qui ne sont plus impayées (rapprochées, corrigées, encaissées), sans
+   * rien préparer ni envoyer : le passage le fait même quand le relevé de banque est trop ancien pour relancer [R553].
+   */
+  async closeSettledReminders(networkId: string): Promise<void> {
+    await this.closeSettled(networkId);
+  }
+
   /** Pourquoi une facture n'est plus impayée : rapprochée, corrigée par un avoir, encaissée ; `null` si elle l'est encore. */
   private async settled(invoiceId: string): Promise<'rapprochee' | 'avoir' | 'encaissee' | null> {
     if (await this.db.first('SELECT 1 FROM bank_reconciliations WHERE invoice_id = ?', [invoiceId])) return 'rapprochee';

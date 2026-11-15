@@ -122,6 +122,8 @@ export function facturationJobs(db: SqlDatabase, journal: JournalStore, acces: A
         const networks = await db.all<{ network_id: string }>("SELECT DISTINCT network_id FROM invoices WHERE kind = 'honoraires' ORDER BY network_id");
         await eachNetwork(networks, async (networkId) => {
           await reconcile(networkId);
+          // Une facture rapprochée, corrigée ou encaissée ferme sa relance, même sur un relevé ancien [R553].
+          await r.closeSettledReminders(networkId);
           const freshness = await bankStatementFreshness(db, networkId, now(), maxAgeDays);
           if (!freshness.fresh) {
             await appendEvent(
@@ -149,6 +151,7 @@ export function facturationJobs(db: SqlDatabase, journal: JournalStore, acces: A
         const networks = await db.all<{ network_id: string }>("SELECT DISTINCT network_id FROM invoice_reminders WHERE status = 'validee' ORDER BY network_id");
         await eachNetwork(networks, async (networkId) => {
           await reconcile(networkId);
+          await r.closeSettledReminders(networkId);
           // La relance dit que la facture n'apparaît pas dans les encaissements : sur un relevé ancien, elle attend
           // le dépôt suivant, validée, sans rien écrire au journal à chaque heure.
           if (!(await bankStatementFreshness(db, networkId, now(), maxAgeDays)).fresh) return;
