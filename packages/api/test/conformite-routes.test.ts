@@ -136,7 +136,62 @@ describeWithSqlite('L09 · routes de M12', () => {
     expect(opened.headers.get('content-disposition')).toBe('attachment; filename="piece.pdf"');
     expect(opened.headers.get('cache-control')).toBe('no-store');
     expect([...opened.bytes!]).toEqual([...PDF]);
+    // RC51 : l'empreinte vérifiée part avec la pièce, celle des octets rendus.
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', opened.bytes!));
+    expect(opened.headers.get('repr-digest')).toBe(`sha-256=:${Buffer.from(digest).toString('base64')}:`);
     // Rien de la pièce au journal.
+    expect(JSON.stringify(await t.journal.all())).not.toContain(key);
+  });
+
+  it('[R90] RC51 : une pièce changée au stockage n’est jamais remise, une pièce absente non plus, et chacun le lit en mots', async () => {
+    const t = await setup();
+    const deposit = await t.call(t.agent, 'POST', `/personnes/${t.buyerId}/coffre?sorte=passeport&verifie=2027-03-01`, undefined, { raw: PDF });
+    const pieceId = deposit.body!.receipt.pieceId as string;
+    const [key] = [...t.bucket.objects.keys()];
+    const opens = async () => (await t.journal.all()).filter((e) => e.type === 'coffre.ouvert').length;
+
+    // Intacte : une seule ligne « ouvert » au journal, écrite après la vérification.
+    const before = await opens();
+    expect((await t.call(t.compliance, 'GET', `/coffre/${pieceId}`)).status).toBe(200);
+    expect((await opens()) - before).toBe(1);
+
+    // Un octet changé au stockage : refus en mots, rien de la pièce rendu, aucun « ouvert ».
+    const changed = new Uint8Array(PDF);
+    changed[changed.length - 1] = changed[changed.length - 1]! ^ 1;
+    t.bucket.objects.set(key!, { bytes: changed, type: 'application/pdf' });
+    const altered = await t.call(t.compliance, 'GET', `/coffre/${pieceId}`);
+    expect(altered).toMatchObject({ status: 409, body: { ok: false, rule: 'R90', code: 'altered' } });
+    expect((altered.body as { message?: string }).message).toMatch(/n’est pas remise/);
+    expect(JSON.stringify(altered.body)).not.toContain('piece inventee');
+    expect(altered.headers.get('repr-digest')).toBeNull();
+    // Un octet de plus : altérée aussi.
+    t.bucket.objects.set(key!, { bytes: new Uint8Array([...PDF, 0]), type: 'application/pdf' });
+    expect(await t.call(t.compliance, 'GET', `/coffre/${pieceId}`)).toMatchObject({ status: 409, body: { code: 'altered' } });
+    expect((await opens()) - before).toBe(1);
+    expect((await t.journal.all()).filter((e) => e.type === 'coffre.altere')).toHaveLength(2);
+
+    // Absente du stockage : 404 en mots.
+    t.bucket.objects.delete(key!);
+    const missing = await t.call(t.compliance, 'GET', `/coffre/${pieceId}`);
+    expect(missing).toMatchObject({ status: 404, body: { ok: false, rule: 'R90', code: 'missing' } });
+    expect((missing.body as { message?: string }).message).toMatch(/introuvable/);
+    expect((await opens()) - before).toBe(1);
+
+    // Agent, direction : refusés, le stockage jamais lu.
+    t.bucket.objects.set(key!, { bytes: new Uint8Array(PDF), type: 'application/pdf' });
+    let reads = 0;
+    const get = t.bucket.get.bind(t.bucket);
+    t.bucket.get = async (k: string) => {
+      reads += 1;
+      return get(k);
+    };
+    for (const v of [t.agent, t.direction]) expect((await t.call(v, 'GET', `/coffre/${pieceId}`)).status).toBe(403);
+    expect(await t.call(t.compliance, 'GET', '/coffre/piece-inconnue')).toMatchObject({ status: 404 });
+    expect(reads).toBe(0);
+    // Et le responsable la relit, remise en état.
+    expect((await t.call(t.compliance, 'GET', `/coffre/${pieceId}`)).status).toBe(200);
+    expect(reads).toBe(1);
+    // Rien de la clé au journal [R13].
     expect(JSON.stringify(await t.journal.all())).not.toContain(key);
   });
 

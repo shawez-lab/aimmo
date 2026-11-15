@@ -110,6 +110,17 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
 
 const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
 const noVault = (): Response => json(503, { ok: false, rule: null, code: 'vault_not_configured', message: 'Coffre indisponible : aucun stockage du coffre.' });
+/** Les refus de lecture d'une pièce du coffre (RC51), dits en mots au responsable. */
+export const VAULT_READ_MESSAGES = {
+  altered: 'La pièce n’est pas remise : ses octets au stockage ne sont plus ceux du dépôt (empreinte différente).',
+  missing: 'La pièce n’est pas remise : elle est introuvable au stockage du coffre, ou le stockage ne répond pas.',
+} as const;
+
+/** L'en-tête `Repr-Digest` (RFC 9530) d'une empreinte SHA-256 rangée en hexadécimal : `sha-256=:<base64>:`. */
+export function reprDigest(sha256: string): string {
+  const pairs = sha256.match(/../g) ?? [];
+  return `sha-256=:${btoa(String.fromCharCode(...pairs.map((h) => parseInt(h, 16))))}:`;
+}
 const query = (r: Request, name: string): string | null => new URL(r.url).searchParams.get(name);
 
 /**
@@ -209,16 +220,24 @@ export function conformiteRoutes(): ConformiteRoute[] {
     }),
     route('GET', `${P}/coffre`, 'coffre_liste', async (s, v, [personId]) => reply(await services(s).coffre.list(v, personId!))),
     route('GET', `${P}/coffre/recus`, 'coffre_recus', async (s, v, [personId]) => reply(await services(s).coffre.receipts(v, personId!))),
+    // RC51 : la pièce n'est remise que si ses octets sont ceux du dépôt (RC44), avec son empreinte vérifiée en en-tête.
     route('GET', `/coffre/${ID}`, 'coffre_ouvrir', async (s, v, [pieceId]) => {
       if (!s.vault) return noVault();
-      const opened = await services(s).coffre.open(v, pieceId!);
-      if (!opened.ok) return reply(opened);
-      const content = await s.vault.read(opened.storageRef);
-      if (!content) return json(404, { ok: false, rule: null, code: 'unknown_content' });
-      const extension = opened.contentType === 'application/pdf' ? 'pdf' : opened.contentType === 'image/png' ? 'png' : 'jpg';
-      return new Response(content, {
+      const read = await services(s).coffre.read(v, pieceId!, s.vault);
+      if (!read.ok) {
+        if (read.code === 'altered') return json(409, { ...read, message: VAULT_READ_MESSAGES.altered });
+        if (read.code === 'missing') return json(404, { ...read, message: VAULT_READ_MESSAGES.missing });
+        return reply(read);
+      }
+      const extension = read.contentType === 'application/pdf' ? 'pdf' : read.contentType === 'image/png' ? 'png' : 'jpg';
+      return new Response(read.content, {
         status: 200,
-        headers: { 'content-type': opened.contentType, 'content-disposition': `attachment; filename="piece.${extension}"`, ...HEADERS },
+        headers: {
+          'content-type': read.contentType,
+          'content-disposition': `attachment; filename="piece.${extension}"`,
+          'repr-digest': reprDigest(read.sha256),
+          ...HEADERS,
+        },
       });
     }),
 
