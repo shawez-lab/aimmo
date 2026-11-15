@@ -235,4 +235,48 @@ describeWithSqlite('RC45 · Les fichiers déposés de l’agence sous licence, r
     expect(twice[0]!.sha256).toBe(twice[1]!.sha256);
     expect(t.reads.filter((x) => x === 'stock/lac/note-1.ogg')).toHaveLength(1);
   });
+  it('[R666] un stockage qui réutilise son tampon : chaque pièce garde ses propres octets, même citée deux fois', async () => {
+    const t = await setup();
+    const at = '2028-01-09T08:00:00.000Z';
+    // L'ordre de la liste : facture, note 1, (masquée), note 3, perdue, coffre, puis la note 7 qui cite de nouveau la note 1.
+    await t.db.run("INSERT INTO voice_notes (id, network_id, channel, external_id, status, media_ref, mime, transcript, created_at) VALUES ('note-lac-7', ?, 'whatsapp', 'ext-7', 'transcrite', 'stock/lac/note-1.ogg', 'audio/ogg', 'Bonjour, essai.', ?)", [t.lacNet, at]);
+    const made = await t.reprise.make(t.lacDirection, 'preuve-ok');
+    if (!made.ok) throw new Error(made.code);
+    const shared = new Uint8Array(64);
+    const reuse: StockageFichiers = {
+      async read(ref) {
+        const b = t.store.get(ref);
+        if (b === undefined) return null;
+        shared.set(b);
+        return shared.subarray(0, b.byteLength);
+      },
+    };
+    const contenus = new ContenusRepriseAgence(t.db, new SqlJournalStore(t.db), { requireSecondFactor: async () => ({ ok: true }) as const }, reuse);
+    const r = await contenus.remettre(t.lacDirection, made.value.document, 'preuve-ok');
+    if (!r.ok) throw new Error(r.code);
+    for (const p of r.value.pieces.filter((x) => x.statut === 'remise')) {
+      expect(new TextDecoder().decode(p.contenu!)).toBe(new TextDecoder().decode(t.store.get(p.ref)!));
+      expect(p.sha256).toBe(await hex(t.store.get(p.ref)!));
+    }
+    const twice = r.value.pieces.filter((p) => p.ref === 'stock/lac/note-1.ogg');
+    expect(twice).toHaveLength(2);
+    // Une copie par pièce : changer l'une ne change pas l'autre.
+    twice[0]!.contenu![0] = 0;
+    expect(await pieceIntacte(twice[1]!, t.store.get('stock/lac/note-1.ogg')!)).toBe(true);
+  });
+
+  it('[R666] une pièce trop grosse citée deux fois n’est lue qu’une fois et ses octets ne sont pas gardés', async () => {
+    const t = await setup({ maxBytes: 24 });
+    const at = '2028-01-09T08:00:00.000Z';
+    await t.db.run("INSERT INTO mandate_source_costs (id, network_id, month, source, version, amount_cents, proof_ref, entered_by, entered_at) VALUES ('cout-lac-2', ?, '2027-11', 'flyers', 1, 9000, 'stock/lac/facture.pdf', 'direction:direction-lac', ?)", [t.lacNet, at]);
+    const made = await t.reprise.make(t.lacDirection, 'preuve-ok');
+    if (!made.ok) throw new Error(made.code);
+    const r = await t.contenus.remettre(t.lacDirection, made.value.document, 'preuve-ok');
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.pieces.filter((p) => p.ref === 'stock/lac/facture.pdf').map((p) => [p.statut, p.taille, p.contenu])).toEqual([
+      ['trop_grosse', 27, null],
+      ['trop_grosse', 27, null],
+    ]);
+    expect(t.reads.filter((x) => x === 'stock/lac/facture.pdf')).toHaveLength(1);
+  });
 });

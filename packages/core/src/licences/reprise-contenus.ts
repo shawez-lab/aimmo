@@ -137,7 +137,9 @@ export class ContenusRepriseAgence {
 
     const pieces: PieceReprise[] = [];
     // Une même référence citée par plusieurs lignes n'est lue qu'une fois dans le lot.
-    const read = new Map<string, Uint8Array | null>();
+    // Ce qui est gardé : une copie à soi des octets lus (le stockage peut réutiliser son tampon), ou la seule taille d'une
+    // pièce trop grosse, jamais ses octets.
+    const read = new Map<string, { content: Uint8Array } | { size: number } | null>();
     let bytes = 0;
     let suite: number | null = null;
     for (let i = depuis; i < fichiers.length; i++) {
@@ -152,35 +154,36 @@ export class ContenusRepriseAgence {
         pieces.push({ ...base, statut: 'masquee', ...none });
         continue;
       }
-      let content: Uint8Array | null;
-      if (f.ref.startsWith(PREFIXE_COFFRE)) content = null;
-      else if (read.has(f.ref)) content = read.get(f.ref)!;
+      let got: { content: Uint8Array } | { size: number } | null;
+      if (f.ref.startsWith(PREFIXE_COFFRE)) got = null;
+      else if (read.has(f.ref)) got = read.get(f.ref)!;
       else {
+        let raw: unknown;
         try {
-          const got = await this.storage.read(f.ref);
-          content = got instanceof Uint8Array ? got : null;
+          raw = await this.storage.read(f.ref);
         } catch {
-          content = null;
+          raw = null;
         }
-        read.set(f.ref, content);
+        got = !(raw instanceof Uint8Array) ? null : raw.byteLength > this.maxBytes ? { size: raw.byteLength } : { content: raw.slice() };
+        read.set(f.ref, got);
       }
-      if (content === null) {
+      if (got === null) {
         pieces.push({ ...base, statut: 'absente', ...none });
         continue;
       }
-      const size = content.byteLength;
-      if (size > this.maxBytes) {
-        pieces.push({ ...base, statut: 'trop_grosse', sha256: null, taille: size, contenu: null });
+      if ('size' in got) {
+        pieces.push({ ...base, statut: 'trop_grosse', sha256: null, taille: got.size, contenu: null });
         continue;
       }
+      const size = got.content.byteLength;
       // Le lot s'arrête avant la pièce qui le ferait déborder ; elle ouvrira le lot suivant.
       if (bytes + size > this.maxBytes) {
         suite = i;
         break;
       }
       bytes += size;
-      // Une copie : ce qui est remis ne change pas si le stockage réutilise ses octets.
-      const own = content.slice();
+      // Une copie par pièce : changer les octets d'une pièce remise ne change ni une autre ni ce qui est gardé.
+      const own = got.content.slice();
       pieces.push({ ...base, statut: 'remise', sha256: await sha256Hex(own), taille: size, contenu: own });
     }
     const manifeste = await fingerprintOf(manifesteDe(check.fingerprint, pieces));
