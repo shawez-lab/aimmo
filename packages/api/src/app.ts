@@ -136,6 +136,7 @@ import { investirRoutes, type InvestirRoute, type InvestirServices } from './inv
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
+import { dicteeRoutes, type DicteeRoute } from './dictee.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -1676,6 +1677,16 @@ function biensDeFicheRoutes(): RouteDef[] {
   }));
 }
 
+/** La création à la voix (BR100) : l'agent seul, le rôle contrôlé avant le corps [R16]. */
+function dicteeRoutesDef(): RouteDef[] {
+  return dicteeRoutes().map((r: DicteeRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les appels notés par l'agent (AC12) : la route contrôle son rôle avant de lire le corps [R16, R204]. */
 function appelsFicheRoutes(): RouteDef[] {
   return appelsRoutes().map((r: AppelsRoute) => ({
@@ -2326,6 +2337,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
+    ...dicteeRoutesDef(),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
     ...m01Routes(config),
