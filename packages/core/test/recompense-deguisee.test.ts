@@ -62,6 +62,11 @@ describe('RC65 · récompense déguisée', () => {
       'l’indemnité d’immobilisation du compromis',
       'un remboursement anticipé de votre prêt',
       'le remboursement de son crédit',
+      'Hugo accepte d’être appelé après le remboursement du crédit',
+      'le remboursement de mon prêt',
+      'le remboursement des prêts',
+      'le remboursement d’emprunt',
+      'le remboursement de leurs crédits',
     ]) {
       expect(mentionsReward(text), text).toBe(false);
       expect(rewardWords(text), text).toEqual([]);

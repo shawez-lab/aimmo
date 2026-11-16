@@ -41,7 +41,7 @@ export const REWARD = new RegExp(
     String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
     String.raw`\b\d+\s*(?:balles|k|ke|keur)\b`,
     // Une indemnité ou un remboursement au client qui recommande ; ceux d'un compromis ou d'un prêt n'en sont pas.
-    String.raw`\b(?:indemnite|indemnites|remboursement|remboursements)\b(?!\s+(?:d.immobilisation|anticipes?|de (?:votre |son |leur |du )?pret|du pret|d.emprunt|de (?:votre |son |leur )?credit))`,
+    String.raw`\b(?:indemnite|indemnites|remboursement|remboursements)\b(?!\s+(?:d.immobilisation|anticipes?|(?:du|des|de|d.)\s*(?:(?:mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|ce|cet|cette)\s+)?(?:pret|prets|credit|credits|emprunt|emprunts)\b))`,
     String.raw`\b(?:restaurant|resto|repas|diner|dejeuner|week.end|voyage|sejour|bouteille|champagne|abonnement)\s+(?:vous\s+|lui\s+|leur\s+)?(?:offerts?|offertes?|paye|payes|payee|rembourse)\b`,
     String.raw`\b(?:offr\w*|paie\w*|pay\w*)\s+(?:[\w']+\s+){0,3}(?:au restaurant|un restaurant|un resto|un repas|un diner|un dejeuner|une bouteille|un week.end|un voyage|un sejour|un abonnement)\b`,
     // Une invitation au restaurant en remerciement est une récompense ; un repas de quartier ne l'est pas.
