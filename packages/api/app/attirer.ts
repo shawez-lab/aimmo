@@ -227,14 +227,14 @@ globalThis.AIMMO_ATTIRER = function (t) {
     chosenMonth = month;
     show('attirer');
     state('Chargement…');
-    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET'), send('/v1/attirer/prix/zones', 'GET'), send('/v1/attirer/agents', 'GET')]).then(function (all) {
+    return Promise.all([send('/v1/attirer/prix/versions', 'GET'), send('/v1/attirer/sites', 'GET'), send('/v1/attirer/origine/' + month, 'GET'), send('/v1/attirer/quartiers', 'GET'), send('/v1/attirer/prix/zones', 'GET'), send('/v1/attirer/agents', 'GET'), send('/v1/attirer/prix/zones/a-refaire', 'GET')]).then(function (all) {
       if (mine !== t.session() || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
       var body = $('attirer-corps');
       body.appendChild(renderOrigin(all[2], month));
       body.appendChild(renderPrices(all[0]));
       body.appendChild(renderQuarters(all[3]));
-      body.appendChild(renderZones(all[4]));
+      body.appendChild(renderZones(all[4], all[6]));
       body.appendChild(renderSites(all[1]));
       body.appendChild(renderSiteStats());
       body.appendChild(renderAgents(all[5]));
@@ -387,9 +387,10 @@ globalThis.AIMMO_ATTIRER = function (t) {
       saveZone(input, (isCommune ? 'Commune' : 'Quartier') + ' ajouté' + (isCommune ? 'e' : '') + '. Les prix suivront au prochain calcul.');
     }));
   }
-  function zoneLine(z, warning) {
+  function zoneLine(z, warning, redraw) {
     var li = el('li');
     li.appendChild(el('strong', z.name));
+    if (redraw[z.id]) li.appendChild(el('p', 'Contour à refaire : mise de côté du calcul. Retirez-la, puis retracez-la.', 'etat'));
     li.appendChild(confirmed('Retirer', warning, function () {
       once(function () {
         state('Envoi…');
@@ -402,17 +403,40 @@ globalThis.AIMMO_ATTIRER = function (t) {
     }));
     return li;
   }
-  function renderZones(res) {
+  /*
+   * BR97 · les zones rangées avant le contrôle des contours, mises de côté du calcul (RC60) : dites en tête, puis marquées
+   * dans la liste. Une lecture en échec ne dit jamais « aucune » [R10].
+   */
+  var LEVELS = { commune: 'commune', quartier: 'quartier' };
+  function renderRedraw(box, res) {
+    var todo = list(res);
+    if (!todo) {
+      box.appendChild(el('p', 'Liste des zones à refaire non lue. ' + (res.offline ? 'Pas de réseau.' : refusal(res, 'Indisponible pour le moment.')), 'etat'));
+      return {};
+    }
+    var marked = {};
+    if (!todo.length) return marked;
+    box.appendChild(el('p', todo.length === 1 ? '1 zone mise de côté du dernier calcul : son contour se touche lui-même, ses prix ne sont pas publiés.' : todo.length + ' zones mises de côté du dernier calcul : leur contour se touche lui-même, leurs prix ne sont pas publiés.', 'etat'));
+    var ul = el('ul', null, 'liste');
+    todo.forEach(function (z) {
+      marked[z.id] = true;
+      ul.appendChild(el('li', z.name + ' (' + (LEVELS[z.level] || 'zone') + ')' + (z.level === 'commune' ? ', avec ses quartiers' : '') + ' : retirez-la, puis retracez-la.'));
+    });
+    box.appendChild(ul);
+    return marked;
+  }
+  function renderZones(res, redrawRes) {
     var box = part('Communes et quartiers des prix');
     var items = list(res);
     if (!items) return missing(box, res);
+    var redraw = renderRedraw(box, redrawRes);
     var communes = items.filter(function (z) { return z.level === 'commune'; });
     if (!communes.length) box.appendChild(el('p', 'Aucune commune : aucun prix ne peut être calculé.', 'doux'));
     var ul = el('ul', null, 'liste');
     communes.forEach(function (c) {
-      var li = zoneLine(c, 'La commune et ses quartiers quitteront le site : prix et pages de quartier. Appuyez de nouveau pour confirmer.');
+      var li = zoneLine(c, 'La commune et ses quartiers quitteront le site : prix et pages de quartier. Appuyez de nouveau pour confirmer.', redraw);
       var inner = el('ul', null, 'liste');
-      items.forEach(function (q) { if (q.parentId === c.id) inner.appendChild(zoneLine(q, 'Ce quartier quittera le site : ses prix et sa page. Appuyez de nouveau pour confirmer.')); });
+      items.forEach(function (q) { if (q.parentId === c.id) inner.appendChild(zoneLine(q, 'Ce quartier quittera le site : ses prix et sa page. Appuyez de nouveau pour confirmer.', redraw)); });
       li.appendChild(inner);
       ul.appendChild(li);
     });

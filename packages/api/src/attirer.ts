@@ -169,6 +169,8 @@ export function attirerRoutes(): AttirerRoute[] {
     // AT01 · prix regroupés
     { method: 'GET', pattern: new RegExp(`${P}/prix/versions$`), name: 'attirer.prix_versions', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).readPrices.versions(v.networkId))) },
     { method: 'GET', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zones', roles: DIRECTION, handle: async (s, v) => reply(await services(s).readPrices.zones(v)) },
+    // BR97 · les zones mises de côté du calcul, à retirer puis retracer (RC60) : nom, niveau et raison, jamais le contour.
+    { method: 'GET', pattern: new RegExp(`${P}/prix/zones/a-refaire$`), name: 'attirer.prix_zones_a_refaire', roles: DIRECTION, handle: async (s, v) => reply(await services(s).readPrices.zonesToRedraw(v)) },
     { method: 'POST', pattern: new RegExp(`${P}/prix/zones$`), name: 'attirer.prix_zone', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).readPrices.defineZone(v, b as never)), ZONE_BODY_BYTES) },
     { method: 'POST', pattern: new RegExp(`${P}/prix/zones/${ID}/retrait$`), name: 'attirer.prix_zone_retrait', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).readPrices.retireZone(v, id)) },
     {

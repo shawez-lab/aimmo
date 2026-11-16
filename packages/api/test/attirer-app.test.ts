@@ -42,6 +42,7 @@ const BASE: Record<string, Answer> = {
     { id: 'zc', level: 'commune', parentId: null, name: 'Ville Test' },
     { id: 'z1', level: 'quartier', parentId: 'zc', name: 'Ouest' },
   ]),
+  'GET /v1/attirer/prix/zones/a-refaire': ok([]),
   'POST /v1/attirer/prix/zones': ok({ id: 'z9' }),
   'POST /v1/attirer/prix/zones/z1/retrait': ok({ id: 'z1' }),
   'GET /v1/attirer/agents': ok({
@@ -405,7 +406,7 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   });
 
   it('pas de réseau : c’est dit, rien n’est inventé', async () => {
-    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/agents': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
+    const t = await run({ 'GET /v1/attirer/prix/versions': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/sites': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/quartiers': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/agents': async () => Promise.reject(new TypeError('x')), 'GET /v1/attirer/prix/zones/a-refaire': async () => Promise.reject(new TypeError('x')), [`GET /v1/attirer/origine/${MONTH}`]: async () => Promise.reject(new TypeError('x')) });
     await t.ouvrir();
     expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
   });
@@ -685,6 +686,64 @@ describe('AT12 · écran « Attirer » de la direction', () => {
       b.listeners.click!({});
       await settle();
       expect(t.posts()).toHaveLength(1);
+    });
+  });
+
+  describe('BR97 · zones à retracer', () => {
+    const TODO = [
+      { id: 'z1', level: 'quartier', parentId: 'zc', name: 'Ouest', reason: 'contour_croise' },
+      { id: 'zx', level: 'commune', parentId: null, name: INJECTED, reason: 'contour_croise' },
+    ];
+
+    it('[R150] les zones à refaire sont dites en tête, avec leur niveau et le geste, puis marquées dans la liste', async () => {
+      const t = await run({ 'GET /v1/attirer/prix/zones/a-refaire': ok(TODO) });
+      await t.ouvrir();
+      const texts = t.texts();
+      expect(texts).toContain('2 zones mises de côté du dernier calcul : leur contour se touche lui-même, leurs prix ne sont pas publiés.');
+      expect(texts).toContain('Ouest (quartier) : retirez-la, puis retracez-la.');
+      expect(texts).toContain(`${INJECTED} (commune), avec ses quartiers : retirez-la, puis retracez-la.`);
+      const marks = t.body().all().filter((e) => e.textContent === 'Contour à refaire : mise de côté du calcul. Retirez-la, puis retracez-la.');
+      expect(marks).toHaveLength(1);
+      // Le texte reçu n'est jamais lu comme du HTML, et aucun identifiant n'est montré.
+      expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+      expect(texts).not.toMatch(/\bz1\b|\bzx\b|contour_croise/);
+    });
+
+    it('[R150] une seule zone se dit au singulier ; aucune : rien n’est ajouté', async () => {
+      const one = await run({ 'GET /v1/attirer/prix/zones/a-refaire': ok([TODO[0]]) });
+      await one.ouvrir();
+      expect(one.texts()).toContain('1 zone mise de côté du dernier calcul : son contour se touche lui-même, ses prix ne sont pas publiés.');
+      const none = await run();
+      await none.ouvrir();
+      expect(none.texts()).not.toMatch(/mise de côté|à refaire/);
+    });
+
+    it('[R10] une lecture en échec ne dit jamais « aucune » : elle dit que la liste n’est pas lue', async () => {
+      for (const [answer, said] of [
+        [no(403, { ok: false, rule: 'R16', code: 'role' }), 'Liste des zones à refaire non lue. Ce n’est pas dans vos droits.'],
+        [no(500, { ok: false }), 'Liste des zones à refaire non lue. Indisponible pour le moment.'],
+        [async () => Promise.reject(new TypeError('x')), 'Liste des zones à refaire non lue. Pas de réseau.'],
+      ] as const) {
+        const t = await run({ 'GET /v1/attirer/prix/zones/a-refaire': answer });
+        await t.ouvrir();
+        expect(t.texts()).toContain(said);
+        // Le reste de l'écran des zones reste là.
+        expect(t.buttons('Retirer').length).toBeGreaterThan(0);
+      }
+    });
+
+    it('[R16] la lecture existe sous la direction seule', async () => {
+      const t = await run();
+      await t.ouvrir();
+      const call = t.calls.find((c) => c.url === '/v1/attirer/prix/zones/a-refaire');
+      expect(call?.method).toBe('GET');
+      const route = attirerRoutes().find((r) => r.method === 'GET' && r.pattern.test('/attirer/prix/zones/a-refaire'));
+      expect(route!.roles).toEqual(['direction']);
+    });
+
+    it('[R201] le script de l’écran tient le budget d’une page, sans innerHTML', () => {
+      expect(budgetProblems({ html: '', js: ATTIRER_SCRIPT }, BUDGETS.page)).toEqual([]);
+      expect(ATTIRER_SCRIPT).not.toContain('innerHTML');
     });
   });
 
