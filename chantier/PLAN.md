@@ -2320,7 +2320,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC60 · Une zone de prix rangée avant le contrôle des contours, mise de côté du calcul et signalée à la direction (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#615, `a25d4819`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6375 tests). Reste pour la voie 1 : la route `GET /v1/attirer/prix/zones/a-refaire` par `PrixRegroupes.zonesToRedraw` et l'avertissement à l'écran des zones de la direction.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT19, RC59
 - Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150, R16, R10.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC59 (« les zones déjà rangées ne sont pas recontrôlées »). Une zone tracée avant AT19 ou RC59 peut avoir un contour qui se touche lui-même : ses ventes seraient mal attribuées, et la direction ne le sait pas. Désormais, dans `packages/core/src/attirer/prix-versions.ts` seul : `recompute` relit chaque contour rangé avec `ringSelfCrosses` ; une zone dont le contour se touche (ou ne se relit pas) est mise de côté du calcul comme une zone retirée : ni case, ni vente attribuée ; une commune mise de côté emporte ses quartiers, un quartier mis de côté laisse ses ventes à sa commune. Les cases de la version précédente restent contrôlées contre la nouvelle (comme après un retrait) [R150]. Le résultat et la ligne du journal disent combien de zones sont mises de côté (`setAside`, un nombre, aucun identifiant). `zonesToRedraw(viewer)`, direction seule [R16], dit lesquelles, par nom et niveau, avec la raison « contour qui se touche ». Rien n'est retiré ni réécrit : la zone reste rangée, la direction la retire et la retrace. Aucune route, aucun écran, aucune migration ; `zones(viewer)` ne change pas.
