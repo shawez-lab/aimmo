@@ -1696,7 +1696,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR95 · Mes rapports sur mesure depuis « Mes chiffres », chaque chiffre recompté sur ses lignes (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#614, `a8c81418`). Codex 1 P0 (titres h5 sous le h2 de « Mes chiffres ») corrigé, puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6375 tests). Un compte plus en activité : l'application referme la session avant le script (refus `agent_inactive` lu par `send`). Reste : les factures fournisseurs (lecture IA, H13) n'ont pas encore d'écran.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX62, BR94
 - Cahier : M13 Pilotage et finances (rapports) ; R560, R14, R68, R69, R16, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de BR94 (« l'écran de l'agent pour ses propres rapports, depuis « Mes chiffres » »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Les routes `/v1/finances/rapports` admettent déjà l'agent actif, pour ses seuls chiffres (HX62). Un second script servi à part (`/app/rapports-agent.js`), fait par le même code que celui de la direction, ouvert par le chargeur commun (`lazyBlock`) au bas de « Mes chiffres », au seul geste [R201]. L'agent ne choisit aucune portée : le corps n'a ni `agentId` ni `network`, le serveur lit le lecteur [R68]. Changent seulement `app/rapports.ts`, une ligne de `app/fichiers.ts`, `src/agent-app.ts` et des tests ; ni le serveur ni le cœur.
