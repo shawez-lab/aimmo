@@ -193,6 +193,36 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     expect(await t.db.all('SELECT id FROM client_space_links WHERE person_id = ?', [p.id])).toHaveLength(3);
   });
 
+  it('[R160] [R16] [R13] BR98 : au plafond, la route dit les comptes et l’heure du prochain lien, à l’agent de la personne et à la direction seuls', async () => {
+    const t = await setup();
+    const routes = espacesRoutes();
+    const read = async (viewer: Viewer, personId: string) => {
+      const path = `/espaces/personnes/${personId}/liens`;
+      const route = routes.find((r) => r.method === 'GET' && r.pattern.test(path))!;
+      const response = await route.handle(t.s, viewer, (route.pattern.exec(path) ?? []).slice(1), new Request(`https://api.example/v1${path}`));
+      return { status: response.status, body: (await response.json()) as { ok: boolean; rule?: string; code?: string; data?: Record<string, unknown> } };
+    };
+    const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.agent.userId, firstName: 'Client', lastName: 'Inventé' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: p.id, kind: 'email', value: 'client.liens@example.test' });
+    t.sides.set(p.id, ['vendeur']);
+    expect(await read(t.agent, p.id)).toMatchObject({ status: 200, body: { ok: true, data: { counted: 0, nextAt: null } } });
+    for (let i = 0; i < 3; i++) expect((await t.callAgent(t.agent, `/espaces/personnes/${p.id}/ouvrir`, CONSENT)).status).toBe(200);
+    const full = await read(t.agent, p.id);
+    expect(full.status).toBe(200);
+    expect(full.body.data).toMatchObject({ limit: 3, counted: 3, prepared: 3, requested: 0, opened: 0, requestsUnopened: false });
+    expect(typeof full.body.data!.nextAt).toBe('string');
+    expect(JSON.stringify(full.body)).not.toMatch(/@|example\.test|espace\/[a-z]{40}|[a-z]{40}/);
+    // La direction lit aussi ; un autre rôle est refusé et c'est écrit ; un autre agent est refusé.
+    expect((await read({ role: 'direction', userId: 'dir-1', networkId: t.network.id }, p.id)).status).toBe(200);
+    expect(await read({ role: 'compliance', userId: 'conf-1', networkId: t.network.id }, p.id)).toEqual({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });
+    const refused = (await t.journal.all()).filter((e) => e.type === 'acces.refuse');
+    expect(refused.map((e) => (e.data as { kind: string }).kind)).toContain('espaces.liens');
+    const bea = await t.store.createAgent({ networkId: t.network.id, firstName: 'Bea', lastName: 'Essai' });
+    const other = await read({ role: 'agent', userId: bea.id, networkId: t.network.id }, p.id);
+    expect(other.body).toMatchObject({ ok: false, rule: 'R16' });
+    expect([403, 404]).toContain(other.status);
+  });
+
   it('[R161] une donnée des sources est toujours échappée dans la page', async () => {
     const t = await setup();
     const c = await t.client('vendeur');
