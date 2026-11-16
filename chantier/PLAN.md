@@ -1706,6 +1706,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : un second script servi à part, chargé au seul geste depuis « Mes chiffres », budgets tenus, sans innerHTML ni fetch, seules les routes des rapports, jamais la liste des agents ni le total du réseau [R201, R68] (test) ; corps des lectures sans `agentId` ni `network` [R68] (test) ; chaque chiffre égal à ses lignes, montré et ouvert sur elles ; un chiffre faux dit non vérifiable [R69, R560] (test) ; réponse du réseau ou d'un autre agent jetée [R14, R68] (test) ; enregistrer et relire ses rapports sur la période choisie (test) ; refus (droits, compte pas en activité, période), réseau coupé dits en mots, jamais un code ; réponse d'une session finie jetée [R16] (test) ; tous les tests de BR94 restent verts.
 - Attend : rien.
 
+### BR96 · L'alerte de cession relue au coffre, dite à l'écran du responsable (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC58, CE21
+- Cahier : M16 « Règles » (vigilance renforcée de la cession) et M12 Conformité ; R118, R14, R15, R10.
+- Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC58 (« dire `stillMissing`, `checkedAt` et `buyerCurrent` à l'écran du responsable, à la place de « Vérifiez le coffre avant de décider » ; `null` dit « coffre non relu » »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Seul `cCessions` de `packages/api/app/conformite.ts` et son test changent ; aucune route, aucune migration. L'alerte garde ce qui manquait à sa levée, puis dit l'heure de la relecture, ce qui manque encore et ce qui a été déposé depuis ; tout déposé se dit, mais la décision reste au responsable [R14] ; `stillMissing` nul ou absent (serveur plus ancien) dit « coffre non relu : vérifiez-le avant de décider », jamais « rien ne manque » [R10] ; `buyerCurrent` faux dit que l'acquéreur a été remplacé depuis.
+- Objectif : le responsable lit, sur l'alerte même, ce qui manque encore aujourd'hui au coffre, sans l'ouvrir.
+- Jamais vu : une alerte anti-blanchiment qui dit d'elle-même « levée le 28/10 sans origine des fonds ; relue à 9 h 12 : déposée depuis », sans montrer une pièce ni un montant, et « coffre non relu » quand elle ne sait pas.
+- Critères : ce qui manque encore et ce qui est déposé depuis, avec la date et l'heure de la relecture [R118] (test) ; tout déposé : dit, le formulaire de décision reste [R14] (test) ; `stillMissing` nul ou absent : « coffre non relu », jamais « tout est déposé » [R10] (test) ; acquéreur remplacé dit, acquéreur actuel rien de plus (test) ; aucune pièce ni montant, la référence reste tronquée [R15, R13] (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
