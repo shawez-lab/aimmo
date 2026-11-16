@@ -1789,7 +1789,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR104 · Les panneaux à l'écran : poser sur le bien, récupérer depuis l'accueil
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#631, `df2edc1d`). Codex 2 P2 corrigés (l'incertitude d'une écriture reste dite quand la relecture échoue ; le verrou d'envoi tient quand le bloc est rouvert), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6483 tests, `wrangler deploy --dry-run` compris). La réserve de 1 000 octets de BR102 pour BR103 est retirée du test, le budget de l'application reste vérifié. Reste (voie 1) : l'ajout au stock par la direction (`POST /v1/panneaux/stock`) n'a pas d'écran ; les écrans de la boutique, du marketing et du coût de l'agent moyen non plus (BR02, BR03).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR23
 - Cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux » ; R282, R283, R284, R42, R16, R201.
 - Décidé (2026-11-16, voie 1) : ajoutée parce que le « Reste » de BR23 dit « écran du stock à faire » et qu'aucun écran n'appelle `/v1/panneaux` ; toutes les autres tâches de la voie 1 attendent un humain. Un seul script servi à part, `/app/panneaux.js`, chargé au geste par le chargeur commun : l'application n'y gagne que deux appels. L'ajout au stock par la direction suivra dans une tâche à part.
