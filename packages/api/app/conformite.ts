@@ -513,8 +513,20 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     if (!alerts.length) box.appendChild(el('p', 'Aucune alerte.', 'etat'));
     var ul = el('ul', null, 'liste');
     alerts.forEach(function (a) {
-      var what = (a.missing || []).map(function (m) { return C_CESSION_MISSING[m] || 'une pièce'; }).join(', ');
-      var li = line('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : ' + what + '. Vérifiez le coffre avant de décider.', cRef(a.personId) + ' · levée le ' + date(a.raisedAt));
+      var names = function (list) { return list.map(function (m) { return C_CESSION_MISSING[m] || 'une pièce'; }).join(', '); };
+      var missing = a.missing || [];
+      var li = line('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : ' + names(missing) + '.', cRef(a.personId) + ' · levée le ' + date(a.raisedAt));
+      /* RC58 : relue au coffre par son seul état à cette lecture ; nulle ou absente, rien n'est dit déposé [R10, R15]. */
+      var still = Array.isArray(a.stillMissing) ? a.stillMissing : null;
+      var at = still && a.checkedAt && date(a.checkedAt) && hour(a.checkedAt) ? ' le ' + date(a.checkedAt) + ' à ' + hour(a.checkedAt) : null;
+      if (!still || !at) {
+        li.appendChild(el('p', 'Coffre non relu : vérifiez-le avant de décider.', 'etat'));
+      } else {
+        var since = missing.filter(function (m) { return still.indexOf(m) < 0; });
+        li.appendChild(el('p', still.length ? 'Relu au coffre' + at + ' : il manque encore ' + names(still) + '.' : 'Relu au coffre' + at + ' : tout ce qui manquait est déposé depuis. La décision reste la vôtre.', still.length ? 'etat' : 'doux'));
+        if (still.length && since.length) li.appendChild(el('p', 'Déposé depuis la levée : ' + names(since) + '.', 'doux'));
+      }
+      if (a.buyerCurrent === false) li.appendChild(el('p', 'L’acquéreur de cette alerte a été remplacé depuis sur le dossier.', 'etat'));
       if (a.decision) {
         li.appendChild(el('p', (C_VIGILANCE[a.decision.decision] || 'Décidée') + ' · ' + a.decision.validatorName + ', le ' + date(a.decision.decidedAt), 'decision'));
       } else {
