@@ -12,6 +12,7 @@
  *   longueur, par canal.
  */
 import type { OutboundChannelName } from '../db/types.ts';
+import { hiddenIbanSpans } from './iban-detours.ts';
 
 export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
@@ -257,10 +258,21 @@ function maskPart(part: string): string {
     out += part.slice(at, a) + IBAN_MASK;
     at = b;
   }
-  return (out + part.slice(at)).replace(RIB, IBAN_MASK);
+  const plainMasked = (out + part.slice(at)).replace(RIB, IBAN_MASK);
+  // BR106 : puis les IBAN épelés, dictés en mots ou déguisés par des sosies, chacun pris en entier [R15].
+  let hidden = '';
+  let from = 0;
+  for (const [a, b] of hiddenIbanSpans(plainMasked)) {
+    hidden += plainMasked.slice(from, a) + IBAN_MASK;
+    from = b;
+  }
+  return hidden + plainMasked.slice(from);
 }
 
-/** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
+/**
+ * Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15], épelé, dicté en mots ou
+ * déguisé par des sosies compris (BR106). Le reste ne change pas.
+ */
 export function maskIban(text: string): string {
   const uuids = text.match(UUID) ?? [];
   return text
