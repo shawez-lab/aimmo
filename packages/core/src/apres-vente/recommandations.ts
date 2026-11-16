@@ -26,15 +26,223 @@ export const REFERRAL_CALL_HOURS = 24;
 export const REFERRAL_FIELDS = ['firstName', 'email', 'phone', 'projectKind', 'callable', 'proof'] as const;
 
 const plain = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
-/** Tout ce qui promet ou décrit une récompense au client qui recommande [R66]. */
-export const REWARD =
-  /\b(?:prime|primes|cadeau|cadeaux|commission|commissions|bon d.achat|bons d.achat|cheque|cheques|pourcentage|pourcent|recompense\w*|remuner\w*|gratification\w*|retrocession\w*|parrainage remunere|euros?|eur|carte cadeau|ristourne|dedommag\w*|merci en argent)\b|%|€/;
+/**
+ * Tout ce qui promet ou décrit une récompense au client qui recommande [R66], y compris par détour : une remise ou des
+ * honoraires offerts, de l'argent, un virement, un repas ou un week-end offerts, et les mots anglais d'usage. Lu sur le
+ * texte sans accents ni majuscules. « Remise des clés », « estimation offerte » ou « espèces protégées » ne sont pas
+ * des récompenses.
+ */
+export const REWARD = new RegExp(
+  [
+    String.raw`\b(?:prime|primes|cadeau|cadeaux|commission|commissions|bon d.achat|bons d.achat|cheque|cheques|pourcentage|pourcent|recompense\w*|remuner\w*|gratification\w*|retrocession\w*|parrainage remunere|euros?|eur|carte cadeau|ristourne|dedommag\w*|merci en argent)\b`,
+    // Une remise sur ce que l'agence facture, ou ses honoraires offerts, est une récompense en nature.
+    String.raw`\b(?:remise|remises|reduction|reductions|rabais)(?:\s+[\w'’]+){0,3}?\s+(?:[dl]['’])?(?:honoraires|frais d.agence|frais d.agent|commission)\b`,
+    String.raw`\b(?:honoraires|frais d.agence|frais d.agent)\s+(?:sont\s+|seront\s+)?(?:offerts?|reduits?|gratuits?|rembourses?|divises?|partages?)\b`,
+    String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
+    // « 200 balles » ; « 300k » est un budget, pas une récompense.
+    String.raw`\b\d+\s*balles\b`,
+    // Une indemnité ou un remboursement au client qui recommande ; ceux d'un compromis ou d'un prêt n'en sont pas.
+    String.raw`\b(?:indemnite|indemnites|remboursement|remboursements)\b(?!\s+(?:d.immobilisation|anticipes?|(?:du|des|de|d.)\s*(?:(?:mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|ce|cet|cette)\s+)?(?:pret|prets|credit|credits|emprunt|emprunts)\b))`,
+    String.raw`\b(?:restaurant|resto|repas|diner|dejeuner|week.end|voyage|sejour|bouteille|champagne|abonnement)\s+(?:vous\s+|lui\s+|leur\s+)?(?:offerts?|offertes?|paye|payes|payee|rembourse)\b`,
+    String.raw`\b(?:offr\w*|paie\w*|pay\w*)\s+(?:[\w']+\s+){0,3}(?:au restaurant|un restaurant|un resto|un repas|un diner|un dejeuner|une bouteille|un week.end|un voyage|un sejour|un abonnement)\b`,
+    // Une invitation au restaurant en remerciement est une récompense ; un repas de quartier ne l'est pas.
+    String.raw`\binvit\w*\s+(?:[\w']+\s+){0,3}(?:au restaurant|au resto)\b`,
+    String.raw`\b(?:reward\w*|gift\w*|cash|cashback|fee|fees|kickback)\b`,
+    '%',
+    '€',
+  ].join('|'),
+);
+const REWARD_ALL = new RegExp(REWARD.source, 'g');
+/** Un mot tapé lettre par lettre, séparées par des espaces, des points ou des tirets : « c a d e a u », « p.r.i.m.e ». */
+/**
+ * Le vocabulaire de récompense, sur une suite de lettres entière et sans séparateurs : une expression de plusieurs mots
+ * épelée (« c a r t e p r é p a y é e ») perd ses espaces, ses apostrophes et ses tirets.
+ */
+const REWARD_WHOLE = new RegExp(
+  `^(?:${REWARD.source.replace(/\\s[+*]/g, '').replace(/ /g, '').replace(/\['’\]/g, '').replace(/(?<!\\)\./g, '.?')})$`,
+);
+/** Le vocabulaire sans espace ni apostrophe obligatoires entre les mots d'une expression : seulement sur un passage épelé. */
+// Les mots libres entre deux termes d'une expression deviennent une seule classe bornée, pour que la lecture reste
+// linéaire même sans espace obligatoire.
+const REWARD_LOOSE = new RegExp(
+  REWARD.source
+    .replace(/\(\?:\\s\+\[\\w'’\]\+\)\{0,3\}\?/g, String.raw`[\w'’\s]{0,40}?`)
+    .replace(/\(\?:\[\\w'\]\+\\s\+\)\{0,3\}/g, String.raw`[\w'\s]{0,40}?`)
+    .replace(/\\s\+/g, '\\s*')
+    .replace(/ /g, ' ?')
+    .replace(/(?<!\\)\./g, '.?'),
+  'g',
+);
+/** Au-delà, une suite de lettres isolées n'est plus lue : un texte normal n'en a jamais autant. */
+const SPELLED_MAX = 80;
+/** Au-delà, les combinaisons de bords des suites épelées ne sont plus toutes relues : chaque suite l'est seule. */
+const SPELLED_READINGS_MAX = 256;
+/** Au-delà de ces combinaisons, chaque suite est relue seule dans ce nombre d'unités de texte de part et d'autre. */
+const SPELLED_WINDOW = 120;
+/** Les mots d'une lettre qu'une suite épelée peut avaler à ses bords, sans accents : « a », « à », « y », « d' », « l' ». */
+const EDGE_LETTERS = ['a', 'y', 'd', 'l'];
+const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
 
-export function mentionsReward(text: string): boolean {
-  return REWARD.test(plain(text));
+/** Le texte sans accents ni majuscules, et pour chaque unité du résultat, sa place dans le texte tapé. */
+function plainWithPlaces(text: string): { plain: string; from: number[]; to: number[] } {
+  let out = '';
+  const from: number[] = [];
+  const to: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const p = plain(ch);
+    for (let k = 0; k < p.length; k += 1) {
+      from.push(i);
+      to.push(i + ch.length);
+    }
+    out += p;
+    i += ch.length;
+  }
+  return { plain: out, from, to };
 }
 
-export type ReferralRefusal = { ok: false; rule: 'R16' | 'R66' | 'R03' | null; code: string };
+/**
+ * Les mots qui promettent une récompense [R66], tels que tapés, dans l'ordre du texte et sans doublon, pour que l'agent
+ * sache quoi retirer ; un mot écrit lettre par lettre est lu comme le mot. Rien n'est écrit au journal ici.
+ */
+export function rewardWords(text: string): string[] {
+  if (typeof text !== 'string' || text === '') return [];
+  const { plain: p, from, to } = plainWithPlaces(text);
+  const found: { at: number; end: number }[] = [];
+  // Le texte relu, chaque mot épelé recollé à sa place parmi les mots ordinaires (« une carte p r é p a y é e ») ;
+  // chaque unité garde sa place dans le texte sans accents. Une suite épelée peut avaler un ou deux mots d'une lettre
+  // à ses bords (« à », « y a ») : chaque suite est aussi relue sans eux, et toutes les lectures comptent.
+  // Une suite de plus de SPELLED_MAX lettres isolées n'est pas un mot épelé : elle reste telle quelle, sans autre lecture.
+  const runs = [...p.matchAll(SPELLED)]
+    .map((m) => [...m[0].matchAll(/\p{L}/gu)].map((l) => m.index! + l.index!))
+    .filter((letters) => letters.length <= SPELLED_MAX);
+  const spelledAt = new Set(runs.flat());
+  // Une lecture du passage [lo, hi) du texte, chaque suite qui y tient recollée avec les bords choisis par `cut`.
+  const read = (cut: (r: number) => [number, number], lo = 0, hi = p.length): void => {
+    let q = '';
+    const qAt: number[] = [];
+    let k = lo;
+    runs.forEach((letters, r) => {
+      if (letters[0]! < lo || letters[letters.length - 1]! >= hi) return;
+      for (; k < letters[0]!; k += 1) {
+        q += p[k];
+        qAt.push(k);
+      }
+      const [lead, trail] = cut(r);
+      letters.forEach((at, i) => {
+        // Un mot d'une lettre détaché du bord : un espace à la place du séparateur qui le suit ou le précède.
+        if (i === letters.length - trail && i > 0) {
+          q += ' ';
+          qAt.push(at - 1);
+        }
+        q += p[at];
+        qAt.push(at);
+        if (i < lead) {
+          q += ' ';
+          qAt.push(at + 1);
+        }
+      });
+      k = letters[letters.length - 1]! + 1;
+    });
+    for (; k < hi; k += 1) {
+      q += p[k];
+      qAt.push(k);
+    }
+    for (const m of q.matchAll(REWARD_ALL)) {
+      if (m[0] === '') continue;
+      found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
+    }
+    // Des mots voisins épelés à la suite se recollent en un seul (« r e m i s e s u r v o s ») : l'expression est relue
+    // sans exiger d'espace entre ses mots, et gardée seulement si elle touche une lettre épelée.
+    if (runs.length === 0) return;
+    for (const m of q.matchAll(REWARD_LOOSE)) {
+      if (m[0] === '') continue;
+      let spelled = false;
+      for (let i = m.index!; i < m.index! + m[0].length && !spelled; i += 1) spelled = spelledAt.has(qAt[i]!);
+      if (spelled) found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
+    }
+  };
+  // Pour chaque suite, les bords qu'elle peut avoir avalés : au plus deux mots d'une lettre de chaque côté (« y a »,
+  // « à », « d' », « l' »), sans laisser moins de deux lettres. Toutes les combinaisons sont relues tant qu'elles
+  // restent peu nombreuses ; au-delà, chaque suite seule, puis les mêmes bords pour toutes.
+  const edge = (at: number): boolean => EDGE_LETTERS.includes(p[at]!);
+  const options = runs.map((letters) => {
+    const out: [number, number][] = [];
+    for (let lead = 0; lead <= 2; lead += 1) {
+      if (lead > 0 && !edge(letters[lead - 1]!)) break;
+      for (let trail = 0; trail <= 2; trail += 1) {
+        if (trail > 0 && !edge(letters[letters.length - trail]!)) break;
+        if (letters.length - lead - trail >= 2) out.push([lead, trail]);
+      }
+    }
+    return out;
+  });
+  const combinations = options.reduce((n, o) => n * o.length, 1);
+  if (combinations <= SPELLED_READINGS_MAX) {
+    const pick = options.map(() => 0);
+    for (let n = 0; n < combinations; n += 1) {
+      let rest = n;
+      options.forEach((o, r) => {
+        pick[r] = rest % o.length;
+        rest = Math.floor(rest / o.length);
+      });
+      read((r) => options[r]![pick[r]!]!);
+    }
+  } else {
+    // Trop de suites pour toutes les combinaisons : le texte entier tel quel, puis chaque suite relue avec ses bords
+    // dans un passage autour d'elle seulement, élargi aux suites qu'il coupe, pour que la lecture reste bornée.
+    read(() => [0, 0]);
+    options.forEach((o, r) => {
+      let lo = Math.max(0, runs[r]![0]! - SPELLED_WINDOW);
+      let hi = Math.min(p.length, runs[r]![runs[r]!.length - 1]! + 1 + SPELLED_WINDOW);
+      for (const letters of runs) {
+        if (letters[0]! < lo && letters[letters.length - 1]! >= lo) lo = letters[0]!;
+        if (letters[0]! < hi && letters[letters.length - 1]! >= hi) hi = letters[letters.length - 1]! + 1;
+      }
+      for (const c of o) if (c[0] || c[1]) read((s) => (s === r ? c : [0, 0]), lo, hi);
+    });
+  }
+  for (const m of p.matchAll(SPELLED)) {
+    // Chaque lettre de la suite et sa place : le mot peut être entouré de mots d'une lettre (« un c a d e a u à Léa »).
+    const letters: { ch: string; at: number }[] = [];
+    for (const l of m[0].matchAll(/\p{L}/gu)) letters.push({ ch: l[0], at: m.index! + l.index! });
+    if (letters.length > SPELLED_MAX) continue;
+    let i = 0;
+    while (i < letters.length) {
+      let matched = -1;
+      for (let j = letters.length - 1; j >= i + 2; j -= 1) {
+        if (REWARD_WHOLE.test(letters.slice(i, j + 1).map((l) => l.ch).join(''))) {
+          matched = j;
+          break;
+        }
+      }
+      if (matched < 0) {
+        i += 1;
+        continue;
+      }
+      found.push({ at: from[letters[i]!.at]!, end: to[letters[matched]!.at]! });
+      i = matched + 1;
+    }
+  }
+  // Deux lectures du même passage : la plus longue seule.
+  found.sort((a, b) => a.at - b.at || b.end - a.end);
+  const words: string[] = [];
+  let reach = -1;
+  for (const f of found) {
+    if (f.at < reach) continue;
+    reach = f.end;
+    const word = text.slice(f.at, f.end);
+    if (!words.includes(word)) words.push(word);
+  }
+  return words;
+}
+
+export function mentionsReward(text: string): boolean {
+  return rewardWords(text).length > 0;
+}
+
+/** Au refus `reward`, `words` dit les mots fautifs tels que tapés [R66] ; ils ne vont jamais au journal [R13]. */
+export type ReferralRefusal = { ok: false; rule: 'R16' | 'R66' | 'R03' | null; code: string; words?: string[] };
 
 /**
  * Ce que rend une recommandation rangée : la même chose que le proche soit nouveau, déjà client du lecteur, d'un autre
@@ -117,16 +325,17 @@ export class Recommandations {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, `person:${referrerPersonId}`, 'not_assigned');
     const referrer = read.value.person;
-    const stop = async (rule: ReferralRefusal['rule'], code: string): Promise<ReferralRefusal> => {
+    const stop = async (rule: ReferralRefusal['rule'], code: string, words?: string[]): Promise<ReferralRefusal> => {
       await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `person:${referrer.id}`, data: { rule, code } }, this.now);
-      return { ok: false, rule, code };
+      return words ? { ok: false, rule, code, words } : { ok: false, rule, code };
     };
 
     // La forme d'abord : aucun champ en dehors de la liste, donc aucun champ de récompense possible [R66].
     if (input === null || typeof input !== 'object' || Array.isArray(input)) return stop(null, 'bad_shape');
     const raw = input as Record<string, unknown>;
     if (Object.keys(raw).some((k) => !(REFERRAL_FIELDS as readonly string[]).includes(k))) return stop('R66', 'unknown_field');
-    if (Object.values(raw).some((v) => typeof v === 'string' && mentionsReward(v))) return stop('R66', 'reward');
+    const words = Object.values(raw).flatMap((v) => (typeof v === 'string' ? rewardWords(v) : []));
+    if (words.length > 0) return stop('R66', 'reward', [...new Set(words)]);
     const { firstName, email, phone, projectKind, callable, proof } = raw;
     if (firstName !== undefined && firstName !== null && (typeof firstName !== 'string' || firstName.trim() === '' || firstName.trim().length > 60)) return stop(null, 'bad_first_name');
     if (typeof projectKind !== 'string' || !(PROJECT_KINDS as readonly string[]).includes(projectKind)) return stop(null, 'bad_project');
