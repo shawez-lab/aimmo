@@ -1770,6 +1770,22 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : un script servi à part, chargé au seul geste, budget tenu, sans innerHTML [R201] (test) ; chaque champ montré avec sa phrase, en `textContent` [R260] (test) ; seuls les champs cochés partent à la validation, avec l'identifiant tiré une fois par dictée (test) ; refus dits en mots, jamais un code ; créneau pris : ce qui est rangé et les créneaux libres dits (test) ; réseau coupé dit, la dictée gardée à l'écran (test).
 - Attend : rien.
 
+### BR102 · De la place dans le budget de l'application : « Pièces au coffre » chargées au geste
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR101
+- Cahier : Conformité ; Architecture technique ; R90, R16, R201.
+- Objectif : relevé dans le « Reste » de BR101 : l'application tient en 49 134 octets compressés pour 49 152, la dictée depuis l'écran de la visite n'y entre pas. Le dépôt au coffre de la fiche (L10), aujourd'hui posé en entier dans `app.js` (près de 1 500 octets compressés), passe dans un script servi à part, `/app/coffre.js`, chargé par le chargeur commun au geste « Pièces au coffre » ; `app.js` n'en garde que la ligne du bloc. Le dépôt envoie la pièce par `send`, qui sait déjà retirer une clé refusée.
+- Critères : `app.js` ne contient plus le dépôt (ni `/coffre/recus`, ni le formulaire) et gagne au moins 1 000 octets compressés [R201] (test) ; rien n'est lu au coffre avant le geste (test) ; la liste des preuves de dépôt, le dépôt par le corps brut avec son type, les refus sur place (format, 10 Mo) et ceux du serveur dits en mots, comme avant [R90] (test) ; une clé refusée ou un agent sorti efface la clé et la fiche [R16] (test) ; le script servi tient le budget d'une page, sans innerHTML (test) ; l'agent ne demande jamais une pièce, seulement ses preuves (test).
+- Attend : rien.
+
+### BR103 · La dictée en sortant d'une visite, depuis l'écran de la visite (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR102
+- Cahier : Phase 3, HX06 ; R260, R261, R201.
+- Objectif : relevé dans le « Reste » de BR101 : depuis l'écran de la visite, l'agent dicte son compte rendu ; la dictée part avec l'identifiant du rendez-vous (`appointmentId`), par le même script que « Ma journée », chargé au geste.
+- Critères : à préciser au début de la tâche d'après `POST /v1/dictee/lecture` (BR100) ; budget de l'application tenu [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
