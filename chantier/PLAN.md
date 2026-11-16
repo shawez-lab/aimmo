@@ -2553,6 +2553,16 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : « RIB », « IBAN », « virement », « coordonnées bancaires » écrits avec des sosies grecs ou cyrilliques, coupés par des caractères invisibles, en lettres mathématiques ou en pleine chasse : le bon signal [R62] (test) ; un IBAN coupé par des espaces de largeur nulle ou écrit avec des chiffres d'autres écritures que NFKC ramène : `iban` [R62] (test) ; une phrase russe ou grecque ordinaire, un nom propre accentué : aucun signal (test) ; lecture linéaire : 40 000 caractères de sosies et d'invisibles en moins de 500 ms (test) ; tous les tests de N05, RC66 à RC69 restent verts.
 - Attend : rien.
 
+### RC71 · Un faux RIB écrit en « leet », « R1B », « v1r3ment », « @compte », alerte quand même l'agent (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC70, N05
+- Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; R62.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé en essayant `fundSignals` sur les détours qui restent après RC70. Aujourd'hui « nouveau R1B », « 1BAN », « c00rdonnées bancaires », « ch@ngé de b4nque », « v1r3ment », « l'@compte », « $équestre », « p@yer », « paypa1 » passent sans aucun signal. Désormais, dans `packages/core/src/dossiers/bouclier.ts` seul, le texte démasqué est relu une fois de plus sans l'écriture « leet » : dans un mot qui porte au moins une lettre et au moins un chiffre ou signe, 0 vaut o, 3 vaut e, 4 et @ valent a, 5 et $ valent s, 7 vaut t, et 1 vaut i dans une lecture, l dans une autre. Un nombre seul ne change jamais : prix, dates, codes postaux, dépôts chiffrés restent lus comme avant. Seuls les signaux de mots en profitent ; l'IBAN garde ses lectures (RC67 à RC70). Parcours linéaire. Ni route, ni écran, ni migration ; le journal garde seulement les sortes de signaux [R15, R13]. Le contrôle de ce qui sort (`fundsInOutgoing`, `envoi/texte.ts`, socle) ne change pas : voie 1.
+- Objectif : un escroc ne peut plus cacher « RIB », « virement », « acompte » ou « payer » en remplaçant des lettres par des chiffres ou des signes.
+- Jamais vu : le bouclier lit « R1B » et « v1r3ment » comme un client les lit, sans jamais confondre un « T3 », un « 1er » ou un « 15h30 » avec un mot bancaire.
+- Critères : « R1B », « 1BAN », « B1C », « c00rdonnées », « b@ncaires », « b4nque » : `coordonnees_bancaires` [R62] (test) ; « v1r3ment », « @compte », « 4compte », « $équestre », « 5equestre », « p@yer », « paypa1 », anglais « w1re », « d3posit » : le bon signal [R62] (test) ; leet mêlé aux sosies, aux invisibles, à la pleine chasse (test) ; T3, F4, 1er, 2ème, 15h30, R+1, 4G, références, téléphone, adresse mail : aucun signal (test) ; un nombre seul inchangé (test) ; lecture linéaire : 40 000 caractères en moins de 500 ms (test) ; tous les tests de N05, RC66 à RC70 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
