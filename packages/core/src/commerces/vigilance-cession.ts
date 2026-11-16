@@ -15,6 +15,11 @@
  * demande neutre d'origine des fonds de L04, identique pour tous. Le journal range l'alerte sous sa propre référence,
  * jamais sous le bien ni la personne [R13].
  *
+ * À chaque lecture par le responsable (RC58), l'alerte est relue au coffre, par son seul état : `stillMissing` dit ce qui,
+ * parmi ce qui manquait à la levée, manque encore à l'instant `checkedAt` ; `null` si le coffre n'a pas pu être lu,
+ * jamais une liste vide qui dirait « tout est là » [R10]. `buyerCurrent` dit si l'acquéreur de l'alerte est encore
+ * celui du dossier. Rien n'est fermé ni décidé par cette relecture [R14], rien n'est écrit au journal [R13].
+ *
  * Décidé, lecture prudente : « avant le compromis » se lit tant que la cession n'est pas signée ; l'examen se fait à
  * chaque acquéreur rangé et par la tâche quotidienne ; les alertes vivent dans leur table et s'ajouteront à la liste du
  * responsable de L04 au branchement (CE10).
@@ -42,6 +47,12 @@ export interface TransferVigilanceAlert {
   personId: string;
   missing: TransferVigilanceMissing[];
   raisedAt: string;
+  /** Parmi `missing`, ce qui manque encore au coffre à l'instant `checkedAt` ; `null` : coffre non relu [R10]. */
+  stillMissing: TransferVigilanceMissing[] | null;
+  /** L'instant de la relecture au coffre. */
+  checkedAt: string;
+  /** Faux si l'acquéreur de l'alerte a été remplacé depuis sur le dossier. */
+  buyerCurrent: boolean;
   decision: { decision: VigilanceDecisionKind; reason: string; validatorName: string; decidedAt: string } | null;
 }
 
@@ -62,21 +73,33 @@ interface AlertRow {
   person_id: string;
   missing: string;
   raised_at: string;
+  current_buyer: string | null;
   decision: VigilanceDecisionKind | null;
   reason: string | null;
   validator_name: string | null;
   decided_at: string | null;
 }
 
-const ALERT_SELECT = `SELECT a.*, d.decision, d.reason, d.validator_name, d.decided_at FROM business_transfer_watch a
+const ALERT_SELECT = `SELECT a.*, d.decision, d.reason, d.validator_name, d.decided_at,
+  (SELECT b.person_id FROM business_transfer_buyers b WHERE b.file_id = a.file_id ORDER BY b.version DESC LIMIT 1) AS current_buyer
+  FROM business_transfer_watch a
   LEFT JOIN business_transfer_watch_decisions d ON d.alert_id = a.id`;
 
-const toAlert = (r: AlertRow): TransferVigilanceAlert => ({
+/** Les pièces du coffre qui lèvent chaque manque : les mêmes que celles de l'examen [R118]. */
+const MISSING_PIECES: Record<TransferVigilanceMissing, readonly VaultPieceKind[]> = {
+  beneficiaires_effectifs: ['registre_beneficiaires'],
+  origine_des_fonds: ['origine_fonds'],
+};
+
+const toAlert = (r: AlertRow, stillMissing: TransferVigilanceMissing[] | null, checkedAt: string): TransferVigilanceAlert => ({
   id: r.id,
   fileId: r.file_id,
   personId: r.person_id,
   missing: JSON.parse(r.missing) as TransferVigilanceMissing[],
   raisedAt: r.raised_at,
+  stillMissing,
+  checkedAt,
+  buyerCurrent: r.current_buyer === r.person_id,
   decision: r.decision && r.reason && r.validator_name && r.decided_at ? { decision: r.decision, reason: r.reason, validatorName: r.validator_name, decidedAt: r.decided_at } : null,
 });
 
@@ -162,8 +185,8 @@ export class VigilanceCession {
       (await this.declaredCompany(networkId, buyer.person_id));
     if (await this.db.first('SELECT 1 FROM business_transfer_watch WHERE file_id = ? AND person_id = ? AND legal_person = ?', [fileId, buyer.person_id, legal ? 1 : 0])) return false;
     const missing: TransferVigilanceMissing[] = [];
-    if (legal && !(await this.vault.everDeposited(networkId, buyer.person_id, ['registre_beneficiaires'], at))) missing.push('beneficiaires_effectifs');
-    if (!(await this.vault.everDeposited(networkId, buyer.person_id, ['origine_fonds'], at))) missing.push('origine_des_fonds');
+    if (legal && !(await this.vault.everDeposited(networkId, buyer.person_id, MISSING_PIECES.beneficiaires_effectifs, at))) missing.push('beneficiaires_effectifs');
+    if (!(await this.vault.everDeposited(networkId, buyer.person_id, MISSING_PIECES.origine_des_fonds, at))) missing.push('origine_des_fonds');
     if (missing.length === 0) return false;
     const id = this.newId();
     const { changes } = await this.db.run(
@@ -198,7 +221,28 @@ export class VigilanceCession {
   async list(viewer: Viewer): Promise<VigilanceCessionResult<TransferVigilanceAlert[]>> {
     if (viewer.role !== 'compliance') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
     const rows = await this.db.all<AlertRow>(`${ALERT_SELECT} WHERE a.network_id = ? ORDER BY a.raised_at, a.rowid`, [viewer.networkId]);
-    return { ok: true, value: rows.map(toAlert) };
+    const at = this.now();
+    const out: TransferVigilanceAlert[] = [];
+    for (const r of rows) out.push(toAlert(r, await this.stillMissing(r, at), at.toISOString()));
+    return { ok: true, value: out };
+  }
+
+  /**
+   * Relit au coffre, par son seul état, ce qui manquait à la levée de l'alerte (RC58) : déposé ou non, toutes fiches
+   * réunies, jamais une pièce [R15]. Une panne du coffre rend `null`, jamais « rien ne manque » [R10].
+   */
+  private async stillMissing(r: AlertRow, at: Date): Promise<TransferVigilanceMissing[] | null> {
+    const missing = JSON.parse(r.missing) as TransferVigilanceMissing[];
+    const still: TransferVigilanceMissing[] = [];
+    try {
+      for (const m of missing) {
+        const kinds = MISSING_PIECES[m];
+        if (!kinds || !(await this.vault.everDeposited(r.network_id, r.person_id, kinds, at))) still.push(m);
+      }
+    } catch {
+      return null;
+    }
+    return still;
   }
 
   /** Le responsable décide, une seule fois, avec son nom et sa raison ; rien n'est bloqué ni envoyé [R14]. */
@@ -215,8 +259,9 @@ export class VigilanceCession {
     );
     if (changes !== 1) return { ok: false, rule: null, code: 'already_decided' };
     await appendEvent(this.journal, { type: 'commerces.cession.vigilance_decision', actor: this.actor(viewer), subject: `business_vigilance:${row.id}`, data: { rule: 'R118', decision: input.decision } }, this.now);
-    const done = await this.db.first<AlertRow>(`${ALERT_SELECT} WHERE a.id = ?`, [row.id]);
-    return { ok: true, value: toAlert(done!) };
+    const done = (await this.db.first<AlertRow>(`${ALERT_SELECT} WHERE a.id = ?`, [row.id]))!;
+    const at = this.now();
+    return { ok: true, value: toAlert(done, await this.stillMissing(done, at), at.toISOString()) };
   }
 
   /**

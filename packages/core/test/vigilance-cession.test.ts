@@ -3,12 +3,13 @@ import { expect, it } from 'vitest';
 import { Acces, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { CessionCommerce, FicheCommerce, VigilanceCession, type VaultDeposits } from '../src/commerces/index.ts';
 import { FUNDS_REQUEST_TEXT } from '../src/conformite/vigilance.ts';
+import { EtatCoffre } from '../src/conformite/coffre.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
 const proof = (n: number): string => `preuves/00000000-0000-4000-8000-${String(n).padStart(12, '0')}.pdf`;
 
-async function setup() {
+async function setup(makeVault?: (db: SqlDatabase, now: () => Date) => VaultDeposits) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = Date.parse('2027-09-07T08:00:00.000Z');
@@ -19,7 +20,7 @@ async function setup() {
   const fiches = new FicheCommerce(db, journal, { now });
   const cessions = new CessionCommerce(db, journal, fiches, { now });
   const deposited = new Set<string>();
-  const vault: VaultDeposits = { everDeposited: async (_n, personId, kinds) => kinds.some((k) => deposited.has(`${personId}:${k}`)) };
+  const vault: VaultDeposits = makeVault ? makeVault(db, now) : { everDeposited: async (_n, personId, kinds) => kinds.some((k) => deposited.has(`${personId}:${k}`)) };
   const vigilance = new VigilanceCession(db, journal, vault, { now });
   const network = await store.createNetwork('Réseau test');
   const alexAgent = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -169,5 +170,85 @@ describeWithSqlite('CE08 · vigilance renforcée de la cession', () => {
     await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: third, legalPerson: false });
     await t.db.run('UPDATE persons SET agent_id = NULL WHERE id = ?', [third]);
     expect(await t.vigilance.buyer(t.acces, t.alex, fileId)).toEqual({ ok: true, value: { firstName: null, lastName: null, legalPerson: false, version: 3 } });
+  });
+});
+
+describeWithSqlite('RC58 · l’alerte de vigilance relue au coffre à chaque lecture', () => {
+  let pieces = 0;
+  /** Une pièce rangée au coffre, par son seul état : rien de son contenu n'est lu ici. */
+  const deposit = (t: Awaited<ReturnType<typeof setup>>, personId: string, kind: string) =>
+    t.db.run(
+      "INSERT INTO compliance_vault_pieces (id, network_id, person_id, kind, storage_ref, sha256, content_type, size_bytes, verified_on, deposited_by, deposited_at) VALUES (?, ?, ?, ?, ?, ?, 'application/pdf', 1234, '2027-09-07', 'compliance:conf-1', '2027-09-07T08:00:00.500Z')",
+      [`piece-${(pieces += 1)}`, t.networkId, personId, kind, `coffre/piece-${pieces}.pdf`, 'a'.repeat(64)],
+    );
+  const real = (db: SqlDatabase, now: () => Date) => new EtatCoffre(db, { now });
+
+  it('[R118] [R17] une pièce déposée depuis la levée sort de ce qui manque encore, toutes fiches réunies ; ce qui manquait ne change pas', async () => {
+    const t = await setup(real);
+    const fileId = await t.readyFile();
+    const company = await t.buyer('Société');
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: company, legalPerson: true });
+    const first = await t.vigilance.list(t.compliance);
+    expect(first.ok && first.value.map((a) => [a.missing, a.stillMissing, a.buyerCurrent])).toEqual([[['beneficiaires_effectifs', 'origine_des_fonds'], ['beneficiaires_effectifs', 'origine_des_fonds'], true]]);
+    // L'origine des fonds déposée sur une fiche réunie depuis avec celle de l'acquéreur : elle compte.
+    const twin = await t.buyer('Société doublon');
+    await t.merge(company, twin);
+    await deposit(t, twin, 'origine_fonds');
+    const second = await t.vigilance.list(t.compliance);
+    expect(second.ok && second.value.map((a) => [a.missing, a.stillMissing])).toEqual([[['beneficiaires_effectifs', 'origine_des_fonds'], ['beneficiaires_effectifs']]]);
+    await deposit(t, company, 'registre_beneficiaires');
+    const third = await t.vigilance.list(t.compliance);
+    if (!third.ok) throw new Error('liste');
+    const alert = third.value[0]!;
+    expect(alert.missing).toEqual(['beneficiaires_effectifs', 'origine_des_fonds']);
+    expect(alert.stillMissing).toEqual([]);
+    expect(Date.parse(alert.checkedAt)).toBeGreaterThan(Date.parse(alert.raisedAt));
+    // Une pièce d'une autre sorte ne lève rien : seules celles de l'examen comptent.
+    const other = await t.readyFile();
+    const person = await t.buyer('Camille');
+    await t.vigilance.setBuyer(t.acces, t.alex, other, { personId: person, legalPerson: false });
+    await deposit(t, person, 'carte_identite');
+    const fourth = await t.vigilance.list(t.compliance);
+    expect(fourth.ok && fourth.value.map((a) => a.stillMissing)).toEqual([[], ['origine_des_fonds']]);
+  });
+
+  it('[R10] un coffre qui ne répond pas : « non relu », jamais « rien ne manque », et la liste est rendue quand même', async () => {
+    let broken = false;
+    const t = await setup((db, now) => {
+      const state = new EtatCoffre(db, { now });
+      return { everDeposited: async (...args) => (broken ? Promise.reject(new Error('coffre en panne')) : state.everDeposited(...args)) };
+    });
+    const fileId = await t.readyFile();
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: await t.buyer('Camille'), legalPerson: false });
+    broken = true;
+    const list = await t.vigilance.list(t.compliance);
+    expect(list.ok && list.value.map((a) => [a.missing, a.stillMissing])).toEqual([[['origine_des_fonds'], null]]);
+  });
+
+  it('un acquéreur remplacé : l’ancienne alerte le dit, la nouvelle est celle de l’acquéreur du dossier', async () => {
+    const t = await setup(real);
+    const fileId = await t.readyFile();
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: await t.buyer('Camille'), legalPerson: false });
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: await t.buyer('Dominique'), legalPerson: false });
+    const list = await t.vigilance.list(t.compliance);
+    expect(list.ok && list.value.map((a) => a.buyerCurrent)).toEqual([false, true]);
+  });
+
+  it('[R14] [R15] [R13] la relecture ne ferme ni ne décide rien, n’écrit rien au journal ; la décision rend la même relecture', async () => {
+    const t = await setup(real);
+    const fileId = await t.readyFile();
+    const person = await t.buyer('Camille');
+    await t.vigilance.setBuyer(t.acces, t.alex, fileId, { personId: person, legalPerson: false });
+    await deposit(t, person, 'origine_fonds');
+    const before = (await t.journal.all()).length;
+    const list = await t.vigilance.list(t.compliance);
+    if (!list.ok) throw new Error('liste');
+    expect(list.value).toHaveLength(1);
+    expect(list.value[0]).toMatchObject({ stillMissing: [], decision: null });
+    expect((await t.journal.all()).length).toBe(before);
+    // Ni la pièce, ni sa référence, ni son empreinte ne sortent de la relecture.
+    expect(JSON.stringify(list.value)).not.toMatch(/piece-|coffre\/|a{64}|application\/pdf/);
+    const decided = await t.vigilance.decide(t.compliance, list.value[0]!.id, { decision: 'classee', reason: 'Origine des fonds déposée depuis la levée.', validatorName: 'Responsable Inventé' });
+    expect(decided).toMatchObject({ ok: true, value: { missing: ['origine_des_fonds'], stillMissing: [], buyerCurrent: true, decision: { decision: 'classee' } } });
   });
 });
