@@ -187,9 +187,14 @@ interface Token { word: string; raw: string; sep: string }
 /** Un mot d'un nombre composé ne se lie au précédent qu'à travers des espaces ou des traits d'union, trois au plus. */
 const binds = (sep: string): boolean => sep.length > 0 && sep.length <= 3 && /^[ \-]+$/.test(sep);
 
+/** RC69 : les mots qui multiplient, « mille » (et « mil ») et « cent », en français et en anglais. */
+const THOUSAND_WORDS = new Set(['mille', 'mil', 'thousand']);
+const HUNDRED_WORDS = new Set(['cent', 'cents', 'hundred']);
+const isMultiplier = (w: string | undefined): boolean => w !== undefined && (THOUSAND_WORDS.has(w) || HUNDRED_WORDS.has(w));
+
 /**
  * Un nombre en mots qui commence au mot `i` : ses chiffres et le mot qui le suit, ou rien. Chaque lecture regarde au
- * plus quatre mots plus loin : le parcours reste linéaire [R62]. Une virgule coupe toujours un nombre composé.
+ * plus neuf mots plus loin : le parcours reste linéaire [R62]. Une virgule coupe toujours un nombre composé.
  */
 function numberAt(t: Token[], i: number): [string, number] | null {
   const at = (k: number): string | undefined => (k < t.length && (k === i || binds(t[k]!.sep)) ? t[k]!.word : undefined);
@@ -198,7 +203,6 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     for (let m = i + 1; m <= k; m += 1) if (at(m) === undefined) return undefined;
     return at(k);
   };
-  const w = t[i]!.word;
   const unit = (k: number, min: number): number | undefined => {
     const u = UNIT_WORDS[chain(k) ?? ''];
     return u !== undefined && u >= min ? u : undefined;
@@ -213,33 +217,67 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     if (x !== undefined && TEEN_WORDS[x] !== undefined) return [TEEN_WORDS[x]!, k + 1];
     return null;
   };
+  /** Un nombre de zéro à quatre-vingt-dix-neuf au mot `s` : sa valeur et le mot suivant. */
+  const below100 = (s: number): [number, number] | null => {
+    const w = chain(s);
+    if (w === undefined) return null;
+    const tens = TENS_WORDS[w];
+    if (tens !== undefined) {
+      if (tens === 60) {
+        const tn = chain(s + 1) === 'et' && chain(s + 2) === 'onze' ? ([11, s + 3] as [number, number]) : teen(s + 1);
+        if (tn !== null) return [60 + tn[0], tn[1]];
+      }
+      if (chain(s + 1) === 'et' && chain(s + 2) === 'un') return [tens + 1, s + 3];
+      const u = unit(s + 1, 1);
+      return u !== undefined ? [tens + u, s + 2] : [tens, s + 1];
+    }
+    if (w === 'quatre' && (chain(s + 1) === 'vingt' || chain(s + 1) === 'vingts')) {
+      const tn = teen(s + 2);
+      if (tn !== null) return [80 + tn[0], tn[1]];
+      const u = unit(s + 2, 1);
+      return u !== undefined ? [80 + u, s + 3] : [80, s + 2];
+    }
+    if (w === 'dix' || TEEN_WORDS[w] !== undefined) return teen(s);
+    const u = UNIT_WORDS[w];
+    return u === undefined ? null : [u, s + 1];
+  };
+  /**
+   * RC69 : « mille » ou « cent » au mot `s`, précédés ou non de deux à neuf (de one à nine en anglais) : la valeur et le
+   * mot suivant. « Un mille » et « un cent » ne se disent pas en français.
+   */
+  const scaled = (s: number, words: Set<string>, factor: number): [number, number] | null => {
+    const w = chain(s);
+    if (w === undefined) return null;
+    if (words.has(w)) return [factor, s + 1];
+    const next = chain(s + 1);
+    if (next === undefined || !words.has(next)) return null;
+    const u = unit(s, next === 'thousand' || next === 'hundred' ? 1 : 2);
+    return u === undefined ? null : [u * factor, s + 2];
+  };
+  const w = t[i]!.word;
   const repeat = REPEAT_WORDS[w];
   if (repeat !== undefined) {
     const u = unit(i + 1, 0);
     return u !== undefined ? [String(u).repeat(repeat), i + 2] : null;
   }
-  const tens = TENS_WORDS[w];
-  if (tens !== undefined) {
-    if (tens === 60) {
-      const tn = chain(i + 1) === 'et' && chain(i + 2) === 'onze' ? ([11, i + 3] as [number, number]) : teen(i + 1);
-      if (tn !== null) return [String(60 + tn[0]), tn[1]];
+  // RC69 : de 100 à 9 999, « trois mille », « deux cent trente-quatre », « mille un », « two hundred and five ».
+  const th = scaled(i, THOUSAND_WORDS, 1000);
+  const hu = scaled(th === null ? i : th[1], HUNDRED_WORDS, 100);
+  if (th !== null || hu !== null) {
+    let value = (th?.[0] ?? 0) + (hu?.[0] ?? 0);
+    let k = hu?.[1] ?? th![1];
+    const afterAnd = hu !== null && chain(k) === 'and' ? k + 1 : k;
+    const rest = below100(afterAnd);
+    // Un chiffre seul suivi de « mille » ou « cent » commence le groupe suivant : « trois mille six mille ».
+    const opensNext = rest !== null && rest[1] === afterAnd + 1 && isMultiplier(chain(rest[1]));
+    if (rest !== null && rest[0] > 0 && !opensNext) {
+      value += rest[0];
+      k = rest[1];
     }
-    if (chain(i + 1) === 'et' && chain(i + 2) === 'un') return [String(tens + 1), i + 3];
-    const u = unit(i + 1, 1);
-    return u !== undefined ? [String(tens + u), i + 2] : [String(tens), i + 1];
+    return [String(value), k];
   }
-  if (w === 'quatre' && (chain(i + 1) === 'vingt' || chain(i + 1) === 'vingts')) {
-    const tn = teen(i + 2);
-    if (tn !== null) return [String(80 + tn[0]), tn[1]];
-    const u = unit(i + 2, 1);
-    return u !== undefined ? [String(80 + u), i + 3] : ['80', i + 2];
-  }
-  if (w === 'dix' || TEEN_WORDS[w] !== undefined) {
-    const tn = teen(i);
-    return tn === null ? null : [String(tn[0]), tn[1]];
-  }
-  const u = UNIT_WORDS[w];
-  return u === undefined ? null : [String(u), i + 1];
+  const n = below100(i);
+  return n === null ? null : [String(n[0]), n[1]];
 }
 
 /**
