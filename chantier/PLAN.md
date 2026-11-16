@@ -1761,7 +1761,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR101 · La création à la voix à l'écran de l'agent (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#625, `f9b67caa`). Codex 1 P0 (une lecture dépassée pouvait porter l'identifiant d'une autre dictée) et 3 P2 (une validation tardive effaçait une nouvelle dictée ; après un créneau pris, le conseil « dictez seulement le rendez-vous » était refusé, puis aurait fait une seconde fiche sans numéro ni mail gardé) corrigés : un geste à la fois, chaque réponse liée à sa dictée, conseil testé par la route ; puis rien à signaler. GitHub Actions bloqué (facturation), vérification locale verte (6441 tests). L'application tient en 49 134 octets compressés pour 49 152 : il ne reste que 18 octets. Reste : la dictée en sortant d'une visite (`appointmentId`, compte rendu) depuis l'écran de la visite, qui demande d'abord de la place dans le budget de l'application.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR100
 - Cahier : Phase 3, HX06 ; R260, R261, R201.
 - Objectif : depuis « Ma journée », l'agent dicte avec le micro du clavier de son téléphone, lit chaque champ proposé avec la phrase qui le porte, retire ce qu'il ne garde pas et valide d'un geste.
