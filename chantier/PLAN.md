@@ -1717,6 +1717,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : ce qui manque encore et ce qui est déposé depuis, avec la date et l'heure de la relecture [R118] (test) ; tout déposé : dit, le formulaire de décision reste [R14] (test) ; `stillMissing` nul ou absent : « coffre non relu », jamais « tout est déposé » [R10] (test) ; acquéreur remplacé dit, acquéreur actuel rien de plus (test) ; aucune pièce ni montant, la référence reste tronquée [R15, R13] (test) ; budget tenu [R201] (test).
 - Attend : rien.
 
+### BR97 · Les zones de prix à retracer, dites à l'écran de la direction (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC60
+- Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150, R16, R10, R201.
+- Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC60 (« la route `GET /v1/attirer/prix/zones/a-refaire` par `PrixRegroupes.zonesToRedraw` et l'avertissement à l'écran des zones de la direction »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Changent seulement `packages/api/src/attirer.ts` (une route, direction seule), `packages/api/app/attirer.ts` (l'avertissement au-dessus de la liste des zones) et leurs tests ; ni le cœur, ni migration. Une lecture qui échoue ne dit jamais « aucune zone à refaire » [R10].
+- Objectif : la direction voit, en ouvrant ses zones de prix, lesquelles sont mises de côté du calcul et doivent être retirées puis retracées.
+- Jamais vu : l'écran des quartiers qui dit de lui-même « 2 zones mises de côté du dernier calcul : Ouest (quartier), contour qui se touche ; retirez-la puis retracez-la », au lieu de publier des prix faux en silence.
+- Critères : `GET /v1/attirer/prix/zones/a-refaire` rend nom, niveau et raison à la direction, refuse un agent (403) et l'écrit au journal [R16] (test) ; autre réseau : liste vide (test) ; une zone retirée sort de la liste (test) ; à l'écran, les zones à refaire dites en mots avec leur niveau et le geste à faire, chacune marquée dans la liste [R150] (test) ; lecture en échec : « liste des zones à refaire non lue », jamais « aucune » [R10] (test) ; budget tenu, sans innerHTML [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
