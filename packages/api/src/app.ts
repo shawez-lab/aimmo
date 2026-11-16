@@ -67,7 +67,7 @@ import { bearerKey, fromMcpKey, intakeFromRequest, markMcpKey, parseApiKeys, par
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
-import type { ReplyWriter } from '@aimmo/core';
+import type { ReplyWriter, ReportWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
 import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
@@ -177,6 +177,11 @@ export interface ApiConfig {
   assistantLimits?: AssistantLimits;
   /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
   writer?: ReplyWriter;
+  /**
+   * L'IA qui rédige le compte rendu d'une visite d'après la dictée de l'agent, une fois branchée (H13) : la même pour
+   * l'écran de la visite (M08) et pour la dictée en sortant de la visite (BR103). Absente : aucun compte rendu proposé.
+   */
+  reportWriter?: ReportWriter;
   /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
@@ -1678,12 +1683,12 @@ function biensDeFicheRoutes(): RouteDef[] {
 }
 
 /** La création à la voix (BR100) : l'agent seul, le rôle contrôlé avant le corps [R16]. */
-function dicteeRoutesDef(): RouteDef[] {
+function dicteeRoutesDef(reportWriter: ReportWriter | null): RouteDef[] {
   return dicteeRoutes().map((r: DicteeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter }, viewer, params, request),
   }));
 }
 
@@ -2291,7 +2296,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null }),
+    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
@@ -2337,7 +2342,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
-    ...dicteeRoutesDef(),
+    ...dicteeRoutesDef(config.reportWriter ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
     ...m01Routes(config),

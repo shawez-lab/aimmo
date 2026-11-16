@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { Acces, FicheClient, FicheUnique, RendezVous, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { Acces, FicheClient, FicheUnique, RendezVous, SELLER_UPDATE_PURPOSE, SqlJournalStore, Visites, applyMigrations, fromSyncSqlite, type ReportWriter, type SqlDatabase, type Viewer, type VisitReport } from '@aimmo/core';
 import { MAX_DICTEE_BODY_BYTES, dicteeRoutes, type DicteeServices } from '../src/dictee.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -215,7 +215,84 @@ describeWithSqlite('BR100 · la création à la voix par l’API', () => {
     expect(doc).toContain('`POST /lecture`');
     expect(doc).toContain('`POST /validation`');
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
-    expect(app).toContain('...dicteeRoutesDef(),');
+    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null),');
     expect(dicteeRoutes().map((r) => r.name)).toEqual(['dictee.lecture', 'dictee.validation']);
+  });
+});
+
+// BR103 · En sortant d'une visite, par les routes : l'IA du compte rendu passe par les services de la dictée.
+const GOOD: VisitReport = { opinion: 'Le visiteur a aimé la lumière du séjour.', strengths: ['séjour lumineux', 'jardin'], reservations: ['cuisine à refaire'], interest: 'fort', readyToOffer: false };
+const AFTER_VISIT = 'Elle a aimé la lumière du séjour et le jardin, la cuisine est à refaire, intérêt fort. Contre-visite samedi à 10 h.';
+
+async function withVisit(reportWriter: ReportWriter | null) {
+  const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+  await applyMigrations(db, loadMigrations());
+  let clock = T0;
+  const now = (): Date => new Date(clock);
+  const journal = new SqlJournalStore(db);
+  const store = new FicheClient(db, { now });
+  const fiche = new FicheUnique(db, store, { now });
+  const acces = new Acces(db, store, fiche, journal, { now });
+  const rdv = new RendezVous(db, journal, { now });
+  const visites = new Visites(db, journal, acces, { diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) }, rendezVous: rdv, now });
+  const network = await store.createNetwork('Réseau Essai');
+  const alexRow = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
+  const samRow = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Essai' });
+  const alex: Viewer = { role: 'agent', userId: alexRow.id, networkId: network.id };
+  const direction: Viewer = { role: 'direction', userId: 'dir-1', networkId: network.id };
+  await rdv.setAvailability(alex, WEEK);
+  await rdv.setAvailability({ role: 'agent', userId: samRow.id, networkId: network.id }, WEEK);
+  await visites.createSlipTemplate(direction, 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.');
+  const seller = await store.createPerson({ networkId: network.id, agentId: samRow.id, firstName: 'Victor', lastName: 'Vendeur' });
+  await store.addIdentifier({ networkId: network.id, personId: seller.id, kind: 'email', value: 'victor@example.test' });
+  await store.addConsent({ networkId: network.id, personId: seller.id, purpose: SELLER_UPDATE_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date(T0 - 10 * 86_400_000) });
+  const property = await store.createProperty({ networkId: network.id, agentId: samRow.id, reference: 'B1', kind: 'home', city: 'Talant', priceEur: 250_000, surfaceM2: 90, rooms: 4, status: 'available' });
+  const signed = new Date(T0 - 20 * 86_400_000).toISOString();
+  await db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, property_id, signed_at, source_kind, recorded_by, created_at) VALUES ('m1', ?, ?, ?, ?, ?, 'site', 'test', ?)", [network.id, samRow.id, seller.id, property.id, signed, new Date(T0).toISOString()]);
+  await db.run("INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, at, actor, prev_hash, hash) VALUES (?, 1, 'inscription', 'm1', 1, 'T-1', ?, ?, ?, ?, 'test', 'p', 'h-m1')", [network.id, samRow.id, property.id, signed, new Date(T0).toISOString()]);
+  const buyer = await store.createPerson({ networkId: network.id, agentId: alexRow.id, firstName: 'Inès', lastName: 'Durand' });
+  const project = await store.createProject({ networkId: network.id, agentId: alexRow.id, personId: buyer.id, kind: 'buy' });
+  const v = await visites.schedule(alex, { propertyId: property.id, projectId: project.id, start: new Date(T0 + 24 * 3_600_000) });
+  if (!v.ok) throw new Error(v.code);
+  clock = Date.parse(v.visit.appointment.end_at) + 10 * 60_000;
+  const s: DicteeServices = { db, acces, journal, now, reportWriter };
+  const call = async (path: string, body: unknown) => {
+    const route = dicteeRoutes().find((r) => r.pattern.test(path))!;
+    const response = await route.handle(s, alex, [], new Request(`https://api.example.test/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+    return { status: response.status, body: (await response.json()) as Record<string, any> };
+  };
+  const toSeller = () => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ?', [seller.id]);
+  return { call, visitId: v.visit.appointment.id, toSeller, db };
+}
+
+describeWithSqlite('BR103 · la dictée en sortant d’une visite, par les routes', () => {
+  it('[R260] [R261] avec l’IA du compte rendu : la lecture le propose sans le ranger, la validation l’envoie au vendeur', async () => {
+    const briefs: string[] = [];
+    const t = await withVisit({ write: async (b) => (briefs.push(b.dictation), GOOD) });
+    const read = await t.call('/dictee/lecture', { dictation: AFTER_VISIT, appointmentId: t.visitId });
+    expect(read.status).toBe(200);
+    expect(read.body.data.report).toEqual(GOOD);
+    expect(briefs).toHaveLength(1);
+    expect(await t.toSeller()).toEqual([]);
+    const done = await t.call('/dictee/validation', { requestId: key(9), dictation: AFTER_VISIT, readAt: read.body.data.readAt, appointmentId: t.visitId, keep: {}, report: read.body.data.report });
+    expect(done.status).toBe(200);
+    expect(done.body.data.report).toEqual({ delivery: 'sent', rule: null });
+    const sent = await t.toSeller();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.body).not.toMatch(/Inès|Durand/);
+  });
+
+  it('[R10] sans IA branchée : la lecture ne propose aucun compte rendu, rien ne part', async () => {
+    const t = await withVisit(null);
+    const read = await t.call('/dictee/lecture', { dictation: AFTER_VISIT, appointmentId: t.visitId });
+    expect(read.status).toBe(200);
+    expect(read.body.data.report).toBeNull();
+    expect(await t.toSeller()).toEqual([]);
+  });
+
+  it('[R16] l’IA du compte rendu de la configuration passe à la dictée comme à l’écran de la visite', () => {
+    const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
+    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null),');
+    expect(app).toContain('...(config.reportWriter ? { reportWriter: config.reportWriter } : {})');
   });
 });
