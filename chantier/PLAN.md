@@ -2414,6 +2414,16 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : le test cherche un identifiant d'au moins 20 caractères et les clés du texte, plus « p2 » (test) ; le nom de la place n'a que la date et le hasard hexadécimal [R231, R13] (test) ; tous les tests de SV02 restent verts.
 - Attend : rien.
 
+### RC64 · Une annonce de programme neuf dont un lot a changé de surface, d'étage ou de frais ne tient plus (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC56, BR99
+- Cahier : M17 Investir (programmes neufs, grille des lots) ; R543, R544, R10.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé en relisant `listingStillHolds` pour le « Reste » de BR99 (« le passage qui retire l'annonce quand `listingStillHolds` ne tient plus, après H10 »). Aujourd'hui l'annonce est dite tenir tant que chaque lot annoncé est publié au même prix : si le promoteur corrige la surface d'un lot de 45 à 54 m², sa typologie ou son étage, ou si la direction range un nouveau barème qui change les frais, le texte copié chez les portails devient faux et rien ne le dit ; de même si le nom, la ville ou le promoteur du programme changent. Désormais, dans `packages/core/src/neuf-viager/annonce.ts` seul : chaque lot écrit garde sa ligne sans la date de confirmation (`line`, `null` pour un lot seulement compté) et l'annonce garde son en-tête (`heading` : nom, code postal, ville, promoteur, et les barèmes cités) ; `listingStillHolds` relit chaque ligne et l'en-tête contre la grille du jour et dit `detailsChanged` (les lots dont la ligne écrite ne tient plus) et `headingChanged`. Une reconfirmation seule (nouvelle date) ne casse rien : le texte disait vrai. Un lot seulement compté ne se relit que sur sa présence et son prix, comme avant. La route de BR99 rend les deux champs en plus, sans autre changement ; ni écran, ni migration.
+- Objectif : une annonce copiée qui dit une surface, un étage, une typologie, des frais ou un nom qui ne sont plus ceux de la grille est dite à retirer, lot par lot.
+- Jamais vu : l'annonce n'est pas seulement datée, elle est relue mot pour mot contre la grille du jour : « le lot B02 n'a plus la surface annoncée » plutôt qu'une annonce fausse qui reste en ligne.
+- Critères : surface, typologie, étage changés : `detailsChanged` et `holds` faux [R543] (test) ; frais changés par un nouveau barème : `detailsChanged` [R544] (test) ; source d'un barème changée à frais égaux : `headingChanged` [R544] (test) ; nom, ville ou promoteur changés : `headingChanged` (test) ; reconfirmation seule : tient (test) ; lot seulement compté dont la surface change : tient, son prix changé : `priceChanged` comme avant (test) ; tous les tests de RC56 et BR99 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
