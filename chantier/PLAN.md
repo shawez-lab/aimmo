@@ -1788,6 +1788,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : bouton sur l'écran de la visite, chargé au geste, budgets tenus [R201] (test) ; lecture et validation avec `appointmentId`, compte rendu coché validé d'un geste avec les champs cochés [R260, R261] (test) ; décoché, il ne part pas ; rien coché, rien ne part (test) ; compte rendu mal formé jamais proposé ni envoyé [R10] (test) ; texte reçu posé en texte [R13] (test) ; refus dits en mots [R16] (test).
 - Attend : rien.
 
+### BR104 · Les panneaux à l'écran : poser sur le bien, récupérer depuis l'accueil
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR23
+- Cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux » ; R282, R283, R284, R42, R16, R201.
+- Décidé (2026-11-16, voie 1) : ajoutée parce que le « Reste » de BR23 dit « écran du stock à faire » et qu'aucun écran n'appelle `/v1/panneaux` ; toutes les autres tâches de la voie 1 attendent un humain. Un seul script servi à part, `/app/panneaux.js`, chargé au geste par le chargeur commun : l'application n'y gagne que deux appels. L'ajout au stock par la direction suivra dans une tâche à part.
+- Objectif : sur l'écran « Mettre en vente » du bien, l'agent lit les panneaux posés sur ce bien et en pose un : le numéro lu sur le panneau et l'adresse de la pose (`POST /v1/panneaux/poses`). Sur l'accueil, « Mes panneaux » dit les comptes du stock, les panneaux à récupérer avec leur raison et leur jour, et ses autres poses ; chaque pose se dit récupérée, ou perdue au second appui (`POST /v1/panneaux/poses/<id>/retrait`).
+- Critères : script servi à part, chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; l'écran du bien ne montre que les poses de ce bien, la pose envoie le numéro et l'adresse, puis relit (test) ; numéro ou code postal mal formés refusés avant l'appel (test) ; refus du serveur dits en mots, jamais un code, dont le bien sans mandat diffusable [R42, R282] (test) ; « Perdu » ne part qu'au second appui [R283] (test) ; une écriture sans réponse dite incertaine et relue (test) ; texte reçu posé en texte [R13] (test) ; clé refusée : rien gardé [R16] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
