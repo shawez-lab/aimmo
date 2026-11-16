@@ -114,7 +114,7 @@ globalThis.AIMMO_DICTEE = function (t) {
     if (built && built.corps === corps && built.session === t.session()) return true;
     var mine = t.session(), at = ++turn;
     built = { corps: corps, session: mine };
-    var current = null, lastText = null, requestId = null;
+    var current = null, lastText = null, requestId = null, reading = 0;
     clear(corps);
     said.textContent = '';
     corps.appendChild(el('p', 'Touchez le micro du clavier de votre téléphone et dites ce que vous venez d’apprendre : rien n’est rangé avant votre validation.', 'doux'));
@@ -124,6 +124,10 @@ globalThis.AIMMO_DICTEE = function (t) {
     var answer = el('p', null, 'etat');
     answer.setAttribute('role', 'status');
     function live() { return mine === t.session() && at === turn; }
+    // Un geste à la fois : une lecture ou une validation en cours ne laisse partir rien d'autre, et chaque réponse ne vaut
+    // que pour la dictée qu'elle lit, avec l'identifiant tiré pour elle [R261].
+    var busy = false;
+    function wait() { answer.textContent = 'Une demande est en cours : attendez sa réponse.'; }
     function draw(data) {
       clear(result);
       answer.textContent = '';
@@ -153,9 +157,14 @@ globalThis.AIMMO_DICTEE = function (t) {
         var keep = {};
         checks.forEach(function (c) { if (c.box.checked) (keep[c.target] = keep[c.target] || []).push(c.key); });
         if (!Object.keys(keep).length) { answer.textContent = REFUSALS.nothing_kept; return; }
+        if (busy) return wait();
+        var sent = current;
+        if (!sent || sent.reading !== reading) return;
+        busy = true;
         answer.textContent = 'Validation…';
-        send(VALIDATE, 'POST', { requestId: requestId, dictation: current.text, readAt: current.readAt, keep: keep }).then(function (x) {
-          if (x.gone || !live()) return;
+        send(VALIDATE, 'POST', { requestId: sent.id, dictation: sent.text, readAt: sent.readAt, keep: keep }).then(function (x) {
+          busy = false;
+          if (x.gone || !live() || current !== sent) return;
           if (x.offline) { answer.textContent = ${JSON.stringify(DICTEE_OFFLINE)}; return; }
           if (!x.ok) {
             answer.textContent = refusal(x.body) || ${JSON.stringify(DICTEE_OTHER)};
@@ -171,8 +180,10 @@ globalThis.AIMMO_DICTEE = function (t) {
           if (str(d.appointmentId, 64)) parts.push('le rendez-vous');
           clear(result);
           answer.textContent = parts.length ? 'Rangé : ' + parts.join(', ') + '. Aucun message n’est parti au contact.' : ${JSON.stringify(DICTEE_DONE)};
-          text.value = '';
-          current = null; lastText = null; requestId = null;
+          current = null;
+          // Une dictée changée depuis l'envoi reste à l'écran, avec son propre identifiant à venir.
+          if (text.value === sent.text) text.value = '';
+          if (lastText === sent.text) { lastText = null; requestId = null; }
         });
       }));
     }
@@ -180,15 +191,20 @@ globalThis.AIMMO_DICTEE = function (t) {
       var value = typeof text.value === 'string' ? text.value : '';
       if (!value.trim()) { answer.textContent = 'Dictez ou écrivez d’abord ce que vous voulez ranger.'; return; }
       if (value.length > 5000) { answer.textContent = REFUSALS.bad_dictation; return; }
+      if (busy) return wait();
       // Une seule demande par dictée : relue sans changement, elle garde son identifiant et rien ne double.
       if (value !== lastText) { requestId = globalThis.crypto.randomUUID(); lastText = value; }
+      var id = requestId, mineReading = ++reading;
+      busy = true;
+      current = null;
       clear(result);
       answer.textContent = 'Lecture…';
       send(READ, 'POST', { dictation: value }).then(function (x) {
-        if (x.gone || !live()) return;
+        busy = false;
+        if (x.gone || !live() || mineReading !== reading) return;
         if (x.offline) { answer.textContent = ${JSON.stringify(DICTEE_OFFLINE)}; return; }
         if (!x.ok || !x.body.data || !instant(x.body.data.readAt)) { answer.textContent = refusal(x.body) || ${JSON.stringify(DICTEE_FAILED)}; return; }
-        current = { text: value, readAt: x.body.data.readAt };
+        current = { text: value, readAt: x.body.data.readAt, id: id, reading: mineReading };
         draw(x.body.data);
       });
     }));

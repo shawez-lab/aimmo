@@ -97,7 +97,7 @@ async function desk(answers: Record<string, Answer> = {}) {
   const posts = () => calls.filter((c) => c.method === 'POST');
   const boxes = () => part().all().filter((e) => e.tagName === 'input' && e.attributes.type === 'checkbox');
   const answer = () => part().all().find((e) => e.attributes.role === 'status' && e !== part().children[1])?.textContent ?? '';
-  return { els, ctx, calls, table, part, btn, open, click, dictate, area, posts, boxes, answer, text: () => part().textContent };
+  return { els, ctx, calls, table, part, btn, open, click, dictate, area, posts, boxes, answer, settle, text: () => part().textContent };
 }
 
 describe('BR101 · la création à la voix à l’écran de l’agent', () => {
@@ -222,6 +222,47 @@ describe('BR101 · la création à la voix à l’écran de l’agent', () => {
     await d.click(d.btn('Valider ce qui est coché'));
     expect(d.answer()).toBe(DICTEE_OFFLINE);
     expect(d.area().value).toBe(DICTATION);
+  });
+
+  it('[R261] un geste à la fois : une lecture en cours n’en laisse partir aucune autre, et la validation porte la dictée lue avec son identifiant', async () => {
+    let release: () => void = () => undefined;
+    const held: Answer = () => new Promise((r) => { release = () => r(Response.json({ ok: true, mode: 'essai', data: { draft: DRAFT, readAt: READ_AT, report: null } })); });
+    const d = await desk({ 'POST /v1/dictee/lecture': held });
+    await d.open();
+    await d.dictate('Dictée A : Madame Claire Exemple vend sa maison.');
+    // La dictée B est lue avant la réponse de A : rien ne part, l'écran le dit.
+    await d.dictate('Dictée B : Monsieur Paul Fictif vend son terrain.');
+    expect(d.answer()).toBe('Une demande est en cours : attendez sa réponse.');
+    expect(d.posts().filter((p) => p.url === '/v1/dictee/lecture')).toHaveLength(1);
+    release();
+    await d.settle();
+    await d.click(d.btn('Valider ce qui est coché'));
+    const v = d.posts().find((p) => p.url === '/v1/dictee/validation')!;
+    expect(v.body).toMatchObject({ requestId: '7d1c2b3a-1111-4a2b-8c3d-000000000001', dictation: 'Dictée A : Madame Claire Exemple vend sa maison.' });
+  });
+
+  it('une validation qui répond après une nouvelle dictée ne l’efface pas', async () => {
+    let release: () => void = () => undefined;
+    const held: Answer = () => new Promise((r) => { release = () => r(Response.json({ ok: true, mode: 'essai', data: { personId: 'p1', contact: 'created', propertyId: null, appointmentId: null, report: null } })); });
+    const d = await desk({ 'POST /v1/dictee/validation': held });
+    await d.open();
+    await d.dictate();
+    await d.click(d.btn('Valider ce qui est coché'));
+    // Pendant la validation : une seconde validation ne part pas, la nouvelle dictée attend.
+    await d.click(d.btn('Valider ce qui est coché'));
+    expect(d.posts().filter((p) => p.url === '/v1/dictee/validation')).toHaveLength(1);
+    d.area().value = 'Une autre dictée, commencée pendant la validation.';
+    await d.dictate(d.area().value);
+    expect(d.posts().filter((p) => p.url === '/v1/dictee/lecture')).toHaveLength(1);
+    release();
+    await d.settle();
+    expect(d.answer()).toBe('Rangé : la fiche du contact, créée. Aucun message n’est parti au contact.');
+    expect(d.area().value).toBe('Une autre dictée, commencée pendant la validation.');
+    // Lue maintenant, elle a son propre identifiant.
+    d.table['POST /v1/dictee/validation'] = ok({ personId: 'p2', contact: 'created', propertyId: null, appointmentId: null, report: null });
+    await d.dictate(d.area().value);
+    await d.click(d.btn('Valider ce qui est coché'));
+    expect(d.posts().filter((p) => p.url === '/v1/dictee/validation').map((p) => p.body!.requestId)).toEqual(['7d1c2b3a-1111-4a2b-8c3d-000000000001', '7d1c2b3a-1111-4a2b-8c3d-000000000002']);
   });
 
   it('tout texte reçu est posé en texte ; une dictée vide n’appelle pas le socle', async () => {
