@@ -12,6 +12,7 @@
  *   longueur, par canal.
  */
 import type { OutboundChannelName } from '../db/types.ts';
+import { hiddenIbanSpans } from './iban-detours.ts';
 
 export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
@@ -251,16 +252,37 @@ export const IBAN_MASK = '[IBAN masqué]';
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 function maskPart(part: string): string {
+  // BR106 : toutes les plages sont cherchées sur le texte d'origine, puis réunies, avant de rien remplacer : un IBAN
+  // mêlant chiffres ordinaires et chiffres dictés ou pleine chasse est masqué en entier, jamais son début seul [R15].
+  const spans: [number, number][] = [...ibanSpans(part)];
+  for (const m of part.matchAll(RIB)) spans.push([m.index, m.index + m[0].length]);
+  spans.push(...hiddenIbanSpans(part));
+  spans.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
   let out = '';
   let at = 0;
-  for (const [a, b] of ibanSpans(part)) {
-    out += part.slice(at, a) + IBAN_MASK;
-    at = b;
+  let open: [number, number] | null = null;
+  for (const [a, b] of spans) {
+    if (open !== null && a < open[1]) {
+      open[1] = Math.max(open[1], b);
+      continue;
+    }
+    if (open !== null) {
+      out += part.slice(at, open[0]) + IBAN_MASK;
+      at = open[1];
+    }
+    open = [a, b];
   }
-  return (out + part.slice(at)).replace(RIB, IBAN_MASK);
+  if (open !== null) {
+    out += part.slice(at, open[0]) + IBAN_MASK;
+    at = open[1];
+  }
+  return out + part.slice(at);
 }
 
-/** Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15]. Le reste ne change pas. */
+/**
+ * Le texte, chaque IBAN ou RIB remplacé en entier par `IBAN_MASK`, avant de le ranger [R15], épelé, dicté en mots ou
+ * déguisé par des sosies compris (BR106). Le reste ne change pas.
+ */
 export function maskIban(text: string): string {
   const uuids = text.match(UUID) ?? [];
   return text
