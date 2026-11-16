@@ -2256,7 +2256,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC57 · Une exclusion ou une note d'appel rangée juste après une fusion défaite suit aussi l'autre fiche
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#609, `79f7965c`). Codex 2 P2 corrigés (au rattrapage, une exclusion déjà présente de l'autre côté, levée ou non, n'est jamais recopiée : une levée faite après la fusion défaite tient ; la ligne du journal d'un rattrapage coupé est écrite au suivant, par les copies pas encore au journal), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6343 tests). Reste pour la voie 1 : appeler `catchUpUndoneMerges` dans un passage régulier quand une route défera une fusion.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AC08, AC12
 - Cahier : Conformité (opposition, démarchage téléphonique) ; R02, R04, R204, R17.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de AC12 (« une note écrite juste après le lot d'`undoMerge` n'est pas recopiée, même fenêtre que les exclusions (AC08) »). Une demande qui a lu les fiches réunies juste avant le lot de `undoMerge` range son arrêt ou sa note sur la fiche gardée seulement, après le lot : l'autre fiche ne l'a jamais, et ses envois ou ses appels repartent. Dans `packages/core/src/fiche/fusion.ts` seul : les couples séparés sont lus tels qu'ils étaient à l'instant de la fusion défaite (fusions actives à cette date), et `catchUpUndoneMerge(id)` recopie, sans doublon et sans rien effacer, les exclusions et notes rangées jusqu'à 2 minutes après cet instant ; `catchUpUndoneMerges()` le fait pour les fusions défaites depuis 10 minutes. Une exclusion ou une note rangée dans ces 2 minutes pour une seule des deux personnes vaut aussi pour l'autre : plus prudent. Aucune route, aucun écran, aucune migration ; aucun appelant de `undoMerge` en production aujourd'hui.
