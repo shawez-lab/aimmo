@@ -171,6 +171,38 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
     expect(await t.count('bank_reconciliations')).toBe(1);
   });
 
+  it('[R551] BR93 · le relevé envoyé en JSON sous la seule clé csv : la même lecture que le CSV direct, rien d’autre admis', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    const csv = 'Date;Libellé;Montant\n2027-07-14;VIR F-2027-00001;10 000,00\n2027-07-15;VIR AUTRE;9 999,99\n';
+    const asJson = (body: unknown) => t.raw('direction', 'POST', '/finances/banque/releve', JSON.stringify(body));
+    const first = await asJson({ csv });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, added: 2, already: 0 });
+    // Le même fichier, par le CSV direct : déjà connu, rien de doublé.
+    expect(await t.statement(csv)).toMatchObject({ status: 200, body: { ok: true, added: 0, already: 2 } });
+    expect(await t.count('bank_lines')).toBe(2);
+    // Une autre clé, même un montant, est refusée sans rien ranger.
+    const extra = await asJson({ csv: '2027-07-15;VIR NEUF;1,00\n', amountCents: 100 });
+    expect(extra.status).toBe(400);
+    expect(await extra.json()).toMatchObject({ ok: false, code: 'unknown_field' });
+    for (const bad of [{}, { csv: 12 }, ['csv'], { csv: null }]) {
+      const r = await asJson(bad);
+      expect(r.status, JSON.stringify(bad)).toBe(400);
+      expect(await r.json()).toMatchObject({ ok: false, code: 'invalid_body' });
+    }
+    const broken = await t.raw('direction', 'POST', '/finances/banque/releve', '{"csv":', 'application/json');
+    expect(broken.status).toBe(400);
+    // Une ligne illisible arrête tout, avec son numéro, comme le CSV direct.
+    const unreadable = await asJson({ csv: '2027-07-15;VIR NEUF;1,00\n2027-07-15;sans montant\n' });
+    expect(unreadable.status).toBe(400);
+    expect(await unreadable.json()).toMatchObject({ code: 'bad_statement', line: 2 });
+    // Plus gros que la limite du relevé : refusé, rien de rangé.
+    const big = await asJson({ csv: `2027-07-15;VIR;1,00\n${'x'.repeat(1_000_001)}` });
+    expect(big.status).toBe(400);
+    expect(await t.count('bank_lines')).toBe(2);
+  });
+
   it('[R552] l’encaissement par la route a pour preuve la ligne de banque ; une facture non rapprochée ne s’encaisse pas', async () => {
     const t = await setup();
     t.setClock(at9('2027-07-15'));

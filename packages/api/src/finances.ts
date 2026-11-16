@@ -86,6 +86,27 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+/**
+ * Le relevé envoyé en JSON (BR93) : `{ "csv": "<le fichier tel quel>" }`, rien d'autre. Le texte garde la même limite
+ * que le CSV direct ; l'enveloppe JSON a droit à un peu plus, pour ses échappements.
+ */
+async function readStatementJson(request: Request): Promise<string | 'unknown_field' | null> {
+  const text = await readText(request, MAX_STATEMENT_BYTES * 2);
+  if (text === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.some((k) => k !== 'csv')) return 'unknown_field';
+  const csv = (value as { csv?: unknown }).csv;
+  if (typeof csv !== 'string' || new TextEncoder().encode(csv).length > MAX_STATEMENT_BYTES) return null;
+  return csv;
+}
+
 const badBody = (): Response => json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Corps JSON attendu.' });
 const unknownField = (): Response => json(400, { ok: false, rule: null, code: 'unknown_field' });
 
@@ -159,7 +180,15 @@ export function financesRoutes(): FinancesRoute[] {
       name: 'finances.banque.releve',
       roles: DIRECTION,
       handle: async (s, v, _p, r) => {
-        if (!(r.headers.get('content-type') ?? '').toLowerCase().startsWith('text/csv')) return json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Relevé CSV attendu.' });
+        const type = (r.headers.get('content-type') ?? '').toLowerCase();
+        // L'écran de la direction (BR93) n'envoie que du JSON : le même relevé, tel quel, sous la seule clé `csv`.
+        if (type.startsWith('application/json')) {
+          const csv = await readStatementJson(r);
+          if (csv === 'unknown_field') return unknownField();
+          if (csv === null) return json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Relevé CSV attendu, sous la clé csv.' });
+          return reply(await banque(s).importStatement(v, csv));
+        }
+        if (!type.startsWith('text/csv')) return json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Relevé CSV attendu.' });
         const csv = await readText(r, MAX_STATEMENT_BYTES);
         if (csv === null) return json(400, { ok: false, rule: null, code: 'invalid_body', message: 'Relevé trop gros.' });
         return reply(await banque(s).importStatement(v, csv));
