@@ -25,6 +25,9 @@ describe('RC65 · récompense déguisée', () => {
       'cash back',
       'un geste commercial',
       'un rabais',
+      'une indemnité pour vous remercier',
+      'un remboursement pour votre recommandation',
+      'Léa recevra une indemnité',
     ]) {
       expect(mentionsReward(text), text).toBe(true);
     }
@@ -35,6 +38,11 @@ describe('RC65 · récompense déguisée', () => {
       expect(mentionsReward(text), text).toBe(true);
     }
     expect(rewardWords('Léa aura un c a d e a u demain')).toEqual(['c a d e a u']);
+    // Un mot d'une lettre juste avant ou après ne cache pas le mot épelé.
+    expect(rewardWords('un c a d e a u à Léa')).toEqual(['c a d e a u']);
+    expect(rewardWords('une p.r.i.m.e à Léa')).toEqual(['p.r.i.m.e']);
+    expect(rewardWords('y a c a d e a u x à Léa')).toEqual(['c a d e a u x']);
+    expect(mentionsReward('a b c d e f g h')).toBe(false);
   });
 
   it('[R66] aucun faux refus sur les phrases d’usage', () => {
@@ -51,6 +59,9 @@ describe('RC65 · récompense déguisée', () => {
       'Il a un projet de vente à l’automne',
       'les frais d’agence sont à la charge du vendeur',
       'a b',
+      'l’indemnité d’immobilisation du compromis',
+      'un remboursement anticipé de votre prêt',
+      'le remboursement de son crédit',
     ]) {
       expect(mentionsReward(text), text).toBe(false);
       expect(rewardWords(text), text).toEqual([]);

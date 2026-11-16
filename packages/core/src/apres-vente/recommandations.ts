@@ -40,6 +40,8 @@ export const REWARD = new RegExp(
     String.raw`\b(?:honoraires|frais d.agence|frais d.agent)\s+(?:sont\s+|seront\s+)?(?:offerts?|reduits?|gratuits?|rembourses?|divises?|partages?)\b`,
     String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
     String.raw`\b\d+\s*(?:balles|k|ke|keur)\b`,
+    // Une indemnité ou un remboursement au client qui recommande ; ceux d'un compromis ou d'un prêt n'en sont pas.
+    String.raw`\b(?:indemnite|indemnites|remboursement|remboursements)\b(?!\s+(?:d.immobilisation|anticipes?|de (?:votre |son |leur |du )?pret|du pret|d.emprunt|de (?:votre |son |leur )?credit))`,
     String.raw`\b(?:restaurant|resto|repas|diner|dejeuner|week.end|voyage|sejour|bouteille|champagne|abonnement)\s+(?:vous\s+|lui\s+|leur\s+)?(?:offerts?|offertes?|paye|payes|payee|rembourse)\b`,
     String.raw`\b(?:offr\w*|paie\w*|pay\w*)\s+(?:[\w']+\s+){0,3}(?:au restaurant|un restaurant|un resto|un repas|un diner|un dejeuner|une bouteille|un week.end|un voyage|un sejour|un abonnement)\b`,
     // Une invitation au restaurant en remerciement est une récompense ; un repas de quartier ne l'est pas.
@@ -51,6 +53,10 @@ export const REWARD = new RegExp(
 );
 const REWARD_ALL = new RegExp(REWARD.source, 'g');
 /** Un mot tapé lettre par lettre, séparées par des espaces, des points ou des tirets : « c a d e a u », « p.r.i.m.e ». */
+/** Le vocabulaire de récompense, sur une suite de lettres entière. */
+const REWARD_WHOLE = new RegExp(`^(?:${REWARD.source})$`);
+/** Au-delà, une suite de lettres isolées n'est plus lue : un texte normal n'en a jamais autant. */
+const SPELLED_MAX = 80;
 const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
 
 /** Le texte sans accents ni majuscules, et pour chaque unité du résultat, sa place dans le texte tapé. */
@@ -86,11 +92,28 @@ export function rewardWords(text: string): string[] {
     found.push({ at: start, word: text.slice(start, end) });
   }
   for (const m of p.matchAll(SPELLED)) {
-    const letters = m[0].replace(/[^\p{L}]/gu, '');
-    if (!new RegExp(REWARD.source).test(letters)) continue;
-    const start = from[m.index!]!;
-    const end = to[m.index! + m[0].length - 1]!;
-    found.push({ at: start, word: text.slice(start, end) });
+    // Chaque lettre de la suite et sa place : le mot peut être entouré de mots d'une lettre (« un c a d e a u à Léa »).
+    const letters: { ch: string; at: number }[] = [];
+    for (const l of m[0].matchAll(/\p{L}/gu)) letters.push({ ch: l[0], at: m.index! + l.index! });
+    if (letters.length > SPELLED_MAX) continue;
+    let i = 0;
+    while (i < letters.length) {
+      let matched = -1;
+      for (let j = letters.length - 1; j >= i + 2; j -= 1) {
+        if (REWARD_WHOLE.test(letters.slice(i, j + 1).map((l) => l.ch).join(''))) {
+          matched = j;
+          break;
+        }
+      }
+      if (matched < 0) {
+        i += 1;
+        continue;
+      }
+      const start = from[letters[i]!.at]!;
+      const end = to[letters[matched]!.at]!;
+      found.push({ at: start, word: text.slice(start, end) });
+      i = matched + 1;
+    }
   }
   found.sort((a, b) => a.at - b.at);
   const words: string[] = [];
