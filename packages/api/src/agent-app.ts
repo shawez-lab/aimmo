@@ -33,7 +33,7 @@ import { LOUER_MODELES_SCRIPT } from '../app/louer-modeles.ts';
 import { MANDAT_MODELES_SCRIPT } from '../app/mandat-modeles.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { REPRISE_SCRIPT } from '../app/reprise.ts';
-import { CONFORMITE_SCRIPT } from '../app/conformite.ts';
+import { COFFRE_SCRIPT, CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { INVESTIR_SCRIPT } from '../app/investir.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
@@ -255,6 +255,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // La création à la voix (BR101), chargée au premier geste depuis « Ma journée », jamais gardée sur l'appareil [R201].
   '/app/dictee.js': { body: DICTEE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/reclamations.js': { body: RECLAMATIONS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le dépôt d'une pièce au coffre depuis la fiche (BR102), chargé au geste, jamais gardé sur l'appareil [R201].
+  '/app/coffre.js': { body: COFFRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les visites réservées en ligne à rattacher (BR64), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/visites-en-ligne.js': { body: VISITES_EN_LIGNE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Recommander un proche depuis la fiche (X22), chargé au premier geste, jamais gardé sur l'appareil [R201].

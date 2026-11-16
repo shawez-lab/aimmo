@@ -575,7 +575,7 @@ export const APP_JS = `'use strict';
     body.appendChild(notesVocalesBlock(personId));
     // Les réclamations de la fiche : ranger, échéance, réponse, médiateur (BR69) [R16, R606, R607].
     body.appendChild(reclamationsBlock(personId));
-    // Le dépôt d'une pièce au coffre par l'agent de la fiche (L10) [R90].
+    // Le dépôt d'une pièce au coffre par l'agent de la fiche (L10), chargé au geste (BR102) [R90].
     body.appendChild(coffreBlock(personId));
     // La fin de bail connue, raison écrite d'une relance d'ancien contact (G15) [R143].
     body.appendChild(finDeBailBlock(personId));
@@ -2090,7 +2090,8 @@ ${LOUER_JS}
     var headers = { authorization: 'Bearer ' + key };
     if (extra) Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; });
     var init = { method: method || 'GET', headers: headers, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
-    if (body !== undefined) { headers['content-type'] = 'application/json'; init.body = JSON.stringify(body); }
+    // Un corps qui dit son type (BR102 : une pièce au coffre) part tel quel ; sinon en JSON.
+    if (body !== undefined) init.body = headers['content-type'] ? body : (headers['content-type'] = 'application/json', JSON.stringify(body));
     return fetch(path, init);
   }
   function refuse(message) {
