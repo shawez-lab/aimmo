@@ -39,7 +39,8 @@ export const REWARD = new RegExp(
     String.raw`\b(?:remise|remises|reduction|reductions|rabais)(?:\s+[\w'’]+){0,3}?\s+(?:[dl]['’])?(?:honoraires|frais d.agence|frais d.agent|commission)\b`,
     String.raw`\b(?:honoraires|frais d.agence|frais d.agent)\s+(?:sont\s+|seront\s+)?(?:offerts?|reduits?|gratuits?|rembourses?|divises?|partages?)\b`,
     String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
-    String.raw`\b\d+\s*(?:balles|k|ke|keur)\b`,
+    // « 200 balles » ; « 300k » est un budget, pas une récompense.
+    String.raw`\b\d+\s*balles\b`,
     // Une indemnité ou un remboursement au client qui recommande ; ceux d'un compromis ou d'un prêt n'en sont pas.
     String.raw`\b(?:indemnite|indemnites|remboursement|remboursements)\b(?!\s+(?:d.immobilisation|anticipes?|(?:du|des|de|d.)\s*(?:(?:mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|ce|cet|cette)\s+)?(?:pret|prets|credit|credits|emprunt|emprunts)\b))`,
     String.raw`\b(?:restaurant|resto|repas|diner|dejeuner|week.end|voyage|sejour|bouteille|champagne|abonnement)\s+(?:vous\s+|lui\s+|leur\s+)?(?:offerts?|offertes?|paye|payes|payee|rembourse)\b`,
@@ -61,14 +62,23 @@ const REWARD_WHOLE = new RegExp(
   `^(?:${REWARD.source.replace(/\\s[+*]/g, '').replace(/ /g, '').replace(/\['’\]/g, '').replace(/(?<!\\)\./g, '.?')})$`,
 );
 /** Le vocabulaire sans espace ni apostrophe obligatoires entre les mots d'une expression : seulement sur un passage épelé. */
+// Les mots libres entre deux termes d'une expression deviennent une seule classe bornée, pour que la lecture reste
+// linéaire même sans espace obligatoire.
 const REWARD_LOOSE = new RegExp(
-  REWARD.source.replace(/\\s\+/g, '\\s*').replace(/ /g, ' ?').replace(/(?<!\\)\./g, '.?'),
+  REWARD.source
+    .replace(/\(\?:\\s\+\[\\w'’\]\+\)\{0,3\}\?/g, String.raw`[\w'’\s]{0,40}?`)
+    .replace(/\(\?:\[\\w'\]\+\\s\+\)\{0,3\}/g, String.raw`[\w'\s]{0,40}?`)
+    .replace(/\\s\+/g, '\\s*')
+    .replace(/ /g, ' ?')
+    .replace(/(?<!\\)\./g, '.?'),
   'g',
 );
 /** Au-delà, une suite de lettres isolées n'est plus lue : un texte normal n'en a jamais autant. */
 const SPELLED_MAX = 80;
 /** Au-delà, les combinaisons de bords des suites épelées ne sont plus toutes relues : chaque suite l'est seule. */
 const SPELLED_READINGS_MAX = 256;
+/** Au-delà de ces combinaisons, chaque suite est relue seule dans ce nombre d'unités de texte de part et d'autre. */
+const SPELLED_WINDOW = 120;
 /** Les mots d'une lettre qu'une suite épelée peut avaler à ses bords, sans accents : « a », « à », « y », « d' », « l' ». */
 const EDGE_LETTERS = ['a', 'y', 'd', 'l'];
 const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
@@ -102,13 +112,18 @@ export function rewardWords(text: string): string[] {
   // Le texte relu, chaque mot épelé recollé à sa place parmi les mots ordinaires (« une carte p r é p a y é e ») ;
   // chaque unité garde sa place dans le texte sans accents. Une suite épelée peut avaler un ou deux mots d'une lettre
   // à ses bords (« à », « y a ») : chaque suite est aussi relue sans eux, et toutes les lectures comptent.
-  const runs = [...p.matchAll(SPELLED)].map((m) => [...m[0].matchAll(/\p{L}/gu)].map((l) => m.index! + l.index!));
+  // Une suite de plus de SPELLED_MAX lettres isolées n'est pas un mot épelé : elle reste telle quelle, sans autre lecture.
+  const runs = [...p.matchAll(SPELLED)]
+    .map((m) => [...m[0].matchAll(/\p{L}/gu)].map((l) => m.index! + l.index!))
+    .filter((letters) => letters.length <= SPELLED_MAX);
   const spelledAt = new Set(runs.flat());
-  const read = (cut: (r: number) => [number, number]): void => {
+  // Une lecture du passage [lo, hi) du texte, chaque suite qui y tient recollée avec les bords choisis par `cut`.
+  const read = (cut: (r: number) => [number, number], lo = 0, hi = p.length): void => {
     let q = '';
     const qAt: number[] = [];
-    let k = 0;
+    let k = lo;
     runs.forEach((letters, r) => {
+      if (letters[0]! < lo || letters[letters.length - 1]! >= hi) return;
       for (; k < letters[0]!; k += 1) {
         q += p[k];
         qAt.push(k);
@@ -129,7 +144,7 @@ export function rewardWords(text: string): string[] {
       });
       k = letters[letters.length - 1]! + 1;
     });
-    for (; k < p.length; k += 1) {
+    for (; k < hi; k += 1) {
       q += p[k];
       qAt.push(k);
     }
@@ -174,9 +189,17 @@ export function rewardWords(text: string): string[] {
       read((r) => options[r]![pick[r]!]!);
     }
   } else {
+    // Trop de suites pour toutes les combinaisons : le texte entier tel quel, puis chaque suite relue avec ses bords
+    // dans un passage autour d'elle seulement, élargi aux suites qu'il coupe, pour que la lecture reste bornée.
     read(() => [0, 0]);
     options.forEach((o, r) => {
-      for (const c of o) read((s) => (s === r ? c : [0, 0]));
+      let lo = Math.max(0, runs[r]![0]! - SPELLED_WINDOW);
+      let hi = Math.min(p.length, runs[r]![runs[r]!.length - 1]! + 1 + SPELLED_WINDOW);
+      for (const letters of runs) {
+        if (letters[0]! < lo && letters[letters.length - 1]! >= lo) lo = letters[0]!;
+        if (letters[0]! < hi && letters[letters.length - 1]! >= hi) hi = letters[letters.length - 1]! + 1;
+      }
+      for (const c of o) if (c[0] || c[1]) read((s) => (s === r ? c : [0, 0]), lo, hi);
     });
   }
   for (const m of p.matchAll(SPELLED)) {

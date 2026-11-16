@@ -86,6 +86,21 @@ describe('RC65 · récompense déguisée', () => {
     expect(rewardWords('il y a c a d e a u x à Léa')).toEqual(['c a d e a u x']);
   });
 
+  it('[R66] une saisie démesurée reste lue vite, et une récompense cachée derrière beaucoup de lettres isolées reste trouvée', () => {
+    for (const text of [
+      `r e m i s e ${Array(2400).fill('z').join(' ')}`,
+      `r e m i s e ${Array(1300).fill('zz').join(' ')}`,
+      Array(1000).fill('a b c xx').join(' '),
+      `${Array(8).fill('y a c a d e a a').join(' xx ')} ${Array(1500).fill('zzzz').join(' ')}`,
+    ]) {
+      const start = performance.now();
+      rewardWords(text.slice(0, 8000));
+      expect(performance.now() - start, text.slice(0, 20)).toBeLessThan(1500);
+    }
+    const padded = `${Array(40).fill('a b c').join(' xx ')} et une carte p r é p a y é e à Léa`;
+    expect(rewardWords(padded)).toEqual(['carte p r é p a y é e']);
+  });
+
   it('[R66] aucun faux refus sur les phrases d’usage', () => {
     for (const text of [
       'Hugo est d’accord pour être appelé à la remise des clés',
@@ -108,7 +123,8 @@ describe('RC65 · récompense déguisée', () => {
       'le remboursement des prêts',
       'le remboursement d’emprunt',
       'le remboursement de leurs crédits',
-    ]) {
+      'Hugo accepte d’être appelé pour un achat avec un budget de 300k',
+          ]) {
       expect(mentionsReward(text), text).toBe(false);
       expect(rewardWords(text), text).toEqual([]);
     }
