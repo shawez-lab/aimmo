@@ -1707,7 +1707,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR96 · L'alerte de cession relue au coffre, dite à l'écran du responsable (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#616, `4dd915c2`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6384 tests). Reste : rien.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC58, CE21
 - Cahier : M16 « Règles » (vigilance renforcée de la cession) et M12 Conformité ; R118, R14, R15, R10.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC58 (« dire `stillMissing`, `checkedAt` et `buyerCurrent` à l'écran du responsable, à la place de « Vérifiez le coffre avant de décider » ; `null` dit « coffre non relu » »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Seul `cCessions` de `packages/api/app/conformite.ts` et son test changent ; aucune route, aucune migration. L'alerte garde ce qui manquait à sa levée, puis dit l'heure de la relecture, ce qui manque encore et ce qui a été déposé depuis ; tout déposé se dit, mais la décision reste au responsable [R14] ; `stillMissing` nul ou absent (serveur plus ancien) dit « coffre non relu : vérifiez-le avant de décider », jamais « rien ne manque » [R10] ; `buyerCurrent` faux dit que l'acquéreur a été remplacé depuis.
