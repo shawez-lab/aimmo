@@ -51,6 +51,11 @@ describe('RC65 · récompense déguisée', () => {
     expect(mentionsReward('un g e s t e c o m m e r c i a l')).toBe(true);
     expect(mentionsReward('un b o n d a c h a t')).toBe(true);
     expect(mentionsReward('un w e e k e n d o f f e r t')).toBe(true);
+    // Des mots épelés mêlés à des mots ordinaires, relus à leur place.
+    expect(rewardWords('Léa recevra une carte p r é p a y é e pour sa recommandation')).toEqual(['carte p r é p a y é e']);
+    expect(rewardWords('une b o u t e i l l e offerte pour vous remercier')).toEqual(['b o u t e i l l e offerte']);
+    expect(rewardWords('vos h o n o r a i r e s seront offerts')).toEqual(['h o n o r a i r e s seront offerts']);
+    expect(mentionsReward('une remise sur vos h.o.n.o.r.a.i.r.e.s')).toBe(true);
   });
 
   it('[R66] aucun faux refus sur les phrases d’usage', () => {

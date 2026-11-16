@@ -89,12 +89,30 @@ function plainWithPlaces(text: string): { plain: string; from: number[]; to: num
 export function rewardWords(text: string): string[] {
   if (typeof text !== 'string' || text === '') return [];
   const { plain: p, from, to } = plainWithPlaces(text);
-  const found: { at: number; word: string }[] = [];
-  for (const m of p.matchAll(REWARD_ALL)) {
+  const found: { at: number; end: number }[] = [];
+  // Le texte relu, chaque mot épelé recollé à sa place parmi les mots ordinaires (« une carte p r é p a y é e ») ;
+  // chaque unité garde sa place dans le texte sans accents.
+  let q = '';
+  const qAt: number[] = [];
+  let k = 0;
+  for (const m of p.matchAll(SPELLED)) {
+    for (; k < m.index!; k += 1) {
+      q += p[k];
+      qAt.push(k);
+    }
+    for (const l of m[0].matchAll(/\p{L}/gu)) {
+      q += l[0];
+      qAt.push(m.index! + l.index!);
+    }
+    k = m.index! + m[0].length;
+  }
+  for (; k < p.length; k += 1) {
+    q += p[k];
+    qAt.push(k);
+  }
+  for (const m of q.matchAll(REWARD_ALL)) {
     if (m[0] === '') continue;
-    const start = from[m.index!]!;
-    const end = to[m.index! + m[0].length - 1]!;
-    found.push({ at: start, word: text.slice(start, end) });
+    found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
   }
   for (const m of p.matchAll(SPELLED)) {
     // Chaque lettre de la suite et sa place : le mot peut être entouré de mots d'une lettre (« un c a d e a u à Léa »).
@@ -114,15 +132,20 @@ export function rewardWords(text: string): string[] {
         i += 1;
         continue;
       }
-      const start = from[letters[i]!.at]!;
-      const end = to[letters[matched]!.at]!;
-      found.push({ at: start, word: text.slice(start, end) });
+      found.push({ at: from[letters[i]!.at]!, end: to[letters[matched]!.at]! });
       i = matched + 1;
     }
   }
-  found.sort((a, b) => a.at - b.at);
+  // Deux lectures du même passage : la plus longue seule.
+  found.sort((a, b) => a.at - b.at || b.end - a.end);
   const words: string[] = [];
-  for (const f of found) if (!words.includes(f.word)) words.push(f.word);
+  let reach = -1;
+  for (const f of found) {
+    if (f.at < reach) continue;
+    reach = f.end;
+    const word = text.slice(f.at, f.end);
+    if (!words.includes(word)) words.push(word);
+  }
   return words;
 }
 
