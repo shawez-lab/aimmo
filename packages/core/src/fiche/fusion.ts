@@ -342,15 +342,21 @@ export class FicheUnique {
     const until = new Date(Date.parse(undoneAt) + UNDO_MERGE_CATCH_UP.graceMs).toISOString();
     const pairs = await this.separatedPairs(merge, undoneAt);
     if (pairs.length === 0) return done;
-    const copies = async () => ({
-      exclusions: (await this.db.all<{ id: string }>('SELECT id FROM exclusions WHERE undone_merge_id = ?', [mergeId])).map((r) => r.id),
-      calls: (await this.db.all<{ id: string }>('SELECT id FROM call_notes WHERE undone_merge_id = ?', [mergeId])).map((r) => r.id),
-    });
-    const before = await copies();
     await runBatch(this.db, copyStatements(pairs, mergeId, undoneAt, until));
-    const after = await copies();
-    done.exclusions = after.exclusions.filter((id) => !before.exclusions.includes(id)).sort();
-    done.calls = after.calls.filter((id) => !before.calls.includes(id)).sort();
+    // Toute copie de cette fusion pas encore au journal y va : celles de ce passage, et celles d'un passage coupé avant
+    // sa ligne. Les copies du lot sont déjà dites par `fiche.fusion_defaite`.
+    const said = new Set<string>();
+    for (const e of await trace.journal.bySubject(`person:${merge.survivor_id}`)) {
+      if ((e.type !== 'fiche.fusion_defaite' && e.type !== 'fiche.fusion_defaite_rattrapee') || e.data.merge !== mergeId) continue;
+      for (const key of ['exclusions', 'calls'] as const) {
+        const ids = e.data[key];
+        if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'string') said.add(id);
+      }
+    }
+    const unsaid = async (table: 'exclusions' | 'call_notes') =>
+      (await this.db.all<{ id: string }>(`SELECT id FROM ${table} WHERE undone_merge_id = ? ORDER BY id`, [mergeId])).map((r) => r.id).filter((id) => !said.has(id));
+    done.exclusions = await unsaid('exclusions');
+    done.calls = await unsaid('call_notes');
     if (done.exclusions.length > 0 || done.calls.length > 0) {
       await appendEvent(
         trace.journal,
@@ -487,6 +493,8 @@ export class FicheUnique {
 /**
  * Les copies d'exclusions et de notes d'appel d'une fiche séparée vers l'autre, faites seulement si la fusion est bien
  * défaite à `undoneAt`. `until` borne la date de ce qui est recopié (le rattrapage) ; `null` : tout depuis la réunion.
+ * Au rattrapage, une exclusion déjà présente de l'autre côté, levée ou non, n'est jamais recopiée : une levée faite
+ * après la fusion défaite sur l'une des fiches n'est pas défaite par la copie encore ouverte de l'autre.
  */
 function copyStatements(pairs: SeparatedPair[], mergeId: string, undoneAt: string, until: string | null): { sql: string; params: SqlValue[] }[] {
   const bound = (column: string): string => (until === null ? '' : ` AND ${column} <= ?`);
@@ -498,7 +506,7 @@ function copyStatements(pairs: SeparatedPair[], mergeId: string, undoneAt: strin
             FROM exclusions e
             WHERE e.person_id = ? AND e.created_at >= ?${bound('e.created_at')}
               AND NOT EXISTS (SELECT 1 FROM exclusions t WHERE t.person_id = ? AND t.reason = e.reason AND t.channel IS e.channel
-                                AND t.noted_at = e.noted_at AND t.lifted_at IS e.lifted_at)
+                                AND t.noted_at = e.noted_at${until === null ? ' AND t.lifted_at IS e.lifted_at' : ''})
               AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
             GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
       params: [target, mergeId, source, since, ...upTo, target, mergeId, undoneAt],

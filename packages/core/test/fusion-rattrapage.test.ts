@@ -188,6 +188,44 @@ describeWithSqlite('RC57 · rattrapage d’une fusion défaite', () => {
     expect(JSON.stringify(lines[0])).not.toMatch(/Léa|Inventée|06 00|example\.test|accord de test/);
   });
 
+  it('[R02] [R17] une levée faite après la fusion défaite, sur l’une ou l’autre fiche, n’est jamais défaite par un nouveau rattrapage', async () => {
+    const t = await setup();
+    const { merge, undoneAt } = await t.mergeAndUndo();
+    const original = await t.lateExclusion(t.a, undoneAt - 1000, 'refused');
+    t.advance(MINUTE);
+    const [copyId] = (await t.unique.catchUpUndoneMerge(merge.id, t.trace)).exclusions;
+    t.advance(5 * MINUTE);
+    await t.store.liftExclusion(original.id, new Date(t.nowMs()));
+    await t.unique.catchUpUndoneMerge(merge.id, t.trace);
+    const open = async (id: string) => (await t.store.listExclusions(id)).filter((e) => e.lifted_at === null).length;
+    expect(await open(t.a)).toBe(0);
+    expect(await open(t.b)).toBe(1);
+    await t.store.liftExclusion(copyId!, new Date(t.nowMs()));
+    await t.unique.catchUpUndoneMerge(merge.id, t.trace);
+    expect(await open(t.b)).toBe(0);
+    expect(await t.count('exclusions')).toBe(2);
+  });
+
+  it('[R17] une coupure du journal après la copie : le rattrapage suivant écrit la ligne manquante, une seule fois', async () => {
+    const t = await setup();
+    const { merge, undoneAt } = await t.mergeAndUndo();
+    await t.lateExclusion(t.a, undoneAt - 1000);
+    t.advance(MINUTE);
+    const cut = new SqlJournalStore(t.db);
+    cut.append = async () => {
+      throw new Error('coupure');
+    };
+    await expect(t.unique.catchUpUndoneMerge(merge.id, { journal: cut, actor: 'direction:test' })).rejects.toThrow('coupure');
+    expect(await t.count('exclusions')).toBe(2);
+
+    const retry = await t.unique.catchUpUndoneMerge(merge.id, t.trace);
+    expect(retry.exclusions).toHaveLength(1);
+    expect(await t.unique.catchUpUndoneMerge(merge.id, t.trace)).toEqual({ merge: merge.id, exclusions: [], calls: [] });
+    const lines = (await t.journal.bySubject(`person:${t.a}`)).filter((e) => e.type === 'fiche.fusion_defaite_rattrapee');
+    expect(lines.map((e) => e.data.exclusions)).toEqual([retry.exclusions]);
+    expect(await t.count('exclusions')).toBe(2);
+  });
+
   it('[R17] une fusion pas défaite : rien ne change', async () => {
     const t = await setup();
     t.advance(MINUTE);
