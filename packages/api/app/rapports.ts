@@ -91,6 +91,8 @@ globalThis.${mine ? 'AIMMO_RAPPORTS_AGENT' : 'AIMMO_RAPPORTS'} = function (t) {
   var ROLE = ${JSON.stringify(mine ? RAPPORTS_AGENT_ROLE : RAPPORTS_ROLE)}, OFFLINE = ${JSON.stringify(RAPPORTS_OFFLINE)}, READ_LOST = ${JSON.stringify(RAPPORTS_READ_LOST)};
   var LOST = ${JSON.stringify(RAPPORTS_LOST)}, FAILED = ${JSON.stringify(RAPPORTS_FAILED)}, UNCHECKED = ${JSON.stringify(RAPPORTS_UNCHECKED)}, UNCHECKED_NOTE = ${JSON.stringify(RAPPORTS_UNCHECKED_NOTE)};
   var NO_MEASURE = ${JSON.stringify(RAPPORTS_NO_MEASURE)}, BAD_PERIOD = ${JSON.stringify(RAPPORTS_BAD_PERIOD)}, BAD_NAME = ${JSON.stringify(RAPPORTS_BAD_NAME)}, NEVER_TWO = ${JSON.stringify(mine ? RAPPORTS_AGENT_ONLY : RAPPORTS_NEVER_TWO)};
+  /* Sous les engagements de la direction, les titres suivent son h4 ; sous « Mes chiffres », le h2 de l'écran [R201]. */
+  var HEAD = '${mine ? 'h3' : 'h5'}';
   var R = '/v1/finances/rapports'${mine ? '' : ", AGENTS = '/v1/gagner/recommandations/agents'"};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, MONTH = /^\\d{4}-\\d{2}$/;
   var box = null, status = null, body = null, result = null, busy = false, reads = 0, asked = 0;
@@ -162,7 +164,7 @@ globalThis.${mine ? 'AIMMO_RAPPORTS_AGENT' : 'AIMMO_RAPPORTS'} = function (t) {
     var list = cells(r, ask);
     if (!list) { result.appendChild(el('p', READ_LOST, 'etat')); return; }
     var who = ${mine ? "'Mes chiffres seulement'" : "ask.network ? 'Total du réseau' : 'Agent : ' + agentName(ask.agentId)"};
-    result.appendChild(el('h5', who));
+    result.appendChild(el(HEAD, who));
     result.appendChild(el('p', 'Du ' + dayText(ask.from) + ' au ' + dayText(ask.to) + '. Chaque chiffre s’ouvre sur ses lignes : vous pouvez tout recompter.', 'doux'));
     var keys = [];
     list.forEach(function (c) { if (keys.indexOf(c.key) < 0) keys.push(c.key); });
@@ -237,7 +239,7 @@ globalThis.${mine ? 'AIMMO_RAPPORTS_AGENT' : 'AIMMO_RAPPORTS'} = function (t) {
   }
   function compose() {
     var p = el('section', null, 'bloc');
-    p.appendChild(el('h5', 'Composer un rapport'));
+    p.appendChild(el(HEAD, 'Composer un rapport'));
     p.appendChild(el('p', 'Des mesures, un regroupement, une période d’un an au plus. ' + NEVER_TWO, 'doux'));
     ORDER.forEach(function (m) {
       var wrap = el('div', null, 'case'), c = el('input'), l = el('label', MEASURES[m]);
@@ -270,7 +272,7 @@ ${mine ? '' : `    var options = { '': 'Le total du réseau' };
   }
   function saved(list) {
     var p = el('section', null, 'bloc');
-    p.appendChild(el('h5', 'Mes rapports enregistrés'));
+    p.appendChild(el(HEAD, 'Mes rapports enregistrés'));
     if (!Array.isArray(list)) { p.appendChild(el('p', READ_LOST, 'etat')); return p; }
     var ok = list.filter(function (r) {
       return r && ID.test(r.id) && typeof r.name === 'string' && r.name.trim() && r.definition && Array.isArray(r.definition.measures) && r.definition.measures.length && r.definition.measures.every(function (m) { return owns(MEASURES, m); }) && owns(GROUPINGS, r.definition.grouping);

@@ -142,14 +142,19 @@ describe('BR95 · mes rapports sur mesure depuis « Mes chiffres »', () => {
     await d.open();
     expect(scriptsOf(d.els.fiche!, '/app/rapports-agent.js')).toHaveLength(1);
     expect(d.calls.filter((c) => c.method === 'GET' && (c.url.startsWith('/v1/finances') || c.url.includes('/agents'))).map((c) => c.url)).toEqual(['/v1/finances/rapports']);
-    expect(d.part().all().filter((e) => e.tagName === 'h5').map((e) => e.textContent)).toEqual(['Composer un rapport', 'Mes rapports enregistrés']);
+    // Les titres suivent le h2 de « Mes chiffres », sans sauter de niveau [R201].
+    expect(HTML).toContain('<h2 id="chiffres-titre">Mes chiffres</h2>');
+    expect(d.part().all().filter((e) => e.tagName === 'h3').map((e) => e.textContent)).toEqual(['Composer un rapport', 'Mes rapports enregistrés']);
+    expect(d.part().all().some((e) => /^h[4-6]$/.test(e.tagName))).toBe(false);
+    await d.click(d.button('Lire le rapport'));
+    expect(d.part().all().filter((e) => e.tagName === 'h3').map((e) => e.textContent)).toContain('Mes chiffres seulement');
+    expect(d.part().all().some((e) => /^h[4-6]$/.test(e.tagName))).toBe(false);
     expect(d.text()).toContain(RAPPORTS_AGENT_ONLY);
     for (const id of ['mes-rapports-contacts', 'mes-rapports-regroupement', 'mes-rapports-du', 'mes-rapports-au', 'mes-rapports-nom']) {
       expect(d.part().all().some((e) => e.tagName === 'label' && e.attributes.for === id)).toBe(true);
     }
     // Aucune portée à choisir : ni le réseau, ni un autre agent.
     expect(d.part().all().some((e) => e.attributes.id === 'mes-rapports-portee' || e.attributes.id === 'rapports-portee')).toBe(false);
-    expect(d.posts()).toHaveLength(0);
   });
 
   it('[R68] [R560] lire : le corps n’a ni agentId ni network ; 12 derniers mois de Paris par défaut ; période fausse arrêtée avant l’envoi', async () => {
