@@ -60,8 +60,17 @@ const REWARD_ALL = new RegExp(REWARD.source, 'g');
 const REWARD_WHOLE = new RegExp(
   `^(?:${REWARD.source.replace(/\\s[+*]/g, '').replace(/ /g, '').replace(/\['’\]/g, '').replace(/(?<!\\)\./g, '.?')})$`,
 );
+/** Le vocabulaire sans espace ni apostrophe obligatoires entre les mots d'une expression : seulement sur un passage épelé. */
+const REWARD_LOOSE = new RegExp(
+  REWARD.source.replace(/\\s\+/g, '\\s*').replace(/ /g, ' ?').replace(/(?<!\\)\./g, '.?'),
+  'g',
+);
 /** Au-delà, une suite de lettres isolées n'est plus lue : un texte normal n'en a jamais autant. */
 const SPELLED_MAX = 80;
+/** Au-delà, les combinaisons de bords des suites épelées ne sont plus toutes relues : chaque suite l'est seule. */
+const SPELLED_READINGS_MAX = 256;
+/** Les mots d'une lettre qu'une suite épelée peut avaler à ses bords, sans accents : « a », « à », « y », « d' », « l' ». */
+const EDGE_LETTERS = ['a', 'y', 'd', 'l'];
 const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
 
 /** Le texte sans accents ni majuscules, et pour chaque unité du résultat, sa place dans le texte tapé. */
@@ -91,28 +100,84 @@ export function rewardWords(text: string): string[] {
   const { plain: p, from, to } = plainWithPlaces(text);
   const found: { at: number; end: number }[] = [];
   // Le texte relu, chaque mot épelé recollé à sa place parmi les mots ordinaires (« une carte p r é p a y é e ») ;
-  // chaque unité garde sa place dans le texte sans accents.
-  let q = '';
-  const qAt: number[] = [];
-  let k = 0;
-  for (const m of p.matchAll(SPELLED)) {
-    for (; k < m.index!; k += 1) {
+  // chaque unité garde sa place dans le texte sans accents. Une suite épelée peut avaler un ou deux mots d'une lettre
+  // à ses bords (« à », « y a ») : chaque suite est aussi relue sans eux, et toutes les lectures comptent.
+  const runs = [...p.matchAll(SPELLED)].map((m) => [...m[0].matchAll(/\p{L}/gu)].map((l) => m.index! + l.index!));
+  const spelledAt = new Set(runs.flat());
+  const read = (cut: (r: number) => [number, number]): void => {
+    let q = '';
+    const qAt: number[] = [];
+    let k = 0;
+    runs.forEach((letters, r) => {
+      for (; k < letters[0]!; k += 1) {
+        q += p[k];
+        qAt.push(k);
+      }
+      const [lead, trail] = cut(r);
+      letters.forEach((at, i) => {
+        // Un mot d'une lettre détaché du bord : un espace à la place du séparateur qui le suit ou le précède.
+        if (i === letters.length - trail && i > 0) {
+          q += ' ';
+          qAt.push(at - 1);
+        }
+        q += p[at];
+        qAt.push(at);
+        if (i < lead) {
+          q += ' ';
+          qAt.push(at + 1);
+        }
+      });
+      k = letters[letters.length - 1]! + 1;
+    });
+    for (; k < p.length; k += 1) {
       q += p[k];
       qAt.push(k);
     }
-    for (const l of m[0].matchAll(/\p{L}/gu)) {
-      q += l[0];
-      qAt.push(m.index! + l.index!);
+    for (const m of q.matchAll(REWARD_ALL)) {
+      if (m[0] === '') continue;
+      found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
     }
-    k = m.index! + m[0].length;
-  }
-  for (; k < p.length; k += 1) {
-    q += p[k];
-    qAt.push(k);
-  }
-  for (const m of q.matchAll(REWARD_ALL)) {
-    if (m[0] === '') continue;
-    found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
+    // Des mots voisins épelés à la suite se recollent en un seul (« r e m i s e s u r v o s ») : l'expression est relue
+    // sans exiger d'espace entre ses mots, et gardée seulement si elle touche une lettre épelée.
+    if (runs.length === 0) return;
+    for (const m of q.matchAll(REWARD_LOOSE)) {
+      if (m[0] === '') continue;
+      let spelled = false;
+      for (let i = m.index!; i < m.index! + m[0].length && !spelled; i += 1) spelled = spelledAt.has(qAt[i]!);
+      if (spelled) found.push({ at: from[qAt[m.index!]!]!, end: to[qAt[m.index! + m[0].length - 1]!]! });
+    }
+  };
+  // Pour chaque suite, les bords qu'elle peut avoir avalés : au plus deux mots d'une lettre de chaque côté (« y a »,
+  // « à », « d' », « l' »), sans laisser moins de deux lettres. Toutes les combinaisons sont relues tant qu'elles
+  // restent peu nombreuses ; au-delà, chaque suite seule, puis les mêmes bords pour toutes.
+  const edge = (at: number): boolean => EDGE_LETTERS.includes(p[at]!);
+  const options = runs.map((letters) => {
+    const out: [number, number][] = [];
+    for (let lead = 0; lead <= 2; lead += 1) {
+      if (lead > 0 && !edge(letters[lead - 1]!)) break;
+      for (let trail = 0; trail <= 2; trail += 1) {
+        if (trail > 0 && !edge(letters[letters.length - trail]!)) break;
+        if (letters.length - lead - trail >= 2) out.push([lead, trail]);
+      }
+    }
+    return out;
+  });
+  const combinations = options.reduce((n, o) => n * o.length, 1);
+  if (combinations <= SPELLED_READINGS_MAX) {
+    const pick = options.map(() => 0);
+    for (let n = 0; n < combinations; n += 1) {
+      let rest = n;
+      options.forEach((o, r) => {
+        pick[r] = rest % o.length;
+        rest = Math.floor(rest / o.length);
+      });
+      read((r) => options[r]![pick[r]!]!);
+    }
+  } else {
+    read(() => [0, 0]);
+    options.forEach((o, r) => {
+      for (const c of o) read((s) => (s === r ? c : [0, 0]));
+    });
   }
   for (const m of p.matchAll(SPELLED)) {
     // Chaque lettre de la suite et sa place : le mot peut être entouré de mots d'une lettre (« un c a d e a u à Léa »).

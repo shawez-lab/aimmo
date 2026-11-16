@@ -58,6 +58,34 @@ describe('RC65 · récompense déguisée', () => {
     expect(mentionsReward('une remise sur vos h.o.n.o.r.a.i.r.e.s')).toBe(true);
   });
 
+  it('[R66] tout le vocabulaire, épelé en entier ou en partie, entouré de mots d’une lettre', () => {
+    // Chaque expression : ses mots, et pour chaque mot s'il est épelé ; toutes les façons de l'épeler sont essayées.
+    // Un mot de moins de trois lettres (« un », « au ») n'est jamais épelé : il se lit tel quel.
+    const spell = (w: string): string => (w.length < 3 ? w : [...w.replace(/['’-]/g, '')].join(' '));
+    const expressions = [
+      'cadeau', 'prime', 'commission', 'chèque', 'récompense', 'rémunération', 'ristourne', 'bon d’achat', 'carte cadeau',
+      'virement', 'argent', 'bonus', 'pourboire', 'carte prépayée', 'geste commercial', 'petite enveloppe', 'rabais',
+      'indemnité', 'remboursement', 'reward', 'gift', 'cash', 'kickback', 'remise sur vos honoraires',
+      'réduction de vos frais d’agence', 'honoraires offerts', 'honoraires seront offerts', 'restaurant offert',
+      'week-end offert', 'bouteille offerte', 'invite au restaurant', 'offre un repas',
+    ];
+    const misses: string[] = [];
+    for (const expression of expressions) {
+      const words = expression.split(' ');
+      for (let mask = 1; mask < 1 << words.length; mask += 1) {
+        const written = words.map((w, i) => (mask & (1 << i) ? spell(w) : w)).join(' ');
+        for (const [before, after] of [['', ' à Léa'], ['il y a ', ''], ['à ', ' à Léa'], ['y a ', ' a Léa'], ['Léa a ', ' a']]) {
+          const text = `${before}${written}${after}`;
+          if (!mentionsReward(text)) misses.push(text);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
+    expect(rewardWords('une carte p r é p a y é e à Léa')).toEqual(['carte p r é p a y é e']);
+    expect(rewardWords('une remise sur vos h o n o r a i r e s à Léa')).toEqual(['remise sur vos h o n o r a i r e s']);
+    expect(rewardWords('il y a c a d e a u x à Léa')).toEqual(['c a d e a u x']);
+  });
+
   it('[R66] aucun faux refus sur les phrases d’usage', () => {
     for (const text of [
       'Hugo est d’accord pour être appelé à la remise des clés',
