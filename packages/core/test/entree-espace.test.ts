@@ -434,3 +434,104 @@ describeWithSqlite('EC01 · entrée du client dans son espace', () => {
     expect(await unique.hasConsentInForce(c.id, CLIENT_SPACE_PURPOSE, 'email')).toBe(true);
   });
 });
+
+describeWithSqlite('RC61 · où en est le plafond des liens, dit à l’agent', () => {
+  it('[R160] sous le plafond : le compte et aucune heure d’attente', async () => {
+    const t = await setup();
+    const c = await t.client();
+    const empty = await t.entree.linkAllowance(t.acces, t.alex, c.id);
+    expect(empty).toMatchObject({ ok: true, value: { limit: 3, counted: 0, requested: 0, prepared: 0, opened: 0, nextAt: null, requestsUnopened: false } });
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    await t.entree.requestLink(t.network.id, c.email);
+    const r = await t.entree.linkAllowance(t.acces, t.alex, c.id);
+    expect(r).toMatchObject({ ok: true, value: { counted: 2, requested: 1, prepared: 1, opened: 0, nextAt: null, requestsUnopened: false } });
+  });
+
+  it('[R160] au plafond : l’heure où le plus ancien lien sort des 24 heures, et un lien préparé à cette heure passe', async () => {
+    const t = await setup();
+    const c = await t.client();
+    for (let i = 0; i < 3; i++) {
+      expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
+      t.advance(3_600_000);
+    }
+    const oldest = (await t.db.first<{ created_at: string }>('SELECT created_at FROM client_space_links WHERE person_id = ? ORDER BY created_at LIMIT 1', [c.id]))!;
+    const r = await t.entree.linkAllowance(t.acces, t.direction, c.id);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toMatchObject({ counted: 3, prepared: 3, requested: 0, requestsUnopened: false });
+    expect(r.value.nextAt).toBe(new Date(Date.parse(oldest.created_at) + DAY).toISOString());
+    // Avant cette heure, le refus ; à cette heure, le lien passe.
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toEqual({ ok: false, rule: 'R160', code: 'plafond' });
+    const wait = Date.parse(r.value.nextAt!) - Date.parse(r.value.checkedAt);
+    t.advance(wait);
+    expect((await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).ok).toBe(true);
+    const after = await t.entree.linkAllowance(t.acces, t.alex, c.id);
+    expect(after).toMatchObject({ ok: true, value: { counted: 3 } });
+  });
+
+  it('[R160] au plafond par des demandes du site jamais ouvertes : dit ; une ouverte : non', async () => {
+    const t = await setup();
+    const c = await t.client();
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    t.advance(DAY);
+    for (let i = 0; i < 3; i++) await t.entree.requestLink(t.network.id, c.email);
+    const r = await t.entree.linkAllowance(t.acces, t.alex, c.id);
+    expect(r).toMatchObject({ ok: true, value: { counted: 3, requested: 3, prepared: 0, opened: 0, requestsUnopened: true } });
+    // Le client ouvre l'un d'eux : ce n'est plus le signe d'un autre que lui.
+    const [token] = await t.tokens(c.id);
+    expect((await t.entree.open(token)).ok).toBe(true);
+    expect(await t.entree.linkAllowance(t.acces, t.alex, c.id)).toMatchObject({ ok: true, value: { opened: 1, requestsUnopened: false } });
+  });
+
+  it('[R160] un lien préparé parmi les demandes : le plafond n’est pas pris par le site seul', async () => {
+    const t = await setup();
+    const c = await t.client();
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    await t.entree.requestLink(t.network.id, c.email);
+    await t.entree.requestLink(t.network.id, c.email);
+    expect(await t.entree.linkAllowance(t.acces, t.alex, c.id)).toMatchObject({ ok: true, value: { counted: 3, requested: 2, prepared: 1, requestsUnopened: false } });
+  });
+
+  it('[R160] fiches réunies comptées, lien non remis par le contrôle central non compté', async () => {
+    const t = await setup();
+    const a = await t.client();
+    const b = await t.client();
+    // Mardi 22 h, heure de Paris : rien ne part, rien ne compte.
+    t.advance(12 * 3_600_000);
+    expect(await t.entree.invite(t.acces, t.alex, a.id, CONSENT)).toMatchObject({ ok: false, code: 'send_refused' });
+    t.advance(12 * 3_600_000);
+    await t.entree.invite(t.acces, t.alex, a.id, CONSENT);
+    await t.entree.invite(t.acces, t.alex, b.id, CONSENT);
+    await t.fiche.merge({ survivorId: b.id, mergedId: a.id, reason: 'même personne' });
+    expect(await t.entree.linkAllowance(t.acces, t.alex, b.id)).toMatchObject({ ok: true, value: { counted: 2, nextAt: null } });
+    expect(await t.entree.linkAllowance(t.acces, t.alex, a.id)).toMatchObject({ ok: true, value: { counted: 2 } });
+  });
+
+  it('[R16] un autre agent, un partenaire ou la conformité ne lisent rien', async () => {
+    const t = await setup();
+    const c = await t.client();
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    const sam = await t.entree.linkAllowance(t.acces, t.sam, c.id);
+    expect(sam).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.entree.linkAllowance(t.acces, { role: 'partner', userId: 'p-1', networkId: t.network.id }, c.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.entree.linkAllowance(t.acces, t.compliance, c.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.entree.linkAllowance(t.acces, t.alex, '')).toMatchObject({ ok: false });
+  });
+
+  it('[R13] ni adresse ni jeton dans la réponse, rien au journal que la lecture de la fiche', async () => {
+    const t = await setup();
+    const c = await t.client();
+    for (let i = 0; i < 3; i++) await t.entree.requestLink(t.network.id, c.email);
+    await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
+    const before = (await t.journal.all()).length;
+    const r = await t.entree.linkAllowance(t.acces, t.alex, c.id);
+    expect(r.ok).toBe(true);
+    const text = JSON.stringify(r);
+    expect(text).not.toContain(c.email);
+    expect(text).not.toMatch(/[a-z]{40}/);
+    for (const token of await t.tokens(c.id)) expect(text).not.toContain(token);
+    expect(Object.keys(r.ok ? r.value : {}).sort()).toEqual(['checkedAt', 'counted', 'limit', 'nextAt', 'opened', 'prepared', 'requested', 'requestsUnopened']);
+    // Seule la lecture de la fiche, comme pour tout geste sous les droits [R16] : rien sur les liens.
+    expect((await t.journal.all()).slice(before).map((e) => e.type)).toEqual(['fiche.lue']);
+  });
+});

@@ -68,6 +68,26 @@ export interface ClientViewer {
   sides: readonly ClientSide[];
 }
 
+/** Où en est le plafond des liens de l'espace d'une personne, lu par son agent ou la direction (RC61) [R160]. */
+export interface LinkAllowance {
+  /** Le plafond des 24 heures (réglage). */
+  limit: number;
+  /** Les liens qui comptent : remis, des 24 dernières heures, fiches réunies comprises. */
+  counted: number;
+  /** Parmi eux, ceux demandés depuis le site par l'adresse du client. */
+  requested: number;
+  /** Parmi eux, ceux préparés par l'agent ou la direction. */
+  prepared: number;
+  /** Parmi eux, ceux qui ont été ouverts. */
+  opened: number;
+  /** L'heure où un nouveau lien redeviendra possible ; `null` sous le plafond. */
+  nextAt: string | null;
+  /** Au plafond, seulement des demandes du site, aucune ouverte. */
+  requestsUnopened: boolean;
+  /** L'instant de la lecture. */
+  checkedAt: string;
+}
+
 export type EntreeRefusal = { ok: false; rule: 'R16' | 'R160' | 'R03' | string | null; code: string };
 export type EntreeResult<T> = { ok: true; value: T } | EntreeRefusal;
 
@@ -254,6 +274,48 @@ export class EntreeEspace {
     if (!row) return;
     const { changes } = await this.db.run('INSERT INTO client_space_session_closures (session_id, closed_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [row.id, this.now().toISOString()]);
     if (changes === 1) await this.event('espaces.fermeture', `person:${row.person_id}`, { session: row.id }, 'client');
+  }
+
+  /**
+   * Où en est le plafond des liens de la personne (RC61) [R160, R16, R13] : l'agent de la personne, ou la direction, lit
+   * combien de liens comptent sur les 24 dernières heures (fiches réunies comprises, un lien non remis ne compte pas),
+   * d'où ils viennent, combien ont été ouverts, et l'heure où un nouveau lien redeviendra possible. `requestsUnopened`
+   * est vrai quand le plafond n'est tenu que par des demandes du site dont aucune n'a été ouverte : ce que ferait un autre
+   * que le client qui connaît son adresse. Ni lien, ni jeton, ni adresse ; au journal, seulement la lecture de la fiche [R16].
+   */
+  async linkAllowance(acces: Acces, viewer: Viewer, personId: string): Promise<EntreeResult<LinkAllowance>> {
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+    const read = await this.access(acces, viewer, personId);
+    if (!read.ok) return read;
+    const members = await this.fiche.membersOf(read.value);
+    const at = this.now();
+    const since = new Date(at.getTime() - 86_400_000).toISOString();
+    const rows = await this.db.all<{ origin: string; created_at: string; opened: number }>(
+      `SELECT origin, created_at, (SELECT COUNT(*) FROM client_space_link_uses u WHERE u.link_id = client_space_links.id) AS opened
+       FROM client_space_links WHERE network_id = ? AND person_id IN (${members.map(() => '?').join(', ')}) AND created_at > ? AND ${DELIVERED_LINK}
+       ORDER BY created_at, id`,
+      [viewer.networkId, ...members, since],
+    );
+    const limit = this.settings.linksPerDay;
+    const counted = rows.length;
+    const atCap = counted >= limit;
+    // Le lien qui doit sortir des 24 heures pour que le compte repasse sous le plafond.
+    const freeing = atCap ? rows[counted - limit]! : null;
+    const opened = rows.filter((r) => Number(r.opened) > 0).length;
+    const requested = rows.filter((r) => r.origin === 'demande').length;
+    return {
+      ok: true,
+      value: {
+        limit,
+        counted,
+        requested,
+        prepared: counted - requested,
+        opened,
+        nextAt: freeing ? new Date(Date.parse(freeing.created_at) + 86_400_000).toISOString() : null,
+        requestsUnopened: atCap && requested === counted && opened === 0,
+        checkedAt: at.toISOString(),
+      },
+    };
   }
 
   /** Les liens de la personne, toutes origines et fiches réunies comprises, atteignent-ils le plafond des 24 heures ? */
