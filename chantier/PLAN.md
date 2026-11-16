@@ -1685,7 +1685,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR94 · Les rapports sur mesure à l'écran de la direction, chaque chiffre recompté sur ses lignes (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#613, `3286c329`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6368 tests). Reste (voie 1) : l'écran de l'agent pour ses propres rapports, depuis « Mes chiffres » ; les factures fournisseurs (lecture IA, H13) n'ont pas encore d'écran.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX62, BR93
 - Cahier : M13 Pilotage et finances (rapports) ; R560, R14, R69, R16, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de BR93 (« les rapports sur mesure n'ont pas encore d'écran ») ; les factures fournisseurs attendent H13 pour leur lecture. Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme la banque (BR93) : un écran de la direction posé sous les engagements de l'écran du réseau, servi à part (`/app/rapports.js`) et chargé au premier geste [R201]. La direction compose un rapport (mesures du catalogue, total ou mois, période d'un an au plus), choisit le total du réseau ou un seul agent dans la liste des agents en activité (`GET /v1/gagner/recommandations/agents`), le lit, l'enregistre sous un nom, relit un rapport enregistré sur la période et la portée choisies. Aucun identifiant ne se tape. Seuls un fichier neuf `app/rapports.ts`, `app/engagements.ts` (une ligne), `src/agent-app.ts` et des tests changent ; ni le serveur ni le cœur. L'écran de l'agent (ses propres chiffres) reste à part.
