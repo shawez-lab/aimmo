@@ -2277,6 +2277,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : pièce déposée après la levée : absente de `stillMissing`, `missing` inchangé [R118, R17] (test) ; rien déposé : `stillMissing` égal à `missing` (test) ; pièce déposée sur une fiche réunie : comptée [R118] (test) ; coffre en panne : `stillMissing` nul, la liste rendue quand même [R10] (test) ; acquéreur remplacé : `buyerCurrent` faux sur l'ancienne alerte, vrai sur la nouvelle (test) ; rien de neuf au journal, aucune pièce lue [R15, R13] (test) ; `decide` rend la même relecture, l'alerte n'est jamais fermée seule [R14] (test) ; tous les tests de CE08 et CE21 restent verts.
 - Attend : rien.
 
+### RC59 · Un contour presque plat, ou avec une pointe qui revient sur elle-même, est refusé
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT19
+- Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de AT19 (« des points presque alignés sans surface peuvent passer à cause des arrondis »). `ringSelfCrosses` ne voit un contact que s'il est exact : trois points alignés à un millimètre près, ou une pointe qui repart presque sur son bord, passent, et une zone sans intérieur réel serait tracée, ses ventes mal attribuées. Dans `packages/core/src/attirer/prix.ts` seul : les distances se lisent en mètres (projection locale), un sommet à moins de 50 cm d'un bord qui n'est pas le sien, une pointe qui revient à moins de 50 cm de son bord, ou un contour de largeur moyenne (2 × surface / périmètre) sous 50 cm, comptent comme un contour qui se touche lui-même : même refus `contour_croise`, même message à l'écran. Un point répété à la suite ne compte toujours pas ; un petit bord de moins de 50 cm qui ne revient pas en arrière non plus. Aucune route, aucun écran, aucune migration.
+- Objectif : la direction ne peut jamais tracer une zone de prix qui n'a pas de vrai intérieur, même quand les arrondis la cachent.
+- Critères : trois sommets alignés à 1 mm près refusés [R150] (test) ; pointe qui revient à 1 cm de son bord refusée [R150] (test) ; sommet à 30 cm d'un autre bord refusé, à 2 m accepté (test) ; contour très fin (largeur moyenne sous 50 cm) refusé (test) ; carré, U concave, sommet au milieu d'un bord, point répété, petit bord de 20 cm qui tourne normalement : acceptés (test) ; le plus grand contour admis se contrôle toujours en temps borné (test AT19) ; tous les tests de AT01, AT15 et AT19 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
