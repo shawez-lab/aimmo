@@ -380,11 +380,29 @@ export function unmasked(text: string): string {
   });
 }
 
+/** RC71 : les chiffres et signes qui tiennent lieu d'une lettre dans un mot (écriture « leet »). */
+const LEET: Record<string, string> = { '0': 'o', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's' };
+
+/**
+ * RC71 : le texte relu sans l'écriture « leet » : « R1B », « 1BAN », « v1r3ment », « c00rdonnées », « @compte »,
+ * « b@nque », « $équestre ». Seul un mot qui porte au moins une lettre et au moins un de ces signes est relu ; un
+ * nombre seul (« 5000 », « 21000 ») ne change jamais. Le 1 vaut tantôt I, tantôt L : `one` dit lequel, et les deux
+ * lectures sont faites. Chaque caractère est lu une fois [R62].
+ */
+export function unleet(text: string, one: 'i' | 'l' = 'i'): string {
+  return text.replace(/[\p{L}\p{M}\p{N}@$]+/gu, (word) => {
+    if (!/\p{L}/u.test(word) || !/[0-9@$]/.test(word)) return word;
+    let out = '';
+    for (const c of word) out += c === '1' ? one : (LEET[c] ?? c);
+    return out;
+  });
+}
+
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
 export function fundSignals(text: string): FundSignal[] {
   const seen = unmasked(text);
   const variants: string[] = [];
-  for (const p of new Set([plain(text), plain(seen)])) {
+  for (const p of new Set([plain(text), plain(seen), plain(unleet(seen, 'i')), plain(unleet(seen, 'l'))])) {
     for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
       const v = joinSpelled(p, ds, de);
       if (!variants.includes(v)) variants.push(v);
