@@ -1771,7 +1771,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR102 · De la place dans le budget de l'application : « Pièces au coffre » chargées au geste
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#627, `5eda0a27`). L'application passe à 48 039 octets compressés (1 095 gagnés), `/app/coffre.js` pèse 2 013 octets. Décidé en cours de route : `api` envoie tel quel un corps qui dit son `content-type` (la pièce), sinon en JSON ; la liste des preuves se lit au geste, plus à l'ouverture de la fiche. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6446 tests, `wrangler deploy --dry-run` compris).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR101
 - Cahier : Conformité ; Architecture technique ; R90, R16, R201.
 - Objectif : relevé dans le « Reste » de BR101 : l'application tient en 49 134 octets compressés pour 49 152, la dictée depuis l'écran de la visite n'y entre pas. Le dépôt au coffre de la fiche (L10), aujourd'hui posé en entier dans `app.js` (près de 1 500 octets compressés), passe dans un script servi à part, `/app/coffre.js`, chargé par le chargeur commun au geste « Pièces au coffre » ; `app.js` n'en garde que la ligne du bloc. Le dépôt envoie la pièce par `send`, qui sait déjà retirer une clé refusée.
@@ -1779,7 +1780,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR103 · La dictée en sortant d'une visite, depuis l'écran de la visite (Jamais vu)
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR102
 - Cahier : Phase 3, HX06 ; R260, R261, R201.
 - Objectif : relevé dans le « Reste » de BR101 : depuis l'écran de la visite, l'agent dicte son compte rendu ; la dictée part avec l'identifiant du rendez-vous (`appointmentId`), par le même script que « Ma journée », chargé au geste.
