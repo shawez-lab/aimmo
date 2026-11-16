@@ -2353,6 +2353,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : sous le plafond, le compte et `nextAt` nul (test) ; au plafond par des liens préparés, `nextAt` à l'heure où le plus ancien sort des 24 heures, et un lien préparé à cette heure passe [R160] (test) ; demandes du site jamais ouvertes : `requestsUnopened` vrai ; une ouverte : faux (test) ; fiches réunies comptées, lien non remis par le contrôle central non compté [R160] (test) ; autre agent, partenaire ou conformité refusés [R16] (test) ; ni adresse ni jeton dans la réponse, rien au journal que la lecture de la fiche [R13] (test) ; tous les tests de EC01 et EC13 restent verts.
 - Attend : rien.
 
+### RC62 · Une ouverture d'espace refusée pour un rôle sans droit est écrite au journal
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : EC01, RC61
+- Cahier : Le produit, espaces des clients ; R16, R13.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC61 (« le refus de rôle de `invite` n'est pas écrit au journal non plus »). Un partenaire ou la conformité qui tente d'ouvrir l'espace d'une personne est refusé sans trace, alors que tout refus d'`Acces` est écrit [R16]. Désormais, dans `packages/core/src/espaces/entree.ts` seul, `invite` écrit ce refus comme `linkAllowance` : `acces.refuse`, rôle et code, aucune preuve d'accord ni adresse [R13] ; un même assistant privé sert aux deux. La réponse ne change pas de forme.
+- Objectif : tout refus de rôle sur l'espace d'un client laisse une trace que la conformité peut relire.
+- Critères : partenaire et conformité refusés par `invite`, refus écrit `acces.refuse` avec rôle et code [R16] (test) ; ni preuve d'accord ni adresse au journal [R13] (test) ; rien rangé, aucun lien ni accord (test) ; tous les tests de EC01, EC13 et RC61 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
