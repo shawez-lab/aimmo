@@ -3,7 +3,7 @@ import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { runScheduler, sha256Hex } from '../src/index.ts';
 import { ActeVente, Echeancier } from '../../core/src/dossiers/index.ts';
 import { RelancesImpayes, type LecteurFactures, type SupplierInvoiceRead } from '../../core/src/facturation/index.ts';
-import { Commissions, Factures, PlateformeEssai } from '../../core/src/pilotage/index.ts';
+import { Commissions, Encaissements, Factures, PlateformeEssai } from '../../core/src/pilotage/index.ts';
 import { PROOF, setupDossier } from '../../core/test/dossiers-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
@@ -171,6 +171,38 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
     expect(await t.count('bank_reconciliations')).toBe(1);
   });
 
+  it('[R551] BR93 · le relevé envoyé en JSON sous la seule clé csv : la même lecture que le CSV direct, rien d’autre admis', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    const csv = 'Date;Libellé;Montant\n2027-07-14;VIR F-2027-00001;10 000,00\n2027-07-15;VIR AUTRE;9 999,99\n';
+    const asJson = (body: unknown) => t.raw('direction', 'POST', '/finances/banque/releve', JSON.stringify(body));
+    const first = await asJson({ csv });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, added: 2, already: 0 });
+    // Le même fichier, par le CSV direct : déjà connu, rien de doublé.
+    expect(await t.statement(csv)).toMatchObject({ status: 200, body: { ok: true, added: 0, already: 2 } });
+    expect(await t.count('bank_lines')).toBe(2);
+    // Une autre clé, même un montant, est refusée sans rien ranger.
+    const extra = await asJson({ csv: '2027-07-15;VIR NEUF;1,00\n', amountCents: 100 });
+    expect(extra.status).toBe(400);
+    expect(await extra.json()).toMatchObject({ ok: false, code: 'unknown_field' });
+    for (const bad of [{}, { csv: 12 }, ['csv'], { csv: null }]) {
+      const r = await asJson(bad);
+      expect(r.status, JSON.stringify(bad)).toBe(400);
+      expect(await r.json()).toMatchObject({ ok: false, code: 'invalid_body' });
+    }
+    const broken = await t.raw('direction', 'POST', '/finances/banque/releve', '{"csv":', 'application/json');
+    expect(broken.status).toBe(400);
+    // Une ligne illisible arrête tout, avec son numéro, comme le CSV direct.
+    const unreadable = await asJson({ csv: '2027-07-15;VIR NEUF;1,00\n2027-07-15;sans montant\n' });
+    expect(unreadable.status).toBe(400);
+    expect(await unreadable.json()).toMatchObject({ code: 'bad_statement', line: 2 });
+    // Plus gros que la limite du relevé : refusé, rien de rangé.
+    const big = await asJson({ csv: `2027-07-15;VIR;1,00\n${'x'.repeat(1_000_001)}` });
+    expect(big.status).toBe(400);
+    expect(await t.count('bank_lines')).toBe(2);
+  });
+
   it('[R552] l’encaissement par la route a pour preuve la ligne de banque ; une facture non rapprochée ne s’encaisse pas', async () => {
     const t = await setup();
     t.setClock(at9('2027-07-15'));
@@ -178,10 +210,27 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
     await t.statement('2027-07-14;VIR SEPA ETUDE REF F-2027-00001;10 000,00\n');
     const lineId = ((await t.http('direction', 'GET', '/finances/banque/propositions')).body.data as { lineId: string }[])[0]!.lineId;
     expect((await t.http('direction', 'POST', `/finances/banque/lignes/${lineId}/rapprochement`, { invoiceId: t.invoice.id })).status).toBe(200);
-    expect((await t.http('direction', 'GET', '/finances/banque/rapprochements')).body.data).toEqual([expect.objectContaining({ invoiceId: t.invoice.id, lineId, amountCents: 1_000_000 })]);
+    expect((await t.http('direction', 'GET', '/finances/banque/rapprochements')).body.data).toEqual([expect.objectContaining({ invoiceId: t.invoice.id, lineId, amountCents: 1_000_000, receipt: null })]);
     expect((await t.http('direction', 'POST', `/finances/banque/factures/${t.invoice.id}/encaissement`)).status).toBe(200);
     expect(await t.db.first('SELECT proof_ref FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: `banque:${lineId}` });
     expect(await t.http('direction', 'POST', `/finances/banque/factures/${t.invoice.id}/encaissement`)).toMatchObject({ status: 400, body: { code: 'already' } });
+    // BR93 : l'encaissement rangé se lit au rapprochement, avec sa preuve dite « cette ligne », jamais la référence brute.
+    const [rec] = (await t.http('direction', 'GET', '/finances/banque/rapprochements')).body.data as { receipt: Record<string, unknown> }[];
+    expect(rec!.receipt).toEqual({ receivedAt: '2027-07-13T22:00:00.000Z', payoutDueAt: expect.any(String), proof: 'ligne' });
+    expect(JSON.stringify(rec)).not.toContain('banque:');
+  });
+
+  it('[R552] BR93 · un encaissement rangé avec une autre preuve (commissions) se dit « autre » au rapprochement', async () => {
+    const t = await setup();
+    t.setClock(at9('2027-07-15'));
+    await t.statement('2027-07-14;VIR SEPA ETUDE REF F-2027-00001;10 000,00\n');
+    const lineId = ((await t.http('direction', 'GET', '/finances/banque/propositions')).body.data as { lineId: string }[])[0]!.lineId;
+    expect((await t.http('direction', 'POST', `/finances/banque/lignes/${lineId}/rapprochement`, { invoiceId: t.invoice.id })).status).toBe(200);
+    const other = await new Encaissements(t.db, t.acces, t.journal, { now: t.now }).recordReceipt(t.direction, t.fileId, { receivedAt: '2027-07-14T08:00:00.000Z', proofRef: 'virements/releve-juillet.pdf' });
+    expect(other.ok).toBe(true);
+    const [rec] = (await t.http('direction', 'GET', '/finances/banque/rapprochements')).body.data as { receipt: Record<string, unknown> }[];
+    expect(rec!.receipt).toEqual({ receivedAt: '2027-07-14T08:00:00.000Z', payoutDueAt: expect.any(String), proof: 'autre' });
+    expect(JSON.stringify(rec)).not.toContain('releve-juillet');
   });
 
   it('[R553] aucune relance sans validation : la route valide une fois, n’envoie rien, et ne change pas le texte', async () => {

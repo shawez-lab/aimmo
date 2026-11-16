@@ -103,6 +103,11 @@ export interface Reconciliation {
   day: string;
   amountCents: number;
   mode: 'auto' | 'direction';
+  /**
+   * L'encaissement des honoraires de la vente, s'il est rangé (BR93) : son jour, l'échéance du versement à l'agent, et
+   * si sa preuve est cette ligne de banque ou une autre (rangé par K11). Rendu par `list` seulement.
+   */
+  receipt?: { receivedAt: string; payoutDueAt: string; proof: 'ligne' | 'autre' } | null;
 }
 
 type Problem = { ok: false; rule: null | 'R551' | 'R552'; code: 'bad_statement' | 'unknown_line' | 'unknown_invoice' | 'not_credit' | 'amount' | 'before_invoice' | 'credited' | 'already' | 'not_reconciled'; line?: number };
@@ -237,12 +242,26 @@ export class Rapprochements {
   async list(viewer: Viewer): Promise<{ ok: true; value: Reconciliation[] } | Refusal> {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_reconciliations');
     if (refusal) return refusal;
-    const rows = await this.db.all<{ line_id: string; invoice_id: string; label: string; day: string; amount_cents: number; mode: 'auto' | 'direction' }>(
-      `SELECT r.line_id, r.invoice_id, ${LABEL_SQL('i')} AS label, l.day, l.amount_cents, r.mode FROM bank_reconciliations r
-         JOIN bank_lines l ON l.id = r.line_id JOIN invoices i ON i.id = r.invoice_id WHERE r.network_id = ? ORDER BY l.day, i.number`,
+    const rows = await this.db.all<{ line_id: string; invoice_id: string; label: string; day: string; amount_cents: number; mode: 'auto' | 'direction'; received_at: string | null; payout_due_at: string | null; proof_ref: string | null }>(
+      `SELECT r.line_id, r.invoice_id, ${LABEL_SQL('i')} AS label, l.day, l.amount_cents, r.mode, c.received_at, c.payout_due_at, c.proof_ref FROM bank_reconciliations r
+         JOIN bank_lines l ON l.id = r.line_id JOIN invoices i ON i.id = r.invoice_id
+         LEFT JOIN commission_receipts c ON c.file_id = i.file_id AND c.network_id = r.network_id
+       WHERE r.network_id = ? ORDER BY l.day, i.number`,
       [viewer.networkId],
     );
-    return { ok: true, value: rows.map((r) => ({ lineId: r.line_id, invoiceId: r.invoice_id, label: r.label, day: r.day, amountCents: r.amount_cents, mode: r.mode })) };
+    return {
+      ok: true,
+      value: rows.map((r) => ({
+        lineId: r.line_id,
+        invoiceId: r.invoice_id,
+        label: r.label,
+        day: r.day,
+        amountCents: r.amount_cents,
+        mode: r.mode,
+        // Aucune preuve n'est rendue telle quelle : seulement si c'est cette ligne [R13].
+        receipt: r.received_at && r.payout_due_at ? { receivedAt: r.received_at, payoutDueAt: r.payout_due_at, proof: r.proof_ref === `banque:${r.line_id}` ? ('ligne' as const) : ('autre' as const) } : null,
+      })),
+    };
   }
 
   /**

@@ -68,6 +68,7 @@ import { AVANT_CONTRAT_SCRIPT } from '../app/avant-contrat.ts';
 import { REMISES_SCRIPT } from '../app/remises.ts';
 import { NEUF_SCRIPT } from '../app/neuf.ts';
 import { NEUF_DIRECTION_SCRIPT } from '../app/neuf-direction.ts';
+import { BANQUE_SCRIPT } from '../app/banque.ts';
 import { VIAGER_SCRIPT } from '../app/viager.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
@@ -198,6 +199,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/viager.js': { body: VIAGER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les programmes neufs de la direction (BR79), chargés sous « Engagements de service », jamais gardés [R201].
   '/app/neuf-direction.js': { body: NEUF_DIRECTION_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La banque et les relances d'impayés de la direction (BR93), sous les engagements, chargées au premier geste [R201].
+  '/app/banque.js': { body: BANQUE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/veille-dpe.js': { body: VEILLE_DPE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Attirer » de la direction (AT12), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
