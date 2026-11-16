@@ -137,6 +137,18 @@ export function espacesRoutes(): EspacesRoute[] {
         return json(r.rule === 'R16' ? (r.code === 'unknown' ? 404 : 403) : r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
       },
     },
+    {
+      // BR98 · au plafond, où en sont les liens de la personne (RC61) : des comptes et une heure, jamais un lien ni une adresse [R160, R13].
+      method: 'GET',
+      pattern: new RegExp(`^/espaces/personnes/${ID}/liens$`),
+      name: 'espaces.liens',
+      roles: ['agent', 'direction'],
+      handle: async (s, v, [id]) => {
+        const r = await espacesCore(s).entree.linkAllowance(s.acces, v, id!);
+        if (r.ok) return json(200, { ok: true, mode: 'essai', data: r.value });
+        return json(r.rule === 'R16' ? (r.code === 'unknown' ? 404 : 403) : r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+      },
+    },
   ];
   return routes.map((route) => ({
     ...route,
