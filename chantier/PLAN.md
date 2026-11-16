@@ -2267,7 +2267,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC58 · L'alerte de vigilance d'une cession relue au coffre à l'instant où le responsable la lit (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#611, `27613bb6`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6349 tests). Reste pour la voie 1 : dire `stillMissing`, `checkedAt` et `buyerCurrent` à l'écran du responsable (`packages/api/app/conformite.ts`, `cCessions`), à la place de « Vérifiez le coffre avant de décider » ; `null` dit « coffre non relu ».
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : CE08, CE21
 - Cahier : M16 « Règles » (vigilance renforcée de la cession) et M12 Conformité ; R118, R14, R15, R10.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de CE21 (« ce qui manque est dit à la levée de l'alerte, l'état actuel du coffre n'est pas relu »). Aujourd'hui l'alerte dit ce qui manquait le jour où elle a été levée ; l'écran demande au responsable de « vérifier le coffre avant de décider », à la main. Désormais `VigilanceCession.list` et `decide` rendent aussi, pour chaque alerte, `stillMissing` : ce qui, parmi ce qui manquait, manque encore au coffre à l'instant de la lecture (par son seul état, déposé ou non, toutes fiches réunies, comme l'examen [R15]) ; `null` si le coffre n'a pas pu être lu, jamais une liste vide qui dirait « tout est là » [R10] ; `checkedAt`, l'instant de cette lecture ; `buyerCurrent`, faux si l'acquéreur de l'alerte a été remplacé depuis sur le dossier. Rien n'est décidé ni fermé seul : l'alerte reste au responsable [R14]. Seuls `packages/core/src/commerces/vigilance-cession.ts` et son test changent ; aucune route, aucun écran, aucune migration. Reste pour la voie 1 : le dire à l'écran du responsable (`packages/api/app/conformite.ts`, `cCessions`).
