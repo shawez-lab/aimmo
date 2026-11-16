@@ -51,6 +51,8 @@ const INBOUND: [FundSignal, RegExp][] = [
 ];
 
 const isLetter = (c: string | undefined): boolean => c !== undefined && c >= 'a' && c <= 'z';
+/** RC72 : dans la lecture leet d'un mot épelé, les chiffres et signes qui tiennent lieu d'une lettre comptent aussi. */
+const LEET_SPELL = new Set(['0', '1', '3', '4', '5', '7', '@', '$']);
 const isSpellSep = (c: string | undefined): boolean => c === ' ' || c === '.' || c === '-';
 
 /**
@@ -59,25 +61,34 @@ const isSpellSep = (c: string | undefined): boolean => c === ' ' || c === '.' ||
  * `dropEnd` laissent à part une ou deux lettres de chaque bord. Parcours linéaire, chaque caractère lu au plus deux
  * fois, jamais une expression qui pourrait s'emballer [R62].
  */
-function joinSpelled(p: string, dropStart: number, dropEnd: number): string {
+function joinSpelled(p: string, dropStart: number, dropEnd: number, leet: 'i' | 'l' | null = null): string {
+  // RC72 : en lecture leet, « r 1 b », « v.1.r.3.m.e.n.t », « @ c o m p t e » se recollent aussi, puis se relisent
+  // sans le leet ; seul un mot qui porte une lettre et un signe du leet change (sinon la lecture ordinaire suffit).
+  const isPart = leet === null ? isLetter : (c: string | undefined): boolean => isLetter(c) || (c !== undefined && LEET_SPELL.has(c));
   let out = '';
   let i = 0;
   while (i < p.length) {
     const sep = p[i + 1];
-    if (isLetter(p[i]) && !isLetter(p[i - 1]) && isSpellSep(sep)) {
+    if (isPart(p[i]) && !isPart(p[i - 1]) && isSpellSep(sep)) {
       let j = i;
       let word = p[i]!;
-      while (p[j + 1] === sep && isLetter(p[j + 2]) && !isLetter(p[j + 3])) {
+      while (p[j + 1] === sep && isPart(p[j + 2]) && !isPart(p[j + 3])) {
         word += p[j + 2]!;
         j += 2;
       }
-      if (word.length >= 3 && word.length - dropStart - dropEnd >= 3) {
+      const leetWord = leet !== null && /[a-z]/.test(word) && /[0-9@$]/.test(word);
+      if ((leet === null || leetWord) && word.length >= 3 && word.length - dropStart - dropEnd >= 3) {
         const head = word.slice(0, dropStart).split('');
         const tail = dropEnd > 0 ? word.slice(-dropEnd).split('') : [];
-        out += [...head, word.slice(dropStart, word.length - dropEnd), ...tail].join(' ');
+        const middle = word.slice(dropStart, word.length - dropEnd);
+        out += [...head, leet === null ? middle : unleet(middle, leet), ...tail].join(' ');
         i = j + 1;
         continue;
       }
+      // Un mot épelé écarté est recopié d'un bloc : aucune de ses lettres ne recommence un mot (lecture linéaire).
+      out += p.slice(i, j + 1);
+      i = j + 1;
+      continue;
     }
     out += p[i]!;
     i += 1;
@@ -196,7 +207,7 @@ const isMultiplier = (w: string | undefined): boolean => w !== undefined && (THO
  * Un nombre en mots qui commence au mot `i` : ses chiffres et le mot qui le suit, ou rien. Chaque lecture regarde au
  * plus neuf mots plus loin : le parcours reste linéaire [R62]. Une virgule coupe toujours un nombre composé.
  */
-function numberAt(t: Token[], i: number): [string, number] | null {
+function numberAt(t: Token[], i: number, split = false): [string, number] | null {
   const at = (k: number): string | undefined => (k < t.length && (k === i || binds(t[k]!.sep)) ? t[k]!.word : undefined);
   // Un mot plus loin, lié à chacun des précédents.
   const chain = (k: number): string | undefined => {
@@ -254,6 +265,16 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     const u = unit(s, next === 'thousand' || next === 'hundred' ? 1 : 2);
     return u === undefined ? null : [u * factor, s + 2];
   };
+  /**
+   * RC72 : en lecture `split`, un nombre composé de `s` à `n[1]` dont le dernier mot est un chiffre de deux à neuf suivi
+   * sans pause de « mille » ou « cent » rend ce chiffre au groupe suivant : « quatre-vingt-dix sept mille » se lit 90 puis
+   * 7000, « deux cent trente six mille » 230 puis 6000.
+   */
+  const handBack = (s: number, n: [number, number]): [number, number] => {
+    if (!split || n[1] - 1 <= s || !isMultiplier(chain(n[1]))) return n;
+    const last = UNIT_WORDS[t[n[1] - 1]!.word];
+    return last !== undefined && last >= 2 ? [n[0] - last, n[1] - 1] : n;
+  };
   const w = t[i]!.word;
   const repeat = REPEAT_WORDS[w];
   if (repeat !== undefined) {
@@ -267,7 +288,8 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     let value = (th?.[0] ?? 0) + (hu?.[0] ?? 0);
     let k = hu?.[1] ?? th![1];
     const afterAnd = hu !== null && chain(k) === 'and' ? k + 1 : k;
-    const rest = below100(afterAnd);
+    const read = below100(afterAnd);
+    const rest = read === null ? null : handBack(afterAnd, read);
     // Un chiffre seul suivi de « mille » ou « cent » commence le groupe suivant : « trois mille six mille ».
     const opensNext = rest !== null && rest[1] === afterAnd + 1 && isMultiplier(chain(rest[1]));
     if (rest !== null && rest[0] > 0 && !opensNext) {
@@ -276,7 +298,8 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     }
     return [String(value), k];
   }
-  const n = below100(i);
+  const read = below100(i);
+  const n = read === null ? null : handBack(i, read);
   return n === null ? null : [String(n[0]), n[1]];
 }
 
@@ -297,7 +320,7 @@ const inFours = (word: string): string => (word.length > 4 && /[0-9]/.test(word)
  * en majuscules. Forme normale de compatibilité d'abord (« ＦＲ７６ » devient « FR76 »), accents ôtés, la casse gardée
  * jusqu'aux sosies. Ce qui n'est ni un nombre ni un sosie reste tel quel.
  */
-function digitsRewritten(text: string, lookalikes: boolean): string {
+function digitsRewritten(text: string, lookalikes: boolean, split = false): string {
   const p = text.normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’`]/g, "'");
   const tokens: Token[] = [];
   const re = /([\p{L}\p{N}]+)|([^\p{L}\p{N}]+)/gu;
@@ -311,7 +334,7 @@ function digitsRewritten(text: string, lookalikes: boolean): string {
   let out = '';
   let i = 0;
   while (i < tokens.length) {
-    const n = numberAt(tokens, i);
+    const n = numberAt(tokens, i, split);
     out += tokens[i]!.sep;
     if (n !== null) {
       out += n[0];
@@ -331,7 +354,11 @@ function digitsRewritten(text: string, lookalikes: boolean): string {
  * les sosies, passe par `spelledIban` seul : pays, longueur exacte et clé restent exigés.
  */
 export function dictatedIban(text: string): boolean {
-  return spelledIban(digitsRewritten(text, false)) || spelledIban(digitsRewritten(text, true));
+  // RC72 : chaque relecture est faite aussi en rendant au groupe suivant le chiffre qui précède « mille » ou « cent ».
+  for (const split of [false, true]) {
+    if (spelledIban(digitsRewritten(text, false, split)) || spelledIban(digitsRewritten(text, true, split))) return true;
+  }
+  return false;
 }
 
 /**
@@ -407,6 +434,12 @@ export function fundSignals(text: string): FundSignal[] {
       const v = joinSpelled(p, ds, de);
       if (!variants.includes(v)) variants.push(v);
     }
+  }
+  // RC72 : le leet épelé, « R 1 B », lu sur le texte démasqué, le 1 valant i puis l.
+  const spelledLeet = plain(seen);
+  for (const one of ['i', 'l'] as const) for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
+    const v = joinSpelled(spelledLeet, ds, de, one);
+    if (!variants.includes(v)) variants.push(v);
   }
   const found: FundSignal[] = [];
   const hasIban = (t: string): boolean => IBAN.test(t) || spelledIban(t) || dictatedIban(t);
