@@ -1729,7 +1729,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR98 · Au plafond des liens de l'espace, l'agent lit à l'écran qui les a pris et à quelle heure réessayer (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#620, `894f005f`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6408 tests). Reste : rien.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC61, EC12
 - Cahier : Le produit, espaces des clients ; R160, R16, R13, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC61 (« la route, par exemple `GET /v1/espaces/<personne>/liens`, et la phrase à l'écran quand la préparation du lien est refusée au plafond »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Changent seulement `packages/api/src/espaces.ts` (une route `GET /v1/espaces/personnes/<id>/liens`, agent de la personne ou direction, refus de rôle au journal comme `ouvrir`), `packages/api/app/espace-agent.ts` (la phrase au refus `plafond`) et leurs tests ; ni le cœur (où la voie 2 travaille), ni migration. La lecture ne se fait qu'après le refus au plafond, jamais avant le geste. Une lecture en échec garde la phrase d'aujourd'hui, sans heure inventée [R10].
