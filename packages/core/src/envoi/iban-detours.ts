@@ -1,7 +1,8 @@
 /**
  * BR106 : les plages d'un IBAN écrit par un détour, épelé (« F R 7 6 3 0 0 0 … »), dicté en mots (« F R soixante-seize,
  * trois mille, six mille… », « double zéro », anglais) ou déguisé par des sosies (O pour 0, l pour 1, pleine chasse),
- * dans le texte d'origine [R15, R62]. `maskIban` les remplace par `IBAN_MASK` : un message rangé ne garde jamais un tel
+ * dans le texte d'origine [R15, R62]. BR107 : aussi coupé de caractères invisibles ou écrit avec des sosies grecs ou
+ * cyrilliques, lu dans le texte tel que l'œil le voit. `maskIban` les remplace par `IBAN_MASK` : un message rangé ne garde jamais un tel
  * IBAN en clair, et `fundsInOutgoing` refuse tout texte qui en porte.
  *
  * La lecture est celle du bouclier (`dossiers/bouclier.ts`, RC67 à RC69), qui importe ce fichier-ci par `texte.ts` :
@@ -231,15 +232,87 @@ function mapped(): Mapped & { push: (s: string, a: number, b: number) => void } 
 }
 
 /**
- * Le texte en forme normale de compatibilité (« ＦＲ７６ » devient « FR76 »), accents ôtés, apostrophes droites,
- * caractère par caractère pour garder la place de chacun dans le texte d'origine.
+ * BR107 : les caractères qui ne se voient pas, comme le bouclier (RC70) : tous ceux qu'Unicode dit ignorables par
+ * défaut, et les marques de direction en plus.
  */
-function normalized(text: string): Mapped {
-  const out = mapped();
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f]/gu;
+
+/** BR107 : les lettres grecques et cyrilliques qui ont l'air d'une lettre latine, et cette lettre, comme le bouclier. */
+const LOOKALIKE: Record<string, string> = {
+  // cyrillique
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
+  'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'һ': 'h', 'ӏ': 'l', 'ԛ': 'q', 'ԝ': 'w',
+  'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P',
+  'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'І': 'I', 'Ј': 'J', 'Ѕ': 'S', 'Ԛ': 'Q',
+  'Ԝ': 'W', 'Ӏ': 'I',
+  // grec
+  'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M',
+  'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X', 'ο': 'o', 'α': 'a',
+  'ν': 'v', 'ρ': 'p', 'ι': 'i',
+  // latin de détour
+  'ı': 'i', 'ɑ': 'a', 'ɡ': 'g',
+};
+
+/** Une lettre latine (accentuée comprise), un chiffre ASCII ou un accent posé : ce qu'un mot démasqué peut garder. */
+const LATIN = /[A-Za-z0-9À-ɏ̀-ͯ]/;
+const WORD_CHAR = /[\p{L}\p{M}\p{N}]/u;
+const WORD = /[\p{L}\p{M}\p{N}]+/uy;
+
+/**
+ * BR107 : le texte tel que l'œil le lit, comme `unmasked` du bouclier (RC70), avec la place d'origine de chaque
+ * caractère. Forme normale de compatibilité (« 𝐑𝐈𝐁 », « ＦＲ７６ » deviennent « RIB », « FR76 ») ; caractères
+ * invisibles ôtés ; dans un mot fait seulement de lettres latines, de chiffres et de sosies, qui porte au moins un sosie,
+ * chaque sosie devient sa lettre latine. Un vrai mot russe ou grec garde ses lettres. Parcours linéaire.
+ */
+export function seenMapped(text: string): { text: string; start: number[]; end: number[] } {
+  const p = mapped();
   let i = 0;
   for (const cp of text) {
+    p.push(cp.normalize('NFKC').replace(INVISIBLE, ''), i, i + cp.length);
+    i += cp.length;
+  }
+  const out = mapped();
+  let k = 0;
+  while (k < p.text.length) {
+    if (!WORD_CHAR.test(p.text[k]!)) {
+      out.push(p.text[k]!, p.start[k]!, p.end[k]!);
+      k += 1;
+      continue;
+    }
+    WORD.lastIndex = k;
+    const j = k + WORD.exec(p.text)![0].length;
+    let swapped = false;
+    let foreign = false;
+    for (const c of p.text.slice(k, j)) {
+      if (LOOKALIKE[c] !== undefined) swapped = true;
+      else if (!LATIN.test(c)) foreign = true;
+    }
+    const swap = swapped && !foreign;
+    for (let q = k; q < j; q += 1) out.push(swap ? (LOOKALIKE[p.text[q]!] ?? p.text[q]!) : p.text[q]!, p.start[q]!, p.end[q]!);
+    k = j;
+  }
+  return { text: out.text, start: out.start, end: out.end };
+}
+
+/** BR107 : le texte tel que l'œil le lit (voir `seenMapped`). */
+export function unmaskedText(text: string): string {
+  return seenMapped(text).text;
+}
+
+/**
+ * Le texte en forme normale de compatibilité (« ＦＲ７６ » devient « FR76 »), accents ôtés, apostrophes droites,
+ * caractère par caractère pour garder la place de chacun dans le texte d'origine ; si `seen` est donné, c'est lui qui
+ * est lu, le texte tel que l'œil le voit (BR107).
+ */
+function normalized(text: string, seen: Mapped | null): Mapped {
+  const unmask = seen !== null;
+  const src: Mapped = seen ?? { text, start: [], end: [] };
+  const out = mapped();
+  let i = 0;
+  for (const cp of src.text) {
     const n = cp.normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’`]/g, "'");
-    out.push(n, i, i + cp.length);
+    if (unmask) out.push(n, src.start[i]!, src.end[i + cp.length - 1]!);
+    else out.push(n, i, i + cp.length);
     i += cp.length;
   }
   return out;
@@ -255,8 +328,8 @@ function unmaskLookalikes(word: string): string {
  * Le texte relu comme le bouclier le relit (nombres en mots remis en chiffres, et, si `lookalikes`, sosies de chiffres
  * aussi, en majuscules), avec la place d'origine de chaque caractère. Un nombre en mots tient toute la plage de ses mots.
  */
-function digitsRewritten(text: string, lookalikes: boolean): Mapped {
-  const p = normalized(text);
+function digitsRewritten(text: string, lookalikes: boolean, seen: Mapped | null): Mapped {
+  const p = normalized(text, seen);
   const from = (a: number, b: number): [number, number] => [p.start[a]!, p.end[b - 1]!];
   const tokens: Token[] = [];
   const re = /([\p{L}\p{N}]+)|([^\p{L}\p{N}]+)/gu;
@@ -318,9 +391,14 @@ function merged(spans: Span[]): Span[] {
  */
 export function hiddenIbanSpans(text: string): Span[] {
   const spans: Span[] = [...spelledIbanSpans(text)];
-  for (const lookalikes of [false, true]) {
-    const r = digitsRewritten(text, lookalikes);
-    for (const [a, b] of spelledIbanSpans(r.text)) spans.push([r.start[a]!, r.end[b - 1]!]);
+  const seen = seenMapped(text);
+  const sources: (Mapped | null)[] = seen.text === text ? [null] : [null, seen];
+  if (seen.text !== text) for (const [a, b] of spelledIbanSpans(seen.text)) spans.push([seen.start[a]!, seen.end[b - 1]!]);
+  for (const source of sources) {
+    for (const lookalikes of [false, true]) {
+      const r = digitsRewritten(text, lookalikes, source);
+      for (const [a, b] of spelledIbanSpans(r.text)) spans.push([r.start[a]!, r.end[b - 1]!]);
+    }
   }
   return merged(spans);
 }

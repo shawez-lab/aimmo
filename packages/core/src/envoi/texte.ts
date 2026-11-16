@@ -12,7 +12,7 @@
  *   longueur, par canal.
  */
 import type { OutboundChannelName } from '../db/types.ts';
-import { hiddenIbanSpans } from './iban-detours.ts';
+import { hiddenIbanSpans, seenMapped, unmaskedText } from './iban-detours.ts';
 
 export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
@@ -257,6 +257,14 @@ function maskPart(part: string): string {
   const spans: [number, number][] = [...ibanSpans(part)];
   for (const m of part.matchAll(RIB)) spans.push([m.index, m.index + m[0].length]);
   spans.push(...hiddenIbanSpans(part));
+  // BR107 : un IBAN ou un RIB écrit d'un bloc mais coupé d'invisibles ou de sosies est cherché dans le texte tel que
+  // l'œil le voit, puis rendu à sa plage d'origine [R15].
+  const seen = seenMapped(part);
+  if (seen.text !== part) {
+    const back = (a: number, b: number): [number, number] => [seen.start[a]!, seen.end[b - 1]!];
+    for (const [a, b] of ibanSpans(seen.text)) spans.push(back(a, b));
+    for (const m of seen.text.matchAll(RIB)) spans.push(back(m.index, m.index + m[0].length));
+  }
   spans.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
   let out = '';
   let at = 0;
@@ -301,13 +309,21 @@ const PAYMENT_REQUEST: RegExp[] = [
   /\b(?:effectuer|faire|effectuez|faites)\s+(?:le|un|votre|ce)\s+(?:virement|versement|paiement)\b/,
 ];
 
+/**
+ * BR107 : le texte sans accents ni majuscules, et aussi tel que l'œil le voit quand il diffère (« RΙΒ », « vir\u200bement »,
+ * « 𝐈𝐁𝐀𝐍 ») : une règle d'argent lit les deux [R62].
+ */
+function readings(text: string): string[] {
+  const seen = unmaskedText(text);
+  return seen === text ? [plain(text)] : [plain(text), plain(seen)];
+}
+
 export function paymentRequestIn(text: string): boolean {
-  const p = plain(text);
-  return PAYMENT_REQUEST.some((re) => re.test(p));
+  return readings(text).some((p) => PAYMENT_REQUEST.some((re) => re.test(p)));
 }
 
 export function bankDetailsIn(text: string): boolean {
-  return IBAN.test(text) || text.includes(IBAN_MASK) || /\b(?:rib|bic|swift|iban)\b/.test(plain(text));
+  return IBAN.test(text) || text.includes(IBAN_MASK) || readings(text).some((p) => /\b(?:rib|bic|swift|iban)\b/.test(p));
 }
 
 const OUTGOING_FUNDS: RegExp[] = [
@@ -323,6 +339,5 @@ const OUTGOING_FUNDS: RegExp[] = [
 /** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
 export function fundsInOutgoing(text: string): boolean {
   if (bankDetailsIn(text)) return true;
-  const p = plain(text);
-  return OUTGOING_FUNDS.some((re) => re.test(p));
+  return readings(text).some((p) => OUTGOING_FUNDS.some((re) => re.test(p)));
 }
