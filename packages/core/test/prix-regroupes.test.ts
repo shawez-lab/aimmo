@@ -104,6 +104,35 @@ describe('AT01 · calcul des cases de prix', () => {
     expect(ringSelfCrosses([[0, 0], [0, 1], [0, 0]])).toBe(true);
   });
 
+  it('[R150] RC59 : un contour presque plat, une pointe qui revient sur son bord, un sommet à moins de 10 cm d’un autre bord se touchent', () => {
+    // En mètres autour de Dijon : [vers le nord, vers l'est].
+    const m = (ring: Array<[number, number]>): LatLon[] => ring.map(([n, e]) => [47.32 + n / 110_574, 5.04 + e / (111_320 * Math.cos((47.32 * Math.PI) / 180))] as LatLon);
+    // Trois sommets alignés à 1 mm près : aucun intérieur.
+    expect(ringSelfCrosses(m([[0, 0], [0, 500], [0.001, 1000]]))).toBe(true);
+    // Un carré dont un côté a un sommet de plus, 1 mm hors de son bord : un vrai contour.
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100.001, 50], [100, 0]]))).toBe(false);
+    // Une pointe de 50 m sur le haut d'un rectangle, dont le retour passe à 1 cm, puis 5 cm, de l'aller ; à 2 m, une vraie pointe.
+    const needle = (gap: number) => m([[0, 0], [0, 200], [200, 200], [200, 100 + gap], [250, 100], [200, 100], [200, 0]]);
+    expect(ringSelfCrosses(needle(0.01))).toBe(true);
+    expect(ringSelfCrosses(needle(0.05))).toBe(true);
+    expect(ringSelfCrosses(needle(2))).toBe(false);
+    // Une fente dont les deux bords passent à 5 cm l'un de l'autre ; à 1 m, une vraie fente.
+    const slit = (gap: number) => m([[0, 0], [0, 100], [100, 100], [100, 0], [50 + gap, 0], [50 + gap, 80], [50, 80], [50, 0]]);
+    expect(ringSelfCrosses(slit(0.05))).toBe(true);
+    expect(ringSelfCrosses(slit(1))).toBe(false);
+    // Un contour très fin : 1 km de long, 5 cm de large ; à 1 m de large, il passe.
+    expect(ringSelfCrosses(m([[0, 0], [0, 1000], [0.05, 1000], [0.05, 0]]))).toBe(true);
+    expect(ringSelfCrosses(m([[0, 0], [0, 1000], [1, 1000], [1, 0]]))).toBe(false);
+    // Un petit bord de 5 cm à un angle aigu, ou à 30°, n'est pas une pointe repliée : accepté.
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [0.04, 0.02]]))).toBe(false);
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 0], [0.05 * Math.cos(Math.PI / 6), 0.05 * Math.sin(Math.PI / 6)]]))).toBe(false);
+    // Un petit bord de 5 cm qui tourne normalement, un point répété : acceptés.
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 0], [50, 0], [50, -0.05], [0, -0.05]]))).toBe(false);
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 100], [100, 0]]))).toBe(false);
+    // Concave en U, à l'échelle d'un quartier.
+    expect(ringSelfCrosses(m([[0, 0], [0, 300], [300, 300], [300, 0], [200, 0], [200, 200], [100, 200], [100, 0]]))).toBe(false);
+  });
+
   it('[R150] AT19 : le plus grand contour admis se contrôle en un temps borné, seul et contre un voisin', { timeout: 60_000 }, () => {
     const circle = (lat: number, lon: number): LatLon[] => Array.from({ length: 2000 }, (_, i) => [lat + 0.01 * Math.cos((2 * Math.PI * i) / 2000), lon + 0.01 * Math.sin((2 * Math.PI * i) / 2000)] as LatLon);
     const a = circle(47, 5);

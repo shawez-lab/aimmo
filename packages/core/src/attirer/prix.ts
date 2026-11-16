@@ -162,9 +162,64 @@ function properCross(a: LatLon, b: LatLon, c: LatLon, d: LatLon): boolean {
   return o1 * o2 < 0 && o3 * o4 < 0;
 }
 
+/** Écart en dessous duquel deux morceaux d'un contour se touchent : les arrondis ne cachent jamais un contact [R150]. */
+export const RING_TOUCH_METERS = 0.1;
+
+/** Le contour en mètres, projeté autour de son premier point (assez juste à l'échelle d'une commune). */
+function ringInMeters(points: readonly LatLon[]): Array<[number, number]> {
+  const [lat0, lon0] = points[0]!;
+  const east = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+  return points.map(([lat, lon]) => [(lat - lat0) * 110_574, (lon - lon0) * east]);
+}
+
+/** La distance du point au segment, et où tombe le point le plus proche (0 en `a`, 1 en `b`). */
+function nearestOnSegment(p: [number, number], a: [number, number], b: [number, number]): { distance: number; t: number } {
+  const dy = b[0] - a[0], dx = b[1] - a[1];
+  const len2 = dy * dy + dx * dx;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dy + (p[1] - a[1]) * dx) / len2));
+  return { distance: Math.hypot(p[0] - (a[0] + t * dy), p[1] - (a[1] + t * dx)), t };
+}
+
+/** Deux points du contour ne se touchent que s'ils sont au moins à cette distance l'un de l'autre le long du contour. */
+const RING_TOUCH_PATH_METERS = 1;
+
+/**
+ * Vrai si, en mètres, le contour n'a pas de vrai intérieur (RC59) : largeur moyenne (2 × surface / périmètre) sous
+ * 10 cm, ou un sommet à moins de 10 cm d'un autre point du contour alors qu'il en est à 1 m au moins en le suivant :
+ * le contour est parti, puis revenu presque sur lui-même (pointe repliée, fente fermée). Un petit bord, même à un
+ * angle aigu, n'en est pas un : ses deux bouts sont proches aussi le long du contour.
+ */
+function ringNearlyTouches(points: readonly LatLon[]): boolean {
+  const p = ringInMeters(points);
+  const n = p.length;
+  let twiceArea = 0;
+  const start: number[] = [];
+  const length: number[] = [];
+  let perimeter = 0;
+  for (let i = 0; i < n; i++) {
+    const a = p[i]!, b = p[(i + 1) % n]!;
+    twiceArea += a[1] * b[0] - b[1] * a[0];
+    start.push(perimeter);
+    length.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
+    perimeter += length[i]!;
+  }
+  if (Math.abs(twiceArea) / perimeter < RING_TOUCH_METERS) return true;
+  for (let k = 0; k < n; k++) {
+    for (let e = 0; e < n; e++) {
+      if (e === k || (e + 1) % n === k) continue;
+      const near = nearestOnSegment(p[k]!, p[e]!, p[(e + 1) % n]!);
+      if (near.distance >= RING_TOUCH_METERS) continue;
+      const along = Math.abs(start[e]! + near.t * length[e]! - start[k]!);
+      if (Math.min(along, perimeter - along) >= RING_TOUCH_PATH_METERS) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Vrai si un contour se croise, se touche ou repasse sur lui-même : l'intérieur n'en est plus défini, donc ni les ventes
  * qui lui appartiennent, ni le prix publié [R150]. Un point répété à la suite ne compte pas, un contour concave non plus.
+ * Un contact à moins de 10 cm compte, pour que les arrondis ne cachent jamais un contour sans surface (RC59).
  */
 export function ringSelfCrosses(ring: readonly LatLon[]): boolean {
   const same = (p: LatLon, q: LatLon) => p[0] === q[0] && p[1] === q[1];
@@ -188,7 +243,7 @@ export function ringSelfCrosses(ring: readonly LatLon[]): boolean {
       if (touches(a, b, points[j]!, points[(j + 1) % n]!)) return true;
     }
   }
-  return false;
+  return ringNearlyTouches(points);
 }
 
 /**
