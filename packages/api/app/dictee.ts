@@ -8,6 +8,12 @@
  * la demande est tiré une fois par dictée : la même dictée revalidée ne double rien. Au créneau pris entre-temps,
  * l'écran dit ce qui est déjà rangé et les créneaux libres. Tout texte reçu est posé en texte, chaque refus dit en mots.
  * La dictée reste à l'écran tant que l'agent ne l'a pas validée : un réseau coupé ne la perd pas.
+ *
+ * BR103 · Le même script sert en sortant d'une visite, depuis l'écran de la visite : le chargeur lui passe l'identifiant
+ * du rendez-vous, qui part avec la lecture et la validation. La lecture rend aussi le compte rendu rédigé d'après la
+ * dictée, montré sans être rangé ; coché, il est validé avec le reste, d'un seul geste, et part au vendeur par le
+ * contrôle central [R52, R260, R261]. Jamais vu : une minute de dictée en sortant d'une visite remplit la fiche, l'avis
+ * de visite et la relance du vendeur, à valider d'un geste.
  */
 
 /** Les deux seules routes que le script appelle. */
@@ -47,7 +53,24 @@ export const DICTEE_REFUSALS = Object.freeze({
   slot_not_free: 'Ce créneau n’est plus libre dans votre agenda.',
   slot_taken_meanwhile: 'Le créneau a été pris pendant la validation.',
   stale_reading: 'La lecture a plus de 12 heures : lisez la dictée de nouveau.',
+  unknown: 'Cette visite n’existe plus : rien n’est rangé.',
+  already_validated: 'Le compte rendu de cette visite est déjà validé : il ne se dicte plus.',
+  no_visit_reports: 'Les comptes rendus de visite ne sont pas ouverts pour le moment.',
+  report_without_visit: 'Le compte rendu se dicte depuis l’écran de la visite.',
 });
+
+/** Ce que le contrôle central a fait du compte rendu validé (comme l'écran de la visite). */
+export const DICTEE_DELIVERY = Object.freeze({
+  sent: 'Le compte rendu est parti au vendeur, sans le nom du visiteur.',
+  waiting: 'Le compte rendu est validé : il part au vendeur au prochain créneau d’envoi permis.',
+  refused: 'Le compte rendu est validé, mais le vendeur ne reçoit pas de message : accord retiré ou exclusion. Dites-le-lui de vive voix.',
+  failed: 'Le compte rendu est validé ; l’envoi a échoué, il sera repris.',
+});
+
+export const DICTEE_INTEREST = Object.freeze({ aucun: 'aucun intérêt', faible: 'intérêt faible', moyen: 'intérêt moyen', fort: 'intérêt fort' });
+
+/** Le bouton de l'écran de la visite (BR103), posé par le chargeur commun dans `fichiers.ts`. */
+export const DICTEE_VISIT_LABEL = 'Dicter en sortant de la visite';
 
 export const DICTEE_OFFLINE = 'Pas de réseau. Votre dictée reste ici : réessayez dans un moment.';
 export const DICTEE_FAILED = 'La dictée ne se lit pas pour le moment. Elle reste ici : réessayez plus tard.';
@@ -64,6 +87,8 @@ globalThis.AIMMO_DICTEE = function (t) {
   var TARGETS = ${JSON.stringify(DICTEE_TARGETS)}, LABELS = ${JSON.stringify(DICTEE_LABELS)}, VALUES = ${JSON.stringify(DICTEE_VALUES)};
   var REFUSALS = ${JSON.stringify(DICTEE_REFUSALS)};
   var READ = ${JSON.stringify(DICTEE_ROUTES.read)}, VALIDATE = ${JSON.stringify(DICTEE_ROUTES.validate)};
+  var DELIVERY = ${JSON.stringify(DICTEE_DELIVERY)}, INTEREST = ${JSON.stringify(DICTEE_INTEREST)};
+  var ID = /^[A-Za-z0-9_-]{1,64}$/;
   var turn = 0, n = 0;
   function own(map, k) { return map && typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : null; }
   function str(v, max) { return typeof v === 'string' && v.length > 0 && v.length <= max ? v : null; }
@@ -79,6 +104,12 @@ globalThis.AIMMO_DICTEE = function (t) {
     if (f.key === 'priceEur') return int(v) !== null ? euros(v) : null;
     if (f.key === 'rooms') return int(v) !== null ? String(v) : null;
     return str(v, 200);
+  }
+  // Le compte rendu reçu, gardé seulement s'il a la forme que la validation accepte ; sinon il n'est pas proposé.
+  function reportOf(r) {
+    function list(x) { return Array.isArray(x) && x.length <= 8 && x.every(function (s) { return typeof s === 'string' && s.length <= 200; }); }
+    if (!r || typeof r !== 'object' || !str(r.opinion, 1000) || !list(r.strengths) || !list(r.reservations) || !own(INTEREST, r.interest) || typeof r.readyToOffer !== 'boolean') return null;
+    return { opinion: r.opinion, strengths: r.strengths.slice(), reservations: r.reservations.slice(), interest: r.interest, readyToOffer: r.readyToOffer };
   }
   function labelOf(key) { var parts = String(key).split('.'); return own(own(LABELS, parts[0]), parts[1]); }
   function keysSaid(keys) {
@@ -109,7 +140,9 @@ globalThis.AIMMO_DICTEE = function (t) {
     box.appendChild(ul);
   }
   var built = null;
-  return function (_personId, corps, said) {
+  // Depuis « Ma journée », rien ; depuis l'écran de la visite, l'identifiant du rendez-vous (BR103).
+  return function (appointmentId, corps, said) {
+    var visit = typeof appointmentId === 'string' && ID.test(appointmentId) ? appointmentId : null;
     // Le bouton touché de nouveau ne refait pas l'écran : la dictée en cours reste [R261].
     if (built && built.corps === corps && built.session === t.session()) return true;
     var mine = t.session(), at = ++turn;
@@ -117,7 +150,7 @@ globalThis.AIMMO_DICTEE = function (t) {
     var current = null, lastText = null, requestId = null, reading = 0;
     clear(corps);
     said.textContent = '';
-    corps.appendChild(el('p', 'Touchez le micro du clavier de votre téléphone et dites ce que vous venez d’apprendre : rien n’est rangé avant votre validation.', 'doux'));
+    corps.appendChild(el('p', visit ? 'Touchez le micro du clavier et dites ce que le visiteur a pensé du bien, puis la suite : une contre-visite, un nouveau contact. Rien n’est rangé ni envoyé avant votre validation.' : 'Touchez le micro du clavier de votre téléphone et dites ce que vous venez d’apprendre : rien n’est rangé avant votre validation.', 'doux'));
     var text = t.field(corps, 'dictee-texte-' + (++n), 'Votre dictée', 'textarea');
     text.setAttribute('maxlength', '5000');
     var result = el('div');
@@ -152,17 +185,34 @@ globalThis.AIMMO_DICTEE = function (t) {
       var conflicts = draft && Array.isArray(draft.conflicts) ? draft.conflicts : [];
       var twice = conflicts.map(function (c) { return c && own(own(LABELS, c.target), c.key); }).filter(Boolean);
       if (twice.length) result.appendChild(el('p', 'Dit deux fois avec deux valeurs, donc non proposé : ' + twice.join(', ') + '. Saisissez-le vous-même ensuite.'));
-      if (!checks.length) { result.appendChild(el('p', 'Rien à proposer dans cette dictée : dites un nom, un numéro, le bien ou le rendez-vous.')); return; }
+      // En sortant d'une visite : le compte rendu rédigé d'après la dictée, montré sans être rangé, coché pour partir au vendeur.
+      var report = visit ? reportOf(data.report) : null, sendReport = null;
+      if (report) {
+        var rbox = el('fieldset', null, 'bloc');
+        rbox.appendChild(el('legend', 'Le compte rendu au vendeur'));
+        rbox.appendChild(el('p', report.opinion));
+        if (report.strengths.length) rbox.appendChild(el('p', 'Points forts : ' + report.strengths.join(', ')));
+        if (report.reservations.length) rbox.appendChild(el('p', 'Réserves : ' + report.reservations.join(', ')));
+        rbox.appendChild(el('p', INTEREST[report.interest] + (report.readyToOffer ? ' · prêt à faire une offre' : ''), 'doux'));
+        sendReport = t.checkbox(rbox, 'dictee-' + n + '-compte-rendu', 'Valider ce compte rendu et l’envoyer au vendeur, sans le nom du visiteur');
+        sendReport.checked = true;
+        result.appendChild(rbox);
+      } else if (visit) result.appendChild(el('p', 'Le compte rendu n’a pas pu être rédigé d’après cette dictée : écrivez-le dans « Compte rendu au vendeur ».', 'doux'));
+      if (!checks.length && !report) { result.appendChild(el('p', visit ? 'Rien à proposer dans cette dictée : dites ce que le visiteur a pensé du bien, ou la suite.' : 'Rien à proposer dans cette dictée : dites un nom, un numéro, le bien ou le rendez-vous.')); return; }
       result.appendChild(t.button('Valider ce qui est coché', function () {
         var keep = {};
         checks.forEach(function (c) { if (c.box.checked) (keep[c.target] = keep[c.target] || []).push(c.key); });
-        if (!Object.keys(keep).length) { answer.textContent = REFUSALS.nothing_kept; return; }
+        var withReport = !!(report && sendReport && sendReport.checked);
+        if (!Object.keys(keep).length && !withReport) { answer.textContent = REFUSALS.nothing_kept; return; }
         if (busy) return wait();
         var sent = current;
         if (!sent || sent.reading !== reading) return;
         busy = true;
         answer.textContent = 'Validation…';
-        send(VALIDATE, 'POST', { requestId: sent.id, dictation: sent.text, readAt: sent.readAt, keep: keep }).then(function (x) {
+        var ask = { requestId: sent.id, dictation: sent.text, readAt: sent.readAt, keep: keep };
+        if (visit) ask.appointmentId = visit;
+        if (withReport) ask.report = report;
+        send(VALIDATE, 'POST', ask).then(function (x) {
           busy = false;
           if (x.gone || !live() || current !== sent) return;
           if (x.offline) { answer.textContent = ${JSON.stringify(DICTEE_OFFLINE)}; return; }
@@ -178,8 +228,9 @@ globalThis.AIMMO_DICTEE = function (t) {
           else if (d.contact === 'matched') parts.push('le contact, ajouté à sa fiche');
           if (str(d.propertyId, 64)) parts.push('le bien, en brouillon');
           if (str(d.appointmentId, 64)) parts.push('le rendez-vous');
+          var delivered = d.report && typeof d.report === 'object' ? own(DELIVERY, d.report.delivery) || 'Le compte rendu est validé.' : null;
           clear(result);
-          answer.textContent = parts.length ? 'Rangé : ' + parts.join(', ') + '. Aucun message n’est parti au contact.' : ${JSON.stringify(DICTEE_DONE)};
+          answer.textContent = (parts.length ? 'Rangé : ' + parts.join(', ') + '. Aucun message n’est parti au contact.' : delivered ? '' : ${JSON.stringify(DICTEE_DONE)}) + (delivered ? (parts.length ? ' ' : '') + delivered : '');
           current = null;
           // Une dictée changée depuis l'envoi reste à l'écran, avec son propre identifiant à venir.
           if (text.value === sent.text) text.value = '';
@@ -199,7 +250,7 @@ globalThis.AIMMO_DICTEE = function (t) {
       current = null;
       clear(result);
       answer.textContent = 'Lecture…';
-      send(READ, 'POST', { dictation: value }).then(function (x) {
+      send(READ, 'POST', visit ? { dictation: value, appointmentId: visit } : { dictation: value }).then(function (x) {
         busy = false;
         if (x.gone || !live() || mineReading !== reading) return;
         if (x.offline) { answer.textContent = ${JSON.stringify(DICTEE_OFFLINE)}; return; }
