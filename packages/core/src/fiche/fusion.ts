@@ -55,6 +55,26 @@ export interface FicheUniqueOptions {
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /**
+ * Rattrapage d'une fusion défaite [R02, R04, R204] : une demande qui a lu les fiches réunies juste avant le lot peut ranger
+ * son arrêt ou sa note après lui, sur une seule fiche. Ce qui est rangé jusqu'à `graceMs` après la fusion défaite vaut
+ * donc pour les deux, comme pendant la réunion : plus prudent. `windowMs` borne les fusions que le passage relit.
+ */
+export const UNDO_MERGE_CATCH_UP = Object.freeze({ graceMs: 2 * 60_000, windowMs: 10 * 60_000 });
+
+/** Ce qu'un rattrapage a recopié : les identifiants des copies seulement [R13]. */
+export interface UndoMergeCatchUp {
+  merge: string;
+  exclusions: string[];
+  calls: string[];
+}
+
+interface SeparatedPair {
+  source: string;
+  target: string;
+  since: string;
+}
+
+/**
  * Une seule fiche par personne : identifiants normalisés, doublons repérés, fusion réversible.
  * Une fusion ne déplace ni n'efface aucune ligne [R17] : elle relie deux fiches, et la défaire les sépare
  * exactement comme avant.
@@ -257,7 +277,7 @@ export class FicheUnique {
     if (undoneAt === null) {
       const at = this.now().toISOString();
       const ids = await this.membersOf(merge.survivor_id);
-      const pairs = await this.separatedPairs(merge, ids);
+      const pairs = await this.separatedPairs(merge, at);
       const [undo] = await runBatch(this.db, [
         { sql: 'UPDATE person_merges SET undone_at = ? WHERE id = ? AND undone_at IS NULL', params: [at, mergeId] },
         {
@@ -270,28 +290,7 @@ export class FicheUnique {
         // En SQL : un arrêt rangé pendant ce geste n'échappe pas à la copie. Les colonnes de la ligne servent de clé :
         // l'original et ses copies ne font qu'un, et rien n'est doublé. La copie garde la date de création de l'original,
         // pour qu'une fusion défaite plus tard la lise comme lui.
-        ...pairs.map(({ source, target, since }) => ({
-          sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, undone_merge_id)
-                SELECT ${SQL_UUID}, e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, MIN(e.created_at), ?
-                FROM exclusions e
-                WHERE e.person_id = ? AND e.created_at >= ?
-                  AND NOT EXISTS (SELECT 1 FROM exclusions t WHERE t.person_id = ? AND t.reason = e.reason AND t.channel IS e.channel
-                                    AND t.noted_at = e.noted_at AND t.lifted_at IS e.lifted_at)
-                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
-                GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
-          params: [target, mergeId, source, since, target, mergeId, at],
-        })),
-        // De même pour les notes d'appel : l'original et ses copies ne font qu'un, et se relisent comme un seul appel.
-        ...pairs.map(({ source, target, since }) => ({
-          sql: `INSERT INTO call_notes (id, network_id, person_id, outcome, basis, noted_by, noted_at, undone_merge_id)
-                SELECT ${SQL_UUID}, n.network_id, ?, n.outcome, n.basis, MIN(n.noted_by), n.noted_at, ?
-                FROM call_notes n
-                WHERE n.person_id = ? AND n.noted_at >= ?
-                  AND NOT EXISTS (SELECT 1 FROM call_notes t WHERE t.person_id = ? AND t.outcome = n.outcome AND t.basis = n.basis AND t.noted_at = n.noted_at)
-                  AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
-                GROUP BY n.network_id, n.outcome, n.basis, n.noted_at`,
-          params: [target, mergeId, source, since, target, mergeId, at],
-        })),
+        ...copyStatements(pairs, mergeId, at, null),
       ]);
       if (undo?.changes === 1) undoneAt = at;
       else {
@@ -328,15 +327,93 @@ export class FicheUnique {
   }
 
   /**
+   * Rattrape une fusion défaite [R02, R04, R204] : une exclusion ou une note d'appel rangée sur l'une des fiches séparées,
+   * depuis leur réunion et jusqu'à `UNDO_MERGE_CATCH_UP.graceMs` après la fusion défaite, est recopiée sur l'autre, avec sa
+   * date, sa levée, son heure et sa base, comme par `undoMerge`. C'est la demande qui avait lu les fiches réunies juste
+   * avant le lot et rangé après lui. Rien n'est doublé ni effacé [R17] ; une fusion pas défaite ne change rien. Les
+   * copies faites vont au journal, par leurs identifiants seulement [R13].
+   */
+  async catchUpUndoneMerge(mergeId: string, trace: UndoMergeTrace): Promise<UndoMergeCatchUp> {
+    const merge = await this.db.first<PersonMerge>('SELECT * FROM person_merges WHERE id = ?', [mergeId]);
+    if (!merge) throw new Error(`Fusion inconnue : ${mergeId}`);
+    const done: UndoMergeCatchUp = { merge: mergeId, exclusions: [], calls: [] };
+    const undoneAt = merge.undone_at;
+    if (undoneAt === null) return done;
+    const until = new Date(Date.parse(undoneAt) + UNDO_MERGE_CATCH_UP.graceMs).toISOString();
+    const pairs = await this.separatedPairs(merge, undoneAt);
+    if (pairs.length === 0) return done;
+    await runBatch(this.db, copyStatements(pairs, mergeId, undoneAt, until));
+    // Toute copie de cette fusion pas encore au journal y va : celles de ce passage, et celles d'un passage coupé avant
+    // sa ligne. Les copies du lot sont déjà dites par `fiche.fusion_defaite`.
+    const said = new Set<string>();
+    for (const e of await trace.journal.bySubject(`person:${merge.survivor_id}`)) {
+      if ((e.type !== 'fiche.fusion_defaite' && e.type !== 'fiche.fusion_defaite_rattrapee') || e.data.merge !== mergeId) continue;
+      for (const key of ['exclusions', 'calls'] as const) {
+        const ids = e.data[key];
+        if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'string') said.add(id);
+      }
+    }
+    const unsaid = async (table: 'exclusions' | 'call_notes') =>
+      (await this.db.all<{ id: string }>(`SELECT id FROM ${table} WHERE undone_merge_id = ? ORDER BY id`, [mergeId])).map((r) => r.id).filter((id) => !said.has(id));
+    done.exclusions = await unsaid('exclusions');
+    done.calls = await unsaid('call_notes');
+    if (done.exclusions.length > 0 || done.calls.length > 0) {
+      await appendEvent(
+        trace.journal,
+        {
+          type: 'fiche.fusion_defaite_rattrapee',
+          actor: trace.actor,
+          subject: `person:${merge.survivor_id}`,
+          data: { rule: 'R04', merge: mergeId, exclusions: done.exclusions, calls: done.calls },
+        },
+        this.now,
+      );
+    }
+    return done;
+  }
+
+  /**
+   * Rattrape chaque fusion défaite depuis `UNDO_MERGE_CATCH_UP.windowMs` : à appeler par un passage régulier, après
+   * tout geste qui défait une fusion. Rend seulement les fusions où quelque chose a été recopié.
+   */
+  async catchUpUndoneMerges(trace: UndoMergeTrace): Promise<UndoMergeCatchUp[]> {
+    const since = new Date(this.now().getTime() - UNDO_MERGE_CATCH_UP.windowMs).toISOString();
+    const rows = await this.db.all<{ id: string }>(
+      'SELECT id FROM person_merges WHERE undone_at IS NOT NULL AND undone_at >= ? ORDER BY undone_at, id',
+      [since],
+    );
+    const caught: UndoMergeCatchUp[] = [];
+    for (const { id } of rows) {
+      const done = await this.catchUpUndoneMerge(id, trace);
+      if (done.exclusions.length > 0 || done.calls.length > 0) caught.push(done);
+    }
+    return caught;
+  }
+
+  /**
    * Les couples de fiches que la fusion défaite sépare, chacun avec la date où ils ont été réunis : la plus récente des
    * fusions qui les relient. Une exclusion ou une note plus ancienne que cette date n'a jamais valu pour l'autre fiche et ne la suit pas.
+   * Les fusions sont lues telles qu'elles étaient à `asOf`, l'instant où la fusion est défaite : celles déjà faites et pas
+   * encore défaites, elle comprise. Le rattrapage retrouve ainsi les mêmes couples que le lot.
    */
-  private async separatedPairs(merge: PersonMerge, ids: string[]): Promise<{ source: string; target: string; since: string }[]> {
+  private async separatedPairs(merge: PersonMerge, asOf: string): Promise<SeparatedPair[]> {
     const edges = await this.db.all<{ survivor_id: string; merged_id: string; merged_at: string }>(
-      `SELECT survivor_id, merged_id, merged_at FROM person_merges WHERE undone_at IS NULL AND merged_id IN (${placeholders(ids.length)})`,
-      ids,
+      `SELECT survivor_id, merged_id, merged_at FROM person_merges
+       WHERE network_id = ? AND merged_at <= ? AND (undone_at IS NULL OR undone_at >= ?) ORDER BY merged_at, id`,
+      [merge.network_id, asOf, asOf],
     );
     const parent = new Map(edges.map((e) => [e.merged_id, e]));
+    // Les fiches réunies à cet instant : la fiche gardée au bout des fusions, puis tout ce qui y est fusionné.
+    let root = merge.survivor_id;
+    const up = new Set([root]);
+    for (let edge = parent.get(root); edge && !up.has(edge.survivor_id); edge = parent.get(edge.survivor_id)) {
+      root = edge.survivor_id;
+      up.add(root);
+    }
+    const ids = [root];
+    for (let i = 0; i < ids.length; i++) {
+      for (const edge of edges) if (edge.survivor_id === ids[i] && !ids.includes(edge.merged_id)) ids.push(edge.merged_id);
+    }
     // Du haut de la fiche vers elle-même : chaque ancêtre, avec la date la plus récente du chemin jusqu'à la fiche.
     const climb = (id: string): Map<string, string> => {
       const seen = new Map([[id, '']]);
@@ -411,4 +488,39 @@ export class FicheUnique {
     );
     return { person, members, identifiers, consents, exclusions, projects, sources, messages, merges };
   }
+}
+
+/**
+ * Les copies d'exclusions et de notes d'appel d'une fiche séparée vers l'autre, faites seulement si la fusion est bien
+ * défaite à `undoneAt`. `until` borne la date de ce qui est recopié (le rattrapage) ; `null` : tout depuis la réunion.
+ * Au rattrapage, une exclusion déjà présente de l'autre côté, levée ou non, n'est jamais recopiée : une levée faite
+ * après la fusion défaite sur l'une des fiches n'est pas défaite par la copie encore ouverte de l'autre.
+ */
+function copyStatements(pairs: SeparatedPair[], mergeId: string, undoneAt: string, until: string | null): { sql: string; params: SqlValue[] }[] {
+  const bound = (column: string): string => (until === null ? '' : ` AND ${column} <= ?`);
+  const upTo: SqlValue[] = until === null ? [] : [until];
+  return [
+    ...pairs.map(({ source, target, since }) => ({
+      sql: `INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at, undone_merge_id)
+            SELECT ${SQL_UUID}, e.network_id, MIN(e.agent_id), ?, e.reason, e.channel, e.noted_at, e.lifted_at, MIN(e.created_at), ?
+            FROM exclusions e
+            WHERE e.person_id = ? AND e.created_at >= ?${bound('e.created_at')}
+              AND NOT EXISTS (SELECT 1 FROM exclusions t WHERE t.person_id = ? AND t.reason = e.reason AND t.channel IS e.channel
+                                AND t.noted_at = e.noted_at${until === null ? ' AND t.lifted_at IS e.lifted_at' : ''})
+              AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
+            GROUP BY e.network_id, e.reason, e.channel, e.noted_at, e.lifted_at`,
+      params: [target, mergeId, source, since, ...upTo, target, mergeId, undoneAt],
+    })),
+    // De même pour les notes d'appel : l'original et ses copies ne font qu'un, et se relisent comme un seul appel.
+    ...pairs.map(({ source, target, since }) => ({
+      sql: `INSERT INTO call_notes (id, network_id, person_id, outcome, basis, noted_by, noted_at, undone_merge_id)
+            SELECT ${SQL_UUID}, n.network_id, ?, n.outcome, n.basis, MIN(n.noted_by), n.noted_at, ?
+            FROM call_notes n
+            WHERE n.person_id = ? AND n.noted_at >= ?${bound('n.noted_at')}
+              AND NOT EXISTS (SELECT 1 FROM call_notes t WHERE t.person_id = ? AND t.outcome = n.outcome AND t.basis = n.basis AND t.noted_at = n.noted_at)
+              AND EXISTS (SELECT 1 FROM person_merges WHERE id = ? AND undone_at = ?)
+            GROUP BY n.network_id, n.outcome, n.basis, n.noted_at`,
+      params: [target, mergeId, source, since, ...upTo, target, mergeId, undoneAt],
+    })),
+  ];
 }
