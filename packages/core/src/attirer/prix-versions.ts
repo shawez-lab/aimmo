@@ -53,7 +53,16 @@ export type ZoneResult = { ok: true; id: string } | { ok: false; rule: 'R16' | '
 
 export type RecomputeResult =
   | { ran: false; reason: 'dvf_non_couvert' | 'aucune_zone' | 'deja_fait' | 'source_incomplete'; versionId?: string }
-  | { ran: true; versionId: string; published: number; carried: number; held: number };
+  | { ran: true; versionId: string; published: number; carried: number; held: number; setAside: number };
+
+/** Une zone rangée dont le contour ne passerait plus le contrôle d'aujourd'hui : à retirer et retracer (RC60). */
+export interface ZoneToRedraw {
+  id: string;
+  level: ZoneLevel;
+  parentId: string | null;
+  name: string;
+  reason: 'contour_croise';
+}
 
 /** Une case montrée au public : chiffres regroupés, source et date [R150, R151]. Rien d'autre. */
 export interface PublicCell {
@@ -126,6 +135,31 @@ function ringNearParent(ring: readonly LatLon[], parent: readonly LatLon[]): boo
   const [a, b, c, d] = [Math.min(...lats), Math.max(...lats), Math.min(...lons), Math.max(...lons)];
   const [dLat, dLon] = [(b - a) / 10, (d - c) / 10];
   return ring.every(([lat, lon]) => lat >= a - dLat && lat <= b + dLat && lon >= c - dLon && lon <= d + dLon);
+}
+
+/**
+ * Vrai si le contour rangé ne passerait plus le contrôle d'aujourd'hui (RC59) : il se touche lui-même, ou ne se relit
+ * pas. Une zone tracée avant ce contrôle ne dirait pas quelles ventes elle contient [R150].
+ */
+function storedRingToRedraw(ringJson: string): boolean {
+  let value: unknown;
+  try {
+    value = JSON.parse(ringJson);
+  } catch {
+    return true;
+  }
+  const ring = parseRing(value);
+  return ring === null || ringSelfCrosses(ring);
+}
+
+/**
+ * Les zones à mettre de côté du calcul : celles dont le contour est à refaire, et les quartiers d'une commune à refaire,
+ * comme ceux d'une commune retirée.
+ */
+function zonesSetAside(zones: readonly ZoneRow[]): Set<string> {
+  const out = new Set(zones.filter((z) => storedRingToRedraw(z.ring_json)).map((z) => z.id));
+  for (const z of zones) if (z.parent_id !== null && out.has(z.parent_id)) out.add(z.id);
+  return out;
 }
 
 function parseRing(value: unknown): LatLon[] | null {
@@ -255,6 +289,28 @@ export class PrixRegroupes {
     return { ok: true, value };
   }
 
+  /**
+   * Les zones en service dont le contour est à refaire (RC60), pour la direction seule [R16] : rangées avant le contrôle
+   * des contours, elles sont mises de côté du calcul jusqu'à ce que la direction les retire et les retrace. Le quartier
+   * d'une commune à refaire n'y est pas : il est mis de côté avec elle, son contour à lui est sain.
+   */
+  async zonesToRedraw(viewer: Viewer): Promise<{ ok: true; value: ZoneToRedraw[] } | { ok: false; rule: 'R16'; code: 'role' }> {
+    if (viewer.role !== 'direction') {
+      await appendEvent(
+        this.journal,
+        { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'price_zones', code: 'role' } },
+        this.now,
+      );
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const rows = await this.activeZones(viewer.networkId);
+    const value = rows
+      .filter((z) => storedRingToRedraw(z.ring_json))
+      .map((z): ZoneToRedraw => ({ id: z.id, level: z.level, parentId: z.parent_id, name: z.name, reason: 'contour_croise' }));
+    value.sort((a, b) => a.name.localeCompare(b.name, 'fr') || a.id.localeCompare(b.id));
+    return { ok: true, value };
+  }
+
   /** Les zones en service : ni retirées, ni quartiers d'une commune retirée. */
   private async activeZones(networkId: string): Promise<ZoneRow[]> {
     return this.db.all<ZoneRow>(
@@ -276,7 +332,10 @@ export class PrixRegroupes {
   async recompute(networkId: string): Promise<RecomputeResult> {
     const coverage = await this.sales.coverage();
     if (!coverage || !/^\d{4}-\d{2}-\d{2}$/.test(coverage.lastSale)) return { ran: false, reason: 'dvf_non_couvert' };
-    const zones = await this.activeZones(networkId);
+    // Une zone dont le contour est à refaire est mise de côté comme une zone retirée : ni case ni vente attribuée [R150].
+    const active = await this.activeZones(networkId);
+    const aside = zonesSetAside(active);
+    const zones = active.filter((z) => !aside.has(z.id));
     const communes = zones.filter((z) => z.level === 'commune');
     if (communes.length === 0) return { ran: false, reason: 'aucune_zone' };
     const zonesHash = await sha256Hex(JSON.stringify(zones.map((z) => [z.id, z.parent_id, z.ring_json])));
@@ -386,11 +445,11 @@ export class PrixRegroupes {
         type: 'attirer.prix.version',
         actor: 'system:prix',
         subject: `price_version:${versionId}`,
-        data: { rule: 'R150', dvfLastSale: coverage.lastSale, previous: previousId, published, carried, held },
+        data: { rule: 'R150', dvfLastSale: coverage.lastSale, previous: previousId, published, carried, held, setAside: aside.size },
       },
       this.now,
     );
-    return { ran: true, versionId, published, carried, held };
+    return { ran: true, versionId, published, carried, held, setAside: aside.size };
   }
 
   /** Les cases montrées par une version, avec leur ensemble de ventes (celui de la version d'origine pour une reprise). */
