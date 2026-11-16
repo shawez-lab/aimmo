@@ -16,6 +16,7 @@ import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/ind
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
 import { signPickupsJob } from '../../core/src/panneaux/index.ts';
 import { dpeWatchJob, type DiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
+import { facturationJobs } from '../../core/src/facturation/index.ts';
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -99,6 +100,14 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Pilotage (K08) : commissions, factures d'essai et reversements chaque heure ; alertes à 6 h, avec les pièces du
       // dossier d'agent ; rapport du matin du lundi au vendredi à 7 h 30, rangé, jamais envoyé.
       ...pilotageJobs(config.db, journal, { now }),
+      // Facturation (HX49, RC55, BR92), juste après le pilotage qui écrit les factures : le rapprochement chaque heure ;
+      // à 6 h les relances dues préparées, à valider par la direction ; de 9 h à 19 h du lundi au samedi, les relances
+      // validées par le contrôle central, canaux du mode essai seulement. Sur un relevé de banque de plus de 7 jours, ou
+      // sans relevé, aucune relance n'est préparée ni envoyée [R551, R553, R26].
+      ...(() => {
+        const store = new FicheClient(config.db, { now });
+        return facturationJobs(config.db, journal, new Acces(config.db, store, new FicheUnique(config.db, store, { now }), journal, { now }), { now });
+      })(),
       // Réseau (J13), à 6 h : échéances des pièces du dossier d'agent et du compteur de formation, rangées pour les
       // écrans, jamais envoyées.
       reseau.reseauDailyJob(config.db, journal, { now }),

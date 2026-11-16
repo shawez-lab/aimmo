@@ -16,7 +16,7 @@
  * (BR05).
  */
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { FacturesFournisseurs, Rapprochements, RelancesImpayes, type Corrections, type LecteurFactures } from '../../core/src/facturation/index.ts';
+import { FacturesFournisseurs, Rapprochements, RelancesImpayes, bankStatementFreshness, type Corrections, type LecteurFactures } from '../../core/src/facturation/index.ts';
 import { RapportsSurMesure } from '../../core/src/rapports/index.ts';
 
 export const TRIAL_MODE = 'essai';
@@ -192,6 +192,15 @@ export function financesRoutes(): FinancesRoute[] {
       name: 'finances.banque.encaissement',
       roles: DIRECTION,
       handle: async (s, v, [invoiceId]) => reply((await banque(s).recordReceipt(v, invoiceId!)) as Outcome),
+    },
+    // Fraîcheur du dernier relevé (RC55, BR92) : au-delà de 7 jours, ou sans relevé, aucune relance n'est préparée.
+    // Le jour du dernier dépôt et son âge seulement, jamais un montant ni une ligne [R13, R553].
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/banque/fraicheur$`),
+      name: 'finances.banque.fraicheur',
+      roles: DIRECTION,
+      handle: async (s, v) => reply({ ok: true, value: await bankStatementFreshness(s.db, v.networkId, s.now()) }),
     },
     // Relances des impayés (HX49) : préparées par le passage, validées ici, envoyées par le passage en essai [R553].
     {
