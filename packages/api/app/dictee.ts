@@ -98,7 +98,7 @@ globalThis.AIMMO_DICTEE = function (t) {
     if (k.contact === 'created') parts.push('la fiche du contact, créée');
     else if (k.contact === 'matched') parts.push('le contact, retrouvé dans sa fiche');
     if (str(k.propertyId, 64)) parts.push('le bien');
-    if (parts.length) box.appendChild(el('p', 'Déjà rangé, sans rien doubler : ' + parts.join(' et ') + '. Choisissez un autre créneau, puis dictez seulement le rendez-vous.'));
+    if (parts.length) box.appendChild(el('p', 'Déjà rangé, sans rien doubler : ' + parts.join(' et ') + '. Le rendez-vous n’est pas pris : fixez une autre heure avec le contact, puis dictez son numéro ou son mail avec le nouveau rendez-vous, sans le bien ; le rendez-vous rejoindra sa fiche.'));
   }
   function free(box, slots) {
     var list = (Array.isArray(slots) ? slots : []).filter(instant).slice(0, 3);

@@ -185,7 +185,7 @@ describe('BR101 · la création à la voix à l’écran de l’agent', () => {
     await d.click(d.btn('Valider ce qui est coché'));
     expect(d.answer()).toBe(DICTEE_REFUSALS.slot_taken_meanwhile);
     const text = d.text();
-    expect(text).toContain('Déjà rangé, sans rien doubler : la fiche du contact, créée et le bien.');
+    expect(text).toContain('Déjà rangé, sans rien doubler : la fiche du contact, créée et le bien. Le rendez-vous n’est pas pris : fixez une autre heure avec le contact, puis dictez son numéro ou son mail avec le nouveau rendez-vous, sans le bien ; le rendez-vous rejoindra sa fiche.');
     expect(text).toContain('Créneaux libres les plus proches :');
     expect(text).toContain('à 11:00');
     expect(text).not.toContain(INJECTED);
