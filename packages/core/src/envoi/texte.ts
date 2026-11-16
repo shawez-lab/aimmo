@@ -252,21 +252,31 @@ export const IBAN_MASK = '[IBAN masqué]';
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 function maskPart(part: string): string {
+  // BR106 : toutes les plages sont cherchées sur le texte d'origine, puis réunies, avant de rien remplacer : un IBAN
+  // mêlant chiffres ordinaires et chiffres dictés ou pleine chasse est masqué en entier, jamais son début seul [R15].
+  const spans: [number, number][] = [...ibanSpans(part)];
+  for (const m of part.matchAll(RIB)) spans.push([m.index, m.index + m[0].length]);
+  spans.push(...hiddenIbanSpans(part));
+  spans.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
   let out = '';
   let at = 0;
-  for (const [a, b] of ibanSpans(part)) {
-    out += part.slice(at, a) + IBAN_MASK;
-    at = b;
+  let open: [number, number] | null = null;
+  for (const [a, b] of spans) {
+    if (open !== null && a < open[1]) {
+      open[1] = Math.max(open[1], b);
+      continue;
+    }
+    if (open !== null) {
+      out += part.slice(at, open[0]) + IBAN_MASK;
+      at = open[1];
+    }
+    open = [a, b];
   }
-  const plainMasked = (out + part.slice(at)).replace(RIB, IBAN_MASK);
-  // BR106 : puis les IBAN épelés, dictés en mots ou déguisés par des sosies, chacun pris en entier [R15].
-  let hidden = '';
-  let from = 0;
-  for (const [a, b] of hiddenIbanSpans(plainMasked)) {
-    hidden += plainMasked.slice(from, a) + IBAN_MASK;
-    from = b;
+  if (open !== null) {
+    out += part.slice(at, open[0]) + IBAN_MASK;
+    at = open[1];
   }
-  return hidden + plainMasked.slice(from);
+  return out + part.slice(at);
 }
 
 /**

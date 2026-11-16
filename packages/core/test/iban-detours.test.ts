@@ -198,3 +198,21 @@ it('lecture linéaire : 40 000 caractères épelés ou en mots masqués en moins
     expect(performance.now() - t0).toBeLessThan(500);
   }
 });
+
+it('[R15] un IBAN qui mêle chiffres ordinaires et chiffres pleine chasse ou dictés est masqué en entier, jamais son début seul', () => {
+  const g = FR.slice(4).match(/.{1,4}/g)!;
+  const mixed = [
+    `${FR.slice(0, 4)} ${g.slice(0, 4).join(' ')} ${fullWidth(g[4]!)} ${g[5]}`,
+    `${FR.slice(0, 4)} ${g.slice(0, 4).join(' ')} ${sayEach(g[4]!, FR_DIGITS)} ${g[5]}`,
+    `${FR.slice(0, 4)} ${g.slice(0, 4).join(' ')} ${sosie(g[4]!)} ${sosie(g[5]!)}`,
+  ];
+  for (const iban of mixed) {
+    const text = `Voici : ${iban} merci`;
+    expect(maskIban(text), text).toBe(`Voici : ${IBAN_MASK} merci`);
+  }
+});
+
+it('[R15] un IBAN et un RIB écrits normalement restent masqués comme avant, chacun à sa place', () => {
+  const text = `IBAN ${FR} et RIB 30006 00001 12345678901 89, puis ${BE}.`;
+  expect(maskIban(text)).toBe(`IBAN ${IBAN_MASK} et RIB ${IBAN_MASK}, puis ${IBAN_MASK}.`);
+});
