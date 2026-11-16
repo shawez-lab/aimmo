@@ -40,20 +40,62 @@ import { openFile } from './acces-dossier.ts';
 export type FundSignal = 'iban' | 'coordonnees_bancaires' | 'virement' | 'acompte' | 'sequestre' | 'paiement';
 
 // Les formes courantes, pluriels et impératifs compris. « Règlement » seul ne compte pas : règlement de copropriété.
+// RC66 : aussi les détours des escrocs (domiciliation, banque changée, transfert, dépôt chiffré, moyens de détour,
+// anglais). Le transfert de propriété, de bail, des risques, des charges ou du dossier n'est pas un transfert de fonds.
 const INBOUND: [FundSignal, RegExp][] = [
-  ['coordonnees_bancaires', /\b(?:ribs?|bic|swift|iban|coordonnees bancaires|releve d'identite bancaire|nouveaux? comptes?|changement de (?:compte|banque|coordonnees)|autre compte|comptes? bancaires?|numero de compte|nouvelles? coordonnees|coordonnees (?:\w+ )?(?:ont |a )?change\w*|sur (?:le|ce|notre|un|leur|votre) (?:nouveau )?compte|compte ci-(?:joint|dessous|apres))\b/],
-  ['virement', /\b(?:virements?|vire[rsz]?|virons|virent|transferts? de fonds|transfere[rsz]?|fonds(?! de commerce))\b/],
-  ['acompte', /\b(?:acomptes?|arrhes|depots? de garantie)\b/],
-  ['sequestre', /\b(?:sequestres?|consignation)\b/],
-  ['paiement', /\b(?:paye[rsz]?|paie[sz]?|payons|paiements?|verse[rsz]?|versons|versements?|regle[rz]|reglons|regler la somme|reglement de la somme|frais a regler)\b/],
+  ['coordonnees_bancaires', /\b(?:ribs?|bic|swift|iban|coordonnees bancaires|releve d'identite bancaire|nouveaux? comptes?|changement de (?:compte|banque|coordonnees)|autre compte|comptes? bancaires?|numero de compte|nouvelles? coordonnees|coordonnees (?:\w+ )?(?:ont |a )?change\w*|sur (?:le|ce|notre|un|leur|votre) (?:nouveau )?compte|compte ci-(?:joint|dessous|apres)|domiciliations? bancaires?|(?:references?|informations?|details?|donnees) bancaires|change(?:r|z|ons|nt)? de banque|nouvelles? banques?|coordonnees du compte|bank accounts?|bank details|account numbers?|sort codes?|routing numbers?|new account)\b/],
+  ['virement', /\b(?:virements?|vire[rsz]?|virons|virent|transferts? de fonds|transfere[rsz]?|fonds(?! de commerce)|transferts?(?! d(?:e|u|es) (?:la )?(?:propriete|bail|risques?|charges|dossiers?)\b)|envo(?:yer|yez|yons|ie|ies) (?:l'argent|la somme|le montant|les fonds)|transfer(?:s|red|ring)?|wire[ds]?|wiring|funds|send (?:the )?money)\b/],
+  ['acompte', /\b(?:acomptes?|arrhes|depots? de garantie|depots? (?:de|d'un montant de) \d+|deposits?)\b/],
+  ['sequestre', /\b(?:sequestres?|consignation|escrow)\b/],
+  ['paiement', /\b(?:paye[rsz]?|paie[sz]?|payons|paiements?|verse[rsz]?|versons|versements?|regle[rz]|reglons|regler la somme|reglement de la somme|frais a regler|proceder au reglement|cheques?|wero|paypal|lydia|western union|mandats? cash|cartes? cadeaux?|bitcoins?|cryptos?|cryptomonnaies?|usdt|payments?|pay|paid|paying)\b/],
 ];
+
+const isLetter = (c: string | undefined): boolean => c !== undefined && c >= 'a' && c <= 'z';
+const isSpellSep = (c: string | undefined): boolean => c === ' ' || c === '.' || c === '-';
+
+/**
+ * Un mot écrit lettre par lettre, « r.i.b », « r i b », « r-i-b » (trois lettres au moins, un même séparateur), recollé :
+ * « rib ». Une lettre seule voisine peut se coller à la suite (« r i b a changé », « il y a r i b ») : `dropStart` et
+ * `dropEnd` laissent à part une ou deux lettres de chaque bord. Parcours linéaire, chaque caractère lu au plus deux
+ * fois, jamais une expression qui pourrait s'emballer [R62].
+ */
+function joinSpelled(p: string, dropStart: number, dropEnd: number): string {
+  let out = '';
+  let i = 0;
+  while (i < p.length) {
+    const sep = p[i + 1];
+    if (isLetter(p[i]) && !isLetter(p[i - 1]) && isSpellSep(sep)) {
+      let j = i;
+      let word = p[i]!;
+      while (p[j + 1] === sep && isLetter(p[j + 2]) && !isLetter(p[j + 3])) {
+        word += p[j + 2]!;
+        j += 2;
+      }
+      if (word.length >= 3 && word.length - dropStart - dropEnd >= 3) {
+        const head = word.slice(0, dropStart).split('');
+        const tail = dropEnd > 0 ? word.slice(-dropEnd).split('') : [];
+        out += [...head, word.slice(dropStart, word.length - dropEnd), ...tail].join(' ');
+        i = j + 1;
+        continue;
+      }
+    }
+    out += p[i]!;
+    i += 1;
+  }
+  return out;
+}
 
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
 export function fundSignals(text: string): FundSignal[] {
   const p = plain(text);
+  const variants = [p];
+  for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
+    const v = joinSpelled(p, ds, de);
+    if (!variants.includes(v)) variants.push(v);
+  }
   const found: FundSignal[] = [];
   if (IBAN.test(text) || text.includes(IBAN_MASK)) found.push('iban');
-  for (const [signal, re] of INBOUND) if (re.test(p)) found.push(signal);
+  for (const [signal, re] of INBOUND) if (variants.some((v) => re.test(v))) found.push(signal);
   return found;
 }
 
