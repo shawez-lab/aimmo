@@ -86,6 +86,7 @@ export const INDEX_HTML = `<!doctype html>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
 <button id="vers-reseau" type="button" class="secondaire" hidden>Voir le réseau</button>
+<div id="dictee-accueil"></div>
 <section class="bloc" aria-labelledby="titre-reprendre">
 <h3 id="titre-reprendre">À reprendre</h3>
 <p id="reprendre-etat" class="etat"></p>
@@ -682,7 +683,9 @@ export const APP_JS = `'use strict';
   }
   function loadPlan(key, mine) { return part('plan', api('/v1/plan-du-jour', key), renderPlan, mine); }
   function day(key, mine) {
-    var ra = $('remises-accueil');
+    var da = $('dictee-accueil'), ra = $('remises-accueil');
+    clear(da);
+    da.appendChild(lazyBlock('Dicter un contact, un bien ou un rendez-vous', '/app/dictee.js', 'AIMMO_DICTEE', ''));
     clear(ra);
     ra.appendChild(lazyBlock('Mes remises négociées', '/app/remises.js', 'AIMMO_REMISES', ''));
     return Promise.all([
@@ -705,6 +708,7 @@ export const APP_JS = `'use strict';
   }
   function wipe() {
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
+    clear($('dictee-accueil'));
     clear($('remises-accueil'));
     wipeFiche();
     wipeM08();

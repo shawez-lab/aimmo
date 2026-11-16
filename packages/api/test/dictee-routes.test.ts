@@ -166,6 +166,14 @@ describeWithSqlite('BR100 · la création à la voix par l’API', () => {
     }
     expect(await t.db.all("SELECT id FROM appointments WHERE person_id = ?", [key(6)])).toEqual([]);
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM properties'))!.n).toBe(1);
+    // BR101 : ce que l'écran conseille marche. Le numéro et le nouveau rendez-vous, sans le bien : le rendez-vous rejoint la fiche.
+    const again = "Son numéro est le 06 12 34 56 78. Rendez-vous d'estimation mardi à 15 h.";
+    const read2 = await t.call(t.alex, '/dictee/lecture', { dictation: again });
+    const r2 = await t.call(t.alex, '/dictee/validation', { requestId: key(7), dictation: again, readAt: read2.body.data.readAt, keep: { contact: ['phone'], rendezvous: ['appointmentKind', 'start'] } });
+    expect(r2.status).toBe(200);
+    expect(r2.body.data).toMatchObject({ personId: key(6), contact: 'matched', propertyId: null });
+    expect(await t.db.all("SELECT start_at FROM appointments WHERE person_id = ?", [key(6)])).toEqual([{ start_at: '2026-12-08T14:00:00.000Z' }]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM persons'))!.n).toBe(2);
   });
 
   it('un corps mal formé, un champ non prévu ou une dictée trop longue : 400, rien n’est rangé', async () => {
