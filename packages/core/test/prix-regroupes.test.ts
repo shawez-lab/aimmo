@@ -123,6 +123,9 @@ describe('AT01 · calcul des cases de prix', () => {
     // Un contour très fin : 1 km de long, 5 cm de large ; à 1 m de large, il passe.
     expect(ringSelfCrosses(m([[0, 0], [0, 1000], [0.05, 1000], [0.05, 0]]))).toBe(true);
     expect(ringSelfCrosses(m([[0, 0], [0, 1000], [1, 1000], [1, 0]]))).toBe(false);
+    // Un petit bord de 5 cm à un angle aigu, ou à 30°, n'est pas une pointe repliée : accepté.
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [0.04, 0.02]]))).toBe(false);
+    expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 0], [0.05 * Math.cos(Math.PI / 6), 0.05 * Math.sin(Math.PI / 6)]]))).toBe(false);
     // Un petit bord de 5 cm qui tourne normalement, un point répété : acceptés.
     expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 0], [50, 0], [50, -0.05], [0, -0.05]]))).toBe(false);
     expect(ringSelfCrosses(m([[0, 0], [0, 100], [100, 100], [100, 100], [100, 0]]))).toBe(false);

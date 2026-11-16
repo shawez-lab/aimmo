@@ -180,37 +180,37 @@ function nearestOnSegment(p: [number, number], a: [number, number], b: [number, 
   return { distance: Math.hypot(p[0] - (a[0] + t * dy), p[1] - (a[1] + t * dx)), t };
 }
 
+/** Deux points du contour ne se touchent que s'ils sont au moins à cette distance l'un de l'autre le long du contour. */
+const RING_TOUCH_PATH_METERS = 1;
+
 /**
  * Vrai si, en mètres, le contour n'a pas de vrai intérieur (RC59) : largeur moyenne (2 × surface / périmètre) sous
- * 10 cm ; une pointe dont le retour passe à moins de 10 cm de son aller ; ou un sommet à moins de 10 cm d'un bord qui
- * n'est ni le sien ni celui d'à côté. Un petit bord qui tourne normalement n'en est pas un.
+ * 10 cm, ou un sommet à moins de 10 cm d'un autre point du contour alors qu'il en est à 1 m au moins en le suivant :
+ * le contour est parti, puis revenu presque sur lui-même (pointe repliée, fente fermée). Un petit bord, même à un
+ * angle aigu, n'en est pas un : ses deux bouts sont proches aussi le long du contour.
  */
 function ringNearlyTouches(points: readonly LatLon[]): boolean {
   const p = ringInMeters(points);
   const n = p.length;
   let twiceArea = 0;
+  const start: number[] = [];
+  const length: number[] = [];
   let perimeter = 0;
   for (let i = 0; i < n; i++) {
     const a = p[i]!, b = p[(i + 1) % n]!;
     twiceArea += a[1] * b[0] - b[1] * a[0];
-    perimeter += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    start.push(perimeter);
+    length.push(Math.hypot(b[0] - a[0], b[1] - a[1]));
+    perimeter += length[i]!;
   }
   if (Math.abs(twiceArea) / perimeter < RING_TOUCH_METERS) return true;
-  for (let i = 0; i < n; i++) {
-    const v = p[(i + n - 1) % n]!, w = p[i]!, x = p[(i + 1) % n]!;
-    // Le point le plus proche ailleurs qu'au sommet commun : le bord revient en arrière sur l'autre.
-    const back = nearestOnSegment(x, v, w);
-    if (back.t < 1 && back.distance < RING_TOUCH_METERS) return true;
-    const forth = nearestOnSegment(v, w, x);
-    if (forth.t > 0 && forth.distance < RING_TOUCH_METERS) return true;
-  }
-  if (n < 5) return false;
   for (let k = 0; k < n; k++) {
     for (let e = 0; e < n; e++) {
-      // Les bords du sommet et ceux qui les suivent sont lus ci-dessus : un petit bord y serait pris pour un contact.
-      const gap = (e - k + n) % n;
-      if (gap === 0 || gap === n - 1 || gap === 1 || gap === n - 2) continue;
-      if (nearestOnSegment(p[k]!, p[e]!, p[(e + 1) % n]!).distance < RING_TOUCH_METERS) return true;
+      if (e === k || (e + 1) % n === k) continue;
+      const near = nearestOnSegment(p[k]!, p[e]!, p[(e + 1) % n]!);
+      if (near.distance >= RING_TOUCH_METERS) continue;
+      const along = Math.abs(start[e]! + near.t * length[e]! - start[k]!);
+      if (Math.min(along, perimeter - along) >= RING_TOUCH_PATH_METERS) return true;
     }
   }
   return false;
