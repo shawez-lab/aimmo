@@ -18,6 +18,39 @@ export const ESPACE_AGENT_SCRIPT = `'use strict';
 globalThis.AIMMO_ESPACE_AGENT = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field;
   var REFUSALS = ${JSON.stringify(REFUSALS)};
+  // BR98 · au refus du plafond, ce qui le tient et l'heure de Paris du prochain lien (RC61), lus seulement après le refus.
+  // Une lecture qui échoue garde la phrase d'avant, sans heure inventée [R10].
+  var HOUR = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', minute: '2-digit' });
+  var DAY = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' });
+  function hourOf(iso, now) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    var p = HOUR.formatToParts(d), h = '', m = '';
+    p.forEach(function (x) { if (x.type === 'hour') h = String(Number(x.value)); if (x.type === 'minute') m = x.value; });
+    if (!h || !m) return null;
+    return (DAY.format(d) === DAY.format(now) ? 'aujourd’hui' : 'demain') + ' à ' + h + ' h ' + m;
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function capSaid(a) {
+    if (!a || typeof a.counted !== 'number' || typeof a.limit !== 'number' || a.counted < a.limit) return null;
+    var at = a.nextAt ? hourOf(a.nextAt, new Date(Date.now())) : null;
+    if (!at) return null;
+    var parts = [];
+    if (a.requested) parts.push(plural(a.requested, 'demandé depuis le site', 'demandés depuis le site'));
+    if (a.prepared) parts.push(plural(a.prepared, 'préparé', 'préparés'));
+    var text = 'Plafond atteint : ' + plural(a.counted, 'lien', 'liens') + ' ces 24 heures (' + parts.join(', ') + '), ' + (a.opened ? plural(a.opened, 'ouvert', 'ouverts') : 'aucun ouvert') + '. Rien n’est préparé.';
+    if (a.requestsUnopened) text += ' Aucune de ces demandes n’a été ouverte : elles ne viennent peut-être pas de la personne.';
+    return text + ' Prochain lien possible ' + at + '.';
+  }
+  function capRefusal(personId, say) {
+    say(REFUSALS.plafond);
+    return send('/v1/espaces/personnes/' + encodeURIComponent(personId) + '/liens', 'GET').then(function (res) {
+      if (res.gone) return false;
+      var text = res.ok && res.body ? capSaid(res.body.data) : null;
+      if (text) say(text);
+      return false;
+    });
+  }
   function form(box, personId, say) {
     clear(box);
     say('');
@@ -43,6 +76,7 @@ globalThis.AIMMO_ESPACE_AGENT = function (t) {
           say('Réponse perdue : le lien est peut-être préparé, la fiche ne peut pas le confirmer. Recommencer en ferait un autre : réessayez seulement plus tard, si la personne ne l’a pas reçu.');
           return false;
         }
+        if (code === 'plafond') return capRefusal(personId, say);
         say(REFUSALS[code] || (res.status === 403 ? REFUSALS.role : 'Le lien n’est pas préparé.'));
         return false;
       });

@@ -171,6 +171,62 @@ describe('EC12 · ouvrir l’espace d’un client depuis sa fiche', () => {
     expect(t.body.all().map((e) => e.textContent).join(' ')).not.toMatch(/Lien préparé|https?:|[a-z]{40}/);
   });
 
+  describe('BR98 · au plafond, ce qui le tient et l’heure du prochain lien', () => {
+    const LIENS = '/v1/espaces/personnes/p-1/liens';
+    const CAP = { [POST]: no(409, { ok: false, rule: 'R160', code: 'plafond' }) };
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+    /** L'heure de Paris attendue, écrite à part de l'écran. */
+    const paris = (iso: string) => {
+      const [h, m] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso)).split(':');
+      const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(d);
+      return `${day(new Date(iso)) === day(new Date()) ? 'aujourd’hui' : 'demain'} à ${Number(h)} h ${m}`;
+    };
+    const refuse = async (allowance: Answer) => {
+      const t = await open(FICHE, { ...CAP, [LIENS]: allowance });
+      await t.press('Ouvrir son espace client');
+      expect(t.calls.some((c) => c.url === LIENS)).toBe(false);
+      t.proof().value = 'Accord de vive voix.';
+      await t.press('Préparer le lien de son espace');
+      return t;
+    };
+
+    it('[R160] [R13] les demandes du site jamais ouvertes sont dites, avec l’heure de Paris du prochain lien ; ni lien ni adresse', async () => {
+      const next = at(5 * 3_600_000);
+      const t = await refuse(ok({ limit: 3, counted: 3, requested: 3, prepared: 0, opened: 0, nextAt: next, requestsUnopened: true, checkedAt: at(0) }));
+      expect(t.say()).toContain(`Plafond atteint : 3 liens ces 24 heures (3 demandés depuis le site), aucun ouvert. Rien n’est préparé. Aucune de ces demandes n’a été ouverte : elles ne viennent peut-être pas de la personne. Prochain lien possible ${paris(next)}.`);
+      expect(t.calls.filter((c) => c.url === LIENS)).toEqual([{ url: LIENS, method: 'GET' }]);
+      expect(t.body.all().map((e) => e.textContent).join(' ')).not.toMatch(/Lien préparé|https?:|@|plafond:/);
+    });
+
+    it('[R160] liens préparés et ouverts : comptes au singulier et au pluriel, sans la phrase des demandes ; le lendemain dit « demain »', async () => {
+      const next = at(23 * 3_600_000 + 59 * 60_000);
+      const t = await refuse(ok({ limit: 3, counted: 3, requested: 1, prepared: 2, opened: 1, nextAt: next, requestsUnopened: false, checkedAt: at(0) }));
+      expect(t.say()).toContain(`Plafond atteint : 3 liens ces 24 heures (1 demandé depuis le site, 2 préparés), 1 ouvert. Rien n’est préparé. Prochain lien possible ${paris(next)}.`);
+      expect(paris(next)).toMatch(/^demain à \d{1,2} h \d{2}$/);
+    });
+
+    it('[R10] une lecture en échec, hors réseau, incomplète ou sous le plafond garde la phrase d’avant, sans heure inventée', async () => {
+      for (const answer of [
+        no(403, { ok: false, rule: 'R16', code: 'role' }),
+        async () => Promise.reject(new TypeError('x')),
+        ok({ limit: 3, counted: 3, requested: 0, prepared: 3, opened: 0, nextAt: null, requestsUnopened: false }),
+        ok({ limit: 3, counted: 3, requested: 0, prepared: 3, opened: 0, nextAt: 'pas une date', requestsUnopened: false }),
+        ok({ limit: 3, counted: 2, requested: 0, prepared: 2, opened: 0, nextAt: null, requestsUnopened: false }),
+        ok(null),
+      ] as Answer[]) {
+        const t = await refuse(answer);
+        expect(t.say()).toContain('Le plafond de liens sur 24 heures est atteint pour cette personne : rien n’est préparé');
+        expect(t.say()).not.toMatch(/Prochain lien| h \d{2}/);
+      }
+    });
+
+    it('[R201] le script tient son budget, sans innerHTML ; l’application ne lit pas les liens', () => {
+      expect(budgetProblems({ html: '', js: ESPACE_AGENT_SCRIPT }, BUDGETS.page)).toEqual([]);
+      expect(ESPACE_AGENT_SCRIPT).not.toContain('innerHTML');
+      expect(AGENT_APP_FILES['/app/app.js']).not.toContain('/liens');
+    });
+  });
+
   it('une réponse perdue est dite telle : le geste n’est plus offert, chaque appel ferait un nouveau lien', async () => {
     const t = await open(FICHE);
     await t.press('Ouvrir son espace client');
