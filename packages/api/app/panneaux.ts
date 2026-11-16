@@ -52,6 +52,9 @@ export const PANNEAUX_REFUSALS: Readonly<Record<string, string>> = Object.freeze
 
 export const PANNEAUX_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 
+/** Un envoi part encore : rien d'autre ne part avant sa réponse. */
+export const PANNEAUX_BUSY = 'Un geste sur les panneaux part encore : rouvrez dans un instant.';
+
 /** Une écriture partie sans réponse : le geste a pu être noté, la liste relue le dira. */
 export const PANNEAUX_UNSURE = 'La réponse n’est pas arrivée : le geste a peut-être été noté. La liste est relue, vérifiez-la avant de recommencer.';
 
@@ -72,10 +75,10 @@ globalThis.AIMMO_PANNEAUX = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date;
   var SIZES = ${JSON.stringify(PANNEAUX_SIZES)}, PICKUPS = ${JSON.stringify(PANNEAUX_PICKUPS)};
   var REFUSALS = ${JSON.stringify(PANNEAUX_REFUSALS)}, FORM = ${JSON.stringify(PANNEAUX_FORM)};
-  var OFFLINE = ${JSON.stringify(PANNEAUX_OFFLINE)}, UNSURE = ${JSON.stringify(PANNEAUX_UNSURE)}, CONFIRM = ${JSON.stringify(PANNEAUX_CONFIRM)};
+  var BUSY = ${JSON.stringify(PANNEAUX_BUSY)}, OFFLINE = ${JSON.stringify(PANNEAUX_OFFLINE)}, UNSURE = ${JSON.stringify(PANNEAUX_UNSURE)}, CONFIRM = ${JSON.stringify(PANNEAUX_CONFIRM)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, NUM = /^\\d{1,6}$/, CP = /^\\d{5}$/;
   /* Le bloc ouvert : son bien ('' pour l'accueil), son corps, son état. Une réponse d'un bloc d'avant ne dessine rien. */
-  var ctx = null, reading = 0, writing = false, writes = 0, armed = null;
+  var ctx = null, reading = 0, writing = false, armed = null;
   document.addEventListener('click', function (e) { if (armed && (!e || e.target !== armed)) disarm(); }, true);
   function say(m) { if (ctx) ctx.said.textContent = m; }
   function text(v, max) { return typeof v === 'string' && v.length <= (max || 200) ? v : ''; }
@@ -181,10 +184,9 @@ globalThis.AIMMO_PANNEAUX = function (t) {
   function post(path, body, done) {
     if (writing) return Promise.resolve(false);
     writing = true;
-    var gen = writes, turn = ++reading, mine = ctx;
+    var turn = ++reading, mine = ctx;
     say('Envoi…');
     return send(path, 'POST', body).then(function (res) {
-      if (gen !== writes) return false;
       writing = false;
       if (turn !== reading || mine !== ctx) return false;
       /* Sans réponse : le geste a pu être noté ; la liste relue le dira. */
@@ -197,13 +199,16 @@ globalThis.AIMMO_PANNEAUX = function (t) {
         return false;
       }
       return load(done);
-    }, function () { if (gen !== writes) return false; writing = false; if (turn === reading && mine === ctx) return load(UNSURE); return false; });
+    }, function () { writing = false; if (turn === reading && mine === ctx) return load(UNSURE); return false; });
   }
   function remove(r, outcome, done) { return post('/v1/panneaux/poses/' + encodeURIComponent(r.id) + '/retrait', { outcome: outcome }, done); }
+  /* Un envoi en cours garde son verrou : rouvrir le bloc ne relâche rien, et un autre bloc attend sa fin. */
   function open(id, corps, said) {
-    writes += 1;
-    writing = false;
-    armed = null;
+    if (writing) {
+      if (!ctx || ctx.corps !== corps) { clear(corps); said.textContent = BUSY; }
+      return Promise.resolve(false);
+    }
+    disarm();
     ctx = { id: typeof id === 'string' ? id : '', corps: corps, said: said };
     if (ctx.id !== '' && !ID.test(ctx.id)) { clear(corps); say(REFUSALS.unknown); return Promise.resolve(false); }
     return load('');

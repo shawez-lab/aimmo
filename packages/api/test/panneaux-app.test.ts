@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { PANNEAUX_CONFIRM, PANNEAUX_FORM, PANNEAUX_OFFLINE, PANNEAUX_REFUSALS, PANNEAUX_SCRIPT, PANNEAUX_UNSURE } from '../app/panneaux.ts';
+import { PANNEAUX_BUSY, PANNEAUX_CONFIRM, PANNEAUX_FORM, PANNEAUX_OFFLINE, PANNEAUX_REFUSALS, PANNEAUX_SCRIPT, PANNEAUX_UNSURE } from '../app/panneaux.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -234,6 +234,29 @@ describe('BR104 · les panneaux à l’écran', () => {
     await b.press(b.button('Confirmer : perdu'));
     expect(b.posts()).toEqual([{ method: 'POST', url: '/v1/panneaux/poses/p1/retrait', body: { outcome: 'perdu' } }]);
     expect(b.status()).toContain('noté perdu : il ne se posera plus.');
+  });
+
+  it('un envoi en cours garde son verrou : rouvrir le bloc ne laisse partir aucun autre geste', async () => {
+    const a = await screen('accueil', { 'POST /v1/panneaux/poses/p2/retrait': () => new Promise<Response>(() => undefined) });
+    await a.open();
+    await a.press(btns(a.block(), 'Récupéré')[0]);
+    expect(a.status()).toBe('Envoi…');
+    // Rouvrir le bloc pendant l'envoi : rien n'est relu ni relâché.
+    await a.press(btn(a.block(), 'Mes panneaux'));
+    expect(a.gets()).toHaveLength(1);
+    expect(a.status()).toBe('Envoi…');
+    const lost = btns(a.block(), 'Perdu')[0]!;
+    await a.press(lost);
+    await a.press(lost);
+    await a.press(btns(a.block(), 'Récupéré')[1]);
+    expect(a.posts()).toHaveLength(1);
+    // Un autre bloc ouvert pendant l'envoi attend sa fin, dit en mots.
+    await a.press(btn(a.els.biens!, 'Mettre en vente'));
+    const other = a.els['vente-corps']!.children.find((e) => e.tagName === 'section' && btn(e, 'Panneaux du bien'))!;
+    await a.press(btn(other, 'Panneaux du bien'));
+    expect(statusOf(other)).toBe(PANNEAUX_BUSY);
+    expect(a.gets()).toHaveLength(1);
+    expect(a.posts()).toHaveLength(1);
   });
 
   it('une écriture sans réponse est dite incertaine et la liste relue ; une pose déjà retirée fait relire', async () => {
