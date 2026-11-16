@@ -178,7 +178,7 @@ export class EntreeEspace {
    * pour recevoir le lien par mail est rangé avec sa preuve [R03], et un premier lien part par le contrôle central.
    */
   async invite(acces: Acces, viewer: Viewer, personId: string, input: { consentProof?: unknown }): Promise<EntreeResult<{ linkId: string; expiresAt: string; mode: 'essai' }>> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.roleRefused(viewer, personId);
     const read = await this.access(acces, viewer, personId);
     if (!read.ok) return read;
     const root = read.value;
@@ -284,12 +284,7 @@ export class EntreeEspace {
    * que le client qui connaît son adresse. Ni lien, ni jeton, ni adresse ; au journal, seulement la lecture de la fiche [R16].
    */
   async linkAllowance(acces: Acces, viewer: Viewer, personId: string): Promise<EntreeResult<LinkAllowance>> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') {
-      // Refus écrit au journal comme ceux d'`Acces` : rôle et code, aucun compte de liens [R16, R13].
-      const subject = typeof personId === 'string' && personId !== '' ? `person:${personId}` : null;
-      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'person', code: 'role' } }, this.now);
-      return { ok: false, rule: 'R16', code: 'role' };
-    }
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.roleRefused(viewer, personId);
     const read = await this.access(acces, viewer, personId);
     if (!read.ok) return read;
     const members = await this.fiche.membersOf(read.value);
@@ -386,6 +381,16 @@ export class EntreeEspace {
       return { ok: false, rule: sent.rule, code: 'send_refused' };
     }
     return { ok: true, value: { linkId: id, expiresAt, mode: 'essai' } };
+  }
+
+  /**
+   * Un rôle sans droit sur l'espace d'un client (partenaire, conformité) : refus écrit au journal comme ceux d'`Acces`,
+   * rôle et code seulement, ni preuve d'accord, ni adresse, ni compte de liens [R16, R13] (RC61, RC62).
+   */
+  private async roleRefused(viewer: Viewer, personId: unknown): Promise<EntreeRefusal> {
+    const subject = typeof personId === 'string' && personId !== '' && personId.length <= 200 ? `person:${personId}` : null;
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'person', code: 'role' } }, this.now);
+    return { ok: false, rule: 'R16', code: 'role' };
   }
 
   /** La fiche gardée de la personne, lue sous les droits de celui qui demande [R16]. */

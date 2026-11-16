@@ -545,3 +545,47 @@ describeWithSqlite('RC61 · où en est le plafond des liens, dit à l’agent', 
     expect((await t.journal.all()).slice(before).map((e) => e.type)).toEqual(['fiche.lue']);
   });
 });
+
+describeWithSqlite('RC62 · un refus de rôle à l’ouverture d’un espace est écrit au journal', () => {
+  it('[R16] [R13] partenaire et conformité refusés par invite, chaque refus écrit, sans preuve ni adresse, rien rangé', async () => {
+    const t = await setup();
+    const c = await t.client();
+    const partner = { role: 'partner' as const, userId: 'p-1', networkId: t.network.id };
+    const before = (await t.journal.all()).length;
+    expect(await t.entree.invite(t.acces, partner, c.id, CONSENT)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.entree.invite(t.acces, t.compliance, c.id, CONSENT)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const refusals = (await t.journal.all()).slice(before);
+    expect(refusals.map((e) => [e.type, e.actor, e.subject, (e.data as { rule: string; role: string; code: string }).rule, (e.data as { role: string }).role, (e.data as { code: string }).code])).toEqual([
+      ['acces.refuse', 'partner:p-1', `person:${c.id}`, 'R16', 'partner', 'role'],
+      ['acces.refuse', `compliance:${t.compliance.userId}`, `person:${c.id}`, 'R16', 'compliance', 'role'],
+    ]);
+    // Ni la preuve d'accord, ni l'adresse du client au journal [R13].
+    const text = JSON.stringify(refusals);
+    expect(text).not.toContain(CONSENT.consentProof);
+    expect(text).not.toContain(c.email);
+    // Rien rangé : ni accord, ni lien, ni message.
+    expect(await t.db.all('SELECT 1 FROM consents WHERE person_id = ?', [c.id])).toHaveLength(0);
+    expect(await t.db.all('SELECT 1 FROM client_space_links WHERE person_id = ?', [c.id])).toHaveLength(0);
+    expect(await t.tokens(c.id)).toEqual([]);
+  });
+
+  it('[R16] un identifiant vide ou démesuré n’est pas recopié au journal', async () => {
+    const t = await setup();
+    const partner = { role: 'partner' as const, userId: 'p-2', networkId: t.network.id };
+    const before = (await t.journal.all()).length;
+    expect(await t.entree.invite(t.acces, partner, '', CONSENT)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await t.entree.invite(t.acces, partner, 'x'.repeat(5000), CONSENT)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const refusals = (await t.journal.all()).slice(before);
+    expect(refusals.map((e) => [e.type, e.subject])).toEqual([
+      ['acces.refuse', null],
+      ['acces.refuse', null],
+    ]);
+  });
+
+  it('[R16] l’agent du client ouvre toujours son espace, sans refus au journal', async () => {
+    const t = await setup();
+    const c = await t.client();
+    expect(await t.entree.invite(t.acces, t.alex, c.id, CONSENT)).toMatchObject({ ok: true });
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.refuse')).toHaveLength(0);
+  });
+});
