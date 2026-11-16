@@ -1780,11 +1780,12 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR103 · La dictée en sortant d'une visite, depuis l'écran de la visite (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#628, `2a3cb1db`). Bloc « Dicter en sortant de la visite » sur l'écran de la visite (prévue ou honorée, compte rendu pas encore validé), même script `/app/dictee.js` avec l'identifiant du rendez-vous ; le compte rendu proposé est montré sans être rangé, coché, validé d'un geste avec la contre-visite ; un compte rendu mal formé n'est ni proposé ni envoyé. Codex 1 P1 corrigé : l'IA du compte rendu (`ApiConfig.reportWriter`) passe à la dictée comme à l'écran de la visite, testé par les routes sur une vraie visite ; puis rien à signaler. Application à 48 091 octets compressés. GitHub Actions bloqué (facturation), vérification locale verte (6464 tests). Reste : aucune IA n'est branchée tant que H13 n'est pas fait, le compte rendu se rédige alors à la main.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR102
 - Cahier : Phase 3, HX06 ; R260, R261, R201.
 - Objectif : relevé dans le « Reste » de BR101 : depuis l'écran de la visite, l'agent dicte son compte rendu ; la dictée part avec l'identifiant du rendez-vous (`appointmentId`), par le même script que « Ma journée », chargé au geste.
-- Critères : à préciser au début de la tâche d'après `POST /v1/dictee/lecture` (BR100) ; budget de l'application tenu [R201] (test).
+- Critères : bouton sur l'écran de la visite, chargé au geste, budgets tenus [R201] (test) ; lecture et validation avec `appointmentId`, compte rendu coché validé d'un geste avec les champs cochés [R260, R261] (test) ; décoché, il ne part pas ; rien coché, rien ne part (test) ; compte rendu mal formé jamais proposé ni envoyé [R10] (test) ; texte reçu posé en texte [R13] (test) ; refus dits en mots [R16] (test).
 - Attend : rien.
 
 ## Restes du cœur des groupes HX
