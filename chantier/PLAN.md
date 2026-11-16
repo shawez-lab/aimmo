@@ -1718,7 +1718,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR97 · Les zones de prix à retracer, dites à l'écran de la direction (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#618, `d0c0c2d5`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6403 tests). Reste : rien.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC60
 - Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150, R16, R10, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC60 (« la route `GET /v1/attirer/prix/zones/a-refaire` par `PrixRegroupes.zonesToRedraw` et l'avertissement à l'écran des zones de la direction »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Changent seulement `packages/api/src/attirer.ts` (une route, direction seule), `packages/api/app/attirer.ts` (l'avertissement au-dessus de la liste des zones) et leurs tests ; ni le cœur, ni migration. Une lecture qui échoue ne dit jamais « aucune zone à refaire » [R10].
