@@ -1799,7 +1799,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR105 · Le stock de panneaux pour la direction : ajouter des panneaux et lire le stock par format
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#633, `fa235b39`). Codex 1 P2 corrigé (un ajout en cours garde sa réponse et ses numéros quand l'écran du réseau est redessiné), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6515 tests, `wrangler deploy --dry-run` compris). Restent (voie 1) : les écrans de la boutique, du marketing et du coût de l'agent moyen (BR02, BR03).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR104
 - Cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux » ; R282, R283, R284, R16, R201.
 - Décidé (2026-11-16, voie 1) : relevé dans le « Reste » de BR104 (« l'ajout au stock par la direction n'a pas d'écran ») ; toutes les autres tâches de la voie 1 attendent un humain. La direction n'a pas l'accueil de l'agent : l'écran se pose sous « Engagements de service » de l'écran du réseau, comme les remises (BR73), par le même script `/app/panneaux.js` (porte `show`), chargé au geste ; `app.js` ne change pas.
