@@ -54,6 +54,13 @@ it('[R62] un IBAN épelé en minuscules, en groupes mêlés, sans aucun mot banc
   }
 });
 
+it('[R62] un IBAN dont le compte est fait de lettres (Suisse) alerte aussi', () => {
+  const ch = withKey('CH', '00762ABCDEFGHIJKL');
+  expect(ch.length).toBe(21);
+  expect(spelledIban(spell(ch, ' '))).toBe(true);
+  expect(fundSignals(`Merci : ${spell(ch, '.')}`)).toContain('iban');
+});
+
 it('[R62] une clé fausse, un téléphone, des références, des dates, des montants épelés ne sont pas un IBAN', () => {
   const cases = [
     `Le numéro : ${spell(wrongKey(FR), ' ')}`,

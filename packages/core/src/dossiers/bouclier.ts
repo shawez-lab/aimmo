@@ -122,10 +122,8 @@ function runHasIban(joined: string, starts: boolean[], ends: boolean[]): boolean
     if (length === undefined || !isAsciiDigit(joined[k + 2]) || !isAsciiDigit(joined[k + 3])) continue;
     const end = k + length;
     if (end > joined.length || !ends[end]) continue;
-    const chars = joined.slice(k, end);
-    let digits = 0;
-    for (const ch of chars) if (isAsciiDigit(ch)) digits += 1;
-    if (digits >= 10 && ibanKeyOk(chars)) return true;
+    // Aucun nombre de chiffres exigé : un compte suisse ou maltais peut être fait de lettres ; la clé suffit.
+    if (ibanKeyOk(joined.slice(k, end))) return true;
   }
   return false;
 }
