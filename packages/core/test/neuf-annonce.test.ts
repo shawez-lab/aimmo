@@ -80,10 +80,13 @@ describe('RC56 · la grille d’un programme neuf écrite pour les annonces', ()
     expect(a.body).toContain('sous réserve de la vente des lots');
     expect(a.body).toContain('pas une offre');
     expect(a.body).not.toMatch(/[<>]/);
-    expect(a.lots).toEqual([
+    expect(a.lots.map(({ line: _, ...l }) => l)).toEqual([
       { lotRef: 'A01', priceCents: 18_000_000, confirmedOn: '2027-03-01', written: true },
       { lotRef: 'B02', priceCents: 32_000_000, confirmedOn: '2027-03-02', written: true },
     ]);
+    // RC64 : chaque lot écrit garde sa ligne du texte, sans sa date de confirmation.
+    expect(a.lots.map((l) => `${n(l.line!)} · confirmé le `)).toEqual(lines.map((l) => l.replace(/confirmé le .*$/, 'confirmé le ')));
+    expect(n(a.heading)).toBe(`Les Jardins Test · 21000 · Dijon · Promoteur Inventé\n${a.body.split('\n').find((l) => l.startsWith('D’où viennent'))}`);
     expect(a.omitted).toBe(0);
     expect(listing(grid([lot('A01', 18_000_000)])).title).toBe('Les Jardins Test, programme neuf à Dijon : 1 lot dès 180 000 €');
   });
@@ -187,10 +190,10 @@ describe('RC56 · la grille d’un programme neuf écrite pour les annonces', ()
     // La plus ancienne confirmation plus 14 jours.
     expect(a.validUntil).toBe('2027-03-11');
     const sameDay = grid([lot('A01', 18_000_000, '2027-03-04'), lot('A02', 20_000_000, '2027-02-25')], { day: '2027-03-11' });
-    expect(listingStillHolds(a, sameDay)).toEqual({ holds: true, gone: [], priceChanged: [], expired: false, otherProgram: false });
+    expect(listingStillHolds(a, sameDay)).toEqual({ holds: true, gone: [], priceChanged: [], expired: false, otherProgram: false, detailsChanged: [], headingChanged: false });
     // Le lendemain, A02 n'est plus publié : l'annonce est à retirer.
     const next = grid([lot('A01', 18_000_000, '2027-03-04')], { day: '2027-03-12' });
-    expect(listingStillHolds(a, next)).toEqual({ holds: false, gone: ['A02'], priceChanged: [], expired: true, otherProgram: false });
+    expect(listingStillHolds(a, next)).toEqual({ holds: false, gone: ['A02'], priceChanged: [], expired: true, otherProgram: false, detailsChanged: [], headingChanged: false });
     // Même si la grille la montrait encore (reconfirmée), l'annonce a passé son jour : elle se refait.
     const reconfirmed = grid([lot('A01', 18_000_000, '2027-03-04'), lot('A02', 20_000_000, '2027-03-12')], { day: '2027-03-12' });
     expect(listingStillHolds(a, reconfirmed)).toMatchObject({ holds: false, expired: true, gone: [] });
@@ -205,11 +208,73 @@ describe('RC56 · la grille d’un programme neuf écrite pour les annonces', ()
       priceChanged: ['A03'],
       expired: false,
       otherProgram: false,
+      detailsChanged: [],
+      headingChanged: false,
     });
     expect(listingStillHolds(a, today([lot('A01', 18_000_000), lot('A02', 20_000_000), lot('A03', 22_000_000), lot('A04', 25_000_000)])).holds).toBe(true);
     // La grille d'un autre programme ne confirme jamais l'annonce.
     expect(listingStillHolds(a, today(a.lots.map((l) => lot(l.lotRef, l.priceCents)), { programId: 'prog-2' }))).toMatchObject({ holds: false, otherProgram: true });
     expect(listingStillHolds(a, today([lot('A01', 18_000_000)], { day: 'demain' }))).toMatchObject({ holds: false, expired: true });
+  });
+});
+
+describe('RC64 · une annonce relue mot pour mot contre la grille du jour (Jamais vu)', () => {
+  const today = (lots: PublishedLot[], over: Partial<PublishedGrid> = {}) => grid(lots, { day: '2027-03-06', ...over });
+  const base = () => [lot('A01', 18_000_000), lot('A02', 20_000_000)];
+
+  it('[R543] surface, typologie ou étage changés : le lot est nommé et l’annonce ne tient plus', () => {
+    const a = listing(grid(base()));
+    for (const change of [{ livingAreaHundredths: 5400 }, { typology: 't2' as const }, { floor: 0 }]) {
+      const r = listingStillHolds(a, today([{ ...lot('A01', 18_000_000), ...change }, lot('A02', 20_000_000)]));
+      expect(r).toEqual({ holds: false, gone: [], priceChanged: [], expired: false, otherProgram: false, detailsChanged: ['A01'], headingChanged: false });
+    }
+  });
+
+  it('[R544] frais changés par un nouveau barème, ou barème rangé après coup : la ligne ne tient plus', () => {
+    const a = listing(grid(base()));
+    const other = { ...lot('A02', 20_000_000), fees: { ...fees(20_000_000), newFees: { ...fees(20_000_000).newFees, value: 999_00 } } };
+    expect(listingStillHolds(a, today([lot('A01', 18_000_000), other]))).toMatchObject({ holds: false, detailsChanged: ['A02'] });
+    const without = listing(grid([lot('A01', 18_000_000, '2027-03-01', false)]));
+    expect(without.body).toContain('frais non calculés');
+    expect(listingStillHolds(without, today([lot('A01', 18_000_000)]))).toMatchObject({ holds: false, detailsChanged: ['A01'] });
+  });
+
+  it('[R544] source d’un barème changée à frais égaux : l’en-tête ne tient plus', () => {
+    const a = listing(grid(base()));
+    const moved = (l: PublishedLot): PublishedLot => ({ ...l, fees: { ...l.fees!, oldFees: { ...l.fees!.oldFees, asOf: '2027-03-01' } } });
+    expect(listingStillHolds(a, today(base().map(moved)))).toMatchObject({ holds: false, detailsChanged: [], headingChanged: true });
+  });
+
+  it('nom, code postal, ville ou promoteur changés : l’en-tête ne tient plus', () => {
+    const a = listing(grid(base()));
+    for (const over of [{ name: 'Les Jardins Renommés' }, { postalCode: '21100' }, { city: 'Talant' }, { promoter: 'Autre Promoteur Inventé' }]) {
+      expect(listingStillHolds(a, today(base(), over))).toMatchObject({ holds: false, detailsChanged: [], headingChanged: true });
+    }
+  });
+
+  it('[R543] une reconfirmation seule ne casse rien : le texte disait vrai', () => {
+    const a = listing(grid(base()));
+    expect(listingStillHolds(a, today([lot('A01', 18_000_000, '2027-03-06'), lot('A02', 20_000_000, '2027-03-05')])).holds).toBe(true);
+  });
+
+  it('[R543] un lot seulement compté se relit sur sa présence et son prix, pas sur sa ligne qu’il n’a pas', () => {
+    // Assez de lots pour dépasser 4000 signes : les derniers sont comptés.
+    const lots = Array.from({ length: 40 }, (_, i) => lot(`L${String(i).padStart(2, '0')}`, 10_000_000 + i * 100_000));
+    const a = listing(grid(lots));
+    const counted = a.lots.find((l) => !l.written)!;
+    expect(counted.line).toBeNull();
+    expect(a.lots.filter((l) => l.written).every((l) => typeof l.line === 'string' && !l.line.includes('confirmé'))).toBe(true);
+    const bigger = lots.map((l) => (l.lotRef === counted.lotRef ? { ...l, livingAreaHundredths: 9000 } : l));
+    expect(listingStillHolds(a, today(bigger)).holds).toBe(true);
+    const dearer = lots.map((l) => (l.lotRef === counted.lotRef ? { ...l, priceCents: l.priceCents + 1 } : l));
+    expect(listingStillHolds(a, today(dearer))).toMatchObject({ holds: false, priceChanged: [counted.lotRef], detailsChanged: [] });
+  });
+
+  it('[R10] une annonce rangée sans ligne ni en-tête ne tient jamais ; un lot parti ne fait pas dire l’en-tête changé', () => {
+    const a = listing(grid(base()));
+    const broken = { ...a, heading: undefined as unknown as string, lots: a.lots.map((l) => ({ ...l, line: null })) };
+    expect(listingStillHolds(broken, today(base()))).toMatchObject({ holds: false, detailsChanged: ['A01', 'A02'], headingChanged: true });
+    expect(listingStillHolds(a, today([lot('A01', 18_000_000)]))).toMatchObject({ holds: false, gone: ['A02'], detailsChanged: [], headingChanged: false });
   });
 });
 
