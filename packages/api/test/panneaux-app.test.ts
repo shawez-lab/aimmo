@@ -248,6 +248,18 @@ describe('BR104 · les panneaux à l’écran', () => {
     await down.press(down.button('Poser le panneau'));
     expect(down.status()).toContain(PANNEAUX_UNSURE);
     expect(down.gets()).toHaveLength(2);
+    // La relecture échoue aussi : l'incertitude reste dite, avec la panne de la lecture.
+    const lost = await screen('accueil', { 'POST /v1/panneaux/poses/p2/retrait': cut });
+    await lost.open();
+    lost.table['GET /v1/panneaux'] = cut;
+    await lost.press(btns(lost.block(), 'Récupéré')[0]);
+    expect(lost.status()).toBe(`${PANNEAUX_UNSURE} ${PANNEAUX_OFFLINE}`);
+    const refused = await screen('bien', { 'POST /v1/panneaux/poses': no(503, { ok: false }) });
+    await refused.open();
+    refused.table['GET /v1/panneaux'] = no(403, { ok: false, rule: 'R16', code: 'role' });
+    refused.fill();
+    await refused.press(refused.button('Poser le panneau'));
+    expect(refused.status()).toBe(`${PANNEAUX_UNSURE} ${PANNEAUX_REFUSALS.role}`);
     const gone = await screen('accueil', { 'POST /v1/panneaux/poses/p2/retrait': no(409, { ok: false, rule: 'R283', code: 'deja_retire' }) });
     await gone.open();
     await gone.press(btns(gone.block(), 'Récupéré')[0]);

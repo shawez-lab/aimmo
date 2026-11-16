@@ -157,24 +157,25 @@ globalThis.AIMMO_PANNEAUX = function (t) {
     box.appendChild(go);
     return box;
   }
-  /* Seule la dernière lecture dessine. Le formulaire d'une pose refusée garde sa saisie. */
+  /* Seule la dernière lecture dessine. Ce qui précède la lecture (un geste noté, ou peut-être noté) reste dit, même si
+     la lecture échoue. */
   function load(said) {
     if (writing || !ctx) return Promise.resolve(false);
     disarm();
-    var turn = ++reading, mine = ctx;
+    var turn = ++reading, mine = ctx, pre = said ? said + ' ' : '';
     clear(ctx.corps);
     say('Chargement…');
     return send('/v1/panneaux', 'GET').then(function (res) {
       if (turn !== reading || mine !== ctx) return false;
       if (res.gone) { clear(ctx.corps); say(''); return false; }
-      if (res.offline || !res.body || res.status >= 500) { say(OFFLINE); return false; }
+      if (res.offline || !res.body || res.status >= 500) { say(pre + OFFLINE); return false; }
       var data = res.body.data;
-      if (!res.ok || !data || typeof data !== 'object' || !Array.isArray(data.placed)) { say(refusal(res, 'Les panneaux ne se lisent pas pour le moment.')); return false; }
+      if (!res.ok || !data || typeof data !== 'object' || !Array.isArray(data.placed)) { say(pre + refusal(res, 'Les panneaux ne se lisent pas pour le moment.')); return false; }
       var rows = data.placed.map(read).filter(Boolean);
       var m = ctx.id === '' ? home(data, rows) : property(rows);
-      say((said ? said + ' ' : '') + m);
+      say(pre + m);
       return true;
-    }, function () { if (turn === reading && mine === ctx) say(OFFLINE); return false; });
+    }, function () { if (turn === reading && mine === ctx) say(pre + OFFLINE); return false; });
   }
   /* Un seul envoi à la fois : un second geste pendant l'envoi ne part pas. */
   function post(path, body, done) {
