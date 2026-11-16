@@ -1740,7 +1740,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR99 · Le texte des portails d'un programme neuf, prêt à copier, qui dit jusqu'à quel jour il tient (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#621, `81b94115`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6413 tests). Reste : l'envoi aux portails et le passage qui retire l'annonce quand `listingStillHolds` ne tient plus, après H10.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC56, BR78
 - Cahier : M17 Investir (programmes neufs, grille des lots) ; R543, R544, R16, R10, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC56 (« envoyer le titre et le texte aux portails, et un passage quotidien qui retire l'annonce dès que `listingStillHolds` ne tient plus »). Aucun portail n'est branché (H10) : rien n'est envoyé ni retiré seul. Cette tâche donne le texte à l'agent, prêt à copier, avec le jour où il cesse de tenir. Changent seulement `packages/api/src/neuf-viager.ts` (une route `GET /v1/neuf/programmes/<id>/annonce`, agent du programme ou direction, sous les droits de `agentGrid`, refus au journal), `packages/api/app/neuf.ts` (le bloc « Texte pour les portails » sous la grille) et leurs tests ; ni le cœur (où la voie 2 travaille), ni migration. Le passage qui retire l'annonce attend H10.
