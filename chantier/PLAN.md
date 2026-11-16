@@ -2405,7 +2405,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC63 · Le test du registre des effacements ne tombe plus au hasard
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#622, `f354ea23`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6416 tests, en 10 parts). Rien pour la voie 1.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : SV02, RC61
 - Cahier : Conformité (droit à l'effacement, copies de la base) ; R231.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC61 (« `effacements-rejeu.test.ts` cherche « p2 » dans un chiffré tiré au hasard, qui peut le contenir »). Le dernier test de ce fichier vérifie que le registre rangé est illisible en cherchant « p2 » dans les octets chiffrés : deux lettres s'y trouvent au hasard environ une fois sur 450, et la vérification tombe sans raison, ce qui fait douter de R231 et coûte une vérification à refaire. Désormais, dans ce test seul, la personne effacée porte un identifiant long et inventé ; on cherche dans le chiffré cet identifiant, celui de la demande et les clés du texte rangé (`"personId"`, `"requestId"`, `"erasedAt"`), qu'un texte en clair contiendrait toujours et qu'un chiffré ne contient pas ; et le nom de la place rangée a la forme attendue (date et 16 chiffres hexadécimaux), sans identifiant. Aucun code de production ne change.
