@@ -1739,6 +1739,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : la route rend le compte à l'agent de la personne et à la direction, refuse un autre rôle (403, journal) et un autre agent [R16] (test) ; ni adresse ni jeton dans la réponse [R13] (test) ; au refus `plafond`, l'écran dit les comptes et l'heure de Paris du prochain lien, « demain » quand c'est le lendemain [R160] (test) ; demandes jamais ouvertes : la phrase qui le dit ; sinon rien de plus (test) ; lecture en échec ou hors réseau : la phrase d'avant, sans heure [R10] (test) ; aucune lecture avant le refus ; budget, sans innerHTML [R201] (test).
 - Attend : rien.
 
+### BR99 · Le texte des portails d'un programme neuf, prêt à copier, qui dit jusqu'à quel jour il tient (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC56, BR78
+- Cahier : M17 Investir (programmes neufs, grille des lots) ; R543, R544, R16, R10, R201.
+- Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC56 (« envoyer le titre et le texte aux portails, et un passage quotidien qui retire l'annonce dès que `listingStillHolds` ne tient plus »). Aucun portail n'est branché (H10) : rien n'est envoyé ni retiré seul. Cette tâche donne le texte à l'agent, prêt à copier, avec le jour où il cesse de tenir. Changent seulement `packages/api/src/neuf-viager.ts` (une route `GET /v1/neuf/programmes/<id>/annonce`, agent du programme ou direction, sous les droits de `agentGrid`, refus au journal), `packages/api/app/neuf.ts` (le bloc « Texte pour les portails » sous la grille) et leurs tests ; ni le cœur (où la voie 2 travaille), ni migration. Le passage qui retire l'annonce attend H10.
+- Objectif : l'agent du programme copie le titre et le texte de l'annonce depuis la grille publiée, sans rien retaper, et sait jusqu'à quel jour ce texte est juste.
+- Jamais vu : « Ce texte tient jusqu'au 24/03/2027 inclus. Le 25/03/2027, un lot n'est plus confirmé : faites reconfirmer les lots par le promoteur, puis recopiez le texte, ou retirez l'annonce. »
+- Critères : la route rend titre, texte, jour, `validUntil` et les lots annoncés à l'agent du programme et à la direction, refuse un autre agent et la conformité (403, journal) [R16] (test) ; programme inconnu : 404 (test) ; aucun lot publié : refus `no_lot_published`, sans texte [R543] (test) ; un lot vendu n'est jamais dans le texte [R543] (test) ; à l'écran, titre et texte posés en `textContent`, le jour où il tient et le lendemain dits en mots, et un geste de copie qui dit s'il a réussi (test) ; refus dits en mots, jamais un code ; lecture en échec : « texte non préparé », jamais un texte ancien [R10] (test) ; budget, sans innerHTML [R201] (test).
+- Attend : rien (H10 pour l'envoi réel aux portails).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
