@@ -1819,6 +1819,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : IBAN épelé (espaces, points, tirets, minuscules), dicté en mots (chiffres, paires, « double zéro », « mille », « cent », anglais), avec sosies (O, l, pleine chasse) : masqué en entier, le texte autour inchangé [R15] (test) ; `fundsInOutgoing` refuse ces textes [R62] (test) ; clé fausse, téléphone, dates, montants, phrases ordinaires en mots : texte inchangé (test) ; tout IBAN lu par `spelledIban` ou `dictatedIban` du bouclier est masqué par `maskIban` (test) ; lecture linéaire : 40 000 caractères en moins de 500 ms (test) ; tous les tests existants restent verts.
 - Attend : rien.
 
+### BR107 · Le socle lit le texte comme l'œil le voit : un IBAN ou un mot d'argent caché par des invisibles ou des sosies est masqué à l'entrée et refusé à la sortie (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR106, RC70
+- Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; Conformité ; R15, R62.
+- Décidé (2026-11-17, voie 1), lecture prudente : relevé dans les « Reste » de BR106 et RC70 (« `fundsInOutgoing` et `maskIban` ne démasquent pas encore »). Toutes les autres tâches de la voie 1 attendent un humain. `dossiers/bouclier.ts` reste à la voie 2 (RC71 en cours) : rien n'y change. La lecture « comme l'œil » de RC70 (forme NFKC, ignorables d'Unicode ôtés, sosies grecs et cyrilliques ramenés dans un mot qui n'a que des lettres latines, des chiffres et des sosies) est reprise dans `envoi/iban-detours.ts`, en suivant la place de chaque caractère ; `hiddenIbanSpans` lit aussi ce texte démasqué ; `bankDetailsIn`, `paymentRequestIn` et `fundsInOutgoing` lisent aussi le texte démasqué. Le texte brut reste lu : rien de ce qui était masqué ou refusé ne se perd.
+- Objectif : un IBAN coupé d'invisibles ou écrit avec des sosies n'est jamais rangé en clair ; un texte d'AIMMO qui porte « RΙΒ », « vir​ement », « 𝐈𝐁𝐀𝐍 » ou un IBAN caché ne sort jamais.
+- Jamais vu : le masque et le contrôle de sortie lisent ce que l'œil voit, pas ce que la machine stocke, et seule la plage de l'IBAN disparaît.
+- Critères : IBAN coupé d'espaces de largeur nulle, de traits d'union conditionnels ou de marques de direction, en chiffres mathématiques, avec un O cyrillique ou grec : masqué en entier, texte autour inchangé [R15] (test) ; « RΙΒ », « РІВ », « vir​ement », « 𝐈𝐁𝐀𝐍 », « ＢＩＣ », « pay​ez » dans un texte qui sort : refusé [R62] (test) ; phrase russe ou grecque ordinaire, nom propre accentué, texte ordinaire : inchangé et accepté (test) ; le texte démasqué du socle est celui du bouclier (`unmasked`) sur tous les sosies et invisibles (test) ; tout IBAN que le bouclier lit dans le texte démasqué est masqué par `maskIban` (test) ; lecture linéaire : 40 000 caractères d'invisibles et de sosies en moins de 500 ms (test) ; tous les tests existants restent verts.
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
