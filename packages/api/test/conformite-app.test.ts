@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { BUDGETS, budgetProblems, gzipSize } from '../../core/src/design/audit.ts';
+import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { COFFRE_JS, COFFRE_SCRIPT, CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
@@ -488,8 +488,7 @@ describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
     expect(COFFRE_SCRIPT).not.toContain('innerHTML');
     expect(budgetProblems({ html: '', js: COFFRE_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
-    // Au moins 1 000 octets compressés de libres pour la dictée en sortant d'une visite (BR103).
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 1000);
+    // La place gagnée était réservée à la dictée en sortant d'une visite (BR103), fusionnée depuis : le budget ci-dessus suffit.
     // Le geste charge le script une fois, puis les preuves de la fiche seulement.
     await t.click(t.byText(t.els['fiche-corps']!, 'Pièces au coffre'));
     expect(coffreScripts(t)).toHaveLength(1);

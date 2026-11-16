@@ -688,6 +688,7 @@ export const APP_JS = `'use strict';
     da.appendChild(lazyBlock('Dicter un contact, un bien ou un rendez-vous', '/app/dictee.js', 'AIMMO_DICTEE', ''));
     clear(ra);
     ra.appendChild(lazyBlock('Mes remises négociées', '/app/remises.js', 'AIMMO_REMISES', ''));
+    ra.appendChild(lazyBlock('Mes panneaux', '/app/panneaux.js', 'AIMMO_PANNEAUX', ''));
     return Promise.all([
       // La semaine est lue après le plan : l'ouverture de ce matin y compte déjà.
       loadPlan(key, mine).then(function (done) {
@@ -1355,6 +1356,7 @@ export const APP_JS = `'use strict';
     body.appendChild(pub);
     venteArmoire(body, propertyId);
     body.appendChild(lazyBlock('Remises du moment', '/app/remises.js', 'AIMMO_REMISES', propertyId));
+    body.appendChild(lazyBlock('Panneaux du bien', '/app/panneaux.js', 'AIMMO_PANNEAUX', propertyId));
   }
   /* ---------- M11 : après la vente (F07). ---------- */
   var SIDES = { vendeur: 'Vendeur', acquereur: 'Acquéreur' };
