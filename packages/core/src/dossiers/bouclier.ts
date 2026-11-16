@@ -334,16 +334,64 @@ export function dictatedIban(text: string): boolean {
   return spelledIban(digitsRewritten(text, false)) || spelledIban(digitsRewritten(text, true));
 }
 
+/**
+ * RC70 : les caractères qui ne se voient pas, ôtés : trait d'union conditionnel, espaces de largeur nulle, joints,
+ * marques de direction, sélecteurs de variante, indicateur d'ordre des octets.
+ */
+const INVISIBLE = /[­͏؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ]/g;
+
+/** RC70 : les lettres grecques et cyrilliques qui ont l'air d'une lettre latine, et cette lettre. */
+const LOOKALIKE: Record<string, string> = {
+  // cyrillique
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
+  'і': 'i', 'ј': 'j', 'ѕ': 's', 'ԁ': 'd', 'һ': 'h', 'ӏ': 'l', 'ԛ': 'q', 'ԝ': 'w',
+  'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P',
+  'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'І': 'I', 'Ј': 'J', 'Ѕ': 'S', 'Ԛ': 'Q',
+  'Ԝ': 'W', 'Ӏ': 'I',
+  // grec
+  'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M',
+  'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X', 'ο': 'o', 'α': 'a',
+  'ν': 'v', 'ρ': 'p', 'ι': 'i',
+  // latin de détour
+  'ı': 'i', 'ɑ': 'a', 'ɡ': 'g',
+};
+
+/**
+ * RC70 : le texte tel que l'œil le lit. Forme normale de compatibilité (« ＲＩＢ », « 𝐑𝐈𝐁 » deviennent « RIB ») ;
+ * caractères invisibles ôtés ; dans un mot fait seulement de lettres latines, de chiffres et de sosies, qui porte au
+ * moins un sosie, chaque sosie devient sa lettre latine. Un vrai mot russe ou grec porte presque toujours une lettre
+ * sans sosie : il reste tel quel. Chaque caractère est lu une fois [R62].
+ */
+export function unmasked(text: string): string {
+  const p = text.normalize('NFKC').replace(INVISIBLE, '');
+  return p.replace(/[\p{L}\p{M}\p{N}]+/gu, (word) => {
+    let out = '';
+    let swapped = false;
+    for (const c of word) {
+      const latin = LOOKALIKE[c];
+      if (latin !== undefined) {
+        out += latin;
+        swapped = true;
+      } else if (/[A-Za-z0-9À-ɏ̀-ͯ]/.test(c)) out += c;
+      else return word;
+    }
+    return swapped ? out : word;
+  });
+}
+
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
 export function fundSignals(text: string): FundSignal[] {
-  const p = plain(text);
-  const variants = [p];
-  for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
-    const v = joinSpelled(p, ds, de);
-    if (!variants.includes(v)) variants.push(v);
+  const seen = unmasked(text);
+  const variants: string[] = [];
+  for (const p of new Set([plain(text), plain(seen)])) {
+    for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
+      const v = joinSpelled(p, ds, de);
+      if (!variants.includes(v)) variants.push(v);
+    }
   }
   const found: FundSignal[] = [];
-  if (IBAN.test(text) || text.includes(IBAN_MASK) || spelledIban(text) || dictatedIban(text)) found.push('iban');
+  const hasIban = (t: string): boolean => IBAN.test(t) || spelledIban(t) || dictatedIban(t);
+  if (text.includes(IBAN_MASK) || hasIban(text) || (seen !== text && hasIban(seen))) found.push('iban');
   for (const [signal, re] of INBOUND) if (variants.some((v) => re.test(v))) found.push(signal);
   return found;
 }
