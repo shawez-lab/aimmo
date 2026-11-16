@@ -2376,7 +2376,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC62 · Une ouverture d'espace refusée pour un rôle sans droit est écrite au journal
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#619, `288c8e44`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6400 tests, en 10 parts). Rien pour la voie 1.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : EC01, RC61
 - Cahier : Le produit, espaces des clients ; R16, R13.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC61 (« le refus de rôle de `invite` n'est pas écrit au journal non plus »). Un partenaire ou la conformité qui tente d'ouvrir l'espace d'une personne est refusé sans trace, alors que tout refus d'`Acces` est écrit [R16]. Désormais, dans `packages/core/src/espaces/entree.ts` seul, `invite` écrit ce refus comme `linkAllowance` : `acces.refuse`, rôle et code, aucune preuve d'accord ni adresse [R13] ; un même assistant privé sert aux deux. La réponse ne change pas de forme.
