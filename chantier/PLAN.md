@@ -1798,6 +1798,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : script servi à part, chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; l'écran du bien ne montre que les poses de ce bien, la pose envoie le numéro et l'adresse, puis relit (test) ; numéro ou code postal mal formés refusés avant l'appel (test) ; refus du serveur dits en mots, jamais un code, dont le bien sans mandat diffusable [R42, R282] (test) ; « Perdu » ne part qu'au second appui [R283] (test) ; une écriture sans réponse dite incertaine et relue (test) ; texte reçu posé en texte [R13] (test) ; clé refusée : rien gardé [R16] (test).
 - Attend : rien.
 
+### BR105 · Le stock de panneaux pour la direction : ajouter des panneaux et lire le stock par format
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR104
+- Cahier : M07 Commercialiser ; Phase 3, « Stock de panneaux » ; R282, R283, R284, R16, R201.
+- Décidé (2026-11-16, voie 1) : relevé dans le « Reste » de BR104 (« l'ajout au stock par la direction n'a pas d'écran ») ; toutes les autres tâches de la voie 1 attendent un humain. La direction n'a pas l'accueil de l'agent : l'écran se pose sous « Engagements de service » de l'écran du réseau, comme les remises (BR73), par le même script `/app/panneaux.js` (porte `show`), chargé au geste ; `app.js` ne change pas.
+- Objectif : la direction lit le stock par format (en stock, posés), toutes les poses, celles à récupérer d'abord, et ajoute au stock de 1 à 50 panneaux d'un format (`POST /v1/panneaux/stock`) ; les numéros donnés par le serveur sont dits, à écrire sur les panneaux.
+- Critères : bloc « Stock de panneaux » sous les engagements, script chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; comptes par format et toutes les poses, celles à récupérer d'abord [R284] (test) ; l'ajout envoie le format et le nombre, puis relit ; format ou nombre mal formés (hors 1 à 50) refusés avant l'appel [R282] (test) ; les numéros reçus dits, un numéro mal formé tu (test) ; un seul envoi à la fois, une écriture sans réponse dite incertaine et relue, jamais renvoyée seule (test) ; refus du serveur dits en mots, jamais un code [R16] (test) ; texte reçu posé en texte [R13] (test) ; l'accueil de l'agent ne propose pas l'ajout (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
