@@ -1811,6 +1811,7 @@ export const APP_JS = `'use strict';
     var f = data.upcomingFees || { value: 0, lines: [] };
     figure(body, 'Honoraires à venir', euros(f.value), f.lines, function (l) { return el('li', euros(l.amountCents) + ' · ' + (FEE_STATUS[l.status] || 'en cours')); });
     body.appendChild(el('p', 'Les honoraires à venir sont vos parts pas encore versées, quelle que soit la période. Ces chiffres sont calculés depuis vos dossiers, jamais saisis ni estimés.', 'doux'));
+    body.appendChild(lazyBlock('Mes rapports sur mesure', '/app/rapports-agent.js', 'AIMMO_RAPPORTS_AGENT', ''));
   }
   function wipeChiffres() {
     clear($('chiffres-corps'));

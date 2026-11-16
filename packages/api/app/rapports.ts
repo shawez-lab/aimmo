@@ -32,6 +32,10 @@ export const RAPPORTS_BAD_PERIOD = 'La période : un jour de début avant le jou
 export const RAPPORTS_BAD_NAME = 'Le nom du rapport : de 1 à 80 caractères.';
 export const RAPPORTS_NEVER_TWO = 'Un rapport se lit pour le total du réseau ou pour un seul agent, jamais deux agents côte à côte.';
 
+export const RAPPORTS_AGENT_ROLE = 'Ce n’est pas dans vos droits : un agent lit ses propres chiffres.';
+export const RAPPORTS_AGENT_INACTIVE = 'Votre compte n’est pas en activité : vos rapports ne se lisent pas.';
+export const RAPPORTS_AGENT_ONLY = 'Vos chiffres seulement, jamais comparés à ceux de personne.';
+
 export const RAPPORTS_MEASURES: Readonly<Record<(typeof REPORT_MEASURES)[number], string>> = Object.freeze({
   contacts: 'Contacts attribués',
   rendez_vous: 'Rendez-vous tenus',
@@ -59,19 +63,40 @@ export const RAPPORTS_REFUSALS: Readonly<Record<string, string>> = Object.freeze
   unknown_field: 'La demande n’a pas pu être envoyée.',
 });
 
-/** Le script servi à part. Il ne lit et n'écrit que sous `/v1/finances/rapports`, et lit la liste des agents [R16]. */
-export const RAPPORTS_SCRIPT = `'use strict';
-globalThis.AIMMO_RAPPORTS = function (t) {
-  var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, select = t.select, details = t.details, date = t.date;
-  var REFUSALS = ${JSON.stringify(RAPPORTS_REFUSALS)}, MEASURES = ${JSON.stringify(RAPPORTS_MEASURES)}, GROUPINGS = ${JSON.stringify(RAPPORTS_GROUPINGS)};
+/** Les refus que l'agent peut lire : ceux de la portée n'en sont pas, il n'en choisit aucune [R68]. */
+export const RAPPORTS_AGENT_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  ...Object.fromEntries(Object.entries(RAPPORTS_REFUSALS).filter(([k]) => !['other_network', 'unknown'].includes(k))),
+  role: RAPPORTS_AGENT_ROLE,
+  agent_inactive: RAPPORTS_AGENT_INACTIVE,
+  compares_agents: RAPPORTS_AGENT_ONLY,
+});
+
+/**
+ * Le script d'un écran, fait par le même code pour les deux : la direction (`mine` faux) lit sous `/v1/finances/rapports`
+ * et la liste des agents ; l'agent (`mine` vrai) ne lit que sous `/v1/finances/rapports`, sans portée, ses seuls chiffres
+ * [R16, R68]. Le texte de l'un ne contient rien de ce qui n'est qu'à l'autre.
+ */
+const rapportsScript = (mine: boolean): string => `'use strict';
+globalThis.${mine ? 'AIMMO_RAPPORTS_AGENT' : 'AIMMO_RAPPORTS'} = function (t) {
+  var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date;
+  var select = t.select || function (box, id, label, options, value) {
+    var s = field(box, id, label, 'select');
+    Object.keys(options).forEach(function (k) { var o = el('option', options[k]); o.value = k; s.appendChild(o); });
+    s.value = value;
+    return s;
+  };
+  var details = t.details || function (box, title) { var d = el('details'); d.appendChild(el('summary', title)); box.appendChild(d); return d; };
+  var REFUSALS = ${JSON.stringify(mine ? RAPPORTS_AGENT_REFUSALS : RAPPORTS_REFUSALS)}, MEASURES = ${JSON.stringify(RAPPORTS_MEASURES)}, GROUPINGS = ${JSON.stringify(RAPPORTS_GROUPINGS)};
   var ORDER = ${JSON.stringify(REPORT_MEASURES)};
-  var ROLE = ${JSON.stringify(RAPPORTS_ROLE)}, OFFLINE = ${JSON.stringify(RAPPORTS_OFFLINE)}, READ_LOST = ${JSON.stringify(RAPPORTS_READ_LOST)};
+  var ROLE = ${JSON.stringify(mine ? RAPPORTS_AGENT_ROLE : RAPPORTS_ROLE)}, OFFLINE = ${JSON.stringify(RAPPORTS_OFFLINE)}, READ_LOST = ${JSON.stringify(RAPPORTS_READ_LOST)};
   var LOST = ${JSON.stringify(RAPPORTS_LOST)}, FAILED = ${JSON.stringify(RAPPORTS_FAILED)}, UNCHECKED = ${JSON.stringify(RAPPORTS_UNCHECKED)}, UNCHECKED_NOTE = ${JSON.stringify(RAPPORTS_UNCHECKED_NOTE)};
-  var NO_MEASURE = ${JSON.stringify(RAPPORTS_NO_MEASURE)}, BAD_PERIOD = ${JSON.stringify(RAPPORTS_BAD_PERIOD)}, BAD_NAME = ${JSON.stringify(RAPPORTS_BAD_NAME)}, NEVER_TWO = ${JSON.stringify(RAPPORTS_NEVER_TWO)};
-  var R = '/v1/finances/rapports', AGENTS = '/v1/gagner/recommandations/agents';
+  var NO_MEASURE = ${JSON.stringify(RAPPORTS_NO_MEASURE)}, BAD_PERIOD = ${JSON.stringify(RAPPORTS_BAD_PERIOD)}, BAD_NAME = ${JSON.stringify(RAPPORTS_BAD_NAME)}, NEVER_TWO = ${JSON.stringify(mine ? RAPPORTS_AGENT_ONLY : RAPPORTS_NEVER_TWO)};
+  /* Sous les engagements de la direction, les titres suivent son h4 ; sous « Mes chiffres », le h2 de l'écran [R201]. */
+  var HEAD = '${mine ? 'h3' : 'h5'}';
+  var R = '/v1/finances/rapports'${mine ? '' : ", AGENTS = '/v1/gagner/recommandations/agents'"};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/, MONTH = /^\\d{4}-\\d{2}$/;
   var box = null, status = null, body = null, result = null, busy = false, reads = 0, asked = 0;
-  var checks = {}, grouping = null, from = null, to = null, scope = null, name = null, agents = [];
+  var checks = {}, grouping = null, from = null, to = null, scope = null, name = null, agents = [], me = null;
   function say(text) { if (status) status.textContent = text; }
   function owns(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
   function today() {
@@ -118,9 +143,7 @@ globalThis.AIMMO_RAPPORTS = function (t) {
   }
   /* La portée : le total du réseau, ou un seul agent de la liste ; jamais les deux [R14]. */
   function portee() {
-    var v = scope.value;
-    if (v === '') return { network: true };
-    return ID.test(v) && agentName(v) ? { agentId: v } : null;
+    ${mine ? 'return {};' : "var v = scope.value;\n    if (v === '') return { network: true };\n    return ID.test(v) && agentName(v) ? { agentId: v } : null;"}
   }
   function wipe() { reads += 1; if (result) clear(result); }
   function cells(r, wanted) {
@@ -140,8 +163,8 @@ globalThis.AIMMO_RAPPORTS = function (t) {
     clear(result);
     var list = cells(r, ask);
     if (!list) { result.appendChild(el('p', READ_LOST, 'etat')); return; }
-    var who = ask.network ? 'Total du réseau' : 'Agent : ' + agentName(ask.agentId);
-    result.appendChild(el('h5', who));
+    var who = ${mine ? "'Mes chiffres seulement'" : "ask.network ? 'Total du réseau' : 'Agent : ' + agentName(ask.agentId)"};
+    result.appendChild(el(HEAD, who));
     result.appendChild(el('p', 'Du ' + dayText(ask.from) + ' au ' + dayText(ask.to) + '. Chaque chiffre s’ouvre sur ses lignes : vous pouvez tout recompter.', 'doux'));
     var keys = [];
     list.forEach(function (c) { if (keys.indexOf(c.key) < 0) keys.push(c.key); });
@@ -175,8 +198,9 @@ globalThis.AIMMO_RAPPORTS = function (t) {
       if (res.offline || !res.body) { say(LOST); return; }
       if (!res.ok) { say(res.status >= 500 ? FAILED : refusal(res)); return; }
       var r = data(res);
-      var same = r && (ask.network ? r.scope === 'reseau' && r.agentId === undefined : r.scope === 'agent' && r.agentId === ask.agentId) && r.from === ask.from && r.to === ask.to;
+      var same = r && ${mine ? "r.scope === 'agent' && ID.test(r.agentId) && (me === null || r.agentId === me)" : "(ask.network ? r.scope === 'reseau' && r.agentId === undefined : r.scope === 'agent' && r.agentId === ask.agentId)"} && r.from === ask.from && r.to === ask.to;
       if (!same) { say(READ_LOST); return; }
+      ${mine ? '/* La première lecture dit qui est l’agent ; une réponse pour un autre est jetée [R14, R68]. */\n      me = r.agentId;' : ''}
       say('');
       show(r, ask);
     });
@@ -215,40 +239,40 @@ globalThis.AIMMO_RAPPORTS = function (t) {
   }
   function compose() {
     var p = el('section', null, 'bloc');
-    p.appendChild(el('h5', 'Composer un rapport'));
+    p.appendChild(el(HEAD, 'Composer un rapport'));
     p.appendChild(el('p', 'Des mesures, un regroupement, une période d’un an au plus. ' + NEVER_TWO, 'doux'));
     ORDER.forEach(function (m) {
       var wrap = el('div', null, 'case'), c = el('input'), l = el('label', MEASURES[m]);
       c.setAttribute('type', 'checkbox');
-      c.setAttribute('id', 'rapports-' + m);
-      l.setAttribute('for', 'rapports-' + m);
+      c.setAttribute('id', '${mine ? 'mes-rapports' : 'rapports'}-' + m);
+      l.setAttribute('for', '${mine ? 'mes-rapports' : 'rapports'}-' + m);
       c.checked = m === 'contacts' || m === 'mandats';
       wrap.appendChild(c);
       wrap.appendChild(l);
       p.appendChild(wrap);
       checks[m] = c;
     });
-    grouping = select(p, 'rapports-regroupement', 'Regroupement', GROUPINGS, 'mois');
+    grouping = select(p, '${mine ? 'mes-rapports' : 'rapports'}-regroupement', 'Regroupement', GROUPINGS, 'mois');
     var end = today();
-    from = field(p, 'rapports-du', 'Du');
+    from = field(p, '${mine ? 'mes-rapports' : 'rapports'}-du', 'Du');
     from.setAttribute('type', 'date');
     from.value = yearAgo(end);
-    to = field(p, 'rapports-au', 'Au');
+    to = field(p, '${mine ? 'mes-rapports' : 'rapports'}-au', 'Au');
     to.setAttribute('type', 'date');
     to.value = end;
-    var options = { '': 'Le total du réseau' };
+${mine ? '' : `    var options = { '': 'Le total du réseau' };
     agents.forEach(function (a) { options[a.agentId] = a.firstName + ' ' + a.lastName; });
-    scope = select(p, 'rapports-portee', 'Pour', options, '');
+    scope = select(p, '${mine ? 'mes-rapports' : 'rapports'}-portee', 'Pour', options, '');
     /* Changer de portée efface le rapport affiché, avant toute lecture : jamais deux agents à l'écran [R14]. */
     scope.addEventListener('change', function () { wipe(); busy = false; say(''); });
-    p.appendChild(button('Lire le rapport', readNow));
-    name = field(p, 'rapports-nom', 'Nom, pour l’enregistrer (80 caractères au plus)');
+`}    p.appendChild(button('Lire le rapport', readNow));
+    name = field(p, '${mine ? 'mes-rapports' : 'rapports'}-nom', 'Nom, pour l’enregistrer (80 caractères au plus)');
     p.appendChild(button('Enregistrer ce rapport', save));
     return p;
   }
   function saved(list) {
     var p = el('section', null, 'bloc');
-    p.appendChild(el('h5', 'Mes rapports enregistrés'));
+    p.appendChild(el(HEAD, 'Mes rapports enregistrés'));
     if (!Array.isArray(list)) { p.appendChild(el('p', READ_LOST, 'etat')); return p; }
     var ok = list.filter(function (r) {
       return r && ID.test(r.id) && typeof r.name === 'string' && r.name.trim() && r.definition && Array.isArray(r.definition.measures) && r.definition.measures.length && r.definition.measures.every(function (m) { return owns(MEASURES, m); }) && owns(GROUPINGS, r.definition.grouping);
@@ -269,15 +293,15 @@ globalThis.AIMMO_RAPPORTS = function (t) {
   function load(message) {
     var mine = t.session(), n = ++asked;
     if (!message) say('Chargement…');
-    return Promise.all([send(R, 'GET'), send(AGENTS, 'GET')]).then(function (all) {
+    return Promise.all([send(R, 'GET')${mine ? '' : ", send(AGENTS, 'GET')"}]).then(function (all) {
       if (mine !== t.session() || n !== asked || all.some(function (x) { return x.gone; })) return false;
       clear(body);
       if (all.some(function (x) { return !x.offline && x.body && x.body.code === 'role'; })) { say(ROLE); return false; }
       if (all.every(function (x) { return x.offline; })) { say(message || OFFLINE); return false; }
-      var a = data(all[1]);
+${mine ? "      say(message || '');\n" : `      var a = data(all[1]);
       agents = Array.isArray(a) ? a.filter(function (x) { return x && ID.test(x.agentId) && typeof x.firstName === 'string' && typeof x.lastName === 'string'; }) : [];
       say(message || (Array.isArray(a) ? '' : 'La liste des agents n’a pas pu être lue : seul le total du réseau se lit.'));
-      reads += 1;
+`}      reads += 1;
       busy = false;
       body.appendChild(compose());
       result = el('div');
@@ -287,19 +311,24 @@ globalThis.AIMMO_RAPPORTS = function (t) {
       return true;
     });
   }
-  return {
-    show: function (inner) {
-      clear(inner);
-      box = el('div', null, 'rapports');
-      status = el('p', null, 'etat');
-      status.setAttribute('role', 'status');
-      body = el('div');
-      box.appendChild(status);
-      box.appendChild(body);
-      inner.appendChild(box);
-      busy = false;
-      load('');
-    },
-  };
+  function mount(inner, said) {
+    clear(inner);
+    box = el('div', null, 'rapports');
+    status = said || el('p', null, 'etat');
+    if (!said) { status.setAttribute('role', 'status'); box.appendChild(status); }
+    body = el('div');
+    box.appendChild(body);
+    inner.appendChild(box);
+    busy = false;
+    me = null;
+    return load('');
+  }
+  /* La direction l'ouvre sous les engagements (\`show\`) ; l'agent par le chargeur commun de « Mes chiffres » (\`open\`). */
+  return { show: mount, open: function (_id, inner, said) { return mount(inner, said); } };
 };
 `;
+
+/** Le script servi à part pour la direction. Il ne lit et n'écrit que sous `/v1/finances/rapports`, et lit la liste des agents [R16]. */
+export const RAPPORTS_SCRIPT = rapportsScript(false);
+/** Le script servi à part pour l'agent, depuis « Mes chiffres » : ses seuls rapports, sans portée ni liste des agents [R68]. */
+export const RAPPORTS_AGENT_SCRIPT = rapportsScript(true);
