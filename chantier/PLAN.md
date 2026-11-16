@@ -1674,7 +1674,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR93 · La banque et les relances d'impayés à l'écran de la direction (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#610, `90782aa8`). Codex 1 P2 corrigé (un encaissement déjà rangé gardait son bouton : `list` rend désormais `receipt`, preuve « ligne » ou « autre »), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6345 tests). Reste (voie 1) : les factures fournisseurs (lecture IA, H13) et les rapports sur mesure n'ont pas encore d'écran.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR92
 - Cahier : M13 Pilotage et finances (rapprochement bancaire, relance des impayés) ; R551, R552, R553, R16, R201.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de BR92 (« aucun écran n'appelle encore `/v1/finances` »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Comme les programmes neufs (BR79) : un écran de la direction posé sous les engagements de l'écran du réseau, servi à part (`/app/banque.js`) et chargé au premier geste [R201]. Il lit la fraîcheur, les propositions, les rapprochements et les relances, et offre quatre gestes : déposer le relevé CSV (lu sur l'appareil, envoyé tel quel), rapprocher une ligne d'une facture proposée, ranger l'encaissement d'une facture rapprochée, valider une relance ; chaque geste en deux appuis. Aucun montant ne se saisit [R551, R552]. L'outil `send` de l'application n'envoie que du JSON : la route du relevé accepte aussi `application/json` avec la seule clé `csv`, même taille et même lecture. Les factures fournisseurs et les rapports sur mesure restent à part.
