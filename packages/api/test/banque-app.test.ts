@@ -40,7 +40,10 @@ const PROPOSALS = [
 ];
 const RECS = [
   { lineId: 'l9', invoiceId: 'f9', label: 'F-2027-00010', day: '2027-07-10', amountCents: 800_000, mode: 'auto' },
-  { lineId: 'l8', invoiceId: 'f8', label: 'F-2027-00011', day: '2027-07-11', amountCents: 300_000, mode: 'direction' },
+  { lineId: 'l8', invoiceId: 'f8', label: 'F-2027-00011', day: '2027-07-11', amountCents: 300_000, mode: 'direction', receipt: null },
+  { lineId: 'l7', invoiceId: 'f7', label: 'F-2027-00014', day: '2027-07-08', amountCents: 200_000, mode: 'auto', receipt: { receivedAt: '2027-07-07T22:00:00.000Z', payoutDueAt: '2027-07-09T22:00:00.000Z', proof: 'ligne' } },
+  { lineId: 'l6', invoiceId: 'f6', label: 'F-2027-00015', day: '2027-07-08', amountCents: 100_000, mode: 'direction', receipt: { receivedAt: '2027-07-08T08:00:00.000Z', payoutDueAt: '2027-07-10T08:00:00.000Z', proof: 'autre' } },
+  { lineId: 'l5', invoiceId: 'f5', label: 'F-2027-00016', day: '2027-07-08', amountCents: 100_000, mode: 'direction', receipt: { receivedAt: 'demain', payoutDueAt: '2027-07-10T08:00:00.000Z', proof: 'ligne' } },
 ];
 const TEXT = 'Bonjour,\n\nla facture F-2027-00012 de 5 000,00 €, émise le 1er juin 2027, arrivait à échéance le 1er juillet 2027.\n\nSi elle a déjà été réglée, une simple réponse suffit.';
 const REMINDERS = [
@@ -263,6 +266,11 @@ describe('BR93 · la banque et les relances d’impayés à l’écran de la dir
     expect(text).toContain('Facture F-2027-00010 : 8 000,00 €');
     expect(text).toContain('Payée par la ligne du 10/07/2027, rapprochée seule par le passage');
     expect(text).toContain('Payée par la ligne du 11/07/2027, rapprochée par la direction.');
+    // Un encaissement déjà rangé se dit, sans bouton ; un détail illisible n'offre pas de geste non plus.
+    expect(d.buttons('Ranger l’encaissement')).toHaveLength(2);
+    expect(text).toContain('Encaissement rangé, reçu le 08/07/2027 00:00, cette ligne de banque pour preuve. Part de l’agent à verser avant le 10/07/2027 00:00.');
+    expect(text).toContain('Encaissement rangé, reçu le 08/07/2027 10:00, avec une autre preuve, aux commissions.');
+    expect(text).toContain('Un encaissement est rangé, mais son détail n’a pas pu être lu.');
     const [first] = d.buttons('Ranger l’encaissement');
     await d.click(first);
     expect(d.posts()).toHaveLength(0);

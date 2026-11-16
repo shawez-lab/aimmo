@@ -11,7 +11,8 @@
  * - Les lignes à choisir (`GET …/propositions`) : chacune dit pourquoi le passage ne l'a pas rapprochée seule ; la
  *   facture citée par le libellé passe en tête. Rapprocher se fait en deux appuis (`POST …/lignes/<id>/rapprochement`),
  *   seulement vers une facture proposée par le serveur : aucun montant ni identifiant ne se tape [R551].
- * - Les rapprochements (`GET …/rapprochements`), par le passage ou par la direction ; l'encaissement d'une facture
+ * - Les rapprochements (`GET …/rapprochements`), par le passage ou par la direction ; un encaissement déjà rangé se dit,
+ *   sans geste, avec sa preuve (cette ligne ou une autre) ; l'encaissement d'une autre facture
  *   rapprochée se range en deux appuis, avec la ligne de banque pour preuve (`POST …/factures/<id>/encaissement`) [R552].
  * - Les relances (`GET /v1/finances/relances`) : le texte montré mot pour mot, tel qu'il partira ; seule une relance « à
  *   valider » se valide, en deux appuis (`POST …/relances/<id>/validation`) [R553]. Rien ne part d'ici : l'envoi reste
@@ -243,6 +244,14 @@ globalThis.AIMMO_BANQUE = function (t) {
       var li = el('li');
       li.appendChild(el('strong', 'Facture ' + r.label + ' : ' + euros(r.amountCents)));
       li.appendChild(el('p', 'Payée par la ligne du ' + day(r.day) + ', rapprochée ' + (r.mode === 'auto' ? 'seule par le passage (numéro cité, même montant, un seul choix).' : 'par la direction.'), 'doux'));
+      /* Un encaissement déjà rangé se dit, sans geste : seul ce qui attend la direction garde son bouton. */
+      if (r.receipt) {
+        var c = r.receipt, got = moment(c.receivedAt), due = moment(c.payoutDueAt);
+        if (!got || !due || (c.proof !== 'ligne' && c.proof !== 'autre')) li.appendChild(el('p', 'Un encaissement est rangé, mais son détail n’a pas pu être lu.', 'etat'));
+        else li.appendChild(el('p', 'Encaissement rangé, reçu le ' + got + (c.proof === 'ligne' ? ', cette ligne de banque pour preuve' : ', avec une autre preuve, aux commissions') + '. Part de l’agent à verser avant le ' + due + '.', 'doux'));
+        ul.appendChild(li);
+        return;
+      }
       var holder = el('div');
       twoSteps(holder, 'Ranger l’encaissement', 'Ranger l’encaissement de la facture ' + r.label + ', reçu le ' + day(r.day) + ', avec la ligne de banque pour preuve.', 'Confirmer l’encaissement', function () {
         write(B + '/factures/' + encodeURIComponent(r.invoiceId) + '/encaissement', undefined, function (b) {
