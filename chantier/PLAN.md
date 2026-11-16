@@ -2554,7 +2554,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC71 · Un faux RIB écrit en « leet », « R1B », « v1r3ment », « @compte », alerte quand même l'agent (Jamais vu)
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#637, `17ffad65`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6541 tests, en 10 parts). Reste : un leet épelé (« R . 1 . B ») n'est pas lu ; voie 1 : `fundsInOutgoing` (`envoi/texte.ts`, socle) ne lit pas le leet.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC70, N05
 - Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; R62.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé en essayant `fundSignals` sur les détours qui restent après RC70. Aujourd'hui « nouveau R1B », « 1BAN », « c00rdonnées bancaires », « ch@ngé de b4nque », « v1r3ment », « l'@compte », « $équestre », « p@yer », « paypa1 » passent sans aucun signal. Désormais, dans `packages/core/src/dossiers/bouclier.ts` seul, le texte démasqué est relu une fois de plus sans l'écriture « leet » : dans un mot qui porte au moins une lettre et au moins un chiffre ou signe, 0 vaut o, 3 vaut e, 4 et @ valent a, 5 et $ valent s, 7 vaut t, et 1 vaut i dans une lecture, l dans une autre. Un nombre seul ne change jamais : prix, dates, codes postaux, dépôts chiffrés restent lus comme avant. Seuls les signaux de mots en profitent ; l'IBAN garde ses lectures (RC67 à RC70). Parcours linéaire. Ni route, ni écran, ni migration ; le journal garde seulement les sortes de signaux [R15, R13]. Le contrôle de ce qui sort (`fundsInOutgoing`, `envoi/texte.ts`, socle) ne change pas : voie 1.
