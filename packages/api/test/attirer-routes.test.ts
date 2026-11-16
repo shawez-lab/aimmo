@@ -422,6 +422,29 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.call(direction, 'GET', '/attirer/prix/zones')).body.data).toEqual([]);
   });
 
+  it('[R16] [R150] BR97 : les zones à refaire, par nom, niveau et raison, à la direction de ce réseau seule ; retirée, elle en sort', async () => {
+    const t = await setup();
+    await preparedNetwork(t);
+    expect(await t.call(direction, 'GET', '/attirer/prix/zones/a-refaire')).toMatchObject({ status: 200, body: { data: [] } });
+    const items = (await t.call(direction, 'GET', '/attirer/prix/zones')).body.data as { id: string; level: string }[];
+    const communeId = items.find((z) => z.level === 'commune')!.id;
+    // Un quartier rangé avant le contrôle des contours : un nœud papillon, écrit directement en base.
+    await t.db.run(
+      'INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ['zone-noeud', 'net-1', 'quartier', communeId, 'noeud', 'Nœud', null, JSON.stringify([[47, 5], [47.1, 5.1], [47, 5.1], [47.1, 5]]), 'Contour ancien', 'direction:dir-1', '2026-09-01T08:00:00.000Z'],
+    );
+    const res = await t.call(direction, 'GET', '/attirer/prix/zones/a-refaire');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: 'zone-noeud', level: 'quartier', parentId: communeId, name: 'Nœud', reason: 'contour_croise' }]);
+    expect(JSON.stringify(res.body)).not.toMatch(/ring|47\.1/);
+    expect((await t.call(camille, 'GET', '/attirer/prix/zones/a-refaire')).status).toBe(403);
+    const refused = (await t.db.first<{ data: string }>("SELECT data FROM journal WHERE type = 'acces.refuse' ORDER BY seq DESC LIMIT 1"))!;
+    expect(JSON.parse(refused.data)).toMatchObject({ rule: 'R16' });
+    expect(await t.call({ ...direction, networkId: 'net-2' }, 'GET', '/attirer/prix/zones/a-refaire')).toMatchObject({ status: 200, body: { data: [] } });
+    expect((await t.call(direction, 'POST', '/attirer/prix/zones/zone-noeud/retrait')).status).toBe(200);
+    expect(await t.call(direction, 'GET', '/attirer/prix/zones/a-refaire')).toMatchObject({ status: 200, body: { data: [] } });
+  });
+
   it('[R152] [R153] AT16 : la lecture des agents dit comme la page ce qui manque ; un site hors service reste lisible et se rétablit', async () => {
     const t = await setup();
     await preparedNetwork(t);
