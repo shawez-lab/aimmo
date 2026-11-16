@@ -284,7 +284,12 @@ export class EntreeEspace {
    * que le client qui connaît son adresse. Ni lien, ni jeton, ni adresse ; au journal, seulement la lecture de la fiche [R16].
    */
   async linkAllowance(acces: Acces, viewer: Viewer, personId: string): Promise<EntreeResult<LinkAllowance>> {
-    if (viewer.role !== 'agent' && viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') {
+      // Refus écrit au journal comme ceux d'`Acces` : rôle et code, aucun compte de liens [R16, R13].
+      const subject = typeof personId === 'string' && personId !== '' ? `person:${personId}` : null;
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'person', code: 'role' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
     const read = await this.access(acces, viewer, personId);
     if (!read.ok) return read;
     const members = await this.fiche.membersOf(read.value);

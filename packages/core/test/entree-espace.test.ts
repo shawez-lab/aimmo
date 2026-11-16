@@ -513,8 +513,18 @@ describeWithSqlite('RC61 · où en est le plafond des liens, dit à l’agent', 
     await t.entree.invite(t.acces, t.alex, c.id, CONSENT);
     const sam = await t.entree.linkAllowance(t.acces, t.sam, c.id);
     expect(sam).toMatchObject({ ok: false, rule: 'R16' });
+    const before = (await t.journal.all()).length;
     expect(await t.entree.linkAllowance(t.acces, { role: 'partner', userId: 'p-1', networkId: t.network.id }, c.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.entree.linkAllowance(t.acces, t.compliance, c.id)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    // Chaque refus de rôle est écrit au journal, sans aucun compte de liens [R16, R13].
+    const refusals = (await t.journal.all()).slice(before);
+    expect(refusals.map((e) => [e.type, e.actor, e.subject, (e.data as { code: string }).code])).toEqual([
+      ['acces.refuse', 'partner:p-1', `person:${c.id}`, 'role'],
+      ['acces.refuse', `compliance:${t.compliance.userId}`, `person:${c.id}`, 'role'],
+    ]);
+    expect(JSON.stringify(refusals)).not.toMatch(/counted|requested|nextAt/);
+    const samRefusal = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' && e.actor === `agent:${t.sam.userId}`);
+    expect(samRefusal).toHaveLength(1);
     expect(await t.entree.linkAllowance(t.acces, t.alex, '')).toMatchObject({ ok: false });
   });
 
