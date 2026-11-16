@@ -20,6 +20,7 @@ import {
   dictee,
   type Acces,
   type JournalStore,
+  type ReportWriter,
   type SqlDatabase,
   type Viewer,
   type VisitReport,
@@ -36,6 +37,8 @@ export interface DicteeServices {
   acces: Acces;
   journal: JournalStore;
   now: () => Date;
+  /** L'IA qui rédige le compte rendu d'une visite d'après la dictée (BR103), la même que celle de l'écran de la visite ; absente : aucun compte rendu proposé. */
+  reportWriter?: ReportWriter | null;
 }
 
 export interface DicteeRoute {
@@ -102,7 +105,7 @@ function voix(s: DicteeServices): dictee.Dictee {
   const fiche = new FicheUnique(s.db, store, { now: s.now });
   const rendezVous = new RendezVous(s.db, s.journal, { now: s.now });
   const visites = new Visites(s.db, s.journal, s.acces, { now: s.now, rendezVous });
-  const comptes = new ComptesRendus(s.db, s.journal, visites, { now: s.now });
+  const comptes = new ComptesRendus(s.db, s.journal, visites, { now: s.now, ...(s.reportWriter ? { writer: s.reportWriter } : {}) });
   const biens = new NouveauBien(s.db, s.acces, s.journal, { now: s.now });
   return new dictee.Dictee(s.db, s.journal, { acces: s.acces, store, fiche, biens, rendezVous, visites, comptes }, { now: s.now });
 }

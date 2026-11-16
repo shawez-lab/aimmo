@@ -860,6 +860,8 @@ export const APP_JS = `'use strict';
     if (v.status !== 'booked' && v.status !== 'honored') body.appendChild(el('p', 'Cette visite n’est plus prévue.', 'alerte'));
     body.appendChild(safetyBlock(v));
     body.appendChild(reportBlock(v));
+    // BR103 : dicter en sortant de la visite, le compte rendu et la suite validés d'un geste [R260, R261].
+    if ((v.status === 'booked' || v.status === 'honored') && !(v.report && v.report.status === 'valide')) body.appendChild(lazyBlock('Dicter en sortant de la visite', '/app/dictee.js', 'AIMMO_DICTEE', v.appointmentId));
     body.appendChild(slipBlock(v.slip));
     if (typeof p.id === 'string' && ID.test(p.id)) {
       body.appendChild(button('Acquéreurs pour ce bien', function () { openBien(p.id, p.reference || 'ce bien'); }));
