@@ -90,29 +90,11 @@ export const CONFORMITE_CSS = `
 
 /**
  * La part de l'écran posée dans le script de l'application : les outils partagés, le chargement à la demande du
- * script du responsable, et le dépôt au coffre sur la fiche d'un client. Un agent ne reçoit jamais le code de l'écran
+ * script du responsable, et le bloc du coffre sur la fiche d'un client, chargé au geste (BR102). Un agent ne reçoit jamais le code de l'écran
  * du responsable : il n'est chargé que pour la clé du responsable.
  */
 export const COFFRE_JS = `
   /* ---------- M12 : le dépôt au coffre depuis la fiche, et l'écran « Conformité » chargé à la demande (L10). ---------- */
-  var C_PIECES = ${JSON.stringify(PIECES)};
-  var C_TYPES = ${JSON.stringify(VAULT_CONTENT_TYPES)};
-  var C_MAX = ${VAULT_MAX_BYTES};
-  var COFFRE_REFUSALS = {
-    role: 'Réservé à l’agent du client.',
-    not_assigned: 'Ce client est suivi par un autre agent.',
-    bad_date: 'Date non valable.',
-    unknown_piece: 'Choisissez la sorte de pièce.',
-    empty_content: 'Choisissez le fichier de la pièce.',
-    bad_content_type: 'Seuls les PDF, JPEG et PNG entrent au coffre.',
-    too_large: 'La pièce dépasse 10 Mo.',
-    vault_not_configured: 'Le coffre n’est pas encore ouvert : aucune pièce ne peut y être déposée pour le moment.',
-  };
-  function coffreRefusal(res, fallback) {
-    if (res && res.offline) return 'Pas de réseau. Réessayez dans un moment.';
-    var b = res && res.body;
-    return (b && COFFRE_REFUSALS[b.code]) || fallback;
-  }
   function cToday() {
     try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }); } catch (e) { return new Date().toISOString().slice(0, 10); }
   }
@@ -154,70 +136,103 @@ export const COFFRE_JS = `
     });
   }
 
-  function coffreBlock(personId) {
-    var box = el('section', null, 'bloc coffre');
-    box.appendChild(el('h3', 'Pièces au coffre'));
+  // BR102 : le dépôt au coffre se charge au geste, dans son script servi à part, /app/coffre.js [R201].
+  function coffreBlock(personId) { return lazyBlock('Pièces au coffre', '/app/coffre.js', 'AIMMO_COFFRE', personId); }
+`;
+
+/**
+ * BR102 · Le dépôt d'une pièce au coffre depuis la fiche (L10), servi à part (`/app/coffre.js`) et chargé au geste par
+ * le chargeur commun, pour que l'application tienne son budget [R201]. Il ne lit que les preuves de dépôt de la fiche et
+ * n'écrit que le dépôt : l'agent ne demande jamais une pièce [R90]. La pièce part par `send`, en corps brut avec son
+ * type ; une clé refusée ou un agent sorti y est retiré comme partout [R16].
+ */
+export const COFFRE_SCRIPT = `'use strict';
+globalThis.AIMMO_COFFRE = function (t) {
+  var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, date = t.date, hour = t.hour;
+  var PIECES = ${JSON.stringify(PIECES)};
+  var TYPES = ${JSON.stringify(VAULT_CONTENT_TYPES)};
+  var MAX = ${VAULT_MAX_BYTES};
+  var REFUSALS = {
+    role: 'Réservé à l’agent du client.',
+    not_assigned: 'Ce client est suivi par un autre agent.',
+    bad_date: 'Date non valable.',
+    unknown_piece: 'Choisissez la sorte de pièce.',
+    empty_content: 'Choisissez le fichier de la pièce.',
+    bad_content_type: 'Seuls les PDF, JPEG et PNG entrent au coffre.',
+    too_large: 'La pièce dépasse 10 Mo.',
+    vault_not_configured: 'Le coffre n’est pas encore ouvert : aucune pièce ne peut y être déposée pour le moment.',
+  };
+  var seq = 0;
+  function refusal(res, fallback) {
+    if (res && res.offline) return 'Pas de réseau. Réessayez dans un moment.';
+    var b = res && res.body;
+    return (b && typeof b.code === 'string' && Object.prototype.hasOwnProperty.call(REFUSALS, b.code) && REFUSALS[b.code]) || fallback;
+  }
+  function today() {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' }); } catch (e) { return new Date().toISOString().slice(0, 10); }
+  }
+  function state() { var p = el('p', null, 'etat'); p.setAttribute('role', 'status'); return p; }
+  return function (personId, corps, said) {
+    clear(corps);
+    said.textContent = '';
+    var box = el('div', null, 'coffre');
     box.appendChild(el('p', 'La pièce part au coffre, que seul le responsable de la conformité ouvre. Vous gardez la preuve de dépôt.', 'doux'));
     var receipts = el('ul', null, 'liste');
-    var listState = cState();
+    var listState = state();
     box.appendChild(listState);
     box.appendChild(receipts);
     var base = '/v1/conformite/personnes/' + encodeURIComponent(personId) + '/coffre';
-    function load(message) {
+    function load() {
       return send(base + '/recus', 'GET').then(function (res) {
         if (res.gone) return;
         clear(receipts);
-        if (!res.ok) { listState.textContent = coffreRefusal(res, 'Preuves indisponibles pour le moment.'); return; }
-        var rows = res.body.data || [];
-        listState.textContent = message || (rows.length ? '' : 'Aucune pièce déposée.');
+        if (!res.ok) { listState.textContent = refusal(res, 'Preuves indisponibles pour le moment.'); return; }
+        var rows = Array.isArray(res.body.data) ? res.body.data : [];
+        listState.textContent = rows.length ? '' : 'Aucune pièce déposée.';
         rows.forEach(function (p) {
-          var li = line(p.label + ', déposée le ' + date(p.depositedAt) + ' à ' + hour(p.depositedAt));
+          if (!p || typeof p.label !== 'string' || typeof p.sha256 !== 'string') return;
+          var li = el('li', p.label + ', déposée le ' + date(p.depositedAt) + ' à ' + hour(p.depositedAt));
           li.appendChild(el('p', 'Empreinte : ' + p.sha256, 'empreinte'));
           receipts.appendChild(li);
         });
       });
     }
     var form = el('div', null, 'decision');
-    var id = cSeq();
-    var kinds = {};
-    C_PIECES.forEach(function (p) { kinds[p.kind] = p.label; });
-    var kind = cSelect(form, id + '-sorte', 'Sorte de pièce', kinds);
+    var id = 'coffre-' + (++seq);
+    var kind = field(form, id + '-sorte', 'Sorte de pièce', 'select');
+    PIECES.forEach(function (p) { var o = el('option', p.label); o.setAttribute('value', p.kind); kind.appendChild(o); });
+    kind.value = PIECES[0].kind;
     var checked = field(form, id + '-verifie', 'Vérifiée le');
     checked.setAttribute('type', 'date');
-    checked.value = cToday();
+    checked.value = today();
     var until = field(form, id + '-valide', 'Valable jusqu’au (si la pièce le dit)');
     until.setAttribute('type', 'date');
     var file = field(form, id + '-fichier', 'Fichier (PDF, JPEG ou PNG, 10 Mo au plus)');
     file.setAttribute('type', 'file');
-    file.setAttribute('accept', C_TYPES.join(','));
-    var state = cState();
+    file.setAttribute('accept', TYPES.join(','));
+    var st = state();
     form.appendChild(button('Déposer au coffre', function () {
       var f = file.files && file.files[0];
-      if (!f) { state.textContent = COFFRE_REFUSALS.empty_content; return; }
-      if (C_TYPES.indexOf(f.type) === -1) { state.textContent = COFFRE_REFUSALS.bad_content_type; return; }
-      if (f.size > C_MAX) { state.textContent = COFFRE_REFUSALS.too_large; return; }
-      if (!currentKey) return;
+      if (!f) { st.textContent = REFUSALS.empty_content; return; }
+      if (TYPES.indexOf(f.type) === -1) { st.textContent = REFUSALS.bad_content_type; return; }
+      if (f.size > MAX) { st.textContent = REFUSALS.too_large; return; }
       var q = '?sorte=' + encodeURIComponent(kind.value) + '&verifie=' + encodeURIComponent(checked.value) + (until.value ? '&valide=' + encodeURIComponent(until.value) : '');
-      var mine = session;
-      state.textContent = 'Dépôt…';
-      fetch(base + q, { method: 'POST', headers: { authorization: 'Bearer ' + currentKey, 'content-type': f.type }, body: f, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
-        return r.json().then(function (b) { return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b }; }, function () { return { status: r.status, ok: false, body: null }; });
-      }, function () { return { offline: true }; }).then(function (res) {
-        if (mine !== session) return;
-        // Comme pour toute demande de l'application : une clé refusée ou un agent qui n'est plus actif efface tout.
-        if (res.status === 401 || (res.status === 403 && res.body && res.body.code === 'agent_inactive')) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return; }
-        if (!res.ok) { state.textContent = coffreRefusal(res, 'Pièce refusée. Vérifiez la saisie.'); return; }
+      st.textContent = 'Dépôt…';
+      send(base + q, 'POST', f, { 'content-type': f.type }).then(function (res) {
+        if (res.gone) return;
+        if (!res.ok) { st.textContent = refusal(res, 'Pièce refusée. Vérifiez la saisie.'); return; }
         file.value = '';
         var receipt = res.body.receipt;
-        state.textContent = receipt ? 'Déposée : ' + receipt.label + '. Empreinte : ' + receipt.sha256 : 'Déposée.';
+        st.textContent = receipt && typeof receipt.label === 'string' ? 'Déposée : ' + receipt.label + '. Empreinte : ' + receipt.sha256 : 'Déposée.';
         load();
       });
     }));
-    form.appendChild(state);
+    form.appendChild(st);
     box.appendChild(form);
-    load();
-    return box;
-  }
+    corps.appendChild(box);
+    return load();
+  };
+};
 `;
 
 /**

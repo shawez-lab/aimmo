@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
-import { COFFRE_JS, CONFORMITE_SCRIPT } from '../app/conformite.ts';
+import { BUDGETS, budgetProblems, gzipSize } from '../../core/src/design/audit.ts';
+import { COFFRE_JS, COFFRE_SCRIPT, CONFORMITE_SCRIPT } from '../app/conformite.ts';
 import { GEL_REGISTRE_SCRIPT } from '../app/gel-registre.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -462,12 +462,60 @@ describe('CE21 · le responsable lit et décide les alertes de cession', () => {
 });
 
 describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
+  // BR102 : le bloc se charge au geste « Pièces au coffre », par le chargeur commun ; le script servi tourne dans la page.
+  const coffreScripts = (t: Awaited<ReturnType<typeof run>>) => t.els.fiche!.children.filter((e) => e.attributes.src === '/app/coffre.js');
   const openFiche = async () => {
     const t = await run(AGENT);
     await t.click(t.byText(t.els.chauds!, 'Voir la fiche'));
-    const box = t.els['fiche-corps']!.all().find((e) => e.className === 'bloc coffre')!;
+    await t.click(t.byText(t.els['fiche-corps']!, 'Pièces au coffre'));
+    runInNewContext(COFFRE_SCRIPT, t.context);
+    coffreScripts(t)[0]!.listeners.load!({});
+    await settle();
+    const box = t.els['fiche-corps']!.all().find((e) => e.className === 'coffre')!;
     return { ...t, box };
   };
+
+  it('[R201] BR102 · servi à part, chargé au geste : rien n’est lu au coffre avant, et l’application y gagne sa place', async () => {
+    const t = await run(AGENT);
+    await t.click(t.byText(t.els.chauds!, 'Voir la fiche'));
+    expect(t.calls.some((c) => c.url.includes('/coffre'))).toBe(false);
+    expect(coffreScripts(t)).toEqual([]);
+    expect(AGENT_APP_FILES['/app/coffre.js']).toBe(COFFRE_SCRIPT);
+    expect(AGENT_APP_SHELL).not.toContain('/app/coffre.js');
+    expect(JS).toContain("lazyBlock('Pièces au coffre', '/app/coffre.js', 'AIMMO_COFFRE', personId)");
+    // Le dépôt n'est plus dans le script que reçoit chaque agent : ni la liste des preuves, ni le formulaire.
+    for (const gone of ['/coffre/recus', 'Déposer au coffre', 'Sorte de pièce', 'vault_not_configured']) expect(JS).not.toContain(gone);
+    expect(COFFRE_SCRIPT).not.toContain('innerHTML');
+    expect(budgetProblems({ html: '', js: COFFRE_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
+    // Au moins 1 000 octets compressés de libres pour la dictée en sortant d'une visite (BR103).
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 1000);
+    // Le geste charge le script une fois, puis les preuves de la fiche seulement.
+    await t.click(t.byText(t.els['fiche-corps']!, 'Pièces au coffre'));
+    expect(coffreScripts(t)).toHaveLength(1);
+    runInNewContext(COFFRE_SCRIPT, t.context);
+    coffreScripts(t)[0]!.listeners.load!({});
+    await settle();
+    expect(t.calls.filter((c) => c.url.includes('/coffre')).map((c) => c.url)).toEqual(['/v1/conformite/personnes/p1/coffre/recus']);
+  });
+
+  it('[R10] BR102 · une preuve mal formée n’est pas dite ; aucune preuve : dit en mots', async () => {
+    const t = await run({ ...AGENT, 'GET /v1/conformite/personnes/p1/coffre/recus': ok([{ pieceId: 'v9', label: 7 }, null]) });
+    await t.click(t.byText(t.els.chauds!, 'Voir la fiche'));
+    await t.click(t.byText(t.els['fiche-corps']!, 'Pièces au coffre'));
+    runInNewContext(COFFRE_SCRIPT, t.context);
+    coffreScripts(t)[0]!.listeners.load!({});
+    await settle();
+    const box = t.els['fiche-corps']!.all().find((e) => e.className === 'coffre')!;
+    expect(box.all().filter((e) => e.tagName === 'li')).toEqual([]);
+    const u = await run({ ...AGENT, 'GET /v1/conformite/personnes/p1/coffre/recus': ok([]) });
+    await u.click(u.byText(u.els.chauds!, 'Voir la fiche'));
+    await u.click(u.byText(u.els['fiche-corps']!, 'Pièces au coffre'));
+    runInNewContext(COFFRE_SCRIPT, u.context);
+    coffreScripts(u)[0]!.listeners.load!({});
+    await settle();
+    expect(u.els['fiche-corps']!.textContent).toContain('Aucune pièce déposée.');
+  });
 
   it('[R90] l’agent dépose la pièce par son corps brut et lit la preuve de dépôt, jamais la pièce', async () => {
     const t = await openFiche();
@@ -491,6 +539,7 @@ describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
       '/v1/conformite/personnes/p1/coffre/recus',
     ]);
     expect(COFFRE_JS).not.toContain('/v1/conformite/coffre/');
+    expect(COFFRE_SCRIPT).not.toContain('/v1/conformite/coffre/');
   });
 
   it('[R90] un fichier d’un autre format est refusé sur place ; un coffre fermé est dit tel quel', async () => {
