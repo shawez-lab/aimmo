@@ -269,15 +269,18 @@ globalThis.AIMMO_PANNEAUX = function (t) {
   function show(inner) {
     var said = el('p', null, 'etat');
     said.setAttribute('role', 'status');
+    var corps = el('div');
+    clear(inner);
+    inner.appendChild(said);
+    inner.appendChild(corps);
     if (writing) {
-      if (!ctx || !ctx.desk) { clear(inner); inner.appendChild(said); said.textContent = BUSY; }
+      /* Un ajout part encore : le bloc rouvert, même redessiné par l'écran du réseau, devient le sien ; sa réponse et
+         ses numéros y seront dits. */
+      if (ctx && ctx.desk) { ctx.corps = corps; ctx.said = said; }
+      said.textContent = BUSY;
       return Promise.resolve(false);
     }
     disarm();
-    clear(inner);
-    var corps = el('div');
-    inner.appendChild(said);
-    inner.appendChild(corps);
     ctx = { id: '', corps: corps, said: said, desk: true };
     return load('');
   }

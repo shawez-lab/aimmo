@@ -214,6 +214,24 @@ describe('BR105 · le stock de panneaux pour la direction', () => {
     expect(d.status()).toContain('Écrivez sur chacun son numéro : 20, 21.');
     expect(d.gets()).toHaveLength(2);
 
+    // L'écran du réseau redessiné pendant l'ajout : le bloc rouvert reçoit la réponse et les numéros.
+    let later: (r: Response) => void = () => undefined;
+    const g = await desk({ 'POST /v1/panneaux/stock': () => new Promise<Response>((r) => { later = r; }) });
+    await g.open();
+    g.set('petit', '2');
+    await g.click(g.button('Ajouter au stock'));
+    const before = g.part();
+    await g.click(g.els['engagements-voir']);
+    expect(g.part()).not.toBe(before);
+    await g.click(g.button('Ouvrir le stock'));
+    expect(g.status()).toBe(PANNEAUX_BUSY);
+    expect(g.gets()).toHaveLength(1);
+    later(Response.json({ ok: true, mode: 'essai', data: { numbers: [30, 31] } }));
+    await settle();
+    expect(g.status()).toContain('2 panneaux petit format ajoutés au stock. Écrivez sur chacun son numéro : 30, 31.');
+    expect(g.texts()).toContain('Grand format : 4 en stock, 1 posé.');
+    expect(g.posts()).toHaveLength(1);
+
     const u = await desk({ 'POST /v1/panneaux/stock': cut });
     await u.open();
     u.set('moyen', '4');
