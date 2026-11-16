@@ -173,7 +173,9 @@ describe('BR101 · la création à la voix à l’écran de l’agent', () => {
   });
 
   it('[R32] créneau pris pendant la validation : ce qui est rangé et les créneaux libres sont dits (Jamais vu)', async () => {
+    const withPhone = { ...DRAFT, fields: [...DRAFT.fields, { target: 'contact', key: 'phone', value: '+33612345678', sentence: 0, quote: '06 12 34 56 78' }] };
     const d = await desk({
+      'POST /v1/dictee/lecture': ok({ draft: withPhone, readAt: READ_AT, report: null }),
       'POST /v1/dictee/validation': no(409, {
         ok: false, rule: 'R32', code: 'slot_taken_meanwhile',
         kept: { personId: 'p1', contact: 'created', propertyId: 'b1' },
@@ -189,6 +191,16 @@ describe('BR101 · la création à la voix à l’écran de l’agent', () => {
     expect(text).toContain('Créneaux libres les plus proches :');
     expect(text).toContain('à 11:00');
     expect(text).not.toContain(INJECTED);
+  });
+
+  it('[R262] créneau pris sans numéro ni mail gardé : l’écran ne conseille pas une dictée qui ferait une seconde fiche', async () => {
+    const d = await desk({ 'POST /v1/dictee/validation': no(409, { ok: false, rule: 'R32', code: 'slot_taken_meanwhile', kept: { personId: 'p1', contact: 'created', propertyId: 'b1' }, freeSlots: [] }) });
+    await d.open();
+    await d.dictate();
+    await d.click(d.btn('Valider ce qui est coché'));
+    expect(d.posts().find((p) => p.url === '/v1/dictee/validation')!.body!.keep).toMatchObject({ contact: ['firstName', 'lastName', 'project'] });
+    expect(d.text()).toContain('ajoutez son numéro ou son mail à sa fiche avant de dicter le rendez-vous : sans eux, une nouvelle dictée ferait une seconde fiche.');
+    expect(d.text()).not.toContain('dictez son numéro ou son mail avec le nouveau rendez-vous');
   });
 
   it('refus dits en mots, jamais un code ; un refus inconnu a sa phrase', async () => {

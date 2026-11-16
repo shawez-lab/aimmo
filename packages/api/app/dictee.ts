@@ -92,13 +92,13 @@ globalThis.AIMMO_DICTEE = function (t) {
     if (!said) return null;
     return said + (code === 'not_dictated' || code === 'incomplete_property' || code === 'incomplete_appointment' ? keysSaid(b.keys) : '');
   }
-  function kept(box, k) {
+  function kept(box, k, reach) {
     if (!k || typeof k !== 'object') return;
     var parts = [];
     if (k.contact === 'created') parts.push('la fiche du contact, créée');
     else if (k.contact === 'matched') parts.push('le contact, retrouvé dans sa fiche');
     if (str(k.propertyId, 64)) parts.push('le bien');
-    if (parts.length) box.appendChild(el('p', 'Déjà rangé, sans rien doubler : ' + parts.join(' et ') + '. Le rendez-vous n’est pas pris : fixez une autre heure avec le contact, puis dictez son numéro ou son mail avec le nouveau rendez-vous, sans le bien ; le rendez-vous rejoindra sa fiche.'));
+    if (parts.length) box.appendChild(el('p', 'Déjà rangé, sans rien doubler : ' + parts.join(' et ') + '. Le rendez-vous n’est pas pris : fixez une autre heure avec le contact, puis ' + (reach ? 'dictez son numéro ou son mail avec le nouveau rendez-vous, sans le bien ; le rendez-vous rejoindra sa fiche.' : 'ajoutez son numéro ou son mail à sa fiche avant de dicter le rendez-vous : sans eux, une nouvelle dictée ferait une seconde fiche.')));
   }
   function free(box, slots) {
     var list = (Array.isArray(slots) ? slots : []).filter(instant).slice(0, 3);
@@ -169,7 +169,7 @@ globalThis.AIMMO_DICTEE = function (t) {
           if (!x.ok) {
             answer.textContent = refusal(x.body) || ${JSON.stringify(DICTEE_OTHER)};
             var b = x.body || {};
-            if (b.code === 'slot_not_free' || b.code === 'slot_taken_meanwhile') { kept(result, b.kept); if (b.code === 'slot_taken_meanwhile') free(result, b.freeSlots); }
+            if (b.code === 'slot_not_free' || b.code === 'slot_taken_meanwhile') { kept(result, b.kept, (keep.contact || []).some(function (k) { return k === 'phone' || k === 'email'; })); if (b.code === 'slot_taken_meanwhile') free(result, b.freeSlots); }
             return;
           }
           var d = x.body.data || {};
