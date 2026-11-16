@@ -9,6 +9,7 @@
 import { ACTUALITES_SCRIPT } from '../app/actualites.ts';
 import { CLES_A_RENDRE_SCRIPT } from '../app/cles-a-rendre.ts';
 import { ARMOIRE_SCRIPT } from '../app/armoire.ts';
+import { PANNEAUX_SCRIPT } from '../app/panneaux.ts';
 import { A_TENIR_SCRIPT } from '../app/a-tenir.ts';
 import { ALERTES_SCRIPT } from '../app/alertes.ts';
 import { SEQUENCES_JOUR_SCRIPT } from '../app/sequences-jour.ts';
@@ -145,6 +146,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/cles-a-rendre.js': { body: CLES_A_RENDRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'armoire des clés d'un bien (BR51), chargée au geste depuis « Mettre en vente », jamais gardée [R201].
   '/app/armoire.js': { body: ARMOIRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Les panneaux (BR104), sur l'accueil de l'agent et dans « Mettre en vente », par le chargeur commun [R201, R284].
+  '/app/panneaux.js': { body: PANNEAUX_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les gestes d'appel de la fiche (AC12), chargés à l'ouverture d'une fiche où ils servent [R201].
   '/app/appels.js': { body: APPELS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le classement de la fiche et sa correction (Q08), chargés à l'ouverture d'une fiche classée [R201].
