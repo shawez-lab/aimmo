@@ -530,3 +530,127 @@ describeWithSqlite('AT02 · la page de prix rendue depuis la dernière version',
     expect(text).toContain('Pas assez de ventes pour publier un chiffre fiable.');
   });
 });
+
+/** Une zone rangée telle qu'avant le contrôle des contours (AT19, RC59) : écrite directement, sans `defineZone`. */
+async function storedZone(db: SqlDatabase, id: string, level: 'commune' | 'quartier', parentId: string | null, slug: string, ring: LatLon[]) {
+  await db.run(
+    'INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, 'net-1', level, parentId, slug, slug, level === 'commune' ? '99009' : null, JSON.stringify(ring), 'Contour ancien', 'direction:dir-1', '2026-09-01T08:00:00.000Z'],
+  );
+}
+
+// Un quartier en nœud papillon, et un autre presque plat (trois points alignés à 1 mm près), dans la commune test.
+const BOWTIE: LatLon[] = [[47.0, 5.05], [47.1, 5.1], [47.0, 5.1], [47.1, 5.05]];
+const FLAT: LatLon[] = [[47.0, 5.0], [47.05, 5.0], [47.1, 5.0 + 0.000000013]];
+// Une commune voisine en nœud papillon, avec un quartier sain.
+const FAR_BOWTIE: LatLon[] = [[48.0, 5.0], [48.1, 5.1], [48.0, 5.1], [48.1, 5.0]];
+const FAR_QUARTER: LatLon[] = [[48.0, 5.0], [48.0, 5.02], [48.02, 5.02], [48.02, 5.0]];
+
+describeWithSqlite('RC60 · une zone rangée avant le contrôle des contours', () => {
+  it('[R150] avec des contours sains, rien de mis de côté ; une zone à refaire ajoutée ne change pas la version', async () => {
+    const list = [2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p));
+    const { prix, db, direction, communeId } = await setup(list);
+    const r = await prix.recompute('net-1');
+    expect(r).toMatchObject({ ran: true, setAside: 0 });
+    expect(await prix.zonesToRedraw(direction)).toEqual({ ok: true, value: [] });
+    // La version ne dépend que des zones calculées : une zone mise de côté laisse le même identifiant.
+    await storedZone(db, 'zone-noeud', 'quartier', communeId, 'noeud', BOWTIE);
+    expect(await prix.recompute('net-1')).toEqual({ ran: false, reason: 'deja_fait', versionId: (r as { versionId: string }).versionId });
+  });
+
+  it('[R150] un quartier dont le contour se touche n’a aucune case ; ses ventes restent comptées dans sa commune', async () => {
+    const list = [
+      ...[2000, 2100, 2200, 2300, 2400, 2500, 2600].map((p) => sale('apartment', 5.02, p)),
+      ...[3000, 3100, 3200, 3300, 3400, 3500].map((p) => sale('apartment', 5.08, p)),
+    ];
+    const { prix, db, direction, communeId } = await setup(list);
+    // L'ancien quartier « est » est retiré, puis un quartier en nœud papillon avait été rangé à sa place.
+    const listed = await prix.zones(direction);
+    const est = listed.ok ? listed.value.find((z) => z.name === 'Est') : undefined;
+    expect(await prix.retireZone(direction, est!.id)).toMatchObject({ ok: true });
+    await storedZone(db, 'zone-noeud', 'quartier', communeId, 'noeud', BOWTIE);
+    const r = await prix.recompute('net-1');
+    expect(r).toMatchObject({ ran: true, setAside: 1 });
+    const p = (await prix.communePrices('net-1', 'commune-test'))!;
+    const apt = p.cells.filter((c) => c.kind === 'apartment').map((c) => [c.zone.slug, c.sales]);
+    expect(apt).toEqual([
+      ['commune-test', 13],
+      ['ouest', 7],
+    ]);
+    expect([...p.cells, ...p.held].some((c) => c.zone.slug === 'noeud')).toBe(false);
+    // La ligne du journal dit combien de zones sont mises de côté, sans identifiant.
+    const row = (await db.first<{ data: string }>("SELECT data FROM journal WHERE type = 'attirer.prix.version' ORDER BY seq DESC LIMIT 1"))!;
+    expect(JSON.parse(row.data)).toMatchObject({ setAside: 1 });
+    expect(row.data).not.toContain('zone-noeud');
+  });
+
+  it('[R150] une commune dont le contour se touche n’a aucune case, ni ses quartiers ; les autres communes sont calculées', async () => {
+    const list = [
+      ...[2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p)),
+      ...[2000, 2100, 2200, 2300, 2400, 2500].map((p) => ({ ...sale('apartment', 5.01, p), lat: 48.01 })),
+    ];
+    const { prix, db } = await setup(list);
+    await storedZone(db, 'commune-noeud', 'commune', null, 'commune-noeud', FAR_BOWTIE);
+    await storedZone(db, 'quartier-sain', 'quartier', 'commune-noeud', 'quartier-sain', FAR_QUARTER);
+    const r = await prix.recompute('net-1');
+    // La commune et son quartier, au contour sain, sont mis de côté ensemble.
+    expect(r).toMatchObject({ ran: true, setAside: 2 });
+    expect((await prix.communePrices('net-1', 'commune-test'))!.cells.find((c) => c.zone.slug === 'commune-test' && c.kind === 'apartment')).toMatchObject({ sales: 6 });
+    const far = await prix.communePrices('net-1', 'commune-noeud');
+    expect(far === null || (far.cells.length === 0 && far.held.length === 0)).toBe(true);
+    const cells = await db.all<{ area_id: string }>("SELECT area_id FROM price_cells WHERE area_id IN ('commune-noeud', 'quartier-sain')");
+    expect(cells).toEqual([]);
+  });
+
+  it('[R150] un contour presque plat ou illisible est aussi mis de côté ; une seule commune à refaire : aucune zone à calculer', async () => {
+    const { prix, db, direction, communeId } = await setup([2000, 2100, 2200, 2300, 2400, 2500].map((p) => sale('apartment', 5.02, p)));
+    await storedZone(db, 'zone-plate', 'quartier', communeId, 'plate', FLAT);
+    await db.run(
+      'INSERT INTO price_zones (id, network_id, level, parent_id, slug, label, insee_code, ring_json, ring_source, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ['zone-illisible', 'net-1', 'quartier', communeId, 'illisible', 'illisible', null, '[[47,5],', 'Contour ancien', 'direction:dir-1', '2026-09-01T08:00:00.000Z'],
+    );
+    expect(await prix.recompute('net-1')).toMatchObject({ ran: true, setAside: 2 });
+    const todo = await prix.zonesToRedraw(direction);
+    expect(todo.ok && todo.value.map((z) => z.name)).toEqual(['illisible', 'plate']);
+    // Seule commune à refaire : rien à calculer.
+    const other = await setup([]);
+    expect(await other.prix.retireZone(other.direction, other.communeId)).toMatchObject({ ok: true });
+    await storedZone(other.db, 'seule', 'commune', null, 'seule', FAR_BOWTIE);
+    expect(await other.prix.recompute('net-1')).toEqual({ ran: false, reason: 'aucune_zone' });
+  });
+
+  it('[R16] zonesToRedraw : la direction lit les zones à refaire par nom et niveau ; un agent est refusé et c’est écrit', async () => {
+    const { prix, db, direction, communeId } = await setup([]);
+    await storedZone(db, 'zone-noeud', 'quartier', communeId, 'noeud', BOWTIE);
+    await storedZone(db, 'commune-noeud', 'commune', null, 'commune-noeud', FAR_BOWTIE);
+    await storedZone(db, 'quartier-sain', 'quartier', 'commune-noeud', 'quartier-sain', FAR_QUARTER);
+    const todo = await prix.zonesToRedraw(direction);
+    // Le quartier sain d'une commune à refaire n'est pas à refaire lui-même.
+    expect(todo).toEqual({
+      ok: true,
+      value: [
+        { id: 'commune-noeud', level: 'commune', parentId: null, name: 'commune-noeud', reason: 'contour_croise' },
+        { id: 'zone-noeud', level: 'quartier', parentId: communeId, name: 'noeud', reason: 'contour_croise' },
+      ],
+    });
+    expect(JSON.stringify(todo)).not.toMatch(/ring|47\.|5\.05/);
+    const agent = { role: 'agent' as const, userId: 'ag-1', networkId: 'net-1' };
+    expect(await prix.zonesToRedraw(agent)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const refused = (await db.first<{ data: string }>("SELECT data FROM journal WHERE type = 'acces.refuse' ORDER BY seq DESC LIMIT 1"))!;
+    expect(JSON.parse(refused.data)).toMatchObject({ rule: 'R16', kind: 'price_zones', code: 'role' });
+    // Un autre réseau ne voit rien.
+    expect(await prix.zonesToRedraw({ ...direction, networkId: 'net-2' })).toEqual({ ok: true, value: [] });
+  });
+
+  it('[R17] une zone à refaire n’est ni retirée ni réécrite ; retirée par la direction, elle sort de la liste', async () => {
+    const { prix, db, direction, communeId } = await setup([]);
+    await storedZone(db, 'zone-noeud', 'quartier', communeId, 'noeud', BOWTIE);
+    await prix.recompute('net-1');
+    await prix.zonesToRedraw(direction);
+    const stored = (await db.first<{ ring_json: string }>("SELECT ring_json FROM price_zones WHERE id = 'zone-noeud'"))!;
+    expect(JSON.parse(stored.ring_json)).toEqual(BOWTIE);
+    expect(await db.first("SELECT area_id FROM price_zone_retirements WHERE area_id = 'zone-noeud'")).toBeNull();
+    expect(await prix.retireZone(direction, 'zone-noeud')).toMatchObject({ ok: true });
+    expect(await prix.zonesToRedraw(direction)).toEqual({ ok: true, value: [] });
+  });
+});
