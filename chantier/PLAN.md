@@ -2386,6 +2386,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : partenaire et conformité refusés par `invite`, refus écrit `acces.refuse` avec rôle et code [R16] (test) ; ni preuve d'accord ni adresse au journal [R13] (test) ; rien rangé, aucun lien ni accord (test) ; tous les tests de EC01, EC13 et RC61 restent verts.
 - Attend : rien.
 
+### RC63 · Le test du registre des effacements ne tombe plus au hasard
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : SV02, RC61
+- Cahier : Conformité (droit à l'effacement, copies de la base) ; R231.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC61 (« `effacements-rejeu.test.ts` cherche « p2 » dans un chiffré tiré au hasard, qui peut le contenir »). Le dernier test de ce fichier vérifie que le registre rangé est illisible en cherchant « p2 » dans les octets chiffrés : deux lettres s'y trouvent au hasard environ une fois sur 450, et la vérification tombe sans raison, ce qui fait douter de R231 et coûte une vérification à refaire. Désormais, dans ce test seul, la personne effacée porte un identifiant long et inventé ; on cherche dans le chiffré cet identifiant, celui de la demande et les clés du texte rangé (`"personId"`, `"requestId"`, `"erasedAt"`), qu'un texte en clair contiendrait toujours et qu'un chiffré ne contient pas ; et le nom de la place rangée a la forme attendue (date et 16 chiffres hexadécimaux), sans identifiant. Aucun code de production ne change.
+- Objectif : la preuve que le registre des effacements est illisible dans le stockage ne tombe plus jamais par hasard, et elle attrape toujours un registre rangé en clair.
+- Critères : le test cherche un identifiant d'au moins 20 caractères et les clés du texte, plus « p2 » (test) ; le nom de la place n'a que la date et le hasard hexadécimal [R231, R13] (test) ; tous les tests de SV02 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.

@@ -131,10 +131,15 @@ describeWithSqlite('SV02 · un effacement fait après la copie est refait après
 
   it('[R231] le registre est illisible dans le stockage, et il refuse un effacement mal décrit', async () => {
     const t = await world();
-    await recordErasure(t.store, t.key, t.entry('p2', '2027-03-10T12:00:00.000Z'));
+    // Un identifiant long, et non « p2 » : deux lettres se retrouvent au hasard dans un chiffré (une fois sur quelques centaines),
+    // une vingtaine jamais. Les clés du texte rangé sont cherchées aussi : un chiffré ne les contient pas, un texte en clair si.
+    const person = 'Inventee-Personne-Effacee-0002';
+    await recordErasure(t.store, t.key, t.entry(person, '2027-03-10T12:00:00.000Z'));
     const stored = [...t.parts].find(([k]) => k.startsWith('effacements/'))!;
-    expect(stored[0]).not.toContain('p2');
-    expect(new TextDecoder('latin1').decode(stored[1])).not.toMatch(/p2|dem-/);
+    expect(stored[0]).not.toContain(person);
+    expect(stored[0]).toMatch(/^effacements\/[0-9TZ]+-[0-9a-f]{16}$/);
+    const raw = new TextDecoder('latin1').decode(stored[1]);
+    for (const plain of [person, `dem-${person}`, '"personId"', '"requestId"', '"erasedAt"']) expect(raw).not.toContain(plain);
     await expect(recordErasure(t.store, t.key, t.entry('', 'pas une date'))).rejects.toThrow('mal décrit');
   });
 });
