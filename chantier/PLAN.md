@@ -2476,6 +2476,16 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : chaque forme déguisée alerte, avec sa sorte de signal [R62] (test) ; lettres espacées ou pointées lues [R62] (test) ; aucune fausse alerte sur les phrases d'usage de la vente (test) ; lecture linéaire : un texte de 40 000 caractères de lettres espacées lu en moins de 500 ms (test) ; tous les tests de N05, N09 et N10 restent verts.
 - Attend : rien.
 
+### RC67 · Un IBAN épelé caractère par caractère, « F R 7 6 3 0 0 0 … », alerte quand même l'agent (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC66, N05
+- Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; R62.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC66 (« un IBAN épelé caractère par caractère n'est lu ni en entrée ni en sortie »). Aujourd'hui `IBAN` (socle) ne lit un IBAN que si ses deux lettres et ses deux chiffres de tête sont collés : « F R 7 6 3 0 0 0 6 … », « F.R.7.6.3.0… », « FR 7 6 3000 6000 … » ou un IBAN écrit en minuscules et espacé passent le bouclier sans aucune alerte quand le message ne dit pas « IBAN » ni « RIB ». Désormais, dans `packages/core/src/dossiers/bouclier.ts` seul : un parcours linéaire relève les suites de morceaux de 1 à 4 lettres ou chiffres séparés par des espaces, retours à la ligne, points, tirets, virgules, barres ou soulignés (trois au plus d'affilée) ; dans chaque suite recollée, un IBAN est lu s'il commence au début d'un morceau par un code de pays connu suivi de deux chiffres, a exactement la longueur de ce pays, finit au bout d'un morceau et a une clé juste (modulo 97). Le signal `iban` part alors. Sans fausse alerte : numéros de téléphone épelés, références de lot, dates, codes postaux, montants, un IBAN épelé dont la clé est fausse (lu comme « coordonnées » seulement si un mot le dit). Le masque de l'IBAN épelé dans le message rangé (`maskIban`, `envoi/texte.ts`, socle) et le contrôle de ce qui sort ne changent pas : voie 1. Ni route, ni écran, ni migration ; le journal garde seulement les sortes de signaux [R15, R13].
+- Objectif : un IBAN donné au client par un détour d'écriture alerte l'agent comme un IBAN écrit normalement.
+- Jamais vu : le bouclier recolle un IBAN dicté ou tapé caractère par caractère et le reconnaît à sa clé, sans alerter sur un numéro de téléphone épelé.
+- Critères : IBAN français, belge, allemand, suisse, espagnol, italien, luxembourgeois, monégasque épelés avec espaces, points, tirets, retours à la ligne, en minuscules, en groupes mêlés : `iban` [R62] (test) ; au milieu d'une phrase sans aucun mot bancaire : `iban` [R62] (test) ; clé fausse, téléphone, références, dates, montants épelés : pas `iban` (test) ; lecture linéaire : 40 000 caractères de morceaux épelés en moins de 500 ms (test) ; tous les tests de N05, N09, N10 et RC66 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
