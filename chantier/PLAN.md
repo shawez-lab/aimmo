@@ -2331,6 +2331,16 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 - Reste pour la voie 1 : la route `GET /v1/attirer/prix/zones/a-refaire` et l'avertissement à l'écran des zones de la direction.
 
+### RC61 · Au plafond des liens de l'espace, l'agent sait qui les a pris et quand il pourra en préparer un (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : EC01, EC13
+- Cahier : Le produit, espaces des clients ; R160, R16, R13.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de EC13 (« un tiers qui connaît l'adresse peut consommer le plafond par des demandes ; l'agent attend alors la fin des 24 heures »). Le plafond de R160 ne change pas : 3 liens par 24 heures et par personne, toutes origines. Mais aujourd'hui l'agent refusé ne sait ni pourquoi ni jusqu'à quand. Désormais, dans `packages/core/src/espaces/entree.ts` seul, `EntreeEspace.linkAllowance(acces, viewer, personId)` dit à l'agent de la personne (ou à la direction), sous ses droits [R16] : combien de liens comptent sur les 24 dernières heures, fiches réunies comprises, combien demandés depuis le site et combien préparés, combien ouverts, l'heure où un nouveau lien redeviendra possible (`nextAt`, `null` sous le plafond), et `requestsUnopened`, vrai quand le plafond est tenu par des demandes du site dont aucune n'a été ouverte. Aucun lien, jeton ni adresse rendu ; rien écrit au journal par la lecture. Le refus de `invite` ne change pas de forme.
+- Objectif : l'agent dont la préparation du lien est refusée sait aussitôt à quelle heure réessayer, et qu'un plafond pris par des demandes jamais ouvertes ressemble à des demandes faites par un autre que le client.
+- Jamais vu : un espace client qui, au lieu d'un « trop de tentatives » muet, dit à l'agent « 3 liens demandés depuis le site ces 24 heures, aucun ouvert ; prochain lien possible à 14 h 05 », sans jamais montrer l'adresse ni le lien.
+- Critères : sous le plafond, le compte et `nextAt` nul (test) ; au plafond par des liens préparés, `nextAt` à l'heure où le plus ancien sort des 24 heures, et un lien préparé à cette heure passe [R160] (test) ; demandes du site jamais ouvertes : `requestsUnopened` vrai ; une ouverte : faux (test) ; fiches réunies comptées, lien non remis par le contrôle central non compté [R160] (test) ; autre agent, partenaire ou conformité refusés [R16] (test) ; ni adresse ni jeton dans la réponse, rien de neuf au journal [R13] (test) ; tous les tests de EC01 et EC13 restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
