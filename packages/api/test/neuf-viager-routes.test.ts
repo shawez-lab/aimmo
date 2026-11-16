@@ -65,7 +65,7 @@ const LOT = { lotRef: 'A01', typology: 't3', livingAreaHundredths: 6500, floor: 
 
 it('BR75 · chaque route nomme ses rôles, sous /neuf et /viager', () => {
   const routes = neufViagerRoutes();
-  expect(routes.length).toBe(13);
+  expect(routes.length).toBe(14);
   for (const r of routes) {
     expect(r.name).toMatch(/^(neuf|viager)\./);
     expect(r.roles.length).toBeGreaterThan(0);
@@ -82,6 +82,7 @@ describeWithSqlite('BR75 · routes du neuf et du viager', () => {
       ['alex', 'POST', '/viager/tables', TABLE],
       ['conf', 'GET', '/neuf/programmes'],
       ['conf', 'GET', '/neuf/programmes/p-1'],
+      ['conf', 'GET', '/neuf/programmes/p-1/annonce'],
       ['conf', 'POST', '/neuf/programmes/p-1/lots', LOT],
       ['conf', 'POST', '/viager/calculs', { inputs: TYPED }],
       ['conf', 'GET', '/viager/calculs/c-1'],
@@ -286,5 +287,50 @@ describeWithSqlite('BR75 · routes du neuf et du viager', () => {
     // Un agent sorti : refusé par l'application entière.
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.alex]);
     expect((await t.call('alex', 'GET', `/viager/biens/${t.property}/calculs`)).status).toBe(403);
+  });
+});
+
+describeWithSqlite('BR99 · le texte des portails d’un programme neuf', () => {
+  it('[R16] [R543] [R544] titre et texte depuis les seuls lots publiés, jusqu’au jour où ils tiennent ; un autre agent refusé au journal', async () => {
+    const t = await setup();
+    const promoter = await t.partner('promoteur', 'Promoteur Exemple');
+    const open = { promoterPartnerId: promoter, agentId: t.alex, name: 'Les Jardins inventés', city: 'Dijon', postalCode: '21000' };
+    const programId = (await t.call('dir', 'POST', '/neuf/programmes', open)).body.data.programId as string;
+
+    // Aucun lot publié : aucun texte [R543].
+    const empty = await t.call('alex', 'GET', `/neuf/programmes/${programId}/annonce`);
+    expect([empty.status, empty.body.rule, empty.body.code, empty.body.data]).toEqual([409, 'R543', 'no_lot_published', undefined]);
+
+    expect((await t.call('alex', 'POST', `/neuf/programmes/${programId}/lots`, LOT)).status).toBe(200);
+    expect((await t.call('alex', 'POST', `/neuf/programmes/${programId}/lots`, { ...LOT, lotRef: 'B02', priceCents: 19_000_000, confirmedOn: '2027-02-27' })).status).toBe(200);
+    expect((await t.call('alex', 'POST', `/neuf/programmes/${programId}/lots`, { ...LOT, lotRef: 'C03', priceCents: 30_000_000, status: 'vendu' })).status).toBe(200);
+    expect((await t.call('alex', 'POST', `/neuf/programmes/${programId}/lots`, { ...LOT, lotRef: 'D04', priceCents: 31_000_000, status: 'option' })).status).toBe(200);
+
+    for (const who of ['alex', 'dir'] as const) {
+      const r = await t.call(who, 'GET', `/neuf/programmes/${programId}/annonce`);
+      expect(r.status, who).toBe(200);
+      const d = r.body.data;
+      expect(d.programId).toBe(programId);
+      expect(d.title).toBe('Les Jardins inventés, programme neuf à Dijon : 2 lots dès 190\u202f000\u00a0€');
+      expect(d.day).toBe('2027-03-01');
+      // La plus ancienne confirmation (27 février) plus 14 jours.
+      expect(d.validUntil).toBe('2027-03-13');
+      expect(d.lots.map((l: { lotRef: string }) => l.lotRef)).toEqual(['B02', 'A01']);
+      // Un lot vendu ou sous option n'est jamais dans le texte [R543] ; sans barème, aucun chiffre de frais [R544].
+      expect(d.body).not.toMatch(/C03|D04/);
+      expect(d.body).toContain('frais non calculés, barème absent');
+      expect(d.body).not.toMatch(/<|>/);
+      expect(JSON.stringify(d)).not.toContain(t.alex);
+    }
+
+    // Un autre agent : refusé, écrit au journal ; programme inconnu : 404 [R16].
+    const before = (await t.events('acces.refuse')).length;
+    const other = await t.call('sam', 'GET', `/neuf/programmes/${programId}/annonce`);
+    expect([other.status, other.body.code, other.body.data]).toEqual([403, 'not_assigned', undefined]);
+    expect((await t.events('acces.refuse')).length).toBe(before + 1);
+    expect((await t.call('alex', 'GET', '/neuf/programmes/inconnu/annonce')).status).toBe(404);
+
+    // Rien n'est rangé ni envoyé par la lecture.
+    expect(await t.count('new_program_lot_versions')).toBe(4);
   });
 });

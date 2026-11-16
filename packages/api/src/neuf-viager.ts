@@ -9,7 +9,7 @@
  * occupée et l'expert du viager passe par la mise en relation de M18 [R542]. Rien n'est envoyé d'ici.
  */
 import { Acces, FicheClient, FicheUnique, agentState, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { ProgrammesNeufs, Viager, type ExpertViagerRelation } from '../../core/src/neuf-viager/index.ts';
+import { ProgrammesNeufs, Viager, newBuildListing, type ExpertViagerRelation } from '../../core/src/neuf-viager/index.ts';
 
 export const TRIAL_MODE = 'essai';
 /** Le corps d'une requête ordinaire ; une table d'espérance de vie (121 lignes au plus) y tient largement. */
@@ -132,6 +132,18 @@ async function programs(s: NeufViagerServices, v: Viewer): Promise<Outcome> {
   };
 }
 
+/**
+ * BR99 : le titre et le texte de l'annonce d'un programme neuf, pour les portails, depuis la seule grille publiée, sous
+ * les droits de la grille (agent du programme ou direction) [R16]. Un lot vendu, réservé, sous option ou à reconfirmer
+ * n'y est jamais [R543] ; les frais sont ceux du code [R544]. Rien n'est envoyé : l'agent copie le texte.
+ */
+async function listing(s: NeufViagerServices, v: Viewer, id: string): Promise<Outcome> {
+  const g = await core(s).neuf.agentGrid(v, id);
+  if (!g.ok) return g;
+  const { programId, name, city, postalCode, promoter, day, lots } = g.value;
+  return newBuildListing({ programId, name, city, postalCode, promoter, day, lots });
+}
+
 /** Le rejeu d'un calcul, lu seulement par qui peut relire ce calcul [R540, R16]. */
 async function replay(s: NeufViagerServices, v: Viewer, id: string): Promise<Outcome> {
   const c = core(s);
@@ -164,6 +176,7 @@ const ROUTES: NeufViagerRoute[] = [
     ),
   },
   { method: 'GET', pattern: new RegExp(`^/neuf/programmes/${ID}$`), name: 'neuf.grille', roles: WRITERS, handle: async (s, v, [id]) => reply(await core(s).neuf.agentGrid(v, id!)) },
+  { method: 'GET', pattern: new RegExp(`^/neuf/programmes/${ID}/annonce$`), name: 'neuf.annonce', roles: WRITERS, handle: async (s, v, [id]) => reply(await listing(s, v, id!)) },
   {
     method: 'POST',
     pattern: new RegExp(`^/neuf/programmes/${ID}/lots$`),
