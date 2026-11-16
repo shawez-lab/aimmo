@@ -5,7 +5,7 @@ import { LOT_CONFIRMATION_DAYS, LOT_STATUSES, LOT_TYPOLOGIES } from '../../core/
  * quand l'agent ouvre la partie « Programmes neufs » de l'écran « Gagner des mandats » : l'application tient ainsi son
  * budget de poids [R201].
  *
- * Il lit `GET /v1/neuf/programmes` et `GET /v1/neuf/programmes/<id>`, et écrit seulement par
+ * Il lit `GET /v1/neuf/programmes`, `GET /v1/neuf/programmes/<id>` et, au seul geste, `GET /v1/neuf/programmes/<id>/annonce` (BR99), et écrit seulement par
  * `POST /v1/neuf/programmes/<id>/lots` [R16]. Il ne calcule aucun frais et ne trie rien : les frais du neuf, de
  * l'ancien et leur écart viennent du serveur, chacun avec sa source, sa date et son hypothèse ; sans barème, aucun
  * chiffre de frais n'est écrit [R544]. Il met seulement en forme les entiers reçus (centimes en euros, centièmes de m²
@@ -47,6 +47,14 @@ export const NEUF_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
   status: 'Choisissez l’état dans la liste.',
   confirmed_on: 'Le jour de confirmation ne peut être ni dans le futur, ni avant la dernière confirmation de ce lot.',
   invalid_body: 'La demande n’a pas pu être lue.',
+  no_lot_published: 'Aucun lot publié : pas d’annonce à écrire tant qu’aucun lot n’est disponible et confirmé depuis peu.',
+  lot_not_confirmed: 'Un lot n’est plus confirmé depuis assez peu : faites-le reconfirmer par le promoteur.',
+  lot_listed_twice: 'Un lot apparaît deux fois dans la grille : relisez la grille.',
+  price_invalid: 'Un prix de la grille ne se lit pas : relisez la grille.',
+  name_missing: 'Le programme n’a pas de nom ou de commune : la direction doit les compléter.',
+  name_too_long: 'Le nom du programme est trop long pour le titre d’une annonce (160 signes) : la direction doit le raccourcir.',
+  too_long: 'Le texte ne tient pas dans les 4 000 signes d’une annonce.',
+  day_invalid: 'Le jour de la grille ne se lit pas : réessayez dans un moment.',
 });
 export const NEUF_OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
 export const NEUF_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. La grille est relue, vérifiez-la avant de recommencer.';
@@ -55,6 +63,10 @@ export const NEUF_NO_SCALE = 'Aucun barème des frais en vigueur : aucun chiffre
 export const NEUF_SOLD = 'Vendu : ce lot ne revient jamais.';
 export const NEUF_STALE = `Disponibles, mais confirmés il y a plus de ${LOT_CONFIRMATION_DAYS} jours : ils ne sont plus publiés tant que le promoteur ne les a pas reconfirmés.`;
 export const NEUF_MISSING = 'Remplissez chaque champ avant de ranger le lot.';
+/** BR99 : le texte des portails, jamais envoyé d'ici. */
+export const NEUF_PORTALS_NOTE = 'Rien n’est envoyé aux portails : copiez le titre et le texte dans votre annonce. Les lots vendus, réservés, sous option ou à reconfirmer n’y sont jamais.';
+export const NEUF_PORTALS_FAILED = 'Texte non préparé';
+export const NEUF_COPY_FAILED = 'Copie impossible sur cet appareil : sélectionnez le texte et copiez-le.';
 
 export const NEUF_SCRIPT = `'use strict';
 globalThis.AIMMO_NEUF = function (t) {
@@ -64,6 +76,7 @@ globalThis.AIMMO_NEUF = function (t) {
   var REFUSALS = ${JSON.stringify(NEUF_REFUSALS)};
   var OFFLINE = ${JSON.stringify(NEUF_OFFLINE)}, LOST = ${JSON.stringify(NEUF_LOST)}, NONE = ${JSON.stringify(NEUF_NONE)};
   var NO_SCALE = ${JSON.stringify(NEUF_NO_SCALE)}, SOLD = ${JSON.stringify(NEUF_SOLD)}, STALE = ${JSON.stringify(NEUF_STALE)}, MISSING = ${JSON.stringify(NEUF_MISSING)};
+  var PNOTE = ${JSON.stringify(NEUF_PORTALS_NOTE)}, PFAIL = ${JSON.stringify(NEUF_PORTALS_FAILED)}, CFAIL = ${JSON.stringify(NEUF_COPY_FAILED)};
   var ID = /^[A-Za-z0-9_-]{1,64}$/, DAY = /^\\d{4}-\\d{2}-\\d{2}$/;
   var root = null, load = 0;
   function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -165,6 +178,62 @@ globalThis.AIMMO_NEUF = function (t) {
     box.appendChild(ul);
     return box;
   }
+  /** Le lendemain d'un jour reçu, pour dire quand le texte cesse de tenir. */
+  function next(s) {
+    if (!DAY.test(str(s))) return '';
+    var p = s.split('-'), d = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + 1));
+    return d.toISOString().slice(0, 10);
+  }
+  function copy(text, ok, said) {
+    var c = globalThis.navigator && globalThis.navigator.clipboard;
+    if (!c || typeof c.writeText !== 'function') { said.textContent = CFAIL; return Promise.resolve(false); }
+    return Promise.resolve().then(function () { return c.writeText(text); }).then(function () { said.textContent = ok; return true; }, function () { said.textContent = CFAIL; return false; });
+  }
+  /** BR99 : le titre et le texte de l'annonce pour les portails, et le jour jusqu'où ils tiennent [R543, R10]. */
+  function portals(ctx) {
+    var box = el('section', null, 'bloc');
+    box.appendChild(el('h4', 'Texte pour les portails'));
+    box.appendChild(el('p', PNOTE, 'doux'));
+    var said = note('');
+    var out = el('div');
+    var turn = 0;
+    box.appendChild(button('Préparer le texte des portails', function () {
+      var mine = ++turn;
+      // Un texte d'avant n'est jamais laissé : il peut ne plus tenir.
+      clear(out);
+      said.textContent = 'Préparation…';
+      return send('/v1/neuf/programmes/' + encodeURIComponent(ctx.id) + '/annonce', 'GET').then(function (x) {
+        if (x.gone || mine !== turn || ctx.mine !== load) return false;
+        var d = x.ok && x.body.data && typeof x.body.data === 'object' ? x.body.data : null;
+        if (!d || !str(d.title) || !str(d.body) || !DAY.test(str(d.validUntil))) {
+          said.textContent = PFAIL + ' : ' + refusal(x, 'la grille ne se lit pas pour le moment.');
+          return false;
+        }
+        said.textContent = '';
+        var until = 'Ce texte tient jusqu’au ' + day(d.validUntil) + ' inclus. Le ' + day(next(d.validUntil)) + ', un lot n’est plus confirmé : faites reconfirmer les lots par le promoteur, puis recopiez le texte, ou retirez l’annonce.';
+        var u = el('p', null, 'etat');
+        u.appendChild(el('strong', until));
+        out.appendChild(u);
+        if (int(d.omitted) && d.omitted > 0) out.appendChild(el('p', (d.omitted === 1 ? '1 lot ne tient pas' : d.omitted + ' lots ne tiennent pas') + ' dans les 4 000 signes : le texte les compte, sans les détailler.', 'doux'));
+        out.appendChild(el('h5', 'Titre'));
+        out.appendChild(el('p', d.title));
+        var done = note('');
+        out.appendChild(button('Copier le titre', function () { return copy(d.title, 'Titre copié.', done); }));
+        out.appendChild(el('h5', 'Texte'));
+        var txt = el('textarea', d.body);
+        txt.setAttribute('readonly', 'readonly');
+        txt.setAttribute('rows', '12');
+        txt.setAttribute('aria-label', 'Texte de l’annonce');
+        out.appendChild(txt);
+        out.appendChild(button('Copier le texte', function () { return copy(d.body, 'Texte copié.', done); }));
+        out.appendChild(done);
+        return true;
+      });
+    }));
+    box.appendChild(said);
+    box.appendChild(out);
+    return box;
+  }
   function form(ctx, from) {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h4', from ? 'Mettre à jour le lot ' + from.lotRef : 'Ranger l’état d’un lot'));
@@ -246,6 +315,7 @@ globalThis.AIMMO_NEUF = function (t) {
       var ctx = { id: id, name: name, mine: mine };
       var place = el('div');
       box.appendChild(published(g));
+      box.appendChild(portals(ctx));
       var s = stale(g);
       if (s) box.appendChild(s);
       box.appendChild(every(ctx, g, place));

@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
-import { NEUF_LOST, NEUF_MISSING, NEUF_NONE, NEUF_NO_SCALE, NEUF_REFUSALS, NEUF_SCRIPT, NEUF_SOLD } from '../app/neuf.ts';
+import { NEUF_COPY_FAILED, NEUF_LOST, NEUF_MISSING, NEUF_NONE, NEUF_NO_SCALE, NEUF_PORTALS_NOTE, NEUF_REFUSALS, NEUF_SCRIPT, NEUF_SOLD } from '../app/neuf.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -69,7 +69,7 @@ const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-async function run(answers: Record<string, Answer> = {}) {
+async function run(answers: Record<string, Answer> = {}, clipboard?: { writeText: (t: string) => Promise<void> }) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { method: string; url: string; body: Record<string, unknown> | undefined; auth: string | undefined }[] = [];
@@ -83,7 +83,7 @@ async function run(answers: Record<string, Answer> = {}) {
       const a = table[`${method} ${url}`];
       return a ? a() : Promise.reject(new TypeError('hors ligne'));
     },
-    navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+    navigator: { serviceWorker: { register: () => Promise.resolve({}) }, ...(clipboard ? { clipboard } : {}) },
   };
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
@@ -300,5 +300,93 @@ describe('BR78 · la grille de mes programmes neufs, à l’écran de l’agent'
     expect(t.buttons(t.part(), 'Voir la grille')).toHaveLength(2);
     expect(t.part().textContent).toContain(INJECTED);
     expect(t.part().all().some((e) => e.tagName === 'img')).toBe(false);
+  });
+});
+
+describe('BR99 · le texte des portails d’un programme neuf, prêt à copier (Jamais vu)', () => {
+  const LISTING = {
+    programId: 'pg1',
+    title: `Les Jardins Inventés, programme neuf à Dijon : 2 lots dès 123 456,78 € ${INJECTED}`,
+    body: `Programme neuf Les Jardins Inventés.\n• Lot B2 · Studio\n• Lot A1 · T3 ${INJECTED}`,
+    day: '2027-03-10',
+    validUntil: '2027-03-22',
+    lots: [
+      { lotRef: 'B2', priceCents: 12_345_678, confirmedOn: '2027-03-09', written: true },
+      { lotRef: 'A1', priceCents: 25_000_000, confirmedOn: '2027-03-08', written: true },
+    ],
+    omitted: 0,
+  };
+  const portals = (t: Awaited<ReturnType<typeof run>>) => t.part().all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Texte pour les portails')!;
+
+  it('[R543] [R10] au seul geste, titre et texte posés en texte, le jour où il tient et le lendemain dits en mots ; copie réussie dite', async () => {
+    const copied: string[] = [];
+    const t = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok(LISTING) }, { writeText: async (x) => void copied.push(x) });
+    await t.grid();
+    const box = portals(t);
+    expect(box.textContent).toContain(NEUF_PORTALS_NOTE);
+    // Rien n'est lu avant le geste.
+    expect(t.mine().some((c) => c.url.endsWith('/annonce'))).toBe(false);
+    await t.click(t.buttons(box, 'Préparer le texte des portails')[0]);
+    expect(t.mine().filter((c) => c.url.endsWith('/annonce')).map((c) => `${c.method} ${c.url}`)).toEqual(['GET /v1/neuf/programmes/pg1/annonce']);
+    expect(box.textContent).toContain('Ce texte tient jusqu’au 22/03/2027 inclus. Le 23/03/2027, un lot n’est plus confirmé : faites reconfirmer les lots par le promoteur, puis recopiez le texte, ou retirez l’annonce.');
+    expect(box.textContent).toContain(LISTING.title);
+    const area = box.all().find((e) => e.tagName === 'textarea')!;
+    expect(area.textContent).toBe(LISTING.body);
+    expect(area.attributes.readonly).toBe('readonly');
+    expect(box.all().some((e) => e.tagName === 'img')).toBe(false);
+    await t.click(t.buttons(box, 'Copier le titre')[0]);
+    expect(box.textContent).toContain('Titre copié.');
+    await t.click(t.buttons(box, 'Copier le texte')[0]);
+    expect(box.textContent).toContain('Texte copié.');
+    expect(copied).toEqual([LISTING.title, LISTING.body]);
+  });
+
+  it('le lendemain passe le mois et l’année ; des lots comptés sans ligne sont dits', async () => {
+    const t = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok({ ...LISTING, validUntil: '2027-12-31', omitted: 3 }) });
+    await t.grid();
+    await t.click(t.buttons(portals(t), 'Préparer le texte des portails')[0]);
+    expect(portals(t).textContent).toContain('jusqu’au 31/12/2027 inclus. Le 01/01/2028,');
+    expect(portals(t).textContent).toContain('3 lots ne tiennent pas dans les 4 000 signes');
+  });
+
+  it('copie impossible : dit en mots, le texte reste à sélectionner', async () => {
+    const none = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok(LISTING) });
+    await none.grid();
+    await none.click(none.buttons(portals(none), 'Préparer le texte des portails')[0]);
+    await none.click(none.buttons(portals(none), 'Copier le texte')[0]);
+    expect(portals(none).textContent).toContain(NEUF_COPY_FAILED);
+    const refused = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok(LISTING) }, { writeText: () => Promise.reject(new Error('refusé')) });
+    await refused.grid();
+    await refused.click(refused.buttons(portals(refused), 'Préparer le texte des portails')[0]);
+    await refused.click(refused.buttons(portals(refused), 'Copier le titre')[0]);
+    expect(portals(refused).textContent).toContain(NEUF_COPY_FAILED);
+    expect(portals(refused).textContent).not.toContain('Titre copié.');
+  });
+
+  it('[R10] refus dits en mots, jamais un code ; lecture en échec : « texte non préparé », jamais un texte d’avant', async () => {
+    const empty = await run({ 'GET /v1/neuf/programmes/pg1/annonce': no(409, { ok: false, rule: 'R543', code: 'no_lot_published' }) });
+    await empty.grid();
+    await empty.click(empty.buttons(portals(empty), 'Préparer le texte des portails')[0]);
+    expect(portals(empty).textContent).toContain(`Texte non préparé : ${NEUF_REFUSALS.no_lot_published}`);
+    expect(portals(empty).textContent).not.toContain('no_lot_published');
+    expect(portals(empty).all().some((e) => e.tagName === 'textarea')).toBe(false);
+
+    // Un premier texte, puis la relecture coupée : l'ancien texte disparaît.
+    const t = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok(LISTING) });
+    await t.grid();
+    await t.click(t.buttons(portals(t), 'Préparer le texte des portails')[0]);
+    expect(portals(t).textContent).toContain(LISTING.title);
+    t.table['GET /v1/neuf/programmes/pg1/annonce'] = cut;
+    await t.click(t.buttons(portals(t), 'Préparer le texte des portails')[0]);
+    expect(portals(t).textContent).not.toContain(LISTING.title);
+    expect(portals(t).all().some((e) => e.tagName === 'textarea')).toBe(false);
+    expect(portals(t).textContent).toContain('Texte non préparé');
+
+    // Une réponse mal formée ou un code inconnu : jamais un texte, jamais le code.
+    const odd = await run({ 'GET /v1/neuf/programmes/pg1/annonce': ok({ ...LISTING, validUntil: 'demain' }) });
+    await odd.grid();
+    await odd.click(odd.buttons(portals(odd), 'Préparer le texte des portails')[0]);
+    expect(portals(odd).textContent).toContain('Texte non préparé : la grille ne se lit pas pour le moment.');
+    expect(portals(odd).textContent).not.toContain(LISTING.title);
   });
 });
