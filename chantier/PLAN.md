@@ -1728,6 +1728,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : `GET /v1/attirer/prix/zones/a-refaire` rend nom, niveau et raison à la direction, refuse un agent (403) et l'écrit au journal [R16] (test) ; autre réseau : liste vide (test) ; une zone retirée sort de la liste (test) ; à l'écran, les zones à refaire dites en mots avec leur niveau et le geste à faire, chacune marquée dans la liste [R150] (test) ; lecture en échec : « liste des zones à refaire non lue », jamais « aucune » [R10] (test) ; budget tenu, sans innerHTML [R201] (test).
 - Attend : rien.
 
+### BR98 · Au plafond des liens de l'espace, l'agent lit à l'écran qui les a pris et à quelle heure réessayer (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC61, EC12
+- Cahier : Le produit, espaces des clients ; R160, R16, R13, R201.
+- Décidé (2026-11-16, voie 1), lecture prudente : relevé dans le « Reste » de RC61 (« la route, par exemple `GET /v1/espaces/<personne>/liens`, et la phrase à l'écran quand la préparation du lien est refusée au plafond »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. Changent seulement `packages/api/src/espaces.ts` (une route `GET /v1/espaces/personnes/<id>/liens`, agent de la personne ou direction, refus de rôle au journal comme `ouvrir`), `packages/api/app/espace-agent.ts` (la phrase au refus `plafond`) et leurs tests ; ni le cœur (où la voie 2 travaille), ni migration. La lecture ne se fait qu'après le refus au plafond, jamais avant le geste. Une lecture en échec garde la phrase d'aujourd'hui, sans heure inventée [R10].
+- Objectif : l'agent refusé au plafond sait aussitôt combien de liens ont été demandés depuis le site ou préparés, combien ouverts, et à quelle heure (de Paris) il pourra en préparer un.
+- Jamais vu : « 3 liens demandés depuis le site ces 24 heures, aucun ouvert : ces demandes ne viennent peut-être pas de la personne. Prochain lien possible demain à 8 h 05 », sans jamais montrer l'adresse ni le lien.
+- Critères : la route rend le compte à l'agent de la personne et à la direction, refuse un autre rôle (403, journal) et un autre agent [R16] (test) ; ni adresse ni jeton dans la réponse [R13] (test) ; au refus `plafond`, l'écran dit les comptes et l'heure de Paris du prochain lien, « demain » quand c'est le lendemain [R160] (test) ; demandes jamais ouvertes : la phrase qui le dit ; sinon rien de plus (test) ; lecture en échec ou hors réseau : la phrase d'avant, sans heure [R10] (test) ; aucune lecture avant le refus ; budget, sans innerHTML [R201] (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
