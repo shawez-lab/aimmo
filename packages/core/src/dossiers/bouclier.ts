@@ -85,6 +85,96 @@ function joinSpelled(p: string, dropStart: number, dropEnd: number): string {
   return out;
 }
 
+/**
+ * RC67 : longueur de l'IBAN par code de pays (Europe, outre-mer français compris). Un IBAN épelé n'est reconnu que
+ * sur un pays connu, à sa longueur exacte et avec une clé juste : un téléphone ou une référence épelés n'en sont pas.
+ */
+const IBAN_LENGTHS: Record<string, number> = {
+  FR: 27, MC: 27, GP: 27, MQ: 27, GF: 27, RE: 27, YT: 27, PM: 27, NC: 27, PF: 27, WF: 27, TF: 27, BL: 27, MF: 27,
+  BE: 16, LU: 20, CH: 21, LI: 21, DE: 22, AT: 20, NL: 18, ES: 24, AD: 24, PT: 25, IT: 27, SM: 27, VA: 22, GB: 22,
+  IE: 22, DK: 18, SE: 24, FI: 18, NO: 15, IS: 26, PL: 28, CZ: 24, SK: 24, HU: 28, RO: 24, BG: 22, GR: 27, CY: 28,
+  MT: 31, SI: 19, HR: 21, EE: 20, LV: 21, LT: 20, GI: 23,
+};
+
+const isAsciiAlnum = (c: string | undefined): boolean =>
+  c !== undefined && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'));
+const isAsciiDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
+const isIbanSep = (c: string | undefined): boolean => c !== undefined && /[\s.,\-/_]/.test(c);
+/** Une lettre ou un chiffre hors ASCII (« é », « ² ») : un morceau qui y est collé fait partie d'un mot. */
+const glued = (c: string | undefined): boolean => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+
+/** La clé d'un IBAN recollé, en majuscules : vraie si le reste modulo 97 vaut 1. */
+function ibanKeyOk(chars: string): boolean {
+  const s = chars.slice(4) + chars.slice(0, 4);
+  let r = 0;
+  for (const ch of s) {
+    const v = isAsciiDigit(ch) ? ch : String(ch.charCodeAt(0) - 55);
+    for (const d of v) r = (r * 10 + Number(d)) % 97;
+  }
+  return r === 1;
+}
+
+/** Dans une suite recollée, un IBAN qui commence au début d'un morceau et finit au bout d'un morceau, clé juste. */
+function runHasIban(joined: string, starts: boolean[], ends: boolean[]): boolean {
+  for (let k = 0; k + 4 <= joined.length; k += 1) {
+    if (!starts[k]) continue;
+    const length = IBAN_LENGTHS[joined.slice(k, k + 2)];
+    if (length === undefined || !isAsciiDigit(joined[k + 2]) || !isAsciiDigit(joined[k + 3])) continue;
+    const end = k + length;
+    if (end > joined.length || !ends[end]) continue;
+    const chars = joined.slice(k, end);
+    let digits = 0;
+    for (const ch of chars) if (isAsciiDigit(ch)) digits += 1;
+    if (digits >= 10 && ibanKeyOk(chars)) return true;
+  }
+  return false;
+}
+
+/**
+ * RC67 : un IBAN épelé ou coupé n'importe où, « F R 7 6 3 0 0 0 … », « f.r.7.6… », « FR 7 6 3000 … ». Un parcours
+ * linéaire relève les suites de morceaux de 1 à 4 lettres ou chiffres, séparés par trois espaces, retours à la ligne,
+ * points, tirets, virgules, barres ou soulignés au plus ; tout autre signe coupe la suite, et un morceau collé à une
+ * lettre accentuée n'en fait pas partie. Chaque suite recollée est relue par `runHasIban`, chaque place au plus
+ * 31 fois [R62].
+ */
+export function spelledIban(text: string): boolean {
+  let joined = '';
+  let starts: boolean[] = [];
+  let ends: boolean[] = [];
+  const flush = (): boolean => {
+    const hit = joined.length >= 15 && runHasIban(joined, starts, ends);
+    joined = '';
+    starts = [];
+    ends = [];
+    return hit;
+  };
+  let i = 0;
+  while (i < text.length) {
+    if (!isAsciiAlnum(text[i])) {
+      let k = i;
+      while (k < text.length && isIbanSep(text[k])) k += 1;
+      if (k === i || k - i > 3) {
+        if (flush()) return true;
+        if (k === i) k = i + 1;
+      }
+      i = k;
+      continue;
+    }
+    let j = i;
+    while (j < text.length && isAsciiAlnum(text[j])) j += 1;
+    if (j - i > 4 || glued(text[i - 1]) || glued(text[j])) {
+      if (flush()) return true;
+      i = j;
+      continue;
+    }
+    starts[joined.length] = true;
+    joined += text.slice(i, j).toUpperCase();
+    ends[joined.length] = true;
+    i = j;
+  }
+  return flush();
+}
+
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
 export function fundSignals(text: string): FundSignal[] {
   const p = plain(text);
@@ -94,7 +184,7 @@ export function fundSignals(text: string): FundSignal[] {
     if (!variants.includes(v)) variants.push(v);
   }
   const found: FundSignal[] = [];
-  if (IBAN.test(text) || text.includes(IBAN_MASK)) found.push('iban');
+  if (IBAN.test(text) || text.includes(IBAN_MASK) || spelledIban(text)) found.push('iban');
   for (const [signal, re] of INBOUND) if (variants.some((v) => re.test(v))) found.push(signal);
   return found;
 }
