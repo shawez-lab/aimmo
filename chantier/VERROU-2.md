@@ -1,1 +1,1 @@
-libre
+occupé depuis 2026-11-16 12:55 (heure de Paris)
