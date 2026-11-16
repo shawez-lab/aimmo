@@ -155,9 +155,10 @@ globalThis.AIMMO_ENGAGEMENTS = function (t) {
     body.appendChild(subScreen('Programmes neufs', 'Les barèmes des frais d’acquisition, chacun avec sa source, et les programmes d’un promoteur de l’annuaire confiés à un agent.', 'Ouvrir les programmes neufs', '/app/neuf-direction.js', 'AIMMO_NEUF_DIRECTION'));
     body.appendChild(subScreen('Banque et relances des impayés', 'L’âge du dernier relevé, son dépôt, les lignes à rapprocher des factures d’honoraires, les encaissements prouvés par la banque et les relances à valider.', 'Ouvrir la banque', '/app/banque.js', 'AIMMO_BANQUE'));
     body.appendChild(subScreen('Rapports sur mesure', 'Des mesures et un regroupement de votre choix, pour le total du réseau ou un seul agent, jamais deux côte à côte ; chaque chiffre s’ouvre sur ses lignes.', 'Ouvrir les rapports', '/app/rapports.js', 'AIMMO_RAPPORTS'));
+    body.appendChild(subScreen('Stock de panneaux', 'Les panneaux du réseau par format, ceux posés et à récupérer, et l’ajout au stock avec les numéros à écrire sur les panneaux.', 'Ouvrir le stock', '/app/panneaux.js', 'AIMMO_PANNEAUX'));
   }
   /* Un écran de la direction posé sous les engagements, servi à part et chargé au premier geste [R201] :
-     les scénarios automatiques (BR57, \`/app/scenarios.js\`), le réglage des réclamations (BR70, \`/app/reclamations-reglage.js\`), les remises négociées (BR73, \`/app/remises.js\`), les programmes neufs (BR79, \`/app/neuf-direction.js\`), la banque et les relances (BR93, \`/app/banque.js\`), les rapports sur mesure (BR94, \`/app/rapports.js\`). */
+     les scénarios automatiques (BR57, \`/app/scenarios.js\`), le réglage des réclamations (BR70, \`/app/reclamations-reglage.js\`), les remises négociées (BR73, \`/app/remises.js\`), les programmes neufs (BR79, \`/app/neuf-direction.js\`), la banque et les relances (BR93, \`/app/banque.js\`), les rapports sur mesure (BR94, \`/app/rapports.js\`), le stock de panneaux (BR105, \`/app/panneaux.js\`). */
   var screens = {};
   function subScreen(title, intro, label, src, name) {
     var box = el('section', null, 'bloc');
