@@ -340,10 +340,64 @@ describe('CE21 · le responsable lit et décide les alertes de cession', () => {
   it('[R118] [R15] l’alerte se lit : ce qui manque et la fin de la référence, jamais une pièce ni un montant ; le résumé la compte', async () => {
     const t = await open();
     const text = t.section().textContent;
-    expect(text).toContain('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : bénéficiaires effectifs, origine des fonds. Vérifiez le coffre avant de décider.');
+    expect(text).toContain('Cession d’un fonds : à la levée de l’alerte, il manquait au coffre : bénéficiaires effectifs, origine des fonds.');
+    expect(text).toContain('Coffre non relu : vérifiez-le avant de décider.');
     expect(text).toContain('Client …z9y8x7');
     expect(text).not.toContain('personne-test');
     expect(t.els['conformite-resume']!.textContent).toContain('alerte de cession');
+  });
+
+  const RELU = { checkedAt: '2026-11-16T08:12:00.000Z', buyerCurrent: true };
+  const withAlert = (more: Record<string, unknown>) => ({ 'GET /v1/commerces/vigilance': ok([{ ...ALERT, ...more }]) });
+
+  it('[R118] BR96 · relue au coffre : ce qui manque encore, ce qui est déposé depuis, avec la date et l’heure', async () => {
+    const t = await open(withAlert({ ...RELU, stillMissing: ['beneficiaires_effectifs'] }));
+    const text = t.section().textContent;
+    expect(text).toContain('il manquait au coffre : bénéficiaires effectifs, origine des fonds.');
+    expect(text).toContain('Relu au coffre le 16/11/2026 à 09:12 : il manque encore bénéficiaires effectifs.');
+    expect(text).toContain('Déposé depuis la levée : origine des fonds.');
+    expect(text).not.toContain('Coffre non relu');
+    expect(text).not.toContain('remplacé');
+  });
+
+  it('[R118] BR96 · rien déposé depuis : tout manque encore, rien n’est dit déposé', async () => {
+    const t = await open(withAlert({ ...RELU, stillMissing: ['beneficiaires_effectifs', 'origine_des_fonds'] }));
+    const text = t.section().textContent;
+    expect(text).toContain('il manque encore bénéficiaires effectifs, origine des fonds.');
+    expect(text).not.toContain('Déposé depuis');
+  });
+
+  it('[R14] BR96 · tout déposé depuis : dit, mais la décision reste au responsable', async () => {
+    const t = await open(withAlert({ ...RELU, stillMissing: [] }));
+    expect(t.section().textContent).toContain('Relu au coffre le 16/11/2026 à 09:12 : tout ce qui manquait est déposé depuis. La décision reste la vôtre.');
+    expect(t.byText(t.section(), SIGN)).toBeDefined();
+    expect(t.els['conformite-resume']!.textContent).toContain('1alerte de cession');
+  });
+
+  it.each([
+    ['nul', { ...RELU, stillMissing: null }],
+    ['absent', {}],
+    ['sans heure de relecture', { stillMissing: [] }],
+    ['heure illisible', { stillMissing: [], checkedAt: 'pas une date' }],
+  ])('[R10] BR96 · coffre non relu (%s) : jamais « tout est déposé »', async (_n, more) => {
+    const t = await open(withAlert(more));
+    const text = t.section().textContent;
+    expect(text).toContain('Coffre non relu : vérifiez-le avant de décider.');
+    expect(text).not.toContain('déposé depuis');
+    expect(text).not.toContain('Relu au coffre');
+  });
+
+  it('BR96 · un acquéreur remplacé depuis se dit sur l’ancienne alerte', async () => {
+    const t = await open(withAlert({ ...RELU, stillMissing: [], buyerCurrent: false }));
+    expect(t.section().textContent).toContain('L’acquéreur de cette alerte a été remplacé depuis sur le dossier.');
+  });
+
+  it('[R15] [R13] BR96 · aucune pièce ni montant, la référence reste tronquée', async () => {
+    const t = await open(withAlert({ ...RELU, stillMissing: ['origine_des_fonds'] }));
+    const text = t.section().textContent;
+    expect(text).not.toContain('personne-test');
+    expect(text).not.toMatch(/€|\d+,\d{2}/);
+    expect(text).toContain('Client …z9y8x7');
   });
 
   it('[R10] une lecture manquée n’est jamais « aucune alerte »', async () => {
