@@ -2298,6 +2298,17 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : trois sommets alignés à 1 mm près refusés [R150] (test) ; pointe qui revient à 1 cm de son bord refusée [R150] (test) ; sommet à 30 cm d'un autre bord refusé, à 2 m accepté (test) ; contour très fin (largeur moyenne sous 50 cm) refusé (test) ; carré, U concave, sommet au milieu d'un bord, point répété, petit bord de 20 cm qui tourne normalement : acceptés (test) ; le plus grand contour admis se contrôle toujours en temps borné (test AT19) ; tous les tests de AT01, AT15 et AT19 restent verts.
 - Attend : rien.
 
+### RC60 · Une zone de prix rangée avant le contrôle des contours, mise de côté du calcul et signalée à la direction (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT19, RC59
+- Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150, R16, R10.
+- Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de RC59 (« les zones déjà rangées ne sont pas recontrôlées »). Une zone tracée avant AT19 ou RC59 peut avoir un contour qui se touche lui-même : ses ventes seraient mal attribuées, et la direction ne le sait pas. Désormais, dans `packages/core/src/attirer/prix-versions.ts` seul : `recompute` relit chaque contour rangé avec `ringSelfCrosses` ; une zone dont le contour se touche (ou ne se relit pas) est mise de côté du calcul comme une zone retirée : ni case, ni vente attribuée ; une commune mise de côté emporte ses quartiers, un quartier mis de côté laisse ses ventes à sa commune. Les cases de la version précédente restent contrôlées contre la nouvelle (comme après un retrait) [R150]. Le résultat et la ligne du journal disent combien de zones sont mises de côté (`setAside`, un nombre, aucun identifiant). `zonesToRedraw(viewer)`, direction seule [R16], dit lesquelles, par nom et niveau, avec la raison « contour qui se touche ». Rien n'est retiré ni réécrit : la zone reste rangée, la direction la retire et la retrace. Aucune route, aucun écran, aucune migration ; `zones(viewer)` ne change pas.
+- Objectif : aucune version de prix n'est calculée sur un contour qu'on ne saurait plus tracer aujourd'hui, et la direction sait lesquels refaire.
+- Jamais vu : un tableau de prix par quartier qui relit ses propres frontières à chaque calcul, écarte d'elle-même une zone devenue douteuse au lieu de publier des chiffres faux, et dit à la direction laquelle retracer.
+- Critères : un quartier rangé avec un contour qui se touche : aucune case pour lui, ses ventes restent comptées dans sa commune [R150] (test) ; une commune rangée ainsi : ni elle ni ses quartiers n'ont de case (test) ; `setAside` au résultat et au journal, sans identifiant (test) ; `zonesToRedraw` rend ces zones par nom et niveau à la direction, refuse un agent et l'écrit au journal [R16] (test) ; une zone mise de côté n'est ni retirée ni réécrite, la retirer la fait sortir de `zonesToRedraw` (test) ; avec des contours sains, version identique à avant (même identifiant) (test) ; tous les tests de AT01, AT15, AT19 et RC59 restent verts.
+- Attend : rien.
+- Reste pour la voie 1 : la route `GET /v1/attirer/prix/zones/a-refaire` et l'avertissement à l'écran des zones de la direction.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
