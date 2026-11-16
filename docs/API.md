@@ -329,6 +329,8 @@ Sous `/v1/panneaux` : chaque route dit les rôles qu'elle admet, contrôlés ava
 
 Le planificateur passe à 6 h, 13 h et 19 h (`panneaux.recuperer`) : un panneau posé sur un bien vendu ou qui ne peut plus être diffusé reçoit sa tâche « récupérer le panneau », une seule par pose [R283].
 
+À l'écran (BR104), par un seul script servi à part, `/app/panneaux.js`, chargé au geste : « Mes panneaux » sur l'accueil (comptes du stock, panneaux à récupérer avec leur raison et leur jour, autres poses) et « Panneaux du bien » dans « Mettre en vente » (les poses du bien, la pose d'un panneau). « Récupéré » d'un appui, « Perdu » au second ; chaque refus dit en mots. L'ajout au stock par la direction n'a pas encore d'écran.
+
 ## Recrutement des 100 premiers agents, en mode essai (BR02)
 
 Sous `/v1/recrutement`, la direction seule : chaque route passe par les droits de la couche métier [R16] et écrit chaque refus au journal. Rien n'est envoyé.

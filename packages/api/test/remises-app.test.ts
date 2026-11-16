@@ -504,7 +504,8 @@ describe('BR74 · mes remises de tous les jours, sur l’accueil de l’agent', 
     // Retour à la journée depuis une fiche : un bloc neuf, fermé, sans rien de lu.
     a.els.retour!.listeners.click!({});
     await settle();
-    expect(a.els['remises-accueil']!.children).toHaveLength(1);
+    // Deux blocs neufs : les remises, puis « Mes panneaux » (BR104).
+    expect(a.els['remises-accueil']!.children).toHaveLength(2);
     expect(a.texts()).not.toContain('Logiciel Inventé');
     expect(btn(a.block(), 'Mes remises négociées')).toBeDefined();
     // Le script déjà chargé sert de nouveau, sans le recharger.
