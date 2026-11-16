@@ -26,15 +26,84 @@ export const REFERRAL_CALL_HOURS = 24;
 export const REFERRAL_FIELDS = ['firstName', 'email', 'phone', 'projectKind', 'callable', 'proof'] as const;
 
 const plain = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('fr');
-/** Tout ce qui promet ou décrit une récompense au client qui recommande [R66]. */
-export const REWARD =
-  /\b(?:prime|primes|cadeau|cadeaux|commission|commissions|bon d.achat|bons d.achat|cheque|cheques|pourcentage|pourcent|recompense\w*|remuner\w*|gratification\w*|retrocession\w*|parrainage remunere|euros?|eur|carte cadeau|ristourne|dedommag\w*|merci en argent)\b|%|€/;
+/**
+ * Tout ce qui promet ou décrit une récompense au client qui recommande [R66], y compris par détour : une remise ou des
+ * honoraires offerts, de l'argent, un virement, un repas ou un week-end offerts, et les mots anglais d'usage. Lu sur le
+ * texte sans accents ni majuscules. « Remise des clés », « estimation offerte » ou « espèces protégées » ne sont pas
+ * des récompenses.
+ */
+export const REWARD = new RegExp(
+  [
+    String.raw`\b(?:prime|primes|cadeau|cadeaux|commission|commissions|bon d.achat|bons d.achat|cheque|cheques|pourcentage|pourcent|recompense\w*|remuner\w*|gratification\w*|retrocession\w*|parrainage remunere|euros?|eur|carte cadeau|ristourne|dedommag\w*|merci en argent)\b`,
+    // Une remise sur ce que l'agence facture, ou ses honoraires offerts, est une récompense en nature.
+    String.raw`\b(?:remise|remises|reduction|reductions|rabais)\s+(?:[\w']+\s+){0,3}(?:honoraires|frais d.agence|frais d.agent|commission)\b`,
+    String.raw`\b(?:honoraires|frais d.agence|frais d.agent)\s+(?:sont\s+|seront\s+)?(?:offerts?|reduits?|gratuits?|rembourses?|divises?|partages?)\b`,
+    String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
+    String.raw`\b\d+\s*(?:balles|k|ke|keur)\b`,
+    String.raw`\b(?:restaurant|resto|repas|diner|dejeuner|week.end|voyage|sejour|bouteille|champagne|abonnement)\s+(?:vous\s+|lui\s+|leur\s+)?(?:offerts?|offertes?|paye|payes|payee|rembourse)\b`,
+    String.raw`\b(?:offr\w*|paie\w*|pay\w*)\s+(?:[\w']+\s+){0,3}(?:au restaurant|un restaurant|un resto|un repas|un diner|un dejeuner|une bouteille|un week.end|un voyage|un sejour|un abonnement)\b`,
+    // Une invitation au restaurant en remerciement est une récompense ; un repas de quartier ne l'est pas.
+    String.raw`\binvit\w*\s+(?:[\w']+\s+){0,3}(?:au restaurant|au resto)\b`,
+    String.raw`\b(?:reward\w*|gift\w*|cash|cashback|fee|fees|kickback)\b`,
+    '%',
+    '€',
+  ].join('|'),
+);
+const REWARD_ALL = new RegExp(REWARD.source, 'g');
+/** Un mot tapé lettre par lettre, séparées par des espaces, des points ou des tirets : « c a d e a u », « p.r.i.m.e ». */
+const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
 
-export function mentionsReward(text: string): boolean {
-  return REWARD.test(plain(text));
+/** Le texte sans accents ni majuscules, et pour chaque unité du résultat, sa place dans le texte tapé. */
+function plainWithPlaces(text: string): { plain: string; from: number[]; to: number[] } {
+  let out = '';
+  const from: number[] = [];
+  const to: number[] = [];
+  let i = 0;
+  for (const ch of text) {
+    const p = plain(ch);
+    for (let k = 0; k < p.length; k += 1) {
+      from.push(i);
+      to.push(i + ch.length);
+    }
+    out += p;
+    i += ch.length;
+  }
+  return { plain: out, from, to };
 }
 
-export type ReferralRefusal = { ok: false; rule: 'R16' | 'R66' | 'R03' | null; code: string };
+/**
+ * Les mots qui promettent une récompense [R66], tels que tapés, dans l'ordre du texte et sans doublon, pour que l'agent
+ * sache quoi retirer ; un mot écrit lettre par lettre est lu comme le mot. Rien n'est écrit au journal ici.
+ */
+export function rewardWords(text: string): string[] {
+  if (typeof text !== 'string' || text === '') return [];
+  const { plain: p, from, to } = plainWithPlaces(text);
+  const found: { at: number; word: string }[] = [];
+  for (const m of p.matchAll(REWARD_ALL)) {
+    if (m[0] === '') continue;
+    const start = from[m.index!]!;
+    const end = to[m.index! + m[0].length - 1]!;
+    found.push({ at: start, word: text.slice(start, end) });
+  }
+  for (const m of p.matchAll(SPELLED)) {
+    const letters = m[0].replace(/[^\p{L}]/gu, '');
+    if (!new RegExp(REWARD.source).test(letters)) continue;
+    const start = from[m.index!]!;
+    const end = to[m.index! + m[0].length - 1]!;
+    found.push({ at: start, word: text.slice(start, end) });
+  }
+  found.sort((a, b) => a.at - b.at);
+  const words: string[] = [];
+  for (const f of found) if (!words.includes(f.word)) words.push(f.word);
+  return words;
+}
+
+export function mentionsReward(text: string): boolean {
+  return rewardWords(text).length > 0;
+}
+
+/** Au refus `reward`, `words` dit les mots fautifs tels que tapés [R66] ; ils ne vont jamais au journal [R13]. */
+export type ReferralRefusal = { ok: false; rule: 'R16' | 'R66' | 'R03' | null; code: string; words?: string[] };
 
 /**
  * Ce que rend une recommandation rangée : la même chose que le proche soit nouveau, déjà client du lecteur, d'un autre
@@ -117,16 +186,17 @@ export class Recommandations {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.view !== 'full') return this.refused(viewer, `person:${referrerPersonId}`, 'not_assigned');
     const referrer = read.value.person;
-    const stop = async (rule: ReferralRefusal['rule'], code: string): Promise<ReferralRefusal> => {
+    const stop = async (rule: ReferralRefusal['rule'], code: string, words?: string[]): Promise<ReferralRefusal> => {
       await appendEvent(this.journal, { type: 'recommandation.refusee', actor: this.actor(viewer), subject: `person:${referrer.id}`, data: { rule, code } }, this.now);
-      return { ok: false, rule, code };
+      return words ? { ok: false, rule, code, words } : { ok: false, rule, code };
     };
 
     // La forme d'abord : aucun champ en dehors de la liste, donc aucun champ de récompense possible [R66].
     if (input === null || typeof input !== 'object' || Array.isArray(input)) return stop(null, 'bad_shape');
     const raw = input as Record<string, unknown>;
     if (Object.keys(raw).some((k) => !(REFERRAL_FIELDS as readonly string[]).includes(k))) return stop('R66', 'unknown_field');
-    if (Object.values(raw).some((v) => typeof v === 'string' && mentionsReward(v))) return stop('R66', 'reward');
+    const words = Object.values(raw).flatMap((v) => (typeof v === 'string' ? rewardWords(v) : []));
+    if (words.length > 0) return stop('R66', 'reward', [...new Set(words)]);
     const { firstName, email, phone, projectKind, callable, proof } = raw;
     if (firstName !== undefined && firstName !== null && (typeof firstName !== 'string' || firstName.trim() === '' || firstName.trim().length > 60)) return stop(null, 'bad_first_name');
     if (typeof projectKind !== 'string' || !(PROJECT_KINDS as readonly string[]).includes(projectKind)) return stop(null, 'bad_project');

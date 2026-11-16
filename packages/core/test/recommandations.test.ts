@@ -57,13 +57,36 @@ describeWithSqlite('F01 · recommandation d’un proche', () => {
     expect((await verifyChain(entries)).ok).toBe(true);
   });
 
+  it('[R66] [R13] RC65 : une récompense déguisée est refusée, le refus dit les mots tels que tapés, le journal ni mots ni texte', async () => {
+    const t = await setup();
+    const before = await t.persons();
+    const agent = t.as('agent', t.alex.id);
+    expect(await t.reco.recommend(agent, t.lea.id, { ...OK, proof: 'Hugo est d’accord ; Léa aura une remise sur ses honoraires' })).toEqual({
+      ok: false,
+      rule: 'R66',
+      code: 'reward',
+      words: ['remise sur ses honoraires'],
+    });
+    expect(await t.reco.recommend(agent, t.lea.id, { ...OK, firstName: 'Hugo', proof: 'd’accord, et un C A D E A U pour Léa, un C A D E A U' })).toEqual({
+      ok: false,
+      rule: 'R66',
+      code: 'reward',
+      words: ['C A D E A U'],
+    });
+    expect(await t.persons()).toBe(before);
+    const lines = await t.refusedLines();
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line.data).toEqual({ rule: 'R66', code: 'reward' });
+    expect(JSON.stringify(lines)).not.toMatch(/honoraires|C A D E A U|Hugo/);
+  });
+
   it('[R66] jamais de récompense : aucun champ en dehors de la liste, aucun texte qui en parle ; rien n’est rangé, chaque refus au journal', async () => {
     const t = await setup();
     const before = await t.persons();
     const agent = t.as('agent', t.alex.id);
     expect(await t.reco.recommend(agent, t.lea.id, { ...OK, reward: 100 })).toEqual({ ok: false, rule: 'R66', code: 'unknown_field' });
     for (const proof of ['Léa aura un cadeau', 'prime de 200 euros', 'Léa touchera 10 %', 'une commission pour Léa', 'bon d’achat offert', 'chèque de remerciement', 'Léa sera rémunérée']) {
-      expect(await t.reco.recommend(agent, t.lea.id, { ...OK, proof }), proof).toEqual({ ok: false, rule: 'R66', code: 'reward' });
+      expect(await t.reco.recommend(agent, t.lea.id, { ...OK, proof }), proof).toMatchObject({ ok: false, rule: 'R66', code: 'reward' });
     }
     expect(await t.reco.recommend(agent, t.lea.id, { ...OK, proof: ' ' })).toEqual({ ok: false, rule: 'R03', code: 'bad_proof' });
     expect(mentionsReward('Hugo est d’accord pour être appelé à la remise des clés')).toBe(false);
