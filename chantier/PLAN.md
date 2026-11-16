@@ -2445,7 +2445,7 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC65 · Une récompense déguisée en remise, en virement ou en lettres espacées est refusée, et l'agent lit le mot qui l'a fait refuser (Jamais vu)
-- Statut : bloquée : quatre tours de relecture de Codex, chacun un nouveau détour d'écriture épelée ; reste un mot épelé collé à un mot d'une lettre dans une expression (« une carte p r é p a y é e à Léa »). Branche `chantier/RC65` gardée (`cdb55481`), proposition #626 ouverte, non fusionnée ; piste écrite dans #626.
+- Statut : en cours (voie 2) : reprise le 2026-11-16 avec la piste de #626
 - Reste : à reprendre par une séance voie 2 avec la piste de #626 (variantes sans le mot d'une lettre au bord de chaque suite, et un test qui épelle tout le vocabulaire) ; vérification locale verte sur `a6d02555` (6439 tests). Voie 1 ensuite : dire `words` dans la zone de texte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : F01
 - Cahier : M11 Après-vente (« une recommandation n'est jamais rémunérée à un particulier ») ; R66.
