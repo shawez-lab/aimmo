@@ -335,10 +335,11 @@ export function dictatedIban(text: string): boolean {
 }
 
 /**
- * RC70 : les caractères qui ne se voient pas, ôtés : trait d'union conditionnel, espaces de largeur nulle, joints,
- * marques de direction, sélecteurs de variante, indicateur d'ordre des octets.
+ * RC70 : les caractères qui ne se voient pas, ôtés : tous ceux qu'Unicode dit ignorables par défaut (trait d'union
+ * conditionnel, espaces de largeur nulle, joints, marques de direction, sélecteurs de variante, ceux du plan
+ * supplémentaire compris, étiquettes, indicateur d'ordre des octets), et les marques de direction en plus.
  */
-const INVISIBLE = /[­͏؜ᅟᅠ឴឵᠋-᠏​-‏‪-‮⁠-⁯ㅤ︀-️﻿ﾠ]/g;
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f]/gu;
 
 /** RC70 : les lettres grecques et cyrilliques qui ont l'air d'une lettre latine, et cette lettre. */
 const LOOKALIKE: Record<string, string> = {
