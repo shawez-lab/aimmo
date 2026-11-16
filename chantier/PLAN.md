@@ -1808,13 +1808,6 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : bloc « Stock de panneaux » sous les engagements, script chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; comptes par format et toutes les poses, celles à récupérer d'abord [R284] (test) ; l'ajout envoie le format et le nombre, puis relit ; format ou nombre mal formés (hors 1 à 50) refusés avant l'appel [R282] (test) ; les numéros reçus dits, un numéro mal formé tu (test) ; un seul envoi à la fois, une écriture sans réponse dite incertaine et relue, jamais renvoyée seule (test) ; refus du serveur dits en mots, jamais un code [R16] (test) ; texte reçu posé en texte [R13] (test) ; l'accueil de l'agent ne propose pas l'ajout (test).
 - Attend : rien.
 
-## Restes du cœur des groupes HX
-
-Voie : 2
-
-Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
-
-
 ### BR106 · Un IBAN épelé ou dicté est masqué dans tout message rangé et refusé dans tout texte qui sort (Jamais vu)
 - Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC67, RC68, RC69
@@ -1824,6 +1817,14 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Jamais vu : la donnée bancaire est masquée même dictée en toutes lettres (« F R soixante-seize, trois mille… ») ou épelée, et seule sa plage disparaît, le reste du message reste lisible.
 - Critères : IBAN épelé (espaces, points, tirets, minuscules), dicté en mots (chiffres, paires, « double zéro », « mille », « cent », anglais), avec sosies (O, l, pleine chasse) : masqué en entier, le texte autour inchangé [R15] (test) ; `fundsInOutgoing` refuse ces textes [R62] (test) ; clé fausse, téléphone, dates, montants, phrases ordinaires en mots : texte inchangé (test) ; tout IBAN lu par `spelledIban` ou `dictatedIban` du bouclier est masqué par `maskIban` (test) ; lecture linéaire : 40 000 caractères en moins de 500 ms (test) ; tous les tests existants restent verts.
 - Attend : rien.
+
+## Restes du cœur des groupes HX
+
+Voie : 2
+
+Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route n'était libre, les branchements BR sont à la voie 1 (`app.ts`, écrans) et le reste attend un humain ; la voie 2 ne faisait plus rien depuis le 2026-11-04. Or plusieurs « Restent » des tâches HX ne touchent que le cœur d'un module déjà fusionné, sans route ni écran. Ids `RC..`. Chaque tâche change seulement les fichiers de son module dans `packages/core/src/<module>/` et ses tests ; `app.ts`, `packages/core/src/index.ts`, les fichiers du socle et les modules qu'une tâche BR en cours branche ne changent pas. Pas de migration. Tâche « Jamais vu » du groupe : RC01.
+
+
 ### RC01 · Les nombres dits en lettres dans la dictée (Jamais vu)
 - Statut : fait (2026-11-11)
 - Reste : fusionnée (#486, a3c2778a). Le 2026-11-11 (voie 2) : mention brute des jours (nombre suivi d'un mois, sans filtre) à la place de la mention filtrée ; un jour dit que la lecture écarte, avec son mois ou après « le » sans mois, fait refuser le rendez-vous de la phrase ; un jour suivi d'une année ancienne, un nombre suivi de son unité (« le trois pièces »), un numéro, un prix ou une surface déjà reconnus ne comptent pas. Relecture forte 1 P0 et 1 P1 corrigés ; Codex 3 P2 corrigés puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (5475 tests). Avant : choix refait le 2026-11-10 à 20 h (voie 2, 3a8100b à 80d0aa02) : motif indépendant `CHOICE` sur toute la phrase (nombre, unité facultative, mot de choix ou de correction partagé avec l'heure, article facultatif, nombre ; « et », « à », « au » entre nombres simples, second suivi de son unité ; « 3/4 », « 12-13 ») ; pièces, surface et prix vérifiés aussi sur leurs mentions brutes (`rawMentions`). Relecture forte 6 P1 et 5 P0 corrigés ; Codex 2 tours corrigés. Reste 1 P0 de Codex sur 80d0aa02 : « Visite le douze janvier à dix heures. En fait visite le quatorze ou quinze janvier à dix heures. » propose le 12, car `anyDays` passe par `wordHits`, qui applique `NUMBER_BEFORE`. Autre approche : ajouter aux `RAW_UNITS` une mention brute des jours, `CHOICE_NUMBER` suivi d'un mois, sans aucun filtre, et la mettre à la place de `anyDays`.
