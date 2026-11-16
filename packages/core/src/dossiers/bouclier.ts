@@ -173,6 +173,129 @@ export function spelledIban(text: string): boolean {
   return flush();
 }
 
+/** RC68 : les chiffres dits en mots, en français et en anglais. « Une » n'en est pas un : « une chambre ». */
+const UNIT_WORDS: Record<string, number> = {
+  zero: 0, un: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9,
+  one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9,
+};
+const TEEN_WORDS: Record<string, number> = { dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16 };
+const TENS_WORDS: Record<string, number> = { vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60 };
+const REPEAT_WORDS: Record<string, number> = { double: 2, triple: 3 };
+
+interface Token { word: string; raw: string; sep: string }
+
+/** Un mot d'un nombre composé ne se lie au précédent qu'à travers des espaces ou des traits d'union, trois au plus. */
+const binds = (sep: string): boolean => sep.length > 0 && sep.length <= 3 && /^[ \-]+$/.test(sep);
+
+/**
+ * Un nombre en mots qui commence au mot `i` : ses chiffres et le mot qui le suit, ou rien. Chaque lecture regarde au
+ * plus quatre mots plus loin : le parcours reste linéaire [R62]. Une virgule coupe toujours un nombre composé.
+ */
+function numberAt(t: Token[], i: number): [string, number] | null {
+  const at = (k: number): string | undefined => (k < t.length && (k === i || binds(t[k]!.sep)) ? t[k]!.word : undefined);
+  // Un mot plus loin, lié à chacun des précédents.
+  const chain = (k: number): string | undefined => {
+    for (let m = i + 1; m <= k; m += 1) if (at(m) === undefined) return undefined;
+    return at(k);
+  };
+  const w = t[i]!.word;
+  const unit = (k: number, min: number): number | undefined => {
+    const u = UNIT_WORDS[chain(k) ?? ''];
+    return u !== undefined && u >= min ? u : undefined;
+  };
+  /** Après dix ou soixante : « dix-sept », « onze »… ; rend la valeur au-delà de la dizaine et le mot suivant. */
+  const teen = (k: number): [number, number] | null => {
+    const x = chain(k);
+    if (x === 'dix') {
+      const u = unit(k + 1, 7);
+      return u !== undefined ? [10 + u, k + 2] : [10, k + 1];
+    }
+    if (x !== undefined && TEEN_WORDS[x] !== undefined) return [TEEN_WORDS[x]!, k + 1];
+    return null;
+  };
+  const repeat = REPEAT_WORDS[w];
+  if (repeat !== undefined) {
+    const u = unit(i + 1, 0);
+    return u !== undefined ? [String(u).repeat(repeat), i + 2] : null;
+  }
+  const tens = TENS_WORDS[w];
+  if (tens !== undefined) {
+    if (tens === 60) {
+      const tn = chain(i + 1) === 'et' && chain(i + 2) === 'onze' ? ([11, i + 3] as [number, number]) : teen(i + 1);
+      if (tn !== null) return [String(60 + tn[0]), tn[1]];
+    }
+    if (chain(i + 1) === 'et' && chain(i + 2) === 'un') return [String(tens + 1), i + 3];
+    const u = unit(i + 1, 1);
+    return u !== undefined ? [String(tens + u), i + 2] : [String(tens), i + 1];
+  }
+  if (w === 'quatre' && (chain(i + 1) === 'vingt' || chain(i + 1) === 'vingts')) {
+    const tn = teen(i + 2);
+    if (tn !== null) return [String(80 + tn[0]), tn[1]];
+    const u = unit(i + 2, 1);
+    return u !== undefined ? [String(80 + u), i + 3] : ['80', i + 2];
+  }
+  if (w === 'dix' || TEEN_WORDS[w] !== undefined) {
+    const tn = teen(i);
+    return tn === null ? null : [String(tn[0]), tn[1]];
+  }
+  const u = UNIT_WORDS[w];
+  return u === undefined ? null : [String(u), i + 1];
+}
+
+/**
+ * Un sosie de chiffre dans un morceau qui porte déjà un chiffre, ou dans une lettre seule : O ou o pour 0, l minuscule
+ * pour 1. Le L majuscule reste une lettre (un compte peut en porter une).
+ */
+function unmaskLookalikes(word: string): string {
+  if (word.length > 1 && !/[0-9]/.test(word)) return word;
+  return word.replace(/[Oo]/g, '0').replace(/l/g, '1');
+}
+
+/** Un morceau collé qui porte un chiffre, coupé par quatre : `spelledIban` le lit alors comme un IBAN écrit par groupes. */
+const inFours = (word: string): string => (word.length > 4 && /[0-9]/.test(word) ? word.replace(/(.{4})(?=.)/g, '$1 ') : word);
+
+/**
+ * RC68 : le texte relu pour l'IBAN, nombres en mots remis en chiffres, et, si `lookalikes`, sosies de chiffres aussi ;
+ * en majuscules. Forme normale de compatibilité d'abord (« ＦＲ７６ » devient « FR76 »), accents ôtés, la casse gardée
+ * jusqu'aux sosies. Ce qui n'est ni un nombre ni un sosie reste tel quel.
+ */
+function digitsRewritten(text: string, lookalikes: boolean): string {
+  const p = text.normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’`]/g, "'");
+  const tokens: Token[] = [];
+  const re = /([\p{L}\p{N}]+)|([^\p{L}\p{N}]+)/gu;
+  let sep = '';
+  for (let m = re.exec(p); m !== null; m = re.exec(p)) {
+    if (m[1] !== undefined) {
+      tokens.push({ word: m[1].toLowerCase(), raw: m[1], sep });
+      sep = '';
+    } else sep = m[2]!;
+  }
+  let out = '';
+  let i = 0;
+  while (i < tokens.length) {
+    const n = numberAt(tokens, i);
+    out += tokens[i]!.sep;
+    if (n !== null) {
+      out += n[0];
+      i = n[1];
+    } else {
+      const raw = tokens[i]!.raw;
+      out += inFours(lookalikes ? unmaskLookalikes(raw) : raw);
+      i += 1;
+    }
+  }
+  return (out + sep).toUpperCase();
+}
+
+/**
+ * RC68 : un IBAN dicté en mots (« F R sept six trois zéro… », « FR soixante-seize, trente, zéro zéro six… », « double
+ * zéro »), ou écrit avec des sosies de chiffres (O pour 0, l pour 1, chiffres pleine chasse). Le texte relu, avec et sans
+ * les sosies, passe par `spelledIban` seul : pays, longueur exacte et clé restent exigés.
+ */
+export function dictatedIban(text: string): boolean {
+  return spelledIban(digitsRewritten(text, false)) || spelledIban(digitsRewritten(text, true));
+}
+
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */
 export function fundSignals(text: string): FundSignal[] {
   const p = plain(text);
@@ -182,7 +305,7 @@ export function fundSignals(text: string): FundSignal[] {
     if (!variants.includes(v)) variants.push(v);
   }
   const found: FundSignal[] = [];
-  if (IBAN.test(text) || text.includes(IBAN_MASK) || spelledIban(text)) found.push('iban');
+  if (IBAN.test(text) || text.includes(IBAN_MASK) || spelledIban(text) || dictatedIban(text)) found.push('iban');
   for (const [signal, re] of INBOUND) if (variants.some((v) => re.test(v))) found.push(signal);
   return found;
 }
