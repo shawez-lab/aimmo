@@ -143,6 +143,31 @@ describeWithSqlite('BR100 · la création à la voix par l’API', () => {
     expect(await t.counts()).toEqual(before);
   });
 
+  it('[R32] [R261] le créneau pris pendant la validation : 409 avec ce qui est rangé et les créneaux libres, sans rien doubler', async () => {
+    const t = await setup();
+    // La course : un autre rendez-vous prend le créneau juste après la vérification, quand le bien est rangé.
+    await t.db.run(
+      `CREATE TRIGGER course_creneau AFTER INSERT ON properties BEGIN
+         INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at)
+         VALUES ('course-1', NEW.network_id, NEW.agent_id, '${t.someone.id}', NULL, 'estimation', '${TUESDAY_10H}', '2026-12-08T10:00:00.000Z', 'booked', 'empreinte-course', 'agent', '2026-12-03T09:00:00.000Z', '2026-12-03T09:00:00.000Z');
+       END`,
+      [],
+    );
+    const read = await t.call(t.alex, '/dictee/lecture', { dictation: DICTATION });
+    const r = await t.call(t.alex, '/dictee/validation', { requestId: key(6), dictation: DICTATION, readAt: read.body.data.readAt, keep: KEEP_ALL });
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, rule: 'R32', code: 'slot_taken_meanwhile', kept: { personId: key(6), contact: 'created', propertyId: key(6) } });
+    expect(Array.isArray(r.body.freeSlots)).toBe(true);
+    expect(r.body.freeSlots.length).toBeGreaterThan(0);
+    expect(r.body.freeSlots.length).toBeLessThanOrEqual(3);
+    for (const slot of r.body.freeSlots as string[]) {
+      expect(slot).not.toBe(TUESDAY_10H);
+      expect(Date.parse(slot)).toBeGreaterThan(T0);
+    }
+    expect(await t.db.all("SELECT id FROM appointments WHERE person_id = ?", [key(6)])).toEqual([]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM properties'))!.n).toBe(1);
+  });
+
   it('un corps mal formé, un champ non prévu ou une dictée trop longue : 400, rien n’est rangé', async () => {
     const t = await setup();
     const before = await t.counts();
