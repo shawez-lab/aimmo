@@ -1751,7 +1751,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H10 pour l'envoi réel aux portails).
 
 ### BR100 · La création à la voix par l'API : lire une dictée, puis la valider d'un geste
-- Statut : en cours
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#624, `236722c9`). Codex 1 P1 corrigé (la course au créneau testée par la route : `slot_taken_meanwhile`, `kept` et `freeSlots` rendus, la course jouée par un déclencheur SQLite du test), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6428 tests). Reste : l'écran (BR101).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX06, RC01, RC22
 - Cahier : Phase 3, HX06 « Création d'un bien et d'un contact à la voix » ; M05 Rendez-vous ; R260, R261, R262, R16, R13, R32.
 - Décidé (2026-11-16, voie 1), lecture prudente : relevé dans les « Restent » de HX06 (« écran de dictée et branchement au Worker (`app.ts`) ») et de RC22 (« Reste l'écran de dictée (voie 1) »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Dictee` n'est branchée nulle part. Un fichier neuf `packages/api/src/dictee.ts` : `POST /v1/dictee/lecture` (`prepare`) et `POST /v1/dictee/validation` (`validate`), l'agent seul, le rôle contrôlé avant le corps et le refus écrit au journal par la couche métier [R16] ; la dictée n'est jamais écrite au journal ni rendue ailleurs que dans la lecture [R13]. Visites et comptes rendus construits comme pour M08, la même prise de rendez-vous pour la vérification du créneau et la réservation. Une ligne dans `app.ts`, `docs/API.md`. Ni le cœur (où la voie 2 travaille), ni migration. L'écran : BR101.
@@ -1760,7 +1761,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR101 · La création à la voix à l'écran de l'agent (Jamais vu)
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR100
 - Cahier : Phase 3, HX06 ; R260, R261, R201.
 - Objectif : depuis « Ma journée », l'agent dicte avec le micro du clavier de son téléphone, lit chaque champ proposé avec la phrase qui le porte, retire ce qu'il ne garde pas et valide d'un geste.
