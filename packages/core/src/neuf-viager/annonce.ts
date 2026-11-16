@@ -8,6 +8,10 @@
  * Jamais vu : l'annonce dit jusqu'à quel jour elle tient (`validUntil`, la plus ancienne confirmation plus 14 jours), et
  * `listingStillHolds` dit, lot par lot, ce qui ne tient plus face à la grille du jour (lot vendu ou retiré, prix changé,
  * confirmation passée). Une annonce qui ne tient plus est à retirer.
+ *
+ * Jamais vu (RC64) : l'annonce est relue mot pour mot contre la grille du jour. Chaque lot écrit garde sa ligne sans sa
+ * date de confirmation (`line`), l'annonce garde son en-tête (`heading` : nom, code postal, ville, promoteur et barèmes
+ * cités) : une surface, une typologie, un étage, des frais ou un nom qui ne sont plus ceux de la grille la font retirer.
  */
 import { LOT_CONFIRMATION_DAYS, type LotTypology, type NeufOutcome, type PublishedGrid, type PublishedLot } from './neuf.ts';
 import { areaOf, dayOf, eurosOf, floorOf, sourceText } from './page-publique.ts';
@@ -38,6 +42,8 @@ export interface ListedLot {
   confirmedOn: string;
   /** Faux pour un lot compté dans « et N autres lots » sans ligne à lui : il est annoncé disponible tout de même. */
   written: boolean;
+  /** La ligne écrite du lot, sans sa date de confirmation, pour la relire contre la grille du jour ; `null` pour un lot compté. */
+  line: string | null;
 }
 
 export interface NewBuildListing {
@@ -51,17 +57,29 @@ export interface NewBuildListing {
   lots: ListedLot[];
   /** Tous les lots annoncés, du moins cher au plus cher : ceux qui ne tiennent pas dans les 4000 signes sont comptés, jamais coupés. */
   omitted: number;
+  /** Ce que le texte dit du programme hors des lots : nom, code postal, ville, promoteur et barèmes cités, pour le relire. */
+  heading: string;
 }
 
 const byPrice = (a: PublishedLot, b: PublishedLot): number => a.priceCents - b.priceCents || (a.lotRef < b.lotRef ? -1 : a.lotRef > b.lotRef ? 1 : 0);
 
-function lotLine(l: PublishedLot): string {
+/** La ligne d'un lot sans sa date de confirmation : ce qu'une reconfirmation seule ne change pas. */
+function lotDetails(l: PublishedLot): string {
   const head = `• Lot ${listingPlainText(l.lotRef)} · ${TYPOLOGY[l.typology]}, ${areaOf(l.livingAreaHundredths)}, ${floorOf(l.floor).toLowerCase()} · ${eurosOf(l.priceCents)}`;
   // Chaque frais est celui calculé par le code depuis le barème rangé ; sans barème, aucun chiffre [R544].
   const fees = l.fees
     ? ` · frais d’acquisition ${eurosOf(l.fees.newFees.value)}, contre ${eurosOf(l.fees.oldFees.value)} dans l’ancien au même prix, soit ${eurosOf(l.fees.saving.value)} d’économie`
     : ' · frais non calculés, barème absent';
-  return `${head}${fees} · confirmé le ${dayOf(l.confirmedOn)}`;
+  return `${head}${fees}`;
+}
+
+function lotLine(l: PublishedLot): string {
+  return `${lotDetails(l)} · confirmé le ${dayOf(l.confirmedOn)}`;
+}
+
+/** L'en-tête relu : le programme tel que le texte le nomme, et les barèmes cités pour les lots écrits [R544]. */
+function headingOf(grid: Pick<PublishedGrid, 'name' | 'postalCode' | 'city' | 'promoter'>, written: readonly PublishedLot[]): string {
+  return [grid.name, grid.postalCode, grid.city, grid.promoter].map(listingPlainText).join(' · ') + '\n' + sourcesText(written);
 }
 
 /** Les barèmes et leurs hypothèses, cités une seule fois chacun sous les lots [R544]. */
@@ -135,8 +153,9 @@ export function newBuildListing(grid: PublishedGrid): NeufOutcome<NewBuildListin
       body,
       day: grid.day,
       validUntil,
-      lots: sorted.map((l, i) => ({ lotRef: l.lotRef, priceCents: l.priceCents, confirmedOn: l.confirmedOn, written: i < kept.length })),
+      lots: sorted.map((l, i) => ({ lotRef: l.lotRef, priceCents: l.priceCents, confirmedOn: l.confirmedOn, written: i < kept.length, line: i < kept.length ? lotDetails(l) : null })),
       omitted: sorted.length - kept.length,
+      heading: headingOf(grid, kept),
     },
   };
 }
@@ -152,22 +171,53 @@ export interface ListingCheck {
   expired: boolean;
   /** Vrai quand la grille du jour n'est pas celle du même programme. */
   otherProgram: boolean;
+  /**
+   * Les lots écrits, encore publiés au même prix, dont la ligne ne tient plus : surface, typologie, étage ou frais changés
+   * (RC64). Une reconfirmation seule n'y met jamais un lot.
+   */
+  detailsChanged: string[];
+  /** Vrai quand le nom, le code postal, la ville, le promoteur ou un barème cité ne sont plus ceux de la grille du jour (RC64). */
+  headingChanged: boolean;
 }
 
 /**
  * L'annonce tient-elle encore face à la grille publiée du jour ? Dit lot par lot ce qui ne tient plus [R543, R10].
  * Un lot de plus dans la grille ne rend pas l'annonce fausse : il n'y est simplement pas encore.
  */
-export function listingStillHolds(listing: Pick<NewBuildListing, 'programId' | 'validUntil' | 'lots'>, today: PublishedGrid): ListingCheck {
+export function listingStillHolds(listing: Pick<NewBuildListing, 'programId' | 'validUntil' | 'lots' | 'heading'>, today: PublishedGrid): ListingCheck {
   const otherProgram = listing.programId !== today.programId;
   const now = new Map(today.lots.map((l) => [l.lotRef, l] as const));
   const gone: string[] = [];
   const priceChanged: string[] = [];
+  const detailsChanged: string[] = [];
+  const written: PublishedLot[] = [];
   for (const l of listing.lots) {
     const cur = otherProgram ? undefined : now.get(l.lotRef);
     if (!cur) gone.push(l.lotRef);
     else if (cur.priceCents !== l.priceCents) priceChanged.push(l.lotRef);
+    // Un lot écrit se relit mot pour mot ; une ligne absente ou abîmée ne tient jamais [R10].
+    else if (l.written && (typeof l.line !== 'string' || l.line !== lotDetails(cur))) detailsChanged.push(l.lotRef);
+    if (cur && l.written) written.push(cur);
   }
+  // Le programme se relit toujours ; les barèmes cités, seulement quand chaque lot écrit est encore publié : un lot parti
+  // emporte ses barèmes, et il est déjà dit dans `gone`.
+  const headingChanged =
+    !otherProgram &&
+    (typeof listing.heading !== 'string' ||
+      (() => {
+        const [who, ...src] = listing.heading.split('\n');
+        const [nowWho, ...nowSrc] = headingOf(today, [...written].sort(byPrice)).split('\n');
+        const allWritten = written.length === listing.lots.filter((l) => l.written).length;
+        return who !== nowWho || (allWritten && src.join('\n') !== nowSrc.join('\n'));
+      })());
   const expired = !DAY.test(today.day) || today.day > listing.validUntil;
-  return { holds: !otherProgram && !expired && gone.length === 0 && priceChanged.length === 0, gone, priceChanged, expired, otherProgram };
+  return {
+    holds: !otherProgram && !expired && gone.length === 0 && priceChanged.length === 0 && detailsChanged.length === 0 && !headingChanged,
+    gone,
+    priceChanged,
+    expired,
+    otherProgram,
+    detailsChanged,
+    headingChanged,
+  };
 }
