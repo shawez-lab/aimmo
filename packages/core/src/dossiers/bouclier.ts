@@ -182,7 +182,7 @@ const TEEN_WORDS: Record<string, number> = { dix: 10, onze: 11, douze: 12, treiz
 const TENS_WORDS: Record<string, number> = { vingt: 20, trente: 30, quarante: 40, cinquante: 50, soixante: 60 };
 const REPEAT_WORDS: Record<string, number> = { double: 2, triple: 3 };
 
-interface Token { word: string; sep: string }
+interface Token { word: string; raw: string; sep: string }
 
 /** Un mot d'un nombre composé ne se lie au précédent qu'à travers des espaces ou des traits d'union, trois au plus. */
 const binds = (sep: string): boolean => sep.length > 0 && sep.length <= 3 && /^[ \-]+$/.test(sep);
@@ -242,29 +242,34 @@ function numberAt(t: Token[], i: number): [string, number] | null {
   return u === undefined ? null : [String(u), i + 1];
 }
 
-/** Un sosie de chiffre dans un morceau qui porte déjà un chiffre, ou dans une lettre seule : O pour 0, l pour 1. */
+/**
+ * Un sosie de chiffre dans un morceau qui porte déjà un chiffre, ou dans une lettre seule : O ou o pour 0, l minuscule
+ * pour 1. Le L majuscule reste une lettre (un compte peut en porter une).
+ */
 function unmaskLookalikes(word: string): string {
   if (word.length > 1 && !/[0-9]/.test(word)) return word;
-  return word.replace(/o/g, '0').replace(/l/g, '1');
+  return word.replace(/[Oo]/g, '0').replace(/l/g, '1');
 }
 
+/** Un morceau collé qui porte un chiffre, coupé par quatre : `spelledIban` le lit alors comme un IBAN écrit par groupes. */
+const inFours = (word: string): string => (word.length > 4 && /[0-9]/.test(word) ? word.replace(/(.{4})(?=.)/g, '$1 ') : word);
+
 /**
- * RC68 : le texte relu pour l'IBAN, nombres en mots et sosies de chiffres remis en chiffres, en majuscules. Forme normale
- * de compatibilité d'abord (« ＦＲ７６ » devient « FR76 »). Ce qui n'est ni un nombre ni un sosie reste tel quel.
+ * RC68 : le texte relu pour l'IBAN, nombres en mots remis en chiffres, et, si `lookalikes`, sosies de chiffres aussi ;
+ * en majuscules. Forme normale de compatibilité d'abord (« ＦＲ７６ » devient « FR76 »), accents ôtés, la casse gardée
+ * jusqu'aux sosies. Ce qui n'est ni un nombre ni un sosie reste tel quel.
  */
-function digitsRewritten(text: string): string {
-  const p = plain(text.normalize('NFKC'));
+function digitsRewritten(text: string, lookalikes: boolean): string {
+  const p = text.normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’`]/g, "'");
   const tokens: Token[] = [];
-  let tail = '';
   const re = /([\p{L}\p{N}]+)|([^\p{L}\p{N}]+)/gu;
   let sep = '';
   for (let m = re.exec(p); m !== null; m = re.exec(p)) {
     if (m[1] !== undefined) {
-      tokens.push({ word: m[1], sep });
+      tokens.push({ word: m[1].toLowerCase(), raw: m[1], sep });
       sep = '';
     } else sep = m[2]!;
   }
-  tail = sep;
   let out = '';
   let i = 0;
   while (i < tokens.length) {
@@ -274,21 +279,21 @@ function digitsRewritten(text: string): string {
       out += n[0];
       i = n[1];
     } else {
-      out += unmaskLookalikes(tokens[i]!.word);
+      const raw = tokens[i]!.raw;
+      out += inFours(lookalikes ? unmaskLookalikes(raw) : raw);
       i += 1;
     }
   }
-  return (out + tail).toUpperCase();
+  return (out + sep).toUpperCase();
 }
 
 /**
  * RC68 : un IBAN dicté en mots (« F R sept six trois zéro… », « FR soixante-seize, trente, zéro zéro six… », « double
- * zéro »), ou écrit avec des sosies de chiffres (O pour 0, l pour 1, chiffres pleine chasse). Le texte relu passe par la
- * lecture de l'IBAN collé et par `spelledIban` : pays, longueur exacte et clé restent exigés.
+ * zéro »), ou écrit avec des sosies de chiffres (O pour 0, l pour 1, chiffres pleine chasse). Le texte relu, avec et sans
+ * les sosies, passe par `spelledIban` seul : pays, longueur exacte et clé restent exigés.
  */
 export function dictatedIban(text: string): boolean {
-  const r = digitsRewritten(text);
-  return IBAN.test(r) || spelledIban(r);
+  return spelledIban(digitsRewritten(text, false)) || spelledIban(digitsRewritten(text, true));
 }
 
 /** Les signaux d'argent d'un message reçu, dans un ordre fixe, sans rien garder du texte. */

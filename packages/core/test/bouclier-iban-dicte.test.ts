@@ -144,6 +144,28 @@ it('lecture linéaire : 40 000 caractères de mots en nombres en moins de 500 ms
   expect(performance.now() - start).toBeLessThan(500);
 });
 
+it('[R62] un L ou un O vrais d\'un compte, ou d\'un code de pays épelé, ne sont pas pris pour des chiffres', () => {
+  const withL = withKey('FR', '3000600001L234567890189');
+  const t = sayEach(withL, FR_DIGITS);
+  expect([t, dictatedIban(t)]).toEqual([t, true]);
+  for (const iban of [withKey('PL', '109010140000071219812874'), withKey('NO', '86011117947'), withKey('LU', '0019400644750000'), withKey('NL', 'ABNA0417164300')]) {
+    const s = sayEach(iban, FR_DIGITS);
+    expect([s, dictatedIban(s)]).toEqual([s, true]);
+  }
+});
+
+it('un début d\'IBAN dicté trop court, ou d\'un pays inconnu, n\'alerte pas', () => {
+  for (const t of [
+    'FR99 un deux trois quatre cinq six sept huit neuf zéro',
+    'ZZ99 un deux trois quatre cinq six sept huit neuf zéro un deux trois quatre cinq six sept huit neuf zéro un deux trois',
+  ]) {
+    expect([t, dictatedIban(t)]).toEqual([t, false]);
+    expect([t, fundSignals(t).includes('iban')]).toEqual([t, false]);
+  }
+  // Un groupe collé à sosie : la relecture exige toujours la clé (la lecture du socle, elle, reste celle de N09).
+  expect(dictatedIban('FR99 1234 5678 9O12')).toBe(false);
+});
+
 it('un IBAN écrit normalement reste lu, et rien ne change sans IBAN', () => {
   expect(fundSignals(`Le compte ${FR}`)).toContain('iban');
   expect(fundSignals('Bonjour, la visite est confirmée pour samedi.')).toEqual([]);
