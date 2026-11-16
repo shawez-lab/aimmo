@@ -175,15 +175,15 @@ describe('BR93 · la banque et les relances d’impayés à l’écran de la dir
     await d.open();
     await d.click(d.button('Déposer ce relevé'));
     expect(d.status()).toBe('Choisissez le fichier du relevé.');
-    d.input('banque-releve').files = [{ size: 1_000_001, text: async () => 'x' }];
+    (d.input('banque-releve') as unknown as { files: unknown }).files = [{ size: 1_000_001, text: async () => 'x' }];
     await d.click(d.button('Déposer ce relevé'));
     expect(d.status()).toContain('dépasse 1 Mo');
-    d.input('banque-releve').files = [{ size: 0, text: async () => '' }];
+    (d.input('banque-releve') as unknown as { files: unknown }).files = [{ size: 0, text: async () => '' }];
     await d.click(d.button('Déposer ce relevé'));
     expect(d.status()).toContain('vide');
     expect(d.posts()).toHaveLength(0);
     const csv = '﻿Date;Libellé;Montant\r\n2027-07-14;VIR SEPA ETUDE F-2027-00002;10 000,00\r\n';
-    d.input('banque-releve').files = [{ size: csv.length, text: async () => csv }];
+    (d.input('banque-releve') as unknown as { files: unknown }).files = [{ size: csv.length, text: async () => csv }];
     const before = d.calls.length;
     await d.click(d.button('Déposer ce relevé'));
     expect(d.posts()).toEqual([{ method: 'POST', url: '/v1/finances/banque/releve', body: { csv }, type: 'application/json' }]);
@@ -204,7 +204,7 @@ describe('BR93 · la banque et les relances d’impayés à l’écran de la dir
     for (const [answer, said] of cases) {
       const d = await desk({ 'POST /v1/finances/banque/releve': answer });
       await d.open();
-      d.input('banque-releve').files = [{ size: 10, text: async () => '2027-07-14;VIR;1,00' }];
+      (d.input('banque-releve') as unknown as { files: unknown }).files = [{ size: 10, text: async () => '2027-07-14;VIR;1,00' }];
       await d.click(d.button('Déposer ce relevé'));
       expect(d.status()).toBe(said);
       expect(d.text()).not.toMatch(/bad_statement|invalid_body|secret_inconnu/);
