@@ -28,6 +28,9 @@ describe('RC65 · récompense déguisée', () => {
       'une indemnité pour vous remercier',
       'un remboursement pour votre recommandation',
       'Léa recevra une indemnité',
+      'Léa recevra une remise d’honoraires pour sa recommandation',
+      'une réduction d\'honoraires',
+      'un rabais d’honoraires',
     ]) {
       expect(mentionsReward(text), text).toBe(true);
     }
@@ -43,6 +46,11 @@ describe('RC65 · récompense déguisée', () => {
     expect(rewardWords('une p.r.i.m.e à Léa')).toEqual(['p.r.i.m.e']);
     expect(rewardWords('y a c a d e a u x à Léa')).toEqual(['c a d e a u x']);
     expect(mentionsReward('a b c d e f g h')).toBe(false);
+    // Une expression de plusieurs mots épelée d'un bout à l'autre.
+    expect(rewardWords('Léa recevra une c a r t e p r é p a y é e')).toEqual(['c a r t e p r é p a y é e']);
+    expect(mentionsReward('un g e s t e c o m m e r c i a l')).toBe(true);
+    expect(mentionsReward('un b o n d a c h a t')).toBe(true);
+    expect(mentionsReward('un w e e k e n d o f f e r t')).toBe(true);
   });
 
   it('[R66] aucun faux refus sur les phrases d’usage', () => {

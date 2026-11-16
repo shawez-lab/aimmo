@@ -36,7 +36,7 @@ export const REWARD = new RegExp(
   [
     String.raw`\b(?:prime|primes|cadeau|cadeaux|commission|commissions|bon d.achat|bons d.achat|cheque|cheques|pourcentage|pourcent|recompense\w*|remuner\w*|gratification\w*|retrocession\w*|parrainage remunere|euros?|eur|carte cadeau|ristourne|dedommag\w*|merci en argent)\b`,
     // Une remise sur ce que l'agence facture, ou ses honoraires offerts, est une récompense en nature.
-    String.raw`\b(?:remise|remises|reduction|reductions|rabais)\s+(?:[\w']+\s+){0,3}(?:honoraires|frais d.agence|frais d.agent|commission)\b`,
+    String.raw`\b(?:remise|remises|reduction|reductions|rabais)(?:\s+[\w'’]+){0,3}?\s+(?:[dl]['’])?(?:honoraires|frais d.agence|frais d.agent|commission)\b`,
     String.raw`\b(?:honoraires|frais d.agence|frais d.agent)\s+(?:sont\s+|seront\s+)?(?:offerts?|reduits?|gratuits?|rembourses?|divises?|partages?)\b`,
     String.raw`\b(?:rabais|virement|virements|argent|liquide|en especes|especes sonnantes|petite enveloppe|pourboire|bonus|carte prepayee|cartes prepayees|remerciement financier|geste financier|geste commercial)\b`,
     String.raw`\b\d+\s*(?:balles|k|ke|keur)\b`,
@@ -53,8 +53,13 @@ export const REWARD = new RegExp(
 );
 const REWARD_ALL = new RegExp(REWARD.source, 'g');
 /** Un mot tapé lettre par lettre, séparées par des espaces, des points ou des tirets : « c a d e a u », « p.r.i.m.e ». */
-/** Le vocabulaire de récompense, sur une suite de lettres entière. */
-const REWARD_WHOLE = new RegExp(`^(?:${REWARD.source})$`);
+/**
+ * Le vocabulaire de récompense, sur une suite de lettres entière et sans séparateurs : une expression de plusieurs mots
+ * épelée (« c a r t e p r é p a y é e ») perd ses espaces, ses apostrophes et ses tirets.
+ */
+const REWARD_WHOLE = new RegExp(
+  `^(?:${REWARD.source.replace(/\\s[+*]/g, '').replace(/ /g, '').replace(/\['’\]/g, '').replace(/(?<!\\)\./g, '.?')})$`,
+);
 /** Au-delà, une suite de lettres isolées n'est plus lue : un texte normal n'en a jamais autant. */
 const SPELLED_MAX = 80;
 const SPELLED = /(?<![\p{L}\p{N}])\p{L}(?:[\s.\-_·*/]+\p{L}){2,}(?![\p{L}\p{N}])/gu;
