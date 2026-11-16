@@ -1750,6 +1750,24 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : la route rend titre, texte, jour, `validUntil` et les lots annoncés à l'agent du programme et à la direction, refuse un autre agent et la conformité (403, journal) [R16] (test) ; programme inconnu : 404 (test) ; aucun lot publié : refus `no_lot_published`, sans texte [R543] (test) ; un lot vendu n'est jamais dans le texte [R543] (test) ; à l'écran, titre et texte posés en `textContent`, le jour où il tient et le lendemain dits en mots, et un geste de copie qui dit s'il a réussi (test) ; refus dits en mots, jamais un code ; lecture en échec : « texte non préparé », jamais un texte ancien [R10] (test) ; budget, sans innerHTML [R201] (test).
 - Attend : rien (H10 pour l'envoi réel aux portails).
 
+### BR100 · La création à la voix par l'API : lire une dictée, puis la valider d'un geste
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : HX06, RC01, RC22
+- Cahier : Phase 3, HX06 « Création d'un bien et d'un contact à la voix » ; M05 Rendez-vous ; R260, R261, R262, R16, R13, R32.
+- Décidé (2026-11-16, voie 1), lecture prudente : relevé dans les « Restent » de HX06 (« écran de dictée et branchement au Worker (`app.ts`) ») et de RC22 (« Reste l'écran de dictée (voie 1) »). Plus aucune tâche libre : B04, C09, S11 et SV05 attendent un humain. `Dictee` n'est branchée nulle part. Un fichier neuf `packages/api/src/dictee.ts` : `POST /v1/dictee/lecture` (`prepare`) et `POST /v1/dictee/validation` (`validate`), l'agent seul, le rôle contrôlé avant le corps et le refus écrit au journal par la couche métier [R16] ; la dictée n'est jamais écrite au journal ni rendue ailleurs que dans la lecture [R13]. Visites et comptes rendus construits comme pour M08, la même prise de rendez-vous pour la vérification du créneau et la réservation. Une ligne dans `app.ts`, `docs/API.md`. Ni le cœur (où la voie 2 travaille), ni migration. L'écran : BR101.
+- Objectif : l'application de l'agent peut envoyer une dictée, recevoir chaque champ avec sa phrase, puis valider d'un geste ce que l'agent garde.
+- Critères : un autre rôle que l'agent refusé 403 avant la lecture du corps, refus au journal [R16] (test) ; la lecture rend chaque champ avec sa phrase et ne range rien [R260, R261] (test) ; la validation crée la fiche, le bien et le rendez-vous, et la même demande rejouée ne double rien [R261] (test) ; un champ non dicté refusé 409 avec ses clés [R260] (test) ; créneau pris : 409 avec ce qui est rangé et les créneaux libres [R261, R32] (test) ; champ non prévu, corps mal formé ou trop long : 400 (test) ; la dictée n'est jamais au journal [R13] (test) ; `docs/API.md` à jour (test).
+- Attend : rien.
+
+### BR101 · La création à la voix à l'écran de l'agent (Jamais vu)
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR100
+- Cahier : Phase 3, HX06 ; R260, R261, R201.
+- Objectif : depuis « Ma journée », l'agent dicte avec le micro du clavier de son téléphone, lit chaque champ proposé avec la phrase qui le porte, retire ce qu'il ne garde pas et valide d'un geste.
+- Jamais vu : à côté de chaque champ, la phrase exacte qui le porte ; un champ dit deux fois avec deux valeurs n'est pas proposé et l'écran le dit ; au créneau pris entre-temps, l'écran dit ce qui est déjà rangé et propose les créneaux libres, sans rien doubler.
+- Critères : un script servi à part, chargé au seul geste, budget tenu, sans innerHTML [R201] (test) ; chaque champ montré avec sa phrase, en `textContent` [R260] (test) ; seuls les champs cochés partent à la validation, avec l'identifiant tiré une fois par dictée (test) ; refus dits en mots, jamais un code ; créneau pris : ce qui est rangé et les créneaux libres dits (test) ; réseau coupé dit, la dictée gardée à l'écran (test).
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
