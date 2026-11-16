@@ -2278,7 +2278,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC59 · Un contour presque plat, ou avec une pointe qui revient sur elle-même, est refusé
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-16)
+- Reste : fusionnée (#612, `7a50c572`). Décidé en cours de route : tolérance de 10 cm (et non 50) ; un contact compte quand deux points du contour sont à moins de 10 cm l'un de l'autre et à 1 m au moins le long du contour, ou quand la largeur moyenne est sous 10 cm ; un petit bord, même à angle aigu, passe. Codex 1 P2 corrigé (un petit bord à un angle aigu était pris pour une pointe), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6362 tests). Reste : les zones déjà rangées ne sont pas recontrôlées.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AT19
 - Cahier : M01 Attirer (prix regroupés par commune et quartier) ; R150.
 - Décidé (2026-11-16, voie 2), lecture prudente : relevé dans le « Reste » de AT19 (« des points presque alignés sans surface peuvent passer à cause des arrondis »). `ringSelfCrosses` ne voit un contact que s'il est exact : trois points alignés à un millimètre près, ou une pointe qui repart presque sur son bord, passent, et une zone sans intérieur réel serait tracée, ses ventes mal attribuées. Dans `packages/core/src/attirer/prix.ts` seul : les distances se lisent en mètres (projection locale), un sommet à moins de 50 cm d'un bord qui n'est pas le sien, une pointe qui revient à moins de 50 cm de son bord, ou un contour de largeur moyenne (2 × surface / périmètre) sous 50 cm, comptent comme un contour qui se touche lui-même : même refus `contour_croise`, même message à l'écran. Un point répété à la suite ne compte toujours pas ; un petit bord de moins de 50 cm qui ne revient pas en arrière non plus. Aucune route, aucun écran, aucune migration.
