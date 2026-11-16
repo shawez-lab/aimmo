@@ -2426,6 +2426,16 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : surface, typologie, étage changés : `detailsChanged` et `holds` faux [R543] (test) ; frais changés par un nouveau barème : `detailsChanged` [R544] (test) ; source d'un barème changée à frais égaux : `headingChanged` [R544] (test) ; nom, ville ou promoteur changés : `headingChanged` (test) ; reconfirmation seule : tient (test) ; lot seulement compté dont la surface change : tient, son prix changé : `priceChanged` comme avant (test) ; tous les tests de RC56 et BR99 restent verts.
 - Attend : rien.
 
+### RC65 · Une récompense déguisée en remise, en virement ou en lettres espacées est refusée, et l'agent lit le mot qui l'a fait refuser (Jamais vu)
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : F01, U13
+- Cahier : M11 Après-vente (« une recommandation n'est jamais rémunérée à un particulier ») ; R66.
+- Décidé (2026-11-16, voie 2), lecture prudente : plus aucun reste du cœur relevé dans le plan qui ne touche pas au socle ; relevé en relisant `REWARD` (`apres-vente/recommandations.ts`), partagé par les recommandations de M11 et de M20, la lettre de quartier et le texte aux anciens contacts. Aujourd'hui « une remise de 10 % » est refusée par le signe %, mais « une remise sur vos honoraires », « un virement pour vous remercier », « 200 balles », « un restaurant offert », « un bonus » ou « c a d e a u » passent, et un refus ne dit jamais quel mot a fait refuser. Désormais, dans ce seul fichier : le vocabulaire couvre la remise ou réduction sur les honoraires ou les frais, les honoraires offerts ou réduits, le virement, l'argent, le liquide, les espèces sonnantes, les balles, le bonus, la carte prépayée, le restaurant, le repas ou le week-end offerts, l'indemnité, le remboursement, et les mots anglais (reward, gift, cash, bonus, fee) ; un mot écrit lettre par lettre (espaces, points, tirets) est lu comme le mot ; `rewardWords` rend les mots trouvés tels que tapés, et le refus `reward` des recommandations de M11 les rend (`words`). Sans faux refus : « remise des clés », « remise en état », « estimation offerte », « avis de valeur offert », « espèces protégées », « je vous remercie ». Aucun écran (voie 1 : dire les mots dans la zone de texte), ni migration ; le journal garde seulement la règle et le code, jamais les mots [R13].
+- Objectif : une promesse de récompense au client qui recommande ne passe plus par un détour de vocabulaire, et l'agent sait quoi retirer.
+- Jamais vu : le refus nomme le mot fautif tel qu'il l'a tapé, même écrit « c a d e a u ».
+- Critères : chaque forme déguisée refusée [R66] (test) ; lettres espacées ou pointées refusées [R66] (test) ; aucun faux refus sur les phrases d'usage (test) ; `rewardWords` rend les mots tels que tapés, sans doublon (test) ; le refus des recommandations rend `words`, le journal ni mots ni texte [R66, R13] (test) ; tous les tests de F01, U13, U05 et de la lettre de quartier restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
