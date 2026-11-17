@@ -1874,7 +1874,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR112 · Le passage des créneaux du calendrier et l'envoi des éditions de la lettre au planificateur, en mode essai
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR111
 - Cahier : M01 Attirer ; M07 Commercialiser ; Phase 3, HX52, HX53 ; R580 à R586, R26.
 - Décidé (2026-11-17, voie 1) : relevé dans le « Reste » de BR111 et le commentaire de `packages/api/src/marketing.ts` (« le passage des créneaux dus reste un travail planifié »). Aucun des deux n'est branché à `runScheduler`.
