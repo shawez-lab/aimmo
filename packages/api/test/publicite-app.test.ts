@@ -250,6 +250,18 @@ describe('BR110 · la publicité payante à l’écran de la direction', () => {
     await t.click(t.button('Valider ces budgets'));
     expect(t.buttons()).toContain('Arrêter');
     expect(t.posts()).toEqual([]);
+    // Saisir, choisir ou ouvrir un volet annule aussi : le bouton revient, et un appui ne fait que redemander.
+    for (const gesture of [() => t.byId('pub-nom').listeners.input!({}), () => t.byId('pub-plateforme').listeners.change!({}), () => t.byId('pub-jour-1').listeners.focus!({}), () => t.part().all().find((e) => e.tagName === 'details')!.listeners.toggle!({})]) {
+      await t.click(t.button('Lancer'));
+      expect(t.buttons()).toContain('Confirmer : lancer');
+      gesture();
+      expect(t.buttons()).not.toContain('Confirmer : lancer');
+      await t.click(t.button('Lancer'));
+      expect(t.posts()).toEqual([]);
+      expect(t.status()).toBe(PUBLICITE_CONFIRM.lancer);
+      await t.click(t.button('Arrêter'));
+    }
+    await t.click(t.button('Valider ces budgets'));
     await t.click(t.button('Lancer'));
     await t.click(t.button('Confirmer : lancer'));
     expect(t.posts()).toEqual([{ method: 'POST', url: `${BASE}/cmp-3/lancement`, body: null, auth: `Bearer ${KEY}` }]);

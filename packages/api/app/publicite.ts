@@ -71,7 +71,21 @@ export const PUBLICITE_CONFIRM: Readonly<Record<string, string>> = Object.freeze
 /** Le script servi à part (`/app/publicite.js`). Il ne lit et n'écrit que `/v1/marketing/publicite` [R16]. */
 export const PUBLICITE_SCRIPT = `'use strict';
 globalThis.AIMMO_PUBLICITE = function (t) {
-  var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field;
+  var el = t.el, clear = t.clear, send = t.send, button = t.button;
+  /* Saisir, choisir ou ouvrir un volet est un autre geste : il annule un « Confirmer » en attente. */
+  function field(box, id, label, tag) {
+    var f = t.field(box, id, label, tag);
+    f.addEventListener('input', disarm);
+    f.addEventListener('change', disarm);
+    f.addEventListener('focus', disarm);
+    return f;
+  }
+  function panel(title) {
+    var d = el('details');
+    d.addEventListener('toggle', disarm);
+    d.appendChild(el('summary', title));
+    return d;
+  }
   var REFUSALS = ${JSON.stringify(PUBLICITE_REFUSALS)};
   var PLATFORMS = ${JSON.stringify(PUBLICITE_PLATFORMS)};
   var STATES = ${JSON.stringify(PUBLICITE_STATES)};
@@ -123,8 +137,7 @@ globalThis.AIMMO_PUBLICITE = function (t) {
   function count(n) { return whole(n) ? String(n) : '—'; }
   function per(c, none) { return c === null ? none : euros(c); }
   function budgets(li, id, n) {
-    var d = el('details');
-    d.appendChild(el('summary', 'Valider des budgets'));
+    var d = panel('Valider des budgets');
     d.appendChild(el('p', 'Rien ne se dépense sans eux. La campagne s’arrête seule au seuil de coût par contact ou au budget total.', 'doux'));
     var daily = field(d, 'pub-jour-' + n, 'Budget par jour, en euros');
     var total = field(d, 'pub-total-' + n, 'Budget total, en euros');
@@ -211,8 +224,7 @@ globalThis.AIMMO_PUBLICITE = function (t) {
     }, function () { busy = false; say(LOST); return false; });
   }
   function propose(inner) {
-    var d = el('details');
-    d.appendChild(el('summary', 'Proposer une campagne'));
+    var d = panel('Proposer une campagne');
     d.appendChild(el('p', 'Pour le logement, le ciblage ne porte que sur des communes et un rayon, pour tous les adultes. Elle ne dépense rien avant la validation de ses budgets.', 'doux'));
     var platform = field(d, 'pub-plateforme', 'Plateforme', 'select');
     var o = el('option', 'Choisir…');
