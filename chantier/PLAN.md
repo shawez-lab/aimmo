@@ -1864,7 +1864,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (H63 pour une campagne réelle).
 
 ### BR111 · La lettre et le magazine à l'écran de la direction, le calendrier de publication à l'écran de l'agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR03, BR110
 - Cahier : M01 Attirer ; M07 Commercialiser ; Phase 3, HX52, HX53 ; R580, R581, R582, R583, R584, R585, R586, R16, R201.
 - Décidé (2026-11-17, voie 1) : la seconde moitié de l'écran du marketing relevé dans le « Reste » de BR03, coupée de BR110. Scripts servis à part, chargés au geste ; `app.js` ne change pas, sauf un bouton d'entrée si le budget le permet.
