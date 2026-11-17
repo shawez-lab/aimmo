@@ -53,6 +53,11 @@ export interface CalendarSlot {
   dueAt: string;
   postId: string;
   propertyId: string;
+  /**
+   * La référence du bien, lue dans la base à chaque lecture et seulement dans le réseau du créneau (RC74) : l'agent
+   * sait quel bien sortira. null si le bien n'est pas trouvé dans ce réseau, jamais la référence d'un autre [R16].
+   */
+  propertyReference: string | null;
   /** null : à venir, ou pas encore passé. */
   outcome: 'envoye' | 'echec' | 'refuse' | 'manque' | null;
   /**
@@ -111,6 +116,8 @@ interface SlotRow {
   outcome: 'envoye' | 'echec' | 'refuse' | null;
   code: string | null;
   claimed: string | null;
+  /** Lu seulement par `slots`. */
+  property_reference?: string | null;
 }
 
 const validDay = (v: unknown): v is string => {
@@ -368,8 +375,9 @@ export class CalendrierPublications {
     if (!me.ok) return me;
     if (!validDay(from) || !validDay(to) || to < from || to > addDays(from, 31)) return { ok: false, rule: 'R10', code: 'periode_invalide' };
     const rows = await this.db.all<SlotRow>(
-      `SELECT c.*, o.outcome, o.code, r.claimed_at AS claimed FROM social_calendar_slots c
+      `SELECT c.*, o.outcome, o.code, r.claimed_at AS claimed, p.reference AS property_reference FROM social_calendar_slots c
        LEFT JOIN social_calendar_runs r ON r.slot_id = c.id LEFT JOIN social_calendar_outcomes o ON o.slot_id = c.id
+       LEFT JOIN properties p ON p.id = c.property_id AND p.network_id = c.network_id
        WHERE c.agent_id = ? AND c.network_id = ? AND c.day BETWEEN ? AND ? ORDER BY c.due_at, c.channel, c.rank`,
       [viewer.userId, viewer.networkId, from, to],
     );
@@ -377,7 +385,7 @@ export class CalendrierPublications {
     for (const r of rows) {
       if ((await this.inForce(viewer.userId, r.day))?.id !== r.rules_id) continue;
       const late = r.claimed === null && Date.parse(r.due_at) <= this.now().getTime() - LATE_MS;
-      value.push({ id: r.id, day: r.day, channel: r.channel, rank: r.rank, dueAt: r.due_at, postId: r.post_id, propertyId: r.property_id, outcome: r.outcome ?? (late ? 'manque' : null), reason: r.outcome === 'refuse' ? (REASONS[r.code ?? ''] ?? 'controle') : null });
+      value.push({ id: r.id, day: r.day, channel: r.channel, rank: r.rank, dueAt: r.due_at, postId: r.post_id, propertyId: r.property_id, propertyReference: r.property_reference ?? null, outcome: r.outcome ?? (late ? 'manque' : null), reason: r.outcome === 'refuse' ? (REASONS[r.code ?? ''] ?? 'controle') : null });
     }
     return { ok: true, value };
   }
