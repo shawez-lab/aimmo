@@ -1883,6 +1883,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : hors mode essai, rien ne passe [R26] (test) ; un créneau dû passe une seule fois, même rejoué [R582] (test) ; sans lien marqué, rien ne part [R582] (test) ; sans variable de désinscription, aucune lettre, écrit au journal [R584] (test) ; une lettre seulement aux accords en vigueur [R583] (test) ; une édition n'est envoyée qu'une fois (test) ; rien d'autre ne change dans le planificateur (tous ses tests restent verts).
 - Attend : rien en essai (H63 n'est pas en jeu ; la variable du lien de désinscription sera une ligne de HUMAIN.md à la mise en service).
 
+### BR113 · Le dossier de la lutte contre le blanchiment de l'agence sous licence par l'API : son responsable de la conformité le tire et le vérifie
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX76, BR17
+- Cahier : M12 Conformité, « Anti-blanchiment » (documents « visibles que du responsable ») ; Feuille de route, phase 5 ; R662, R663, R664, R601, R16.
+- Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Restent » de HX76 (« routes et écran du responsable de la conformité de l'agence (voie 1) ») : `DossierLcbAgences` n'est appelé par aucune route. Toutes les autres tâches de la voie 1 attendent un humain, RC74 est à la voie 2. Ici les routes seules, dans `packages/api/src/cles.ts` à côté de la reprise de la direction (même porte du second facteur) : `POST /v1/export/agence/lcb` (`{stepUpId}`) et `POST /v1/export/agence/lcb/verification` (`{document}`, 4 Mo au plus), rôle `compliance` seul, refusé avant le corps. Fermées (503) sans site WebAuthn, comme la reprise. Ni migration, ni règle nouvelle, ni écran.
+- Objectif : le responsable de la conformité de l'agence sous licence tire, sur la preuve de sa clé pour `licence_lcb:<id>`, le dossier complet de sa lutte contre le blanchiment, et vérifie un dossier reçu.
+- Critères : un autre rôle (direction de l'agence, agent, direction du réseau) : 403 avant le corps, au journal [R16, R662] (test) ; le responsable de la conformité du réseau qui donne les licences : 409 `pas_de_licence` [R662] (test) ; sans preuve, preuve d'une autre action, d'un autre objet ou d'une autre agence, preuve rejouée : 409 R601, rien de rangé (test) ; le dossier ne porte que les lignes de l'agence, empreinte seule au registre et au journal [R663] (test) ; vérification vraie pour le dossier remis, fausse un octet changé, rien dit d'un dossier d'un autre réseau [R664] (test) ; champ inconnu, corps illisible : 400 (test) ; sans site WebAuthn : 503 (test).
+- Attend : rien (le contenu des pièces attend un stockage du coffre branché ; l'écran suivra).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
