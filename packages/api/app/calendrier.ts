@@ -7,7 +7,7 @@ import { SOCIAL_CHANNELS } from '../../core/src/studio/publications.ts';
  * Script servi à part (`/app/calendrier.js`), chargé au premier geste depuis l'écran « Gagner des mandats » [R201].
  * Rien ne se publie d'ici : seul le passage planifié fait partir un créneau, par le chemin de publication de X05, en
  * mode essai [R582, R26]. Un réglage vaut à partir du lendemain, jamais pour un jour commencé [R581]. Les créneaux se
- * lisent dans l'ordre reçu ; un créneau refusé dit pourquoi, et d'abord quand le bien n'a aucun lien marqué vers sa
+ * lisent dans l'ordre reçu, chacun avec la référence de son bien (RC75) ; un créneau refusé dit pourquoi, et d'abord quand le bien n'a aucun lien marqué vers sa
  * page [R582]. Chaque refus se dit en mots, jamais par un code ; une réponse perdue se dit incertaine.
  */
 
@@ -44,6 +44,9 @@ export const CALENDRIER_REASONS: Readonly<Record<string, string>> = Object.freez
   controle: 'Refusé par le contrôle de la publication. Rien n’est parti.',
 });
 
+/** Un créneau dont le bien ne se lit plus dans le réseau (RC74 rend `null`) : jamais l'identifiant interne. */
+export const CALENDRIER_NO_PROPERTY = 'Bien introuvable dans le réseau';
+
 export const CALENDRIER_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez le calendrier avant de recommencer.';
 
 /** Le script servi à part (`/app/calendrier.js`). Il ne lit et n'écrit que `/v1/marketing/calendrier` [R16]. */
@@ -56,6 +59,7 @@ globalThis.AIMMO_CALENDRIER = function (t) {
   var OUTCOMES = ${JSON.stringify(CALENDRIER_OUTCOMES)};
   var REASONS = ${JSON.stringify(CALENDRIER_REASONS)};
   var LOST = ${JSON.stringify(CALENDRIER_LOST)};
+  var NO_PROPERTY = ${JSON.stringify(CALENDRIER_NO_PROPERTY)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
   var BASE = '/v1/marketing/calendrier';
   var HOUR = new RegExp('^([01][0-9]|2[0-3]):[0-5][0-9]$');
@@ -97,6 +101,11 @@ globalThis.AIMMO_CALENDRIER = function (t) {
     rulesOut.appendChild(el('p', 'Aujourd’hui : ' + (today ? rulesText(today) : 'aucun réglage en vigueur.')));
     if (next) rulesOut.appendChild(el('p', 'À partir du ' + dayText(next.effectiveDay) + ' : ' + rulesText(next), 'doux'));
   }
+  /* La référence du bien reçue (RC74), seule ; l'identifiant interne n'est jamais montré. */
+  function propertyText(s) {
+    var r = typeof s.propertyReference === 'string' ? s.propertyReference.trim() : '';
+    return r && r.length <= 40 ? 'Bien ' + r : NO_PROPERTY;
+  }
   function slotText(s) {
     if (s.outcome === 'refuse') return REASONS[s.reason] || REASONS.controle;
     if (s.outcome === null || s.outcome === undefined) return OUTCOMES.a_venir;
@@ -111,6 +120,7 @@ globalThis.AIMMO_CALENDRIER = function (t) {
       if (!s || typeof s !== 'object') return;
       var li = el('li');
       li.appendChild(el('h4', dayText(s.day) + ' à ' + hourText(s.dueAt) + ' · ' + (CHANNELS[s.channel] || 'Réseau inconnu')));
+      li.appendChild(el('p', propertyText(s)));
       li.appendChild(el('p', slotText(s), s.outcome === 'refuse' || s.outcome === 'manque' || s.outcome === 'echec' ? 'alerte' : 'doux'));
       ul.appendChild(li);
     });

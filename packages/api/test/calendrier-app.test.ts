@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { SOCIAL_CHANNELS } from '../../core/src/studio/publications.ts';
-import { CALENDRIER_CHANNELS, CALENDRIER_LOST, CALENDRIER_OUTCOMES, CALENDRIER_REASONS, CALENDRIER_REFUSALS, CALENDRIER_SCRIPT } from '../app/calendrier.ts';
+import { CALENDRIER_CHANNELS, CALENDRIER_LOST, CALENDRIER_NO_PROPERTY, CALENDRIER_OUTCOMES, CALENDRIER_REASONS, CALENDRIER_REFUSALS, CALENDRIER_SCRIPT } from '../app/calendrier.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -26,11 +26,11 @@ const TODAY_RULES = { version: 1, perDay: { ...zero, instagram: 2, facebook: 1 }
 const NEXT_RULES = { version: 2, perDay: { ...zero, linkedin: 1 }, hours: ['12:00'], effectiveDay: '2027-10-12' };
 // Dans l'ordre reçu, volontairement pas celui des heures : l'écran ne trie rien.
 const SLOTS = [
-  { id: 's2', day: '2027-10-12', channel: 'facebook', rank: 0, dueAt: '2027-10-12T07:00:00.000Z', postId: 'p2', propertyId: 'b2', outcome: null, reason: null },
-  { id: 's1', day: '2027-10-11', channel: 'instagram', rank: 0, dueAt: '2027-10-11T07:00:00.000Z', postId: 'p1', propertyId: 'b1', outcome: 'refuse', reason: 'sans_lien' },
-  { id: 's3', day: '2027-10-11', channel: 'instagram', rank: 1, dueAt: '2027-10-11T16:30:00.000Z', postId: 'p3', propertyId: 'b3', outcome: 'envoye', reason: null },
-  { id: 's4', day: '2027-10-11', channel: INJECTED, rank: 0, dueAt: 'pas une date', postId: 'p4', propertyId: 'b4', outcome: 'manque', reason: null },
-  { id: 's5', day: '2027-10-11', channel: 'youtube', rank: 0, dueAt: '2027-10-11T07:00:00.000Z', postId: 'p5', propertyId: 'b5', outcome: 'refuse', reason: 'inconnue' },
+  { id: 's2', day: '2027-10-12', channel: 'facebook', rank: 0, dueAt: '2027-10-12T07:00:00.000Z', postId: 'p2', propertyId: 'b2', propertyReference: 'AIM-0002', outcome: null, reason: null },
+  { id: 's1', day: '2027-10-11', channel: 'instagram', rank: 0, dueAt: '2027-10-11T07:00:00.000Z', postId: 'p1', propertyId: 'b1', propertyReference: 'AIM-0001', outcome: 'refuse', reason: 'sans_lien' },
+  { id: 's3', day: '2027-10-11', channel: 'instagram', rank: 1, dueAt: '2027-10-11T16:30:00.000Z', postId: 'p3', propertyId: 'b3', propertyReference: null, outcome: 'envoye', reason: null },
+  { id: 's4', day: '2027-10-11', channel: INJECTED, rank: 0, dueAt: 'pas une date', postId: 'p4', propertyId: 'b4', propertyReference: INJECTED, outcome: 'manque', reason: null },
+  { id: 's5', day: '2027-10-11', channel: 'youtube', rank: 0, dueAt: '2027-10-11T07:00:00.000Z', postId: 'p5', propertyId: 'b5', propertyReference: 'X'.repeat(41), outcome: 'refuse', reason: 'inconnue' },
 ];
 
 const settle = async () => {
@@ -191,16 +191,31 @@ describe('BR111 · le calendrier de publication à l’écran de l’agent', () 
     const t = await run();
     await t.open();
     expect(t.items()).toEqual([
-      'mardi 12 octobre à 09 h 00 · Facebook' + CALENDRIER_OUTCOMES.a_venir,
-      'lundi 11 octobre à 09 h 00 · Instagram' + CALENDRIER_REASONS.sans_lien,
-      'lundi 11 octobre à 18 h 30 · Instagram' + CALENDRIER_OUTCOMES.envoye,
-      'lundi 11 octobre à — · Réseau inconnu' + CALENDRIER_OUTCOMES.manque,
-      'lundi 11 octobre à 09 h 00 · YouTube' + CALENDRIER_REASONS.controle,
+      'mardi 12 octobre à 09 h 00 · FacebookBien AIM-0002' + CALENDRIER_OUTCOMES.a_venir,
+      'lundi 11 octobre à 09 h 00 · InstagramBien AIM-0001' + CALENDRIER_REASONS.sans_lien,
+      'lundi 11 octobre à 18 h 30 · Instagram' + CALENDRIER_NO_PROPERTY + CALENDRIER_OUTCOMES.envoye,
+      'lundi 11 octobre à — · Réseau inconnuBien ' + INJECTED + CALENDRIER_OUTCOMES.manque,
+      'lundi 11 octobre à 09 h 00 · YouTube' + CALENDRIER_NO_PROPERTY + CALENDRIER_REASONS.controle,
     ]);
-    expect(t.texts()).not.toContain('<img');
+    // La référence piégée n'est que du texte : aucun élément n'est créé à partir d'elle.
+    expect(t.part().all().some((e) => e.tagName === 'img')).toBe(false);
     const t2 = await run({ [`GET ${SLOTS_URL}`]: ok([]) });
     await t2.open();
     expect(t2.texts()).toContain('Aucun créneau réservé sur les deux semaines.');
+  });
+
+  it('[R580] RC75 · chaque créneau montre la référence de son bien, jamais l’identifiant interne ; sans référence, il le dit', async () => {
+    const list = [
+      { ...SLOTS[0], propertyId: 'b-interne-1', propertyReference: '  AIM-0102  ' },
+      { ...SLOTS[2], propertyId: 'b-interne-2', propertyReference: undefined },
+      { ...SLOTS[2], propertyId: 'b-interne-3', propertyReference: '   ' },
+      { ...SLOTS[2], propertyId: 'b-interne-4', propertyReference: 42 },
+    ];
+    const t = await run({ [`GET ${SLOTS_URL}`]: ok(list) });
+    await t.open();
+    const lines = t.part().all().filter((e) => e.tagName === 'li').map((li) => li.children[1]!.textContent);
+    expect(lines).toEqual(['Bien AIM-0102', CALENDRIER_NO_PROPERTY, CALENDRIER_NO_PROPERTY, CALENDRIER_NO_PROPERTY]);
+    expect(t.texts()).not.toMatch(/b-interne/);
   });
 
   it('réserver la semaine part du jour de Paris, puis relit le calendrier', async () => {
