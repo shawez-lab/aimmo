@@ -1841,6 +1841,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : script servi à part, chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; chaque chiffre reçu dit en euros ou en pour cent, sans tri ni recalcul, couvert ou non, seuil ou seuil hors d'atteinte [R625] (test) ; un mois incomplet jamais dit couvert, ce qui manque dit [R623, R624] (test) ; une facture sans poste classée par une liste fermée, rien ne part sans choix, le mois relu ; identifiant mal formé ni montré ni envoyé (test) ; réglage : mois passé, pour cent hors de 0 à 100 ou à plus de deux décimales, raison hors de 3 à 200 caractères refusés avant l'appel ; aucune clé de montant envoyée [R624] (test) ; une écriture à la fois, réponse perdue dite incertaine, seule la dernière lecture dessine (test) ; la moyenne seule, aucun classement, deux champs de saisie seulement [R14] (test) ; refus dits en mots, jamais un code, seules les routes `/v1/recrutement/cout-agent` [R16] (test).
 - Attend : rien.
 
+### BR109 · Le socle ferme les écarts de RC73 : « R.I.B », « R1B », « R 1 B », « P@yez » refusés à la sortie, l'IBAN dicté après un nombre composé masqué (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC73, BR107
+- Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; Conformité ; R15, R62.
+- Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de RC73 (« fermer les écarts écrits, puis retirer chaque ligne de `ECARTS_CONNUS` »). Toutes les autres tâches de la voie 1 attendent un humain ; la voie 2 n'a plus de reste connu et RC73 est fusionnée : le test d'accord peut changer ici. `dossiers/bouclier.ts` ne change pas. Les lectures des mots (épelés, leet, leet épelé) sont reprises du bouclier dans un fichier neuf du socle, `packages/core/src/envoi/mots-detours.ts`, que `readings` de `texte.ts` lit : `bankDetailsIn`, `paymentRequestIn` et `fundsInOutgoing` en profitent tous trois. La seconde lecture de RC72 (le chiffre rendu au groupe suivant devant « mille » ou « cent ») passe dans `envoi/iban-detours.ts`, faite seulement quand elle change la relecture.
+- Objectif : plus aucun écart connu entre ce que le bouclier voit et ce que le socle masque et refuse : `ECARTS_CONNUS` est vide.
+- Jamais vu : un texte d'AIMMO ne peut pas faire sortir « R 1 B » ou « P@yez », et un IBAN dicté « … quatre-vingt-dix sept mille … » n'est jamais rangé en clair, quand un filtre ordinaire n'y voit ni mot ni nombre.
+- Critères : « R.I.B », « r i b », « I.B.A.N », « R1B », « 1BAN », « B1C », « R 1 B », « 1-B-A-N », « P@yez », « V1rez » : refusés par `fundsInOutgoing` [R62] (test) ; IBAN dicté « … quatre-vingt-dix sept mille … » et « … deux cent trente six mille » : masqué en entier, texte autour inchangé [R15] (test) ; `ECARTS_CONNUS` vide, le test d'accord vert (test) ; T3, F4, 1er, 15h30, R+1, « il y a 3 pièces », adresse mail, téléphone, textes d'AIMMO ordinaires : acceptés (test) ; lecture linéaire : 40 000 caractères en moins de 500 ms (test) ; tous les tests existants restent verts.
+- Attend : rien.
+
 ## Restes du cœur des groupes HX
 
 Voie : 2

@@ -75,27 +75,10 @@ const DETOURS: Detour[] = [
 ];
 
 /**
- * Les écarts connus au 2026-11-17, chacun avec la tâche qui le fermera. Le socle de BR106 et BR107 lit l'IBAN épelé,
- * dicté, coupé d'invisibles ou de sosies, mais pas encore les détours que RC71 et RC72 ont appris au bouclier : le leet
- * (« R1B »), le leet épelé (« R 1 B ») et le groupe dicté juste après un nombre composé (« quatre-vingt-dix sept
- * mille »). Le socle est à la voie 1 : quand il les lit, chaque ligne fermée sort de cette liste.
+ * Les écarts connus, chacun avec la tâche qui le fermera. BR109 a fermé ceux relevés par RC73 (mots épelés, leet, leet
+ * épelé, IBAN dicté après un nombre composé) : la liste est vide. Un écart nouveau s'y écrit avec sa tâche.
  */
-const ECARTS_CONNUS: Record<string, string> = {
-  'rib-points:sortie': 'voie 1 : les mots épelés de RC66 dans `fundsInOutgoing`',
-  'rib-espaces:sortie': 'voie 1 : les mots épelés de RC66 dans `fundsInOutgoing`',
-  'iban-points:sortie': 'voie 1 : les mots épelés de RC66 dans `fundsInOutgoing`',
-  'iban-dicte-apres-compose:masque': 'voie 1 : seconde lecture de RC72 dans `envoi/iban-detours.ts`',
-  'iban-dicte-apres-compose:sortie': 'voie 1 : seconde lecture de RC72 dans `envoi/iban-detours.ts`',
-  'iban-dicte-cent-trente-six-mille:masque': 'voie 1 : seconde lecture de RC72 dans `envoi/iban-detours.ts`',
-  'iban-dicte-cent-trente-six-mille:sortie': 'voie 1 : seconde lecture de RC72 dans `envoi/iban-detours.ts`',
-  'rib-leet:sortie': 'voie 1 : le leet de RC71 dans `fundsInOutgoing`',
-  'iban-leet:sortie': 'voie 1 : le leet de RC71 dans `fundsInOutgoing`',
-  'bic-leet:sortie': 'voie 1 : le leet de RC71 dans `fundsInOutgoing`',
-  'rib-leet-epele:sortie': 'voie 1 : le leet épelé de RC72 dans `fundsInOutgoing`',
-  'iban-leet-epele:sortie': 'voie 1 : le leet épelé de RC72 dans `fundsInOutgoing`',
-  'payez-leet:sortie': 'voie 1 : le leet de RC71 dans `fundsInOutgoing`',
-  'virez-leet:sortie': 'voie 1 : le leet de RC71 dans `fundsInOutgoing`',
-};
+const ECARTS_CONNUS: Record<string, string> = {};
 
 function ecarts(): string[] {
   const out: string[] = [];

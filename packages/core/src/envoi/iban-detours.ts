@@ -140,7 +140,7 @@ const binds = (sep: string): boolean => sep.length > 0 && sep.length <= 3 && /^[
  * Un nombre en mots qui commence au mot `i` : ses chiffres et le mot qui le suit, ou rien. Même lecture que le
  * bouclier ; chaque lecture regarde au plus neuf mots plus loin.
  */
-function numberAt(t: Token[], i: number): [string, number] | null {
+function numberAt(t: Token[], i: number, split = false): [string, number] | null {
   const at = (k: number): string | undefined => (k < t.length && (k === i || binds(t[k]!.sep)) ? t[k]!.word : undefined);
   const chain = (k: number): string | undefined => {
     for (let m = i + 1; m <= k; m += 1) if (at(m) === undefined) return undefined;
@@ -191,6 +191,16 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     const u = unit(s, next === 'thousand' || next === 'hundred' ? 1 : 2);
     return u === undefined ? null : [u * factor, s + 2];
   };
+  /**
+   * BR109, comme RC72 au bouclier : en lecture `split`, un nombre composé de `s` à `n[1]` dont le dernier mot est un
+   * chiffre de deux à neuf suivi sans pause de « mille » ou « cent » rend ce chiffre au groupe suivant :
+   * « quatre-vingt-dix sept mille » se lit 90 puis 7000, « deux cent trente six mille » 230 puis 6000.
+   */
+  const handBack = (s: number, n: [number, number]): [number, number] => {
+    if (!split || n[1] - 1 <= s || !isMultiplier(chain(n[1]))) return n;
+    const last = UNIT_WORDS[t[n[1] - 1]!.word];
+    return last !== undefined && last >= 2 ? [n[0] - last, n[1] - 1] : n;
+  };
   const w = t[i]!.word;
   const repeat = REPEAT_WORDS[w];
   if (repeat !== undefined) {
@@ -203,7 +213,8 @@ function numberAt(t: Token[], i: number): [string, number] | null {
     let value = (th?.[0] ?? 0) + (hu?.[0] ?? 0);
     let k = hu?.[1] ?? th![1];
     const afterAnd = hu !== null && chain(k) === 'and' ? k + 1 : k;
-    const rest = below100(afterAnd);
+    const read = below100(afterAnd);
+    const rest = read === null ? null : handBack(afterAnd, read);
     const opensNext = rest !== null && rest[1] === afterAnd + 1 && isMultiplier(chain(rest[1]));
     if (rest !== null && rest[0] > 0 && !opensNext) {
       value += rest[0];
@@ -324,13 +335,9 @@ function unmaskLookalikes(word: string): string {
   return word.replace(/[Oo]/g, '0').replace(/l/g, '1');
 }
 
-/**
- * Le texte relu comme le bouclier le relit (nombres en mots remis en chiffres, et, si `lookalikes`, sosies de chiffres
- * aussi, en majuscules), avec la place d'origine de chaque caractère. Un nombre en mots tient toute la plage de ses mots.
- */
-function digitsRewritten(text: string, lookalikes: boolean, seen: Mapped | null): Mapped {
+/** Le texte normalisé (voir `normalized`), coupé en mots et en séparateurs, chacun avec sa place. */
+function tokenized(text: string, seen: Mapped | null): Tokenized {
   const p = normalized(text, seen);
-  const from = (a: number, b: number): [number, number] => [p.start[a]!, p.end[b - 1]!];
   const tokens: Token[] = [];
   const re = /([\p{L}\p{N}]+)|([^\p{L}\p{N}]+)/gu;
   let sep = '';
@@ -345,6 +352,19 @@ function digitsRewritten(text: string, lookalikes: boolean, seen: Mapped | null)
       sepStart = m.index;
     }
   }
+  return { p, tokens, sep, sepStart };
+}
+
+/** Le texte normalisé et coupé en mots, fait une fois et relu par chaque lecture (BR109). */
+interface Tokenized { p: Mapped; tokens: Token[]; sep: string; sepStart: number }
+
+/**
+ * Le texte relu comme le bouclier le relit (nombres en mots remis en chiffres, et, si `lookalikes`, sosies de chiffres
+ * aussi, en majuscules), avec la place d'origine de chaque caractère. Un nombre en mots tient toute la plage de ses mots.
+ */
+function digitsRewritten(tk: Tokenized, lookalikes: boolean, split = false): Mapped {
+  const { p, tokens, sep, sepStart } = tk;
+  const from = (a: number, b: number): [number, number] => [p.start[a]!, p.end[b - 1]!];
   const out = mapped();
   const pushSep = (s: string, at: number): void => {
     for (let q = 0; q < s.length; q += 1) out.push(s[q]!.toUpperCase(), ...from(at + q, at + q + 1));
@@ -352,7 +372,7 @@ function digitsRewritten(text: string, lookalikes: boolean, seen: Mapped | null)
   let i = 0;
   while (i < tokens.length) {
     const tok = tokens[i]!;
-    const n = numberAt(tokens, i);
+    const n = numberAt(tokens, i, split);
     pushSep(tok.sep, tok.sepStart);
     if (n !== null) {
       out.push(n[0], ...from(tok.start, tokens[n[1] - 1]!.end));
@@ -372,6 +392,9 @@ function digitsRewritten(text: string, lookalikes: boolean, seen: Mapped | null)
   pushSep(sep, sepStart);
   return out;
 }
+
+/** BR109 : un chiffre de deux à neuf suivi de « mille » ou « cent » sans pause : la seconde lecture de RC72 peut changer. */
+const SPLIT_HINT = /(?:^|[^\p{L}\p{N}])(?:deux|trois|quatre|cinq|six|sept|huit|neuf|one|two|three|four|five|six|seven|eight|nine)[ -]{1,3}(?:mille|mil|thousand|cents?|hundred)(?![\p{L}\p{N}])/u;
 
 /** Les plages réunies, triées, sans chevauchement. */
 function merged(spans: Span[]): Span[] {
@@ -393,11 +416,18 @@ export function hiddenIbanSpans(text: string): Span[] {
   const spans: Span[] = [...spelledIbanSpans(text)];
   const seen = seenMapped(text);
   const sources: (Mapped | null)[] = seen.text === text ? [null] : [null, seen];
+  const maySplit = SPLIT_HINT.test(seen.text.normalize('NFKC').toLowerCase());
   if (seen.text !== text) for (const [a, b] of spelledIbanSpans(seen.text)) spans.push([seen.start[a]!, seen.end[b - 1]!]);
   for (const source of sources) {
+    const tk = tokenized(text, source);
     for (const lookalikes of [false, true]) {
-      const r = digitsRewritten(text, lookalikes, source);
+      const r = digitsRewritten(tk, lookalikes);
       for (const [a, b] of spelledIbanSpans(r.text)) spans.push([r.start[a]!, r.end[b - 1]!]);
+      // BR109 : la seconde lecture de RC72, faite seulement si un chiffre de deux à neuf précède « mille » ou « cent »,
+      // et relue seulement si elle change quelque chose.
+      if (!maySplit) continue;
+      const split = digitsRewritten(tk, lookalikes, true);
+      if (split.text !== r.text) for (const [a, b] of spelledIbanSpans(split.text)) spans.push([split.start[a]!, split.end[b - 1]!]);
     }
   }
   return merged(spans);

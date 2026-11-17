@@ -13,6 +13,7 @@
  */
 import type { OutboundChannelName } from '../db/types.ts';
 import { hiddenIbanSpans, seenMapped, unmaskedText } from './iban-detours.ts';
+import { wordReadings } from './mots-detours.ts';
 
 export type TextRule = 'R06' | 'R07' | 'R08' | 'R09' | 'R10' | 'R19' | 'R62' | 'question' | 'length';
 
@@ -311,11 +312,14 @@ const PAYMENT_REQUEST: RegExp[] = [
 
 /**
  * BR107 : le texte sans accents ni majuscules, et aussi tel que l'œil le voit quand il diffère (« RΙΒ », « vir\u200bement »,
- * « 𝐈𝐁𝐀𝐍 ») : une règle d'argent lit les deux [R62].
+ * « 𝐈𝐁𝐀𝐍 ») : une règle d'argent lit les deux [R62]. BR109 : et ses lectures épelées ou sans le leet (« R.I.B »,
+ * « R1B », « R 1 B », « P@yez »), voir `mots-detours.ts`.
  */
 function readings(text: string): string[] {
   const seen = unmaskedText(text);
-  return seen === text ? [plain(text)] : [plain(text), plain(seen)];
+  const base = seen === text ? [plain(text)] : [plain(text), plain(seen)];
+  // BR109 : aussi les mots épelés, le leet et le leet épelé, lus sur le texte démasqué comme le bouclier les lit.
+  return [...new Set([...base, ...wordReadings(plain(seen))])];
 }
 
 export function paymentRequestIn(text: string): boolean {
@@ -338,6 +342,7 @@ const OUTGOING_FUNDS: RegExp[] = [
 
 /** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
 export function fundsInOutgoing(text: string): boolean {
-  if (bankDetailsIn(text)) return true;
+  // Comme `bankDetailsIn` puis les règles de sortie, les lectures faites une seule fois (BR109).
+  if (IBAN.test(text) || text.includes(IBAN_MASK)) return true;
   return readings(text).some((p) => OUTGOING_FUNDS.some((re) => re.test(p)));
 }
