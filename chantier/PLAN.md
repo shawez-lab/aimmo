@@ -1943,7 +1943,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : les questions viennent de l'API en liste fermée, aucune réponse libre envoyée [R440] (test) ; chaque clause affiche la réponse qui la déclenche et son texte de loi (test) ; l'écart de prix se montre et le geste « montré au vendeur » appelle la route prévue [R441] (test) ; le contrôle avant signature se dit en phrases simples, jamais « prêt » tant qu'un blocage reste (test) ; aucun prix ni texte de clause au journal ni dans l'adresse de la page [R13] (test) ; budget de l'application tenu [R201] (test).
 - Attend : rien.
 ### BR117 · Rouvrir un mandat préparé par questionnaire pour montrer l'écart plus tard
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#653, `a129860b`). Codex une P2 (rouvrir après le geste le reproposait) corrigée et testée, puis rien à signaler ; garde HX67 : tri sans `rowid`. GitHub Actions bloqué (facturation), vérification locale verte (6664 tests). Restent (voie 1) : écrire et valider les clauses à l'écran (direction, conformité) ; de vrais textes attendent H08.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR116
 - Cahier : M06 Mandats et documents (mandat par questionnaire) ; R440, R441, R443, R16, R13, R201.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de BR116 (P2 de Codex). Une lecture des mandats préparés d'un bien (`forProperty` au cœur, `GET /v1/questionnaire-mandat/biens/<id>/mandats`), sans le texte du document, qui reste avec les documents du bien ; lue par l'agent du bien, la direction et la conformité. L'écran du questionnaire liste ces mandats et les rouvre ; un geste déjà noté ne se repropose pas. Aucune migration, aucun changement de `app.ts`.
