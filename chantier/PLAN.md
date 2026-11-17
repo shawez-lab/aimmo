@@ -1842,7 +1842,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR109 · Le socle ferme les écarts de RC73 : « R.I.B », « R1B », « R 1 B », « P@yez » refusés à la sortie, l'IBAN dicté après un nombre composé masqué (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#642, `77d5016b`). Codex 1 P2 corrigé (la seconde lecture refaisait tout le texte : elle n'est faite que si un chiffre de deux à neuf précède « mille » ou « cent », le texte normalisé est coupé en mots une fois par source, les mots épelés sont recollés par blocs), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6583 tests, en 10 parts). `ECARTS_CONNUS` est vide. Plus aucun écart connu entre le bouclier et le socle.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : RC73, BR107
 - Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; Conformité ; R15, R62.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de RC73 (« fermer les écarts écrits, puis retirer chaque ligne de `ECARTS_CONNUS` »). Toutes les autres tâches de la voie 1 attendent un humain ; la voie 2 n'a plus de reste connu et RC73 est fusionnée : le test d'accord peut changer ici. `dossiers/bouclier.ts` ne change pas. Les lectures des mots (épelés, leet, leet épelé) sont reprises du bouclier dans un fichier neuf du socle, `packages/core/src/envoi/mots-detours.ts`, que `readings` de `texte.ts` lit : `bankDetailsIn`, `paymentRequestIn` et `fundsInOutgoing` en profitent tous trois. La seconde lecture de RC72 (le chiffre rendu au groupe suivant devant « mille » ou « cent ») passe dans `envoi/iban-detours.ts`, faite seulement quand elle change la relecture.
