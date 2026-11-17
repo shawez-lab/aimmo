@@ -97,6 +97,7 @@ import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
 import { boutiqueRoutes, type BoutiqueRoute } from './boutique.ts';
 import { panneauxRoutes, type PanneauxRoute } from './panneaux.ts';
 import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
+import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionnaire.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
@@ -1358,6 +1359,16 @@ function veilleDpeRoutesDef(): RouteDef[] {
   }));
 }
 
+/** Les routes du mandat par questionnaire (BR115) : rôle contrôlé avant le corps [R16], clauses et prix [R440, R441, R442]. */
+function questionnaireRoutesDef(): RouteDef[] {
+  return questionnaireRoutes().map((r: QuestionnaireRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les sources du score par adresse : celles données, sinon la Base adresse nationale et les ventes de l'estimation avec le cadastre et les diagnostics publics. */
 function scoreSourcesOf(config: ApiConfig): ScoreServices | null {
   if (config.scoreSources !== undefined) return config.scoreSources;
@@ -2329,6 +2340,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...boutiqueRoutesDef(),
     ...panneauxRoutesDef(),
     ...veilleDpeRoutesDef(),
+    ...questionnaireRoutesDef(),
     ...scoreAdresseRoutesDef(scoreSourcesOf(config)),
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...rechercheRoutesDef(),

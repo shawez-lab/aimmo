@@ -160,6 +160,20 @@ export function renderPriceCheck(p: PreparedMandate['price'], valuationDate: str
   return `<section class="prix">\n<p${flagged ? ' class="evidence"' : ''}>${escapeHtml(text)}</p>\n</section>`;
 }
 
+/** Une version du texte d'une clause, telle que la direction et la conformité la lisent. */
+export interface ClauseVersion {
+  id: string;
+  code: ClauseCode;
+  title: string;
+  version: number;
+  body: string;
+  hash: string;
+  createdAt: string;
+  status: 'essai' | 'valide';
+  validatedAt: string | null;
+  ownText: boolean;
+}
+
 interface ClauseRow {
   id: string;
   code: string;
@@ -240,6 +254,36 @@ export class MandatQuestionnaire {
       return { ok: true, id, version };
     }
     throw new Error('clause_version_busy');
+  }
+
+  /**
+   * Les versions des textes des clauses du réseau, les plus récentes d'abord, chacune dite « essai » ou « validée » :
+   * la direction qui les écrit et la conformité qui les valide, seules [R16, R442]. Sans elle, la conformité ne peut
+   * pas trouver ce qu'elle valide. Rien n'est réécrit : chaque version reste lisible [R443].
+   */
+  async clauseVersions(viewer: Viewer): Promise<{ ok: true; versions: ClauseVersion[] } | Refusal> {
+    if (viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const rows = await this.db.all<{ id: string; code: string; version: number; body: string; hash: string; created_by: string; created_at: string; validated_at: string | null }>(
+      `SELECT c.id, c.code, c.version, c.body, c.hash, c.created_by, c.created_at, v.validated_at FROM mandate_clause_versions c
+       LEFT JOIN mandate_clause_validations v ON v.clause_id = c.id WHERE c.network_id = ? ORDER BY c.code ASC, c.version DESC`,
+      [viewer.networkId],
+    );
+    const versions = rows
+      .filter((r) => Object.hasOwn(CLAUSES, r.code))
+      .map((r) => ({
+        id: r.id,
+        code: r.code as ClauseCode,
+        title: CLAUSES[r.code as ClauseCode].title,
+        version: Number(r.version),
+        body: r.body,
+        hash: r.hash,
+        createdAt: r.created_at,
+        status: (r.validated_at === null ? 'essai' : 'valide') as 'essai' | 'valide',
+        validatedAt: r.validated_at,
+        // La conformité ne valide jamais ce qu'elle a écrit, sous quelque rôle que ce soit [R442].
+        ownText: r.created_by.slice(r.created_by.indexOf(':') + 1) === viewer.userId,
+      }));
+    return { ok: true, versions };
   }
 
   /** La conformité seule valide une version, une fois, et jamais une version qu'elle aurait écrite [R442]. */
