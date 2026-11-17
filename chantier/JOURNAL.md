@@ -1373,3 +1373,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 23:53 · VOIE 2 : rien de faisable : toujours une seule proposition ouverte, #654 (BR118, voie 1), bloquée par H35 (facturation GitHub) ; aucune fusion depuis 22:54 ; S11, B04, C09, SV05 attendent un humain ; aucun module libre ; rien de nouveau ouvert pour ne pas empiler · prochaine : voie 2 attend H35 réglé
 - 2026-11-17 23:53 · VOIE 2 : relance refusée, question 2 (les séances de 20:55, 21:53 et 22:54 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-17 23:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-18 00:23 · VOIE 1 : rien de fusionnable : #654 (BR118) toujours bloquée, « Vérifier » non démarré sur #654 et sur main (facturation GitHub, H35, encore vérifié à 22:53) ; fusion non retentée ; aucune nouvelle tâche ouverte pour ne pas empiler ; verrou libre, pas de relance · prochaine : fusionner #654 dès H35 réglé
