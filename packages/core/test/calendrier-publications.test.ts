@@ -386,6 +386,25 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
   });
 });
 
+describeWithSqlite('RC74 · la référence du bien dans chaque créneau', () => {
+  it('chaque créneau de la semaine dit la référence de son bien, la même à la réservation et à la relecture', async () => {
+    const t = await setup();
+    const a = await t.property(3);
+    const b = await t.property(3);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1, facebook: 1 }, hours: ['09:00'] });
+    const w = await t.cal.planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    expect(w.value.length).toBeGreaterThan(0);
+    const refs = new Map((await t.db.all<{ id: string; reference: string }>('SELECT id, reference FROM properties WHERE id IN (?, ?)', [a, b])).map((r) => [r.id, r.reference]));
+    for (const s of w.value) {
+      expect(s.propertyReference).toBe(refs.get(s.propertyId));
+      expect(s.propertyReference).toMatch(/^CAL-\d+$/);
+    }
+    const again = await t.cal.slots(t.alexV, '2027-10-11', '2027-10-17');
+    expect(again).toEqual(w);
+  });
+});
+
 describeWithSqlite('RC29 · deux planifications simultanées du calendrier', () => {
   const SLOT = /INSERT INTO social_calendar_slots/;
   /**
