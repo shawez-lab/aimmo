@@ -548,6 +548,37 @@ globalThis.AIMMO_MANDAT = function (t) {
         return false;
       });
     })));
+    drawQuestionnaire(who);
+  }
+  /* BR116 : le mandat par questionnaire, script servi à part, chargé au geste [R201, R440, R441]. */
+  var questionnaire = null;
+  function drawQuestionnaire(who) {
+    var box = bloc('Préparer par questionnaire');
+    box.appendChild(el('p', 'Six questions au vendeur : chaque clause dit la réponse qui l’a fait entrer et la loi qui la fonde, et le prix est comparé à l’avis de valeur avant la signature.', 'doux'));
+    var inner = el('div');
+    // Vivant tant que l'écran montre le même bien : quitter ou rouvrir l'écran remplace cur.
+    var mine = cur;
+    var ctx = { personId: function () { return who.value; }, propertyId: mine.id, alive: function () { return cur === mine; } };
+    var b = button('Ouvrir le questionnaire', function () {
+      if (b.disabled || !ctx.alive()) return;
+      if (questionnaire) { questionnaire.show(inner, ctx); return; }
+      b.disabled = true;
+      var s = el('script');
+      s.setAttribute('src', '/app/mandat-questionnaire.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_MANDAT_QUESTIONNAIRE;
+        try { delete globalThis.AIMMO_MANDAT_QUESTIONNAIRE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (!ctx.alive()) return;
+        if (typeof make !== 'function') { state('Indisponible pour le moment. Réessayez dans un moment.'); return; }
+        questionnaire = make({ el: el, clear: clear, send: send, button: button, field: field, ID: ID });
+        questionnaire.show(inner, ctx);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (ctx.alive()) state('Pas de réseau. Réessayez dans un moment.'); });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
   }
   return { open: open, wipe: wipe };
 };
