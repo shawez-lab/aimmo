@@ -355,10 +355,14 @@ function digitsRewritten(text: string, lookalikes: boolean, split = false): stri
  */
 export function dictatedIban(text: string): boolean {
   // RC72 : chaque relecture est faite aussi en rendant au groupe suivant le chiffre qui précède « mille » ou « cent ».
-  for (const split of [false, true]) {
-    if (spelledIban(digitsRewritten(text, false, split)) || spelledIban(digitsRewritten(text, true, split))) return true;
-  }
-  return false;
+  // La seconde lecture n'est relue que si elle change quelque chose.
+  const plainRead = digitsRewritten(text, false);
+  const lookRead = digitsRewritten(text, true);
+  if (spelledIban(plainRead) || spelledIban(lookRead)) return true;
+  const plainSplit = digitsRewritten(text, false, true);
+  if (plainSplit !== plainRead && spelledIban(plainSplit)) return true;
+  const lookSplit = plainSplit === plainRead ? lookRead : digitsRewritten(text, true, true);
+  return lookSplit !== lookRead && spelledIban(lookSplit);
 }
 
 /**
@@ -437,7 +441,8 @@ export function fundSignals(text: string): FundSignal[] {
   }
   // RC72 : le leet épelé, « R 1 B », lu sur le texte démasqué, le 1 valant i puis l.
   const spelledLeet = plain(seen);
-  for (const one of ['i', 'l'] as const) for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
+  const mayHaveLeet = /[0-9@$][ .-][a-z]|[a-z][ .-][0-9@$]/.test(spelledLeet);
+  if (mayHaveLeet) for (const one of ['i', 'l'] as const) for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) {
     const v = joinSpelled(spelledLeet, ds, de, one);
     if (!variants.includes(v)) variants.push(v);
   }
