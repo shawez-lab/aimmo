@@ -109,6 +109,15 @@ describeWithSqlite('RC76 · la direction défait une fusion faite à tort', () =
     expect((await t.journal.all()).filter((e) => e.type === 'fiche.fusion_defaite')).toHaveLength(1);
   });
 
+  it('une autre direction qui arrive après le geste n’écrit pas son motif', async () => {
+    const t = await setup();
+    await t.fusions.undo(t.direction, t.lea, t.merge.id, { reason: 'erreur_de_saisie' });
+    const other = { role: 'direction', userId: 'd-3', networkId: t.network.id } as Viewer;
+    expect(await t.fusions.undo(other, t.lea, t.merge.id, { reason: 'personnes_differentes' })).toMatchObject({ ok: true, value: { changed: false } });
+    const motifs = (await t.journal.all()).filter((e) => e.type === 'fiche.fusion_defaite_motif');
+    expect(motifs.map((e) => [e.actor, e.data.reason])).toEqual([['direction:d-1', 'erreur_de_saisie']]);
+  });
+
   it('[R16] seule la direction du réseau : agent de la fiche, conformité et autre réseau refusés, au journal, rien de défait', async () => {
     const t = await setup();
     for (const viewer of [t.alex, t.compliance, t.outsider]) {

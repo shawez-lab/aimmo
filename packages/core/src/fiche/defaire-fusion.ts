@@ -153,8 +153,9 @@ export class DefaireFusion {
     const done = lines.find((e) => e.type === 'fiche.fusion_defaite' && e.data.merge === merge.id);
     const count = (key: string): number => (Array.isArray(done?.data[key]) ? (done.data[key] as unknown[]).length : 0);
     const said = lines.some((e) => e.type === 'fiche.fusion_defaite_motif' && e.data.merge === merge.id);
-    // Le motif de la direction, une seule fois : le premier geste compte, comme pour la fusion défaite.
-    if (!said) {
+    // Le motif de la direction, une seule fois, et seulement par celle dont la ligne de la fusion défaite porte le nom :
+    // une direction qui arrive après une autre n'écrit pas son motif sur un geste qu'elle n'a pas fait.
+    if (!said && done?.actor === actor) {
       await appendEvent(this.journal, { type: 'fiche.fusion_defaite_motif', actor, subject, data: { rule: 'R16', merge: merge.id, reason } }, this.now);
     }
     return {
