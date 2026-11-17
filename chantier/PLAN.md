@@ -1852,6 +1852,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : « R.I.B », « r i b », « I.B.A.N », « R1B », « 1BAN », « B1C », « R 1 B », « 1-B-A-N », « P@yez », « V1rez » : refusés par `fundsInOutgoing` [R62] (test) ; IBAN dicté « … quatre-vingt-dix sept mille … » et « … deux cent trente six mille » : masqué en entier, texte autour inchangé [R15] (test) ; `ECARTS_CONNUS` vide, le test d'accord vert (test) ; T3, F4, 1er, 15h30, R+1, « il y a 3 pièces », adresse mail, téléphone, textes d'AIMMO ordinaires : acceptés (test) ; lecture linéaire : 40 000 caractères en moins de 500 ms (test) ; tous les tests existants restent verts.
 - Attend : rien.
 
+### BR110 · La publicité payante à l'écran de la direction : proposer, valider les budgets, lancer, arrêter, et juger chaque campagne au mandat (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR03, AT12
+- Cahier : M01 Attirer ; Phase 3, HX54 ; R587, R588, R589, R16, R201.
+- Décidé (2026-11-17, voie 1) : relevé dans les « Reste » de BR03, BR104, BR105 et BR108 (« l'écran du marketing »). Toutes les autres tâches de la voie 1 attendent un humain. L'écran du marketing est coupé en deux : ici la publicité payante, sous l'écran « Attirer » de la direction (après « Statistiques du site »), par un script servi à part, `/app/publicite.js`, chargé au geste comme `/app/site.js` ; la lettre, le magazine et le calendrier de l'agent suivront (BR111). `app.js` ne change pas.
+- Objectif : la direction lit le compte rendu des campagnes (état, raison d'arrêt, dépense, contacts, mandats, actes, coût par contact, par mandat, par acte, seuil), propose une campagne (plateforme, nom, communes en codes INSEE, rayon), valide ses budgets en euros, la lance et l'arrête au second appui, en mode essai seul.
+- Jamais vu (celui de HX54, rendu utilisable) : chaque campagne jugée au mandat signé et à l'acte, pas au clic, et un ciblage interdit pour le logement impossible à saisir : l'écran n'a que des communes et un rayon.
+- Critères : script servi à part, chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; chaque chiffre reçu dit en euros ou en nombre, dans l'ordre reçu, sans recalcul, état et raison d'arrêt en mots [R588] (test) ; communes (1 à 30 codes INSEE, sans doublon), rayon (vide ou 15 à 80 km), nom (3 à 80 caractères) et plateforme vérifiés avant l'appel ; seuls `communes` et `rayonKm` envoyés au ciblage [R589] (test) ; budgets en euros changés en centimes, total au moins le budget du jour, refusés avant l'appel sinon [R587] (test) ; lancer et arrêter au second appui seulement, tout autre geste annule (test) ; une écriture à la fois, réponse perdue dite incertaine, seule la dernière lecture dessine (test) ; refus dits en mots, jamais un code, critère interdit nommé ; seules les routes `/v1/marketing/publicite` [R16] (test).
+- Attend : rien (H63 pour une campagne réelle).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
