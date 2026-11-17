@@ -109,6 +109,20 @@ export function letterJob(db: SqlDatabase, letter: () => LettreInformation, opti
   };
 }
 
+/**
+ * Les dépendances du calendrier comme au Worker : la porte de publication est la classe de X05 faite par le studio,
+ * avec ses canaux d'essai par défaut [R26] ; la porte de diffusion de D05 [R42] ; le lien marqué de AT20 [R156].
+ */
+export function calendarDeps(db: SqlDatabase, journal: JournalStore, files: { has(ref: string): Promise<boolean> }, now: () => Date): CalendarDeps {
+  const store = new FicheClient(db, { now });
+  const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
+  return {
+    gate: studioCore({ db, journal, now, files }).publications,
+    diffusion: new Diffusion(db, acces, journal, { now }),
+    links: new OrigineContacts(db, journal, { now }),
+  };
+}
+
 export interface MarketingJobsOptions {
   now: () => Date;
   /** Le stockage des fichiers du studio (`MEDIA`) ; absent, le passage du calendrier ne tourne pas. */
@@ -124,24 +138,7 @@ export interface MarketingJobsOptions {
 export function marketingJobs(db: SqlDatabase, journal: JournalStore, options: MarketingJobsOptions): ScheduledJob[] {
   const { now, files } = options;
   const jobs: ScheduledJob[] = [];
-  if (files) {
-    jobs.push(
-      calendarJob(
-        db,
-        journal,
-        () => {
-          const store = new FicheClient(db, { now });
-          const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
-          return {
-            gate: studioCore({ db, journal, now, files }).publications,
-            diffusion: new Diffusion(db, acces, journal, { now }),
-            links: new OrigineContacts(db, journal, { now }),
-          };
-        },
-        { now },
-      ),
-    );
-  }
+  if (files) jobs.push(calendarJob(db, journal, () => calendarDeps(db, journal, files, now), { now }));
   jobs.push(letterJob(db, () => letterService({ db, journal, now }, options.letterUnsubscribeBase), { now }));
   return jobs;
 }

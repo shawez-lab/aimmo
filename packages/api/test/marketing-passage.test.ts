@@ -7,7 +7,8 @@ import { DELAY_END, MIN, setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
-import { CALENDAR_JOB, LETTER_EDITION_DAYS, LETTER_JOB, LETTER_UNSUBSCRIBE_PATH, calendarJob, letterUnsubscribeBase, marketingJobs } from '../src/marketing-passage.ts';
+import { OrigineContacts } from '../../core/src/attirer/origine-contacts.ts';
+import { CALENDAR_JOB, calendarDeps, LETTER_EDITION_DAYS, LETTER_JOB, LETTER_UNSUBSCRIBE_PATH, calendarJob, letterUnsubscribeBase, marketingJobs } from '../src/marketing-passage.ts';
 import { runScheduler } from '../src/planificateur.ts';
 import { runListingSync } from '../src/vitrine.ts';
 
@@ -170,6 +171,31 @@ describeWithSqlite('BR112 · le passage des créneaux du calendrier au planifica
     await t.tick();
     expect(t.received).toEqual([]);
     expect(await t.db.first("SELECT count(*) AS n FROM social_calendar_runs r JOIN social_calendar_slots c ON c.id = r.slot_id WHERE c.day = '2027-10-12'")).toEqual({ n: 0 });
+  });
+
+  it('[R582] [R26] branché comme au Worker : la classe de publication de X05 et ses canaux d’essai ; sans page du bien en ligne, le créneau est refusé une fois', async () => {
+    const t = await setupCalendar();
+    const deps = calendarDeps(t.db, t.journal, { has: async () => true }, () => new Date(START));
+    expect(deps.gate).toBeInstanceOf(Publications);
+    expect(deps.links).toBeInstanceOf(OrigineContacts);
+    // Les canaux de la porte : ceux du mode essai seulement.
+    const channels = (deps.gate as unknown as { channels: Map<string, { mode: string }> }).channels;
+    expect(channels.size).toBeGreaterThan(0);
+    for (const c of channels.values()) expect(c.mode).toBe('essai');
+
+    await t.property('CAL-1');
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    expect(await t.cal.planWeek(t.alexV, '2027-10-11')).toMatchObject({ ok: true });
+    // Le planificateur du Worker, sans `jobs` : le vrai lien marqué de AT20 n'a aucune page en ligne pour ce bien.
+    for (const at of ['2027-10-11T07:00:30.000Z', '2027-10-11T07:00:40.000Z', '2027-10-11T08:00:30.000Z']) {
+      t.setClock(at);
+      const r = await runScheduler({ db: t.db, mode: 'essai', now: () => new Date(at), studioFiles: { has: async () => true } });
+      expect(r?.failed).toEqual([]);
+    }
+    expect(t.received).toEqual([]);
+    expect(await t.outcomes()).toEqual([{ channel: 'instagram', outcome: 'refuse', reason: 'sans_lien' }]);
+    expect(await t.db.first('SELECT count(*) AS n FROM social_calendar_runs')).toEqual({ n: 1 });
+    expect(await t.db.first("SELECT count(*) AS n FROM journal WHERE type = 'marketing.calendrier.passage'")).toEqual({ n: 1 });
   });
 
   it('sans le stockage des fichiers du studio, le passage du calendrier n’est pas inscrit ; avec lui, il l’est, à chaque heure', () => {
