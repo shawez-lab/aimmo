@@ -1315,3 +1315,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 11:31 · VOIE 2 : plafond vérifié : 1) oui, cinquième séance voie 2 depuis minuit au plus ; 2) non, les séances de 07:55, 08:55 et 09:53 n'ont produit ni commit ni tâche terminée ; 3) oui, RC74 est neuve
 - 2026-11-17 11:31 · VOIE 2 : relance refusée, question 2 (aucun commit ni tâche terminée aux trois dernières séances voie 2)
 - 2026-11-17 11:31 · VOIE 2 : RC74, 1db4a115 (#646, fusionnée), relancé non
+- 2026-11-17 12:10 · BR113 · fusionnée (#647, f3765201) : routes du dossier LCB de l'agence sous licence pour son responsable de la conformité [R662, R663, R664, R601] ; relecture forte rien en P0/P1, Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6626 tests) · prochaine : BR114
+- 2026-11-17 12:10 · VOIE 1 : relance immédiate non tentée (refusée par le contrôle des permissions aux séances précédentes, pas de nouvel essai) ; le passage planifié reprendra avec BR114
