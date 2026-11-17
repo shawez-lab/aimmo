@@ -21,6 +21,10 @@
  * fichier complet de son réseau, sur une preuve « export_complet » pour `licence:<id>` ; la direction du réseau qui
  * donne les licences n'en a pas [R657, R658, R659, R601].
  *
+ * Le dossier de la lutte contre le blanchiment de l'agence sous licence (HX76, BR113), sous `/v1/export/agence/lcb` :
+ * son responsable de la conformité seul le tire, sur une preuve « export_complet » pour `licence_lcb:<id>`, et le
+ * vérifie ; ni sa direction, ni le réseau qui donne les licences. AIMMO ne range que l'empreinte [R662, R663, R664, R601].
+ *
  * Le contenu des fichiers de cette reprise (BR82), sous `/v1/export/agence/contenus` : sa direction seule, sur un
  * fichier de reprise qu'AIMMO lui a remis et une preuve « export_complet » par appel, reçoit les octets en base64, par
  * lots de 8 Mo au plus (la mémoire d'un Worker), et les plus grosses pièces tranche par tranche [R666, R667, R663]. Sans
@@ -30,6 +34,7 @@ import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type
 import { takeSlot } from './assistant.ts';
 import { sha256Hex } from './auth.ts';
 import { ContenusRepriseAgence, RepriseDonneesAgence, TRANCHE_OCTETS, type StockageFichiersPlages } from '../../core/src/licences/index.ts';
+import { DossierLcbAgences } from '../../core/src/conformite/index.ts';
 import { ExportAgent } from '../../core/src/rapports/index.ts';
 import { ClesAppareil, ClesAssistant, type AssertionPayload, type RegistrationPayload } from '../../core/src/securite/index.ts';
 
@@ -71,6 +76,7 @@ type Role = Viewer['role'];
 const DEVICE_USERS: readonly Role[] = ['agent', 'direction', 'compliance'];
 const DIRECTION: readonly Role[] = ['direction'];
 const AGENT: readonly Role[] = ['agent'];
+const COMPLIANCE: readonly Role[] = ['compliance'];
 
 export interface ClesRoute {
   method: 'GET' | 'POST';
@@ -292,6 +298,24 @@ export function clesRoutes(): ClesRoute[] {
         },
         MAX_EXPORT_BYTES,
       ),
+    },
+    // Le dossier de la lutte contre le blanchiment de l'agence sous licence, pour son responsable de la conformité seul,
+    // sur sa preuve « export_complet » pour `licence_lcb:<id>` ; l'empreinte seule est rangée [R662, R663, R664, R601].
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/lcb$/,
+      name: 'export.agence.lcb',
+      roles: COMPLIANCE,
+      handle: withBody(['stepUpId'], async (s, v, _p, b) => reply(await new DossierLcbAgences(s.db, s.journal, cles(s), { now: s.now }).make(v, b.stepUpId))),
+    },
+    // Vérifier un dossier : est-il celui qu'AIMMO a remis, couvre-t-il chaque table du traitement, sa liste des pièces
+    // est-elle entière ? Rien n'est gardé ; d'un dossier d'un autre réseau, rien n'est dit [R664, R662].
+    {
+      method: 'POST',
+      pattern: /^\/export\/agence\/lcb\/verification$/,
+      name: 'export.agence.lcb.verification',
+      roles: COMPLIANCE,
+      handle: withBody(['document'], async (s, v, _p, b) => reply(await new DossierLcbAgences(s.db, s.journal, cles(s), { now: s.now }).verify(v, b.document)), MAX_EXPORT_BYTES),
     },
     // Le contenu des fichiers de la reprise : un lot, l'empreinte d'une pièce en tranches, une tranche ; une preuve par
     // appel, jamais de référence ni de contenu au journal [R666, R667, R663, R601, R13].
