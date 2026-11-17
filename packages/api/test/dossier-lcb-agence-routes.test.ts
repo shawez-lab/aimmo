@@ -199,4 +199,32 @@ describeWithSqlite('BR113 · routes du dossier de la lutte contre le blanchiment
     }
     expect(await t.count('licence_lcb_exports')).toBe(0);
   });
+
+  it('[R16] [R662] BR114 · la licence que la preuve désigne : au responsable de la conformité de l’agence seul, rien d’autre', async () => {
+    const t = await setup();
+    const mine = await t.http('conformite', 'GET', '/export/agence/lcb');
+    expect(mine).toEqual({ status: 200, body: expect.objectContaining({ ok: true, data: { licenceId: t.lac.id } }) });
+    expect((await t.http('conformiteAutre', 'GET', '/export/agence/lcb')).body.data).toEqual({ licenceId: t.pres.id });
+    expect(await t.http('conformiteReseau', 'GET', '/export/agence/lcb')).toMatchObject({ status: 409, body: { rule: 'R662', code: 'pas_de_licence' } });
+    for (const who of ['agence', 'agenceAgent', 'direction', 'agent', 'autre'] as Who[]) {
+      const before = (await t.events('acces.refuse')).length;
+      const r = await t.http(who, 'GET', '/export/agence/lcb');
+      expect(r.status, who).toBe(403);
+      expect(r.body, who).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+      expect(r.body.data, who).toBeUndefined();
+      expect((await t.events('acces.refuse')).length, who).toBe(before + 1);
+    }
+    // Lire la licence ne tire rien et ne range rien.
+    expect(await t.count('licence_lcb_exports')).toBe(0);
+    expect(await t.events('conformite.dossier_lcb_remis')).toHaveLength(0);
+    const keys = JSON.stringify([{ sha256: await sha256Hex(KEYS.conformite), networkId: t.lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' }]);
+    const closed = await handleRequest(new Request('https://aimmo-api.example.test/v1/export/agence/lcb', { headers: { authorization: `Bearer ${KEYS.conformite}` } }), {
+      db: t.db,
+      apiKeys: keys,
+      mode: 'essai',
+      now: () => new Date(START),
+      cles: null,
+    });
+    expect(closed.status).toBe(503);
+  });
 });

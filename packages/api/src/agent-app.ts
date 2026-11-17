@@ -59,6 +59,7 @@ import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { LICENCES_SCRIPT } from '../app/licences.ts';
 import { REPRISE_CONTENUS_SCRIPT } from '../app/reprise-contenus.ts';
 import { CLES_SCRIPT } from '../app/cles.ts';
+import { DOSSIER_LCB_SCRIPT } from '../app/dossier-lcb.ts';
 import { PHASES_SCRIPT } from '../app/phases.ts';
 import { GUIDES_PHOTO_SCRIPT } from '../app/guides-photo.ts';
 import { SCENARIOS_SCRIPT } from '../app/scenarios.ts';
@@ -238,6 +239,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   // Le délai de réponse aux réclamations et le médiateur (BR70), chargés depuis « Engagements de service », jamais gardés [R201].
   '/app/reclamations-reglage.js': { body: RECLAMATIONS_REGLAGE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/gel-registre.js': { body: GEL_REGISTRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le dossier anti-blanchiment de l'agence sous licence (BR114), chargé au geste de son responsable de la conformité [R662].
+  '/app/dossier-lcb.js': { body: DOSSIER_LCB_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La copropriété et l'urbanisme résumés (BR88), chargés depuis « Dossier de vente », jamais gardés [R201].
   '/app/copropriete.js': { body: COPROPRIETE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'avant-contrat (BR91), chargé depuis « Dossier de vente », jamais gardé [R201].

@@ -169,6 +169,18 @@ export class DossierLcbAgences {
   }
 
   /**
+   * La licence de l'agence, pour que son responsable de la conformité fasse la preuve de sa clé pour `licence_lcb:<id>`
+   * avant de tirer le dossier (BR114). Rien d'autre n'est dit ; un autre rôle, ou le réseau qui donne les licences,
+   * sont refusés comme au tirage [R16, R662].
+   */
+  async licence(viewer: Viewer): Promise<{ ok: true; value: { licenceId: string } } | DossierLcbRefusal> {
+    if (viewer.role !== 'compliance') return this.refuse(viewer, 'R16', 'role');
+    const licenceId = await this.licenceOf(viewer);
+    if (licenceId === null) return this.refuse(viewer, 'R662', 'pas_de_licence');
+    return { ok: true, value: { licenceId } };
+  }
+
+  /**
    * Tire le dossier complet de l'agence sous licence, pour son responsable de la conformité seul, sur la preuve du
    * second facteur ; range son empreinte, rien d'autre [R662, R663, R664, R601].
    */
