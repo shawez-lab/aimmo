@@ -196,6 +196,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       body.appendChild(renderTournee());
       body.appendChild(renderVeille());
       body.appendChild(renderSite());
+      body.appendChild(renderCalendrier());
       body.appendChild(renderNeuf());
       body.appendChild(renderViager());
       state(message || '');
@@ -306,6 +307,35 @@ globalThis.AIMMO_GAGNER = function (t) {
         if (mine !== t.session() || typeof make !== 'function') return;
         siteScreen = make({ el: el, clear: clear, send: send, button: button });
         siteScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
+  }
+  /* BR111 · mon calendrier de publication : script servi à part (/app/calendrier.js), chargé au premier geste [R201, R581]. */
+  var calScreen = null;
+  function renderCalendrier() {
+    var box = part('Calendrier de publication');
+    box.appendChild(el('p', 'Combien de publications par réseau et par jour, à quelles heures, et les créneaux réservés pour vos biens.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir mon calendrier', function () {
+      if (b.disabled) return;
+      if (calScreen) { calScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/calendrier.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_CALENDRIER;
+        try { delete globalThis.AIMMO_CALENDRIER; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        calScreen = make({ el: el, clear: clear, send: send, button: button, field: field, session: t.session });
+        calScreen.show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);

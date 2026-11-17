@@ -254,6 +254,8 @@ describeWithSqlite('HX52 · calendrier de publication', () => {
     expect(s.ok && s.value.map((x) => x.outcome)).toEqual(['refuse', 'refuse', 'manque', 'manque']);
     const outcomes = await t.db.all<{ rule: string; code: string }>('SELECT rule, code FROM social_calendar_outcomes ORDER BY done_at');
     expect(outcomes).toEqual([{ rule: 'R582', code: 'sans_lien' }, { rule: 'R42', code: 'bien_non_diffusable' }]);
+    // BR111 : la raison d'un refus se lit avec le créneau, dans une liste fermée ; aucune sinon.
+    expect(s.ok && s.value.map((x) => x.reason)).toEqual(['sans_lien', 'non_diffusable', null, null]);
     expect(t.received).toEqual([]);
     // L'agent parti : rien ne part, et il ne règle plus rien.
     const t2 = await setup();
