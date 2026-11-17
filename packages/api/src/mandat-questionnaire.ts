@@ -6,7 +6,7 @@
  * conformité lit les versions et en valide une, jamais un texte qu'elle a écrit [R442] ; l'agent ou la direction
  * prépare le mandat depuis les réponses, chaque clause disant la réponse qui l'a déclenchée et son texte de loi [R440] ;
  * l'agent du bien dit avoir montré l'écart de prix au vendeur ; l'agent du bien, la direction et la conformité lisent
- * ce qui empêche encore de signer [R441]. Tout s'ajoute [R443]. Rien n'est envoyé : le mandat se signe par D03 et D08.
+ * ce qui empêche encore de signer [R441] ; les mandats préparés d'un bien se relisent pour les rouvrir (BR117). Tout s'ajoute [R443]. Rien n'est envoyé : le mandat se signe par D03 et D08.
  * Un champ non prévu : 400 `unknown_field`. Le préfixe est à part pour ne croiser aucune route `/mandats/<id>`.
  */
 import type { JournalStore, SqlDatabase, Viewer } from '@aimmo/core';
@@ -212,6 +212,15 @@ export function questionnaireRoutes(): QuestionnaireRoute[] {
       handle: reading(ALL, async (s, v, [id]) => {
         const r = await questionnaire(s).beforeSignature(v, id!);
         return r.ok ? { ok: true, value: { ready: r.ready, blockers: r.blockers } } : r;
+      }),
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`^/questionnaire-mandat/biens/${ID}/mandats$`),
+      name: 'questionnaire_mandat.par_bien',
+      handle: reading(ALL, async (s, v, [propertyId]) => {
+        const r = await questionnaire(s).forProperty(v, propertyId!);
+        return r.ok ? { ok: true, value: r.mandates } : r;
       }),
     },
   ];

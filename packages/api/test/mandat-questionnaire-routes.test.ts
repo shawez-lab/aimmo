@@ -235,3 +235,53 @@ describeWithSqlite('BR115 · routes du mandat par questionnaire', () => {
     expect(await t.count('mandate_questionnaires')).toBe(2);
   });
 });
+
+describeWithSqlite('BR117 · relire les mandats préparés d’un bien', () => {
+  it('[R16] [R441] l’agent du bien, la direction et la conformité relisent les mandats préparés, avec le geste et le contrôle', async () => {
+    const t = await setup({ price: 360000 });
+    await t.templates();
+    await t.valuation(280000, 310000);
+    const first = await t.prepare();
+    const second = await t.prepare('alex', { ...BASE, exclusivite: 'oui' });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect((await t.http('alex', 'POST', `/questionnaire-mandat/mandats/${first.body.data.id}/ecart-montre`, {})).status).toBe(200);
+    const path = `/questionnaire-mandat/biens/${t.property.id}/mandats`;
+    for (const who of ['alex', 'direction', 'conformite'] as const) {
+      const r = await t.http(who, 'GET', path);
+      expect(r.status, who).toBe(200);
+      expect(r.body.data.map((m: { id: string }) => m.id).sort()).toEqual([first.body.data.id, second.body.data.id].sort());
+      const a = r.body.data.find((m: { id: string }) => m.id === first.body.data.id);
+      const b = r.body.data.find((m: { id: string }) => m.id === second.body.data.id);
+      expect(a).toMatchObject({ kind: 'mandat_vente_simple', gapAcknowledged: true, ready: true, blockers: [], price: { priceEur: 360000, low: 280000, high: 310000, check: 'ecart' } });
+      expect(b).toMatchObject({ kind: 'mandat_vente_exclusif', gapAcknowledged: false, ready: false, blockers: ['essai', 'manque', 'ecart_prix'], missing: ['clause:exclusivite'] });
+      expect(b.clauses.map((c: { code: string; question: string; answer: string; basis: string }) => [c.code, c.question, c.answer])).toEqual([['exclusivite', 'exclusivite', 'oui']]);
+      expect(b.clauses[0].basis.length).toBeGreaterThan(10);
+      // Le texte du document n'est pas rendu par la liste : il reste avec les documents du bien.
+      expect(a.content).toBeUndefined();
+      // Le contrôle de la liste dit la même chose que la route du contrôle avant signature.
+      for (const m of [a, b]) expect((await t.http(who, 'GET', `/questionnaire-mandat/mandats/${m.id}/avant-signature`)).body.data).toEqual({ ready: m.ready, blockers: m.blockers });
+    }
+  });
+
+  it('[R16] un autre agent est refusé et noté au journal ; un bien inconnu est 404 ; aucun paramètre admis ; rien n’est écrit', async () => {
+    const t = await setup();
+    await t.templates();
+    const path = `/questionnaire-mandat/biens/${t.property.id}/mandats`;
+    // Un bien sans mandat préparé : une liste vide, pas un refus.
+    expect((await t.http('alex', 'GET', path)).body).toMatchObject({ ok: true, data: [] });
+    expect((await t.prepare()).status).toBe(200);
+    const before = (await t.refusals()).length;
+    const sam = await t.http('sam', 'GET', path);
+    expect(sam.status).toBe(403);
+    expect(sam.body).toMatchObject({ rule: 'R16', code: 'not_property_agent' });
+    expect((await t.refusals()).length).toBe(before + 1);
+    expect((await t.http('alex', 'GET', '/questionnaire-mandat/biens/inconnu/mandats')).status).toBe(404);
+    expect((await t.http('alex', 'GET', `${path}?prix=1`)).body).toMatchObject({ code: 'unknown_field', field: 'prix' });
+    const rows = await t.count('mandate_questionnaires');
+    const acks = await t.count('mandate_questionnaire_gap_acks');
+    expect((await t.http('alex', 'GET', path)).body.data).toHaveLength(1);
+    expect(await t.count('mandate_questionnaires')).toBe(rows);
+    expect(await t.count('mandate_questionnaire_gap_acks')).toBe(acks);
+  });
+});

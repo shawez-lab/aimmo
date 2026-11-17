@@ -82,6 +82,15 @@ export interface PreparedMandate {
   createdAt: string;
 }
 
+export type Blocker = 'essai' | 'manque' | 'ecart_prix' | 'sans_avis' | 'sans_prix';
+
+/** Un mandat préparé, rouvert depuis son bien : sans le texte du document, avec le geste et le contrôle [R441]. */
+export interface ReopenedMandate extends Omit<PreparedMandate, 'content'> {
+  gapAcknowledged: boolean;
+  ready: boolean;
+  blockers: Blocker[];
+}
+
 export interface PrepareRequest {
   personId: string;
   propertyId: string;
@@ -433,6 +442,45 @@ export class MandatQuestionnaire {
       if (!ack) blockers.push(row.price_check === 'ecart' ? 'ecart_prix' : row.price_check);
     }
     return { ok: true, ready: blockers.length === 0, blockers };
+  }
+
+  /**
+   * Les mandats préparés par questionnaire pour un bien, les plus récents d'abord (50 au plus), pour les rouvrir et
+   * montrer l'écart plus tard : clauses avec leur réponse et leur texte de loi [R440], relevé du prix, geste déjà fait
+   * ou non, et ce qui empêche encore de signer [R441]. Lus par l'agent du bien, la direction et la conformité [R16] ;
+   * le texte du document n'est pas rendu ici : il reste avec les documents du bien. Rien n'est réécrit [R443].
+   */
+  async forProperty(viewer: Viewer, propertyId: string): Promise<{ ok: true; mandates: ReopenedMandate[] } | Refusal> {
+    const property = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, viewer.networkId]);
+    if (!property) return this.refuse(viewer, 'unknown', `property:${propertyId}`);
+    if (viewer.role !== 'direction' && viewer.role !== 'compliance' && !(viewer.role === 'agent' && property.agent_id === viewer.userId)) return this.refuse(viewer, 'not_property_agent', `property:${propertyId}`);
+    const rows = await this.db.all<QuestionnaireRow & { ack_at: string | null }>(
+      `SELECT q.*, a.at AS ack_at FROM mandate_questionnaires q LEFT JOIN mandate_questionnaire_gap_acks a ON a.questionnaire_id = q.id
+       WHERE q.network_id = ? AND q.property_id = ? ORDER BY q.created_at DESC, q.rowid DESC LIMIT 50`,
+      [viewer.networkId, propertyId],
+    );
+    const mandates = rows.map((row): ReopenedMandate => {
+      const missing = JSON.parse(row.missing) as string[];
+      const blockers: Blocker[] = [];
+      if (row.mode !== 'reel') blockers.push('essai');
+      if (missing.length > 0) blockers.push('manque');
+      if (row.price_check !== 'dans_fourchette' && row.ack_at === null) blockers.push(row.price_check === 'ecart' ? 'ecart_prix' : row.price_check);
+      return {
+        id: row.id,
+        documentId: row.document_id,
+        kind: ((JSON.parse(row.answers) as Answers).exclusivite === 'oui' ? 'mandat_vente_exclusif' : 'mandat_vente_simple') as DocumentKind,
+        mode: row.mode,
+        missing,
+        clauses: JSON.parse(row.clauses) as RetainedClause[],
+        price: { priceEur: row.price_eur, low: row.range_low, high: row.range_high, gapBps: row.gap_bps, maxGapBps: Number(row.max_gap_bps), check: row.price_check, valuationId: row.valuation_id },
+        contentHash: row.content_hash,
+        createdAt: row.created_at,
+        gapAcknowledged: row.ack_at !== null,
+        ready: blockers.length === 0,
+        blockers,
+      };
+    });
+    return { ok: true, mandates };
   }
 
   private async isPropertyAgent(viewer: Viewer, propertyId: string): Promise<boolean> {

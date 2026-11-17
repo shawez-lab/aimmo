@@ -46,6 +46,7 @@ const MANDATE = {
 const PREPARE = 'POST /v1/questionnaire-mandat/mandats';
 const ACK = 'POST /v1/questionnaire-mandat/mandats/q1/ecart-montre';
 const CHECK = 'GET /v1/questionnaire-mandat/mandats/q1/avant-signature';
+const LIST = 'GET /v1/questionnaire-mandat/biens/b1/mandats';
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
   'GET /v1/plan-du-jour': ok(null),
@@ -56,6 +57,7 @@ const BASE: Record<string, Answer> = {
   [PREPARE]: ok(MANDATE),
   [CHECK]: ok({ ready: false, blockers: ['essai', 'manque', 'ecart_prix'] }),
   [ACK]: ok(null),
+  [LIST]: ok([]),
 };
 const settle = async () => {
   for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 0));
@@ -258,5 +260,68 @@ describe('BR116 · le mandat par questionnaire à l’écran', () => {
     release(Response.json({ ok: true, mode: 'essai', data: MANDATE }));
     await settle();
     expect(before.textContent).not.toContain('Parce que');
+  });
+});
+
+describe('BR117 · rouvrir un mandat préparé par questionnaire', () => {
+  const { content: _content, ...STORED } = MANDATE;
+  const EARLIER = { ...STORED, gapAcknowledged: false, ready: false, blockers: ['essai', 'manque', 'ecart_prix'] };
+
+  it('[R441] les mandats déjà préparés pour le bien se listent et se rouvrent, avec l’écart et le geste, sans refaire le questionnaire', async () => {
+    const t = await run({ [LIST]: ok([EARLIER]) });
+    await t.open();
+    await t.openQuestionnaire();
+    expect(t.calls.map((c) => `${c.method} ${c.url}`)).toContain(LIST);
+    const text = t.box()!.textContent;
+    expect(text).toContain('Déjà préparés pour ce bien');
+    expect(text).toContain('Mandat exclusif, préparé le 10/02/2027 (document d’essai).');
+    expect(text).toContain('Un point reste à régler avant de signer.');
+    await t.press('Rouvrir');
+    const after = t.box()!.textContent;
+    expect(after).toContain('Parce que : Le vendeur confie-t-il la vente à AIMMO seul ? → oui, en exclusivité');
+    expect(after).toContain('Écart de 5 % au-dessus de la fourchette (toléré : 3 %)');
+    expect(after).toContain('L’écart entre le prix et l’avis de valeur n’est pas encore montré au vendeur.');
+    await t.press('J’ai montré l’écart au vendeur');
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/questionnaire-mandat/mandats/q1/ecart-montre']);
+    expect(t.status()).toBe('Noté : le vendeur a vu le prix comparé à l’avis de valeur.');
+  });
+
+  it('[R441] un geste déjà noté ne se repropose pas ; une liste vide ou illisible ne dit rien de faux', async () => {
+    const t = await run({ [LIST]: ok([{ ...EARLIER, gapAcknowledged: true, blockers: ['essai', 'manque'] }]) });
+    await t.open();
+    await t.openQuestionnaire();
+    await t.press('Rouvrir');
+    expect(t.find('J’ai montré l’écart au vendeur')).toBeUndefined();
+    expect(t.box()!.textContent).toContain('Noté : le vendeur a vu le prix comparé à l’avis de valeur.');
+    expect(t.box()!.textContent).not.toContain('Rien n’empêche de signer');
+
+    const empty = await run();
+    await empty.open();
+    await empty.openQuestionnaire();
+    expect(empty.box()!.textContent).not.toContain('Déjà préparés');
+    expect(empty.find('Rouvrir')).toBeUndefined();
+
+    const refused = await run({ [LIST]: no(403, 'not_property_agent', 'R16') });
+    await refused.open();
+    await refused.openQuestionnaire();
+    expect(refused.box()!.textContent).toContain('Seul l’agent du bien dit avoir montré l’écart au vendeur.');
+    expect(refused.find('Rouvrir')).toBeUndefined();
+    // Le questionnaire reste utilisable pour préparer un nouveau mandat.
+    refused.answerAll();
+    await refused.press('Préparer le mandat par questionnaire');
+    expect(refused.posts().map((c) => c.url)).toEqual(['/v1/questionnaire-mandat/mandats']);
+  });
+
+  it('[R13] un identifiant mal formé n’est pas rouvert, et aucune adresse ne porte un prix', async () => {
+    const t = await run({ [LIST]: ok([{ ...EARLIER, id: 'q 1/../x' }]) });
+    await t.open();
+    await t.openQuestionnaire();
+    expect(t.find('Rouvrir')).toBeUndefined();
+    const u = await run({ [LIST]: ok([EARLIER]) });
+    await u.open();
+    await u.openQuestionnaire();
+    await u.press('Rouvrir');
+    for (const c of u.calls) expect(c.url).not.toMatch(/262500|250000|\?/);
+    expect(budgetProblems({ html: '', js: MANDAT_QUESTIONNAIRE_SCRIPT }, BUDGETS.page)).toEqual([]);
   });
 });

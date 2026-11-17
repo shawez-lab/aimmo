@@ -7,7 +7,9 @@
  * mandat (`POST /v1/questionnaire-mandat/mandats`), puis montre chaque clause retenue avec la réponse qui l'a fait entrer
  * et le texte de loi qui la fonde, et l'état de son texte (validé, d'essai, pas encore écrit) [R442]. Il dit le prix
  * comparé à l'avis de valeur, et l'agent du bien dit avoir montré l'écart au vendeur [R441]. Il lit enfin ce qui empêche
- * encore de signer, en phrases simples : jamais « prêt » tant qu'un blocage reste. Rien n'est calculé ici : l'écran pose ce
+ * encore de signer, en phrases simples : jamais « prêt » tant qu'un blocage reste. Les mandats déjà préparés pour le bien
+ * se rouvrent (`GET /v1/questionnaire-mandat/biens/<id>/mandats`, BR117) pour montrer l'écart plus tard, sans refaire le
+ * questionnaire ; un geste déjà noté ne se repropose pas. Rien n'est calculé ici : l'écran pose ce
  * que le code rend. Les adresses ne portent que des identifiants, jamais un prix ni un texte [R13]. Rien n'est gardé dans
  * le navigateur ; tout texte reçu est posé en texte.
  */
@@ -96,7 +98,9 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
     function alive() { return mine === turn && ctx.alive(); }
     function say(x) { if (alive()) stateLine.textContent = x; }
     var form = el('div');
+    var earlier = el('div');
     var result = el('div');
+    box.appendChild(earlier);
     box.appendChild(form);
     box.appendChild(stateLine);
     box.appendChild(result);
@@ -105,8 +109,38 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
       if (x.gone || !alive()) return false;
       var cat = x.ok && x.body && x.body.data;
       if (!cat || !Array.isArray(cat.questions) || !Array.isArray(cat.clauses)) { say(x.offline ? OFFLINE : why(x, 'Le questionnaire est indisponible pour le moment.')); return false; }
-      draw(form, result, cat, ctx, say, alive);
+      var maps = draw(form, result, cat, ctx, say, alive);
       say('');
+      return drawEarlier(earlier, result, maps, ctx, say, alive);
+    });
+  }
+  /* BR117 : les mandats déjà préparés pour ce bien, à rouvrir pour montrer l'écart plus tard [R441]. */
+  function drawEarlier(earlier, result, maps, ctx, say, alive) {
+    if (!ID.test(String(ctx.propertyId))) return true;
+    return send(BASE + '/biens/' + encodeURIComponent(ctx.propertyId) + '/mandats', 'GET').then(function (x) {
+      if (x.gone || !alive()) return false;
+      clear(earlier);
+      var list = x.ok && x.body && x.body.data;
+      if (!Array.isArray(list)) { earlier.appendChild(el('p', x.offline ? OFFLINE : why(x, 'Les mandats déjà préparés n’ont pas pu être lus.'), 'doux')); return false; }
+      var kept = list.filter(function (m) { return m && ID.test(String(m.id)); });
+      if (!kept.length) return true;
+      earlier.appendChild(el('h4', 'Déjà préparés pour ce bien'));
+      var ul = el('ul', null, 'liste');
+      kept.forEach(function (m) {
+        var li = el('li');
+        var when = typeof m.createdAt === 'string' ? new Date(m.createdAt) : null;
+        var day = when && !isNaN(when.getTime()) ? when.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }) : 'date inconnue';
+        var kind = m.kind === 'mandat_vente_exclusif' ? 'Mandat exclusif' : 'Mandat simple';
+        li.appendChild(el('p', kind + ', préparé le ' + day + (m.mode === 'reel' ? '' : ' (document d’essai)') + '.'));
+        li.appendChild(el('p', m.ready === true && Array.isArray(m.blockers) && m.blockers.length === 0 ? 'Rien n’empêche de signer.' : 'Un point reste à régler avant de signer.', 'doux'));
+        li.appendChild(button('Rouvrir', function () {
+          if (!alive()) return false;
+          say('');
+          return drawMandate(result, m, maps.questions, maps.clauses, say, alive);
+        }));
+        ul.appendChild(li);
+      });
+      earlier.appendChild(ul);
       return true;
     });
   }
@@ -159,6 +193,7 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
         });
       });
     }));
+    return { questions: questions, clauses: clauses };
   }
   function drawMandate(result, m, questions, clauses, say, alive) {
     clear(result);
@@ -198,7 +233,8 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
         return true;
       });
     }
-    if (ACKS[p.check]) {
+    if (ACKS[p.check] && m.gapAcknowledged === true) priceBox.appendChild(el('p', 'Noté : le vendeur a vu le prix comparé à l’avis de valeur.', 'doux'));
+    else if (ACKS[p.check]) {
       var ack = button(ACKS[p.check], function () {
         return once(function () {
           say('Enregistrement…');
