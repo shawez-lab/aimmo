@@ -366,28 +366,31 @@ globalThis.AIMMO_PHASES = function (t) {
       return true;
     });
   }
-  /* BR38 · les communes à pourvoir : script servi à part (\`/app/communes.js\`), chargé au premier geste [R201]. */
-  var communesScreen = null;
-  function renderCommunes() {
+  /*
+   * BR38 · les communes à pourvoir, BR108 · le coût de l'agent moyen : chacun un script servi à part, chargé au premier
+   * geste [R201].
+   */
+  var screens = {};
+  function lazy(title, intro, label, src, name) {
     var box = el('section', null, 'bloc');
-    box.appendChild(el('h4', 'Communes à pourvoir'));
-    box.appendChild(el('p', 'Où des clients sont restés sans agent un mois fini, et où ouvrir ou fermer le recrutement. La page de candidature ne dit que les noms des communes ouvertes, sans aucun chiffre.', 'doux'));
+    box.appendChild(el('h4', title));
+    box.appendChild(el('p', intro, 'doux'));
     var inner = el('div');
-    var b = button('Ouvrir les communes à pourvoir', function () {
+    var b = button(label, function () {
       if (b.disabled) return;
-      if (communesScreen) { communesScreen.show(inner); return; }
+      if (screens[name]) { screens[name].show(inner); return; }
       b.disabled = true;
       var mine = t.session();
       var s = el('script');
-      s.setAttribute('src', '/app/communes.js');
+      s.setAttribute('src', src);
       s.addEventListener('load', function () {
-        var make = globalThis.AIMMO_COMMUNES;
-        try { delete globalThis.AIMMO_COMMUNES; } catch (e) { /* rien */ }
+        var make = globalThis[name];
+        try { delete globalThis[name]; } catch (e) { /* rien */ }
         b.disabled = false;
         if (mine !== t.session()) return;
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
-        communesScreen = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, session: t.session });
-        communesScreen.show(inner);
+        screens[name] = make({ el: el, clear: clear, send: send, button: button, field: field, date: date, session: t.session });
+        screens[name].show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', OFFLINE, 'etat')); } });
       box.appendChild(s);
@@ -395,6 +398,12 @@ globalThis.AIMMO_PHASES = function (t) {
     box.appendChild(b);
     box.appendChild(inner);
     return box;
+  }
+  function renderCommunes() {
+    return lazy('Communes à pourvoir', 'Où des clients sont restés sans agent un mois fini, et où ouvrir ou fermer le recrutement. La page de candidature ne dit que les noms des communes ouvertes, sans aucun chiffre.', 'Ouvrir les communes à pourvoir', '/app/communes.js', 'AIMMO_COMMUNES');
+  }
+  function renderCout() {
+    return lazy('Coût de l’agent moyen', 'Pour un mois fini, si la part du réseau couvre le coût complet de l’agent moyen, marge comprise, et la part qui le couvre tout juste. Aucun montant ne se saisit : tout est calculé sur les factures et les dossiers.', 'Ouvrir le coût de l’agent moyen', '/app/cout-agent.js', 'AIMMO_COUT_AGENT');
   }
   function show(message) {
     var mine = t.session();
@@ -415,6 +424,7 @@ globalThis.AIMMO_PHASES = function (t) {
       if (p1.ok && p1.body && p1.body.data && Array.isArray(p1.body.data.days)) renderPhase1(body, p1.body.data);
       else bad.push(why(p1, 'Phase 1 indisponible pour le moment.'));
       body.appendChild(renderCommunes());
+      body.appendChild(renderCout());
       state([message].concat(bad).filter(function (x, i, all) { return x && all.indexOf(x) === i; }).join(' '));
       return bad.length === 0;
     });
