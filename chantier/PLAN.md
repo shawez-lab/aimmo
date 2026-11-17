@@ -2588,7 +2588,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC73 · Ce que le bouclier voit, le socle le masque et le refuse : chaque écart entre les deux nommé et tenu par un test
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#641, `9c1f0a38`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6567 tests, en 10 parts). Reste pour la voie 1 (socle) : fermer les écarts écrits ci-dessous, puis retirer chaque ligne de `ECARTS_CONNUS`.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC72, BR107
 - Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; Conformité ; R15, R62.
 - Décidé (2026-11-17, voie 2), lecture prudente : plus aucun reste connu du cœur pour la voie 2 (RC72 : « plus aucun reste connu dans `bouclier.ts` » ; les autres « Reste » relevés sont des routes et écrans de la voie 1). Le bouclier (voie 2) et le socle (`envoi/texte.ts`, `envoi/iban-detours.ts`, voie 1) lisent les mêmes détours avec deux copies du code, qui s'écartent : le bouclier alerte l'agent sur un texte que le socle range en clair ou laisse sortir. Un fichier de test neuf, `packages/core/test/bouclier-socle-accord.test.ts`, seul : chaque détour (IBAN épelé, dicté, par groupes, coupé d'invisibles, sosies, chiffres mathématiques, dicté après un nombre composé ; RIB, IBAN, BIC épelés, en sosies, en leet, en leet épelé ; demande de paiement coupée ou en leet) est écrit en clair et caché ; le texte clair est refusé par le socle, le caché lu par le bouclier ; tout texte caché que le bouclier lit et que le socle ne masque pas ou laisse sortir doit être dans la liste des écarts connus, chacun avec la tâche de la voie 1 qui le fermera. Aucun code ne change : ni le bouclier, ni le socle.
