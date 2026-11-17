@@ -1894,7 +1894,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (le contenu des pièces attend un stockage du coffre branché ; l'écran suivra).
 
 ### BR114 · Le dossier de la lutte contre le blanchiment à l'écran du responsable de la conformité de l'agence sous licence
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR113
 - Cahier : M12 Conformité, « Anti-blanchiment » ; R662, R663, R664, R601.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de BR113. Un script servi à part, chargé au geste, comme l'écran de la reprise de la direction ; `app.js` ne change pas, sauf un bouton d'entrée si le budget le permet. Visible du rôle `compliance` d'une agence sous licence seul.
