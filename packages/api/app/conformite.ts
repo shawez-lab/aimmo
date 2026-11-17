@@ -125,7 +125,7 @@ export const COFFRE_JS = `
         var make = globalThis.AIMMO_CONFORMITE;
         try { delete globalThis.AIMMO_CONFORMITE; } catch (e) { /* rien à retirer */ }
         if (mine !== session || typeof make !== 'function') { resolve(false); return; }
-        conformiteScreen = make({ $: $, el: el, clear: clear, send: send, field: field, checkbox: checkbox, button: button, section: section, block: block, line: line, date: date, hour: hour, show: show, cToday: cToday, cSelect: cSelect, cSeq: cSeq, cState: cState, session: function () { return session; } });
+        conformiteScreen = make({ $: $, el: el, clear: clear, send: send, field: field, checkbox: checkbox, button: button, section: section, block: block, line: line, date: date, hour: hour, show: show, cToday: cToday, cSelect: cSelect, cSeq: cSeq, cState: cState, prove: proveAction, session: function () { return session; } });
         resolve(conformiteScreen.open());
       });
       script.addEventListener('error', function () {
@@ -421,6 +421,38 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     if (data.fuites) body.appendChild(cBreaches(data.fuites));
     if (data.registre) body.appendChild(cRegistry(data.registre));
     body.appendChild(cGels());
+    body.appendChild(cLcb());
+  }
+  /* BR114 : le dossier anti-blanchiment de l'agence sous licence, script servi à part, chargé au geste [R201, R662]. */
+  var lcbScreen = null;
+  function cLcb() {
+    var box = section('Dossier anti-blanchiment de l’agence');
+    var inner = el('div');
+    var state = cState();
+    var say = function (x) { state.textContent = x; };
+    var b = button('Ouvrir le dossier anti-blanchiment', function () {
+      if (b.disabled) return;
+      if (lcbScreen) { lcbScreen.show(inner, say); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/dossier-lcb.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_DOSSIER_LCB;
+        try { delete globalThis.AIMMO_DOSSIER_LCB; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { say('Indisponible pour le moment. Réessayez dans un moment.'); return; }
+        lcbScreen = make({ el: el, clear: clear, send: send, button: button, prove: t.prove, session: t.session });
+        lcbScreen.show(inner, say);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) say('Pas de réseau. Réessayez dans un moment.'); });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    box.appendChild(state);
+    return box;
   }
   /* BR85 : l'import du registre des gels, script servi à part et chargé au premier geste [R201]. */
   var gelScreen = null;
