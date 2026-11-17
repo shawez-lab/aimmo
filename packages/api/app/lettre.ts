@@ -76,7 +76,8 @@ globalThis.AIMMO_LETTRE = function (t) {
       say('Préparation…');
       return fetch('/v1/marketing/magazine', { method: 'GET', headers: { authorization: 'Bearer ' + key }, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
         if (turn !== printing || mine !== t.session()) return false;
-        if (r.status === 401) { say('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
+        /* Clé refusée : la même demande repasse par l'envoi commun, qui oublie la clé, vide les écrans et revient à l'accueil. */
+        if (r.status === 401) return send('/v1/marketing/magazine', 'GET').then(function () { return false; });
         var type = String((r.headers && r.headers.get && r.headers.get('content-type')) || '');
         if (!r.ok || type.indexOf('text/html') !== 0) {
           return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {

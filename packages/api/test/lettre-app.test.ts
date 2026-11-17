@@ -89,7 +89,7 @@ async function run(answers: Record<string, Answer> = {}) {
     byId('lettre-titre').value = text;
     return click(button('Ouvrir cette édition'));
   };
-  return { els, calls, context, page, part, button, buttons, status, click, open, marketing, scriptsOf, byId, title, blobs };
+  return { storage, els, calls, context, page, part, button, buttons, status, click, open, marketing, scriptsOf, byId, title, blobs };
 }
 
 describe('BR111 · la lettre et le magazine à l’écran de la direction', () => {
@@ -169,7 +169,6 @@ describe('BR111 · la lettre et le magazine à l’écran de la direction', () =
       [no(403, { ok: false, rule: 'R16', code: 'role' }), LETTRE_REFUSALS.role!],
       [no(500, { ok: false }), 'Le magazine ne se tire pas pour le moment.'],
       [ok({ html: '<p>x</p>' }), 'Le magazine ne se tire pas pour le moment.'],
-      [no(401, { ok: false }), 'Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'],
       [cut, 'Pas de réseau. Réessayez dans un moment.'],
     ];
     for (const [answer, said] of cases) {
@@ -180,6 +179,14 @@ describe('BR111 · la lettre et le magazine à l’écran de la direction', () =
       expect(t.blobs).toEqual([]);
       expect(t.status()).not.toMatch(/prix_inconnu|coordonnee|R\d+/);
     }
+  });
+
+  it('une clé refusée au magazine est oubliée comme partout ailleurs : retour à l’accueil, rien d’enregistré', async () => {
+    const t = await run({ [`GET ${MAG}`]: no(401, { ok: false }) });
+    await t.open();
+    await t.click(t.button('Tirer le magazine'));
+    expect(t.storage.has('aimmo.cle')).toBe(false);
+    expect(t.blobs).toEqual([]);
   });
 
   it('une page coupée en route : rien n’est enregistré, l’écran le dit', async () => {
