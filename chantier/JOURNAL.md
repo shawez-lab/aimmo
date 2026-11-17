@@ -1354,3 +1354,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 18:55 · VOIE 2 : relance refusée, question 2 (les séances de 15:55, 16:55 et 17:52 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-17 18:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-17 19:25 · VOIE 1 : rien de fusionnable : #654 (BR118) attend toujours, vérification GitHub toujours non démarrée à 18:53 sur main (facturation, H35) ; fusion non retentée (refusée par le contrôle des permissions) ; aucune nouvelle tâche ouverte pour ne pas empiler ce qui ne peut pas arriver sur main ; verrou libre, pas de relance · prochaine : fusionner #654 dès H35 réglé, puis réglage de l'écart toléré à l'écran
+- 2026-11-17 19:55 · VOIE 2 : rien de faisable : toujours une seule proposition ouverte, #654 (BR118, voie 1), bloquée par H35 (facturation GitHub, vérification rouge sur main) ; aucune fusion depuis 18:55 ; restes de RC76 à la voie 1 ; S11, B04, C09, SV05 attendent un humain ; aucun module libre ; rien de nouveau ouvert pour ne pas empiler · prochaine : voie 2 attend H35 réglé
+- 2026-11-17 19:55 · VOIE 2 : relance refusée, question 2 (les séances de 16:55, 17:52 et 18:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-17 19:55 · VOIE 2 : aucune tâche, rien, relancé non
