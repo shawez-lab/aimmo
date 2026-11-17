@@ -171,9 +171,11 @@ export function questionnaireRoutes(): QuestionnaireRoute[] {
       pattern: /^\/questionnaire-mandat\/reglage$/,
       name: 'questionnaire_mandat.reglage',
       handle: withBody(DIRECTION, ['maxGapBps'], MAX_BODY_BYTES, async (s, v, _p, b) => {
-        if (typeof b.maxGapBps !== 'number') return { ok: false, rule: 'R441', code: 'bad_setting' };
+        // Un réglage hors bornes (0 à 5 000 points de base, entier) est une faute de la demande : 400 [R441].
+        const bad = (): Response => json(400, { ok: false, rule: 'R441', code: 'bad_setting' });
+        if (typeof b.maxGapBps !== 'number') return bad();
         const r = await questionnaire(s).setMaxGap(v, b.maxGapBps);
-        if (!r.ok && r.code === 'bad_setting') return json(400, { ok: false, rule: 'R441', code: 'bad_setting' });
+        if (!r.ok && r.code === 'bad_setting') return bad();
         return r.ok ? { ok: true, value: null } : r;
       }),
     },
