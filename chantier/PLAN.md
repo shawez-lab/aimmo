@@ -1904,7 +1904,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien (le contenu des pièces attend un stockage du coffre branché ; l'écran suivra).
 
 ### BR114 · Le dossier de la lutte contre le blanchiment à l'écran du responsable de la conformité de l'agence sous licence
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#649, `106fe0e9`). Route ajoutée `GET /v1/export/agence/lcb` (`{licenceId}`, compliance seul) pour que l'écran fasse la preuve sur `licence_lcb:<id>` ; `app.js` passe seulement `prove` à l'écran Conformité. Relecture forte rien en P0 ni P1 (un commentaire mal placé, corrigé) ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6635 tests).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR113
 - Cahier : M12 Conformité, « Anti-blanchiment » ; R662, R663, R664, R601.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de BR113. Un script servi à part, chargé au geste, comme l'écran de la reprise de la direction ; `app.js` ne change pas, sauf un bouton d'entrée si le budget le permet. Visible du rôle `compliance` d'une agence sous licence seul.

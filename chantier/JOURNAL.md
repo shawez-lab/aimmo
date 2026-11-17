@@ -1321,3 +1321,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 12:47 · VOIE 2 : plafond vérifié : 1) oui, moins de 30 séances voie 2 depuis minuit ; 2) non, la séance de 09:53 n'a produit ni commit ni tâche terminée ; 3) oui, RC75 est neuve
 - 2026-11-17 12:47 · VOIE 2 : relance refusée, question 2 (la séance de 09:53, parmi les trois dernières, n'a rien produit)
 - 2026-11-17 12:47 · VOIE 2 : RC75, bcd5334a (#648, fusionnée), relancé non
+- 2026-11-17 13:35 · BR114 · fusionnée (#649, 106fe0e9) : le dossier anti-blanchiment à l'écran « Conformité » de l'agence sous licence, script servi à part `/app/dossier-lcb.js`, route `GET /v1/export/agence/lcb` (licence que la preuve désigne) [R662, R663, R664, R601, R16] ; relecture forte rien en P0/P1, Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6635 tests) · prochaine : un nouveau « Reste » de voie 1 (B04, C09, SV05 attendent un humain)
+- 2026-11-17 13:35 · VOIE 1 : relance immédiate non tentée (refusée par le contrôle des permissions aux séances précédentes, pas de nouvel essai) ; le passage planifié reprendra
