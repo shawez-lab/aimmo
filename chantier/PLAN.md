@@ -2659,6 +2659,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : chaque créneau rendu par `slots` et `planWeek` porte la référence de son bien (test) ; un bien d'un autre réseau portant le même identifiant ne donne jamais sa référence : `null` [R16] (test) ; tous les tests du calendrier restent verts.
 - Attend : rien.
 
+### RC75 · Chaque créneau du calendrier de l'agent montre la référence du bien qu'il publiera
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC74, BR111
+- Cahier : M01 Attirer ; M07 Commercialiser ; R580, R201.
+- Décidé (2026-11-17, voie 2), lecture prudente : relevé dans le « Reste » de RC74 (« afficher `propertyReference` dans `/app/calendrier.js` », noté pour la voie 1). La voie 1 tient BR113 (`packages/api/src/cles.ts`) et la voie 2 n'a rien eu depuis six séances : la voie 2 le prend. Seuls `packages/api/app/calendrier.ts` (script servi à part, pas un fichier du socle) et son test changent ; `app.js`, `agent-app.ts` et le cœur ne changent pas.
+- Objectif : sous chaque créneau, l'agent lit « Bien <référence> » ; un créneau dont le bien n'est plus lisible dans le réseau le dit, sans identifiant interne.
+- Critères : la référence de chaque créneau affichée, dans l'ordre reçu [R580] (test) ; `null`, absente ou mal formée : « Bien introuvable dans le réseau », jamais l'identifiant interne (test) ; une référence piégée reste du texte (test) ; budget tenu [R201] (test).
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
