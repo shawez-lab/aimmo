@@ -206,7 +206,7 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
             if (x.gone || !alive()) return false;
             if (x.offline || !x.body || x.status >= 500) { say(LOST); return false; }
             var code = (x.body || {}).code;
-            if (!x.ok && code !== 'already_acknowledged') { say(why(x, 'Rien n’est noté : réessayez.')); return false; }
+            if (!x.ok && code !== 'already_acknowledged') { say(code === 'role' ? NO.not_property_agent : why(x, 'Rien n’est noté : réessayez.')); return false; }
             say(x.ok ? 'Noté : le vendeur a vu le prix comparé à l’avis de valeur.' : NO.already_acknowledged);
             ack.hidden = true;
             return readCheck();
