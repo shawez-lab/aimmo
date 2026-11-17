@@ -2650,7 +2650,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC74 · Chaque créneau du calendrier de publication dit la référence du bien qu'il publiera
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#646, `1db4a115`). Codex 1 P1 corrigé (le critère du bien d'un autre réseau n'avait pas de test : test [R16] ajouté, vérifié qu'il tombe sans le prédicat de réseau de la jointure), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6620 tests en 5 parts ; 4 tests tombés au délai sous la charge, relancés seuls : verts). Reste pour la voie 1 : afficher `propertyReference` dans `/app/calendrier.js`.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX52, BR111
 - Cahier : M01 Attirer ; M07 Commercialiser ; HX52 ; R580, R16.
 - Décidé (2026-11-17, voie 2), lecture prudente : relevé dans les « Restent » de BR111 (« la référence du bien dans les créneaux (le cœur ne la donne pas) »). Aujourd'hui `CalendrierPublications.slots` et `planWeek` rendent l'identifiant interne du bien, jamais sa référence : l'agent lit sa semaine sans savoir quel bien sortira. Dans `packages/core/src/marketing/calendrier.ts` seul : chaque créneau rend aussi `propertyReference`, la référence du bien lue dans la base au moment de la lecture, seulement dans le réseau du créneau ; un bien introuvable dans ce réseau donne `null`, jamais la référence d'un autre réseau. Ni route, ni écran, ni migration ; `docs/API.md` dit le champ. Reste pour la voie 1 : l'afficher dans `/app/calendrier.js`.
