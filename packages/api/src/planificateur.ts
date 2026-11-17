@@ -11,6 +11,7 @@ import { phase1ReadingJob } from './phases.ts';
 import { postgresReadingJob } from './postgresql.ts';
 import { sequencesJob } from './sequences.ts';
 import { datesJob, scenariosJob } from './scenarios.ts';
+import { marketingJobs } from './marketing-passage.ts';
 import type { Geocoder, JournalStore, SalesSource } from '@aimmo/core';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
@@ -44,6 +45,10 @@ export interface SchedulerConfig {
   platformNetworkId?: string | undefined;
   /** La base ouverte des diagnostics de l'ADEME (HX16, BR26) ; absente, la veille ne lit rien. */
   dpeFeed?: DiagnosisFeed | null;
+  /** Le stockage des fichiers du studio (`MEDIA`, X10) : sans lui, le passage du calendrier de publication ne tourne pas (BR112). */
+  studioFiles?: { has(ref: string): Promise<boolean> } | null;
+  /** Le lien de désinscription de la lettre, vérifié par `letterUnsubscribeBase` ; absent, aucune lettre ne part [R584]. */
+  letterUnsubscribeBase?: string | null;
   now?: () => Date;
 }
 
@@ -172,6 +177,11 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Dates des clients (HX25, BR56), à chaque heure, juste après les scénarios : une place de scénario prise ce jour
       // fait attendre la date ; les messages du jour par le contrôle central, canaux du mode essai seulement [R402, R405, R26].
       datesJob(config.db, journal, { now }),
+      // Marketing (HX52, HX53, BR112) : à chaque heure, les créneaux dus du calendrier de publication, chacun une seule
+      // fois, par la porte de publication de X05 et ses canaux d'essai, seulement avec le stockage du studio ; du lundi au
+      // samedi à 10 h et 16 h, les éditions de la lettre ouvertes depuis moins de sept jours, par le contrôle central,
+      // seulement avec le lien de désinscription réglé [R582, R583, R584, R26].
+      ...marketingJobs(config.db, journal, { now, files: config.studioFiles ?? null, letterUnsubscribeBase: config.letterUnsubscribeBase ?? null }),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {

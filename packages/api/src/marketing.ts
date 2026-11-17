@@ -6,10 +6,11 @@
  * [R16]. La couche métier refait ses propres contrôles derrière (agent parti [R86], validation de la direction [R587]).
  *
  * Rien ne part ni ne se paie d'ici :
- * - le calendrier ne fait que régler et réserver ; le passage des créneaux dus reste un travail planifié (`runDue`),
- *   seul à appeler le chemin de publication de X05, et la porte donnée ici refuse toute publication [R582, R26] ;
- * - la lettre ne fait qu'ouvrir une édition et tirer le magazine ; l'envoi d'une édition reste un travail planifié, avec
- *   sa page de désinscription [R583, R584] ;
+ * - le calendrier ne fait que régler et réserver ; le passage des créneaux dus est un travail planifié (`runDue`,
+ *   `marketing-passage.ts`, BR112), seul à appeler le chemin de publication de X05, et la porte donnée ici refuse toute
+ *   publication [R582, R26] ;
+ * - la lettre ne fait qu'ouvrir une édition et tirer le magazine ; l'envoi d'une édition est un travail planifié
+ *   (`marketing-passage.ts`, BR112), avec sa page de désinscription [R583, R584] ;
  * - les campagnes ne parlent qu'aux plateformes du mode essai [R587] ; la dépense et les contacts sont lus par un
  *   travail planifié (`recordSpend`, `recordContact`, `runChecks`), jamais saisis par une route [R588].
  */
@@ -120,12 +121,18 @@ const calendrier = (s: MarketingServices) =>
     { now: s.now },
   );
 
-/** La lettre, sans lien de désinscription : aucune lettre ne peut partir d'ici [R584]. Les mentions sont celles de M07 [R43]. */
-function lettre(s: MarketingServices): LettreInformation {
+/** La lettre des routes, sans lien de désinscription : aucune lettre ne peut partir d'ici [R584]. */
+const lettre = (s: MarketingServices): LettreInformation => letterService(s, null);
+
+/**
+ * La lettre, avec les mentions de M07 [R43] et les canaux du mode essai par défaut [R26]. Seul le passage planifié
+ * (BR112) lui donne un lien de désinscription ; les routes n'en donnent jamais.
+ */
+export function letterService(s: MarketingServices, unsubscribeBase: string | null): LettreInformation {
   const a = acces(s);
   return new LettreInformation(s.db, s.journal, {
     now: s.now,
-    unsubscribeBase: null,
+    unsubscribeBase,
     mentions: {
       checklist: async (networkId: string, propertyId: string) => {
         const input = await new MentionsAnnonce(s.db, a, s.journal, { now: s.now }).inputFor(networkId, propertyId);
