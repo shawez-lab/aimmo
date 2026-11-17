@@ -1934,7 +1934,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 
 
 ### BR116 · Le mandat par questionnaire à l'écran : questions, clauses expliquées, écart de prix montré, contrôle avant signature (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#652, `36c0e765`). Relecture forte rien en P0 ni P1 (une P2 corrigée : refus du geste par la direction dit juste) ; Codex une P2 : un questionnaire préparé ne se rouvre pas pour montrer l'écart plus tard (il faut une route de lecture des questionnaires d'un bien, cœur et API) ; GitHub Actions bloqué (facturation), vérification locale verte (6659 tests). Restent (voie 1) : rouvrir un questionnaire préparé (P2 de Codex) ; écrire et valider les clauses à l'écran (direction, conformité) ; de vrais textes attendent H08.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : BR115
 - Cahier : M06 Mandats et documents (mandat par questionnaire) ; R440, R441, R442, R443, R16, R201.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Reste » de BR115. Un script servi à part, chargé au geste, comme l'écran du dossier anti-blanchiment (BR114) ; `app.js` ne gagne qu'une entrée. L'agent répond aux questions, voit chaque clause avec la réponse qui l'a déclenchée et son texte de loi, voit l'écart avec l'avis de valeur et dit l'avoir montré, puis lit ce qui empêche encore de signer. L'écriture des clauses (direction) et leur validation (conformité) restent par l'API dans cette tâche.
