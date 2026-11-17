@@ -1915,7 +1915,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR115 · Le mandat par questionnaire par l'API : textes des clauses, validation, réglage de l'écart, préparation et contrôle avant signature (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#651, `9a00a2fc`). Relecture forte rien en P0 ni P1 ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6642 tests). Reste (voie 1) : l'écran du questionnaire (BR116) ; de vrais textes de clauses attendent H08.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX33, D02, D03
 - Cahier : M06 Mandats et documents (mandat par questionnaire) ; R440, R441, R442, R443, R16.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Restent » de HX33 (« routes, écran du questionnaire, branchement au Worker (voie 1, `app.ts`) ») : `MandatQuestionnaire` n'est appelé par aucune route. B04, C09 et SV05 attendent un humain. Ici les routes seules, dans un fichier neuf `packages/api/src/mandat-questionnaire.ts`, sous `/v1/questionnaire-mandat` (préfixe à part pour ne croiser aucune route `/mandats/<id>`). Le cœur gagne une lecture des versions des clauses (`clauseVersions`, direction et conformité), sans laquelle la conformité ne peut pas trouver ce qu'elle valide. Ni migration ni règle nouvelle ; l'écran suivra (BR116).
