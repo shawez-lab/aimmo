@@ -299,8 +299,6 @@ export function clesRoutes(): ClesRoute[] {
         MAX_EXPORT_BYTES,
       ),
     },
-    // Le dossier de la lutte contre le blanchiment de l'agence sous licence, pour son responsable de la conformité seul,
-    // sur sa preuve « export_complet » pour `licence_lcb:<id>` ; l'empreinte seule est rangée [R662, R663, R664, R601].
     // La licence de l'agence, que la preuve du dossier désigne (BR114) ; rien d'autre [R662, R16].
     {
       method: 'GET',
@@ -309,6 +307,8 @@ export function clesRoutes(): ClesRoute[] {
       roles: COMPLIANCE,
       handle: async (s, v) => reply(await new DossierLcbAgences(s.db, s.journal, cles(s as ClesServices & { site: ClesConfig }), { now: s.now }).licence(v)),
     },
+    // Le dossier de la lutte contre le blanchiment de l'agence sous licence, pour son responsable de la conformité seul,
+    // sur sa preuve « export_complet » pour `licence_lcb:<id>` ; l'empreinte seule est rangée [R662, R663, R664, R601].
     {
       method: 'POST',
       pattern: /^\/export\/agence\/lcb$/,
