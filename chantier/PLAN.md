@@ -1853,7 +1853,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR110 · La publicité payante à l'écran de la direction : proposer, valider les budgets, lancer, arrêter, et juger chaque campagne au mandat (Jamais vu)
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#643, `bd793275`). Codex 1 P2 corrigé (saisir, choisir, entrer dans un champ ou ouvrir un volet annule aussi un « Confirmer » en attente), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6594 tests en 5 parts sur le premier commit, 2583 tests de `packages/api` sur le second). Restent (voie 1) : la lettre, le magazine et le calendrier de l'agent à l'écran (BR111) ; aucune campagne réelle avant H63.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR03, AT12
 - Cahier : M01 Attirer ; Phase 3, HX54 ; R587, R588, R589, R16, R201.
 - Décidé (2026-11-17, voie 1) : relevé dans les « Reste » de BR03, BR104, BR105 et BR108 (« l'écran du marketing »). Toutes les autres tâches de la voie 1 attendent un humain. L'écran du marketing est coupé en deux : ici la publicité payante, sous l'écran « Attirer » de la direction (après « Statistiques du site »), par un script servi à part, `/app/publicite.js`, chargé au geste comme `/app/site.js` ; la lettre, le magazine et le calendrier de l'agent suivront (BR111). `app.js` ne change pas.
@@ -1861,6 +1862,15 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Jamais vu (celui de HX54, rendu utilisable) : chaque campagne jugée au mandat signé et à l'acte, pas au clic, et un ciblage interdit pour le logement impossible à saisir : l'écran n'a que des communes et un rayon.
 - Critères : script servi à part, chargé au seul geste, rien lu avant, budgets tenus, sans innerHTML [R201] (test) ; chaque chiffre reçu dit en euros ou en nombre, dans l'ordre reçu, sans recalcul, état et raison d'arrêt en mots [R588] (test) ; communes (1 à 30 codes INSEE, sans doublon), rayon (vide ou 15 à 80 km), nom (3 à 80 caractères) et plateforme vérifiés avant l'appel ; seuls `communes` et `rayonKm` envoyés au ciblage [R589] (test) ; budgets en euros changés en centimes, total au moins le budget du jour, refusés avant l'appel sinon [R587] (test) ; lancer et arrêter au second appui seulement, tout autre geste annule (test) ; une écriture à la fois, réponse perdue dite incertaine, seule la dernière lecture dessine (test) ; refus dits en mots, jamais un code, critère interdit nommé ; seules les routes `/v1/marketing/publicite` [R16] (test).
 - Attend : rien (H63 pour une campagne réelle).
+
+### BR111 · La lettre et le magazine à l'écran de la direction, le calendrier de publication à l'écran de l'agent
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR03, BR110
+- Cahier : M01 Attirer ; M07 Commercialiser ; Phase 3, HX52, HX53 ; R580, R581, R582, R583, R584, R585, R586, R16, R201.
+- Décidé (2026-11-17, voie 1) : la seconde moitié de l'écran du marketing relevé dans le « Reste » de BR03, coupée de BR110. Scripts servis à part, chargés au geste ; `app.js` ne change pas, sauf un bouton d'entrée si le budget le permet.
+- Objectif : la direction ouvre une édition de la lettre (titre sans chiffre, `POST /v1/marketing/lettre/editions`) et ouvre le magazine imprimable (`GET /v1/marketing/magazine`) ; l'agent lit et règle son calendrier (0 à 3 publications par réseau et par jour, heures de Paris, à partir du lendemain), réserve sa semaine et lit ses créneaux (`/v1/marketing/calendrier`). Rien ne part d'un écran.
+- Critères : scripts à part, chargés au seul geste, budgets tenus, sans innerHTML [R201] (test) ; titre d'édition sans chiffre, 3 à 120 caractères, refusé avant l'appel [R586] (test) ; magazine ouvert avec la clé dans l'en-tête, jamais dans l'adresse (test) ; réglage du calendrier vérifié avant l'appel (0 à 3, heures valides), dit valable à partir du lendemain [R581] (test) ; créneaux dans l'ordre reçu, ceux sans lien marqué dits [R580, R582] (test) ; aucun envoi ni publication proposé à l'écran [R583, R584, R26] (test) ; refus dits en mots, seules les routes `/v1/marketing` [R16] (test).
+- Attend : rien.
 
 ## Restes du cœur des groupes HX
 
