@@ -2640,6 +2640,15 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Écarts trouvés (pour la voie 1, socle) : `fundsInOutgoing` ne lit ni les mots épelés de RC66 (« R.I.B », « r i b », « I.B.A.N »), ni le leet de RC71 (« R1B », « 1BAN », « B1C », « P@yez », « V1rez »), ni le leet épelé de RC72 (« R 1 B », « 1-B-A-N ») ; `maskIban` et `fundsInOutgoing` ne lisent pas l'IBAN dicté juste après un nombre composé (RC72 : « … quatre-vingt-dix sept mille … », « … deux cent trente six mille ») : ce texte est rangé en clair [R15].
 - Attend : rien.
 
+### RC74 · Chaque créneau du calendrier de publication dit la référence du bien qu'il publiera
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : HX52, BR111
+- Cahier : M01 Attirer ; M07 Commercialiser ; HX52 ; R580, R16.
+- Décidé (2026-11-17, voie 2), lecture prudente : relevé dans les « Restent » de BR111 (« la référence du bien dans les créneaux (le cœur ne la donne pas) »). Aujourd'hui `CalendrierPublications.slots` et `planWeek` rendent l'identifiant interne du bien, jamais sa référence : l'agent lit sa semaine sans savoir quel bien sortira. Dans `packages/core/src/marketing/calendrier.ts` seul : chaque créneau rend aussi `propertyReference`, la référence du bien lue dans la base au moment de la lecture, seulement dans le réseau du créneau ; un bien introuvable dans ce réseau donne `null`, jamais la référence d'un autre réseau. Ni route, ni écran, ni migration ; `docs/API.md` dit le champ. Reste pour la voie 1 : l'afficher dans `/app/calendrier.js`.
+- Objectif : l'agent (et l'écran) savent, créneau par créneau, quel bien sortira.
+- Critères : chaque créneau rendu par `slots` et `planWeek` porte la référence de son bien (test) ; un bien d'un autre réseau portant le même identifiant ne donne jamais sa référence : `null` [R16] (test) ; tous les tests du calendrier restent verts.
+- Attend : rien.
+
 ## Phase 1 : le socle
 
 D'après la Feuille de route, novembre et décembre 2026. Condition pour passer à la suite : 30 jours sans aucun envoi hors règles, et plus aucune tâche du système planifiée dans les applications.
