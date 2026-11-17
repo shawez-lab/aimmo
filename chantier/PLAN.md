@@ -2670,7 +2670,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Attend : rien.
 
 ### RC75 · Chaque créneau du calendrier de l'agent montre la référence du bien qu'il publiera
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#648, `bcd5334a`). Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6624 tests en 5 parts). Rien ne reste.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : RC74, BR111
 - Cahier : M01 Attirer ; M07 Commercialiser ; R580, R201.
 - Décidé (2026-11-17, voie 2), lecture prudente : relevé dans le « Reste » de RC74 (« afficher `propertyReference` dans `/app/calendrier.js` », noté pour la voie 1). La voie 1 tient BR113 (`packages/api/src/cles.ts`) et la voie 2 n'a rien eu depuis six séances : la voie 2 le prend. Seuls `packages/api/app/calendrier.ts` (script servi à part, pas un fichier du socle) et son test changent ; `app.js`, `agent-app.ts` et le cœur ne changent pas.

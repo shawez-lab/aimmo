@@ -1317,3 +1317,7 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 11:31 · VOIE 2 : RC74, 1db4a115 (#646, fusionnée), relancé non
 - 2026-11-17 12:10 · BR113 · fusionnée (#647, f3765201) : routes du dossier LCB de l'agence sous licence pour son responsable de la conformité [R662, R663, R664, R601] ; relecture forte rien en P0/P1, Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6626 tests) · prochaine : BR114
 - 2026-11-17 12:10 · VOIE 1 : relance immédiate non tentée (refusée par le contrôle des permissions aux séances précédentes, pas de nouvel essai) ; le passage planifié reprendra avec BR114
+- 2026-11-17 12:47 · RC75 · fusionnée (#648, bcd5334a) : sous chaque créneau du calendrier de l'agent, « Bien <référence> » (RC74) ; sans référence lisible : « Bien introuvable dans le réseau », jamais l'identifiant interne [R580, R201] ; seuls `packages/api/app/calendrier.ts` et son test changent ; Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6624 tests) · prochaine : voie 2 attend un nouveau reste du cœur ou un module libre
+- 2026-11-17 12:47 · VOIE 2 : plafond vérifié : 1) oui, moins de 30 séances voie 2 depuis minuit ; 2) non, la séance de 09:53 n'a produit ni commit ni tâche terminée ; 3) oui, RC75 est neuve
+- 2026-11-17 12:47 · VOIE 2 : relance refusée, question 2 (la séance de 09:53, parmi les trois dernières, n'a rien produit)
+- 2026-11-17 12:47 · VOIE 2 : RC75, bcd5334a (#648, fusionnée), relancé non
