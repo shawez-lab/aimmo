@@ -45,6 +45,8 @@ import { VEILLE_DPE_SCRIPT } from '../app/veille-dpe.ts';
 import { COMMUNES_SCRIPT } from '../app/communes.ts';
 import { COUT_AGENT_SCRIPT } from '../app/cout-agent.ts';
 import { PUBLICITE_SCRIPT } from '../app/publicite.ts';
+import { LETTRE_SCRIPT } from '../app/lettre.ts';
+import { CALENDRIER_SCRIPT } from '../app/calendrier.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { BASCULE_SCRIPT } from '../app/bascule.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
@@ -248,6 +250,10 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/cout-agent.js': { body: COUT_AGENT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La publicité payante pour la direction (BR110), chargée depuis « Attirer », jamais gardée [R201].
   '/app/publicite.js': { body: PUBLICITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // La lettre et le magazine pour la direction (BR111), chargés depuis « Attirer », jamais gardés [R201].
+  '/app/lettre.js': { body: LETTRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le calendrier de publication de l'agent (BR111), chargé depuis « Gagner des mandats », jamais gardé [R201].
+  '/app/calendrier.js': { body: CALENDRIER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/licences.js': { body: LICENCES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le contenu des fichiers de la reprise (BR83), chargé depuis « Reprendre mes données », jamais gardé [R201].
   '/app/reprise-contenus.js': { body: REPRISE_CONTENUS_SCRIPT, type: 'text/javascript; charset=utf-8' },

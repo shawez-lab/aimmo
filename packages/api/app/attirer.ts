@@ -238,6 +238,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       body.appendChild(renderSites(all[1]));
       body.appendChild(renderSiteStats());
       body.appendChild(renderPublicite());
+      body.appendChild(renderLettre());
       body.appendChild(renderAgents(all[5]));
       state(message || '');
       return true;
@@ -564,6 +565,35 @@ globalThis.AIMMO_ATTIRER = function (t) {
         if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
         pubScreen = make({ el: el, clear: clear, send: send, button: button, field: field, session: t.session });
         pubScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
+  }
+  /* BR111 · la lettre et le magazine : script servi à part (/app/lettre.js), chargé au premier geste [R201, R586]. */
+  var lettreScreen = null;
+  function renderLettre() {
+    var box = part('Lettre et magazine');
+    box.appendChild(el('p', 'Ouvrir une édition de la lettre et tirer le magazine imprimable des biens. Rien ne part d’ici.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir la lettre et le magazine', function () {
+      if (b.disabled) return;
+      if (lettreScreen) { lettreScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/lettre.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_LETTRE;
+        try { delete globalThis.AIMMO_LETTRE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        lettreScreen = make({ el: el, clear: clear, send: send, button: button, field: field, key: t.key, session: t.session });
+        lettreScreen.show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
