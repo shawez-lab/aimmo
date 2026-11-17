@@ -127,6 +127,9 @@ describeWithSqlite('BR113 · routes du dossier de la lutte contre le blanchiment
   it('[R662] le responsable de la conformité du réseau qui donne les licences n’a pas de dossier ici : 409, rien n’est lu', async () => {
     const t = await setup();
     expect(await t.http('conformiteReseau', 'POST', '/export/agence/lcb', {})).toMatchObject({ status: 409, body: { rule: 'R662', code: 'pas_de_licence' } });
+    // Sa vérification ne dit jamais vrai : aucune empreinte de dossier n'est rangée pour ce réseau.
+    const own = { format: 'aimmo-dossier-lcb-agence/1', licenceId: 'x', networkId: t.network.id, tables: {}, pieces: [] };
+    expect((await t.http('conformiteReseau', 'POST', '/export/agence/lcb/verification', { document: own })).body.data).toMatchObject({ verified: false });
     expect(await t.count('licence_lcb_exports')).toBe(0);
   });
 
