@@ -1913,6 +1913,16 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Critères : l'entrée n'apparaît qu'au rôle `compliance` (test) ; la preuve est demandée pour `licence_lcb:<id>` avant l'appel (test) ; le dossier est enregistré en fichier, jamais écrit dans la page (test) ; la vérification dit vrai, faux, incomplet ou pièces manquantes en phrases simples (test) ; un refus 409 `pas_de_licence` ou R601 se dit sans rien ranger (test) ; budget de l'application tenu (test).
 - Attend : rien.
 
+### BR115 · Le mandat par questionnaire par l'API : textes des clauses, validation, réglage de l'écart, préparation et contrôle avant signature (Jamais vu)
+- Statut : en cours
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : HX33, D02, D03
+- Cahier : M06 Mandats et documents (mandat par questionnaire) ; R440, R441, R442, R443, R16.
+- Décidé (2026-11-17, voie 1), lecture prudente : relevé dans le « Restent » de HX33 (« routes, écran du questionnaire, branchement au Worker (voie 1, `app.ts`) ») : `MandatQuestionnaire` n'est appelé par aucune route. B04, C09 et SV05 attendent un humain. Ici les routes seules, dans un fichier neuf `packages/api/src/mandat-questionnaire.ts`, sous `/v1/questionnaire-mandat` (préfixe à part pour ne croiser aucune route `/mandats/<id>`). Le cœur gagne une lecture des versions des clauses (`clauseVersions`, direction et conformité), sans laquelle la conformité ne peut pas trouver ce qu'elle valide. Ni migration ni règle nouvelle ; l'écran suivra (BR116).
+- Objectif : la direction écrit le texte de chaque clause et règle l'écart toléré, la conformité lit et valide les versions, l'agent (ou la direction) prépare le mandat depuis ses réponses, l'agent du bien dit avoir montré l'écart, et chacun de ceux qui y ont droit lit ce qui empêche encore de signer.
+- Jamais vu (celui de HX33, rendu utilisable) : chaque clause du mandat dit, à côté d'elle, la réponse qui l'a déclenchée et le texte de loi qui la fonde, et le prix est confronté à l'avis de valeur validé avant la signature.
+- Critères : chaque route refuse un rôle non prévu avant de lire le corps, refus au journal [R16] (test) ; les questions et les clauses se lisent en liste fermée, avec leur texte de loi [R440] (test) ; réponses hors liste ou champ inconnu : 400, rien de rangé [R440] (test) ; une clause écrite par la direction n'est validée que par la conformité, jamais par son auteur [R442] (test) ; la lecture des versions dit essai ou validée, sans texte pour un autre rôle [R16] (test) ; écart hors fourchette : le contrôle avant signature dit `ecart_prix` jusqu'au geste de l'agent du bien, puis prêt [R441] (test) ; tout s'ajoute, rien ne se réécrit [R443] (test) ; le journal ne porte ni prix ni texte [R13] (test).
+- Attend : rien (H08 pour de vrais textes de clauses).
+
 ## Restes du cœur des groupes HX
 
 Voie : 2
