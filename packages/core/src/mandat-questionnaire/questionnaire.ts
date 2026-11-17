@@ -456,7 +456,7 @@ export class MandatQuestionnaire {
     if (viewer.role !== 'direction' && viewer.role !== 'compliance' && !(viewer.role === 'agent' && property.agent_id === viewer.userId)) return this.refuse(viewer, 'not_property_agent', `property:${propertyId}`);
     const rows = await this.db.all<QuestionnaireRow & { ack_at: string | null }>(
       `SELECT q.*, a.at AS ack_at FROM mandate_questionnaires q LEFT JOIN mandate_questionnaire_gap_acks a ON a.questionnaire_id = q.id
-       WHERE q.network_id = ? AND q.property_id = ? ORDER BY q.created_at DESC, q.rowid DESC LIMIT 50`,
+       WHERE q.network_id = ? AND q.property_id = ? ORDER BY q.created_at DESC, q.id DESC LIMIT 50`,
       [viewer.networkId, propertyId],
     );
     const mandates = rows.map((row): ReopenedMandate => {

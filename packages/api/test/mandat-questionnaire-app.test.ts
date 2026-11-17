@@ -284,6 +284,10 @@ describe('BR117 · rouvrir un mandat préparé par questionnaire', () => {
     await t.press('J’ai montré l’écart au vendeur');
     expect(t.posts().map((c) => c.url)).toEqual(['/v1/questionnaire-mandat/mandats/q1/ecart-montre']);
     expect(t.status()).toBe('Noté : le vendeur a vu le prix comparé à l’avis de valeur.');
+    // Rouvrir le même mandat après le geste ne le repropose pas.
+    await t.press('Rouvrir');
+    expect(t.find('J’ai montré l’écart au vendeur')).toBeUndefined();
+    expect(t.box()!.textContent).toContain('Noté : le vendeur a vu le prix comparé à l’avis de valeur.');
   });
 
   it('[R441] un geste déjà noté ne se repropose pas ; une liste vide ou illisible ne dit rien de faux', async () => {

@@ -244,6 +244,8 @@ globalThis.AIMMO_MANDAT_QUESTIONNAIRE = function (t) {
             var code = (x.body || {}).code;
             if (!x.ok && code !== 'already_acknowledged') { say(code === 'role' ? NO.not_property_agent : why(x, 'Rien n’est noté : réessayez.')); return false; }
             say(x.ok ? 'Noté : le vendeur a vu le prix comparé à l’avis de valeur.' : NO.already_acknowledged);
+            /* Rouvrir le même mandat ne repropose plus le geste (BR117). */
+            m.gapAcknowledged = true;
             ack.hidden = true;
             return readCheck();
           });
