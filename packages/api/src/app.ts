@@ -1,4 +1,6 @@
 import { UNSUBSCRIBE_PATH, handleUnsubscribe } from './alertes.ts';
+import { handleLetterUnsubscribe } from './lettre-desinscription.ts';
+import { LETTER_UNSUBSCRIBE_PATH } from './marketing-passage.ts';
 import {
   AIMMO_VERSION,
   AlertesAgent,
@@ -2037,6 +2039,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'public:desinscription', 'alertes.desinscription', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // La désinscription de la lettre d'information (HX53, BR112) : une page publique, sans clé, hors de /v1, sans chiffre.
+  if (url.pathname.startsWith(LETTER_UNSUBSCRIBE_PATH)) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleLetterUnsubscribe(request, { db: config.db, now });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:desinscription', 'lettre.desinscription', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }

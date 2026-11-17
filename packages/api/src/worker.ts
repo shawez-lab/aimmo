@@ -3,6 +3,7 @@ import { REGISTRE_GELS_URL, REGISTRE_GELS_USER_AGENT } from './securite.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
+import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
@@ -42,6 +43,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** Début du lien de désinscription de la lettre (BR112), en https, sans chiffre, terminé par `/lettre/desinscription/` ; absent, aucune lettre ne part. */
+  LETTRE_DESINSCRIPTION_BASE?: string;
   /**
    * Le barème des frais d'acquisition réglé par la direction (M17), en points de base du prix, entier de 0 à 2 000, suivi
    * de la date du réglage : `750@2027-09-01`. Absent ou mal formé, aucune alerte qui demande un rendement.
@@ -212,6 +215,9 @@ export default {
       investorFeesRateBp: investorFeesRate(env.INVESTIR_FRAIS_BAREME),
       platformNetworkId: env.PLATFORM_NETWORK_ID,
       dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),
+      // BR112 : le calendrier de publication lit les certificats et les accords dans `MEDIA` ; la lettre attend son lien.
+      studioFiles: env.MEDIA ? mediaFiles(env.MEDIA) : null,
+      letterUnsubscribeBase: letterUnsubscribeBase(env.LETTRE_DESINSCRIPTION_BASE),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
