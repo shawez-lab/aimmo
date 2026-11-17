@@ -55,7 +55,16 @@ export interface CalendarSlot {
   propertyId: string;
   /** null : à venir, ou pas encore passé. */
   outcome: 'envoye' | 'echec' | 'refuse' | 'manque' | null;
+  /**
+   * Pour un créneau refusé au passage seulement, la raison dans une liste fermée (BR111) : `sans_lien` (aucun lien
+   * marqué vers la page du bien) [R582], `non_diffusable` (porte de diffusion fermée) [R42], `agent_parti` [R86],
+   * `manque` (passé trop tard), `controle` (tout autre refus du chemin de publication). null sinon.
+   */
+  reason: SlotReason | null;
 }
+
+export type SlotReason = 'sans_lien' | 'non_diffusable' | 'agent_parti' | 'manque' | 'controle';
+const REASONS: Readonly<Record<string, SlotReason>> = { sans_lien: 'sans_lien', bien_non_diffusable: 'non_diffusable', agent_parti: 'agent_parti', manque: 'manque' };
 
 /** Le seul chemin de publication, celui de X05 : `Publications` le remplit [R582]. */
 export interface PublicationGate {
@@ -100,6 +109,7 @@ interface SlotRow {
   property_id: string;
   due_at: string;
   outcome: 'envoye' | 'echec' | 'refuse' | null;
+  code: string | null;
   claimed: string | null;
 }
 
@@ -320,7 +330,7 @@ export class CalendrierPublications {
   /** Les créneaux encore à passer d'un réseau, sous la version en vigueur de leur jour. */
   private async pendingSlots(agentId: string, channel: SocialChannelName): Promise<SlotRow[]> {
     const rows = await this.db.all<SlotRow>(
-      `SELECT c.*, o.outcome, r.claimed_at AS claimed FROM social_calendar_slots c
+      `SELECT c.*, o.outcome, o.code, r.claimed_at AS claimed FROM social_calendar_slots c
        LEFT JOIN social_calendar_runs r ON r.slot_id = c.id LEFT JOIN social_calendar_outcomes o ON o.slot_id = c.id
        WHERE c.agent_id = ? AND c.channel = ? AND r.slot_id IS NULL AND c.due_at > ?`,
       [agentId, channel, new Date(this.now().getTime() - LATE_MS).toISOString()],
@@ -358,7 +368,7 @@ export class CalendrierPublications {
     if (!me.ok) return me;
     if (!validDay(from) || !validDay(to) || to < from || to > addDays(from, 31)) return { ok: false, rule: 'R10', code: 'periode_invalide' };
     const rows = await this.db.all<SlotRow>(
-      `SELECT c.*, o.outcome, r.claimed_at AS claimed FROM social_calendar_slots c
+      `SELECT c.*, o.outcome, o.code, r.claimed_at AS claimed FROM social_calendar_slots c
        LEFT JOIN social_calendar_runs r ON r.slot_id = c.id LEFT JOIN social_calendar_outcomes o ON o.slot_id = c.id
        WHERE c.agent_id = ? AND c.network_id = ? AND c.day BETWEEN ? AND ? ORDER BY c.due_at, c.channel, c.rank`,
       [viewer.userId, viewer.networkId, from, to],
@@ -367,7 +377,7 @@ export class CalendrierPublications {
     for (const r of rows) {
       if ((await this.inForce(viewer.userId, r.day))?.id !== r.rules_id) continue;
       const late = r.claimed === null && Date.parse(r.due_at) <= this.now().getTime() - LATE_MS;
-      value.push({ id: r.id, day: r.day, channel: r.channel, rank: r.rank, dueAt: r.due_at, postId: r.post_id, propertyId: r.property_id, outcome: r.outcome ?? (late ? 'manque' : null) });
+      value.push({ id: r.id, day: r.day, channel: r.channel, rank: r.rank, dueAt: r.due_at, postId: r.post_id, propertyId: r.property_id, outcome: r.outcome ?? (late ? 'manque' : null), reason: r.outcome === 'refuse' ? (REASONS[r.code ?? ''] ?? 'controle') : null });
     }
     return { ok: true, value };
   }
@@ -380,7 +390,7 @@ export class CalendrierPublications {
   async runDue(networkId: string): Promise<{ passed: number }> {
     const now = this.now();
     const rows = await this.db.all<SlotRow>(
-      `SELECT c.*, NULL AS outcome, NULL AS claimed FROM social_calendar_slots c
+      `SELECT c.*, NULL AS outcome, NULL AS code, NULL AS claimed FROM social_calendar_slots c
        LEFT JOIN social_calendar_runs r ON r.slot_id = c.id
        WHERE c.network_id = ? AND r.slot_id IS NULL AND c.due_at <= ? AND c.due_at > ? ORDER BY c.due_at, c.channel, c.rank`,
       [networkId, now.toISOString(), new Date(now.getTime() - LATE_MS).toISOString()],
