@@ -1831,7 +1831,8 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 - Attend : rien.
 
 ### BR108 · Le coût de l'agent moyen à l'écran de la direction : le mois lu, les factures sans poste classées, la provision et la marge réglées
-- Statut : en cours
+- Statut : fait (2026-11-17)
+- Reste : fusionnée (#640, `2ba3ab9b`). Codex 1 P2 corrigé (un mois incomplet avec honoraires disait « aucun honoraire » : il dit désormais « pas de seuil tant que le mois est incomplet »), puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6574 tests, `wrangler deploy --dry-run` compris). Restent (voie 1) : les écrans du marketing (BR03) et des contenus de recrutement (BR02).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR02, BR38
 - Cahier : Offre aux agents, « La règle de calcul » ; Feuille de route, phase 4, « La part du réseau couvre le coût complet de chaque agent » ; M13 ; R623, R624, R625, R14, R16, R201.
 - Décidé (2026-11-17, voie 1) : relevé dans les « Reste » de BR02, BR104 et BR105 (« les écrans du coût de l'agent moyen… »). Toutes les autres tâches de la voie 1 attendent un humain. Comme les communes à pourvoir (BR38), sous « Phases et régions » de l'écran du réseau, par un script servi à part, `/app/cout-agent.js`, chargé au geste ; le chargeur des communes devient commun aux deux parties, sans rien changer à ce qu'il fait. `app.js` ne change pas.
