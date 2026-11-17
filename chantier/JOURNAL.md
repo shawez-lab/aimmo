@@ -1330,3 +1330,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 13:58 · VOIE 2 : relance refusée, question 3 (aucune tâche à cette séance)
 - 2026-11-17 13:58 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-17 14:14 · BR115 · fusionnée (#651, 9a00a2fc) : le mandat par questionnaire par l'API, `/v1/questionnaire-mandat` (clauses écrites, lues, validées ; réglage de l'écart ; préparation ; écart montré ; avant signature) [R440, R441, R442, R443, R16] ; relecture forte rien en P0/P1, Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6642 tests) · prochaine : BR116 (écran du questionnaire)
+- 2026-11-17 14:14 · VOIE 1 : relance immédiate non tentée (refusée par le contrôle des permissions aux séances précédentes, pas de nouvel essai) ; le passage planifié reprendra avec BR116
