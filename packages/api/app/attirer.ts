@@ -237,6 +237,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       body.appendChild(renderZones(all[4], all[6]));
       body.appendChild(renderSites(all[1]));
       body.appendChild(renderSiteStats());
+      body.appendChild(renderPublicite());
       body.appendChild(renderAgents(all[5]));
       state(message || '');
       return true;
@@ -534,6 +535,35 @@ globalThis.AIMMO_ATTIRER = function (t) {
         if (mine !== t.session() || typeof make !== 'function') return;
         statsScreen = make({ el: el, clear: clear, send: send, button: button, scope: 'reseau' });
         statsScreen.show(inner);
+      });
+      s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
+      box.appendChild(s);
+    });
+    box.appendChild(b);
+    box.appendChild(inner);
+    return box;
+  }
+  /* BR110 · la publicité payante : script servi à part (/app/publicite.js), chargé au premier geste [R201, R587]. */
+  var pubScreen = null;
+  function renderPublicite() {
+    var box = part('Publicité payante');
+    box.appendChild(el('p', 'Chaque campagne jugée aux mandats signés et aux actes de ses contacts. Ciblage par communes et rayon seulement ; rien ne se dépense sans vos budgets validés.', 'doux'));
+    var inner = el('div');
+    var b = button('Ouvrir la publicité payante', function () {
+      if (b.disabled) return;
+      if (pubScreen) { pubScreen.show(inner); return; }
+      b.disabled = true;
+      var mine = t.session();
+      var s = el('script');
+      s.setAttribute('src', '/app/publicite.js');
+      s.addEventListener('load', function () {
+        var make = globalThis.AIMMO_PUBLICITE;
+        try { delete globalThis.AIMMO_PUBLICITE; } catch (e) { /* rien */ }
+        b.disabled = false;
+        if (mine !== t.session()) return;
+        if (typeof make !== 'function') { clear(inner); inner.appendChild(el('p', 'Indisponible pour le moment. Réessayez dans un moment.', 'etat')); return; }
+        pubScreen = make({ el: el, clear: clear, send: send, button: button, field: field, session: t.session });
+        pubScreen.show(inner);
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
