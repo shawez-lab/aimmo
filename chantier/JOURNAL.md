@@ -1306,3 +1306,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 08:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-17 08:40 · BR111 · fusionnée (#644, fc4849cc) : la lettre et le magazine sous « Attirer » de la direction, le calendrier de publication sous « Gagner des mandats » de l'agent, scripts servis à part ; raison d'un créneau refusé en liste fermée [R580, R581, R582, R586] ; Codex 1 P1 et 1 P2 corrigés puis rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte · prochaine : BR112
 - 2026-11-17 08:42 · VOIE 1 : relance immédiate refusée par le contrôle des permissions ; le passage planifié reprendra avec BR112
+- 2026-11-17 09:53 · VOIE 2 : rien de faisable : aucune tâche libre ; BR112 en cours à la voie 1 (seule tâche ouverte des branchements HX), S11, B04, C09 attendent un humain, SV05 est à la voie 1 ; tous les modules réservés et groupes de la Feuille de route sont faits · prochaine : voie 2 attend un nouveau reste du cœur ou un module libre
+- 2026-11-17 09:53 · VOIE 2 : relance refusée, question 2 (aucun commit ni tâche terminée aux trois dernières séances voie 2) et question 3 (aucune tâche nouvelle)
+- 2026-11-17 09:53 · VOIE 2 : aucune tâche, rien, relancé non
