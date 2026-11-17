@@ -1344,3 +1344,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-17 16:55 · VOIE 2 : rien de faisable : aucune proposition ouverte ; depuis 15:55 seule BR117 a été fusionnée (voie 1), et son reste (clauses écrites et validées à l'écran) est annoncé à la voie 1 ; les restes de RC76 touchent `app.ts` ou demandent une migration (voie 1) ; S11, B04, C09, SV05 attendent un humain ; aucun module de la Feuille de route libre · prochaine : voie 2 attend un nouveau reste du cœur ou un module libre
 - 2026-11-17 16:55 · VOIE 2 : relance refusée, question 3 (aucune tâche à cette séance) ; question 2 aussi non (les séances de 13:58, 14:55 et 15:55 n'ont rien produit)
 - 2026-11-17 16:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-17 17:52 · VOIE 2 : rien de faisable : une seule proposition ouverte, #654 (BR118, voie 1, en cours) ; aucune fusion depuis 16:55 ; les restes de RC76 touchent `app.ts` ou demandent une migration (voie 1) ; S11, B04, C09, SV05 attendent un humain ; aucun module de la Feuille de route libre · prochaine : voie 2 attend un nouveau reste du cœur ou un module libre
+- 2026-11-17 17:52 · VOIE 2 : relance refusée, question 3 (aucune tâche à cette séance) ; question 2 aussi non (les séances de 14:55, 15:55 et 16:55 n'ont rien produit)
+- 2026-11-17 17:52 · VOIE 2 : aucune tâche, rien, relancé non
