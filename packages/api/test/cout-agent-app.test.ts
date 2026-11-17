@@ -57,6 +57,8 @@ const INCOMPLETE = {
   covered: false,
   missing: ['reglage', 'factures_non_classees'],
   settings: null,
+  breakEvenNetworkBp: null,
+  networkBp: null,
   lines: { files: [], invoices: [], unclassified: ['fac-1', 'fac-2', INJECTED] },
 };
 
@@ -220,6 +222,9 @@ describe('BR108 · le coût de l’agent moyen à l’écran de la direction', (
     expect(x).toContain('Mois incomplet : il n’est jamais dit couvert.');
     expect(x).not.toContain('La part du réseau couvre');
     expect(x).toContain('Aucun réglage de provision et de marge ne vaut pour ce mois.');
+    // Des honoraires, mais pas de seuil tant que le mois est incomplet : jamais « aucun honoraire ».
+    expect(x).toContain('Pas de seuil tant que le mois est incomplet.');
+    expect(x).not.toContain('Aucun honoraire encaissé');
     // Un identifiant mal formé n'est ni montré ni envoyé.
     expect(x).toContain('2 factures du mois n’ont pas de poste.');
     expect(x).not.toContain(INJECTED);

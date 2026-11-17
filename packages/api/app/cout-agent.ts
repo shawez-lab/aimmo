@@ -117,7 +117,8 @@ globalThis.AIMMO_COUT_AGENT = function (t) {
     /* Jamais vu : la part du réseau qui couvre tout juste le coût, sur les coûts réels du mois [R625]. */
     if (v.breakEvenUnreachable === true) out.appendChild(el('p', 'Même tous les honoraires au réseau ne couvriraient pas le coût de ce mois.', 'alerte'));
     else if (whole(v.breakEvenNetworkBp)) out.appendChild(el('p', 'Seuil : ' + pct(v.breakEvenNetworkBp) + ' des honoraires au réseau couvrent tout juste le coût, marge comprise' + (whole(v.networkBp) ? ' ; ce mois, le réseau en a gardé ' + pct(v.networkBp) + '.' : '.')));
-    else out.appendChild(el('p', 'Aucun honoraire encaissé ce mois : pas de seuil.', 'doux'));
+    else if (v.complete !== true) out.appendChild(el('p', 'Pas de seuil tant que le mois est incomplet.', 'doux'));
+    else if (v.feesCents === 0) out.appendChild(el('p', 'Aucun honoraire encaissé ce mois : pas de seuil.', 'doux'));
     var dl = el('dl');
     row(dl, 'Agents présents', whole(v.agentsPresent) && v.agentsPresent >= 0 ? String(v.agentsPresent) : '—');
     row(dl, 'Honoraires encaissés, hors taxe', euros(v.feesCents));
