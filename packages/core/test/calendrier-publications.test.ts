@@ -403,6 +403,26 @@ describeWithSqlite('RC74 · la référence du bien dans chaque créneau', () => 
     const again = await t.cal.slots(t.alexV, '2027-10-11', '2027-10-17');
     expect(again).toEqual(w);
   });
+
+  it('[R16] un bien qui ne se trouve que dans un autre réseau ne donne jamais sa référence', async () => {
+    const t = await setup();
+    const a = await t.property(2);
+    await t.cal.setRules(t.alexV, { perDay: { instagram: 1 }, hours: ['09:00'] });
+    const w = await t.cal.planWeek(t.alexV, '2027-10-11');
+    if (!w.ok) throw new Error(w.code);
+    expect(w.value.some((s) => s.propertyId === a && s.propertyReference !== null)).toBe(true);
+    // Le même identifiant de bien ne se trouve plus que dans un autre réseau : le créneau garde son bien, sans référence.
+    await t.db.run("INSERT INTO networks (id, name, created_at) SELECT 'autre-reseau', 'Autre réseau', created_at FROM networks WHERE id = ?", [t.network.id]);
+    // Les clés étrangères relient le bien à son réseau partout : on les coupe le temps de fabriquer ce cas qui ne doit jamais arriver.
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("UPDATE properties SET network_id = 'autre-reseau' WHERE id = ?", [a]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    const r = await t.cal.slots(t.alexV, '2027-10-11', '2027-10-17');
+    if (!r.ok) throw new Error(r.code);
+    const mine = r.value.filter((s) => s.propertyId === a);
+    expect(mine.length).toBeGreaterThan(0);
+    for (const s of mine) expect(s.propertyReference).toBeNull();
+  });
 });
 
 describeWithSqlite('RC29 · deux planifications simultanées du calendrier', () => {
