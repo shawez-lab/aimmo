@@ -182,6 +182,19 @@ describe('BR111 · la lettre et le magazine à l’écran de la direction', () =
     }
   });
 
+  it('une page coupée en route : rien n’est enregistré, l’écran le dit', async () => {
+    const broken: Answer = async () => {
+      const r = new Response('<!doctype html>', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+      Object.defineProperty(r, 'blob', { value: () => Promise.reject(new TypeError('coupé')) });
+      return r;
+    };
+    const t = await run({ [`GET ${MAG}`]: broken });
+    await t.open();
+    await t.click(t.button('Tirer le magazine'));
+    expect(t.status()).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.blobs).toEqual([]);
+  });
+
   it('refus d’une édition dits en mots ; réponse perdue ou panne dite incertaine ; une écriture à la fois', async () => {
     const cases: [Answer, string][] = [
       [no(409, { ok: false, rule: 'R586', code: 'titre' }), LETTRE_REFUSALS.titre!],

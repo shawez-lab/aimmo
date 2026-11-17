@@ -96,6 +96,10 @@ globalThis.AIMMO_LETTRE = function (t) {
           setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
           say('Magazine enregistré : ouvrez-le pour l’imprimer ou l’enregistrer en PDF.');
           return true;
+        }, function () {
+          /* La page coupée en route : rien n'est enregistré. */
+          if (turn === printing && mine === t.session()) say(OFFLINE);
+          return false;
         });
       }, function () {
         if (turn === printing && mine === t.session()) say(OFFLINE);
