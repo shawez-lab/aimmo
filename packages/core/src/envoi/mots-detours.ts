@@ -38,7 +38,9 @@ export function unleetWords(text: string, one: 'i' | 'l'): string {
  */
 export function joinSpelledWords(p: string, dropStart: number, dropEnd: number, leet: 'i' | 'l' | null = null): string {
   const isPart = leet === null ? isLetter : (c: string | undefined): boolean => isLetter(c) || (c !== undefined && LEET_SPELL.has(c));
-  let out = '';
+  // Les morceaux inchangés sont recopiés d'un bloc : le parcours reste linéaire et rapide.
+  const parts: string[] = [];
+  let last = 0;
   let i = 0;
   while (i < p.length) {
     const sep = p[i + 1];
@@ -54,18 +56,17 @@ export function joinSpelledWords(p: string, dropStart: number, dropEnd: number, 
         const head = word.slice(0, dropStart).split('');
         const tail = dropEnd > 0 ? word.slice(-dropEnd).split('') : [];
         const middle = word.slice(dropStart, word.length - dropEnd);
-        out += [...head, leet === null ? middle : unleetWords(middle, leet), ...tail].join(' ');
-        i = j + 1;
-        continue;
+        parts.push(p.slice(last, i), [...head, leet === null ? middle : unleetWords(middle, leet), ...tail].join(' '));
+        last = j + 1;
       }
-      out += p.slice(i, j + 1);
+      // Un mot épelé écarté reste tel quel : aucune de ses lettres ne recommence un mot.
       i = j + 1;
       continue;
     }
-    out += p[i]!;
     i += 1;
   }
-  return out;
+  parts.push(p.slice(last));
+  return parts.join('');
 }
 
 /** Trois lettres (ou signes du leet) séparées une à une : un mot épelé est possible. */
@@ -82,13 +83,43 @@ const MAY_BE_SPELLED_LEET = /[0-9@$][ .-][a-z]|[a-z][ .-][0-9@$]/;
  */
 export function wordReadings(p: string): string[] {
   const out = new Set<string>([p]);
-  const bases = MAY_BE_LEET.test(p) ? [p, unleetWords(p, 'i'), unleetWords(p, 'l')] : [p];
+  const bases = MAY_BE_LEET.test(p) ? [...new Set([p, unleetWords(p, 'i'), unleetWords(p, 'l')])] : [p];
   for (const b of bases) out.add(b);
   if (MAY_BE_SPELLED.test(p)) {
-    for (const b of new Set(bases)) for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) out.add(joinSpelledWords(b, ds, de));
+    // Une lettre n'est laissée à part que d'un mot épelé assez long pour en garder trois : les bords à essayer sont
+    // bornés par le plus long mot épelé du texte.
+    const drops = (q: string, leet: boolean): [number, number][] => {
+      const spare = Math.min(4, longestSpelled(q, leet) - 3);
+      const combos: [number, number][] = [];
+      for (let ds = 0; ds <= 2; ds += 1) for (let de = 0; de <= 2; de += 1) if (ds + de <= spare) combos.push([ds, de]);
+      return combos;
+    };
+    for (const b of bases) for (const [ds, de] of drops(b, false)) out.add(joinSpelledWords(b, ds, de));
     if (MAY_BE_SPELLED_LEET.test(p)) {
-      for (const one of ['i', 'l'] as const) for (const ds of [0, 1, 2]) for (const de of [0, 1, 2]) out.add(joinSpelledWords(p, ds, de, one));
+      const combos = drops(p, true);
+      for (const one of ['i', 'l'] as const) for (const [ds, de] of combos) out.add(joinSpelledWords(p, ds, de, one));
     }
   }
   return [...out];
+}
+
+/** La longueur du plus long mot épelé du texte (lettres, et signes du leet si `leet`), en un parcours. */
+function longestSpelled(p: string, leet: boolean): number {
+  const isPart = leet ? (c: string | undefined): boolean => isLetter(c) || (c !== undefined && LEET_SPELL.has(c)) : isLetter;
+  let best = 0;
+  let i = 0;
+  while (i < p.length) {
+    const sep = p[i + 1];
+    if (isPart(p[i]) && !isPart(p[i - 1]) && isSpellSep(sep)) {
+      let j = i;
+      let n = 1;
+      while (p[j + 1] === sep && isPart(p[j + 2]) && !isPart(p[j + 3])) {
+        n += 1;
+        j += 2;
+      }
+      if (n > best) best = n;
+      i = j + 1;
+    } else i += 1;
+  }
+  return best;
 }

@@ -342,6 +342,7 @@ const OUTGOING_FUNDS: RegExp[] = [
 
 /** Un texte d'AIMMO qui donne des coordonnées bancaires ou demande un paiement : jamais [R62]. */
 export function fundsInOutgoing(text: string): boolean {
-  if (bankDetailsIn(text)) return true;
+  // Comme `bankDetailsIn` puis les règles de sortie, les lectures faites une seule fois (BR109).
+  if (IBAN.test(text) || text.includes(IBAN_MASK)) return true;
   return readings(text).some((p) => OUTGOING_FUNDS.some((re) => re.test(p)));
 }
