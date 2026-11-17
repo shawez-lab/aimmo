@@ -1821,6 +1821,7 @@ Ajouté le 2026-11-10 par la voie 1 : le groupe BR19 fini, les modules HX sans r
 
 ### BR107 · Le socle lit le texte comme l'œil le voit : un IBAN ou un mot d'argent caché par des invisibles ou des sosies est masqué à l'entrée et refusé à la sortie (Jamais vu)
 - Statut : en cours
+- Où : proposition #638 ouverte (commit `f7e0ef1b`), à fusionner à l'étape 3 de la prochaine séance. Codex rien à signaler ; GitHub Actions bloqué (facturation), vérification locale verte (6551 tests, `wrangler deploy --dry-run` compris), commentée sur la proposition ; fusion par l'API refusée par le contrôle des permissions, non réessayée.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR106, RC70
 - Cahier : M10 Compromis et acte (bouclier contre le faux RIB) ; Conformité ; R15, R62.
 - Décidé (2026-11-17, voie 1), lecture prudente : relevé dans les « Reste » de BR106 et RC70 (« `fundsInOutgoing` et `maskIban` ne démasquent pas encore »). Toutes les autres tâches de la voie 1 attendent un humain. `dossiers/bouclier.ts` reste à la voie 2 (RC71 en cours) : rien n'y change. La lecture « comme l'œil » de RC70 (forme NFKC, ignorables d'Unicode ôtés, sosies grecs et cyrilliques ramenés dans un mot qui n'a que des lettres latines, des chiffres et des sosies) est reprise dans `envoi/iban-detours.ts`, en suivant la place de chaque caractère ; `hiddenIbanSpans` lit aussi ce texte démasqué ; `bankDetailsIn`, `paymentRequestIn` et `fundsInOutgoing` lisent aussi le texte démasqué. Le texte brut reste lu : rien de ce qui était masqué ou refusé ne se perd.
