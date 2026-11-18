@@ -4,4 +4,4 @@ ALTER TABLE rental_facts ADD COLUMN main_room_hundredths INTEGER CHECK (main_roo
 ALTER TABLE rental_facts ADD COLUMN ceiling_height_cm INTEGER CHECK (ceiling_height_cm IS NULL OR ceiling_height_cm BETWEEN 100 AND 1500);
 ALTER TABLE rental_facts ADD COLUMN habitable_volume_hundredths INTEGER CHECK (habitable_volume_hundredths IS NULL OR habitable_volume_hundredths > 0);
 -- Le règlement sanitaire local lu par l'agent : référence, jour de lecture, respecté ou non (JSON) ; sans lui, jamais « louable ».
-ALTER TABLE rental_facts ADD COLUMN local_rules TEXT CHECK (local_rules IS NULL OR json_valid(local_rules));
+ALTER TABLE rental_facts ADD COLUMN local_rules TEXT CHECK (local_rules IS NULL OR length(local_rules) BETWEEN 2 AND 400);
