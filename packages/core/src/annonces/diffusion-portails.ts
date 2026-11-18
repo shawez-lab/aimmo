@@ -38,7 +38,11 @@ export interface PortalReceipt {
 export interface PortalConnector {
   readonly portal: string;
   readonly mode: 'reel' | 'essai';
-  send(operation: { action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null>;
+  /**
+   * Contrat : idempotent sur `key` (bien, portail, version, geste). Un geste dont l'accusé n'a pas pu être rangé est
+   * renvoyé avec la même clé au passage suivant ; le connecteur rend alors le même accusé sans rien déposer deux fois.
+   */
+  send(operation: { key: string; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null>;
 }
 
 export const trialPortal = (portal: string): PortalConnector => ({ portal, mode: 'essai', send: async () => null });
@@ -48,6 +52,8 @@ export const PORTAL_NAME = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])$/;
 const RECEIPT = /^[\x21-\x7e]{1,200}$/;
 const ON_PORTALS: ReadonlySet<ListingState> = new Set(['en_vente', 'sous_offre']);
 export const PORTAL_LEASE_MS = 5 * 60_000;
+/** Un envoi plus long est coupé, bien avant la fin du bail : il sera repris avec la même clé. */
+export const PORTAL_SEND_TIMEOUT_MS = 60_000;
 
 export type PortalState = 'publiee' | 'retiree' | 'en_attente' | 'echec' | 'essai' | 'non_publiee';
 
@@ -203,7 +209,7 @@ export class DiffusionPortails {
         if (!action || !version || !listing) continue;
         // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
         const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
-        const outcome = await this.send(networkId, propertyId, portal, version, action, sent);
+        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, ack !== null && ack.action !== 'retirer', lease);
         out[outcome === 'accuse' ? 'acknowledged' : outcome === 'essai' ? 'trial' : 'failed'].push(portal);
       }
       return out;
@@ -212,19 +218,32 @@ export class DiffusionPortails {
     }
   }
 
-  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
+  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload, live: boolean, lease: string): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
     const c = this.connector(portal);
     const record = async (outcome: 'accuse' | 'essai' | 'echec', extra: { receipt?: string; portalRef?: string | null; code?: string }): Promise<boolean> => {
+      // Seul le passage qui tient encore le bail range un geste : un passage en retard n'écrit rien par-dessus le suivant.
       const { changes } = await this.db
-        .run('INSERT INTO portal_operations (id, network_id, property_id, portal, version_id, seq, action, outcome, receipt, portal_ref, error_code, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
-          this.newId(), networkId, propertyId, portal, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
-        ])
+        .run(
+          `INSERT INTO portal_operations (id, network_id, property_id, portal, version_id, seq, action, outcome, receipt, portal_ref, error_code, at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM portal_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
+          [
+            this.newId(), networkId, propertyId, portal, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
+            propertyId, lease, this.now().toISOString(),
+          ],
+        )
         .catch((error: unknown) => {
           if (/UNIQUE/i.test(String(error))) return { changes: 0 };
           throw error;
         });
       return changes === 1;
     };
+    if (c.mode !== 'reel' && live) {
+      // Une annonce réelle est en ligne, mais son connecteur n'est plus là : rien ne la modifie ni ne la retire.
+      // Ce n'est pas un essai : c'est un échec, dit au statut et au journal, repris dès que le connecteur revient.
+      await record('echec', { code: 'connecteur_absent' });
+      await appendEvent(this.journal, { type: 'portail.echec', actor: 'system:portails', subject: `property:${propertyId}`, data: { rule: 'R668', portal, seq: Number(version.seq), action, code: 'connecteur_absent' } }, this.now);
+      return 'echec';
+    }
     if (c.mode !== 'reel') {
       // Essai : rien ne part. Rangé une fois par version et par geste, jamais compté comme publié.
       if (await record('essai', {})) await appendEvent(this.journal, { type: 'portail.essai', actor: 'system:portails', subject: `property:${propertyId}`, data: { rule: 'R668', portal, seq: Number(version.seq), action } }, this.now);
@@ -232,7 +251,13 @@ export class DiffusionPortails {
     }
     let receipt: PortalReceipt | null;
     try {
-      receipt = await c.send({ action, listing: structuredClone(listing) });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('delai_depasse')), PORTAL_SEND_TIMEOUT_MS)));
+      try {
+        receipt = await Promise.race([c.send({ key: `${propertyId}:${portal}:${Number(version.seq)}:${action}`, action, listing: structuredClone(listing) }), timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (error) {
       const code = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'erreur';
       await record('echec', { code });
@@ -290,7 +315,7 @@ export class DiffusionPortails {
       const live = ack !== null && ack.action !== 'retirer';
       let state: PortalState;
       if (due === null) state = live ? 'publiee' : ack ? 'retiree' : 'non_publiee';
-      else if (mode === 'essai') state = 'essai';
+      else if (mode === 'essai') state = ack !== null && ack.action !== 'retirer' ? 'echec' : 'essai';
       else if (lastError && version && lastError.seq === Number(version.seq)) state = 'echec';
       else state = 'en_attente';
       out.push({

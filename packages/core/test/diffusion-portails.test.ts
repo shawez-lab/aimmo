@@ -6,12 +6,12 @@ import { describeWithSqlite } from './sqlite.ts';
 /** Un portail réel de test : il garde chaque geste reçu et rend un accusé, ou tombe en panne à la demande. */
 class FakePortal implements PortalConnector {
   readonly mode = 'reel' as const;
-  received: { action: PortalAction; listing: ListingPayload }[] = [];
+  received: { key: string; action: PortalAction; listing: ListingPayload }[] = [];
   failNext = 0;
   noReceipt = 0;
   private n = 0;
   constructor(readonly portal: string) {}
-  async send(op: { action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null> {
+  async send(op: { key: string; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null> {
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error('portail_indisponible');
@@ -152,5 +152,43 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await expect(t.db.run('DELETE FROM portal_operations')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE portal_operations SET receipt = 'x'")).rejects.toThrow(/rien ne se réécrit/);
     await expect(t.db.run('DELETE FROM portal_subscriptions')).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R668] un accusé arrivé après la fin du bail n’est pas rangé ; le geste repart avec la même clé, sans doublon côté portail', async () => {
+    const t = await published();
+    const keys: string[] = [];
+    let first = true;
+    const late: PortalConnector = {
+      portal: 'portail-a',
+      mode: 'reel',
+      send: async (op) => {
+        keys.push(op.key);
+        // Le premier envoi dure plus que le bail : un autre passage a pu le prendre.
+        if (first) (first = false), t.setClock(new Date(t.now().getTime() + 6 * 60_000));
+        return { receipt: 'ACK-IDEM' };
+      },
+    };
+    const p = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [late] });
+    await p.sync(t.network.id, t.propertyId);
+    expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(0);
+    await p.sync(t.network.id, t.propertyId);
+    expect(keys).toEqual([`${t.propertyId}:portail-a:1:publier`, `${t.propertyId}:portail-a:1:publier`]);
+    expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(1);
+  });
+
+  it('[R668] [R42] une annonce en ligne dont le connecteur a disparu : échec « connecteur_absent », jamais « essai »', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [t.propertyId]);
+    t.setClock(new Date('2027-03-02T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+    const sans = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now });
+    expect(await sans.sync(t.network.id, t.propertyId)).toMatchObject({ trial: [], failed: ['portail-a', 'portail-b'] });
+    const st = await sans.status(t.agent, t.propertyId);
+    expect(st.ok && st.value.find((x) => x.portal === 'portail-a')).toMatchObject({ mode: 'essai', state: 'echec', lastError: { code: 'connecteur_absent', action: 'retirer' } });
+    expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM journal WHERE type = 'portail.echec' AND data LIKE '%connecteur_absent%'"))!.n).toBe(2);
+    // Le connecteur revient : le retrait part.
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received.at(-1)!.action).toBe('retirer');
   });
 });
