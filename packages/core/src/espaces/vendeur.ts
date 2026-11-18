@@ -77,6 +77,8 @@ export interface SellerDocument {
   addedAt: string;
   signature: 'sans' | 'a_signer' | 'signe';
   signedAt: string | null;
+  /** Le numéro du registre d'un mandat signé [R39] ; absent : non communiqué. */
+  number?: string | null;
 }
 
 export interface SellerAppointment {
@@ -127,7 +129,7 @@ export const CHAMPS_VENDEUR = {
   bien: ['reference', 'city', 'status', 'price'],
   visite: ['at', 'state', 'report', 'interest'],
   offre: ['receivedAt', 'amount', 'netSeller', 'conditions', 'validUntil', 'state'],
-  document: ['title', 'kind', 'addedAt', 'signature'],
+  document: ['title', 'kind', 'addedAt', 'signature', 'number'],
   rendezVous: ['at', 'kind', 'state'],
   point: ['weekOf', 'text'],
   acte: ['date', 'holds'],
@@ -154,6 +156,7 @@ export interface VueDocument {
   kind: string;
   addedAt: Fait<string>;
   signature: Fait<'sans' | 'a_signer' | 'signe'>;
+  number: Fait<string>;
 }
 
 export interface VueRendezVous {
@@ -192,6 +195,7 @@ const SOURCES = {
   dossier: 'dossier de vente',
   point: 'point de la semaine validé par l’agent',
   echeancier: 'échéancier du dossier',
+  registre: 'registre des mandats',
 } as const;
 
 /** Le libellé qui remplace un intitulé retenu. */
@@ -329,6 +333,7 @@ export class EspaceVendeur {
         kind: d.kind,
         addedAt: fait(d.addedAt, SOURCES.dossier, d.addedAt),
         signature: fait(d.signature, SOURCES.dossier, d.signature === 'signe' ? d.signedAt : d.addedAt),
+        number: fait(d.number ?? null, SOURCES.registre, d.signedAt),
       })),
       appointments: byDate(appointments, (a) => a.at).map((a) => ({ at: fait(a.at, SOURCES.agenda, a.at), kind: a.kind, state: fait(a.state, SOURCES.agenda, a.at) })),
       weeklyPoints: byDate(points, (w) => w.weekOf)

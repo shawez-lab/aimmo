@@ -32,7 +32,7 @@ import { ComparatifOffres } from '../offres/comparatif.ts';
 import { sellerReportText, type VisitReport } from '../visites/compte-rendu.ts';
 import { weeklyPointText, type WeeklyFigures } from '../visites/point-semaine.ts';
 import type { ClientParties, ClientSide } from './entree.ts';
-import { DOCUMENT_TITLES, LIVE_MANDATES, placeholders, sourcePerson } from './lecture.ts';
+import { DOCUMENT_TITLES, LIVE_MANDATE_MANDANTS, placeholders, sourcePerson } from './lecture.ts';
 import { buyerSides } from './sources-acquereur.ts';
 import { ownerWindows } from './sources-proprietaire.ts';
 import { OFFER_STOPPED_AT, OFFER_STOPPED_STATE, type SellerAppointment, type SellerDeedDate, type SellerDocument, type SellerOffer, type SellerProperty, type SellerVisit, type SellerWeeklyPoint, type SourcePerson, type SourcesVendeur } from './vendeur.ts';
@@ -59,12 +59,20 @@ export interface SellerWindow {
  */
 export async function sellerWindows(db: SqlDatabase, fiche: FicheUnique, networkId: string, personId: string): Promise<SellerWindow[]> {
   const members = new Set(await fiche.membersOf(personId));
-  const own = await db.all<{ property_id: string }>(`SELECT DISTINCT property_id FROM (${LIVE_MANDATES}) WHERE person_id IN (${placeholders(members.size)})`, [networkId, ...members]);
+  // Chaque mandant d'un mandat vivant compte, le premier comme les autres nommés par le document signé (AU001b).
+  const own = await db.all<{ property_id: string }>(`SELECT DISTINCT property_id FROM (${LIVE_MANDATE_MANDANTS}) WHERE person_id IN (${placeholders(members.size)})`, [networkId, networkId, ...members]);
   const out: SellerWindow[] = [];
   for (const { property_id } of own) {
-    const all = await db.all<{ id: string; person_id: string; signed_at: string }>(`SELECT id, person_id, signed_at FROM (${LIVE_MANDATES}) WHERE property_id = ? ORDER BY signed_at, id`, [networkId, property_id]);
+    const rows = await db.all<{ id: string; person_id: string; signed_at: string }>(`SELECT id, person_id, signed_at FROM (${LIVE_MANDATE_MANDANTS}) WHERE property_id = ? ORDER BY signed_at, id`, [networkId, networkId, property_id]);
+    // Un mandat, avec tous ses mandants, dans l'ordre des signatures.
+    const all: { id: string; signed_at: string; mine: boolean }[] = [];
+    for (const r of rows) {
+      const last = all.at(-1);
+      if (last?.id === r.id) last.mine ||= members.has(r.person_id);
+      else all.push({ id: r.id, signed_at: r.signed_at, mine: members.has(r.person_id) });
+    }
     const run: { id: string; signed_at: string }[] = [];
-    for (let i = all.length - 1; i >= 0 && members.has(all[i]!.person_id); i--) run.unshift(all[i]!);
+    for (let i = all.length - 1; i >= 0 && all[i]!.mine; i--) run.unshift({ id: all[i]!.id, signed_at: all[i]!.signed_at });
     if (run.length === 0) continue;
     out.push({ propertyId: property_id, since: run[0]!.signed_at, mandateIds: run.map((m) => m.id), latest: run.at(-1)! });
   }
@@ -294,16 +302,22 @@ export class SqlSourcesVendeur implements SourcesVendeur {
     const since = await this.since(networkId, propertyId, personId);
     if (!since) return [];
     const members = await this.fiche.membersOf(personId);
-    const docs = await this.db.all<{ id: string; kind: string; created_at: string; mandate_signed: string | null; amendment_signed: string | null }>(
-      `SELECT d.id, d.kind, d.created_at, s.signed_at AS mandate_signed, a.signed_at AS amendment_signed
+    const q = placeholders(members.length);
+    // Les documents dont la personne est le premier mandant, ou un autre mandant nommé (AU001b) ; jamais ceux d'un autre
+    // mandant seul [R16].
+    const docs = await this.db.all<{ id: string; kind: string; created_at: string; mandate_signed: string | null; amendment_signed: string | null; number: string | null }>(
+      `SELECT d.id, d.kind, d.created_at, s.signed_at AS mandate_signed, a.signed_at AS amendment_signed, s.number
        FROM documents d LEFT JOIN signed_documents s ON s.document_id = d.id LEFT JOIN signed_amendments a ON a.document_id = d.id
-       WHERE d.network_id = ? AND d.property_id = ? AND d.mode = 'reel' AND d.status = 'complet' AND d.person_id IN (${placeholders(members.length)})
+       WHERE d.network_id = ? AND d.property_id = ? AND d.mode = 'reel' AND d.status = 'complet'
+         AND (d.person_id IN (${q}) OR EXISTS (SELECT 1 FROM document_co_mandants c WHERE c.document_id = d.id AND c.person_id IN (${q})))
        ORDER BY d.created_at, d.id`,
-      [networkId, propertyId, ...members],
+      [networkId, propertyId, ...members, ...members],
     );
     const out: SellerDocument[] = docs.map((d) => {
       const signedAt = d.mandate_signed ?? d.amendment_signed;
-      return { id: d.id, title: DOCUMENT_TITLES[d.kind] ?? 'Document', kind: d.kind, addedAt: d.created_at, signature: signedAt ? 'signe' : 'a_signer', signedAt };
+      // Le numéro du registre, que porte l'exemplaire du mandant [R39].
+      const number = d.mandate_signed && d.number ? d.number : null;
+      return { id: d.id, title: DOCUMENT_TITLES[d.kind] ?? 'Document', kind: d.kind, addedAt: d.created_at, signature: signedAt ? 'signe' : 'a_signer', signedAt, number };
     });
     const file = await this.ownFile(networkId, propertyId, personId, since);
     if (file) {
