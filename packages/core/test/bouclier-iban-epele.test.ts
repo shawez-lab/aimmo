@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { fundSignals, spelledIban } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire';
 
 // RC67 : un IBAN épelé caractère par caractère, ou coupé n'importe où. IBAN inventés : la clé est calculée ici.
 
@@ -86,10 +87,12 @@ it('un morceau collé à une lettre accentuée fait partie du mot, pas de la sui
   expect(spelledIban(`é ${spell(FR, ' ')}`)).toBe(true);
 });
 
-it('[R62] la lecture reste linéaire : 40 000 caractères de morceaux épelés en moins de 500 ms', () => {
-  const t = 'F R 7 6 1 2 3 4 '.repeat(2500);
-  const t0 = performance.now();
-  spelledIban(t);
-  fundSignals(t);
-  expect(performance.now() - t0).toBeLessThan(500);
+it('[R62] la lecture reste linéaire : 40 000 caractères de morceaux épelés', () => {
+  expectLinear(
+    (n) => 'F R 7 6 1 2 3 4 '.repeat(n / 16),
+    (t) => {
+      spelledIban(t);
+      fundSignals(t);
+    },
+  );
 });

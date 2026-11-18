@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { IBAN_MASK, bankDetailsIn, fundsInOutgoing, maskIban, paymentRequestIn } from '../src/envoi/texte.ts';
 import { joinSpelledWords, unleetWords, wordReadings } from '../src/envoi/mots-detours.ts';
+import { expectLinear } from './lineaire';
 
 // BR109 : le socle lit les mots d'argent épelés, en leet et en leet épelé, et l'IBAN dicté juste après un nombre
 // composé, comme le bouclier (RC66, RC71, RC72). Textes et IBAN inventés : la clé est calculée ici.
@@ -86,10 +87,13 @@ it('[R15] [R62] l’IBAN dicté juste après un nombre composé est masqué en e
   expect(maskIban(price)).toBe(price);
 });
 
-it('lecture linéaire : 40 000 caractères épelés, en leet et en mots en moins de 500 ms', () => {
-  const t = 'r 1 b v.1.r.3.m.e.n.t P@yez a b c d quatre-vingt-dix sept mille '.repeat(650).slice(0, 40000);
-  const start = performance.now();
-  fundsInOutgoing(t);
-  maskIban(t);
-  expect(performance.now() - start).toBeLessThan(500);
+it('lecture linéaire : 40 000 caractères épelés, en leet et en mots', () => {
+  const chunk = 'r 1 b v.1.r.3.m.e.n.t P@yez a b c d quatre-vingt-dix sept mille ';
+  expectLinear(
+    (n) => chunk.repeat(Math.ceil(n / chunk.length)).slice(0, n),
+    (t) => {
+      fundsInOutgoing(t);
+      maskIban(t);
+    },
+  );
 });

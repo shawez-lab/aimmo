@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { fundSignals, unmasked } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire';
 
 // RC70 : un faux RIB masqué par des caractères invisibles, des sosies grecs ou cyrilliques, des lettres de fantaisie.
 // IBAN inventé, clé calculée ici.
@@ -84,10 +85,7 @@ it('un vrai mot cyrillique ou grec reste tel quel ; seul un mot fait de sosies e
   expect(unmasked('Hélène')).toBe('Hélène');
 });
 
-it('[R62] lecture linéaire : 40 000 caractères de sosies et d\'invisibles en moins de 500 ms', () => {
+it('[R62] lecture linéaire : 40 000 caractères de sosies et d\'invisibles', () => {
   const chunk = `Р${ZW}І${SHY}Β οа `;
-  const text = chunk.repeat(Math.ceil(40_000 / chunk.length)).slice(0, 40_000);
-  const t0 = performance.now();
-  fundSignals(text);
-  expect(performance.now() - t0).toBeLessThan(500);
+  expectLinear((n) => chunk.repeat(Math.ceil(n / chunk.length)).slice(0, n), (t) => fundSignals(t));
 });
