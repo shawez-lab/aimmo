@@ -39,6 +39,1077 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 - Objectif : un système de design propre à AIMMO (couleurs, typographie, espacements, composants, mouvements) appliqué à tous les écrans existants, téléphone d'abord. Rien de générique ni qui ressemble à un site fait par une IA ; niveau des meilleures applis du monde. Captures avant et après dans la proposition.
 - Critères : chaque écran passe un contrôle d'accessibilité automatique et un budget de performance (tests) ; aucun écran en dehors du système de design (test) ; Codex relit aussi les captures.
 
+## Audit exigeant du 2026-11-18 (demande de Shawez, avant le reste de la phase 3)
+
+Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e138` : 117 points (21 bloquants, 90 majeurs, 6 mineurs). Ids `AU` = numéro de l'audit ; dans « endroit », C/ = `packages/core/src/`, A/ = `packages/api/src/`, UI/ = `packages/api/app/`. Règle pour chaque tâche : **vérifier d'abord le constat sur le code actuel**. S'il est faux ou déjà réglé, passer à « fait (non confirmé : <preuve>) » sans rien coder. Sinon, corriger avec un test par critère. Le code et les tests se font même quand la mise en service réelle attend un humain : ce qui reste à brancher va dans « Reste » et dans `HUMAIN.md`. Les points juridiques (statut, mentions, plafonds) suivent le texte officiel cité, daté dans la règle. Ordre conseillé par l'audit : mandat (AU001-003, 059, 060), pièces de la vente (AU009-011), diffusion conforme (AU004-007, 012, 067, 068), visite hors connexion (AU018, 103-105), canaux réels (AU008, 032-045), rapprochement (AU039-042, 070-074), agenda (AU053-056), sécurité des dossiers (AU019-021, 107-111), finances (AU013, 091-095), location (AU014-017, 096-099).
+
+### AU001 · Je ne peux pas signer le mandat d’un couple ou d’une indivision
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A001 (bloquant), endroit : C/documents/controles.ts, `mandants`, R41.
+- Constat de l'audit : Je ne peux pas signer le mandat d’un couple ou d’une indivision : le contrôle exige un seul propriétaire.
+- Objectif : Un mandat avec deux propriétaires distincts se signe seulement après identification et signature des deux, sans fusionner leurs fiches.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Modelo ajoute chaque indivisaire](https://support.modelo.fr/aide/enregistrer-une-indivision).
+- Attend : rien.
+
+### AU002 · Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A002 (bloquant), endroit : C/documents/modeles.ts, `TEMPLATE_FIELDS`.
+- Constat de l'audit : Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le domicile du mandant.
+- Objectif : Ces champs structurés figurent dans chaque exemplaire signé et toute désignation obligatoire manquante empêche son état « complet ».
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU003 · La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A003 (bloquant), endroit : A/app.ts, routes de signature ; H24.
+- Constat de l'audit : La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel.
+- Objectif : Un parcours réel remet à chaque partie l’exemplaire signé et son dossier de preuve validé juridiquement ; l’interface distingue explicitement essai et réel.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Modelo documente la cérémonie réelle](https://support.modelo.fr/aide/signer-un-document-%C3%A9lectroniquement).
+- Attend : rien (mise en service réelle : H24).
+
+### AU004 · Je dois garder mon ancien logiciel pour publier sur les portails
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A004 (bloquant), endroit : docs/PORTAILS.md, P07, H10.
+- Constat de l'audit : Je dois garder mon ancien logiciel pour publier sur les portails : AIMMO ne fournit que ses formats XML d’essai.
+- Objectif : Publier, modifier puis retirer un bien sur chaque portail souscrit produit un accusé réel et un statut consultable par portail.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H10).
+
+### AU005 · Un DPE de 2019 passe encore la checklist de publication en novembre 2026
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A005 (bloquant), endroit : C/annonces/fiche-bien.ts, `parseSheet` ; C/annonces/mentions.ts.
+- Constat de l'audit : Un DPE de 2019 passe encore la checklist de publication en novembre 2026, alors que sa validité transitoire est terminée.
+- Objectif : La publication refuse ce DPE et contrôle de nouveau sa validité à chaque diffusion.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Validité officielle du DPE](https://www.service-public.gouv.fr/particuliers/vosdroits/F16096).
+- Attend : rien.
+
+### AU006 · Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A006 (bloquant), endroit : C/annonces/page-bien.ts, `renderListingPage`, `renderListingPrint`.
+- Constat de l'audit : Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte, sans les deux graphiques réglementaires en couleur.
+- Objectif : Les deux supports affichent les deux échelles lisibles correspondant aux classes du bien.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Présentation exigée](https://www.service-public.gouv.fr/particuliers/vosdroits/F32061).
+- Attend : rien.
+
+### AU007 · Mon annonce de bien affiche mon nom et une carte T
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A007 (bloquant), endroit : C/annonces/page-bien.ts, `AgentCard`, `agentBlock` ; C/annonces/mentions.ts.
+- Constat de l'audit : Mon annonce de bien affiche mon nom et une carte T, mais aucun statut d’agent commercial ni numéro et lieu RSAC propres à moi.
+- Objectif : Les mentions du professionnel suivent le statut réel de l’intervenant sur la page, la fiche et les exports ; leur absence bloque la publication concernée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Mentions des agents commerciaux](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/professionnels-de-limmobilier-les-regles-connaitre).
+- Attend : rien.
+
+### AU008 · Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A008 (bloquant), endroit : C/visites/securite.ts, `TrialDirectionNotifier`.
+- Constat de l'audit : Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un.
+- Objectif : Une alerte déclenche une notification réelle avec accusé et escalade si personne n’acquitte ; aucun libellé ne laisse croire à une assistance active en essai.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU009 · Une offre et son échéancier ne portent qu’un acquéreur et une date de notification
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M09 Offre ; audit A009 (bloquant), endroit : C/offres/registre-offres.ts, `buyerPersonId` ; C/dossiers/echeancier.ts, `notification_acquereur`.
+- Constat de l'audit : Une offre et son échéancier ne portent qu’un acquéreur et une date de notification : je ne peux pas suivre séparément les droits des coacquéreurs.
+- Objectif : Deux coacquéreurs conservent leurs identités, notifications et échéances propres ; le dossier retient le dernier délai applicable avant de poursuivre.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU010 · Le dossier peut être déclaré complet sans audit énergétique pour une maison E, F ou G qui y est soumise
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A010 (bloquant), endroit : C/dossiers/pieces.ts, `PIECES`, `expectedPieces`.
+- Constat de l'audit : Le dossier peut être déclaré complet sans audit énergétique pour une maison E, F ou G qui y est soumise.
+- Objectif : L’audit devient une pièce conditionnelle obligatoire, avec contrôle de validité et remise avant la visite selon le cas applicable.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Champ de l’audit obligatoire](https://www.ecologie.gouv.fr/politiques-publiques/audit-energetique-reglementaire).
+- Attend : rien.
+
+### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A011 (bloquant), endroit : C/dossiers/pieces.ts, commentaire et liste des pièces.
+- Constat de l'audit : Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement, sans déterminer les obligations locales applicables.
+- Objectif : Une adresse et le type d’installation déclenchent les pièces ou informations requises, avec source locale datée ; une situation inconnue interdit le verdict « complet ».
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU012 · Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M12 Conformité ; audit A012 (bloquant), endroit : docs/REGLES.md, R07 ; C/annonces/page-bien.ts, `agentBlock`.
+- Constat de l'audit : Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte professionnelle personnelle.
+- Objectif : Les textes utilisent une qualité conforme au statut vérifié et ne qualifient pas automatiquement le collaborateur de titulaire de carte.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Interdiction rappelée par la DGCCRF](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/professionnels-de-limmobilier-les-regles-connaitre).
+- Attend : H24 (l'avocat dit quel titre afficher pour un agent commercial sans carte personnelle ; la règle R07 de Shawez impose « agent immobilier »). En attendant, préparer le réglage du titre par statut, sans changer le texte affiché.
+
+### AU013 · Je ne peux émettre que des factures d’essai
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M13 Pilotage et finances ; audit A013 (bloquant), endroit : C/pilotage/factures.ts, `PlateformeFacturation`, `PlateformeEssai`, H26.
+- Constat de l'audit : Je ne peux émettre que des factures d’essai, sans valeur comptable, puis je dois refaire ma facturation ailleurs.
+- Objectif : Une facture réelle validée possède son numéro, les mentions fiscales adaptées et son suivi de transmission réel, sans recréation manuelle.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H26).
+
+### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
+- Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
+- Objectif : Sans mandat de location en cours, aucune annonce locative n’est déclarée publiable et aucune prestation donnant droit à honoraires n’avance.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Nécessité d’un mandat écrit](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/professionnels-de-limmobilier-les-regles-connaitre).
+- Attend : rien.
+
+### AU015 · Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A015 (bloquant), endroit : C/location/logement.ts, `RentalFacts` ; C/location/annonce-location.ts.
+- Constat de l'audit : Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse.
+- Objectif : Dans une zone concernée, le contrôle utilise l’arrêté en vigueur et les caractéristiques du logement, refuse un dépassement injustifié et génère les mentions adaptées.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Encadrement applicable](https://www.service-public.fr/particuliers/actualites/A17566).
+- Attend : rien.
+
+### AU016 · Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A016 (bloquant), endroit : C/location/logement.ts, `RentalFacts`, `checkDwelling`.
+- Constat de l'audit : Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation.
+- Objectif : Le dernier loyer et les exceptions justifiées sont contrôlés ; une hausse interdite bloque le bail.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Gel des loyers F/G](https://www.ecologie.gouv.fr/sites/default/files/documents/22014-1_Guide_RenoEnergetique_2024-10.pdf).
+- Attend : rien.
+
+### AU017 · Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A017 (bloquant), endroit : C/location/logement.ts, `checkDwelling`.
+- Constat de l'audit : Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume : « louable » est trop affirmatif.
+- Objectif : Le verdict exige les dimensions de la pièce principale et applique les alternatives légales ainsi que les règles locales plus restrictives.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Critères de décence](https://www.service-public.gouv.fr/particuliers/vosdroits/F2042).
+- Attend : rien.
+
+### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
+- Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
+- Objectif : En mode avion après préparation, je consulte la visite, saisis notes et photos, ferme puis rouvre l’application et synchronise sans perte ni doublon.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU019 · La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A019 (bloquant), endroit : C/sauvegarde/copie.ts ; docs/SAUVEGARDE.md.
+- Constat de l'audit : La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre : restaurer les références ne restaure pas mes dossiers.
+- Objectif : Un exercice restaure la base et tous les objets de chaque stockage depuis des copies indépendantes, avec contrôle des empreintes.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A020 (bloquant), endroit : chantier/PLAN.md, SV05 ; H29, `ERASURE_MODE`.
+- Constat de l'audit : L’effacement réel et sa procédure validée restent à mettre en service : je n’ai pas de parcours de suppression de production démontré.
+- Objectif : Une demande recevable efface réellement les données concernées et leurs objets, préserve les archives obligatoires et fournit une preuve ; état réel actuel non vérifié.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H29).
+
+### AU021 · Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire »
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A021 (bloquant), endroit : chantier/PLAN.md, SV05 ; C/sauvegarde/effacements.ts.
+- Constat de l'audit : Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire » : une restauration peut réintroduire les données supprimées si ce raccordement manque.
+- Objectif : Effacer une personne, restaurer une copie antérieure puis rejouer le registre ne laisse aucune donnée qui devait disparaître.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU022 · Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A022 (majeur), endroit : `/rejoindre` en production ; A/worker.ts, `CANDIDATURE_NETWORK_ID`.
+- Constat de l'audit : Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande.
+- Objectif : La page accepte une candidature ou propose une liste d’attente avec information et accord adaptés ; la demande apparaît dans la file.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU023 · Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A023 (majeur), endroit : UI/fichiers.ts, connexion ; H22.
+- Constat de l'audit : Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de sa configuration par la direction.
+- Objectif : Une invitation nominative mène à une connexion par clé d’appareil, avec récupération documentée sans manipulation d’un secret technique par l’agent.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H22).
+
+### AU024 · Mon écran d’intégration liste les pièces manquantes
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A024 (majeur), endroit : UI/integration.ts, `renderFile`.
+- Constat de l'audit : Mon écran d’intégration liste les pièces manquantes, mais ne me permet pas de déposer les justificatifs à cet endroit.
+- Objectif : Chaque pièce manquante propose directement dépôt, aperçu et confirmation de réception sur téléphone.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU025 · Le premier parcours pédagogique annonce un outil d’exercice
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A025 (majeur), endroit : A/worker.ts, configuration `reseau` ; C/reseau/bac-a-sable.ts.
+- Constat de l'audit : Le premier parcours pédagogique annonce un outil d’exercice, mais le Worker ne lui fournit pas son stockage isolé.
+- Objectif : Un nouvel agent ouvre depuis son écran un exercice isolé et réalise les cinq étapes, progression persistante comprise.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU026 · Les quiz et attestations existent côté métier
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A026 (majeur), endroit : UI/integration.ts ; C/formation/quiz.ts.
+- Constat de l'audit : Les quiz et attestations existent côté métier, mais l’académie affichée ne donne pas d’accès pour les passer et les télécharger.
+- Objectif : Chaque module ou parcours offre son quiz, ses corrections et l’attestation obtenue sans appel manuel à l’API.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU027 · Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A027 (majeur), endroit : C/reseau/academie.ts, `complete`, `compute`.
+- Constat de l'audit : Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo, sans preuve de suivi associée.
+- Objectif : Les heures déclarées sont distinguées des heures justifiées ; le compteur utilisable pour les obligations ne retient que des justificatifs vérifiables.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU028 · Les périodes de formation repartent de mon arrivée au réseau
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A028 (majeur), endroit : C/reseau/academie.ts, `periodOf`, `startedOn`.
+- Constat de l'audit : Les périodes de formation repartent de mon arrivée au réseau, sans reprendre explicitement mon cycle antérieur.
+- Objectif : L’intégration importe les attestations antérieures et la période de référence applicable, sans remise à zéro artificielle.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU029 · Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A029 (majeur), endroit : docs/REPRISE.md, J05 ; C/reseau/import-agent.ts.
+- Constat de l'audit : Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel.
+- Objectif : Un import pilote rapproche les historiques et actions futures de chaque contact, avec bilan des éléments non repris.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU030 · Mes biens importés perdent leur dossier opérationnel
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A030 (majeur), endroit : C/reseau/import-agent.ts, champs de biens.
+- Constat de l'audit : Mes biens importés perdent leur dossier opérationnel : photos, diagnostics, mandats signés et diffusion ne sont pas repris.
+- Objectif : Un dossier témoin conserve ses documents, médias et liens ; tout élément exclu est explicitement compté avant validation de migration.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU031 · La migration jette volontairement l’adresse de mes biens, que je dois ressaisir pour travailler
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A031 (majeur), endroit : docs/REPRISE.md, « L’adresse n’est jamais lue ».
+- Constat de l'audit : La migration jette volontairement l’adresse de mes biens, que je dois ressaisir pour travailler.
+- Objectif : L’adresse exacte est importée dans un espace privé autorisé et reste exclue des sorties publiques.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU032 · La captation par mail dépend encore d’un routage et de variables marqués « plus tard »
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A032 (majeur), endroit : chantier/HUMAIN.md, H16 ; A/courrier.ts.
+- Constat de l'audit : La captation par mail dépend encore d’un routage et de variables marqués « plus tard » : aucune réception réelle n’est démontrée dans le dossier de livraison.
+- Objectif : Un mail réel de chaque portail souscrit crée un contact unique et une alerte, même après relivraison ; activation actuelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H16).
+
+### AU033 · Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A033 (majeur), endroit : chantier/HUMAIN.md, H06/H17 ; A/worker.ts, `meta`.
+- Constat de l'audit : Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier.
+- Objectif : Un message réel sur chacun des trois canaux rejoint la bonne fiche avec son origine et un traitement visible ; activation actuelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H06, H17).
+
+### AU034 · La pige a ses règles et son écran
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A034 (majeur), endroit : C/pige/pige.ts, `PigeSource` ; A/worker.ts.
+- Constat de l'audit : La pige a ses règles et son écran, mais aucun fournisseur réel n’est raccordé par le Worker.
+- Objectif : Des annonces réelles autorisées du secteur entrent chaque jour, avec date de dernière collecte et alerte de panne.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU035 · Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A035 (majeur), endroit : C/pige/pige.ts, reconnaissance du bien.
+- Constat de l'audit : Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour propager « pas d’agence ».
+- Objectif : Deux annonces distinctes de 65 m² dans la même commune restent distinctes tant qu’aucune preuve suffisante ne permet leur réunion.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU036 · Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A036 (majeur), endroit : C/annonces/publication.ts, `trialChannel` ; A/app.ts, marketing.
+- Constat de l'audit : Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux : les canaux de l’application restent d’essai.
+- Objectif : Une publication autorisée apparaît sur chaque compte choisi avec lien, statut réel et traitement d’échec.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU037 · La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A037 (majeur), endroit : A/app.ts, `attirerServices` ; H07.
+- Constat de l'audit : La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles.
+- Objectif : Une mise à jour autorisée de la fiche Google remonte son accusé réel et une erreur de connexion devient actionnable.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H07).
+
+### AU038 · Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A038 (majeur), endroit : chantier/HUMAIN.md, H63 ; A/worker.ts.
+- Constat de l'audit : Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat.
+- Objectif : Une campagne test à budget plafonné est créée sur le compte réel et ses dépenses et demandes se rapprochent de la campagne.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H63).
+
+### AU039 · La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A039 (majeur), endroit : C/qualification/regles.ts, `DEFAULT_COMMUNES` ; A/app.ts.
+- Constat de l'audit : La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais : « Lyon » ressort inconnu.
+- Objectif : La liste des communes et leurs codes INSEE provient du paramétrage géographique du réseau, sans modification du code.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU040 · Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active »
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A040 (majeur), endroit : C/qualification/attribution.ts, `agentsOf`.
+- Constat de l'audit : Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active ».
+- Objectif : Pendant une absence, un nouveau lead suit la règle de remplacement prévue et ne reste pas en attente chez l’absent.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU041 · Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A041 (majeur), endroit : C/qualification/attribution.ts, `chooseAgent`.
+- Constat de l'audit : Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent.
+- Objectif : Un agent à capacité déclarée nulle ne reçoit pas de nouveau lead ; la règle et la file de secours restent déterministes et visibles.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU042 · Le délai de rappel court en heures écoulées
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A042 (majeur), endroit : C/qualification/attribution.ts, `callback_hours`, réattribution.
+- Constat de l'audit : Le délai de rappel court en heures écoulées : un contact du samedi soir peut changer d’agent pendant une période où le rappel est fermé.
+- Objectif : Le délai tient compte des heures d’ouverture et des disponibilités de service avant de déclencher une réattribution.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU043 · Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A043 (majeur), endroit : A/worker.ts ; H55 ; module boîte mail.
+- Constat de l'audit : Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé.
+- Objectif : Après connexion autorisée, un mail reçu dans la boîte personnelle de l’agent apparaît dans sa file et reste rattaché à son message d’origine.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H55).
+
+### AU044 · Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A044 (majeur), endroit : A/worker.ts ; H52 ; C/voix/notes-vocales.ts.
+- Constat de l'audit : Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle.
+- Objectif : Un vocal réel devient un texte traçable et une panne conserve l’audio accessible avec une tâche de reprise.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H52).
+
+### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M03 Qualifier et attribuer ; audit A045 (majeur), endroit : A/worker.ts ; C/voix/appels.ts et assistant.ts.
+- Constat de l'audit : Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers l’assistant vocal.
+- Objectif : Un appel sur le numéro déclaré produit le parcours d’accord, la fiche et le relais attendus, vérifiés depuis un téléphone extérieur.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU046 · En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A046 (majeur), endroit : C/estimation/preparation-avis.ts, refus `peu_de_ventes`.
+- Constat de l'audit : En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres références vérifiées.
+- Objectif : Un avis manuel sourcé reste possible, avec validation humaine et absence clairement indiquée de fourchette automatique.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU047 · L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A047 (majeur), endroit : C/estimation/preparation-avis.ts, `not_a_home`.
+- Constat de l'audit : L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille.
+- Objectif : Chaque type dispose d’un avis adapté ou d’un parcours manuel documenté, imprimable et validable.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU048 · La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A048 (majeur), endroit : C/estimation/fourchette.ts, sélection des comparables.
+- Constat de l'audit : La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes retenues.
+- Objectif : Une fenêtre temporelle et sa justification sont visibles ; une vente trop ancienne est exclue ou corrigée selon une méthode traçable.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU049 · Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A049 (majeur), endroit : C/estimation/preparation-avis.ts, `prepare`.
+- Constat de l'audit : Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis.
+- Objectif : Exclure un comparable avec motif produit une nouvelle version recalculée et conserve la sélection précédente.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
+- Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
+- Objectif : Chaque coefficient publié cite sa méthode et son périmètre ; l’agent peut retenir un ajustement motivé, versionné et visible dans l’avis.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU051 · La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A051 (majeur), endroit : C/estimation/preparation-avis.ts, `featuresOf`.
+- Constat de l'audit : La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la fiche utilisée par le parcours réel.
+- Objectif : Deux biens ne différant que par chacun de ces équipements produisent l’ajustement attendu dans l’avis préparé par l’API.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
+- Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.
+- Objectif : Une adresse privée vérifiée se réutilise sur un nouvel avis sans ressaisie, avec modification explicite si nécessaire.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU053 · Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M05 Rendez-vous ; audit A053 (majeur), endroit : H21/H53 ; A/worker.ts ; C/rendezvous/fournisseurs.ts.
+- Constat de l'audit : Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au Worker utilisé.
+- Objectif : Un événement privé occupé bloque réellement la réservation ; déplacer un rendez-vous se synchronise dans les deux sens sans doublon.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H21, H53).
+
+### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
+- Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
+- Objectif : Un trajet avec obstacle ou détour important utilise un temps routier sourcé ou reste explicitement non garanti avant confirmation.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU055 · Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M05 Rendez-vous ; audit A055 (majeur), endroit : C/rendezvous/creneaux.ts, `DEFAULT_SLOT_SETTINGS`.
+- Constat de l'audit : Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble.
+- Objectif : Deux visites au même lieu peuvent s’enchaîner avec une marge spécifique paramétrée, sans affaiblir les contrôles des autres trajets.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU056 · Mes rendez-vous sont limités à quatre types et à leurs durées de réglage
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M05 Rendez-vous ; audit A056 (majeur), endroit : C/rendezvous/creneaux.ts, `APPOINTMENT_KINDS` et durées.
+- Constat de l'audit : Mes rendez-vous sont limités à quatre types et à leurs durées de réglage, sans durée propre à un cas réel dans le modèle de créneau.
+- Objectif : Je réserve une contre-visite de 20 minutes ou un rendez-vous notaire de 90 minutes avec contrôle des conflits sur la durée choisie.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU057 · Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A057 (majeur), endroit : C/documents/avenants.ts ; C/documents/modeles.ts.
+- Constat de l'audit : Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat.
+- Objectif : Un avenant validé et signé peut changer chaque condition autorisée, puis met à jour annonce et calcul financier selon sa date d’effet.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU058 · Le barème de vente se résume à un taux maximal et un minimum
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A058 (majeur), endroit : C/documents/controles.ts, `setFeeSchedule`.
+- Constat de l'audit : Le barème de vente se résume à un taux maximal et un minimum, sans tranches ni forfaits par prestation.
+- Objectif : Un barème à tranches ou forfaits se paramètre et le contrôle retrouve exactement le plafond applicable au mandat.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU059 · Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A059 (majeur), endroit : C/documents/modeles.ts ; C/documents/controles.ts.
+- Constat de l'audit : Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration.
+- Objectif : Le mandat distingue partie et représentant, contrôle la procuration jointe et conserve qui a signé pour qui.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Modelo prévoit la représentation](https://support.modelo.fr/aide/ins%C3%A9rer-une-clause-de-repr%C3%A9sentation-1).
+- Attend : rien.
+
+### AU060 · Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M06 Mandats et documents ; audit A060 (majeur), endroit : C/documents/modeles.ts ; C/mandat-questionnaire/questionnaire.ts.
+- Constat de l'audit : Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs : ma vente avec usufruitier repart sur papier séparé.
+- Objectif : Un dossier de démembrement distingue usufruitier et nus-propriétaires, droits, justificatifs et signatures requises.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
+- Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
+- Objectif : Chaque équipement ou état courant se saisit avec sa source puis devient utilisable dans le texte validé.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU062 · Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A062 (majeur), endroit : C/biens/nouveau-bien.ts, `surfaceM2` ; UI/biens-fiche.ts.
+- Constat de l'audit : Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers.
+- Objectif : Une surface décimale reste exacte entre saisie, fiche, annonce et document sans arrondi silencieux.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU063 · Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A063 (majeur), endroit : C/annonces/fiche-bien.ts, `Characteristics`.
+- Constat de l'audit : Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce.
+- Objectif : Ces surfaces coexistent avec leurs unités et sources et chaque support choisit explicitement celle qu’il affiche.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU064 · Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A064 (majeur), endroit : C/annonces/fiche-bien.ts, `EnergyDiagnosis`.
+- Constat de l'audit : Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux reprises fiables.
+- Objectif : L’identifiant, les valeurs et le document source se contrôlent et se transmettent sans ressaisie aux supports concernés.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU065 · Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A065 (majeur), endroit : C/annonces/fiche-bien.ts, `costReferenceYear` ; C/annonces/mentions.ts.
+- Constat de l'audit : Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période exacte du diagnostic.
+- Objectif : Un DPE portant une période de référence conserve et affiche cette période fidèlement.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
+- Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
+- Objectif : La version conforme déjà publiée reste en ligne pendant la préparation d’une révision, sauf modification qui la rend effectivement illicite ou obsolète.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU067 · Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A067 (majeur), endroit : A/worker.ts, passage aux quarts d’heure ; C/annonces/publication.ts.
+- Constat de l'audit : Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits disponibles.
+- Objectif : Une demande urgente lance les retraits immédiatement et montre chaque accusé, puis réessaie les échecs.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU068 · La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A068 (majeur), endroit : C/diffusion/surveillance.ts ; H10.
+- Constat de l'audit : La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si ma baisse de prix est réellement en ligne.
+- Objectif : Une relecture réelle détecte un ancien prix ou une annonce retirée encore visible et ouvre une action datée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H10).
+
+### AU069 · Je peux proposer des langues rares pour le réseau français
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A069 (majeur), endroit : C/annonces/traductions.ts, `LISTING_LANGUAGES`.
+- Constat de l'audit : Je peux proposer des langues rares pour le réseau français, mais pas l’allemand, l’espagnol, l’italien ou le néerlandais.
+- Objectif : Ces langues se paramètrent selon les besoins des agents, avec la même validation et les mêmes contrôles de chiffres.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A070 (majeur), endroit : C/acquereurs/rapprochement.ts, `KINDS_OF_PROPERTY`.
+- Constat de l'audit : Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home ».
+- Objectif : Un acquéreur cherchant exclusivement une maison ne reçoit pas un appartement, y compris après import.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU071 · Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A071 (majeur), endroit : C/acquereurs/rapprochement.ts, `featuresMet`.
+- Constat de l'audit : Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait.
+- Objectif : Les équipements choisis comme indispensables deviennent éliminatoires et leurs absences sont expliquées.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU072 · Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A072 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `BuyerSearch`.
+- Constat de l'audit : Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée.
+- Objectif : Ces contraintes se saisissent et filtrent les biens, avec une distinction entre souhait et impératif.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
+- Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.
+- Objectif : Un périmètre privé enregistré filtre les biens par position et se réutilise dans les alertes.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A074 (majeur), endroit : C/acquereurs/rapprochement.ts, `DEFAULT_ACTIVE_DAYS`.
+- Constat de l'audit : Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous échangeons encore.
+- Objectif : Une confirmation récente de recherche prolonge l’activité sans obliger à modifier artificiellement les critères.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU075 · Pour signer un bon de visite, le parcours principal impose encore le papier et son scan
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A075 (majeur), endroit : C/visites/visites.ts, bon de visite.
+- Constat de l'audit : Pour signer un bon de visite, le parcours principal impose encore le papier et son scan.
+- Objectif : Le visiteur signe le bon sur le téléphone ou à distance et reçoit l’exemplaire avec sa preuve, sans impression.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU076 · Mon bon de visite ne peut désigner le bien que par référence et commune
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A076 (majeur), endroit : C/visites/visites.ts, `VISIT_SLIP_FIELDS`, R19.
+- Constat de l'audit : Mon bon de visite ne peut désigner le bien que par référence et commune, sans adresse privée sur l’exemplaire signé.
+- Objectif : Le bon confidentiel peut identifier précisément le bien autorisé tout en gardant cette adresse hors des annonces publiques.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU077 · Manque
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A077 (majeur), endroit : C/rendezvous/reservation.ts ; C/visites/visites.ts.
+- Constat de l'audit : Manque : une visite groupée avec plusieurs acquéreurs ne peut partager un même créneau d’agent sans être traitée comme des rendez-vous concurrents.
+- Objectif : Un événement groupé porte plusieurs participants, bons et comptes rendus indépendants, sans double réservation de l’agent.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU078 · Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A078 (majeur), endroit : C/visites/point-semaine.ts, `PRICE_DROP`, R53.
+- Constat de l'audit : Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue : le vocabulaire du prix est interdit.
+- Objectif : Une décision validée explicitement par l’agent et liée à son échange peut figurer dans le compte rendu sans déclencher de négociation automatique.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU079 · La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M09 Offre ; audit A079 (majeur), endroit : C/offres/registre-offres.ts, `OfferCondition`.
+- Constat de l'audit : La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement l’offre et le compromis.
+- Objectif : Les paramètres essentiels déclarés du prêt sont structurés et toute divergence du projet notarial est signalée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU080 · Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M09 Offre ; audit A080 (majeur), endroit : C/offres/registre-offres.ts, `MAX_VALIDITY_DAYS`.
+- Constat de l'audit : Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement.
+- Objectif : Toute offre reçue peut être archivée avec son échéance exacte ; un délai atypique alerte au lieu de supprimer le fait reçu.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU081 · Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M09 Offre ; audit A081 (majeur), endroit : C/offres/registre-offres.ts, contrôle d’accès de l’acquéreur.
+- Constat de l'audit : Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction.
+- Objectif : Le collègue autorise un partage limité au dossier et l’offre suit son registre sans dévoiler son fichier complet ni nécessiter la direction.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
+- Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.
+- Objectif : Chaque condition de l’offre ou du compromis possède responsable, date, état et justificatif, avec alertes indépendantes.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU083 · Quand deux banques travaillent sur le dossier, leurs étapes se mélangent
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A083 (majeur), endroit : C/dossiers/financement.ts, `DeclaredStep`.
+- Constat de l'audit : Quand deux banques travaillent sur le dossier, leurs étapes se mélangent : aucune banque ni demande distincte n’est identifiée.
+- Objectif : Deux demandes de financement gardent leurs suites d’événements séparées et une seule offre abandonnée n’éteint pas les alertes utiles.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU084 · La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A084 (majeur), endroit : C/dossiers/pieces.ts, âge des installations.
+- Constat de l'audit : La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations : je cours après des diagnostics parfois inutiles.
+- Objectif : L’âge et la présence de chaque installation sont saisis avec preuve et déterminent la demande exacte de diagnostic.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU085 · Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M10 Compromis et acte ; audit A085 (majeur), endroit : C/dossiers/echeancier.ts, jours ouvrables.
+- Constat de l'audit : Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle.
+- Objectif : Les échéances concernées utilisent le calendrier territorial applicable et passent les cas de Vendredi saint et de Saint-Étienne.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU086 · Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M11 Après-vente ; audit A086 (majeur), endroit : C/apres-vente/relances-apres-vente.ts, `CHOICE_GRACE_DAYS`.
+- Constat de l'audit : Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement plus tard.
+- Objectif : Un nouvel accord explicite daté peut ouvrir les suivis futurs, sans transformer rétroactivement un refus ni envoyer un anniversaire passé.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU087 · Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M11 Après-vente ; audit A087 (majeur), endroit : C/apres-vente/demandes-avis.ts, `REVIEW_WINDOW_DAYS`, R11.
+- Constat de l'audit : Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher de solliciter tous les clients.
+- Objectif : Un lot de vingt clients éligibles finit par recevoir chacun une demande autorisée, sans expiration due au seul plafond d’envoi.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU088 · La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M12 Conformité ; audit A088 (majeur), endroit : chantier/HUMAIN.md, H09/H47 ; C/attirer/mentions-site.ts.
+- Constat de l'audit : La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des prérequis non soldés dans le chantier.
+- Objectif : Un tableau de mise en service expose leurs preuves valides et ferme les fonctions concernées tant qu’elles manquent ; situation réelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H09, H47).
+
+### AU089 · Le dispositif LCB-FT a du code
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M12 Conformité ; audit A089 (majeur), endroit : chantier/HUMAIN.md, H29 ; C/conformite/identification.ts.
+- Constat de l'audit : Le dispositif LCB-FT a du code, mais pas de preuve fournie de responsable nommé et de procédure validée utilisables au quotidien.
+- Objectif : Un dossier témoin déroule identification, risque, vigilance et transmission réservée au responsable avec procédure approuvée ; nomination réelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H29).
+
+### AU090 · L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M12 Conformité ; audit A090 (majeur), endroit : chantier/HUMAIN.md, H54 ; C/juridique/bibliotheque.ts.
+- Constat de l'audit : L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat.
+- Objectif : Chaque texte utilisé porte une vérification récente et une validation ; un texte dépassé ne produit pas de recommandation opérationnelle.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H54).
+
+### AU091 · Une réduction d’honoraires après compromis laisse ma commission prévue bloquée
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M13 Pilotage et finances ; audit A091 (majeur), endroit : C/pilotage/commissions.ts, commission prévue figée.
+- Constat de l'audit : Une réduction d’honoraires après compromis laisse ma commission prévue bloquée, sans parcours de régularisation métier décrit.
+- Objectif : La direction approuve un recalcul motivé, conserve les versions et propage les corrections aux parts et factures sans double rémunération.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M13 Pilotage et finances ; audit A092 (majeur), endroit : C/pilotage/commissions.ts, `GridInput`.
+- Constat de l'audit : Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé.
+- Objectif : Une grille contractuelle à paliers calcule le taux de chaque vente et montre le cumul et la tranche retenus.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU093 · Les reversements utilisent un taux de TVA nul par défaut
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M13 Pilotage et finances ; audit A093 (majeur), endroit : C/pilotage/factures.ts, `DEFAULT_VAT_BP`.
+- Constat de l'audit : Les reversements utilisent un taux de TVA nul par défaut, sans traitement opérationnel démontré des agents soumis à TVA.
+- Objectif : Deux agents de régimes différents obtiennent chacun le calcul, les mentions et le reversement fiscalement validés.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU094 · Un règlement partiel ou un virement groupé ne peut pas se rapprocher des factures, même à la main
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M13 Pilotage et finances ; audit A094 (majeur), endroit : C/facturation/banque.ts, rapprochement un à un.
+- Constat de l'audit : Un règlement partiel ou un virement groupé ne peut pas se rapprocher des factures, même à la main.
+- Objectif : Plusieurs lignes peuvent solder une facture et une ligne peut solder plusieurs factures, avec solde restant et traçabilité au centime.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A095 (majeur), endroit : C/location/honoraires.ts, constantes des plafonds.
+- Constat de l'audit : Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en 2026.
+- Objectif : Le millésime 2026 utilise 12,10/10,09/8,07 et 3,03 €/m², avec date d’effet et arrondis testés.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Arrêté officiel](https://www.legifrance.gouv.fr/loda/id/JORFTEXT000052611411/2026-07-04).
+- Attend : rien.
+
+### AU096 · Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A096 (majeur), endroit : C/location/bail.ts, `LEASE_KINDS`, durée.
+- Constat de l'audit : Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique.
+- Objectif : Les cas demandés couramment — personne morale, meublé étudiant, mobilité — ont chacun leur durée, contrôles et modèle propres, ou sont refusés explicitement avant saisie.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU097 · Manque
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A097 (majeur), endroit : C/location/bail.ts, `locataire.nom` ; C/location/choix.ts.
+- Constat de l'audit : Manque : un bail commun de colocation avec plusieurs cotitulaires et leurs signatures n’a pas de modèle de parties adapté.
+- Objectif : Deux colocataires restent deux personnes, avec leurs pièces autorisées, signatures et exemplaires du même bail.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU098 · Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A098 (majeur), endroit : C/location/logement.ts, `ENERGY_BANS`.
+- Constat de l'audit : Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent.
+- Objectif : Le territoire du logement sélectionne le calendrier légal daté ; un logement ultramarin n’est pas bloqué selon le calendrier métropolitain.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Source : [Calendrier outre-mer](https://www.service-public.gouv.fr/particuliers/actualites/A17975).
+- Attend : rien.
+
+### AU099 · Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A099 (majeur), endroit : C/investir/calcul.ts, `MarketRentValue`, `netIncome`.
+- Constat de l'audit : Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables : le revenu net peut être surévalué.
+- Objectif : Un exemple à 800 € charges comprises dont 100 € de charges calcule son revenu locatif sur 700 € hors charges, sans double déduction.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU100 · Manque
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
+- Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.
+- Objectif : Une simulation distingue rendement du bien et trésorerie mensuelle après dette, assurance et frais déclarés, sans promesse fiscale.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU101 · Le bail commercial est réduit à durée, loyer et grandes catégories
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A101 (majeur), endroit : C/commerces/fiche.ts, `BusinessSheet`.
+- Constat de l'audit : Le bail commercial est réduit à durée, loyer et grandes catégories, sans échéances triennales ni indexation structurée.
+- Objectif : Le dossier commercial suit les échéances et clauses d’indexation déclarées et alerte sur les dates utiles à la cession.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A102 (majeur), endroit : C/commerces/estimation.ts, `METHODS_BY_KIND`.
+- Constat de l'audit : Un local vacant sans loyer n’a pas de méthode d’estimation exploitable : murs et locaux sont limités au rendement du bail.
+- Objectif : Une estimation par comparables ou valeur locative sourcée est possible sans inventer un bail existant.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU103 · Le HDR reste un calcul sur prises fournies
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A103 (majeur), endroit : chantier/PLAN.md, HX12 ; C/hors-ligne/photo.ts.
+- Constat de l'audit : Le HDR reste un calcul sur prises fournies, sans capture multi-exposition ni dépôt de l’image entière raccordés au téléphone.
+- Objectif : Depuis la caméra réelle, l’agent produit et dépose une image entière exploitable, avec contrôle de qualité sur le résultat conservé.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
+- Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.
+- Objectif : Un mode privé protégé donne temporairement les informations nécessaires à la visite, avec verrouillage, expiration et effacement local.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU105 · Manque
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A105 (majeur), endroit : UI/avis.ts, `wipe`, changement d’écran ; UI/fiche-bien.ts.
+- Constat de l'audit : Manque : la saisie non envoyée n’a pas de brouillon durable ni de garde générale avant de quitter l’écran.
+- Objectif : Après saisie, retour accidentel, fermeture puis réouverture, l’agent retrouve son brouillon ou a explicitement confirmé son abandon.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU106 · Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A106 (majeur), endroit : C/design/audit.ts, `budgetProblems` ; tests/design.
+- Constat de l'audit : Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un portefeuille chargé.
+- Objectif : Un parcours instrumenté mesure ouverture, recherche et sauvegarde sur données représentatives et réseau mobile, avec seuils p95 publiés ; vitesse réelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU107 · Je ne peux pas donner à une assistante ou au comptable un accès limité adapté
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A107 (majeur), endroit : C/acces/droits.ts, `ROLES`.
+- Constat de l'audit : Je ne peux pas donner à une assistante ou au comptable un accès limité adapté : seuls agent, direction, conformité et partenaire existent.
+- Objectif : Un rôle d’assistance et un rôle comptable ont des permissions minimales testées sans partage de la clé d’un agent ou de la direction.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU108 · La clé API permanente reste un accès parallèle aux sessions par appareil et ne porte pas d’expiration propre
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A108 (majeur), endroit : A/auth.ts, `parseApiKeys` ; UI/fichiers.ts, `localStorage`.
+- Constat de l'audit : La clé API permanente reste un accès parallèle aux sessions par appareil et ne porte pas d’expiration propre.
+- Objectif : Les accès ordinaires utilisent des sessions révocables et expirantes ; perdre un appareil permet de couper tous ses accès sans désactiver les autres appareils autorisés de l’agent.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU109 · La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A109 (majeur), endroit : docs/SAUVEGARDE.md ; H50 ; `.github/workflows/copie-nuit.yml`.
+- Constat de l'audit : La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier.
+- Objectif : La direction voit un reçu récent de copie et un exercice réel réussi, avec alerte indépendante si le travail GitHub cesse ; activation actuelle non vérifiée.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien (mise en service réelle : H50).
+
+### AU110 · L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A110 (majeur), endroit : C/rapports/export-agent.ts, `AgentExport`.
+- Constat de l'audit : L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon portefeuille, donc il ne suffit pas à une reprise opérationnelle autorisée.
+- Objectif : Un export contractuellement autorisé précise son périmètre, remet les données et pièces permises et s’importe dans un environnement de contrôle sans références orphelines.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU111 · Une fois « parti », je perds l’export agent
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Architecture technique ; Conformité ; audit A111 (majeur), endroit : C/reseau/depart.ts ; C/rapports/export-agent.ts, `make`.
+- Constat de l'audit : Une fois « parti », je perds l’export agent, alors que mon solde et mes pièces personnelles restent à récupérer.
+- Objectif : Un accès de sortie limité donne les pièces personnelles et relevés autorisés après départ, sans accès aux clients réattribués.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU112 · Mon référent n’est présenté que par son prénom et une date
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M14 Réseau et académie ; audit A112 (mineur), endroit : UI/integration.ts, `renderReferent`.
+- Constat de l'audit : Mon référent n’est présenté que par son prénom et une date, sans moyen direct de le joindre depuis ce bloc.
+- Objectif : Un bouton ouvre le canal de contact professionnel autorisé du référent.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU113 · L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M01 Attirer ; M02 Capter ; audit A113 (mineur), endroit : C/annonces/traductions.ts, validation de langue.
+- Constat de l'audit : L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue.
+- Objectif : Toutes les langues à valider exigent une compétence déclarée ou un relecteur explicitement désigné.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU114 · Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu…
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Cahier : M07 Commercialiser ; audit A114 (mineur), endroit : C/annonces/page-bien.ts, `photoList`.
+- Constat de l'audit : Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu utile sans vision des images.
+- Objectif : Chaque photo porte une légende ou description précise de sa pièce, utilisée aussi comme alternative accessible.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU115 · La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant…
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : M08 Acquéreurs et visites ; audit A115 (mineur), endroit : C/acquereurs/rapprochement.ts, tolérances.
+- Constat de l'audit : La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant déclaré infranchissable.
+- Objectif : L’acquéreur ou l’agent peut déclarer le plafond strict ; aucune tolérance ne le dépasse ensuite.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU116 · « Place
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A116 (mineur), endroit : UI/fichiers.ts, `renderPlan` ; capture app-journee-clair.png.
+- Constat de l'audit : « Place : règle 1 » ou un ordre interne occupe ma journée au lieu de m’aider à exécuter le rappel.
+- Objectif : La ligne montre une priorité compréhensible et son échéance, sans numéro de règle interne comme information principale.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU117 · Les écrans internes ne portent pas d’historique de navigation général
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Cahier : Le produit (téléphone, hors connexion) ; audit A117 (mineur), endroit : UI/fichiers.ts, navigation par sections.
+- Constat de l'audit : Les écrans internes ne portent pas d’historique de navigation général : le retour du navigateur n’est pas raccordé au retour métier.
+- Objectif : Fiche puis bien puis mandat se parcourent avec Retour/Avancer du navigateur sans quitter l’application ni perdre le contexte.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
 ## Phase 3 : faire mieux que Hektor et Modelo (demande de Shawez du 2026-11-06)
 
 Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de client copiée) et dans les présentations publiques de Hektor, Hektor Voice et Modelo. Ce qu'AIMMO a déjà est écarté ; voici ce qui manque. Chaque tâche fait la même chose qu'eux ET un pas de plus, écrit dans « Jamais vu ». Relecture forte pour toutes. Section 9 du protocole.
