@@ -44,13 +44,23 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e138` : 117 points (21 bloquants, 90 majeurs, 6 mineurs). Ids `AU` = numéro de l'audit ; dans « endroit », C/ = `packages/core/src/`, A/ = `packages/api/src/`, UI/ = `packages/api/app/`. Règle pour chaque tâche : **vérifier d'abord le constat sur le code actuel**. S'il est faux ou déjà réglé, passer à « fait (non confirmé : <preuve>) » sans rien coder. Sinon, corriger avec un test par critère. Le code et les tests se font même quand la mise en service réelle attend un humain : ce qui reste à brancher va dans « Reste » et dans `HUMAIN.md`. Les points juridiques (statut, mentions, plafonds) suivent le texte officiel cité, daté dans la règle. Ordre conseillé par l'audit : mandat (AU001-003, 059, 060), pièces de la vente (AU009-011), diffusion conforme (AU004-007, 012, 067, 068), visite hors connexion (AU018, 103-105), canaux réels (AU008, 032-045), rapprochement (AU039-042, 070-074), agenda (AU053-056), sécurité des dossiers (AU019-021, 107-111), finances (AU013, 091-095), location (AU014-017, 096-099).
 
 ### AU001 · Je ne peux pas signer le mandat d’un couple ou d’une indivision
-- Statut : en cours
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#659). Constat confirmé. Relecture forte : 3 P1, dont 2 corrigés et 1 passé à AU001b. Codex : 9 P0, tous corrigés, puis plus aucune remarque ; vérification GitHub verte. Nouvelle option `sharedIf` dans la carte d'accès : le texte d'un mandat n'est masqué que s'il a plusieurs mandants. Espace client du second mandant : AU001b. La signature en ligne reste d'essai (H24).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A001 (bloquant), endroit : C/documents/controles.ts, `mandants`, R41.
 - Constat de l'audit : Je ne peux pas signer le mandat d’un couple ou d’une indivision : le contrôle exige un seul propriétaire.
 - Objectif : Un mandat avec deux propriétaires distincts se signe seulement après identification et signature des deux, sans fusionner leurs fiches.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Source : [Modelo ajoute chaque indivisaire](https://support.modelo.fr/aide/enregistrer-une-indivision).
+- Attend : rien.
+
+### AU001b · Le second mandant voit son mandat dans son espace
+- Statut : à faire
+- Qui : Claude, voie 1 · Relecture : forte · Dépend de : AU001
+- Cahier : M06 Mandats et documents ; M11 Après-vente (espaces des clients).
+- Trouvé par la relecture forte de AU001 : l'espace vendeur et l'espace propriétaire s'ouvrent par `mandates.person_id`, donc par le seul premier mandant. Un autre mandant d'un mandat signé n'a pas d'espace, et ne voit ni son mandat ni son numéro [R39].
+- Objectif : chaque mandant d'un mandat signé (`document_co_mandants`) a son espace vendeur, avec le mandat, son numéro et ses avenants, sans rien voir de la fiche de l'autre mandant.
+- Critères : le second mandant voit le mandat et son numéro (test) ; rien de l'autre mandant dans son espace [R16] (test) ; le premier mandant voit toujours le sien (test).
 - Attend : rien.
 
 ### AU002 · Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le…
