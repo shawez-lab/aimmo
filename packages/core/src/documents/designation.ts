@@ -12,7 +12,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import type { SqlDatabase, SqlValue } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -103,7 +103,7 @@ export const formatParcels = (parcels: readonly CadastralParcel[]): string =>
 /** La désignation la plus récente d'un bien, ou null. Sans contrôle des droits : à l'appelant de les avoir vérifiés. */
 export async function latestDesignation(db: SqlDatabase, networkId: string, propertyId: string): Promise<PropertyDesignation | null> {
   const row = await db.first<{ street: string; postal_code: string; city: string; parcels: string; set_at: string }>(
-    'SELECT street, postal_code, city, parcels, set_at FROM property_designations WHERE network_id = ? AND property_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
+    'SELECT street, postal_code, city, parcels, set_at FROM property_designations WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1',
     [networkId, propertyId],
   );
   if (!row) return null;
@@ -124,7 +124,7 @@ export async function latestDomicile(db: SqlDatabase, networkId: string, personI
   if (personIds.length === 0) return null;
   const row = await db.first<{ street: string; postal_code: string; city: string; country: string | null }>(
     `SELECT street, postal_code, city, country FROM person_domiciles WHERE network_id = ? AND person_id IN (${personIds.map(() => '?').join(', ')})
-     ORDER BY set_at DESC, rowid DESC LIMIT 1`,
+     ORDER BY set_at DESC, version DESC LIMIT 1`,
     [networkId, ...personIds],
   );
   return row ? { street: row.street, postalCode: row.postal_code, city: row.city, country: row.country } : null;
@@ -153,6 +153,15 @@ export class Designations {
     return { ok: false, rule: 'R16', code };
   }
 
+  private async insertNext(max: string, params: SqlValue[], insert: (version: number) => [string, SqlValue[]]): Promise<void> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const last = await this.db.first<{ v: number | null }>(max, params);
+      const [sql, values] = insert(Number(last?.v ?? 0) + 1);
+      if ((await this.db.run(sql, values)).changes === 1) return;
+    }
+    throw new Error('designation_busy');
+  }
+
   /** L'adresse et les parcelles d'un bien : son agent ou la direction, qui le voient en entier [R16]. */
   async setProperty(viewer: Viewer, propertyId: string, input: { address: unknown; parcels: unknown }): Promise<{ ok: true; value: PropertyDesignation } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'designation', 'role', `property:${propertyId}`);
@@ -164,9 +173,14 @@ export class Designations {
     const parcels = readParcels(input.parcels);
     if (!parcels) return { ok: false, rule: null, code: 'bad_parcels' };
     const at = this.now().toISOString();
-    await this.db.run(
-      'INSERT INTO property_designations (id, network_id, property_id, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [this.newId(), viewer.networkId, propertyId, address.street, address.postalCode, address.city, JSON.stringify(parcels), this.actor(viewer), at],
+    // Le rang suivant ; deux saisies au même instant : l'une des deux reprend au rang d'après.
+    await this.insertNext(
+      'SELECT MAX(version) AS v FROM property_designations WHERE property_id = ?',
+      [propertyId],
+      (version) => [
+        'INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (property_id, version) DO NOTHING',
+        [this.newId(), viewer.networkId, propertyId, version, address.street, address.postalCode, address.city, JSON.stringify(parcels), this.actor(viewer), at],
+      ],
     );
     await appendEvent(this.journal, { type: 'bien.designation', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { parcels: parcels.length } }, this.now);
     return { ok: true, value: { address, parcels, setAt: at } };
@@ -181,9 +195,13 @@ export class Designations {
     const address = readAddress(input, { abroad: true });
     if (!address) return { ok: false, rule: null, code: 'bad_address' };
     const at = this.now().toISOString();
-    await this.db.run(
-      'INSERT INTO person_domiciles (id, network_id, person_id, street, postal_code, city, country, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [this.newId(), viewer.networkId, read.value.person.id, address.street, address.postalCode, address.city, address.country ?? null, this.actor(viewer), at],
+    await this.insertNext(
+      'SELECT MAX(version) AS v FROM person_domiciles WHERE person_id = ?',
+      [read.value.person.id],
+      (version) => [
+        'INSERT INTO person_domiciles (id, network_id, person_id, version, street, postal_code, city, country, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (person_id, version) DO NOTHING',
+        [this.newId(), viewer.networkId, read.value.person.id, version, address.street, address.postalCode, address.city, address.country ?? null, this.actor(viewer), at],
+      ],
     );
     await appendEvent(this.journal, { type: 'fiche.domicile', actor: this.actor(viewer), subject: `person:${read.value.person.id}`, data: {} }, this.now);
     return { ok: true, value: address };
