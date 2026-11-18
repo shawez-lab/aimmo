@@ -612,7 +612,8 @@ export class SignatureEnLigne {
       if (delivered) { await markSent(r.person_id); remises.push({ position: r.position, sent: true }); continue; }
       let attempt = r.attempt;
       // Un essai réservé, sans accusé du canal ni échec écrit, depuis plus d'une heure : abandonné (panne avant la
-      // remise). Un nouvel essai, sous un nouveau sujet, le remplace ; au pire, le mandant reçoit deux fois son exemplaire.
+      // remise). Un nouvel essai, sous un nouveau sujet et avec un texte qui porte son rang (l'anti-doublon du texte,
+      // R05, refuserait sinon le même texte), le remplace ; au pire, le mandant reçoit deux fois son exemplaire.
       const stale = await this.db.first<{ created_at: string }>('SELECT created_at FROM message_subjects WHERE person_id = ? AND subject = ? ORDER BY created_at DESC LIMIT 1', [r.person_id, subjectOf(attempt)]);
       if (stale && this.now().getTime() - Date.parse(stale.created_at) > ABANDONED_SEND_MS) {
         const { changes } = await this.db.run(`UPDATE signature_remises SET attempt = attempt + 1 WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer' AND attempt = ?`, [documentId, r.person_id, attempt]);
@@ -630,14 +631,14 @@ export class SignatureEnLigne {
         kind: 'alert',
         purpose: ONLINE_SIGNATURE_PURPOSE,
         subject: subjectOf(attempt),
-        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis en pièces jointes de ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.${attempt > 1 ? ' Nouvel envoi : le précédent n’a pas abouti.' : ''}`],
+        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis en pièces jointes de ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.${attempt > 1 ? ` Envoi n° ${attempt} : le précédent n’a pas abouti.` : ''}`],
         // L'exemplaire signé (suivi du dossier) et le dossier seul, en pièces jointes : le mandant les garde chez lui.
         attachments: [
           { name: `exemplaire-signe-${number ?? documentId}.html`, contentType: 'text/html', content: dossierRow.copy_content },
           { name: `dossier-de-preuve-${number ?? documentId}.html`, contentType: 'text/html', content: dossierRow.dossier },
         ],
         // Le numéro, la référence et l'empreinte sont des identifiants, pas des chiffres à vérifier [R10].
-        figures: [...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],
+        figures: [attempt, ...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],
       });
       const ok = sent.status === 'sent';
       if (ok) await markSent(r.person_id);

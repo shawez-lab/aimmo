@@ -268,13 +268,20 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     // Tout de suite : l'essai en cours n'est ni dit remis, ni doublé.
     expect(await online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: false }] } });
     expect(canal.sent.filter((m) => m.body.includes('pièces jointes'))).toHaveLength(0);
-    // Plus d'une heure après, sans accusé ni échec : un nouvel essai part, avec les pièces.
+    // Plus d'une heure après, sans accusé ni échec : un nouvel essai part ; il est bloqué lui aussi.
     clock = T0 + 61 * 60_000;
+    canal.hang = true;
+    void online.finish(t.agent, t.documentId);
+    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
+    canal.hang = false;
+    expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'a_envoyer', attempt: 2 });
+    // Encore une heure : le troisième essai part, avec les pièces et un texte qui n'est pas celui des deux autres.
+    clock = T0 + 122 * 60_000;
     expect(await online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
     const remis = canal.sent.filter((m) => m.body.includes('pièces jointes'));
     expect(remis).toHaveLength(1);
     expect(remis[0]!.attachments).toHaveLength(2);
-    expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'envoyee', attempt: 2 });
+    expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'envoyee', attempt: 3 });
   });
 
   it('[R01] une remise refusée la nuit reste à envoyer, et part à la demande suivante, une seule fois', async () => {
