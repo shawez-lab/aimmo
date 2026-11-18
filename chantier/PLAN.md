@@ -112,13 +112,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU008 · Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A008 (bloquant), endroit : C/visites/securite.ts, `TrialDirectionNotifier`.
 - Constat de l'audit : Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un.
 - Objectif : Une alerte déclenche une notification réelle avec accusé et escalade si personne n’acquitte ; aucun libellé ne laisse croire à une assistance active en essai.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#658), migration `3960`, R54 complétée. Décidé, lecture prudente : « prévenue » seulement sur l'accusé réel du prévenant (`{ mode: 'reel', receipt }`), jamais en essai ; acquittement par la direction du réseau, définitif ; sans acquittement, palier dû compté depuis le geste (+1 toutes les 5 minutes, jusqu'au palier 3 : direction de permanence, toute la direction, contact d'urgence), pendant l'heure qui suit ; la lecture de l'agent fait monter le palier dû ; anciennes alertes « prévenues » par l'essai reclassées « essai » ; bouton renommé « Alerte sécurité ». Relecture forte 1 P0 et 1 P1 corrigés, Codex 1 P0 corrigé puis rien à signaler. Restent : appeler `VisiteSecurisee.tick()` à chaque minute du Worker (voie 1, planificateur) ; écran de la direction pour acquitter et relecture de l'état sur le téléphone de l'agent (voie 1, `app.ts`) ; prévenant réel par SMS ou appel avec accusé (H71).
 
 ### AU009 · Une offre et son échéancier ne portent qu’un acquéreur et une date de notification
 - Statut : à faire

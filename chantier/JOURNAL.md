@@ -1420,3 +1420,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 10:52 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-18 10:55 · VOIE 1 : dépôt public, vérifications GitHub revenues mais rouges sur main : trois tests de vitesse R62 trop serrés pour les machines de GitHub, rendus indépendants de la vitesse (#655, fusionnée) ; #654 (BR118) fusionnée ; H35 fait · prochaine : BR119
 - 2026-11-18 10:55 · BR119 · écart de prix toléré lu (nouvelle route) et réglé à l'écran, fusionnée (#657) · prochaine : un autre « Reste » faisable, sinon le module suivant
+- 2026-11-18 13:25 · AU008 · alerte de sécurité dite « prévenue » seulement sur accusé réel, acquittée par la direction, escaladée jusqu'au palier 3, fusionnée (#658) · prochaine : AU009
+- 2026-11-18 13:25 · VOIE 2 : relance refusée, question 2 (les séances de 09:53 et 10:52 n'ont rien produit)
+- 2026-11-18 13:25 · VOIE 2 : AU008, 2309d575, relancé non
