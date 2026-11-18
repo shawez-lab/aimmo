@@ -18,6 +18,7 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { DEFAULT_PROFESSIONAL_TITLE, capitalizedTitle, professionalTitle, type ProfessionalTitle } from './qualite.ts';
 import { LISTINGS_PER_PAGE, LISTABLE_STATUSES, when, type ListingGate } from './liste-biens.ts';
 
 export interface AgentMentions {
@@ -50,6 +51,8 @@ export interface AgentPageInput {
   listings: AgentListing[];
   /** Le lien vers les avis publiés par les clients eux-mêmes (fiche Google de l'agent), s'il est réglé. */
   reviewsUrl: string | null;
+  /** Le titre réglé par la direction (AU012) ; sans lui, « agent immobilier » [R07]. */
+  title?: ProfessionalTitle;
 }
 
 export interface PublicAgent {
@@ -101,7 +104,8 @@ export function mentionsLine(m: AgentMentions): string {
 /** La page de l'agent : la base du système de design d'AIMMO, puis sa mise en page, en jetons [R201]. */
 export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more: boolean }): string {
   const name = `${input.firstName} ${input.lastName}`;
-  const title = `${name}, agent immobilier`;
+  const quality = input.title ?? DEFAULT_PROFESSIONAL_TITLE;
+  const title = `${name}, ${quality}`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
   const brand = `<header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
   const contact: string[] = [];
@@ -122,7 +126,7 @@ export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more:
       : `<p class="doux">Les avis de ses clients seront bientôt en ligne.</p>`;
   return (
     `${head}<body>${brand}<main>` +
-    `<section class="qui" aria-labelledby="nom"><p class="metier">Agent immobilier${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
+    `<section class="qui" aria-labelledby="nom"><p class="metier">${escapeHtml(capitalizedTitle(quality))}${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
     `<p class="statut">${escapeHtml(mentionsLine(input.mentions))}</p></section>` +
     (contact.length > 0 ? `<nav class="contact" aria-label="Contacter ${escapeHtml(input.firstName)}">${contact.join('')}</nav>` : '') +
     `<h2>Ses biens</h2>${check ? `<p class="doux">Mandats vérifiés le ${when(check.at)}.</p>` : ''}${listings}${check?.more ? '<p><a href="/biens">Voir tous les biens du site</a></p>' : ''}` +
@@ -297,6 +301,7 @@ export class PageAgent {
         mentions: { rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardNumber: card.card_number.trim(), cardHolder: holder.holder_name },
         listings,
         reviewsUrl: reviews?.url ?? null,
+        title: await professionalTitle(this.db, networkId, agentId),
       },
     };
   }

@@ -17,6 +17,7 @@
 import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import type { AgentCard } from '../annonces/page-bien.ts';
+import { DEFAULT_PROFESSIONAL_TITLE } from '../attirer/qualite.ts';
 import { euros } from '../annonces/mentions.ts';
 import type { ListingPayload } from '../annonces/publication.ts';
 import { encodeQr, qrSvg } from './qr.ts';
@@ -167,10 +168,11 @@ export function renderSupport(input: SupportInput): RenderedSupport | SupportRef
   const qr = qrBlock(input.url, keyword, agent.phone);
   if (typeof qr !== 'string') return qr;
   const ref = `<p class="ref">Réf. ${escapeHtml(p.reference)}</p>`;
-  const agentLine = `<p class="agent"><strong>${escapeHtml(name)}</strong>, agent immobilier · ${escapeHtml(agent.phone)}${agent.email ? ` · ${escapeHtml(agent.email)}` : ''}</p>`;
+  const quality = escapeHtml(agent.title ?? DEFAULT_PROFESSIONAL_TITLE);
+  const agentLine = `<p class="agent"><strong>${escapeHtml(name)}</strong>, ${quality} · ${escapeHtml(agent.phone)}${agent.email ? ` · ${escapeHtml(agent.email)}` : ''}</p>`;
   let body: string;
   if (input.support === 'panneau') {
-    body = `<section class="support panneau"><p class="vendre">À vendre</p><p class="tel">${escapeHtml(agent.phone)}</p>${qr}${ref}<p class="marque">${escapeHtml(name)} · agent immobilier · AIMMO</p></section>`;
+    body = `<section class="support panneau"><p class="vendre">À vendre</p><p class="tel">${escapeHtml(agent.phone)}</p>${qr}${ref}<p class="marque">${escapeHtml(name)} · ${quality} · AIMMO</p></section>`;
   } else {
     // La première photo de l'annonce publiée, avec sa mention d'aménagement virtuel sur l'image [R48].
     const first = p.media.find((m) => m.kind === 'photo');

@@ -17,6 +17,7 @@ import { DESIGN_CSS, PRINT_DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts'
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { DEFAULT_PROFESSIONAL_TITLE, professionalTitle, type ProfessionalTitle } from '../attirer/qualite.ts';
 import type { PublishedMedia } from './medias.ts';
 import { euros } from './mentions.ts';
 import type { ListingPayload, ListingState } from './publication.ts';
@@ -26,6 +27,8 @@ export interface AgentCard {
   lastName: string;
   phone: string | null;
   email: string | null;
+  /** Le titre réglé par la direction (AU012) ; sans lui, « agent immobilier » [R07]. */
+  title?: ProfessionalTitle;
 }
 
 export interface PageInput {
@@ -92,7 +95,7 @@ function photoList(photos: PublishedMedia[], limit: number): string {
 export function agentBlock(agent: AgentCard | null): string {
   if (!agent) return '';
   const name = escapeHtml(`${agent.firstName} ${agent.lastName}`);
-  const parts = [`<p><strong>${name}</strong>, agent immobilier</p>`];
+  const parts = [`<p><strong>${name}</strong>, ${escapeHtml(agent.title ?? DEFAULT_PROFESSIONAL_TITLE)}</p>`];
   if (agent.phone && PHONE.test(agent.phone)) parts.push(`<p><a href="tel:${escapeHtml(agent.phone.replace(/[ .]/g, ''))}">${escapeHtml(agent.phone)}</a></p>`);
   if (agent.email && EMAIL.test(agent.email)) parts.push(`<p><a href="mailto:${escapeHtml(agent.email)}">${escapeHtml(agent.email)}</a></p>`);
   return `<section class="agent" aria-label="Votre agent">${parts.join('')}</section>`;
@@ -184,13 +187,16 @@ export class PageBien {
     if (!v || v.network_id !== networkId) return null;
     const payload = { ...(JSON.parse(v.payload) as Omit<ListingPayload, 'version'>), version: Number(v.seq) };
     const photos = (payload.media ?? []).filter((m) => m.kind === 'photo');
-    const a = await this.db.first<{ first_name: string; last_name: string; status: string }>('SELECT a.first_name, a.last_name, a.status FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?', [propertyId]);
+    const a = await this.db.first<{ id: string; first_name: string; last_name: string; status: string }>('SELECT a.id, a.first_name, a.last_name, a.status FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?', [propertyId]);
     const card = await this.db.first<{ phone: string; email: string }>(
       'SELECT c.phone, c.email FROM agent_public_cards c JOIN properties p ON p.agent_id = c.agent_id WHERE p.id = ? ORDER BY c.set_at DESC, c.rowid DESC LIMIT 1',
       [propertyId],
     );
     // Un agent parti n'est plus montré : la page reste, sans ses coordonnées.
-    const agent = a && a.status === 'active' ? { firstName: a.first_name, lastName: a.last_name, phone: card?.phone ?? null, email: card?.email ?? null } : null;
+    const agent =
+      a && a.status === 'active'
+        ? { firstName: a.first_name, lastName: a.last_name, phone: card?.phone ?? null, email: card?.email ?? null, title: await professionalTitle(this.db, networkId, a.id) }
+        : null;
     return { payload, agent, photos };
   }
 

@@ -27,7 +27,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { FicheClient, FicheUnique, Rapprochement, appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, QualiteAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -126,6 +126,7 @@ const services = (s: AttirerServices) => {
     prices,
     readPrices,
     pageAgent: new PageAgent(s.db, s.journal, { now: s.now }),
+    qualite: new QualiteAgent(s.db, s.journal, { now: s.now }),
     origine: new OrigineContacts(s.db, s.journal, { now: s.now }),
     quartiers: new PagesQuartier(s.db, s.journal, { now: s.now, writer: s.neighbourhoodWriter ?? undefined, prices: readPrices, listings: referencement }),
     google: new FicheGoogle(s.db, s.journal, {
@@ -199,6 +200,9 @@ export function attirerRoutes(): AttirerRoute[] {
       },
     },
     { method: 'POST', pattern: new RegExp(`${P}/agents/${ID}/mentions$`), name: 'attirer.agent_mentions', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).pageAgent.setLegalMentions(v, id!, { rsacNumber: b.rsacNumber, rsacRegistry: b.rsacRegistry }))) },
+    // Le titre écrit à côté du nom des agents, dans une liste fermée (AU012) [R07].
+    { method: 'GET', pattern: new RegExp(`${P}/titre-agent$`), name: 'attirer.titre_agent_lu', roles: DIRECTION, handle: async (s, v) => reply(await services(s).qualite.title(v)) },
+    { method: 'POST', pattern: new RegExp(`${P}/titre-agent$`), name: 'attirer.titre_agent', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).qualite.setTitle(v, b.title))) },
     { method: 'POST', pattern: new RegExp(`${P}/titulaire$`), name: 'attirer.titulaire', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).pageAgent.setCardHolder(v, b.holder))) },
     {
       method: 'GET',

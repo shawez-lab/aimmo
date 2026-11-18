@@ -49,7 +49,7 @@ export const TABLES_RESEAU: readonly string[] = `
   business_transfer_tasks business_transfer_third_parties  
   business_valuation_scales business_valuation_validations business_valuations buyer_searches call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
-  candidate_interviews candidate_replies candidates card_holders client_date_messages client_date_texts client_dates
+  candidate_interviews candidate_replies candidates card_holders agent_title_settings client_date_messages client_date_texts client_dates
    client_space_favorites client_space_links client_space_sessions commission_grids
   commission_payouts commission_receipts commissions commune_rental_rules complaint_alerts complaint_answers
   complaint_mediator_offers complaint_settings complaints consents contact_ai_engines
@@ -351,7 +351,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   vitrine_screens voice_assistant_lines agents alert_unsubscribe_tokens assistant_calls assistant_sessions
   automation_daily_messages automation_rollouts automation_tasks automation_runs automation_switches
   automation_simulations automation_scenarios bank_lines business_nda_templates business_safeguard_communes
-  business_valuation_scales card_holders client_date_texts commission_grids commune_rental_rules complaint_settings
+  business_valuation_scales card_holders agent_title_settings client_date_texts commission_grids commune_rental_rules complaint_settings
   custom_reports data_breach_alerts data_breach_restores data_breach_cuts data_breach_evaluations
   data_breach_notifications data_breaches diffusion_portal_settings document_templates dpe_diagnoses fee_schedules
   import_keys investor_alerts legal_basis_checks licence_data_exports licence_states software_licences

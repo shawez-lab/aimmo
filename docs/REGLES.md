@@ -10,7 +10,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R04 | Arrêt. Une demande d'arrêt reçue sur un canal marque aussitôt la personne « ne plus écrire » sur tous les canaux. | oui | S05 |
 | R05 | Anti-doublon. Jamais deux fois le même message ni le même bien à la même personne, sur aucun canal. | oui | S06 |
 | R06 | Mention de l'assistant. Le premier message automatique d'une conversation porte la mention légale de l'assistant. Aucun autre texte destiné à un client ne parle de l'IA. | oui | S06 |
-| R07 | Vocabulaire. Dans tout texte destiné à un client ou au public : « agent immobilier », jamais « mandataire » ; « offert », jamais « gratuit ». | oui | S06 |
+| R07 | Vocabulaire. Dans tout texte destiné à un client ou au public : « agent immobilier », jamais « mandataire » ; « offert », jamais « gratuit ». Le titre écrit à côté du nom d'un agent (page du bien, page de l'agent, panneau, flyer, vitrine, carte) vient du réglage de la direction, dans une liste fermée qui ne dit jamais « mandataire » et ne fait jamais de l'agent commercial le titulaire d'une carte ; sans réglage : « agent immobilier », en attendant l'avis de l'avocat (H24) (AU012). | oui | S06, AU012 |
 | R08 | Ton. Tutoiement sur Instagram, vouvoiement avec le prénom ailleurs. Pas de « Salut » à chaque message. Ni parenthèses ni formules administratives. | oui | S06 |
 | R09 | Contenu public. Jamais le nom d'un client ni une adresse exacte dans un contenu public. | oui | S06 |
 | R10 | Chiffres. Aucun prix, aucune surface, aucune date inventés : chaque chiffre d'un message vient de la base ou d'une source publique citée. | oui | S06 |
