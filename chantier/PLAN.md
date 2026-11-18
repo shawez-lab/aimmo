@@ -164,7 +164,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A011 (bloquant), endroit : C/dossiers/pieces.ts, commentaire et liste des pièces.
 - Constat de l'audit : Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement, sans déterminer les obligations locales applicables.
