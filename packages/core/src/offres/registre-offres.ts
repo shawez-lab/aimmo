@@ -381,14 +381,18 @@ export class RegistreOffres {
         // la migration 3970, aussi sur une base qui ne l'a pas encore.
         // Le lien de chaque coacquéreur à l'offre part dans le même lot : l'un n'existe jamais sans l'autre [R96].
         const co = coBuyers.length > 0;
-        await runBatch(this.db, [
-          {
-            sql: `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key${co ? ', co_buyers' : ''})
+        const insertOffer = {
+          sql: `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key${co ? ', co_buyers' : ''})
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${co ? ', ?' : ''})`,
-            params: [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, ...(co ? [line.co_buyers!] : [])],
-          },
-          ...coBuyers.map((personId, i) => ({ sql: 'INSERT INTO offer_co_buyers (offer_id, network_id, person_id, position) VALUES (?, ?, ?, ?)', params: [line.id, line.network_id, personId, i + 1] })),
-        ]);
+          params: [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, ...(co ? [line.co_buyers!] : [])],
+        };
+        if (!co) await this.db.run(insertOffer.sql, insertOffer.params);
+        else {
+          await runBatch(this.db, [
+            insertOffer,
+            ...coBuyers.map((personId, i) => ({ sql: 'INSERT INTO offer_co_buyers (offer_id, network_id, person_id, position) VALUES (?, ?, ?, ?)', params: [line.id, line.network_id, personId, i + 1] })),
+          ]);
+        }
       } catch (error) {
         // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
         const twin = await known();
