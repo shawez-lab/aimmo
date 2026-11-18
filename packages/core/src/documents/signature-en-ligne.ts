@@ -145,6 +145,8 @@ export class SignatureEnLigne {
     // Le signataire : un mandant du document, le premier par défaut ; jamais une autre fiche (AU001).
     const signer = await this.signerOf(documentId, doc.person_id, input.signerId);
     if (!signer) return { ok: false, rule: null, code: 'bad_signer' };
+    // L'accord, le code et l'exemplaire touchent la fiche du signataire : qui présente la signature la voit en entier [R16].
+    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     const contentHash = await sha256(doc.content);
     if (await this.signedBy(documentId, doc.person_id, signer, contentHash)) return { ok: false, rule: null, code: 'already_signed' };
     // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
@@ -249,6 +251,7 @@ export class SignatureEnLigne {
     const read = await this.acces.readFiche(viewer, doc.person_id);
     if (!read.ok || read.view !== 'full' || (viewer.role !== 'agent' && viewer.role !== 'direction')) return false;
     const signer = session.signer_person_id ?? doc.person_id;
+    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `signature:${sessionId}`))) return false;
     const hello = await this.greeting(signer);
     const result = await this.envois.send({
       networkId: viewer.networkId,
@@ -304,6 +307,14 @@ export class SignatureEnLigne {
       signers.push({ personId, signed: await this.signedBy(documentId, firstPersonId, personId, contentHash) });
     }
     return { signers, allSigned: signers.every((s) => s.signed) };
+  }
+
+  /** Le viewer voit-il cette fiche en entier, agent ou direction ? Sinon le refus va au journal [R16]. */
+  private async seesInFull(viewer: Viewer, personId: string, subject: string): Promise<boolean> {
+    const read = await this.acces.readFiche(viewer, personId);
+    if (read.ok && read.view === 'full' && (viewer.role === 'agent' || viewer.role === 'direction')) return true;
+    if (read.ok) await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
+    return false;
   }
 
   /** Le mandant qui signe : celui demandé s'il en est un, le premier sinon ; null pour toute autre fiche. */

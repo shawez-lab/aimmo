@@ -204,6 +204,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       proof_publication_cache: ['body'],
       document_templates: ['body', 'created_by', 'validated_by'],
       documents: ['agent_id', 'person_id', 'content', 'content_hash', 'created_by', 'facts'],
+      // AU001 : les autres mandants d'un mandat (couple, indivision), chacun sa fiche.
+      document_co_mandants: ['person_id'],
       fee_schedules: ['set_by'],
       identity_checks: ['person_id', 'checked_by'],
       document_checks: ['lines', 'checked_by'],
@@ -235,7 +237,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       mandate_withdrawals: ['proof', 'recorded_by'],
       mandate_tasks: ['agent_id'],
       signed_amendments: ['scan_ref', 'copy_content', 'copy_hash', 'registered_by'],
-      signature_sessions: ['content_hash', 'created_by', 'drawing_hash', 'proof', 'copy_content', 'copy_status'],
+      signature_sessions: ['content_hash', 'created_by', 'drawing_hash', 'proof', 'copy_content', 'copy_status', 'signer_person_id'],
     },
   },
   {
@@ -1123,6 +1125,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   mandate_register: ['network_id', 'seq', 'kind', 'mandate_id', 'number', 'property_id', 'signed_at', 'cancels_seq', 'at', 'prev_hash', 'hash'],
   document_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
+  document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
   identity_checks: ['id', 'network_id', 'piece', 'seen_at', 'created_at'],
   document_checks: ['id', 'network_id', 'document_id', 'passed', 'checked_at'],

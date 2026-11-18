@@ -508,7 +508,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates')] },
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')] },
+  // AU001 : un autre mandant d'un mandat, par sa fiche.
+  document_co_mandants: { locate: [...by('person_id')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
@@ -534,7 +536,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
   signed_amendments: { locate: [via('document_id', 'documents')] },
-  signature_sessions: { locate: [via('document_id', 'documents')], secrets: ['code_hash'] },
+  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'] },
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },

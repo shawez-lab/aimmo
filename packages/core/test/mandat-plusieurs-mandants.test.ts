@@ -196,6 +196,23 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(await t.online.progress(t.samViewer, id)).toMatchObject({ ok: false, rule: 'R16' });
   });
 
+  it('[R16] la fiche du second mandant confiée à un autre agent : ni accord ni code envoyés par l’agent du premier', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    await t.identify(lea);
+    await t.identify(noe);
+    const d = await t.generate(lea, [noe]);
+    if (!d.ok) throw new Error(d.code);
+    const s = await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe });
+    if (!s.ok) throw new Error(s.code);
+    await t.online.sign(t.agent, s.value.sessionId, { code: (await t.codes())[0]!.code });
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    const before = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages');
+    expect(await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages')).toEqual(before);
+  });
+
   it('[R41, R92] sur papier : le mandat n’est numéroté que si chaque mandant était identifié au jour de la signature', async () => {
     const t = await setup();
     const lea = await t.owner('Léa', 'Exemple');
