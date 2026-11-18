@@ -155,7 +155,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU010b · L'audit énergétique remis à l'acquéreur dès la première visite
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#665), migration `3985`, R60 et R73 complétées. Décidé, lecture prudente : avis à l'agent dès la prise de visite et relu avant (`RemiseAudit.notice`) : remettre, faire faire (absent ou périmé le jour de la visite), préciser la classe, déjà remis, rien ; remise rangée avec la date et le moyen déclarés (papier, mail, espace), ni future ni plus de 30 jours avant la visite, une par visite, liée au document remis ; dépôt du diagnostiqueur seulement si sa certification DPE du jour porte la mention « audit énergétique » cochée par la direction (`auditMention`). Relecture forte sans P0 ni P1 ; Codex 2 P0 et 2 P2 corrigés, puis rien. Restent : écran et route de l'agent (voie 1, `app.ts`) ; report des diagnostics de la fiche du bien au dossier de vente (U09).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU010
 - Cahier : M08 Acquéreurs et visites ; suite d'AU010 (art. L126-28-1 du CCH : audit communiqué à l'acquéreur potentiel dès la première visite).
 - Objectif : quand `energyAuditCase` dit « requis » pour le bien, la visite (`visites.ts`) rappelle à l'agent de remettre l'audit et range la preuve de sa remise (date, moyen) ; une classe inconnue le dit à l'agent ; le diagnostiqueur partenaire peut déposer l'audit au dossier (`PIECE_RULES`, `PIECE_CREDENTIALS`, après lecture du justificatif requis).
