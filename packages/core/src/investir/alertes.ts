@@ -173,9 +173,30 @@ export class AlertesInvestisseurs {
     return out;
   }
 
-  /** Le rendement brut du bien par les formules de Y03 : prix et surface du bien, loyer de la base, barème réglé. */
+  /**
+   * La provision pour charges récupérables du bien, quand le bien a des faits de location rangés (M15) : les charges
+   * mensuelles de la dernière version, avec leur source et leur date ; `null` sinon, jamais une valeur inventée (AU099).
+   */
+  private async provisionOf(property: Pick<PropertyRow, 'network_id' | 'id'>): Promise<Sourced<number> | null> {
+    const row = await this.db.first<{ charges_cents: number; recorded_at: string; listing_id: string }>(
+      `SELECT f.charges_cents, f.recorded_at, f.listing_id FROM rental_facts f JOIN rental_listings l ON l.id = f.listing_id
+        WHERE l.property_id = ? AND l.network_id = ? ORDER BY f.recorded_at DESC, f.version DESC LIMIT 1`,
+      [property.id, property.network_id],
+    );
+    if (!row) return null;
+    return { value: Number(row.charges_cents), source: `location:${row.listing_id}`, asOf: String(row.recorded_at).slice(0, 10), hypothesis: 'charges mensuelles des faits de location du bien' };
+  }
+
+  /**
+   * Le rendement brut du bien par les formules de Y03 : prix et surface du bien, loyer de la base, barème réglé, et la
+   * provision pour charges récupérables quand elle est sourcée (AU099). Le loyer de marché est charges comprises : sans
+   * provision connue, aucun rendement n'est donné, jamais un zéro inventé [R120] ; un profil qui vise un rendement ne
+   * reçoit alors pas l'alerte, un profil sans cible la reçoit sans chiffre.
+   */
   async alertYield(property: Pick<PropertyRow, 'network_id' | 'id' | 'price_eur' | 'surface_m2' | 'insee_code' | 'rent_kind'>): Promise<AlertYield | null> {
     const fees = this.options.feesRateBp ?? null;
+    const provision = await this.provisionOf(property);
+    if (provision === null) return null;
     if (fees === null || property.price_eur === null || property.surface_m2 === null || property.surface_m2 <= 0) return null;
     const rent = await this.loyers.marketRent(property.network_id, property.insee_code, property.rent_kind);
     if (rent.status !== 'connu') return null;
@@ -195,6 +216,7 @@ export class AlertesInvestisseurs {
           hypothesis: 'loyer central',
         },
         nonRecoverableCharges: given(0, 'alerte', 'non lu pour le brut'),
+        recoverableCharges: provision,
         propertyTax: given(0, 'alerte', 'non lu pour le brut'),
         vacancyMonths: given(0, 'alerte', 'non lu pour le brut'),
       },
