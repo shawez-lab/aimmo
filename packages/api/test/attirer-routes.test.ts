@@ -625,4 +625,13 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect((await t.get(`${CAMILLE}/quartiers/ville-test/ouest`))!.status).toBe(404);
     expect((await t.call(direction, 'GET', `/attirer/quartiers/${zone!.id}/textes`)).body.data).toHaveLength(1);
   });
+
+  it('[R07] [R16] AU012 : la direction règle le titre écrit à côté du nom des agents, dans une liste fermée', async () => {
+    const t = await setup();
+    expect((await t.call(direction, 'GET', '/attirer/titre-agent')).body).toMatchObject({ ok: true, data: { setting: null, shown: 'agent immobilier' } });
+    expect((await t.call(direction, 'POST', '/attirer/titre-agent', { title: 'mandataire immobilier' })).body).toMatchObject({ ok: false, rule: 'R07', code: 'titre_hors_liste' });
+    expect((await t.call(camille, 'POST', '/attirer/titre-agent', { title: 'conseiller immobilier' })).status).toBe(403);
+    expect((await t.call(direction, 'POST', '/attirer/titre-agent', { title: 'agent commercial en immobilier' })).status).toBe(200);
+    expect((await t.call(direction, 'GET', '/attirer/titre-agent')).body).toMatchObject({ ok: true, data: { setting: 'agent commercial en immobilier', shown: 'agent commercial en immobilier' } });
+  });
 });

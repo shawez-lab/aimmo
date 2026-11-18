@@ -10,6 +10,7 @@
  *
  * Le site d'un agent ne dit le nom de son agent qu'avec ses mentions, et ne mène à sa page que si elle est publiable [R152].
  */
+import { DEFAULT_PROFESSIONAL_TITLE, type ProfessionalTitle } from './qualite.ts';
 import { THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { SITE_CSS, listingCard, when } from './liste-biens.ts';
@@ -58,14 +59,14 @@ export interface SiteHomeInput {
   /** Les candidatures de `/rejoindre` vont à ce réseau. */
   recruiting: boolean;
   /** L'agent du site, seulement si sa page est publiable : son nom ne va jamais sans ses mentions [R152]. */
-  agent: { agentId: string; name: string; mentions: AgentMentions } | null;
+  agent: { agentId: string; name: string; mentions: AgentMentions; title?: ProfessionalTitle | undefined } | null;
   listings: readonly PublishedListing[];
   checkedAt: Date;
 }
 
 export function renderSiteHome(input: SiteHomeInput): string {
   const { agent, listings } = input;
-  const title = input.kind === 'reseau' ? 'AIMMO, le réseau d’agents immobiliers' : agent ? `${agent.name}, agent immobilier` : 'Votre agent immobilier AIMMO';
+  const title = input.kind === 'reseau' ? 'AIMMO, le réseau d’agents immobiliers' : agent ? `${agent.name}, ${agent.title ?? DEFAULT_PROFESSIONAL_TITLE}` : 'Votre agent immobilier AIMMO';
   const who = agent ? `<p class="statut doux">${escapeHtml(mentionsLine(agent.mentions))}</p>` : '';
   const paths = [
     ...(agent ? [{ path: `/agents/${encodeURIComponent(agent.agentId)}`, label: 'Son activité et ses avis', text: 'Sa page, pour le contacter et lire les avis de ses clients.' }] : []),

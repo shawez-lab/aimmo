@@ -14,6 +14,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { PageBien, type AgentCard } from '../annonces/page-bien.ts';
+import { professionalTitle } from '../attirer/qualite.ts';
 import type { ListingPayload } from '../annonces/publication.ts';
 import { Referencement } from '../attirer/referencement.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -206,10 +207,10 @@ export class Boutique {
   }
 
   private async agentCard(agentId: string): Promise<AgentCard | null> {
-    const a = await this.db.first<{ first_name: string; last_name: string; status: string }>('SELECT first_name, last_name, status FROM agents WHERE id = ?', [agentId]);
+    const a = await this.db.first<{ network_id: string; first_name: string; last_name: string; status: string }>('SELECT network_id, first_name, last_name, status FROM agents WHERE id = ?', [agentId]);
     if (!a || a.status !== 'active') return null;
     const c = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [agentId]);
-    return { firstName: a.first_name, lastName: a.last_name, phone: c?.phone ?? null, email: c?.email ?? null };
+    return { firstName: a.first_name, lastName: a.last_name, phone: c?.phone ?? null, email: c?.email ?? null, title: await professionalTitle(this.db, a.network_id, agentId) };
   }
 
   /**
