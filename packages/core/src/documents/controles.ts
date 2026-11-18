@@ -35,6 +35,8 @@ import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
  * Les mandants d'un document, dans l'ordre où il les nomme : son premier mandant, puis les autres (AU001).
  */
 export async function documentMandants(db: SqlDatabase, documentId: string, firstPersonId: string): Promise<string[]> {
+  // Une base d'avant la migration 3920 n'a qu'un mandant par document.
+  if (!(await db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_co_mandants'`))) return [firstPersonId];
   const rows = await db.all<{ person_id: string }>('SELECT person_id FROM document_co_mandants WHERE document_id = ? ORDER BY position', [documentId]);
   return [firstPersonId, ...rows.map((r) => r.person_id)];
 }
