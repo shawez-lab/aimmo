@@ -1398,3 +1398,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 05:53 · VOIE 2 : relance refusée, question 2 (les séances de 02:55, 03:53 et 04:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-18 05:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-18 05:35 · VOIE 1 : dépôt public demandé par Shawez ; refusé par le proxy (HTTP 403), à faire par Shawez ; historique sans secret · prochaine : relancer la vérification de #654 dès le dépôt public
+- 2026-11-18 06:23 · VOIE 1 : rien de fusionnable : #654 (BR118) toujours bloquée par H35 (dépôt encore privé, « Vérifications » en échec sur main à 05:57, facturation GitHub) ; fusion non retentée ; aucune nouvelle tâche ouverte pour ne pas empiler ; verrou resté libre, pas de relance · prochaine : fusionner #654 dès H35 réglé
