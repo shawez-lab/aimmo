@@ -1434,3 +1434,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 20:47 · AU002 · le mandat de vente reprend en champs l'adresse du bien, ses parcelles et le domicile de chaque mandant ; sans eux, il reste incomplet et ne se signe pas, fusionnée (#663) ; verrou laissé à la séance de voie 1 ouverte à 20:24 · prochaine : AU003
 - 2026-11-18 21:19 · AU010b · audit énergétique rappelé à l'agent avant chaque visite, remise rangée (date et moyen déclarés, liée au document), dépôt par un diagnostiqueur DPE avec mention ; Codex 2 P0 et 2 P2 corrigés ; fusionnée (#665, 0847b979) · prochaine : AU011
 - 2026-11-18 21:19 · VOIE 2 : AU010b, 0847b979, relancé oui
+- 2026-11-18 22:20 · VOIE 3 : AU095 (#664, plafonds de location 2026) et AU099 (#667, rendement hors charges, alertes sans provision inventée) fusionnées ; AU017 (#668) en vérification · prochaine : AU014

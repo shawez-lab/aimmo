@@ -926,7 +926,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A095 (majeur), endroit : C/location/honoraires.ts, constantes des plafonds.
 - Constat de l'audit : Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en 2026.
@@ -964,7 +964,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU099 · Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables
-- Statut : à faire
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A099 (majeur), endroit : C/investir/calcul.ts, `MarketRentValue`, `netIncome`.
 - Constat de l'audit : Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables : le revenu net peut être surévalué.
