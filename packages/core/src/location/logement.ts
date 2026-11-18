@@ -35,6 +35,19 @@ export type RentalEnergyClass = (typeof RENTAL_ENERGY_CLASSES)[number];
 
 /** Les dates d'interdiction par classe, pour un bail commençant ce jour-là ou après (loi Climat et résilience). */
 export const ENERGY_BANS: Readonly<Partial<Record<RentalEnergyClass, string>>> = Object.freeze({ G: '2025-01-01', F: '2028-01-01', E: '2034-01-01' });
+/**
+ * Guadeloupe, Martinique, Guyane, La Réunion et Mayotte (AU098) : G à partir du 1er janvier 2028, F du 1er janvier 2031,
+ * aucune date pour E (loi Climat et résilience, art. 160 ; service-public.fr, A17975). Le seuil de 450 kWh en énergie
+ * finale ne vaut qu'en métropole (décret n° 2021-19).
+ */
+export const OVERSEAS_ENERGY_BANS: Readonly<Partial<Record<RentalEnergyClass, string>>> = Object.freeze({ G: '2028-01-01', F: '2031-01-01' });
+export const TERRITORIES = ['metropole', 'outre_mer'] as const;
+export type Territory = (typeof TERRITORIES)[number];
+
+/** Le territoire d'un code postal ou d'un code commune : 971 à 976, outre-mer ; le reste, métropole (Corse comprise). */
+export function territoryOf(code: string | null | undefined): Territory {
+  return typeof code === 'string' && /^97[1-6]/.test(code) ? 'outre_mer' : 'metropole';
+}
 /** Au-delà de cette consommation en énergie finale, interdit pour un bail commençant à partir du 1er janvier 2023. */
 export const MAX_FINAL_ENERGY_KWH = 450;
 export const FINAL_ENERGY_BAN_FROM = '2023-01-01';
@@ -163,21 +176,21 @@ export function requiredAnnexes(facts: Pick<RentalFacts, 'buildYear' | 'electric
 }
 
 /** La date à partir de laquelle un logement de cette classe ne peut plus être loué, ou `null` [R100]. */
-export function banDate(energyClass: RentalEnergyClass): string | null {
-  return ENERGY_BANS[energyClass] ?? null;
+export function banDate(energyClass: RentalEnergyClass, territory: Territory = 'metropole'): string | null {
+  return (territory === 'outre_mer' ? OVERSEAS_ENERGY_BANS : ENERGY_BANS)[energyClass] ?? null;
 }
 
 /**
  * Le contrôle du logement pour un bail commençant `facts.leaseStart`, par les seules règles écrites : rejouable,
  * sans écriture [R100, R101]. `annexes` : la dernière version de chaque annexe rangée ; `today` : le jour du contrôle.
  */
-export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[], today: string): CheckReason[] {
+export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[], today: string, territory: Territory = 'metropole'): CheckReason[] {
   const reasons: CheckReason[] = [];
   // La classe est jugée au plus tard du début du bail et du jour du contrôle : une date de bail passée ne rouvre rien.
   const on = facts.leaseStart > today ? facts.leaseStart : today;
-  const ban = banDate(facts.energyClass);
+  const ban = banDate(facts.energyClass, territory);
   if (ban !== null && on >= ban) reasons.push({ code: 'energy_class', energyClass: facts.energyClass, bannedFrom: ban });
-  if (facts.finalEnergyKwh > MAX_FINAL_ENERGY_KWH && on >= FINAL_ENERGY_BAN_FROM) reasons.push({ code: 'final_energy', finalEnergyKwh: facts.finalEnergyKwh, bannedFrom: FINAL_ENERGY_BAN_FROM });
+  if (territory === 'metropole' && facts.finalEnergyKwh > MAX_FINAL_ENERGY_KWH && on >= FINAL_ENERGY_BAN_FROM) reasons.push({ code: 'final_energy', finalEnergyKwh: facts.finalEnergyKwh, bannedFrom: FINAL_ENERGY_BAN_FROM });
   if (facts.livingAreaHundredths < MIN_LIVING_AREA_HUNDREDTHS) reasons.push({ code: 'living_area', livingAreaHundredths: facts.livingAreaHundredths });
   for (const kind of requiredAnnexes(facts)) {
     const a = annexes.find((x) => x.kind === kind);
@@ -324,6 +337,12 @@ export class MisesEnLocation {
     if (p.agent_id !== viewer.userId) return this.refuse(viewer, subject, 'not_assigned');
     const agent = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [viewer.userId, viewer.networkId]);
     return agent?.status === 'active' ? null : this.refuse(viewer, subject, 'agent_inactive');
+  }
+
+  /** Le territoire du logement, par le code postal de son bien : outre-mer ou métropole (AU098). */
+  private async territoryOfListing(row: Pick<ListingRow, 'property_id' | 'network_id'>): Promise<Territory> {
+    const p = await this.db.first<{ postal_code: string | null }>('SELECT postal_code FROM properties WHERE id = ? AND network_id = ?', [row.property_id, row.network_id]);
+    return territoryOf(p?.postal_code ?? null);
   }
 
   private async load(viewer: Viewer, listingId: unknown, write: boolean): Promise<LocationRefusal | ListingRow> {
@@ -510,7 +529,8 @@ export class MisesEnLocation {
     if (!facts) return { ok: false, rule: null, code: 'no_facts' };
     const annexes = await this.latestAnnexes(row.id);
     const today = this.today();
-    const reasons = checkDwelling(facts, annexes, today);
+    const territory = await this.territoryOfListing(row);
+    const reasons = checkDwelling(facts, annexes, today, territory);
     const decision = reasons.length === 0 ? 'louable' : 'bloque';
     const id = this.newId();
     const at = this.now().toISOString();
@@ -526,7 +546,7 @@ export class MisesEnLocation {
     ]);
     const rule = reasons.some((r) => r.code === 'energy_class' || r.code === 'final_energy') ? 'R100' : reasons.length > 0 ? 'R101' : null;
     await appendEvent(this.journal, { type: 'location.controle', actor: this.actor(viewer), subject: `rental:${row.id}`, data: { rule, decision, reasons: reasons.map((r) => r.code), factsVersion: facts.version } }, this.now);
-    const bannedFrom = banDate(facts.energyClass);
+    const bannedFrom = banDate(facts.energyClass, territory);
     if (bannedFrom !== null) await this.prepareNotice(row, facts.energyClass as 'E' | 'F' | 'G', bannedFrom, today);
     return { ok: true, value: { checkId: id, listingId: row.id, factsVersion: facts.version, decision, reasons, bannedFrom, checkedAt: at } };
   }
@@ -574,8 +594,10 @@ export class MisesEnLocation {
     );
     if (!c) return null;
     const f = await this.db.first<{ energy_class: RentalEnergyClass }>('SELECT energy_class FROM rental_facts WHERE listing_id = ? AND version = ?', [listingId, c.facts_version]);
+    const listing = await this.db.first<{ property_id: string; network_id: string }>('SELECT property_id, network_id FROM rental_listings WHERE id = ?', [listingId]);
+    const territory = listing ? await this.territoryOfListing(listing) : 'metropole';
     return {
-      check: { checkId: c.id, listingId, factsVersion: Number(c.facts_version), decision: c.decision, reasons: JSON.parse(c.reasons) as CheckReason[], bannedFrom: f ? banDate(f.energy_class) : null, checkedAt: c.checked_at },
+      check: { checkId: c.id, listingId, factsVersion: Number(c.facts_version), decision: c.decision, reasons: JSON.parse(c.reasons) as CheckReason[], bannedFrom: f ? banDate(f.energy_class, territory) : null, checkedAt: c.checked_at },
       facts_version: Number(c.facts_version),
       annexes_key: c.annexes_key,
     };
@@ -592,12 +614,12 @@ export class MisesEnLocation {
    * et les dernières annexes, et que ce contrôle refait aujourd'hui le dirait encore [R100, R101]. Pour W03 et W06.
    */
   async advertisable(networkId: string, listingId: string): Promise<boolean> {
-    const row = await this.db.first<ListingRow>('SELECT id FROM rental_listings WHERE id = ? AND network_id = ?', [listingId, networkId]);
+    const row = await this.db.first<ListingRow>('SELECT id, network_id, property_id FROM rental_listings WHERE id = ? AND network_id = ?', [listingId, networkId]);
     if (!row) return false;
     const c = await this.lastCheck(listingId);
     if (!c || c.check.decision !== 'louable' || !(await this.current(listingId, c.facts_version, c.annexes_key))) return false;
     const facts = (await this.latestFacts(listingId))!;
-    return checkDwelling(facts, await this.latestAnnexes(listingId), this.today()).length === 0;
+    return checkDwelling(facts, await this.latestAnnexes(listingId), this.today(), await this.territoryOfListing(row)).length === 0;
   }
 
   /** Les échéances préparées pour ce logement, pour l'agent ; elles attendent leur passage par le contrôle central (W10). */
