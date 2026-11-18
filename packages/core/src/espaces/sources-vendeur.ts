@@ -24,6 +24,7 @@ import { mandateTerms } from '../documents/conditions.ts';
 import { CheminCritique, type PartyView } from '../dossiers/chemin-critique.ts';
 import { PIECE_LABELS } from '../dossiers/relances.ts';
 import { expectedPieces, type Piece } from '../dossiers/pieces.ts';
+import type { LocalFacts } from '../dossiers/obligations-locales.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -123,8 +124,11 @@ export const SELLER_PIECES: ReadonlySet<Piece> = (() => {
     { kind: 'home' as const, sheet: { characteristics: { buildYear: null, heating: 'individuel_gaz' }, coownership: { isCoownership: true } } },
     { kind: 'land' as const, sheet: { characteristics: {}, coownership: { isCoownership: false } } },
   ];
+  // Une commune en zone termites et mérule, un logement non raccordé (AU011) : les pièces des obligations locales.
+  const source = { title: 'exemple', url: 'https://exemple.fr/a', datedOn: '2027-01-01', readOn: '2027-01-01' };
+  const local: LocalFacts = { commune: { postalCode: '00000', city: 'exemple' }, termites: { inZone: true, source }, merule: { inZone: true, source }, sanitation: 'non_collectif' };
   for (const s of sheets) {
-    const list = expectedPieces(s.kind, s.sheet as never, 'year' in s ? s.year : 2027);
+    const list = expectedPieces(s.kind, s.sheet as never, 'year' in s ? s.year : 2027, local);
     for (const p of list?.pieces ?? []) if (p.side === 'vendeur') all.add(p.piece);
   }
   return all;
