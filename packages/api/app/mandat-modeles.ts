@@ -1,10 +1,12 @@
 import { TEMPLATE_FIELDS } from '../../core/src/documents/modeles.ts';
+import { MANDAT_CLAUSES_PART } from './mandat-clauses.ts';
 
 /**
  * Les modèles de mandat et d'avenant à l'écran (D18), servis à part (`/app/mandat-modeles.js`), chargés au premier geste
  * [R201]. La direction lit et range une nouvelle version, qui s'ajoute sans toucher à l'ancienne [R17] ; seule la conformité
  * valide [H08]. Sans modèle, ni mandat ni avenant ne se prépare : c'est le manque que D17 a trouvé. Le serveur décide de
  * tout [R40] ; l'écran ne fait que dire ses refus. Tout texte reçu est posé en texte ; rien n'est gardé sur l'appareil.
+ * Sous les modèles, au même geste, les textes des clauses du mandat par questionnaire (BR118, `mandat-clauses.ts`).
  */
 const MANDATE_ONLY = ['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero'];
 const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois'];
@@ -33,14 +35,14 @@ const STALE = {
 };
 
 const entry = (p: string, about: string): string => `<section class="bloc" aria-labelledby="${p}-titre">
-<h3 id="${p}-titre">Modèles de mandat et d’avenant</h3>
+<h3 id="${p}-titre">Modèles et clauses du mandat</h3>
 <p class="doux">${about}</p>
-<button id="${p}-ouvrir" type="button" class="secondaire">Lire les modèles de mandat</button>
+<button id="${p}-ouvrir" type="button" class="secondaire">Lire les modèles et les clauses</button>
 <p id="${p}-etat" class="etat" role="status"></p>
 <div id="${p}-corps"></div>
 </section>
 `;
-export const MANDAT_MODELES_ENTRY_HTML = entry('mandat-modeles', 'Sans modèle, aucun mandat ni avenant ne se prépare. La direction range les versions, la conformité les valide. L’ancienne version reste.');
+export const MANDAT_MODELES_ENTRY_HTML = entry('mandat-modeles', 'Sans modèle, aucun mandat ni avenant ne se prépare ; sans texte validé, une clause du questionnaire laisse le mandat d’essai. La direction range les versions, la conformité les valide. L’ancienne version reste.');
 export const MANDAT_MODELES_CONFORMITE_HTML = entry('mandat-modeles-c', 'Valider seulement un texte relu par l’avocat.');
 
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
@@ -179,14 +181,19 @@ globalThis.AIMMO_MANDAT_MODELES = function (t) {
       if (r !== reads) return;
       if (res.gone || mine !== t.session()) { clear(box); say(''); return; }
       clear(box);
-      if (res.status === 403) { say('Ce geste n’est pas dans vos droits.'); return; }
-      if (res.offline) { say('Pas de réseau. Réessayez dans un moment.'); return; }
+      if (res.status === 403) say('Ce geste n’est pas dans vos droits.');
+      else if (res.offline) say('Pas de réseau. Réessayez dans un moment.');
       /* Une liste illisible ne se lit jamais comme « aucun modèle ». */
-      if (!res.ok || !readable(res.body.data)) { say('Les modèles ne se lisent pas pour le moment.'); return; }
-      say(said || '');
-      KINDS.forEach(function (k) { kindBlock(box, say, mode, k, res.body.data); });
+      else if (!res.ok || !readable(res.body.data)) say('Les modèles ne se lisent pas pour le moment.');
+      else {
+        say(said || '');
+        KINDS.forEach(function (k) { kindBlock(box, say, mode, k, res.body.data); });
+      }
+      /* BR118 : les clauses se lisent à part, avec leur propre état, même si les modèles ne se lisent pas. */
+      return clausesPart(box, mode);
     });
   }
+${MANDAT_CLAUSES_PART}
   return { open: open };
 };
 `.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '');
