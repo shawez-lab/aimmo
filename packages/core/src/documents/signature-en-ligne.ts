@@ -92,6 +92,8 @@ export interface SignatureProgress {
   documentId: string;
   signers: { personId: string; signed: boolean }[];
   allSigned: boolean;
+  /** Chaque mandant a-t-il signé cette version en réel (AU003) ? */
+  allSignedReal: boolean;
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
@@ -174,8 +176,20 @@ export class SignatureEnLigne {
   private readonly envois: ControleEnvois;
   private readonly realEnvois: ControleEnvois | null;
 
-  private envoisFor(mode: SignatureMode | null): ControleEnvois {
-    return mode === 'reel' && this.realEnvois ? this.realEnvois : this.envois;
+  /** Une session réelle ne part que par le mail réel, jamais par la boîte d'essai : sans lui, rien ne part. */
+  private envoisFor(mode: SignatureMode | null): ControleEnvois | null {
+    return mode === 'reel' ? this.realEnvois : this.envois;
+  }
+
+  /** Ce sujet est-il déjà parti à la personne par un vrai canal (envoi fait, puis panne avant d'être noté) ? */
+  private async deliveredBefore(personId: string, subject: string): Promise<boolean> {
+    const row = await this.db.first(
+      `SELECT 1 FROM message_subjects s WHERE s.person_id = ? AND s.subject = ?
+         AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')
+         AND NOT EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = s.message_id) LIMIT 1`,
+      [personId, subject],
+    );
+    return row !== null;
   }
 
   /** La validation de l'avocat en vigueur pour le format de ce dossier de preuve, s'il y en a une. */
@@ -258,7 +272,7 @@ export class SignatureEnLigne {
       [id, viewer.networkId, documentId, contentHash, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString(), signer, mode],
     );
     const hello = await this.greeting(signer);
-    const sent = await this.envoisFor(mode).send({
+    const sent = await this.envoisFor(mode)!.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
       personId: signer,
@@ -338,7 +352,8 @@ export class SignatureEnLigne {
     // Le code vient de servir à une autre demande : il ne sert qu'une fois.
     if (changes !== 1) return { ok: false, rule: null, code: 'already_signed' };
     // Le document n'est signé que quand chaque mandant a signé cette même version (AU001).
-    const allSigned = (await this.progressOf(session.document_id, doc.person_id, contentHash)).allSigned;
+    // Une session réelle : seules les signatures réelles comptent, jamais une d'essai (AU003).
+    const allSigned = (await this.progressOf(session.document_id, doc.person_id, contentHash, mode === 'reel' ? 'reel' : undefined)).allSigned;
     await appendEvent(this.journal, { type: mode === 'reel' ? 'signature.reelle' : 'signature.essai', actor: this.actor(viewer), subject: `document:${session.document_id}`, data: { session: sessionId, method: proof.method, realSignature: mode === 'reel', allSigned } }, this.now);
     // Le signataire reçoit son exemplaire, par le contrôle central ; refusé pour l'heure, il est repris plus tard.
     const copySent = await this.sendCopy(viewer, sessionId);
@@ -368,7 +383,9 @@ export class SignatureEnLigne {
     if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `signature:${sessionId}`))) return false;
     const hello = await this.greeting(signer);
     const real = session.mode === 'reel';
-    const result = await this.envoisFor(session.mode).send({
+    const envois = this.envoisFor(session.mode);
+    if (!envois) return false;
+    const result = await envois.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
       personId: signer,
@@ -424,13 +441,16 @@ export class SignatureEnLigne {
     for (const personId of await documentMandants(this.db, documentId, doc.person_id)) {
       if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
-    return { ok: true, value: { documentId, ...(await this.progressOf(documentId, doc.person_id, await sha256(doc.content))) } };
+    const hash = await sha256(doc.content);
+    // `allSignedReal` : chacun a signé cette version en réel ; une signature d'essai n'y compte jamais (AU003).
+    const real = await this.progressOf(documentId, doc.person_id, hash, 'reel');
+    return { ok: true, value: { documentId, ...(await this.progressOf(documentId, doc.person_id, hash)), allSignedReal: real.allSigned } };
   }
 
-  private async progressOf(documentId: string, firstPersonId: string, contentHash: string): Promise<{ signers: { personId: string; signed: boolean }[]; allSigned: boolean }> {
+  private async progressOf(documentId: string, firstPersonId: string, contentHash: string, mode?: 'reel'): Promise<{ signers: { personId: string; signed: boolean }[]; allSigned: boolean }> {
     const signers: { personId: string; signed: boolean }[] = [];
     for (const personId of await documentMandants(this.db, documentId, firstPersonId)) {
-      signers.push({ personId, signed: await this.signedBy(documentId, firstPersonId, personId, contentHash) });
+      signers.push({ personId, signed: await this.signedBy(documentId, firstPersonId, personId, contentHash, mode) });
     }
     // Des mandants réunis depuis la génération : le document ne peut plus être signé par tous [R41].
     return { signers, allSigned: signers.every((s) => s.signed) && (await this.distinctMandants(documentId, firstPersonId)) };
@@ -550,16 +570,17 @@ export class SignatureEnLigne {
         [documentId, viewer.networkId, contentHash, validation.id, dossier, dossierHash, copy, await sha256(copy), this.now().toISOString()],
       );
       if (changes === 1) {
-        let position = 1;
-        for (const personId of mandants) {
-          await this.db.run(
-            `INSERT INTO signature_remises (document_id, person_id, network_id, position, status, created_at) VALUES (?, ?, ?, ?, 'a_envoyer', ?) ON CONFLICT (document_id, person_id) DO NOTHING`,
-            [documentId, personId, viewer.networkId, position++, this.now().toISOString()],
-          );
-        }
         await appendEvent(this.journal, { type: 'signature.dossier', actor: this.actor(viewer), subject: `document:${documentId}`, data: { dossierHash, signers: mandants.length, registered: number !== null } }, this.now);
       }
       dossierRow = (await this.db.first<{ dossier_hash: string; copy_hash: string; content_hash: string }>('SELECT dossier_hash, copy_hash, content_hash FROM signature_dossiers WHERE document_id = ?', [documentId]))!;
+    }
+    // Une remise par mandant, posée à chaque demande : une panne après le dossier ne les perd jamais.
+    let position = 1;
+    for (const personId of mandants) {
+      await this.db.run(
+        `INSERT INTO signature_remises (document_id, person_id, network_id, position, status, created_at) VALUES (?, ?, ?, ?, 'a_envoyer', ?) ON CONFLICT (document_id, person_id) DO NOTHING`,
+        [documentId, personId, viewer.networkId, position++, this.now().toISOString()],
+      );
     }
     if (number === null && MANDATE_KINDS.includes(doc.kind)) number = (await this.db.first<{ number: string | null }>('SELECT number FROM signed_documents WHERE document_id = ?', [documentId]))?.number ?? null;
 
@@ -569,14 +590,24 @@ export class SignatureEnLigne {
       if (r.status === 'envoyee') { remises.push({ position: r.position, sent: true }); continue; }
       const hello = await this.greeting(r.person_id);
       const what = number ? `Votre mandat n° ${number} est signé électroniquement par chaque mandant.` : 'Votre document est signé électroniquement par chaque signataire.';
-      const sent = await this.envoisFor('reel').send({
+      const subject = `signature:${documentId}:remise:${r.position}`;
+      const envois = this.envoisFor('reel');
+      // Sans mail réel, rien ne part : la remise reste à envoyer.
+      if (!envois) { remises.push({ position: r.position, sent: false }); continue; }
+      // Déjà partie, puis une panne avant d'être notée : elle est notée, jamais renvoyée.
+      if (await this.deliveredBefore(r.person_id, subject)) {
+        await this.db.run(`UPDATE signature_remises SET status = 'envoyee', sent_at = ? WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer'`, [this.now().toISOString(), documentId, r.person_id]);
+        remises.push({ position: r.position, sent: true });
+        continue;
+      }
+      const sent = await envois.send({
         networkId: viewer.networkId,
         agentId: doc.agent_id,
         personId: r.person_id,
         channel: 'email',
         kind: 'alert',
         purpose: ONLINE_SIGNATURE_PURPOSE,
-        subject: `signature:${documentId}:remise:${r.position}`,
+        subject,
         fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis avec ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.`],
         // Le numéro, la référence et l'empreinte sont des identifiants, pas des chiffres à vérifier [R10].
         figures: [...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],

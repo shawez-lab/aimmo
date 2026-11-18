@@ -91,8 +91,13 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     expect(await none.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM signed_documents')).toEqual({ n: 0 });
     expect(await none.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM signature_dossiers')).toEqual({ n: 0 });
     expect(await none.online.finish(none.agent, none.documentId)).toEqual({ ok: false, rule: 'R41', code: 'not_all_signed' });
-    // Le mail réel n'a rien reçu d'une session d'essai.
+    // Le mail réel branché, sans validation : une session d'essai n'y envoie rien, tout reste dans la boîte d'essai.
+    const m = await mailOnly.online.start(mailOnly.agent, mailOnly.documentId, CONSENT);
+    if (!m.ok) throw new Error(m.code);
+    expect(m.value.mode).toBe('essai');
+    expect((await mailOnly.online.sign(mailOnly.agent, m.value.sessionId, { code: (await mailOnly.trialCodes())[0]! })).ok).toBe(true);
     expect(mailOnly.mail.sent).toEqual([]);
+    expect(await mailOnly.trialCount()).toBe(2);
   });
 
   it('[R41] [R39] signée réellement : mandat inscrit au registre, dossier de preuve figé, exemplaire et dossier remis au mandant par le mail réel', async () => {
