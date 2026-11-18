@@ -172,6 +172,13 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     expect(offer[0]!.buyer_person_id).not.toBe(t.buyerId);
     expect(offer[0]!.co_buyers).not.toContain(co);
     expect(section('sale_files')).toHaveLength(1);
+    // Rien de ce qui suit l'offre pour l'acquéreur en tête : ni son contrôle d'identité, ni le journal de l'offre.
+    await new (await import('../src/offres/controles-offre.ts')).ControlesOffre(t.db, t.acces, t.journal, { now: t.now }).check(t.agent, t.offerId);
+    const again = await assembleAccessDetail(t.db, [co!]);
+    expect(again.response.sections.map((x) => x.table)).not.toContain('offer_checks');
+    expect(JSON.stringify(again.response.sections.find((x) => x.table === 'journal'))).not.toContain(`offer:${t.offerId}`);
+    const leadChecks = await assembleAccessDetail(t.db, [t.buyerId]);
+    expect(leadChecks.response.sections.find((x) => x.table === 'offer_checks')?.rows.length).toBeGreaterThan(0);
     expect(section('sale_file_buyer_notices')).toHaveLength(1);
     expect(JSON.stringify(detail.response)).not.toContain(t.buyerId);
     // Le journal du dossier : l'avancée partagée, dont sa propre notification.

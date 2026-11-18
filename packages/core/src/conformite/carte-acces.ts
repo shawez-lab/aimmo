@@ -573,12 +573,14 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un coacquéreur trouve l'offre par son lien ; la fiche de l'acquéreur en tête et la liste des autres lui sont masquées.
   offer_co_buyers: { locate: by('person_id') },
   offer_register: { locate: [...by('buyer_person_id'), via('id', 'offer_co_buyers', 'offer_id', { tag: 'coacquereur' })], own: { buyer_person_id: [] }, shared: ['co_buyers'] },
-  offer_checks: { locate: [via('offer_id', 'offer_register')] },
-  offer_transmissions: { locate: [via('offer_id', 'offer_register')] },
-  offer_responses: { locate: [via('offer_id', 'offer_register')] },
-  offer_untransmitted_alerts: { locate: [via('offer_id', 'offer_register')] },
-  offer_tasks: { locate: [via('offer_id', 'offer_register')] },
-  offer_proposals: { locate: [via('offer_id', 'offer_register')] },
+  // Ce qui suit l'offre est rendu à l'acquéreur en tête seul : son contrôle porte son identité ; un coacquéreur reçoit
+  // l'offre et l'avancée du dossier, jamais le contrôle ni les échanges de l'autre (AU009) [R96].
+  offer_checks: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
+  offer_transmissions: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
+  offer_responses: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
+  offer_untransmitted_alerts: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
+  offer_tasks: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
+  offer_proposals: { locate: [via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
   proposal_transmissions: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_responses: { locate: [via('proposal_id', 'offer_proposals')] },
   proposal_tasks: { locate: [via('proposal_id', 'offer_proposals')] },
@@ -828,7 +830,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       { column: 'subject', prefix: 'person:' },
       via('subject', 'mandates', 'id', { prefix: 'mandate:' }),
       via('subject', 'documents', 'id', { prefix: 'document:' }),
-      via('subject', 'offer_register', 'id', { prefix: 'offer:' }),
+      via('subject', 'offer_register', 'id', { prefix: 'offer:', onlyMatchedBy: 'buyer_person_id' }),
       // Le dossier de vente : chaque sorte d'événement à la partie que dit SALE_FILE_EVENTS, jamais par défaut.
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('partage', 'acquereur') } }),
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('partage') } }),
