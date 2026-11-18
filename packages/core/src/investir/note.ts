@@ -218,6 +218,11 @@ const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
   { re: /\bpercus?\b/, keys: ['collectedRent'] },
   { re: /\bcharges\b/, keys: ['nonRecoverableCharges'] },
+  { re: /\btresorerie\b/, keys: ['monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'] },
+  { re: /\b(?:mensualites?|remboursements?)\b/, keys: ['loanPayment'] },
+  { re: /\b(?:emprunte|empruntes|emprunt|pret|credit|capital)\b/, keys: ['loanCents', 'loanMonths'] },
+  { re: /\btaux\b/, keys: ['loanRateBp'] },
+  { re: /\bassurance\b/, keys: ['loanInsurance'] },
   { re: /\b(?:taxe|fonciere)\b/, keys: ['propertyTax'] },
   { re: /\brevenus?\b/, keys: ['netIncome'] },
   { re: /\b(?:surface|m2|m²)\b/, keys: ['livingArea'] },
@@ -245,7 +250,7 @@ function boundOk(key: string, bound: 'low' | 'high' | null): boolean {
 }
 
 /** Les montants d'une ligne du calcul qui valent par mois, et ceux qui valent par an. */
-const MONTHLY: readonly string[] = ['monthlyRent', 'monthlyRentWithCharges', 'recoverableCharges'];
+const MONTHLY: readonly string[] = ['monthlyRent', 'monthlyRentWithCharges', 'recoverableCharges', 'loanPayment', 'loanInsurance', 'monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'];
 const YEARLY: readonly string[] = ['annualRent', 'collectedRent', 'netIncome', 'nonRecoverableCharges', 'propertyTax'];
 
 /** La période que dit un membre de phrase : « par mois », « mensuel » ; « par an », « annuel » ; sinon `null`. */
@@ -374,6 +379,14 @@ export const LINE_LABELS: Record<string, string> = {
   marketRentM2High: 'Loyer de marché au m², haut',
   monthlyRent: 'Loyer mensuel',
   monthlyRentWithCharges: 'Loyer mensuel charges comprises',
+  loanCents: 'Capital emprunté',
+  loanRateBp: 'Taux du prêt',
+  loanMonths: 'Durée du prêt',
+  loanInsurance: 'Assurance du prêt par mois',
+  loanPayment: 'Mensualité du prêt',
+  monthlyCashflow: 'Trésorerie mensuelle avant impôt',
+  monthlyCashflowLow: 'Trésorerie mensuelle, basse',
+  monthlyCashflowHigh: 'Trésorerie mensuelle, haute',
   recoverableCharges: 'Provision pour charges récupérables par mois',
   annualRent: 'Loyer annuel',
   vacancyMonths: 'Vacance',
