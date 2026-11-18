@@ -592,7 +592,14 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // L'avancée du dossier (étapes, dates, acte) est aussi celle du coacquéreur ; le reste du dossier ne lui est pas rendu (AU009).
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
-  sale_file_dates: { locate: [via('file_id', 'sale_files')] },
+  // La notification de l'acquéreur en tête est à lui : un coacquéreur reçoit les dates partagées, et la sienne par
+  // `sale_file_buyer_notices` (AU009) [R96].
+  sale_file_dates: {
+    locate: [
+      via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' }),
+      via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'coacquereur', except: { kind: ['notification_acquereur'] } }),
+    ],
+  },
   // La notification d'un coacquéreur est la sienne (AU009).
   sale_file_buyer_notices: { locate: by('person_id') },
   sale_file_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
@@ -838,7 +845,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('partage', 'acquereur') } }),
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('partage') } }),
       // Un coacquéreur (AU009) suit l'avancée partagée du dossier ; ce qui n'est qu'à l'acquéreur en tête (son financement) reste à lui.
-      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'coacquereur', only: { type: saleFileTypes('partage') } }),
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'coacquereur', only: { type: saleFileTypes('partage') }, jsonNot: { kind: 'notification_acquereur' } }),
+      // Sa propre notification, qui porte sa fiche (`person`).
+      via('data', 'persons', 'id', { prefix: 'person:', jsonPath: 'person', startsWith: { subject: 'sale_file:' }, only: { type: ['dossier.date'] } }),
       // Ce qui est fait pour un seul client du dossier porte sa fiche : à lui seul, même si le bien a eu d'autres mandants.
       via('data', 'persons', 'id', { prefix: 'person:', jsonPath: 'client', startsWith: { subject: 'sale_file:' }, only: { type: saleFileTypes('client') } }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
