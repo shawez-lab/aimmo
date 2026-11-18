@@ -87,6 +87,9 @@ export interface BusinessSheet {
   leaseStart: string | null;
   leaseYears: number | null;
   leaseAnnualRentCents: number | null;
+  /** Local ou murs libres (AU102) : la valeur locative annuelle de marché, en centimes, et ce qui la fonde. */
+  marketAnnualRentCents: number | null;
+  marketRentBasis: string | null;
   leaseUse: LeaseUse | null;
   leaseAssignment: LeaseAssignment | null;
   employees: number | null;
@@ -102,6 +105,8 @@ export const SHEET_FIELDS: readonly SheetField[] = [
   'leaseStart',
   'leaseYears',
   'leaseAnnualRentCents',
+  'marketAnnualRentCents',
+  'marketRentBasis',
   'leaseUse',
   'leaseAssignment',
   'employees',
@@ -126,6 +131,8 @@ export const SHEET_VISIBILITY: Readonly<Record<string, Visibility>> = Object.fre
   lease_start: 'confidential',
   lease_years: 'confidential',
   lease_annual_rent_cents: 'confidential',
+  market_annual_rent_cents: 'confidential',
+  market_rent_basis: 'confidential',
   lease_use: 'confidential',
   lease_assignment: 'confidential',
   employees: 'confidential',
@@ -169,6 +176,7 @@ const MAX_CENTS = 10_000_000_000_000;
 const INT_LIMITS: Partial<Record<SheetField, [number, number]>> = {
   leaseYears: [1, 99],
   leaseAnnualRentCents: [0, 100_000_000_000],
+  marketAnnualRentCents: [1, 100_000_000_000],
   employees: [0, 100_000],
 };
 const LISTS: Partial<Record<SheetField, readonly string[]>> = {
@@ -258,8 +266,10 @@ export function checkSheetChanges(input: unknown): SheetCheck {
       out[field] = value;
       continue;
     }
-    // signName
-    if (typeof value !== 'string' || value.trim().length === 0 || value.trim().length > 120) return refuse('valeur', field);
+    // signName, marketRentBasis : la base d'une valeur locative dit ses comparables, 5 à 300 caractères.
+    const max = field === 'marketRentBasis' ? 300 : 120;
+    const min = field === 'marketRentBasis' ? 5 : 1;
+    if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max) return refuse('valeur', field);
     out[field] = value.trim();
   }
   return { ok: true, value: out as Partial<BusinessSheet> };
@@ -276,6 +286,8 @@ export interface BusinessSheetRow {
   lease_start: string | null;
   lease_years: number | null;
   lease_annual_rent_cents: number | null;
+  market_annual_rent_cents: number | null;
+  market_rent_basis: string | null;
   lease_use: LeaseUse | null;
   lease_assignment: LeaseAssignment | null;
   employees: number | null;
@@ -304,6 +316,8 @@ export const EMPTY_SHEET: Readonly<BusinessSheet> = Object.freeze({
   leaseStart: null,
   leaseYears: null,
   leaseAnnualRentCents: null,
+  marketAnnualRentCents: null,
+  marketRentBasis: null,
   leaseUse: null,
   leaseAssignment: null,
   employees: null,
@@ -338,6 +352,8 @@ export function toSheetVersion(row: BusinessSheetRow): BusinessSheetVersion {
       leaseStart: row.lease_start,
       leaseYears: row.lease_years,
       leaseAnnualRentCents: row.lease_annual_rent_cents,
+      marketAnnualRentCents: row.market_annual_rent_cents ?? null,
+      marketRentBasis: row.market_rent_basis ?? null,
       leaseUse: row.lease_use,
       leaseAssignment: row.lease_assignment,
       employees: row.employees,
@@ -484,8 +500,8 @@ export class FicheCommerce {
       const id = this.newId();
       const { changes: inserted } = await this.db.run(
         `INSERT INTO business_sheets (id, network_id, property_id, version, activity, sign_name, fiscal_years, lease_start,
-           lease_years, lease_annual_rent_cents, lease_use, lease_assignment, employees, equipment, licenses, sources, author, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+           lease_years, lease_annual_rent_cents, market_annual_rent_cents, market_rent_basis, lease_use, lease_assignment, employees, equipment, licenses, sources, author, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [
           id,
           property.network_id,
@@ -497,6 +513,8 @@ export class FicheCommerce {
           next.leaseStart,
           next.leaseYears,
           next.leaseAnnualRentCents,
+          next.marketAnnualRentCents,
+          next.marketRentBasis,
           next.leaseUse,
           next.leaseAssignment,
           next.employees,
