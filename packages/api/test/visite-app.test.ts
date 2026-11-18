@@ -92,7 +92,7 @@ describe('T08 · écran de la visite', () => {
     expect(text).toContain('Bon de visite prêt à signer (modèle d’essai, en attente de validation juridique).');
     expect(text).not.toMatch(/a_confirmer|complet\b|essai'|booked/);
     // L'alerte en un geste est là, en tête de l'écran.
-    expect(HTML).toContain('<button id="alerte" type="button" class="danger">Alerte : prévenir la direction</button>');
+    expect(HTML).toContain('<button id="alerte" type="button" class="danger">Alerte sécurité</button>');
   });
 
   it('[R54] le code ne part qu’avec l’accord du visiteur coché ; puis code et nom sont saisis ; un refus est dit en clair', async () => {

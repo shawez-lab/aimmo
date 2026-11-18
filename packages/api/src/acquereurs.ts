@@ -10,6 +10,8 @@
  *   POST /visites                                       fixer une visite, avec son bon [R40]
  *   GET  /visites/alertes                               les alertes de sécurité du réseau (direction)
  *   POST /visites/alertes/:alerte                       l'alerte en un geste
+ *   GET  /visites/alertes/:alerte                       l'état de son alerte : palier, accusé réel, acquittement (AU008)
+ *   POST /visites/alertes/:alerte/acquittement          la direction acquitte l'alerte, l'escalade s'arrête (AU008)
  *   POST /visites/modeles                               une version du modèle de bon de visite (direction)
  *   POST /visites/modeles/:modele/validation            sa validation
  *   GET  /visites/:visite                               l'écran de la visite : bien, heure, bon, sécurité, compte rendu
@@ -175,9 +177,11 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {
       const r = await securite(s).raise(v, a!);
-      // Sans prévenant branché, la direction n'est prévenue que dans le journal d'essai : la réponse le dit.
-      return reply(r.ok ? { ...r, trial: !options.notifier } : r);
+      // Sans prévenant réel, la direction n'est prévenue que dans le journal d'essai : la réponse le dit.
+      return reply(r.ok ? { ...r, trial: r.mode === 'essai' || (r.mode === null && !options.notifier) } : r);
     }),
+    get('visites.alerte.etat', `/visites/alertes/${ID}`, async (s, v, [a]) => reply(await securite(s).status(v, a!))),
+    post('visites.alerte.acquittement', `/visites/alertes/${ID}/acquittement`, async (s, v, [a]) => reply(await securite(s).acknowledge(v, a!))),
     post('visites.modele', '/visites/modeles', async (s, v, _p, body) =>
       typeof body.body === 'string' ? reply(await visites(s).createSlipTemplate(v, body.body)) : failure(400, 'invalid_template', 'body : le texte du modèle.'),
     ),

@@ -143,7 +143,7 @@ ${clesEntryHtml('accueil')}</section>
 </section>
 <section id="visite" hidden>
 <button id="visite-retour" type="button" class="retour">Retour à ma journée</button>
-<button id="alerte" type="button" class="danger">Alerte : prévenir la direction</button>
+<button id="alerte" type="button" class="danger">Alerte sécurité</button>
 <p id="alerte-etat" role="alert" hidden></p>
 <h2 id="visite-titre"></h2>
 <p id="visite-etat" class="etat" role="status"></p>
