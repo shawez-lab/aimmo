@@ -232,7 +232,7 @@ export class SignatureEnLigne {
       'INSERT INTO signature_validations (id, network_id, proof_format, reference, validated_on, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [id, viewer.networkId, PROOF_FORMAT, input.reference.trim(), input.validatedOn.toISOString().slice(0, 10), this.actor(viewer), this.now().toISOString()],
     );
-    await appendEvent(this.journal, { type: 'signature.validation_avocat', actor: this.actor(viewer), subject: `signature_validation:${id}`, data: { proofFormat: PROOF_FORMAT } }, this.now);
+    await appendEvent(this.journal, { type: 'signature.validation_avocat', actor: this.actor(viewer), subject: null, data: { validation: id, proofFormat: PROOF_FORMAT } }, this.now);
     return { ok: true, id };
   }
   private readonly fiche: FicheUnique;

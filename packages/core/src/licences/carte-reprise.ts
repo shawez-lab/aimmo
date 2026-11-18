@@ -96,7 +96,8 @@ export const TABLES_RESEAU: readonly string[] = `
   satisfaction_answers satisfaction_tokens security_challenges security_devices security_sessions security_step_ups
   send_log send_quota_slots send_reservations seo_signals service_commitments shop_orders shop_tariffs
   sign_pickup_tasks sign_placements sign_removals signature_circuit_annexes signature_circuit_events
-  signature_circuit_signers signature_circuits signature_sessions signed_amendments signed_documents signs
+  signature_circuit_signers signature_circuits signature_dossiers signature_remises signature_sessions signature_validations
+  signed_amendments signed_documents signs
   site_legal_mentions site_page_views social_calendar_rules social_calendar_slots social_posts
   sources sponsorships studio_option_requests supplier_invoice_reads supplier_invoices 
    thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
@@ -297,7 +298,8 @@ export const ORDRE_REPRISE: readonly string[] = `
   visit_safety visit_slips visit_tasks visits appointments assistance_alerts assistance_requests assistant_keys
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
-  document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_sessions signed_amendments
+  document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers
+  signature_validations signature_sessions signed_amendments
   signed_documents document_co_mandants documents person_domiciles property_designations dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
   person_request_answers person_request_outputs person_requests exclusions gbp_claims gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
