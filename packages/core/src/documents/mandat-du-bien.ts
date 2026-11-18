@@ -17,6 +17,7 @@ import { checkDepositedFile, type FileDepositInput } from '../dossiers/depot.ts'
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { Diffusion, type DiffusionDecision } from './retractation.ts';
+import { latestDesignation, latestDomicile, type PostalAddress, type PropertyDesignation } from './designation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Les plus récents : une page de téléphone, pas une archive. */
@@ -42,7 +43,10 @@ export interface PropertyMandate {
   }[];
   /** La décision de diffusion dit l'état du mandat ; `mandate` est nul s'il n'y en a aucun. */
   mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason']; withdrawalLastDay: string | null; withdrawalUnfinished: boolean } | null;
-  owners: { personId: string; firstName: string | null; lastName: string | null }[];
+  /** Chaque propriétaire vu en entier, avec son domicile repris par le mandat (AU002), ou null s'il manque. */
+  owners: { personId: string; firstName: string | null; lastName: string | null; domicile: PostalAddress | null }[];
+  /** L'adresse et les parcelles du bien que reprend chaque mandat de vente (AU002), ou null si elles manquent. */
+  designation: Omit<PropertyDesignation, 'setAt'> | null;
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
@@ -103,7 +107,7 @@ export class MandatDuBien {
       const fiche = await this.acces.readFiche(viewer, link.person_id);
       if (!fiche.ok || fiche.view !== 'full') continue;
       const person = fiche.value.person;
-      owners.set(person.id, { personId: person.id, firstName: person.first_name, lastName: person.last_name });
+      owners.set(person.id, { personId: person.id, firstName: person.first_name, lastName: person.last_name, domicile: await latestDomicile(this.db, viewer.networkId, fiche.value.members.map((m) => m.id)) });
     }
 
     return {
@@ -122,6 +126,10 @@ export class MandatDuBien {
         })),
         mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay, withdrawalUnfinished: unfinished } : null,
         owners: [...owners.values()],
+        designation: await (async () => {
+          const d = await latestDesignation(this.db, viewer.networkId, propertyId);
+          return d ? { address: d.address, parcels: d.parcels } : null;
+        })(),
       },
     };
   }

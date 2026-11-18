@@ -33,6 +33,7 @@ import { DossiersVente, RegistreOffres, TransmissionOffres } from '../src/offres
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { loadMigrations } from './migrations.ts';
 import { openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 export interface JourneyStep<W> {
   /** L'identifiant de l'étape, celui que nomme une panne. */
@@ -93,7 +94,7 @@ const paris = (day: string, hhmm: string): Date => {
   return parisInstant(day, h * 60 + m)!;
 };
 
-const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const SLIP = 'BON DE VISITE · {{reseau.nom}}\n\nJe soussigné {{visiteur.nom}} reconnais avoir visité le bien {{bien.reference}}, {{bien.type}} à {{bien.commune}}, {{bien.surface}}, {{bien.pieces}} pièces, au prix de {{bien.prix}}, le {{visite.date}} à {{visite.heure}}, avec {{agent.nom}}.\n\nFait le {{signature.date}}.';
 export const SELLER_EMAIL = 'lea.vendeuse@example.test';
 export const BUYER_EMAIL = 'noe.acheteur@example.test';
@@ -282,6 +283,7 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
         }),
         'fiche du bien',
       );
+      await designerTout(w.db);
       const d = await w.modeles.generate(w.agent, { kind: 'mandat_vente_simple', personId: w.seller, propertyId: w.propertyId, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
       if (!d.ok) throw new Error(`mandat refusé : ${d.code}`);
       const signed = accepted(await new SignaturePapier(w.db, w.acces, w.journal, { now: w.now }).register(w.agent, d.document.id, { signedAt, place: 'hors_agence', scanRef: 'scans/mandat-parcours.pdf', source: 'referral' }), 'signature');

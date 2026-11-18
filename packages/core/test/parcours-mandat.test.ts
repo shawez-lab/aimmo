@@ -19,9 +19,10 @@ import {
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Parcours de test, de l'avis de valeur validé au mandat numéroté, sur une horloge simulée. Tout est inventé.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test.\n\nNuméro : {{registre.numero}}, le {{signature.date}}, {{signature.lieu}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}, le {{signature.date}}, {{signature.lieu}}.';
 const T0 = Date.parse('2027-02-10T09:00:00.000Z');
 const MIN = 60_000;
 
@@ -66,6 +67,7 @@ async function parcours(minutes: { generate: number; check: number; sign: number
     timings[name] = performance.now() - start;
     return result;
   };
+  await designerTout(db);
   const doc = await step('generation', minutes.generate, () => modeles.generate(agent, { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } }));
   if (!doc.ok) throw new Error(doc.code);
   const check = await step('controle', minutes.check, () => controles.check(agent, doc.document.id));

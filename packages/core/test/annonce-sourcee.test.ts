@@ -17,6 +17,7 @@ import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, fallbackListing, trace
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Biens et textes inventés.
 const FACTS: ListingFacts = {
@@ -165,7 +166,7 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
 });
 
 // Le parcours en base : brouillon, correction, validation.
-const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const SHEET = (pid: string) => ({
   characteristics: { bedrooms: 2, floor: 3, floorsTotal: 5, buildYear: 1965, heating: 'collectif', outdoor: ['balcon'], parkingSpaces: 1, elevator: true },
   energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: '2027-01-15' },
@@ -204,6 +205,7 @@ async function setup(writer?: ListingWriter, options: { timeoutMs?: number } = {
   await fiches.save(agent, b.id, SHEET(b.id));
   const mentions = new MentionsAnnonce(db, acces, journal, { now });
   const signMandate = async () => {
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
     if (!d.ok) throw new Error(d.code);
     const s = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: new Date('2027-02-10T09:00:00.000Z'), place: 'agence', scanRef: 'scans/mandat.pdf', source: 'referral' });

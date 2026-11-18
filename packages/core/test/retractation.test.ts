@@ -20,9 +20,10 @@ import { loadMigrations } from './migrations.ts';
 import { localTime } from '../src/envoi/horaires.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèle, registre et personnes inventés. Février 2027 : Paris est à UTC+1.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const SIGNED = new Date('2027-02-10T09:00:00.000Z'); // mercredi 10 février, 10 h à Paris
 const paris = (date: string, hhmm: string) => new Date(`${date}T${hhmm}:00+01:00`);
 
@@ -57,6 +58,7 @@ async function setup(duration: number | null = 12) {
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
     await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
     const inputs = { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', ...(duration === null ? {} : { 'mandat.duree_mois': duration }) } as const;
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: inputs as never });
     if (!d.ok) throw new Error(d.code);
     const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place, scanRef: `scans/test-${n}.pdf`, source: 'referral' });

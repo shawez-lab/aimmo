@@ -6,6 +6,7 @@ import { INVESTOR_ALERTS_JOB, investorFeesRate, runScheduler } from '../src/plan
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
+import { designerTout } from '../../core/test/designation-jeu.ts';
 
 // Réseau, agent, investisseurs, biens et clés inventés. Le 14 septembre 2027 est un mardi ; été : Paris = UTC + 2.
 const BASE = 'https://aimmo-api.example.test';
@@ -35,7 +36,7 @@ async function setup() {
   const alertes = new investir.AlertesInvestisseurs(db, journal, { now });
   // Le mandat signé en agence, sans délai de rétractation : le bien est diffusable (D05), comme dans la vie.
   const modeles = new Modeles(db, acces, journal, { now });
-  const template = await modeles.createVersion(direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.');
+  const template = await modeles.createVersion(direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.');
   await modeles.validate({ role: 'compliance', userId: 'c-1', networkId: network } as Viewer, template.ok ? template.template.id : '');
   await new ControlesSignature(db, acces, journal, { now }).setFeeSchedule(direction, { maxRatePercent: 5, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
@@ -45,6 +46,7 @@ async function setup() {
     await store.linkProjectProperty({ networkId: network, agentId: alex, projectId: project, propertyId, role: 'owned' });
     const signedAt = new Date(TUESDAY_10H - 30 * DAY);
     await identiteAuCoffre({ db, acces, journal, now }, agent, seller, { piece: 'carte_identite', seenAt: signedAt });
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: seller, propertyId, inputs: { 'honoraires.montant': 7500, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } as never });
     if (!d.ok) throw new Error(d.code);
     const r = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt, place: 'agence', scanRef: `scans/test-${ref}.pdf`, source: 'referral' });

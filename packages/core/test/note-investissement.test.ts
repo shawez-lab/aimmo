@@ -140,7 +140,8 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     const slow = await setup({ writer: { write: () => new Promise((resolve) => setTimeout(() => resolve({ paragraphs: ['Texte.'] }), 500)) } });
     const s = await slow.notes.draft(slow.acces, slow.as('agent', slow.alex.id), { calculationId: slow.calcId, projectId: slow.project.id });
     expect(s.ok && s.value.origin).toBe('secours');
-  });
+    // Dix bases montées l'une après l'autre : plus de 5 s sur une machine chargée.
+  }, 30_000);
 
   it('la note de secours ne porte que des nombres du calcul, chacun avec sa preuve', async () => {
     const t = await setup();
