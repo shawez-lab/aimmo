@@ -44,7 +44,7 @@ Les tâches se font dans l'ordre, dès que leurs dépendances sont faites. Le d�
 Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e138` : 117 points (21 bloquants, 90 majeurs, 6 mineurs). Ids `AU` = numéro de l'audit ; dans « endroit », C/ = `packages/core/src/`, A/ = `packages/api/src/`, UI/ = `packages/api/app/`. Règle pour chaque tâche : **vérifier d'abord le constat sur le code actuel**. S'il est faux ou déjà réglé, passer à « fait (non confirmé : <preuve>) » sans rien coder. Sinon, corriger avec un test par critère. Le code et les tests se font même quand la mise en service réelle attend un humain : ce qui reste à brancher va dans « Reste » et dans `HUMAIN.md`. Les points juridiques (statut, mentions, plafonds) suivent le texte officiel cité, daté dans la règle. Ordre conseillé par l'audit : mandat (AU001-003, 059, 060), pièces de la vente (AU009-011), diffusion conforme (AU004-007, 012, 067, 068), visite hors connexion (AU018, 103-105), canaux réels (AU008, 032-045), rapprochement (AU039-042, 070-074), agenda (AU053-056), sécurité des dossiers (AU019-021, 107-111), finances (AU013, 091-095), location (AU014-017, 096-099).
 
 ### AU001 · Je ne peux pas signer le mandat d’un couple ou d’une indivision
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A001 (bloquant), endroit : C/documents/controles.ts, `mandants`, R41.
 - Constat de l'audit : Je ne peux pas signer le mandat d’un couple ou d’une indivision : le contrôle exige un seul propriétaire.
