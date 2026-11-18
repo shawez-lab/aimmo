@@ -21,7 +21,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { Mandats } from '../mandats/source.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
-import { ControlesSignature, type SignatureCheck } from './controles.ts';
+import { ControlesSignature, documentMandants, type SignatureCheck } from './controles.ts';
 import { mandateScanPrefix } from './mandat-du-bien.ts';
 import { Diffusion } from './retractation.ts';
 import { escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
@@ -292,7 +292,14 @@ export class SignaturePapier {
     if (!row || row.copy_content === null || row.number === null) return { ok: false, rule: null, code: 'not_signed' };
     const read = await this.acces.readFiche(viewer, row.person_id);
     if (!read.ok) return read;
-    if (read.view !== 'full') {
+    // L'exemplaire nomme chaque mandant : chacune de leurs fiches est vue en entier (AU001) [R16].
+    let others = true;
+    for (const personId of (await documentMandants(this.db, documentId, row.person_id)).slice(1)) {
+      const co = await this.acces.readFiche(viewer, personId);
+      if (!co.ok) return co;
+      if (co.view !== 'full') others = false;
+    }
+    if (read.view !== 'full' || !others) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'exemplaire', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }

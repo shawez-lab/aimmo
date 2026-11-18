@@ -309,5 +309,9 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM mandate_register')).toEqual({ n: 0 });
     await t.identify(noe);
     expect(await t.papier.register(t.agent, d.document.id, paper)).toMatchObject({ ok: true });
+    expect(await t.papier.copy(t.agent, d.document.id)).toMatchObject({ ok: true });
+    // [R16] Le second mandant confié à un autre agent : l'exemplaire, qui le nomme, n'est plus rendu.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    expect(await t.papier.copy(t.agent, d.document.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
   });
 });
