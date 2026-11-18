@@ -19,6 +19,7 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { enClair } from './boite-essai.ts';
+import { EspaceVendeur, SqlClientParties, SqlSourcesVendeur, type ClientViewer } from '../src/espaces/index.ts';
 
 // AU001 · Le mandat d'un couple ou d'une indivision. Modèle, barème et personnes inventés.
 const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
@@ -72,7 +73,7 @@ async function setup() {
         ),
       )
     ).map((r) => ({ personId: r.person_id, code: /(\d{6})/.exec(r.body)![1]! }));
-  return { db, journal, store, unique, modeles, controles, online, papier, network, alex, sam, agent, samViewer, direction, property, owner, identify, generate, codes };
+  return { db, journal, acces, now, store, unique, modeles, controles, online, papier, network, alex, sam, agent, samViewer, direction, property, owner, identify, generate, codes };
 }
 
 const failed = (r: Awaited<ReturnType<ControlesSignature['check']>>) => (r.ok ? r.value.lines.filter((l) => !l.ok).map((l) => l.code) : [r.code]);
@@ -313,5 +314,55 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     // [R16] Le second mandant confié à un autre agent : l'exemplaire, qui le nomme, n'est plus rendu.
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
     expect(await t.papier.copy(t.agent, d.document.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+  });
+
+  it('[R39] [R16] [R161] AU001b : chaque mandant d’un mandat signé a son espace vendeur, avec le mandat et son numéro, sans rien de l’autre', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    await t.identify(lea);
+    await t.identify(noe);
+    const d = await t.generate(lea, [noe]);
+    if (!d.ok) throw new Error(d.code);
+    const r = await t.papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef: 'scans/2027/02/test-espace.pdf', source: 'referral' });
+    if (!r.ok) throw new Error(r.code);
+    const number = (await t.db.first<{ number: string }>('SELECT number FROM signed_documents WHERE document_id = ?', [d.document.id]))!.number;
+    expect(number).toBe('T-001');
+    // Ce qui n'est qu'à Léa : un document à elle seule et un rendez-vous d'estimation avec elle.
+    const own = await t.generate(lea);
+    if (!own.ok) throw new Error(own.code);
+    const at = new Date(T0 + 86_400_000).toISOString();
+    await t.db.run(
+      `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES ('rdv-lea', ?, ?, ?, ?, 'estimation', ?, ?, 'booked', 'h-rdv-lea', 'agent', NULL, ?, ?)`,
+      [t.network.id, t.alex.id, lea, t.property.id, at, at, at, at],
+    );
+    const parties = new SqlClientParties(t.db);
+    const espace = new EspaceVendeur(new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now }), t.journal, { now: t.now });
+    const viewer = async (personId: string): Promise<ClientViewer> => ({ kind: 'client', networkId: t.network.id, personId, sessionId: `s-${personId}`, sides: await parties.sidesOf(t.network.id, personId) });
+    // Le second mandant : un espace vendeur, le mandat et son numéro.
+    const noeViewer = await viewer(noe);
+    expect(noeViewer.sides).toContain('vendeur');
+    const forNoe = await espace.vue(noeViewer);
+    if (!forNoe.ok) throw new Error(forNoe.code);
+    expect(forNoe.value.map((b) => b.reference)).toEqual(['REF-T-1']);
+    const mandat = forNoe.value[0]!.documents.filter((x) => x.kind === 'mandat_vente_simple');
+    expect(mandat).toHaveLength(1);
+    expect(mandat[0]!.signature.value).toBe('signe');
+    expect(mandat[0]!.number).toMatchObject({ value: 'T-001', source: 'registre des mandats' });
+    // Rien de l'autre mandant : ni son document à elle seule, ni son rendez-vous, ni son nom, ni sa fiche [R16].
+    expect(forNoe.value[0]!.appointments).toEqual([]);
+    const text = JSON.stringify(forNoe.value);
+    expect(text).not.toContain(lea);
+    expect(text).not.toContain(own.document.id);
+    expect(text).not.toMatch(/Léa|Exemple/);
+    // Le premier mandant voit toujours le sien, avec le même numéro, et ce qui n'est qu'à lui.
+    const forLea = await espace.vue(await viewer(lea));
+    if (!forLea.ok) throw new Error(forLea.code);
+    expect(forLea.value[0]!.documents.filter((x) => x.kind === 'mandat_vente_simple' && x.number.value === 'T-001')).toHaveLength(1);
+    expect(forLea.value[0]!.documents.filter((x) => x.kind === 'mandat_vente_simple')).toHaveLength(2);
+    expect(forLea.value[0]!.appointments).toHaveLength(1);
+    // Une tierce personne, propriétaire mais pas mandant, n'a pas d'espace vendeur.
+    const tiers = await t.owner('Tom', 'Tiers');
+    expect((await viewer(tiers)).sides).not.toContain('vendeur');
   });
 });
