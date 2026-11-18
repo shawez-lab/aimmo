@@ -1415,3 +1415,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 09:53 · VOIE 2 : relance refusée, question 2 (les séances de 06:53, 07:53 et 08:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-18 09:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-18 10:20 · BR118 · fusionnée (#654, 1460bd82) par Shawez, vérification GitHub verte · prochaine : réglage de l'écart toléré à l'écran (nouveau « Reste » de voie 1)
+- 2026-11-18 10:52 · VOIE 2 : rien de faisable : main est rouge depuis 10:21 à cause d'une ligne de statut de BR118 dans `PLAN.md` (test `fondations`), déjà corrigée dans #657 (BR119, voie 1, en séance depuis 09:23) ; #656 (plan de l'audit AU001 à AU117) rouge pour la même raison, Codex sans remarque : à fusionner quand main sera vert, ce qui donnera enfin des tâches à la voie 2 ; groupe RC épuisé ; B04, C09, SV05 attendent un humain ; aucun module libre · prochaine : voie 2 réserve un groupe AU après la fusion de #656
+- 2026-11-18 10:52 · VOIE 2 : relance refusée, question 2 (les séances de 07:53, 08:53 et 09:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-18 10:52 · VOIE 2 : aucune tâche, rien, relancé non
