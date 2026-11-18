@@ -83,3 +83,26 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
   };
   return { ...t, offerId: offer.id, fileId, storage, pieces, obligations, upload, verifyBuyer, startCompromis, coBuyerIds };
 }
+
+/**
+ * AU011 · Pour les jeux qui montent leur dossier eux-mêmes : la commune du bien hors zone termites et mérule, selon un
+ * arrêté inventé lu le jour même, et le bien raccordé au tout-à-l'égout.
+ */
+export async function lieuConnu(
+  t: { db: import('../src/index.ts').SqlDatabase; acces: import('../src/acces/acces.ts').Acces; journal: import('../src/journal/types.ts').JournalStore; now: () => Date; direction: import('../src/acces/droits.ts').Viewer },
+  propertyId: string,
+): Promise<void> {
+  const o = new ObligationsLocales(t.db, t.acces, t.journal, { now: t.now });
+  const p = await t.db.first<{ postal_code: string | null; city: string | null }>(
+    `SELECT COALESCE((SELECT postal_code FROM property_designations d WHERE d.property_id = p.id ORDER BY version DESC LIMIT 1), p.postal_code) AS postal_code,
+            COALESCE((SELECT city FROM property_designations d WHERE d.property_id = p.id ORDER BY version DESC LIMIT 1), p.city) AS city FROM properties p WHERE p.id = ?`,
+    [propertyId],
+  );
+  const today = t.now().toISOString().slice(0, 10);
+  for (const hazard of ['termites', 'merule'] as const) {
+    const z = await o.recordZone(t.direction, { postalCode: p?.postal_code ?? '21000', city: p?.city ?? 'Dijon', hazard, inZone: false, title: `Arrêté préfectoral inventé, ${hazard}`, url: `https://prefecture.example.fr/arretes/${hazard}`, datedOn: '2020-01-15', readOn: today });
+    if (!z.ok) throw new Error(z.code);
+  }
+  const s = await o.recordSanitation(t.direction, propertyId, 'collectif');
+  if (!s.ok) throw new Error(s.code);
+}
