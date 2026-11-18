@@ -114,6 +114,15 @@ export interface AccessDetail {
  * Assemble les lignes de la personne, table par table, en suivant la carte. Les lignes sont rendues dans un ordre
  * stable : la même base donne la même réponse, donc la même empreinte.
  */
+/** Une ligne est-elle à plusieurs parties ? Toujours, si la table a des colonnes `shared` sans condition. */
+async function sharedRow(db: SqlDatabase, entry: Extract<AccessMapEntry, { locate: unknown }>, row: Readonly<Record<string, SqlValue>>): Promise<boolean> {
+  if ((entry.shared ?? []).length === 0) return false;
+  if (!entry.sharedIf) return true;
+  const value = row[entry.sharedIf.key];
+  if (value === null || value === undefined) return false;
+  return (await db.first(`SELECT 1 AS x FROM ${entry.sharedIf.from} WHERE ${entry.sharedIf.column} = ? LIMIT 1`, [value])) !== null;
+}
+
 export async function assembleAccess(
   db: SqlDatabase,
   personIds: readonly string[],
@@ -134,6 +143,8 @@ export async function assembleAccessDetail(
   const found = new Map<string, Map<string, Found>>();
   const json = new Map<string, Map<string, string>>();
   const exclusive = new Map<string, Set<string>>();
+  // Les lignes à plusieurs parties de chaque table : leurs colonnes `shared` ne sont jamais montrées.
+  const sharedKeys = new Map<string, Set<string>>();
 
   const select = async (table: string, column: string, values: readonly string[], where: Readonly<Record<string, string>>): Promise<Row[]> => {
     const rows: Row[] = [];
@@ -331,10 +342,13 @@ export async function assembleAccessDetail(
     // qu'aucune de ses colonnes n'est celle d'une autre personne. Un tableau partagé (le plan d'un agent) ne l'est jamais,
     // ni un document à deux parties (colonnes `shared` : un bail, un état des lieux), ni ce qui en dépend.
     const mine = new Set<string>();
-    const shared = entry.locate.some((l) => 'json' in l) || (entry.shared ?? []).length > 0;
+    const sharedTable = entry.locate.some((l) => 'json' in l);
+    const partShared = new Set<string>();
+    for (const [key, f] of rows) if (await sharedRow(db, entry, f.row)) partShared.add(key);
+    sharedKeys.set(table, partShared);
     for (const [key, f] of rows) {
       const masked = Object.keys(entry.own ?? {}).some((c) => !f.matched.has(c));
-      if (!shared && !masked && !f.foreign && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);
+      if (!sharedTable && !partShared.has(key) && !masked && !f.foreign && (f.matched.size > 0 || f.viaExclusive)) mine.add(key);
     }
     exclusive.set(table, mine);
     found.set(table, rows);
@@ -355,7 +369,7 @@ export async function assembleAccessDetail(
           if (f.matched.has(column)) continue;
           for (const c of [column, ...owned]) row[c] = MASKED;
         }
-        for (const c of [...(entry.secrets ?? []), ...(entry.shared ?? [])]) row[c] = MASKED;
+        for (const c of [...(entry.secrets ?? []), ...(sharedKeys.get(table)?.has(key) ? (entry.shared ?? []) : [])]) row[c] = MASKED;
         shown.push(row);
       }
       shown.sort((a, b) => {

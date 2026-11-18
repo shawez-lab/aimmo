@@ -86,6 +86,9 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     const d = await t.generate(lea);
     if (!d.ok) throw new Error(d.code);
     expect(failed(await t.controles.check(t.agent, d.document.id))).toEqual(['mandants_differ']);
+    // [R96] Un mandat à un seul mandant est rendu entier dans sa réponse d'accès.
+    const access = await conformite.assembleAccess(t.db, [lea]);
+    expect(access.sections.find((x) => x.table === 'documents')!.rows[0]!.content).toBe(d.document.content);
   });
 
   it('[R41] deux propriétaires distincts : le mandat les nomme tous les deux et ne passe qu’une fois chacun identifié, sans réunir leurs fiches', async () => {
@@ -218,7 +221,12 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     const s = await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe });
     if (!s.ok) throw new Error(s.code);
     await t.online.sign(t.agent, s.value.sessionId, { code: (await t.codes())[0]!.code });
+    const leaPending = await t.online.start(t.agent, d.document.id, CONSENT);
+    if (!leaPending.ok) throw new Error(leaPending.code);
+    const leaCode = (await t.codes()).at(-1)!.code;
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    // La session du premier, ouverte avant, ne signe pas non plus : son résultat dirait l'état du second.
+    expect(await t.online.sign(t.agent, leaPending.value.sessionId, { code: leaCode })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     // Une session ouverte avant la réaffectation ne signe pas non plus.
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.alex.id, noe]);
     const lateDoc = await t.generate(lea, [noe]);
