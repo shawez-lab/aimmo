@@ -208,6 +208,15 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     if (!s.ok) throw new Error(s.code);
     await t.online.sign(t.agent, s.value.sessionId, { code: (await t.codes())[0]!.code });
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    // Une session ouverte avant la réaffectation ne signe pas non plus.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.alex.id, noe]);
+    const lateDoc = await t.generate(lea, [noe]);
+    if (!lateDoc.ok) throw new Error(lateDoc.code);
+    const late = await t.online.start(t.agent, lateDoc.document.id, { ...CONSENT, signerId: noe });
+    if (!late.ok) throw new Error(late.code);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    expect(await t.online.sign(t.agent, late.value.sessionId, { code: (await t.codes()).at(-1)!.code })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.db.first(`SELECT status FROM signature_sessions WHERE id = ?`, [late.value.sessionId])).toEqual({ status: 'ouverte' });
     const before = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages');
     expect(await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages')).toEqual(before);

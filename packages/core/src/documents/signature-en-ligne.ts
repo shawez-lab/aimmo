@@ -197,6 +197,9 @@ export class SignatureEnLigne {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
+    // Le signataire aussi : sa fiche confiée depuis à un autre agent, sa signature n'est pas présentée par celui-ci [R16].
+    const signer = session.signer_person_id ?? doc.person_id;
+    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `signature:${sessionId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     if (session.status === 'signee') return { ok: false, rule: null, code: 'already_signed' };
     if (session.status === 'bloquee') return { ok: false, rule: null, code: 'blocked' };
     if (this.now().getTime() > Date.parse(session.expires_at)) return { ok: false, rule: null, code: 'expired' };
