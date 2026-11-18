@@ -30,6 +30,7 @@ import type { DocumentFacts } from './modeles.ts';
 import { mandateExpired } from './conditions.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
+import { MANDATE_DESIGNATION_FIELDS } from './designation.ts';
 
 /**
  * Les mandants d'un document, dans l'ordre où il les nomme : son premier mandant, puis les autres (AU001).
@@ -147,6 +148,18 @@ export class ControlesSignature {
    * mandat signé sur papier et enregistré après coup, `identitySignedAt` juge l'identité au jour de la signature (L03) :
    * une pièce vérifiée après ne la couvre pas, une pièce valide ce jour-là, échue depuis, ne la bloque pas [R92].
    */
+  /** Le modèle du document a la place de chaque champ de désignation (AU002). */
+  private async designated(documentId: string): Promise<boolean> {
+    const row = await this.db.first<{ fields: string }>('SELECT t.fields FROM documents d JOIN document_templates t ON t.id = d.template_id WHERE d.id = ?', [documentId]);
+    let fields: unknown = null;
+    try {
+      fields = row ? JSON.parse(row.fields) : null;
+    } catch {
+      fields = null;
+    }
+    return Array.isArray(fields) && MANDATE_DESIGNATION_FIELDS.every((f) => fields.includes(f));
+  }
+
   async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
@@ -173,7 +186,11 @@ export class ControlesSignature {
 
     const at = this.now();
     const lines: CheckLine[] = [];
-    lines.push({ check: 'champs', ok: doc.status === 'complet', code: doc.status === 'complet' ? 'complete' : 'missing_fields' });
+    // Un mandat de vente préparé avant AU002 a pu se dire « complet » sans désignation : son modèle n'en avait pas la
+    // place. Il ne se signe pas ; il faut le refaire sur un modèle qui la porte [R40].
+    const designated = doc.kind === 'avenant_mandat' || (await this.designated(doc.id));
+    const complete = doc.status === 'complet' && designated;
+    lines.push({ check: 'champs', ok: complete, code: complete ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));

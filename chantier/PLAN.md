@@ -65,7 +65,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU002 · Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le…
-- Statut : en cours
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#663, `ba4fb304`). Constat confirmé. Adresse et parcelles du bien (`property_designations`), domicile de chaque mandant (`person_domiciles`), saisis à l'écran « Mandat » et repris par le mandat ; modèle sans leur place refusé, document sans valeur incomplet, et le contrôle arrête aussi un mandat d'avant AU002 (P0 de Codex corrigé). Relecture forte : 1 P1 corrigé (domicile à l'étranger). R40 complétée. À faire hors code : donner ces trois places aux modèles réels (H08). Piste : préremplir depuis l'état des risques.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A002 (bloquant), endroit : C/documents/modeles.ts, `TEMPLATE_FIELDS`.
 - Constat de l'audit : Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le domicile du mandant.
@@ -74,7 +75,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU003 · La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A003 (bloquant), endroit : A/app.ts, routes de signature ; H24.
 - Constat de l'audit : La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel.
@@ -191,7 +192,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
 - Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
 - Objectif : Sans mandat de location en cours, aucune annonce locative n’est déclarée publiable et aucune prestation donnant droit à honoraires n’avance.
@@ -201,7 +202,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU015 · Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A015 (bloquant), endroit : C/location/logement.ts, `RentalFacts` ; C/location/annonce-location.ts.
 - Constat de l'audit : Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse.
 - Objectif : Dans une zone concernée, le contrôle utilise l’arrêté en vigueur et les caractéristiques du logement, refuse un dépassement injustifié et génère les mentions adaptées.
@@ -211,7 +212,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU016 · Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A016 (bloquant), endroit : C/location/logement.ts, `RentalFacts`, `checkDwelling`.
 - Constat de l'audit : Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation.
 - Objectif : Le dernier loyer et les exceptions justifiées sont contrôlés ; une hausse interdite bloque le bail.
@@ -221,7 +222,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU017 · Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A017 (bloquant), endroit : C/location/logement.ts, `checkDwelling`.
 - Constat de l'audit : Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume : « louable » est trop affirmatif.
 - Objectif : Le verdict exige les dimensions de la pièce principale et applique les alternatives légales ainsi que les règles locales plus restrictives.
@@ -924,8 +925,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…
-- Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Statut : en cours (voie 3)
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A095 (majeur), endroit : C/location/honoraires.ts, constantes des plafonds.
 - Constat de l'audit : Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en 2026.
 - Objectif : Le millésime 2026 utilise 12,10/10,09/8,07 et 3,03 €/m², avec date d’effet et arrondis testés.
@@ -935,7 +936,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU096 · Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A096 (majeur), endroit : C/location/bail.ts, `LEASE_KINDS`, durée.
 - Constat de l'audit : Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique.
 - Objectif : Les cas demandés couramment — personne morale, meublé étudiant, mobilité — ont chacun leur durée, contrôles et modèle propres, ou sont refusés explicitement avant saisie.
@@ -944,7 +945,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU097 · Manque
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A097 (majeur), endroit : C/location/bail.ts, `locataire.nom` ; C/location/choix.ts.
 - Constat de l'audit : Manque : un bail commun de colocation avec plusieurs cotitulaires et leurs signatures n’a pas de modèle de parties adapté.
 - Objectif : Deux colocataires restent deux personnes, avec leurs pièces autorisées, signatures et exemplaires du même bail.
@@ -953,7 +954,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU098 · Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A098 (majeur), endroit : C/location/logement.ts, `ENERGY_BANS`.
 - Constat de l'audit : Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent.
 - Objectif : Le territoire du logement sélectionne le calendrier légal daté ; un logement ultramarin n’est pas bloqué selon le calendrier métropolitain.
@@ -963,7 +964,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU099 · Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A099 (majeur), endroit : C/investir/calcul.ts, `MarketRentValue`, `netIncome`.
 - Constat de l'audit : Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables : le revenu net peut être surévalué.
 - Objectif : Un exemple à 800 € charges comprises dont 100 € de charges calcule son revenu locatif sur 700 € hors charges, sans double déduction.
@@ -972,7 +973,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU100 · Manque
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
 - Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.
 - Objectif : Une simulation distingue rendement du bien et trésorerie mensuelle après dette, assurance et frais déclarés, sans promesse fiscale.
@@ -981,7 +982,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU101 · Le bail commercial est réduit à durée, loyer et grandes catégories
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A101 (majeur), endroit : C/commerces/fiche.ts, `BusinessSheet`.
 - Constat de l'audit : Le bail commercial est réduit à durée, loyer et grandes catégories, sans échéances triennales ni indexation structurée.
 - Objectif : Le dossier commercial suit les échéances et clauses d’indexation déclarées et alerte sur les dates utiles à la cession.
@@ -990,7 +991,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A102 (majeur), endroit : C/commerces/estimation.ts, `METHODS_BY_KIND`.
 - Constat de l'audit : Un local vacant sans loyer n’a pas de méthode d’estimation exploitable : murs et locaux sont limités au rendement du bail.
 - Objectif : Une estimation par comparables ou valeur locative sourcée est possible sans inventer un bail existant.

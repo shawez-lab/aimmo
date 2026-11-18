@@ -6,6 +6,7 @@ import { sourcePerson } from '../src/espaces/lecture.ts';
 import { nameWords } from '../src/visites/compte-rendu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Tout est inventé.
 const NOW = new Date('2027-03-03T10:00:00.000Z');
@@ -93,8 +94,9 @@ describeWithSqlite('SV10 · la direction corrige un nom', () => {
     const b = await biens.create(t.alex, t.person.id, { requestId: '0b6f1d2e-5555-4a2b-8c3d-000000000041', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, priceEur: 150000 });
     if (!b.ok) throw new Error(b.code);
     const modeles = new Modeles(t.db, t.acces, t.journal, { now: t.now });
-    const version = await modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{bien.prix}}.\n\nNuméro : {{registre.numero}}.');
+    const version = await modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{bien.prix}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.');
     if (!version.ok) throw new Error(version.code);
+    await designerTout(t.db);
     const generate = () => modeles.generate(t.alex, { kind: 'mandat_vente_simple', personId: t.person.id, propertyId: b.value.propertyId, inputs: {} });
     const before = await generate();
     if (!before.ok) throw new Error(before.code);

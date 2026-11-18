@@ -19,6 +19,7 @@ import { FicheBien, MentionsAnnonce, computeMentions, euros, feePercent, type Me
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Biens, mandats et numéro de carte inventés.
 const S = ' ';
@@ -156,7 +157,7 @@ describe('P02 · mentions obligatoires', () => {
 });
 
 // Un mandat signé et numéroté, puis un avenant de prix, sur des données inventées.
-const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const AMENDMENT = 'Avenant de test au mandat n° {{mandat.numero}} : {{avenant.objet}}.\n\nMandant : {{mandant.nom}}. Signé le {{signature.date}}, {{signature.lieu}}.';
 
 async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'agence' | 'hors_agence' = 'agence') {
@@ -190,6 +191,7 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'a
   const mentions = new MentionsAnnonce(db, acces, journal, { now });
   const fiches = new FicheBien(db, acces, journal, { now });
   const signMandate = async () => {
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': feeCharge, 'mandat.duree_mois': 12 } });
     if (!d.ok) throw new Error(d.code);
     const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: new Date('2027-02-10T09:00:00.000Z'), place, scanRef: 'scans/mandat.pdf', source: 'referral' });

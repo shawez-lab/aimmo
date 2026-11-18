@@ -100,7 +100,8 @@ describeWithSqlite('SV14 · un second dossier sur un bien', () => {
 
   it('[R17] la table refaite : aucune ligne perdue ni changée, liens intacts, preuve de recopie gardée', async () => {
     // La base telle qu'avant SV14 : un dossier ouvert puis arrêté, avec ses étapes et son vendeur.
-    const t = await withMigrationsBefore('1760', stopped);
+    // AU002 : le mandat du jeu lit la désignation du bien ; ses tables ne touchent pas à `sale_files`.
+    const t = await withMigrationsBefore('1760', stopped, ['3970_designations_mandat']);
     expect(await t.db.first("SELECT 1 FROM sqlite_master WHERE name = 'sale_files_recopie'")).toBeNull();
     const snapshot = async () => ({
       files: await t.db.all('SELECT * FROM sale_files ORDER BY id'),

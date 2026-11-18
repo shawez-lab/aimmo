@@ -1430,3 +1430,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 17:24 · VOIE 2 : AU009, c08db752, relancé non
 - 2026-11-18 18:53 · AU010 · audit énergétique pièce obligatoire d'une maison ou d'un immeuble hors copropriété classé E, F ou G (D en 2034), valable 5 ans à l'acte ; classe inconnue ou DPE d'avant juillet 2021 : jamais « complet » ; année des règles = ouverture du dossier (P2 de Codex corrigé, Codex sans remarque ensuite) ; fusionnée (#662, aa2eba79) ; AU010b ajoutée (remise à la première visite) · prochaine : AU010b ou AU011
 - 2026-11-18 18:53 · VOIE 2 : AU010, aa2eba79, relancé oui
+- 2026-11-18 19:35 · VOIE 3 : ouverte à la demande de Shawez (travail en continu) ; réserve la location et l'investissement de l'audit (AU014-017, AU095-102) ; prend AU095
+- 2026-11-18 20:47 · AU002 · le mandat de vente reprend en champs l'adresse du bien, ses parcelles et le domicile de chaque mandant ; sans eux, il reste incomplet et ne se signe pas, fusionnée (#663) ; verrou laissé à la séance de voie 1 ouverte à 20:24 · prochaine : AU003
