@@ -55,7 +55,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU001b · Le second mandant voit son mandat dans son espace
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AU001
 - Cahier : M06 Mandats et documents ; M11 Après-vente (espaces des clients).
 - Trouvé par la relecture forte de AU001 : l'espace vendeur et l'espace propriétaire s'ouvrent par `mandates.person_id`, donc par le seul premier mandant. Un autre mandant d'un mandat signé n'a pas d'espace, et ne voit ni son mandat ni son numéro [R39].
