@@ -17,7 +17,7 @@
 import { PRINT_DESIGN_CSS } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import type { AgentCard } from '../annonces/page-bien.ts';
-import { DEFAULT_PROFESSIONAL_TITLE } from '../attirer/qualite.ts';
+import { DEFAULT_PROFESSIONAL_TITLE, capitalizedTitle } from '../attirer/qualite.ts';
 import { euros } from '../annonces/mentions.ts';
 import type { ListingPayload } from '../annonces/publication.ts';
 import { encodeQr, qrSvg } from './qr.ts';
@@ -152,7 +152,7 @@ export function renderSupport(input: SupportInput): RenderedSupport | SupportRef
     if (typeof qr !== 'string') return qr;
     const email = agent.email ? `<p>${escapeHtml(agent.email)}</p>` : '';
     const body =
-      `<section class="support carte"><div><p class="nom">${escapeHtml(name)}</p><p class="titre">Agent immobilier</p>` +
+      `<section class="support carte"><div><p class="nom">${escapeHtml(name)}</p><p class="titre">${escapeHtml(capitalizedTitle(agent.title ?? DEFAULT_PROFESSIONAL_TITLE))}</p>` +
       `<p>${escapeHtml(agent.phone)}</p>${email}<p class="marque">AIMMO</p></div>${qr}</section>`;
     const html = document('carte', `Carte de visite · ${name}`, body);
     if (unsourcedFigures(visibleText(html), agentSources).length > 0) return { ok: false, code: 'chiffre_invente' };

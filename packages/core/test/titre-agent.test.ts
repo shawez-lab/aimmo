@@ -87,7 +87,12 @@ describe('AU012 · titre de l’agent selon son statut', () => {
     expect(page).toContain('<title>Camille Exemple, agent commercial en immobilier</title>');
     expect(page).toContain('<p class="metier">Agent commercial en immobilier · Dijon centre</p>');
     expect(page).not.toMatch(/agent immobilier/i);
-    for (const support of ['panneau', 'flyer'] as const) {
+    const card = renderSupport({ support: 'carte', agent: CARD, url: 'https://exemple.test' });
+    expect('html' in card && card.html).toContain('<p class="titre">Agent immobilier</p>');
+    const titled = renderSupport({ support: 'carte', agent: { ...CARD, title }, url: 'https://exemple.test' });
+    expect('html' in titled && titled.html).toContain('<p class="titre">Agent commercial en immobilier</p>');
+    expect('html' in titled && titled.html).not.toMatch(/agent immobilier/i);
+    for (const support of ['panneau', 'flyer', 'vitrine'] as const) {
       const r = renderSupport({ support, payload: PAYLOAD, agent: { ...CARD, title }, url: 'https://exemple.test/biens/b1' });
       expect('html' in r).toBe(true);
       if ('html' in r) {
