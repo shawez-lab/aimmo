@@ -262,10 +262,17 @@ export class PiecesDossier {
     return gateSaleFile({ db: this.db, acces: this.acces, journal: this.journal, now: this.now }, viewer, fileId, write, 'sale_file_pieces');
   }
 
-  private async expected(propertyId: string, kind: PropertyKind): Promise<ExpectedList | null> {
+  /**
+   * L'année des règles est celle de l'ouverture du dossier, à Paris (offre acceptée, avant le compromis) : un acte
+   * rapporté après un passage d'année ne fait pas demander une pièce que la vente n'exigeait pas (AU010, relecture
+   * de Codex). Sans date lisible, l'année en cours, par prudence.
+   */
+  private async expected(fileId: string, propertyId: string, kind: PropertyKind): Promise<ExpectedList | null> {
     const row = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const sheet = row ? (JSON.parse(row.data) as PropertySheet) : null;
-    const year = Number(localTime(this.now(), TIME_ZONE).date.slice(0, 4));
+    const opened = await this.db.first<{ opened_at: string }>('SELECT opened_at FROM sale_files WHERE id = ?', [fileId]);
+    const at = opened ? new Date(opened.opened_at) : null;
+    const year = Number(localTime(at && !Number.isNaN(at.getTime()) ? at : this.now(), TIME_ZONE).date.slice(0, 4));
     return expectedPieces(kind, sheet, year);
   }
 
@@ -277,7 +284,7 @@ export class PiecesDossier {
   }
 
   private async compute(viewer: Viewer, file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
-    const list = await this.expected(file.property_id, kind);
+    const list = await this.expected(file.id, file.property_id, kind);
     if (!list) return { ok: false, rule: null, code: 'business' };
     const rows = await this.db.all<{ piece: Piece; version: number; ref: string; issued_on: string; received_at: string }>(
       `SELECT piece, version, ref, issued_on, received_at FROM sale_file_pieces p WHERE file_id = ?
@@ -311,7 +318,7 @@ export class PiecesDossier {
     // Un dossier clos par l'acte ne reçoit plus de pièce.
     if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     const piece = input.piece as Piece;
-    const list = await this.expected(g.file.property_id, g.kind);
+    const list = await this.expected(g.file.id, g.file.property_id, g.kind);
     if (!list) return { ok: false, rule: null, code: 'business' };
     if (!list.pieces.some((p) => p.piece === piece)) return { ok: false, rule: null, code: 'not_expected' };
     // La référence est donnée par le stockage, dans le dossier de ce dossier de vente : aucun nom de fichier libre.

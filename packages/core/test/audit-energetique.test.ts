@@ -107,6 +107,20 @@ describeWithSqlite('AU010 · audit énergétique au dossier de vente', () => {
     expect(await t.pieces.add(t.agent, t.fileId, { piece: 'audit_energetique', ref: t.upload(), issuedOn: '2026-09-02' })).toMatchObject({ ok: true, value: { missing: [], complete: true } });
   });
 
+  it('[R60] l’année des règles est celle de l’ouverture du dossier, pas celle où l’acte est rapporté', async () => {
+    const t = await setupDossier('maison');
+    const current = await t.db.first<{ data: string; version: number }>('SELECT data, version FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const data = JSON.parse(current!.data) as PropertySheet;
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      'v-classe-d', t.propertyId, t.network.id, current!.version + 1, JSON.stringify({ ...data, energy: energy('D', '2026-09-01'), coownership: { isCoownership: false } }), 'agent:test', t.now().toISOString(),
+    ]);
+    // Dossier ouvert en 2027 : une maison classée D n'est pas soumise, même lue en 2034.
+    t.setClock(new Date('2034-02-01T10:00:00.000Z'));
+    const s = await t.pieces.status(t.agent, t.fileId);
+    expect(s.ok && s.value.lines.map((l) => l.piece)).not.toContain('audit_energetique');
+    expect(s.ok && s.value.unknown).toEqual([]);
+  });
+
   it('[R60] la maison du jeu, classée hors des classes soumises, n’attend pas d’audit, qui est alors refusé comme non attendu', async () => {
     const t = await setupDossier('maison');
     const s = await t.pieces.status(t.agent, t.fileId);
