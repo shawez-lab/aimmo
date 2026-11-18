@@ -19,9 +19,10 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { enClair, tablesContenant } from './boite-essai.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèle et personnes inventés.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const T0 = Date.parse('2027-02-10T10:00:00.000Z'); // mercredi, 11 h à Paris
 const CONSENT = { consentProof: 'accord donné au rendez-vous (test)' };
 
@@ -50,6 +51,7 @@ async function setup() {
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
   await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date(T0) });
+  await designerTout(db);
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
   await store.addIdentifier({ networkId: network.id, personId: p.id, kind: 'email', value: 'lea.exemple@example.test' });

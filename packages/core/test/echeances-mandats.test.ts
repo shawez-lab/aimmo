@@ -18,9 +18,10 @@ import {
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèle, registre et personnes inventés.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test.\n\nNuméro : {{registre.numero}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const SIGNED = new Date('2027-02-10T09:00:00.000Z');
 // Heure de Paris : UTC+2 d'avril à octobre, UTC+1 sinon (dates de test hors des jours de changement).
 const paris = (date: string, hhmm = '06:00') => new Date(`${date}T${hhmm}:00${date.slice(5, 7) >= '04' && date.slice(5, 7) <= '10' ? '+02:00' : '+01:00'}`);
@@ -54,6 +55,7 @@ async function setup() {
     const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `REF-T-${n}`, kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
+    await designerTout(db);
     await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
     const d = await modeles.generate(agent, { kind, personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': months } });
     if (!d.ok) throw new Error(d.code);

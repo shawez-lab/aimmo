@@ -103,6 +103,43 @@ describe('D12 · écran « Mandat »', () => {
     expect(t.body().textContent).toContain('Mandat simple');
   });
 
+  it('[R40] AU002 : la désignation du bien et le domicile du mandant se saisissent en champs, l’écran envoie ce qui est saisi', async () => {
+    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/fiches/p1/domicile': ok({}) });
+    await t.open();
+    expect(t.body().textContent).toContain('Adresse du bien : à saisir.');
+    expect(t.body().textContent).toContain('Domicile de Léa Exemple : à saisir.');
+    t.input('bien-adresse-voie').value = '12 rue des Essais';
+    t.input('bien-adresse-cp').value = '21000';
+    t.input('bien-adresse-commune').value = 'Dijon';
+    t.input('bien-parcelles').value = 'AB';
+    await t.press('Enregistrer la désignation');
+    expect(t.posts()).toEqual([]);
+    expect(t.state()).toContain('Les parcelles : une section et un numéro');
+    t.input('bien-parcelles').value = 'AB 123, 012 C 45';
+    await t.press('Enregistrer la désignation');
+    expect(t.posts()[0]).toEqual({ method: 'POST', url: '/v1/biens/b1/designation', body: { address: { street: '12 rue des Essais', postalCode: '21000', city: 'Dijon' }, parcels: [{ section: 'AB', number: '123' }, { prefix: '012', section: 'C', number: '45' }] } });
+    expect(t.state()).toContain('Désignation enregistrée');
+    t.input('domicile-p1-voie').value = '3 place du Test';
+    t.input('domicile-p1-cp').value = '21121';
+    t.input('domicile-p1-commune').value = 'Fontaine-lès-Dijon';
+    await t.press('Enregistrer le domicile de Léa Exemple');
+    expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
+    expect(t.state()).toContain('Domicile enregistré');
+  });
+
+  it('[R40] AU002 : ce qui est déjà saisi est montré et prérempli ; un refus du serveur est dit en français', async () => {
+    const read = { ...READ, owners: [{ ...OWNER, domicile: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon', country: null } }], designation: { address: { street: '12 rue des Essais', postalCode: '21000', city: 'Dijon' }, parcels: [{ prefix: null, section: 'AB', number: '123' }] } };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok(read), 'POST /v1/biens/b1/designation': no(400, 'bad_address') });
+    await t.open();
+    expect(t.body().textContent).toContain('Adresse du bien : 12 rue des Essais, 21000 Dijon');
+    expect(t.body().textContent).toContain('Domicile de Léa Exemple : 3 place du Test, 21121 Fontaine-lès-Dijon');
+    expect(t.input('bien-parcelles').value).toBe('AB 123');
+    expect(t.input('domicile-p1-voie').value).toBe('3 place du Test');
+    t.input('bien-adresse-cp').value = '2100';
+    await t.press('Enregistrer la désignation');
+    expect(t.state()).toBe('L’adresse : un numéro et une voie, un code postal à cinq chiffres, une commune.');
+  });
+
   it('[R16] aucun identifiant à saisir : le mandant se choisit, et sans propriétaire lié rien ne se prépare', async () => {
     const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, owners: [] }) });
     await t.open();

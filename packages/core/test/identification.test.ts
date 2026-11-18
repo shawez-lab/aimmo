@@ -7,10 +7,11 @@ import { setupDossier } from './dossiers-jeu.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Personnes, sociétés et pièces inventées pour les tests.
 const NOW = new Date('2027-03-10T10:00:00.000Z');
-const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro : {{registre.numero}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const INPUTS = { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 };
 
 async function setup() {
@@ -43,6 +44,7 @@ async function setup() {
     const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `REF-L03-${++n}`, kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: INPUTS as never });
     if (!d.ok) throw new Error(d.code);
     return { personId: p.id, documentId: d.document.id };

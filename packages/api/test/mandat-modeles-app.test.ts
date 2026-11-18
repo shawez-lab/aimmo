@@ -106,6 +106,7 @@ describe('D18 · modèles de mandat et d’avenant à l’écran', () => {
 
   it.each([
     ['unknown_field', 'Le modèle porte un champ entre accolades que le mandat ne connaît pas : rien n’est rangé.'],
+    ['no_designation_field', 'Il manque la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}} ont chacun leur place dans un mandat de vente. Rien n’est rangé.'],
     ['no_evidence', 'Un mandat exclusif met sa clause d’exclusivité en évidence : commencez son paragraphe par « !! » suivi d’une espace. Rien n’est rangé.'],
     ['body_too_long', 'Le modèle est trop long : rien n’est rangé.'],
     ['invalid_body', 'Le modèle est trop long ou illisible : rien n’est rangé.'],
@@ -150,13 +151,13 @@ describe('D18 · modèles de mandat et d’avenant à l’écran', () => {
   });
 
   it('[R40] chaque sorte dit ses places et ses seuls champs ; une version que l’agent ne pourrait pas utiliser est signalée, sans bloquer', async () => {
-    const full = { ...v(1, 'essai', 'Mandat complet'), fields: ['registre.numero', 'honoraires.montant', 'honoraires.charge', 'mandat.duree_mois'] };
+    const full = { ...v(1, 'essai', 'Mandat complet'), fields: ['registre.numero', 'honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'bien.adresse', 'bien.cadastre', 'mandant.domicile'] };
     const bare = { ...v(2, 'essai', 'Avenant nu', 'avenant_mandat'), fields: ['mandat.numero'] };
     const byObject = { ...v(3, 'essai', 'Avenant objet', 'avenant_mandat'), fields: ['mandat.numero', 'avenant.objet'] };
     const direction = await run('direction', { [READ]: ok([full, bare]) });
     await direction.open();
     const text = direction.body().textContent;
-    expect(text).toContain('Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}} et {{mandat.duree_mois}}.');
+    expect(text).toContain('Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}}, {{mandat.duree_mois}}, et la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}}.');
     expect(text).toContain('Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}.');
     expect(text).not.toContain('Version 1 : il manque des places');
     expect(text).toContain('Version 2 : il manque des places, l’agent ne pourra pas préparer de document avec elle.');

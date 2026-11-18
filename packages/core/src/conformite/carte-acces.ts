@@ -520,6 +520,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
+  // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
+  person_domiciles: { locate: by('person_id') },
+  property_designations: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },

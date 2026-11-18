@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, canSignForReal, fromSyncSqlite, renderDocument, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèle d'essai inventé pour les tests : ce n'est pas un modèle juridique.
 const BODY = [
@@ -10,7 +11,7 @@ const BODY = [
   'Bien : {{bien.type}} référence {{bien.reference}}, {{bien.commune}}, {{bien.surface}}, {{bien.pieces}} pièces, au prix de {{bien.prix}}.',
   'Honoraires : {{honoraires.montant}}, {{honoraires.charge}}. Durée : {{mandat.duree_mois}}.',
   '!! Clause d’exclusivité de test : le mandant confie la vente au seul agent désigné ci-dessus.',
-  'Numéro au registre : {{registre.numero}}. Fait le {{document.date}}.',
+  'Numéro au registre : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}. Fait le {{document.date}}.',
 ].join('\n\n');
 const NOW = new Date('2027-02-10T10:00:00.000Z');
 
@@ -46,10 +47,11 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const t = await setup();
     const v = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     if (!v.ok) throw new Error(v.code);
-    expect(v.template).toMatchObject({ version: 1, status: 'essai', fields: ['mandant.nom', 'reseau.nom', 'agent.nom', 'bien.type', 'bien.reference', 'bien.commune', 'bien.surface', 'bien.pieces', 'bien.prix', 'honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero', 'document.date'] });
+    expect(v.template).toMatchObject({ version: 1, status: 'essai', fields: ['mandant.nom', 'reseau.nom', 'agent.nom', 'bien.type', 'bien.reference', 'bien.commune', 'bien.surface', 'bien.pieces', 'bien.prix', 'honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero', 'bien.adresse', 'bien.cadastre', 'mandant.domicile', 'document.date'] });
     expect(await t.modeles.validate(t.conformite, v.template.id)).toMatchObject({ ok: true, template: { status: 'valide', validatedBy: 'compliance:conformite-1' } });
     for (let n = 1; n <= 5; n++) {
       const c = await t.client(n);
+      await designerTout(t.db);
       const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
       if (!r.ok) throw new Error(r.code);
       expect(r.document).toMatchObject({ mode: 'reel', status: 'complet', missing: [], templateVersion: 1 });
@@ -67,6 +69,9 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
         .replace('{{honoraires.charge}}', 'à la charge du vendeur')
         .replace('{{mandat.duree_mois}}', '12 mois')
         .replace('{{registre.numero}}', '[numéro au registre à la signature]')
+        .replace('{{bien.adresse}}', '1 rue de l’Essai, 21000 Dijon')
+        .replace('{{bien.cadastre}}', 'section AB n° 1')
+        .replace('{{mandant.domicile}}', '2 avenue du Test, 21000 Dijon')
         .replace('{{document.date}}', '10/02/2027');
       const html = expected
         .split('\n\n')
@@ -84,6 +89,7 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Léa', lastName: null as never });
     const b = await t.store.createProperty({ networkId: t.network.id, agentId: t.alex.id, reference: 'REF-T-9', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: null as never, rooms: null as never, priceEur: null as never });
+    await designerTout(t.db);
     const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 9000 } });
     if (!r.ok) throw new Error(r.code);
     expect(r.document.status).toBe('incomplet');
@@ -99,7 +105,9 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
   it('[R40] un modèle d’essai ne produit qu’un document d’essai, marqué, refusé à la signature réelle', async () => {
     const t = await setup();
     await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
-    const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...(await t.client(1)), inputs: INPUTS });
+    const c = await t.client(1);
+    await designerTout(t.db);
+    const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
     if (!r.ok) throw new Error(r.code);
     expect(r.document).toMatchObject({ mode: 'essai', status: 'complet' });
     expect(r.document.content).toContain('DOCUMENT D’ESSAI');
@@ -111,10 +119,12 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const v1 = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     if (!v1.ok) throw new Error(v1.code);
     const c = await t.client(1);
+    await designerTout(t.db);
     const d1 = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
     const v2 = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY.replace('Durée', 'Durée du mandat'));
     expect(v2.ok && v2.template.version).toBe(2);
     expect(v2.ok && v2.template.hash).not.toBe(v1.template.hash);
+    await designerTout(t.db);
     const d2 = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
     expect(d1.ok && d2.ok && [d1.document.templateVersion, d2.document.templateVersion]).toEqual([1, 2]);
     const again = await t.modeles.read(t.as('agent', t.alex.id), d1.ok ? d1.document.id : '');
@@ -150,6 +160,7 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     await t.db.run(`UPDATE properties SET status = 'available' WHERE id = ?`, [other.id]);
     expect(await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', personId: c.personId, propertyId: other.id })).toMatchObject({ ok: false, rule: 'R16' });
     const p = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: '<script>alert(1)</script>', lastName: 'Test' });
+    await designerTout(t.db);
     const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: c.propertyId, inputs: INPUTS });
     expect(r.ok && r.document.content).toContain('&lt;script&gt;alert(1)&lt;/script&gt; Test');
     expect(r.ok && r.document.content).not.toContain('<script>');
@@ -167,7 +178,9 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const v1 = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     await t.modeles.validate(t.conformite, v1.ok ? v1.template.id : '');
     await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY.replace('Durée', 'Durée du mandat'));
-    const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...(await t.client(1)), inputs: INPUTS });
+    const c = await t.client(1);
+    await designerTout(t.db);
+    const r = await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
     expect(r.ok && [r.document.templateVersion, r.document.mode]).toEqual([1, 'reel']);
   });
 
@@ -181,6 +194,7 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const t = await setup();
     await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     const c = await t.client(1);
+    await designerTout(t.db);
     await t.modeles.generate(t.as('agent', t.alex.id), { kind: 'mandat_vente_exclusif', ...c, inputs: INPUTS });
     const types = (await t.journal.all()).map((e) => [e.type, e.subject]);
     const read = types.findIndex(([type, subject]) => type === 'bien.lu' && subject === `property:${c.propertyId}`);

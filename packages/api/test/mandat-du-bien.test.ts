@@ -8,6 +8,7 @@ import { fromD1 } from '../src/d1.ts';
 import { sha256Hex } from '../src/index.ts';
 import worker, { type Env } from '../src/worker.ts';
 import { fakeD1 } from './fake-d1.ts';
+import { designerTout } from '../../core/test/designation-jeu.ts';
 
 // Clés, personnes et biens inventés.
 const BASE = 'https://aimmo-api.example.workers.dev';
@@ -48,12 +49,13 @@ async function world(withStore = true, writable = true) {
 
 /** Un mandat généré, avec identité vérifiée et registre réglé : prêt à signer. */
 async function ready(w: Awaited<ReturnType<typeof world>>) {
-  const template = (await (await w.post('/modeles', KEYS.direction, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}} {{registre.numero}} {{signature.date}} {{mandat.duree_mois}}' })).json()) as { data: { id: string } };
+  const template = (await (await w.post('/modeles', KEYS.direction, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}} {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}} {{signature.date}} {{mandat.duree_mois}}' })).json()) as { data: { id: string } };
   await w.post(`/modeles/${template.data.id}/validation`, KEYS.compliance);
   await w.post('/honoraires/bareme', KEYS.direction, { maxRatePercent: 5, minEur: 3000 });
   await w.post('/registre/reglage', KEYS.direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   const acces = new Acces(w.db, w.store, new FicheUnique(w.db, w.store), w.journal);
   await identiteAuCoffre({ db: w.db, acces, journal: w.journal, now: () => new Date() }, { role: 'agent', userId: w.alex.id, networkId: w.network.id } as Viewer, w.lea.id, { piece: 'carte_identite', seenAt: new Date() });
+  await designerTout(w.db);
   const made = await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 3 } });
   const doc = (await made.json()) as { data: { id: string; status: string; missing: string[] } };
   return doc.data;
@@ -164,6 +166,7 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
 
   it('[R10] un scan prouve une seule signature ; l’index ferme la course', async () => {
     const first = await ready(w);
+    await designerTout(w.db);
     const second = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 3 } })).json()) as { data: { id: string } }).data;
     const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
     const paper = { signedAt: new Date(Date.now() - 60_000).toISOString(), place: 'agence', scanRef: data.ref, source: 'referral' };
@@ -214,7 +217,7 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
     await w.store.linkProjectProperty({ networkId: w.network.id, agentId: w.alex.id, projectId: project.id, propertyId: w.bien.id, role: 'owned' });
     await new FicheUnique(w.db, w.store).merge({ survivorId: w.lea.id, mergedId: double.id, reason: 'test' });
     const read = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { owners: { personId: string }[] } };
-    expect(read.data.owners).toEqual([{ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple' }]);
+    expect(read.data.owners).toEqual([{ personId: w.lea.id, firstName: 'Léa', lastName: 'Exemple', domicile: null }]);
   });
 
   describe('D16', () => {
@@ -246,6 +249,7 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
       expect(await mandate()).toMatchObject({ reason: 'withdrawn', allowed: false, withdrawalUnfinished: false });
       expect((await stop(KEYS.alex)).status).toBe(409);
       // Le bien se rouvre jusqu'à la signature d'un second mandat, pas seulement jusqu'au contrôle.
+      await designerTout(w.db);
       const made = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } })).json()) as { data: { id: string } }).data;
       await sign(made, 0, 'agence');
       expect(await mandate()).toMatchObject({ allowed: true, reason: 'allowed' });
@@ -409,6 +413,7 @@ describeWithSqlite('D15 · annuler un mandat au registre', () => {
     const { data } = (await (await w.scan(KEYS.alex)).json()) as { data: { ref: string } };
     const at = new Date(Date.now() - 60_000).toISOString();
     expect((await w.post(`/documents/${doc.id}/signature-papier`, KEYS.alex, { signedAt: at, place: 'agence', scanRef: data.ref, source: 'referral' })).status).toBe(200);
+    await designerTout(w.db);
     const second = ((await (await w.post('/documents', KEYS.alex, { kind: 'mandat_vente_simple', personId: w.lea.id, propertyId: w.bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 3 } })).json()) as { data: { id: string } }).data;
     const scan2 = ((await (await w.scan(KEYS.alex, new TextEncoder().encode('%PDF-1.7 second'))).json()) as { data: { ref: string } }).data.ref;
     const signSecond = () => w.post(`/documents/${second.id}/signature-papier`, KEYS.alex, { signedAt: at, place: 'agence', scanRef: scan2, source: 'referral' });

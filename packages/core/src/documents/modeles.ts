@@ -20,6 +20,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { mandateExpired } from './conditions.ts';
 import { documentMandants } from './controles.ts';
+import { MANDATE_DESIGNATION_FIELDS, formatAddress, formatParcels, latestDesignation, latestDomicile } from './designation.ts';
 
 /** Prénom et nom : l'un sans l'autre ne suffit pas à identifier un mandant. */
 function fullName(first: string | null | undefined, last: string | null | undefined): string | null {
@@ -48,6 +49,10 @@ export const TEMPLATE_FIELDS: Readonly<Record<string, { source: FieldSource; lab
   'bien.surface': { source: 'base', label: 'surface du bien' },
   'bien.pieces': { source: 'base', label: 'nombre de pièces' },
   'bien.prix': { source: 'base', label: 'prix du bien' },
+  // AU002 : la désignation du bien et le domicile de chaque mandant, repris en champs depuis la base.
+  'bien.adresse': { source: 'base', label: 'adresse du bien' },
+  'bien.cadastre': { source: 'base', label: 'désignation cadastrale du bien' },
+  'mandant.domicile': { source: 'base', label: 'domicile du mandant' },
   'agent.nom': { source: 'base', label: 'nom de l’agent' },
   'reseau.nom': { source: 'base', label: 'nom du réseau' },
   'document.date': { source: 'base', label: 'date du document' },
@@ -127,7 +132,7 @@ export interface GenerateRequest {
 export const MAX_CO_MANDANTS = 9;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' | 'no_designation_field' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -271,6 +276,8 @@ export class Modeles {
     if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
     // Le numéro du registre figure sur l'exemplaire du mandant : tout mandat de vente en porte le champ [R39].
     if (kind !== 'avenant_mandat' && !fields.includes('registre.numero')) return { ok: false, rule: 'R40', code: 'no_number_field' };
+    // Un mandat de vente désigne le bien (adresse, cadastre) et le domicile de chaque mandant, en champs (AU002) [R40].
+    if (kind !== 'avenant_mandat' && MANDATE_DESIGNATION_FIELDS.some((f) => !fields.includes(f))) return { ok: false, rule: 'R40', code: 'no_designation_field' };
     // Un avenant porte la référence du mandat qu'il modifie : son numéro au registre.
     if (kind === 'avenant_mandat' && !fields.includes('mandat.numero')) return { ok: false, rule: 'R40', code: 'no_number_field' };
     // Un mandat exclusif met sa clause d'exclusivité en évidence : un paragraphe qui commence par `!! `.
@@ -347,7 +354,7 @@ export class Modeles {
 
     // Les autres mandants : des fiches distinctes, vues en entier, jamais celle du premier ni deux fois la même [R16].
     // Un avenant reprend ceux du mandat qu'il modifie, sans en changer.
-    let coMandants: { id: string; name: string | null }[] = [];
+    let coMandants: { id: string; name: string | null; memberIds: string[] }[] = [];
     if (template.kind === 'avenant_mandat') {
       if (request.coMandantIds !== undefined) return { ok: false, rule: null, code: 'bad_co_mandants' };
       // Chacun relu sous droits, comme au mandat : une fiche confiée depuis à un autre agent arrête l'avenant [R16].
@@ -355,7 +362,7 @@ export class Modeles {
         const co = await this.acces.readFiche(viewer, id);
         if (!co.ok) return co;
         if (co.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${id}`);
-        coMandants.push({ id, name: fullName(co.value.person.first_name, co.value.person.last_name) });
+        coMandants.push({ id, name: fullName(co.value.person.first_name, co.value.person.last_name), memberIds: co.value.members.map((m) => m.id) });
       }
     } else if (request.coMandantIds !== undefined) {
       const ids = request.coMandantIds;
@@ -368,7 +375,7 @@ export class Modeles {
         // Une fiche réunie à celle du premier mandant, ou déjà nommée, n'est pas un autre mandant.
         if (co.value.members.some((m) => seen.has(m.id))) return { ok: false, rule: null, code: 'bad_co_mandants' };
         for (const m of co.value.members) seen.add(m.id);
-        coMandants.push({ id: co.value.person.id, name: fullName(co.value.person.first_name, co.value.person.last_name) });
+        coMandants.push({ id: co.value.person.id, name: fullName(co.value.person.first_name, co.value.person.last_name), memberIds: co.value.members.map((m) => m.id) });
       }
     }
 
@@ -378,6 +385,16 @@ export class Modeles {
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [viewer.networkId]);
     const text = (v: string | null | undefined): string | null => (v === null || v === undefined || v.trim() === '' ? null : v.trim());
     const day = localTime(this.now(), TIME_ZONE).date;
+    // La désignation du bien et le domicile de chaque mandant, lus dans la base après les droits (AU002) [R16, R40].
+    const designation = await latestDesignation(this.db, viewer.networkId, property.id);
+    const mandantsOf = [{ name: fullName(fiche.person.first_name, fiche.person.last_name), memberIds: fiche.members.map((m) => m.id) }, ...coMandants];
+    const domiciles = await Promise.all(mandantsOf.map(async (m) => ({ name: m.name, domicile: await latestDomicile(this.db, viewer.networkId, m.memberIds) })));
+    // Un seul mandant : son domicile ; plusieurs : chacun nommé avec le sien. Un seul qui manque rend le champ manquant.
+    const domicileText = domiciles.some((d) => d.domicile === null || (domiciles.length > 1 && d.name === null))
+      ? null
+      : domiciles.length === 1
+        ? formatAddress(domiciles[0]!.domicile!)
+        : domiciles.map((d) => `${d.name} : ${formatAddress(d.domicile!)}`).join(' ; ');
     const base: Record<string, string | null> = {
       // Le mandant est identifié par son prénom et son nom : l'un sans l'autre ne suffit pas.
       // Plusieurs mandants : tous nommés, dans l'ordre ; un seul nom qui manque rend le champ manquant.
@@ -388,6 +405,9 @@ export class Modeles {
       'bien.surface': property.surface_m2 === null ? null : `${number.format(property.surface_m2)} m²`,
       'bien.pieces': property.rooms === null ? null : String(property.rooms),
       'bien.prix': property.price_eur === null ? null : `${number.format(property.price_eur)} €`,
+      'bien.adresse': designation ? formatAddress(designation.address) : null,
+      'bien.cadastre': designation ? formatParcels(designation.parcels) : null,
+      'mandant.domicile': domicileText,
       'agent.nom': agent ? text(`${agent.first_name} ${agent.last_name}`) : null,
       'reseau.nom': text(network?.name),
       'document.date': `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`,
@@ -425,7 +445,10 @@ export class Modeles {
     // Une annexe (le questionnaire de HX33) s'ajoute au document même : ce qui se signe est ce qu'elle montre, et une
     // annexe d'essai ou incomplète rend le document entier d'essai ou incomplet [R40, R442].
     const extra = annex ? await annex({ priceEur: facts.priceEur, templateValidated: template.status === 'valide' }) : null;
-    const missing = [...fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined)), ...(extra?.missing ?? [])];
+    // Un mandat de vente fait sur un modèle d'avant AU002, sans place pour la désignation, ne la porte pas : il reste
+    // incomplet, et aucune signature réelle ne l'accepte [R40].
+    const undesignated = template.kind === 'avenant_mandat' ? [] : MANDATE_DESIGNATION_FIELDS.filter((f) => !fields.includes(f));
+    const missing = [...fields.filter((f) => TEMPLATE_FIELDS[f]?.source !== 'signature' && (base[f] === null || base[f] === undefined)), ...undesignated, ...(extra?.missing ?? [])];
     const mode = template.status === 'valide' && !extra?.trial ? 'reel' : 'essai';
     let content = renderDocument(template.body, base, { title: `${KIND_TITLE[template.kind]} · ${base['bien.reference'] ?? ''}`, trial: mode === 'essai' });
     if (extra) content = content.replace('</style>', `${extra.css}</style>`).replace('\n</body>', `\n${extra.html}\n</body>`);

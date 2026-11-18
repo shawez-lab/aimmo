@@ -4,6 +4,7 @@ import { EspaceVendeur, SqlClientParties, SqlSourcesVendeur, type ClientViewer }
 import { setupDossier } from './dossiers-jeu.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { describeWithSqlite } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Réseau, biens, vendeurs, visiteurs et acquéreurs inventés.
 const H = 3_600_000;
@@ -266,6 +267,7 @@ describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
       const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: seller.id, kind: 'sell' });
       await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.alexId, projectId: project.id, propertyId: property.id, role: 'owned' });
       await identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, seller.id, { piece: 'carte_identite', seenAt: t.now() });
+      await designerTout(t.db);
       const d = await modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: seller.id, propertyId: property.id, inputs: { 'honoraires.montant': 8000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
       if (!d.ok) throw new Error(d.code);
       const s = await signature.register(t.agent, d.document.id, { signedAt: t.now(), place: 'agence', scanRef: `scans/mandat-${i}.pdf`, source: 'referral' });

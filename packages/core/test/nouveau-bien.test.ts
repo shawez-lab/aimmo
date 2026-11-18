@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, NouveauBien, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Tout est inventé.
 const NOW = new Date('2027-02-03T10:00:00.000Z');
@@ -108,8 +109,9 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     // La direction retrouve l'agent unique ; le lien vaut pour le mandat de la fiche réunie.
     expect(await t.biens.create(t.direction, root.id, { ...INPUT, requestId: key(3) })).toMatchObject({ ok: true });
     const modeles = new Modeles(t.db, t.acces, t.journal, { now: t.now });
-    const version = await modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{bien.prix}}.\n\nNuméro : {{registre.numero}}.');
+    const version = await modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat de test : {{mandant.nom}}, {{bien.prix}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.');
     if (!version.ok) throw new Error(version.code);
+    await designerTout(t.db);
     const doc = await modeles.generate(t.alex, { kind: 'mandat_vente_simple', personId: root.id, propertyId: r.value.propertyId, inputs: {} });
     if (!doc.ok) throw new Error(doc.code);
     const check = await new ControlesSignature(t.db, t.acces, t.journal, { now: t.now }).check(t.alex, doc.document.id);

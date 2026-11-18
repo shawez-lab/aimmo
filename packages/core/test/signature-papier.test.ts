@@ -3,9 +3,10 @@ import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, RegistreM
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèle, registre et personnes inventés pour les tests.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro au registre : {{registre.numero}}. Signé le {{signature.date}}, {{signature.lieu}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro au registre : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}. Signé le {{signature.date}}, {{signature.lieu}}.';
 const NOW = new Date('2027-02-10T10:00:00.000Z');
 const INPUTS = { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } as const;
 const PAPER = { signedAt: new Date('2027-02-10T09:00:00.000Z'), place: 'hors_agence' as const, scanRef: 'scans/2027/02/test-1.pdf', source: 'referral' };
@@ -41,6 +42,7 @@ async function setup() {
     const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
     await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
     if (identity) await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: NOW });
+    await designerTout(db);
     const d = await modeles.generate(agent, { kind: 'mandat_vente_exclusif', personId: p.id, propertyId: b.id, inputs: INPUTS });
     if (!d.ok) throw new Error(d.code);
     return { documentId: d.document.id, content: d.document.content, personId: p.id };
@@ -160,6 +162,7 @@ describeWithSqlite('D04 · mandat signé sur papier, numéroté au registre', ()
     );
     const d = await t.mandateDoc();
     const p = await t.db.first<{ person_id: string; property_id: string }>('SELECT person_id, property_id FROM documents WHERE id = ?', [d.documentId]);
+    await designerTout(t.db);
     const doc = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: p!.person_id, propertyId: p!.property_id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur' } });
     if (!doc.ok) throw new Error(doc.code);
     expect(await t.papier.register(t.agent, doc.document.id, PAPER)).toEqual({ ok: false, rule: 'R39', code: 'no_number_field' });
