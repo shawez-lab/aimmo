@@ -1002,6 +1002,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU101b · Les jours limites de congé du bail commercial, en tâche et à l'écran
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU101
+- Cahier : M16 Commerces et entreprises ; audit A101.
+- Objectif : la tâche quotidienne de M16 range une tâche à l'agent du bien 60 jours avant chaque jour limite de congé (triennale et fin) donné par `leaseMilestones` ; l'écran du commerce montre ces dates, lues du serveur.
+- Critères : une tâche, une seule, 60 jours avant le jour limite (test) ; aucune sans début ni durée (test) ; l'écran affiche les dates du serveur sans les calculer (test).
+- Attend : rien.
 ### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
 - Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
