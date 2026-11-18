@@ -134,7 +134,7 @@ export class DiffusionPortails {
   async subscriptions(networkId: string): Promise<{ portal: string; active: boolean }[]> {
     const rows = await this.db.all<{ portal: string; active: number }>(
       `SELECT s.portal, s.active FROM portal_subscriptions s
-       WHERE s.network_id = ? AND s.id = (SELECT t.id FROM portal_subscriptions t WHERE t.network_id = s.network_id AND t.portal = s.portal ORDER BY t.set_at DESC, t.rowid DESC LIMIT 1)
+       WHERE s.network_id = ? AND s.id = (SELECT t.id FROM portal_subscriptions t WHERE t.network_id = s.network_id AND t.portal = s.portal ORDER BY t.set_at DESC, t.id DESC LIMIT 1)
        ORDER BY s.portal`,
       [networkId],
     );
@@ -147,7 +147,7 @@ export class DiffusionPortails {
 
   private async lastAck(propertyId: string, portal: string): Promise<AckRow | null> {
     return this.db.first<AckRow>(
-      "SELECT seq, action, receipt, portal_ref, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'accuse' ORDER BY seq DESC, at DESC, rowid DESC LIMIT 1",
+      "SELECT seq, action, receipt, portal_ref, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'accuse' ORDER BY seq DESC, at DESC, id DESC LIMIT 1",
       [propertyId, portal],
     );
   }
@@ -308,7 +308,7 @@ export class DiffusionPortails {
       const ack = await this.lastAck(propertyId, portal);
       const due = DiffusionPortails.due(version, listing, subscribed, ack);
       const err = await this.db.first<{ seq: number; action: PortalAction; error_code: string; at: string }>(
-        "SELECT seq, action, error_code, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec' ORDER BY at DESC, rowid DESC LIMIT 1",
+        "SELECT seq, action, error_code, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec' ORDER BY at DESC, id DESC LIMIT 1",
         [propertyId, portal],
       );
       const lastError = err && (!ack || err.at > ack.at) ? { seq: Number(err.seq), action: err.action, code: err.error_code, at: err.at } : null;
