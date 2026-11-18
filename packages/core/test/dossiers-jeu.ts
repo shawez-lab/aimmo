@@ -1,6 +1,6 @@
 // Jeu de test commun aux tâches de M10 : l'offre acceptée de M09 et son dossier de vente, inventés.
 import { FicheBien } from '../src/annonces/index.ts';
-import { PiecesDossier, type PieceStore } from '../src/dossiers/index.ts';
+import { ObligationsLocales, PiecesDossier, type PieceStore } from '../src/dossiers/index.ts';
 import { DossiersVente, TransmissionOffres } from '../src/offres/index.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
@@ -20,7 +20,7 @@ let counter = 0;
 /** Les trois biens types des dossiers tests : l'appartement en copropriété du jeu de M07, une maison, un terrain. */
 export type DossierKind = 'appartement' | 'maison' | 'terrain';
 
-export async function setupDossier(kind: DossierKind = 'appartement', offerPatch: Record<string, unknown> = {}, options: { coBuyers?: number } = {}) {
+export async function setupDossier(kind: DossierKind = 'appartement', offerPatch: Record<string, unknown> = {}, options: { coBuyers?: number; local?: boolean } = {}) {
   const t = await setupOffre();
   // Des coacquéreurs inventés, chacun sa fiche (AU009).
   const coBuyerIds: string[] = [];
@@ -52,6 +52,17 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
   const opened = await new DossiersVente(t.db, t.acces, t.journal, { now: t.now }).open(t.agent, offer.id);
   if (!opened.ok) throw new Error(opened.code);
   const fileId = opened.value.id;
+  // Les obligations locales (AU011), connues par défaut : commune hors zone termites et mérule, selon un arrêté inventé
+  // lu le jour de l'ouverture, logement raccordé au tout-à-l'égout. `local: false` les laisse inconnues.
+  const obligations = new ObligationsLocales(t.db, t.acces, t.journal, { now: t.now });
+  if (options.local !== false) {
+    for (const hazard of ['termites', 'merule'] as const) {
+      const z = await obligations.recordZone(t.direction, { postalCode: '21000', city: 'Dijon', hazard, inZone: false, title: `Arrêté préfectoral inventé, ${hazard}`, url: `https://prefecture.example.fr/arretes/${hazard}`, datedOn: '2020-01-15', readOn: '2027-03-01' });
+      if (!z.ok) throw new Error(z.code);
+    }
+    const s = await obligations.recordSanitation(t.agent, t.propertyId, 'collectif');
+    if (!s.ok) throw new Error(s.code);
+  }
   const storage = new FakePieceStore();
   const pieces = new PiecesDossier(t.db, t.acces, t.journal, storage, { now: t.now });
   /** Dépose une pièce dans le faux stockage et rend sa référence. */
@@ -70,5 +81,5 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
     const r = await new DossiersVente(t.db, t.acces, t.journal, { now: t.now }).startCompromis(t.agent, fileId);
     if (!r.ok) throw new Error(r.code);
   };
-  return { ...t, offerId: offer.id, fileId, storage, pieces, upload, verifyBuyer, startCompromis, coBuyerIds };
+  return { ...t, offerId: offer.id, fileId, storage, pieces, obligations, upload, verifyBuyer, startCompromis, coBuyerIds };
 }

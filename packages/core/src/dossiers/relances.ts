@@ -69,6 +69,9 @@ export const PIECE_LABELS: Record<Piece, string> = {
   dta_parties_communes: 'le dossier technique amiante des parties communes',
   fiche_renseignements_acquereur: "la fiche de renseignements de l'acquéreur remplie",
   audit_energetique: "l'audit énergétique",
+  etat_termites: "l'état relatif à la présence de termites",
+  information_merule: "l'information sur le risque de mérule",
+  controle_assainissement: "le rapport de contrôle de l'assainissement non collectif",
 };
 
 /**

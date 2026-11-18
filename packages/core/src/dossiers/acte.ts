@@ -34,7 +34,7 @@ import { PiecesDossier, type Piece, type PieceStore } from './pieces.ts';
 const TIME_ZONE = 'Europe/Paris';
 
 /** Durée de validité des pièces datées, en mois, au jour de l'acte : des réglages. */
-export const DEFAULT_VALIDITY_MONTHS: Partial<Record<Piece, number>> = { etat_risques: 6, electricite: 36, gaz: 36, plomb: 12, dpe: 120, audit_energetique: 60 };
+export const DEFAULT_VALIDITY_MONTHS: Partial<Record<Piece, number>> = { etat_risques: 6, electricite: 36, gaz: 36, plomb: 12, dpe: 120, audit_energetique: 60, etat_termites: 6, controle_assainissement: 36 };
 
 /** Le dernier jour de validité d'une pièce datée du `issuedOn` (même jour, `months` mois plus tard, la veille). */
 export function validUntil(issuedOn: string, months: number): string {
