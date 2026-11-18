@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { EnergyClass, PropertySheet } from '../src/annonces/index.ts';
-import { auditClasses, energyAuditCase, expectedPieces } from '../src/dossiers/index.ts';
+import { auditClasses, energyAuditCase, expectedPieces, type LocalFacts } from '../src/dossiers/index.ts';
 import { expiredPieces } from '../src/dossiers/acte.ts';
 import { reminderText } from '../src/dossiers/relances.ts';
 import { PIECES } from '../src/dossiers/pieces.ts';
@@ -10,6 +10,10 @@ import { describeWithSqlite } from './sqlite.ts';
 
 // AU010 · L'audit énergétique devient une pièce obligatoire du dossier quand la vente y est soumise
 // (art. L126-28-1 du code de la construction et de l'habitation, lu le 2026-11-18).
+
+// Le lieu connu, hors zone et raccordé (AU011) : seules les règles de l'audit jouent ici.
+const SRC = { title: 'Arrêté inventé', url: 'https://prefecture.example.fr/a', datedOn: '2020-01-01', readOn: '2026-01-01' };
+const KNOWN: LocalFacts = { commune: { postalCode: '21000', city: 'Dijon' }, termites: { inZone: false, source: SRC }, merule: { inZone: false, source: SRC }, sanitation: 'collectif' };
 
 const energy = (energyClass: EnergyClass, diagnosedOn = '2026-05-10') => ({ energyClass, climateClass: energyClass, annualCostMinEur: 2100, annualCostMaxEur: 2900, costReferenceYear: 2023, diagnosedOn });
 
@@ -30,7 +34,7 @@ it('[R60] AU010 · une maison classée F, E ou G hors copropriété demande l’
     expect(hasAudit('building', sheet({ energy: energy(c) }))).toBe(true);
   }
   for (const c of ['A', 'B', 'C', 'D'] as const) expect(hasAudit('home', sheet({ energy: energy(c) }))).toBe(false);
-  expect(expectedPieces('home', sheet({ energy: energy('G') }), 2026)?.unknown).toEqual([]);
+  expect(expectedPieces('home', sheet({ energy: energy('G') }), 2026, KNOWN)?.unknown).toEqual([]);
 });
 
 it('[R60] AU010 · le calendrier légal : F et G depuis 2023, E depuis 2025, D à partir de 2034', () => {
@@ -52,23 +56,23 @@ it('[R60] AU010 · un lot de copropriété, un local commercial ou un terrain ne
   expect(hasAudit('commercial', sheet({ energy: energy('G') }))).toBe(false);
   expect(hasAudit('land', null)).toBe(false);
   // Copropriété inconnue : l'audit est demandé par prudence, et le dossier reste incomplet tant que la fiche ne la dit pas.
-  const unknownCopro = expectedPieces('home', sheet({ energy: energy('F'), coownership: null }), 2026);
+  const unknownCopro = expectedPieces('home', sheet({ energy: energy('F'), coownership: null }), 2026, KNOWN);
   expect(unknownCopro?.pieces).toContainEqual({ piece: 'audit_energetique', side: 'vendeur', reason: 'copropriete_inconnue' });
   expect(unknownCopro?.unknown).toEqual(['copropriete']);
 });
 
 it('[R60] AU010 · une classe énergie inconnue, ou lue sur un DPE d’avant juillet 2021, interdit le verdict « complet »', () => {
   expect(energyAuditCase('home', sheet({ energy: null }), 2026)).toEqual({ case: 'inconnu' });
-  expect(expectedPieces('home', sheet({ energy: null }), 2026)?.unknown).toEqual(['classe_energie']);
+  expect(expectedPieces('home', sheet({ energy: null }), 2026, KNOWN)?.unknown).toEqual(['classe_energie']);
   // Un DPE de l'ancienne méthode : sa classe ne compte pas, même si elle dit A.
   expect(energyAuditCase('home', sheet({ energy: energy('A', '2021-06-30') }), 2026)).toEqual({ case: 'inconnu' });
   expect(energyAuditCase('home', sheet({ energy: energy('F', '2021-07-01') }), 2026)).toEqual({ case: 'requis', energyClass: 'F' });
   // Sans fiche du tout, c'est la fiche entière qui manque, déjà dite.
-  expect(expectedPieces('home', null, 2026)?.unknown).toEqual(['fiche_bien']);
+  expect(expectedPieces('home', null, 2026, KNOWN)?.unknown).toEqual(['fiche_bien']);
   expect(energyAuditCase('home', null, 2026)).toEqual({ case: 'inconnu' });
   expect(energyAuditCase('commercial', null, 2026)).toEqual({ case: 'non_requis' });
   // Un lot de copropriété n'en dépend pas : pas de classe à demander.
-  expect(expectedPieces('home', sheet({ energy: null, coownership: { isCoownership: true, lots: 8, annualChargesEur: 1200, proceedings: false } }), 2026)?.unknown).toEqual([]);
+  expect(expectedPieces('home', sheet({ energy: null, coownership: { isCoownership: true, lots: 8, annualChargesEur: 1200, proceedings: false } }), 2026, KNOWN)?.unknown).toEqual([]);
 });
 
 it('[R60] AU010 · l’audit vaut 5 ans au jour de l’acte', () => {
@@ -118,7 +122,8 @@ describeWithSqlite('AU010 · audit énergétique au dossier de vente', () => {
     t.setClock(new Date('2034-02-01T10:00:00.000Z'));
     const s = await t.pieces.status(t.agent, t.fileId);
     expect(s.ok && s.value.lines.map((l) => l.piece)).not.toContain('audit_energetique');
-    expect(s.ok && s.value.unknown).toEqual([]);
+    // La classe ne manque pas ; seules les lectures d'arrêté du jeu, faites en 2027, ont vieilli (AU011).
+    expect(s.ok && s.value.unknown).toEqual(['zone_termites', 'zone_merule']);
   });
 
   it('[R60] la maison du jeu, classée hors des classes soumises, n’attend pas d’audit, qui est alors refusé comme non attendu', async () => {

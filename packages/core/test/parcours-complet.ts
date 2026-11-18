@@ -29,6 +29,7 @@ import {
 import { Annonces, CHANNELS, FicheBien, MentionsAnnonce, Publication, type Channel, type ListingChannel, type ListingPayload } from '../src/annonces/index.ts';
 import { CarnetsProprietaire, DemandesAvis, REVIEW_PURPOSE, SqlBiensVendus, SqlDossiersClos } from '../src/apres-vente/index.ts';
 import { ActeVente, Echeancier, PiecesDossier, type PieceStore } from '../src/dossiers/index.ts';
+import { lieuConnu } from './dossiers-jeu.ts';
 import { DossiersVente, RegistreOffres, TransmissionOffres } from '../src/offres/index.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { loadMigrations } from './migrations.ts';
@@ -406,6 +407,8 @@ export const JOURNEY: readonly JourneyStep<JourneyWorld>[] = [
       for (const [kind, day] of [['compromis_signe', '2027-03-10'], ['notification_acquereur', '2027-03-11'], ['dia_recue', '2027-03-11'], ['date_limite_pret', '2027-05-10']] as const) {
         accepted(await echeancier.record(w.agent, w.fileId, { kind, day, proofRef: PROOF }), `échéance ${kind}`);
       }
+      // La commune du bien hors zone et le bien raccordé, rangés par la direction et l'agent (AU011).
+      await lieuConnu(w, w.propertyId);
       const pieces = new PiecesDossier(w.db, w.acces, w.journal, w.pieces, { now: w.now });
       const status = accepted(await pieces.status(w.agent, w.fileId), 'pièces');
       let n = 0;

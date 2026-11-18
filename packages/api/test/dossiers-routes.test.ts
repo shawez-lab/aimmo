@@ -144,3 +144,19 @@ describeWithSqlite('N08 · routes de M10', () => {
     expect(await syncDossiers(t.s, t.network.id)).toEqual({ deadlines: 0, financing: 0, funds: 0, reminders: 0 });
   });
 });
+
+describeWithSqlite('AU011 · routes des obligations locales', () => {
+  it('[R16] [R60] la direction range un arrêté, l’agent déclare le raccordement : le dossier demande alors ses pièces', async () => {
+    const t = await setup('maison');
+    const zone = { postalCode: '21000', city: 'Dijon', hazard: 'termites', inZone: true, title: 'Arrêté préfectoral inventé', url: 'https://prefecture.example.fr/arretes/t', datedOn: '2026-01-01', readOn: '2027-03-01' };
+    expect(await t.call(t.agent, 'POST', '/dossiers/obligations-locales', zone)).toMatchObject({ status: 403, body: { ok: false, rule: 'R16' } });
+    expect(await t.call(t.direction, 'POST', '/dossiers/obligations-locales', { ...zone, url: 'http://x.fr/a' })).toMatchObject({ status: 400, body: { code: 'bad_source' } });
+    expect(await t.call(t.direction, 'POST', '/dossiers/obligations-locales', zone)).toMatchObject({ status: 200, body: { ok: true, data: { inZone: true } } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/assainissement`, { mode: 'fosse' })).toMatchObject({ status: 400, body: { code: 'bad_mode' } });
+    expect(await t.call(t.sam, 'POST', `/dossiers/${t.fileId}/assainissement`, { mode: 'non_collectif' })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.call(t.agent, 'POST', '/dossiers/inconnu/assainissement', { mode: 'non_collectif' })).toMatchObject({ status: 404, body: { code: 'unknown_file' } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/assainissement`, { mode: 'non_collectif' })).toMatchObject({ status: 200, body: { ok: true, data: 'non_collectif' } });
+    const pieces = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
+    expect(pieces.body.data.missing).toEqual(expect.arrayContaining(['etat_termites', 'controle_assainissement']));
+  });
+});

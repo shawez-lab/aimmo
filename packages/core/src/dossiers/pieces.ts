@@ -20,8 +20,11 @@
  *   devine pas une obligation, ni un audit de plusieurs centaines d'euros. La copropriété inconnue fait demander l'audit.
  *   Lecture prudente : la règle de la métropole vaut aussi outre-mer, où l'obligation vient plus tard (une pièce de trop
  *   plutôt qu'un acte retardé) ;
- * - les diagnostics qui dépendent d'un arrêté local (termites, mérule, assainissement non collectif) ne sont pas
- *   encore listés : le notaire les demande, une tâche à part les ajoutera par commune ;
+ * - obligations locales (AU011, art. L271-4 du CCH) : l'état termites et l'information mérule pour un bâtiment dans
+ *   une zone délimitée par arrêté préfectoral, le contrôle de l'assainissement non collectif pour un logement non
+ *   raccordé ; la zone vient d'une lecture datée de l'arrêté, rangée par la direction pour la commune du bien
+ *   (`obligations-locales.ts`), et chaque ligne porte sa source. Une commune inconnue, une zone sans lecture à jour ou un
+ *   raccordement non déclaré empêchent le dossier d'être complet : on ne laisse plus ces pièces au notaire ;
  * - un fonds de commerce relève de M16 : pas de liste ici ;
  * - une pièce d'identité, un document anti-blanchiment ou un RIB ne sont jamais des pièces du dossier [R15].
  */
@@ -34,6 +37,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ControlesOffre } from '../offres/controles-offre.ts';
 import { gateSaleFile, refuseFile, type PropertyKind } from './acces-dossier.ts';
+import { UNKNOWN_LOCAL, localFactsOf, type LocalFacts, type LocalHazard, type LocalSource, type LocalZone } from './obligations-locales.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -58,6 +62,9 @@ export const PIECES = [
   'dta_parties_communes',
   'fiche_renseignements_acquereur',
   'audit_energetique',
+  'etat_termites',
+  'information_merule',
+  'controle_assainissement',
 ] as const;
 export type Piece = (typeof PIECES)[number];
 
@@ -79,17 +86,32 @@ export type PieceReason =
   | 'terrain'
   | 'lot_copropriete'
   | 'classe_energie_soumise_audit'
-  | 'copropriete_inconnue';
+  | 'copropriete_inconnue'
+  | 'zone_termites'
+  | 'zone_merule'
+  | 'assainissement_non_collectif';
 
 export interface ExpectedPiece {
   piece: Piece;
   side: Side;
   reason: PieceReason;
+  /** La source locale datée qui fait demander la pièce (AU011) : l'arrêté lu par la direction. */
+  source?: LocalSource;
 }
 
 
-/** Ce qui manque au bien pour dresser la liste : la fiche entière, la copropriété, ou la classe du DPE (AU010). */
-export type UnknownData = 'fiche_bien' | 'copropriete' | 'classe_energie';
+/**
+ * Ce qui manque au bien pour dresser la liste : la fiche entière, la copropriété, la classe du DPE (AU010), la commune,
+ * une zone locale sans lecture à jour, le raccordement aux eaux usées (AU011).
+ */
+export type UnknownData = 'fiche_bien' | 'copropriete' | 'classe_energie' | 'commune' | 'zone_termites' | 'zone_merule' | 'assainissement';
+
+/** Ce qu'une lecture locale a dit pour le bien, dans la zone ou hors zone, avec sa source : l'agent voit pourquoi. */
+export interface LocalReading {
+  hazard: LocalHazard;
+  inZone: boolean;
+  source: LocalSource;
+}
 
 /** Les logements : une maison, un immeuble d'habitation. */
 const HOUSING: readonly PropertyKind[] = ['home', 'building'];
@@ -128,18 +150,24 @@ export type { PropertyKind } from './acces-dossier.ts';
 export interface ExpectedList {
   pieces: ExpectedPiece[];
   unknown: UnknownData[];
+  /** Les lectures locales qui ont servi (AU011), dans la zone ou non. */
+  local: LocalReading[];
 }
+
+/** Les bâtiments : tout bien bâti, logement ou non. Un terrain et un fonds de commerce n'en sont pas. */
+const BUILT: readonly PropertyKind[] = ['home', 'building', 'commercial', 'business_walls'];
 
 
 /**
  * Les pièces attendues, par des règles écrites, dans un ordre fixe. Fonction pure : mêmes données, même liste [R60].
  * `year` est l'année en cours, à Paris. Un fonds de commerce rend null (M16).
  */
-export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, year: number): ExpectedList | null {
+export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, year: number, local: LocalFacts = UNKNOWN_LOCAL): ExpectedList | null {
   if (kind === 'business') return null;
   const pieces: ExpectedPiece[] = [];
   const unknown: UnknownData[] = [];
-  const add = (piece: Piece, side: Side, reason: PieceReason) => pieces.push({ piece, side, reason });
+  const readings: LocalReading[] = [];
+  const add = (piece: Piece, side: Side, reason: PieceReason, source?: LocalSource) => pieces.push(source ? { piece, side, reason, source } : { piece, side, reason });
   add('titre_propriete', 'vendeur', 'toujours');
   add('fiche_renseignements_vendeur', 'vendeur', 'toujours');
   add('etat_risques', 'vendeur', 'toujours');
@@ -180,9 +208,32 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
       if (audit.case === 'requis') add('audit_energetique', 'vendeur', sheet.coownership === null ? 'copropriete_inconnue' : 'classe_energie_soumise_audit');
       else if (audit.case === 'inconnu') unknown.push('classe_energie');
     }
+    // Obligations locales (AU011) : termites et mérule pour un bâtiment en zone d'arrêté, lue et datée ; l'assainissement
+    // non collectif pour un logement non raccordé. Ce qu'on ne sait pas ne se devine pas.
+    if (BUILT.includes(kind)) {
+      if (!local.commune) unknown.push('commune');
+      else {
+        const zones: [LocalHazard, LocalZone | null, Piece, PieceReason, UnknownData][] = [
+          ['termites', local.termites, 'etat_termites', 'zone_termites', 'zone_termites'],
+          ['merule', local.merule, 'information_merule', 'zone_merule', 'zone_merule'],
+        ];
+        for (const [hazard, zone, piece, reason, missing] of zones) {
+          if (!zone) {
+            unknown.push(missing);
+            continue;
+          }
+          readings.push({ hazard, inZone: zone.inZone, source: zone.source });
+          if (zone.inZone) add(piece, 'vendeur', reason, zone.source);
+        }
+      }
+    }
+    if (HOUSING.includes(kind)) {
+      if (local.sanitation === null) unknown.push('assainissement');
+      else if (local.sanitation === 'non_collectif') add('controle_assainissement', 'vendeur', 'assainissement_non_collectif');
+    }
   }
   add('fiche_renseignements_acquereur', 'acquereur', 'toujours');
-  return { pieces, unknown };
+  return { pieces, unknown, local: readings };
 }
 
 export interface ReceivedPiece {
@@ -204,6 +255,8 @@ export interface FileStatus {
   lines: PieceLine[];
   missing: Piece[];
   unknown: UnknownData[];
+  /** Les lectures locales qui ont servi, avec leur source datée (AU011). */
+  local: LocalReading[];
   /**
    * Un état, jamais une copie : vérifiée dans la fenêtre du réglage de D03, ou non [R15, R58]. `non_visible` : qui lit
    * ne voit pas la fiche de l'acquéreur en entier, l'état ne lui est pas dit et le dossier n'est pas dit complet [R16].
@@ -273,7 +326,10 @@ export class PiecesDossier {
     const opened = await this.db.first<{ opened_at: string }>('SELECT opened_at FROM sale_files WHERE id = ?', [fileId]);
     const at = opened ? new Date(opened.opened_at) : null;
     const year = Number(localTime(at && !Number.isNaN(at.getTime()) ? at : this.now(), TIME_ZONE).date.slice(0, 4));
-    return expectedPieces(kind, sheet, year);
+    // Le lieu et l'installation (AU011) : lus au jour du calcul, car une lecture d'arrêté vieillit.
+    const network = await this.db.first<{ network_id: string }>('SELECT network_id FROM sale_files WHERE id = ?', [fileId]);
+    const local = network ? await localFactsOf(this.db, network.network_id, propertyId, localTime(this.now(), TIME_ZONE).date) : UNKNOWN_LOCAL;
+    return expectedPieces(kind, sheet, year, local);
   }
 
   /** La liste des pièces du dossier, ce qui manque, et s'il est complet [R60]. */
@@ -300,7 +356,7 @@ export class PiecesDossier {
     if (buyer.ok && buyer.view === 'full') identity = (await this.controles.identitySeenAt(file.network_id, file.buyer_person_id, this.now())) !== null ? 'verifiee' : 'non_verifiee';
     else if (buyer.ok) await this.refuse(viewer, file.id, 'buyer_not_assigned');
     const complete = missing.length === 0 && list.unknown.length === 0 && identity === 'verifiee';
-    return { ok: true, value: { fileId: file.id, lines, missing, unknown: list.unknown, identity, complete } };
+    return { ok: true, value: { fileId: file.id, lines, missing, unknown: list.unknown, local: list.local, identity, complete } };
   }
 
   /**

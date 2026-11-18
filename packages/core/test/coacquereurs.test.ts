@@ -9,7 +9,7 @@ import { ActeVente, ArretDossier } from '../src/dossiers/index.ts';
 import { conformite } from '../src/index.ts';
 import { hashOffer } from '../src/offres/registre-offres.ts';
 import { Echeancier, buyerWithdrawalLastDay, scheduleLines } from '../src/dossiers/index.ts';
-import { PROOF, setupDossier } from './dossiers-jeu.ts';
+import { PROOF, setupDossier, lieuConnu } from './dossiers-jeu.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -142,6 +142,8 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     // Plus d'un an après : l'acquéreur en tête refait son contrôle d'identité avant l'acte ; celui du coacquéreur date
     // de mars 2027, trop ancien.
     t.setClock(new Date('2028-06-05T08:00:00.000Z'));
+    // Les lectures d'arrêté du jeu ont plus d'un an : la direction les relit (AU011).
+    await lieuConnu(t, t.propertyId);
     expect(await t.verifyBuyer(new Date('2028-06-05T07:00:00.000Z'))).toMatchObject({ ok: true });
     t.setClock(new Date('2028-06-11T08:00:00.000Z'));
     const s = await t.pieces.status(t.agent, t.fileId);
