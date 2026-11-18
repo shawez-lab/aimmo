@@ -286,7 +286,12 @@ export class SignatureEnLigne {
     const doc = (await this.db.first<{ person_id: string }>('SELECT person_id FROM documents WHERE id = ?', [session.document_id]))!;
     const read = await this.acces.readFiche(viewer, doc.person_id);
     if (!read.ok) return read;
-    if (read.view !== 'full') {
+    // L'exemplaire nomme chaque mandant : chacune de leurs fiches est vue en entier (AU001).
+    let others = true;
+    for (const personId of (await documentMandants(this.db, session.document_id, doc.person_id)).slice(1)) {
+      if (!(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) others = false;
+    }
+    if (read.view !== 'full' || !others) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }

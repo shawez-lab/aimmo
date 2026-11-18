@@ -19,6 +19,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { mandateExpired } from './conditions.ts';
+import { documentMandants } from './controles.ts';
 
 /** Prénom et nom : l'un sans l'autre ne suffit pas à identifier un mandant. */
 function fullName(first: string | null | undefined, last: string | null | undefined): string | null {
@@ -506,6 +507,12 @@ export class Modeles {
     const read = await this.acces.readFiche(viewer, row.person_id);
     if (!read.ok) return read;
     if (read.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
+    // Le texte nomme chaque mandant : qui le lit voit chacune de leurs fiches en entier (AU001) [R16].
+    for (const person_id of (await documentMandants(this.db, documentId, row.person_id)).slice(1)) {
+      const co = await this.acces.readFiche(viewer, person_id);
+      if (!co.ok) return co;
+      if (co.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
+    }
     return {
       ok: true,
       document: {
