@@ -41,7 +41,16 @@ async function setup(options: { fees?: boolean } = {}) {
     if (!r.ok) throw new Error(r.code);
     return { person, project };
   };
-  const property = async (ref: string, energyClass: string | null = 'C', insee = '99001') => {
+  /** Les faits de location du bien, pour sa provision pour charges récupérables (AU099) ; `null` : aucun fait rangé. */
+  const rentalFacts = async (propertyId: string, chargesCents: number) => {
+    const listing = `rl-${propertyId}`;
+    await db.run("INSERT INTO rental_listings (id, network_id, property_id, owner_person_id, created_by, created_at) VALUES (?, ?, ?, 'proprietaire-invente', 'agent:a', '2027-01-01')", [listing, network.id, propertyId]);
+    await db.run(
+      "INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, recorded_by, recorded_at) VALUES (?, 1, 1, 50000, ?, 4500, 'C', 150, 1990, 0, 'aucune', '2027-09-01', 'agent:a', '2027-01-02')",
+      [listing, chargesCents],
+    );
+  };
+  const property = async (ref: string, energyClass: string | null = 'C', insee = '99001', provisionCents: number | null = 0) => {
     const p = await store.createProperty({ postalCode: '99000', networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: 'Commune Une', priceEur: 150_000, surfaceM2: 45, rooms: 2, status: 'available' });
     if (energyClass) {
       await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-01-01')", [
@@ -53,6 +62,7 @@ async function setup(options: { fees?: boolean } = {}) {
     }
     const r = await alertes.recordPropertyCommune(acces, { role: 'agent', userId: alex.id, networkId: network.id }, p.id, { inseeCode: insee, rentKind: 'apartment' });
     if (!r.ok) throw new Error(r.code);
+    if (provisionCents !== null) await rentalFacts(p.id, provisionCents);
     return p;
   };
   const sent = (personId?: string) =>
@@ -163,6 +173,24 @@ describeWithSqlite('Y06 · alertes aux investisseurs, en mode essai', () => {
     expect(await t2.sent(i.person.id)).toHaveLength(0);
     const body = (await t2.sent(plain.person.id))[0]!.body;
     expect(body).not.toMatch(/Rendement/);
+  });
+
+  it('[R120] AU099 · sans provision pour charges sourcée, aucun rendement ; avec elle, le loyer charges comprises est diminué', async () => {
+    const t = await setup();
+    const target = await t.investor('Inès', { ...PROFILE, targetGrossYieldBp: 414 });
+    const plain = await t.investor('Noé', { ...PROFILE, targetGrossYieldBp: null });
+    const bare = await t.property('B1', 'C', '99001', null);
+    expect(await t.alertes.alertYield({ ...bare, network_id: t.network.id, id: bare.id, price_eur: 150_000, surface_m2: 45, insee_code: '99001', rent_kind: 'apartment' })).toBeNull();
+    await t.alertes.forProperty(t.network.id, bare.id);
+    expect(await t.sent(target.person.id)).toHaveLength(0);
+    expect((await t.sent(plain.person.id))[0]!.body).not.toMatch(/Rendement/);
+    const without = await t.property('B2', 'C', '99001', 0);
+    const with50 = await t.property('B3', 'C', '99001', 5_000);
+    const row = (p: { id: string }) => ({ network_id: t.network.id, id: p.id, price_eur: 150_000, surface_m2: 45, insee_code: '99001', rent_kind: 'apartment' as const });
+    const y0 = await t.alertes.alertYield(row(without));
+    const y50 = await t.alertes.alertYield(row(with50));
+    expect(y0).not.toBeNull();
+    expect(y50!.grossBp).toBeLessThan(y0!.grossBp);
   });
 
   it('un bien sans commune rangée, ou qui ne peut plus être diffusé, ne part pas', async () => {

@@ -15,6 +15,8 @@ import {
   traceParagraph,
   type NoteFacts,
   type NoteWriter,
+  computeYield,
+  type YieldInputs,
 } from '../src/investir/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -442,4 +444,21 @@ describeWithSqlite('Y14 · retrouver les calculs et les notes d’un projet', ()
     expect(JSON.stringify(again.value)).not.toContain(d.value.text.slice(0, 40));
     expect(await t.notes.forClient(t.network.id, d.value.id)).toBeNull();
   });
+});
+
+it('[R126] AU099 · une note qui change une hypothèse d’un calcul de version 1 range un calcul de version 1, complet', async () => {
+  const t = await setup({ writer: writerOf(['Le bien coûte au total ce que dit le calcul.']) });
+  const agent = t.as('agent', t.alex.id);
+  const current = await t.calculs.get(t.network.id, t.calcId);
+  if (!current) throw new Error('calcul absent');
+  const { recoverableCharges: _gone, ...legacy } = current.inputs;
+  const legacyInputs = legacy as unknown as YieldInputs;
+  const id = await t.calculs.store(agent, { propertyId: current.propertyId, projectId: current.projectId, inputs: legacyInputs, result: computeYield(legacyInputs, AT, 1) });
+  const stored = await t.calculs.get(t.network.id, id);
+  expect(stored?.result).toMatchObject({ status: 'complet', formulaVersion: 1 });
+  expect((await t.calculs.replay(t.network.id, id))?.same).toBe(true);
+  const r = await t.notes.draft(t.acces, agent, { calculationId: id, projectId: t.project.id, hypotheses: { vacancyMonths: 2 } });
+  if (!r.ok) throw new Error(r.code);
+  const revised = await t.calculs.get(t.network.id, r.value.calculationId);
+  expect(revised?.result).toMatchObject({ status: 'complet', formulaVersion: 1 });
 });

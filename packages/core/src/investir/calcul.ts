@@ -418,7 +418,7 @@ export class CalculInvestissement {
     const id = this.newId();
     const createdAt = this.now().toISOString();
     // Le résultat rangé est celui que donne le code depuis les entrées, à la date du rangement : rejouable à l'identique.
-    const result = computeYield(c.inputs, createdAt);
+    const result = computeYield(c.inputs, createdAt, c.result.formulaVersion);
     await this.db.run(
       `INSERT INTO investment_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -73,6 +73,12 @@ async function setup() {
     ]);
     const r = await alertes.recordPropertyCommune(acces, agent, p, { inseeCode: '99001', rentKind: 'apartment' });
     if (!r.ok) throw new Error(r.code);
+    // Les faits de location du bien donnent sa provision pour charges récupérables, ici nulle (AU099).
+    await db.run("INSERT INTO rental_listings (id, network_id, property_id, owner_person_id, created_by, created_at) VALUES (?, ?, ?, 'proprietaire-invente', 'agent:a', '2027-01-01')", [`rl-${ref}`, network, p]);
+    await db.run(
+      "INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, recorded_by, recorded_at) VALUES (?, 1, 1, 50000, 0, 4500, 'C', 150, 1990, 0, 'aucune', '2027-09-01', 'agent:a', '2027-01-02')",
+      [`rl-${ref}`],
+    );
     await mandate(p, ref);
     return p;
   };
