@@ -132,7 +132,8 @@ export interface ScheduleLine {
 
 /** La notification d'un acquéreur du dossier et son propre délai de rétractation (AU009). */
 export interface BuyerNotice {
-  personId: string;
+  /** null quand celui qui lit ne voit pas cette fiche en entier [R16]. */
+  personId: string | null;
   /** L'acquéreur en tête de l'offre ; les autres sont ses coacquéreurs. */
   lead: boolean;
   /** La première présentation de sa notification, ou null tant qu'elle n'est pas saisie. */
@@ -259,6 +260,19 @@ export class Echeancier {
     return new Map(rows.map((r) => [r.person_id, { day: r.day, version: Number(r.version) }]));
   }
 
+  /**
+   * L'échéancier tel que le lit une personne : chaque acquéreur dont elle ne voit pas la fiche en entier y reste, sans son
+   * identifiant ni ses dates ; le délai collectif du dossier ne change pas [R16] (AU009).
+   */
+  private async visibleTo(viewer: Viewer, schedule: Schedule): Promise<Schedule> {
+    const buyers: BuyerNotice[] = [];
+    for (const b of schedule.buyers) {
+      const read = b.personId ? await this.acces.readFiche(viewer, b.personId) : null;
+      buyers.push(read?.ok && read.view === 'full' ? b : { personId: null, lead: b.lead, notifiedOn: null, version: null, lastDay: null });
+    }
+    return { ...schedule, buyers };
+  }
+
   /** L'échéancier d'un dossier, pour les passages du système, qui ne montrent rien à personne : sans contrôle d'accès. */
   async scheduleOf(file: { id: string; offer_id: string; property_id: string }): Promise<Schedule> {
     const dates = await this.datesOf(file.id);
@@ -275,7 +289,7 @@ export class Echeancier {
   async schedule(viewer: Viewer, fileId: string): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    return { ok: true, value: await this.scheduleOf(g.file) };
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(g.file)) };
   }
 
   /** L'agent du dossier saisit une date du compromis, avec sa preuve. Une correction s'ajoute en nouvelle version [R17]. */
@@ -328,7 +342,7 @@ export class Echeancier {
       throw error;
     }
     await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R61', kind, version } }, this.now);
-    return { ok: true, value: await this.scheduleOf(g.file) };
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(g.file)) };
   }
 
   /** La notification d'un coacquéreur : sa date, sa preuve, en nouvelle version si elle est corrigée [R17] (AU009). */
@@ -356,7 +370,7 @@ export class Echeancier {
     }
     // Au journal : la fiche du coacquéreur par son identifiant, jamais son nom [R13].
     await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${file.id}`, data: { rule: 'R61', kind: 'notification_acquereur', version, person: `person:${personId}` } }, this.now);
-    return { ok: true, value: await this.scheduleOf(file) };
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(file)) };
   }
 
   /**

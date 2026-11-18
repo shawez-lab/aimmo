@@ -213,4 +213,23 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     }
     for (const id of [t.buyerId, co!]) expect(await t.db.first('SELECT 1 FROM prospect_retention_cycles WHERE person_id = ?', [id])).toBeNull();
   });
+
+  it('[R16] un coacquéreur confié à un autre agent : l’échéancier et le registre le taisent, le délai du dossier reste', async () => {
+    const t = await setupDossier('appartement', {}, { coBuyers: 1 });
+    const [co] = t.coBuyerIds;
+    await t.startCompromis();
+    t.setClock(new Date('2027-03-16T08:00:00.000Z'));
+    const e = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+    await e.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-11', proofRef: PROOF, personId: t.buyerId });
+    await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-13', proofRef: PROOF, personId: co });
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.userId, co!]);
+    const s = await e.schedule(t.agent, t.fileId);
+    expect(s.ok && s.value.buyers[1]).toEqual({ personId: null, lead: false, notifiedOn: null, version: null, lastDay: null });
+    expect(s.ok && s.value.lines[0]).toMatchObject({ status: 'datee', day: '2027-03-23' });
+    expect(JSON.stringify(s)).not.toContain(co!);
+    const { SuiviOffres } = await import('../src/offres/suivi-offres.ts');
+    const listed = await new SuiviOffres(t.db, t.acces, t.journal, { now: t.now }).listFor(t.agent, t.propertyId);
+    expect(JSON.stringify(listed)).not.toContain(co!);
+  });
 });
