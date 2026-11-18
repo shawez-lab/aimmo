@@ -555,6 +555,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
   // fiche ne sont jamais montrés [R96].
   signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash', 'copy_content'], sharedIf: CO_MANDANTS('document_id'), foreignPersons: ['signer_person_id'] },
+  // AU003 : le dossier de preuve et l'exemplaire remis, par le document ; la remise, par la fiche du mandant.
+  signature_dossiers: { locate: [via('document_id', 'documents')], shared: ['copy_content'], sharedIf: CO_MANDANTS('document_id') },
+  signature_remises: { locate: [...by('person_id'), via('document_id', 'documents')] },
+  signature_validations: out('sans_client', 'Validation du format du dossier de preuve par l\'avocat du réseau.'),
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },

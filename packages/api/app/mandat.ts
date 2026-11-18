@@ -6,7 +6,8 @@
  * L'agent génère le mandat, lit le contrôle ligne par ligne, enregistre la signature sur papier avec le scan déposé, voit
  * le numéro au registre et l'exemplaire. L'écran ne lit et n'écrit que par les routes [R16] et ne calcule ni numéro ni
  * honoraires [R39] : il pose ce que le code rend. Le formulaire de signature n'existe qu'après un contrôle réussi [R41].
- * Un document d'essai est dit tel [R40]. La signature en ligne n'y est pas : elle attend la validation de l'avocat (H24).
+ * Un document d'essai est dit tel [R40]. Après un contrôle réussi, l'écran dit si la signature en ligne est réelle ou
+ * seulement d'essai, et ce qu'elle attend (AU003).
  * L'agent y note aussi la rétractation reçue et la demande écrite de commencer tout de suite (D16) [R42] ; le code seul
  * décide si la date tient, l'écran n'en dit que le refus. Sur un mandat en cours, il lit les conditions en vigueur,
  * prépare et enregistre un avenant de prix ou de durée (D17) [R41].
@@ -439,7 +440,21 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (check.passed !== true) { state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
       state('Contrôle réussi : vous pouvez enregistrer la signature.');
       drawSign(zone, d);
+      if (d.kind !== 'avenant_mandat') online(zone);
       return true;
+    });
+  }
+  // La signature en ligne : réelle seulement quand le mail réel et la validation de l'avocat sont là ; sinon d'essai,
+  // dite telle, sans valeur juridique (AU003). Le mode vient du serveur, jamais de l'écran.
+  function online(zone) {
+    var line = el('p', '');
+    zone.appendChild(line);
+    return send('/v1/signature-en-ligne/mode', 'GET').then(function (res) {
+      var m = res.ok && res.body && res.body.data;
+      if (!m) return;
+      line.textContent = m.mode === 'reel'
+        ? 'Signature en ligne : réelle, avec dossier de preuve remis à chaque mandant.'
+        : 'Signature en ligne : essai seulement, sans valeur juridique' + (m.missing && m.missing.indexOf('validation_avocat') >= 0 ? ' (validation de l’avocat attendue).' : ' (mail réel pas encore branché).');
     });
   }
   function drawSource(zone, d) {
