@@ -3,6 +3,8 @@ import type { EnergyClass, PropertySheet } from '../src/annonces/index.ts';
 import { auditClasses, energyAuditCase, expectedPieces } from '../src/dossiers/index.ts';
 import { expiredPieces } from '../src/dossiers/acte.ts';
 import { reminderText } from '../src/dossiers/relances.ts';
+import { PIECES } from '../src/dossiers/pieces.ts';
+import { SELLER_PIECES } from '../src/espaces/sources-vendeur.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -77,6 +79,12 @@ it('[R60] AU010 · l’audit vaut 5 ans au jour de l’acte', () => {
 
 it('AU010 · la relance de la pièce la nomme en français simple', () => {
   expect(reminderText('Camille', 'audit_energetique')).toContain("l'audit énergétique");
+});
+
+it('AU010 · l’audit reçu se voit dans l’espace du vendeur, comme chaque pièce que les règles lui demandent', () => {
+  expect(SELLER_PIECES.has('audit_energetique')).toBe(true);
+  // Toutes les pièces du vendeur, et aucune de l'acquéreur.
+  expect([...PIECES].filter((p) => !SELLER_PIECES.has(p))).toEqual(['fiche_renseignements_acquereur']);
 });
 
 describeWithSqlite('AU010 · audit énergétique au dossier de vente', () => {
