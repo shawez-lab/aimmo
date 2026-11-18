@@ -525,13 +525,17 @@ globalThis.AIMMO_MANDAT = function (t) {
   }
   /* AU002 : l'adresse du bien, ses parcelles et le domicile de chaque mandant, que chaque mandat de vente reprend. */
   function where(a) { return a && a.street ? a.street + ', ' + a.postalCode + ' ' + a.city + (a.country ? ', ' + a.country : '') : null; }
-  function addressFields(box, id, a) {
+  function addressFields(box, id, a, abroad) {
     var street = field(box, id + '-voie', 'Numéro et voie');
     var cp = field(box, id + '-cp', 'Code postal');
-    cp.setAttribute('inputmode', 'numeric');
     var city = field(box, id + '-commune', 'Commune');
-    if (a) { street.value = a.street || ''; cp.value = a.postalCode || ''; city.value = a.city || ''; }
-    return function () { return { street: street.value.trim(), postalCode: cp.value.trim(), city: city.value.trim() }; };
+    var country = abroad ? field(box, id + '-pays', 'Pays, s’il n’est pas en France') : null;
+    if (a) { street.value = a.street || ''; cp.value = a.postalCode || ''; city.value = a.city || ''; if (country) country.value = a.country || ''; }
+    return function () {
+      var out = { street: street.value.trim(), postalCode: cp.value.trim(), city: city.value.trim() };
+      if (country && country.value.trim()) out.country = country.value.trim();
+      return out;
+    };
   }
   function drawDesignation(d, owners) {
     var box = bloc('Désignation pour le mandat');
@@ -563,7 +567,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       var sub = el('div');
       box.appendChild(sub);
       sub.appendChild(el('p', where(o.domicile) ? 'Domicile de ' + name + ' : ' + where(o.domicile) : 'Domicile de ' + name + ' : à saisir.'));
-      var get = addressFields(sub, 'domicile-' + o.personId, o.domicile);
+      var get = addressFields(sub, 'domicile-' + o.personId, o.domicile, true);
       sub.appendChild(button('Enregistrer le domicile de ' + name, act(function () {
         var mine = ++seq;
         return send('/v1/fiches/' + o.personId + '/domicile', 'POST', get()).then(function (res) {

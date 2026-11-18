@@ -125,6 +125,13 @@ describe('D12 · écran « Mandat »', () => {
     await t.press('Enregistrer le domicile de Léa Exemple');
     expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
     expect(t.state()).toContain('Domicile enregistré');
+    // Un domicile à l'étranger : le pays s'envoie avec lui.
+    t.input('domicile-p1-voie').value = '1 Test Street';
+    t.input('domicile-p1-cp').value = 'SW1A 1AA';
+    t.input('domicile-p1-commune').value = 'London';
+    t.input('domicile-p1-pays').value = 'Royaume-Uni';
+    await t.press('Enregistrer le domicile de Léa Exemple');
+    expect(t.posts()[2]!.body).toEqual({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' });
   });
 
   it('[R40] AU002 : ce qui est déjà saisi est montré et prérempli ; un refus du serveur est dit en français', async () => {

@@ -190,6 +190,7 @@ describeWithSqlite('AU002 · le mandat reprend en champs l’adresse du bien, so
     expect(readAddress({ street: '12 rue des Essais', postalCode: '21000', city: 'Dijon', country: 'Belgique' })).toBeNull();
     expect(readAddress({ street: '1 rue Haute', postalCode: '1000', city: 'Bruxelles', country: 'Belgique' }, { abroad: true })).toEqual({ street: '1 rue Haute', postalCode: '1000', city: 'Bruxelles', country: 'Belgique' });
     expect(readAddress({ street: '1 rue Haute', postalCode: '1000', city: 'Dijon' }, { abroad: true })).toBeNull();
+    expect(readAddress({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' }, { abroad: true })).toMatchObject({ postalCode: 'SW1A 1AA', country: 'Royaume-Uni' });
     expect(readParcels([{ section: 'ab', number: '0123' }])).toEqual([{ prefix: null, section: 'AB', number: '123' }]);
     expect(readParcels([{ section: '0A', number: 7 }])).toEqual([{ prefix: null, section: '0A', number: '7' }]);
     expect(readParcels([{ section: 'ABC', number: '1' }])).toBeNull();
