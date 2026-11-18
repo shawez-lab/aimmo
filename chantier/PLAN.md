@@ -175,7 +175,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU012 · Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#672, `9e156f5d`), migration `3995`, R07 complétée. Constat confirmé (titre en dur). Décidé, lecture prudente : titre écrit à côté du nom de l'agent réglé par la direction dans une liste fermée (`agent immobilier`, `agent commercial en immobilier`, `conseiller immobilier`), jamais « mandataire » ni titulaire de carte, rangé sans réécriture ; sans réglage « agent immobilier » : texte affiché inchangé (H24). Branché : page du bien, page de l'agent, accueil du site de l'agent, panneau, flyer, vitrine, carte de visite ; routes `GET/POST /v1/attirer/titre-agent`. Relecture forte 1 P1 (carte de visite) corrigé ; Codex 1 P0 (accueil du site) corrigé, puis rien ; vérification GitHub verte. Restent : écran de réglage de la direction (voie 1, `app.ts`) ; les autres textes qui écrivent « agent immobilier » (mails, lettres, signatures) passeront au réglage quand l'avocat aura tranché (H24).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M12 Conformité ; audit A012 (bloquant), endroit : docs/REGLES.md, R07 ; C/annonces/page-bien.ts, `agentBlock`.
 - Constat de l'audit : Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte professionnelle personnelle.
