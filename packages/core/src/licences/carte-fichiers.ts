@@ -126,6 +126,7 @@ export const CLES_LIGNES: Readonly<Record<string, readonly string[]>> = {
   registered_letter_events: ['letter_id', 'seq'],
   rental_choices: ['listing_id'],
   sale_file_closings: ['file_id'],
+  sale_file_buyer_notices: ['file_id', 'person_id', 'version'],
   sale_file_dates: ['file_id', 'kind', 'version'],
   sale_file_stops: ['file_id'],
   signature_circuit_annexes: ['circuit_id', 'position'],
