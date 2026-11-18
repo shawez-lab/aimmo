@@ -55,7 +55,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU001b · Le second mandant voit son mandat dans son espace
-- Statut : en cours
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#661, `92eb1fa7`). Constat confirmé (le second mandant n'avait aucun côté). Chaque mandant d'un mandat vivant compte pour l'espace vendeur (`LIVE_MANDATE_MANDANTS`) ; documents du mandant ou d'un mandant en plus seulement ; numéro du registre montré [R39] ; R161 complétée. Relecture forte : aucun P0 ni P1 ; Codex rien à signaler ; vérification GitHub verte (en local, un test Y05 dépasse 5 s, machine lente, sans lien). Restent : l'espace propriétaire (`ownerWindows`) ne compte que le premier mandant ; un test de l'avenant dans l'espace du second mandant.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : AU001
 - Cahier : M06 Mandats et documents ; M11 Après-vente (espaces des clients).
 - Trouvé par la relecture forte de AU001 : l'espace vendeur et l'espace propriétaire s'ouvrent par `mandates.person_id`, donc par le seul premier mandant. Un autre mandant d'un mandat signé n'a pas d'espace, et ne voit ni son mandat ni son numéro [R39].

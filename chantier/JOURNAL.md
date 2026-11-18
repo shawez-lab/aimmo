@@ -1424,3 +1424,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 13:25 · VOIE 2 : relance refusée, question 2 (les séances de 09:53 et 10:52 n'ont rien produit)
 - 2026-11-18 13:25 · VOIE 2 : AU008, 2309d575, relancé non
 - 2026-11-18 15:20 · AU001 · mandat d'un couple ou d'une indivision : chaque mandant nommé, identifié et signataire, fusionnée (#659) ; #656 (plan de l'audit) fusionnée ; AU001b ajoutée · prochaine : AU001b
+- 2026-11-18 16:39 · AU001b · le second mandant d'un mandat signé a son espace vendeur, avec le mandat et son numéro, sans rien de l'autre, fusionnée (#661) · prochaine : AU002
