@@ -415,7 +415,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const listings = await latestListings(site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all, s.diffusion, networkId, checkedAt, HOME_LISTINGS);
       // Le nom de l'agent ne va jamais sans ses mentions [R152].
       const own = site.kind === 'agent' ? await svc.pageAgent.inputFor(networkId, site.agentId!) : null;
-      const agent = own?.ok ? { agentId: own.input.agentId, name: `${own.input.firstName} ${own.input.lastName}`, mentions: own.input.mentions } : null;
+      const agent = own?.ok ? { agentId: own.input.agentId, name: `${own.input.firstName} ${own.input.lastName}`, mentions: own.input.mentions, title: own.input.title } : null;
       return liveHtml(renderSiteHome({ kind: site.kind, recruiting: s.recruitingNetworkId === networkId, agent, listings, checkedAt }));
     }
     case 'liste': {

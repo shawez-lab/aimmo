@@ -8,6 +8,7 @@ import {
   QualiteAgent,
   professionalTitle,
   renderAgentPage,
+  renderSiteHome,
   titleFor,
   type AgentPageInput,
 } from '../src/attirer/index.ts';
@@ -92,6 +93,13 @@ describe('AU012 · titre de l’agent selon son statut', () => {
     const titled = renderSupport({ support: 'carte', agent: { ...CARD, title }, url: 'https://exemple.test' });
     expect('html' in titled && titled.html).toContain('<p class="titre">Agent commercial en immobilier</p>');
     expect('html' in titled && titled.html).not.toMatch(/agent immobilier/i);
+    // L'accueil du site de l'agent aussi, et sans réglage rien ne change.
+    const home = { kind: 'agent' as const, recruiting: false, listings: [], checkedAt: new Date('2026-11-18T08:00:00.000Z') };
+    const agentHome = { agentId: 'ag-1', name: 'Camille Exemple', mentions: PAGE_INPUT.mentions };
+    expect(renderSiteHome({ ...home, agent: agentHome })).toContain('Camille Exemple, agent immobilier');
+    const titledHome = renderSiteHome({ ...home, agent: { ...agentHome, title } });
+    expect(titledHome).toContain('Camille Exemple, agent commercial en immobilier');
+    expect(titledHome).not.toContain('Camille Exemple, agent immobilier');
     for (const support of ['panneau', 'flyer', 'vitrine'] as const) {
       const r = renderSupport({ support, payload: PAYLOAD, agent: { ...CARD, title }, url: 'https://exemple.test/biens/b1' });
       expect('html' in r).toBe(true);
