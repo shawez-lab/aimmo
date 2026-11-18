@@ -154,7 +154,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU010b · L'audit énergétique remis à l'acquéreur dès la première visite
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU010
 - Cahier : M08 Acquéreurs et visites ; suite d'AU010 (art. L126-28-1 du CCH : audit communiqué à l'acquéreur potentiel dès la première visite).
 - Objectif : quand `energyAuditCase` dit « requis » pour le bien, la visite (`visites.ts`) rappelle à l'agent de remettre l'audit et range la preuve de sa remise (date, moyen) ; une classe inconnue le dit à l'agent ; le diagnostiqueur partenaire peut déposer l'audit au dossier (`PIECE_RULES`, `PIECE_CREDENTIALS`, après lecture du justificatif requis).
