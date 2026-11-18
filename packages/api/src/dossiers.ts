@@ -12,7 +12,7 @@ import { journalError } from './app.ts';
 import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, PiecesDossier, RelancesPieces } = m10;
+const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, ObligationsLocales, PiecesDossier, RelancesPieces } = m10;
 export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
@@ -100,6 +100,7 @@ const services = (s: DossierServices) => ({
   chemin: new CheminCritique(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   relances: new RelancesPieces(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   bouclier: new BouclierFonds(s.db, s.acces, s.journal, { now: s.now }),
+  obligations: new ObligationsLocales(s.db, s.acces, s.journal, { now: s.now }),
 });
 
 const depositAs = (kind: m10.FileDepositKind): DossierRoute['handle'] => async (s, v, [id], r) => {
@@ -146,6 +147,24 @@ export function dossierRoutes(): DossierRoute[] {
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/acte$`), name: 'dossiers.acte.signe', handle: withBody(async (s, v, [id], b) => reply(await services(s).acte.record(v, id!, { signedOn: b.signedOn, proofRef: b.proofRef }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/chemin$`), name: 'dossiers.chemin', handle: async (s, v, [id]) => reply(await services(s).chemin.of(v, id!)) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/relances$`), name: 'dossiers.relances', handle: async (s, v, [id]) => reply(await services(s).relances.ofFile(v, id!)) },
+    // AU011 : la direction range la lecture d'un arrêté local pour une commune ; l'agent du bien ou la direction déclare le
+    // raccordement du bien du dossier aux eaux usées. Les droits sont ceux de la couche métier, refus au journal [R16].
+    {
+      method: 'POST',
+      pattern: /^\/dossiers\/obligations-locales$/,
+      name: 'dossiers.obligations_locales',
+      handle: withBody(async (s, v, _p, b) => reply(await services(s).obligations.recordZone(v, { postalCode: b.postalCode, city: b.city, hazard: b.hazard, inZone: b.inZone, title: b.title, url: b.url, datedOn: b.datedOn, readOn: b.readOn }))),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/dossiers/${ID}/assainissement$`),
+      name: 'dossiers.assainissement',
+      handle: withBody(async (s, v, [id], b) => {
+        const file = await s.db.first<{ property_id: string }>('SELECT property_id FROM sale_files WHERE id = ? AND network_id = ?', [id!, v.networkId]);
+        if (!file) return reply({ ok: false, rule: null, code: 'unknown_file' });
+        return reply(await services(s).obligations.recordSanitation(v, file.property_id, b.mode));
+      }),
+    },
     { method: 'GET', pattern: /^\/dossiers\/taches$/, name: 'dossiers.taches', handle: async (s, v) => reply((await services(s).echeancier.tasksOf(v)) as Outcome) },
     {
       method: 'GET',
