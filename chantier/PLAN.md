@@ -122,7 +122,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#658), migration `3960`, R54 complétée. Décidé, lecture prudente : « prévenue » seulement sur l'accusé réel du prévenant (`{ mode: 'reel', receipt }`), jamais en essai ; acquittement par la direction du réseau, définitif ; sans acquittement, palier dû compté depuis le geste (+1 toutes les 5 minutes, jusqu'au palier 3 : direction de permanence, toute la direction, contact d'urgence), pendant l'heure qui suit ; la lecture de l'agent fait monter le palier dû ; anciennes alertes « prévenues » par l'essai reclassées « essai » ; bouton renommé « Alerte sécurité ». Relecture forte 1 P0 et 1 P1 corrigés, Codex 1 P0 corrigé puis rien à signaler. Restent : appeler `VisiteSecurisee.tick()` à chaque minute du Worker (voie 1, planificateur) ; écran de la direction pour acquitter et relecture de l'état sur le téléphone de l'agent (voie 1, `app.ts`) ; prévenant réel par SMS ou appel avec accusé (H71).
 
 ### AU009 · Une offre et son échéancier ne portent qu’un acquéreur et une date de notification
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M09 Offre ; audit A009 (bloquant), endroit : C/offres/registre-offres.ts, `buyerPersonId` ; C/dossiers/echeancier.ts, `notification_acquereur`.
 - Constat de l'audit : Une offre et son échéancier ne portent qu’un acquéreur et une date de notification : je ne peux pas suivre séparément les droits des coacquéreurs.
