@@ -23,7 +23,7 @@ import { CollecteBien, SOURCES, type CadastreService, type EnergyService, type G
 import { DEFAULT_RANGE_SETTINGS, departmentOf, distance, type EstimatedKind, type Sale, type SalesCoverage } from '../estimation/fourchette.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { banDate, dayInFrench } from '../location/logement.ts';
+import { banDate, dayInFrench, territoryOf } from '../location/logement.ts';
 import { addressCarriesPerson } from '../veille-dpe/veille.ts';
 
 /** La même lecture que la veille des diagnostics : le titre d'une voie n'est pas une personne [R292]. */
@@ -94,7 +94,7 @@ export function computeScore(facts: AddressFacts, today: string): AddressScore {
     const age = daysBetween(e.diagnosedOn, today);
     const p = age <= 180 ? 35 : age <= 365 ? 20 : 0;
     if (p > 0) points.push({ signal: 'diagnostic_recent', points: p, fact: `Diagnostic énergétique établi le ${dayInFrench(e.diagnosedOn)} : il est demandé pour vendre ou pour louer.`, source: e.source, date: e.diagnosedOn });
-    const ban = e.energyClass === 'E' || e.energyClass === 'F' || e.energyClass === 'G' ? banDate(e.energyClass) : null;
+    const ban = e.energyClass === 'E' || e.energyClass === 'F' || e.energyClass === 'G' ? banDate(e.energyClass, territoryOf(facts.address.inseeCode || facts.address.postcode)) : null;
     if (ban !== null && ban <= shiftDay(today, 3 * 365)) {
       const when = ban <= today ? `ne peut plus être loué depuis le ${dayInFrench(ban)}` : `ne pourra plus être loué à partir du ${dayInFrench(ban)}`;
       points.push({

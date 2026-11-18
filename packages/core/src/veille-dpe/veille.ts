@@ -28,7 +28,7 @@ import { plain } from '../envoi/texte.ts';
 import type { Fetcher } from '../estimation/collecte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { banDate, dayInFrench, ownerNoticeText } from '../location/logement.ts';
+import { banDate, dayInFrench, ownerNoticeText, territoryOf } from '../location/logement.ts';
 import { checkLetterText, LETTER_RECIPIENT_LABELS, renderLetters } from '../mandats/gagner/lettres-quartier.ts';
 import { withoutRoadTitles } from './titre-voie.ts';
 
@@ -254,7 +254,7 @@ const pointOf = (viewer: Viewer) => (r: DiagnosisRow): DpePoint => ({
   receivedOn: r.received_on,
   address: { streetNumber: r.street_number, street: r.street, postcode: r.postcode, commune: r.commune },
   position: r.lat === null || r.lon === null ? null : { lat: Number(r.lat), lon: Number(r.lon) },
-  rentBanFrom: banDate(r.energy_class),
+  rentBanFrom: banDate(r.energy_class, territoryOf(r.postcode)),
   letterId: r.letter_id,
   letterMine: viewer.role === 'agent' && r.letter_id !== null && r.letter_agent_id === viewer.userId,
 });
@@ -525,7 +525,7 @@ export class VeilleDpe {
     if (!d) return { ok: false, rule: null, code: 'unknown_diagnosis' };
     if (!(await this.zoneSlugs(viewer.networkId, viewer.userId)).has(d.commune_slug)) return this.refuse(viewer, `dpe:${d.id}`, 'hors_zone');
     if (d.energy_class !== 'F' && d.energy_class !== 'G') return { ok: false, rule: 'R290', code: 'classe_sans_lettre' };
-    const bannedFrom = banDate(d.energy_class);
+    const bannedFrom = banDate(d.energy_class, territoryOf(d.postcode));
     if (!bannedFrom) return { ok: false, rule: 'R290', code: 'sans_date' };
     if (d.letter_id) return { ok: false, rule: 'R290', code: 'deja_preparee' };
     const body = ownerLetterText(d.energy_class, bannedFrom, this.today());

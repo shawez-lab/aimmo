@@ -151,3 +151,10 @@ describeWithSqlite('Y04 · contraintes signalées', () => {
     expect(refused.map((e) => (e.data as { code: string }).code)).toEqual(['source', 'source', 'date_source', 'regle', 'insee']);
   });
 });
+
+it('[R124] AU098b · un G ultramarin porte l’échéance de 2028, sans le seuil métropolitain des 450 kWh', () => {
+  const g = energyConstraint('G', 460, '2027-09-14', 'fiche', 'outre_mer');
+  expect(g).toMatchObject({ status: 'echeance', bannedFrom: '2028-01-01' });
+  expect(energyConstraint('G', 460, '2027-09-14', 'fiche')).toMatchObject({ status: 'interdit' });
+  expect(energyConstraint('E', null, '2027-09-14', 'fiche', 'outre_mer')).toMatchObject({ bannedFrom: null });
+});
