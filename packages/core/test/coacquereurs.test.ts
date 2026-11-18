@@ -5,7 +5,8 @@ import { DossiersVente } from '../src/offres/dossier-vente.ts';
 import { FicheUnique } from '../src/index.ts';
 import { caseScopeOf } from '../src/conformite/dossier-fige.ts';
 import { assembleAccessDetail } from '../src/conformite/demandes-personnes.ts';
-import { ActeVente } from '../src/dossiers/index.ts';
+import { ActeVente, ArretDossier } from '../src/dossiers/index.ts';
+import { conformite } from '../src/index.ts';
 import { hashOffer } from '../src/offres/registre-offres.ts';
 import { Echeancier, buyerWithdrawalLastDay, scheduleLines } from '../src/dossiers/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
@@ -177,5 +178,20 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     const lead = await assembleAccessDetail(t.db, [t.buyerId]);
     expect(lead.response.sections.find((x) => x.table === 'offer_register')?.rows).toHaveLength(1);
     expect(JSON.stringify(lead.response.sections.find((x) => x.table === 'offer_register'))).not.toContain(co);
+  });
+
+  it('[R97] [R233] le coacquéreur d’un dossier arrêté n’entre pas aux prospects, comme l’acquéreur en tête', async () => {
+    const t = await setupDossier('appartement', {}, { coBuyers: 1 });
+    const [co] = t.coBuyerIds;
+    const durees = new conformite.DureesProspects(t.db, t.journal, new FicheUnique(t.db, t.store, { now: t.now }), { now: t.now });
+    const proof = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000001.pdf';
+    t.storage.refs.add(proof);
+    t.setClock(new Date('2027-03-10T10:00:00.000Z'));
+    expect(await new ArretDossier(t.db, t.acces, t.journal, t.storage, { now: t.now }).stop(t.agent, t.fileId, { reason: 'pret_refuse', proofRef: proof })).toMatchObject({ ok: true });
+    for (const at of ['2030-03-10T10:00:00.000Z', '2030-04-10T10:00:00.000Z']) {
+      t.setClock(new Date(at));
+      await durees.run(t.network.id);
+    }
+    for (const id of [t.buyerId, co!]) expect(await t.db.first('SELECT 1 FROM prospect_retention_cycles WHERE person_id = ?', [id])).toBeNull();
   });
 });
