@@ -330,8 +330,21 @@ describe('D12 · écran « Mandat »', () => {
     expect(t.state()).toBe('Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.');
   });
 
-  it('[R41] la signature en ligne n’existe pas sur cet écran tant que l’avocat ne l’a pas validée (H24)', () => {
-    expect(MANDAT_SCRIPT).not.toContain('signature-en-ligne');
+  it('[R41] après un contrôle réussi, l’écran dit si la signature en ligne est réelle ou seulement d’essai, d’après le serveur (AU003)', async () => {
+    const essai = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['mail_reel', 'validation_avocat'], proofFormat: 'aimmo-preuve-1' }) });
+    await essai.open();
+    await essai.press('Contrôler avant signature');
+    expect(essai.body().textContent).toContain('Signature en ligne : essai seulement, sans valeur juridique (validation de l’avocat attendue).');
+    const reel = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'reel', missing: [], proofFormat: 'aimmo-preuve-1' }) });
+    await reel.open();
+    await reel.press('Contrôler avant signature');
+    expect(reel.body().textContent).toContain('Signature en ligne : réelle, avec dossier de preuve remis à chaque mandant.');
+    expect(reel.body().textContent).not.toContain('essai seulement');
+    // Le serveur ne répond pas : rien n'est affirmé.
+    const rien = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }) });
+    await rien.open();
+    await rien.press('Contrôler avant signature');
+    expect(rien.body().textContent).not.toContain('Signature en ligne');
   });
 
   it('[R16] une lecture refusée n’est pas montrée comme un bien sans mandat ; quitter l’écran n’y laisse rien', async () => {
