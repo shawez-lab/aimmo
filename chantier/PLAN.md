@@ -200,6 +200,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Source : [Nécessité d’un mandat écrit](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/professionnels-de-limmobilier-les-regles-connaitre).
 - Attend : rien.
+- Découpé (2026-11-18, voie 3) : constat confirmé, et plus large que prévu : AIMMO n'a aucun mandat de location. `DOCUMENT_KINDS` ne connaît que les mandats de vente et l'avenant (CHECK de `document_templates`, migration 0033), `mandates` n'a pas d'objet, et `Diffusion.canDiffuse` (R42) ne regarde pas l'objet du mandat. À faire dans l'ordre : AU014a, un modèle « mandat de location » (sorte de document, champs, contrôles, écran Mandats, table des modèles reconstruite) et l'objet du mandat (`vente` ou `location`) rangé à la signature ; AU014b, `canDiffuse` par objet, puis l'annonce de location publiable et le barème d'honoraires seulement sous un mandat de location en cours (tests : sans mandat, annonce non publiable et barème refusé ; un mandat de vente n'ouvre pas la location).
 
 ### AU015 · Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse
 - Statut : à faire
