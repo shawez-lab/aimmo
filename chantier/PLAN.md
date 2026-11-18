@@ -65,7 +65,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU002 · Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le…
-- Statut : en cours
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#663, `ba4fb304`). Constat confirmé. Adresse et parcelles du bien (`property_designations`), domicile de chaque mandant (`person_domiciles`), saisis à l'écran « Mandat » et repris par le mandat ; modèle sans leur place refusé, document sans valeur incomplet, et le contrôle arrête aussi un mandat d'avant AU002 (P0 de Codex corrigé). Relecture forte : 1 P1 corrigé (domicile à l'étranger). R40 complétée. À faire hors code : donner ces trois places aux modèles réels (H08). Piste : préremplir depuis l'état des risques.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A002 (bloquant), endroit : C/documents/modeles.ts, `TEMPLATE_FIELDS`.
 - Constat de l'audit : Mon mandat généré ne peut pas reprendre par champs l’adresse du bien, sa désignation cadastrale et le domicile du mandant.
