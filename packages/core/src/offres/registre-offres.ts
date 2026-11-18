@@ -27,6 +27,8 @@ import type { JournalStore } from '../journal/types.ts';
 const TIME_ZONE = 'Europe/Paris';
 export const OFFER_GENESIS = '0'.repeat(64);
 export const MAX_VALIDITY_DAYS = 60;
+/** Coacquéreurs d'une offre, en plus de l'acquéreur en tête (AU009). */
+export const MAX_CO_BUYERS = 3;
 
 /** `autre` : une autre condition, sans texte libre ; son contenu est dans l'offre signée rangée par sa référence. */
 export const CONDITION_KINDS = ['pret', 'vente_autre_bien', 'permis_construire', 'certificat_urbanisme', 'autre'] as const;
@@ -41,6 +43,8 @@ export type OfferCondition =
 
 export interface OfferInput {
   buyerPersonId: unknown;
+  /** Les coacquéreurs, chacun sa fiche, jamais fusionnée avec celle de l'acquéreur en tête (AU009) ; facultatif. */
+  coBuyerPersonIds?: unknown;
   amountEur: unknown;
   conditions: unknown;
   validUntil: unknown;
@@ -57,6 +61,8 @@ export interface Offer {
   propertyId: string;
   seq: number;
   buyerPersonId: string;
+  /** Les coacquéreurs, dans l'ordre de l'offre signée ; vide pour un acquéreur seul. */
+  coBuyerPersonIds: string[];
   amountEur: number;
   conditions: OfferCondition[];
   validUntil: string;
@@ -79,6 +85,8 @@ interface Row {
   property_id: string;
   seq: number;
   buyer_person_id: string;
+  /** JSON : les fiches des coacquéreurs ; `[]` pour un acquéreur seul (migration 3970). */
+  co_buyers?: string;
   amount_eur: number;
   conditions: string;
   valid_until: string;
@@ -93,12 +101,16 @@ interface Row {
   hash: string;
 }
 
-/** L'empreinte d'une offre : tout ce qu'elle porte, dans un ordre fixe, et l'empreinte de la précédente. */
+/**
+ * L'empreinte d'une offre : tout ce qu'elle porte, dans un ordre fixe, et l'empreinte de la précédente. Les coacquéreurs
+ * s'y ajoutent dès qu'il y en a un : une offre d'un acquéreur seul garde l'empreinte qu'elle avait avant AU009.
+ */
 export async function hashOffer(r: Omit<Row, 'hash'>): Promise<string> {
-  const fields = [
+  const fields: unknown[] = [
     r.id, r.network_id, r.property_id, Number(r.seq), r.buyer_person_id, Number(r.amount_eur), r.conditions, r.valid_until,
     Number(r.down_payment_eur), Number(r.loan_eur), r.signed_ref, r.received_at, r.agent_id, r.at, r.actor, r.prev_hash,
   ];
+  if (r.co_buyers !== undefined && r.co_buyers !== '[]') fields.push(r.co_buyers);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(fields)));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -144,7 +156,8 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'invalid'; field: string }
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
-  | { ok: false; rule: null; code: 'buyer_is_seller'; field: 'buyerPersonId' }
+  | { ok: false; rule: null; code: 'buyer_is_seller'; field: 'buyerPersonId' | `coBuyerPersonIds.${number}` }
+  | { ok: false; rule: null; code: 'same_buyer'; field: `coBuyerPersonIds.${number}` }
   | { ok: false; rule: 'R42'; code: 'not_on_sale' }
   | { ok: false; rule: 'R505'; code: 'remote_slip_unsigned'; appointmentId: string }
   | { ok: false; rule: 'R56'; code: 'request_key_reused' };
@@ -187,6 +200,7 @@ const toOffer = (r: Row): Offer => ({
   propertyId: r.property_id,
   seq: Number(r.seq),
   buyerPersonId: r.buyer_person_id,
+  coBuyerPersonIds: JSON.parse(r.co_buyers ?? '[]') as string[],
   amountEur: Number(r.amount_eur),
   conditions: JSON.parse(r.conditions) as OfferCondition[],
   validUntil: r.valid_until,
@@ -264,7 +278,8 @@ export class RegistreOffres {
       const conds = parseConditions(input.conditions);
       const received = typeof input.receivedAt === 'string' && Number.isFinite(Date.parse(input.receivedAt)) ? new Date(input.receivedAt).toISOString() : null;
       const same = conds.ok && received === early.receivedAt && input.amountEur === early.amountEur && JSON.stringify(conds.value) === JSON.stringify(early.conditions) &&
-        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef;
+        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef &&
+        JSON.stringify(input.coBuyerPersonIds ?? []) === JSON.stringify(early.coBuyerPersonIds);
       const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.acces.readFiche(viewer, input.buyerPersonId) : null;
       if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId) return { ok: true, value: early };
       await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: early.seq } }, this.now);
@@ -272,6 +287,9 @@ export class RegistreOffres {
     }
 
     if (typeof input.buyerPersonId !== 'string' || input.buyerPersonId.length > 64) return bad('buyerPersonId');
+    const coInput = input.coBuyerPersonIds ?? [];
+    if (!Array.isArray(coInput) || coInput.length > MAX_CO_BUYERS) return bad('coBuyerPersonIds');
+    for (const [i, id] of coInput.entries()) if (typeof id !== 'string' || id.length === 0 || id.length > 64) return bad(`coBuyerPersonIds.${i}`);
     if (!isInt(input.amountEur, 1, 100_000_000)) return bad('amountEur');
     const conditions = parseConditions(input.conditions);
     if (!conditions.ok) return bad(conditions.field);
@@ -291,21 +309,37 @@ export class RegistreOffres {
     const members = new Set(buyer.value.members.map((m) => m.id));
     const sellers = await this.db.all<{ person_id: string }>(`SELECT person_id FROM (${LIVE_MANDATES}) WHERE property_id = ?`, [g.networkId, propertyId]);
     if (sellers.some((s) => members.has(s.person_id))) return { ok: false, rule: null, code: 'buyer_is_seller', field: 'buyerPersonId' };
+    // Chaque coacquéreur : une fiche vue en entier, ni le mandant, ni une personne déjà dans l'offre sous une autre fiche.
+    // Les fiches restent distinctes : rien n'est fusionné, chacun garde son identité et ses droits (AU009).
+    const coBuyers: string[] = [];
+    const seen = new Set(members);
+    for (const [i, id] of (coInput as string[]).entries()) {
+      const co = await this.acces.readFiche(viewer, id);
+      if (!co.ok) return co.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (co as Refusal);
+      if (co.view !== 'full') return this.refuse(viewer, `person:${id}`, 'not_assigned');
+      const its = co.value.members.map((m) => m.id);
+      if (its.some((m) => seen.has(m))) return { ok: false, rule: null, code: 'same_buyer', field: `coBuyerPersonIds.${i}` };
+      if (sellers.some((s) => its.includes(s.person_id))) return { ok: false, rule: null, code: 'buyer_is_seller', field: `coBuyerPersonIds.${i}` };
+      for (const m of its) seen.add(m);
+      coBuyers.push(co.value.person.id);
+    }
     // Un bien reçoit des offres seulement s'il est en vente sous mandat (D05) [R42].
     const sale = await this.diffusion.canDiffuse(g.networkId, propertyId, now);
     const status = await this.db.first<{ status: string }>('SELECT status FROM properties WHERE id = ?', [propertyId]);
     // Vendu, loué ou retiré de la vente : plus d'offre, même si le mandat court encore.
     if (!sale.allowed || !status || ['sold', 'rented', 'withdrawn'].includes(status.status)) return { ok: false, rule: 'R42', code: 'not_on_sale' };
     // Une visite faite à distance dont le bon n'est pas signé : refus dit en mots, avant de prendre un rang [R505].
-    const missing = await remoteSlipMissing(this.db, g.networkId, propertyId, buyer.value.person.id);
-    if (missing !== null) return this.slipMissing(viewer, propertyId, missing);
+    for (const who of [buyer.value.person.id, ...coBuyers]) {
+      const missing = await remoteSlipMissing(this.db, g.networkId, propertyId, who);
+      if (missing !== null) return this.slipMissing(viewer, propertyId, missing);
+    }
 
     // Une ancre manquée après une panne du journal est reprise d'abord, pour une ligne intacte seulement.
     await this.resumeAnchors(viewer, propertyId);
     // Un rejeu avec la même clé ne rend l'offre déjà enregistrée que si c'est bien la même offre ; une offre différente
     // envoyée avec une clé déjà prise est refusée et le refus écrit au journal, jamais avalée [R56].
     const sameOffer = (o: Offer): boolean =>
-      o.buyerPersonId === buyer.value.person.id && o.amountEur === input.amountEur && JSON.stringify(o.conditions) === JSON.stringify(conditions.value) &&
+      o.buyerPersonId === buyer.value.person.id && JSON.stringify(o.coBuyerPersonIds) === JSON.stringify(coBuyers) && o.amountEur === input.amountEur && JSON.stringify(o.conditions) === JSON.stringify(conditions.value) &&
       o.validUntil === input.validUntil && o.downPaymentEur === input.downPaymentEur && o.loanEur === input.loanEur && o.signedRef === input.signedRef && o.receivedAt === receivedAt;
     const replay = async (o: Offer): Promise<{ ok: true; value: Offer } | Problem> => {
       if (sameOffer(o)) return { ok: true, value: o };
@@ -322,6 +356,7 @@ export class RegistreOffres {
         property_id: propertyId,
         seq: (last ? Number(last.seq) : 0) + 1,
         buyer_person_id: buyer.value.person.id,
+        co_buyers: JSON.stringify(coBuyers),
         amount_eur: input.amountEur,
         conditions: JSON.stringify(conditions.value),
         valid_until: input.validUntil,
@@ -337,9 +372,9 @@ export class RegistreOffres {
       const hash = await hashOffer(line);
       try {
         await this.db.run(
-          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey],
+          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key, co_buyers)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, line.co_buyers ?? '[]'],
         );
       } catch (error) {
         // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.

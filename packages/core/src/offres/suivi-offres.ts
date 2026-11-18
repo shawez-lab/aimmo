@@ -154,7 +154,7 @@ export class SuiviOffres {
     if (!list.ok) return list;
     const out: unknown[] = [];
     for (const offer of list.value) {
-      out.push((await this.buyer(viewer, offer)) ? offer : { ...offer, buyerPersonId: null, downPaymentEur: null, loanEur: null, signedRef: null, conditions: offer.conditions.map((c) => ({ kind: c.kind })) });
+      out.push((await this.buyer(viewer, offer)) ? offer : { ...offer, buyerPersonId: null, coBuyerPersonIds: null, downPaymentEur: null, loanEur: null, signedRef: null, conditions: offer.conditions.map((c) => ({ kind: c.kind })) });
     }
     return { ok: true, value: out };
   }

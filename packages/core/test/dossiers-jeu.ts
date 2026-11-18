@@ -20,8 +20,14 @@ let counter = 0;
 /** Les trois biens types des dossiers tests : l'appartement en copropriété du jeu de M07, une maison, un terrain. */
 export type DossierKind = 'appartement' | 'maison' | 'terrain';
 
-export async function setupDossier(kind: DossierKind = 'appartement', offerPatch: Record<string, unknown> = {}) {
+export async function setupDossier(kind: DossierKind = 'appartement', offerPatch: Record<string, unknown> = {}, options: { coBuyers?: number } = {}) {
   const t = await setupOffre();
+  // Des coacquéreurs inventés, chacun sa fiche (AU009).
+  const coBuyerIds: string[] = [];
+  for (let i = 0; i < (options.coBuyers ?? 0); i++) {
+    coBuyerIds.push((await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: `Coacheteur${i + 1}`, lastName: 'Exemple' })).id);
+  }
+  if (coBuyerIds.length) offerPatch = { coBuyerPersonIds: coBuyerIds, ...offerPatch };
   if (kind === 'maison') {
     const sheet = await new FicheBien(t.db, t.acces, t.journal, { now: t.now }).read(t.agent, t.propertyId);
     if (!sheet.ok) throw new Error(sheet.code);
@@ -55,13 +61,14 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
     storage.refs.add(ref);
     return ref;
   };
-  const verifyBuyer = (seenAt = new Date('2027-03-01T11:30:00.000Z')) =>
-    identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, t.buyerId, { piece: 'passeport', seenAt });
+  const verifyBuyer = (seenAt = new Date('2027-03-01T11:30:00.000Z'), personId = t.buyerId) =>
+    identiteAuCoffre({ db: t.db, acces: t.acces, journal: t.journal, now: t.now }, t.agent, personId, { piece: 'passeport', seenAt });
   /** Identité vérifiée, compromis en préparation [R58]. */
   const startCompromis = async () => {
     await verifyBuyer();
+    for (const id of coBuyerIds) await verifyBuyer(undefined, id);
     const r = await new DossiersVente(t.db, t.acces, t.journal, { now: t.now }).startCompromis(t.agent, fileId);
     if (!r.ok) throw new Error(r.code);
   };
-  return { ...t, offerId: offer.id, fileId, storage, pieces, upload, verifyBuyer, startCompromis };
+  return { ...t, offerId: offer.id, fileId, storage, pieces, upload, verifyBuyer, startCompromis, coBuyerIds };
 }
