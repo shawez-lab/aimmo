@@ -37,6 +37,7 @@ import {
   MandatDuBien,
   FicheAgent,
   Modeles,
+  Designations,
   FicheUnique,
   JourneeRendezVous,
   Qualification,
@@ -698,6 +699,33 @@ const ROUTES: RouteDef[] = [
       const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/biens/${ID}/designation$`),
+    name: 'bien.designation',
+    // L'adresse et les parcelles du bien, reprises par chaque mandat de vente (AU002) : son agent ou la direction [R16, R40].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => !['address', 'parcels'].includes(k))) return failure(400, 'unexpected_field', 'Seuls address et parcels sont admis.');
+      const r = await new Designations(s.db, s.acces, s.journal, { now: s.now }).setProperty(viewer, id!, { address: body.address, parcels: body.parcels });
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/fiches/${ID}/domicile$`),
+    name: 'fiche.domicile',
+    // Le domicile du mandant, repris par chaque mandat qu'il signe (AU002) : qui voit sa fiche en entier [R16, R40].
+    handle: async (s, viewer, [id], request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new Designations(s.db, s.acces, s.journal, { now: s.now }).setDomicile(viewer, id!, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
   },
   {

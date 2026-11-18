@@ -14,10 +14,11 @@ const MANDATE_ONLY = ['honoraires.montant', 'honoraires.charge', 'mandat.duree_m
 const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois'];
 const fieldsOf = (hidden: string[]): string =>
   Object.entries(TEMPLATE_FIELDS).filter(([name]) => !hidden.includes(name)).map(([name, f]) => `{{${name}}} : ${f.label}`).join(' · ');
-const MANDATE_NEEDS = 'Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}} et {{mandat.duree_mois}}.';
+const MANDATE_NEEDS = 'Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}}, {{mandat.duree_mois}}, et la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}}.';
 const AVENANT_NEEDS = 'Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}.';
 // Ce que l'écran de l'agent envoie toujours : le serveur refuse toute saisie qui n'a pas sa place sur le document (`bad_input`).
-const MANDATE_INPUTS = [['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois']];
+// Pour un mandat de vente, s'y ajoute la désignation, sans laquelle le document reste incomplet (AU002).
+const MANDATE_INPUTS = [['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'bien.adresse', 'bien.cadastre', 'mandant.domicile']];
 const AVENANT_INPUTS = [['avenant.objet'], ['avenant.prix', 'avenant.duree_mois']];
 const KINDS = [
   { kind: 'mandat_vente_simple', title: 'Mandat de vente simple', needs: MANDATE_NEEDS, inputs: MANDATE_INPUTS, fields: fieldsOf(AVENANT_ONLY) },
@@ -25,6 +26,7 @@ const KINDS = [
   { kind: 'avenant_mandat', title: 'Avenant au mandat', needs: AVENANT_NEEDS, inputs: AVENANT_INPUTS, fields: fieldsOf(MANDATE_ONLY) },
 ];
 const REFUSALS = {
+  no_designation_field: 'Il manque la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}} ont chacun leur place dans un mandat de vente. Rien n’est rangé.',
   empty_body: 'Le modèle est vide : rien n’est rangé.',
   body_too_long: 'Le modèle est trop long : rien n’est rangé.',
   invalid_body: 'Le modèle est trop long ou illisible : rien n’est rangé.',

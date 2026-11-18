@@ -38,10 +38,17 @@ describeWithSqlite('D03, D04 · routes des contrôles avant signature et de la s
     const post = async (path: string, key: string, body: unknown = {}) =>
       worker.fetch(new Request(`${BASE}${path}`, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }), env);
 
-    const template = (await (await post('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{registre.numero}}.' })).json()) as { data: { id: string } };
+    const template = (await (await post('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Test : {{mandant.nom}}, {{honoraires.montant}} {{honoraires.charge}}, {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.' })).json()) as { data: { id: string } };
     await post(`/v1/modeles/${template.data.id}/validation`, KEY_COMPLIANCE);
     expect((await post('/v1/honoraires/bareme', KEY_AGENT, { maxRatePercent: 5, minEur: 3000 })).status).toBe(403);
     expect((await post('/v1/honoraires/bareme', KEY_DIRECTION, { maxRatePercent: 5, minEur: 3000 })).status).toBe(200);
+    // AU002 : la désignation du bien et le domicile du mandant, saisis par leurs routes ; un autre agent ne le peut pas.
+    expect((await post(`/v1/biens/${bien.id}/designation`, KEY_AGENT, { address: { street: '1 rue de l’Essai', postalCode: '21000', city: 'Dijon' }, parcels: [{ section: 'AB', number: '1' }] })).status).toBe(200);
+    expect((await post(`/v1/biens/${bien.id}/designation`, KEY_AGENT, { address: { street: '1 rue de l’Essai', postalCode: '21000', city: 'Dijon' }, parcels: [] })).status).toBe(400);
+    expect((await post(`/v1/biens/${bien.id}/designation`, KEY_AGENT, { address: {}, parcels: [], autre: 1 })).status).toBe(400);
+    expect((await post(`/v1/biens/${bien.id}/designation`, KEY_COMPLIANCE, { address: { street: '1 rue de l’Essai', postalCode: '21000', city: 'Dijon' }, parcels: [{ section: 'AB', number: '1' }] })).status).toBe(403);
+    expect((await post(`/v1/fiches/${lea.id}/domicile`, KEY_COMPLIANCE, { street: '2 avenue du Test', postalCode: '21000', city: 'Dijon' })).status).toBe(403);
+    expect((await post(`/v1/fiches/${lea.id}/domicile`, KEY_AGENT, { street: '2 avenue du Test', postalCode: '21000', city: 'Dijon' })).status).toBe(200);
     const doc = (await (await post('/v1/documents', KEY_AGENT, { kind: 'mandat_vente_simple', personId: lea.id, propertyId: bien.id, inputs: { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur' } })).json()) as { data: { id: string } };
     const before = (await (await post(`/v1/documents/${doc.data.id}/controle`, KEY_AGENT)).json()) as { data: { passed: boolean } };
     expect(before.data.passed).toBe(false);

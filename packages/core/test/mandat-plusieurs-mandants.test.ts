@@ -18,11 +18,12 @@ import {
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
+import { designerTout } from './designation-jeu.ts';
 import { enClair } from './boite-essai.ts';
 import { EspaceVendeur, SqlClientParties, SqlSourcesVendeur, type ClientViewer } from '../src/espaces/index.ts';
 
 // AU001 · Le mandat d'un couple ou d'une indivision. Modèle, barème et personnes inventés.
-const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.';
+const BODY = 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
 const T0 = Date.parse('2027-02-10T10:00:00.000Z'); // mercredi, 11 h à Paris
 const INPUTS = { 'honoraires.montant': 9000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } as const;
 const CONSENT = { consentProof: 'accord donné au rendez-vous (test)' };
@@ -62,8 +63,10 @@ async function setup() {
     return p.id;
   };
   const identify = (personId: string) => identiteAuCoffre({ db, acces, journal, now }, agent, personId, { piece: 'carte_identite', seenAt: new Date(T0) });
-  const generate = (personId: string, coMandantIds?: string[]) =>
-    modeles.generate(agent, { kind: 'mandat_vente_simple', personId, propertyId: property.id, inputs: INPUTS as never, ...(coMandantIds ? { coMandantIds } : {}) });
+  const generate = async (personId: string, coMandantIds?: string[]) => {
+    await designerTout(db);
+    return modeles.generate(agent, { kind: 'mandat_vente_simple', personId, propertyId: property.id, inputs: INPUTS as never, ...(coMandantIds ? { coMandantIds } : {}) });
+  };
   /** Les codes rangés dans la boîte d'essai, avec la fiche à qui chacun part. */
   const codes = async (): Promise<{ personId: string; code: string }[]> =>
     (
@@ -269,7 +272,7 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
 
   it('[R40, R41] un modèle qui ne nomme pas le mandant ne porte pas plusieurs mandants', async () => {
     const t = await setup();
-    const v = await t.modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat sans nom : {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.');
+    const v = await t.modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat sans nom : {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.');
     if (!v.ok) throw new Error(v.code);
     await t.modeles.validate({ role: 'compliance', userId: 'c-1', networkId: t.network.id }, v.template.id);
     const lea = await t.owner('Léa', 'Exemple');
