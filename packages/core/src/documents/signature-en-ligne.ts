@@ -281,7 +281,7 @@ export class SignatureEnLigne {
    * essais faux bloquent la session. Le résultat dit le mode de la session ; signé réellement par tous, le document est
    * fini (`finish`).
    */
-  async sign(viewer: Viewer, sessionId: string, input: { code: string; drawing?: string | null }): Promise<{ ok: true; value: SignatureProof } | Refusal | Problem> {
+  async sign(viewer: Viewer, sessionId: string, input: { code: string; drawing?: string | null }): Promise<{ ok: true; value: SignatureProof & { finished?: { ok: true } | { ok: false; rule: string | null; code: string } } } | Refusal | Problem> {
     const session = await this.db.first<SessionRow>('SELECT * FROM signature_sessions WHERE id = ?', [sessionId]);
     if (!session || session.network_id !== viewer.networkId) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'unknown' } }, this.now);
@@ -343,7 +343,11 @@ export class SignatureEnLigne {
     // Le signataire reçoit son exemplaire, par le contrôle central ; refusé pour l'heure, il est repris plus tard.
     const copySent = await this.sendCopy(viewer, sessionId);
     // Le dernier mandant a signé réellement : le document est fini, et chacun reçoit son exemplaire et le dossier.
-    if (mode === 'reel' && allSigned) await this.finish(viewer, session.document_id);
+    // La source du mandat manque encore (R38) : le document attend, et l'agent le finit en la donnant.
+    if (mode === 'reel' && allSigned) {
+      const finished = await this.finish(viewer, session.document_id);
+      return { ok: true, value: { ...proof, allSigned, copySent, finished: finished.ok ? { ok: true } : { ok: false, rule: finished.rule, code: finished.code } } };
+    }
     return { ok: true, value: { ...proof, allSigned, copySent } };
   }
 
@@ -476,7 +480,7 @@ export class SignatureEnLigne {
    * s'était arrêté (une remise refusée pour l'heure part à la demande suivante), sans rien refaire. Qui voit la fiche de
    * chaque mandant en entier, agent ou direction [R16].
    */
-  async finish(viewer: Viewer, documentId: string): Promise<{ ok: true; value: SignatureDossier } | Refusal | Problem | { ok: false; rule: string | null; code: string }> {
+  async finish(viewer: Viewer, documentId: string, input: { source?: string | null; sourceDetail?: string | null } = {}): Promise<{ ok: true; value: SignatureDossier } | Refusal | Problem | { ok: false; rule: string | null; code: string }> {
     const doc = await this.db.first<{ network_id: string; person_id: string; agent_id: string; kind: string; content: string; template_id: string | null; template_version: number | null; template_hash: string | null }>(
       'SELECT network_id, person_id, agent_id, kind, content, template_id, template_version, template_hash FROM documents WHERE id = ?',
       [documentId],
@@ -514,6 +518,9 @@ export class SignatureEnLigne {
           signedAt: new Date(signedAt),
           place: 'distance',
           scanRef: `signature-en-ligne/${documentId}`,
+          // La source du mandat, donnée ou reprise de la fiche [R38].
+          source: input.source ?? null,
+          sourceDetail: input.sourceDetail ?? null,
         });
         if (!registered.ok && registered.code !== 'already_signed') return registered;
         const signed = await this.db.first<{ number: string | null; copy_content: string | null }>('SELECT number, copy_content FROM signed_documents WHERE document_id = ?', [documentId]);
