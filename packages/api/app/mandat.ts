@@ -51,6 +51,8 @@ const REFUSALS = {
   bad_mandate: 'Ce mandat n’est plus en cours, ou ce mandant n’est pas le sien : l’avenant n’est pas préparé.',
   no_mandate: 'Le mandat de cet avenant n’est plus en cours : il ne se signe pas.',
   before_mandate: 'Un avenant ne se signe pas avant son mandat : vérifiez le jour.',
+  bad_address: 'L’adresse : un numéro et une voie, un code postal à cinq chiffres, une commune.',
+  bad_parcels: 'Les parcelles : une section et un numéro, chacune une seule fois.',
 };
 /** Chaque ligne du contrôle, dite en français ; un code inconnu reste un échec, jamais un succès [R41]. */
 const CHECKS = {
@@ -275,6 +277,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     // Un avenant se signe sur le mandat qu'il modifie, seulement si c'est le mandat en cours.
     var amendable = !free && m.reason !== 'no_mandate' && m.number && ID.test(m.id) ? m.id : null;
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free, amendable); });
+    if (free) drawDesignation(data.designation || null, Array.isArray(data.owners) ? data.owners : []);
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
     else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
   }
@@ -519,6 +522,62 @@ globalThis.AIMMO_MANDAT = function (t) {
         });
       }, function () { if (mine === t.session()) state('Pas de réseau : rien n’est rangé.'); return null; });
     }, function () { if (mine === t.session()) state('Ce fichier ne se lit pas sur ce téléphone.'); return null; });
+  }
+  /* AU002 : l'adresse du bien, ses parcelles et le domicile de chaque mandant, que chaque mandat de vente reprend. */
+  function where(a) { return a && a.street ? a.street + ', ' + a.postalCode + ' ' + a.city + (a.country ? ', ' + a.country : '') : null; }
+  function addressFields(box, id, a, abroad) {
+    var street = field(box, id + '-voie', 'Numéro et voie');
+    var cp = field(box, id + '-cp', 'Code postal');
+    var city = field(box, id + '-commune', 'Commune');
+    var country = abroad ? field(box, id + '-pays', 'Pays, s’il n’est pas en France') : null;
+    if (a) { street.value = a.street || ''; cp.value = a.postalCode || ''; city.value = a.city || ''; if (country) country.value = a.country || ''; }
+    return function () {
+      var out = { street: street.value.trim(), postalCode: cp.value.trim(), city: city.value.trim() };
+      if (country && country.value.trim()) out.country = country.value.trim();
+      return out;
+    };
+  }
+  function drawDesignation(d, owners) {
+    var box = bloc('Désignation pour le mandat');
+    box.appendChild(el('p', 'Le mandat reprend ces champs tels quels ; s’il en manque un, il reste incomplet et ne se signe pas.', 'doux'));
+    box.appendChild(el('p', where(d && d.address) ? 'Adresse du bien : ' + where(d.address) : 'Adresse du bien : à saisir.'));
+    var read = addressFields(box, 'bien-adresse', d && d.address);
+    var parcels = field(box, 'bien-parcelles', 'Parcelles (section et numéro, par exemple AB 123, 012 C 45)');
+    if (d && Array.isArray(d.parcels)) parcels.value = d.parcels.map(function (p) { return (p.prefix ? p.prefix + ' ' : '') + p.section + ' ' + p.number; }).join(', ');
+    box.appendChild(button('Enregistrer la désignation', act(function () {
+      var list = [], bad = false;
+      parcels.value.split(/[,;]/).forEach(function (part) {
+        var x = part.trim();
+        if (!x) return;
+        var m = /^(?:(\\d{3})\\s+)?([0-9A-Za-z]{1,2})\\s*(?:n°\\s*)?(\\d{1,4})$/.exec(x);
+        if (!m) { bad = true; return; }
+        list.push(m[1] ? { prefix: m[1], section: m[2], number: m[3] } : { section: m[2], number: m[3] });
+      });
+      if (bad || !list.length) { state('Les parcelles : une section et un numéro, par exemple AB 123.'); return false; }
+      var mine = ++seq;
+      return send('/v1/biens/' + cur.id + '/designation', 'POST', { address: read(), parcels: list }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (res.ok) return load('Désignation enregistrée : le prochain mandat la reprend.');
+        state(why(res, 'La désignation n’est pas enregistrée : vérifiez l’adresse et les parcelles.'));
+        return false;
+      });
+    })));
+    owners.filter(function (o) { return ID.test(o.personId); }).forEach(function (o) {
+      var name = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom';
+      var sub = el('div');
+      box.appendChild(sub);
+      sub.appendChild(el('p', where(o.domicile) ? 'Domicile de ' + name + ' : ' + where(o.domicile) : 'Domicile de ' + name + ' : à saisir.'));
+      var get = addressFields(sub, 'domicile-' + o.personId, o.domicile, true);
+      sub.appendChild(button('Enregistrer le domicile de ' + name, act(function () {
+        var mine = ++seq;
+        return send('/v1/fiches/' + o.personId + '/domicile', 'POST', get()).then(function (res) {
+          if (res.gone || mine !== seq) return false;
+          if (res.ok) return load('Domicile enregistré : le prochain mandat le reprend.');
+          state(why(res, 'Le domicile n’est pas enregistré : vérifiez l’adresse.'));
+          return false;
+        });
+      })));
+    });
   }
   function drawGenerate(owners) {
     var box = bloc('Préparer un mandat');

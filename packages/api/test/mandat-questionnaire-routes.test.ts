@@ -5,6 +5,7 @@ import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type Sql
 import { CLAUSE_CODES, QUESTION_CODES } from '../../core/src/mandat-questionnaire/questionnaire.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
+import { designerTout } from '../../core/test/designation-jeu.ts';
 
 // Réseau, agents, clients, biens, modèles, clauses et clés d'API inventés : aucun texte juridique réel.
 const NOW = Date.parse('2027-04-12T09:00:00.000Z');
@@ -17,7 +18,7 @@ const KEYS = {
   meme: 'test-cle-br115-meme-personne-eeeeeeeeeeeeeeeeeee',
 };
 type Who = keyof typeof KEYS;
-const SIMPLE = ['MANDAT DE VENTE SIMPLE (MODÈLE DE TEST)', 'Entre {{mandant.nom}} et {{reseau.nom}}, représenté par {{agent.nom}}.', 'Bien {{bien.reference}}, {{bien.commune}}, au prix de {{bien.prix}}.', 'Honoraires : {{honoraires.montant}}, {{honoraires.charge}}. Durée : {{mandat.duree_mois}}.', 'Numéro au registre : {{registre.numero}}. Fait le {{document.date}}.'].join('\n\n');
+const SIMPLE = ['MANDAT DE VENTE SIMPLE (MODÈLE DE TEST)', 'Entre {{mandant.nom}} et {{reseau.nom}}, représenté par {{agent.nom}}.', 'Bien {{bien.reference}}, {{bien.commune}}, au prix de {{bien.prix}}.', 'Honoraires : {{honoraires.montant}}, {{honoraires.charge}}. Durée : {{mandat.duree_mois}}.', 'Numéro au registre : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}. Fait le {{document.date}}.'].join('\n\n');
 const EXCLUSIF = SIMPLE.replace('SIMPLE', 'EXCLUSIF') + '\n\n!! Clause d’exclusivité du modèle de test.';
 const BASE = { exclusivite: 'non', lieu_signature: 'agence', vendeurs: 'une', occupation: 'libre', copropriete: 'non', honoraires: 'vendeur' };
 const INPUTS = { 'honoraires.montant': 9000, 'mandat.duree_mois': 3 };
@@ -71,7 +72,7 @@ async function setup(o: { price?: number } = {}) {
        VALUES ('val-1', ?, ?, ?, 'validated', '{}', ?, ?, NULL, NULL, 'Avis de test', 'fallback', '2027-04-01T10:00:00.000Z', '2027-04-01T10:00:00.000Z', ?, '2027-04-01T10:00:00.000Z')`,
       [network.id, property.id, alex.id, low, high, `agent:${alex.id}`],
     );
-  const prepare = (who: Who = 'alex', answers: unknown = BASE) => http(who, 'POST', '/questionnaire-mandat/mandats', { personId: person.id, propertyId: property.id, answers, inputs: INPUTS });
+  const prepare = async (who: Who = 'alex', answers: unknown = BASE) => (await designerTout(db), http(who, 'POST', '/questionnaire-mandat/mandats', { personId: person.id, propertyId: property.id, answers, inputs: INPUTS }));
   const refusals = async () => (await journal.all()).filter((e) => e.type === 'acces.refuse');
   const count = async (table: string) => Number((await db.first<{ n: number }>(`SELECT count(*) AS n FROM ${table}`))!.n);
   return { db, journal, config, http, templates, clauses, valuation, prepare, refusals, count, person, property };
