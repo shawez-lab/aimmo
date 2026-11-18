@@ -153,6 +153,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Source : [Champ de l’audit obligatoire](https://www.ecologie.gouv.fr/politiques-publiques/audit-energetique-reglementaire).
 - Attend : rien.
 
+### AU010b · L'audit énergétique remis à l'acquéreur dès la première visite
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU010
+- Cahier : M08 Acquéreurs et visites ; suite d'AU010 (art. L126-28-1 du CCH : audit communiqué à l'acquéreur potentiel dès la première visite).
+- Objectif : quand `energyAuditCase` dit « requis » pour le bien, la visite (`visites.ts`) rappelle à l'agent de remettre l'audit et range la preuve de sa remise (date, moyen) ; une classe inconnue le dit à l'agent ; le diagnostiqueur partenaire peut déposer l'audit au dossier (`PIECE_RULES`, `PIECE_CREDENTIALS`, après lecture du justificatif requis).
+- Critères : visite d'une maison classée F sans audit au bien : l'agent est prévenu avant la visite (test) ; remise rangée avec sa date, jamais inventée [R10] (test) ; lot de copropriété : rien demandé (test) ; dépôt par un diagnostiqueur certifié rangé au dossier (test).
+- Attend : rien.
+
 ### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
