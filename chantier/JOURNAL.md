@@ -1439,3 +1439,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 22:52 · VOIE 2 : AU011, 92994844, relancé non (les trois questions répondent oui, mais la séance horaire de 22:52 part à l’instant : une relance en plus ferait deux séances voie 2 en même temps)
 - 2026-11-18 23:04 · VOIE 3 : AU100 bloquée (R123, R125, IOBSP : avis avocat H24), calcul prêt sur voie3/AU100 ; #668 (AU017) et #671 (AU098) en vérification
 - 2026-11-18 23:29 · AU003 · signature en ligne réelle derrière la validation de l'avocat (H24) et le mail réel (H05), sinon essai dit tel partout ; signé par tous : mandat inscrit, dossier de preuve figé, exemplaire et dossier joints au mail de chaque mandant ; fusionnée (#669) · prochaine : AU004
+- 2026-11-18 23:31 · VOIE 1 : relance de la séance suivante refusée par le contrôle des permissions ; la prochaine séance prévue reprendra à AU004
