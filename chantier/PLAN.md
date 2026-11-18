@@ -75,7 +75,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU003 · La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A003 (bloquant), endroit : A/app.ts, routes de signature ; H24.
 - Constat de l'audit : La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel.
