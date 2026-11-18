@@ -170,6 +170,14 @@ describeWithSqlite('AU002 · le mandat reprend en champs l’adresse du bien, so
     if (!d.ok) throw new Error(d.code);
     expect(d.document).toMatchObject({ mode: 'reel', status: 'incomplet', missing: ['bien.adresse', 'bien.cadastre', 'mandant.domicile'] });
     expect(canSignForReal(d.document)).toBe(false);
+    // Un mandat préparé avant AU002, rangé « complet » sans désignation : le contrôle l'arrête, rien ne se signe.
+    await t.identify(lea);
+    await t.db.run(`INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts, mandate_id)
+      SELECT 'doc-ancien', network_id, template_id, template_version, template_hash, kind, mode, 'complet', '[]', agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts, mandate_id FROM documents WHERE id = ?`, [d.document.id]);
+    const check = await t.controles.check(t.agent, 'doc-ancien');
+    expect(check.ok && check.value.lines.find((l) => l.check === 'champs')).toEqual({ check: 'champs', ok: false, code: 'missing_fields' });
+    expect(await t.papier.register(t.agent, 'doc-ancien', { signedAt: new Date(T0), place: 'agence', scanRef: 'scans/2027/02/test-ancien.pdf', source: 'referral' })).toMatchObject({ ok: false });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM signed_documents')).toEqual({ n: 0 });
   });
 
   it('[R16] seuls l’agent du bien ou de la fiche et la direction saisissent ; une saisie mal formée est refusée', async () => {
