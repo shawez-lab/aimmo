@@ -23,6 +23,10 @@
  * lot de copropriété ; une fin du délai de la commune un samedi, un dimanche ou un jour férié est reportée au jour
  * ouvrable suivant, pour ne jamais annoncer trop tôt un silence acquis ;
  * les jours fériés propres à l'Alsace-Moselle ne sont pas comptés.
+ *
+ * Coacquéreurs (AU009) : chacun a sa propre notification, avec sa date, sa preuve et ses versions, donc son propre délai
+ * de rétractation. Le dossier retient le dernier délai : la rétractation est « à saisir » tant qu'un seul des
+ * coacquéreurs n'a pas de date, et finit au dernier jour du délai le plus tardif.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -126,19 +130,39 @@ export interface ScheduleLine {
   from: DateKind;
 }
 
+/** La notification d'un acquéreur du dossier et son propre délai de rétractation (AU009). */
+export interface BuyerNotice {
+  /** null quand celui qui lit ne voit pas cette fiche en entier [R16]. */
+  personId: string | null;
+  /** L'acquéreur en tête de l'offre ; les autres sont ses coacquéreurs. */
+  lead: boolean;
+  /** La première présentation de sa notification, ou null tant qu'elle n'est pas saisie. */
+  notifiedOn: string | null;
+  version: number | null;
+  /** Le dernier jour de sa rétractation, ou null. */
+  lastDay: string | null;
+}
+
 export interface Schedule {
   fileId: string;
   dates: Partial<Record<DateKind, { day: string; version: number }>>;
+  /** Un acquéreur par ligne, l'acquéreur en tête d'abord, chacun avec son délai. */
+  buyers: BuyerNotice[];
   lines: ScheduleLine[];
 }
 
-/** L'échéancier, depuis les dates saisies. Fonction pure, dans un ordre fixe : mêmes dates, mêmes échéances [R61]. */
-export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: { hasLoanCondition: boolean; isCoownershipLot: boolean | null }): ScheduleLine[] {
+/**
+ * L'échéancier, depuis les dates saisies. Fonction pure, dans un ordre fixe : mêmes dates, mêmes échéances [R61].
+ * `coBuyersNotifiedOn` : la notification de chaque coacquéreur, null tant qu'elle manque (AU009). La fin de la
+ * rétractation est la plus tardive de tous ; à saisir tant qu'une seule manque.
+ */
+export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: { hasLoanCondition: boolean; isCoownershipLot: boolean | null }, coBuyersNotifiedOn: readonly (string | null)[] = []): ScheduleLine[] {
   const line = (deadline: Deadline, source: 'calcul' | 'saisie', from: DateKind, day: string | null): ScheduleLine => ({ deadline, source, from, day, status: day === null ? 'a_saisir' : 'datee' });
-  const n = dates.notification_acquereur;
+  const notices = [dates.notification_acquereur ?? null, ...coBuyersNotifiedOn];
+  const withdrawal = notices.some((d) => d === null) ? null : notices.map((d) => buyerWithdrawalLastDay(d!)).reduce((a, b) => (a > b ? a : b));
   const dia = dates.dia_recue;
   const lines: ScheduleLine[] = [
-    line('fin_retractation', 'calcul', 'notification_acquereur', n ? buyerWithdrawalLastDay(n) : null),
+    line('fin_retractation', 'calcul', 'notification_acquereur', withdrawal),
     !dia ? line('reponse_preemption', 'calcul', 'dia_recue', null)
       : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= preemptionBaseEnd(dia) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' }
       : line('reponse_preemption', 'calcul', dates.dia_reprise ? 'dia_reprise' : 'dia_recue', preemptionLastDay(dia, dates.dia_suspension, dates.dia_reprise)),
@@ -173,7 +197,7 @@ export interface FileTask {
   createdAt: string;
 }
 
-export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_date' | 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' | 'closed' } | { ok: false; rule: 'R460'; code: 'set_by_registered_letter' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
+export type ScheduleProblem = { ok: false; rule: null; code: 'unknown_buyer' | 'buyer_required' | 'unknown_date' | 'bad_day' | 'bad_proof' | 'not_stored' | 'future_day' | 'before_compromis' | 'compromis_first' | 'out_of_order' | 'busy' | 'closed' } | { ok: false; rule: 'R460'; code: 'set_by_registered_letter' } | { ok: false; rule: 'R58'; code: 'compromis_not_started' };
 
 export class Echeancier {
   private readonly now: () => Date;
@@ -217,22 +241,59 @@ export class Echeancier {
     return { hasLoanCondition: conditions.some((c) => c.kind === 'pret'), isCoownershipLot: coownership === null ? null : coownership.isCoownership };
   }
 
+  /** L'acquéreur en tête et les coacquéreurs de l'offre du dossier, dans l'ordre de l'offre (AU009). */
+  private async buyersOf(file: { id: string; offer_id: string }): Promise<{ lead: string; co: string[] }> {
+    const row = await this.db.first<{ buyer_person_id: string; co_buyers: string | null }>(
+      'SELECT f.buyer_person_id, o.co_buyers FROM sale_files f JOIN offer_register o ON o.id = f.offer_id WHERE f.id = ?',
+      [file.id],
+    );
+    return { lead: row?.buyer_person_id ?? '', co: JSON.parse(row?.co_buyers ?? '[]') as string[] };
+  }
+
+  /** La dernière version de la notification de chaque coacquéreur. */
+  private async coNoticesOf(fileId: string): Promise<Map<string, { day: string; version: number }>> {
+    const rows = await this.db.all<{ person_id: string; day: string; version: number }>(
+      `SELECT person_id, day, version FROM sale_file_buyer_notices n WHERE file_id = ?
+       AND version = (SELECT MAX(version) FROM sale_file_buyer_notices m WHERE m.file_id = n.file_id AND m.person_id = n.person_id)`,
+      [fileId],
+    );
+    return new Map(rows.map((r) => [r.person_id, { day: r.day, version: Number(r.version) }]));
+  }
+
+  /**
+   * L'échéancier tel que le lit une personne : chaque acquéreur dont elle ne voit pas la fiche en entier y reste, sans son
+   * identifiant ni ses dates ; le délai collectif du dossier ne change pas [R16] (AU009).
+   */
+  private async visibleTo(viewer: Viewer, schedule: Schedule): Promise<Schedule> {
+    const buyers: BuyerNotice[] = [];
+    for (const b of schedule.buyers) {
+      const read = b.personId ? await this.acces.readFiche(viewer, b.personId) : null;
+      buyers.push(read?.ok && read.view === 'full' ? b : { personId: null, lead: b.lead, notifiedOn: null, version: null, lastDay: null });
+    }
+    return { ...schedule, buyers };
+  }
+
   /** L'échéancier d'un dossier, pour les passages du système, qui ne montrent rien à personne : sans contrôle d'accès. */
   async scheduleOf(file: { id: string; offer_id: string; property_id: string }): Promise<Schedule> {
     const dates = await this.datesOf(file.id);
     const days = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
-    return { fileId: file.id, dates, lines: scheduleLines(days, await this.facts(file)) };
+    const { lead, co } = await this.buyersOf(file);
+    const notices = await this.coNoticesOf(file.id);
+    const notice = (personId: string, isLead: boolean, n: { day: string; version: number } | undefined): BuyerNotice =>
+      ({ personId, lead: isLead, notifiedOn: n?.day ?? null, version: n?.version ?? null, lastDay: n ? buyerWithdrawalLastDay(n.day) : null });
+    const buyers = [notice(lead, true, dates.notification_acquereur), ...co.map((p) => notice(p, false, notices.get(p)))];
+    return { fileId: file.id, dates, buyers, lines: scheduleLines(days, await this.facts(file), co.map((p) => notices.get(p)?.day ?? null)) };
   }
 
   /** L'échéancier du dossier : agent du bien, direction, conformité [R16]. */
   async schedule(viewer: Viewer, fileId: string): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    return { ok: true, value: await this.scheduleOf(g.file) };
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(g.file)) };
   }
 
   /** L'agent du dossier saisit une date du compromis, avec sa preuve. Une correction s'ajoute en nouvelle version [R17]. */
-  async record(viewer: Viewer, fileId: string, input: { kind: unknown; day: unknown; proofRef: unknown }): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown | ScheduleProblem> {
+  async record(viewer: Viewer, fileId: string, input: { kind: unknown; day: unknown; proofRef: unknown; /** L'acquéreur notifié, quand l'offre a des coacquéreurs (AU009). */ personId?: unknown }): Promise<{ ok: true; value: Schedule } | FileRefusal | FileUnknown | ScheduleProblem> {
     const g = await this.gate(viewer, fileId, true);
     if (!g.ok) return g;
     // Un dossier clos par l'acte ne reçoit plus de date (N13) : aucune tâche ni aucun chemin ne la lirait.
@@ -248,6 +309,13 @@ export class Echeancier {
       return { ok: false, rule: 'R58', code: 'compromis_not_started' };
     }
     if (PAST_KINDS.includes(kind) && day > this.today()) return { ok: false, rule: null, code: 'future_day' };
+    // Avec des coacquéreurs, chaque notification nomme son acquéreur ; une autre date n'en nomme aucun (AU009).
+    const { lead, co } = await this.buyersOf(g.file);
+    const personId = input.personId ?? null;
+    if (personId !== null && (kind !== 'notification_acquereur' || typeof personId !== 'string' || (personId !== lead && !co.includes(personId)))) return { ok: false, rule: null, code: 'unknown_buyer' };
+    if (kind === 'notification_acquereur' && personId === null && co.length > 0) return { ok: false, rule: null, code: 'buyer_required' };
+    const coNotices = await this.coNoticesOf(fileId);
+    if (personId !== null && personId !== lead) return this.recordCoBuyer(viewer, g.file, personId, day, input.proofRef, coNotices);
     // La première présentation prouvée par le prestataire de la lettre recommandée (HX36) fait foi : elle ne se
     // ressaisit pas à la main [R460].
     if (kind === 'notification_acquereur' && (await this.db.first("SELECT 1 FROM registered_letter_events WHERE file_id = ? AND kind = 'premiere_presentation'", [fileId]))) {
@@ -260,6 +328,8 @@ export class Echeancier {
     proposed[kind] = day;
     const problem = orderProblem(proposed);
     if (problem) return { ok: false, rule: null, code: problem };
+    // Une signature corrigée ne passe pas après la notification déjà saisie d'un coacquéreur.
+    if (proposed.compromis_signe && [...coNotices.values()].some((n) => n.day < proposed.compromis_signe!)) return { ok: false, rule: null, code: 'before_compromis' };
     if (this.proofs && !(await this.proofs.has(input.proofRef))) return { ok: false, rule: null, code: 'not_stored' };
     const version = (dates[kind]?.version ?? 0) + 1;
     try {
@@ -272,7 +342,35 @@ export class Echeancier {
       throw error;
     }
     await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R61', kind, version } }, this.now);
-    return { ok: true, value: await this.scheduleOf(g.file) };
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(g.file)) };
+  }
+
+  /** La notification d'un coacquéreur : sa date, sa preuve, en nouvelle version si elle est corrigée [R17] (AU009). */
+  private async recordCoBuyer(
+    viewer: Viewer,
+    file: { id: string; network_id: string; offer_id: string; property_id: string },
+    personId: string,
+    day: string,
+    proofRef: string,
+    notices: Map<string, { day: string; version: number }>,
+  ): Promise<{ ok: true; value: Schedule } | ScheduleProblem> {
+    const dates = await this.datesOf(file.id);
+    if (!dates.compromis_signe) return { ok: false, rule: null, code: 'compromis_first' };
+    if (day < dates.compromis_signe.day) return { ok: false, rule: null, code: 'before_compromis' };
+    if (this.proofs && !(await this.proofs.has(proofRef))) return { ok: false, rule: null, code: 'not_stored' };
+    const version = (notices.get(personId)?.version ?? 0) + 1;
+    try {
+      await this.db.run(
+        'INSERT INTO sale_file_buyer_notices (file_id, network_id, person_id, version, day, proof_ref, at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [file.id, file.network_id, personId, version, day, proofRef, this.now().toISOString(), actorOf(viewer)],
+      );
+    } catch (error) {
+      if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
+      throw error;
+    }
+    // Au journal : la fiche du coacquéreur par son identifiant, jamais son nom [R13].
+    await appendEvent(this.journal, { type: 'dossier.date', actor: actorOf(viewer), subject: `sale_file:${file.id}`, data: { rule: 'R61', kind: 'notification_acquereur', version, person: `person:${personId}` } }, this.now);
+    return { ok: true, value: await this.visibleTo(viewer, await this.scheduleOf(file)) };
   }
 
   /**

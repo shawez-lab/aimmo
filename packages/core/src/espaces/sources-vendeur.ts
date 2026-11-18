@@ -113,16 +113,18 @@ const holdLabel = (line: PartyView['remaining'][number]): string => {
 };
 
 /** Une pièce est du côté du vendeur si les règles écrites la lui demandent (N01) ; l'inconnu reste caché [R161]. */
-const SELLER_PIECES: ReadonlySet<Piece> = (() => {
+export const SELLER_PIECES: ReadonlySet<Piece> = (() => {
   const all = new Set<Piece>();
   // Toutes les pièces que les règles écrites peuvent demander au vendeur : un lot de copropriété d'année inconnue (toutes
-  // les pièces d'un bien bâti) et un terrain (le bornage). Une pièce ajoutée plus tard pour l'acquéreur reste cachée.
+  // les pièces d'un bien bâti), un terrain (le bornage) et une maison hors copropriété classée G sur un DPE récent, en
+  // 2034 (l'audit énergétique, AU010). Une pièce ajoutée plus tard pour l'acquéreur reste cachée.
   const sheets = [
+    { kind: 'home' as const, sheet: { characteristics: { buildYear: 2000 }, coownership: { isCoownership: false }, energy: { energyClass: 'G', diagnosedOn: '2030-01-01' } }, year: 2034 },
     { kind: 'home' as const, sheet: { characteristics: { buildYear: null, heating: 'individuel_gaz' }, coownership: { isCoownership: true } } },
     { kind: 'land' as const, sheet: { characteristics: {}, coownership: { isCoownership: false } } },
   ];
   for (const s of sheets) {
-    const list = expectedPieces(s.kind, s.sheet as never, 2027);
+    const list = expectedPieces(s.kind, s.sheet as never, 'year' in s ? s.year : 2027);
     for (const p of list?.pieces ?? []) if (p.side === 'vendeur') all.add(p.piece);
   }
   return all;

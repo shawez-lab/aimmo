@@ -1425,3 +1425,9 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-18 13:25 · VOIE 2 : AU008, 2309d575, relancé non
 - 2026-11-18 15:20 · AU001 · mandat d'un couple ou d'une indivision : chaque mandant nommé, identifié et signataire, fusionnée (#659) ; #656 (plan de l'audit) fusionnée ; AU001b ajoutée · prochaine : AU001b
 - 2026-11-18 16:39 · AU001b · le second mandant d'un mandat signé a son espace vendeur, avec le mandat et son numéro, sans rien de l'autre, fusionnée (#661) · prochaine : AU002
+- 2026-11-18 17:24 · AU009 · coacquéreurs : identités, notifications et délais propres, rétractation au plus tardif ; gel, vigilance, acte, prospects, bon à distance et droit d'accès couverts ; fusionnée (#660, c08db752) · prochaine : AU010
+- 2026-11-18 17:24 · VOIE 2 : relance refusée, question 2 (la séance de 10:52 n'a rien produit)
+- 2026-11-18 17:24 · VOIE 2 : AU009, c08db752, relancé non
+- 2026-11-18 18:53 · AU010 · audit énergétique pièce obligatoire d'une maison ou d'un immeuble hors copropriété classé E, F ou G (D en 2034), valable 5 ans à l'acte ; classe inconnue ou DPE d'avant juillet 2021 : jamais « complet » ; année des règles = ouverture du dossier (P2 de Codex corrigé, Codex sans remarque ensuite) ; fusionnée (#662, aa2eba79) ; AU010b ajoutée (remise à la première visite) · prochaine : AU010b ou AU011
+- 2026-11-18 18:53 · VOIE 2 : AU010, aa2eba79, relancé oui
+- 2026-11-18 19:35 · VOIE 3 : ouverte à la demande de Shawez (travail en continu) ; réserve la location et l'investissement de l'audit (AU014-017, AU095-102) ; prend AU095

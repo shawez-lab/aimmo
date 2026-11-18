@@ -33,7 +33,7 @@ export interface SaleFile {
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: null; code: 'unknown_offer' | 'unknown_property' | 'unknown_file' | 'not_accepted' | 'already_open' | 'not_on_sale' | 'already_started' | string }
-  | { ok: false; rule: 'R58'; code: IdentificationCode };
+  | { ok: false; rule: 'R58'; code: IdentificationCode; /** Le coacquéreur dont l'identité manque, quand ce n'est pas l'acquéreur en tête (AU009). */ personId?: string };
 
 export class DossiersVente {
   private readonly now: () => Date;
@@ -132,6 +132,21 @@ export class DossiersVente {
     if (!identification.ok) {
       await appendEvent(this.journal, { type: 'dossier.bloque', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: identification.code } }, this.now);
       return { ok: false, rule: 'R58', code: identification.code };
+    }
+    // Chaque coacquéreur a sa propre identité, vérifiée à part : aucune ne vaut pour l'autre (AU009) [R58].
+    const co = await this.db.first<{ co_buyers: string }>('SELECT co_buyers FROM offer_register WHERE id = ?', [f.offer_id]);
+    for (const personId of JSON.parse(co?.co_buyers ?? '[]') as string[]) {
+      const fiche = await this.acces.readFiche(viewer, personId);
+      if (!fiche.ok) return fiche as Refusal;
+      if (fiche.view !== 'full') {
+        await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `person:${personId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'sale_file', code: 'not_assigned' } }, this.now);
+        return { ok: false, rule: 'R16', code: 'not_assigned' };
+      }
+      const its = await this.controles.identificationAt(viewer.networkId, personId, this.now());
+      if (!its.ok) {
+        await appendEvent(this.journal, { type: 'dossier.bloque', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R58', code: its.code, person: `person:${personId}` } }, this.now);
+        return { ok: false, rule: 'R58', code: its.code, personId };
+      }
     }
     const { changes } = await this.db.run("INSERT INTO sale_file_steps (file_id, step, at, by) VALUES (?, 'compromis_en_preparation', ?, ?) ON CONFLICT DO NOTHING", [fileId, this.now().toISOString(), this.actor(viewer)]);
     if (changes !== 1) return { ok: false, rule: null, code: 'already_started' };

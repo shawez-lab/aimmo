@@ -9,7 +9,7 @@
  * Refusé : sans compromis en préparation, donc sans identité vérifiée [R58] ; sans compromis signé saisi (N02) ; sans
  * dossier complet au jour de l'acte [R60] : chaque pièce reçue, l'identité vérifiée, et aucune pièce périmée ce
  * jour-là d'après la date du document (état des risques 6 mois, électricité et gaz 3 ans, constat plomb 1 an, DPE
- * 10 ans, des réglages) ; sans mandat en vigueur au jour du compromis : la commission ne se saisit jamais [R63].
+ * 10 ans, audit énergétique 5 ans, des réglages) ; sans mandat en vigueur au jour du compromis : la commission ne se saisit jamais [R63].
  *
  * Décidé, lecture prudente : le mandat qui compte est celui en vigueur le jour du compromis, quand la vente est
  * conclue ; les honoraires sont ceux du document signé, qu'un avenant ne change pas ; le constat plomb compte un an,
@@ -34,7 +34,7 @@ import { PiecesDossier, type Piece, type PieceStore } from './pieces.ts';
 const TIME_ZONE = 'Europe/Paris';
 
 /** Durée de validité des pièces datées, en mois, au jour de l'acte : des réglages. */
-export const DEFAULT_VALIDITY_MONTHS: Partial<Record<Piece, number>> = { etat_risques: 6, electricite: 36, gaz: 36, plomb: 12, dpe: 120 };
+export const DEFAULT_VALIDITY_MONTHS: Partial<Record<Piece, number>> = { etat_risques: 6, electricite: 36, gaz: 36, plomb: 12, dpe: 120, audit_energetique: 60 };
 
 /** Le dernier jour de validité d'une pièce datée du `issuedOn` (même jour, `months` mois plus tard, la veille). */
 export function validUntil(issuedOn: string, months: number): string {
@@ -215,6 +215,13 @@ export class ActeVente {
     if (identity !== 'non_visible') {
       const seen = await this.controles.identitySeenAt(g.file.network_id, g.file.buyer_person_id, new Date(`${signedOn}T21:59:59.999Z`));
       identity = seen !== null && localTime(new Date(seen), TIME_ZONE).date <= signedOn ? 'verifiee' : 'non_verifiee';
+      // Chaque coacquéreur aussi, au jour de l'acte (AU009) [R58, R60].
+      const co = await this.db.first<{ co_buyers: string | null }>('SELECT co_buyers FROM offer_register WHERE id = ?', [g.file.offer_id]);
+      for (const personId of JSON.parse(co?.co_buyers ?? '[]') as string[]) {
+        if (identity !== 'verifiee') break;
+        const its = await this.controles.identitySeenAt(g.file.network_id, personId, new Date(`${signedOn}T21:59:59.999Z`));
+        if (its === null || localTime(new Date(its), TIME_ZONE).date > signedOn) identity = 'non_verifiee';
+      }
     }
     if (status.value.missing.length > 0 || status.value.unknown.length > 0 || identity !== 'verifiee' || expired.length > 0) {
       return blocked({ ok: false, rule: 'R60', code: 'incomplete', missing: status.value.missing, expired, unknown: status.value.unknown, identity });

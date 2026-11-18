@@ -118,6 +118,31 @@ describeWithSqlite('RC25 · une offre sans le bon de la visite à distance', () 
     await expect(new RegistreOffres(broken, t.acces, t.journal, { now: t.now }).record(t.agent, t.propertyId, t.input({ buyerPersonId: other.id }))).rejects.toThrow(/disque plein/);
   });
 
+  it('[R505] AU009 : le bon manquant d’un coacquéreur refuse l’offre, aussi s’il apparaît entre la lecture et l’écriture', async () => {
+    const t = await setupOffre();
+    const co = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Coacheteur', lastName: 'Distance' });
+    const first = await remoteVisit(t, co.id);
+    expect(await t.offres.record(t.agent, t.propertyId, t.input({ coBuyerPersonIds: [co.id] }))).toEqual({ ok: false, rule: 'R505', code: 'remote_slip_unsigned', appointmentId: first });
+    expect(await count(t)).toBe(0);
+    // Un autre coacquéreur, sans visite au moment de la lecture.
+    const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Autre', lastName: 'Distance' });
+    // La garde de la base : une visite du coacquéreur finie juste avant l'écriture du lot.
+    let rdv: string | null = null;
+    const db: SqlDatabase = Object.create(t.db, {
+      batch: {
+        value: async (statements: { sql: string; params: unknown[] }[]) => {
+          if (rdv === null) rdv = await remoteVisit(t, other.id);
+          return t.db.batch!(statements as never);
+        },
+      },
+    });
+    const r = await new RegistreOffres(db, t.acces, t.journal, { now: t.now }).record(t.agent, t.propertyId, t.input({ coBuyerPersonIds: [other.id] }));
+    expect(rdv).not.toBeNull();
+    expect(r).toEqual({ ok: false, rule: 'R505', code: 'remote_slip_unsigned', appointmentId: rdv });
+    expect(await count(t)).toBe(0);
+    expect(await t.db.first('SELECT 1 FROM offer_co_buyers')).toBeNull();
+  });
+
   it('[R13] au journal, sous la visite, des identifiants seulement ; jamais sous le bien, que lit le vendeur', async () => {
     const t = await setupOffre();
     const rdv = await remoteVisit(t, t.buyerId);

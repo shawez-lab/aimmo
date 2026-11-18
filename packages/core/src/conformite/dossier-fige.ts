@@ -64,6 +64,7 @@ const PARTS: Part[] = [
   { table: 'sale_file_steps', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || step || ':' || at AS k, * FROM sale_file_steps WHERE file_id IN (${q})` },
   { table: 'sale_file_pieces', over: 'saleFiles', sql: (q) => `SELECT id AS k, * FROM sale_file_pieces WHERE file_id IN (${q})` },
   { table: 'sale_file_dates', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || kind || ':' || version AS k, * FROM sale_file_dates WHERE file_id IN (${q})` },
+  { table: 'sale_file_buyer_notices', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || person_id || ':' || version AS k, * FROM sale_file_buyer_notices WHERE file_id IN (${q})` },
   { table: 'sale_file_financing', over: 'saleFiles', sql: (q) => `SELECT file_id || ':' || seq AS k, * FROM sale_file_financing WHERE file_id IN (${q})` },
   { table: 'sale_file_closings', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_closings WHERE file_id IN (${q})` },
   { table: 'sale_file_stops', over: 'saleFiles', sql: (q) => `SELECT file_id AS k, * FROM sale_file_stops WHERE file_id IN (${q})` },
@@ -115,9 +116,10 @@ export async function caseScopeOf(
     scope.mandates = [id];
     // La vente qui en découle (RC36) : les offres reçues sur le même bien, leurs dossiers de vente et leurs acquéreurs.
     if (options.withSale && row.property_id) {
-      const offers = await db.all<{ id: string; buyer_person_id: string }>('SELECT id, buyer_person_id FROM offer_register WHERE network_id = ? AND property_id = ?', [networkId, row.property_id]);
+      const offers = await db.all<{ id: string; buyer_person_id: string; co_buyers: string | null }>('SELECT id, buyer_person_id, co_buyers FROM offer_register WHERE network_id = ? AND property_id = ?', [networkId, row.property_id]);
       scope.offers = unique(offers.map((o) => o.id));
-      scope.persons = unique(offers.map((o) => o.buyer_person_id));
+      // Chaque acquéreur, coacquéreurs compris (AU009).
+      scope.persons = unique(offers.flatMap((o) => [o.buyer_person_id, ...(JSON.parse(o.co_buyers ?? '[]') as string[])]));
     }
   } else {
     let offerId = id;
@@ -127,13 +129,14 @@ export async function caseScopeOf(
       scope.saleFiles = [id];
       offerId = file.offer_id;
     }
-    const offer = await db.first<{ network_id: string; buyer_person_id: string; property_id: string }>('SELECT network_id, buyer_person_id, property_id FROM offer_register WHERE id = ?', [offerId]);
+    const offer = await db.first<{ network_id: string; buyer_person_id: string; property_id: string; co_buyers: string | null }>('SELECT network_id, buyer_person_id, property_id, co_buyers FROM offer_register WHERE id = ?', [offerId]);
     if (!offer || offer.network_id !== networkId) return null;
     personId = offer.buyer_person_id;
     scope.offers = [offerId];
     const mandates = await db.all<{ id: string; person_id: string }>('SELECT id, person_id FROM mandates WHERE network_id = ? AND property_id = ?', [networkId, offer.property_id]);
     scope.mandates = unique(mandates.map((m) => m.id));
-    scope.persons = unique(mandates.map((m) => m.person_id));
+    // Les mandants, et les coacquéreurs de l'offre, chacun partie du dossier (AU009).
+    scope.persons = unique([...mandates.map((m) => m.person_id), ...(JSON.parse(offer.co_buyers ?? '[]') as string[])]);
   }
   // Les dossiers de vente ouverts depuis chaque offre du périmètre (RC36) : une offre signalée fige aussi sa vente.
   if (options.withSale && scope.offers.length > 0) {

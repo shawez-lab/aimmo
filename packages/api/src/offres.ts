@@ -97,7 +97,7 @@ export function offreRoutes(pieces: OfferUploadStore | null = null): OffreRoute[
       name: 'offres.enregistrer',
       // Enregistrée et contrôlée dans le même appel ; la clé d'envoi évite un doublon au registre.
       handle: withBody(async (s, v, [id], b) => reply(await o(s).controles.recordAndCheck(v, id!, {
-        buyerPersonId: b.buyerPersonId, amountEur: b.amountEur, conditions: b.conditions, validUntil: b.validUntil,
+        buyerPersonId: b.buyerPersonId, coBuyerPersonIds: b.coBuyerPersonIds, amountEur: b.amountEur, conditions: b.conditions, validUntil: b.validUntil,
         downPaymentEur: b.downPaymentEur, loanEur: b.loanEur, signedRef: b.signedRef, receivedAt: b.receivedAt, requestKey: b.requestKey,
       }))),
     },
