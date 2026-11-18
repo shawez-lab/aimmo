@@ -66,7 +66,8 @@ it('[R60] la liste des pièces suit des règles écrites, chaque ligne avec sa r
   });
   // Ce qui ne se devine pas empêche le dossier d'être complet.
   expect(expectedPieces('home', null, 2027)?.unknown).toEqual(['fiche_bien']);
-  expect(expectedPieces('home', sheet({ coownership: null }), 2027)?.unknown).toEqual(['copropriete']);
+  // Une copropriété inconnue : sans DPE à la fiche, la classe énergie non plus ne se devine pas (AU010).
+  expect(expectedPieces('home', sheet({ coownership: null }), 2027)?.unknown).toEqual(['copropriete', 'classe_energie']);
   // Un fonds de commerce relève de M16.
   expect(expectedPieces('business', null, 2027)).toBeNull();
 });

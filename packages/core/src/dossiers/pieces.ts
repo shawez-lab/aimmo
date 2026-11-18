@@ -12,6 +12,14 @@
  * - une donnée du bien inconnue (année de construction, chauffage) fait demander le diagnostic qu'elle pourrait
  *   rendre inutile : mieux vaut une pièce de trop qu'un acte retardé ; la copropriété inconnue, elle, empêche le
  *   dossier d'être complet tant que la fiche ne la précise pas, car ses six pièces ne se devinent pas ;
+ * - audit énergétique (AU010, art. L126-28-1 du code de la construction et de l'habitation) : demandé pour la vente
+ *   d'une maison ou d'un immeuble d'habitation hors copropriété (monopropriété) classé F ou G depuis le 1er avril 2023,
+ *   E depuis le 1er janvier 2025, D à partir du 1er janvier 2034 ; valable 5 ans, et remis à l'acquéreur dès la
+ *   première visite. La classe est celle du DPE de la fiche du bien. Une classe inconnue, ou lue sur un DPE d'avant le
+ *   1er juillet 2021 (ancienne méthode), empêche le dossier d'être complet tant que la fiche ne la précise pas : on ne
+ *   devine pas une obligation, ni un audit de plusieurs centaines d'euros. La copropriété inconnue fait demander l'audit.
+ *   Lecture prudente : la règle de la métropole vaut aussi outre-mer, où l'obligation vient plus tard (une pièce de trop
+ *   plutôt qu'un acte retardé) ;
  * - les diagnostics qui dépendent d'un arrêté local (termites, mérule, assainissement non collectif) ne sont pas
  *   encore listés : le notaire les demande, une tâche à part les ajoutera par commune ;
  * - un fonds de commerce relève de M16 : pas de liste ici ;
@@ -19,7 +27,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { PropertySheet } from '../annonces/fiche-bien.ts';
+import type { EnergyClass, PropertySheet } from '../annonces/fiche-bien.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -49,6 +57,7 @@ export const PIECES = [
   'pppt_dtg',
   'dta_parties_communes',
   'fiche_renseignements_acquereur',
+  'audit_energetique',
 ] as const;
 export type Piece = (typeof PIECES)[number];
 
@@ -68,7 +77,9 @@ export type PieceReason =
   | 'chauffage_gaz'
   | 'installation_gaz_possible'
   | 'terrain'
-  | 'lot_copropriete';
+  | 'lot_copropriete'
+  | 'classe_energie_soumise_audit'
+  | 'copropriete_inconnue';
 
 export interface ExpectedPiece {
   piece: Piece;
@@ -77,8 +88,40 @@ export interface ExpectedPiece {
 }
 
 
-/** Ce qui manque au bien pour dresser la liste : la fiche entière, ou la copropriété. */
-export type UnknownData = 'fiche_bien' | 'copropriete';
+/** Ce qui manque au bien pour dresser la liste : la fiche entière, la copropriété, ou la classe du DPE (AU010). */
+export type UnknownData = 'fiche_bien' | 'copropriete' | 'classe_energie';
+
+/** Les logements : une maison, un immeuble d'habitation. */
+const HOUSING: readonly PropertyKind[] = ['home', 'building'];
+
+/** Le premier jour d'un DPE de la méthode en vigueur : une classe lue sur un DPE plus ancien ne compte pas (AU010). */
+export const DPE_CURRENT_METHOD_FROM = '2021-07-01';
+
+/**
+ * Les classes du DPE soumises à l'audit énergétique à la vente, l'année donnée (art. L126-28-1 du CCH, texte lu le
+ * 2026-11-18) : F et G depuis le 1er avril 2023, E depuis le 1er janvier 2025, D à partir du 1er janvier 2034. Seule
+ * l'année est connue : 2023 compte en entier, par prudence.
+ */
+export function auditClasses(year: number): readonly EnergyClass[] {
+  if (year >= 2034) return ['D', 'E', 'F', 'G'];
+  if (year >= 2025) return ['E', 'F', 'G'];
+  if (year >= 2023) return ['F', 'G'];
+  return [];
+}
+
+/**
+ * Le cas de l'audit énergétique pour un bien, l'année donnée (AU010) : `requis` (avec la classe qui le déclenche),
+ * `non_requis`, ou `inconnu` quand la fiche ne permet pas de trancher. Fonction pure, aussi pour la remise à la visite.
+ */
+export function energyAuditCase(kind: PropertyKind, sheet: PropertySheet | null, year: number): { case: 'requis'; energyClass: EnergyClass | null } | { case: 'non_requis' } | { case: 'inconnu' } {
+  if (!HOUSING.includes(kind) || !sheet) return HOUSING.includes(kind) ? { case: 'inconnu' } : { case: 'non_requis' };
+  // Un lot de copropriété n'y est pas soumis ; une copropriété inconnue le fait demander.
+  if (sheet.coownership?.isCoownership === true) return { case: 'non_requis' };
+  const e = sheet.energy;
+  if (!e || e.diagnosedOn < DPE_CURRENT_METHOD_FROM) return { case: 'inconnu' };
+  if (!auditClasses(year).includes(e.energyClass)) return { case: 'non_requis' };
+  return { case: 'requis', energyClass: e.energyClass };
+}
 
 export type { PropertyKind } from './acces-dossier.ts';
 
@@ -87,7 +130,6 @@ export interface ExpectedList {
   unknown: UnknownData[];
 }
 
-const HOUSING: readonly PropertyKind[] = ['home', 'building'];
 
 /**
  * Les pièces attendues, par des règles écrites, dans un ordre fixe. Fonction pure : mêmes données, même liste [R60].
@@ -131,6 +173,12 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
       // a son permis d'avant juillet 1997, ou si on ne sait pas.
       for (const p of ['reglement_copropriete', 'pv_assemblees', 'fiche_synthetique', 'pre_etat_date', 'carnet_entretien', 'mesurage_carrez', 'notice_information', 'pppt_dtg'] as const) add(p, 'vendeur', 'lot_copropriete');
       if (buildYear === null || buildYear <= 1997) add('dta_parties_communes', 'vendeur', buildYear === null ? 'annee_construction_inconnue' : 'construit_avant_juillet_1997');
+    }
+    // Audit énergétique (AU010) : une maison ou un immeuble hors copropriété, classé dans une classe soumise cette année.
+    if (sheet && HOUSING.includes(kind)) {
+      const audit = energyAuditCase(kind, sheet, year);
+      if (audit.case === 'requis') add('audit_energetique', 'vendeur', sheet.coownership === null ? 'copropriete_inconnue' : 'classe_energie_soumise_audit');
+      else if (audit.case === 'inconnu') unknown.push('classe_energie');
     }
   }
   add('fiche_renseignements_acquereur', 'acquereur', 'toujours');

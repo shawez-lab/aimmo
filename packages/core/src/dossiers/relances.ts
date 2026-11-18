@@ -68,6 +68,7 @@ export const PIECE_LABELS: Record<Piece, string> = {
   pppt_dtg: 'le plan pluriannuel de travaux ou le diagnostic technique global',
   dta_parties_communes: 'le dossier technique amiante des parties communes',
   fiche_renseignements_acquereur: "la fiche de renseignements de l'acquéreur remplie",
+  audit_energetique: "l'audit énergétique",
 };
 
 /**
