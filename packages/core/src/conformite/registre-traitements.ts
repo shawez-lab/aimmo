@@ -811,7 +811,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
     tables: {
-      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'market_annual_rent_cents', 'market_rent_basis', 'lease_use', 'lease_assignment', 'employees', 'equipment', 'licenses', 'author'],
+      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'market_annual_rent_cents', 'market_rent_basis', 'lease_use', 'lease_assignment', 'lease_index', 'employees', 'equipment', 'licenses', 'author'],
       business_valuations: ['low_cents', 'high_cents', 'lines', 'created_by'],
       business_valuation_validations: ['validated_by'],
       business_valuation_scales: ['recorded_by'],
