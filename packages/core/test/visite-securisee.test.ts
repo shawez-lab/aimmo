@@ -275,10 +275,27 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     await t.securite.raise(agent, 'alerte-0400');
     t.setClock(start + 6 * MINUTE);
     expect(await t.securite.status(agent, 'alerte-0400')).toMatchObject({ ok: true, alert: { level: 2, notified: true } });
+    // Un seul passage, 12 minutes après le geste : le palier dû est 3, atteint d'un coup.
+    t.setClock(start + 12 * MINUTE);
+    expect(await t.securite.escalate()).toBe(1);
+    expect(await t.db.first("SELECT level FROM safety_alerts WHERE id = 'alerte-0400'")).toEqual({ level: 3 });
+    expect(received.map((a) => a.level)).toEqual([1, 2, 3]);
+    t.setClock(start + 6 * MINUTE);
     await t.securite.raise(agent, 'alerte-0401');
     t.setClock(start + 6 * MINUTE + 61 * MINUTE);
     expect(await t.securite.escalate()).toBe(0);
     expect(await t.securite.status(agent, 'alerte-0401')).toMatchObject({ ok: true, alert: { level: 1 } });
+  });
+
+  it('[R54] AU008 : une alerte « prévenue » par l’ancien essai est reclassée en essai par la migration', async () => {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    const all = loadMigrations();
+    await applyMigrations(db, all.filter((m) => m.id < '3960'));
+    const store = new FicheClient(db);
+    const network = await store.createNetwork('Réseau test');
+    await db.run("INSERT INTO safety_alerts (id, network_id, agent_id, raised_at, notified_at, attempts) VALUES ('alerte-ancienne', ?, 'a1', '2026-11-01T09:00:00.000Z', '2026-11-01T09:00:01.000Z', 1)", [network.id]);
+    await applyMigrations(db, all);
+    expect(await db.first("SELECT notified_at, mode, trial_at FROM safety_alerts WHERE id = 'alerte-ancienne'")).toEqual({ notified_at: null, mode: 'essai', trial_at: '2026-11-01T09:00:01.000Z' });
   });
 
   it('[R54] AU008 : un envoi du palier précédent qui revient après la montée n’est pas compté pour le nouveau palier', async () => {

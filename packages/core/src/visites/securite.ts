@@ -348,8 +348,8 @@ export class VisiteSecurisee {
   }
 
   /**
-   * Fait monter d'un palier chaque alerte que personne n'a acquittée depuis 5 minutes, pendant l'heure qui suit le geste,
-   * jusqu'au palier 3, puis prévient à ce palier. Rend le nombre d'alertes montées.
+   * Fait monter au palier dû (un de plus toutes les 5 minutes depuis le geste, jusqu'au palier 3) chaque alerte que
+   * personne n'a acquittée, pendant l'heure qui suit le geste, puis prévient à ce palier. Rend le nombre d'alertes montées.
    */
   async escalate(): Promise<number> {
     const since = new Date(this.now().getTime() - SAFETY_ESCALATION_WINDOW_MINUTES * 60_000).toISOString();
@@ -369,16 +369,19 @@ export class VisiteSecurisee {
     const at = this.now();
     const level = Number(r.level);
     if (r.acknowledged_at !== null || level >= SAFETY_MAX_LEVEL) return false;
-    if (Date.parse(r.raised_at) < at.getTime() - SAFETY_ESCALATION_WINDOW_MINUTES * 60_000) return false;
-    if (Date.parse(r.level_at ?? r.raised_at) > at.getTime() - SAFETY_ACK_MINUTES * 60_000) return false;
+    const elapsed = at.getTime() - Date.parse(r.raised_at);
+    if (!(elapsed >= 0) || elapsed > SAFETY_ESCALATION_WINDOW_MINUTES * 60_000) return false;
+    // Le palier dû se compte depuis le geste, pas depuis le dernier passage : un passage en retard rattrape d'un coup.
+    const due = Math.min(SAFETY_MAX_LEVEL, 1 + Math.floor(elapsed / (SAFETY_ACK_MINUTES * 60_000)));
+    if (due <= level) return false;
     // Une seule montée pour un même palier, même avec deux passages en même temps.
     const { changes } = await this.db.run(
       `UPDATE safety_alerts SET level = ?, level_at = ?, notified_at = NULL, receipt = NULL, mode = NULL, trial_at = NULL, claimed_until = NULL
        WHERE id = ? AND level = ? AND acknowledged_at IS NULL`,
-      [level + 1, at.toISOString(), r.id, level],
+      [due, at.toISOString(), r.id, level],
     );
     if (changes !== 1) return false;
-    await appendEvent(this.journal, { type: 'visite.alerte_escalade', actor: 'system:securite', subject: `alert:${r.id}`, data: { level: level + 1 } }, this.now);
+    await appendEvent(this.journal, { type: 'visite.alerte_escalade', actor: 'system:securite', subject: `alert:${r.id}`, data: { level: due } }, this.now);
     await this.notifyOne(r.id);
     return true;
   }

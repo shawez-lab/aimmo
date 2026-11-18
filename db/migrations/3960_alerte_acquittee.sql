@@ -11,6 +11,9 @@ ALTER TABLE safety_alerts ADD COLUMN trial_at TEXT;
 ALTER TABLE safety_alerts ADD COLUMN acknowledged_at TEXT;
 ALTER TABLE safety_alerts ADD COLUMN acknowledged_by TEXT;
 
+-- Avant AU008, seul l'essai était branché : une alerte marquée « prévenue » ne l'a jamais été réellement.
+UPDATE safety_alerts SET mode = 'essai', trial_at = notified_at, notified_at = NULL WHERE notified_at IS NOT NULL AND receipt IS NULL;
+
 -- Un accusé rangé ne change plus ; un palier ne redescend jamais.
 CREATE TRIGGER IF NOT EXISTS safety_alerts_acquittee
 BEFORE UPDATE ON safety_alerts
