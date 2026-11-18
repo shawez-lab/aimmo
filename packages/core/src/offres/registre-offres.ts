@@ -17,7 +17,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { LIVE_MANDATES } from '../espaces/lecture.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -278,10 +278,16 @@ export class RegistreOffres {
       const conds = parseConditions(input.conditions);
       const received = typeof input.receivedAt === 'string' && Number.isFinite(Date.parse(input.receivedAt)) ? new Date(input.receivedAt).toISOString() : null;
       const same = conds.ok && received === early.receivedAt && input.amountEur === early.amountEur && JSON.stringify(conds.value) === JSON.stringify(early.conditions) &&
-        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef &&
-        JSON.stringify(input.coBuyerPersonIds ?? []) === JSON.stringify(early.coBuyerPersonIds);
+        input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef;
       const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.acces.readFiche(viewer, input.buyerPersonId) : null;
-      if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId) return { ok: true, value: early };
+      // Les coacquéreurs comparés par leur fiche d'aujourd'hui, comme l'acquéreur en tête : une fiche réunie depuis reste la même personne.
+      const coIn = input.coBuyerPersonIds ?? [];
+      let sameCo = Array.isArray(coIn) && coIn.length === early.coBuyerPersonIds.length;
+      for (const [i, id] of (sameCo ? (coIn as unknown[]) : []).entries()) {
+        const read = typeof id === 'string' ? await this.acces.readFiche(viewer, id) : null;
+        if (!read?.ok || read.value.person.id !== early.coBuyerPersonIds[i]) sameCo = false;
+      }
+      if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId && sameCo) return { ok: true, value: early };
       await appendEvent(this.journal, { type: 'offre.cle_reutilisee', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R56', seq: early.seq } }, this.now);
       return { ok: false, rule: 'R56', code: 'request_key_reused' };
     }
@@ -373,12 +379,16 @@ export class RegistreOffres {
       try {
         // La colonne des coacquéreurs n'est écrite que s'il y en a : une offre d'un acquéreur seul s'inscrit comme avant
         // la migration 3970, aussi sur une base qui ne l'a pas encore.
+        // Le lien de chaque coacquéreur à l'offre part dans le même lot : l'un n'existe jamais sans l'autre [R96].
         const co = coBuyers.length > 0;
-        await this.db.run(
-          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key${co ? ', co_buyers' : ''})
+        await runBatch(this.db, [
+          {
+            sql: `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key${co ? ', co_buyers' : ''})
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${co ? ', ?' : ''})`,
-          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, ...(co ? [line.co_buyers!] : [])],
-        );
+            params: [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, ...(co ? [line.co_buyers!] : [])],
+          },
+          ...coBuyers.map((personId, i) => ({ sql: 'INSERT INTO offer_co_buyers (offer_id, network_id, person_id, position) VALUES (?, ?, ?, ?)', params: [line.id, line.network_id, personId, i + 1] })),
+        ]);
       } catch (error) {
         // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
         const twin = await known();

@@ -4,6 +4,7 @@ import { expect, it } from 'vitest';
 import { DossiersVente } from '../src/offres/dossier-vente.ts';
 import { FicheUnique } from '../src/index.ts';
 import { caseScopeOf } from '../src/conformite/dossier-fige.ts';
+import { assembleAccessDetail } from '../src/conformite/demandes-personnes.ts';
 import { ActeVente } from '../src/dossiers/index.ts';
 import { hashOffer } from '../src/offres/registre-offres.ts';
 import { Echeancier, buyerWithdrawalLastDay, scheduleLines } from '../src/dossiers/index.ts';
@@ -47,12 +48,19 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     const listed = await t.offres.list(t.agent, t.propertyId);
     expect(listed.ok && listed.value[0]!.coBuyerPersonIds).toEqual([co.id]);
     expect(await t.offres.check(t.propertyId)).toEqual({ ok: true, count: 1 });
+    // Un rejeu avec la même clé rend la même offre ; avec un autre coacquéreur, c'est une autre offre : refusé.
+    const keyed = t.input({ coBuyerPersonIds: [co.id], requestKey: 'cle-coacquereurs-0001', signedRef: 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000003.pdf' });
+    const once = await t.offres.record(t.agent, t.propertyId, keyed);
+    expect(await t.offres.record(t.agent, t.propertyId, keyed)).toEqual(once);
+    expect(await t.offres.record(t.agent, t.propertyId, { ...keyed, coBuyerPersonIds: [] })).toMatchObject({ ok: false, code: 'request_key_reused' });
+    expect(await t.offres.check(t.propertyId)).toEqual({ ok: true, count: 2 });
     // Deux fiches distinctes : rien n'a été fusionné.
     expect(await t.db.first('SELECT 1 FROM person_merges')).toBeNull();
     // Une offre sans coacquéreur reste comme avant.
     const solo = await t.offres.record(t.agent, t.propertyId, t.input({ signedRef: 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000002.pdf' }));
     expect(solo.ok && solo.value.coBuyerPersonIds).toEqual([]);
-    expect(await t.offres.check(t.propertyId)).toEqual({ ok: true, count: 2 });
+    expect(await t.offres.check(t.propertyId)).toEqual({ ok: true, count: 3 });
+    expect(await t.db.all('SELECT position FROM offer_co_buyers WHERE person_id = ? ORDER BY offer_id', [co.id])).toHaveLength(2);
   });
 
   it('[R56] un coacquéreur qui est déjà l’acquéreur, le mandant, ou une liste trop longue : refusé, rien au registre', async () => {
@@ -145,5 +153,29 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     expect(await t.verifyBuyer(new Date('2028-06-11T07:00:00.000Z'), t.coBuyerIds[0])).toMatchObject({ ok: true });
     t.setClock(new Date('2028-06-12T08:00:00.000Z'));
     expect(await acte.record(t.agent, t.fileId, { signedOn: '2028-06-12', proofRef: ACT })).toMatchObject({ ok: true });
+  });
+
+  it('[R96] le coacquéreur qui demande ses données reçoit l’offre, le dossier et sa notification, sans la fiche des autres', async () => {
+    const t = await setupDossier('appartement', {}, { coBuyers: 1 });
+    const [co] = t.coBuyerIds;
+    await t.startCompromis();
+    t.setClock(new Date('2027-03-16T08:00:00.000Z'));
+    const e = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+    await e.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-13', proofRef: PROOF, personId: co })).toMatchObject({ ok: true });
+    const detail = await assembleAccessDetail(t.db, [co!]);
+    const section = (table: string) => detail.response.sections.find((x) => x.table === table)?.rows ?? [];
+    const offer = section('offer_register');
+    expect(offer).toHaveLength(1);
+    expect(offer[0]).toMatchObject({ id: t.offerId });
+    expect(offer[0]!.buyer_person_id).not.toBe(t.buyerId);
+    expect(offer[0]!.co_buyers).not.toContain(co);
+    expect(section('sale_files')).toHaveLength(1);
+    expect(section('sale_file_buyer_notices')).toHaveLength(1);
+    expect(JSON.stringify(detail.response)).not.toContain(t.buyerId);
+    // L'acquéreur en tête retrouve toujours son offre ; la liste des coacquéreurs lui est masquée.
+    const lead = await assembleAccessDetail(t.db, [t.buyerId]);
+    expect(lead.response.sections.find((x) => x.table === 'offer_register')?.rows).toHaveLength(1);
+    expect(JSON.stringify(lead.response.sections.find((x) => x.table === 'offer_register'))).not.toContain(co);
   });
 });

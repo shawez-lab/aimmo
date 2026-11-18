@@ -570,7 +570,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   weekly_points: { locate: by('person_id') },
   // offres-dossiers-vente : l'acquéreur par son offre ; le vendeur voit son dossier de vente sans l'acquéreur.
   // Les coacquéreurs (AU009) : leurs fiches ne sont pas montrées à l'acquéreur en tête qui demande ses données.
-  offer_register: { locate: by('buyer_person_id'), shared: ['co_buyers'] },
+  // Un coacquéreur trouve l'offre par son lien ; la fiche de l'acquéreur en tête et la liste des autres lui sont masquées.
+  offer_co_buyers: { locate: by('person_id') },
+  offer_register: { locate: [...by('buyer_person_id'), via('id', 'offer_co_buyers', 'offer_id', { tag: 'coacquereur' })], own: { buyer_person_id: [] }, shared: ['co_buyers'] },
   offer_checks: { locate: [via('offer_id', 'offer_register')] },
   offer_transmissions: { locate: [via('offer_id', 'offer_register')] },
   offer_responses: { locate: [via('offer_id', 'offer_register')] },
@@ -582,7 +584,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   proposal_tasks: { locate: [via('proposal_id', 'offer_proposals')] },
   // Le vendeur d'un dossier est celui rangé à son ouverture, jamais tout mandant passé ou futur du bien.
   sale_file_sellers: { locate: by('person_id') },
-  sale_files: { locate: [...by('buyer_person_id'), via('id', 'sale_file_sellers', 'file_id', { tag: 'vendeur' })], own: { buyer_person_id: ['offer_id'] } },
+  sale_files: { locate: [...by('buyer_person_id'), via('id', 'sale_file_sellers', 'file_id', { tag: 'vendeur' }), via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'coacquereur', tag: 'coacquereur' })], own: { buyer_person_id: ['offer_id'] } },
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },

@@ -17,3 +17,18 @@ CREATE TABLE IF NOT EXISTS sale_file_buyer_notices (
 );
 CREATE TRIGGER IF NOT EXISTS sale_file_buyer_notices_fige BEFORE UPDATE ON sale_file_buyer_notices BEGIN SELECT RAISE(ABORT, 'sale_file_buyer_notices : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS sale_file_buyer_notices_sans_effacement BEFORE DELETE ON sale_file_buyer_notices BEGIN SELECT RAISE(ABORT, 'sale_file_buyer_notices : rien ne s''efface'); END;
+
+-- Le lien de chaque coacquéreur à son offre, écrit avec l'offre dans le même lot : sa fiche y est trouvée quand il
+-- demande ses données (R96). En ajout seul.
+CREATE TABLE IF NOT EXISTS offer_co_buyers (
+  offer_id TEXT NOT NULL REFERENCES offer_register (id) ON DELETE RESTRICT,
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  person_id TEXT NOT NULL,
+  position INTEGER NOT NULL CHECK (position >= 1),
+  PRIMARY KEY (offer_id, person_id),
+  UNIQUE (offer_id, position),
+  FOREIGN KEY (person_id, network_id) REFERENCES persons (id, network_id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS offer_co_buyers_person ON offer_co_buyers (network_id, person_id);
+CREATE TRIGGER IF NOT EXISTS offer_co_buyers_fige BEFORE UPDATE ON offer_co_buyers BEGIN SELECT RAISE(ABORT, 'offer_co_buyers : rien ne change'); END;
+CREATE TRIGGER IF NOT EXISTS offer_co_buyers_sans_effacement BEFORE DELETE ON offer_co_buyers BEGIN SELECT RAISE(ABORT, 'offer_co_buyers : rien ne s''efface'); END;
