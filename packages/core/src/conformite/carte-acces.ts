@@ -508,8 +508,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
-  // Le mandat d'un autre mandant (AU001) : sa fiche n'est jamais montrée [R96].
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'] },
+  // Un mandat peut nommer plusieurs mandants (AU001), comme un bail ses deux parties : la fiche de l'autre et le texte qui
+  // les nomme tous ne sont jamais montrés, leur empreinte reste [R96].
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'] },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
@@ -520,7 +521,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_price_gap_settings: out('sans_client', 'Écart de prix toléré, réglé par la direction.'),
   mandate_questionnaires: { locate: [...by('person_id'), via('document_id', 'documents')] },
   mandate_questionnaire_gap_acks: { locate: [via('questionnaire_id', 'mandate_questionnaires')] },
-  signed_documents: { locate: [via('document_id', 'documents')] },
+  signed_documents: { locate: [via('document_id', 'documents')], shared: ['copy_content'] },
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
   risk_statements: { locate: [via('file_id', 'sale_files')] },
   coownership_summaries: { locate: [via('file_id', 'sale_files')] },
@@ -536,10 +537,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   signature_circuit_events: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
-  signed_amendments: { locate: [via('document_id', 'documents')] },
+  signed_amendments: { locate: [via('document_id', 'documents')], shared: ['copy_content'] },
   // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
   // fiche ne sont jamais montrés [R96].
-  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash'], foreignPersons: ['signer_person_id'] },
+  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash', 'copy_content'], foreignPersons: ['signer_person_id'] },
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },

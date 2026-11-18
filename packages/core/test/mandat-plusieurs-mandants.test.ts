@@ -196,6 +196,8 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(forNoe).toContain(id);
     const leaks = (await conformite.assembleAccess(t.db, [noe])).sections.filter((x) => JSON.stringify(x).includes(lea)).map((x) => x.table);
     expect(leaks).toEqual([]);
+    // Ni son nom, que le texte du mandat porte.
+    expect(forNoe).not.toMatch(/Léa|Exemple/);
     const sessions = (await conformite.assembleAccess(t.db, [noe])).sections.find((x) => x.table === 'signature_sessions')!;
     expect(sessions.rows).toHaveLength(2);
     for (const row of sessions.rows) expect(row.drawing_hash).toBe(conformite.MASKED);
@@ -228,6 +230,7 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(await t.db.first(`SELECT status FROM signature_sessions WHERE id = ?`, [late.value.sessionId])).toEqual({ status: 'ouverte' });
     const before = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages');
     expect(await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    expect(await t.online.progress(t.agent, d.document.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages')).toEqual(before);
   });
 

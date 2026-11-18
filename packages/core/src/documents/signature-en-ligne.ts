@@ -304,6 +304,10 @@ export class SignatureEnLigne {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
+    // Chaque signataire est une fiche : son état n'est rendu qu'à qui les voit toutes en entier [R16].
+    for (const personId of await documentMandants(this.db, documentId, doc.person_id)) {
+      if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     return { ok: true, value: { documentId, ...(await this.progressOf(documentId, doc.person_id, await sha256(doc.content))) } };
   }
 
