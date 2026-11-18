@@ -499,7 +499,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var a = ANNEXES[r.kind] || 'Annexe';
     if (r.code === 'energy_class') return 'Classe énergie ' + r.energyClass + ' : interdite à la location depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
     if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
-    if (r.code === 'living_area') return 'Non décent : pièce de 9 m² sous 2,20 m, ou 20 m³, exigés.';
+    if (r.code === 'living_area') return 'Trop petit pour être décent.';
     if (r.code === 'local_rules_unchecked') return 'Règle locale non vérifiée.';
     if (r.code === 'local_rules_failed') return 'Règle locale non respectée.';
     if (r.code === 'dimensions_missing') return 'Dimensions manquantes.';
@@ -548,6 +548,8 @@ globalThis.AIMMO_LOUER = function (t) {
     var height = field(d, 'hauteur-' + n, 'Hauteur sous plafond, en m');
     var volume = field(d, 'volume-' + n, 'Volume habitable, en m³');
     var localRef = field(d, 'rsd-' + n, 'Règle locale lue');
+    var localDay = field(d, 'rsd-j-' + n, 'Lue le');
+    localDay.type = 'date';
     var localOk = checkbox(d, 'rsd-ok-' + n, 'Respectée');
     var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
     var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
@@ -563,7 +565,7 @@ globalThis.AIMMO_LOUER = function (t) {
       area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
       if (f.mainRoomHundredths) room.value = String(f.mainRoomHundredths / 100).replace('.', ',');
       if (f.ceilingHeightCm) height.value = String(f.ceilingHeightCm / 100).replace('.', ',');
-      if (f.localRules) { localRef.value = f.localRules.reference; localOk.checked = !!f.localRules.compliant; }
+      if (f.localRules) { localRef.value = f.localRules.reference; localDay.value = f.localRules.checkedOn; localOk.checked = !!f.localRules.compliant; }
       if (f.habitableVolumeHundredths) volume.value = String(f.habitableVolumeHundredths / 100).replace('.', ',');
       kwh.value = String(f.finalEnergyKwh);
       year.value = String(f.buildYear);
@@ -576,7 +578,7 @@ globalThis.AIMMO_LOUER = function (t) {
       var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
       Object.keys(dims).forEach(function (k) { var t = dims[k].value.trim(); if (t) { var c = toCents(t); if (c === null) bad = true; else b[k] = c; } });
       if (bad) { louerState('Dimensions : des nombres.'); return; }
-      if (localRef.value.trim()) b.localRules = { reference: localRef.value.trim(), checkedOn: new Date().toISOString().slice(0, 10), compliant: !!localOk.checked };
+      if (localRef.value.trim()) b.localRules = { reference: localRef.value.trim(), checkedOn: localDay.value, compliant: !!localOk.checked };
       if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
       louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
     }));
