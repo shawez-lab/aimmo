@@ -55,7 +55,9 @@ export async function setupDossier(kind: DossierKind = 'appartement', offerPatch
   // Les obligations locales (AU011), connues par défaut : commune hors zone termites et mérule, selon un arrêté inventé
   // lu le jour de l'ouverture, logement raccordé au tout-à-l'égout. `local: false` les laisse inconnues.
   const obligations = new ObligationsLocales(t.db, t.acces, t.journal, { now: t.now });
-  if (options.local !== false) {
+  // Un jeu monté avant la migration 3990 (test de migration) n'a pas ces tables : rien à ranger.
+  const hasLocal = await t.db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_hazard_orders'`);
+  if (options.local !== false && hasLocal) {
     for (const hazard of ['termites', 'merule'] as const) {
       const z = await obligations.recordZone(t.direction, { postalCode: '21000', city: 'Dijon', hazard, inZone: false, title: `Arrêté préfectoral inventé, ${hazard}`, url: `https://prefecture.example.fr/arretes/${hazard}`, datedOn: '2020-01-15', readOn: '2027-03-01' });
       if (!z.ok) throw new Error(z.code);
