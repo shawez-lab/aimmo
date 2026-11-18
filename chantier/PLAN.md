@@ -112,7 +112,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU008 · Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A008 (bloquant), endroit : C/visites/securite.ts, `TrialDirectionNotifier`.
 - Constat de l'audit : Mon bouton d’alerte de sécurité écrit une ligne d’essai au journal au lieu de prévenir réellement quelqu’un.
