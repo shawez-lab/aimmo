@@ -75,7 +75,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU003 · La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel
-- Statut : en cours
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#669, `3c8e80da`), migration `3980`, R41 complétée. Constat reproduit (aucune voie vers une signature réelle). Décidé, lecture prudente : une session n'est réelle que si la direction a enregistré la validation de l'avocat pour le format `aimmo-preuve-1` (H24) et que le mail réel est donné (H05) ; sinon essai, dit au résultat, au code, à l'exemplaire et à l'écran « Mandat ». Mode fixé à l'ouverture (la base le garde). Seul un mandat de vente se signe en réel. Signé réellement par tous : mandat inscrit (lieu « distance », source R38 donnée à `fin` si la fiche ne l'a pas), dossier de preuve figé sans nom, exemplaire et dossier joints au mail de remise de chaque mandant (`attachments`, canal réel seulement) ; remise notée seulement sur accusé du canal, essai abandonné remplacé après une heure. Relecture forte 4 P1 corrigés ; Codex 5 P0 corrigés en 3 tours, puis rien à signaler. Restent : l'API ne donne encore aucun canal réel (H05) ; l'adaptateur du mail réel devra joindre `attachments` ; avenant signé en ligne réel (inscription à `signed_amendments`) ; dossier de preuve dans l'espace vendeur ; routes de l'exemplaire par session disent encore `mode: essai`.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A003 (bloquant), endroit : A/app.ts, routes de signature ; H24.
 - Constat de l'audit : La signature électronique proposée reste une signature d’essai, inutilisable pour conclure mon mandat réel.
@@ -164,7 +165,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#670, `92994844`), migration `3990`, R60 complétée. Constat confirmé. Décidé, lecture prudente : la direction range, par commune (code postal et nom sans accents ni traits d'union), la lecture datée de l'arrêté termites ou mérule (intitulé, lien https, date de l'arrêté, jour de lecture) ; une lecture de plus d'un an ne vaut plus ; la commune est celle de la désignation du bien (AU002), sinon de sa fiche courte ; termites et mérule pour tout bâtiment, contrôle de l'assainissement non collectif pour un logement déclaré non raccordé ; état termites valable 6 mois, contrôle 3 ans ; commune inconnue, zone sans lecture à jour ou raccordement non déclaré : jamais « complet ». Routes `POST /v1/dossiers/obligations-locales` (direction) et `POST /v1/dossiers/<id>/assainissement`. Relecture forte 1 P1 corrigé ; Codex 1 P1 (routes) et 1 P2 (libellés) corrigés, puis rien ; vérification GitHub verte. Restent : écran de la direction pour ranger les arrêtés et bouton du raccordement dans l'écran du dossier (voie 1, `app.ts`) ; à la mise en service, la direction range les arrêtés de Côte-d'Or (termites, mérule) pour chaque commune des biens.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A011 (bloquant), endroit : C/dossiers/pieces.ts, commentaire et liste des pièces.
 - Constat de l'audit : Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement, sans déterminer les obligations locales applicables.
@@ -173,7 +175,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU012 · Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M12 Conformité ; audit A012 (bloquant), endroit : docs/REGLES.md, R07 ; C/annonces/page-bien.ts, `agentBlock`.
 - Constat de l'audit : Le logiciel m’impose le titre « agent immobilier » même si je suis agent commercial sans carte professionnelle personnelle.
@@ -974,7 +976,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU100 · Manque
-- Statut : à faire
+- Statut : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H24). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
 - Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.

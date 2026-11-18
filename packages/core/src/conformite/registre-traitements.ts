@@ -243,6 +243,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       mandate_tasks: ['agent_id'],
       signed_amendments: ['scan_ref', 'copy_content', 'copy_hash', 'registered_by'],
       signature_sessions: ['content_hash', 'created_by', 'drawing_hash', 'proof', 'copy_content', 'copy_status', 'signer_person_id'],
+      // AU003 : la signature réelle, son dossier de preuve, sa remise à chaque mandant, et la validation de l'avocat.
+      signature_dossiers: ['content_hash', 'dossier', 'dossier_hash', 'copy_content', 'copy_hash'],
+      signature_remises: ['person_id'],
+      signature_validations: ['proof_format', 'reference', 'recorded_by'],
     },
   },
   {
@@ -403,6 +407,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       sale_file_sellers: ['person_id'],
       sale_file_steps: ['by'],
       sale_file_pieces: ['by'],
+      // AU011 : la lecture d'arrêté local par la direction, le raccordement du bien déclaré par son agent.
+      // La commune et sa zone, prudemment comptées comme données : elles décrivent le lieu d'un bien.
+      local_hazard_orders: ['postal_code', 'city_key', 'in_zone', 'source_url', 'set_by'],
+      property_sanitation: ['set_by'],
       sale_file_dates: ['proof_ref', 'by'],
       sale_file_buyer_notices: ['person_id', 'proof_ref', 'by'],
       offer_co_buyers: ['person_id'],
@@ -1161,7 +1169,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   mandate_withdrawals: ['mandate_id', 'network_id', 'received_at', 'sent_on', 'created_at'],
   mandate_tasks: ['id', 'network_id', 'mandate_id', 'kind', 'due_day', 'dedup_key', 'created_at', 'done_at'],
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],
-  signature_sessions: ['id', 'network_id', 'document_id', 'code_hash', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at'],
+  signature_sessions: ['id', 'network_id', 'document_id', 'code_hash', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at', 'mode'],
+  signature_dossiers: ['document_id', 'network_id', 'validation_id', 'created_at'],
+  signature_remises: ['document_id', 'network_id', 'position', 'status', 'attempt', 'created_at', 'sent_at'],
+  signature_validations: ['id', 'network_id', 'validated_on', 'recorded_at'],
   property_sheets: ['id', 'property_id', 'network_id', 'version', 'created_at'],
   listing_settings: ['id', 'network_id', 'set_at'],
   card_holders: ['id', 'network_id', 'set_at'],
@@ -1295,6 +1306,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_file_sellers: ['file_id', 'network_id', 'mandate_id', 'at'],
   sale_file_steps: ['file_id', 'step', 'at'],
   sale_file_pieces: ['id', 'file_id', 'network_id', 'piece', 'version', 'ref', 'issued_on', 'received_at'],
+  local_hazard_orders: ['id', 'network_id', 'hazard', 'version', 'source_title', 'dated_on', 'read_on', 'set_at'],
+  property_sanitation: ['id', 'network_id', 'property_id', 'version', 'mode', 'set_at'],
   sale_file_dates: ['file_id', 'network_id', 'kind', 'version', 'day', 'at'],
   sale_file_buyer_notices: ['file_id', 'network_id', 'version', 'day', 'at'],
   offer_co_buyers: ['offer_id', 'network_id', 'position'],

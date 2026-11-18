@@ -526,6 +526,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },
+  property_sanitation: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
@@ -554,6 +555,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
   // fiche ne sont jamais montrés [R96].
   signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash', 'copy_content'], sharedIf: CO_MANDANTS('document_id'), foreignPersons: ['signer_person_id'] },
+  // AU003 : le dossier de preuve et l'exemplaire remis, par le document ; la remise, par la fiche du mandant.
+  signature_dossiers: { locate: [via('document_id', 'documents')], shared: ['copy_content'], sharedIf: CO_MANDANTS('document_id') },
+  signature_remises: { locate: [...by('person_id'), via('document_id', 'documents')] },
+  signature_validations: out('sans_client', 'Validation du format du dossier de preuve par l\'avocat du réseau.'),
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },
@@ -835,6 +840,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   commission_agency_shares: out('partenaire', 'Part d\'une agence partenaire sur une commission.'),
   partner_credentials: out('partenaire', 'Justificatifs du partenaire.'),
   partner_credential_alerts: out('partenaire', 'Alertes des justificatifs du partenaire.'),
+  local_hazard_orders: out('sans_client', 'Lecture d\'un arrêté local par commune (termites, mérule), sans client.'),
   partner_credential_mentions: out('partenaire', 'Mention audit énergétique d\'une certification du partenaire.'),
   partner_referrals: { locate: [via('project_id', 'projects')] },
   partner_referral_options: { locate: [via('referral_id', 'partner_referrals')] },
