@@ -203,15 +203,21 @@ function clauseAround(text: string, start: number, length: number): { text: stri
   return { text: text.slice(from, to), offset: from };
 }
 const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
+  // Les tournures précises d'abord : à égale distance, la première l'emporte. « Hors charges » n'est jamais le loyer
+  // charges comprises, ni l'inverse ; la provision n'est jamais un loyer (AU099).
+  { re: /\bcharges comprises\b/, keys: ['monthlyRentWithCharges'] },
+  { re: /\bhors charges\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent'] },
+  { re: /\bcharges non recuperables\b/, keys: ['nonRecoverableCharges'] },
+  { re: /\b(?:provision|charges recuperables)\b/, keys: ['recoverableCharges'] },
   { re: /\bbruts?\b/, keys: ['grossYieldBp', 'grossYieldBpLow', 'grossYieldBpHigh'] },
   { re: /\bnets?\b/, keys: ['netYieldBp', 'netYieldBpLow', 'netYieldBpHigh', 'netIncome'] },
   { re: /\bfrais\b/, keys: ['acquisitionFees', 'acquisitionFeesRateBp'] },
   { re: /\bprix\b/, keys: ['price'] },
   { re: /\btravaux\b/, keys: ['works'] },
   { re: /\b(?:total|cout|coute|coutera)\b/, keys: ['totalCost'] },
-  { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'monthlyRentWithCharges', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
+  { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
   { re: /\bpercus?\b/, keys: ['collectedRent'] },
-  { re: /\bcharges\b/, keys: ['nonRecoverableCharges', 'recoverableCharges', 'monthlyRentWithCharges'] },
+  { re: /\bcharges\b/, keys: ['nonRecoverableCharges'] },
   { re: /\b(?:taxe|fonciere)\b/, keys: ['propertyTax'] },
   { re: /\brevenus?\b/, keys: ['netIncome'] },
   { re: /\b(?:surface|m2|m²)\b/, keys: ['livingArea'] },
@@ -366,7 +372,7 @@ export const LINE_LABELS: Record<string, string> = {
   marketRentM2: 'Loyer de marché au m²',
   marketRentM2Low: 'Loyer de marché au m², bas',
   marketRentM2High: 'Loyer de marché au m², haut',
-  monthlyRent: 'Loyer mensuel hors charges',
+  monthlyRent: 'Loyer mensuel',
   monthlyRentWithCharges: 'Loyer mensuel charges comprises',
   recoverableCharges: 'Provision pour charges récupérables par mois',
   annualRent: 'Loyer annuel',

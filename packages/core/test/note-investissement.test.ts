@@ -16,6 +16,7 @@ import {
   type NoteFacts,
   type NoteWriter,
   computeYield,
+  fallbackParagraphs,
   type YieldInputs,
 } from '../src/investir/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -461,4 +462,23 @@ it('[R126] AU099 · une note qui change une hypothèse d’un calcul de version 
   if (!r.ok) throw new Error(r.code);
   const revised = await t.calculs.get(t.network.id, r.value.calculationId);
   expect(revised?.result).toMatchObject({ status: 'complet', formulaVersion: 1 });
+});
+
+it('[R126] AU099 · « hors charges » et « charges comprises » ne se relient qu’à leur loyer, la provision jamais à un loyer', () => {
+  const at = '2027-09-01';
+  const l = (key: string, value: number) => ({ key, value, unit: 'cents' as const, source: 'calcul', asOf: at, hypothesis: 'h' });
+  const lines = [l('monthlyRentWithCharges', 80_000), l('recoverableCharges', 10_000), l('monthlyRent', 70_000), l('nonRecoverableCharges', 60_000)];
+  expect(traceParagraph('Le loyer hors charges est de 800 € par mois.', lines).problems).toEqual([{ code: 'nombre_sans_source', value: '800' }]);
+  expect(traceParagraph('Le loyer hors charges est de 700 € par mois.', lines)).toMatchObject({ problems: [], proofs: [{ line: 'monthlyRent' }] });
+  expect(traceParagraph('Le loyer charges comprises est de 800 € par mois.', lines)).toMatchObject({ problems: [], proofs: [{ line: 'monthlyRentWithCharges' }] });
+  expect(traceParagraph('Le loyer charges comprises est de 700 € par mois.', lines).problems).toHaveLength(1);
+  expect(traceParagraph('La provision pour charges récupérables est de 100 € par mois.', lines)).toMatchObject({ problems: [], proofs: [{ line: 'recoverableCharges' }] });
+  expect(traceParagraph('Le loyer est de 100 € par mois.', lines).problems).toHaveLength(1);
+});
+
+it('[R126] AU099 · la note de secours avec provision se prouve chiffre par chiffre', () => {
+  const s = (value: number) => ({ value, source: 'x', asOf: '2027-09-01', hypothesis: 'h' });
+  const r = computeYield({ price: s(15_000_000), acquisitionFeesRateBp: s(750), works: s(0), livingArea: s(4_000), marketRent: { value: { centralM2Cents: 2_000, lowerM2Cents: 1_800, upperM2Cents: 2_200 }, source: 'x', asOf: '2027-01-01', hypothesis: 'h' }, nonRecoverableCharges: s(60_000), recoverableCharges: s(10_000), propertyTax: s(90_000), vacancyMonths: s(1) }, AT);
+  if (r.status !== 'complet') throw new Error('incomplet');
+  for (const p of fallbackParagraphs({ lines: r.lines } as unknown as NoteFacts)) expect(traceParagraph(p, r.lines).problems).toEqual([]);
 });
