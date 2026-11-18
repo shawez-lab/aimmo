@@ -975,7 +975,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU100 · Manque
-- Statut : à faire
+- Statut : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H24). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
 - Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.
