@@ -44,14 +44,14 @@ export function capitalizedTitle(title: ProfessionalTitle): string {
 
 /** Le dernier titre réglé par la direction du réseau, ou `null`. */
 export async function networkTitleSetting(db: SqlDatabase, networkId: string): Promise<string | null> {
-  const row = await db.first<{ title: string }>('SELECT title FROM agent_title_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+  const row = await db.first<{ title: string }>('SELECT title FROM agent_title_settings WHERE network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [networkId]);
   return row?.title ?? null;
 }
 
 /** Le statut légal rangé pour l'agent dans son réseau. */
 export async function agentLegalStatus(db: SqlDatabase, networkId: string, agentId: string): Promise<AgentLegalStatus> {
   const row = await db.first<{ legal_status: string }>(
-    'SELECT legal_status FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
+    'SELECT legal_status FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1',
     [agentId, networkId],
   );
   return row?.legal_status === 'agent_commercial' ? 'agent_commercial' : 'inconnu';
