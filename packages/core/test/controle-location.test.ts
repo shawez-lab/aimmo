@@ -351,6 +351,8 @@ const FACTS: RentalFacts = {
   finalEnergyKwh: 210,
   buildYear: 1985,
   electricityOver15: false,
+  mainRoomHundredths: 1_800,
+  ceilingHeightCm: 250,
   gas: 'aucune',
   leaseStart: '2027-09-01',
 };

@@ -499,7 +499,8 @@ globalThis.AIMMO_LOUER = function (t) {
     var a = ANNEXES[r.kind] || 'Annexe';
     if (r.code === 'energy_class') return 'Classe énergie ' + r.energyClass + ' : interdite à la location depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
     if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
-    if (r.code === 'living_area') return 'Surface habitable sous 9 m².';
+    if (r.code === 'living_area') return 'Trop petit pour être décent : il faut une pièce principale d’au moins 9 m² sous 2,20 m de plafond, ou 20 m³ habitables.';
+    if (r.code === 'dimensions_missing') return 'Dimensions manquantes : saisissez la pièce principale et sa hauteur sous plafond, ou le volume habitable.';
     if (r.code === 'annex_missing') return a + ' : manquant.';
     if (r.code === 'annex_expired') return a + ' : échu le ' + date(r.validUntil + 'T12:00:00Z') + '.';
     if (r.code === 'annex_future') return a + ' : daté dans le futur.';
@@ -541,6 +542,9 @@ globalThis.AIMMO_LOUER = function (t) {
     var charges = field(d, 'charges-' + n, 'Charges, en euros par mois');
     var mode = select(d, 'mode-' + n, 'Les charges sont', { provision: 'Une provision, régularisée chaque année', forfait: 'Un forfait (meublé seulement)' }, (f && f.chargesMode) || 'provision');
     var area = field(d, 'surface-' + n, 'Surface habitable, en m²');
+    var room = field(d, 'piece-' + n, 'Pièce principale, en m²');
+    var height = field(d, 'hauteur-' + n, 'Hauteur sous plafond de la pièce principale, en m');
+    var volume = field(d, 'volume-' + n, 'Volume habitable, en m³ (si connu)');
     var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
     var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
     var year = field(d, 'annee-' + n, 'Année de construction');
@@ -548,11 +552,14 @@ globalThis.AIMMO_LOUER = function (t) {
     var gas = select(d, 'gaz-' + n, 'Gaz', GAS, (f && f.gas) || 'aucune');
     var start = field(d, 'debut-' + n, 'Début du bail envisagé');
     start.setAttribute('type', 'date');
-    [rent, charges, area, kwh, year].forEach(function (x) { x.setAttribute('inputmode', 'decimal'); x.setAttribute('autocomplete', 'off'); });
+    [rent, charges, area, room, height, volume, kwh, year].forEach(function (x) { x.setAttribute('inputmode', 'decimal'); x.setAttribute('autocomplete', 'off'); });
     if (f) {
       rent.value = centsText(f.rentCents);
       charges.value = centsText(f.chargesCents);
       area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
+      if (f.mainRoomHundredths) room.value = String(f.mainRoomHundredths / 100).replace('.', ',');
+      if (f.ceilingHeightCm) height.value = String(f.ceilingHeightCm / 100).replace('.', ',');
+      if (f.habitableVolumeHundredths) volume.value = String(f.habitableVolumeHundredths / 100).replace('.', ',');
       kwh.value = String(f.finalEnergyKwh);
       year.value = String(f.buildYear);
       elec.checked = !!f.electricityOver15;
@@ -560,7 +567,13 @@ globalThis.AIMMO_LOUER = function (t) {
     }
     d.appendChild(button('Ranger les faits', function () {
       var a = toCents(area.value);
+      // Hauteur en mètres → centimètres, surfaces et volume en centièmes : même lecture que les montants.
+      var rm = room.value.trim() ? toCents(room.value) : null, hc = height.value.trim() ? toCents(height.value) : null, vo = volume.value.trim() ? toCents(volume.value) : null;
+      if ((room.value.trim() && rm === null) || (height.value.trim() && hc === null) || (volume.value.trim() && vo === null)) { louerState('Les dimensions doivent être des nombres.'); return; }
       var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
+      if (rm !== null) b.mainRoomHundredths = rm;
+      if (hc !== null) b.ceilingHeightCm = hc;
+      if (vo !== null) b.habitableVolumeHundredths = vo;
       if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
       louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
     }));

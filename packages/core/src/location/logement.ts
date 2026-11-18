@@ -38,8 +38,16 @@ export const ENERGY_BANS: Readonly<Partial<Record<RentalEnergyClass, string>>> =
 /** Au-delà de cette consommation en énergie finale, interdit pour un bail commençant à partir du 1er janvier 2023. */
 export const MAX_FINAL_ENERGY_KWH = 450;
 export const FINAL_ENERGY_BAN_FROM = '2023-01-01';
-/** Surface habitable minimale, en centièmes de m². */
+/**
+ * Décence (décret n° 2002-120 du 30 janvier 2002, art. 4) : une pièce principale d'au moins 9 m² avec une hauteur sous
+ * plafond d'au moins 2,20 m, ou un volume habitable d'au moins 20 m³. Sans ces dimensions, le logement n'est jamais dit
+ * louable (AU017). Les règles locales plus strictes (règlement sanitaire départemental) restent à vérifier par l'agent.
+ */
 export const MIN_LIVING_AREA_HUNDREDTHS = 900;
+/** Hauteur sous plafond minimale de la pièce principale, en centimètres. */
+export const MIN_CEILING_HEIGHT_CM = 220;
+/** Volume habitable minimal, en centièmes de m³. */
+export const MIN_HABITABLE_VOLUME_HUNDREDTHS = 2_000;
 
 export const ANNEX_KINDS = [
   { kind: 'dpe', label: 'Diagnostic de performance énergétique' },
@@ -68,6 +76,12 @@ export interface RentalFacts {
   leaseStart: string;
   /** Provision avec régularisation annuelle, ou forfait (meublé seulement) ; absent des faits rangés avant W03. */
   chargesMode?: ChargesMode | null;
+  /** Surface de la pièce principale, en centièmes de m² (AU017). */
+  mainRoomHundredths?: number | null;
+  /** Hauteur sous plafond de la pièce principale, en centimètres (AU017). */
+  ceilingHeightCm?: number | null;
+  /** Volume habitable du logement, en centièmes de m³ (AU017). */
+  habitableVolumeHundredths?: number | null;
 }
 
 export const CHARGES_MODES = ['provision', 'forfait'] as const;
@@ -76,7 +90,8 @@ export type ChargesMode = (typeof CHARGES_MODES)[number];
 export type CheckReason =
   | { code: 'energy_class'; energyClass: RentalEnergyClass; bannedFrom: string }
   | { code: 'final_energy'; finalEnergyKwh: number; bannedFrom: string }
-  | { code: 'living_area'; livingAreaHundredths: number }
+  | { code: 'living_area'; livingAreaHundredths: number; mainRoomHundredths: number | null; ceilingHeightCm: number | null; habitableVolumeHundredths: number | null }
+  | { code: 'dimensions_missing' }
   | { code: 'annex_missing'; kind: AnnexKind }
   | { code: 'annex_expired'; kind: AnnexKind; validUntil: string }
   | { code: 'annex_future'; kind: AnnexKind };
@@ -171,6 +186,22 @@ export function banDate(energyClass: RentalEnergyClass): string | null {
  * Le contrôle du logement pour un bail commençant `facts.leaseStart`, par les seules règles écrites : rejouable,
  * sans écriture [R100, R101]. `annexes` : la dernière version de chaque annexe rangée ; `today` : le jour du contrôle.
  */
+/**
+ * Le critère de surface et de volume de la décence : « oui » si l'une des deux voies du décret est remplie, « non » si
+ * aucune ne l'est alors qu'au moins une est mesurée, « inconnue » sans aucune mesure. Une pièce principale plus grande que
+ * le logement est une saisie impossible : « inconnue ».
+ */
+export function decencyOf(facts: RentalFacts): 'oui' | 'non' | 'inconnue' {
+  const room = facts.mainRoomHundredths ?? null;
+  const height = facts.ceilingHeightCm ?? null;
+  const volume = facts.habitableVolumeHundredths ?? null;
+  const roomKnown = room !== null && height !== null && room <= facts.livingAreaHundredths;
+  const volumeKnown = volume !== null;
+  if (roomKnown && room >= MIN_LIVING_AREA_HUNDREDTHS && height >= MIN_CEILING_HEIGHT_CM) return 'oui';
+  if (volumeKnown && volume >= MIN_HABITABLE_VOLUME_HUNDREDTHS) return 'oui';
+  return roomKnown || volumeKnown ? 'non' : 'inconnue';
+}
+
 export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[], today: string): CheckReason[] {
   const reasons: CheckReason[] = [];
   // La classe est jugée au plus tard du début du bail et du jour du contrôle : une date de bail passée ne rouvre rien.
@@ -178,7 +209,16 @@ export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: Anne
   const ban = banDate(facts.energyClass);
   if (ban !== null && on >= ban) reasons.push({ code: 'energy_class', energyClass: facts.energyClass, bannedFrom: ban });
   if (facts.finalEnergyKwh > MAX_FINAL_ENERGY_KWH && on >= FINAL_ENERGY_BAN_FROM) reasons.push({ code: 'final_energy', finalEnergyKwh: facts.finalEnergyKwh, bannedFrom: FINAL_ENERGY_BAN_FROM });
-  if (facts.livingAreaHundredths < MIN_LIVING_AREA_HUNDREDTHS) reasons.push({ code: 'living_area', livingAreaHundredths: facts.livingAreaHundredths });
+  const decency = decencyOf(facts);
+  if (decency === 'inconnue') reasons.push({ code: 'dimensions_missing' });
+  else if (decency === 'non')
+    reasons.push({
+      code: 'living_area',
+      livingAreaHundredths: facts.livingAreaHundredths,
+      mainRoomHundredths: facts.mainRoomHundredths ?? null,
+      ceilingHeightCm: facts.ceilingHeightCm ?? null,
+      habitableVolumeHundredths: facts.habitableVolumeHundredths ?? null,
+    });
   for (const kind of requiredAnnexes(facts)) {
     const a = annexes.find((x) => x.kind === kind);
     if (!a) reasons.push({ code: 'annex_missing', kind });
@@ -218,6 +258,9 @@ interface FactsRow {
   gas: GasState;
   lease_start: string;
   charges_mode: ChargesMode | null;
+  main_room_hundredths: number | null;
+  ceiling_height_cm: number | null;
+  habitable_volume_hundredths: number | null;
 }
 
 const toFacts = (r: FactsRow): RentalFacts => ({
@@ -232,6 +275,9 @@ const toFacts = (r: FactsRow): RentalFacts => ({
   gas: r.gas,
   leaseStart: r.lease_start,
   chargesMode: r.charges_mode ?? null,
+  ...(r.main_room_hundredths != null ? { mainRoomHundredths: Number(r.main_room_hundredths) } : {}),
+  ...(r.ceiling_height_cm != null ? { ceilingHeightCm: Number(r.ceiling_height_cm) } : {}),
+  ...(r.habitable_volume_hundredths != null ? { habitableVolumeHundredths: Number(r.habitable_volume_hundredths) } : {}),
 });
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
@@ -240,7 +286,7 @@ const isInt = (v: unknown, min: number, max: number): v is number => typeof v ==
 export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | { ok: false; field: string } {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, field: '' };
   const v = input as Record<string, unknown>;
-  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode'];
+  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode', 'mainRoomHundredths', 'ceilingHeightCm', 'habitableVolumeHundredths'];
   for (const k of Object.keys(v)) if (!keys.includes(k)) return { ok: false, field: k };
   if (typeof v.furnished !== 'boolean') return { ok: false, field: 'furnished' };
   if (!isInt(v.rentCents, 1, 100_000_000)) return { ok: false, field: 'rentCents' };
@@ -256,6 +302,12 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
   if (mode !== null && (typeof mode !== 'string' || !(CHARGES_MODES as readonly string[]).includes(mode))) return { ok: false, field: 'chargesMode' };
   // Un logement vide se loue avec une provision régularisée chaque année, jamais au forfait (loi de 1989, art. 23).
   if (mode === 'forfait' && v.furnished === false) return { ok: false, field: 'chargesMode' };
+  const room = v.mainRoomHundredths ?? null;
+  if (room !== null && (!isInt(room, 1, 10_000_000) || room > (v.livingAreaHundredths as number))) return { ok: false, field: 'mainRoomHundredths' };
+  const height = v.ceilingHeightCm ?? null;
+  if (height !== null && !isInt(height, 100, 1_500)) return { ok: false, field: 'ceilingHeightCm' };
+  const volume = v.habitableVolumeHundredths ?? null;
+  if (volume !== null && !isInt(volume, 1, 1_000_000_000)) return { ok: false, field: 'habitableVolumeHundredths' };
   return {
     ok: true,
     value: {
@@ -270,6 +322,9 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
       gas: v.gas as GasState,
       leaseStart: v.leaseStart,
       ...(mode !== null ? { chargesMode: mode as ChargesMode } : {}),
+      ...(room !== null ? { mainRoomHundredths: room } : {}),
+      ...(height !== null ? { ceilingHeightCm: height } : {}),
+      ...(volume !== null ? { habitableVolumeHundredths: volume } : {}),
     },
   };
 }
@@ -409,9 +464,9 @@ export class MisesEnLocation {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, recorded_by, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, this.actor(viewer), this.now().toISOString()],
+        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, recorded_by, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, f.mainRoomHundredths ?? null, f.ceilingHeightCm ?? null, f.habitableVolumeHundredths ?? null, this.actor(viewer), this.now().toISOString()],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
@@ -479,7 +534,7 @@ export class MisesEnLocation {
 
   private async latestFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
     const r = await this.db.first<FactsRow>(
-      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
+      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
       [listingId],
     );
     return r ? { ...toFacts(r), version: Number(r.version) } : null;
