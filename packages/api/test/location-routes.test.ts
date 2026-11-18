@@ -200,10 +200,10 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     await t.ok(t.dir, 'POST', '/location/modeles-bail', { kind: 'bail_meuble', body: BODY });
     // 1. Un logement vide en zone tendue : 10 € par m² et 3 € pour l'état des lieux, sur 42,50 m².
     const vide = await t.rent({ city: 'Tendue-Essai', insee: '21901', zone: 'tendue', facts: {}, candidates: 7 });
-    expect(vide.ceilings).toMatchObject({ zone: 'tendue', tenantCeilingCents: 42_500, inventoryCeilingCents: 12_750, depositCeilingCents: 65_000 });
+    expect(vide.ceilings).toMatchObject({ zone: 'tendue', tenantCeilingCents: 42_882, inventoryCeilingCents: 12_877, depositCeilingCents: 65_000 });
     // 2. Un meublé hors zone : 8 € par m², dépôt de deux mois au plus.
     const meuble = await t.rent({ city: 'Calme-Essai', insee: '21902', zone: 'autre', facts: { furnished: true }, candidates: 7 });
-    expect(meuble.ceilings).toMatchObject({ zone: 'autre', tenantCeilingCents: 34_000, depositCeilingCents: 130_000 });
+    expect(meuble.ceilings).toMatchObject({ zone: 'autre', tenantCeilingCents: 34_297, depositCeilingCents: 130_000 });
     expect(meuble.lease.content).toContain('location meublée');
     // 3. Un logement classé F dont le bail commence avant 2028 : encore louable, mention de consommation excessive.
     const f = await t.rent({ city: 'Ancien-Essai', insee: '21903', zone: null, facts: { energyClass: 'F', finalEnergyKwh: 380, leaseStart: '2027-10-01' }, candidates: 6 });

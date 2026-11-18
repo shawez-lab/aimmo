@@ -2,8 +2,11 @@
  * Honoraires du locataire et dépôt de garantie sous le plafond (M15, W02) [R102].
  *
  * Loi du 6 juillet 1989, article 5, et son décret d'application : la part du locataire pour la visite, la constitution
- * du dossier et la rédaction du bail ne dépasse pas 12 € par m² habitable en zone très tendue, 10 € en zone tendue et
- * 8 € ailleurs ; celle de l'état des lieux d'entrée, 3 € par m². Chacune ne dépasse jamais la part du bailleur pour
+ * du dossier et la rédaction du bail ne dépasse pas un plafond par m² habitable selon la zone ; celle de l'état des
+ * lieux d'entrée, un plafond par m². Les plafonds sont révisés : chaque millésime est rangé dans `FEE_SCALES` avec sa
+ * date d'effet et sa source, et le plafond appliqué est celui du jour où le barème est jugé (AU095). Depuis le
+ * 1er janvier 2026 (arrêté du 13 novembre 2025, NOR VLOL2530987A) : 12,10 €, 10,09 € et 8,07 €, et 3,03 € pour
+ * l'état des lieux. Le plafond en centimes est arrondi vers le bas, jamais au-dessus du texte. Chacune ne dépasse jamais la part du bailleur pour
  * les mêmes prestations. Article 22 et 25-6 : le dépôt de garantie d'un logement vide ne dépasse pas un mois de loyer hors charges,
  * celui d'un meublé deux mois.
  *
@@ -25,10 +28,36 @@ const TIME_ZONE = 'Europe/Paris';
 export const RENTAL_ZONES = ['tres_tendue', 'tendue', 'autre'] as const;
 export type RentalZone = (typeof RENTAL_ZONES)[number];
 
-/** Plafond de la part du locataire (visite, dossier, bail), en euros par m² habitable. Réglage, écrit par la loi. */
-export const TENANT_CEILING_EUR_PER_M2: Readonly<Record<RentalZone, number>> = Object.freeze({ tres_tendue: 12, tendue: 10, autre: 8 });
-/** Plafond de la part du locataire pour l'état des lieux d'entrée, en euros par m² habitable. */
-export const INVENTORY_CEILING_EUR_PER_M2 = 3;
+/** Un millésime des plafonds, en centimes par m² habitable, avec sa date d'effet (AAAA-MM-JJ) et son texte. */
+export interface FeeScale {
+  from: string;
+  tenantCentsPerM2: Readonly<Record<RentalZone, number>>;
+  inventoryCentsPerM2: number;
+  source: string;
+}
+
+/** Les plafonds successifs, du plus ancien au plus récent ; écrits par la loi, jamais calculés. */
+export const FEE_SCALES: readonly FeeScale[] = Object.freeze([
+  Object.freeze({
+    from: '2014-09-15',
+    tenantCentsPerM2: Object.freeze({ tres_tendue: 1200, tendue: 1000, autre: 800 }),
+    inventoryCentsPerM2: 300,
+    source: 'décret n° 2014-890 du 1er août 2014',
+  }),
+  Object.freeze({
+    from: '2026-01-01',
+    tenantCentsPerM2: Object.freeze({ tres_tendue: 1210, tendue: 1009, autre: 807 }),
+    inventoryCentsPerM2: 303,
+    source: 'arrêté du 13 novembre 2025 modifiant l\'arrêté du 17 juillet 2025, NOR VLOL2530987A',
+  }),
+]);
+
+/** Le millésime en vigueur un jour donné (AAAA-MM-JJ) : le plus récent dont la date d'effet est passée. */
+export function feeScaleOn(day: string): FeeScale {
+  let scale = FEE_SCALES[0]!;
+  for (const s of FEE_SCALES) if (s.from <= day) scale = s;
+  return scale;
+}
 
 const INSEE = /^(?:\d{5}|2[AB]\d{3})$/;
 
@@ -40,15 +69,16 @@ export interface FeeCeilings {
 }
 
 /**
- * Les plafonds pour une surface habitable (en centièmes de m²), une zone et un loyer hors charges : rejouable, sans
- * écriture. Euros par m² × centièmes de m² = centimes, sans arrondi [R102].
+ * Les plafonds pour une surface habitable (en centièmes de m²), une zone, un loyer hors charges et le jour où le barème
+ * est jugé : rejouable, sans écriture. Centimes par m² × centièmes de m² / 100, arrondi vers le bas [R102].
  */
-export function feeCeilings(livingAreaHundredths: number, zone: RentalZone | 'inconnue', rentCents: number, furnished: boolean): FeeCeilings {
-  const rate = TENANT_CEILING_EUR_PER_M2[zone === 'inconnue' ? 'autre' : zone];
+export function feeCeilings(livingAreaHundredths: number, zone: RentalZone | 'inconnue', rentCents: number, furnished: boolean, day: string): FeeCeilings {
+  const scale = feeScaleOn(day);
+  const rate = scale.tenantCentsPerM2[zone === 'inconnue' ? 'autre' : zone];
   return {
     zone,
-    tenantCeilingCents: rate * livingAreaHundredths,
-    inventoryCeilingCents: INVENTORY_CEILING_EUR_PER_M2 * livingAreaHundredths,
+    tenantCeilingCents: Math.floor((rate * livingAreaHundredths) / 100),
+    inventoryCeilingCents: Math.floor((scale.inventoryCentsPerM2 * livingAreaHundredths) / 100),
     depositCeilingCents: (furnished ? 2 : 1) * rentCents,
   };
 }
@@ -193,8 +223,9 @@ export class HonorairesLocation {
     if (!inseeCode) return { ok: false, rule: null, code: 'no_commune' };
     const facts = await this.listings.currentFacts(listing.id);
     if (!facts) return { ok: false, rule: null, code: 'no_facts' };
-    const zone = await this.zoneOn(inseeCode, this.judgedOn(facts.leaseStart));
-    return { ok: true, value: { ...feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished), factsVersion: facts.version, inseeCode } };
+    const day = this.judgedOn(facts.leaseStart);
+    const zone = await this.zoneOn(inseeCode, day);
+    return { ok: true, value: { ...feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished, day), factsVersion: facts.version, inseeCode } };
   }
 
   /** La zone est lue au plus tard du début du bail et du jour : jamais une zone d'avant pour un bail d'aujourd'hui. */
@@ -280,8 +311,9 @@ export class HonorairesLocation {
     if (!r) return null;
     const facts = await this.listings.currentFacts(listingId);
     if (!facts || facts.version !== Number(r.facts_version)) return null;
-    const zone = await this.zoneOn(r.insee_code, this.judgedOn(facts.leaseStart));
-    const c = feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished);
+    const day = this.judgedOn(facts.leaseStart);
+    const zone = await this.zoneOn(r.insee_code, day);
+    const c = feeCeilings(facts.livingAreaHundredths, zone, facts.rentCents, facts.furnished, day);
     const fees: FeeInput = {
       tenantCents: Number(r.tenant_cents),
       tenantInventoryCents: Number(r.tenant_inventory_cents),
