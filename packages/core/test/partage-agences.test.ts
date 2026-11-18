@@ -157,6 +157,8 @@ describeWithSqlite('HX01 · partage de biens entre agences et partage d’honora
     const storage = new FakePieceStore();
     storage.refs.add(ACT_PROOF);
     const pieces = new PiecesDossier(t.db, t.acces, t.journal, storage, { now: t.now });
+    const { lieuConnu } = await import('./dossiers-jeu.ts');
+    await lieuConnu(t, t.propertyId);
     const s = await pieces.status(t.agent, fileId);
     if (!s.ok) throw new Error(s.code);
     let n = 0;

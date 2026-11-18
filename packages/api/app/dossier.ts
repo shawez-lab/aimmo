@@ -57,6 +57,7 @@ const PIECE_NAMES = {
   carnet_entretien: 'Carnet d’entretien', mesurage_carrez: 'Mesurage Carrez', notice_information: 'Notice d’information', pppt_dtg: 'Plan de travaux ou diagnostic technique',
   dta_parties_communes: 'Amiante des parties communes', fiche_renseignements_acquereur: 'Fiche de renseignements de l’acquéreur',
   audit_energetique: 'Audit énergétique',
+  etat_termites: 'État termites', information_merule: 'Information mérule', controle_assainissement: 'Contrôle de l’assainissement non collectif',
 };
 const DATE_NAMES: Record<DateKind, string> = {
   compromis_signe: 'Compromis signé', notification_acquereur: 'Notification reçue par l’acquéreur', date_limite_pret: 'Date limite du prêt', dia_recue: 'Déclaration reçue par la commune',
@@ -66,7 +67,7 @@ const STEP_NAMES: Record<FinancingStep, string> = { demande_deposee: 'Demande de
 const BY_NAMES: Record<DeclaredBy, string> = { acquereur: 'l’acquéreur', courtier: 'le courtier' };
 const STOPS = { retractation_acquereur: 'Rétractation de l’acquéreur', pret_refuse: 'Prêt refusé', preemption: 'Préemption de la commune', accord_des_parties: 'Accord des parties', autre: 'Autre raison' };
 export const DEADLINES = { fin_retractation: 'Fin du délai de rétractation', reponse_preemption: 'Réponse de la commune', date_limite_pret: 'Date limite du prêt', etat_date: 'État daté', acte: 'Acte' };
-const ITEMS = { pret: 'le prêt', fiche_bien: 'la fiche du bien', copropriete: 'la copropriété', classe_energie: 'la classe énergie du DPE récent' };
+const ITEMS = { pret: 'le prêt', fiche_bien: 'la fiche du bien', copropriete: 'la copropriété', classe_energie: 'la classe énergie du DPE récent', commune: 'la commune du bien', zone_termites: 'la zone termites de la commune', zone_merule: 'la zone mérule de la commune', assainissement: 'le raccordement aux eaux usées' };
 const WHO = { acquereur: 'à l’acquéreur', vendeur: 'au vendeur', commune: 'à la commune', banque: 'à la banque', syndic: 'au syndic', agent: 'à vous' };
 const REASONS = {
   fin_retractation: 'Délai de rétractation en cours', reponse_commune: 'Réponse de la commune attendue', delai_commune_suspendu: 'Délai de la commune suspendu',
