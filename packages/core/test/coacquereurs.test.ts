@@ -164,6 +164,9 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     const e = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
     await e.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
     expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-13', proofRef: PROOF, personId: co })).toMatchObject({ ok: true });
+    // Une pièce du dossier et une tâche de l'agent : elles suivent le dossier pour ses parties, pas pour le coacquéreur.
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'titre_propriete', ref: t.upload(), issuedOn: '2027-03-05' })).toMatchObject({ ok: true });
+    await e.run(t.network.id);
     const detail = await assembleAccessDetail(t.db, [co!]);
     const section = (table: string) => detail.response.sections.find((x) => x.table === table)?.rows ?? [];
     const offer = section('offer_register');
@@ -180,6 +183,9 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     const leadChecks = await assembleAccessDetail(t.db, [t.buyerId]);
     expect(leadChecks.response.sections.find((x) => x.table === 'offer_checks')?.rows.length).toBeGreaterThan(0);
     expect(section('sale_file_buyer_notices')).toHaveLength(1);
+    expect(section('sale_file_dates')).toHaveLength(1);
+    expect(section('sale_file_pieces')).toHaveLength(0);
+    expect(section('sale_file_tasks')).toHaveLength(0);
     expect(JSON.stringify(detail.response)).not.toContain(t.buyerId);
     // Le journal du dossier : l'avancée partagée, dont sa propre notification.
     const journal = JSON.stringify(section('journal'));
@@ -188,6 +194,8 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     // L'acquéreur en tête retrouve toujours son offre ; la liste des coacquéreurs lui est masquée.
     const lead = await assembleAccessDetail(t.db, [t.buyerId]);
     expect(lead.response.sections.find((x) => x.table === 'offer_register')?.rows).toHaveLength(1);
+    expect(lead.response.sections.find((x) => x.table === 'sale_file_pieces')?.rows).toHaveLength(1);
+    expect(lead.response.sections.find((x) => x.table === 'sale_file_tasks')?.rows.length).toBeGreaterThan(0);
     expect(JSON.stringify(lead.response.sections.find((x) => x.table === 'offer_register'))).not.toContain(co);
   });
 

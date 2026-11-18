@@ -53,6 +53,8 @@ export interface ViaLocator {
   where?: Readonly<Record<string, string>>;
   /** Seulement les lignes de `from` trouvées par cette colonne directe, ou portant cette marque (`tag`) : pas celles de l'autre partie. */
   onlyMatchedBy?: string;
+  /** Pas les lignes de `from` trouvées seulement par cette marque (`tag`) : un coacquéreur ne reçoit pas ce qui suit le dossier pour les autres (AU009). */
+  notOnlyBy?: string;
   /** D'autres colonnes qui doivent aussi valoir celles de la même ligne de `from` (colonne ici → colonne là-bas). */
   alsoMatch?: Readonly<Record<string, string>>;
   /** Pour une colonne de `alsoMatch` : le préfixe ajouté à la valeur de la ligne de `from` (`rental:` devant l'identifiant du logement). */
@@ -519,18 +521,18 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_questionnaire_gap_acks: { locate: [via('questionnaire_id', 'mandate_questionnaires')] },
   signed_documents: { locate: [via('document_id', 'documents')] },
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
-  risk_statements: { locate: [via('file_id', 'sale_files')] },
-  coownership_summaries: { locate: [via('file_id', 'sale_files')] },
-  registered_letters: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
-  registered_letter_events: { locate: [via('file_id', 'sale_files')] },
-  pre_contract_briefs: { locate: [via('file_id', 'sale_files')] },
-  notary_drafts: { locate: [via('file_id', 'sale_files')] },
-  notary_draft_differences: { locate: [via('file_id', 'sale_files')] },
-  pre_contract_deposits: { locate: [via('file_id', 'sale_files')] },
-  signature_circuits: { locate: [via('file_id', 'sale_files')] },
-  signature_circuit_annexes: { locate: [via('file_id', 'sale_files')] },
-  signature_circuit_signers: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
-  signature_circuit_events: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
+  risk_statements: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  coownership_summaries: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  registered_letters: { locate: [...by('person_id'), via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  registered_letter_events: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  pre_contract_briefs: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  notary_drafts: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  notary_draft_differences: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  pre_contract_deposits: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  signature_circuits: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  signature_circuit_annexes: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  signature_circuit_signers: { locate: [...by('person_id'), via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  signature_circuit_events: { locate: [...by('person_id'), via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
   signed_amendments: { locate: [via('document_id', 'documents')] },
@@ -587,12 +589,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le vendeur d'un dossier est celui rangé à son ouverture, jamais tout mandant passé ou futur du bien.
   sale_file_sellers: { locate: by('person_id') },
   sale_files: { locate: [...by('buyer_person_id'), via('id', 'sale_file_sellers', 'file_id', { tag: 'vendeur' }), via('offer_id', 'offer_register', 'id', { onlyMatchedBy: 'coacquereur', tag: 'coacquereur' })], own: { buyer_person_id: ['offer_id'] } },
+  // L'avancée du dossier (étapes, dates, acte) est aussi celle du coacquéreur ; le reste du dossier ne lui est pas rendu (AU009).
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
-  sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
+  sale_file_pieces: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },
   // La notification d'un coacquéreur est la sienne (AU009).
   sale_file_buyer_notices: { locate: by('person_id') },
-  sale_file_tasks: { locate: [via('file_id', 'sale_files')] },
+  sale_file_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   sale_file_reminders: { locate: by('person_id') },
   // Le financement est celui de l'acquéreur : le vendeur ne le voit pas.
   sale_file_financing: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
@@ -611,7 +614,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   partner_recommendation_race_guard: out('partenaire', 'Garde d\'un lot, toujours vide, sans personne.'),
   partner_recommendation_withheld: { locate: [via('recommendation_id', 'partner_recommendations')], secrets: ['identifier_sha256'] },
   review_requests: { locate: by('person_id') },
-  after_sale_tasks: { locate: [via('file_id', 'sale_files')] },
+  after_sale_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   after_sale_choices: { locate: by('person_id') },
   after_sale_reminders: { locate: by('person_id') },
   after_sale_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
@@ -1119,6 +1122,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
           if (!schema.get(l.from)?.columns.includes(there)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: there });
         }
         for (const here of Object.keys(l.alsoMatchPrefix ?? {})) if (!(here in (l.alsoMatch ?? {}))) gaps.push({ kind: 'colonne_inconnue', table, column: here });
+        if (l.notOnlyBy && parent && 'locate' in parent && !parent.locate.some((p) => isVia(p) && p.tag === l.notOnlyBy)) gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.notOnlyBy });
         if (l.onlyMatchedBy && parent && 'locate' in parent && !parent.locate.some((p) => (isDirect(p) && p.column === l.onlyMatchedBy) || (isVia(p) && p.tag === l.onlyMatchedBy))) {
           gaps.push({ kind: 'colonne_inconnue', table: l.from, column: l.onlyMatchedBy });
         }
