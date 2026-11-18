@@ -285,3 +285,27 @@ describeWithSqlite('BR117 · relire les mandats préparés d’un bien', () => {
     expect(await t.count('mandate_questionnaire_gap_acks')).toBe(acks);
   });
 });
+
+describeWithSqlite('BR119 · lire l’écart toléré', () => {
+  it('[R441] [R16] [R13] le défaut de 5 % tant que rien n’est réglé, puis le dernier réglage, sans qui l’a réglé ; l’agent n’y a pas accès', async () => {
+    const t = await setup();
+    for (const who of ['direction', 'conformite'] as const) {
+      const r = await t.http(who, 'GET', '/questionnaire-mandat/reglage');
+      expect(r.status).toBe(200);
+      expect(r.body.data).toEqual({ maxGapBps: 500, isDefault: true, setAt: null });
+    }
+    expect((await t.http('direction', 'POST', '/questionnaire-mandat/reglage', { maxGapBps: 1000 })).status).toBe(200);
+    expect((await t.http('direction', 'POST', '/questionnaire-mandat/reglage', { maxGapBps: 250 })).status).toBe(200);
+    const after = await t.http('conformite', 'GET', '/questionnaire-mandat/reglage');
+    expect(after.body.data).toEqual({ maxGapBps: 250, isDefault: false, setAt: '2027-04-12T09:00:00.000Z' });
+    expect(JSON.stringify(after.body)).not.toContain('direction-1');
+    // Chaque réglage s'ajoute : l'ancien reste [R441].
+    expect(await t.count('mandate_price_gap_settings')).toBe(2);
+    const before = (await t.refusals()).length;
+    const agent = await t.http('alex', 'GET', '/questionnaire-mandat/reglage');
+    expect(agent.status).toBe(403);
+    expect(agent.body).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect((await t.refusals()).length).toBe(before + 1);
+    expect((await t.http('direction', 'GET', '/questionnaire-mandat/reglage?reseau=autre')).body).toMatchObject({ code: 'unknown_field', field: 'reseau' });
+  });
+});

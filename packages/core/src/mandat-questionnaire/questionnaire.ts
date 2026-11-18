@@ -317,8 +317,22 @@ export class MandatQuestionnaire {
     return { ok: true };
   }
 
+  /**
+   * L'écart en vigueur, lu par la direction et la conformité (BR119) : le dernier réglage, sinon le défaut de 5 % ;
+   * avec sa date, jamais qui l'a réglé [R441, R13].
+   */
+  async gapSetting(viewer: Viewer): Promise<{ ok: true; setting: { maxGapBps: number; isDefault: boolean; setAt: string | null } } | Refusal> {
+    if (viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const row = await this.latestGap(viewer.networkId);
+    return { ok: true, setting: row ? { maxGapBps: Number(row.max_gap_bps), isDefault: false, setAt: String(row.set_at) } : { maxGapBps: DEFAULT_MAX_GAP_BPS, isDefault: true, setAt: null } };
+  }
+
+  private async latestGap(networkId: string): Promise<{ max_gap_bps: number; set_at: string } | null> {
+    return this.db.first<{ max_gap_bps: number; set_at: string }>('SELECT max_gap_bps, set_at FROM mandate_price_gap_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+  }
+
   private async maxGap(networkId: string): Promise<number> {
-    const row = await this.db.first<{ max_gap_bps: number }>('SELECT max_gap_bps FROM mandate_price_gap_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const row = await this.latestGap(networkId);
     return row ? Number(row.max_gap_bps) : DEFAULT_MAX_GAP_BPS;
   }
 
