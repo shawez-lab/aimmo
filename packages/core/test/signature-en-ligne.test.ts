@@ -156,13 +156,16 @@ describeWithSqlite('D08 · signature en ligne AIMMO, en mode essai', () => {
 
   it('le signataire reçoit son exemplaire dans la boîte d’essai ; la nuit, le code ne part pas [R01]', async () => {
     const t = await setup();
+    t.at(12 * 3_600_000); // 23 h à Paris
+    expect(await t.online.start(t.agent, t.documentId, CONSENT)).toMatchObject({ ok: false, rule: 'R01', code: 'send_refused' });
+    expect(await t.online.start(t.agent, t.documentId, { consentProof: '' })).toEqual({ ok: false, rule: null, code: 'bad_consent' });
+    t.at(24 * 3_600_000); // le lendemain, 11 h à Paris
     const s = await t.online.start(t.agent, t.documentId, CONSENT);
     if (!s.ok) throw new Error(s.code);
     await t.online.sign(t.agent, s.value.sessionId, { code: (await t.codes())[0]! });
     expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.body LIKE '%exemplaire%'`)).toEqual({ n: 1 });
-    t.at(12 * 3_600_000); // 23 h à Paris
-    expect(await t.online.start(t.agent, t.documentId, CONSENT)).toMatchObject({ ok: false, rule: 'R01', code: 'send_refused' });
-    expect(await t.online.start(t.agent, t.documentId, { consentProof: '' })).toEqual({ ok: false, rule: null, code: 'bad_consent' });
+    // Ce mandant a signé cette version : il ne rouvre pas de session (AU001).
+    expect(await t.online.start(t.agent, t.documentId, CONSENT)).toEqual({ ok: false, rule: null, code: 'already_signed' });
   });
 
   it('l’exemplaire signé est gardé et lisible ; refusé pour l’heure, son envoi est repris plus tard', async () => {

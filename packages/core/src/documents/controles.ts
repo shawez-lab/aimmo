@@ -7,13 +7,14 @@
  * - honoraires : montant, prix et qui les paie connus, montant dans le barème du réseau (taux maximal du prix et
  *   minimum, réglés par la direction) ;
  * - mandants : les propriétaires du bien connus dans la base sont exactement le mandant du document ;
- * - identité : l'identité du mandant est vérifiée au coffre de la conformité, pièce valide ce jour-là et vérifiée depuis
+ * - identité : l'identité de chaque mandant est vérifiée au coffre de la conformité, pièce valide ce jour-là et vérifiée depuis
  *   moins d'un an ; pour une société, son Kbis et chaque bénéficiaire effectif à 25 % ou plus (L03) [R92].
  * - questionnaire : pour un mandat préparé par questionnaire (HX33), l'écart de prix a été montré au vendeur [R441].
  * Un seul échec suffit : le document ne peut pas être signé. Le résultat est gardé et rendu à l'agent.
  *
- * Décidé, lecture prudente : le modèle ne porte qu'un mandant ; un bien à plusieurs propriétaires ne passe pas tant
- * que le modèle ne les nomme pas tous. Un bien sans propriétaire connu ne passe pas. L'identité vérifiée ne garde ni
+ * Décidé, lecture prudente : un bien à plusieurs propriétaires (couple, indivision) ne passe que si le document les
+ * nomme tous comme mandants, chacun avec sa propre fiche, jamais réunies (AU001) ; l'identité de chacun est vérifiée, et
+ * la première qui manque est dite. Un bien sans propriétaire connu ne passe pas. L'identité vérifiée ne garde ni
  * numéro ni copie de la pièce, qui vivent dans le coffre de la conformité [R15]. Le journal ne porte que des codes
  * [R13]. Droits : ceux de la fiche et du bien [R16].
  */
@@ -29,6 +30,14 @@ import type { DocumentFacts } from './modeles.ts';
 import { mandateExpired } from './conditions.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
+
+/**
+ * Les mandants d'un document, dans l'ordre où il les nomme : son premier mandant, puis les autres (AU001).
+ */
+export async function documentMandants(db: SqlDatabase, documentId: string, firstPersonId: string): Promise<string[]> {
+  const rows = await db.all<{ person_id: string }>('SELECT person_id FROM document_co_mandants WHERE document_id = ? ORDER BY position', [documentId]);
+  return [firstPersonId, ...rows.map((r) => r.person_id)];
+}
 export { IDENTITY_PIECES, type IdentityPiece } from '../conformite/pieces-identite.ts';
 export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
@@ -158,9 +167,9 @@ export class ControlesSignature {
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));
-    const mandants = await this.mandants(doc.person_id, doc.property_id);
-    lines.push(mandants);
-    lines.push(options.identitySignedAt ? await this.identityAtSignature(doc.network_id, doc.person_id, options.identitySignedAt) : await this.identity(doc.network_id, doc.person_id, at));
+    const persons = await documentMandants(this.db, doc.id, doc.person_id);
+    lines.push(await this.mandants(persons, doc.property_id));
+    lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
     // Un mandat préparé par questionnaire (HX33) : un écart de prix, un avis ou un prix absents doivent avoir été
@@ -224,7 +233,7 @@ export class ControlesSignature {
     return line(true, 'fee_in_schedule');
   }
 
-  private async mandants(personId: string, propertyId: string | null): Promise<CheckLine> {
+  private async mandants(personIds: readonly string[], propertyId: string | null): Promise<CheckLine> {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'mandants', ok, code });
     if (!propertyId) return line(false, 'no_property');
     const owners = await this.db.all<{ person_id: string }>(
@@ -234,9 +243,22 @@ export class ControlesSignature {
     if (owners.length === 0) return line(false, 'owners_unknown');
     const roots = new Set<string>();
     for (const o of owners) roots.add(await this.unique.rootOf(o.person_id));
-    const mandant = await this.unique.rootOf(personId);
-    if (roots.size !== 1 || !roots.has(mandant)) return line(false, 'mandants_differ');
+    // Chaque mandant est une fiche à part : deux mandants réunis depuis la génération ne comptent plus que pour un.
+    const mandants = new Set<string>();
+    for (const id of personIds) mandants.add(await this.unique.rootOf(id));
+    if (mandants.size !== personIds.length) return line(false, 'mandants_merged');
+    if (roots.size !== mandants.size || [...roots].some((r) => !mandants.has(r))) return line(false, 'mandants_differ');
     return line(true, 'mandants_match');
+  }
+
+  /** L'identité de chaque mandant, dans l'ordre du document : la première qui manque fait échouer la ligne [R41, R92]. */
+  private async identities(networkId: string, personIds: readonly string[], at: Date, signedAt?: Date): Promise<CheckLine> {
+    let last: CheckLine = { check: 'identite', ok: false, code: 'identity_missing' };
+    for (const id of personIds) {
+      last = signedAt ? await this.identityAtSignature(networkId, id, signedAt) : await this.identity(networkId, id, at);
+      if (!last.ok) return last;
+    }
+    return last;
   }
 
   private async identity(networkId: string, personId: string, at: Date): Promise<CheckLine> {

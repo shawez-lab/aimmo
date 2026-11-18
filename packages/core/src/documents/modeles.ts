@@ -20,6 +20,20 @@ import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { mandateExpired } from './conditions.ts';
 
+/** Prénom et nom : l'un sans l'autre ne suffit pas à identifier un mandant. */
+function fullName(first: string | null | undefined, last: string | null | undefined): string | null {
+  const f = first?.trim() ?? '';
+  const l = last?.trim() ?? '';
+  return f && l ? `${f} ${l}` : null;
+}
+
+/** « A », « A et B », « A, B et C » ; null si un seul nom manque. */
+function namesOf(names: (string | null)[]): string | null {
+  if (names.some((n) => n === null)) return null;
+  const all = names as string[];
+  return all.length <= 1 ? (all[0] ?? null) : `${all.slice(0, -1).join(', ')} et ${all[all.length - 1]}`;
+}
+
 export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
@@ -100,10 +114,19 @@ export interface GenerateRequest {
   inputs?: { 'honoraires.montant'?: unknown; 'honoraires.charge'?: unknown; 'mandat.duree_mois'?: unknown; 'avenant.prix'?: unknown; 'avenant.duree_mois'?: unknown };
   /** Pour un avenant : le mandat signé et numéroté qu'il modifie. */
   mandateId?: string;
+  /**
+   * Les autres mandants d'un mandat de vente (couple, indivision) : chacun avec sa propre fiche, jamais réunie à celle
+   * du premier (AU001). Le document les nomme tous ; chacun est identifié et signe [R41]. Un avenant reprend ceux du
+   * mandat qu'il modifie.
+   */
+  coMandantIds?: string[];
 }
 
+/** Au plus dix mandants par document : le premier et neuf autres. */
+export const MAX_CO_MANDANTS = 9;
+
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -321,6 +344,27 @@ export class Modeles {
       if (!linked) return { ok: false, rule: null, code: 'bad_mandate' };
     } else if (request.mandateId !== undefined) return { ok: false, rule: null, code: 'bad_mandate' };
 
+    // Les autres mandants : des fiches distinctes, vues en entier, jamais celle du premier ni deux fois la même [R16].
+    // Un avenant reprend ceux du mandat qu'il modifie, sans en changer.
+    let coMandants: { id: string; name: string | null }[] = [];
+    if (template.kind === 'avenant_mandat') {
+      if (request.coMandantIds !== undefined) return { ok: false, rule: null, code: 'bad_co_mandants' };
+      coMandants = await this.coMandantsOfMandate(linked!.id);
+    } else if (request.coMandantIds !== undefined) {
+      const ids = request.coMandantIds;
+      if (!Array.isArray(ids) || ids.length > MAX_CO_MANDANTS || ids.some((id) => typeof id !== 'string' || id === '')) return { ok: false, rule: null, code: 'bad_co_mandants' };
+      const seen = new Set(fiche.members.map((m) => m.id));
+      for (const id of ids) {
+        const co = await this.acces.readFiche(viewer, id);
+        if (!co.ok) return co;
+        if (co.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${id}`);
+        // Une fiche réunie à celle du premier mandant, ou déjà nommée, n'est pas un autre mandant.
+        if (co.value.members.some((m) => seen.has(m.id))) return { ok: false, rule: null, code: 'bad_co_mandants' };
+        for (const m of co.value.members) seen.add(m.id);
+        coMandants.push({ id: co.value.person.id, name: fullName(co.value.person.first_name, co.value.person.last_name) });
+      }
+    }
+
     const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.members.map((m) => m.agent_id).find((a) => a !== null) ?? property.agent_id);
     if (!agentId) return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [agentId, viewer.networkId]);
@@ -329,7 +373,8 @@ export class Modeles {
     const day = localTime(this.now(), TIME_ZONE).date;
     const base: Record<string, string | null> = {
       // Le mandant est identifié par son prénom et son nom : l'un sans l'autre ne suffit pas.
-      'mandant.nom': text(fiche.person.first_name) && text(fiche.person.last_name) ? `${text(fiche.person.first_name)} ${text(fiche.person.last_name)}` : null,
+      // Plusieurs mandants : tous nommés, dans l'ordre ; un seul nom qui manque rend le champ manquant.
+      'mandant.nom': namesOf([fullName(fiche.person.first_name, fiche.person.last_name), ...coMandants.map((c) => c.name)]),
       'bien.reference': text(property.reference),
       'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
       'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
@@ -384,15 +429,29 @@ export class Modeles {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, viewer.networkId, template.id, Number(template.version), template.hash, template.kind, mode, status, JSON.stringify(missing), agentId, fiche.person.id, property.id, content, contentHash, this.actor(viewer), at, JSON.stringify(facts), linked?.id ?? null],
     );
+    let position = 0;
+    for (const co of coMandants) {
+      await this.db.run('INSERT INTO document_co_mandants (document_id, person_id, network_id, position, added_at) VALUES (?, ?, ?, ?, ?)', [id, co.id, viewer.networkId, ++position, at]);
+    }
     await appendEvent(
       this.journal,
-      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length } },
+      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length, ...(coMandants.length > 0 ? { coMandants: coMandants.length } : {}) } },
       this.now,
     );
     return {
       ok: true,
       document: { id, kind: template.kind, mode, status, missing, templateId: template.id, templateVersion: Number(template.version), templateHash: template.hash, content, contentHash, createdAt: at },
     };
+  }
+
+  /** Les autres mandants du document d'un mandat signé, dans leur ordre. */
+  private async coMandantsOfMandate(mandateId: string): Promise<{ id: string; name: string | null }[]> {
+    const rows = await this.db.all<{ person_id: string; first_name: string | null; last_name: string | null }>(
+      `SELECT c.person_id, p.first_name, p.last_name FROM signed_documents s JOIN document_co_mandants c ON c.document_id = s.document_id
+       JOIN persons p ON p.id = c.person_id WHERE s.mandate_id = ? ORDER BY c.position`,
+      [mandateId],
+    );
+    return rows.map((r) => ({ id: r.person_id, name: fullName(r.first_name, r.last_name) }));
   }
 
   /** Le mandat signé, numéroté, non annulé ni rétracté, du même mandant et du même bien ; ou null. */
