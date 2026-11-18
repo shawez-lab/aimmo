@@ -144,7 +144,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU010 · Le dossier peut être déclaré complet sans audit énergétique pour une maison E, F ou G qui y est soumise
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A010 (bloquant), endroit : C/dossiers/pieces.ts, `PIECES`, `expectedPieces`.
 - Constat de l'audit : Le dossier peut être déclaré complet sans audit énergétique pour une maison E, F ou G qui y est soumise.
