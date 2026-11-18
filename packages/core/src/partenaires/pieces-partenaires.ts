@@ -49,6 +49,8 @@ export const PIECE_RULES: Readonly<Record<string, PieceRule>> = Object.freeze({
   electricite: { trades: ['diagnostiqueur'], to: 'diagnostic', domain: 'electricite', piece: 'electricite' },
   gaz: { trades: ['diagnostiqueur'], to: 'diagnostic', domain: 'gaz', piece: 'gaz' },
   termites: { trades: ['diagnostiqueur'], to: 'diagnostic', domain: 'termites' },
+  // AU010b : l'audit énergétique réglementaire, demandé à un diagnostiqueur du domaine DPE, va à la fiche du bien.
+  audit_energetique: { trades: ['diagnostiqueur'], to: 'diagnostic', domain: 'dpe', piece: 'audit_energetique' },
   mesurage_carrez: { trades: ['diagnostiqueur'], to: 'diagnostic', domain: 'mesurage', piece: 'mesurage_carrez' },
   bornage: { trades: ['geometre'], to: 'diagnostic', piece: 'bornage' },
   titre_propriete: { trades: ['notaire'], to: 'sale_file', piece: 'titre_propriete' },
@@ -114,6 +116,8 @@ export const PIECE_CREDENTIALS: Readonly<Record<string, { kind: CredentialKind; 
   electricite: { kind: 'certification_diagnostic', domain: 'electricite', trades: ['diagnostiqueur'] },
   gaz: { kind: 'certification_diagnostic', domain: 'gaz', trades: ['diagnostiqueur'] },
   termites: { kind: 'certification_diagnostic', domain: 'termites', trades: ['diagnostiqueur'] },
+  // La certification DPE avec la mention « audit énergétique », lue par `auditMentionOn` (AU010b).
+  audit_energetique: { kind: 'certification_diagnostic', domain: 'dpe', trades: ['diagnostiqueur'] },
   accord_principe: { kind: 'immatriculation_orias', domain: null, trades: ['courtier'] },
   offre_pret: { kind: 'immatriculation_orias', domain: null, trades: ['courtier'] },
   pre_etat_date: { kind: 'carte_g', domain: null, trades: ['gestionnaire'] },
@@ -131,7 +135,11 @@ export function credentialCheck(annuaire: Annuaire): PlacementCheck {
     if (!(await annuaire.coveredOn(networkId, partnerId, 'assurance_rcp', null, issuedOn))) return 'insurance_not_valid_on_date';
     const need = Object.hasOwn(PIECE_CREDENTIALS, sort) ? PIECE_CREDENTIALS[sort] : undefined;
     if (!need || !need.trades.includes(trade)) return null;
-    if (await annuaire.coveredOn(networkId, partnerId, need.kind, need.domain, issuedOn)) return null;
+    if (await annuaire.coveredOn(networkId, partnerId, need.kind, need.domain, issuedOn)) {
+      // Un audit énergétique n'est fait que par un diagnostiqueur certifié DPE « avec mention » ce jour-là (AU010b).
+      if (sort === 'audit_energetique' && !(await annuaire.auditMentionOn(networkId, partnerId, issuedOn))) return 'audit_mention_not_valid_on_date';
+      return null;
+    }
     return need.kind === 'certification_diagnostic' ? 'certification_not_valid_on_date' : 'credential_not_valid_on_date';
   };
 }

@@ -19,7 +19,7 @@
  * [R13]. Rien n'est envoyé ici : les alertes d'échéance sont rendues au planificateur (U09), une seule fois.
  */
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -299,7 +299,7 @@ export class Annuaire {
   async addCredential(
     viewer: Viewer,
     partnerId: string,
-    input: { kind: unknown; domain?: unknown; number: unknown; validFrom: unknown; validUntil: unknown; proofRef: unknown },
+    input: { kind: unknown; domain?: unknown; number: unknown; validFrom: unknown; validUntil: unknown; proofRef: unknown; auditMention?: unknown },
   ): Promise<AnnuaireResult<PartnerStatus>> {
     const denied = await this.gate(viewer, `partner:${partnerId}`, true);
     if (denied) return denied;
@@ -316,6 +316,10 @@ export class Annuaire {
       if (!REQUIRED_CREDENTIALS[partner.trade].includes(kind)) return { ok: false, rule: 'R73', code: 'kind_not_for_trade' };
       if (input.domain !== undefined && input.domain !== null && input.domain !== '') return { ok: false, rule: null, code: 'bad_domain' };
     }
+    // AU010b : la mention « audit énergétique » ne se lit que sur une certification DPE, cochée par qui vérifie le certificat.
+    if (input.auditMention !== undefined && input.auditMention !== false && input.auditMention !== true) return { ok: false, rule: null, code: 'bad_mention' };
+    const auditMention = input.auditMention === true;
+    if (auditMention && domain !== 'dpe') return { ok: false, rule: 'R73', code: 'mention_not_for_domain' };
     const number = typeof input.number === 'string' ? input.number.trim() : '';
     if (!NUMBER.test(number)) return { ok: false, rule: null, code: 'bad_number' };
     if (!validDay(input.validFrom) || !validDay(input.validUntil) || input.validUntil < input.validFrom) return { ok: false, rule: null, code: 'bad_dates' };
@@ -325,17 +329,25 @@ export class Annuaire {
     if (!(await this.proofs.has(input.proofRef))) return { ok: false, rule: null, code: 'not_stored' };
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM partner_credentials WHERE partner_id = ? AND kind = ? AND domain = ?', [partnerId, kind, domain ?? '']);
     const version = Number(last?.v ?? 0) + 1;
+    const credentialId = this.newId();
+    const at = this.now().toISOString();
     try {
-      await this.db.run(
-        'INSERT INTO partner_credentials (id, network_id, partner_id, kind, domain, version, number, valid_from, valid_until, proof_ref, verified_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [this.newId(), viewer.networkId, partnerId, kind, domain ?? '', version, number, input.validFrom, input.validUntil, input.proofRef, this.actor(viewer), this.now().toISOString()],
-      );
+      // Le justificatif et sa mention dans la même écriture : jamais l'un sans l'autre.
+      await runBatch(this.db, [
+        {
+          sql: 'INSERT INTO partner_credentials (id, network_id, partner_id, kind, domain, version, number, valid_from, valid_until, proof_ref, verified_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          params: [credentialId, viewer.networkId, partnerId, kind, domain ?? '', version, number, input.validFrom, input.validUntil, input.proofRef, this.actor(viewer), at],
+        },
+        ...(auditMention
+          ? [{ sql: "INSERT INTO partner_credential_mentions (credential_id, mention, network_id, recorded_by, recorded_at) VALUES (?, 'audit_energetique', ?, ?, ?)", params: [credentialId, viewer.networkId, this.actor(viewer), at] }]
+          : []),
+      ]);
     } catch (error) {
       if (/UNIQUE/i.test(String(error))) return { ok: false, rule: null, code: /proof_ref/.test(String(error)) ? 'ref_used' : 'busy' };
       throw error;
     }
     // Ni numéro ni nom au journal : la sorte, le domaine et la version suffisent à retrouver la vérification [R13].
-    await appendEvent(this.journal, { type: 'partenaire.justificatif_verifie', actor: this.actor(viewer), subject: `partner:${partnerId}`, data: { rule: 'R73', kind, domain, version } }, this.now);
+    await appendEvent(this.journal, { type: 'partenaire.justificatif_verifie', actor: this.actor(viewer), subject: `partner:${partnerId}`, data: { rule: 'R73', kind, domain, version, ...(auditMention ? { mention: 'audit_energetique' } : {}) } }, this.now);
     return { ok: true, value: await this.compute(partnerId, this.now()) };
   }
 
@@ -405,6 +417,21 @@ export class Annuaire {
       domain ?? '',
     ]);
     return authoritativeOn(rows, day) !== null;
+  }
+
+  /**
+   * AU010b · La certification DPE qui faisait foi ce jour-là portait-elle la mention « audit énergétique » ? Seule cette
+   * version compte : un renouvellement sans mention ne l'a pas, une mention d'une version remplacée ne vaut plus [R73].
+   */
+  async auditMentionOn(networkId: string, partnerId: string, day: string): Promise<boolean> {
+    if (!validDay(day)) return false;
+    const rows = await this.db.all<CredentialRow>("SELECT id, kind, domain, version, valid_from, valid_until FROM partner_credentials WHERE network_id = ? AND partner_id = ? AND kind = 'certification_diagnostic' AND domain = 'dpe'", [
+      networkId,
+      partnerId,
+    ]);
+    const row = authoritativeOn(rows, day);
+    if (!row) return false;
+    return (await this.db.first("SELECT 1 FROM partner_credential_mentions WHERE credential_id = ? AND mention = 'audit_energetique'", [row.id])) !== null;
   }
 
   /** Le partenaire est-il proposable ce jour-là ? Lu par la mise en relation (U02) et l'espace partenaire (U04) [R73]. */

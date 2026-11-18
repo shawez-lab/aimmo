@@ -23,6 +23,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { RendezVous, type Appointment, type BookingRefusal } from '../rendezvous/reservation.ts';
+import { RemiseAudit, type AuditNotice } from './remise-audit.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -87,6 +88,8 @@ export interface ScheduledVisit {
   appointment: Appointment;
   slip: VisitSlip;
   confirmation: { status: string; rule: string | null } | null;
+  /** AU010b : ce que l'agent doit faire pour l'audit énergétique avant cette visite. */
+  energyAudit: AuditNotice;
 }
 
 export interface VisitesOptions {
@@ -137,6 +140,7 @@ export class Visites {
   private readonly gate: DiffusionGate;
   private readonly rdv: RendezVous;
   private readonly fiche: FicheUnique;
+  private readonly remise: RemiseAudit;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -149,6 +153,14 @@ export class Visites {
     this.gate = options.diffusion ?? new Diffusion(db, acces, journal, { now: this.now });
     this.rdv = options.rendezVous ?? new RendezVous(db, journal, { now: this.now });
     this.fiche = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+    this.remise = new RemiseAudit(db, journal, acces, { now: this.now });
+  }
+
+  /** AU010b : l'avis sur l'audit énergétique d'une visite qui vient d'être rangée, après les contrôles de la visite. */
+  private async auditNotice(appointmentId: string): Promise<AuditNotice> {
+    const n = await this.remise.noticeAfterChecks(appointmentId);
+    if (!n) throw new Error('avis d’audit énergétique : visite introuvable');
+    return n;
   }
 
   private actor(viewer: Viewer): string {
@@ -265,7 +277,8 @@ export class Visites {
       this.now,
     );
     const slip = await this.makeSlip(viewer.networkId, appointment, agentId, property, fiche.value.members);
-    return { ok: true, visit: { appointment, slip, confirmation: booking.confirmation ? { status: booking.confirmation.status, rule: booking.confirmation.rule } : null } };
+    const energyAudit = await this.auditNotice(appointment.id);
+    return { ok: true, visit: { appointment, slip, energyAudit, confirmation: booking.confirmation ? { status: booking.confirmation.status, rule: booking.confirmation.rule } : null } };
   }
 
   /**
@@ -276,7 +289,7 @@ export class Visites {
    * réunies comprises). La visite garde l'agent du rendez-vous. Un rendez-vous déjà rattaché, ou décalé d'une visite,
    * ne l'est jamais deux fois : la base tranche entre deux appels simultanés. Rien n'est envoyé.
    */
-  async attachOnline(viewer: Viewer, request: { appointmentId: string; projectId: string }): Promise<{ ok: true; visit: { appointment: Appointment; slip: VisitSlip } } | VisitRefusal> {
+  async attachOnline(viewer: Viewer, request: { appointmentId: string; projectId: string }): Promise<{ ok: true; visit: { appointment: Appointment; slip: VisitSlip; energyAudit: AuditNotice } } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role', `appointment:${request.appointmentId}`);
     const subject = `appointment:${request.appointmentId}`;
     const appointment = await this.rdv.get(request.appointmentId);
@@ -321,7 +334,8 @@ export class Visites {
       this.now,
     );
     const slip = await this.makeSlip(viewer.networkId, appointment, appointment.agent_id, property, fiche.value.members);
-    return { ok: true, visit: { appointment, slip } };
+    const energyAudit = await this.auditNotice(appointment.id);
+    return { ok: true, visit: { appointment, slip, energyAudit } };
   }
 
   /**
