@@ -164,7 +164,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#670, `92994844`), migration `3990`, R60 complétée. Constat confirmé. Décidé, lecture prudente : la direction range, par commune (code postal et nom sans accents ni traits d'union), la lecture datée de l'arrêté termites ou mérule (intitulé, lien https, date de l'arrêté, jour de lecture) ; une lecture de plus d'un an ne vaut plus ; la commune est celle de la désignation du bien (AU002), sinon de sa fiche courte ; termites et mérule pour tout bâtiment, contrôle de l'assainissement non collectif pour un logement déclaré non raccordé ; état termites valable 6 mois, contrôle 3 ans ; commune inconnue, zone sans lecture à jour ou raccordement non déclaré : jamais « complet ». Routes `POST /v1/dossiers/obligations-locales` (direction) et `POST /v1/dossiers/<id>/assainissement`. Relecture forte 1 P1 corrigé ; Codex 1 P1 (routes) et 1 P2 (libellés) corrigés, puis rien ; vérification GitHub verte. Restent : écran de la direction pour ranger les arrêtés et bouton du raccordement dans l'écran du dossier (voie 1, `app.ts`) ; à la mise en service, la direction range les arrêtés de Côte-d'Or (termites, mérule) pour chaque commune des biens.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A011 (bloquant), endroit : C/dossiers/pieces.ts, commentaire et liste des pièces.
 - Constat de l'audit : Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement, sans déterminer les obligations locales applicables.
