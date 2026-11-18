@@ -105,6 +105,8 @@ const SHEET_LABELS = {
   leaseStart: 'le début du bail',
   leaseYears: 'la durée du bail (1 à 99 ans)',
   leaseAnnualRentCents: 'le loyer annuel',
+  marketAnnualRentCents: 'la valeur locative',
+  marketRentBasis: 'ce qui fonde la valeur locative',
   leaseUse: 'la destination du bail',
   leaseAssignment: 'la clause de cession',
   employees: 'le nombre de salariés',
@@ -369,6 +371,9 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var start = ceInput(f, 'ce-fiche-bail-debut', 'Début du bail', cur.leaseStart, 'date');
     var length = ceInput(f, 'ce-fiche-bail-duree', 'Durée du bail, en années', cur.leaseYears);
     var rent = ceInput(f, 'ce-fiche-bail-loyer', 'Loyer annuel, en euros', ceHundredthsText(cur.leaseAnnualRentCents));
+    /* AU102 · Un local libre : sa valeur locative de marché et ses comparables, jamais un bail inventé. */
+    var mrent = business ? null : ceInput(f, 'ce-fiche-vl', 'Local libre : valeur locative annuelle, en euros', ceHundredthsText(cur.marketAnnualRentCents));
+    var mbasis = business ? null : ceInput(f, 'ce-fiche-vl-base', 'Ce qui la fonde : comparables, source', cur.marketRentBasis);
     var use = ceSelect(f, 'ce-fiche-bail-destination', 'Destination du bail', CE_LEASE_USE, cur.leaseUse);
     var assign = ceSelect(f, 'ce-fiche-bail-cession', 'Clause de cession du bail', CE_LEASE_ASSIGN, cur.leaseAssignment);
     var staff = business ? ceInput(f, 'ce-fiche-salaries', 'Nombre de salariés', cur.employees) : null;
@@ -410,6 +415,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       next.leaseStart = start.value || null;
       next.leaseYears = whole(length, CE_SHEET.leaseYears);
       next.leaseAnnualRentCents = money(rent, CE_SHEET.leaseAnnualRentCents);
+      if (mrent) { next.marketAnnualRentCents = money(mrent, CE_SHEET.marketAnnualRentCents); next.marketRentBasis = text(mbasis); }
       next.leaseUse = use.value || null;
       next.leaseAssignment = assign.value || null;
       next.equipment = String(gear.value || '').split('\\n').map(function (x) { return x.trim(); }).filter(Boolean);

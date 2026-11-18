@@ -110,7 +110,7 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     expect(cols.sort()).toEqual(Object.keys(SHEET_VISIBILITY).sort());
     expect(cols.filter((c) => visibilityOf(c) === 'public')).toEqual(['activity']);
     // Chaque champ de la fiche a sa colonne.
-    expect(SHEET_FIELDS.length).toBe(11);
+    expect(SHEET_FIELDS.length).toBe(13);
   });
 
   it('[R110] [R09] la vue publique ne porte ni enseigne, ni exercice, ni loyer, ni bail, ni prix, même quand la fiche les porte', async () => {

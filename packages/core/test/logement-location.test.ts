@@ -7,6 +7,7 @@ import {
   banDate,
   checkDwelling,
   decencyOf,
+  territoryOf,
   ownerNoticeText,
   parseFacts,
   requiredAnnexes,
@@ -354,5 +355,40 @@ describe('AU017 · la règle locale plus stricte, lue et datée, avant « louabl
     expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: 'hier', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
     expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true, note: 'x' } })).toEqual({ ok: false, field: 'localRules' });
     expect(parseFacts({ ...raw, localRules: { reference: ' RSD art. 40 ', checkedOn: '2027-01-04', compliant: true } })).toMatchObject({ ok: true, value: { localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true } } });
+  });
+});
+
+describe('AU098 · le calendrier énergétique de l’outre-mer', () => {
+  it('[R100] Guadeloupe, Martinique, Guyane, La Réunion, Mayotte : G en 2028, F en 2031, pas de date pour E ; la métropole garde le sien', () => {
+    expect(territoryOf('97100')).toBe('outre_mer');
+    expect(territoryOf('97600')).toBe('outre_mer');
+    expect(territoryOf('97700')).toBe('metropole');
+    expect(territoryOf('20000')).toBe('metropole');
+    expect(territoryOf('21000')).toBe('metropole');
+    expect(banDate('G', 'outre_mer')).toBe('2028-01-01');
+    expect(banDate('F', 'outre_mer')).toBe('2031-01-01');
+    expect(banDate('E', 'outre_mer')).toBeNull();
+    expect(banDate('G')).toBe('2025-01-01');
+    const g = { ...FACTS, energyClass: 'G' as const, finalEnergyKwh: 460, leaseStart: '2027-09-01' };
+    // Un G ultramarin se loue encore en 2027, sans le seuil métropolitain des 450 kWh ; en métropole, il est bloqué.
+    expect(checkDwelling(g, ALL_VALID, '2026-11-18', 'outre_mer').some((r) => r.code === 'energy_class' || r.code === 'final_energy')).toBe(false);
+    expect(checkDwelling(g, ALL_VALID, '2026-11-18').map((r) => r.code)).toEqual(expect.arrayContaining(['energy_class', 'final_energy']));
+    expect(checkDwelling({ ...g, leaseStart: '2028-01-01' }, ALL_VALID, '2026-11-18', 'outre_mer')).toContainEqual({ code: 'energy_class', energyClass: 'G', bannedFrom: '2028-01-01' });
+  });
+});
+
+describeWithSqlite('AU098 · un logement ultramarin contrôlé avec son calendrier', () => {
+  it('[R100] un G de La Réunion se loue pour un bail de 2027, s’annonce, et son échéance dit le 1er janvier 2028', async () => {
+    const t = await setup();
+    const reunion = await t.db.first<{ id: string }>('SELECT id FROM properties WHERE id = ?', [t.home.id]);
+    await t.db.run('UPDATE properties SET postal_code = ? WHERE id = ?', ['97400', reunion!.id]);
+    const id = await t.open({ energyClass: 'G', finalEnergyKwh: 460 });
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable', reasons: [], bannedFrom: '2028-01-01' } });
+    expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    // L'état relu ne dit pas le contrôle périmé : l'écran garde « Préparer l'annonce ».
+    expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { stale: false } });
+    const notices = await t.location.notices(t.agent, id);
+    expect(notices.ok && notices.value[0]).toMatchObject({ energyClass: 'G', bannedFrom: '2028-01-01' });
   });
 });
