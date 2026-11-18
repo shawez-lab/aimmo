@@ -72,7 +72,7 @@ async function setup(options: { writer?: NoteWriter; energyClass?: string; renta
     inputs: {
       acquisitionFeesRateBp: src(750, 'barème de l’ancien'),
       works: src(1_000_000, 'devis estimé'),
-      nonRecoverableCharges: src(60_000, 'déclarées par le vendeur'),
+      nonRecoverableCharges: src(60_000, 'déclarées par le vendeur'), recoverableCharges: src(0),
       propertyTax: src(90_000, 'avis déclaré'),
       vacancyMonths: src(1, 'vacance réglée'),
     },
@@ -245,7 +245,7 @@ describeWithSqlite('Y05 · note d’investissement', () => {
         inputs: {
           acquisitionFeesRateBp: src(750, 'barème de l’ancien'),
           works: src(1_000_000, hypothesis),
-          nonRecoverableCharges: src(60_000),
+          nonRecoverableCharges: src(60_000), recoverableCharges: src(0),
           propertyTax: src(90_000),
           vacancyMonths: src(1),
         },
@@ -326,7 +326,7 @@ describeWithSqlite('Y05 · note d’investissement', () => {
   it('[R16] une note ne se rédige pas depuis le calcul d’un bien qu’on ne voit pas', async () => {
     const t = await setup();
     // Un calcul d'Alex, sans projet, sur un bien qui sort du fichier commun.
-    const c = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-1', marketRentQuery: { inseeCode: '99001', kind: 'apartment' }, inputs: { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) } });
+    const c = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-1', marketRentQuery: { inseeCode: '99001', kind: 'apartment' }, inputs: { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), recoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) } });
     if (!c.ok) throw new Error(c.code);
     await t.db.run("UPDATE properties SET status = 'draft' WHERE id = 'p-1'");
     const store = new FicheClient(t.db, {});
@@ -398,7 +398,7 @@ describeWithSqlite('Y14 · retrouver les calculs et les notes d’un projet', ()
 
   it('[R10] au-delà de la limite, les plus récentes, et il est dit qu’il y en a d’autres', async () => {
     const t = await history();
-    const inputs = { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) };
+    const inputs = { acquisitionFeesRateBp: src(750), works: src(0), nonRecoverableCharges: src(0), recoverableCharges: src(0), propertyTax: src(0), vacancyMonths: src(1) };
     let last = '';
     for (let i = 0; i < PROJECT_HISTORY_LIMIT; i++) {
       const c = await t.calculs.compute(t.acces, t.agent, { propertyId: 'p-1', projectId: t.project.id, marketRentQuery: { inseeCode: '99001', kind: 'apartment' }, inputs });

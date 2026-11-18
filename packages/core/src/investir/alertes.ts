@@ -195,6 +195,7 @@ export class AlertesInvestisseurs {
           hypothesis: 'loyer central',
         },
         nonRecoverableCharges: given(0, 'alerte', 'non lu pour le brut'),
+        recoverableCharges: given(0, 'alerte', 'non connue : brut sur le loyer charges comprises'),
         propertyTax: given(0, 'alerte', 'non lu pour le brut'),
         vacancyMonths: given(0, 'alerte', 'non lu pour le brut'),
       },

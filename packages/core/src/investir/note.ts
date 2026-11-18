@@ -209,9 +209,9 @@ const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\bprix\b/, keys: ['price'] },
   { re: /\btravaux\b/, keys: ['works'] },
   { re: /\b(?:total|cout|coute|coutera)\b/, keys: ['totalCost'] },
-  { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
+  { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'monthlyRentWithCharges', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
   { re: /\bpercus?\b/, keys: ['collectedRent'] },
-  { re: /\bcharges\b/, keys: ['nonRecoverableCharges'] },
+  { re: /\bcharges\b/, keys: ['nonRecoverableCharges', 'recoverableCharges', 'monthlyRentWithCharges'] },
   { re: /\b(?:taxe|fonciere)\b/, keys: ['propertyTax'] },
   { re: /\brevenus?\b/, keys: ['netIncome'] },
   { re: /\b(?:surface|m2|m²)\b/, keys: ['livingArea'] },
@@ -239,7 +239,7 @@ function boundOk(key: string, bound: 'low' | 'high' | null): boolean {
 }
 
 /** Les montants d'une ligne du calcul qui valent par mois, et ceux qui valent par an. */
-const MONTHLY: readonly string[] = ['monthlyRent'];
+const MONTHLY: readonly string[] = ['monthlyRent', 'monthlyRentWithCharges', 'recoverableCharges'];
 const YEARLY: readonly string[] = ['annualRent', 'collectedRent', 'netIncome', 'nonRecoverableCharges', 'propertyTax'];
 
 /** La période que dit un membre de phrase : « par mois », « mensuel » ; « par an », « annuel » ; sinon `null`. */
@@ -366,7 +366,9 @@ export const LINE_LABELS: Record<string, string> = {
   marketRentM2: 'Loyer de marché au m²',
   marketRentM2Low: 'Loyer de marché au m², bas',
   marketRentM2High: 'Loyer de marché au m², haut',
-  monthlyRent: 'Loyer mensuel',
+  monthlyRent: 'Loyer mensuel hors charges',
+  monthlyRentWithCharges: 'Loyer mensuel charges comprises',
+  recoverableCharges: 'Provision pour charges récupérables par mois',
   annualRent: 'Loyer annuel',
   vacancyMonths: 'Vacance',
   collectedRent: 'Loyer perçu sur l’année',
@@ -392,7 +394,9 @@ export function fallbackParagraphs(facts: NoteFacts): string[] {
   const l = (k: string) => formatLine(lineOf(facts.lines, k));
   return [
     `Le bien coûte ${l('totalCost')} au total. Le prix est de ${l('price')}, les frais d’acquisition de ${l('acquisitionFees')} et les travaux estimés de ${l('works')}.`,
-    `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit un loyer de ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
+    facts.lines.some((x) => x.key === 'monthlyRentWithCharges')
+      ? `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRentWithCharges')} par mois charges comprises ; sans la provision de ${l('recoverableCharges')} pour charges récupérables, reversées et non gagnées, le loyer est de ${l('monthlyRent')} par mois, soit un loyer de ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`
+      : `Pour ${l('livingArea')}, le loyer de marché de ${l('marketRentM2')} donne ${l('monthlyRent')} par mois, soit un loyer de ${l('annualRent')} par an. Avec ${l('vacancyMonths')} de vacance par an, ${l('nonRecoverableCharges')} de charges non récupérables et ${l('propertyTax')} de taxe foncière, le revenu net avant impôt est de ${l('netIncome')} par an.`,
   ];
 }
 
@@ -629,7 +633,7 @@ export class NotesInvestissement {
     const today = this.now().toISOString().slice(0, 10);
     const inputs = input.hypotheses ? withHypotheses(calc.inputs, input.hypotheses, actor, today) : calc.inputs;
     if (!inputs) return { ok: false, rule: 'R120', code: 'hypothese' };
-    const result: YieldResult = input.hypotheses ? computeYield(inputs, this.now().toISOString()) : calc.result;
+    const result: YieldResult = input.hypotheses ? computeYield(inputs, this.now().toISOString(), calc.result.formulaVersion) : calc.result;
     if (result.status !== 'complet') return { ok: false, rule: 'R120', code: 'incomplet' };
     const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, input.projectId, input.inseeCode ?? null, input.energy);
     const facts: NoteFacts = {
