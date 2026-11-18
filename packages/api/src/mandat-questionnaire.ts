@@ -167,6 +167,15 @@ export function questionnaireRoutes(): QuestionnaireRoute[] {
       }),
     },
     {
+      method: 'GET',
+      pattern: /^\/questionnaire-mandat\/reglage$/,
+      name: 'questionnaire_mandat.reglage_lire',
+      handle: reading(WRITERS, async (s, v) => {
+        const r = await questionnaire(s).gapSetting(v);
+        return r.ok ? { ok: true, value: r.setting } : r;
+      }),
+    },
+    {
       method: 'POST',
       pattern: /^\/questionnaire-mandat\/reglage$/,
       name: 'questionnaire_mandat.reglage',

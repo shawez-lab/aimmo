@@ -1,12 +1,14 @@
 import { TEMPLATE_FIELDS } from '../../core/src/documents/modeles.ts';
 import { MANDAT_CLAUSES_PART } from './mandat-clauses.ts';
+import { MANDAT_REGLAGE_PART } from './mandat-reglage.ts';
 
 /**
  * Les modèles de mandat et d'avenant à l'écran (D18), servis à part (`/app/mandat-modeles.js`), chargés au premier geste
  * [R201]. La direction lit et range une nouvelle version, qui s'ajoute sans toucher à l'ancienne [R17] ; seule la conformité
  * valide [H08]. Sans modèle, ni mandat ni avenant ne se prépare : c'est le manque que D17 a trouvé. Le serveur décide de
  * tout [R40] ; l'écran ne fait que dire ses refus. Tout texte reçu est posé en texte ; rien n'est gardé sur l'appareil.
- * Sous les modèles, au même geste, les textes des clauses du mandat par questionnaire (BR118, `mandat-clauses.ts`).
+ * Sous les modèles, au même geste, les textes des clauses du mandat par questionnaire (BR118, `mandat-clauses.ts`),
+ * puis l'écart de prix toléré (BR119, `mandat-reglage.ts`).
  */
 const MANDATE_ONLY = ['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero'];
 const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois'];
@@ -189,11 +191,13 @@ globalThis.AIMMO_MANDAT_MODELES = function (t) {
         say(said || '');
         KINDS.forEach(function (k) { kindBlock(box, say, mode, k, res.body.data); });
       }
-      /* BR118 : les clauses se lisent à part, avec leur propre état, même si les modèles ne se lisent pas. */
-      return clausesPart(box, mode);
+      /* BR118 et BR119 : les clauses et l'écart se lisent à part, chacun avec son état, même si les modèles ne se lisent pas. */
+      var clauses = clausesPart(box, mode);
+      return Promise.all([clauses, gapPart(box, mode)]);
     });
   }
 ${MANDAT_CLAUSES_PART}
+${MANDAT_REGLAGE_PART}
   return { open: open };
 };
 `.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '');
