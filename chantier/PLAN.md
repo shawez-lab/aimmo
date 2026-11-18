@@ -957,7 +957,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU098 · Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent
-- Statut : à faire
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A098 (majeur), endroit : C/location/logement.ts, `ENERGY_BANS`.
 - Constat de l'audit : Le calendrier énergétique locatif est national dans le code alors que les dates ultramarines diffèrent.
@@ -966,6 +966,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Source : [Calendrier outre-mer](https://www.service-public.gouv.fr/particuliers/actualites/A17975).
 - Attend : rien.
 
+
+### AU098b · Le calendrier de l'outre-mer pour les autres lecteurs de l'interdiction de louer
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU098
+- Cahier : M17 Investir ; M15 Louer ; audit A098.
+- Objectif : les contraintes Investir, la veille DPE et le score d'adresse appellent `banDate` sans territoire et appliquent le calendrier métropolitain à un bien ultramarin ; leur passer le territoire du bien (`territoryOf`).
+- Critères : un G de La Réunion n'est pas dit interdit avant 2028 dans chacun des trois (test) ; R100 citée.
+- Attend : rien.
 ### AU099 · Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables
 - Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
@@ -976,7 +984,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU100 · Manque
-- Statut : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H24). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
+- Statut : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H72). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
 - Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.
@@ -994,7 +1002,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
-- Statut : à faire
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A102 (majeur), endroit : C/commerces/estimation.ts, `METHODS_BY_KIND`.
 - Constat de l'audit : Un local vacant sans loyer n’a pas de méthode d’estimation exploitable : murs et locaux sont limités au rendement du bail.
