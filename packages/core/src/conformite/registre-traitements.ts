@@ -177,7 +177,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       visit_slip_templates: ['body', 'created_by', 'validated_by'],
       visit_slips: ['content', 'content_hash', 'scan_ref', 'signed_by'],
       visit_safety: ['phone_confirmed_at'],
-      safety_alerts: ['agent_id', 'town'],
+      safety_alerts: ['agent_id', 'town', 'acknowledged_by'],
       visit_reports: ['dictation', 'report', 'validated_by', 'created_by'],
       visit_tasks: ['agent_id'],
       // HX44 : le dossier du bien envoyé avant la visite, la visite à distance et la signature en ligne de son bon.
@@ -1249,7 +1249,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_slip_templates: ['id', 'network_id', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
   visit_slips: ['id', 'appointment_id', 'network_id', 'template_id', 'template_version', 'template_hash', 'mode', 'status', 'missing', 'created_at', 'signed_at'],
   visit_safety: ['appointment_id', 'network_id', 'code_hash', 'code_expires_at', 'attempts', 'requested_at', 'identity_confirmed_at'],
-  safety_alerts: ['id', 'network_id', 'appointment_id', 'raised_at', 'visit_start_at', 'notified_at', 'attempts', 'claimed_until'],
+  safety_alerts: ['id', 'network_id', 'appointment_id', 'raised_at', 'visit_start_at', 'notified_at', 'attempts', 'claimed_until', 'level', 'level_at', 'mode', 'receipt', 'trial_at', 'acknowledged_at'],
   visit_reports: ['appointment_id', 'network_id', 'source', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],
   visit_tasks: ['appointment_id', 'kind', 'network_id', 'project_id', 'due_at', 'created_at', 'done_at'],
   visit_dossiers: ['id', 'network_id', 'appointment_id', 'property_id', 'version_id', 'token_hash', 'expires_at', 'status', 'message_id', 'created_at'],

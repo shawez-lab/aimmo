@@ -131,11 +131,12 @@ describeWithSqlite('T05 · visite sécurisée', () => {
         if (down) throw new Error('panne');
         await new Promise((r) => setTimeout(r, 5));
         received.push(a);
+        return { mode: 'reel', receipt: `remise-${received.length}` };
       },
     });
     t.setClock(WEDNESDAY_10H.getTime() + 10 * MINUTE);
     const r = await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0001');
-    expect(r).toEqual({ ok: true, recorded: true, notified: false });
+    expect(r).toEqual({ ok: true, recorded: true, notified: false, mode: null, level: 1 });
     // Le même geste envoyé deux fois : une seule alerte.
     await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0001');
     down = false;
@@ -186,11 +187,186 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     expect(await t.db.first("SELECT town, appointment_id FROM safety_alerts WHERE id = 'alerte-0020'")).toEqual({ town: 'Talant', appointment_id: moved.appointment.id });
   });
 
-  it('sans panne, la direction est prévenue aussitôt, en essai : une ligne au journal, rien ne part', async () => {
+  it('[R54] AU008 : en essai, l’alerte n’est jamais dite « prévenue » : une ligne au journal, rien ne part, et pas de reprise', async () => {
     const t = await setup();
-    expect(await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0003')).toEqual({ ok: true, recorded: true, notified: true });
+    // Le constat de l'audit : l'essai rendait `notified: true` alors que rien n'était parti.
+    expect(await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0003')).toEqual({ ok: true, recorded: true, notified: false, mode: 'essai', level: 1 });
     const entries = await t.journal.all();
     expect(entries.filter((e) => e.type === 'alerte.direction.essai')).toHaveLength(1);
     expect(entries.filter((e) => e.type === 'visite.alerte')).toHaveLength(1);
+    expect(await t.securite.list(t.as('direction', 'd1'))).toMatchObject({ ok: true, alerts: [{ id: 'alerte-0003', mode: 'essai', notified: false, acknowledged: false }] });
+    // Une alerte en essai n'est pas renvoyée en boucle par la reprise.
+    expect(await t.securite.retry()).toBe(0);
+    expect((await t.journal.all()).filter((e) => e.type === 'alerte.direction.essai')).toHaveLength(1);
+  });
+
+  it('[R54] AU008 : prévenue seulement sur l’accusé réel du service d’envoi ; une réponse sans accusé est une panne reprise', async () => {
+    const answers: unknown[] = [{ mode: 'reel' }, { mode: 'reel', receipt: '' }, undefined, { mode: 'reel', receipt: 'sms-remise-42' }];
+    const t = await setup({ notify: async () => answers.shift() as never });
+    const agent = t.as('agent', t.alex.id);
+    expect(await t.securite.raise(agent, 'alerte-0100')).toMatchObject({ notified: false, mode: null });
+    expect(await t.securite.retry()).toBe(0);
+    expect(await t.securite.retry()).toBe(0);
+    expect(await t.securite.retry()).toBe(1);
+    expect(await t.db.first("SELECT mode, receipt FROM safety_alerts WHERE id = 'alerte-0100'")).toEqual({ mode: 'reel', receipt: 'sms-remise-42' });
+    expect(await t.securite.status(agent, 'alerte-0100')).toMatchObject({ ok: true, alert: { notified: true, mode: 'reel', level: 1, acknowledged: false } });
+    const types = (await t.journal.all()).map((e) => e.type);
+    expect(types.filter((x) => x === 'visite.alerte_en_panne')).toHaveLength(3);
+    expect(types.filter((x) => x === 'visite.alerte_prevenue')).toHaveLength(1);
+  });
+
+  it('[R54] AU008 : sans acquittement, l’alerte monte d’un palier toutes les 5 minutes jusqu’au palier 3, une fois chacun', async () => {
+    const received: SafetyAlert[] = [];
+    const t = await setup({ notify: async (a) => (received.push(a), { mode: 'reel', receipt: `r-${received.length}` }) });
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0200');
+    expect(received.map((a) => a.level)).toEqual([1]);
+    t.setClock(start + 4 * MINUTE);
+    expect(await t.securite.escalate()).toBe(0);
+    t.setClock(start + 5 * MINUTE);
+    // Deux passages en même temps : une seule montée.
+    const both = await Promise.all([t.securite.escalate(), t.securite.escalate()]);
+    expect(both[0] + both[1]).toBe(1);
+    expect(received.map((a) => a.level)).toEqual([1, 2]);
+    expect(received[1]).toMatchObject({ id: 'alerte-0200', town: 'Talant', appointmentId: t.appointmentId });
+    t.setClock(start + 10 * MINUTE);
+    expect(await t.securite.tick()).toEqual({ retried: 0, escalated: 1 });
+    t.setClock(start + 30 * MINUTE);
+    expect(await t.securite.escalate()).toBe(0);
+    expect(received.map((a) => a.level)).toEqual([1, 2, 3]);
+    const types = (await t.journal.all()).filter((e) => e.type === 'visite.alerte_escalade').map((e) => (e.data as { level: number }).level);
+    expect(types).toEqual([2, 3]);
+    // Un palier ne redescend jamais.
+    await expect(t.db.run("UPDATE safety_alerts SET level = 1 WHERE id = 'alerte-0200'")).rejects.toThrow();
+  });
+
+  it('[R54] AU008 : la direction acquitte, l’escalade s’arrête, l’agent le lit ; l’acquittement ne change plus', async () => {
+    const received: SafetyAlert[] = [];
+    const t = await setup({ notify: async (a) => (received.push(a), { mode: 'reel', receipt: `r-${received.length}` }) });
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    const agent = t.as('agent', t.alex.id);
+    await t.securite.raise(agent, 'alerte-0300');
+    t.setClock(start + 2 * MINUTE);
+    // Ni l'agent, ni un autre réseau ne l'acquittent.
+    expect(await t.securite.acknowledge(agent, 'alerte-0300')).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.securite.acknowledge({ role: 'direction', userId: 'd9', networkId: 'autre' }, 'alerte-0300')).toMatchObject({ ok: false, rule: 'R16' });
+    const ack = await t.securite.acknowledge(t.as('direction', 'd1'), 'alerte-0300');
+    expect(ack).toMatchObject({ ok: true, already: false, alert: { acknowledged: true, acknowledgedAt: new Date(start + 2 * MINUTE).toISOString(), level: 1 } });
+    expect(await t.securite.acknowledge(t.as('direction', 'd2'), 'alerte-0300')).toMatchObject({ ok: true, already: true });
+    expect(await t.db.first("SELECT acknowledged_by FROM safety_alerts WHERE id = 'alerte-0300'")).toEqual({ acknowledged_by: 'd1' });
+    t.setClock(start + 20 * MINUTE);
+    expect(await t.securite.escalate()).toBe(0);
+    expect(received).toHaveLength(1);
+    expect(await t.securite.status(agent, 'alerte-0300')).toMatchObject({ ok: true, alert: { acknowledged: true, level: 1 } });
+    // Un autre agent ne lit pas l'alerte d'Alex.
+    expect(await t.securite.status(t.as('agent', t.sam.id), 'alerte-0300')).toMatchObject({ ok: false, rule: 'R16' });
+    await expect(t.db.run("UPDATE safety_alerts SET acknowledged_by = 'd2' WHERE id = 'alerte-0300'")).rejects.toThrow();
+    expect((await t.journal.all()).filter((e) => e.type === 'visite.alerte_acquittee')).toHaveLength(1);
+  });
+
+  it('[R54] AU008 : la lecture de l’agent fait monter le palier dû ; passé l’heure, plus d’escalade', async () => {
+    const received: SafetyAlert[] = [];
+    const t = await setup({ notify: async (a) => (received.push(a), { mode: 'reel', receipt: `r-${received.length}` }) });
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    const agent = t.as('agent', t.alex.id);
+    await t.securite.raise(agent, 'alerte-0400');
+    t.setClock(start + 6 * MINUTE);
+    expect(await t.securite.status(agent, 'alerte-0400')).toMatchObject({ ok: true, alert: { level: 2, notified: true } });
+    // Un seul passage, 12 minutes après le geste : le palier dû est 3, atteint d'un coup.
+    t.setClock(start + 12 * MINUTE);
+    expect(await t.securite.escalate()).toBe(1);
+    expect(await t.db.first("SELECT level FROM safety_alerts WHERE id = 'alerte-0400'")).toEqual({ level: 3 });
+    expect(received.map((a) => a.level)).toEqual([1, 2, 3]);
+    t.setClock(start + 6 * MINUTE);
+    await t.securite.raise(agent, 'alerte-0401');
+    t.setClock(start + 6 * MINUTE + 61 * MINUTE);
+    expect(await t.securite.escalate()).toBe(0);
+    expect(await t.securite.status(agent, 'alerte-0401')).toMatchObject({ ok: true, alert: { level: 1 } });
+  });
+
+  it('[R54] [R05] AU008 : une prise faite avant la montée de palier n’envoie jamais le nouveau palier', async () => {
+    const received: SafetyAlert[] = [];
+    let down = true;
+    const notifier: DirectionNotifier = {
+      notify: async (a) => {
+        if (down) throw new Error('panne');
+        received.push(a);
+        return { mode: 'reel', receipt: `r-${received.length}` };
+      },
+    };
+    const t = await setup(notifier);
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0600');
+    down = false;
+    // La reprise s'arrête juste après sa prise, avant de relire l'alerte.
+    let gate: (() => void) | null = null;
+    let paused: (() => void) | null = null;
+    const reached = new Promise<void>((r) => (paused = r));
+    let armed = true;
+    const slowDb: SqlDatabase = new Proxy(t.db, {
+      get(target, prop, recv) {
+        if (prop === 'first') {
+          return async (sql: string, params?: unknown[]) => {
+            if (armed && sql.startsWith('SELECT * FROM safety_alerts WHERE id')) {
+              armed = false;
+              paused!();
+              await new Promise<void>((r) => (gate = r));
+            }
+            return target.first(sql, params as never);
+          };
+        }
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const slow = new VisiteSecurisee(slowDb, t.journal, t.visites, { now: () => new Date(t.clock()), notifier });
+    t.setClock(start + 3 * MINUTE);
+    const late = slow.retry();
+    await reached;
+    t.setClock(start + 5 * MINUTE);
+    expect(await t.securite.escalate()).toBe(1);
+    gate!();
+    expect(await late).toBe(0);
+    expect(received.map((a) => a.level)).toEqual([2]);
+  });
+
+  it('[R54] AU008 : une alerte « prévenue » par l’ancien essai est reclassée en essai par la migration', async () => {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    const all = loadMigrations();
+    await applyMigrations(db, all.filter((m) => m.id < '3960'));
+    const store = new FicheClient(db);
+    const network = await store.createNetwork('Réseau test');
+    await db.run("INSERT INTO safety_alerts (id, network_id, agent_id, raised_at, notified_at, attempts) VALUES ('alerte-ancienne', ?, 'a1', '2026-11-01T09:00:00.000Z', '2026-11-01T09:00:01.000Z', 1)", [network.id]);
+    await applyMigrations(db, all);
+    expect(await db.first("SELECT notified_at, mode, trial_at FROM safety_alerts WHERE id = 'alerte-ancienne'")).toEqual({ notified_at: null, mode: 'essai', trial_at: '2026-11-01T09:00:01.000Z' });
+  });
+
+  it('[R54] AU008 : un envoi du palier précédent qui revient après la montée n’est pas compté pour le nouveau palier', async () => {
+    let release: (() => void) | null = null;
+    const received: SafetyAlert[] = [];
+    const t = await setup({
+      notify: async (a) => {
+        received.push(a);
+        if (a.level === 1 && received.length === 1) throw new Error('panne');
+        if (a.level === 1) await new Promise<void>((r) => (release = r));
+        return { mode: 'reel', receipt: `r-${received.length}` };
+      },
+    });
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0500');
+    t.setClock(start + 3 * MINUTE);
+    const slow = t.securite.retry();
+    await new Promise((r) => setTimeout(r, 5));
+    t.setClock(start + 5 * MINUTE);
+    expect(await t.securite.escalate()).toBe(1);
+    expect(await t.db.first("SELECT level, receipt FROM safety_alerts WHERE id = 'alerte-0500'")).toEqual({ level: 2, receipt: 'r-3' });
+    release!();
+    expect(await slow).toBe(0);
+    expect(await t.db.first("SELECT level, receipt FROM safety_alerts WHERE id = 'alerte-0500'")).toEqual({ level: 2, receipt: 'r-3' });
   });
 });

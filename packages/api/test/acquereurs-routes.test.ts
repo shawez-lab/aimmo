@@ -113,7 +113,11 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
 
     // L'alerte en un geste : sans prévenant branché, la réponse dit le mode essai.
-    expect((await t.call('alex', 'POST', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { recorded: true, trial: true } });
+    expect((await t.call('alex', 'POST', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { recorded: true, notified: false, mode: 'essai', level: 1, trial: true } });
+    // AU008 : l'agent lit l'état de son alerte ; la direction l'acquitte.
+    expect((await t.call('alex', 'GET', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { alert: { notified: false, mode: 'essai', acknowledged: false } } });
+    expect((await t.call('direction', 'POST', '/visites/alertes/alerte-0000001/acquittement')).body).toMatchObject({ ok: true, data: { already: false, alert: { acknowledged: true } } });
+    expect((await t.call('alex', 'GET', '/visites/alertes/alerte-0000001')).body).toMatchObject({ ok: true, data: { alert: { acknowledged: true } } });
 
     // Rien n'est parti réellement ; ni clé, ni numéro, ni dictée au journal [R13] ; la chaîne tient.
     const entries = await t.journal.all();
@@ -141,6 +145,8 @@ describeWithSqlite('T08 · routes de M08', () => {
       ['sam', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H }],
       ['alex', 'GET', '/visites/alertes'],
       ['direction', 'POST', '/visites/alertes/alerte-0000001'],
+      ['sam', 'GET', '/visites/alertes/alerte-0000001'],
+      ['alex', 'POST', '/visites/alertes/alerte-0000001/acquittement'],
       ['alex', 'POST', '/visites/modeles', { body: TEMPLATE }],
       ['sam', 'GET', `/visites/${id}`],
       ['sam', 'GET', `/visites/${id}/bon`],
