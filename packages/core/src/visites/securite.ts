@@ -405,15 +405,18 @@ export class VisiteSecurisee {
   }
 
   private async notifyOne(alertId: string): Promise<boolean> {
-    // Une seule prise à la fois, pour deux minutes : deux reprises simultanées ne préviennent pas deux fois.
+    // La prise vaut pour un palier : une montée pendant l'envoi la rend caduque, l'ancien preneur n'envoie pas le nouveau palier.
     const nowIso = this.now().toISOString();
+    const before = await this.db.first<{ level: number }>('SELECT level FROM safety_alerts WHERE id = ?', [alertId]);
+    if (!before) return false;
+    const level = Number(before.level);
     const claim = await this.db.run(
-      'UPDATE safety_alerts SET attempts = attempts + 1, claimed_until = ? WHERE id = ? AND notified_at IS NULL AND trial_at IS NULL AND acknowledged_at IS NULL AND (claimed_until IS NULL OR claimed_until <= ?)',
-      [new Date(this.now().getTime() + 120_000).toISOString(), alertId, nowIso],
+      'UPDATE safety_alerts SET attempts = attempts + 1, claimed_until = ? WHERE id = ? AND level = ? AND notified_at IS NULL AND trial_at IS NULL AND acknowledged_at IS NULL AND (claimed_until IS NULL OR claimed_until <= ?)',
+      [new Date(this.now().getTime() + 120_000).toISOString(), alertId, level, nowIso],
     );
     if (claim.changes !== 1) return (await this.db.first('SELECT id FROM safety_alerts WHERE id = ? AND notified_at IS NOT NULL', [alertId])) !== null;
     const r = (await this.db.first<AlertRow>('SELECT * FROM safety_alerts WHERE id = ?', [alertId]))!;
-    const level = Number(r.level);
+    if (Number(r.level) !== level) return false;
     let result: unknown;
     try {
       result = await this.notifier.notify({ id: r.id, agentId: r.agent_id, raisedAt: r.raised_at, town: r.town, visitStartAt: r.visit_start_at, appointmentId: r.appointment_id, level });

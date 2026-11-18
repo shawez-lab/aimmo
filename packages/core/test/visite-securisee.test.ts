@@ -287,6 +287,53 @@ describeWithSqlite('T05 · visite sécurisée', () => {
     expect(await t.securite.status(agent, 'alerte-0401')).toMatchObject({ ok: true, alert: { level: 1 } });
   });
 
+  it('[R54] [R05] AU008 : une prise faite avant la montée de palier n’envoie jamais le nouveau palier', async () => {
+    const received: SafetyAlert[] = [];
+    let down = true;
+    const notifier: DirectionNotifier = {
+      notify: async (a) => {
+        if (down) throw new Error('panne');
+        received.push(a);
+        return { mode: 'reel', receipt: `r-${received.length}` };
+      },
+    };
+    const t = await setup(notifier);
+    const start = WEDNESDAY_10H.getTime() + 10 * MINUTE;
+    t.setClock(start);
+    await t.securite.raise(t.as('agent', t.alex.id), 'alerte-0600');
+    down = false;
+    // La reprise s'arrête juste après sa prise, avant de relire l'alerte.
+    let gate: (() => void) | null = null;
+    let paused: (() => void) | null = null;
+    const reached = new Promise<void>((r) => (paused = r));
+    let armed = true;
+    const slowDb: SqlDatabase = new Proxy(t.db, {
+      get(target, prop, recv) {
+        if (prop === 'first') {
+          return async (sql: string, params?: unknown[]) => {
+            if (armed && sql.startsWith('SELECT * FROM safety_alerts WHERE id')) {
+              armed = false;
+              paused!();
+              await new Promise<void>((r) => (gate = r));
+            }
+            return target.first(sql, params as never);
+          };
+        }
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const slow = new VisiteSecurisee(slowDb, t.journal, t.visites, { now: () => new Date(t.clock()), notifier });
+    t.setClock(start + 3 * MINUTE);
+    const late = slow.retry();
+    await reached;
+    t.setClock(start + 5 * MINUTE);
+    expect(await t.securite.escalate()).toBe(1);
+    gate!();
+    expect(await late).toBe(0);
+    expect(received.map((a) => a.level)).toEqual([2]);
+  });
+
   it('[R54] AU008 : une alerte « prévenue » par l’ancien essai est reclassée en essai par la migration', async () => {
     const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
     const all = loadMigrations();
