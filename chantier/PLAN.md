@@ -1952,7 +1952,8 @@ Réservé le 2026-11-10 par la voie 2. Plus aucun module de la Feuille de route 
 - Critères : l'agent du bien, la direction et la conformité relisent les mandats préparés d'un bien, chaque clause avec sa réponse et son texte de loi, le relevé du prix, le geste fait ou non et le contrôle avant signature, identique à la route du contrôle [R440, R441] (test) ; un autre agent refusé au journal, bien inconnu 404, aucun paramètre admis, rien n'est écrit [R16, R443] (test) ; l'écran liste et rouvre, le geste appelle la route prévue, un geste déjà noté ne se repropose pas, un refus se dit et le questionnaire reste utilisable [R441] (test) ; aucun prix dans une adresse, identifiant mal formé non rouvert, budget tenu [R13, R201] (test).
 - Attend : rien.
 ### BR118 · Les textes des clauses du mandat par questionnaire à l'écran : la direction écrit, la conformité valide
-- Statut : bloquée : proposition #654 prête (vérification locale verte sur `92b0be2`, 6678 tests ; Codex rien à signaler), mais la fusion a été refusée le 2026-11-17 par le contrôle des permissions de la séance, parce que la vérification GitHub est rouge (facturation, H35) ; à fusionner par Shawez ou dès que GitHub Actions repart
+- Statut : fait (2026-11-18)
+- Fusionnée (#654, `1460bd82`) par Shawez après que la vérification GitHub est repassée au vert ; Codex rien à signaler ; vérification locale verte (6678 tests).
 - Reste : le réglage de l'écart toléré à l'écran (il faut une route de lecture du réglage) ; de vrais textes attendent H08.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : BR117
 - Cahier : M06 Mandats et documents (mandat par questionnaire) ; R440, R442, R443, R16, R13, R201.
