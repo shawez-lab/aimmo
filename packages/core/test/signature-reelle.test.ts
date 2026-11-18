@@ -139,6 +139,12 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     expect(remise?.to).toBe('lea.exemple@example.test');
     expect(remise?.body).toContain('T-001');
     expect(remise?.body).toContain(d.value.copyHash);
+    // L'exemplaire signé et le dossier sont joints au mail : le mandant les reçoit, pas seulement leur référence.
+    expect(remise?.attachments?.map((a) => a.name)).toEqual(['exemplaire-signe-T-001.html', 'dossier-de-preuve-T-001.html']);
+    expect(remise?.attachments?.[0]!.content).toBe(d.value.copy);
+    expect(remise?.attachments?.[1]!.content).toBe(d.value.dossier);
+    // Ni l'exemplaire ni le dossier ne sont rangés avec le message.
+    expect(JSON.stringify(await t.db.all('SELECT body FROM messages'))).not.toContain('Dossier de preuve de la signature');
     expect(await t.db.first(`SELECT status FROM signature_remises WHERE document_id = ?`, [t.documentId])).toEqual({ status: 'envoyee' });
     // Redemandé : rien n'est refait, rien ne repart.
     const sentBefore = t.mail.sent.length;
@@ -195,6 +201,21 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
       `UPDATE signature_remises SET status = 'a_envoyer'`,
       `DELETE FROM signature_remises`,
     ]) await expect(t.db.run(sql)).rejects.toThrow();
+  });
+
+  it('une remise tombée avec le canal n’est jamais dite envoyée, et repart une seule fois', async () => {
+    const t = await setup({ mail: true });
+    expect((await t.online.recordValidation(t.direction, AVIS)).ok).toBe(true);
+    const s = await t.online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    await t.online.sign(t.agent, s.value.sessionId, { code: t.realCodes()[0]! });
+    // Le canal tombe pendant la remise : rien n'est noté envoyé.
+    t.mail.failWith = new Error('panne');
+    expect(await t.online.finish(t.agent, t.documentId, SOURCE)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: false }] } });
+    expect(await t.db.first(`SELECT status FROM signature_remises WHERE document_id = ?`, [t.documentId])).toEqual({ status: 'a_envoyer' });
+    t.mail.failWith = null;
+    expect(await t.online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
+    expect(t.mail.sent.filter((m) => m.body.includes('dossier de preuve vous sont remis'))).toHaveLength(1);
   });
 
   it('[R01] une remise refusée la nuit reste à envoyer, et part à la demande suivante, une seule fois', async () => {

@@ -181,10 +181,14 @@ export class SignatureEnLigne {
     return mode === 'reel' ? this.realEnvois : this.envois;
   }
 
-  /** Ce sujet est-il déjà parti à la personne par un vrai canal (envoi fait, puis panne avant d'être noté) ? */
+  /**
+   * Ce sujet a-t-il été remis à la personne par le canal réel (envoi fait, puis panne avant d'être noté) ? Seul l'accusé
+   * du canal le prouve (`outbound_refs`, écrit après la remise) ; un sujet réservé ou un envoi en cours ne suffit pas.
+   */
   private async deliveredBefore(personId: string, subject: string): Promise<boolean> {
     const row = await this.db.first(
-      `SELECT 1 FROM message_subjects s WHERE s.person_id = ? AND s.subject = ?
+      `SELECT 1 FROM message_subjects s JOIN outbound_refs r ON r.message_id = s.message_id
+       WHERE s.person_id = ? AND s.subject = ?
          AND NOT EXISTS (SELECT 1 FROM send_log l WHERE l.message_id = s.message_id AND l.outcome = 'failed')
          AND NOT EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = s.message_id) LIMIT 1`,
       [personId, subject],
@@ -523,7 +527,9 @@ export class SignatureEnLigne {
     }
     if (!(await this.distinctMandants(documentId, doc.person_id))) return { ok: false, rule: 'R41', code: 'mandants_merged' };
 
-    let dossierRow = await this.db.first<{ dossier_hash: string; copy_hash: string; content_hash: string }>('SELECT dossier_hash, copy_hash, content_hash FROM signature_dossiers WHERE document_id = ?', [documentId]);
+    type DossierRow = { dossier_hash: string; copy_hash: string; content_hash: string; dossier: string; copy_content: string };
+    const DOSSIER_SQL = 'SELECT dossier_hash, copy_hash, content_hash, dossier, copy_content FROM signature_dossiers WHERE document_id = ?';
+    let dossierRow = await this.db.first<DossierRow>(DOSSIER_SQL, [documentId]);
     if (dossierRow && dossierRow.content_hash !== contentHash) return { ok: false, rule: null, code: 'document_changed' };
     let number: string | null = null;
     if (!dossierRow) {
@@ -572,7 +578,7 @@ export class SignatureEnLigne {
       if (changes === 1) {
         await appendEvent(this.journal, { type: 'signature.dossier', actor: this.actor(viewer), subject: `document:${documentId}`, data: { dossierHash, signers: mandants.length, registered: number !== null } }, this.now);
       }
-      dossierRow = (await this.db.first<{ dossier_hash: string; copy_hash: string; content_hash: string }>('SELECT dossier_hash, copy_hash, content_hash FROM signature_dossiers WHERE document_id = ?', [documentId]))!;
+      dossierRow = (await this.db.first<DossierRow>(DOSSIER_SQL, [documentId]))!;
     }
     // Une remise par mandant, posée à chaque demande : une panne après le dossier ne les perd jamais.
     let position = 1;
@@ -608,7 +614,12 @@ export class SignatureEnLigne {
         kind: 'alert',
         purpose: ONLINE_SIGNATURE_PURPOSE,
         subject,
-        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis avec ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.`],
+        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis en pièces jointes de ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.`],
+        // L'exemplaire signé (suivi du dossier) et le dossier seul, en pièces jointes : le mandant les garde chez lui.
+        attachments: [
+          { name: `exemplaire-signe-${number ?? documentId}.html`, contentType: 'text/html', content: dossierRow.copy_content },
+          { name: `dossier-de-preuve-${number ?? documentId}.html`, contentType: 'text/html', content: dossierRow.dossier },
+        ],
         // Le numéro, la référence et l'empreinte sont des identifiants, pas des chiffres à vérifier [R10].
         figures: [...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],
       });
