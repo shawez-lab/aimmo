@@ -155,7 +155,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU010b · L'audit énergétique remis à l'acquéreur dès la première visite
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-18)
+- Reste : fusionnée (#665), migration `3985`, R60 et R73 complétées. Décidé, lecture prudente : avis à l'agent dès la prise de visite et relu avant (`RemiseAudit.notice`) : remettre, faire faire (absent ou périmé le jour de la visite), préciser la classe, déjà remis, rien ; remise rangée avec la date et le moyen déclarés (papier, mail, espace), ni future ni plus de 30 jours avant la visite, une par visite, liée au document remis ; dépôt du diagnostiqueur seulement si sa certification DPE du jour porte la mention « audit énergétique » cochée par la direction (`auditMention`). Relecture forte sans P0 ni P1 ; Codex 2 P0 et 2 P2 corrigés, puis rien. Restent : écran et route de l'agent (voie 1, `app.ts`) ; report des diagnostics de la fiche du bien au dossier de vente (U09).
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU010
 - Cahier : M08 Acquéreurs et visites ; suite d'AU010 (art. L126-28-1 du CCH : audit communiqué à l'acquéreur potentiel dès la première visite).
 - Objectif : quand `energyAuditCase` dit « requis » pour le bien, la visite (`visites.ts`) rappelle à l'agent de remettre l'audit et range la preuve de sa remise (date, moyen) ; une classe inconnue le dit à l'agent ; le diagnostiqueur partenaire peut déposer l'audit au dossier (`PIECE_RULES`, `PIECE_CREDENTIALS`, après lecture du justificatif requis).
@@ -163,7 +164,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU011 · Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A011 (bloquant), endroit : C/dossiers/pieces.ts, commentaire et liste des pièces.
 - Constat de l'audit : Mon dossier « complet » laisse explicitement au notaire les termites, la mérule et l’assainissement, sans déterminer les obligations locales applicables.
@@ -199,6 +200,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Source : [Nécessité d’un mandat écrit](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/professionnels-de-limmobilier-les-regles-connaitre).
 - Attend : rien.
+- Découpé (2026-11-18, voie 3) : constat confirmé, et plus large que prévu : AIMMO n'a aucun mandat de location. `DOCUMENT_KINDS` ne connaît que les mandats de vente et l'avenant (CHECK de `document_templates`, migration 0033), `mandates` n'a pas d'objet, et `Diffusion.canDiffuse` (R42) ne regarde pas l'objet du mandat. À faire dans l'ordre : AU014a, un modèle « mandat de location » (sorte de document, champs, contrôles, écran Mandats, table des modèles reconstruite) et l'objet du mandat (`vente` ou `location`) rangé à la signature ; AU014b, `canDiffuse` par objet, puis l'annonce de location publiable et le barème d'honoraires seulement sous un mandat de location en cours (tests : sans mandat, annonce non publiable et barème refusé ; un mandat de vente n'ouvre pas la location).
 
 ### AU015 · Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse
 - Statut : à faire
@@ -925,7 +927,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A095 (majeur), endroit : C/location/honoraires.ts, constantes des plafonds.
 - Constat de l'audit : Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en 2026.
@@ -963,7 +965,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU099 · Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables
-- Statut : à faire
+- Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A099 (majeur), endroit : C/investir/calcul.ts, `MarketRentValue`, `netIncome`.
 - Constat de l'audit : Le rendement utilise un loyer de marché charges comprises sans retirer les charges récupérables : le revenu net peut être surévalué.

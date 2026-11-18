@@ -25,6 +25,7 @@ function inputsOf(c: Case['inputs']): YieldInputs {
       hypothesis: 'loyer central de la commune',
     },
     nonRecoverableCharges: src(c.charges, 'client_dit:a-1', 'déclarées par le vendeur'),
+    recoverableCharges: src(0, 'client_dit:a-1', 'sans provision pour charges récupérables'),
     propertyTax: src(c.tax, 'client_dit:a-1', 'avis de taxe foncière déclaré'),
     vacancyMonths: src(c.vacancy, 'direction:d-1', 'vacance réglée'),
   };
@@ -82,10 +83,10 @@ it('[R10] une entrée manquante rend « incomplet » avec la liste de ce qui man
   const full = inputsOf(CASES[0]!.inputs);
   for (const key of INPUT_KEYS) {
     const r = computeYield({ ...full, [key]: null }, AT);
-    expect(r, key).toEqual({ status: 'incomplet', formulaVersion: 1, missing: [key] });
+    expect(r, key).toEqual({ status: 'incomplet', formulaVersion: 2, missing: [key] });
   }
   const r = computeYield({ ...full, price: null, marketRent: null }, AT);
-  expect(r).toEqual({ status: 'incomplet', formulaVersion: 1, missing: ['price', 'marketRent'] });
+  expect(r).toEqual({ status: 'incomplet', formulaVersion: 2, missing: ['price', 'marketRent'] });
   expect(JSON.stringify(r)).not.toMatch(/Yield/);
 });
 
@@ -201,7 +202,7 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     const r = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), {
       propertyId: 'p-2',
       marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
-      inputs: { acquisitionFeesRateBp: c.acquisitionFeesRateBp, works: c.works, nonRecoverableCharges: c.nonRecoverableCharges, propertyTax: c.propertyTax, vacancyMonths: c.vacancyMonths },
+      inputs: { acquisitionFeesRateBp: c.acquisitionFeesRateBp, works: c.works, nonRecoverableCharges: c.nonRecoverableCharges, recoverableCharges: c.recoverableCharges, propertyTax: c.propertyTax, vacancyMonths: c.vacancyMonths },
     });
     if (!r.ok) throw new Error(r.code);
     // Le même bien 1 qu'à la main : 150 000 €, 45 m², 12,35 €/m² → 389 pb brut, 269 pb net.
@@ -227,4 +228,41 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     const none = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery: { inseeCode: '99009', kind: 'apartment' }, inputs: { ...c, marketRent: null } });
     expect(none.ok && none.value.result).toMatchObject({ status: 'incomplet', missing: ['marketRent'] });
   });
+});
+
+it('[R120] AU099 · la provision pour charges récupérables sort du loyer charges comprises : 800 € dont 100 € de charges → 700 €', () => {
+  const base = inputsOf(CASES[0]!.inputs);
+  const inputs: YieldInputs = {
+    ...base,
+    livingArea: src(4_000, 'bien:p-1', 'surface habitable de la fiche'),
+    marketRent: { ...base.marketRent!, value: { centralM2Cents: 2_000, lowerM2Cents: 1_800, upperM2Cents: 2_200 } },
+    recoverableCharges: src(10_000, 'client_dit:a-1', 'provision déclarée par le vendeur'),
+    vacancyMonths: src(0),
+    nonRecoverableCharges: src(0),
+    propertyTax: src(0),
+  };
+  const r = computeYield(inputs, AT);
+  if (r.status !== 'complet') throw new Error('incomplet');
+  expect(r.formulaVersion).toBe(2);
+  expect(line(r, 'monthlyRentWithCharges')).toBe(80_000);
+  expect(line(r, 'recoverableCharges')).toBe(10_000);
+  expect(line(r, 'monthlyRent')).toBe(70_000);
+  expect(line(r, 'annualRent')).toBe(840_000);
+  // Sans double déduction : le revenu net est le loyer hors charges, rien d'autre ne retire la provision.
+  expect(line(r, 'netIncome')).toBe(840_000);
+  const without = computeYield({ ...inputs, recoverableCharges: src(0) }, AT);
+  if (without.status !== 'complet') throw new Error('incomplet');
+  expect(r.grossYieldBp.central).toBeLessThan(without.grossYieldBp.central);
+  expect(r.netYieldBp.low).toBe(roundDiv((1_800 * 40 - 10_000) * 12 * 10_000, line(r, 'totalCost')!));
+  // Une provision au moins égale au loyer de la borne basse : incomplet sur la provision, jamais un loyer négatif.
+  expect(computeYield({ ...inputs, recoverableCharges: src(72_000) }, AT)).toEqual({ status: 'incomplet', formulaVersion: 2, missing: ['recoverableCharges'] });
+  // Un calcul rangé en version 1, sans provision, se rejoue avec ses formules et donne le même résultat qu'avant.
+  const { recoverableCharges: _gone, ...old } = inputs;
+  const v1 = computeYield(old as unknown as YieldInputs, AT, 1);
+  if (v1.status !== 'complet') throw new Error('incomplet');
+  expect(v1.formulaVersion).toBe(1);
+  expect(line(v1, 'monthlyRent')).toBe(80_000);
+  expect(v1.lines.some((l) => l.key === 'recoverableCharges')).toBe(false);
+  // En version 2, la provision manquante est dite.
+  expect(computeYield(old as unknown as YieldInputs, AT)).toEqual({ status: 'incomplet', formulaVersion: 2, missing: ['recoverableCharges'] });
 });

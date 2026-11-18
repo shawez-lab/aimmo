@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { HonorairesLocation, MisesEnLocation, feeCeilings, feeProblems, type RentalFacts } from '../src/location/index.ts';
+import { FEE_SCALES, HonorairesLocation, MisesEnLocation, feeCeilings, feeProblems, feeScaleOn, type RentalFacts } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -27,17 +27,38 @@ const FACTS: RentalFacts = {
 describe('W02 · plafonds écrits', () => {
   it('[R102] plafonds par zone, au centime, depuis la surface habitable', () => {
     // 42,50 m² : 12 € → 510 €, 10 € → 425 €, 8 € → 340 €, état des lieux 3 € → 127,50 €.
-    expect(feeCeilings(4_250, 'tres_tendue', 65_000, false)).toEqual({ zone: 'tres_tendue', tenantCeilingCents: 51_000, inventoryCeilingCents: 12_750, depositCeilingCents: 65_000 });
-    expect(feeCeilings(4_250, 'tendue', 65_000, false).tenantCeilingCents).toBe(42_500);
-    expect(feeCeilings(4_250, 'autre', 65_000, false).tenantCeilingCents).toBe(34_000);
+    expect(feeCeilings(4_250, 'tres_tendue', 65_000, false, '2025-06-01')).toEqual({ zone: 'tres_tendue', tenantCeilingCents: 51_000, inventoryCeilingCents: 12_750, depositCeilingCents: 65_000 });
+    expect(feeCeilings(4_250, 'tendue', 65_000, false, '2025-06-01').tenantCeilingCents).toBe(42_500);
+    expect(feeCeilings(4_250, 'autre', 65_000, false, '2025-06-01').tenantCeilingCents).toBe(34_000);
     // Une commune sans zone connue prend le plafond le plus bas.
-    expect(feeCeilings(4_250, 'inconnue', 65_000, false).tenantCeilingCents).toBe(34_000);
+    expect(feeCeilings(4_250, 'inconnue', 65_000, false, '2025-06-01').tenantCeilingCents).toBe(34_000);
     // Un meublé : deux mois de loyer hors charges.
-    expect(feeCeilings(4_250, 'autre', 65_000, true).depositCeilingCents).toBe(130_000);
+    expect(feeCeilings(4_250, 'autre', 65_000, true, '2025-06-01').depositCeilingCents).toBe(130_000);
+  });
+
+  it('[R102] AU095 · depuis le 1er janvier 2026, les plafonds de l\'arrêté du 13 novembre 2025', () => {
+    // 50 m² : 12,10 € → 605 €, 10,09 € → 504,50 €, 8,07 € → 403,50 €, état des lieux 3,03 € → 151,50 €.
+    expect(feeCeilings(5_000, 'tres_tendue', 80_000, false, '2026-01-01')).toEqual({ zone: 'tres_tendue', tenantCeilingCents: 60_500, inventoryCeilingCents: 15_150, depositCeilingCents: 80_000 });
+    expect(feeCeilings(5_000, 'tendue', 80_000, false, '2026-11-18').tenantCeilingCents).toBe(50_450);
+    expect(feeCeilings(5_000, 'autre', 80_000, false, '2026-11-18').tenantCeilingCents).toBe(40_350);
+    expect(feeCeilings(5_000, 'inconnue', 80_000, false, '2026-11-18').tenantCeilingCents).toBe(40_350);
+    // La veille, l'ancien millésime : 600 €, 150 €.
+    expect(feeCeilings(5_000, 'tres_tendue', 80_000, false, '2025-12-31')).toMatchObject({ tenantCeilingCents: 60_000, inventoryCeilingCents: 15_000 });
+    // Un honoraire de 504,50 € en zone tendue, refusé hier par l'ancien plafond, passe en 2026.
+    const fees = { tenantCents: 50_450, tenantInventoryCents: 15_150, landlordCents: 60_000, landlordInventoryCents: 16_000, depositCents: 80_000 };
+    expect(feeProblems(fees, feeCeilings(5_000, 'tendue', 80_000, false, '2025-12-31'))).toEqual(['tenant_ceiling', 'inventory_ceiling']);
+    expect(feeProblems(fees, feeCeilings(5_000, 'tendue', 80_000, false, '2026-11-18'))).toEqual([]);
+    // Un plafond au demi-centime est arrondi vers le bas, jamais au-dessus du texte : 63,42 m² × 10,09 € = 639,9078 €.
+    expect(feeCeilings(6_342, 'tendue', 80_000, false, '2026-11-18').tenantCeilingCents).toBe(63_990);
+    expect(feeCeilings(6_342, 'tendue', 80_000, false, '2026-11-18').inventoryCeilingCents).toBe(19_216);
+    // Chaque millésime cite son texte et les dates d'effet se suivent.
+    for (const scale of FEE_SCALES) expect(scale.source.length).toBeGreaterThan(10);
+    expect(FEE_SCALES.map((x) => x.from)).toEqual([...FEE_SCALES.map((x) => x.from)].sort());
+    expect(feeScaleOn('2027-03-01').from).toBe('2026-01-01');
   });
 
   it('[R102] chaque dépassement est nommé, testé à un centime près', () => {
-    const c = feeCeilings(4_250, 'tendue', 65_000, false);
+    const c = feeCeilings(4_250, 'tendue', 65_000, false, '2025-06-01');
     const ok = { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 };
     expect(feeProblems(ok, c)).toEqual([]);
     expect(feeProblems({ ...ok, tenantCents: 42_501, landlordCents: 60_000 }, c)).toEqual(['tenant_ceiling']);
@@ -78,15 +99,16 @@ async function setup() {
   return { db, listings, fees, agent, other, dir, compliance, open, events };
 }
 
+// Baux de 2027 : plafonds de 2026 sur 42,50 m², arrondis vers le bas (10,09 € → 428,82 € ; 8,07 € → 342,97 € ; 3,03 € → 128,77 €) [AU095].
 const OK = { tenantCents: 42_500, tenantInventoryCents: 12_750, landlordCents: 42_500, landlordInventoryCents: 12_750, depositCents: 65_000 };
 
 describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
-  it('[R102] la zone vient de la base, avec sa source et sa date d’effet ; sans zone, 8 € par m²', async () => {
+  it('[R102] la zone vient de la base, avec sa source et sa date d’effet ; sans zone, le plafond le plus bas', async () => {
     const t = await setup();
     const id = await t.open();
-    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', tenantCeilingCents: 34_000 } });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', tenantCeilingCents: 34_297 } });
     expect(await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée pour le test' })).toEqual({ ok: true, value: true });
-    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'tendue', tenantCeilingCents: 42_500 } });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'tendue', tenantCeilingCents: 42_882 } });
     // Une nouvelle date d'effet s'ajoute ; elle ne vaut qu'à partir de sa date (bail du 1er septembre 2027).
     expect((await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tres_tendue', effectiveFrom: '2027-10-01', source: 'Arrêté inventé' })).ok).toBe(true);
     expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'tendue' } });
@@ -118,7 +140,7 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
     expect(await t.fees.setCommune(t.agent, id, '21998')).toEqual({ ok: false, rule: 'R102', code: 'commune_set' });
     // Une commune glissée dans le barème est refusée, jamais lue.
     expect(await t.fees.record(t.agent, id, { ...OK, inseeCode: '75999' } as never)).toEqual({ ok: false, rule: null, code: 'invalid', field: 'inseeCode' });
-    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', inseeCode: '21999', tenantCeilingCents: 34_000 } });
+    expect(await t.fees.ceilings(t.agent, id)).toMatchObject({ ok: true, value: { zone: 'inconnue', inseeCode: '21999', tenantCeilingCents: 34_297 } });
     await expect(t.db.run("UPDATE rental_listing_communes SET insee_code = '75999'")).rejects.toThrow(/ne change plus/);
   });
 
@@ -126,15 +148,15 @@ describeWithSqlite('W02 · honoraires et dépôt de garantie', () => {
     const t = await setup();
     await t.fees.recordZone(t.dir, { inseeCode: '21999', zone: 'tendue', effectiveFrom: '2023-08-26', source: 'Liste officielle inventée' });
     const id = await t.open();
-    expect(await t.fees.record(t.agent, id, { ...OK, tenantCents: 42_501, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'tenant_ceiling' });
-    expect(await t.fees.record(t.agent, id, { ...OK, tenantInventoryCents: 12_751, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'inventory_ceiling' });
+    expect(await t.fees.record(t.agent, id, { ...OK, tenantCents: 42_883, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'tenant_ceiling' });
+    expect(await t.fees.record(t.agent, id, { ...OK, tenantInventoryCents: 12_878, landlordCents: 60_000 })).toEqual({ ok: false, rule: 'R102', code: 'inventory_ceiling' });
     expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 42_499 })).toEqual({ ok: false, rule: 'R102', code: 'over_landlord' });
     expect(await t.fees.record(t.agent, id, { ...OK, landlordCents: 55_250, landlordInventoryCents: 0 })).toEqual({ ok: false, rule: 'R102', code: 'inventory_over_landlord' });
     expect(await t.fees.record(t.agent, id, { ...OK, depositCents: 65_001 })).toEqual({ ok: false, rule: 'R102', code: 'deposit_ceiling' });
     expect(await t.db.all('SELECT 1 FROM rental_fees')).toHaveLength(0);
     expect((await t.events('location.bareme_refuse')).map((e) => JSON.parse(e.data))).toHaveLength(5);
     const r = await t.fees.record(t.agent, id, OK);
-    expect(r).toMatchObject({ ok: true, value: { version: 1, zone: 'tendue', tenantCents: 42_500, tenantCeilingCents: 42_500 } });
+    expect(r).toMatchObject({ ok: true, value: { version: 1, zone: 'tendue', tenantCents: 42_500, tenantCeilingCents: 42_882 } });
     expect(await t.fees.current(t.agent.networkId, id)).toMatchObject({ version: 1, depositCents: 65_000 });
     // Le journal ne garde aucun montant.
     for (const e of await t.db.all<{ data: string }>('SELECT data FROM journal')) expect(e.data).not.toMatch(/42500|65000|12750/);

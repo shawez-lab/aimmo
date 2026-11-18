@@ -112,6 +112,7 @@ async function run(answers: Record<string, Answer> = {}) {
     input('Frais d’acquisition, en % du prix').value = '7,5';
     input('Travaux estimés, en euros').value = '10 000';
     input('Charges non récupérables par an, en euros').value = '600';
+    input('Provision pour charges récupérables par mois, en euros').value = '0';
     input('Taxe foncière par an, en euros').value = '900';
     input('Vacance, en mois par an').value = '1';
     await click(byText('Calculer'));
@@ -148,7 +149,7 @@ describe('Y09 · écran « Investir » de l’application', () => {
       propertyId: 'b1',
       projectId: 'p1',
       marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
-      inputs: { acquisitionFeesRateBp: { value: 750 }, works: { value: 1_000_000 }, nonRecoverableCharges: { value: 60_000 }, propertyTax: { value: 90_000 }, vacancyMonths: { value: 1 } },
+      inputs: { acquisitionFeesRateBp: { value: 750 }, works: { value: 1_000_000 }, nonRecoverableCharges: { value: 60_000 }, recoverableCharges: { value: 0 }, propertyTax: { value: 90_000 }, vacancyMonths: { value: 1 } },
     });
     expect(sent.inputs.marketRent).toBeUndefined();
     expect(sent.inputs.price).toBeUndefined();
