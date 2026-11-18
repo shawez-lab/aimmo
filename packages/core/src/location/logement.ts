@@ -582,7 +582,7 @@ export class MisesEnLocation {
     let stale = false;
     if (c) {
       stale = !(await this.current(row.id, c.facts_version, c.annexes_key));
-      if (!stale && c.check.decision === 'louable' && facts) stale = checkDwelling(facts, await this.latestAnnexes(row.id), this.today()).length > 0;
+      if (!stale && c.check.decision === 'louable' && facts) stale = checkDwelling(facts, await this.latestAnnexes(row.id), this.today(), await this.territoryOfListing(row)).length > 0;
     }
     return { ok: true, value: { check: c?.check ?? null, stale, required } };
   }

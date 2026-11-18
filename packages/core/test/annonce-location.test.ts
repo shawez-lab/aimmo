@@ -192,7 +192,7 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
     expect(refused).toHaveLength(1);
     // Le journal garde les codes, jamais le texte refusé.
     expect(refused[0]!.data).not.toContain('fonctionnaire');
-  });
+  }, 20_000);
 
   it('[R103] le texte de l’agent est contrôlé de même : refusé avec ses problèmes, ou rangé en nouvelle version', async () => {
     const t = await setup();

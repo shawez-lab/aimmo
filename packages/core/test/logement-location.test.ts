@@ -322,6 +322,8 @@ describeWithSqlite('AU098 · un logement ultramarin contrôlé avec son calendri
     await t.annexes(id);
     expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable', reasons: [], bannedFrom: '2028-01-01' } });
     expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    // L'état relu ne dit pas le contrôle périmé : l'écran garde « Préparer l'annonce ».
+    expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { stale: false } });
     const notices = await t.location.notices(t.agent, id);
     expect(notices.ok && notices.value[0]).toMatchObject({ energyClass: 'G', bannedFrom: '2028-01-01' });
   });
