@@ -71,7 +71,7 @@ export const TABLES_RESEAU: readonly string[] = `
   network_news_deliveries new_programs newsletter_editions newsletter_letters newsletter_unsubscribe_tokens
   notary_draft_differences notary_drafts offer_checks offer_co_buyers offer_proposals offer_register offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts offline_ops old_contact_followups old_contact_moments outbound_refs
-  owner_booklets partner_addresses partner_agencies partner_credential_alerts partner_credentials partner_documents
+  owner_booklets partner_addresses partner_agencies partner_credential_alerts partner_credential_mentions partner_credentials partner_documents
   partner_followups partner_optouts partner_prospect_mails partner_prospect_optouts partner_prospects
   partner_recommendation_submissions partner_recommendation_withheld partner_recommendations partner_referrals
   partner_reviews partner_zones partners pending_human_replies person_identifiers person_merges
@@ -103,7 +103,7 @@ export const TABLES_RESEAU: readonly string[] = `
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
   viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photos visit_reports
-  visit_safety visit_shot_skips visit_slip_templates visit_slips visit_tasks visits vitrine_screens
+  visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_templates visit_slips visit_tasks visits vitrine_screens
   voice_assistant_calls voice_assistant_lines voice_notes weekly_points
 `.trim().split(/\s+/);
 
@@ -294,7 +294,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
   appointment_reports appointment_tasks presentation_ratings property_key_partner_returns property_key_partner_loans property_key_returns property_key_loans safety_alerts
   visit_field_notes visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
-  visit_safety visit_slips visit_tasks visits appointments assistance_alerts assistance_requests assistant_keys
+  visit_safety visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_sessions signed_amendments
@@ -362,7 +362,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   network_news_withdrawals network_news newsletter_editions old_contact_followups old_contact_moments
   owner_booklet_links owner_booklets partner_agencies partner_prospect_mails partner_prospect_optouts
   partner_prospects partner_recommendation_submissions partner_recommendation_withheld partner_recommendations
-  partner_addresses partner_credential_alerts partner_credentials partner_optouts partner_zones partners
+  partner_addresses partner_credential_alerts partner_credential_mentions partner_credentials partner_optouts partner_zones partners
   pending_human_replies phase1_app_inventories phase1_day_readings phase1_outside_sends phase_openings
   pige_ad_energy pige_ad_sightings pige_ads pige_no_agency pige_oppositions pilotage_alerts pilotage_settings
   price_cell_sales price_cells price_versions price_zone_retirements price_zones pro_send_log pro_trial_outbox

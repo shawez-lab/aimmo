@@ -69,7 +69,7 @@ async function setup(withSaleFile = true) {
     const id = r.value.partnerId;
     const kinds = { courtier: ['immatriculation_orias'], geometre: ['inscription_ordre'], avocat: ['inscription_ordre'], expert_comptable: ['inscription_ordre'], gestionnaire: ['carte_g'] }[trade] ?? [];
     for (const kind of ['assurance_rcp', ...kinds]) await annuaire.addCredential(dir, id, { kind, number: 'N-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`) });
-    if (domain && domain !== 'mesurage') await annuaire.addCredential(dir, id, { kind: 'certification_diagnostic', domain, number: 'C-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`) });
+    if (domain && domain !== 'mesurage') await annuaire.addCredential(dir, id, { kind: 'certification_diagnostic', domain, number: 'C-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`), auditMention: domain === 'dpe' });
     return id;
   };
   /** Une demande confiée à un partenaire, avec l'accord du client. */
@@ -118,10 +118,15 @@ describeWithSqlite('U05 · pièces des partenaires', () => {
 
   it('[R78] chaque sorte connue est rangée au bon endroit, avec le bon nom de pièce', async () => {
     const t = await setup();
+    // Une demande par métier et domaine : le DPE et l'audit énergétique (AU010b) vont au même diagnostiqueur.
+    const asked = new Map<string, Awaited<ReturnType<typeof t.request>>>();
     for (const [sort, rule] of Object.entries(PIECE_RULES)) {
       const trade = rule.trades[0]!;
       const project = rule.to === 'financing' ? t.buyProject.id : t.project.id;
-      const req = await t.request(trade, trade === 'diagnostiqueur' ? (rule.domain ?? 'amiante') : undefined, true, project);
+      const domain = trade === 'diagnostiqueur' ? (rule.domain ?? 'amiante') : undefined;
+      const key = `${trade}/${domain ?? ''}/${project}`;
+      const req = asked.get(key) ?? (await t.request(trade, domain, true, project));
+      asked.set(key, req);
       const expected =
         rule.to === 'diagnostic'
           ? { destination: 'property', targetId: t.property.id, piece: rule.piece ?? sort }
