@@ -9,6 +9,9 @@
  * preuve garde l'empreinte du document, l'horodatage et la méthode ; un document modifié depuis l'ouverture ne se
  * signe pas, et une modification après la signature est détectée par son empreinte.
  *
+ * Un mandat à plusieurs mandants (couple, indivision, AU001) : chacun signe dans sa propre session, avec son propre code
+ * envoyé à sa propre adresse ; le document n'est signé que quand tous l'ont signé dans sa même version (`allSigned`).
+ *
  * Tant que l'avocat n'a pas validé le dossier de preuve (H24), une signature en ligne ne rend jamais un mandat signé
  * réel : elle n'inscrit rien au registre et ne range aucun mandat. Le résultat le dit (`realSignature: false`).
  */
@@ -24,7 +27,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
-import { ControlesSignature, type SignatureCheck } from './controles.ts';
+import { ControlesSignature, documentMandants, type SignatureCheck } from './controles.ts';
 import { sha256 } from './modeles.ts';
 
 export const CODE_TTL_MINUTES = 10;
@@ -44,13 +47,23 @@ export interface SignatureProof {
   drawingHash: string | null;
   mode: 'essai';
   realSignature: false;
+  /** Tous les mandants ont-ils signé cette version du document ? Sinon, le document n'est pas signé. */
+  allSigned: boolean;
+}
+
+/** Où en est la signature en ligne d'un document : chaque mandant, dans l'ordre du document. */
+export interface SignatureProgress {
+  documentId: string;
+  signers: { personId: string; signed: boolean }[];
+  allSigned: boolean;
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
+  | { ok: false; rule: 'R41'; code: 'mandants_merged' }
   | { ok: false; rule: string | null; code: 'send_refused' }
-  | { ok: false; rule: null; code: 'bad_consent' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
+  | { ok: false; rule: null; code: 'bad_consent' | 'bad_signer' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
 
 /** Un code de 6 chiffres, tiré au hasard sans biais. */
 function newCode(): string {
@@ -81,6 +94,7 @@ interface SessionRow {
   status: 'ouverte' | 'signee' | 'bloquee';
   signed_at: string | null;
   proof: string | null;
+  signer_person_id: string | null;
 }
 
 export class SignatureEnLigne {
@@ -119,7 +133,7 @@ export class SignatureEnLigne {
   }
 
   /** Ouvre une session de signature pour un document contrôlé et envoie le code au signataire. */
-  async start(viewer: Viewer, documentId: string, input: { consentProof: string }): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: 'essai' } } | Refusal | Problem> {
+  async start(viewer: Viewer, documentId: string, input: { consentProof: string; signerId?: string }): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: 'essai' } } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'role' } }, this.now);
       return { ok: false, rule: 'R16', code: 'role' };
@@ -129,21 +143,28 @@ export class SignatureEnLigne {
     if (!checked.ok) return checked as Refusal | Problem;
     if (!checked.value.passed) return { ok: false, rule: 'R41', code: 'checks_failed', check: checked.value };
     const doc = (await this.db.first<{ person_id: string; content: string; agent_id: string }>('SELECT person_id, content, agent_id FROM documents WHERE id = ?', [documentId]))!;
+    // Le signataire : un mandant du document, le premier par défaut ; jamais une autre fiche (AU001).
+    const signer = await this.signerOf(documentId, doc.person_id, input.signerId);
+    if (!signer) return { ok: false, rule: null, code: 'bad_signer' };
+    // L'accord, le code et l'exemplaire touchent la fiche du signataire : qui présente la signature la voit en entier [R16].
+    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    const contentHash = await sha256(doc.content);
+    if (await this.signedBy(documentId, doc.person_id, signer, contentHash)) return { ok: false, rule: null, code: 'already_signed' };
     // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
-    const consent = await this.fiche.hasConsentInForce(doc.person_id, ONLINE_SIGNATURE_PURPOSE, 'email');
-    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: doc.person_id, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
+    const consent = await this.fiche.hasConsentInForce(signer, ONLINE_SIGNATURE_PURPOSE, 'email');
+    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: signer, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
     await this.db.run(
-      `INSERT INTO signature_sessions (id, network_id, document_id, content_hash, code_hash, expires_at, attempts, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?)`,
-      [id, viewer.networkId, documentId, await sha256(doc.content), await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString()],
+      `INSERT INTO signature_sessions (id, network_id, document_id, content_hash, code_hash, expires_at, attempts, status, created_by, created_at, signer_person_id) VALUES (?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?, ?)`,
+      [id, viewer.networkId, documentId, contentHash, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString(), signer],
     );
-    const hello = await this.greeting(doc.person_id);
+    const hello = await this.greeting(signer);
     const sent = await this.envois.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
-      personId: doc.person_id,
+      personId: signer,
       channel: 'email',
       kind: 'alert',
       purpose: ONLINE_SIGNATURE_PURPOSE,
@@ -176,6 +197,11 @@ export class SignatureEnLigne {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
+    // Chaque mandant aussi : une fiche confiée depuis à un autre agent arrête la signature, dont le résultat dit l'état de
+    // tous [R16].
+    for (const personId of await documentMandants(this.db, session.document_id, doc.person_id)) {
+      if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
     if (session.status === 'signee') return { ok: false, rule: null, code: 'already_signed' };
     if (session.status === 'bloquee') return { ok: false, rule: null, code: 'blocked' };
     if (this.now().getTime() > Date.parse(session.expires_at)) return { ok: false, rule: null, code: 'expired' };
@@ -197,10 +223,12 @@ export class SignatureEnLigne {
     // Le document n'a pas changé depuis l'ouverture de la session.
     const contentHash = await sha256(doc.content);
     if (contentHash !== session.content_hash) return { ok: false, rule: null, code: 'document_changed' };
+    // Deux mandants réunis depuis l'ouverture ne sont plus deux personnes : aucune signature n'est reçue [R41].
+    if (!(await this.distinctMandants(session.document_id, doc.person_id))) return { ok: false, rule: 'R41', code: 'mandants_merged' };
 
     const signedAt = this.now().toISOString();
     const drawingHash = input.drawing ? await sha256(input.drawing) : null;
-    const proof: SignatureProof = { documentId: session.document_id, contentHash, signedAt, method: drawingHash ? 'code_et_trace' : 'code', drawingHash, mode: 'essai', realSignature: false };
+    const proof = { documentId: session.document_id, contentHash, signedAt, method: drawingHash ? 'code_et_trace' : 'code', drawingHash, mode: 'essai', realSignature: false } as const;
     // L'exemplaire : le document signé, suivi de sa preuve, gardé avec la session pour être relu et envoyé.
     const copy = `${doc.content}\n<!-- Signature en ligne d'essai : session ${sessionId}, empreinte ${contentHash}, ${signedAt}, ${proof.method} -->\n`;
     const { changes } = await this.db.run(
@@ -209,10 +237,12 @@ export class SignatureEnLigne {
     );
     // Le code vient de servir à une autre demande : il ne sert qu'une fois.
     if (changes !== 1) return { ok: false, rule: null, code: 'already_signed' };
-    await appendEvent(this.journal, { type: 'signature.essai', actor: this.actor(viewer), subject: `document:${session.document_id}`, data: { session: sessionId, method: proof.method, realSignature: false } }, this.now);
+    // Le document n'est signé que quand chaque mandant a signé cette même version (AU001).
+    const allSigned = (await this.progressOf(session.document_id, doc.person_id, contentHash)).allSigned;
+    await appendEvent(this.journal, { type: 'signature.essai', actor: this.actor(viewer), subject: `document:${session.document_id}`, data: { session: sessionId, method: proof.method, realSignature: false, allSigned } }, this.now);
     // Le signataire reçoit son exemplaire, par le contrôle central ; refusé pour l'heure, il est repris plus tard.
     const copySent = await this.sendCopy(viewer, sessionId);
-    return { ok: true, value: { ...proof, copySent } };
+    return { ok: true, value: { ...proof, allSigned, copySent } };
   }
 
   /**
@@ -228,11 +258,13 @@ export class SignatureEnLigne {
     // Seul celui qui voit la fiche en entier, agent ou direction, demande l'envoi [R16].
     const read = await this.acces.readFiche(viewer, doc.person_id);
     if (!read.ok || read.view !== 'full' || (viewer.role !== 'agent' && viewer.role !== 'direction')) return false;
-    const hello = await this.greeting(doc.person_id);
+    const signer = session.signer_person_id ?? doc.person_id;
+    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `signature:${sessionId}`))) return false;
+    const hello = await this.greeting(signer);
     const result = await this.envois.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
-      personId: doc.person_id,
+      personId: signer,
       channel: 'email',
       kind: 'alert',
       purpose: ONLINE_SIGNATURE_PURPOSE,
@@ -254,11 +286,76 @@ export class SignatureEnLigne {
     const doc = (await this.db.first<{ person_id: string }>('SELECT person_id FROM documents WHERE id = ?', [session.document_id]))!;
     const read = await this.acces.readFiche(viewer, doc.person_id);
     if (!read.ok) return read;
-    if (read.view !== 'full') {
+    // L'exemplaire nomme chaque mandant : chacune de leurs fiches est vue en entier (AU001).
+    let others = true;
+    for (const personId of (await documentMandants(this.db, session.document_id, doc.person_id)).slice(1)) {
+      if (!(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) others = false;
+    }
+    if (read.view !== 'full' || !others) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `signature:${sessionId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     return { ok: true, content: session.copy_content, sent: session.copy_status === 'envoye' };
+  }
+
+  /**
+   * Où en est la signature en ligne d'un document : chaque mandant, et s'il a signé sa version actuelle. Qui voit la
+   * fiche du document en entier, agent ou direction [R16].
+   */
+  async progress(viewer: Viewer, documentId: string): Promise<{ ok: true; value: SignatureProgress } | Refusal | { ok: false; rule: null; code: 'unknown_document' }> {
+    const doc = await this.db.first<{ network_id: string; person_id: string; content: string }>('SELECT network_id, person_id, content FROM documents WHERE id = ?', [documentId]);
+    if (!doc || doc.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_document' };
+    const read = await this.acces.readFiche(viewer, doc.person_id);
+    if (!read.ok) return read;
+    if (read.view !== 'full' || (viewer.role !== 'agent' && viewer.role !== 'direction')) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    // Chaque signataire est une fiche : son état n'est rendu qu'à qui les voit toutes en entier [R16].
+    for (const personId of await documentMandants(this.db, documentId, doc.person_id)) {
+      if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    }
+    return { ok: true, value: { documentId, ...(await this.progressOf(documentId, doc.person_id, await sha256(doc.content))) } };
+  }
+
+  private async progressOf(documentId: string, firstPersonId: string, contentHash: string): Promise<{ signers: { personId: string; signed: boolean }[]; allSigned: boolean }> {
+    const signers: { personId: string; signed: boolean }[] = [];
+    for (const personId of await documentMandants(this.db, documentId, firstPersonId)) {
+      signers.push({ personId, signed: await this.signedBy(documentId, firstPersonId, personId, contentHash) });
+    }
+    // Des mandants réunis depuis la génération : le document ne peut plus être signé par tous [R41].
+    return { signers, allSigned: signers.every((s) => s.signed) && (await this.distinctMandants(documentId, firstPersonId)) };
+  }
+
+  /** Chaque mandant du document est-il encore une fiche à part ? */
+  private async distinctMandants(documentId: string, firstPersonId: string): Promise<boolean> {
+    const ids = await documentMandants(this.db, documentId, firstPersonId);
+    const roots = new Set(await Promise.all(ids.map((id) => this.fiche.rootOf(id))));
+    return roots.size === ids.length;
+  }
+
+  /** Le viewer voit-il cette fiche en entier, agent ou direction ? Sinon le refus va au journal [R16]. */
+  private async seesInFull(viewer: Viewer, personId: string, subject: string): Promise<boolean> {
+    const read = await this.acces.readFiche(viewer, personId);
+    if (read.ok && read.view === 'full' && (viewer.role === 'agent' || viewer.role === 'direction')) return true;
+    if (read.ok) await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'not_assigned' } }, this.now);
+    return false;
+  }
+
+  /** Le mandant qui signe : celui demandé s'il en est un, le premier sinon ; null pour toute autre fiche. */
+  private async signerOf(documentId: string, firstPersonId: string, signerId: string | undefined): Promise<string | null> {
+    if (signerId === undefined) return firstPersonId;
+    if (typeof signerId !== 'string') return null;
+    return (await documentMandants(this.db, documentId, firstPersonId)).includes(signerId) ? signerId : null;
+  }
+
+  /** Ce mandant a-t-il signé cette version du document ? Une session d'avant AU001 est celle du premier mandant. */
+  private async signedBy(documentId: string, firstPersonId: string, personId: string, contentHash: string): Promise<boolean> {
+    const row = await this.db.first(
+      `SELECT id FROM signature_sessions WHERE document_id = ? AND status = 'signee' AND content_hash = ? AND COALESCE(signer_person_id, ?) = ? LIMIT 1`,
+      [documentId, contentHash, firstPersonId, personId],
+    );
+    return row !== null;
   }
 
   /** Le premier message s'adresse à la personne par son prénom [R08]. */

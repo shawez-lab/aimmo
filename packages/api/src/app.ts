@@ -29,6 +29,7 @@ import {
   ChronologieMandat,
   ControlesSignature,
   SignatureEnLigne,
+  MAX_CO_MANDANTS,
   SignatureAvenant,
   EcheancesMandats,
   Diffusion,
@@ -685,14 +686,16 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId sont admis.');
-      const { kind, personId, propertyId, inputs, mandateId } = body;
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds sont admis.');
+      const { kind, personId, propertyId, inputs, mandateId, coMandantIds } = body;
+      // Les autres mandants (couple, indivision) : une liste d'identifiants de fiches (AU001).
+      if (coMandantIds !== undefined && (!Array.isArray(coMandantIds) || coMandantIds.length > MAX_CO_MANDANTS || coMandantIds.some((c) => typeof c !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(c)))) return failure(400, 'invalid_ids', 'coMandantIds : une liste d’identifiants.');
       if (mandateId !== undefined && (typeof mandateId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(mandateId))) return failure(400, 'invalid_ids', 'mandateId mal formé.');
       if (typeof personId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(personId) || typeof propertyId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(propertyId)) {
         return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
       }
       if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
-      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}) });
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
@@ -886,11 +889,28 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, [id], request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => k !== 'consentProof')) return failure(400, 'unexpected_field', 'Seul consentProof est admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).start(viewer, id!, { consentProof: typeof body.consentProof === 'string' ? body.consentProof : '' });
+      if (Object.keys(body).some((k) => k !== 'consentProof' && k !== 'signerId')) return failure(400, 'unexpected_field', 'Seuls consentProof et signerId sont admis.');
+      // Le mandant qui signe, pour un mandat à plusieurs mandants ; le premier par défaut (AU001).
+      if (body.signerId !== undefined && (typeof body.signerId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.signerId))) return failure(400, 'invalid_ids', 'signerId mal formé.');
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).start(viewer, id!, {
+        consentProof: typeof body.consentProof === 'string' ? body.consentProof : '',
+        ...(typeof body.signerId === 'string' ? { signerId: body.signerId } : {}),
+      });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
       return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
+    name: 'document.signature_en_ligne_etat',
+    // Où en est la signature en ligne : chaque mandant, et s'il a signé la version actuelle ; le document n'est signé
+    // que quand tous l'ont signé (AU001) [R16, R41].
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).progress(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
     },
   },
   {

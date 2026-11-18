@@ -97,6 +97,11 @@ export type AccessMapEntry =
       secrets?: readonly string[];
       /** Des colonnes qui mêlent les données d'une autre personne (un document à deux parties) : jamais montrées, leur empreinte reste. */
       shared?: readonly string[];
+      /**
+       * Les colonnes `shared` ne le sont que pour les lignes dont `key` figure dans `from.column` : un mandat n'est à deux
+       * parties que s'il a un autre mandant (AU001). Sans cela, toute ligne de la table est partagée.
+       */
+      sharedIf?: { key: string; from: string; column: string };
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
       /**
        * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
@@ -114,6 +119,8 @@ export type AccessMapEntry =
 const by = (...columns: string[]): DirectLocator[] => columns.map((column) => ({ column }));
 const via = (column: string, from: string, key = 'id', extra: Partial<ViaLocator> = {}): ViaLocator => ({ column, from, key, ...extra });
 const out = (excluded: ExclusionReason, why: string): AccessMapEntry => ({ excluded, why });
+/** Un document qui a d'autres mandants (AU001). */
+const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id' });
 
 /** Le traitement dont le droit d'accès s'exerce auprès de la CNIL. */
 export const LCB_FT_TRAITEMENT = 'conformite-lcb-ft';
@@ -508,7 +515,11 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates')] },
+  // Un mandat qui nomme plusieurs mandants (AU001) est, comme un bail, à plusieurs parties : la fiche de l'autre et le texte
+  // qui les nomme tous ne sont jamais montrés, leur empreinte reste ; un mandat à un seul mandant est montré entier [R96].
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
+  // AU001 : un autre mandant d'un mandat, par sa fiche.
+  document_co_mandants: { locate: [...by('person_id')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
@@ -517,7 +528,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_price_gap_settings: out('sans_client', 'Écart de prix toléré, réglé par la direction.'),
   mandate_questionnaires: { locate: [...by('person_id'), via('document_id', 'documents')] },
   mandate_questionnaire_gap_acks: { locate: [via('questionnaire_id', 'mandate_questionnaires')] },
-  signed_documents: { locate: [via('document_id', 'documents')] },
+  signed_documents: { locate: [via('document_id', 'documents')], shared: ['copy_content'], sharedIf: CO_MANDANTS('document_id') },
   mandate_early_starts: { locate: [via('mandate_id', 'mandates')] },
   risk_statements: { locate: [via('file_id', 'sale_files')] },
   coownership_summaries: { locate: [via('file_id', 'sale_files')] },
@@ -533,8 +544,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   signature_circuit_events: { locate: [...by('person_id'), via('file_id', 'sale_files')] },
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
-  signed_amendments: { locate: [via('document_id', 'documents')] },
-  signature_sessions: { locate: [via('document_id', 'documents')], secrets: ['code_hash'] },
+  signed_amendments: { locate: [via('document_id', 'documents')], shared: ['copy_content'], sharedIf: CO_MANDANTS('document_id') },
+  // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
+  // fiche ne sont jamais montrés [R96].
+  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash', 'copy_content'], sharedIf: CO_MANDANTS('document_id'), foreignPersons: ['signer_person_id'] },
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },
@@ -1115,7 +1128,7 @@ export function checkAccessMap(schema: Schema, registre: readonly Traitement[], 
         }
       }
     }
-    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.shared ?? []), ...(entry.skip ? [entry.skip.column, ...(entry.skip.marked ? [entry.skip.marked] : [])] : [])]) named.add(c);
+    for (const c of [...Object.keys(entry.own ?? {}), ...Object.values(entry.own ?? {}).flat(), ...(entry.secrets ?? []), ...(entry.shared ?? []), ...(entry.sharedIf ? [entry.sharedIf.key] : []), ...(entry.skip ? [entry.skip.column, ...(entry.skip.marked ? [entry.skip.marked] : [])] : [])]) named.add(c);
     for (const c of named) if (!columns.includes(c)) gaps.push({ kind: 'colonne_inconnue', table, column: c });
     // Chaque colonne qui désigne une personne est suivie : sinon la réponse oublierait des lignes, ou montrerait celles d'un autre.
     const followed = new Set(entry.locate.filter(isDirect).map((l) => l.column));
