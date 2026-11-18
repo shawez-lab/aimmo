@@ -86,7 +86,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H24).
 
 ### AU004 · Je dois garder mon ancien logiciel pour publier sur les portails
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A004 (bloquant), endroit : docs/PORTAILS.md, P07, H10.
 - Constat de l'audit : Je dois garder mon ancien logiciel pour publier sur les portails : AIMMO ne fournit que ses formats XML d’essai.
