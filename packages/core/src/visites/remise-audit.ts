@@ -13,8 +13,8 @@
  * - l'audit du bien est le plus récent déposé à la fiche du bien par un partenaire (U05) ou rangé à un dossier de vente
  *   du bien ; il vaut 5 ans, comme à l'acte (`DEFAULT_VALIDITY_MONTHS`) ; un audit daté après la visite n'existait pas ;
  * - une remise déjà rangée pour le même visiteur (fiches réunies comprises) et le même bien suffit : c'est la première
- *   visite qui compte, tant que l'audit du bien vaut le jour de la visite et qu'il n'a pas été refait depuis la remise
- *   (un nouvel audit se remet de nouveau). Une remise se range même quand la classe est inconnue (une remise de trop ne nuit pas), jamais
+ *   visite qui compte, tant que l'audit remis (sa référence) est celui du bien et qu'il vaut le jour de la visite (un
+ *   nouvel audit se remet de nouveau). Une classe inconnue se dit toujours à l'agent, même après une remise. Une remise se range même quand la classe est inconnue (une remise de trop ne nuit pas), jamais
  *   pour un bien qui n'y est pas soumis, ni datée dans le futur ou plus de 30 jours avant la visite ;
  * - l'agent de la visite ou la direction, qui voient la fiche du visiteur en entier [R16].
  */
@@ -143,28 +143,32 @@ export class RemiseAudit {
     const sheet = row ? (JSON.parse(row.data) as PropertySheet) : null;
     const c = energyAuditCase(prop!.kind, sheet, year);
     // L'audit le plus récent du bien, à la date de la visite : déposé à sa fiche (U05) ou rangé à un de ses dossiers.
-    const docs = await this.db.all<{ issued_on: string }>(
-      `SELECT issued_on FROM partner_documents WHERE destination = 'property' AND target_id = ? AND piece = 'audit_energetique' AND issued_on <= ?
-       UNION ALL SELECT p.issued_on FROM sale_file_pieces p JOIN sale_files f ON f.id = p.file_id WHERE f.property_id = ? AND p.piece = 'audit_energetique' AND p.issued_on <= ?`,
+    const docs = await this.db.all<{ issued_on: string; ref: string; at: string }>(
+      `SELECT issued_on, ref, deposited_at AS at FROM partner_documents WHERE destination = 'property' AND target_id = ? AND piece = 'audit_energetique' AND issued_on <= ?
+       UNION ALL SELECT p.issued_on, p.ref, p.received_at AS at FROM sale_file_pieces p JOIN sale_files f ON f.id = p.file_id WHERE f.property_id = ? AND p.piece = 'audit_energetique' AND p.issued_on <= ?`,
       [visit.property_id, visitDay, visit.property_id, visitDay],
     );
-    const latest = docs.map((d) => d.issued_on).sort().at(-1) ?? null;
-    const until = latest ? validUntil(latest, DEFAULT_VALIDITY_MONTHS.audit_energetique!) : null;
-    const audit = latest && until ? { issuedOn: latest, validUntil: until, valid: visitDay <= until } : null;
+    // Le plus récent par sa date, puis par son rangement : un audit refait le même jour l'emporte.
+    const latest = [...docs].sort((a, b) => (a.issued_on === b.issued_on ? (a.at < b.at ? -1 : a.at > b.at ? 1 : 0) : a.issued_on < b.issued_on ? -1 : 1)).at(-1) ?? null;
+    const until = latest ? validUntil(latest.issued_on, DEFAULT_VALIDITY_MONTHS.audit_energetique!) : null;
+    const audit = latest && until ? { issuedOn: latest.issued_on, validUntil: until, valid: visitDay <= until } : null;
     const ids = members.length > 0 ? members : [visit.person_id];
-    const h = await this.db.first<{ appointment_id: string; handed_on: string; means: HandoverMeans }>(
-      `SELECT appointment_id, handed_on, means FROM visit_energy_audit_handovers WHERE property_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND handed_on >= ? ORDER BY handed_on, recorded_at LIMIT 1`,
-      [visit.property_id, ...ids, latest ?? '0000-00-00'],
-    );
+    // Une remise ne vaut que pour le document remis : un audit remplacé depuis se remet de nouveau (relecture de Codex).
+    const h = latest
+      ? await this.db.first<{ appointment_id: string; handed_on: string; means: HandoverMeans }>(
+          `SELECT appointment_id, handed_on, means FROM visit_energy_audit_handovers WHERE property_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND audit_ref = ? ORDER BY handed_on, recorded_at LIMIT 1`,
+          [visit.property_id, ...ids, latest.ref],
+        )
+      : null;
     const handover = h ? { appointmentId: h.appointment_id, handedOn: h.handed_on, means: h.means } : null;
     const energyClass = c.case === 'requis' ? c.energyClass : null;
     let action: AuditAction;
-    // Une remise passée ne vaut que si l'audit vaut encore le jour de cette visite (relecture de Codex) : périmé, il en faut
-    // un nouveau, à remettre de nouveau.
+    // Une classe inconnue se dit toujours ; une remise passée ne vaut que si l'audit remis est celui du bien et qu'il vaut
+    // encore le jour de cette visite (relecture de Codex) : périmé, il en faut un nouveau, à remettre de nouveau.
     if (c.case === 'non_requis') action = 'aucune';
-    else if (c.case === 'requis' && !audit?.valid) action = 'faire_faire';
-    else if (handover) action = 'deja_remis';
     else if (c.case === 'inconnu') action = 'preciser_classe';
+    else if (!audit?.valid) action = 'faire_faire';
+    else if (handover) action = 'deja_remis';
     else action = 'remettre';
     const notice = { appointmentId: visit.appointment_id, visitDay, case: c.case, energyClass, audit, handover, action };
     return { ...notice, message: messageFor(notice) };
@@ -208,8 +212,8 @@ export class RemiseAudit {
     if (input.handedOn < earliest) return { ok: false, rule: 'R10', code: 'date_too_early' };
     if (before.case === 'non_requis') return { ok: false, rule: 'R60', code: 'not_required' };
     const ref = await this.db.first<{ ref: string }>(
-      `SELECT ref FROM (SELECT ref, issued_on FROM partner_documents WHERE destination = 'property' AND target_id = ? AND piece = 'audit_energetique' AND issued_on <= ?
-       UNION ALL SELECT p.ref, p.issued_on FROM sale_file_pieces p JOIN sale_files f ON f.id = p.file_id WHERE f.property_id = ? AND p.piece = 'audit_energetique' AND p.issued_on <= ?) ORDER BY issued_on DESC LIMIT 1`,
+      `SELECT ref FROM (SELECT ref, issued_on, deposited_at AS at FROM partner_documents WHERE destination = 'property' AND target_id = ? AND piece = 'audit_energetique' AND issued_on <= ?
+       UNION ALL SELECT p.ref, p.issued_on, p.received_at AS at FROM sale_file_pieces p JOIN sale_files f ON f.id = p.file_id WHERE f.property_id = ? AND p.piece = 'audit_energetique' AND p.issued_on <= ?) ORDER BY issued_on DESC, at DESC LIMIT 1`,
       [visit.property_id, input.handedOn, visit.property_id, input.handedOn],
     );
     const { changes } = await this.db.run(

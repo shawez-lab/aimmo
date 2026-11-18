@@ -143,6 +143,8 @@ describeWithSqlite('AU010b · audit énergétique remis dès la première visite
     expect(v.energyAudit.message).toContain('Classe énergie du bien inconnue');
     const ancien = await t.property('home', sheetWith('B', { isCoownership: false }, '2020-03-01'));
     expect((await t.visit(ancien.id, b.project.id, new Date(WEDNESDAY_10H.getTime() + 2 * 3_600_000))).energyAudit.action).toBe('preciser_classe');
+    // Une remise rangée ne fait pas taire la classe inconnue (relecture de Codex).
+    expect(await t.remise.recordHandover(t.as('agent', t.alex.id), v.appointment.id, { handedOn: '2026-12-08', means: 'papier' })).toMatchObject({ ok: true, value: { action: 'preciser_classe' } });
     const sansFiche = await t.property('home', null);
     expect((await t.visit(sansFiche.id, b.project.id, new Date(WEDNESDAY_10H.getTime() + 4 * 3_600_000))).energyAudit.case).toBe('inconnu');
   });
@@ -230,6 +232,9 @@ describeWithSqlite('AU010b · audit énergétique remis dès la première visite
     expect((await t.visit(p.id, b.project.id, new Date(WEDNESDAY_10H.getTime() + 2 * 3_600_000))).energyAudit.action).toBe('deja_remis');
     const autre = await t.buyer('Hugo');
     expect((await t.visit(p.id, autre.project.id, new Date(WEDNESDAY_10H.getTime() + 4 * 3_600_000))).energyAudit.action).toBe('remettre');
+    // Un audit refait, daté d'avant la remise mais rangé après, se remet de nouveau : la remise vaut pour le document remis.
+    expect(await t.depositAudit(partner, referral, '2026-12-07')).toMatchObject({ ok: true, value: { destination: 'property' } });
+    expect(await t.remise.notice(agent, v.appointment.id)).toMatchObject({ ok: true, value: { action: 'remettre', handover: null } });
     // Au journal : la date et le moyen, sans nom ni document [R13].
     const events = await t.journal.all();
     const ev = events.find((e) => e.type === 'visite.audit_remis');
