@@ -15,6 +15,16 @@ export const LIVE_MANDATES = `
                 AND NOT EXISTS (SELECT 1 FROM mandate_register c WHERE c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq))
     AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
 
+/**
+ * Chaque mandant des mandats vivants, une ligne par mandat et par mandant : le premier (`mandates.person_id`), puis les
+ * autres mandants nommés par le document signé (AU001, `document_co_mandants`). Deux paramètres : le réseau, deux fois.
+ */
+export const LIVE_MANDATE_MANDANTS = `
+  SELECT l.id, l.property_id, l.person_id, l.signed_at FROM (${LIVE_MANDATES}) l
+  UNION
+  SELECT l.id, l.property_id, c.person_id, l.signed_at FROM (${LIVE_MANDATES}) l
+  JOIN signed_documents s ON s.mandate_id = l.id JOIN document_co_mandants c ON c.document_id = s.document_id`;
+
 /** Les titres des documents rangés par M06 que l'espace sait nommer ; les autres sont « Document ». */
 export const DOCUMENT_TITLES: Record<string, string> = {
   mandat_vente_simple: 'Mandat de vente simple',

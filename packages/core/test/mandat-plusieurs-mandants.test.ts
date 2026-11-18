@@ -332,9 +332,10 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     const own = await t.generate(lea);
     if (!own.ok) throw new Error(own.code);
     const at = new Date(T0 + 86_400_000).toISOString();
+    const end = new Date(T0 + 90_000_000).toISOString();
     await t.db.run(
       `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES ('rdv-lea', ?, ?, ?, ?, 'estimation', ?, ?, 'booked', 'h-rdv-lea', 'agent', NULL, ?, ?)`,
-      [t.network.id, t.alex.id, lea, t.property.id, at, at, at, at],
+      [t.network.id, t.alex.id, lea, t.property.id, at, end, at, at],
     );
     const parties = new SqlClientParties(t.db);
     const espace = new EspaceVendeur(new SqlSourcesVendeur(t.db, t.acces, t.journal, { now: t.now }), t.journal, { now: t.now });

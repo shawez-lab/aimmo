@@ -253,7 +253,7 @@ function sellerHtml(biens: Extract<Awaited<ReturnType<EspaceVendeur['vue']>>, { 
       (b) => `<section><h2>${escape(b.reference)} · ${escape(b.city)}</h2>${keys ? `<p><a href="${ESPACE_PATH}cles?bien=${encodeURIComponent(b.propertyId)}">Qui a les clés de ce bien</a></p>` : ''}<dl>${row('Statut', shown(b.status))}${row('Prix du mandat', shown(b.price, true))}${row('Acte au plus tôt', shown(b.deed.date))}${row('Ce qui le retient', shown(b.deed.holds))}</dl>
 ${list('Visites', b.visits.map((v) => `<li>${shown(v.at)} · ${shown(v.state)}<br>${shown(v.report)}</li>`), 'Aucune visite pour l’instant.')}
 ${list('Offres', b.offers.map((o) => `<li>${shown(o.amount, true)} · net vendeur ${shown(o.netSeller, true)} · ${shown(o.state)}<br>Conditions : ${shown(o.conditions)} · valable jusqu’au ${shown(o.validUntil)}</li>`), 'Aucune offre pour l’instant.')}
-${list('Documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.signature)}</li>`), 'Aucun document.')}
+${list('Documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.signature)}${d.number.value === null ? '' : ` · n° ${shown(d.number)}`}</li>`), 'Aucun document.')}
 ${list('Rendez-vous', b.appointments.map((a) => `<li>${escape(a.kind)} · ${shown(a.at)} · ${shown(a.state)}</li>`), 'Aucun rendez-vous.')}
 ${list('Points de la semaine', b.weeklyPoints.map((w) => `<li>${shown(w.weekOf)}<br>${shown(w.text)}</li>`), 'Aucun point pour l’instant.')}</section>`,
     )
