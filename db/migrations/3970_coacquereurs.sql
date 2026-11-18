@@ -32,3 +32,22 @@ CREATE TABLE IF NOT EXISTS offer_co_buyers (
 CREATE INDEX IF NOT EXISTS offer_co_buyers_person ON offer_co_buyers (network_id, person_id);
 CREATE TRIGGER IF NOT EXISTS offer_co_buyers_fige BEFORE UPDATE ON offer_co_buyers BEGIN SELECT RAISE(ABORT, 'offer_co_buyers : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS offer_co_buyers_sans_effacement BEFORE DELETE ON offer_co_buyers BEGIN SELECT RAISE(ABORT, 'offer_co_buyers : rien ne s''efface'); END;
+
+-- La garde du bon de la visite à distance (RC25), pour chaque coacquéreur comme pour l'acquéreur en tête : écrite dans
+-- le même lot que l'offre, la ligne du coacquéreur refuse l'offre entière tant que son bon n'est pas signé [R505].
+CREATE TRIGGER IF NOT EXISTS offer_co_buyers_bon_distance_signe
+BEFORE INSERT ON offer_co_buyers
+WHEN EXISTS (
+  SELECT 1 FROM remote_visits rv
+   WHERE rv.property_id = (SELECT o.property_id FROM offer_register o WHERE o.id = NEW.offer_id)
+     AND NOT EXISTS (SELECT 1 FROM remote_slip_signatures s WHERE s.appointment_id = rv.appointment_id AND s.status = 'signee')
+     AND EXISTS (
+       WITH RECURSIVE
+         acheteur(id) AS (SELECT NEW.person_id UNION SELECT pm.survivor_id FROM person_merges pm JOIN acheteur ON pm.merged_id = acheteur.id WHERE pm.undone_at IS NULL),
+         visiteur(id) AS (SELECT rv.person_id UNION SELECT pm.survivor_id FROM person_merges pm JOIN visiteur ON pm.merged_id = visiteur.id WHERE pm.undone_at IS NULL)
+       SELECT 1 FROM acheteur JOIN visiteur ON acheteur.id = visiteur.id
+     )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'offre refusée : bon de la visite à distance non signé');
+END;

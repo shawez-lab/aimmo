@@ -401,8 +401,10 @@ export class RegistreOffres {
         if (/UNIQUE|ajout seul/i.test(String(error))) continue;
         // Une visite à distance finie entre la lecture et l'écriture : la base a refusé, le refus est dit en mots [R505].
         if (REMOTE_SLIP_TRIGGER.test(String(error))) {
-          const late = await remoteSlipMissing(this.db, g.networkId, propertyId, buyer.value.person.id);
-          if (late !== null) return this.slipMissing(viewer, propertyId, late);
+          for (const who of [buyer.value.person.id, ...coBuyers]) {
+            const late = await remoteSlipMissing(this.db, g.networkId, propertyId, who);
+            if (late !== null) return this.slipMissing(viewer, propertyId, late);
+          }
         }
         throw error;
       }
