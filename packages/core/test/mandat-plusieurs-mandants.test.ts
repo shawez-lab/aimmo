@@ -213,6 +213,55 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages')).toEqual(before);
   });
 
+  it('[R41] deux mandants réunis après l’ouverture des sessions : aucune signature reçue, jamais « tous signé »', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    await t.identify(lea);
+    await t.identify(noe);
+    const d = await t.generate(lea, [noe]);
+    if (!d.ok) throw new Error(d.code);
+    const a = await t.online.start(t.agent, d.document.id, CONSENT);
+    const b = await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe });
+    if (!a.ok || !b.ok) throw new Error('session');
+    const sent = await t.codes();
+    expect(await t.online.sign(t.agent, a.value.sessionId, { code: sent[0]!.code })).toMatchObject({ ok: true, value: { allSigned: false } });
+    await t.unique.merge({ survivorId: lea, mergedId: noe, reason: 'test : même personne', agentId: t.alex.id });
+    expect(await t.online.sign(t.agent, b.value.sessionId, { code: sent[1]!.code })).toEqual({ ok: false, rule: 'R41', code: 'mandants_merged' });
+    expect(await t.online.progress(t.agent, d.document.id)).toMatchObject({ ok: true, value: { allSigned: false } });
+  });
+
+  it('[R40, R41] un modèle qui ne nomme pas le mandant ne porte pas plusieurs mandants', async () => {
+    const t = await setup();
+    const v = await t.modeles.createVersion(t.direction, 'mandat_vente_simple', 'Mandat sans nom : {{bien.reference}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}}.');
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate({ role: 'compliance', userId: 'c-1', networkId: t.network.id }, v.template.id);
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    expect(await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: lea, propertyId: t.property.id, inputs: INPUTS as never, coMandantIds: [noe] })).toEqual({ ok: false, rule: 'R40', code: 'bad_co_mandants' });
+  });
+
+  it('[R16] un avenant reprend les autres mandants sous droits : fiche confiée à un autre agent, avenant refusé', async () => {
+    const t = await setup();
+    const av = await t.modeles.createVersion(t.direction, 'avenant_mandat', 'Avenant : {{mandant.nom}}, mandat {{mandat.numero}}, {{avenant.objet}}.');
+    if (!av.ok) throw new Error(av.code);
+    await t.modeles.validate({ role: 'compliance', userId: 'c-1', networkId: t.network.id }, av.template.id);
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    await t.identify(lea);
+    await t.identify(noe);
+    const d = await t.generate(lea, [noe]);
+    if (!d.ok) throw new Error(d.code);
+    const r = await t.papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef: 'scans/2027/02/test-avenant.pdf', source: 'referral' });
+    if (!r.ok) throw new Error(r.code);
+    const mandateId = (await t.db.first<{ mandate_id: string }>('SELECT mandate_id FROM signed_documents WHERE document_id = ?', [d.document.id]))!.mandate_id;
+    const ok = await t.modeles.generate(t.agent, { kind: 'avenant_mandat', personId: lea, propertyId: t.property.id, mandateId, inputs: { 'avenant.prix': 240000 } as never });
+    expect(ok).toMatchObject({ ok: true });
+    expect(ok.ok && ok.document.content).toContain('Léa Exemple et Noé Autre');
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, noe]);
+    expect(await t.modeles.generate(t.agent, { kind: 'avenant_mandat', personId: lea, propertyId: t.property.id, mandateId, inputs: { 'avenant.prix': 240000 } as never })).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
   it('[R41, R92] sur papier : le mandat n’est numéroté que si chaque mandant était identifié au jour de la signature', async () => {
     const t = await setup();
     const lea = await t.owner('Léa', 'Exemple');

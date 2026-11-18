@@ -349,7 +349,13 @@ export class Modeles {
     let coMandants: { id: string; name: string | null }[] = [];
     if (template.kind === 'avenant_mandat') {
       if (request.coMandantIds !== undefined) return { ok: false, rule: null, code: 'bad_co_mandants' };
-      coMandants = await this.coMandantsOfMandate(linked!.id);
+      // Chacun relu sous droits, comme au mandat : une fiche confiée depuis à un autre agent arrête l'avenant [R16].
+      for (const id of await this.coMandantsOfMandate(linked!.id)) {
+        const co = await this.acces.readFiche(viewer, id);
+        if (!co.ok) return co;
+        if (co.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${id}`);
+        coMandants.push({ id, name: fullName(co.value.person.first_name, co.value.person.last_name) });
+      }
     } else if (request.coMandantIds !== undefined) {
       const ids = request.coMandantIds;
       if (!Array.isArray(ids) || ids.length > MAX_CO_MANDANTS || ids.some((id) => typeof id !== 'string' || id === '')) return { ok: false, rule: null, code: 'bad_co_mandants' };
@@ -406,6 +412,8 @@ export class Modeles {
           durationMonths: typeof raw['mandat.duree_mois'] === 'number' ? raw['mandat.duree_mois'] : null,
         };
     const fields = JSON.parse(template.fields) as string[];
+    // Plusieurs mandants : le modèle doit les nommer tous, sinon le document ne dirait pas qui s'engage [R40, R41].
+    if (coMandants.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_co_mandants' };
     // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
     const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
     const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
@@ -445,13 +453,12 @@ export class Modeles {
   }
 
   /** Les autres mandants du document d'un mandat signé, dans leur ordre. */
-  private async coMandantsOfMandate(mandateId: string): Promise<{ id: string; name: string | null }[]> {
-    const rows = await this.db.all<{ person_id: string; first_name: string | null; last_name: string | null }>(
-      `SELECT c.person_id, p.first_name, p.last_name FROM signed_documents s JOIN document_co_mandants c ON c.document_id = s.document_id
-       JOIN persons p ON p.id = c.person_id WHERE s.mandate_id = ? ORDER BY c.position`,
+  private async coMandantsOfMandate(mandateId: string): Promise<string[]> {
+    const rows = await this.db.all<{ person_id: string }>(
+      `SELECT c.person_id FROM signed_documents s JOIN document_co_mandants c ON c.document_id = s.document_id WHERE s.mandate_id = ? ORDER BY c.position`,
       [mandateId],
     );
-    return rows.map((r) => ({ id: r.person_id, name: fullName(r.first_name, r.last_name) }));
+    return rows.map((r) => r.person_id);
   }
 
   /** Le mandat signé, numéroté, non annulé ni rétracté, du même mandant et du même bien ; ou null. */

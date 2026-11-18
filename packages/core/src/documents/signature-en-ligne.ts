@@ -61,6 +61,7 @@ export interface SignatureProgress {
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
+  | { ok: false; rule: 'R41'; code: 'mandants_merged' }
   | { ok: false; rule: string | null; code: 'send_refused' }
   | { ok: false; rule: null; code: 'bad_consent' | 'bad_signer' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
 
@@ -217,6 +218,8 @@ export class SignatureEnLigne {
     // Le document n'a pas changé depuis l'ouverture de la session.
     const contentHash = await sha256(doc.content);
     if (contentHash !== session.content_hash) return { ok: false, rule: null, code: 'document_changed' };
+    // Deux mandants réunis depuis l'ouverture ne sont plus deux personnes : aucune signature n'est reçue [R41].
+    if (!(await this.distinctMandants(session.document_id, doc.person_id))) return { ok: false, rule: 'R41', code: 'mandants_merged' };
 
     const signedAt = this.now().toISOString();
     const drawingHash = input.drawing ? await sha256(input.drawing) : null;
@@ -306,7 +309,15 @@ export class SignatureEnLigne {
     for (const personId of await documentMandants(this.db, documentId, firstPersonId)) {
       signers.push({ personId, signed: await this.signedBy(documentId, firstPersonId, personId, contentHash) });
     }
-    return { signers, allSigned: signers.every((s) => s.signed) };
+    // Des mandants réunis depuis la génération : le document ne peut plus être signé par tous [R41].
+    return { signers, allSigned: signers.every((s) => s.signed) && (await this.distinctMandants(documentId, firstPersonId)) };
+  }
+
+  /** Chaque mandant du document est-il encore une fiche à part ? */
+  private async distinctMandants(documentId: string, firstPersonId: string): Promise<boolean> {
+    const ids = await documentMandants(this.db, documentId, firstPersonId);
+    const roots = new Set(await Promise.all(ids.map((id) => this.fiche.rootOf(id))));
+    return roots.size === ids.length;
   }
 
   /** Le viewer voit-il cette fiche en entier, agent ou direction ? Sinon le refus va au journal [R16]. */
