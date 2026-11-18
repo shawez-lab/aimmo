@@ -832,6 +832,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // Le dossier de vente : chaque sorte d'événement à la partie que dit SALE_FILE_EVENTS, jamais par défaut.
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'buyer_person_id', only: { type: saleFileTypes('partage', 'acquereur') } }),
       via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'vendeur', only: { type: saleFileTypes('partage') } }),
+      // Un coacquéreur (AU009) suit l'avancée partagée du dossier ; ce qui n'est qu'à l'acquéreur en tête (son financement) reste à lui.
+      via('subject', 'sale_files', 'id', { prefix: 'sale_file:', onlyMatchedBy: 'coacquereur', only: { type: saleFileTypes('partage') } }),
       // Ce qui est fait pour un seul client du dossier porte sa fiche : à lui seul, même si le bien a eu d'autres mandants.
       via('data', 'persons', 'id', { prefix: 'person:', jsonPath: 'client', startsWith: { subject: 'sale_file:' }, only: { type: saleFileTypes('client') } }),
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),

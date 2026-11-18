@@ -174,6 +174,10 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     expect(section('sale_files')).toHaveLength(1);
     expect(section('sale_file_buyer_notices')).toHaveLength(1);
     expect(JSON.stringify(detail.response)).not.toContain(t.buyerId);
+    // Le journal du dossier : l'avancée partagée, dont sa propre notification.
+    const journal = JSON.stringify(section('journal'));
+    expect(journal).toContain(`person:${co}`);
+    expect(section('journal').filter((r) => r.type === 'dossier.date')).toHaveLength(2);
     // L'acquéreur en tête retrouve toujours son offre ; la liste des coacquéreurs lui est masquée.
     const lead = await assembleAccessDetail(t.db, [t.buyerId]);
     expect(lead.response.sections.find((x) => x.table === 'offer_register')?.rows).toHaveLength(1);
