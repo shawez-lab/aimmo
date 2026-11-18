@@ -5,7 +5,7 @@ import { partage } from '../src/index.ts';
 import { Commissions } from '../src/pilotage/commissions.ts';
 import { Factures } from '../src/pilotage/factures.ts';
 import type { Viewer } from '../src/acces/droits.ts';
-import { FakePieceStore, PROOF } from './dossiers-jeu.ts';
+import { FakePieceStore, PROOF, lieuConnu } from './dossiers-jeu.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -55,6 +55,7 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     /** Les pièces, puis l'acte. */
     const acte = async () => {
       const pieces = new PiecesDossier(t.db, t.acces, t.journal, storage, { now: t.now });
+      await lieuConnu(t, t.propertyId);
       const s = await pieces.status(t.agent, fileId);
       if (!s.ok) throw new Error(s.code);
       let n = 0;

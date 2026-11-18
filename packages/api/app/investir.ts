@@ -257,14 +257,15 @@ globalThis.AIMMO_INVESTIR = function (t) {
     var fees = said(calc, 'inv-frais', 'Frais d’acquisition, en % du prix', 'barème des frais d’acquisition');
     var works = said(calc, 'inv-travaux', 'Travaux estimés, en euros', 'devis estimé');
     var charges = said(calc, 'inv-charges', 'Charges non récupérables par an, en euros', 'déclarées par le vendeur');
+    var provision = said(calc, 'inv-provision', 'Provision pour charges récupérables par mois, en euros', 'provision déclarée par le vendeur');
     var tax = said(calc, 'inv-taxe', 'Taxe foncière par an, en euros', 'avis de taxe foncière déclaré');
     var vacancy = said(calc, 'inv-vacance', 'Vacance, en mois par an', 'vacance réglée');
     var result = el('div');
     calc.appendChild(button('Calculer', function () {
       var chosen = biens.filter(function (b) { return b.propertyId === bien.value; })[0];
       if (!chosen) { investirState('Choisissez un bien.'); return; }
-      var r = toBp(fees.value.value), w = toCents(works.value.value), c = toCents(charges.value.value), tx = toCents(tax.value.value), m = whole(vacancy.value.value, 12);
-      if (r === null || w === null || c === null || tx === null || m === null) { investirState('Un champ n’est pas valable : vérifiez la saisie.'); return; }
+      var r = toBp(fees.value.value), w = toCents(works.value.value), c = toCents(charges.value.value), pc = toCents(provision.value.value), tx = toCents(tax.value.value), m = whole(vacancy.value.value, 12);
+      if (r === null || w === null || c === null || pc === null || tx === null || m === null) { investirState('Un champ n’est pas valable : vérifiez la saisie.'); return; }
       var day = new Date().toISOString().slice(0, 10);
       function entry(value, h) { return { value: value, source: 'agent', asOf: day, hypothesis: h.value || 'saisi par l’agent' }; }
       var energyBody = energy.value ? { energyClass: energy.value } : undefined;
@@ -273,7 +274,7 @@ globalThis.AIMMO_INVESTIR = function (t) {
         propertyId: chosen.propertyId,
         projectId: x.projectId,
         marketRentQuery: { inseeCode: chosen.inseeCode, kind: chosen.rentKind },
-        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), propertyTax: entry(tx, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis) },
+        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), recoverableCharges: entry(pc, provision.hypothesis), propertyTax: entry(tx, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis) },
       }).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { investirState(res.offline ? 'Pas de réseau : rien n’est calculé.' : investirRefusal(res.body, 'Le calcul n’a pas abouti.')); return; }

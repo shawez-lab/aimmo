@@ -5,17 +5,22 @@
  * faite [R121]. Une entrée manquante rend « incomplet » avec la liste de ce qui manque, jamais un rendement [R10].
  * Chaque calcul est rangé avec ses entrées, et se rejoue à l'identique.
  *
- * Formules, version 1 (montants en centimes, entiers ; divisions arrondies au plus proche, la moitié en s'éloignant
+ * Formules, version 2 (montants en centimes, entiers ; divisions arrondies au plus proche, la moitié en s'éloignant
  * de zéro) :
  * - frais d'acquisition = prix × taux du barème / 10 000 ;
  * - coût total = prix + frais d'acquisition + travaux ;
- * - loyer mensuel = loyer de marché au m² × surface (en centièmes de m²) / 100 ;
+ * - loyer mensuel charges comprises = loyer de marché au m² (charges comprises) × surface (en centièmes de m²) / 100 ;
+ * - loyer mensuel = loyer mensuel charges comprises − provision mensuelle pour charges récupérables (AU099 : les charges
+ *   récupérables sont payées par le locataire et reversées, elles ne sont pas un revenu) ;
  * - loyer annuel = loyer mensuel × 12 ;
  * - rendement brut (points de base) = loyer annuel × 10 000 / coût total ;
  * - loyer perçu = loyer mensuel × (12 − mois de vacance) ;
  * - revenu net avant impôt = loyer perçu − charges non récupérables − taxe foncière ;
  * - rendement net avant impôt (points de base) = revenu net × 10 000 / coût total ;
  * - fourchette : les mêmes rendements avec les bornes basse et haute de l'intervalle du loyer de marché.
+ * La version 1 (sans provision : le loyer charges comprises compté comme revenu) reste rejouable à l'identique pour les
+ * calculs rangés avant AU099 ; tout nouveau calcul est en version 2. Une provision qui égale ou dépasse le loyer charges
+ * comprises de la borne basse rend « incomplet » sur la provision, jamais un loyer négatif.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -24,7 +29,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { MARKET_RENT_KINDS, type LoyersMarche, type MarketRentKind } from './loyers.ts';
 
-export const FORMULA_VERSION = 1;
+export const FORMULA_VERSION = 2;
 
 /** Une entrée du calcul : sa valeur, d'où elle vient, de quand, et ce qu'elle suppose. */
 export interface Sourced<T> {
@@ -57,6 +62,8 @@ export interface YieldInputs {
   marketRent: Sourced<MarketRentValue> | null;
   /** Charges non récupérables déclarées, en centimes par an. */
   nonRecoverableCharges: Sourced<number> | null;
+  /** Provision pour charges récupérables, en centimes par mois, retirée du loyer charges comprises (version 2). */
+  recoverableCharges: Sourced<number> | null;
   /** Taxe foncière déclarée, en centimes par an. */
   propertyTax: Sourced<number> | null;
   /** Vacance réglée, en mois entiers par an. */
@@ -71,6 +78,7 @@ export const INPUT_KEYS: readonly InputKey[] = [
   'livingArea',
   'marketRent',
   'nonRecoverableCharges',
+  'recoverableCharges',
   'propertyTax',
   'vacancyMonths',
 ];
@@ -107,6 +115,7 @@ const LIMITS: Record<Exclude<InputKey, 'marketRent'>, [number, number]> = {
   works: [0, 100_000_000_000],
   livingArea: [100, 10_000_000],
   nonRecoverableCharges: [0, 10_000_000_000],
+  recoverableCharges: [0, 1_000_000_000],
   propertyTax: [0, 10_000_000_000],
   vacancyMonths: [0, 12],
 };
@@ -158,10 +167,16 @@ export function roundDiv(a: number, b: number): number {
   return Number(neg ? -q : q);
 }
 
-/** Le calcul, à partir des entrées seules : la même entrée donne toujours le même résultat. */
-export function computeYield(inputs: YieldInputs, computedAt: string): YieldResult {
-  const missing = INPUT_KEYS.filter((k) => inputs[k] === null);
-  if (missing.length > 0) return { status: 'incomplet', formulaVersion: FORMULA_VERSION, missing };
+/**
+ * Le calcul, à partir des entrées seules : la même entrée donne toujours le même résultat. `version` rejoue un calcul
+ * rangé avec ses propres formules ; un nouveau calcul prend toujours la version en cours.
+ */
+export function computeYield(inputs: YieldInputs, computedAt: string, version: number = FORMULA_VERSION): YieldResult {
+  const v1 = version === 1;
+  const formulaVersion = v1 ? 1 : FORMULA_VERSION;
+  const keys = v1 ? INPUT_KEYS.filter((k) => k !== 'recoverableCharges') : INPUT_KEYS;
+  const missing = keys.filter((k) => inputs[k] === null || inputs[k] === undefined);
+  if (missing.length > 0) return { status: 'incomplet', formulaVersion, missing };
   const price = inputs.price!;
   const rate = inputs.acquisitionFeesRateBp!;
   const works = inputs.works!;
@@ -170,10 +185,15 @@ export function computeYield(inputs: YieldInputs, computedAt: string): YieldResu
   const charges = inputs.nonRecoverableCharges!;
   const tax = inputs.propertyTax!;
   const vacancy = inputs.vacancyMonths!;
+  const provision = v1 ? null : inputs.recoverableCharges!;
+  const provisionCents = provision ? provision.value : 0;
 
   const fees = roundDiv(price.value * rate.value, 10_000);
   const totalCost = price.value + fees + works.value;
-  const monthly = (m2: number): number => roundDiv(m2 * area.value, 100);
+  const withCharges = (m2: number): number => roundDiv(m2 * area.value, 100);
+  const monthly = (m2: number): number => withCharges(m2) - provisionCents;
+  const m0 = inputs.marketRent!.value;
+  if (provision && monthly(m0.lowerM2Cents) <= 0) return { status: 'incomplet', formulaVersion, missing: ['recoverableCharges'] };
   const gross = (m2: number): number => roundDiv(monthly(m2) * 12 * 10_000, totalCost);
   const netIncome = (m2: number): number => monthly(m2) * (12 - vacancy.value) - charges.value - tax.value;
   const net = (m2: number): number => roundDiv(netIncome(m2) * 10_000, totalCost);
@@ -191,7 +211,17 @@ export function computeYield(inputs: YieldInputs, computedAt: string): YieldResu
     { key: 'marketRentM2', value: m.centralM2Cents, unit: 'cents_per_m2', source: rent.source, asOf: rent.asOf, hypothesis: rent.hypothesis },
     { key: 'marketRentM2Low', value: m.lowerM2Cents, unit: 'cents_per_m2', source: rent.source, asOf: rent.asOf, hypothesis: 'borne basse de l’intervalle du loyer de marché' },
     { key: 'marketRentM2High', value: m.upperM2Cents, unit: 'cents_per_m2', source: rent.source, asOf: rent.asOf, hypothesis: 'borne haute de l’intervalle du loyer de marché' },
-    calc('monthlyRent', monthly(m.centralM2Cents), 'cents', 'loyer de marché au m² × surface'),
+    // Sans provision, le loyer charges comprises est le loyer : une seule ligne, pour qu'un nombre de la note ne se relie qu'à une ligne.
+    ...(provision && provisionCents > 0
+      ? [
+          calc('monthlyRentWithCharges', withCharges(m.centralM2Cents), 'cents', 'loyer de marché au m² × surface, charges comprises'),
+          given('recoverableCharges', provision, 'cents'),
+          calc('monthlyRent', monthly(m.centralM2Cents), 'cents', 'loyer charges comprises − provision pour charges récupérables'),
+        ]
+      : [
+          ...(provision ? [given('recoverableCharges', provision, 'cents')] : []),
+          calc('monthlyRent', monthly(m.centralM2Cents), 'cents', 'loyer de marché au m² × surface'),
+        ]),
     calc('annualRent', monthly(m.centralM2Cents) * 12, 'cents', 'loyer mensuel × 12'),
     given('vacancyMonths', vacancy, 'months'),
     calc('collectedRent', monthly(m.centralM2Cents) * (12 - vacancy.value), 'cents', 'loyer mensuel × (12 − mois de vacance)'),
@@ -207,7 +237,7 @@ export function computeYield(inputs: YieldInputs, computedAt: string): YieldResu
   ];
   return {
     status: 'complet',
-    formulaVersion: FORMULA_VERSION,
+    formulaVersion,
     lines,
     grossYieldBp: { low: gross(m.lowerM2Cents), central: gross(m.centralM2Cents), high: gross(m.upperM2Cents) },
     netYieldBp: { low: net(m.lowerM2Cents), central: net(m.centralM2Cents), high: net(m.upperM2Cents) },
@@ -364,7 +394,7 @@ export class CalculInvestissement {
     await this.db.run(
       `INSERT INTO investment_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, propertyId, projectId, JSON.stringify(inputs), result.status, JSON.stringify(result), FORMULA_VERSION, actor, createdAt],
+      [id, viewer.networkId, propertyId, projectId, JSON.stringify(inputs), result.status, JSON.stringify(result), result.formulaVersion, actor, createdAt],
     );
     await appendEvent(
       this.journal,
@@ -388,11 +418,11 @@ export class CalculInvestissement {
     const id = this.newId();
     const createdAt = this.now().toISOString();
     // Le résultat rangé est celui que donne le code depuis les entrées, à la date du rangement : rejouable à l'identique.
-    const result = computeYield(c.inputs, createdAt);
+    const result = computeYield(c.inputs, createdAt, c.result.formulaVersion);
     await this.db.run(
       `INSERT INTO investment_calculations (id, network_id, property_id, project_id, inputs, status, result, formula_version, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, viewer.networkId, c.propertyId, c.projectId, JSON.stringify(c.inputs), result.status, JSON.stringify(result), FORMULA_VERSION, actor, createdAt],
+      [id, viewer.networkId, c.propertyId, c.projectId, JSON.stringify(c.inputs), result.status, JSON.stringify(result), result.formulaVersion, actor, createdAt],
     );
     await appendEvent(
       this.journal,
@@ -439,7 +469,7 @@ export class CalculInvestissement {
   async replay(networkId: string, id: string): Promise<{ same: boolean; result: YieldResult } | null> {
     const row = await this.db.first<CalculationRow>('SELECT * FROM investment_calculations WHERE id = ? AND network_id = ?', [id, networkId]);
     if (!row) return null;
-    const result = computeYield(JSON.parse(row.inputs) as YieldInputs, row.created_at);
+    const result = computeYield(JSON.parse(row.inputs) as YieldInputs, row.created_at, Number(row.formula_version));
     return { same: JSON.stringify(result) === row.result, result };
   }
 }

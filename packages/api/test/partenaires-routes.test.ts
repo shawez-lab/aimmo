@@ -106,7 +106,7 @@ async function setup(options: { uploads?: boolean } = {}) {
 
   const KINDS: Record<string, string[]> = { courtier: ['immatriculation_orias'], geometre: ['inscription_ordre'], gestionnaire: ['carte_g'] };
   /** Un partenaire ajouté par la direction, par les routes, avec ses justificatifs valides. */
-  const partner = async (trade: string, domain?: string): Promise<string> => {
+  const partner = async (trade: string, domain?: string, auditMention = false): Promise<string> => {
     const r = await call(dir, 'POST', '/partenaires/annuaire', { json: { trade, businessName: `Partenaire ${trade} ${++n}`, postcodes: ['21000'] } });
     expect(r.status, trade).toBe(200);
     const id = r.body.data.partnerId as string;
@@ -116,15 +116,15 @@ async function setup(options: { uploads?: boolean } = {}) {
     }
     if (domain && domain !== 'mesurage') {
       const c = await call(dir, 'POST', `/partenaires/annuaire/${id}/justificatifs`, {
-        json: { kind: 'certification_diagnostic', domain, number: 'C-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`) },
+        json: { kind: 'certification_diagnostic', domain, number: 'C-1', validFrom: day(-30), validUntil: day(300), proofRef: files.put(`partenaires/${id}`), ...(auditMention ? { auditMention } : {}) },
       });
       expect(c.status).toBe(200);
     }
     return id;
   };
   /** Une demande confiée par l'agent, par les routes, avec l'accord du client. */
-  const request = async (trade: string, domain?: string, projectId = project.id): Promise<{ partnerId: string; referralId: string; partner: Viewer }> => {
-    const partnerId = await partner(trade, domain);
+  const request = async (trade: string, domain?: string, projectId = project.id, auditMention = false): Promise<{ partnerId: string; referralId: string; partner: Viewer }> => {
+    const partnerId = await partner(trade, domain, auditMention);
     const p = await call(agent, 'POST', '/partenaires/relations', { json: { projectId, trade, domain, propertyId: property.id, postcode: '21000' } });
     expect(p.status, trade).toBe(200);
     const id = p.body.data.referralId as string;
@@ -233,6 +233,16 @@ describeWithSqlite('U10 · routes de M18', () => {
     // Le journal ne garde jamais le fichier ni sa référence.
     const all = await t.db.all<{ data: string }>('SELECT data FROM journal');
     for (const e of all) for (const d of docs) expect(e.data).not.toContain(d.ref);
+  });
+
+  it('[R73] AU010b · la mention « audit énergétique » cochée par la route range l’audit du diagnostiqueur à la fiche du bien', async () => {
+    const t = await setup();
+    const avec = await t.request('diagnostiqueur', 'dpe', undefined, true);
+    expect((await t.call(avec.partner, 'POST', `/partenaires/espace/${avec.referralId}/etat`, { json: { state: 'en_cours' } })).status).toBe(200);
+    const r = await t.upload(avec, 'audit_energetique');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ sort: 'audit_energetique', destination: 'property', targetId: t.property.id, piece: 'audit_energetique', reason: 'rule' });
+    expect(await t.db.all("SELECT mention FROM partner_credential_mentions")).toEqual([{ mention: 'audit_energetique' }]);
   });
 
   it('[R77] un partenaire ne lit et ne dépose que dans ses demandes confiées, et reçoit le seul dossier de son métier', async () => {

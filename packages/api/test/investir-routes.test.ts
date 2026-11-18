@@ -150,7 +150,7 @@ describeWithSqlite('Y07 · routes de M17', () => {
         inputs: {
           acquisitionFeesRateBp: said(c.inputs.rate, 'barème des frais d’acquisition'),
           works: said(c.inputs.works, 'devis estimé'),
-          nonRecoverableCharges: said(c.inputs.charges, 'déclarées par le vendeur'),
+          nonRecoverableCharges: said(c.inputs.charges, 'déclarées par le vendeur'), recoverableCharges: said(0, 'sans provision'),
           propertyTax: said(c.inputs.tax, 'avis de taxe foncière déclaré'),
           vacancyMonths: said(c.inputs.vacancy, 'vacance réglée'),
         },
@@ -234,7 +234,7 @@ describeWithSqlite('Y07 · relecture d’un calcul', () => {
       propertyId: property.id,
       projectId: project.id,
       marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
-      inputs: { acquisitionFeesRateBp: said(750), works: said(0), nonRecoverableCharges: said(60_000), propertyTax: said(90_000), vacancyMonths: said(1) },
+      inputs: { acquisitionFeesRateBp: said(750), works: said(0), nonRecoverableCharges: said(60_000), recoverableCharges: said(0), propertyTax: said(90_000), vacancyMonths: said(1) },
     });
     expect((await t.call(t.other, 'GET', `/investir/calculs/${calc.id}`)).status).toBe(200);
     const note = await t.ok(t.other, 'POST', '/investir/notes', { calculationId: calc.id, projectId: project.id, energy: { energyClass: 'C' } });

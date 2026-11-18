@@ -47,6 +47,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'video_text_checks.media_ref': F,
   'virtual_stagings.real_ref': F,
   'virtual_stagings.staged_ref': F,
+  'visit_energy_audit_handovers.audit_ref': F,
   'visit_slips.scan_ref': F,
   'voice_notes.media_ref': F,
   'academy_modules.script_ref': F,
