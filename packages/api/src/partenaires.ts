@@ -375,7 +375,7 @@ const ROUTES: PartenairesRoute[] = [
     name: 'partenaires.annuaire.justificatif',
     roles: STAFF,
     handle: withBody(async (s, v, [id], b) =>
-      reply(await core(s).annuaire.addCredential(v, id!, { kind: b.kind, domain: b.domain, number: b.number, validFrom: b.validFrom, validUntil: b.validUntil, proofRef: b.proofRef })),
+      reply(await core(s).annuaire.addCredential(v, id!, { kind: b.kind, domain: b.domain, number: b.number, validFrom: b.validFrom, validUntil: b.validUntil, proofRef: b.proofRef, auditMention: b.auditMention })),
     ),
   },
 

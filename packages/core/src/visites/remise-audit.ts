@@ -13,7 +13,8 @@
  * - l'audit du bien est le plus récent déposé à la fiche du bien par un partenaire (U05) ou rangé à un dossier de vente
  *   du bien ; il vaut 5 ans, comme à l'acte (`DEFAULT_VALIDITY_MONTHS`) ; un audit daté après la visite n'existait pas ;
  * - une remise déjà rangée pour le même visiteur (fiches réunies comprises) et le même bien suffit : c'est la première
- *   visite qui compte. Une remise se range même quand la classe est inconnue (une remise de trop ne nuit pas), jamais
+ *   visite qui compte, tant que l'audit du bien vaut le jour de la visite et qu'il n'a pas été refait depuis la remise
+ *   (un nouvel audit se remet de nouveau). Une remise se range même quand la classe est inconnue (une remise de trop ne nuit pas), jamais
  *   pour un bien qui n'y est pas soumis, ni datée dans le futur ou plus de 30 jours avant la visite ;
  * - l'agent de la visite ou la direction, qui voient la fiche du visiteur en entier [R16].
  */
@@ -152,16 +153,19 @@ export class RemiseAudit {
     const audit = latest && until ? { issuedOn: latest, validUntil: until, valid: visitDay <= until } : null;
     const ids = members.length > 0 ? members : [visit.person_id];
     const h = await this.db.first<{ appointment_id: string; handed_on: string; means: HandoverMeans }>(
-      `SELECT appointment_id, handed_on, means FROM visit_energy_audit_handovers WHERE property_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY handed_on, recorded_at LIMIT 1`,
-      [visit.property_id, ...ids],
+      `SELECT appointment_id, handed_on, means FROM visit_energy_audit_handovers WHERE property_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) AND handed_on >= ? ORDER BY handed_on, recorded_at LIMIT 1`,
+      [visit.property_id, ...ids, latest ?? '0000-00-00'],
     );
     const handover = h ? { appointmentId: h.appointment_id, handedOn: h.handed_on, means: h.means } : null;
     const energyClass = c.case === 'requis' ? c.energyClass : null;
     let action: AuditAction;
+    // Une remise passée ne vaut que si l'audit vaut encore le jour de cette visite (relecture de Codex) : périmé, il en faut
+    // un nouveau, à remettre de nouveau.
     if (c.case === 'non_requis') action = 'aucune';
+    else if (c.case === 'requis' && !audit?.valid) action = 'faire_faire';
     else if (handover) action = 'deja_remis';
     else if (c.case === 'inconnu') action = 'preciser_classe';
-    else action = audit?.valid ? 'remettre' : 'faire_faire';
+    else action = 'remettre';
     const notice = { appointmentId: visit.appointment_id, visitDay, case: c.case, energyClass, audit, handover, action };
     return { ...notice, message: messageFor(notice) };
   }

@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS visit_energy_audit_handovers (
   appointment_id TEXT NOT NULL UNIQUE REFERENCES visits (appointment_id) ON DELETE RESTRICT,
   property_id TEXT NOT NULL,
   person_id TEXT NOT NULL,
-  handed_on TEXT NOT NULL CHECK (handed_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  handed_on TEXT NOT NULL CHECK (length(handed_on) = 10),
   means TEXT NOT NULL CHECK (means IN ('papier', 'mail', 'espace')),
   -- Le document remis, quand le bien en a un au dossier : sa référence de stockage, jamais son contenu.
   audit_ref TEXT,

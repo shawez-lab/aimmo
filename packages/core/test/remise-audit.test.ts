@@ -190,7 +190,10 @@ describeWithSqlite('AU010b · audit énergétique remis dès la première visite
     const v = await t.visit(p.id, b.project.id);
     expect(v.energyAudit).toMatchObject({ action: 'faire_faire', audit: { issuedOn: '2021-12-01', validUntil: '2026-11-30', valid: false } });
     expect(v.energyAudit.message).toContain('daté du 01/12/2021, ne vaut plus');
-    // Le nouvel audit, déposé ensuite, le remplace.
+    // Une remise faite quand l'audit valait encore ne suffit plus : il est périmé le jour de cette visite (relecture de Codex).
+    await t.db.run("INSERT INTO visit_energy_audit_handovers (id, network_id, appointment_id, property_id, person_id, handed_on, means, audit_ref, recorded_by, recorded_at) VALUES ('remise-ancienne', ?, ?, ?, ?, '2026-11-25', 'papier', 'ref-ancienne.pdf', 'agent:x', '2026-11-25T10:00:00.000Z')", [t.network.id, v.appointment.id, p.id, b.person.id]);
+    expect(await t.remise.notice(t.as('agent', t.alex.id), v.appointment.id)).toMatchObject({ ok: true, value: { action: 'faire_faire', audit: { valid: false } } });
+    // Le nouvel audit, déposé ensuite, le remplace ; la remise de l'ancien ne vaut pas pour lui : il est à remettre.
     expect(await t.depositAudit(partner, referral)).toMatchObject({ ok: true, value: { destination: 'property' } });
     expect(await t.remise.notice(t.as('agent', t.alex.id), v.appointment.id)).toMatchObject({ ok: true, value: { action: 'remettre', audit: { issuedOn: t.day(-1), valid: true } } });
   });
