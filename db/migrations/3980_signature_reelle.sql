@@ -60,12 +60,15 @@ CREATE TABLE IF NOT EXISTS signature_remises (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   position INTEGER NOT NULL CHECK (position >= 1),
   status TEXT NOT NULL CHECK (status IN ('a_envoyer', 'envoyee')),
+  -- Le rang de l'essai d'envoi : un essai abandonné (panne avant la remise) est remplacé par le suivant.
+  attempt INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),
   created_at TEXT NOT NULL,
   sent_at TEXT,
   PRIMARY KEY (document_id, person_id)
 );
 CREATE TRIGGER IF NOT EXISTS signature_remises_fige BEFORE UPDATE ON signature_remises
-WHEN NOT (OLD.status = 'a_envoyer' AND NEW.status = 'envoyee' AND NEW.sent_at IS NOT NULL)
+WHEN NOT ((OLD.status = 'a_envoyer' AND NEW.status = 'envoyee' AND NEW.sent_at IS NOT NULL AND NEW.attempt IS OLD.attempt)
+       OR (OLD.status = 'a_envoyer' AND NEW.status = 'a_envoyer' AND NEW.attempt = OLD.attempt + 1 AND NEW.sent_at IS NULL))
   OR NEW.document_id IS NOT OLD.document_id OR NEW.person_id IS NOT OLD.person_id OR NEW.network_id IS NOT OLD.network_id
   OR NEW.position IS NOT OLD.position OR NEW.created_at IS NOT OLD.created_at
 BEGIN

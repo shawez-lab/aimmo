@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import type { DeliveryReceipt, OutboundMessage } from '../src/envoi/canaux.ts';
 import {
   Acces,
   ControlesSignature,
@@ -64,7 +65,7 @@ async function setup(options: { mail?: boolean } = {}) {
     (await enClair(db.all<{ id: string; body: string }>(`SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.body LIKE '%code de signature%' ORDER BY m.occurred_at, m.created_at`))).map((r) => /(\d{6})/.exec(r.body)![1]!);
   const realCodes = (): string[] => mail.sent.filter((m) => m.body.includes('code de signature')).map((m) => /(\d{6})/.exec(m.body)![1]!);
   const trialCount = async (): Promise<number> => (await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM trial_outbox'))!.n;
-  return { raw, db, journal, online, mail, agent, direction, sam, network, documentId: d.document.id, trialCodes, realCodes, trialCount, at: (ms: number) => (clock = T0 + ms) };
+  return { raw, db, journal, acces, now, modeles, online, mail, agent, direction, sam, network, documentId: d.document.id, trialCodes, realCodes, trialCount, at: (ms: number) => (clock = T0 + ms) };
 }
 
 describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’essai', () => {
@@ -216,6 +217,64 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     t.mail.failWith = null;
     expect(await t.online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
     expect(t.mail.sent.filter((m) => m.body.includes('dossier de preuve vous sont remis'))).toHaveLength(1);
+  });
+
+  it('[R44] un avenant ne se signe jamais en réel : il ne s’inscrirait pas aux avenants signés', async () => {
+    const t = await setup({ mail: true });
+    expect((await t.online.recordValidation(t.direction, AVIS)).ok).toBe(true);
+    const s = await t.online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    await t.online.sign(t.agent, s.value.sessionId, { code: t.realCodes()[0]! });
+    expect((await t.online.finish(t.agent, t.documentId, SOURCE)).ok).toBe(true);
+    const v = await t.modeles.createVersion(t.direction, 'avenant_mandat', 'Avenant de test au mandat n° {{mandat.numero}} : durée portée à {{avenant.duree_mois}}.');
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate({ role: 'compliance', userId: 'c-1', networkId: t.network.id }, v.template.id);
+    const doc = await t.db.first<{ person_id: string; property_id: string }>('SELECT person_id, property_id FROM documents WHERE id = ?', [t.documentId]);
+    const a = await t.modeles.generate(t.agent, { kind: 'avenant_mandat', personId: doc!.person_id, propertyId: doc!.property_id, inputs: { 'avenant.duree_mois': 18 } as never, mandateId: `m-${t.documentId}` });
+    if (!a.ok) throw new Error(a.code);
+    const started = await t.online.start(t.agent, a.document.id, CONSENT);
+    // Ouvert ou refusé par ses contrôles, il n'est jamais réel ; et il ne se finit pas en réel.
+    if (started.ok) expect(started.value.mode).toBe('essai');
+    expect(await t.online.finish(t.agent, a.document.id, SOURCE)).toEqual({ ok: false, rule: null, code: 'not_a_mandate' });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM signature_dossiers')).toEqual({ n: 1 });
+  });
+
+  it('un envoi de remise abandonné avant la remise (panne) est remplacé après une heure, et le mandant reçoit ses pièces', async () => {
+    // Un canal qui reste bloqué : l'envoi est réservé, puis le travail s'arrête avant la remise.
+    class Bloque {
+      readonly channel = 'email' as const;
+      hang = false;
+      readonly sent: OutboundMessage[] = [];
+      deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
+        if (this.hang && message.body.includes('pièces jointes')) return new Promise(() => {});
+        this.sent.push(message);
+        return Promise.resolve({ externalId: `bloque-${this.sent.length}` });
+      }
+    }
+    const t = await setup();
+    let clock = T0;
+    const now = () => new Date(clock);
+    const canal = new Bloque();
+    const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now, channels: [canal] });
+    expect((await online.recordValidation(t.direction, AVIS)).ok).toBe(true);
+    const s = await online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    const code = /(\d{6})/.exec(canal.sent[0]!.body)![1]!;
+    await online.sign(t.agent, s.value.sessionId, { code });
+    canal.hang = true;
+    void online.finish(t.agent, t.documentId, SOURCE);
+    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
+    canal.hang = false;
+    // Tout de suite : l'essai en cours n'est ni dit remis, ni doublé.
+    expect(await online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: false }] } });
+    expect(canal.sent.filter((m) => m.body.includes('pièces jointes'))).toHaveLength(0);
+    // Plus d'une heure après, sans accusé ni échec : un nouvel essai part, avec les pièces.
+    clock = T0 + 61 * 60_000;
+    expect(await online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
+    const remis = canal.sent.filter((m) => m.body.includes('pièces jointes'));
+    expect(remis).toHaveLength(1);
+    expect(remis[0]!.attachments).toHaveLength(2);
+    expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'envoyee', attempt: 2 });
   });
 
   it('[R01] une remise refusée la nuit reste à envoyer, et part à la demande suivante, une seule fois', async () => {

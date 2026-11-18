@@ -1164,7 +1164,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   signed_amendments: ['document_id', 'network_id', 'mandate_id', 'signed_at', 'place', 'created_at'],
   signature_sessions: ['id', 'network_id', 'document_id', 'code_hash', 'expires_at', 'attempts', 'status', 'created_at', 'signed_at', 'mode'],
   signature_dossiers: ['document_id', 'network_id', 'validation_id', 'created_at'],
-  signature_remises: ['document_id', 'network_id', 'position', 'status', 'created_at', 'sent_at'],
+  signature_remises: ['document_id', 'network_id', 'position', 'status', 'attempt', 'created_at', 'sent_at'],
   signature_validations: ['id', 'network_id', 'validated_on', 'recorded_at'],
   property_sheets: ['id', 'property_id', 'network_id', 'version', 'created_at'],
   listing_settings: ['id', 'network_id', 'set_at'],

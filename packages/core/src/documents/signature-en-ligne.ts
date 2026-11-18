@@ -59,6 +59,8 @@ export type SignatureMode = 'essai' | 'reel';
 export type RealSignatureMissing = 'mail_reel' | 'validation_avocat';
 
 const MANDATE_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif'];
+/** Un essai de remise réservé sans accusé ni échec depuis ce temps est tenu pour abandonné (panne avant la remise). */
+const ABANDONED_SEND_MS = 60 * 60_000;
 const VALIDATION_REF = /^[\p{L}\p{N} ._/'-]{3,120}$/u;
 
 /** Le dossier de preuve d'un document signé réellement par tous, et ce qui en est remis à chaque mandant. */
@@ -101,7 +103,7 @@ type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
   | { ok: false; rule: 'R41'; code: 'mandants_merged' }
   | { ok: false; rule: string | null; code: 'send_refused' }
-  | { ok: false; rule: null; code: 'not_all_signed' | 'no_validation' | 'bad_reference' | 'bad_consent' | 'bad_signer' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
+  | { ok: false; rule: null; code: 'not_all_signed' | 'no_validation' | 'bad_reference' | 'not_a_mandate' | 'bad_consent' | 'bad_signer' | 'unknown_session' | 'expired' | 'blocked' | 'already_signed' | 'wrong_code' | 'document_changed' | 'bad_drawing' | 'unknown_document' | 'bad_schedule' | 'bad_piece' | 'bad_date' };
 
 /** Un code de 6 chiffres, tiré au hasard sans biais. */
 function newCode(): string {
@@ -263,7 +265,10 @@ export class SignatureEnLigne {
     if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     const contentHash = await sha256(doc.content);
     // Le mode est fixé ici, et ne change plus. Une signature d'essai ne compte pas pour une session réelle (AU003).
-    const { mode } = await this.modeFor(viewer.networkId);
+    // Seul un mandat de vente se signe en réel : il s'inscrit au registre. Un avenant ou un autre document reste d'essai
+    // tant que sa propre inscription n'est pas faite (signed_amendments, R44) : une tâche à part (AU003).
+    const docKind = (await this.db.first<{ kind: string }>('SELECT kind FROM documents WHERE id = ?', [documentId]))!.kind;
+    const mode: SignatureMode = MANDATE_KINDS.includes(docKind) ? (await this.modeFor(viewer.networkId)).mode : 'essai';
     if (await this.signedBy(documentId, doc.person_id, signer, contentHash, mode === 'reel' ? 'reel' : undefined)) return { ok: false, rule: null, code: 'already_signed' };
     // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
     const consent = await this.fiche.hasConsentInForce(signer, ONLINE_SIGNATURE_PURPOSE, 'email');
@@ -510,6 +515,7 @@ export class SignatureEnLigne {
       [documentId],
     );
     if (!doc || doc.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_document' };
+    if (!MANDATE_KINDS.includes(doc.kind)) return { ok: false, rule: null, code: 'not_a_mandate' };
     const mandants = await documentMandants(this.db, documentId, doc.person_id);
     for (const personId of mandants) {
       if (!(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
@@ -592,20 +598,30 @@ export class SignatureEnLigne {
 
     // La remise : chaque mandant, son exemplaire et le dossier, par le mail réel et le contrôle central [R16, R26].
     const remises: { position: number; sent: boolean }[] = [];
-    for (const r of await this.db.all<{ person_id: string; position: number; status: string }>('SELECT person_id, position, status FROM signature_remises WHERE document_id = ? ORDER BY position', [documentId])) {
+    const markSent = (personId: string) => this.db.run(`UPDATE signature_remises SET status = 'envoyee', sent_at = ? WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer'`, [this.now().toISOString(), documentId, personId]);
+    for (const r of await this.db.all<{ person_id: string; position: number; status: string; attempt: number }>('SELECT person_id, position, status, attempt FROM signature_remises WHERE document_id = ? ORDER BY position', [documentId])) {
       if (r.status === 'envoyee') { remises.push({ position: r.position, sent: true }); continue; }
-      const hello = await this.greeting(r.person_id);
-      const what = number ? `Votre mandat n° ${number} est signé électroniquement par chaque mandant.` : 'Votre document est signé électroniquement par chaque signataire.';
-      const subject = `signature:${documentId}:remise:${r.position}`;
       const envois = this.envoisFor('reel');
       // Sans mail réel, rien ne part : la remise reste à envoyer.
       if (!envois) { remises.push({ position: r.position, sent: false }); continue; }
-      // Déjà partie, puis une panne avant d'être notée : elle est notée, jamais renvoyée.
-      if (await this.deliveredBefore(r.person_id, subject)) {
-        await this.db.run(`UPDATE signature_remises SET status = 'envoyee', sent_at = ? WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer'`, [this.now().toISOString(), documentId, r.person_id]);
-        remises.push({ position: r.position, sent: true });
-        continue;
+      // Le sujet d'un essai d'envoi : le premier garde le sujet de base, les suivants portent leur rang.
+      const subjectOf = (attempt: number) => `signature:${documentId}:remise:${r.position}${attempt > 1 ? `:${attempt}` : ''}`;
+      // Déjà partie par un essai, puis une panne avant d'être notée : elle est notée, jamais renvoyée.
+      let delivered = false;
+      for (let a = 1; a <= r.attempt && !delivered; a++) delivered = await this.deliveredBefore(r.person_id, subjectOf(a));
+      if (delivered) { await markSent(r.person_id); remises.push({ position: r.position, sent: true }); continue; }
+      let attempt = r.attempt;
+      // Un essai réservé, sans accusé du canal ni échec écrit, depuis plus d'une heure : abandonné (panne avant la
+      // remise). Un nouvel essai, sous un nouveau sujet, le remplace ; au pire, le mandant reçoit deux fois son exemplaire.
+      const stale = await this.db.first<{ created_at: string }>('SELECT created_at FROM message_subjects WHERE person_id = ? AND subject = ? ORDER BY created_at DESC LIMIT 1', [r.person_id, subjectOf(attempt)]);
+      if (stale && this.now().getTime() - Date.parse(stale.created_at) > ABANDONED_SEND_MS) {
+        const { changes } = await this.db.run(`UPDATE signature_remises SET attempt = attempt + 1 WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer' AND attempt = ?`, [documentId, r.person_id, attempt]);
+        // Une autre demande vient de prendre le nouvel essai : elle l'envoie.
+        if (changes !== 1) { remises.push({ position: r.position, sent: false }); continue; }
+        attempt += 1;
       }
+      const hello = await this.greeting(r.person_id);
+      const what = number ? `Votre mandat n° ${number} est signé électroniquement par chaque mandant.` : 'Votre document est signé électroniquement par chaque signataire.';
       const sent = await envois.send({
         networkId: viewer.networkId,
         agentId: doc.agent_id,
@@ -613,8 +629,8 @@ export class SignatureEnLigne {
         channel: 'email',
         kind: 'alert',
         purpose: ONLINE_SIGNATURE_PURPOSE,
-        subject,
-        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis en pièces jointes de ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.`],
+        subject: subjectOf(attempt),
+        fallbackTexts: [`${hello}${what} Votre exemplaire signé et son dossier de preuve vous sont remis en pièces jointes de ce message, sous la référence ${documentId}, empreinte ${dossierRow.copy_hash}.${attempt > 1 ? ' Nouvel envoi : le précédent n’a pas abouti.' : ''}`],
         // L'exemplaire signé (suivi du dossier) et le dossier seul, en pièces jointes : le mandant les garde chez lui.
         attachments: [
           { name: `exemplaire-signe-${number ?? documentId}.html`, contentType: 'text/html', content: dossierRow.copy_content },
@@ -624,7 +640,7 @@ export class SignatureEnLigne {
         figures: [...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],
       });
       const ok = sent.status === 'sent';
-      if (ok) await this.db.run(`UPDATE signature_remises SET status = 'envoyee', sent_at = ? WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer'`, [this.now().toISOString(), documentId, r.person_id]);
+      if (ok) await markSent(r.person_id);
       remises.push({ position: r.position, sent: ok });
     }
     return { ok: true, value: { documentId, contentHash, dossierHash: dossierRow.dossier_hash, copyHash: dossierRow.copy_hash, number, remises } };
