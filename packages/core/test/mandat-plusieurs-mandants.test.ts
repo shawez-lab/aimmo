@@ -231,6 +231,9 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     const before = await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages');
     expect(await t.online.start(t.agent, d.document.id, { ...CONSENT, signerId: noe })).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     expect(await t.online.progress(t.agent, d.document.id)).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
+    // Ni contrôle avant signature, ni mandat papier enregistré par l'agent du premier.
+    expect(await t.controles.check(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef: 'scans/2027/02/test-r16.pdf', source: 'referral' })).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages')).toEqual(before);
   });
 

@@ -163,13 +163,20 @@ export class ControlesSignature {
       if (property.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
     }
 
+    // Chaque autre mandant est une fiche : qui contrôle le document les voit toutes en entier (AU001) [R16].
+    const persons = await documentMandants(this.db, doc.id, doc.person_id);
+    for (const personId of persons.slice(1)) {
+      const co = await this.acces.readFiche(viewer, personId);
+      if (!co.ok) return co;
+      if (co.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
+    }
+
     const at = this.now();
     const lines: CheckLine[] = [];
     lines.push({ check: 'champs', ok: doc.status === 'complet', code: doc.status === 'complet' ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));
-    const persons = await documentMandants(this.db, doc.id, doc.person_id);
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
