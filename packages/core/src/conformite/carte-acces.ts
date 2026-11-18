@@ -508,7 +508,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_source_decisions: out('sans_client', 'Décision de la direction sur une source de mandats, sans client.'),
   mandate_register: { locate: [via('mandate_id', 'mandates')] },
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')] },
+  // Le mandat d'un autre mandant (AU001) : sa fiche n'est jamais montrée [R96].
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'] },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
@@ -536,7 +537,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   mandate_withdrawals: { locate: [via('mandate_id', 'mandates')] },
   mandate_tasks: { locate: [via('mandate_id', 'mandates')] },
   signed_amendments: { locate: [via('document_id', 'documents')] },
-  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'] },
+  // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
+  // fiche ne sont jamais montrés [R96].
+  signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash'], foreignPersons: ['signer_person_id'] },
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },

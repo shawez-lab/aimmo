@@ -10,6 +10,7 @@ import {
   SignaturePapier,
   SqlJournalStore,
   applyMigrations,
+  conformite,
   fromSyncSqlite,
   type SqlDatabase,
   type Viewer,
@@ -190,6 +191,14 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     const two = await t.online.sign(t.agent, second.value.sessionId, { code: sent[1]!.code });
     expect(two).toMatchObject({ ok: true, value: { allSigned: true, realSignature: false } });
     expect(await t.online.progress(t.agent, id)).toMatchObject({ ok: true, value: { allSigned: true } });
+    // [R96] La réponse d'accès de Noé contient le mandat, mais ni le tracé ni la fiche de Léa.
+    const forNoe = JSON.stringify(await conformite.assembleAccess(t.db, [noe]));
+    expect(forNoe).toContain(id);
+    const leaks = (await conformite.assembleAccess(t.db, [noe])).sections.filter((x) => JSON.stringify(x).includes(lea)).map((x) => x.table);
+    expect(leaks).toEqual([]);
+    const sessions = (await conformite.assembleAccess(t.db, [noe])).sections.find((x) => x.table === 'signature_sessions')!;
+    expect(sessions.rows).toHaveLength(2);
+    for (const row of sessions.rows) expect(row.drawing_hash).toBe(conformite.MASKED);
     // Le signataire d'une session ne change plus.
     await expect(t.db.run('UPDATE signature_sessions SET signer_person_id = ?', [tiers])).rejects.toThrow(/figée/);
     // Un autre agent ne lit pas où en est la signature [R16].
