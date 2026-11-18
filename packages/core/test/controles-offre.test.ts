@@ -6,7 +6,7 @@ import { identiteAuCoffre } from './identite-coffre.ts';
 
 // Offres inventées.
 const OFFER: Offer = {
-  id: 'o1', propertyId: 'b1', seq: 1, buyerPersonId: 'p1', amountEur: 205000,
+  id: 'o1', propertyId: 'b1', seq: 1, buyerPersonId: 'p1', coBuyerPersonIds: [], amountEur: 205000,
   conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240 }], validUntil: '2027-03-10',
   downPaymentEur: 70000, loanEur: 150000, signedRef: 'offres/x.pdf', receivedAt: '2027-03-01T09:00:00.000Z', agentId: 'a1', at: '2027-03-01T10:00:00.000Z', hash: 'h',
 };

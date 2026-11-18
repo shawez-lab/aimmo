@@ -171,6 +171,8 @@ export class DureesProspects {
     const clientSources = [
       'SELECT DISTINCT person_id AS id FROM mandates WHERE network_id = ?',
       'SELECT DISTINCT buyer_person_id AS id FROM sale_files WHERE network_id = ?',
+      // Les coacquéreurs d'une offre qui a ouvert un dossier de vente sont aussi des acquéreurs de la vente (AU009).
+      'SELECT DISTINCT c.person_id AS id FROM offer_co_buyers c JOIN sale_files f ON f.offer_id = c.offer_id WHERE f.network_id = ?',
       'SELECT DISTINCT a.person_id AS id FROM rental_leases l JOIN rental_applications a ON a.id = l.application_id WHERE l.network_id = ?',
       'SELECT DISTINCT r.owner_person_id AS id FROM rental_leases l JOIN rental_listings r ON r.id = l.listing_id WHERE l.network_id = ?',
       // Une personne identifiée pour la lutte contre le blanchiment (L03), et les bénéficiaires effectifs d'une société

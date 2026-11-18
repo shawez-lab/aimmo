@@ -266,22 +266,23 @@ export class VigilanceRenforcee {
   }
 
   /** Le dossier cité : son client, son bien et son prix, lus dans la base. */
-  private async loadCase(networkId: string, caseRef: string): Promise<{ personId: string; propertyId: string | null; priceEur: number | null } | null> {
+  private async loadCase(networkId: string, caseRef: string): Promise<{ personId: string; coPersonIds: string[]; propertyId: string | null; priceEur: number | null } | null> {
     const offer = OFFER_REF.exec(caseRef);
     if (offer) {
-      const row = await this.db.first<{ network_id: string; buyer_person_id: string; property_id: string; amount_eur: number }>(
-        'SELECT network_id, buyer_person_id, property_id, amount_eur FROM offer_register WHERE id = ?',
+      const row = await this.db.first<{ network_id: string; buyer_person_id: string; property_id: string; amount_eur: number; co_buyers: string | null }>(
+        'SELECT network_id, buyer_person_id, property_id, amount_eur, co_buyers FROM offer_register WHERE id = ?',
         [offer[1]!],
       );
       if (!row || row.network_id !== networkId) return null;
-      return { personId: row.buyer_person_id, propertyId: row.property_id, priceEur: row.amount_eur };
+      // Les coacquéreurs sont examinés comme l'acquéreur en tête (AU009).
+      return { personId: row.buyer_person_id, coPersonIds: JSON.parse(row.co_buyers ?? '[]') as string[], propertyId: row.property_id, priceEur: row.amount_eur };
     }
     const mandate = MANDATE_REF.exec(caseRef);
     if (mandate) {
       const row = await this.db.first<{ network_id: string; person_id: string; property_id: string | null }>('SELECT network_id, person_id, property_id FROM mandates WHERE id = ?', [mandate[1]!]);
       if (!row || row.network_id !== networkId) return null;
       const terms = await mandateTerms(this.db, mandate[1]!);
-      return { personId: row.person_id, propertyId: row.property_id, priceEur: terms?.priceEur ?? null };
+      return { personId: row.person_id, coPersonIds: [], propertyId: row.property_id, priceEur: terms?.priceEur ?? null };
     }
     return null;
   }
@@ -337,20 +338,27 @@ export class VigilanceRenforcee {
     if (viewer.role !== 'agent' && viewer.role !== 'compliance') return this.refuse(viewer, caseRef, 'role');
     const found = await this.loadCase(viewer.networkId, caseRef);
     if (!found) return { ok: false, rule: null, code: 'unknown_case' };
-    const read = await this.acces.readFiche(viewer, found.personId);
-    if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
-    if (read.view !== 'full') return this.refuse(viewer, caseRef, 'not_assigned');
-    const memberIds = read.value.members.map((m) => m.id);
+    // Chaque acquéreur de l'offre, coacquéreurs compris, est lu et examiné : il faut les voir tous en entier (AU009).
+    const people: { personId: string; memberIds: string[] }[] = [];
+    for (const personId of [found.personId, ...found.coPersonIds]) {
+      const read = await this.acces.readFiche(viewer, personId);
+      if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
+      if (read.view !== 'full') return this.refuse(viewer, caseRef, 'not_assigned');
+      people.push({ personId, memberIds: read.value.members.map((m) => m.id) });
+    }
 
     const settings = await this.currentSettings(viewer.networkId);
-    const facts = await this.facts(viewer.networkId, caseRef, memberIds, found.propertyId, found.priceEur);
-    for (const alert of computeVigilance(settings, facts)) {
-      const fingerprint = await sha256Hex(JSON.stringify([caseRef, alert.key, settings.version, alert.figures]));
-      await this.db.run(
-        `INSERT INTO vigilance_alerts (id, network_id, case_ref, person_id, rule_key, settings_version, figures, fingerprint, raised_by, raised_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (network_id, fingerprint) DO NOTHING`,
-        [this.newId(), viewer.networkId, caseRef, found.personId, alert.key, settings.version, JSON.stringify(alert.figures), fingerprint, this.actor(viewer), this.now().toISOString()],
-      );
+    for (const [i, person] of people.entries()) {
+      const facts = await this.facts(viewer.networkId, caseRef, person.memberIds, found.propertyId, found.priceEur);
+      for (const alert of computeVigilance(settings, facts)) {
+        // L'empreinte d'une alerte de l'acquéreur en tête reste celle d'avant AU009 ; celle d'un coacquéreur le nomme.
+        const fingerprint = await sha256Hex(JSON.stringify(i === 0 ? [caseRef, alert.key, settings.version, alert.figures] : [caseRef, alert.key, settings.version, alert.figures, person.personId]));
+        await this.db.run(
+          `INSERT INTO vigilance_alerts (id, network_id, case_ref, person_id, rule_key, settings_version, figures, fingerprint, raised_by, raised_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (network_id, fingerprint) DO NOTHING`,
+          [this.newId(), viewer.networkId, caseRef, person.personId, alert.key, settings.version, JSON.stringify(alert.figures), fingerprint, this.actor(viewer), this.now().toISOString()],
+        );
+      }
     }
     const rows = await this.db.all<AlertRow>('SELECT * FROM vigilance_alerts WHERE network_id = ? AND case_ref = ? ORDER BY raised_at, rowid', [viewer.networkId, caseRef]);
     for (const row of rows) await this.ensureEvents(row);

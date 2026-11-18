@@ -137,7 +137,7 @@ export function dossierRoutes(): DossierRoute[] {
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/fichiers$`), name: 'dossiers.depot', handle: depositAs('piece') },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/preuves$`), name: 'dossiers.preuve', handle: depositAs('preuve') },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/echeancier$`), name: 'dossiers.echeancier', handle: async (s, v, [id]) => reply(await services(s).echeancier.schedule(v, id!)) },
-    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef }))) },
+    { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef, personId: b.personId }))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement', handle: async (s, v, [id]) => reply(await services(s).financement.financing(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement.etape', handle: withBody(async (s, v, [id], b) => reply(await services(s).financement.declare(v, id!, b))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/arret$`), name: 'dossiers.arret', handle: async (s, v, [id]) => reply(await services(s).arret.of(v, id!)) },

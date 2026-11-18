@@ -154,7 +154,13 @@ export class SuiviOffres {
     if (!list.ok) return list;
     const out: unknown[] = [];
     for (const offer of list.value) {
-      out.push((await this.buyer(viewer, offer)) ? offer : { ...offer, buyerPersonId: null, downPaymentEur: null, loanEur: null, signedRef: null, conditions: offer.conditions.map((c) => ({ kind: c.kind })) });
+      // Chaque coacquéreur, seulement si le lecteur voit sa fiche en entier (AU009) [R16].
+      const coBuyers: string[] = [];
+      for (const id of offer.coBuyerPersonIds) {
+        const read = await this.acces.readFiche(viewer, id);
+        if (read.ok && read.view === 'full') coBuyers.push(id);
+      }
+      out.push((await this.buyer(viewer, offer)) ? { ...offer, coBuyerPersonIds: coBuyers } : { ...offer, buyerPersonId: null, coBuyerPersonIds: null, downPaymentEur: null, loanEur: null, signedRef: null, conditions: offer.conditions.map((c) => ({ kind: c.kind })) });
     }
     return { ok: true, value: out };
   }

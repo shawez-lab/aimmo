@@ -215,6 +215,13 @@ export class ActeVente {
     if (identity !== 'non_visible') {
       const seen = await this.controles.identitySeenAt(g.file.network_id, g.file.buyer_person_id, new Date(`${signedOn}T21:59:59.999Z`));
       identity = seen !== null && localTime(new Date(seen), TIME_ZONE).date <= signedOn ? 'verifiee' : 'non_verifiee';
+      // Chaque coacquéreur aussi, au jour de l'acte (AU009) [R58, R60].
+      const co = await this.db.first<{ co_buyers: string | null }>('SELECT co_buyers FROM offer_register WHERE id = ?', [g.file.offer_id]);
+      for (const personId of JSON.parse(co?.co_buyers ?? '[]') as string[]) {
+        if (identity !== 'verifiee') break;
+        const its = await this.controles.identitySeenAt(g.file.network_id, personId, new Date(`${signedOn}T21:59:59.999Z`));
+        if (its === null || localTime(new Date(its), TIME_ZONE).date > signedOn) identity = 'non_verifiee';
+      }
     }
     if (status.value.missing.length > 0 || status.value.unknown.length > 0 || identity !== 'verifiee' || expired.length > 0) {
       return blocked({ ok: false, rule: 'R60', code: 'incomplete', missing: status.value.missing, expired, unknown: status.value.unknown, identity });
