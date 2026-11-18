@@ -2,6 +2,9 @@
 // Personnes, biens et dates inventés.
 import { expect, it } from 'vitest';
 import { DossiersVente } from '../src/offres/dossier-vente.ts';
+import { FicheUnique } from '../src/index.ts';
+import { caseScopeOf } from '../src/conformite/dossier-fige.ts';
+import { ActeVente } from '../src/dossiers/index.ts';
 import { hashOffer } from '../src/offres/registre-offres.ts';
 import { Echeancier, buyerWithdrawalLastDay, scheduleLines } from '../src/dossiers/index.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
@@ -108,5 +111,39 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     const logged = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((x) => x.type === 'dossier.date').map((x) => x.data);
     expect(logged).toContainEqual({ rule: 'R61', kind: 'notification_acquereur', version: 2, person: `person:${co}` });
     expect(JSON.stringify(logged)).not.toContain('Coacheteur');
+  });
+
+  it('[R603] [R94] chaque coacquéreur est une partie du dossier : contrôlé et figé comme l’acquéreur en tête', async () => {
+    const t = await setupDossier('appartement', {}, { coBuyers: 1 });
+    const fiches = new FicheUnique(t.db, t.store, { now: t.now });
+    for (const [kind, id] of [['offer', t.offerId], ['sale_file', t.fileId]] as const) {
+      const found = await caseScopeOf(t.db, fiches, t.network.id, kind, id);
+      expect(found?.scope.persons).toContain(t.coBuyerIds[0]);
+      expect(found?.scope.persons).toContain(t.buyerId);
+    }
+    const sale = await caseScopeOf(t.db, fiches, t.network.id, 'mandate', t.mandateId, { withSale: true });
+    expect(sale?.scope.persons).toContain(t.coBuyerIds[0]);
+  });
+
+  it('[R60] pas d’acte si l’identité d’un coacquéreur n’est plus vérifiée au jour de l’acte', async () => {
+    const t = await setupDossier('appartement', {}, { coBuyers: 1 });
+    await t.startCompromis();
+    t.setClock(new Date('2027-03-10T08:00:00.000Z'));
+    await new Echeancier(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    // Plus d'un an après : l'acquéreur en tête refait son contrôle d'identité avant l'acte ; celui du coacquéreur date
+    // de mars 2027, trop ancien.
+    t.setClock(new Date('2028-06-05T08:00:00.000Z'));
+    expect(await t.verifyBuyer(new Date('2028-06-05T07:00:00.000Z'))).toMatchObject({ ok: true });
+    t.setClock(new Date('2028-06-11T08:00:00.000Z'));
+    const s = await t.pieces.status(t.agent, t.fileId);
+    if (!s.ok) throw new Error(s.code);
+    for (const piece of s.value.missing) expect(await t.pieces.add(t.agent, t.fileId, { piece, ref: t.upload(), issuedOn: '2028-05-01' })).toMatchObject({ ok: true });
+    const acte = new ActeVente(t.db, t.acces, t.journal, t.storage, { now: t.now });
+    const ACT = 'preuves/0b6f1d2e-7777-4a2b-8c3d-000000000009.pdf';
+    expect(await acte.record(t.agent, t.fileId, { signedOn: '2028-06-10', proofRef: ACT })).toMatchObject({ ok: false, rule: 'R60', code: 'incomplete', missing: [], expired: [], identity: 'non_verifiee' });
+    // Le coacquéreur vérifié à son tour : l'acte du lendemain passe.
+    expect(await t.verifyBuyer(new Date('2028-06-11T07:00:00.000Z'), t.coBuyerIds[0])).toMatchObject({ ok: true });
+    t.setClock(new Date('2028-06-12T08:00:00.000Z'));
+    expect(await acte.record(t.agent, t.fileId, { signedOn: '2028-06-12', proofRef: ACT })).toMatchObject({ ok: true });
   });
 });

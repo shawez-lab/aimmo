@@ -569,7 +569,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_whatsapp_alerts: { locate: by('person_id') },
   weekly_points: { locate: by('person_id') },
   // offres-dossiers-vente : l'acquéreur par son offre ; le vendeur voit son dossier de vente sans l'acquéreur.
-  offer_register: { locate: by('buyer_person_id') },
+  // Les coacquéreurs (AU009) : leurs fiches ne sont pas montrées à l'acquéreur en tête qui demande ses données.
+  offer_register: { locate: by('buyer_person_id'), shared: ['co_buyers'] },
   offer_checks: { locate: [via('offer_id', 'offer_register')] },
   offer_transmissions: { locate: [via('offer_id', 'offer_register')] },
   offer_responses: { locate: [via('offer_id', 'offer_register')] },
@@ -585,6 +586,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sale_file_steps: { locate: [via('file_id', 'sale_files')] },
   sale_file_pieces: { locate: [via('file_id', 'sale_files')] },
   sale_file_dates: { locate: [via('file_id', 'sale_files')] },
+  // La notification d'un coacquéreur est la sienne (AU009).
+  sale_file_buyer_notices: { locate: by('person_id') },
   sale_file_tasks: { locate: [via('file_id', 'sale_files')] },
   sale_file_reminders: { locate: by('person_id') },
   // Le financement est celui de l'acquéreur : le vendeur ne le voit pas.
