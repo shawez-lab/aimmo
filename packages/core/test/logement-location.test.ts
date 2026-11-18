@@ -31,6 +31,7 @@ const FACTS: RentalFacts = {
   electricityOver15: false,
   mainRoomHundredths: 1_800,
   ceilingHeightCm: 250,
+  localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
   gas: 'aucune',
   leaseStart: '2027-09-01',
 };
@@ -332,5 +333,26 @@ describe('AU017 · décence : pièce principale et hauteur, ou volume', () => {
     expect(parseFacts({ ...raw, ceilingHeightCm: 99 })).toEqual({ ok: false, field: 'ceilingHeightCm' });
     expect(parseFacts({ ...raw, habitableVolumeHundredths: 0 })).toEqual({ ok: false, field: 'habitableVolumeHundredths' });
     expect(parseFacts({ ...raw, mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 })).toMatchObject({ ok: true, value: { mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 } });
+  });
+});
+
+describe('AU017 · la règle locale plus stricte, lue et datée, avant « louable »', () => {
+  const today = '2026-11-18';
+  const { localRules: _l, ...national } = FACTS;
+  it('[R101] le seuil national rempli ne suffit pas : sans règle locale lue, jamais « louable »', () => {
+    expect(decencyOf(national)).toBe('oui');
+    expect(checkDwelling(national, ALL_VALID, today)).toContainEqual({ code: 'local_rules_unchecked' });
+    expect(checkDwelling(FACTS, ALL_VALID, today).some((r) => r.code.startsWith('local_rules'))).toBe(false);
+  });
+  it('[R101] une règle locale non respectée bloque avec sa référence, même au-dessus du seuil national', () => {
+    const f = { ...FACTS, localRules: { reference: 'Règlement sanitaire départemental, art. 40-1', checkedOn: '2027-01-04', compliant: false } };
+    expect(checkDwelling(f, ALL_VALID, today)).toContainEqual({ code: 'local_rules_failed', reference: 'Règlement sanitaire départemental, art. 40-1' });
+  });
+  it('[R101] la règle locale se saisit avec sa référence et son jour, rien d’autre', () => {
+    const raw = { ...national, chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, localRules: { reference: 'RS', checkedOn: '2027-01-04', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: 'hier', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true, note: 'x' } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: ' RSD art. 40 ', checkedOn: '2027-01-04', compliant: true } })).toMatchObject({ ok: true, value: { localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true } } });
   });
 });
