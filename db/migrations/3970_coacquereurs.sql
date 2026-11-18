@@ -1,6 +1,6 @@
 -- AU009 · Coacquéreurs. Une offre porte, en plus de son acquéreur, ses coacquéreurs : chacun sa fiche, jamais fusionnée.
 -- L'empreinte de l'offre les couvre dès qu'il y en a un ; une offre d'avant garde la sienne [R56].
-ALTER TABLE offer_register ADD COLUMN co_buyers TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(co_buyers) AND json_type(co_buyers) = 'array');
+ALTER TABLE offer_register ADD COLUMN co_buyers TEXT NOT NULL DEFAULT '[]';
 
 -- La première présentation de la notification à chaque coacquéreur : sa date, sa preuve, ses versions. Celle de
 -- l'acquéreur en tête reste dans `sale_file_dates`. En ajout seul [R17].

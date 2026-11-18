@@ -371,10 +371,13 @@ export class RegistreOffres {
       };
       const hash = await hashOffer(line);
       try {
+        // La colonne des coacquéreurs n'est écrite que s'il y en a : une offre d'un acquéreur seul s'inscrit comme avant
+        // la migration 3970, aussi sur une base qui ne l'a pas encore.
+        const co = coBuyers.length > 0;
         await this.db.run(
-          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key, co_buyers)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, line.co_buyers ?? '[]'],
+          `INSERT INTO offer_register (id, network_id, property_id, seq, buyer_person_id, amount_eur, conditions, valid_until, down_payment_eur, loan_eur, signed_ref, received_at, agent_id, at, actor, prev_hash, hash, request_key${co ? ', co_buyers' : ''})
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${co ? ', ?' : ''})`,
+          [line.id, line.network_id, line.property_id, line.seq, line.buyer_person_id, line.amount_eur, line.conditions, line.valid_until, line.down_payment_eur, line.loan_eur, line.signed_ref, line.received_at, line.agent_id, line.at, line.actor, line.prev_hash, hash, requestKey, ...(co ? [line.co_buyers!] : [])],
         );
       } catch (error) {
         // Le même envoi, arrivé en même temps : l'offre enregistrée par l'autre est rendue.
