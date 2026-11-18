@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, SqlJournalStore, applyMigrations, conformite, fromSyncSqlite, verifyChain, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Personnes et pièces inventées pour les tests : le contenu d'une pièce est quelques octets sans signification.
 const NOW = new Date('2027-03-10T10:00:00.000Z');
@@ -233,13 +234,14 @@ describeWithSqlite('L01 · coffre de la conformité', () => {
     const t = await setup();
     const modeles = new Modeles(t.db, t.acces, t.journal, { now: t.now });
     const controles = new ControlesSignature(t.db, t.acces, t.journal, { now: t.now });
-    const v = await modeles.createVersion(t.direction, 'mandat_vente_exclusif', 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro : {{registre.numero}}.');
+    const v = await modeles.createVersion(t.direction, 'mandat_vente_exclusif', 'Mandat de test : {{mandant.nom}}, {{bien.reference}}, {{bien.prix}}, honoraires {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\n!! Clause de test mise en évidence.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.');
     if (!v.ok) throw new Error(v.code);
     await modeles.validate(t.conformite, v.template.id);
     await controles.setFeeSchedule(t.direction, { maxRatePercent: 5, minEur: 3000 });
     const b = await t.store.createProperty({ networkId: t.network.id, agentId: t.agent.userId, reference: 'REF-L01', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 60, rooms: 3, priceEur: 200000 });
     const project = await t.store.createProject({ networkId: t.network.id, agentId: t.agent.userId, personId: t.person.id, kind: 'sell' });
     await t.store.linkProjectProperty({ networkId: t.network.id, agentId: t.agent.userId, projectId: project.id, propertyId: b.id, role: 'owned' });
+    await designerTout(t.db);
     const d = await modeles.generate(t.agent, { kind: 'mandat_vente_exclusif', personId: t.person.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'vendeur', 'mandat.duree_mois': 12 } as never });
     if (!d.ok) throw new Error(d.code);
     const identity = async () => {

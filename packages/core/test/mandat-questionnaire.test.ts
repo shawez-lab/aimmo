@@ -4,9 +4,10 @@ import { CLAUSES, CLAUSE_CODES, clausesFor, DEFAULT_MAX_GAP_BPS, MandatQuestionn
 import { htmlProblems } from '../src/design/audit.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { designerTout } from './designation-jeu.ts';
 
 // Modèles et clauses de test, inventés : ce ne sont pas des textes juridiques. Réseau, agents et clients inventés.
-const SIMPLE = ['MANDAT DE VENTE SIMPLE (MODÈLE DE TEST)', 'Entre {{mandant.nom}} et {{reseau.nom}}, représenté par {{agent.nom}}.', 'Bien {{bien.reference}}, {{bien.commune}}, au prix de {{bien.prix}}.', 'Honoraires : {{honoraires.montant}}, {{honoraires.charge}}. Durée : {{mandat.duree_mois}}.', 'Numéro au registre : {{registre.numero}}. Fait le {{document.date}}.'].join('\n\n');
+const SIMPLE = ['MANDAT DE VENTE SIMPLE (MODÈLE DE TEST)', 'Entre {{mandant.nom}} et {{reseau.nom}}, représenté par {{agent.nom}}.', 'Bien {{bien.reference}}, {{bien.commune}}, au prix de {{bien.prix}}.', 'Honoraires : {{honoraires.montant}}, {{honoraires.charge}}. Durée : {{mandat.duree_mois}}.', 'Numéro au registre : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}. Fait le {{document.date}}.'].join('\n\n');
 const EXCLUSIF = SIMPLE.replace('SIMPLE', 'EXCLUSIF') + '\n\n!! Clause d’exclusivité du modèle de test.';
 const NOW = new Date('2027-04-12T09:00:00.000Z');
 const BASE: Answers = { exclusivite: 'non', lieu_signature: 'agence', vendeurs: 'une', occupation: 'libre', copropriete: 'non', honoraires: 'vendeur' };
@@ -61,7 +62,7 @@ async function setup(o: { price?: number | null } = {}) {
     );
     return id;
   };
-  const prepare = (answers: Answers = BASE, viewer: Viewer = agent) => mq.prepare(viewer, { personId: person.id, propertyId: property.id, answers, inputs: INPUTS });
+  const prepare = async (answers: Answers = BASE, viewer: Viewer = agent) => (await designerTout(db), mq.prepare(viewer, { personId: person.id, propertyId: property.id, answers, inputs: INPUTS }));
   const line = async (documentId: string, check: string) => {
     const c = await controles.check(direction, documentId);
     if (!c.ok) throw new Error(c.code);
@@ -353,6 +354,7 @@ describeWithSqlite('HX33 · mandat par questionnaire', () => {
     expect(await t.mq.acknowledgeGap(t.agent, r.mandate.id)).toEqual({ ok: true });
     expect(await t.line(r.mandate.documentId, 'questionnaire')).toMatchObject({ ok: true, code: 'price_checked' });
     // Un document fait sans questionnaire n'a pas cette ligne.
+    await designerTout(t.db);
     const plain = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: t.person.id, propertyId: t.property.id, inputs: { ...INPUTS, 'honoraires.charge': 'vendeur' } });
     if (!plain.ok) throw new Error(plain.code);
     expect(await t.line(plain.document.id, 'questionnaire')).toBeUndefined();

@@ -6,6 +6,7 @@ import worker, { type Env } from '../src/worker.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { fakeD1 } from './fake-d1.ts';
+import { designerTout } from '../../core/test/designation-jeu.ts';
 
 // Clés et modèle inventés pour les tests.
 const BASE = 'https://aimmo-api.example.workers.dev';
@@ -39,13 +40,13 @@ describeWithSqlite('D02 · routes des modèles et des documents', () => {
         new Request(`${BASE}${path}`, body === undefined ? { headers: { authorization: `Bearer ${key}` } } : { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }),
         env,
       );
-    const body = 'Mandat de test entre {{mandant.nom}} et {{agent.nom}} pour {{bien.reference}}, numéro {{registre.numero}}.\n\n' + 'Texte long de test. '.repeat(1000);
+    const body = 'Mandat de test entre {{mandant.nom}} et {{agent.nom}} pour {{bien.reference}}, numéro {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.\n\n' + 'Texte long de test. '.repeat(1000);
     expect((await call('/v1/modeles', KEY_AGENT, { kind: 'mandat_vente_simple', body })).status).toBe(403);
     // [R40] Les refus que l'écran de D18 dit en français : leur code et leur statut.
     const refused = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body: 'Mandat sans place pour le numéro.' });
     expect(refused.status).toBe(400);
     expect(await refused.json()).toMatchObject({ ok: false, rule: 'R40', code: 'no_number_field' });
-    const noEvidence = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_exclusif', body: 'Mandat exclusif, numéro {{registre.numero}}.' });
+    const noEvidence = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_exclusif', body: 'Mandat exclusif, numéro {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.' });
     expect(await noEvidence.json()).toMatchObject({ ok: false, rule: 'R40', code: 'no_evidence' });
     const created = await call('/v1/modeles', KEY_DIRECTION, { kind: 'mandat_vente_simple', body });
     expect(created.status).toBe(200);
@@ -53,13 +54,14 @@ describeWithSqlite('D02 · routes des modèles et des documents', () => {
     expect(template.status).toBe('essai');
     expect((await call(`/v1/modeles/${template.id}/validation`, KEY_DIRECTION, {})).status).toBe(403);
 
+    await designerTout(db);
     const gen = (key: string) => call('/v1/documents', key, { kind: 'mandat_vente_simple', personId: lea.id, propertyId: bien.id });
     const trial = (await (await gen(KEY_AGENT)).json()) as { data: { mode: string; status: string; content: string } };
     expect(trial.data).toMatchObject({ mode: 'essai', status: 'complet' });
     expect((await call(`/v1/modeles/${template.id}/validation`, KEY_COMPLIANCE, {})).status).toBe(200);
     const real = (await (await gen(KEY_AGENT)).json()) as { data: { id: string; mode: string; content: string } };
     expect(real.data.mode).toBe('reel');
-    expect(real.data.content).toContain('Mandat de test entre Léa Exemple et Alex Agent pour REF-T-1, numéro <span class="a-signer">[numéro au registre à la signature]</span>.');
+    expect(real.data.content).toContain('Mandat de test entre Léa Exemple et Alex Agent pour REF-T-1, numéro <span class="a-signer">[numéro au registre à la signature]</span> · 1 rue de l’Essai, 21000 Dijon · section AB n° 1 · 2 avenue du Test, 21000 Dijon.');
     expect((await gen(KEY_OTHER)).status).toBe(403);
     expect((await call(`/v1/documents/${real.data.id}`, KEY_AGENT)).status).toBe(200);
     expect((await call(`/v1/documents/${real.data.id}`, KEY_OTHER)).status).toBe(403);

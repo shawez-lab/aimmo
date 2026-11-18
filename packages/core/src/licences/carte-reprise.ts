@@ -56,7 +56,7 @@ export const TABLES_RESEAU: readonly string[] = `
   contact_keys contact_origins contact_scores contact_vitrines conversation_handovers coownership_summaries
   custom_reports daily_plans data_breach_cuts data_breaches diffusion_photo_subjects diffusion_portal_checks
   diffusion_portal_choices diffusion_portal_feedback diffusion_portal_settings diffusion_portal_suspensions
-  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_templates documents dpe_alert_items
+  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_templates documents person_domiciles property_designations dpe_alert_items
   dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
@@ -298,7 +298,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_sessions signed_amendments
-  signed_documents document_co_mandants documents dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
+  signed_documents document_co_mandants documents person_domiciles property_designations dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
   person_request_answers person_request_outputs person_requests exclusions gbp_claims gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
