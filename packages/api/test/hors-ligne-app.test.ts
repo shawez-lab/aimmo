@@ -11,6 +11,7 @@ import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // AU018 · Tout est inventé : réseau, agents, vendeuse, acquéreuse, bien, clé, images.
 const KEY = 'k'.repeat(40);
+const KEY_B = 'b'.repeat(40);
 const HTML = AGENT_APP_FILES['/app/']!;
 const APP = AGENT_APP_FILES['/app/app.js']!;
 const OFFLINE = AGENT_APP_FILES['/app/hors-ligne.js']!;
@@ -105,6 +106,10 @@ const camera = {
   },
 };
 
+const packOf = (idb: Map<string, unknown>): horsLigne.OfflinePack | null => {
+  const k = [...idb.keys()].find((x) => x.startsWith(`${HORS_LIGNE_DB.paquet}:`));
+  return k ? (idb.get(k) as horsLigne.OfflinePack) : null;
+};
 const settle = async () => {
   for (let i = 0; i < 40; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -124,6 +129,8 @@ async function setup() {
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
   const sam = await store.createAgent({ networkId: network.id, firstName: 'Sam', lastName: 'Bienveillant' });
   const agent: Viewer = { role: 'agent', userId: alex.id, networkId: network.id };
+  const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Agente' });
+  const agentB: Viewer = { role: 'agent', userId: bea.id, networkId: network.id };
   const direction: Viewer = { role: 'direction', userId: 'd1', networkId: network.id };
   await rdv.setAvailability(agent, WEEK);
   await visites.createSlipTemplate(direction, 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.');
@@ -148,7 +155,7 @@ async function setup() {
     return route.handle(s, viewer, params, new Request(`https://api.example.test${url}`, init));
   };
   const count = async (t: string) => (await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`))!.n;
-  return { db, journal, agent, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, journal, agent, agentB, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 type World = Awaited<ReturnType<typeof setup>>;
 
@@ -156,7 +163,8 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+  const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
   const calls: string[] = [];
@@ -180,18 +188,19 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     btoa,
     indexedDB: fakeIndexedDb(idb),
     ...camera,
-    crypto: { randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
+    TextEncoder,
+    crypto: { subtle: crypto.subtle, randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
     setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
-    localStorage: { getItem: () => KEY, setItem: () => undefined, removeItem: () => undefined },
+    localStorage: { getItem: () => who.key, setItem: () => undefined, removeItem: () => undefined },
     addEventListener: (n: string, f: () => void) => (winListeners[n] = f),
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
     fetch: async (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
       const method = (init.method ?? 'GET') as 'GET' | 'POST';
       calls.push(`${method} ${url}`);
       if (!net.network) throw new TypeError('hors ligne');
-      expect(init.headers?.authorization).toBe(`Bearer ${KEY}`);
+      expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
-        const r = await w.call(w.agent, method, url, init.body);
+        const r = await w.call(viewer, method, url, init.body);
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
       }
@@ -213,7 +222,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     b.listeners.click!({});
     await settle();
   };
-  const H = ctx.AimmoHorsLigne as { pending: () => Promise<unknown[]>; refused: () => Promise<unknown[]>; readPack: () => Promise<unknown> };
+  const H = ctx.AimmoHorsLigne as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
   return { els, ctx, calls, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
@@ -227,7 +236,7 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(online.els.accueil!.hidden).toBe(false);
     expect(online.calls).toContain('GET /v1/hors-ligne/paquet');
     expect(online.els.accueil!.all().some((e) => e.textContent === 'Mes visites sans réseau')).toBe(true);
-    const pack = idb.get(HORS_LIGNE_DB.paquet) as horsLigne.OfflinePack;
+    const pack = packOf(idb)!;
     expect(pack.appointments.map((a) => a.appointmentId)).toEqual([w.visitId]);
     // Rien d'un client sur le téléphone [R278].
     expect(JSON.stringify([...idb.values()])).not.toMatch(/Inès|Durandal|Victorine|Vendeuse|06 12|example\.test/);
@@ -297,15 +306,50 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(((await dep.json()) as { data: { check: { canLeave: boolean; missing: string[] } } }).data.check).toMatchObject({ canLeave: false, missing: ['limites'] });
   });
 
+  it('[R16] [R276] deux agents sur le même téléphone ne se mélangent pas ; une autre clé sans réseau ne voit rien ; après la sortie, rien ne part', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    // Alex, sans réseau, garde une note, puis se déconnecte ; le réseau revient sur la même page.
+    w.setClock(w.visitStart + 10 * MIN);
+    const net = { network: false };
+    const a = await phone(w, idb, net);
+    a.find('textarea')!.value = 'Note d’Alex.';
+    await a.click(a.find('button', 'Garder la note'));
+    expect(await a.H.pending()).toHaveLength(1);
+    a.els.sortir!.listeners.click!({});
+    await settle();
+    net.network = true;
+    await a.online();
+    expect(a.calls.filter((c) => c.startsWith('POST'))).toEqual([]);
+    // Une autre clé tapée sans réseau n'ouvre pas la journée d'Alex.
+    const stranger = await phone(w, idb, { network: false }, { key: KEY_B, viewer: w.agentB });
+    expect(stranger.root().hidden).toBe(true);
+    expect(stranger.els.erreur!.textContent).toMatch(/Pas de réseau/);
+    // Béa se connecte avec du réseau sur le même téléphone : la note d'Alex ne part pas sous sa clé, et reste à Alex.
+    const b = await phone(w, idb, { network: true }, { key: KEY_B, viewer: w.agentB });
+    expect(b.calls).toContain('GET /v1/hors-ligne/paquet');
+    expect(b.calls.filter((c) => c.startsWith('POST'))).toEqual([]);
+    expect(await w.count('offline_ops')).toBe(0);
+    // Alex revient avec du réseau : sa note part, une fois.
+    const back = await phone(w, idb, { network: true });
+    expect(await back.H.pending()).toEqual([]);
+    expect(await w.count('visit_field_notes')).toBe(1);
+    expect(await w.count('offline_ops')).toBe(1);
+    // Ni la clé ni son empreinte en clair d'un agent : seules des empreintes servent de noms.
+    expect(JSON.stringify([...idb.entries()])).not.toContain(KEY);
+  });
+
   it('[R278] passé minuit, le paquet est effacé du téléphone : sans réseau, l’application dit « Pas de réseau »', async () => {
     const w = await setup();
     const idb = new Map<string, unknown>();
     w.setClock(w.visitStart - 2 * HOUR);
     await phone(w, idb, { network: true });
-    expect(idb.has(HORS_LIGNE_DB.paquet)).toBe(true);
+    expect(packOf(idb)).not.toBeNull();
     w.setClock(w.visitStart + 24 * HOUR);
     const next = await phone(w, idb, { network: false });
-    expect(idb.has(HORS_LIGNE_DB.paquet)).toBe(false);
+    expect(packOf(idb)).toBeNull();
     expect(next.root().hidden).toBe(true);
     expect(next.els.erreur!.textContent).toMatch(/Pas de réseau/);
   });

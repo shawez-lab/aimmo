@@ -83,35 +83,39 @@ function del(k) {
 }
 
 /* La boîte d'envoi [R276]. */
-var state = null, queue = Promise.resolve(), flushing = null;
+/* Chaque agent a sa boîte et son paquet, sous une marque tirée par le serveur : un autre agent sur le même téléphone
+   ne voit, n'envoie ni ne perd rien de lui [R16, R276]. */
+var states = {}, queue = Promise.resolve(), flushing = {};
 function excl(fn) { var run = queue.then(fn, fn); queue = run.then(null, function () {}); return run; }
 function uuid() { return G.crypto.randomUUID(); }
-function current() {
-  if (state) return Promise.resolve(state);
-  return get(BOITE).then(function (s) {
-    if (s) { state = s; return s; }
+function current(o) {
+  if (states[o]) return Promise.resolve(states[o]);
+  return get(BOITE + ':' + o).then(function (s) {
+    if (s) { states[o] = s; return s; }
     var n = { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] };
-    return put(BOITE, n).then(function () { state = n; return n; });
+    return put(BOITE + ':' + o, n).then(function () { states[o] = n; return n; });
   });
 }
 function add(kind, appointmentId, payload) {
+  var o = ui && ui.owner;
+  if (!o) return Promise.reject(new Error('aucun agent'));
   return excl(function () {
-    return current().then(function (s) {
+    return current(o).then(function (s) {
       var op = { opId: uuid(), seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: new Date().toISOString(), payload: payload };
       var next = { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused };
-      return put(BOITE, next).then(function () { state = next; return op; });
+      return put(BOITE + ':' + o, next).then(function () { states[o] = next; return op; });
     });
   });
 }
 function bySeq(a, b) { return a.seq - b.seq; }
-function flush(send, limit) {
-  if (!flushing) flushing = doFlush(send, limit > 0 ? limit : 10).then(function (r) { flushing = null; return r; }, function (e) { flushing = null; throw e; });
-  return flushing;
+function flush(o, send, limit) {
+  if (!flushing[o]) flushing[o] = doFlush(o, send, limit > 0 ? limit : 10).then(function (r) { delete flushing[o]; return r; }, function (e) { delete flushing[o]; throw e; });
+  return flushing[o];
 }
-function doFlush(send, limit) {
+function doFlush(o, send, limit) {
   var sent = 0, refused = 0;
   function step() {
-    return excl(current).then(function (s) {
+    return excl(function () { return current(o); }).then(function (s) {
       var batch = s.pending.slice().sort(bySeq).slice(0, limit);
       if (!batch.length) return { offline: false, sent: sent, refused: refused, left: 0 };
       return send({ deviceId: s.deviceId, ops: batch }).then(function (r) { return r && Array.isArray(r.results) ? r.results : []; }, function () { return null; }).then(function (results) {
@@ -120,7 +124,7 @@ function doFlush(send, limit) {
         batch.forEach(function (o) { asked[o.opId] = true; });
         results.forEach(function (r) { if (r && typeof r.opId === 'string' && asked[r.opId] && !by[r.opId]) { by[r.opId] = r; named++; } });
         return excl(function () {
-          return current().then(function (now) {
+          return current(o).then(function (now) {
             var keep = [], gone = [];
             now.pending.forEach(function (op) {
               var r = by[op.opId];
@@ -129,7 +133,7 @@ function doFlush(send, limit) {
               else keep.push(op);
             });
             var next = { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone) };
-            return put(BOITE, next).then(function () { state = next; return keep.length; });
+            return put(BOITE + ':' + o, next).then(function () { states[o] = next; return keep.length; });
           });
         }).then(function (left) { return named ? step() : { offline: false, sent: sent, refused: refused, left: left }; });
       });
@@ -139,10 +143,19 @@ function doFlush(send, limit) {
 }
 
 /* Le paquet du jour : rien d'un client ; passé sa fin de validité, il est effacé [R278]. */
-function readPack() {
-  return get(PAQUET).then(function (p) {
+function readPack(o) {
+  if (!o) return Promise.resolve(null);
+  return get(PAQUET + ':' + o).then(function (p) {
     if (p && typeof p.validUntil === 'string' && Date.parse(p.validUntil) > Date.now() && Array.isArray(p.appointments)) return p;
-    return p ? del(PAQUET).then(function () { return null; }) : null;
+    return p ? del(PAQUET + ':' + o).then(function () { return null; }) : null;
+  });
+}
+/* L'empreinte de la clé, jamais la clé : elle relie la clé de l'appareil à la marque de son agent, pour ouvrir sans réseau. */
+function tag(key) {
+  return G.crypto.subtle.digest('SHA-256', new G.TextEncoder().encode(String(key))).then(function (b) {
+    var h = '', a = new Uint8Array(b);
+    for (var i = 0; i < a.length; i++) h += (a[i] < 16 ? '0' : '') + a[i].toString(16);
+    return 'cle:' + h;
   });
 }
 
@@ -229,26 +242,36 @@ var limit = 10;
 function sender(key) { return function (batch) { return call(key, R_SAISIES, 'POST', batch); }; }
 
 function sync(key) {
-  if (!key) return Promise.resolve(null);
-  return flush(sender(key), limit).then(function (r) { if (ui) render(); return r; }, function () { return null; });
+  // Seulement la boîte de l'agent connecté, avec sa clé : après une sortie, plus rien ne part [R16].
+  if (!key || !ui || ui.key !== key || !ui.owner) return Promise.resolve(null);
+  return flush(ui.owner, sender(key), limit).then(function (r) { if (ui) render(); return r; }, function () { return null; });
 }
 /** Avec du réseau : le paquet du jour est préparé et gardé, puis la boîte part [R278, R276]. */
 function prepare(key, show, back) {
-  ui = ui || { key: key, show: show, back: back, open: false };
-  ui.key = key;
-  ui.show = show;
-  ui.back = back;
-  entry();
+  var mine = ui = { key: key, owner: null, show: show, back: back, open: false };
   return call(key, R_PAQUET, 'GET').then(function (d) {
     if (d.batchLimit > 0) limit = d.batchLimit;
-    return d.pack && Array.isArray(d.pack.appointments) ? put(PAQUET, d.pack) : null;
-  }).then(function () { return sync(key); }, function () { return sync(key); });
+    if (typeof d.owner !== 'string' || !/^[a-f0-9]{16,64}$/.test(d.owner)) return null;
+    return tag(key).then(function (t) { return put(t, d.owner); }).then(function () {
+      return d.pack && Array.isArray(d.pack.appointments) ? put(PAQUET + ':' + d.owner, d.pack) : null;
+    }).then(function () {
+      if (ui !== mine) return null;
+      mine.owner = d.owner;
+      entry();
+      return sync(key);
+    });
+  }, function () { return null; });
 }
+/** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
+function stop() { ui = null; }
 /** Sans réseau au démarrage : la visite préparée s'ouvre, si un paquet du jour est là. */
 function start(key, show, back, alive) {
-  return readPack().then(function (p) {
-    if (!p || (alive && !alive())) return false;
-    ui = { key: key, show: show, back: back, open: true };
+  // Seule la clé qui a préparé le paquet l'ouvre : une autre clé tapée sans réseau ne voit rien [R16].
+  return tag(key).then(get).then(function (o) {
+    return typeof o === 'string' ? readPack(o).then(function (p) { return p ? { o: o, p: p } : null; }) : null;
+  }).then(function (got) {
+    if (!got || (alive && !alive())) return false;
+    ui = { key: key, owner: got.o, show: show, back: back, open: true };
     return render().then(function () { show('hors-ligne'); return true; });
   }, function () { return false; });
 }
@@ -262,7 +285,8 @@ function entry() {
 function render() {
   var root = $('hors-ligne');
   if (!root || !ui) return Promise.resolve();
-  return Promise.all([readPack(), excl(current)]).then(function (got) {
+  var o = ui.owner;
+  return Promise.all([readPack(o), excl(function () { return current(o); })]).then(function (got) {
     var p = got[0], box = got[1];
     clear(root);
     if (ui.back) root.appendChild(btn('Retour à ma journée', function () { ui.open = false; ui.back(); }, 'retour'));
@@ -349,8 +373,9 @@ G.AimmoHorsLigne = Object.freeze({
   start: start,
   sync: sync,
   add: add,
-  pending: function () { return excl(current).then(function (s) { return s.pending.slice(); }); },
-  refused: function () { return excl(current).then(function (s) { return s.refused.slice(); }); },
+  stop: stop,
+  pending: function (o) { o = o || (ui && ui.owner); return o ? excl(function () { return current(o); }).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
+  refused: function (o) { o = o || (ui && ui.owner); return o ? excl(function () { return current(o); }).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
   photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
 });

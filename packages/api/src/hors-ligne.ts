@@ -45,6 +45,15 @@ function refused(r: Refusal): Response {
   return json(409, { ok: false, rule: r.rule, code: r.code });
 }
 
+/**
+ * La marque de l'agent sur son téléphone : une empreinte de son réseau et de son identifiant, jamais l'identifiant ni la
+ * clé. Le téléphone y range sa boîte et son paquet, pour que deux agents sur le même appareil ne se mélangent pas [R16].
+ */
+export async function ownerMark(viewer: Viewer): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`aimmo-hors-ligne:${viewer.networkId}:${viewer.userId}`)));
+  return [...bytes.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 const server = (s: HorsLigneServices) => new horsLigne.HorsLigne(s.db, s.journal, { now: s.now });
 
 /** Le corps d'un envoi, lu seulement s'il est du JSON sous la limite. */
@@ -73,7 +82,7 @@ export function horsLigneRoutes(): HorsLigneRoute[] {
         if (jour !== null && !DAY.test(jour)) return failure(400, 'bad_day');
         const r = await server(s).pack(viewer, jour ?? undefined);
         if (!r.ok) return refused(r);
-        return json(200, { ok: true, mode: 'essai', sent: false, data: { pack: r.pack, batchLimit: BATCH_LIMIT } });
+        return json(200, { ok: true, mode: 'essai', sent: false, data: { pack: r.pack, batchLimit: BATCH_LIMIT, owner: await ownerMark(viewer) } });
       },
     },
     {

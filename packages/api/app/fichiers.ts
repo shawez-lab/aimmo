@@ -710,6 +710,9 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
+    // AU018 : la session finie, la visite sans réseau oublie la clé et l'agent.
+    var H = offlineApp();
+    if (H) H.stop();
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     clear($('dictee-accueil'));
     clear($('remises-accueil'));
