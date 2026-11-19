@@ -270,7 +270,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : un stockage illisible donne « non sauvegardé » avec sa raison (migration de `base_copy_runs`) ; le lecteur des références couvre chaque table qui cite un fichier, avec un test par table ; R224, R230 et R232 mis à jour.
 - Attend : une clé R2 en lecture seule sur les quatre compartiments des objets (à noter dans HUMAIN.md au moment de la tâche).
 ### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A020 (bloquant), endroit : chantier/PLAN.md, SV05 ; H29, `ERASURE_MODE`.
 - Constat de l'audit : L’effacement réel et sa procédure validée restent à mettre en service : je n’ai pas de parcours de suppression de production démontré.
