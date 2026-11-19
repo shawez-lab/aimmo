@@ -487,6 +487,28 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(next.els.erreur!.textContent).toMatch(/Pas de réseau/);
   });
 
+  it('[R276] une saisie gardée la veille part seule au retour du réseau, même quand le paquet a expiré', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    const field = await phone(w, idb, { network: false });
+    field.find('textarea')!.value = 'Note de la veille.';
+    await field.click(field.find('button', 'Garder la note'));
+    // Le lendemain matin, rouverte sans réseau : le paquet est effacé, l'écran dit « Pas de réseau ».
+    w.setClock(w.visitStart + 22 * HOUR);
+    const net = { network: false };
+    const next = await phone(w, idb, net);
+    expect(packOf(idb)).toBeNull();
+    expect(next.els.erreur!.textContent).toMatch(/Pas de réseau/);
+    // Le réseau revient : la note part, une fois.
+    net.network = true;
+    await next.online();
+    expect(await w.count('visit_field_notes')).toBe(1);
+    expect(next.calls.filter((c) => c.startsWith('POST'))).toHaveLength(1);
+  });
+
   it('[R16] seul l’agent prépare et envoie : un autre rôle est refusé avant la lecture du corps, et le refus est au journal', async () => {
     const w = await setup();
     w.setClock(w.visitStart - HOUR);

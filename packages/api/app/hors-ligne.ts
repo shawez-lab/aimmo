@@ -294,18 +294,26 @@ function prepare(key, show, back) {
 /** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
 function stop() { ui = null; }
 /** Sans réseau au démarrage : la visite préparée s'ouvre, si un paquet du jour est là. */
+/**
+ * Sans réseau au démarrage. Le paquet du jour de cette clé ouvre la visite. Sinon, none() dit « Pas de réseau » ; mais si
+ * la clé est connue de l'appareil, sa boîte reste attachée, et partira seule au retour du réseau, même avec un paquet
+ * périmé [R276]. Rend true (écran ouvert) ou null (none() appelé).
+ */
 function start(key, show, back, alive, none) {
-  return open(key, show, back, alive).then(function (ok) { return ok || (none ? none() : false); }, function () { return none ? none() : false; });
-}
-function open(key, show, back, alive) {
-  // Seule la clé qui a préparé le paquet l'ouvre : une autre clé tapée sans réseau ne voit rien [R16].
   return tag(key).then(get).then(function (o) {
-    return typeof o === 'string' ? readPack(o).then(function (p) { return p ? { o: o, p: p } : null; }) : null;
-  }).then(function (got) {
-    if (!got || (alive && !alive())) return false;
-    ui = { key: key, owner: got.o, show: show, back: back, open: true };
-    return render().then(function () { show('hors-ligne'); return true; });
-  }, function () { return false; });
+    if (typeof o !== 'string') return null;
+    return readPack(o).then(function (p) { return { o: o, p: p }; });
+  }).then(null, function () { return null; }).then(function (got) {
+    if (alive && !alive()) return null;
+    if (got && got.p) {
+      ui = { key: key, owner: got.o, show: show, back: back, open: true };
+      return render().then(function () { show('hors-ligne'); return true; });
+    }
+    if (none) none();
+    // Après none() : le message qu'il affiche ne détache pas la boîte de la clé encore gardée par l'appareil.
+    if (got) ui = { key: key, owner: got.o, show: show, back: back, open: false };
+    return null;
+  });
 }
 function entry() {
   var home = $('accueil');
