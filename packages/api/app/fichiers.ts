@@ -62,6 +62,7 @@ export const INDEX_HTML = `<!doctype html>
 <link rel="manifest" href="/app/manifest.webmanifest">
 <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/app/app.css">
+<script src="/app/hors-ligne.js" defer></script>
 <script src="/app/app.js" defer></script>
 </head>
 <body>
@@ -141,6 +142,7 @@ ${clesEntryHtml('accueil')}</section>
 <p id="fiche-etat" class="etat" role="status"></p>
 <div id="fiche-corps"></div>
 </section>
+<section id="hors-ligne" hidden></section>
 <section id="visite" hidden>
 <button id="visite-retour" type="button" class="retour">Retour à ma journée</button>
 <button id="alerte" type="button" class="danger">Alerte sécurité</button>
@@ -2087,7 +2089,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   function show(id) {
-    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     $('sortir').hidden = id === 'connexion' || id === 'attente' || id === 'invitation';
   }
   function api(path, key, method, body, extra) {
@@ -2148,6 +2150,7 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
+  function offlineApp() { return typeof AimmoHorsLigne === 'undefined' ? null : AimmoHorsLigne; }
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2192,10 +2195,13 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) notifLink(); return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); var H = offlineApp(); if (H) H.prepare(key, show, function () { enter(key); }); } return true; });
     }, function () {
       if (mine !== session) return false;
-      return refuse('Pas de réseau. Réessayez dans un moment.');
+      // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
+      var H = offlineApp();
+      var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
+      return H ? H.start(key, show, function () { enter(key); }, function () { return mine === session; }).then(function (ok) { return ok || no(); }, no) : no();
     });
   }
   document.addEventListener('DOMContentLoaded', function () {
