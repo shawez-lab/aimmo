@@ -36,6 +36,8 @@ import {
   type BuyerPropertyKind,
   type BuyerSearch,
   type FicheAcquereur,
+  type SearchEnergyClass,
+  type SoftCriterion,
 } from '../acquereurs/fiche-acquereur.ts';
 import { DEFAULT_TOLERANCES, matchBuyer, type DiffusionGate, type MatchProperty, type Tolerances } from '../acquereurs/rapprochement.ts';
 
@@ -45,7 +47,7 @@ export const PHRASE_MAX_LENGTH = 500;
 export const STRICT_BUDGET = /\b(?:budget ferme|maximum absolu|max absolu|infranchissable|pas un euro de plus|sans d[ée]passer)\b/i;
 
 /** Les champs qu'une phrase peut remplir : ceux de la fiche acquéreur, hors financement et urgence. */
-export const PHRASE_FIELDS = ['propertyKinds', 'communes', 'features', 'surfaceMinM2', 'roomsMin', 'bedroomsMin', 'budgetMaxEur'] as const;
+export const PHRASE_FIELDS = ['propertyKinds', 'communes', 'features', 'surfaceMinM2', 'roomsMin', 'bedroomsMin', 'budgetMaxEur', 'floorMin', 'floorMax', 'energyClassMax', 'landMinM2'] as const;
 export type PhraseField = (typeof PHRASE_FIELDS)[number];
 
 export type Strength = 'must' | 'nice';
@@ -279,6 +281,43 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
     scan(new RegExp(`${B}${wordsPattern(c)}${E}`, 'g'), (_m, start, end) => add('communes', c, start, end));
   }
 
+  // AU072 · le terrain, avant la surface : « terrain de 500 m² » ou « 500 m² de terrain » n'est pas la surface habitable.
+  const landOf = (raw: string): number | null => {
+    const n = Number(raw.replace(/[ \u00a0\u202f]/g, ''));
+    return Number.isInteger(n) && n >= 1 && n <= 10_000_000 ? n : null;
+  };
+  scan(/(?<![a-z])terrain\s+(?:de\s+|d'au moins\s+|minimum\s+|d'environ\s+)?(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d{1,7})\s*(?:m2|m²|m 2|metres? carres?)(?![a-z0-9])/g, (m, start, end) => {
+    const n = landOf(m[1] ?? '');
+    if (n === null) return false;
+    add('landMinM2', n, start, end);
+  });
+  scan(/(?<![a-z0-9.,]|\d[ \u00a0\u202f])(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d{1,7})\s*(?:m2|m²|m 2|metres? carres?)\s+de\s+terrain(?![a-z])/g, (m, start, end) => {
+    const n = landOf(m[1] ?? '');
+    if (n === null) return false;
+    add('landMinM2', n, start, end);
+  });
+  // AU072 · l'étage : « pas de rez-de-chaussée » (à partir du 1er), « en rez-de-chaussée », « 3e étage maximum »,
+  // « à partir du 2e étage ». La négation fait ici partie du critère : elle est lue avec lui.
+  const ordinal = '(\\d{1,2})\\s*(?:e|eme|er|ere|°)';
+  scan(/(?<![a-z])(?:pas de|pas en|pas au|jamais en|jamais au|sauf)\s+(?:rez[- ]de[- ]chaussee|rdc)(?![a-z])/g, (_m, start, end) => {
+    criteria.push({ field: 'floorMin', value: 1, strength: strengthAt(start), source: words(start, end) });
+  });
+  scan(new RegExp(`(?<![a-z0-9])(?:au\\s+|jusqu'?au\\s+)?${ordinal}\\s+etage\\s+(?:maximum|max|maxi|au plus|au maximum)(?![a-z])`, 'g'), (m, start, end) => {
+    add('floorMax', Number(m[1]), start, end);
+  });
+  scan(new RegExp(`(?<![a-z])(?:a partir du|au moins au|des le)\\s+${ordinal}\\s+etage(?![a-z])|(?<![a-z0-9])${ordinal}\\s+etage\\s+(?:minimum|mini|au moins)(?![a-z])`, 'g'), (m, start, end) => {
+    add('floorMin', Number(m[1] ?? m[2]), start, end);
+  });
+  // « En rez-de-chaussée » : l'étage 0 exactement, jamais un sous-sol ; les deux bornes gardent la même force.
+  scan(/(?<![a-z])(?:en|au)\s+(?:rez[- ]de[- ]chaussee|rdc)(?![a-z])/g, (_m, start, end) => {
+    add('floorMin', 0, start, end);
+    add('floorMax', 0, start, end);
+  });
+  // AU072 · la classe énergie la moins bonne acceptée : « DPE D minimum », « classe C au moins », « D ou mieux ».
+  scan(/(?<![a-z])(?:dpe|classe energie|classe energetique|etiquette energie|classe)\s+([a-g])\s+(?:minimum|mini|au moins|ou mieux)(?![a-z])/g, (m, start, end) => {
+    add('energyClassMax', (m[1] ?? '').toUpperCase(), start, end);
+  });
+
   // La surface, avant les sommes : « 80 m² » n'est pas un budget.
   // Une surface décimale (« 80,5 m² ») se lit en entier, arrondie au mètre au-dessus : jamais moins que demandé.
   // « 1 200 m² » se lit en entier, espaces insécables compris.
@@ -341,6 +380,9 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
       add('features', feature, start, end);
     });
   }
+  // AU072 · « terrain de 500 m² » sans autre type dit : c'est un terrain qui est cherché, et son type reste dans la recherche.
+  const land = criteria.find((c) => c.field === 'landMinM2');
+  if (land && !criteria.some((c) => c.field === 'propertyKinds')) criteria.push({ field: 'propertyKinds', value: 'land', strength: land.strength, source: land.source });
   criteria.sort((a, b) => (a.source.kind === 'phrase' && b.source.kind === 'phrase' ? a.source.start - b.source.start : 0));
   ignored.sort((a, b) => a.start - b.start);
   const budgetStrict = STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
@@ -359,6 +401,10 @@ const WORDS_LABEL: Record<PhraseField, string> = {
   roomsMin: 'pièces',
   bedroomsMin: 'chambres',
   budgetMaxEur: 'budget',
+  floorMin: 'étage',
+  floorMax: 'étage',
+  energyClassMax: 'classe énergie',
+  landMinM2: 'terrain',
 };
 
 /** Le bien tel qu'un refus le décrit. */
@@ -455,7 +501,8 @@ export function toBuyerSearch(search: PhraseSearch, strength: Strength = 'must')
     if (c.field === 'propertyKinds' || c.field === 'communes' || c.field === 'features') {
       const list = out[c.field] as string[];
       if (!list.includes(String(c.value))) list.push(String(c.value));
-    } else if (typeof c.value === 'number') out[c.field] = c.value;
+    } else if (c.field === 'energyClassMax') out.energyClassMax = String(c.value) as SearchEnergyClass;
+    else if (typeof c.value === 'number') out[c.field] = c.value;
   }
   if (strength === 'must' && out.budgetMaxEur !== null) out.budgetStrict = search.budgetStrict === true;
   out.propertyKinds = out.propertyKinds.filter((k) => !search.excludedKinds.includes(k));
@@ -521,6 +568,9 @@ const CRITERION_FIELD: Record<string, PhraseField> = {
   surface: 'surfaceMinM2',
   rooms: 'roomsMin',
   bedrooms: 'bedroomsMin',
+  floor: 'floorMin',
+  energy: 'energyClassMax',
+  land: 'landMinM2',
 };
 
 const REFUSAL_LABEL: Record<RefusalReason, string> = {
@@ -551,19 +601,23 @@ export function judge(
   const kinds = KINDS_OF_PROPERTY[property.kind] ?? [];
   if (kinds.length > 0 && kinds.every((k) => search.excludedKinds.includes(k))) return null;
   if (property.city !== null && search.excludedCommunes.includes(property.city)) return null;
-  const hasMustBase = must.propertyKinds.length + must.communes.length > 0 || [must.budgetMaxEur, must.surfaceMinM2, must.roomsMin, must.bedroomsMin].some((v) => v !== null);
+  const hasMustBase =
+    must.propertyKinds.length + must.communes.length > 0 ||
+    [must.budgetMaxEur, must.surfaceMinM2, must.roomsMin, must.bedroomsMin, must.floorMin ?? null, must.floorMax ?? null, must.energyClassMax ?? null, must.landMinM2 ?? null].some((v) => v !== null);
   const m = matchBuyer(property, must, tolerances);
   if (hasMustBase && m.status === 'miss') return null;
   const reasons: Reason[] = [];
   // Le critère qui a servi : la commune du bien, son type, ou le nombre retenu dans la recherche passée au rapprochement.
-  const sourceOf = (criterion: string, strength: Strength, used: BuyerSearch): PhraseCriterion | undefined => {
+  const sourceOf = (criterion: string, strength: Strength, used: BuyerSearch, bound?: 'floorMin' | 'floorMax'): PhraseCriterion | undefined => {
+    // L'étage vient de la borne jugée, minimum ou maximum (AU072).
+    if (criterion === 'floor') return search.criteria.find((c) => (bound ? c.field === bound : c.field === 'floorMin' || c.field === 'floorMax') && c.strength === strength);
     const field = CRITERION_FIELD[criterion]!;
     const candidates = search.criteria.filter((c) => c.field === field && c.strength === strength);
     if (field === 'communes') return candidates.find((c) => property.city !== null && key(String(c.value)) === key(property.city));
     if (field === 'propertyKinds') return candidates.find((c) => kinds.includes(c.value as BuyerPropertyKind) && used.propertyKinds.includes(c.value as BuyerPropertyKind)) ?? candidates[0];
     return candidates.find((c) => c.value === used[field]) ?? candidates[0];
   };
-  for (const check of m.checks) reasons.push({ text: check.reason, from: fromOf(sourceOf(check.criterion, 'must', must)) });
+  for (const check of m.checks) reasons.push({ text: check.reason, from: fromOf(sourceOf(check.criterion, 'must', must, check.bound)) });
   for (const feature of must.features) {
     if (!property.features.includes(feature)) return null;
     reasons.push({ text: `Demandé : ${FEATURE_LABEL[feature]}, présent.`, from: fromOf(search.criteria.find((c) => c.field === 'features' && c.value === feature)) });
@@ -573,7 +627,7 @@ export function judge(
   for (const check of niceMatch.checks) {
     if (check.state !== 'met') continue;
     preferencesMet += 1;
-    reasons.push({ text: `Préférence remplie. ${check.reason}`, from: fromOf(sourceOf(check.criterion, 'nice', nice)) });
+    reasons.push({ text: `Préférence remplie. ${check.reason}`, from: fromOf(sourceOf(check.criterion, 'nice', nice, check.bound)) });
   }
   for (const feature of nice.features) {
     if (!property.features.includes(feature)) continue;
@@ -755,6 +809,23 @@ export class RechercheLangage {
       } else (changes as Record<string, unknown>)[field] = must[field];
     }
     if ('features' in changes) changes.requiredFeatures = must.features;
+    // AU072 · étage, classe et terrain : un souhait se range aussi, marqué comme tel, jamais éliminatoire.
+    const softOf: Record<string, SoftCriterion> = { floorMin: 'floorMin', floorMax: 'floorMax', energyClassMax: 'energy', landMinM2: 'land' };
+    const soft: SoftCriterion[] = [];
+    for (const field of ['floorMin', 'floorMax', 'energyClassMax', 'landMinM2'] as const) {
+      if (!search.criteria.some((c) => c.field === field)) continue;
+      if ((must[field] ?? null) === null && (nice[field] ?? null) !== null) {
+        (changes as Record<string, unknown>)[field] = nice[field];
+        if (!soft.includes(softOf[field]!)) soft.push(softOf[field]!);
+      }
+    }
+    if (Object.keys(softOf).some((f) => f in changes)) {
+      // Un souhait que la phrase ne touche pas le reste : ses bornes restent dans la fiche, et leur nature avec elles.
+      const said = new Set(search.criteria.map((c) => softOf[c.field]).filter((c): c is SoftCriterion => c !== undefined));
+      const before = ((await fiche.current(project.id))?.search.softCriteria ?? []).filter((c) => !said.has(c));
+      const now = soft.filter((c) => !Object.keys(softOf).some((f) => softOf[f] === c && (must as unknown as Record<string, unknown>)[f] != null));
+      changes.softCriteria = [...new Set([...before, ...now])];
+    }
     if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetStrict === true;
     const checked = checkSearchChanges(changes, this.communes);
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);
