@@ -212,6 +212,8 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_channel: 'Dites comment le propriétaire a fait son choix.',
     incomplete: 'Ce dossier n’est plus complet.',
     no_choice: 'Le propriétaire n’a pas encore choisi.',
+    dossier_incomplet: 'Le dossier choisi n’est plus complet : chaque colocataire fournit ses pièces.',
+    not_cotenant: 'Cette personne n’est pas colocataire de ce bail.',
     missing_charges_mode: 'Dites dans les faits si les charges sont une provision ou un forfait.',
     lease_start_passed: 'La date de début du bail est passée : rangez de nouveaux faits.',
     bad_address: 'L’adresse n’est pas valable.',
