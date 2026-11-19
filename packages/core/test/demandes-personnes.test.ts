@@ -467,6 +467,13 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(await parties(A, 'rental_inventory_signatures')).toEqual(['bailleur']);
     expect(await parties(C, 'rental_inventory_copies')).toEqual(['locataire']);
     expect(await parties(A, 'rental_inventory_copies')).toEqual(['bailleur']);
+    // AU097 · une colocataire nommée au bail de C : elle retrouve le bail et son exemplaire, jamais la signature ni
+    // l'exemplaire d'état des lieux de C [R96].
+    const coloc = 'pc-0008';
+    await insert('rental_lease_cotenants', { lease_id: 'bail-c', person_id: coloc, position: 1 });
+    const ofColoc = await assembleAccess(db, [coloc]);
+    expect(ofColoc.sections.find((s) => s.table === 'rental_lease_copies')!.rows.map((r) => r.lease_id)).toContain('bail-c');
+    for (const table of ['rental_inventory_signatures', 'rental_inventory_copies']) expect(ofColoc.sections.find((s) => s.table === table)?.rows ?? []).toEqual([]);
     // Un bail et un état des lieux à deux parties ne sont jamais proposés à l'effacement : « à examiner ».
     const tenantPlan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [C]));
     for (const table of ['rental_leases', 'rental_inventories']) expect(tenantPlan.lines.filter((l) => l.table === table).map((l) => l.action)).not.toContain('effacer');

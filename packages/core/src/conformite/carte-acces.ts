@@ -981,11 +981,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
   // Le bail retrouvé par la candidature est celui du locataire : marqué, pour lui rendre ce qu'il y a fait en partie.
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' }), via('id', 'rental_lease_cotenants', 'lease_id', { tag: 'locataire' })], shared: ['content'] },
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' }), via('id', 'rental_lease_cotenants', 'lease_id', { tag: 'colocataire' })], shared: ['content'] },
   // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
   // montré à aucune, son empreinte reste.
   rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
-  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
+  // AU097 · un colocataire retrouve l'exemplaire du bail qui le nomme, jamais ce qui est au seul locataire choisi.
+  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' }), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'colocataire', tag: 'colocataire' })], shared: ['content'] },
   rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
