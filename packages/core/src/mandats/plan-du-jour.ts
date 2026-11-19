@@ -69,6 +69,8 @@ export interface PlanItem {
   reason: string;
   /** Pourquoi cette place : les règles écrites appliquées, dans l'ordre. */
   order: string;
+  /** Ce qui fait la place de la ligne, en mots de l'agent, et le jour de la demande (AU116) : ce que l'écran montre. */
+  priority?: string;
   basis: LegalBasis;
   projectId: string | null;
   taskId: string | null;
@@ -204,6 +206,24 @@ function comparePlanCandidates(a: Candidate, b: Candidate): number {
   );
 }
 
+/** La priorité de la ligne, en mots de l'agent, et le jour de la demande, au format français (AU116). */
+function priorityOf(c: Candidate): string {
+  const head =
+    c.kind === 'callback'
+      ? 'Rappel demandé'
+      : c.kind === 'recommendation'
+        ? 'Recommandation à rappeler'
+        : c.sellingIntent
+          ? 'Pense à vendre'
+          : c.horizonLabel
+            ? `Projet annoncé : ${c.horizonLabel}`
+            : c.valuationSentAt
+              ? `Avis de valeur envoyé le ${frDay(c.valuationSentAt)}`
+              : 'À relancer';
+  return `${head} · demande du ${frDay(c.requestedAt)}`;
+}
+const frDay = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
 function explain(c: Candidate): string {
   const parts = [c.kind === 'callback' ? '1. rappel demandé' : c.kind === 'recommendation' ? '1. recommandation à rappeler' : '1. pas de rappel demandé'];
   parts.push(c.sellingIntent ? '2. pense à vendre, réponse au suivi de valeur' : '2. pas de réponse « pense à vendre »');
@@ -287,6 +307,7 @@ export class PlanDuJour {
           kind: c.kind,
           reason: c.reason,
           order: explain(c),
+          priority: priorityOf(c),
           basis: c.basis,
           projectId: c.projectId,
           taskId: c.taskId,
