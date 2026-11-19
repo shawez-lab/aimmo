@@ -575,6 +575,14 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     const heavy = JSON.stringify({ deviceId: 'appareil-1', ops: [], pad: 'x'.repeat(MAX_SAISIES_BODY_BYTES) });
     expect((await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', heavy)).status).toBe(413);
     expect((await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', '{pas du json')).status).toBe(400);
+    // Sans longueur annoncée, un flux trop long est coupé à la limite, pas lu en entier.
+    let pulled = 0;
+    const chunk = new TextEncoder().encode('x'.repeat(64 * 1024));
+    const stream = new ReadableStream<Uint8Array>({ pull: (c) => (pulled++, pulled > 200 ? c.close() : c.enqueue(chunk)) });
+    const route = horsLigneRoutes().find((r) => r.name === 'hors_ligne.saisies')!;
+    const streamed = await route.handle({ db: w.db, journal: w.journal, now: () => new Date(w.clock()) }, w.agent, [], new Request('https://api.example.test/v1/hors-ligne/saisies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: stream, duplex: 'half' } as RequestInit));
+    expect(streamed.status).toBe(413);
+    expect(pulled).toBeLessThan(40);
     expect(await (await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', JSON.stringify({ deviceId: 'appareil-1', ops: [], autre: 1 }))).json()).toMatchObject({ code: 'unexpected_field' });
     expect((await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', JSON.stringify({ deviceId: 'x', ops: [] }))).status).toBe(400);
     expect(await w.count('offline_ops')).toBe(0);

@@ -9,6 +9,7 @@
  * Le rôle est contrôlé avant que le corps soit lu. Rien n'est envoyé à personne.
  */
 import { horsLigne, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { readCapped } from './studio.ts';
 
 /**
  * Un envoi du téléphone : au plus `BATCH_LIMIT` saisies, chacune avec au plus cinq prises réduites de 128 points de
@@ -61,10 +62,11 @@ async function readBatch(request: Request): Promise<Record<string, unknown> | 't
   if (!(request.headers.get('content-type') ?? '').toLowerCase().startsWith('application/json')) return null;
   const length = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(length) && length > MAX_SAISIES_BODY_BYTES) return 'trop_lourd';
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_SAISIES_BODY_BYTES) return 'trop_lourd';
+  // Lu par morceaux, coupé dès la limite passée : un envoi sans longueur annoncée n'est jamais gardé en entier.
+  const bytes = await readCapped(request, MAX_SAISIES_BODY_BYTES);
+  if (bytes === null) return 'trop_lourd';
   try {
-    const value: unknown = JSON.parse(text);
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   } catch {
     return null;
