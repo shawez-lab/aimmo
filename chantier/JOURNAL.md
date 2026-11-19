@@ -1479,3 +1479,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 11:10 · VOIE 2 : AU019b, 324a04f4 (branche, #700), relancé non (la séance horaire de :52 passe à 11:52 et reprendra #700, dont la vérification dure environ 30 minutes)
 - 2026-11-19 · voie 3 · AU073 (#692), AU097 (#696), AU062 (#701) fusionnées ; AU056 ouverte (#707) ; AU066 : test d'écran mis à jour, AU064 : main fusionné (délai des tests).
 - 2026-11-19 11:27 · AU007 · mention de l'intervenant (statut d'agent commercial, greffe et n° RSAC, titulaire) sur page, fiche et exports, absente elle bloque ; relecture forte 1 P1, Codex 1 P0 corrigés ; fusionnée (#705, d4638f59) · prochaine : AU009
+- 2026-11-19 11:27 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié
