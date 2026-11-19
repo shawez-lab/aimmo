@@ -186,7 +186,7 @@ export class Accompagnement {
     if (!current) return { ok: true, value: null };
     const row = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [current.referentId, viewer.networkId]);
     if (!row) return { ok: true, value: null };
-    const card = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [current.referentId, viewer.networkId]);
+    const card = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [current.referentId, viewer.networkId]);
     return { ok: true, value: { firstName: row.first_name, until: current.until, phone: card ? card.phone : null, email: card ? card.email : null } };
   }
 
