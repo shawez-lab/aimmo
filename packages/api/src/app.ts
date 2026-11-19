@@ -85,7 +85,7 @@ import { pilotageRoutes } from './pilotage.ts';
 import { repriseRoutes } from './reprise.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
-import { reseauRoutes, type ReseauOptions } from './reseau.ts';
+import { handleSortiePublic, reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
 import { coproprieteRoutes, type CoproprieteRoute, type CoproprieteServices } from './copropriete.ts';
 import { avantContratRoutes, type AvantContratRoute, type AvantContratServices } from './avant-contrat.ts';
@@ -2379,6 +2379,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return await handleInvitation(request, config.db, now());
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'public:invitation', 'acces.invitation', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  // L'accès de sortie d'un agent parti (AU111) : public, le lien seul ouvre ; jamais un client.
+  if (path.startsWith('/sortie/')) {
+    try {
+      const exit = await handleSortiePublic(request, path, { db: config.db, journal: new SqlJournalStore(config.db), now }, config.reseau?.pieces ?? null);
+      if (exit) return exit;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:sortie', 'reseau.sortie', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }

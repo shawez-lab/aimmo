@@ -15,3 +15,4 @@ export * from './branchement.ts';
 export * from './contenus-recrutement.ts';
 export * from './cout-agent.ts';
 export * from './communes-a-pourvoir.ts';
+export * from './acces-sortie.ts';

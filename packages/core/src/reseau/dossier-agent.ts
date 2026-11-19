@@ -49,6 +49,8 @@ export interface AgentPieceStore {
   has(ref: string): Promise<boolean>;
   /** Range un document préparé par le réseau, rend sa référence. */
   putDraft(agentId: string, text: string): Promise<string>;
+  /** Relit une pièce, pour la remettre à l'agent parti par son lien de sortie (AU111) ; absent, rien ne se remet. */
+  read?(ref: string): Promise<{ body: Uint8Array; contentType: string } | null>;
 }
 
 export type AgentFileRefusal = { ok: false; rule: 'R16' | 'R15' | 'R82' | null; code: string };

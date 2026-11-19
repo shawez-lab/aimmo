@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
-import { DEPARTURE_REASONS, Departs, DossierAgent, Entretiens, addMonths, legalNoticeEnd, legalNoticeMonths, type AgentPieceStore } from '../src/reseau/index.ts';
+import { AccesSortie, DEPARTURE_REASONS, Departs, DossierAgent, Entretiens, addMonths, legalNoticeEnd, legalNoticeMonths, type AgentPieceStore } from '../src/reseau/index.ts';
+import { ExportAgent } from '../src/rapports/export-agent.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -356,5 +357,57 @@ describeWithSqlite("Départ d'un agent (J11)", () => {
     expect(mine.value.pieces[0]!.ref).toBe(`agents/${s.leaver}/b.pdf`);
     expect(await s.departs.personalContents({ role: 'agent', userId: s.leaver, networkId: s.net }, s.leaver)).toMatchObject({ ok: false, rule: 'R16' });
     expect(JSON.stringify(await s.db.all("SELECT * FROM journal WHERE type LIKE 'agent_depart.%'"))).not.toContain('.pdf');
+  });
+
+  it('[R16, R86] AU111 · parti, l’agent garde par un lien de sortie son solde, ses pièces et son relevé, jamais un client', async () => {
+    const s = await setup();
+    s.raw.exec('PRAGMA foreign_keys = OFF');
+    s.raw.prepare('INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)').run('f1', s.net, s.leaver, 'm', '2027-01-10', 1_000_000, 'g', 'x');
+    s.raw.prepare("INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES ('f1', 1, 'agent', ?, NULL, 700000)").run(s.leaver);
+    for (const st of ['prevue', 'due']) s.raw.prepare("INSERT INTO commission_steps (file_id, status, proof_ref, at, by) VALUES ('f1', ?, 'p', 'x', 'x')").run(st);
+    s.raw.prepare("INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES ('k1', ?, ?, 'assurance_rcp', 1, ?, '2027-01-01', '2028-01-01', 0, 'x', 'x')").run(s.net, s.leaver, `agents/${s.leaver}/b.pdf`);
+    s.raw.exec('PRAGMA foreign_keys = ON');
+    const sortie = new AccesSortie(s.db, s.journal, { now: () => new Date(clock), newId: uuid });
+    const asLeaver = { role: 'agent' as const, userId: s.leaver, networkId: s.net };
+    // Encore en activité : il a son propre export ; pas d'accès de sortie.
+    expect(await sortie.grant(s.dir, s.leaver)).toEqual({ ok: false, rule: null, code: 'not_gone' });
+    await s.departs.schedule(s.dir, s.leaver, { noticeGivenOn: s.today(), leavesOn: s.today(), reason: 'faute_grave' });
+    await s.departs.runDue(s.net);
+    // Constat de l'audit : parti, son export lui est refusé.
+    const exporter = new ExportAgent(s.db, s.journal, { requireSecondFactor: async () => ({ ok: true }) }, { now: () => new Date(clock) });
+    expect(await exporter.make(asLeaver, 'preuve')).toMatchObject({ ok: false, code: 'agent_inactive' });
+    // La direction seule donne l'accès, pour un an au plus.
+    expect(await sortie.grant(asLeaver, s.leaver)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await sortie.grant(s.dir, s.leaver, { days: 400 })).toEqual({ ok: false, rule: null, code: 'bad_days' });
+    expect(await sortie.grant({ ...s.dir, networkId: s.other }, s.leaver)).toMatchObject({ ok: false, rule: 'R16', code: 'unknown' });
+    const given = await sortie.grant(s.dir, s.leaver, { days: 30 });
+    if (!given.ok) throw new Error(given.code);
+    expect(given.value.token).toMatch(/^[a-z2-7]{32}$/);
+    expect(given.value.expiresOn).toBe(s.daysFrom(30));
+    const seen = await sortie.read(given.value.token);
+    if (!seen.ok) throw new Error(seen.code);
+    expect(seen.value.statement).toMatchObject({ agentId: s.leaver, settlement: [{ fileId: 'f1', status: 'due', agentShareCents: 700_000 }], pieces: [{ kind: 'assurance_rcp', version: 1 }, { kind: 'contrat_agent_commercial', version: 1 }] });
+    // Aucun client, aucun bien, aucun projet, aucune référence de stockage dans le relevé.
+    const text = JSON.stringify(seen.value);
+    for (const id of [...s.persons, s.theirs, ...s.props, ...s.projects, '.pdf']) expect(text).not.toContain(id);
+    expect(await sortie.verify(seen.value.statement)).toBe(true);
+    expect(await sortie.verify({ ...seen.value.statement, trainingMinutes: 999 })).toBe(false);
+    // Sa pièce se remet par le lien, la dernière version ; une sorte qu'il n'a pas, non.
+    expect(await sortie.pieceRef(given.value.token, 'assurance_rcp')).toBe(`agents/${s.leaver}/b.pdf`);
+    expect(await sortie.pieceRef(given.value.token, 'immatriculation_rsac')).toBeNull();
+    // Le lien n'est jamais rangé ni écrit au journal.
+    const all = JSON.stringify([await s.db.all('SELECT * FROM agent_exit_accesses'), await s.db.all('SELECT * FROM journal')]);
+    expect(all).not.toContain(given.value.token);
+    // Retiré, ou échu : il ne montre plus rien.
+    const other = await sortie.grant(s.dir, s.leaver, { days: 1 });
+    if (!other.ok) throw new Error(other.code);
+    expect(await sortie.revoke(s.dir, given.value.accessId)).toEqual({ ok: true });
+    expect(await sortie.revoke(s.dir, given.value.accessId)).toEqual({ ok: false, rule: null, code: 'already_revoked' });
+    expect(await sortie.read(given.value.token)).toEqual({ ok: false, rule: 'R16', code: 'unknown_link' });
+    expect((await sortie.read(other.value.token)).ok).toBe(true);
+    s.goTo(s.daysFrom(2));
+    expect(await sortie.read(other.value.token)).toEqual({ ok: false, rule: 'R16', code: 'unknown_link' });
+    expect(await sortie.read('pas-un-lien')).toEqual({ ok: false, rule: 'R16', code: 'unknown_link' });
+    await expect(s.db.run('DELETE FROM agent_exit_accesses')).rejects.toThrow();
   });
 });

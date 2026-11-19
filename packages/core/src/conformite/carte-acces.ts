@@ -681,6 +681,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
+  agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
+  agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },
   invoices: { locate: [via('draft_id', 'invoice_drafts')] },
