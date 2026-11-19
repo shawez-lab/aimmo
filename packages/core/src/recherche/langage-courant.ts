@@ -41,6 +41,9 @@ import { DEFAULT_TOLERANCES, matchBuyer, type DiffusionGate, type MatchProperty,
 
 export const PHRASE_MAX_LENGTH = 500;
 
+/** Un budget dit infranchissable dans la phrase : aucune tolérance au rapprochement (AU115). */
+export const STRICT_BUDGET = /\b(?:budget ferme|maximum absolu|max absolu|infranchissable|pas un euro de plus|sans d[ée]passer)\b/i;
+
 /** Les champs qu'une phrase peut remplir : ceux de la fiche acquéreur, hors financement et urgence. */
 export const PHRASE_FIELDS = ['propertyKinds', 'communes', 'features', 'surfaceMinM2', 'roomsMin', 'bedroomsMin', 'budgetMaxEur'] as const;
 export type PhraseField = (typeof PHRASE_FIELDS)[number];
@@ -74,6 +77,8 @@ export interface IgnoredWords {
 export interface ParsedPhrase {
   criteria: PhraseCriterion[];
   ignored: IgnoredWords[];
+  /** La phrase dit le budget infranchissable (AU115). */
+  budgetStrict?: boolean;
 }
 
 /** Les raisons d'un refus, en liste fermée : chacune ajuste un critère d'une façon écrite. */
@@ -92,6 +97,8 @@ export interface PhraseSearch {
   excludedCommunes: string[];
   excludedKinds: BuyerPropertyKind[];
   refusedPropertyIds: string[];
+  /** Le budget dit infranchissable : la recherche en direct comme la fiche rangée n'ont aucune tolérance (AU115). */
+  budgetStrict?: boolean;
 }
 
 /** Les communes proches de chaque commune, réglage de la direction ; la relation vaut dans les deux sens. */
@@ -314,7 +321,7 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
       if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
     },
   );
-  scan(/(?<![a-z])(budget|max(imum)?|jusqu'?a|moins de|pas plus de|au plus)\s*(de\s*)?(\d{1,3}(?:[ .  ]\d{3})+|\d{5,10})(?![a-z0-9])/g, (m, start, end) => {
+  scan(/(?<![a-z])(budget(?:\s+ferme)?|max(imum)?(?:\s+absolu)?|jusqu'?a|moins de|pas plus de|au plus|sans depasser)\s*(de\s*)?(\d{1,3}(?:[ .  ]\d{3})+|\d{5,10})(?![a-z0-9])/g, (m, start, end) => {
     const v = amount(m[4] ?? '', '');
     if (v === null) return false;
     if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
@@ -336,7 +343,10 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   }
   criteria.sort((a, b) => (a.source.kind === 'phrase' && b.source.kind === 'phrase' ? a.source.start - b.source.start : 0));
   ignored.sort((a, b) => a.start - b.start);
-  return { criteria, ignored };
+  const budgetStrict = STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
+  // Un budget dit ferme est une exigence, même relié par « et » à un souhait (AU115).
+  if (budgetStrict) for (const c of criteria) if (c.field === 'budgetMaxEur') c.strength = 'must';
+  return { criteria, ignored, budgetStrict };
 }
 
 // ————— Refus et voisines —————
@@ -376,6 +386,8 @@ export function applyRefusal(
     ignored: search.ignored,
     excludedCommunes: [...search.excludedCommunes],
     excludedKinds: [...search.excludedKinds],
+    // Le budget ferme survit à chaque refus (AU115).
+    budgetStrict: search.budgetStrict === true,
     refusedPropertyIds: search.refusedPropertyIds.includes(property.id) ? [...search.refusedPropertyIds] : [...search.refusedPropertyIds, property.id],
   };
   const source: CriterionSource = { kind: 'refus', propertyId: property.id, reason };
@@ -448,6 +460,7 @@ export function toBuyerSearch(search: PhraseSearch, strength: Strength = 'must')
       if (!list.includes(String(c.value))) list.push(String(c.value));
     } else if (typeof c.value === 'number') out[c.field] = c.value;
   }
+  if (strength === 'must' && out.budgetMaxEur !== null) out.budgetStrict = search.budgetStrict === true;
   out.propertyKinds = out.propertyKinds.filter((k) => !search.excludedKinds.includes(k));
   out.communes = out.communes.filter((c) => !search.excludedCommunes.includes(c));
   return out;
@@ -627,7 +640,7 @@ export class RechercheLangage {
    */
   async build(networkId: string, phrase: string, steps: readonly SearchStep[] = []): Promise<PhraseSearch> {
     const parsed = parsePhrase(phrase, this.communes);
-    let search: PhraseSearch = { criteria: parsed.criteria, ignored: parsed.ignored, excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] };
+    let search: PhraseSearch = { criteria: parsed.criteria, ignored: parsed.ignored, excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [], budgetStrict: parsed.budgetStrict === true };
     for (const step of steps.slice(0, 50)) {
       if ('acceptNeighbour' in step) {
         const proposal = proposedNeighbours(search, this.neighbours).find((n) => n.commune === step.acceptNeighbour);
@@ -733,8 +746,8 @@ export class RechercheLangage {
     // dit ce qui est cherché ; sinon la fiche garderait ce qui a été refusé [R424].
     const cleared = (search.excludedCommunes.length > 0 && must.communes.length === 0) || (search.excludedKinds.length > 0 && must.propertyKinds.length === 0);
     if (cleared) return this.refused(viewer, projectId, 'R424', 'a_preciser');
-    // La fiche n'a pas de préférences : les indispensables y vont, et les contraintes souhaitées s'y ajoutent pour
-    // classer, sans jamais écarter un bien dans le rapprochement.
+    // Les contraintes souhaitées et indispensables vont dans la fiche pour classer ; les indispensables y sont aussi
+    // rangées comme impératives, éliminatoires au rapprochement (AU071). Un budget dit infranchissable perd sa tolérance (AU115).
     const changes: Partial<BuyerSearch> = {};
     for (const field of PHRASE_FIELDS) {
       const excluded = (field === 'communes' && search.excludedCommunes.length > 0) || (field === 'propertyKinds' && search.excludedKinds.length > 0);
@@ -744,6 +757,8 @@ export class RechercheLangage {
         (changes as Record<string, unknown>)[field] = list;
       } else (changes as Record<string, unknown>)[field] = must[field];
     }
+    if ('features' in changes) changes.requiredFeatures = must.features;
+    if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetStrict === true;
     const checked = checkSearchChanges(changes, this.communes);
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);
     const updated = await fiche.update(acces, viewer, projectId, checked.value);

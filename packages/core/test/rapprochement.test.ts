@@ -161,6 +161,23 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(matchBuyer({ kind: 'home', dwelling: 'apartment', city: 'Dijon', priceEur: 1, surfaceM2: 50, rooms: 2, bedrooms: null, features: [] }, { propertyKinds: ['house'], communes: [], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, financing: null, urgency: null })).toMatchObject({ status: 'miss', unmet: ['kind'] });
   });
 
+  it('AU071 · une recherche au seul équipement impératif compte : proposée pour un bien qui l’a, pas pour un autre', async () => {
+    const t = await setup();
+    const b = await t.buyer(t.alex.id, 'Ascenseur', { requiredFeatures: ['elevator'] });
+    const lift = await t.property(t.alex.id, 'ASC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    const stairs = await t.property(t.alex.id, 'ESC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [
+      'sheet-asc', lift.id, t.network.id, JSON.stringify({ characteristics: { elevator: true }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z',
+    ]);
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId);
+    };
+    expect(await proposed(lift.id)).toEqual([b.project.id]);
+    expect(await proposed(stairs.id)).toEqual([]);
+  });
+
   it('le classement ne tient jamais compte du financement [R14] ; à égalité, l’urgence déclarée puis la recherche la plus fraîche', async () => {
     const t = await setup();
     const base = { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 200_000 } as const;
@@ -285,6 +302,24 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(later.value).toEqual([]);
   });
 
+  it('AU074 · une recherche dite toujours d’actualité reste active sans changer un critère ; 180 jours après la confirmation, plus', async () => {
+    const t = await setup();
+    const search = { propertyKinds: ['house'] as ('house')[], communes: ['Talant'] };
+    const a = await t.buyer(t.alex.id, 'Fidèle', search);
+    const prop = await t.property(t.alex.id, 'B1', { city: 'Talant', price: 250_000, surface: 90, rooms: 4 });
+    t.setClock(START + 170 * 86_400_000);
+    expect(await t.acquereurs.confirm(t.acces, t.as('agent', t.alex.id), a.project.id)).toMatchObject({ ok: true });
+    // La conformité ne confirme rien ; un agent sans droit sur la fiche non plus.
+    expect(await t.acquereurs.confirm(t.acces, t.as('compliance', 'c1'), a.project.id)).toMatchObject({ ok: false });
+    t.setClock(START + 181 * 86_400_000);
+    const kept = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    expect(kept.ok && kept.value.map((x) => x.projectId)).toEqual([a.project.id]);
+    expect(await t.db.all('SELECT version FROM buyer_searches WHERE project_id = ?', [a.project.id])).toHaveLength(1);
+    t.setClock(START + 351 * 86_400_000);
+    const gone = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    expect(gone.ok && gone.value).toEqual([]);
+  });
+
   it('carte de la demande : comptes justes sur un jeu inventé, critère seul qui écarte le plus, sans aucun nom', async () => {
     const t = await setup();
     // 3 remplissent, 4 écartés seulement par la surface, 2 seulement par la commune, 1 par deux critères.
@@ -314,4 +349,24 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     const known = matchBuyer({ kind: 'home', city: 'Dijon', priceEur: 200_000, surfaceM2: 61, rooms: 3, bedrooms: 2, features: ['garden'] }, s);
     expect(known).toMatchObject({ status: 'match', unmet: [], featuresMet: ['garden'] });
   });
+});
+
+it('[R51] AU071 · un équipement impératif absent ou inconnu écarte le bien, nommé ; un souhait ne fait que classer', () => {
+  const base: BuyerSearch = { propertyKinds: [], communes: ['Talant'], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, requiredFeatures: [], budgetStrict: false, financing: null, urgency: null };
+  const flat = { kind: 'home' as const, city: 'Talant', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerSearch['features'] };
+  expect(matchBuyer(flat, { ...base, features: ['elevator'] })).toMatchObject({ status: 'match', featuresMet: [] });
+  const m = matchBuyer(flat, { ...base, requiredFeatures: ['elevator'] });
+  expect(m).toMatchObject({ status: 'miss', unmet: ['features'] });
+  expect(m.checks.find((c) => c.criterion === 'features')?.reason).toBe('Impératif absent ou inconnu : ascenseur.');
+  expect(matchBuyer({ ...flat, features: ['elevator'] }, { ...base, requiredFeatures: ['elevator'] })).toMatchObject({ status: 'match' });
+});
+
+it('[R51] AU115 · un budget dit infranchissable n’a aucune tolérance ; sans cette mention, 5 % au plus', () => {
+  const base: BuyerSearch = { propertyKinds: [], communes: [], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: 200_000, requiredFeatures: [], budgetStrict: false, financing: null, urgency: null };
+  const p = { kind: 'home' as const, city: 'Talant', priceEur: 205_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerSearch['features'] };
+  expect(matchBuyer(p, base)).toMatchObject({ status: 'tolerated' });
+  const strict = matchBuyer(p, { ...base, budgetStrict: true });
+  expect(strict).toMatchObject({ status: 'miss', unmet: ['budget'] });
+  expect(strict.checks[0]!.reason).toBe('Prix au-dessus du budget, que l’acquéreur dit infranchissable.');
+  expect(matchBuyer({ ...p, priceEur: 200_000 }, { ...base, budgetStrict: true })).toMatchObject({ status: 'match' });
 });

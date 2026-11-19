@@ -11,7 +11,7 @@
  * Décidé, lecture prudente : le type « logement » du socle répond à une recherche de maison comme d'appartement, tant
  * que la fiche ne les distingue pas ; une valeur du bien inconnue ne remplit pas le critère qui la demande ; le prix
  * rapproché est celui de la fiche de base du bien ; un acquéreur est actif si son projet n'est pas clos et que sa
- * recherche a bougé depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
+ * recherche a bougé, ou a été dite toujours d'actualité, depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
  * direction voit tout le réseau [R16].
  */
 import { shownPrice } from '../biens/prix-publie.ts';
@@ -24,9 +24,10 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
 import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -139,10 +140,11 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
       // En centièmes de pour cent, pour éviter les arrondis à la limite.
       // La limite se compare sans arrondi ; l'arrondi ne sert qu'à l'affichage.
       const over = Math.round(((price - budget) * 10_000) / budget) / 100;
-      if ((price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
+      // Un budget dit infranchissable n'a aucune tolérance (AU115).
+      if (search.budgetStrict !== true && (price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
         gap += over;
         add('budget', 'tolerated', `Prix ${over.toLocaleString('fr-FR')} % au-dessus du budget, dans la tolérance de ${tolerances.budgetOverPct} %.`);
-      } else add('budget', 'unmet', 'Prix au-dessus du budget.');
+      } else add('budget', 'unmet', search.budgetStrict === true ? 'Prix au-dessus du budget, que l’acquéreur dit infranchissable.' : 'Prix au-dessus du budget.');
     }
   }
   if (search.surfaceMinM2 !== null) {
@@ -176,6 +178,13 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     else add('bedrooms', 'unmet', 'Pas assez de chambres.');
   }
 
+  // Les équipements impératifs sont éliminatoires, chaque absence nommée ; une valeur inconnue ne les remplit pas (AU071).
+  const required = search.requiredFeatures ?? [];
+  if (required.length > 0) {
+    const missing = required.filter((f) => !property.features.includes(f));
+    if (missing.length === 0) add('features', 'met', `Impératifs présents : ${required.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+    else add('features', 'unmet', `Impératif absent ou inconnu : ${missing.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+  }
   const featuresMet = search.features.filter((f) => property.features.includes(f));
   // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
   if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0 };
@@ -406,8 +415,9 @@ export class Rapprochement {
   private async candidates(networkId: string): Promise<Candidate[]> {
     const at = this.now();
     const since = new Date(at.getTime() - this.activeDays * 86_400_000).toISOString();
-    const rows = await this.db.all<BuyerSearchRow & { stage: string }>(
-      `SELECT s.*, p.stage FROM buyer_searches s JOIN projects p ON p.id = s.project_id
+    const rows = await this.db.all<BuyerSearchRow & { stage: string; confirmed_at: string | null }>(
+      `SELECT s.*, p.stage, (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = s.project_id) AS confirmed_at
+       FROM buyer_searches s JOIN projects p ON p.id = s.project_id
        WHERE s.network_id = ? AND p.kind = 'buy'
          AND s.version = (SELECT max(version) FROM buyer_searches WHERE project_id = s.project_id)
        ORDER BY s.created_at DESC, s.project_id`,
@@ -417,7 +427,9 @@ export class Rapprochement {
     const byRoot = new Map<string, Candidate>();
     for (const row of rows) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
-      if (row.created_at < since) continue;
+      // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
+      const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
+      if (movedAt < since) continue;
       const search = toVersion(row).search;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
@@ -426,13 +438,14 @@ export class Rapprochement {
         search.budgetMaxEur === null &&
         search.surfaceMinM2 === null &&
         search.roomsMin === null &&
-        search.bedroomsMin === null
+        search.bedroomsMin === null &&
+        (search.requiredFeatures ?? []).length === 0
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
       const known = byRoot.get(root);
       if (known) {
-        known.projects.push({ projectId: row.project_id, search, movedAt: row.created_at });
+        known.projects.push({ projectId: row.project_id, search, movedAt });
         continue;
       }
       const ids = view.members.map((m) => m.id);
@@ -446,7 +459,7 @@ export class Rapprochement {
         memberIds: ids,
         agentIds: view.members.map((m) => m.agent_id),
         firstName: view.members.map((m) => m.first_name).find((n) => n) ?? null,
-        projects: [{ projectId: row.project_id, search, movedAt: row.created_at }],
+        projects: [{ projectId: row.project_id, search, movedAt }],
       });
     }
     return [...byRoot.values()];
