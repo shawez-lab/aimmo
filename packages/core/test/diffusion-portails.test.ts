@@ -226,7 +226,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     t.setClock(new Date('2027-03-01T09:00:00.000Z'));
     await t.surveillance.choose(t.agent, t.propertyId, 'seloger', true);
     await t.portails.sync(t.network.id, t.propertyId);
-    expect(t.a.received.map((r) => [r.key, r.order])).toEqual([[`${t.propertyId}:seloger:1`, 1], [`${t.propertyId}:seloger:2`, 2], [`${t.propertyId}:seloger:3`, 3]]);
+    expect(t.a.received.map((r) => [r.key, r.order])).toEqual([[`${t.propertyId}:seloger:1`, 1], [`${t.propertyId}:seloger:3`, 3], [`${t.propertyId}:seloger:5`, 5]]);
   });
 
   it('[R668] [R42] un dépôt sans accusé a pu être appliqué : le bien retiré est quand même retiré de ce portail', async () => {
@@ -292,7 +292,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     late.forEach((f) => f());
     expect(online).toBe(false);
     const st = await p.status(t.agent, t.propertyId);
-    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ state: 'retiree', acknowledged: { action: 'retirer', receipt: 'ACK-2' } });
+    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ state: 'retiree', acknowledged: { action: 'retirer', receipt: 'ACK-3' } });
   });
 
   it('[R668] un retrait resté sans accusé puis le portail rechoisi : l’annonce est déposée de nouveau, jamais dite « publiée » sur le vieil accusé', async () => {
@@ -306,7 +306,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await t.surveillance.choose(t.agent, t.propertyId, 'seloger', true);
     expect(await stateOf(t, 'seloger')).not.toMatchObject({ state: 'publiee' });
     await t.portails.sync(t.network.id, t.propertyId);
-    expect(t.a.received.map((r) => [r.action, r.order])).toEqual([['publier', 1], ['retirer', 2], ['publier', 3]]);
+    expect(t.a.received.map((r) => [r.action, r.order])).toEqual([['publier', 1], ['retirer', 3], ['publier', 5]]);
     expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'publiee', acknowledged: { action: 'publier', receipt: 'seloger-ACK-2' } });
   });
 
@@ -324,5 +324,34 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     const retraits = t.a.received.filter((r) => r.action === 'retirer');
     expect(new Set(retraits.map((r) => r.key)).size).toBe(1);
     expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'retiree' });
+  });
+
+  it('[R668] [R44] un dépôt appliqué dont l’accusé n’a pu être rangé, puis un nouveau prix : la nouvelle version part avec une autre clé', async () => {
+    const t = await published();
+    const applied = new Map<string, { receipt: string; priceEur: number | null }>();
+    const prices: (number | null)[] = [];
+    let lose = true;
+    const portal: PortalConnector = {
+      portal: 'seloger',
+      mode: 'reel',
+      send: async (op) => {
+        const known = applied.get(op.key);
+        if (known) return { receipt: known.receipt };
+        applied.set(op.key, { receipt: `ACK-${op.order}`, priceEur: op.listing.priceEur });
+        prices.push(op.listing.priceEur);
+        // Le premier dépôt dure plus que le bail : son accusé ne sera pas rangé.
+        if (lose) (lose = false), t.setClock(new Date(t.now().getTime() + 6 * 60_000));
+        return { receipt: `ACK-${op.order}` };
+      },
+    };
+    const p = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [portal] });
+    await p.sync(t.network.id, t.propertyId);
+    t.setClock(new Date('2027-03-01T09:00:00.000Z'));
+    await t.amend(190000);
+    await t.publication.sync(t.network.id, t.propertyId);
+    await p.sync(t.network.id, t.propertyId);
+    expect(prices).toEqual([210000, 200000]);
+    const st = await p.status(t.agent, t.propertyId);
+    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ state: 'publiee', acknowledged: { seq: 2 } });
   });
 });

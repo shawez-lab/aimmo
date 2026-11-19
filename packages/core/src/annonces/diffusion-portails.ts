@@ -91,7 +91,7 @@ interface Presence {
   acknowledgedLive: boolean;
   maybePublished: boolean;
   maybeWithdrawn: boolean;
-  pending: { seq: number; action: PortalAction; key: string } | null;
+  pending: { seq: number; action: PortalAction; key: string; order: number } | null;
 }
 
 interface AckRow {
@@ -152,9 +152,11 @@ export class DiffusionPortails {
    */
   private async presence(propertyId: string, portal: string): Promise<Presence> {
     const ack = await this.lastAck(propertyId, portal);
-    const after = await this.db.all<{ n: number; seq: number; action: PortalAction; op_key: string }>(
-      `SELECT n, seq, action, op_key FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec'
-       AND error_code <> 'connecteur_absent' AND n > ? ORDER BY n`,
+    // Un envoi rangé sans accusé après lui, ou un échec : le portail a pu appliquer le geste.
+    const after = await this.db.all<{ n: number; seq: number; action: PortalAction; op_key: string; first_n: number }>(
+      `SELECT o.n, o.seq, o.action, o.op_key, (SELECT MIN(f.n) FROM portal_operations f WHERE f.property_id = o.property_id AND f.portal = o.portal AND f.op_key = o.op_key) AS first_n
+       FROM portal_operations o WHERE o.property_id = ? AND o.portal = ? AND (o.outcome = 'envoi' OR (o.outcome = 'echec' AND o.error_code <> 'connecteur_absent'))
+       AND o.n > ? ORDER BY o.n`,
       [propertyId, portal, ack ? Number(ack.n) : 0],
     );
     const last = after.at(-1) ?? null;
@@ -163,7 +165,7 @@ export class DiffusionPortails {
       acknowledgedLive: ack !== null && ack.action !== 'retirer',
       maybePublished: after.some((x) => x.action !== 'retirer'),
       maybeWithdrawn: after.some((x) => x.action === 'retirer'),
-      pending: last ? { seq: Number(last.seq), action: last.action, key: last.op_key } : null,
+      pending: last ? { seq: Number(last.seq), action: last.action, key: last.op_key, order: Number(last.first_n) } : null,
     };
   }
 
@@ -229,12 +231,14 @@ export class DiffusionPortails {
         if (!action || !version || !listing) continue;
         // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
         const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
-        // Le rang du geste, sous le bail : personne d'autre n'écrit pour ce bien pendant le passage.
-        const order = Number((await this.db.first<{ n: number }>('SELECT COALESCE(MAX(n), 0) + 1 AS n FROM portal_operations WHERE property_id = ? AND portal = ?', [propertyId, portal]))!.n);
+        // Un geste incertain encore voulu (même geste, même version) repart avec sa clé et son ordre ; tout autre geste
+        // prend le rang suivant, sous le bail : personne d'autre n'écrit pour ce bien pendant le passage.
         const p = presence.pending;
-        const key = p && p.action === action && p.seq === Number(version.seq) ? p.key : `${propertyId}:${portal}:${order}`;
+        const retry = p !== null && p.action === action && p.seq === Number(version.seq);
+        const order = retry ? p.order : Number((await this.db.first<{ n: number }>('SELECT COALESCE(MAX(n), 0) + 1 AS n FROM portal_operations WHERE property_id = ? AND portal = ?', [propertyId, portal]))!.n);
+        const key = retry ? p.key : `${propertyId}:${portal}:${order}`;
         const mayBeOnline = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn;
-        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, mayBeOnline, key, order, lease);
+        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, mayBeOnline, key, order, !retry, lease);
         out[outcome === 'accuse' ? 'acknowledged' : outcome === 'essai' ? 'trial' : 'failed'].push(portal);
       }
       return out;
@@ -243,17 +247,17 @@ export class DiffusionPortails {
     }
   }
 
-  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload, live: boolean, key: string, order: number, lease: string): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
+  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload, live: boolean, key: string, order: number, fresh: boolean, lease: string): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
     const c = this.connector(portal);
-    const record = async (outcome: 'accuse' | 'essai' | 'echec', extra: { receipt?: string; portalRef?: string | null; code?: string }): Promise<boolean> => {
+    const record = async (outcome: 'envoi' | 'accuse' | 'essai' | 'echec', extra: { receipt?: string; portalRef?: string | null; code?: string }): Promise<boolean> => {
       // Seul le passage qui tient encore le bail range un geste : un passage en retard n'écrit rien par-dessus le suivant.
       const { changes } = await this.db
         .run(
           `INSERT INTO portal_operations (id, network_id, property_id, portal, n, op_key, version_id, seq, action, outcome, receipt, portal_listing_id, error_code, at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           SELECT ?, ?, ?, ?, (SELECT COALESCE(MAX(n), 0) + 1 FROM portal_operations WHERE property_id = ? AND portal = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?
            WHERE EXISTS (SELECT 1 FROM portal_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
           [
-            this.newId(), networkId, propertyId, portal, order, key, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
+            this.newId(), networkId, propertyId, portal, propertyId, portal, key, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
             propertyId, lease, this.now().toISOString(),
           ],
         )
@@ -275,6 +279,9 @@ export class DiffusionPortails {
       if (await record('essai', {})) await appendEvent(this.journal, { type: 'portail.essai', actor: 'system:portails', subject: `property:${propertyId}`, data: { rule: 'R668', portal, seq: Number(version.seq), action } }, this.now);
       return 'essai';
     }
+    // Le geste est rangé (clé, ordre, version) avant tout envoi : même si le bail se perd ensuite, sa clé ne servira
+    // jamais à une autre version. Bail déjà perdu : rien ne part.
+    if (fresh && !(await record('envoi', {}))) return 'deja';
     let receipt: PortalReceipt | null;
     try {
       let timer: ReturnType<typeof setTimeout> | undefined;

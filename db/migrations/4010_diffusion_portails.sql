@@ -1,7 +1,8 @@
 -- AU004 · Diffusion réelle sur chaque portail souscrit, avec accusé et statut par portail [R668, R42, R44].
 -- Les portails à diffuser sont ceux de HX38 (`diffusion_portal_settings`, choix et retraits par bien).
 
--- Chaque envoi à un portail : publier, modifier ou retirer une version publiée. « accuse » seulement avec l'accusé
+-- Chaque envoi à un portail : publier, modifier ou retirer une version publiée. « envoi » est rangé avant de rien
+-- envoyer (clé, ordre et version du geste) ; puis « accuse » seulement avec l'accusé
 -- rendu par le portail ; « essai » quand aucun connecteur réel n'existe (rien n'est parti) ; « echec » sinon.
 CREATE TABLE IF NOT EXISTS portal_operations (
   id TEXT PRIMARY KEY,
@@ -15,7 +16,7 @@ CREATE TABLE IF NOT EXISTS portal_operations (
   -- La clé d'envoi du geste : la même à chaque nouvel essai d'un geste resté sans accusé, une autre pour tout autre geste.
   op_key TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('publier', 'modifier', 'retirer')),
-  outcome TEXT NOT NULL CHECK (outcome IN ('accuse', 'essai', 'echec')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('envoi', 'accuse', 'essai', 'echec')),
   receipt TEXT,
   portal_listing_id TEXT,
   error_code TEXT,
