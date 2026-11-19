@@ -242,14 +242,17 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
     };
     for (const pkg of ['core/src', 'api/src']) walk(join(root, pkg));
     // Pas des fichiers des stockages : les copies elles-mêmes, et les fichiers publics des ventes (DVF) servis à part.
-    const autres = new Set(['copies/', 't/', 'd/', 'candidatures/']);
+    // `signature-en-ligne/` marque un document signé dont la copie vit en base ; `candidatures/`, `bail/`, `choix/` sont
+    // des dossiers sous `location/` ; `effacements/` est le registre du compartiment des copies ; le reste, des types MIME.
+    const autres = new Set(['copies/', 't/', 'd/', 'candidatures/', 'bail/', 'choix/', 'effacements/', 'signature-en-ligne/', 'multipart/', 'text/']);
     const seen = new Set<string>();
     for (const f of files) {
       const text = readFileSync(f, 'utf8');
       for (const m of text.matchAll(/`([a-z][a-z0-9-]*\/)\$\{/g)) seen.add(m[1]!);
-      for (const m of text.matchAll(/_PREFIX = '([a-z][a-z0-9-]*\/)'/g)) seen.add(m[1]!);
+      for (const m of text.matchAll(/'([a-z][a-z0-9-]*\/)'/g)) seen.add(m[1]!);
     }
     expect(seen.size).toBeGreaterThan(10);
+    expect(seen.has('offres/')).toBe(true);
     expect([...seen].filter((p) => !autres.has(p) && !(p in REFERENCE_PREFIXES)).sort()).toEqual([]);
   });
 

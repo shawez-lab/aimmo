@@ -19,6 +19,7 @@ import {
   CopieBase,
   copyKeyFromSecret,
   copyObjects,
+  fileReferences,
   OBJECT_STORAGES,
   ObjectCopyError,
   restoreObjects,
@@ -83,9 +84,10 @@ async function attempt(input: NightlyInput): Promise<Attempt> {
     const files = await copyObjects(sources, input.store, key, receipt.copyId);
     // Chaque objet relu depuis le compartiment des copies et comparé à son empreinte, sans tout tenir en mémoire.
     const targets = Object.fromEntries(OBJECT_STORAGES.map((name) => [name, verifyingTarget()])) as Record<ObjectStorage, ObjectTarget>;
-    const filesProof = await restoreObjects(targets, input.store, key, receipt.copyId);
+    // Chaque fichier cité par la photo doit être dans la copie : un fichier perdu, ou disparu pendant la copie, ne se tait pas.
+    const filesProof = await restoreObjects(targets, input.store, key, receipt.copyId, await fileReferences(snapshot));
     if (!filesProof.ok) {
-      const lost = filesProof.code === 'objects_missing' || (filesProof.code === 'not_identical' && filesProof.problems.some((p) => p.kind === 'object_missing'));
+      const lost = filesProof.code === 'objects_missing' || (filesProof.code === 'not_identical' && filesProof.problems.some((p) => p.kind === 'object_missing' || p.kind === 'reference_missing'));
       return no(lost ? 'stockage_en_panne' : 'copie_non_restaurable');
     }
     if (filesProof.objects !== files.objects) return no('copie_non_restaurable');

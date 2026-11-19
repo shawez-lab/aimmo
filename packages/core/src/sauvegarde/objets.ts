@@ -237,7 +237,8 @@ export function verifyingTarget(): ObjectTarget {
 /**
  * Le stockage où vit d'habitude chaque sorte de fichier, d'après le début de sa clé ; la clé est toujours donnée par le
  * code. Le contrôle cherche un fichier cité dans tous les stockages : ce stockage ne sert qu'à dire où chercher d'abord
- * et quoi rapporter. Un test du dépôt échoue si le code construit une clé d'un début absent d'ici.
+ * et quoi rapporter. Un test du dépôt échoue si le code construit une clé d'un début absent d'ici. `signature-en-ligne/`
+ * n'en est pas un : c'est une marque en base, la copie signée vit dans la base elle-même.
  */
 export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Object.freeze({
   'biens/': 'MEDIA',
@@ -247,7 +248,7 @@ export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Objec
   'partenaires/': 'PIECES',
   'relations/': 'PIECES',
   'mandats/': 'PIECES',
-  'signature-en-ligne/': 'PIECES',
+  'offres/': 'PIECES',
   'location/': 'PIECES',
   'boite/': 'PIECES',
   'mesure-sources/': 'PIECES',
