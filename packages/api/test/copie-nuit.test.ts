@@ -88,22 +88,26 @@ describeWithSqlite('SV02 · la copie de nuit', () => {
     expect(t.code).toBe(1);
   });
 
-  it('[R224] AU019b : un fichier cité par la base mais absent de son stockage, ou disparu pendant la copie : « non sauvegardé »', async () => {
+  it('[R224] AU019b : un fichier cité par la base mais absent de son stockage : « non sauvegardé »', async () => {
     const db = await source();
     await db.exec('CREATE TABLE essai_fichiers (ref TEXT)');
     await db.run("INSERT INTO essai_fichiers (ref) VALUES ('offres/4c1b0d8e-0000-4000-8000-000000000001.pdf')");
     const t = await night({ snapshot: async () => db });
     expect(t.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' })]);
+    expect(t.code).toBe(1);
+  }, 30_000);
+
+  it('[R224] AU019b : un fichier cité qui disparaît pendant la copie : « non sauvegardé »', async () => {
     const objects = fichiers();
     const media = objects.MEDIA;
     objects.MEDIA = { list: media.list, get: async () => null };
-    const db2 = await source();
-    await db2.exec('CREATE TABLE essai_fichiers (ref TEXT)');
-    await db2.run("INSERT INTO essai_fichiers (ref) VALUES ('biens/b1/salon.jpg')");
-    const t2 = await night({ snapshot: async () => db2, objects });
-    expect(t2.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' })]);
-    expect(t2.code).toBe(1);
-  });
+    const db = await source();
+    await db.exec('CREATE TABLE essai_fichiers (ref TEXT)');
+    await db.run("INSERT INTO essai_fichiers (ref) VALUES ('biens/b1/salon.jpg')");
+    const t = await night({ snapshot: async () => db, objects });
+    expect(t.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' })]);
+    expect(t.code).toBe(1);
+  }, 30_000);
 
   it('[R224] AU019b : un stockage qui ne se lit pas : « stockage en panne », jamais une copie sans ses fichiers', async () => {
     const objects = fichiers();
