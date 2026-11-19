@@ -353,6 +353,14 @@ describe('W11 · écran « Louer » de l’application', () => {
       await t.click(t.byText('Préparer le bail'));
       expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/bail']);
       expect(JSON.parse(t.posts()[0]!.body!).noticeRef).toBeUndefined();
+      // AU096 · La qualité du bailleur part telle que l'agent l'a choisie (à choisir : vide, refusé par le serveur) ; la case
+      // « étudiant » fait la variante.
+      expect(JSON.parse(t.posts()[0]!.body!)).toMatchObject({ landlord: '', variant: 'standard' });
+      t.input('Le bailleur est').value = 'morale';
+      (t.input('Meublé loué à un étudiant, 9 mois') as unknown as { checked: boolean }).checked = true;
+      t.calls.length = 0;
+      await t.click(t.byText('Préparer le bail'));
+      expect(JSON.parse(t.posts()[0]!.body!)).toMatchObject({ landlord: 'morale', variant: 'etudiant' });
       t.calls.length = 0;
       const again = t.input('La notice d’information, en PDF') as unknown as FakeElement & { files: unknown[] };
       again.files = [pdfFile()];
