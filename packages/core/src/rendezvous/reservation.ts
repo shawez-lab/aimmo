@@ -409,7 +409,8 @@ export class RendezVous {
 
   /**
    * Un rendez-vous pris par l'agent pour l'un de ses clients, avec sa durée propre s'il la choisit (AU056) : la
-   * contre-visite de 20 minutes, la signature chez le notaire de 90 minutes. Le conflit se contrôle sur cette durée
+   * signature chez le notaire de 90 minutes, l'appel de 10 minutes. Une visite (la contre-visite de 20 minutes comprise)
+   * passe par `Visites.schedule`, qui prend la même durée. Le conflit se contrôle sur cette durée
    * [R32, R33]. Aucune confirmation ne part. La direction n'a pas d'agenda ; une fiche hors du portefeuille de l'agent,
    * ou un bien qu'il ne peut pas lire, est refusé et le refus écrit au journal [R16].
    */
@@ -417,7 +418,9 @@ export class RendezVous {
     viewer: Viewer,
     acces: Acces,
     input: { personId: string; propertyId?: string | null; kind: AppointmentKind; start: Date; durationMinutes?: number },
-  ): Promise<BookingResult | { ok: false; rule: 'R16'; code: string }> {
+  ): Promise<BookingResult | { ok: false; rule: 'R16' | 'R40'; code: string }> {
+    // Une visite passe par la sienne (`Visites.schedule`) : bien diffusable, bon de visite et fiche de visite [R40, R42].
+    if (input.kind === 'visite') return { ok: false, rule: 'R40', code: 'visit_route' };
     if (viewer.role !== 'agent') {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${input.personId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'appointment', code: 'not_agent' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_agent' };

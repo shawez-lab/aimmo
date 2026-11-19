@@ -200,6 +200,7 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, durationMinutes: 22 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
     expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, salle: 'B' })).body).toMatchObject({ ok: false, code: 'unknown_field' });
     expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'notaire' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'visite', durationMinutes: 20 })).body).toMatchObject({ ok: false, rule: 'R40', code: 'visit_route' });
     expect((await t.call('sam', 'POST', '/rendez-vous', body)).status).toBe(403);
     expect((await t.call('direction', 'POST', '/rendez-vous', body)).status).toBe(403);
     const booked = await t.call('alex', 'POST', '/rendez-vous', body);

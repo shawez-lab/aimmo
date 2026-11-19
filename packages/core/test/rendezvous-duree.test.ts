@@ -134,6 +134,8 @@ describeWithSqlite('AU056 · la durée propre d’un rendez-vous', () => {
     const input = { personId: w.lea.id, kind: 'signature' as const, start: at('2026-11-10', '09:00'), durationMinutes: 90 };
     expect(await w.rdv.bookAsAgent({ role: 'direction', userId: 'dir-1', networkId: w.net.id }, w.acces, input)).toMatchObject({ ok: false, rule: 'R16', code: 'not_agent' });
     expect(await w.rdv.bookAsAgent(w.asLise, w.acces, input)).toMatchObject({ ok: false, rule: 'R16' });
+    // Une visite passe par sa route, avec son bon et le contrôle de la diffusion [R40, R42].
+    expect(await w.rdv.bookAsAgent(w.asPaul, w.acces, { ...input, kind: 'visite', durationMinutes: 20 })).toEqual({ ok: false, rule: 'R40', code: 'visit_route' });
     const ok = await w.rdv.bookAsAgent(w.asPaul, w.acces, input);
     expect(ok.ok).toBe(true);
     if (!ok.ok || !('appointment' in ok)) return;
