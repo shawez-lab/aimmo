@@ -135,7 +135,7 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(r.value[1]!.reasons).toContain('Prix 3,45 % au-dessus du budget, dans la tolérance de 5 %.');
   });
 
-  it('AU070 · une maison ne répond qu’à une recherche de maison, un appartement qu’à une recherche d’appartement, y compris après import', async () => {
+  it('[R51] AU070 · une maison ne répond qu’à une recherche de maison, un appartement qu’à une recherche d’appartement, y compris après import', async () => {
     const t = await setup();
     const house = await t.buyer(t.alex.id, 'Maison', { propertyKinds: ['house'], communes: ['Dijon'] });
     const flat = await t.buyer(t.alex.id, 'Appartement', { propertyKinds: ['apartment'], communes: ['Dijon'] });
