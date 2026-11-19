@@ -226,10 +226,16 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var labels = {};
     projects.forEach(function (q, n) { labels[q.id] = 'Projet d’achat ' + (n + 1); });
     var pick = projects.length > 1 ? t.cSelect(section, id + '-projet', 'Le projet', labels, projects[0].id) : null;
-    var seen = 0;
+    var seen = 0, known = false;
+    // Sans le secteur en place lu, rien ne se range ni ne se retire : on ne remplace pas ce qu'on n'a pas vu.
+    var retry = el('button', 'Réessayer de lire le secteur');
+    retry.setAttribute('type', 'button');
+    retry.addEventListener('click', function () { load(); });
+    function unread() { state.textContent = 'Le secteur en place n’est pas lu : réessayez de le lire d’abord.'; return Promise.resolve(false); }
     function base() { return '/v1/acquereurs/projets/' + encodeURIComponent(pick ? pick.value : projects[0].id) + '/secteur'; }
     var now = el('p', null, 'doux');
     section.appendChild(now);
+    var fix = section.appendChild(el('div'));
     var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
     var km = field(section, id + '-rayon', 'Rayon, en km', true);
     var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
@@ -242,18 +248,26 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       return true;
     }
     section.appendChild(t.accordButton('Ranger le secteur', function () {
+      if (!known) return unread();
       var r = Number(String(km.value).replace(',', '.'));
       if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
       return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer);
     }));
-    section.appendChild(t.accordButton('Retirer le secteur', function () { return t.send(base(), 'POST', { shape: 'aucun' }).then(answer); }));
+    section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer) : unread(); }));
     section.appendChild(state);
     box.appendChild(section);
     function load() {
       var mine = ++seen;
-      now.textContent = '';
+      known = false;
+      now.textContent = 'Lecture du secteur…';
       state.textContent = '';
-      t.send(base(), 'GET').then(function (res) { if (!res.gone && res.ok && mine === seen) said(res.body.data); });
+      fix.textContent = '';
+      t.send(base(), 'GET').then(function (res) {
+        if (res.gone || mine !== seen) return;
+        if (res.ok) { known = true; said(res.body.data); return; }
+        now.textContent = res.offline ? 'Pas de réseau : le secteur en place n’est pas lu.' : 'Le secteur en place n’a pas pu être lu.';
+        fix.appendChild(retry);
+      });
     }
     if (pick) pick.addEventListener('change', load);
     load();

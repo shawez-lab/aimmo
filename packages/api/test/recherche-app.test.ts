@@ -367,4 +367,20 @@ describe('AU073 · le secteur de la recherche depuis la fiche de l’acquéreur'
     expect(t.posts().at(-1)).toMatchObject({ url: second, body: { shape: 'aucun' } });
     expect(t.posts().some((x) => x.url === first)).toBe(false);
   });
+
+  it('le secteur en place non lu est dit, avec Réessayer ; rien ne se range sans l’avoir lu', async () => {
+    const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const t = await opened({ answers: { [`GET ${base}`]: no(500, { ok: false }) } });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Le secteur en place n’a pas pu être lu.');
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Le secteur en place n’est pas lu : réessayez de le lire d’abord.');
+    expect(t.posts().filter((x) => x.url === base)).toEqual([]);
+    t.table[`GET ${base}`] = ok({ shape: 'polygone', points: [], label: 'Le plateau' });
+    t.named(area(), 'Réessayer de lire le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    expect(t.named(area(), 'Réessayer de lire le secteur')).toEqual([]);
+  });
 });
