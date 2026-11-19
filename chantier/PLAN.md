@@ -96,7 +96,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H10).
 
 ### AU005 · Un DPE de 2019 passe encore la checklist de publication en novembre 2026
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A005 (bloquant), endroit : C/annonces/fiche-bien.ts, `parseSheet` ; C/annonces/mentions.ts.
 - Constat de l'audit : Un DPE de 2019 passe encore la checklist de publication en novembre 2026, alors que sa validité transitoire est terminée.
