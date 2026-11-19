@@ -43,6 +43,10 @@ export const TRIAL_FORMAT: PortalFormat = {
         `<titre>${xml(l.title ?? '')}</titre>` +
         `<texte>${xml(l.body ?? '')}</texte>` +
         `<mentions>${xml(l.mentions ?? '')}</mentions>` +
+        // AU064 · le diagnostic repris tel quel : numéro ADEME, valeurs et classes, jour du diagnostic.
+        (l.dpe
+          ? `<dpe${l.dpe.ademeNumber ? ` numero="${xml(l.dpe.ademeNumber)}"` : ''}${l.dpe.primaryEnergyKwhM2 !== null ? ` energie_primaire="${l.dpe.primaryEnergyKwhM2}"` : ''}${l.dpe.ghgKgM2 !== null ? ` ges="${l.dpe.ghgKgM2}"` : ''} classe_energie="${xml(l.dpe.energyClass)}" classe_climat="${xml(l.dpe.climateClass)}" date="${xml(l.dpe.diagnosedOn)}"/>`
+          : '') +
         `<medias>${media}</medias>` +
         `</annonce>`
       );

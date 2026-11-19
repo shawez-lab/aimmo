@@ -18,6 +18,7 @@ Un document XML en UTF-8, une annonce par bien, triées par référence. Une mê
     <titre>…</titre>
     <texte>…</texte>
     <mentions>…</mentions>
+    <dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="D" classe_climat="D" date="2027-01-15"/>
     <medias>
       <media type="photo" ref="biens/<id>/<identifiant>.jpg"/>
       <media type="photo" ref="biens/<id>/<identifiant>.jpg" mention="Aménagement virtuel"/>
@@ -30,6 +31,7 @@ Un document XML en UTF-8, une annonce par bien, triées par référence. Une mê
 - `etat` : `en_vente` ou `sous_offre`.
 - `prix` : le prix publié, honoraires inclus quand l'acquéreur les paie, en euros entiers.
 - `mentions` : les mentions obligatoires calculées par le code, une par ligne.
+- `dpe` (AU064) : le diagnostic tel qu'il est rangé dans la fiche, pour le reprendre sans ressaisie : son numéro d'enregistrement à l'ADEME (`numero`, 13 caractères), l'énergie primaire en kWh/m²/an (`energie_primaire`), les émissions en kg CO₂/m²/an (`ges`), les deux classes et le jour du diagnostic. Seuls les attributs connus sont écrits ; sans numéro ni valeurs, l'élément est absent.
 
 ## Portails étrangers : format d'essai `aimmo-essai-international-1` (HX05)
 

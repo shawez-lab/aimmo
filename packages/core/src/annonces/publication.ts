@@ -44,6 +44,20 @@ export interface ListingPayload {
   priceEur: number | null;
   /** Photos et vidéos publiables, la mention « Aménagement virtuel » à poser sur l'image quand il le faut [R48]. */
   media: PublishedMedia[];
+  /**
+   * AU064 · le diagnostic tel qu'il est rangé, pour que chaque portail le reprenne sans ressaisie : présent seulement
+   * quand la fiche porte son numéro ADEME ou ses valeurs (une annonce sans eux garde le même contenu qu'avant).
+   */
+  dpe?: ListingDpe;
+}
+
+export interface ListingDpe {
+  ademeNumber: string | null;
+  primaryEnergyKwhM2: number | null;
+  ghgKgM2: number | null;
+  energyClass: string;
+  climateClass: string;
+  diagnosedOn: string;
 }
 
 /**
@@ -139,9 +153,14 @@ export class Publication {
     const input = await this.mentions.inputFor(networkId, propertyId);
     const checklist = input ? computeMentions(input) : null;
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
+    const e = input?.sheet?.energy ?? null;
+    const known = e && (e.ademeNumber !== undefined || e.primaryEnergyKwhM2 !== undefined || e.ghgKgM2 !== undefined);
+    const dpe: ListingDpe | null = known
+      ? { ademeNumber: e.ademeNumber ?? null, primaryEnergyKwhM2: e.primaryEnergyKwhM2 ?? null, ghgKgM2: e.ghgKgM2 ?? null, energyClass: e.energyClass, climateClass: e.climateClass, diagnosedOn: e.diagnosedOn }
+      : null;
     return {
       draftId: draft.id,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion) },
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion), ...(dpe ? { dpe } : {}) },
     };
   }
 

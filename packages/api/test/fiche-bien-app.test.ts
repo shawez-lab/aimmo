@@ -139,6 +139,16 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
   });
 
+  it('AU064 · le numéro ADEME et les valeurs du diagnostic se saisissent une fois et partent avec la fiche', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    t.f('fiche-bien-dpe-numero').value = ' 2321e0123456j ';
+    t.f('fiche-bien-dpe-ep').value = '212';
+    t.f('fiche-bien-dpe-ges').value = '41';
+    await t.save();
+    expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 });
+  });
+
   it('sans fiche : un formulaire vide à la version 0, où un champ vide reste « je ne sais pas »', async () => {
     const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
     await t.open();
