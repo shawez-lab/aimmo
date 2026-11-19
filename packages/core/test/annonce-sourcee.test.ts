@@ -92,6 +92,11 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     }
     expect(traceListing('Appartement à Dijon', 'Sans travaux.', { ...FACTS, condition: 'bon_etat' }).ok).toBe(true);
     expect(traceListing('Appartement à Dijon', 'Sans travaux.', FACTS).ok).toBe(false);
+    // L'absence d'un équipement ne se prouve pas : « sans piscine » est refusé, même quand la fiche dit une piscine.
+    for (const body of ['Sans piscine.', 'Pas de cave.', 'Sans cheminée ni cave.']) {
+      expect(traceListing('Appartement à Dijon', body, { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'] }).ok).toBe(false);
+      expect(traceListing('Appartement à Dijon', body, FACTS).ok).toBe(false);
+    }
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {

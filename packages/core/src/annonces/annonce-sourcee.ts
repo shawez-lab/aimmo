@@ -156,6 +156,13 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['refait à neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits'], field: 'condition', has: (f) => f.condition === 'refait_a_neuf' },
   { terms: ['bon état'], field: 'condition', has: (f) => f.condition === 'bon_etat' || f.condition === 'refait_a_neuf' || f.condition === 'neuf' },
   { terms: ['neuf'], field: 'condition', has: (f) => f.condition === 'neuf' },
+  // L'absence d'un équipement ne se prouve pas par la fiche (une case vide veut dire « je ne sais pas ») : « sans piscine »
+  // n'a jamais de source, et se lit avant « piscine » (AU061).
+  {
+    terms: ['piscine', 'cave', 'cheminée', 'grenier', 'combles', 'véranda', 'climatisation'].flatMap((t) => [`sans ${t}`, `pas de ${t}`, `aucune ${t}`, `ni ${t}`]),
+    field: null,
+    has: () => false,
+  },
   // Sans champ dans la fiche : jamais de source.
   {
     terms: ['cellier', 'fibre', 'double vitrage', 'parquet', 'dressing', 'buanderie',
