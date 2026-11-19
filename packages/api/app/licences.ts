@@ -64,37 +64,12 @@ export const LICENCES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const LICENCES_JS = `
   /* ---------- Les licences du logiciel sur l'écran du réseau (BR16), chargées au premier geste [R16, R201, R657]. ---------- */
-  var licencesTools = null, licencesLoading = false;
   function wipeLicences() {
     clear($('licences-corps'));
     $('licences-etat').textContent = '';
   }
   function withLicences(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (licencesTools) return act(licencesTools);
-    if (licencesLoading) return Promise.resolve(false);
-    licencesLoading = true;
-    var mine = session;
-    $('licences-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/licences.js');
-      s.addEventListener('load', function () {
-        licencesLoading = false;
-        var make = globalThis.AIMMO_LICENCES;
-        try { delete globalThis.AIMMO_LICENCES; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('licences-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        licencesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, prove: proveAction, session: function () { return session; } });
-        resolve(act(licencesTools));
-      });
-      s.addEventListener('error', function () {
-        licencesLoading = false;
-        if (mine === session) $('licences-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('licences', 'AIMMO_LICENCES', 'licences-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, prove: proveAction, session: function () { return session; } }; });
   }
 `;
 

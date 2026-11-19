@@ -52,37 +52,12 @@ export const ANNUAIRE_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const ANNUAIRE_JS = `
   /* ---------- L'annuaire des partenaires sur l'écran du réseau (U13), chargé au premier geste [R16, R73, R201]. ---------- */
-  var annuaireTools = null, annuaireLoading = false;
   function wipeAnnuaire() {
     clear($('annuaire-corps'));
     $('annuaire-etat').textContent = '';
   }
   function withAnnuaire(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (annuaireTools) return act(annuaireTools);
-    if (annuaireLoading) return Promise.resolve(false);
-    annuaireLoading = true;
-    var mine = session;
-    $('annuaire-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/annuaire.js');
-      s.addEventListener('load', function () {
-        annuaireLoading = false;
-        var make = globalThis.AIMMO_ANNUAIRE;
-        try { delete globalThis.AIMMO_ANNUAIRE; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('annuaire-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        annuaireTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, key: function () { return currentKey; }, session: function () { return session; } });
-        resolve(act(annuaireTools));
-      });
-      s.addEventListener('error', function () {
-        annuaireLoading = false;
-        if (mine === session) $('annuaire-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('annuaire', 'AIMMO_ANNUAIRE', 'annuaire-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, key: function () { return currentKey; }, session: function () { return session; } }; });
   }
 `;
 

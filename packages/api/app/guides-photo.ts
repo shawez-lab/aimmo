@@ -17,37 +17,12 @@ export const GUIDES_PHOTO_ENTRY_HTML = `<section class="bloc" aria-labelledby="t
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const GUIDES_PHOTO_JS = `
   /* ---------- Les guides photo à valider, sur l'écran du réseau (X23), chargés au premier geste [R16, R17, R201]. ---------- */
-  var guidesPhotoTools = null, guidesPhotoLoading = false;
   function wipeGuidesPhoto() {
     clear($('guides-photo-corps'));
     $('guides-photo-etat').textContent = '';
   }
   function withGuidesPhoto(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (guidesPhotoTools) return act(guidesPhotoTools);
-    if (guidesPhotoLoading) return Promise.resolve(false);
-    guidesPhotoLoading = true;
-    var mine = session;
-    $('guides-photo-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/guides-photo.js');
-      s.addEventListener('load', function () {
-        guidesPhotoLoading = false;
-        var make = globalThis.AIMMO_GUIDES_PHOTO;
-        try { delete globalThis.AIMMO_GUIDES_PHOTO; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('guides-photo-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        guidesPhotoTools = make({ $: $, el: el, clear: clear, send: send, button: button, session: function () { return session; } });
-        resolve(act(guidesPhotoTools));
-      });
-      s.addEventListener('error', function () {
-        guidesPhotoLoading = false;
-        if (mine === session) $('guides-photo-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('guides-photo', 'AIMMO_GUIDES_PHOTO', 'guides-photo-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, session: function () { return session; } }; });
   }
 `;
 
