@@ -117,6 +117,10 @@ function add(o, kind, appointmentId, payload) {
     s = fresh(s);
     var op = { opId: id, seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: at, payload: payload };
     return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused }, value: op };
+  }).then(function (op) {
+    // Gardée : elle part tout de suite si le réseau est là, même s'il est revenu pendant le contrôle de la photo [R276].
+    if (ui && ui.owner === o) sync(ui.key);
+    return op;
   });
 }
 function bySeq(a, b) { return a.seq - b.seq; }

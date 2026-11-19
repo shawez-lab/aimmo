@@ -238,8 +238,9 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
     fetch: async (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
       const method = (init.method ?? 'GET') as 'GET' | 'POST';
-      calls.push(`${method} ${url}`);
+      // Seuls les appels qui atteignent le réseau sont comptés.
       if (!net.network) throw new TypeError('hors ligne');
+      calls.push(`${method} ${url}`);
       expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
         if (net.dropPack) throw new TypeError('hors ligne');
@@ -498,6 +499,20 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     await t.online();
     expect(await w.count('visit_field_notes')).toBe(1);
     expect(await t.H.pending()).toEqual([]);
+  });
+
+  it('[R276] une note gardée avec du réseau part aussitôt, sans attendre un autre retour du réseau', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const t = await phone(w, idb, { network: true });
+    await t.click(t.els.accueil!.all().find((e) => e.textContent === 'Mes visites sans réseau'));
+    w.setClock(w.visitStart + 10 * MIN);
+    t.find('textarea')!.value = 'Note gardée avec du réseau.';
+    await t.click(t.find('button', 'Garder la note'));
+    expect(await w.count('visit_field_notes')).toBe(1);
+    expect(await t.H.pending()).toEqual([]);
+    expect(t.find('p', /^Tout est envoyé/)).toBeDefined();
   });
 
   it('[R16] l’écran demandé par un agent qui se déconnecte aussitôt n’est jamais dessiné', async () => {
