@@ -34,7 +34,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { BauxLocation, PersonReader } from './bail.ts';
+import { leaseCotenants, type BauxLocation, type PersonReader } from './bail.ts';
 import type { ChoixProprietaire } from './choix.ts';
 import type { LocationRefusal, MisesEnLocation } from './logement.ts';
 import type { LeaseSignatureState } from './remise-cles.ts';
@@ -44,12 +44,16 @@ export const REAL_LEASE_SIGNATURE = false;
 
 export const LEASE_PARTIES = ['bailleur', 'locataire'] as const;
 export type LeaseParty = (typeof LEASE_PARTIES)[number];
+/** AU097 · un colocataire signe le même bail, en son nom, comme une partie de plus. */
+export type SignerParty = LeaseParty | 'colocataire';
+/** La table des sessions d'une partie : les colocataires ont la leur, une signature par personne et par bail. */
+const TABLE = (party: SignerParty): string => (party === 'colocataire' ? 'rental_lease_cotenant_signatures' : 'rental_lease_signatures');
 
 const MAX_DRAWING = 200_000;
 
 export interface LeaseSignatureProof {
   leaseId: string;
-  party: LeaseParty;
+  party: SignerParty;
   contentSha256: string;
   signedAt: string;
   method: 'code' | 'code_et_trace';
@@ -63,11 +67,15 @@ export interface LeaseSignatureStatus {
   contentSha256: string;
   bailleur: string | null;
   locataire: string | null;
-  /** La date où la seconde partie a signé, ou rien. */
+  /** Chaque colocataire nommé au bail, et quand il a signé (AU097). */
+  colocataires: { personId: string; signedAt: string | null }[];
+  /** La date où le dernier signataire a signé, bailleur, locataire et chaque colocataire, ou rien. */
   signedAt: string | null;
   realSignature: false;
   copySha256: string | null;
   copiesSent: LeaseParty[];
+  /** Les colocataires à qui l'avis de l'exemplaire est parti (AU097). */
+  cotenantCopiesSent: string[];
 }
 
 export type LeaseSignatureRefusal = Omit<LocationRefusal, 'rule'> & { rule: LocationRefusal['rule'] | 'R101' | 'R105' | 'R108' | (string & {}) };
@@ -78,7 +86,7 @@ interface SessionRow {
   network_id: string;
   listing_id: string;
   lease_id: string;
-  party: LeaseParty;
+  party: SignerParty;
   person_id: string;
   content_sha256: string;
   code_hash: string;
@@ -135,12 +143,17 @@ export class SignaturesBail implements LeaseSignatureState {
   }
 
   /** Le bail en vigueur et complet du logement, et la personne de la partie [R101, R105]. */
-  private async target(networkId: string, listingId: string, ownerPersonId: string, party: LeaseParty): Promise<{ leaseId: string; contentSha256: string; mode: 'essai' | 'reel'; personId: string } | LeaseSignatureRefusal> {
+  private async target(networkId: string, listingId: string, ownerPersonId: string, party: SignerParty, cotenant?: unknown): Promise<{ leaseId: string; contentSha256: string; mode: 'essai' | 'reel'; personId: string } | LeaseSignatureRefusal> {
     const lease = await this.leases.current(networkId, listingId);
     if (!lease) return { ok: false, rule: 'R108', code: 'no_current_lease' };
     if (!lease.complete) return { ok: false, rule: 'R101', code: 'lease_incomplete' };
     const chosen = await this.choices.chosen(networkId, listingId);
     if (!chosen) return { ok: false, rule: 'R105', code: 'no_choice' };
+    if (party === 'colocataire') {
+      // Seul un colocataire nommé dans ce bail le signe (AU097).
+      if (typeof cotenant !== 'string' || !(await leaseCotenants(this.db, lease.leaseId)).includes(cotenant)) return { ok: false, rule: null, code: 'not_cotenant' };
+      return { ...lease, personId: cotenant };
+    }
     return { ...lease, personId: party === 'bailleur' ? ownerPersonId : chosen.personId };
   }
 
@@ -156,18 +169,18 @@ export class SignaturesBail implements LeaseSignatureState {
    * Ouvre la signature d'une partie sur le bail en vigueur : son code lui est envoyé par le contrôle central. La partie
    * accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
    */
-  async start(viewer: Viewer, listingId: unknown, input: { party?: unknown; consentProof?: unknown }): Promise<LeaseSignatureResult<{ sessionId: string; leaseId: string; contentSha256: string; expiresAt: string; mode: 'essai' }>> {
+  async start(viewer: Viewer, listingId: unknown, input: { party?: unknown; personId?: unknown; consentProof?: unknown }): Promise<LeaseSignatureResult<{ sessionId: string; leaseId: string; contentSha256: string; expiresAt: string; mode: 'essai' }>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `rental:${listing.id}`, 'role');
     const party = input.party;
-    if (typeof party !== 'string' || !(LEASE_PARTIES as readonly string[]).includes(party)) return { ok: false, rule: null, code: 'bad_party' };
+    if (typeof party !== 'string' || !([...LEASE_PARTIES, 'colocataire'] as readonly string[]).includes(party)) return { ok: false, rule: null, code: 'bad_party' };
     if (typeof input.consentProof !== 'string' || input.consentProof.trim() === '' || input.consentProof.length > 300) return { ok: false, rule: null, code: 'bad_consent' };
-    const target = await this.target(listing.networkId, listing.id, listing.ownerPersonId, party as LeaseParty);
+    const target = await this.target(listing.networkId, listing.id, listing.ownerPersonId, party as SignerParty, input.personId);
     if ('ok' in target) return target;
     const sees = await this.seesParty(viewer, target.personId);
     if (sees !== true) return sees;
-    const done = await this.db.first('SELECT 1 FROM rental_lease_signatures WHERE lease_id = ? AND party = ? AND status = ?', [target.leaseId, party, 'signee']);
+    const done = await this.db.first(`SELECT 1 FROM ${TABLE(party as SignerParty)} WHERE lease_id = ? AND party = ? AND person_id = ? AND status = ?`, [target.leaseId, party, target.personId, 'signee']);
     if (done) return { ok: false, rule: null, code: 'already_signed' };
     const consent = await this.fiche.hasConsentInForce(target.personId, ONLINE_SIGNATURE_PURPOSE, 'email');
     if (!consent) await this.store.addConsent({ networkId: listing.networkId, personId: target.personId, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
@@ -175,7 +188,7 @@ export class SignaturesBail implements LeaseSignatureState {
     const code = this.newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
     await this.db.run(
-      `INSERT INTO rental_lease_signatures (id, network_id, listing_id, lease_id, party, person_id, content_sha256, code_hash, expires_at, attempts, status, created_by, created_at)
+      `INSERT INTO ${TABLE(party as SignerParty)} (id, network_id, listing_id, lease_id, party, person_id, content_sha256, code_hash, expires_at, attempts, status, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?)`,
       [id, listing.networkId, listing.id, target.leaseId, party, target.personId, target.contentSha256, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString()],
     );
@@ -203,7 +216,10 @@ export class SignaturesBail implements LeaseSignatureState {
    * l'ouverture, en vigueur, de même empreinte ; sinon de nouvelles signatures sont demandées [R108].
    */
   async sign(viewer: Viewer, sessionId: unknown, input: { code?: unknown; drawing?: unknown }): Promise<LeaseSignatureResult<LeaseSignatureProof & { bothSigned: boolean }>> {
-    const session = typeof sessionId === 'string' ? await this.db.first<SessionRow>('SELECT * FROM rental_lease_signatures WHERE id = ?', [sessionId]) : null;
+    const session =
+      typeof sessionId === 'string'
+        ? ((await this.db.first<SessionRow>('SELECT * FROM rental_lease_signatures WHERE id = ?', [sessionId])) ?? (await this.db.first<SessionRow>('SELECT * FROM rental_lease_cotenant_signatures WHERE id = ?', [sessionId])))
+        : null;
     if (!session || session.network_id !== viewer.networkId) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `lease_signature:${String(sessionId)}`, data: { rule: 'R16', role: String(viewer.role), kind: 'lease_signature', code: 'unknown' } }, this.now);
       return { ok: false, rule: null, code: 'unknown_session' };
@@ -223,7 +239,7 @@ export class SignaturesBail implements LeaseSignatureState {
     if (!given || !sameSignatureHash(given, session.code_hash)) {
       // L'essai est compté dans la base, en un seul ordre : des essais simultanés comptent chacun.
       const after = await this.db.first<{ attempts: number; status: string }>(
-        `UPDATE rental_lease_signatures SET attempts = attempts + 1, status = CASE WHEN attempts + 1 >= ? THEN 'bloquee' ELSE status END
+        `UPDATE ${TABLE(session.party)} SET attempts = attempts + 1, status = CASE WHEN attempts + 1 >= ? THEN 'bloquee' ELSE status END
          WHERE id = ? AND status = 'ouverte' RETURNING attempts, status`,
         [MAX_CODE_ATTEMPTS, session.id],
       );
@@ -232,7 +248,7 @@ export class SignaturesBail implements LeaseSignatureState {
       return { ok: false, rule: null, code: blocked ? 'blocked' : 'wrong_code' };
     }
     // Le bail est encore celui de l'ouverture : en vigueur, complet, même empreinte, même partie [R108, R101, R105].
-    const target = await this.target(listing.networkId, listing.id, listing.ownerPersonId, session.party);
+    const target = await this.target(listing.networkId, listing.id, listing.ownerPersonId, session.party, session.person_id);
     if ('ok' in target || target.leaseId !== session.lease_id || target.contentSha256 !== session.content_sha256 || target.personId !== session.person_id) {
       return { ok: false, rule: 'R108', code: 'lease_changed' };
     }
@@ -250,7 +266,7 @@ export class SignaturesBail implements LeaseSignatureState {
     };
     let changes = 0;
     try {
-      ({ changes } = await this.db.run(`UPDATE rental_lease_signatures SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ? WHERE id = ? AND status = 'ouverte'`, [
+      ({ changes } = await this.db.run(`UPDATE ${TABLE(session.party)} SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ? WHERE id = ? AND status = 'ouverte'`, [
         signedAt,
         drawingHash,
         JSON.stringify(proof),
@@ -281,17 +297,27 @@ export class SignaturesBail implements LeaseSignatureState {
     const of = (p: LeaseParty) => rows.find((r) => r.party === p && r.content_sha256 === lease.content_sha256)?.signed_at ?? null;
     const bailleur = of('bailleur');
     const locataire = of('locataire');
+    // AU097 · chaque colocataire nommé au bail signe à son tour ; le bail n'est signé qu'avec tous.
+    const coRows = await this.db.all<{ person_id: string; signed_at: string; content_sha256: string }>(
+      "SELECT person_id, signed_at, content_sha256 FROM rental_lease_cotenant_signatures WHERE lease_id = ? AND network_id = ? AND status = 'signee'",
+      [leaseId, networkId],
+    );
+    const colocataires = (await leaseCotenants(this.db, leaseId)).map((personId) => ({ personId, signedAt: coRows.find((r) => r.person_id === personId && r.content_sha256 === lease.content_sha256)?.signed_at ?? null }));
+    const all = [bailleur, locataire, ...colocataires.map((c) => c.signedAt)];
     const copy = await this.db.first<{ content_sha256: string }>('SELECT content_sha256 FROM rental_lease_copies WHERE lease_id = ?', [leaseId]);
     const sent = await this.db.all<{ party: LeaseParty }>('SELECT party FROM rental_lease_copy_deliveries WHERE lease_id = ? ORDER BY party', [leaseId]);
+    const coSent = await this.db.all<{ person_id: string }>('SELECT person_id FROM rental_lease_cotenant_copy_deliveries WHERE lease_id = ? ORDER BY person_id', [leaseId]);
     return {
       leaseId,
       contentSha256: lease.content_sha256,
       bailleur,
       locataire,
-      signedAt: bailleur && locataire ? (bailleur > locataire ? bailleur : locataire) : null,
+      colocataires,
+      signedAt: all.every((d) => d !== null) ? (all as string[]).reduce((a, b) => (a > b ? a : b)) : null,
       realSignature: false,
       copySha256: copy?.content_sha256 ?? null,
       copiesSent: sent.map((r) => r.party),
+      cotenantCopiesSent: coSent.map((r) => r.person_id),
     };
   }
 
@@ -326,7 +352,9 @@ export class SignaturesBail implements LeaseSignatureState {
     // deux parties est toujours remis à chacune [R108].
     const pending = await this.db.all<{ lease_id: string }>(
       `SELECT c.lease_id FROM rental_lease_copies c WHERE c.listing_id = ? AND c.network_id = ?
-       AND (SELECT COUNT(*) FROM rental_lease_copy_deliveries d WHERE d.lease_id = c.lease_id) < 2 ORDER BY c.created_at`,
+       AND (SELECT COUNT(*) FROM rental_lease_copy_deliveries d WHERE d.lease_id = c.lease_id)
+         + (SELECT COUNT(*) FROM rental_lease_cotenant_copy_deliveries e WHERE e.lease_id = c.lease_id)
+         < 2 + (SELECT COUNT(*) FROM rental_lease_cotenants t WHERE t.lease_id = c.lease_id) ORDER BY c.created_at`,
       [listing.id, listing.networkId],
     );
     for (const p of pending) await this.deliverCopies(viewer, listing.networkId, listing.id, listing.propertyId, p.lease_id);
@@ -340,10 +368,18 @@ export class SignaturesBail implements LeaseSignatureState {
 
   private async deliverCopies(viewer: Viewer, networkId: string, listingId: string, propertyId: string, leaseId: string): Promise<LeaseSignatureResult<{ copySha256: string; sent: LeaseParty[] }>> {
     const lease = (await this.db.first<{ content: string; content_sha256: string }>('SELECT content, content_sha256 FROM rental_leases WHERE id = ?', [leaseId]))!;
-    const proofs = await this.db.all<{ id: string; party: LeaseParty; proof: string }>(
-      "SELECT id, party, proof FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' AND content_sha256 = ? ORDER BY party",
-      [leaseId, lease.content_sha256],
-    );
+    const proofs = [
+      ...(await this.db.all<{ id: string; party: SignerParty; proof: string }>(
+        "SELECT id, party, proof FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' AND content_sha256 = ? ORDER BY party",
+        [leaseId, lease.content_sha256],
+      )),
+      // Puis chaque colocataire, dans l'ordre du bail (AU097).
+      ...(await this.db.all<{ id: string; party: SignerParty; proof: string }>(
+        `SELECT s.id, s.party, s.proof FROM rental_lease_cotenant_signatures s JOIN rental_lease_cotenants t ON t.lease_id = s.lease_id AND t.person_id = s.person_id
+         WHERE s.lease_id = ? AND s.status = 'signee' AND s.content_sha256 = ? ORDER BY t.position`,
+        [leaseId, lease.content_sha256],
+      )),
+    ];
     const lines = proofs.map((p) => {
       const proof = JSON.parse(p.proof) as LeaseSignatureProof;
       return `<!-- Signature en ligne d'essai du ${p.party} : session ${p.id}, empreinte ${proof.contentSha256}, ${proof.signedAt}, ${proof.method} -->`;
@@ -361,9 +397,17 @@ export class SignaturesBail implements LeaseSignatureState {
     // L'exemplaire rangé fait foi : le même pour les deux parties.
     const copy = (await this.db.first<{ content_sha256: string }>('SELECT content_sha256 FROM rental_lease_copies WHERE lease_id = ?', [leaseId]))!;
     const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [propertyId]);
-    const sessions = await this.db.all<{ party: LeaseParty; person_id: string }>("SELECT party, person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY party", [leaseId]);
+    const sessions = [
+      ...(await this.db.all<{ id: string; party: SignerParty; person_id: string }>("SELECT id, party, person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY party", [leaseId])),
+      ...(await this.db.all<{ id: string; party: SignerParty; person_id: string }>("SELECT id, party, person_id FROM rental_lease_cotenant_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id", [leaseId])),
+    ];
+    const shared = (await leaseCotenants(this.db, leaseId)).length > 0;
     for (const s of sessions) {
-      if (await this.db.first('SELECT 1 FROM rental_lease_copy_deliveries WHERE lease_id = ? AND party = ?', [leaseId, s.party])) continue;
+      const delivered =
+        s.party === 'colocataire'
+          ? await this.db.first('SELECT 1 FROM rental_lease_cotenant_copy_deliveries WHERE lease_id = ? AND person_id = ?', [leaseId, s.person_id])
+          : await this.db.first('SELECT 1 FROM rental_lease_copy_deliveries WHERE lease_id = ? AND party = ?', [leaseId, s.party]);
+      if (delivered) continue;
       const reference = `bail ${leaseId}`;
       const result = await this.envois.send({
         networkId,
@@ -374,14 +418,22 @@ export class SignaturesBail implements LeaseSignatureState {
         purpose: ONLINE_SIGNATURE_PURPOSE,
         subject: `signature_bail:${leaseId}:exemplaire`,
         fallbackTexts: [
-          `${await this.greeting(s.person_id)}Votre bail signé en ligne par les deux parties est enregistré sous la référence ${reference}. Votre agent vous remet votre exemplaire, le même pour le bailleur et le locataire : il porte l’empreinte ${copy.content_sha256}. Signature d’essai, sans valeur juridique.`,
+          shared
+            ? `${await this.greeting(s.person_id)}Votre bail signé en ligne par le bailleur et chaque colocataire est enregistré sous la référence ${reference}. Votre agent vous remet votre exemplaire, le même pour tous : il porte l’empreinte ${copy.content_sha256}. Signature d’essai, sans valeur juridique.`
+            : `${await this.greeting(s.person_id)}Votre bail signé en ligne par les deux parties est enregistré sous la référence ${reference}. Votre agent vous remet votre exemplaire, le même pour le bailleur et le locataire : il porte l’empreinte ${copy.content_sha256}. Signature d’essai, sans valeur juridique.`,
         ],
         // La référence et l'empreinte sont des identifiants, pas des chiffres à vérifier : leurs nombres sont permis [R10].
         figures: [...(leaseId.match(/\d+/g) ?? []), ...(copy.content_sha256.match(/\d+/g) ?? [])],
       });
       if (result.status !== 'sent') continue;
-      await this.db.run('INSERT INTO rental_lease_copy_deliveries (lease_id, party, copy_sha256, sent_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [leaseId, s.party, copy.content_sha256, this.now().toISOString()]);
-      await appendEvent(this.journal, { type: 'location.bail_exemplaire', actor: this.actor(viewer), subject: `rental:${listingId}`, data: { rule: 'R108', party: s.party, copy: copy.content_sha256 } }, this.now);
+      if (s.party === 'colocataire') await this.db.run('INSERT INTO rental_lease_cotenant_copy_deliveries (lease_id, person_id, copy_sha256, sent_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [leaseId, s.person_id, copy.content_sha256, this.now().toISOString()]);
+      else await this.db.run('INSERT INTO rental_lease_copy_deliveries (lease_id, party, copy_sha256, sent_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [leaseId, s.party, copy.content_sha256, this.now().toISOString()]);
+      await appendEvent(
+        this.journal,
+        // Un colocataire est nommé par sa session de signature : l'avis est à lui seul dans sa réponse d'accès (AU097).
+        { type: 'location.bail_exemplaire', actor: this.actor(viewer), subject: `rental:${listingId}`, data: { rule: 'R108', party: s.party, copy: copy.content_sha256, ...(s.party === 'colocataire' ? { session: s.id } : {}) } },
+        this.now,
+      );
     }
     const sent = await this.db.all<{ party: LeaseParty }>('SELECT party FROM rental_lease_copy_deliveries WHERE lease_id = ? ORDER BY party', [leaseId]);
     return { ok: true, value: { copySha256: copy.content_sha256, sent: sent.map((r) => r.party) } };
@@ -395,7 +447,10 @@ export class SignaturesBail implements LeaseSignatureState {
     const row = typeof leaseId === 'string' ? await this.db.first<{ content: string; content_sha256: string }>('SELECT content, content_sha256 FROM rental_lease_copies WHERE lease_id = ? AND listing_id = ?', [leaseId, listing.id]) : null;
     if (!row) return { ok: false, rule: null, code: 'not_signed' };
     // L'exemplaire porte l'identité des deux parties : le lecteur doit voir chacune de leurs fiches en entier [R16].
-    const signers = await this.db.all<{ person_id: string }>("SELECT DISTINCT person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id", [leaseId as string]);
+    const signers = await this.db.all<{ person_id: string }>(
+      "SELECT person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' UNION SELECT person_id FROM rental_lease_cotenant_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id",
+      [leaseId as string, leaseId as string],
+    );
     for (const s of signers) {
       const sees = await this.seesParty(viewer, s.person_id);
       if (sees !== true) return sees;
@@ -419,6 +474,11 @@ export class SignaturesBail implements LeaseSignatureState {
       const sees = await this.seesParty(viewer, target.personId);
       if (sees !== true) return sees;
       lease = target;
+    }
+    // AU097 · le bail nomme aussi chaque colocataire : le lecteur voit chacune de leurs fiches en entier [R16].
+    for (const personId of await leaseCotenants(this.db, lease!.leaseId)) {
+      const sees = await this.seesParty(viewer, personId);
+      if (sees !== true) return sees;
     }
     const row = await this.db.first<{ content: string }>('SELECT content FROM rental_leases WHERE id = ? AND listing_id = ?', [lease!.leaseId, listing.id]);
     if (!row) return { ok: false, rule: null, code: 'no_current_lease' };

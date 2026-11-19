@@ -44,8 +44,8 @@ export interface ViaLocator {
   startsWith?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent que si ces champs du JSON de `data` ont ces valeurs (champ → valeur). */
   jsonIs?: Readonly<Record<string, string>>;
-  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
-  jsonNot?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur, ou l'une de ces valeurs. */
+  jsonNot?: Readonly<Record<string, string | readonly string[]>>;
   /** Les lignes ne comptent que si ces colonnes ont l'une de ces valeurs. */
   only?: Readonly<Record<string, readonly string[]>>;
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
@@ -529,6 +529,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },
+  property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
@@ -583,6 +584,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // acquereurs
   buyer_searches: { locate: by('person_id') },
   buyer_search_confirmations: { locate: [via('project_id', 'projects')] },
+  buyer_search_areas: { locate: [via('project_id', 'projects')] },
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
@@ -888,20 +890,25 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
+      // AU097 · l'ajout ou le retrait d'un colocataire nomme sa ligne : il est aussi au colocataire concerné, à lui seul.
+      via('data', 'rental_cotenant_changes', 'id', { jsonPath: 'change', startsWith: { subject: 'rental_application:', type: 'location.colocataire' } }),
       // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
       // Les événements d'une session de signature du bail sont à qui signe (le propriétaire reçoit les siens par sa
       // propre session, ci-dessous), jamais à l'autre partie.
       // Ce qui est fait par le locataire en tant que partie (sa signature de l'état des lieux, son exemplaire du bail)
       // est au locataire seul.
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: 'locataire' } }),
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: ['locataire', 'colocataire'] } }),
       // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
       via('data', 'rental_lease_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
+      // AU097 · la signature d'un colocataire : ses événements sont à lui seul.
+      via('data', 'rental_lease_cotenant_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
       // L'état des lieux du locataire, retrouvé par son bail : le logement et la version au journal, jamais ce que le
       // propriétaire y a signé ; son exemplaire du bail, par l'empreinte de l'exemplaire.
       via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
-      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: 'bailleur' } }),
+      // L'avis d'exemplaire d'un colocataire nomme sa session : il est à lui seul, jamais au locataire ni au bailleur (AU097).
+      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: ['bailleur', 'colocataire'] } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
       via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
@@ -928,6 +935,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
       via('subject', 'offer_proposals', 'id', { prefix: 'proposal:' }),
       via('subject', 'rental_lease_signatures', 'id', { prefix: 'lease_signature:' }),
+      via('subject', 'rental_lease_cotenant_signatures', 'id', { prefix: 'lease_signature:' }),
     ],
     // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
     foreignPersons: ['actor', 'data'],
@@ -964,7 +972,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un garant Visale n'a pas de personne : sa ligne et son visa sont au candidat (W24).
   rental_guarantors: { locate: [...by('person_id'), via('application_id', 'rental_applications', 'id', { where: { kind: 'visale' } })] },
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
-  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
+  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors'), via('holder', 'persons', 'id', { prefix: 'colocataire:' })] },
+  // AU097 · chaque colocataire : sa ligne, sa place au bail, sa signature et son avis d'exemplaire sont à lui.
+  rental_cotenant_changes: { locate: by('person_id') },
+  rental_lease_cotenants: { locate: by('person_id') },
+  rental_lease_cotenant_revisions: { locate: [via('lease_id', 'rental_leases')] },
+  rental_lease_cotenant_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
+  rental_lease_cotenant_copy_deliveries: { locate: by('person_id') },
   // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).
   rental_piece_deposits: { locate: by('person_id') },
   // Le constat d'une pièce est à la personne de la pièce, comme la pièce elle-même (HX47).
@@ -977,11 +991,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
   // Le bail retrouvé par la candidature est celui du locataire : marqué, pour lui rendre ce qu'il y a fait en partie.
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' })], shared: ['content'] },
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' }), via('id', 'rental_lease_cotenants', 'lease_id', { tag: 'colocataire' })], shared: ['content'] },
   // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
   // montré à aucune, son empreinte reste.
   rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
-  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
+  // AU097 · un colocataire retrouve l'exemplaire du bail qui le nomme, jamais ce qui est au seul locataire choisi.
+  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' }), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'colocataire', tag: 'colocataire' })], shared: ['content'] },
   rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
