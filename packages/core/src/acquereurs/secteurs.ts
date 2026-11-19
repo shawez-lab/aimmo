@@ -101,9 +101,14 @@ export async function areaOfProject(db: SqlDatabase, projectId: string): Promise
   return areaOfRow(await db.first<AreaRow>('SELECT shape, center_lat, center_lon, radius_m, points, label FROM buyer_search_areas WHERE project_id = ? ORDER BY version DESC LIMIT 1', [projectId]));
 }
 
-/** La dernière position rangée d'un bien, ou null. */
+/** La dernière position d'un bien, si elle vient de son adresse désignée en vigueur ; sinon null (adresse corrigée depuis). */
 export async function positionOf(db: SqlDatabase, propertyId: string): Promise<GeoPoint | null> {
-  const r = await db.first<{ lat: number; lon: number }>('SELECT lat, lon FROM property_positions WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
+  const r = await db.first<{ lat: number; lon: number }>(
+    `SELECT lat, lon FROM property_positions WHERE property_id = ?
+       AND designation_version = (SELECT MAX(d.version) FROM property_designations d WHERE d.property_id = ?)
+     ORDER BY version DESC LIMIT 1`,
+    [propertyId, propertyId],
+  );
   return r ? { lat: Number(r.lat), lon: Number(r.lon) } : null;
 }
 
@@ -220,6 +225,12 @@ export class Secteurs {
     return { ok: true, value: area };
   }
 
+  /** Un bien qu'on n'a pas pu situer : le journal le garde, sans l'adresse [R13], et il n'entre dans aucun secteur. */
+  private async notLocated(viewer: Viewer, propertyId: string, code: string): Promise<SecteurRefusal> {
+    await appendEvent(this.journal, { type: 'bien.non_situe', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { code } }, this.now);
+    return { ok: false, rule: null, code };
+  }
+
   /**
    * Situe un bien par son adresse désignée (AU002), géocodée par la Base adresse nationale : son agent ou la direction.
    * Sans adresse désignée ou sans géocodage, rien n'est rangé et le bien ne remplit aucun secteur.
@@ -230,15 +241,15 @@ export class Secteurs {
     if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
     if (read.value.network_id !== viewer.networkId) return this.refused(viewer, `property:${propertyId}`, 'network');
     if (viewer.role === 'agent' && read.value.agent_id !== viewer.userId) return this.refused(viewer, `property:${propertyId}`, 'pas_son_bien');
-    const d = await this.db.first<{ street: string; postal_code: string; city: string }>('SELECT street, postal_code, city FROM property_designations WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
-    if (!d) return { ok: false, rule: null, code: 'sans_adresse' };
-    if (!this.geocoder) return { ok: false, rule: null, code: 'geocodage_absent' };
+    const d = await this.db.first<{ version: number; street: string; postal_code: string; city: string }>('SELECT version, street, postal_code, city FROM property_designations WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
+    if (!d) return this.notLocated(viewer, propertyId, 'sans_adresse');
+    if (!this.geocoder) return this.notLocated(viewer, propertyId, 'geocodage_absent');
     const g = await this.geocoder.geocode(`${d.street} ${d.postal_code} ${d.city}`);
-    if (!g) return { ok: false, rule: null, code: 'lieu_introuvable' };
+    if (!g) return this.notLocated(viewer, propertyId, 'lieu_introuvable');
     for (let attempt = 0; attempt < 5; attempt++) {
       const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM property_positions WHERE property_id = ?', [propertyId]);
       try {
-        await this.db.run('INSERT INTO property_positions (id, network_id, property_id, version, lat, lon, source, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+        await this.db.run('INSERT INTO property_positions (id, network_id, property_id, version, lat, lon, source, designation_version, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
           this.newId(),
           viewer.networkId,
           propertyId,
@@ -246,6 +257,7 @@ export class Secteurs {
           g.lat,
           g.lon,
           'ban',
+          Number(d.version),
           this.actor(viewer),
           this.now().toISOString(),
         ]);

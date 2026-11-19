@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS property_positions (
   lat REAL NOT NULL CHECK (lat BETWEEN -90 AND 90),
   lon REAL NOT NULL CHECK (lon BETWEEN -180 AND 180),
   source TEXT NOT NULL CHECK (source IN ('ban')),
+  -- La version de l'adresse désignée géocodée : une adresse corrigée rend la position inconnue jusqu'au prochain géocodage.
+  designation_version INTEGER NOT NULL CHECK (designation_version >= 1),
   set_by TEXT NOT NULL,
   set_at TEXT NOT NULL,
   UNIQUE (property_id, version)

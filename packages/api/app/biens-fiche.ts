@@ -222,8 +222,12 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(el('h3', 'Secteur de la recherche'));
     var state = t.cState();
     var id = t.cSeq();
-    var p = projects[0];
-    var base = '/v1/acquereurs/projets/' + encodeURIComponent(p.id) + '/secteur';
+    // Plusieurs projets d'achat : l'agent choisit celui dont il range le secteur.
+    var labels = {};
+    projects.forEach(function (q, n) { labels[q.id] = 'Projet d’achat ' + (n + 1); });
+    var pick = projects.length > 1 ? t.cSelect(section, id + '-projet', 'Le projet', labels, projects[0].id) : null;
+    var seen = 0;
+    function base() { return '/v1/acquereurs/projets/' + encodeURIComponent(pick ? pick.value : projects[0].id) + '/secteur'; }
     var now = el('p', null, 'doux');
     section.appendChild(now);
     var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
@@ -240,12 +244,19 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(t.accordButton('Ranger le secteur', function () {
       var r = Number(String(km.value).replace(',', '.'));
       if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
-      return t.send(base, 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer);
+      return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer);
     }));
-    section.appendChild(t.accordButton('Retirer le secteur', function () { return t.send(base, 'POST', { shape: 'aucun' }).then(answer); }));
+    section.appendChild(t.accordButton('Retirer le secteur', function () { return t.send(base(), 'POST', { shape: 'aucun' }).then(answer); }));
     section.appendChild(state);
     box.appendChild(section);
-    t.send(base, 'GET').then(function (res) { if (!res.gone && res.ok) said(res.body.data); });
+    function load() {
+      var mine = ++seen;
+      now.textContent = '';
+      state.textContent = '';
+      t.send(base(), 'GET').then(function (res) { if (!res.gone && res.ok && mine === seen) said(res.body.data); });
+    }
+    if (pick) pick.addEventListener('change', load);
+    load();
   }
   var onlineTool = null, onlineBusy = false;
   function onlineBlock(box, personId, projects) {

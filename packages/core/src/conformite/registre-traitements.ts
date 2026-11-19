@@ -1153,7 +1153,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
   document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
-  property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'set_at'],
+  property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
   identity_checks: ['id', 'network_id', 'piece', 'seen_at', 'created_at'],

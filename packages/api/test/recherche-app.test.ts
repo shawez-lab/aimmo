@@ -346,4 +346,25 @@ describe('AU073 · le secteur de la recherche depuis la fiche de l’acquéreur'
     expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'aucun' } });
     expect(area().textContent).toContain('Aucun secteur');
   });
+
+  it('deux projets d’achat : le secteur lu, rangé et retiré est celui du projet choisi', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const first = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    const t = await opened({
+      projects: [BUY, other],
+      answers: { [`GET ${first}`]: ok(null), [`GET ${second}`]: ok({ shape: 'polygone', points: [], label: 'Le plateau' }), [`POST ${second}`]: ok(null) },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Aucun secteur');
+    const pick = area().all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-projet'))!;
+    pick.value = other.id;
+    pick.listeners.change!({});
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: second, body: { shape: 'aucun' } });
+    expect(t.posts().some((x) => x.url === first)).toBe(false);
+  });
 });

@@ -198,6 +198,14 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect((await secteurs.set(agent, near.project.id, { shape: 'aucun' })).ok).toBe(true);
     expect(await proposed(close.id)).toEqual([near.project.id, free.project.id].sort());
     expect(await t.db.all('SELECT version FROM buyer_search_areas WHERE project_id = ? ORDER BY version', [near.project.id])).toHaveLength(3);
+    // Une adresse corrigée rend la position inconnue : l'ancienne ne vaut plus, même si le nouveau géocodage échoue.
+    expect((await secteurs.set(agent, near.project.id, { shape: 'cercle', place: 'Gare de Dijon', radiusM: 1_500, label: 'Autour de la gare' })).ok).toBe(true);
+    expect(await proposed(close.id)).toEqual([near.project.id, free.project.id].sort());
+    await t.db.run("INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES ('d-close-2', ?, ?, 2, '3 rue Introuvable', '21000', 'Dijon', '[]', 'direction:d1', '2026-02-01T00:00:00.000Z')", [t.network.id, close.id]);
+    expect(await proposed(close.id)).toEqual([free.project.id]);
+    expect(await secteurs.locate(agent, close.id)).toMatchObject({ ok: false, code: 'lieu_introuvable' });
+    expect((await t.journal.all()).filter((e) => e.type === 'bien.non_situe').map((e) => e.data)).toEqual([{ code: 'lieu_introuvable' }]);
+    expect(await proposed(close.id)).toEqual([free.project.id]);
     // Le journal ne garde ni lieu ni coordonnée.
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/47\.3|Gare de Dijon|rue Inventée/);
   });
