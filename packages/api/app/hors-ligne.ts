@@ -57,17 +57,17 @@ function tx(mode, run) {
   if (!p) return null;
   return p.then(function (db) {
     return new Promise(function (ok, ko) {
-      var t = db.transaction(STORE, mode);
-      var out = run(t.objectStore(STORE));
-      t.oncomplete = function () { ok(out && 'result' in out ? out.result : undefined); };
+      var t = db.transaction(STORE, mode), out = {};
+      run(t.objectStore(STORE), out);
+      t.oncomplete = function () { ok(out.value); };
       t.onerror = function () { ko(t.error); };
       t.onabort = function () { ko(t.error); };
     });
   });
 }
 function get(k) {
-  var p = tx('readonly', function (s) { return s.get(k); });
-  return p ? p.then(function (v) { return v === undefined ? null : v; }) : Promise.resolve(clone(mem[k]));
+  var p = tx('readonly', function (s, out) { var q = s.get(k); q.onsuccess = function () { out.value = q.result === undefined ? null : q.result; }; });
+  return p || Promise.resolve(clone(mem[k]));
 }
 function put(k, v) {
   var p = tx('readwrite', function (s) { s.put(clone(v), k); });
@@ -81,65 +81,92 @@ function del(k) {
   delete mem[k];
   return Promise.resolve();
 }
-
-/* La boîte d'envoi [R276]. */
-/* Chaque agent a sa boîte et son paquet, sous une marque tirée par le serveur : un autre agent sur le même téléphone
-   ne voit, n'envoie ni ne perd rien de lui [R16, R276]. */
-var states = {}, queue = Promise.resolve(), flushing = {};
-function excl(fn) { var run = queue.then(fn, fn); queue = run.then(null, function () {}); return run; }
-function uuid() { return G.crypto.randomUUID(); }
-function current(o) {
-  if (states[o]) return Promise.resolve(states[o]);
-  return get(BOITE + ':' + o).then(function (s) {
-    if (s) { states[o] = s; return s; }
-    var n = { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] };
-    return put(BOITE + ':' + o, n).then(function () { states[o] = n; return n; });
+/* Lire et réécrire d'un seul tenant, dans une seule transaction : deux onglets ou deux fenêtres ne s'écrasent jamais.
+   fn rend { next, value } ; next absent : rien n'est écrit [R276]. */
+function update(k, fn) {
+  var p = tx('readwrite', function (s, out) {
+    var q = s.get(k);
+    q.onsuccess = function () {
+      var r = fn(q.result === undefined ? null : clone(q.result));
+      if (r.next !== undefined) s.put(clone(r.next), k);
+      out.value = r.value;
+    };
   });
+  if (p) return p;
+  var r = fn(clone(mem[k]));
+  if (r.next !== undefined) mem[k] = clone(r.next);
+  return Promise.resolve(r.value);
 }
+
+/* La boîte d'envoi [R276]. Chaque agent a sa boîte et son paquet, sous une marque tirée par le serveur : un autre
+   agent sur le même téléphone ne voit, n'envoie ni ne perd rien de lui [R16]. Rien n'est gardé en mémoire : chaque
+   lecture et chaque écriture passent par la base, d'un seul tenant. */
+var flushing = {};
+function uuid() { return G.crypto.randomUUID(); }
+function fresh(s) { return s || { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] }; }
+function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: s } : (s = fresh(s), { next: s, value: s }); }); }
 function add(kind, appointmentId, payload) {
   var o = ui && ui.owner;
   if (!o) return Promise.reject(new Error('aucun agent'));
-  return excl(function () {
-    return current(o).then(function (s) {
-      var op = { opId: uuid(), seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: new Date().toISOString(), payload: payload };
-      var next = { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused };
-      return put(BOITE + ':' + o, next).then(function () { states[o] = next; return op; });
-    });
+  var id = uuid(), at = new Date().toISOString();
+  return update(BOITE + ':' + o, function (s) {
+    s = fresh(s);
+    var op = { opId: id, seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: at, payload: payload };
+    return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused }, value: op };
   });
 }
 function bySeq(a, b) { return a.seq - b.seq; }
-function flush(o, send, limit) {
-  if (!flushing[o]) flushing[o] = doFlush(o, send, limit > 0 ? limit : 10).then(function (r) { delete flushing[o]; return r; }, function (e) { delete flushing[o]; throw e; });
+/* La session qui a lancé l'envoi est-elle toujours celle de l'écran ? Sinon, plus aucun lot ne part [R16]. */
+function live(o, key) { return !!ui && ui.owner === o && ui.key === key; }
+function flush(o, key, send, limit) {
+  if (!flushing[o]) flushing[o] = doFlush(o, key, send, limit > 0 ? limit : 10).then(function (r) { delete flushing[o]; return r; }, function (e) { delete flushing[o]; throw e; });
   return flushing[o];
 }
-function doFlush(o, send, limit) {
-  var sent = 0, refused = 0;
+function doFlush(o, key, send, limit) {
+  var sent = 0, refused = 0, applied = [];
+  function done(offline, left) { return { offline: offline, sent: sent, refused: refused, left: left, applied: applied }; }
   function step() {
-    return excl(function () { return current(o); }).then(function (s) {
+    return box(o).then(function (s) {
       var batch = s.pending.slice().sort(bySeq).slice(0, limit);
-      if (!batch.length) return { offline: false, sent: sent, refused: refused, left: 0 };
+      if (!batch.length) return done(false, 0);
+      if (!live(o, key)) return done(true, s.pending.length);
       return send({ deviceId: s.deviceId, ops: batch }).then(function (r) { return r && Array.isArray(r.results) ? r.results : []; }, function () { return null; }).then(function (results) {
-        if (results === null) return { offline: true, sent: sent, refused: refused, left: s.pending.length };
+        if (results === null) return done(true, s.pending.length);
         var asked = {}, by = {}, named = 0;
-        batch.forEach(function (o) { asked[o.opId] = true; });
+        batch.forEach(function (op) { asked[op.opId] = true; });
         results.forEach(function (r) { if (r && typeof r.opId === 'string' && asked[r.opId] && !by[r.opId]) { by[r.opId] = r; named++; } });
-        return excl(function () {
-          return current(o).then(function (now) {
-            var keep = [], gone = [];
-            now.pending.forEach(function (op) {
-              var r = by[op.opId];
-              if (r && r.outcome === 'applique') sent++;
-              else if (r && r.outcome === 'refuse') { refused++; gone.push({ opId: op.opId, seq: op.seq, kind: op.kind, appointmentId: op.appointmentId, writtenAt: op.writtenAt, payload: op.payload, code: typeof r.code === 'string' ? r.code : 'refuse', rule: typeof r.rule === 'string' ? r.rule : null }); }
-              else keep.push(op);
-            });
-            var next = { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone) };
-            return put(BOITE + ':' + o, next).then(function () { states[o] = next; return keep.length; });
+        // La boîte relue et réécrite d'un seul tenant : une saisie ajoutée pendant l'envoi, ici ou ailleurs, reste dedans.
+        return update(BOITE + ':' + o, function (now) {
+          now = fresh(now);
+          var keep = [], gone = [];
+          now.pending.forEach(function (op) {
+            var r = by[op.opId];
+            if (r && r.outcome === 'applique') { sent++; applied.push(op); }
+            else if (r && r.outcome === 'refuse') { refused++; gone.push({ opId: op.opId, seq: op.seq, kind: op.kind, appointmentId: op.appointmentId, writtenAt: op.writtenAt, payload: op.payload, code: typeof r.code === 'string' ? r.code : 'refuse', rule: typeof r.rule === 'string' ? r.rule : null }); }
+            else keep.push(op);
           });
-        }).then(function (left) { return named ? step() : { offline: false, sent: sent, refused: refused, left: left }; });
+          return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone) }, value: keep.length };
+        }).then(function (left) { return named ? step() : done(false, left); });
       });
     });
   }
   return step();
+}
+/* Une photo ou une pièce sans objet reçue par le serveur reste « faite » dans le paquet gardé, même sans réseau ensuite. */
+function mark(o, ops) {
+  var shots = ops.filter(function (op) { return op.kind !== 'visite.note' && op.payload && typeof op.payload.shot === 'string'; });
+  if (!shots.length) return Promise.resolve();
+  return update(PAQUET + ':' + o, function (p) {
+    if (!p || !Array.isArray(p.appointments)) return { value: null };
+    p.appointments.forEach(function (a) {
+      shots.forEach(function (op) {
+        if (op.appointmentId !== a.appointmentId) return;
+        var list = op.kind === 'visite.photo' ? a.accepted : a.skipped;
+        if (list.indexOf(op.payload.shot) < 0) list.push(op.payload.shot);
+      });
+    });
+    return { next: p, value: null };
+  });
 }
 
 /* Le paquet du jour : rien d'un client ; passé sa fin de validité, il est effacé [R278]. */
@@ -244,7 +271,8 @@ function sender(key) { return function (batch) { return call(key, R_SAISIES, 'PO
 function sync(key) {
   // Seulement la boîte de l'agent connecté, avec sa clé : après une sortie, plus rien ne part [R16].
   if (!key || !ui || ui.key !== key || !ui.owner) return Promise.resolve(null);
-  return flush(ui.owner, sender(key), limit).then(function (r) { if (ui) render(); return r; }, function () { return null; });
+  var o = ui.owner;
+  return flush(o, key, sender(key), limit).then(function (r) { return mark(o, r.applied).then(function () { if (ui) render(); return r; }); }).then(null, function () { return null; });
 }
 /** Avec du réseau : le paquet du jour est préparé et gardé, puis la boîte part [R278, R276]. */
 function prepare(key, show, back) {
@@ -286,7 +314,7 @@ function render() {
   var root = $('hors-ligne');
   if (!root || !ui) return Promise.resolve();
   var o = ui.owner;
-  return Promise.all([readPack(o), excl(function () { return current(o); })]).then(function (got) {
+  return Promise.all([readPack(o), box(o)]).then(function (got) {
     var p = got[0], box = got[1];
     clear(root);
     if (ui.back) root.appendChild(btn('Retour à ma journée', function () { ui.open = false; ui.back(ui.key); }, 'retour'));
@@ -374,8 +402,8 @@ G.AimmoHorsLigne = Object.freeze({
   sync: sync,
   add: add,
   stop: stop,
-  pending: function (o) { o = o || (ui && ui.owner); return o ? excl(function () { return current(o); }).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
-  refused: function (o) { o = o || (ui && ui.owner); return o ? excl(function () { return current(o); }).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
+  pending: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
+  refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
   photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
 });

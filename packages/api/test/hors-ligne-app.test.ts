@@ -53,18 +53,59 @@ const blur = (img: Luma): Luma => {
 const dark = scene((v) => v * 0.25);
 const bright = scene((v) => v * 2.2);
 
-/** Un IndexedDB inventé, gardé hors de l'application : il survit quand on la ferme et la rouvre. */
+/**
+ * Un IndexedDB inventé, gardé hors de l'application : il survit quand on la ferme et la rouvre. Comme le vrai, ses
+ * transactions d'écriture passent l'une après l'autre, même venues de deux onglets ; une requête répond plus tard, et la
+ * transaction ne finit qu'une fois ses requêtes servies, celles faites dans une réponse comprises.
+ */
+const locks = new WeakMap<Map<string, unknown>, Promise<void>>();
 function fakeIndexedDb(data: Map<string, unknown>) {
-  const store = {
-    get: (k: string) => ({ result: data.has(k) ? structuredClone(data.get(k)) : undefined }),
-    put: (v: unknown, k: string) => void data.set(k, structuredClone(v)),
-    delete: (k: string) => void data.delete(k),
-  };
   const db = {
-    createObjectStore: () => store,
+    createObjectStore: () => ({}),
     transaction: () => {
-      const t: Record<string, any> = { objectStore: () => store };
-      setTimeout(() => t.oncomplete?.(), 0);
+      const t: Record<string, any> = {};
+      const waiting: (() => void)[] = [];
+      let active = false;
+      let pending = 0;
+      let release: () => void = () => undefined;
+      const finish = () => {
+        if (pending === 0) setTimeout(() => (t.oncomplete?.(), release()), 0);
+      };
+      const request = (run: () => unknown) => {
+        const r: Record<string, any> = {};
+        pending++;
+        const go = () => {
+          r.result = run();
+          setTimeout(() => {
+            r.onsuccess?.();
+            pending--;
+            finish();
+          }, 0);
+        };
+        if (active) go();
+        else waiting.push(go);
+        return r;
+      };
+      t.objectStore = () => ({
+        get: (k: string) => request(() => (data.has(k) ? structuredClone(data.get(k)) : undefined)),
+        put: (v: unknown, k: string) => request(() => void data.set(k, structuredClone(v))),
+        delete: (k: string) => request(() => void data.delete(k)),
+      });
+      const before = locks.get(data) ?? Promise.resolve();
+      locks.set(
+        data,
+        before.then(
+          () =>
+            new Promise<void>((done) => {
+              release = done;
+              setTimeout(() => {
+                active = true;
+                waiting.splice(0).forEach((go) => go());
+                finish();
+              }, 0);
+            }),
+        ),
+      );
       return t;
     },
   };
@@ -163,7 +204,7 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
@@ -200,6 +241,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       if (!net.network) throw new TypeError('hors ligne');
       expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
+        if (method === 'POST' && net.hold) await net.hold;
         const r = await w.call(viewer, method, url, init.body);
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
@@ -301,6 +343,11 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(await w.count('visit_shot_skips')).toBe(1);
     expect((await w.db.first<{ body: string }>('SELECT body FROM visit_field_notes'))!.body).toBe('Terrain en pente douce, accès par le chemin communal.');
     expect(back.find('p', /^Tout est envoyé/)).toBeDefined();
+    // Reçues, la photo et la pièce sans objet restent faites sur le téléphone, même rouvert sans réseau.
+    expect(back.find('strong', 'Vue d’ensemble : faite')).toBeDefined();
+    const after = await phone(w, idb, { network: false });
+    expect(after.find('strong', 'Vue d’ensemble : faite')).toBeDefined();
+    expect(after.find('strong', 'Accès : sans objet')).toBeDefined();
     // Le serveur dit la même chose que le téléphone avant de repartir.
     const dep = await w.call(w.agent, 'GET', `/v1/hors-ligne/depart/${w.visitId}`);
     expect(((await dep.json()) as { data: { check: { canLeave: boolean; missing: string[] } } }).data.check).toMatchObject({ canLeave: false, missing: ['limites'] });
@@ -339,6 +386,51 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(await w.count('offline_ops')).toBe(1);
     // Ni la clé ni son empreinte en clair d'un agent : seules des empreintes servent de noms.
     expect(JSON.stringify([...idb.entries()])).not.toContain(KEY);
+  });
+
+  it('[R276] deux onglets ouverts sur la même boîte n’effacent jamais la saisie de l’autre', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    const one = await phone(w, idb, { network: false });
+    const two = await phone(w, idb, { network: false });
+    one.find('textarea')!.value = 'Note du premier onglet.';
+    two.find('textarea')!.value = 'Note du second onglet.';
+    // Les deux gestes en même temps, sans attendre l'un l'autre.
+    one.find('button', 'Garder la note')!.listeners.click!({});
+    two.find('button', 'Garder la note')!.listeners.click!({});
+    await settle();
+    expect(((await one.H.pending()) as { payload: { text: string } }[]).map((o) => o.payload.text).sort()).toEqual(['Note du premier onglet.', 'Note du second onglet.']);
+    expect(((await two.H.pending()) as { seq: number }[]).map((o) => o.seq).sort()).toEqual([1, 2]);
+  });
+
+  it('[R16] une sortie en plein envoi arrête les lots suivants : rien ne part plus avec la clé oubliée', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    let open: () => void = () => undefined;
+    const net: { network: boolean; hold?: Promise<void> } = { network: false };
+    const t = await phone(w, idb, net);
+    for (let i = 1; i <= BATCH_LIMIT + 1; i++) {
+      t.find('textarea')!.value = `Note ${i}.`;
+      await t.click(t.find('button', 'Garder la note'));
+    }
+    expect(await t.H.pending()).toHaveLength(BATCH_LIMIT + 1);
+    net.network = true;
+    net.hold = new Promise<void>((r) => (open = r));
+    await t.online();
+    t.els.sortir!.listeners.click!({});
+    open();
+    await settle();
+    expect(t.calls.filter((c) => c.startsWith('POST'))).toHaveLength(1);
+    expect(await w.count('visit_field_notes')).toBe(BATCH_LIMIT);
+    // La dernière note reste dans la boîte d'Alex, pour son prochain retour.
+    const again = await phone(w, idb, { network: false });
+    expect(await again.H.pending()).toHaveLength(1);
   });
 
   it('[R278] passé minuit, le paquet est effacé du téléphone : sans réseau, l’application dit « Pas de réseau »', async () => {
