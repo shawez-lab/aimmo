@@ -116,6 +116,8 @@ export class ControlesSignature {
 
   /** Les tranches d'un barème, dans l'ordre (AU058). */
   private async tiersOf(scheduleId: string): Promise<FeeTier[]> {
+    // Une base d'avant la migration 4019 n'a aucune tranche : le barème y est un plafond seul.
+    if (!(await this.db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'fee_schedule_tiers'`))) return [];
     const rows = await this.db.all<{ up_to_eur: number | null; rate_bp: number | null; flat_eur: number | null }>('SELECT up_to_eur, rate_bp, flat_eur FROM fee_schedule_tiers WHERE schedule_id = ? ORDER BY position', [scheduleId]);
     return rows.map((r) => ({ upToEur: r.up_to_eur === null ? null : Number(r.up_to_eur), ...(r.rate_bp !== null ? { ratePercent: Number(r.rate_bp) / 100 } : { flatEur: Number(r.flat_eur) }) }));
   }
