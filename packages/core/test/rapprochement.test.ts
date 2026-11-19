@@ -258,6 +258,24 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(later.value).toEqual([]);
   });
 
+  it('AU074 · une recherche dite toujours d’actualité reste active sans changer un critère ; 180 jours après la confirmation, plus', async () => {
+    const t = await setup();
+    const search = { propertyKinds: ['house'] as ('house')[], communes: ['Talant'] };
+    const a = await t.buyer(t.alex.id, 'Fidèle', search);
+    const prop = await t.property(t.alex.id, 'B1', { city: 'Talant', price: 250_000, surface: 90, rooms: 4 });
+    t.setClock(START + 170 * 86_400_000);
+    expect(await t.acquereurs.confirm(t.acces, t.as('agent', t.alex.id), a.project.id)).toMatchObject({ ok: true });
+    // La conformité ne confirme rien ; un agent sans droit sur la fiche non plus.
+    expect(await t.acquereurs.confirm(t.acces, t.as('compliance', 'c1'), a.project.id)).toMatchObject({ ok: false });
+    t.setClock(START + 181 * 86_400_000);
+    const kept = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    expect(kept.ok && kept.value.map((x) => x.projectId)).toEqual([a.project.id]);
+    expect(await t.db.all('SELECT version FROM buyer_searches WHERE project_id = ?', [a.project.id])).toHaveLength(1);
+    t.setClock(START + 351 * 86_400_000);
+    const gone = await t.rapprochement.propose(t.acces, t.direction, prop.id);
+    expect(gone.ok && gone.value).toEqual([]);
+  });
+
   it('carte de la demande : comptes justes sur un jeu inventé, critère seul qui écarte le plus, sans aucun nom', async () => {
     const t = await setup();
     // 3 remplissent, 4 écartés seulement par la surface, 2 seulement par la commune, 1 par deux critères.

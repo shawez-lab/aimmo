@@ -93,6 +93,20 @@ describe('A03 · fiche du client dans l’application', () => {
     expect(a.els['fiche-corps']!.children).toHaveLength(0);
   });
 
+  it('AU074 · un projet d’achat se confirme d’un geste, sans changer la recherche', async () => {
+    const buy = { id: '00000000-0000-4000-8000-0000000000b1', kind: 'buy', stage: 'new', deadline: null, budgetMinEur: null, budgetMaxEur: 300000 };
+    const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, projects: [buy] }), [`/v1/acquereurs/projets/${buy.id}/recherche/confirmation`]: ok({ confirmedAt: '2027-01-01T00:00:00.000Z' }) });
+    buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    const body = a.els['fiche-corps']!;
+    const still = buttons(body, 'Recherche toujours d’actualité')[0]!;
+    still.listeners.click!({});
+    await a.tick();
+    expect(still.textContent).toBe('Confirmée');
+    // Un projet de vente n'a pas ce geste.
+    expect(buttons(body, 'Recherche toujours d’actualité')).toHaveLength(0);
+  });
+
   it('[R02, R04] une personne exclue ou arrêtée est signalée, sans bouton d’appel, même si un numéro arrive', async () => {
     const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, contact: { allowed: false, reasons: ['stop'] } }) });
     buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
