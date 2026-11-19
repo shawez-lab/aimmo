@@ -501,7 +501,12 @@ describe('AU072 · étage, classe énergie et terrain dans la recherche', () => 
       ['propertyKinds', 'apartment', 'must'], ['communes', 'Dijon', 'must'], ['floorMax', 3, 'must'], ['energyClassMax', 'C', 'nice'],
     ]);
     expect(fields('Appartement à partir du 2e étage')).toContainEqual(['floorMin', 2, 'must']);
-    expect(fields('Appartement en rez-de-chaussée')).toContainEqual(['floorMax', 0, 'must']);
+    expect(fields('Appartement en rez-de-chaussée')).toEqual(expect.arrayContaining([['floorMin', 0, 'must'], ['floorMax', 0, 'must']]));
+    // Le rez-de-chaussée, c'est l'étage 0 : jamais un sous-sol.
+    const ground = base('Appartement à Dijon en rez-de-chaussée');
+    expect(judge(ground, flat({ floor: 0 }))).toMatchObject({ status: 'match' });
+    expect(judge(ground, flat({ floor: -1 }))).toBeNull();
+    expect(judge(ground, flat({ floor: 1 }))).toBeNull();
   });
   it('[R51] impératifs, ils écartent ; souhaits, ils classent seulement', () => {
     const noGround = base('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum');

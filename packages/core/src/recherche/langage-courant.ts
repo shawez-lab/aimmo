@@ -308,7 +308,9 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   scan(new RegExp(`(?<![a-z])(?:a partir du|au moins au|des le)\\s+${ordinal}\\s+etage(?![a-z])|(?<![a-z0-9])${ordinal}\\s+etage\\s+(?:minimum|mini|au moins)(?![a-z])`, 'g'), (m, start, end) => {
     add('floorMin', Number(m[1] ?? m[2]), start, end);
   });
+  // « En rez-de-chaussée » : l'étage 0 exactement, jamais un sous-sol ; les deux bornes gardent la même force.
   scan(/(?<![a-z])(?:en|au)\s+(?:rez[- ]de[- ]chaussee|rdc)(?![a-z])/g, (_m, start, end) => {
+    add('floorMin', 0, start, end);
     add('floorMax', 0, start, end);
   });
   // AU072 · la classe énergie la moins bonne acceptée : « DPE D minimum », « classe C au moins », « D ou mieux ».
