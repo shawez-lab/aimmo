@@ -213,6 +213,14 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect((await fresh.set(agent, only.id, { shape: 'polygone', points: [{ lat: 47.35, lon: 5.08 }, { lat: 47.37, lon: 5.08 }, { lat: 47.37, lon: 5.12 }, { lat: 47.35, lon: 5.12 }], label: 'Le plateau' })).ok).toBe(true);
     expect(await proposed(far.id)).toContain(only.id);
     expect(await proposed(close.id)).not.toContain(only.id);
+    // Une recherche ancienne de plus de 180 jours, rafraîchie par un secteur rangé aujourd'hui, compte de nouveau.
+    const later = START + 200 * 86_400_000;
+    t.setClock(later);
+    expect(await proposed(far.id)).not.toContain(near.project.id);
+    const today = new Secteurs(t.db, t.acces, t.journal, geocoder, { now: () => new Date(later) });
+    expect((await today.set(agent, near.project.id, { shape: 'polygone', points: [{ lat: 47.35, lon: 5.08 }, { lat: 47.37, lon: 5.08 }, { lat: 47.37, lon: 5.12 }, { lat: 47.35, lon: 5.12 }], label: 'Le plateau' })).ok).toBe(true);
+    expect(await proposed(far.id)).toContain(near.project.id);
+    t.setClock(START);
     // Le journal ne garde ni lieu ni coordonnée.
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/47\.3|Gare de Dijon|rue Inventée/);
   });

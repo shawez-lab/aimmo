@@ -420,6 +420,7 @@ export class Rapprochement {
     const nowIso = at.toISOString();
     // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
     const areas = await areasOfNetwork(this.db, networkId);
+    const areaSetAt = new Map((await this.db.all<{ project_id: string; at: string }>('SELECT project_id, max(set_at) AS at FROM buyer_search_areas WHERE network_id = ? GROUP BY project_id', [networkId])).map((r) => [r.project_id, r.at]));
     const byRoot = new Map<string, Candidate>();
     // Un projet dont le seul critère est un secteur, sans recherche rangée : il compte aussi, avec une recherche vide (AU073).
     const areaOnly = await this.db.all<{ project_id: string; person_id: string; stage: string; set_at: string; confirmed_at: string | null }>(
@@ -437,7 +438,8 @@ export class Rapprochement {
     for (const row of entries) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
       // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
-      const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
+      // Un secteur rangé depuis rafraîchit aussi la recherche (AU073).
+      const movedAt = [row.created_at, row.confirmed_at, areaSetAt.get(row.project_id)].filter((d): d is string => typeof d === 'string').sort().at(-1)!;
       if (movedAt < since) continue;
       const search = row.search();
       const area = areas.get(row.project_id);

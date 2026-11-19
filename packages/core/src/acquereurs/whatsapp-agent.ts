@@ -25,7 +25,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ALERT_PURPOSE, alertFallbackText, checkUnsubscribeBase, newUnsubscribeLine } from './alertes.ts';
-import { FicheAcquereur } from './fiche-acquereur.ts';
+import { EMPTY_SEARCH, FicheAcquereur } from './fiche-acquereur.ts';
 import { CLOSED_STAGES, DEFAULT_ACTIVE_DAYS, Rapprochement, matchBuyer, type DiffusionGate } from './rapprochement.ts';
 
 export type WhatsAppRefusal = { ok: false; rule: string | null; code: string; reason?: string };
@@ -95,16 +95,18 @@ export class AlerteWhatsApp {
     const gate = await this.gate.canDiffuse(viewer.networkId, propertyId, this.now());
     if (!gate.allowed) return stop('R42', gate.reason);
     // Comme le rapprochement : un projet clos, ou une recherche sans nouvelle depuis trop longtemps, ne compte plus.
-    const search = await this.acquereurs.current(projectId);
-    // AU074 · une recherche dite toujours d'actualité compte depuis sa dernière confirmation.
+    const saved = await this.acquereurs.current(projectId);
+    // Le secteur privé de la recherche compte aussi pour l'alerte de l'agent ; un projet au seul secteur a une recherche vide (AU073).
+    const area = await areaOfProject(this.db, projectId);
+    const areaSet = await this.db.first<{ at: string | null }>('SELECT max(set_at) AS at FROM buyer_search_areas WHERE project_id = ?', [projectId]);
+    const search = saved ? saved.search : area ? { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] } : null;
+    // AU074 · une recherche dite toujours d'actualité compte depuis sa dernière confirmation ; un secteur rangé la rafraîchit aussi.
     const confirmed = await this.db.first<{ at: string | null }>('SELECT max(confirmed_at) AS at FROM buyer_search_confirmations WHERE project_id = ?', [projectId]);
-    const movedAt = search && confirmed?.at && confirmed.at > search.createdAt ? confirmed.at : search?.createdAt;
+    const movedAt = [saved?.createdAt, confirmed?.at, areaSet?.at].filter((d): d is string => typeof d === 'string').sort().at(-1);
     const stale = movedAt !== undefined && Date.parse(movedAt) < this.now().getTime() - DEFAULT_ACTIVE_DAYS * 86_400_000;
     if (!search || CLOSED_STAGES.includes(project.stage) || stale) return stop('R51', 'inactive');
     const property = await this.rapprochement.propertyForMatch(read.value);
-    // Le secteur privé de la recherche compte aussi pour l'alerte de l'agent (AU073).
-    const area = await areaOfProject(this.db, projectId);
-    if (matchBuyer(property, area ? { ...search.search, area } : search.search).status === 'miss') return stop('R51', 'not_matching');
+    if (matchBuyer(property, area ? { ...search, area } : search).status === 'miss') return stop('R51', 'not_matching');
 
     const at = this.now();
     const line = await newUnsubscribeLine(this.db, viewer.networkId, root.id, this.unsubscribeBase, at);
