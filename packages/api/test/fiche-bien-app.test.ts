@@ -111,7 +111,7 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts().map((p) => p.body)).toEqual([{ ref, subject: 'cuisine' }, { ref, subject: null }]);
   });
 
-  it('la dernière version est pré-remplie, 0 reste 0, et les photos repartent telles quelles sur la version lue', async () => {
+  it('[R51] la dernière version est pré-remplie, 0 reste 0, et les photos repartent telles quelles sur la version lue', async () => {
     const t = await run({ [POST]: ok({ version: 5 }) });
     await t.open();
     expect(t.f('fiche-bien-floor').value).toBe('0');

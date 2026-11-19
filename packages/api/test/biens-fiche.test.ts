@@ -142,7 +142,7 @@ describe('SV06 · le bloc de la fiche', () => {
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);
   });
 
-  it('[R16] le bien part sans identifiant à saisir, une seule fois, et s’ajoute à la liste', async () => {
+  it('[R16] [R51] le bien part sans identifiant à saisir, une seule fois, et s’ajoute à la liste', async () => {
     const a = await opened(POST_THEN(ok({ ...BIEN, already: false })));
     await a.load();
     a.fill(GOOD);

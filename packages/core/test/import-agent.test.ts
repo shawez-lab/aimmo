@@ -237,7 +237,7 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     expect(await count("SELECT count(*) AS n FROM exclusions WHERE person_id = ?", [theirs.id])).toBe(1);
   });
 
-  it('[R18] deux imports de biens en même temps ne font qu\'un bien par référence', async () => {
+  it('[R18] [R51] deux imports de biens en même temps ne font qu\'un bien par référence', async () => {
     const csv = ['Référence;Type', 'V1;Maison', 'V2;Terrain'].join('\n');
     const [a, b] = await Promise.all([
       w.importer.run(viewer(), w.agent, { format: 'hektor', properties: csv }),
@@ -310,7 +310,7 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     expect((await verifyChain(await w.journal.all())).ok).toBe(true);
   });
 
-  it('les biens sont rangés à l\'agent, en brouillon, sans adresse, une seule fois ; une ligne illisible est signalée', async () => {
+  it('[R51] les biens sont rangés à l\'agent, en brouillon, sans adresse, une seule fois ; une ligne illisible est signalée', async () => {
     const csv = [
       'Référence;Type de bien;Adresse;Code postal;Ville;Surface habitable;Nb pièces;Prix FAI',
       'V100;Appartement T3;3 rue Inventée;21000;Dijon;68,5 m²;3;189 000 €',
