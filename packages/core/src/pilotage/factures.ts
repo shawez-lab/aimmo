@@ -491,7 +491,7 @@ export class Factures {
     let realXml: string | null = null;
     if (!v.transmitted && mode === 'reel' && this.plateforme.mode === 'reel') {
       realXml = await this.facturX(invoiceId, row.network_id, v);
-      if (realXml === null) await this.waiting(v.fileId, `reelle_sans_xml:${v.content.label}`);
+      if (realXml === null) await this.waiting(v.fileId, 'reelle_sans_xml:' + v.content.label); // un code d'attente, pas un sujet
     }
     const sendable = !v.transmitted && mode === this.plateforme.mode && (mode === 'essai' || realXml !== null);
     const attempt = sendable ? await this.claimTransmission(invoiceId, v.fileId, v.content.label) : null;
