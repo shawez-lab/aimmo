@@ -35,6 +35,7 @@ import { identiteAuCoffre } from './identite-coffre.ts';
 import { loadMigrations } from './migrations.ts';
 import { openMemoryDatabase } from './sqlite.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 export interface JourneyStep<W> {
   /** L'identifiant de l'étape, celui que nomme une panne. */
@@ -177,6 +178,7 @@ export async function journeyWorld() {
   await new ControlesSignature(db, acces, journal, { now }).setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'P-', firstNumber: 1, width: 3 });
   await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 002');
+  await rangerStatut(db, journal, now, direction, [alex.id]);
 
   const portals = CHANNELS.map((c) => new HeldPortal(c));
   const pieces = new HeldPieces();

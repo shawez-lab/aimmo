@@ -21,7 +21,12 @@
  *   30 juin 2021, jusqu'au 31 décembre 2024 ; fait depuis le 1er juillet 2021, dix ans, jusqu'à la veille du même jour
  *   dix ans plus tard (code de la construction et de l'habitation, art. D126-19 et décret n° 2020-1610, lus le
  *   2026-11-19 sur service-public.gouv.fr F16096). Le jour est donné à chaque calcul : chaque passage de publication
- *   le relit, une annonce dont le diagnostic expire est retirée au passage suivant.
+ *   le relit, une annonce dont le diagnostic expire est retirée au passage suivant ;
+ * - l'intervenant d'une annonce est l'agent du bien (AU007, R43, R152) : un agent d'AIMMO est un agent commercial habilité
+ *   par le titulaire de la carte du réseau, sans carte à son nom. Ses mentions suivent son statut réel, celui que la
+ *   direction a rangé pour lui (AT03) : statut, greffe et numéro d'immatriculation au RSAC, titulaire qui l'habilite.
+ *   Sans statut rangé, agent parti ou sans titulaire, la mention manque et l'annonce ne part pas ; elle est relue à
+ *   chaque passage de publication, et suit donc l'agent du bien quand il change.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -39,7 +44,7 @@ function parisDay(at: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
 }
 
-export const MENTION_IDS = ['prix', 'energie', 'copropriete', 'risques', 'carte'] as const;
+export const MENTION_IDS = ['prix', 'energie', 'copropriete', 'risques', 'intervenant', 'carte'] as const;
 export type MentionId = (typeof MENTION_IDS)[number];
 
 export type MissingReason =
@@ -50,6 +55,8 @@ export type MissingReason =
   | 'diagnostic_perime'
   | 'copropriete_inconnue'
   | 'risques_inconnus'
+  | 'statut_intervenant_inconnu'
+  | 'titulaire_inconnu'
   | 'carte_inconnue'
   | 'type_de_bien_non_pris_en_charge';
 
@@ -65,12 +72,25 @@ export interface PriceTerms {
   feeCharge: 'vendeur' | 'acquereur' | null;
 }
 
+/** L'agent du bien, avec le statut rangé par la direction (AT03). Seul statut connu : agent commercial [R152]. */
+export interface Intervenant {
+  firstName: string;
+  lastName: string;
+  status: 'agent_commercial';
+  rsacNumber: string;
+  rsacRegistry: string;
+  /** Le titulaire de la carte professionnelle qui l'habilite ; null tant que la direction ne l'a pas réglé. */
+  cardHolder: string | null;
+}
+
 export interface MentionsInput {
   kind: PropertyKind;
   /** null quand aucun mandat signé n'existe pour le bien. */
   terms: PriceTerms | null;
   sheet: PropertySheet | null;
   cardNumber: string | null;
+  /** L'agent du bien et son statut ; null s'il n'y en a pas, s'il est parti ou si son statut n'est pas rangé (AU007). */
+  intervenant: Intervenant | null;
   /** Le jour de Paris du calcul, `AAAA-MM-JJ` : la validité du diagnostic énergétique se juge ce jour-là [R45]. */
   today: string;
 }
@@ -149,6 +169,12 @@ export function energyClassesOf(mentions: string | null): { energy: EnergyClass;
   return m ? { energy: m[1] as EnergyClass, climate: m[2] as EnergyClass } : null;
 }
 
+/** La phrase de l'intervenant, jamais « mandataire » [R07, R152]. */
+export function intervenantLine(who: Intervenant): string {
+  const name = `${who.firstName.trim()} ${who.lastName.trim()}`.trim();
+  return `Annonce présentée par ${name}, agent commercial immatriculé au registre spécial des agents commerciaux (RSAC) de ${who.rsacRegistry.trim()} sous le n° ${who.rsacNumber.trim()}, habilité par ${who.cardHolder!.trim()}, titulaire de la carte professionnelle ci-dessous.`;
+}
+
 /** Calcule chaque mention et la liste de contrôle. Fonction pure : mêmes données, même texte, au caractère près. */
 export function computeMentions(input: MentionsInput): Checklist {
   const items: MentionItem[] = [];
@@ -210,6 +236,13 @@ export function computeMentions(input: MentionsInput): Checklist {
   else if (!sheet?.risks) items.push({ id: 'risques', status: 'manquante', reason: 'risques_inconnus' });
   else if (!sheet.risks.inRiskZone) items.push({ id: 'risques', status: 'sans_objet' });
   else items.push({ id: 'risques', status: 'presente', text: `${GEORISQUES}.` });
+
+  // L'intervenant : son statut réel, son immatriculation, le titulaire qui l'habilite (AU007) [R43, R152].
+  const who = input.intervenant;
+  if (who === null || who.status !== 'agent_commercial' || !who.rsacNumber.trim() || !who.rsacRegistry.trim() || !`${who.firstName}${who.lastName}`.trim()) {
+    items.push({ id: 'intervenant', status: 'manquante', reason: 'statut_intervenant_inconnu' });
+  } else if (who.cardHolder === null || who.cardHolder.trim() === '') items.push({ id: 'intervenant', status: 'manquante', reason: 'titulaire_inconnu' });
+  else items.push({ id: 'intervenant', status: 'presente', text: intervenantLine(who) });
 
   // Carte professionnelle.
   if (input.cardNumber === null || input.cardNumber.trim() === '') items.push({ id: 'carte', status: 'manquante', reason: 'carte_inconnue' });
@@ -286,7 +319,23 @@ export class MentionsAnnonce {
     }
     const sheetRow = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
-    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null, today: parisDay(this.now()) };
+    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null, intervenant: await this.intervenantOf(networkId, propertyId), today: parisDay(this.now()) };
+  }
+
+  /** L'agent du bien et son dernier statut rangé, s'il est en activité dans le réseau ; sinon null (AU007) [R152]. */
+  private async intervenantOf(networkId: string, propertyId: string): Promise<Intervenant | null> {
+    const a = await this.db.first<{ id: string; first_name: string; last_name: string; status: string; network_id: string }>(
+      'SELECT a.id, a.first_name, a.last_name, a.status, a.network_id FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?',
+      [propertyId],
+    );
+    if (!a || a.network_id !== networkId || a.status !== 'active') return null;
+    const legal = await this.db.first<{ legal_status: string; rsac_number: string; rsac_registry: string }>(
+      'SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
+      [a.id, networkId],
+    );
+    if (!legal || legal.legal_status !== 'agent_commercial') return null;
+    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    return { firstName: a.first_name, lastName: a.last_name, status: 'agent_commercial', rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardHolder: holder?.holder_name ?? null };
   }
 
   /** La liste de contrôle d'un bien, pour qui voit le bien en entier : l'agent du bien, la direction, la conformité [R16]. */

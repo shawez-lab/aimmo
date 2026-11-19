@@ -21,6 +21,7 @@ import { identiteAuCoffre } from './identite-coffre.ts';
 import { AmenagementsVirtuels } from '../src/medias/index.ts';
 import { CertificatsPhotos } from '../src/studio/index.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Réseau, bien, vendeur et mandat inventés.
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
@@ -46,7 +47,7 @@ export class FakeChannel implements ListingChannel {
   }
 }
 
-export async function setupAnnonce(options: { card?: boolean; twin?: boolean; diagnosedOn?: string; signedAt?: Date } = {}) {
+export async function setupAnnonce(options: { card?: boolean; statut?: boolean; twin?: boolean; diagnosedOn?: string; signedAt?: Date } = {}) {
   // Un autre jour de signature décale tout le jeu : l'horloge part une heure après.
   const signedAt = options.signedAt ?? SIGNED;
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
@@ -105,6 +106,8 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean; di
     if (!d.ok) throw new Error(`jumelle ${d.code}`);
   }
   if (options.card !== false) await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
+  // Le statut des agents, rangé par la direction : sans lui, l'annonce ne part pas (AU007) [R152].
+  if (options.statut !== false) await rangerStatut(db, journal, now, direction, [alex.id, sam.id]);
   await designerTout(db);
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
