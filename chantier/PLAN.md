@@ -621,7 +621,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU059 · Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A059 (majeur), endroit : C/documents/modeles.ts ; C/documents/controles.ts.
 - Constat de l'audit : Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration.
