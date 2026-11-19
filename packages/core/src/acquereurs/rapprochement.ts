@@ -419,7 +419,8 @@ export class Rapprochement {
         search.budgetMaxEur === null &&
         search.surfaceMinM2 === null &&
         search.roomsMin === null &&
-        search.bedroomsMin === null
+        search.bedroomsMin === null &&
+        (search.requiredFeatures ?? []).length === 0
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;

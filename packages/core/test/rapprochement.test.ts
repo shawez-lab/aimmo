@@ -134,6 +134,23 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(r.value[1]!.reasons).toContain('Prix 3,45 % au-dessus du budget, dans la tolérance de 5 %.');
   });
 
+  it('AU071 · une recherche au seul équipement impératif compte : proposée pour un bien qui l’a, pas pour un autre', async () => {
+    const t = await setup();
+    const b = await t.buyer(t.alex.id, 'Ascenseur', { requiredFeatures: ['elevator'] });
+    const lift = await t.property(t.alex.id, 'ASC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    const stairs = await t.property(t.alex.id, 'ESC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [
+      'sheet-asc', lift.id, t.network.id, JSON.stringify({ characteristics: { elevator: true }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z',
+    ]);
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId);
+    };
+    expect(await proposed(lift.id)).toEqual([b.project.id]);
+    expect(await proposed(stairs.id)).toEqual([]);
+  });
+
   it('le classement ne tient jamais compte du financement [R14] ; à égalité, l’urgence déclarée puis la recherche la plus fraîche', async () => {
     const t = await setup();
     const base = { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 200_000 } as const;
