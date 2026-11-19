@@ -354,4 +354,12 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     const st = await p.status(t.agent, t.propertyId);
     expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ state: 'publiee', acknowledged: { seq: 2 } });
   });
+
+  it('[R668] une annonce accusée à jour dont le connecteur disparaît : le statut dit l’échec, jamais « publiée »', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    const sans = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now });
+    const st = await sans.status(t.agent, t.propertyId);
+    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ mode: 'essai', state: 'echec', acknowledged: { seq: 1 }, lastError: { code: 'connecteur_absent' } });
+  });
 });

@@ -345,11 +345,16 @@ export class DiffusionPortails {
         "SELECT n, seq, action, error_code, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec' ORDER BY n DESC LIMIT 1",
         [propertyId, portal],
       );
-      const lastError = err && (!ack || Number(err.n) > Number(ack.n)) ? { seq: Number(err.seq), action: err.action, code: err.error_code, at: err.at } : null;
+      let lastError = err && (!ack || Number(err.n) > Number(ack.n)) ? { seq: Number(err.seq), action: err.action, code: err.error_code, at: err.at } : null;
       const live = ack !== null && ack.action !== 'retirer';
+      const mayBeOnline = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn;
       let state: PortalState;
-      if (due === null) state = live ? 'publiee' : ack ? 'retiree' : 'non_publiee';
-      else if (mode === 'essai') state = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn ? 'echec' : 'essai';
+      if (mode === 'essai' && mayBeOnline) {
+        // Une annonce réelle est, ou peut être, en ligne sans connecteur : plus rien ne pourrait la modifier ni la retirer.
+        state = 'echec';
+        lastError ??= { seq: ack ? Number(ack.seq) : version ? Number(version.seq) : 0, action: due ?? 'modifier', code: 'connecteur_absent', at: this.now().toISOString() };
+      } else if (due === null) state = live ? 'publiee' : ack ? 'retiree' : 'non_publiee';
+      else if (mode === 'essai') state = 'essai';
       else if (lastError && version && lastError.seq === Number(version.seq)) state = 'echec';
       else state = 'en_attente';
       out.push({
