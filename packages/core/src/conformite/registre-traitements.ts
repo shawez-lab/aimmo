@@ -364,7 +364,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     destinataires: ['L\'agent attribué', 'La direction du réseau, en lecture', 'Le responsable de la conformité'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
     tables: {
-      buyer_searches: ['person_id', 'communes', 'budget_max_eur', 'budget_strict', 'financing'],
+      buyer_searches: ['person_id', 'communes', 'budget_max_eur', 'budget_strict', 'soft_criteria', 'financing'],
       buyer_search_confirmations: ['confirmed_by'],
       buyer_search_areas: ['center_lat', 'center_lon', 'points', 'label', 'set_by'],
       phrase_searches: ['buyer_search_id', 'criteria', 'saved_by'],
@@ -1263,7 +1263,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_legal_mentions: ['id', 'network_id', 'legal_status', 'set_at'],
   video_text_checks: ['id', 'property_id', 'network_id', 'media_ref', 'outcome', 'checked_at'],
   listing_views: ['id', 'property_id', 'network_id', 'channel', 'day', 'views', 'recorded_at'],
-  buyer_searches: ['id', 'network_id', 'project_id', 'version', 'property_kinds', 'features', 'surface_min_m2', 'rooms_min', 'bedrooms_min', 'urgency', 'required_features', 'sources', 'origin', 'created_at'],
+  buyer_searches: ['id', 'network_id', 'project_id', 'version', 'property_kinds', 'features', 'surface_min_m2', 'rooms_min', 'bedrooms_min', 'urgency', 'required_features', 'floor_min', 'floor_max', 'energy_class_max', 'land_min_m2', 'sources', 'origin', 'created_at'],
   buyer_search_confirmations: ['project_id', 'network_id', 'confirmed_at'],
   buyer_search_areas: ['id', 'network_id', 'project_id', 'version', 'shape', 'radius_m', 'set_at'],
   phrase_searches: ['id', 'network_id', 'project_id', 'consent_id', 'created_at'],
