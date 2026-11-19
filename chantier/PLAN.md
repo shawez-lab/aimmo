@@ -186,7 +186,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : H24 (l'avocat dit quel titre afficher pour un agent commercial sans carte personnelle ; la règle R07 de Shawez impose « agent immobilier »). En attendant, préparer le réglage du titre par statut, sans changer le texte affiché.
 
 ### AU013 · Je ne peux émettre que des factures d’essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A013 (bloquant), endroit : C/pilotage/factures.ts, `PlateformeFacturation`, `PlateformeEssai`, H26.
 - Constat de l'audit : Je ne peux émettre que des factures d’essai, sans valeur comptable, puis je dois refaire ma facturation ailleurs.
@@ -216,7 +216,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU016 · Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A016 (bloquant), endroit : C/location/logement.ts, `RentalFacts`, `checkDwelling`.
 - Constat de l'audit : Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation.
@@ -226,7 +226,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU017 · Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A017 (bloquant), endroit : C/location/logement.ts, `checkDwelling`.
 - Constat de l'audit : Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume : « louable » est trop affirmatif.
@@ -706,7 +706,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A070 (majeur), endroit : C/acquereurs/rapprochement.ts, `KINDS_OF_PROPERTY`.
 - Constat de l'audit : Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home ».
 - Objectif : Un acquéreur cherchant exclusivement une maison ne reçoit pas un appartement, y compris après import.
@@ -715,7 +715,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU071 · Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A071 (majeur), endroit : C/acquereurs/rapprochement.ts, `featuresMet`.
 - Constat de l'audit : Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait.
 - Objectif : Les équipements choisis comme indispensables deviennent éliminatoires et leurs absences sont expliquées.
@@ -724,7 +724,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU072 · Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A072 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `BuyerSearch`.
 - Constat de l'audit : Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée.
 - Objectif : Ces contraintes se saisissent et filtrent les biens, avec une distinction entre souhait et impératif.
@@ -733,7 +733,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
 - Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.
 - Objectif : Un périmètre privé enregistré filtre les biens par position et se réutilise dans les alertes.
@@ -742,7 +742,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A074 (majeur), endroit : C/acquereurs/rapprochement.ts, `DEFAULT_ACTIVE_DAYS`.
 - Constat de l'audit : Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous échangeons encore.
 - Objectif : Une confirmation récente de recherche prolonge l’activité sans obliger à modifier artificiellement les critères.
@@ -948,6 +948,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
+- Cahier : M15 Louer ; audit A096.
+- Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.
+- Critères : un meublé étudiant se fait avec son modèle validé, jamais avec celui du meublé ordinaire (test) ; un bail mobilité porte sa durée et son motif, sans dépôt (test) ; sans modèle, refus (test).
+- Attend : H08 (textes validés par la conformité) pour un usage réel ; le code et les tests avant.
 ### AU097 · Manque
 - Statut : à faire
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
@@ -969,7 +977,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU098b · Le calendrier de l'outre-mer pour les autres lecteurs de l'interdiction de louer
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU098
 - Cahier : M17 Investir ; M15 Louer ; audit A098.
 - Objectif : les contraintes Investir, la veille DPE et le score d'adresse appellent `banDate` sans territoire et appliquent le calendrier métropolitain à un bien ultramarin ; leur passer le territoire du bien (`territoryOf`).
@@ -994,7 +1002,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU101 · Le bail commercial est réduit à durée, loyer et grandes catégories
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A101 (majeur), endroit : C/commerces/fiche.ts, `BusinessSheet`.
 - Constat de l'audit : Le bail commercial est réduit à durée, loyer et grandes catégories, sans échéances triennales ni indexation structurée.
@@ -1002,6 +1010,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU101b · Les jours limites de congé du bail commercial, en tâche et à l'écran
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU101
+- Cahier : M16 Commerces et entreprises ; audit A101.
+- Objectif : la tâche quotidienne de M16 range une tâche à l'agent du bien 60 jours avant chaque jour limite de congé (triennale et fin) donné par `leaseMilestones` ; l'écran du commerce montre ces dates, lues du serveur.
+- Critères : une tâche, une seule, 60 jours avant le jour limite (test) ; aucune sans début ni durée (test) ; l'écran affiche les dates du serveur sans les calculer (test).
+- Attend : rien.
 ### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
 - Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
@@ -1121,7 +1137,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU115 · La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant…
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A115 (mineur), endroit : C/acquereurs/rapprochement.ts, tolérances.
 - Constat de l'audit : La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant déclaré infranchissable.
 - Objectif : L’acquéreur ou l’agent peut déclarer le plafond strict ; aucune tolérance ne le dépasse ensuite.

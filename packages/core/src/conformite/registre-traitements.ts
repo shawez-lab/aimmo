@@ -811,7 +811,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     destinataires: ['L\'agent du bien', 'La direction du réseau', 'Le responsable de la conformité, en lecture'],
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
     tables: {
-      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'market_annual_rent_cents', 'market_rent_basis', 'lease_use', 'lease_assignment', 'employees', 'equipment', 'licenses', 'author'],
+      business_sheets: ['sign_name', 'fiscal_years', 'lease_start', 'lease_years', 'lease_annual_rent_cents', 'market_annual_rent_cents', 'market_rent_basis', 'lease_use', 'lease_assignment', 'lease_index', 'employees', 'equipment', 'licenses', 'author'],
       business_valuations: ['low_cents', 'high_cents', 'lines', 'created_by'],
       business_valuation_validations: ['validated_by'],
       business_valuation_scales: ['recorded_by'],
@@ -1491,7 +1491,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_push_log: ['id', 'network_id', 'push_id', 'outcome', 'rule', 'mode', 'at'],
   agent_push_trial_outbox: ['push_id', 'created_at'],
   rental_listings: ['id', 'network_id', 'property_id', 'created_at'],
-  rental_facts: ['listing_id', 'version', 'furnished', 'living_area_hundredths', 'energy_class', 'final_energy_kwh', 'build_year', 'electricity_over_15', 'gas', 'lease_start', 'charges_mode', 'recorded_at'],
+  rental_facts: ['listing_id', 'version', 'furnished', 'living_area_hundredths', 'energy_class', 'final_energy_kwh', 'build_year', 'electricity_over_15', 'gas', 'lease_start', 'charges_mode', 'main_room_hundredths', 'ceiling_height_cm', 'habitable_volume_hundredths', 'local_rules', 'previous_rent_cents', 'first_letting', 'recorded_at'],
   rental_annexes: ['id', 'listing_id', 'kind', 'version', 'diagnosed_on', 'valid_until', 'recorded_at'],
   rental_checks: ['id', 'listing_id', 'annexes_key', 'decision', 'reasons', 'checked_at'],
   rental_owner_notices: ['id', 'listing_id', 'energy_class', 'banned_from', 'prepared_at'],
