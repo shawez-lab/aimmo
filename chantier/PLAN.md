@@ -107,7 +107,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU006 · Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A006 (bloquant), endroit : C/annonces/page-bien.ts, `renderListingPage`, `renderListingPrint`.
 - Constat de l'audit : Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte, sans les deux graphiques réglementaires en couleur.
