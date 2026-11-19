@@ -238,7 +238,7 @@ export async function assembleAccessDetail(
         const children = l.jsonPath || l.startsWith ? await selectJson(table, l, values) : await select(table, l.column, values, l.where ?? {});
         for (const row of children) {
           if (Object.entries(l.startsWith ?? {}).some(([c, start]) => !String(row[c] ?? '').startsWith(start))) continue;
-          if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => jsonField(row, field) === v)) continue;
+          if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => (typeof v === 'string' ? [v] : v).includes(jsonField(row, field) as string))) continue;
           if (Object.entries(l.jsonIs ?? {}).some(([field, v]) => jsonField(row, field) !== v)) continue;
           if (Object.entries(l.except ?? {}).some(([c, values]) => values.includes(String(row[c])))) continue;
           if (Object.entries(l.only ?? {}).some(([c, values]) => !values.includes(String(row[c])))) continue;

@@ -94,6 +94,8 @@ export interface ApplicationView {
   arrivedAt: string;
   dossierFacile: boolean;
   guarantors: { guarantorId: string; kind: 'personne' | 'visale'; personId: string | null }[];
+  /** Les colocataires, en plus du candidat : chacun locataire du même bail, avec ses pièces (AU097). */
+  cotenants: string[];
   /** Par titulaire, le jour où son identité a été vérifiée, sans la sorte de pièce ni rien d'elle [R15, R13]. */
   identityVerifiedOn: Record<string, string>;
   pieces: { holder: string; category: PieceCategory; sort: string; label: string }[];
@@ -111,6 +113,23 @@ export interface AddableContact {
 }
 
 const MAX_ADDABLE = 500;
+
+/** Le titulaire des pièces d'un colocataire : `colocataire:` suivi de sa fiche (AU097). */
+export const COTENANT_PREFIX = 'colocataire:';
+export const cotenantHolder = (personId: string): string => `${COTENANT_PREFIX}${personId}`;
+/** Les colocataires en cours d'une candidature, dans l'ordre de leur dernier ajout (AU097) : la dernière ligne de chacun dit s'il l'est. */
+export async function cotenantsOfApplication(db: SqlDatabase, applicationId: string): Promise<string[]> {
+  const rows = await db.all<{ person_id: string; action: 'ajout' | 'retrait'; seq: number }>(
+    `SELECT c.person_id, c.action, c.seq FROM rental_cotenant_changes c
+     WHERE c.application_id = ? AND c.seq = (SELECT MAX(x.seq) FROM rental_cotenant_changes x WHERE x.application_id = c.application_id AND x.person_id = c.person_id)
+     ORDER BY c.seq`,
+    [applicationId],
+  );
+  return rows.filter((r) => r.action === 'ajout').map((r) => r.person_id);
+}
+
+/** Au plus cinq colocataires en plus du candidat : un bail de six locataires au plus. */
+export const MAX_COTENANTS = 5;
 
 export interface CandidaturesOptions {
   now?: () => Date;
@@ -176,6 +195,9 @@ export class Candidatures {
     if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     const place = { listingId: app.listing_id, applicationId: app.id };
     if (holder === 'candidat') return { ok: true, value: { ...place, holder, personId: app.person_id } };
+    // AU097 · un colocataire dépose ses propres pièces, sous son nom.
+    const co = await this.cotenantOf(app.id, holder);
+    if (co) return { ok: true, value: { ...place, holder: holder as string, personId: co } };
     const g = typeof holder === 'string' ? await this.db.first<{ person_id: string | null }>('SELECT person_id FROM rental_guarantors WHERE id = ? AND application_id = ?', [holder, app.id]) : null;
     if (!g) return { ok: false, rule: null, code: 'unknown_holder' };
     return { ok: true, value: { ...place, holder: holder as string, personId: g.person_id ?? app.person_id } };
@@ -270,6 +292,54 @@ export class Candidatures {
     return { ok: false, rule: null, code: 'busy' };
   }
 
+  /** Les colocataires en cours d'une candidature (AU097). */
+  async cotenantsOf(applicationId: string): Promise<string[]> {
+    return cotenantsOfApplication(this.db, applicationId);
+  }
+
+  /** La personne d'un titulaire `colocataire:<id>` encore colocataire de la candidature, ou null. */
+  private async cotenantOf(applicationId: string, holder: unknown): Promise<string | null> {
+    if (typeof holder !== 'string' || !holder.startsWith(COTENANT_PREFIX)) return null;
+    const personId = holder.slice(COTENANT_PREFIX.length);
+    return (await this.cotenantsOf(applicationId)).includes(personId) ? personId : null;
+  }
+
+  /**
+   * Ajoute ou retire un colocataire (AU097) : une personne de la fiche, avec les mêmes règles qu'un garant (ni le
+   * candidat, ni un autre candidat, ni le bailleur, jamais le client d'un autre agent) [R16]. Il devient un locataire du
+   * même bail : ses pièces, sa signature, son exemplaire. Rien ne s'efface : un retrait est une ligne de plus [R17].
+   */
+  async setCotenant(viewer: Viewer, applicationId: unknown, input: { personId: unknown; action: unknown }): Promise<ApplicationResult<{ cotenants: string[] }>> {
+    const app = await this.app(viewer, applicationId, true);
+    if ('ok' in app) return app;
+    if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
+    if (input.action !== 'ajout' && input.action !== 'retrait') return { ok: false, rule: null, code: 'bad_action' };
+    const current = await this.cotenantsOf(app.id);
+    if (input.action === 'ajout') {
+      const refused = await this.guarantorRefusal(viewer, app, input.personId);
+      if (refused) return refused;
+      if (current.includes(input.personId as string)) return { ok: false, rule: null, code: 'already_added' };
+      if (await this.db.first('SELECT 1 FROM rental_guarantors WHERE application_id = ? AND person_id = ?', [app.id, input.personId as string])) return { ok: false, rule: null, code: 'already_guarantor' };
+      if (current.length >= MAX_COTENANTS) return { ok: false, rule: null, code: 'too_many' };
+    } else if (typeof input.personId !== 'string' || !current.includes(input.personId)) return { ok: false, rule: null, code: 'unknown_person' };
+    let changeId = '';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        changeId = this.newId();
+        await this.db.run(
+          `INSERT INTO rental_cotenant_changes (id, network_id, application_id, person_id, seq, action, changed_by, changed_at)
+           SELECT ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM rental_cotenant_changes WHERE application_id = ?`,
+          [changeId, app.network_id, app.id, input.personId as string, input.action, this.actor(viewer), this.now().toISOString(), app.id],
+        );
+        break;
+      } catch (error) {
+        if (!/UNIQUE/i.test(String(error)) || attempt === 4) throw error;
+      }
+    }
+    await appendEvent(this.journal, { type: 'location.colocataire', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { action: input.action, change: changeId } }, this.now);
+    return { ok: true, value: { cotenants: await this.cotenantsOf(app.id) } };
+  }
+
   /** Ajoute un garant : une personne de la fiche, ou la garantie Visale. */
   async addGuarantor(viewer: Viewer, applicationId: unknown, input: { kind: unknown; personId?: unknown }): Promise<ApplicationResult<{ guarantorId: string }>> {
     const app = await this.app(viewer, applicationId, true);
@@ -281,6 +351,8 @@ export class Candidatures {
     if (input.kind === 'personne') {
       const refused = await this.guarantorRefusal(viewer, app, personId);
       if (refused) return refused;
+      // Un colocataire est locataire, jamais aussi son propre garant (AU097).
+      if ((await this.cotenantsOf(app.id)).includes(personId as string)) return { ok: false, rule: null, code: 'already_cotenant' };
     }
     // Un seul garant Visale par dossier : l'unicité sur la personne ne le voit pas, sa personne étant vide.
     if (input.kind === 'visale' && (await this.db.first("SELECT 1 FROM rental_guarantors WHERE application_id = ? AND kind = 'visale'", [app.id]))) return { ok: false, rule: null, code: 'already_added' };
@@ -337,7 +409,8 @@ export class Candidatures {
     // Après la liste officielle : une pièce interdite reste nommée au journal, même sur ce dossier [R104].
     if (app.dossierfacile_url) return { ok: false, rule: 'R104', code: 'dossierfacile' };
     let holderKind: 'candidat' | 'personne' | 'visale' = 'candidat';
-    if (input.holder !== 'candidat') {
+    // Un colocataire est un candidat à part entière : les pièces de l'annexe I, à son nom (AU097).
+    if (input.holder !== 'candidat' && !(await this.cotenantOf(app.id, input.holder))) {
       const g = typeof input.holder === 'string' ? await this.db.first<{ kind: 'personne' | 'visale' }>('SELECT kind FROM rental_guarantors WHERE id = ? AND application_id = ?', [input.holder, app.id]) : null;
       if (!g) return { ok: false, rule: null, code: 'unknown_holder' };
       holderKind = g.kind;
@@ -393,6 +466,7 @@ export class Candidatures {
       for (const what of REQUIRED) if (!pieces.some((p) => p.holder === holder && p.category === what)) missing.push({ holder, what });
     };
     await person('candidat', app.person_id);
+    for (const c of await this.cotenantsOf(app.id)) await person(cotenantHolder(c), c);
     for (const g of guarantors) {
       if (g.kind === 'personne') await person(g.id, g.person_id!);
       else if (!pieces.some((p) => p.holder === g.id && p.sort === 'visa_visale')) missing.push({ holder: g.id, what: 'visa_visale' });
@@ -412,6 +486,7 @@ export class Candidatures {
       arrivedAt: app.arrived_at,
       dossierFacile: app.dossierfacile_url !== null,
       guarantors: guarantors.map((g) => ({ guarantorId: g.id, kind: g.kind, personId: g.person_id })),
+      cotenants: await this.cotenantsOf(app.id),
       pieces: pieces.map((p) => ({ holder: p.holder, category: p.category, sort: p.sort, label: OFFICIAL_PIECES[p.sort]?.label ?? p.sort })),
       complete: c.complete,
       missing: c.missing,
