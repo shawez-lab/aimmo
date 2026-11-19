@@ -20,6 +20,7 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Biens, mandats et numéro de carte inventés.
 const S = ' ';
@@ -226,6 +227,8 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'a
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
   await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
+  // Le statut de l'agent du bien, rangé par la direction (AU007).
+  await rangerStatut(db, journal, now, direction, [alex.id]);
   const mentions = new MentionsAnnonce(db, acces, journal, { now });
   const fiches = new FicheBien(db, acces, journal, { now });
   const signMandate = async () => {
