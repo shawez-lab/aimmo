@@ -32,7 +32,7 @@ const LONG: PageInput = {
     body: 'Balcon. '.repeat(300),
     mentions:
       `Prix : 210${S}000${N}€ honoraires inclus, soit 200${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.\n` +
-      `Diagnostic de performance énergétique : classe D (220 kWh/m²/an), émissions de gaz à effet de serre : classe D (45 kg CO2/m²/an). Estimation des coûts annuels d'énergie du logement : entre 1${S}200${N}€ et 1${S}700${N}€ par an, prix moyens des énergies indexés sur l'année 2025.\n` +
+      `Classe énergie G, classe climat G. Logement à consommation énergétique excessive. Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre 1${S}200${N}€ et 1${S}700${N}€ par an. Prix moyens des énergies indexés au 1er janvier 2025 (abonnements compris).\n` +
       `Bien en copropriété de 48 lots, charges annuelles moyennes de 2${S}400${N}€, aucune procédure en cours.\n` +
       `Les informations sur les risques auxquels ce bien est exposé sont disponibles sur le site Géorisques.\n` +
       `Carte professionnelle n° CPI 2101 2027 000 000 000, délivrée par la CCI de Côte-d'Or.`,

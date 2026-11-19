@@ -32,7 +32,7 @@ import type { DocumentFacts } from '../documents/modeles.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { PropertySheet } from './fiche-bien.ts';
+import type { EnergyClass, PropertySheet } from './fiche-bien.ts';
 
 /** Le jour à Paris, `AAAA-MM-JJ`. */
 function parisDay(at: Date): string {
@@ -138,6 +138,16 @@ export function dpeValidOn(diagnosedOn: string, today: string): boolean {
 
 const HOMES: readonly PropertyKind[] = ['home', 'building', 'land'];
 const GEORISQUES = 'Les informations sur les risques auxquels ce bien est exposé sont disponibles sur le site Géorisques : www.georisques.gouv.fr';
+
+/**
+ * Les deux classes lues dans les mentions publiées (AU006) : la phrase « Classe énergie X, classe climat Y. » est
+ * écrite par `computeMentions` seule, au début d'une ligne ; la page et la fiche en tirent les deux étiquettes, de la
+ * même version publiée que le texte [R43]. Toute autre forme ne rend rien.
+ */
+export function energyClassesOf(mentions: string | null): { energy: EnergyClass; climate: EnergyClass } | null {
+  const m = mentions ? /^Classe énergie ([A-G]), classe climat ([A-G])\./m.exec(mentions) : null;
+  return m ? { energy: m[1] as EnergyClass, climate: m[2] as EnergyClass } : null;
+}
 
 /** Calcule chaque mention et la liste de contrôle. Fonction pure : mêmes données, même texte, au caractère près. */
 export function computeMentions(input: MentionsInput): Checklist {
