@@ -220,7 +220,9 @@ function priorityOf(c: Candidate): string {
             : c.valuationSentAt
               ? `Avis de valeur envoyé le ${frDay(c.valuationSentAt)}`
               : 'À relancer';
-  return `${head} · demande du ${frDay(c.requestedAt)}`;
+  // Le délai annoncé reste dit quand il n'est pas déjà la priorité : l'agent sait pour quand.
+  const horizon = c.horizonLabel && !head.startsWith('Projet annoncé') ? ` · délai : ${c.horizonLabel}` : '';
+  return `${head}${horizon} · demande du ${frDay(c.requestedAt)}`;
 }
 const frDay = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
