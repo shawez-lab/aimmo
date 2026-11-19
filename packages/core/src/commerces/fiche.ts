@@ -52,6 +52,10 @@ export const LEASE_USES = ['all_trades', 'named_activity', 'named_and_related'] 
 export type LeaseUse = (typeof LEASE_USES)[number];
 
 /** La clause de cession du bail. */
+/** L'indice de révision du loyer du bail (AU101) : loyers commerciaux, activités tertiaires, coût de la construction, aucun. */
+export const LEASE_INDEXES = ['ilc', 'ilat', 'icc', 'aucun'] as const;
+export type LeaseIndex = (typeof LEASE_INDEXES)[number];
+
 export const LEASE_ASSIGNMENTS = ['free', 'landlord_approval', 'with_business_only'] as const;
 export type LeaseAssignment = (typeof LEASE_ASSIGNMENTS)[number];
 
@@ -92,6 +96,7 @@ export interface BusinessSheet {
   marketRentBasis: string | null;
   leaseUse: LeaseUse | null;
   leaseAssignment: LeaseAssignment | null;
+  leaseIndex: LeaseIndex | null;
   employees: number | null;
   equipment: string[];
   licenses: License[];
@@ -109,6 +114,7 @@ export const SHEET_FIELDS: readonly SheetField[] = [
   'marketRentBasis',
   'leaseUse',
   'leaseAssignment',
+  'leaseIndex',
   'employees',
   'equipment',
   'licenses',
@@ -135,6 +141,7 @@ export const SHEET_VISIBILITY: Readonly<Record<string, Visibility>> = Object.fre
   market_rent_basis: 'confidential',
   lease_use: 'confidential',
   lease_assignment: 'confidential',
+  lease_index: 'confidential',
   employees: 'confidential',
   equipment: 'confidential',
   licenses: 'confidential',
@@ -183,6 +190,7 @@ const LISTS: Partial<Record<SheetField, readonly string[]>> = {
   activity: ACTIVITIES,
   leaseUse: LEASE_USES,
   leaseAssignment: LEASE_ASSIGNMENTS,
+  leaseIndex: LEASE_INDEXES,
 };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
@@ -290,6 +298,7 @@ export interface BusinessSheetRow {
   market_rent_basis: string | null;
   lease_use: LeaseUse | null;
   lease_assignment: LeaseAssignment | null;
+  lease_index: LeaseIndex | null;
   employees: number | null;
   equipment: string;
   licenses: string;
@@ -320,6 +329,7 @@ export const EMPTY_SHEET: Readonly<BusinessSheet> = Object.freeze({
   marketRentBasis: null,
   leaseUse: null,
   leaseAssignment: null,
+  leaseIndex: null,
   employees: null,
   equipment: [],
   licenses: [],
@@ -356,6 +366,7 @@ export function toSheetVersion(row: BusinessSheetRow): BusinessSheetVersion {
       marketRentBasis: row.market_rent_basis ?? null,
       leaseUse: row.lease_use,
       leaseAssignment: row.lease_assignment,
+      leaseIndex: row.lease_index ?? null,
       employees: row.employees,
       equipment: parseJson<string[]>(row.equipment, 'equipment', Array.isArray),
       licenses: parseJson<License[]>(row.licenses, 'licenses', Array.isArray),
@@ -500,8 +511,8 @@ export class FicheCommerce {
       const id = this.newId();
       const { changes: inserted } = await this.db.run(
         `INSERT INTO business_sheets (id, network_id, property_id, version, activity, sign_name, fiscal_years, lease_start,
-           lease_years, lease_annual_rent_cents, market_annual_rent_cents, market_rent_basis, lease_use, lease_assignment, employees, equipment, licenses, sources, author, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+           lease_years, lease_annual_rent_cents, market_annual_rent_cents, market_rent_basis, lease_use, lease_assignment, lease_index, employees, equipment, licenses, sources, author, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [
           id,
           property.network_id,
@@ -517,6 +528,7 @@ export class FicheCommerce {
           next.marketRentBasis,
           next.leaseUse,
           next.leaseAssignment,
+          next.leaseIndex,
           next.employees,
           JSON.stringify(next.equipment),
           JSON.stringify(next.licenses),
@@ -559,4 +571,64 @@ export class FicheCommerce {
     );
     return refuse(code, undefined, 'R16');
   }
+}
+
+/** Le même jour, `years` années plus tard ; un 29 février sans équivalent devient le 28. */
+export function addYears(day: string, years: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const last = new Date(Date.UTC(y + years, m, 0)).getUTCDate();
+  return `${String(y + years).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** Le même jour, `months` mois plus tôt ; un jour sans équivalent devient le dernier du mois. */
+export function minusMonths(day: string, months: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const total = y * 12 + (m - 1) - months;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+/** La veille d'un jour. */
+function dayBefore(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+export interface LeaseMilestones {
+  /** La prochaine échéance triennale à venir avant la fin du bail, ou `null` : le dernier jour de la période de 3 ans. */
+  nextTriennial: string | null;
+  /** Le dernier jour pour donner congé à cette échéance : six mois avant (code de commerce, art. L145-4 et L145-9). */
+  triennialNoticeBy: string | null;
+  leaseEnd: string;
+  endNoticeBy: string;
+  /** Le bail est arrivé à son terme : il se prolonge tacitement tant qu'aucun congé n'est donné. */
+  ended: boolean;
+}
+
+/**
+ * Les dates utiles d'un bail commercial (AU101), par le code seul depuis son début et sa durée : échéances triennales,
+ * fin, et le jour limite de chaque congé. `null` sans début ou sans durée : rien n'est deviné [R10].
+ */
+export function leaseMilestones(sheet: Pick<BusinessSheet, 'leaseStart' | 'leaseYears'>, today: string): LeaseMilestones | null {
+  if (!sheet.leaseStart || sheet.leaseYears === null) return null;
+  // Le bail couvre ses années jour pour jour : il expire la veille de l'anniversaire (2014-07-01 sur 9 ans : 2023-06-30).
+  const leaseEnd = dayBefore(addYears(sheet.leaseStart, sheet.leaseYears));
+  let nextTriennial: string | null = null;
+  for (let k = 3; k < sheet.leaseYears; k += 3) {
+    const at = dayBefore(addYears(sheet.leaseStart, k));
+    if (at >= today) {
+      nextTriennial = at;
+      break;
+    }
+  }
+  return {
+    nextTriennial,
+    triennialNoticeBy: nextTriennial ? minusMonths(nextTriennial, 6) : null,
+    leaseEnd,
+    endNoticeBy: minusMonths(leaseEnd, 6),
+    ended: leaseEnd < today,
+  };
 }

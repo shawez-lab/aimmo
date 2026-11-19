@@ -96,6 +96,7 @@ const LICENSE_LABELS: Record<License, string> = {
   autre: 'Autre autorisation',
 };
 const LEASE_USE_LABELS = { all_trades: 'Tous commerces', named_activity: 'Activité nommée', named_and_related: 'Activité nommée et connexes' };
+const LEASE_INDEX_LABELS = { ilc: 'Indice des loyers commerciaux', ilat: 'Indice des activités tertiaires', icc: 'Coût de la construction', aucun: 'Sans indexation' };
 const LEASE_ASSIGNMENT_LABELS = { free: 'Cession libre', landlord_approval: 'Avec l’accord du bailleur', with_business_only: 'Avec le fonds seulement' };
 /** Le nom de chaque champ de la fiche, pour dire lequel le serveur a refusé. */
 const SHEET_LABELS = {
@@ -192,6 +193,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
   var CE_LICENSES = ${JSON.stringify(LICENSE_LABELS)};
   var CE_LEASE_USE = ${JSON.stringify(LEASE_USE_LABELS)};
   var CE_LEASE_ASSIGN = ${JSON.stringify(LEASE_ASSIGNMENT_LABELS)};
+  var CE_LEASE_INDEX = ${JSON.stringify(LEASE_INDEX_LABELS)};
   var CE_SHEET = ${JSON.stringify(SHEET_LABELS)};
   var CE_SCALE = ${JSON.stringify(SCALE_LABELS)};
   var CE_DATES = ${JSON.stringify(DATE_LABELS)};
@@ -376,6 +378,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var mbasis = business ? null : ceInput(f, 'ce-fiche-vl-base', 'Ce qui la fonde : comparables, source', cur.marketRentBasis);
     var use = ceSelect(f, 'ce-fiche-bail-destination', 'Destination du bail', CE_LEASE_USE, cur.leaseUse);
     var assign = ceSelect(f, 'ce-fiche-bail-cession', 'Clause de cession du bail', CE_LEASE_ASSIGN, cur.leaseAssignment);
+    var index = ceSelect(f, 'ce-fiche-bail-indice', 'Indice de révision du loyer', CE_LEASE_INDEX, cur.leaseIndex);
     var staff = business ? ceInput(f, 'ce-fiche-salaries', 'Nombre de salariés', cur.employees) : null;
     var gear = field(f, 'ce-fiche-materiel', 'Matériel, une ligne par élément', 'textarea');
     gear.value = (cur.equipment || []).join('\\n');
@@ -418,6 +421,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       if (mrent) { next.marketAnnualRentCents = money(mrent, CE_SHEET.marketAnnualRentCents); next.marketRentBasis = text(mbasis); }
       next.leaseUse = use.value || null;
       next.leaseAssignment = assign.value || null;
+      next.leaseIndex = index.value || null;
       next.equipment = String(gear.value || '').split('\\n').map(function (x) { return x.trim(); }).filter(Boolean);
       next.licenses = Object.keys(CE_LICENSES).filter(function (k) { return boxes[k].checked; });
       if (staff) next.employees = whole(staff, CE_SHEET.employees);

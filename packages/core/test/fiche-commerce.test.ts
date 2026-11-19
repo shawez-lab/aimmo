@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import {
   ACTIVITIES,
@@ -7,6 +7,10 @@ import {
   SHEET_FIELDS,
   SHEET_VISIBILITY,
   checkSheetChanges,
+  leaseMilestones,
+  minusMonths,
+  sheetText,
+  EMPTY_SHEET,
   visibilityOf,
 } from '../src/commerces/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -110,7 +114,7 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     expect(cols.sort()).toEqual(Object.keys(SHEET_VISIBILITY).sort());
     expect(cols.filter((c) => visibilityOf(c) === 'public')).toEqual(['activity']);
     // Chaque champ de la fiche a sa colonne.
-    expect(SHEET_FIELDS.length).toBe(13);
+    expect(SHEET_FIELDS.length).toBe(14);
   });
 
   it('[R110] [R09] la vue publique ne porte ni enseigne, ni exercice, ni loyer, ni bail, ni prix, même quand la fiche les porte', async () => {
@@ -213,5 +217,32 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     const home = await t.property('home');
     expect(await t.fiches.update(t.acces, t.as('agent', t.alex.id), home.id, { activity: 'restaurant' })).toMatchObject({ ok: false, code: 'sorte' });
     expect(await t.count('SELECT count(*) AS n FROM business_sheets')).toBe(0);
+  });
+});
+
+describe('AU101 · les dates utiles du bail commercial', () => {
+  it('[R10] échéances triennales, fin et jours limites des congés, par le code ; rien sans début ni durée', () => {
+    // L'exemple de service-public.fr : un bail du 1er juillet 2014 sur 9 ans expire le 30 juin 2023.
+    expect(leaseMilestones({ leaseStart: '2014-07-01', leaseYears: 9 }, '2014-07-01')).toMatchObject({ nextTriennial: '2017-06-30', leaseEnd: '2023-06-30', endNoticeBy: '2022-12-30' });
+    const lease = { leaseStart: '2021-03-15', leaseYears: 9 };
+    expect(leaseMilestones(lease, '2026-11-19')).toEqual({ nextTriennial: '2027-03-14', triennialNoticeBy: '2026-09-14', leaseEnd: '2030-03-14', endNoticeBy: '2029-09-14', ended: false });
+    // Le jour même de l'échéance, elle est encore la prochaine ; le lendemain, seule la fin compte.
+    expect(leaseMilestones(lease, '2027-03-14')).toMatchObject({ nextTriennial: '2027-03-14' });
+    expect(leaseMilestones(lease, '2027-03-15')).toMatchObject({ nextTriennial: null, triennialNoticeBy: null, leaseEnd: '2030-03-14' });
+    expect(leaseMilestones(lease, '2030-03-14')).toMatchObject({ ended: false });
+    expect(leaseMilestones(lease, '2030-03-15')).toMatchObject({ ended: true });
+    // Un bail commencé un 29 février : l'anniversaire tombe le 28 les années ordinaires, l'échéance la veille.
+    expect(leaseMilestones({ leaseStart: '2024-02-29', leaseYears: 9 }, '2025-01-01')).toMatchObject({ nextTriennial: '2027-02-27', triennialNoticeBy: '2026-08-27' });
+    expect(minusMonths('2027-08-31', 6)).toBe('2027-02-28');
+    expect(leaseMilestones({ leaseStart: null, leaseYears: 9 }, '2026-11-19')).toBeNull();
+    expect(leaseMilestones({ leaseStart: '2021-03-15', leaseYears: null }, '2026-11-19')).toBeNull();
+  });
+  it('[R110] l’indice de révision se range dans la liste fermée, et le dossier écrit les dates', () => {
+    expect(checkSheetChanges({ leaseIndex: 'ilc' })).toMatchObject({ ok: true, value: { leaseIndex: 'ilc' } });
+    expect(checkSheetChanges({ leaseIndex: 'irl' })).toMatchObject({ ok: false, field: 'leaseIndex' });
+    const text = sheetText({ ...EMPTY_SHEET, fiscalYears: [], equipment: [], licenses: [], leaseStart: '2021-03-15', leaseYears: 9, leaseIndex: 'ilc' }, 'C-1', '2026-11-19');
+    expect(text).toContain('révision indice des loyers commerciaux');
+    expect(text).toContain('Prochaine échéance triennale : 2027-03-14, congé du preneur à donner au plus tard le 2026-09-14.');
+    expect(text).toContain('Fin du bail : 2030-03-14');
   });
 });
