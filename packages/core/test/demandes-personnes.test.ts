@@ -485,7 +485,7 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(C)).not.toContain(seq);
     for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(A)).not.toContain(seq);
     // Son ajout comme colocataire nomme sa ligne : il est à elle ; celui d'une autre personne ne l'est pas.
-    await insert('rental_cotenant_changes', { id: 'chg-coloc', network_id: seeded.get('rental_applications')![B]!.network_id, application_id: 'cand-c', person_id: coloc, seq: 1, action: 'ajout', changed_by: 'ag', changed_at: 't' });
+    await insert('rental_cotenant_changes', { id: 'chg-coloc', network_id: seeded.get('rental_applications')![B]!.network_id as string, application_id: 'cand-c', person_id: coloc, seq: 1, action: 'ajout', changed_by: 'ag', changed_at: 't' });
     await insert('journal', { seq: 9205, at: 't', type: 'location.colocataire', actor: 'ag', subject: 'rental_application:cand-c', data: JSON.stringify({ action: 'ajout', change: 'chg-coloc' }), prev_hash: 'p', hash: 'h9205' });
     await insert('journal', { seq: 9206, at: 't', type: 'location.colocataire', actor: 'ag', subject: 'rental_application:cand-c', data: JSON.stringify({ action: 'ajout', change: 'chg-autre' }), prev_hash: 'p', hash: 'h9206' });
     expect(await seqs(coloc)).toContain(9205);
