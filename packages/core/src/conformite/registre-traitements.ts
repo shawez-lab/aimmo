@@ -210,6 +210,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       document_co_mandants: ['person_id'],
       // AU002 : l'adresse et les parcelles du bien, le domicile du mandant, repris par le mandat.
       property_designations: ['street', 'postal_code', 'city', 'parcels', 'set_by'],
+      property_positions: ['lat', 'lon', 'set_by'],
       person_domiciles: ['person_id', 'street', 'postal_code', 'city', 'country', 'set_by'],
       fee_schedules: ['set_by'],
       identity_checks: ['person_id', 'checked_by'],
@@ -366,6 +367,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     tables: {
       buyer_searches: ['person_id', 'communes', 'budget_max_eur', 'budget_strict', 'soft_criteria', 'financing'],
       buyer_search_confirmations: ['confirmed_by'],
+      buyer_search_areas: ['center_lat', 'center_lon', 'points', 'label', 'set_by'],
       phrase_searches: ['buyer_search_id', 'criteria', 'saved_by'],
       property_alerts: ['person_id'],
       alert_unsubscribe_tokens: ['person_id'],
@@ -1153,6 +1155,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
   document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
+  property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
   identity_checks: ['id', 'network_id', 'piece', 'seen_at', 'created_at'],
@@ -1264,6 +1267,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   listing_views: ['id', 'property_id', 'network_id', 'channel', 'day', 'views', 'recorded_at'],
   buyer_searches: ['id', 'network_id', 'project_id', 'version', 'property_kinds', 'features', 'surface_min_m2', 'rooms_min', 'bedrooms_min', 'urgency', 'required_features', 'floor_min', 'floor_max', 'energy_class_max', 'land_min_m2', 'sources', 'origin', 'created_at'],
   buyer_search_confirmations: ['project_id', 'network_id', 'confirmed_at'],
+  buyer_search_areas: ['id', 'network_id', 'project_id', 'version', 'shape', 'radius_m', 'set_at'],
   phrase_searches: ['id', 'network_id', 'project_id', 'consent_id', 'created_at'],
   property_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'created_at', 'updated_at'],
   property_on_sale: ['property_id', 'network_id', 'mandate_id', 'on_sale_at', 'noted_at'],

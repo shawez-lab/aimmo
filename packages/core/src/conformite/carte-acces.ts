@@ -529,6 +529,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },
+  property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
@@ -582,6 +583,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // acquereurs
   buyer_searches: { locate: by('person_id') },
   buyer_search_confirmations: { locate: [via('project_id', 'projects')] },
+  buyer_search_areas: { locate: [via('project_id', 'projects')] },
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
