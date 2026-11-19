@@ -118,6 +118,16 @@ describeWithSqlite('P04 · publication partout, au même prix, en mode essai', (
     expect(retired?.data).toEqual({ rule: 'R42', seq: 2, state: 'retiree', reason: 'mentions_incompletes' });
   });
 
+  it('[R45] AU005 : un diagnostic de 2019 ne se valide ni ne se publie', async () => {
+    const t = await setup({ diagnosedOn: '2019-06-12' });
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    const v = await t.annonces.validate(t.agent, t.draftId);
+    expect(v).toMatchObject({ ok: false, rule: 'R43', code: 'mentions_incomplete' });
+    expect(!v.ok && 'missing' in v && v.missing).toEqual([{ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' }]);
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toEqual({ version: null, state: null, created: false, pushed: [], failed: [] });
+    expect(t.channels.every((c) => c.received.length === 0)).toBe(true);
+  });
+
   it('[R42] un bien en erreur n’arrête pas le passage des autres ; l’échec est au journal', async () => {
     const t = await setup();
     t.setClock(new Date('2027-02-12T10:00:00.000Z'));

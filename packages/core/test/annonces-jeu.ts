@@ -46,7 +46,7 @@ export class FakeChannel implements ListingChannel {
   }
 }
 
-export async function setupAnnonce(options: { card?: boolean; twin?: boolean } = {}) {
+export async function setupAnnonce(options: { card?: boolean; twin?: boolean; diagnosedOn?: string } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = new Date('2027-02-10T10:00:00.000Z');
@@ -76,7 +76,7 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean } =
   await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
   await new FicheBien(db, acces, journal, { now }).save(agent, b.id, {
     characteristics: { bedrooms: 2, floor: 3, floorsTotal: 5, buildYear: 1965, heating: 'collectif', outdoor: ['balcon'], parkingSpaces: 1, elevator: true },
-    energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: '2027-01-15' },
+    energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: options.diagnosedOn ?? '2027-01-15' },
     coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false },
     risks: { inRiskZone: false },
     media: [
