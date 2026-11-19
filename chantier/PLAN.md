@@ -240,8 +240,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
-- Statut : en cours (voie 2)
-- Reste : proposition #684 (`252e757`), Codex sans remarque après sept tours (P0 et P1 tous corrigés avec leur test : boîte et paquet propres à chaque agent, transaction IndexedDB unique, lots arrêtés à la sortie, script chargé à la demande pour le budget R201, paquet périmé, préparation interrompue, brouillon gardé, envoi lu par morceaux, refus sans IndexedDB, envoi aussitôt gardé). Suite de l'API verte en local. Bloquée à la fusion : la vérification GitHub échoue deux fois sur des tests du cœur sans lien qui dépassent 5 s sur un runner chargé ; à fusionner dès qu'elle passe (mettre la branche à jour avec main relance la vérification). Restent après la fusion : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#684, 0ce44fa0). Restent : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
 - Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
@@ -251,6 +251,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU019 · La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre
 - Statut : en cours (voie 2)
+- Reste : proposition #698 (copie et restauration des objets des quatre stockages, exercice complet, lecteur des références obligatoire), en vérification. Suite : AU019b.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A019 (bloquant), endroit : C/sauvegarde/copie.ts ; docs/SAUVEGARDE.md.
 - Constat de l'audit : La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre : restaurer les références ne restaure pas mes dossiers.
@@ -258,6 +259,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
+- Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
+- Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
+- Critères : un stockage illisible donne « non sauvegardé » avec sa raison (migration de `base_copy_runs`) ; le lecteur des références couvre chaque table qui cite un fichier, avec un test par table ; R224, R230 et R232 mis à jour.
+- Attend : une clé R2 en lecture seule sur les quatre compartiments des objets (à noter dans HUMAIN.md au moment de la tâche).
 ### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
