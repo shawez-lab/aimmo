@@ -23,11 +23,12 @@ import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
-import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+import { areasOfNetwork, insideArea, positionOf, type GeoPoint } from './secteurs.ts';
+import { EMPTY_SEARCH, toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
 const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'area', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -58,6 +59,8 @@ export interface MatchProperty {
   rooms: number | null;
   bedrooms: number | null;
   features: BuyerFeature[];
+  /** La position du bien, géocodée depuis son adresse désignée ; absente tant qu'il n'est pas situé (AU073). */
+  position?: GeoPoint | null;
   /** Étage (0 : rez-de-chaussée), classe énergie et terrain, lus dans la fiche du bien ; absents s'ils ne sont pas dits (AU072). */
   floor?: number | null;
   energyClass?: string | null;
@@ -138,6 +141,13 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     const city = property.city;
     if (city !== null && search.communes.some((c) => same(c, city))) add('commune', 'met', `Commune cherchée : ${city}.`);
     else add('commune', 'unmet', 'Commune hors de la recherche.');
+  }
+  // AU073 · le secteur privé : un bien hors du secteur, ou pas encore situé, n'est pas proposé.
+  if (search.area) {
+    const at = property.position ?? null;
+    if (at === null) add('area', 'unmet', 'Position du bien inconnue.');
+    else if (insideArea(search.area, at)) add('area', 'met', `Dans le secteur « ${search.area.label} ».`);
+    else add('area', 'unmet', 'Hors du secteur cherché.');
   }
   if (search.budgetMaxEur !== null) {
     const price = property.priceEur;
@@ -458,7 +468,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2 };
+    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2, position: await positionOf(this.db, p.id) };
   }
 
   /**
@@ -477,13 +487,32 @@ export class Rapprochement {
       [networkId],
     );
     const nowIso = at.toISOString();
+    // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
+    const areas = await areasOfNetwork(this.db, networkId);
+    const areaSetAt = new Map((await this.db.all<{ project_id: string; at: string }>('SELECT project_id, max(set_at) AS at FROM buyer_search_areas WHERE network_id = ? GROUP BY project_id', [networkId])).map((r) => [r.project_id, r.at]));
     const byRoot = new Map<string, Candidate>();
-    for (const row of rows) {
+    // Un projet dont le seul critère est un secteur, sans recherche rangée : il compte aussi, avec une recherche vide (AU073).
+    const areaOnly = await this.db.all<{ project_id: string; person_id: string; stage: string; set_at: string; confirmed_at: string | null }>(
+      `SELECT a.project_id, p.person_id, p.stage, max(a.set_at) AS set_at,
+         (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = a.project_id) AS confirmed_at
+       FROM buyer_search_areas a JOIN projects p ON p.id = a.project_id
+       WHERE a.network_id = ? AND p.kind = 'buy' AND NOT EXISTS (SELECT 1 FROM buyer_searches s WHERE s.project_id = a.project_id)
+       GROUP BY a.project_id, p.person_id, p.stage ORDER BY set_at DESC, a.project_id`,
+      [networkId],
+    );
+    const entries: { project_id: string; person_id: string; stage: string; created_at: string; confirmed_at: string | null; search: () => BuyerSearch }[] = [
+      ...rows.map((row) => ({ project_id: row.project_id, person_id: row.person_id, stage: row.stage, created_at: row.created_at, confirmed_at: row.confirmed_at, search: () => toVersion(row).search })),
+      ...areaOnly.map((r) => ({ project_id: r.project_id, person_id: r.person_id, stage: r.stage, created_at: r.set_at, confirmed_at: r.confirmed_at, search: (): BuyerSearch => ({ ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] }) })),
+    ];
+    for (const row of entries) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
       // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
-      const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
+      // Un secteur rangé depuis rafraîchit aussi la recherche (AU073).
+      const movedAt = [row.created_at, row.confirmed_at, areaSetAt.get(row.project_id)].filter((d): d is string => typeof d === 'string').sort().at(-1)!;
       if (movedAt < since) continue;
-      const search = toVersion(row).search;
+      const search = row.search();
+      const area = areas.get(row.project_id);
+      if (area) search.area = area;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
         search.propertyKinds.length === 0 &&
@@ -496,7 +525,8 @@ export class Rapprochement {
         (search.floorMin ?? null) === null &&
         (search.floorMax ?? null) === null &&
         (search.energyClassMax ?? null) === null &&
-        (search.landMinM2 ?? null) === null
+        (search.landMinM2 ?? null) === null &&
+        !search.area
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;

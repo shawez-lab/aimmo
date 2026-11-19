@@ -394,6 +394,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // Le fichier public du registre des gels de la DG Trésor (BR85), lu en GET au seul appui du responsable de
               // la conformité, jamais un envoi.
               'registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },',
+              // La Base adresse nationale pour le secteur d'une recherche et la position d'un bien (AU073), en GET : seuls un
+              // lieu ou l'adresse désignée partent, jamais un envoi.
+              'secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),',
               // La base ouverte des diagnostics de l'ADEME pour la veille (HX16, BR26), en lecture seule : seuls le code
               // postal et le jour partent, jamais un envoi.
               // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),

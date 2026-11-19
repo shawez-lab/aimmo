@@ -22,10 +22,11 @@
  *
  * Le branchement au Worker (`app.ts`) et l'écran sur le téléphone sont une tâche à part : `app.ts` ne change pas ici.
  */
+import { areaOfProject } from '../acquereurs/secteurs.ts';
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { matchBuyer, Rapprochement, type BuyerMatch, type DiffusionGate } from '../acquereurs/rapprochement.ts';
-import { toVersion, type BuyerSearch, type BuyerSearchRow } from '../acquereurs/fiche-acquereur.ts';
+import { EMPTY_SEARCH, toVersion, type BuyerSearch, type BuyerSearchRow } from '../acquereurs/fiche-acquereur.ts';
 import { euros } from '../annonces/mentions.ts';
 import { Referencement, type PublishedListing } from '../attirer/referencement.ts';
 import { unsourcedFigures, visibleText } from '../boutique/supports.ts';
@@ -381,7 +382,10 @@ export class ModePresentation {
 
   private async search(projectId: string): Promise<BuyerSearch | null> {
     const row = await this.db.first<BuyerSearchRow>('SELECT * FROM buyer_searches WHERE project_id = ? ORDER BY version DESC LIMIT 1', [projectId]);
-    return row ? toVersion(row).search : null;
+    // Le secteur privé de la recherche compte aussi ici ; un projet au seul secteur a une recherche vide (AU073).
+    const area = await areaOfProject(this.db, projectId);
+    if (!row) return area ? { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [], area } : null;
+    return area ? { ...toVersion(row).search, area } : toVersion(row).search;
   }
 
   private async reference(networkId: string, propertyId: string): Promise<string | null> {
