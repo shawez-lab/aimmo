@@ -34,37 +34,12 @@ export const PROSPECTION_ENTRY_HTML = `<section class="bloc" aria-labelledby="ti
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const PROSPECTION_JS = `
   /* ---------- La prospection des partenaires sur l'écran du réseau (U14), chargée au premier geste [R16, R79, R201]. ---------- */
-  var prospectionTools = null, prospectionLoading = false;
   function wipeProspection() {
     clear($('prospection-corps'));
     $('prospection-etat').textContent = '';
   }
   function withProspection(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (prospectionTools) return act(prospectionTools);
-    if (prospectionLoading) return Promise.resolve(false);
-    prospectionLoading = true;
-    var mine = session;
-    $('prospection-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/prospection.js');
-      s.addEventListener('load', function () {
-        prospectionLoading = false;
-        var make = globalThis.AIMMO_PROSPECTION;
-        try { delete globalThis.AIMMO_PROSPECTION; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('prospection-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        prospectionTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, session: function () { return session; } });
-        resolve(act(prospectionTools));
-      });
-      s.addEventListener('error', function () {
-        prospectionLoading = false;
-        if (mine === session) $('prospection-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('prospection', 'AIMMO_PROSPECTION', 'prospection-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, session: function () { return session; } }; });
   }
 `;
 

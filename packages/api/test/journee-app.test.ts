@@ -43,8 +43,8 @@ const PLAN = {
   computedAt: '2026-11-10T06:30:00.000Z',
   // L'ordre du socle : il n'est pas celui des numéros ni des prénoms, l'écran doit le garder tel quel.
   items: [
-    { rank: 1, personId: 'p2', firstName: 'Zoé', kind: 'callback', reason: 'A demandé à être rappelée', order: 'règle 1', basis: { kind: 'request', since: '2026-11-01', purpose: null } },
-    { rank: 2, personId: 'p1', firstName: INJECTED, kind: 'valuation_follow_up', reason: 'Avis de valeur envoyé il y a 31 jours', order: 'règle 3', basis: { kind: 'consent', since: '2026-10-01', purpose: 'valuation_follow_up' } },
+    { rank: 1, personId: 'p2', firstName: 'Zoé', kind: 'callback', reason: 'A demandé à être rappelée', order: 'règle 1', priority: 'Rappel demandé · demande du 01/11/2026', basis: { kind: 'request', since: '2026-11-01', purpose: null } },
+    { rank: 2, personId: 'p1', firstName: INJECTED, kind: 'valuation_follow_up', reason: 'Avis de valeur envoyé il y a 31 jours', order: 'règle 3', priority: 'Avis de valeur envoyé le 10/10/2026 · demande du 01/10/2026', basis: { kind: 'consent', since: '2026-10-01', purpose: 'valuation_follow_up' } },
     { rank: 3, personId: 'p3', firstName: 'Ana', kind: 'appointment_to_offer', reason: 'Estimation sans rendez-vous', order: 'règle 4', basis: { kind: 'request', since: '2026-10-20', purpose: null } },
   ],
   removed: { excluded: 0, withdrawn: 0, noBasis: 0 },
@@ -85,14 +85,15 @@ const DAY: Answers = { '/v1/moi': ME, '/v1/plan-du-jour': ok(PLAN), '/v1/contact
 const items = (list: FakeElement) => list.children.map((li) => li.textContent);
 
 describe('A02 · écran « Ma journée »', () => {
-  it('[R35] le plan est montré dans l’ordre du socle, avec la raison et la place de chaque ligne, jamais retrié', async () => {
+  it('[R35] le plan est montré dans l’ordre du socle, avec la raison et la priorité de chaque ligne, jamais retrié ; jamais un numéro de règle (AU116)', async () => {
     const { els } = await run(DAY);
     expect(els.accueil!.hidden).toBe(false);
     const shown = items(els.plan!);
     expect(shown).toEqual([
-      '1. ZoéA demandé à être rappeléePlace : règle 1Voir la fiche',
-      `2. ${INJECTED}Avis de valeur envoyé il y a 31 joursPlace : règle 3Voir la fiche`,
-      '3. AnaEstimation sans rendez-vousPlace : règle 4Voir la fiche',
+      '1. ZoéA demandé à être rappeléeRappel demandé · demande du 01/11/2026Voir la fiche',
+      `2. ${INJECTED}Avis de valeur envoyé il y a 31 joursAvis de valeur envoyé le 10/10/2026 · demande du 01/10/2026Voir la fiche`,
+      // Une ligne d'un plan figé avant AU116, sans priorité : sa raison seule, jamais « règle 4 ».
+      '3. AnaEstimation sans rendez-vousVoir la fiche',
       '1 ligne(s) retirée(s) depuis 7 h 30.',
     ]);
     // Le script ne trie rien : aucun appel de tri dans le code de la page.

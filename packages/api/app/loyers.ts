@@ -82,38 +82,13 @@ export const LOYERS_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-l
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const LOYERS_JS = `
   /* ---------- Les loyers de marché sur l'écran du réseau (Y10), chargés au premier geste [R16, R201]. ---------- */
-  var loyersTools = null, loyersLoading = false;
   function wipeLoyers() {
     clear($('loyers-liste'));
     $('loyers-etat').textContent = '';
     ['loyers-type', 'loyers-millesime', 'loyers-fichier', 'loyers-commune'].forEach(function (id) { $(id).value = ''; });
   }
   function withLoyers(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (loyersTools) return act(loyersTools);
-    if (loyersLoading) return Promise.resolve(false);
-    loyersLoading = true;
-    var mine = session;
-    $('loyers-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/loyers.js');
-      s.addEventListener('load', function () {
-        loyersLoading = false;
-        var make = globalThis.AIMMO_LOYERS;
-        try { delete globalThis.AIMMO_LOYERS; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('loyers-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        loyersTools = make({ $: $, el: el, clear: clear, send: send, date: date, button: button, field: field, select: select, session: function () { return session; } });
-        resolve(act(loyersTools));
-      });
-      s.addEventListener('error', function () {
-        loyersLoading = false;
-        if (mine === session) $('loyers-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('loyers', 'AIMMO_LOYERS', 'loyers-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, date: date, button: button, field: field, select: select, session: function () { return session; } }; });
   }
 `;
 

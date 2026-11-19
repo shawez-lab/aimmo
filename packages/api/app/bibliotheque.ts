@@ -68,37 +68,12 @@ export const BIBLIOTHEQUE_ENTRY_HTML = `<section class="bloc" aria-labelledby="t
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const BIBLIOTHEQUE_JS = `
   /* ---------- La bibliothèque sous licence sur l'écran du réseau (X13), chargée au premier geste [R16, R133, R201]. ---------- */
-  var bibliothequeTools = null, bibliothequeLoading = false;
   function wipeBibliotheque() {
     clear($('bibliotheque-corps'));
     $('bibliotheque-etat').textContent = '';
   }
   function withBibliotheque(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (bibliothequeTools) return act(bibliothequeTools);
-    if (bibliothequeLoading) return Promise.resolve(false);
-    bibliothequeLoading = true;
-    var mine = session;
-    $('bibliotheque-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/bibliotheque.js');
-      s.addEventListener('load', function () {
-        bibliothequeLoading = false;
-        var make = globalThis.AIMMO_BIBLIOTHEQUE;
-        try { delete globalThis.AIMMO_BIBLIOTHEQUE; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('bibliotheque-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        bibliothequeTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, key: function () { return currentKey; }, session: function () { return session; } });
-        resolve(act(bibliothequeTools));
-      });
-      s.addEventListener('error', function () {
-        bibliothequeLoading = false;
-        if (mine === session) $('bibliotheque-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('bibliotheque', 'AIMMO_BIBLIOTHEQUE', 'bibliotheque-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, details: details, key: function () { return currentKey; }, session: function () { return session; } }; });
   }
 `;
 

@@ -53,37 +53,12 @@ export const REGLAGES_MANDAT_ENTRY_HTML = `<section class="bloc" aria-labelledby
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const REGLAGES_MANDAT_JS = `
   /* ---------- Les réglages du mandat sur l'écran du réseau (D13), chargés au premier geste [R16, R201]. ---------- */
-  var regMandatTools = null, regMandatLoading = false;
   function wipeReglagesMandat() {
     clear($('regmandat-corps'));
     $('regmandat-etat').textContent = '';
   }
   function withReglagesMandat(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (regMandatTools) return act(regMandatTools);
-    if (regMandatLoading) return Promise.resolve(false);
-    regMandatLoading = true;
-    var mine = session;
-    $('regmandat-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/reglages-mandat.js');
-      s.addEventListener('load', function () {
-        regMandatLoading = false;
-        var make = globalThis.AIMMO_REGLAGES_MANDAT;
-        try { delete globalThis.AIMMO_REGLAGES_MANDAT; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('regmandat-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        regMandatTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } });
-        resolve(act(regMandatTools));
-      });
-      s.addEventListener('error', function () {
-        regMandatLoading = false;
-        if (mine === session) $('regmandat-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('reglages-mandat', 'AIMMO_REGLAGES_MANDAT', 'regmandat-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } }; });
   }
 `;
 
