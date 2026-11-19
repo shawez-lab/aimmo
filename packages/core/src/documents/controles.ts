@@ -20,7 +20,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { Identification } from '../conformite/identification.ts';
@@ -149,8 +149,11 @@ export class ControlesSignature {
       tiers.push({ upTo, rate, flat });
     }
     const id = this.newId();
-    await this.db.run('INSERT INTO fee_schedules (id, network_id, max_rate_bp, min_eur, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)', [id, viewer.networkId, bp, schedule.minEur, this.actor(viewer), this.now().toISOString()]);
-    for (const [i, t] of tiers.entries()) await this.db.run('INSERT INTO fee_schedule_tiers (schedule_id, position, up_to_eur, rate_bp, flat_eur) VALUES (?, ?, ?, ?, ?)', [id, i + 1, t.upTo, t.rate, t.flat]);
+    // Le barème et ses tranches en un seul lot, tout ou rien : jamais un barème en vigueur sans toutes ses tranches.
+    await runBatch(this.db, [
+      { sql: 'INSERT INTO fee_schedules (id, network_id, max_rate_bp, min_eur, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)', params: [id, viewer.networkId, bp, schedule.minEur, this.actor(viewer), this.now().toISOString()] },
+      ...tiers.map((t, i) => ({ sql: 'INSERT INTO fee_schedule_tiers (schedule_id, position, up_to_eur, rate_bp, flat_eur) VALUES (?, ?, ?, ?, ?)', params: [id, i + 1, t.upTo, t.rate, t.flat] })),
+    ]);
     await appendEvent(this.journal, { type: 'bareme.regle', actor: this.actor(viewer), subject: null, data: { maxRateBp: bp, minEur: schedule.minEur, tiers: tiers.length } }, this.now);
     return { ok: true };
   }

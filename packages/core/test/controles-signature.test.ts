@@ -146,6 +146,11 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
     ]) {
       expect(await t.controles.setFeeSchedule(dir, { maxRatePercent: 10, minEur: 0, tiers: bad })).toEqual({ ok: false, rule: null, code: 'bad_tiers' });
     }
+    // Une tranche qui ne s'écrit pas : le barème n'entre pas en vigueur, l'ancien reste, tranches comprises.
+    await t.db.exec("CREATE TRIGGER coupure BEFORE INSERT ON fee_schedule_tiers WHEN NEW.position = 2 BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.controles.setFeeSchedule(dir, { maxRatePercent: 20, minEur: 0, tiers: [{ upToEur: 100_000, ratePercent: 9 }, { upToEur: null, ratePercent: 8 }] })).rejects.toThrow(/coupure/);
+    await t.db.exec('DROP TRIGGER coupure');
+    expect(await t.controles.readFeeSchedule(dir)).toMatchObject({ ok: true, value: { maxRatePercent: 10, tiers } });
   });
 
   it('[R41] sans barème réglé, rien ne passe ; seule la direction règle le barème, en ajout seul', async () => {
