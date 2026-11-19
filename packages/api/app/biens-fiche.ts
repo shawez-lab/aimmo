@@ -19,7 +19,7 @@ const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_kind: 'Choisissez le type de bien.',
   bad_postal_code: 'Le code postal : cinq chiffres.',
   bad_city: 'La commune : en toutes lettres, sans chiffre.',
-  bad_surface: 'La surface : un nombre entier de m².',
+  bad_surface: 'La surface : un nombre de m², au centième près (par exemple 63,42).',
   bad_rooms: 'Le nombre de pièces : un nombre entier.',
   bad_price: 'Le prix : un nombre entier d’euros.',
   name_in_first_name: 'Ce nom est déjà écrit comme prénom : il manque le vrai prénom. Voyez avec la direction.',
@@ -49,7 +49,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
   var REASONS = ${JSON.stringify(CORRECTION_REASONS)};
   var LOST = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez sans changer la saisie : il ne sera pas créé deux fois.';
   function line(b) {
-    var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? b.surfaceM2 + ' m²' : null].filter(Boolean).join(', ');
+    var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? String(b.surfaceM2).replace('.', ',') + ' m²' : null].filter(Boolean).join(', ');
     return el('li', 'Réf. ' + b.reference + ' : ' + facts + '.');
   }
   function field(form, id, label, numeric) {
@@ -258,10 +258,13 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var postal = field(form, id + '-cp', 'Code postal', true);
     var city = field(form, id + '-commune', 'Commune', false);
     var surface = field(form, id + '-surface', 'Surface, en m²', true);
+    // AU062 · une surface décimale se saisit telle quelle, virgule ou point.
+    surface.setAttribute('inputmode', 'decimal');
     var rooms = field(form, id + '-pieces', 'Pièces (facultatif)', true);
     var price = field(form, id + '-prix', 'Prix voulu, en euros (facultatif)', true);
     form.appendChild(t.accordButton('Créer le bien', function () {
-      var n = { surfaceM2: count(surface), rooms: count(rooms), priceEur: count(price) };
+      var sv = surface.value.trim().replace(',', '.');
+      var n = { surfaceM2: /^[0-9]+(\\.[0-9]{1,2})?$/.test(sv) && Number(sv) > 0 ? Number(sv) : NaN, rooms: count(rooms), priceEur: count(price) };
       if (!/^[0-9]{5}$/.test(postal.value.trim())) { state.textContent = CODES.bad_postal_code; return Promise.resolve(false); }
       if (!city.value.trim()) { state.textContent = CODES.bad_city; return Promise.resolve(false); }
       if (!n.surfaceM2) { state.textContent = CODES.bad_surface; return Promise.resolve(false); }

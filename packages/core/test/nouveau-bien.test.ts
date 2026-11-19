@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, ControlesSignature, FicheClient, FicheUnique, Modeles, NouveauBien, SqlJournalStore, applyMigrations, fromSyncSqlite, type Viewer } from '../src/index.ts';
+import { fallbackListing, traceListing } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { designerTout } from './designation-jeu.ts';
@@ -159,6 +160,19 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     expect(await t.biens.create(t.alex, '00000000-0000-4000-8000-000000000000', { ...INPUT, requestId: key(9) })).toMatchObject({ ok: false, code: 'unknown' });
   });
 
+  it('AU062 · une surface au centième près reste exacte de la saisie à l’annonce, sans arrondi', async () => {
+    const t = await setup();
+    const r = await t.biens.create(t.alex, t.person.id, { ...INPUT, surfaceM2: 63.42 });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.surfaceM2).toBe(63.42);
+    expect(await t.db.first('SELECT surface_m2 FROM properties WHERE id = ?', [r.value.propertyId])).toEqual({ surface_m2: 63.42 });
+    const facts = { kind: 'home' as const, city: 'Dijon', postalCode: '21000', surfaceM2: 63.42, rooms: 3, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], elevator: null, parkingSpaces: null, landM2: null, energyClass: null, climateClass: null };
+    const text = fallbackListing(facts as never);
+    expect(`${text.title} ${text.body}`).toContain('63,42 m²');
+    expect(traceListing(text.title, text.body, facts as never).ok).toBe(true);
+    expect(traceListing(text.title, text.body.replace('63,42', '63'), facts as never).ok).toBe(false);
+  });
+
   it('une fiche sans agent ne reçoit pas de bien : elle s’attribue d’abord', async () => {
     const t = await setup();
     const orphan = await t.store.createPerson({ networkId: t.network.id, firstName: 'Noé' });
@@ -172,7 +186,7 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     [{ city: '12 rue de l’Essai' }, 'bad_city'],
     [{ surfaceM2: 0 }, 'bad_surface'],
     [{ surfaceM2: '62' }, 'bad_surface'],
-    [{ surfaceM2: 62.5 }, 'bad_surface'],
+    [{ surfaceM2: 62.555 }, 'bad_surface'],
     [{ rooms: -1 }, 'bad_rooms'],
     [{ priceEur: 0 }, 'bad_price'],
   ])('une saisie fausse est refusée, rien n’est créé : %j', async (patch, code) => {
