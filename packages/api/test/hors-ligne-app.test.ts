@@ -590,7 +590,19 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
 });
 
 describe('AU018 · la visite sans réseau dans la coquille', () => {
-  it('[R277] le téléphone juge la photo exactement comme le serveur', () => {
+  it('[R276] sans IndexedDB, rien n’est dit gardé : la saisie est refusée avec un message clair', async () => {
+    const shown: string[] = [];
+    const ctx: Record<string, unknown> = { JSON, Uint8Array, btoa, crypto: { randomUUID: () => 'appareil-0001', subtle: crypto.subtle }, TextEncoder };
+    runInNewContext(HORS_LIGNE_SCRIPT, ctx);
+    const H = ctx.AimmoHorsLigne as { add: (o: string, k: string, a: string, p: unknown) => Promise<unknown> };
+    await H.add('a'.repeat(32), 'visite.note', 'rdv-00000001', { text: 'Note' }).then(
+      () => shown.push('gardée'),
+      (e: Error) => shown.push(e.message),
+    );
+    expect(shown).toEqual([expect.stringMatching(/^Cet appareil ne peut rien garder sans réseau/)]);
+  });
+
+    it('[R277] le téléphone juge la photo exactement comme le serveur', () => {
     const ctx: Record<string, unknown> = { btoa, Uint8Array, JSON };
     runInNewContext(HORS_LIGNE_SCRIPT, ctx);
     const photo = (ctx.AimmoHorsLigne as { photo: { hdr: (l: Luma[]) => any; judge: (l: Luma) => any; encode: (l: Luma) => unknown } }).photo;

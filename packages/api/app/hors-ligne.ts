@@ -107,8 +107,11 @@ function fresh(s) { return s || { deviceId: uuid(), nextSeq: 1, pending: [], ref
 function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: s } : (s = fresh(s), { next: s, value: s }); }); }
 /* o : la marque de l'agent dont l'écran a reçu le geste, prise avant tout calcul ; une saisie va toujours dans sa boîte à
    lui, même si un autre agent s'est connecté entre-temps [R16, R276]. */
+var NO_STORE = 'Cet appareil ne peut rien garder sans réseau : rien n’a été gardé. Refaites-le quand le réseau revient.';
 function add(o, kind, appointmentId, payload) {
   if (!o) return Promise.reject(new Error('aucun agent'));
+  // Sans IndexedDB, une saisie ne survivrait pas à la fermeture : elle est refusée, jamais dite gardée [R276].
+  if (!G.indexedDB) return Promise.reject(new Error(NO_STORE));
   var id = uuid(), at = new Date().toISOString();
   return update(BOITE + ':' + o, function (s) {
     s = fresh(s);
@@ -395,7 +398,7 @@ function card(a, pending, o) {
   c.appendChild(btn('Garder la note', function () {
     var t = String(note.value || '').trim();
     if (!t || t.length > MAX_NOTE) { said.textContent = 'Une note de 1 à 2 000 caractères.'; return; }
-    add(o, 'visite.note', a.appointmentId, { text: t }).then(function () { note.value = ''; said.textContent = 'Note gardée sur le téléphone.'; return render(); });
+    add(o, 'visite.note', a.appointmentId, { text: t }).then(function () { note.value = ''; said.textContent = 'Note gardée sur le téléphone.'; return render(); }, function () { said.textContent = NO_STORE; });
   }));
   c.appendChild(said);
   return c;
@@ -423,12 +426,12 @@ function shotTools(li, a, s, o) {
     }).then(function (list) {
       var r = hdr(list);
       if (!r.ok) { shots = [null, null]; said.textContent = 'Photo refusée. ' + r.advice; return; }
-      return add(o, 'visite.photo', a.appointmentId, { shot: s.key, exposures: list.map(encode) }).then(render);
+      return add(o, 'visite.photo', a.appointmentId, { shot: s.key, exposures: list.map(encode) }).then(render, function () { shots = [null, null]; said.textContent = NO_STORE; });
     }, function () { said.textContent = 'Photo illisible : reprenez-la.'; });
   }
   input(0, '1re prise, vers la fenêtre');
   input(1, '2e prise, vers le coin sombre');
-  REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add(o, 'visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render); }, 'secondaire')); });
+  REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add(o, 'visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render, function () { said.textContent = NO_STORE; }); }, 'secondaire')); });
   li.appendChild(said);
 }
 // Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
