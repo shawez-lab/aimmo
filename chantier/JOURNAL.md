@@ -1464,3 +1464,14 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 08:11 · AU013 · factures réelles fusionnées (#678, b1421bfc) après une vérification GitHub passée · prochaine : AU018
 - 2026-11-19 08:11 · AU018 · visite sans réseau branchée dans #684 (routes, paquet et boîte IndexedDB par agent, photo HDR jugée sur le téléphone, script gardé par le service worker et chargé à la demande) ; relecture forte 1 P0 2 P1 et Codex 7 P0 1 P1 1 P2 corrigés, Codex sans remarque ensuite ; vérification GitHub rouge deux fois sur des tests du cœur sans lien (délais de 5 s dépassés), non fusionnée · prochaine : fusionner #684 dès que la vérification passe
 - 2026-11-19 08:11 · VOIE 2 : AU013 puis AU018, b1421bfc (main) et 252e757 (branche, #684), relancé oui
+- 2026-11-19 08:39 · AU006 · étiquettes énergie et climat en couleur sur la page et la fiche, classe du bien en avant ; relecture forte 2 P1 corrigés, Codex rien ; fusionnée (#695, afa6ff4e) · prochaine : AU007
+- 2026-11-19 08:39 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié (AU007)
+- 2026-11-19 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:13 par la séance relancée à 08:11, qui travaille sur AU019 #698)
+- 2026-11-19 08:50 · VOIE 3 : AU112 (#694, joindre son référent d'un toucher) et AU113 (#693, langue ouverte par déclaration ou relecteur désigné ; relecteur parti ou remplacé, validation tombée) fusionnées ; ouverte : #697 (AU066, la correction ne retire plus l'annonce en ligne) ; corrections poussées sur #685, #692, #696, #697
+- 2026-11-19 09:03 · AU018 · fusionnée (#684, 0ce44fa0) après une vérification GitHub verte, branche mise à jour avec main · prochaine : AU019
+- 2026-11-19 09:03 · AU019 · copie chiffrée des objets des quatre stockages et exercice qui restaure base et fichiers contre leurs empreintes, lecteur des références obligatoire ; relecture forte 1 P1 corrigé, Codex rien ; fusionnée (#698, d1ecc0fd) · prochaine : AU019b
+- 2026-11-19 09:03 · VOIE 2 : AU018 puis AU019, 0ce44fa0 et d1ecc0fd (main), relancé non
+- 2026-11-19 09:03 · VOIE 2 : relance refusée, « Mes trois dernières séances ont-elles produit au moins un commit ? » : non (séance de 07:04 sans commit)
+- 2026-11-19 09:35 · VOIE 3 : AU065 (#699, période des prix de l'énergie telle que le DPE l'écrit) fusionnée ; ouverte : #701 (AU062, surface au centième) ; AU069 bloquée par H73 (tables des traductions) ; AU064 prise
+- 2026-11-19 10:05 · VOIE 3 : AU070 (#685, maison ou appartement, à la création, à l'import ou sur la fiche) fusionnée ; ouverte : #702 (AU064, numéro ADEME et valeurs du DPE au flux des portails) ; corrections poussées sur #696, #697, #701
+- 2026-11-19 09:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 09:04 par une autre séance voie 2)

@@ -17,6 +17,7 @@ export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
 
 const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_kind: 'Choisissez le type de bien.',
+  bad_dwelling: 'Maison ou appartement : seulement pour un logement.',
   bad_postal_code: 'Le code postal : cinq chiffres.',
   bad_city: 'La commune : en toutes lettres, sans chiffre.',
   bad_surface: 'La surface : un nombre entier de m².',
@@ -255,6 +256,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var id = t.cSeq();
     var state = t.cState();
     var kind = t.cSelect(form, id + '-type', 'Type de bien', KINDS, 'home');
+    // AU070 · une recherche de maison ne reçoit pas un appartement.
+    var dwelling = t.cSelect(form, id + '-logement', 'Maison ou appartement', { '': 'Je ne sais pas encore', house: 'Maison', apartment: 'Appartement' }, '');
     var postal = field(form, id + '-cp', 'Code postal', true);
     var city = field(form, id + '-commune', 'Commune', false);
     var surface = field(form, id + '-surface', 'Surface, en m²', true);
@@ -268,7 +271,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       if (n.rooms !== null && !n.rooms) { state.textContent = CODES.bad_rooms; return Promise.resolve(false); }
       if (n.priceEur !== null && !n.priceEur) { state.textContent = CODES.bad_price; return Promise.resolve(false); }
       state.textContent = 'Enregistrement…';
-      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { requestId: requestId, kind: kind.value, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
+      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { requestId: requestId, kind: kind.value, dwelling: kind.value === 'home' ? dwelling.value || null : null, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
         if (res.gone) return false;
         if (!res.ok) {
           var code = res.body && res.body.code;

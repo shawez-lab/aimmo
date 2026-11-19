@@ -25,7 +25,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { PropertyKind } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { fallbackListing, traceListing, type ListingFacts, type SentenceProblem } from '../annonces/annonce-sourcee.ts';
-import type { PropertySheet } from '../annonces/fiche-bien.ts';
+import { energyPriceText, type PropertySheet } from '../annonces/fiche-bien.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { HonorairesLocation, RentalFees } from './honoraires.ts';
@@ -124,6 +124,7 @@ export interface EnergyCost {
   annualCostMinEur: number;
   annualCostMaxEur: number;
   costReferenceYear: number;
+  costReferenceYears?: number[];
 }
 
 /** Les mentions obligatoires, écrites par le code depuis les données contrôlées : rien d'autre [R102, R103]. */
@@ -147,7 +148,7 @@ export function rentalMentions(
   ];
   if (facts.energyClass === 'F' || facts.energyClass === 'G') lines.push('Logement à consommation énergétique excessive.');
   lines.push(
-    `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. Prix moyens des énergies indexés au 1er janvier ${energy.costReferenceYear} (abonnements compris).`,
+    `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. ${energyPriceText(energy)}`,
   );
   return lines.join('\n');
 }

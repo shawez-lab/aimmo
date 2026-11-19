@@ -176,15 +176,18 @@ export class Accompagnement {
   }
 
   /**
-   * L'agent lit son propre référent en cours (J14) : son prénom et la fin de ses 90 jours, rien d'autre [R16].
-   * Aucun référent en cours : `null`.
+   * L'agent lit son propre référent en cours (J14) : son prénom, la fin de ses 90 jours et, pour le joindre (AU112), ses
+   * seules coordonnées professionnelles publiques (sa carte d'agent : téléphone et adresse mail), rien d'autre [R16].
+   * Aucun référent en cours : `null`. Sans carte d'agent, les coordonnées sont `null`.
    */
-  async myReferent(viewer: Viewer): Promise<{ ok: true; value: { firstName: string; until: string } | null } | AccompagnementRefusal> {
+  async myReferent(viewer: Viewer): Promise<{ ok: true; value: { firstName: string; until: string; phone: string | null; email: string | null } | null } | AccompagnementRefusal> {
     if (viewer.role !== 'agent') return this.refuse(viewer, null, 'my_referent', 'role');
     const current = await this.referentOf(viewer.networkId, viewer.userId);
     if (!current) return { ok: true, value: null };
     const row = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [current.referentId, viewer.networkId]);
-    return { ok: true, value: row ? { firstName: row.first_name, until: current.until } : null };
+    if (!row) return { ok: true, value: null };
+    const card = await this.db.first<{ phone: string; email: string }>('SELECT phone, email FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [current.referentId, viewer.networkId]);
+    return { ok: true, value: { firstName: row.first_name, until: current.until, phone: card ? card.phone : null, email: card ? card.email : null } };
   }
 
   /** La direction écrit un binôme et son partage des honoraires, d'avance. Un partage écrit ne change plus [R17]. */

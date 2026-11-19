@@ -460,7 +460,7 @@ export function applyRefusal(
     if (!next.excludedCommunes.includes(p.city)) next.excludedCommunes.push(p.city);
     next.criteria = next.criteria.filter((c) => !(c.field === 'communes' && c.value === p.city));
   } else if (reason === 'type') {
-    for (const k of KINDS_OF_PROPERTY[p.kind] ?? []) if (!next.excludedKinds.includes(k)) next.excludedKinds.push(k);
+    for (const k of kindsOf(p)) if (!next.excludedKinds.includes(k)) next.excludedKinds.push(k);
     next.criteria = next.criteria.filter((c) => !(c.field === 'propertyKinds' && next.excludedKinds.includes(c.value as BuyerPropertyKind)));
   } else if (reason === 'manque' && feature !== undefined && (BUYER_FEATURES as readonly string[]).includes(feature)) {
     const old = next.criteria.find((c) => c.field === 'features' && c.value === feature);
@@ -479,6 +479,9 @@ const KINDS_OF_PROPERTY: Record<string, readonly BuyerPropertyKind[]> = {
   business_walls: ['commercial'],
   business: ['commercial'],
 };
+
+/** Les types de recherche d'un bien : un logement dit maison ou appartement n'est que l'un des deux (AU070). */
+const kindsOf = (p: Pick<MatchProperty, 'kind' | 'dwelling'>): readonly BuyerPropertyKind[] => (p.kind === 'home' && p.dwelling ? [p.dwelling] : (KINDS_OF_PROPERTY[p.kind] ?? []));
 
 /** Les communes voisines proposées pour la recherche : jamais une commune déjà cherchée ou écartée [R423]. */
 export function proposedNeighbours(search: PhraseSearch, neighbours: Map<string, string[]>): { commune: string; of: string }[] {
@@ -598,7 +601,7 @@ export function judge(
 ): { status: 'match' | 'tolerated'; reasons: Reason[]; preferencesMet: number; gap: number } | null {
   const must = toBuyerSearch(search, 'must');
   const nice = toBuyerSearch(search, 'nice');
-  const kinds = KINDS_OF_PROPERTY[property.kind] ?? [];
+  const kinds = kindsOf(property);
   if (kinds.length > 0 && kinds.every((k) => search.excludedKinds.includes(k))) return null;
   if (property.city !== null && search.excludedCommunes.includes(property.city)) return null;
   const hasMustBase =

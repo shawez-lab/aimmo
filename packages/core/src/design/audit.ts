@@ -4,7 +4,7 @@
  * HTML et le CSS tels que le navigateur les reçoit. Chaque fonction rend la liste des problèmes, vide si tout va.
  */
 import { gzipSync } from 'node:zlib';
-import { DESIGN_CSS, PRINT_DESIGN_CSS } from './systeme.ts';
+import { DESIGN_CSS, ETIQUETTES_CSS, PRINT_DESIGN_CSS } from './systeme.ts';
 
 /* ---------- Contraste ---------- */
 
@@ -86,9 +86,11 @@ export function localCssProblems(css: string): string[] {
 
 /** Les règles locales d'une feuille d'écran, ou `null` si elle ne commence pas par la base du système. */
 export function localPart(css: string): string | null {
-  if (css.startsWith(DESIGN_CSS)) return css.slice(DESIGN_CSS.length);
-  if (css.startsWith(PRINT_DESIGN_CSS)) return css.slice(PRINT_DESIGN_CSS.length);
-  return null;
+  const base = css.startsWith(DESIGN_CSS) ? DESIGN_CSS : css.startsWith(PRINT_DESIGN_CSS) ? PRINT_DESIGN_CSS : null;
+  if (base === null) return null;
+  const rest = css.slice(base.length);
+  // Les étiquettes du DPE (AU006) font partie du système : placées juste après la base, elles ne sont pas locales.
+  return rest.startsWith(ETIQUETTES_CSS) ? rest.slice(ETIQUETTES_CSS.length) : rest;
 }
 
 /** Une feuille d'écran : la base du système, puis des règles locales sans couleur ni police à elles. */

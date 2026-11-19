@@ -107,7 +107,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU006 · Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#695, `afa6ff4e`). Constat confirmé. Décidé, lecture prudente : les deux échelles A à G en couleur du modèle officiel, la classe du bien en avant et dite en mots, lues dans les mentions de la version publiée (`energyClassesOf`) ; couleurs dans le système (`ETIQUETTES_CSS`), écrites dans les seules barres. Relecture forte 2 P1 corrigés : couleurs sorties des jetons ; aucun seuil chiffré (petites surfaces depuis juillet 2024, double seuil). Codex rien à signaler ; vérification GitHub verte au second passage (premier : 7 délais de 5 s dépassés dans des tests sans lien).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A006 (bloquant), endroit : C/annonces/page-bien.ts, `renderListingPage`, `renderListingPrint`.
 - Constat de l'audit : Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte, sans les deux graphiques réglementaires en couleur.
@@ -117,7 +118,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU007 · Mon annonce de bien affiche mon nom et une carte T
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A007 (bloquant), endroit : C/annonces/page-bien.ts, `AgentCard`, `agentBlock` ; C/annonces/mentions.ts.
 - Constat de l'audit : Mon annonce de bien affiche mon nom et une carte T, mais aucun statut d’agent commercial ni numéro et lieu RSAC propres à moi.
@@ -239,8 +240,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
-- Statut : en cours (voie 2)
-- Reste : proposition #684 (`252e757`), Codex sans remarque après sept tours (P0 et P1 tous corrigés avec leur test : boîte et paquet propres à chaque agent, transaction IndexedDB unique, lots arrêtés à la sortie, script chargé à la demande pour le budget R201, paquet périmé, préparation interrompue, brouillon gardé, envoi lu par morceaux, refus sans IndexedDB, envoi aussitôt gardé). Suite de l'API verte en local. Bloquée à la fusion : la vérification GitHub échoue deux fois sur des tests du cœur sans lien qui dépassent 5 s sur un runner chargé ; à fusionner dès qu'elle passe (mettre la branche à jour avec main relance la vérification). Restent après la fusion : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#684, 0ce44fa0). Restent : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
 - Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
@@ -249,7 +250,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU019 · La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre
-- Statut : à faire
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#698) (copie et restauration des objets des quatre stockages, exercice complet, lecteur des références obligatoire) ; Codex rien. Suite : AU019b.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A019 (bloquant), endroit : C/sauvegarde/copie.ts ; docs/SAUVEGARDE.md.
 - Constat de l'audit : La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre : restaurer les références ne restaure pas mes dossiers.
@@ -257,6 +259,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
+- Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
+- Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
+- Critères : un stockage illisible donne « non sauvegardé » avec sa raison (migration de `base_copy_runs`) ; le lecteur des références couvre chaque table qui cite un fichier, avec un test par table ; R224, R230 et R232 mis à jour.
+- Attend : une clé R2 en lecture seule sur les quatre compartiments des objets (à noter dans HUMAIN.md au moment de la tâche).
 ### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
@@ -628,7 +638,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
 - Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
@@ -637,7 +647,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU062 · Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A062 (majeur), endroit : C/biens/nouveau-bien.ts, `surfaceM2` ; UI/biens-fiche.ts.
 - Constat de l'audit : Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers.
@@ -655,7 +665,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU064 · Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A064 (majeur), endroit : C/annonces/fiche-bien.ts, `EnergyDiagnosis`.
 - Constat de l'audit : Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux reprises fiables.
@@ -664,7 +674,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU065 · Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période…
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A065 (majeur), endroit : C/annonces/fiche-bien.ts, `costReferenceYear` ; C/annonces/mentions.ts.
 - Constat de l'audit : Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période exacte du diagnostic.
@@ -673,7 +683,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
 - Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
@@ -700,7 +710,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H10).
 
 ### AU069 · Je peux proposer des langues rares pour le réseau français
-- Statut : à faire
+- Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A069 (majeur), endroit : C/annonces/traductions.ts, `LISTING_LANGUAGES`.
 - Constat de l'audit : Je peux proposer des langues rares pour le réseau français, mais pas l’allemand, l’espagnol, l’italien ou le néerlandais.
@@ -709,7 +719,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A070 (majeur), endroit : C/acquereurs/rapprochement.ts, `KINDS_OF_PROPERTY`.
 - Constat de l'audit : Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home ».
@@ -1122,7 +1132,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU112 · Mon référent n’est présenté que par son prénom et une date
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A112 (mineur), endroit : UI/integration.ts, `renderReferent`.
 - Constat de l'audit : Mon référent n’est présenté que par son prénom et une date, sans moyen direct de le joindre depuis ce bloc.
@@ -1131,7 +1141,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU113 · L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A113 (mineur), endroit : C/annonces/traductions.ts, validation de langue.
 - Constat de l'audit : L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue.

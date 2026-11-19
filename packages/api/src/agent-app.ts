@@ -87,13 +87,18 @@ import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { NOTIFICATIONS_SCRIPT } from '../app/notifications.ts';
+import { HORS_LIGNE_PATH, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
 /** Version de la coquille : changer ce nom remplace le cache de l'appareil. */
-export const AGENT_APP_CACHE = 'aimmo-app-v1';
-/** Les seuls fichiers que l'appareil garde : la coquille, rien d'autre. */
-export const AGENT_APP_SHELL: readonly string[] = Object.freeze(['/app/', '/app/app.css', '/app/app.js', '/app/manifest.webmanifest', '/app/icon.svg']);
+export const AGENT_APP_CACHE = 'aimmo-app-v2';
+/**
+ * Les seuls fichiers que l'appareil garde : la coquille, rien d'autre. La visite sans réseau (AU018) en fait partie : elle
+ * doit s'ouvrir en mode avion. Ses données (le paquet du jour, sans client, et la boîte d'envoi) sont dans IndexedDB,
+ * jamais dans le cache [R276, R278].
+ */
+export const AGENT_APP_SHELL: readonly string[] = Object.freeze(['/app/', '/app/app.css', '/app/app.js', HORS_LIGNE_PATH, '/app/manifest.webmanifest', '/app/icon.svg']);
 
 /** Politique de contenu : rien d'extérieur, aucun script en ligne, aucun appel hors de ce Worker. */
 export const AGENT_APP_CSP =
@@ -141,6 +146,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
   '/app/app.js': { body: trimIndent(stripCommentLines(APP_JS)), type: 'text/javascript; charset=utf-8' },
+  // La visite sans réseau (AU018), gardée par l'appareil avec la coquille [R276, R277, R278].
+  [HORS_LIGNE_PATH]: { body: trimIndent(stripCommentLines(HORS_LIGNE_SCRIPT)), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les étapes du jour des séquences (BR32), chargées seulement s'il y en a au plan, jamais gardées sur l'appareil [R201].

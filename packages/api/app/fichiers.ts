@@ -141,6 +141,7 @@ ${clesEntryHtml('accueil')}</section>
 <p id="fiche-etat" class="etat" role="status"></p>
 <div id="fiche-corps"></div>
 </section>
+<section id="hors-ligne" hidden></section>
 <section id="visite" hidden>
 <button id="visite-retour" type="button" class="retour">Retour à ma journée</button>
 <button id="alerte" type="button" class="danger">Alerte sécurité</button>
@@ -712,6 +713,8 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
+    // AU018 : la session finie, la visite sans réseau oublie la clé et l'agent.
+    if (OFF) OFF.stop();
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     clear($('dictee-accueil'));
     clear($('remises-accueil'));
@@ -2122,7 +2125,7 @@ ${LOUER_JS}
   // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
   var shownId = null, shownArgs = 'null', fromHistory = false;
   function show(id, args) {
-    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
     $('sortir').hidden = out;
     var a = JSON.stringify(args || null);
@@ -2188,6 +2191,18 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
+  /* AU018 : la visite sans réseau, chargée seulement quand elle sert (après la journée, ou sans réseau au démarrage) ; gardée par l'appareil avec la coquille [R201]. */
+  var OFF = null;
+  function offline(f) {
+    if (OFF) return Promise.resolve(f(OFF));
+    return new Promise(function (ok) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/hors-ligne.js');
+      s.addEventListener('load', function () { OFF = globalThis.AimmoHorsLigne || null; ok(OFF && f(OFF)); });
+      s.addEventListener('error', function () { ok(false); });
+      $('hors-ligne').appendChild(s);
+    });
+  }
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2232,10 +2247,12 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) notifLink(); return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); } return true; });
     }, function () {
       if (mine !== session) return false;
-      return refuse('Pas de réseau. Réessayez dans un moment.');
+      // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
+      var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
+      return offline(function (H) { return H.start(key, show, enter, function () { return mine === session; }, no); }).then(function (r) { return r === false ? no() : !!r; });
     });
   }
   try {

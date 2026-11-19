@@ -319,7 +319,10 @@ describeWithSqlite('J12 · routes de M14', () => {
     expect((await t.call(meA, 'GET', '/reseau/mon-referent')).body).toMatchObject({ ok: true, data: null });
     expect((await t.call(t.direction, 'POST', `/reseau/agents/${a}/referent`, { referentId: b })).status).toBe(200);
     const ref = await t.call(meA, 'GET', '/reseau/mon-referent');
-    expect(ref.body.data).toEqual({ firstName: 'Bérénice', until: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(ref.body.data).toEqual({ firstName: 'Bérénice', until: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), phone: null, email: null });
+    // AU112 · sa carte d'agent réglée, ses coordonnées professionnelles servent à le joindre, rien d'autre.
+    await t.db.run("INSERT INTO agent_public_cards (id, agent_id, network_id, phone, email, set_by, set_at) VALUES ('carte-b', ?, ?, '06 00 00 00 02', 'berenice.pro@exemple.test', 'direction:d', '2026-01-01T00:00:00.000Z')", [b, t.network.id]);
+    expect((await t.call(meA, 'GET', '/reseau/mon-referent')).body.data).toEqual({ firstName: 'Bérénice', until: expect.any(String), phone: '06 00 00 00 02', email: 'berenice.pro@exemple.test' });
     // Le référent lui-même n'a pas de référent ; la direction n'a pas de « mon référent » [R16].
     expect((await t.call(meB, 'GET', '/reseau/mon-referent')).body.data).toBeNull();
     const dir = await t.call(t.direction, 'GET', '/reseau/mon-referent');
