@@ -138,6 +138,11 @@ describeWithSqlite('G01 · plan du jour : contenu et ordre', () => {
     expect(third).toMatchObject({ reportId: report, reason: expect.stringContaining('à relancer') });
     expect(third!.order).toContain('4. avis de valeur envoyé le 2026-12-09');
     expect(fourth!.order).toContain('3. délai non annoncé');
+    // AU116 · ce que l'écran montre : la priorité en mots de l'agent et le jour de la demande, sans numéro de règle.
+    expect(first!.priority).toMatch(/^Rappel demandé · délai : tout de suite · demande du \d{2}\/\d{2}\/\d{4}$/);
+    expect(second!.priority).toMatch(/^Projet annoncé : échéance le 2027-02-06 · demande du /);
+    expect(third!.priority).toMatch(/^Avis de valeur envoyé le 09\/12\/2026 · demande du /);
+    for (const item of plan.items) expect(item.priority).not.toMatch(/règle|\d\. /);
     // Aucune ligne ne vient d'une IA : chaque raison et chaque explication sont des textes fixes du code.
     for (const item of plan.items) expect(item.reason.length).toBeGreaterThan(0);
   });

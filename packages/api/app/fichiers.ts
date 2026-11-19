@@ -346,7 +346,7 @@ export const APP_JS = `'use strict';
       var li = el('li');
       li.appendChild(el('strong', String(item.rank) + '. ' + (item.firstName || 'Prénom inconnu')));
       li.appendChild(el('p', item.reason));
-      li.appendChild(el('p', 'Place : ' + item.order, 'doux'));
+      if (item.priority) li.appendChild(el('p', item.priority, 'doux'));
       li.appendChild(ficheButton(item.personId));
       list.appendChild(li);
     });
