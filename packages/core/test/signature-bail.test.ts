@@ -392,6 +392,8 @@ describeWithSqlite('AU097 · un bail commun de colocation', () => {
     expect(status.signedAt).not.toBeNull();
     // Un seul exemplaire, avec les trois preuves ; chacun en reçoit l'avis, Élise comprise.
     expect(status.cotenantCopiesSent).toEqual([elise.id]);
+    // L'avis remis à Élise nomme sa session de signature : sa réponse d'accès le retrouve [R96].
+    expect((await t.journal.all()).filter((e) => e.type === 'location.bail_exemplaire' && (e.data as { party?: string }).party === 'colocataire').map((e) => (e.data as { session?: string }).session)).toEqual([s.value.sessionId]);
     const sent = await t.copies();
     expect(sent.map((c) => c.person_id).sort()).toEqual([t.owner.id, t.tenant(), elise.id].sort());
     expect(new Set(sent.map((c) => /empreinte ([0-9a-f]{64})/.exec(c.body)![1])).size).toBe(1);

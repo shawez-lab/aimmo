@@ -398,8 +398,8 @@ export class SignaturesBail implements LeaseSignatureState {
     const copy = (await this.db.first<{ content_sha256: string }>('SELECT content_sha256 FROM rental_lease_copies WHERE lease_id = ?', [leaseId]))!;
     const agent = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ?', [propertyId]);
     const sessions = [
-      ...(await this.db.all<{ party: SignerParty; person_id: string }>("SELECT party, person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY party", [leaseId])),
-      ...(await this.db.all<{ party: SignerParty; person_id: string }>("SELECT party, person_id FROM rental_lease_cotenant_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id", [leaseId])),
+      ...(await this.db.all<{ id: string; party: SignerParty; person_id: string }>("SELECT id, party, person_id FROM rental_lease_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY party", [leaseId])),
+      ...(await this.db.all<{ id: string; party: SignerParty; person_id: string }>("SELECT id, party, person_id FROM rental_lease_cotenant_signatures WHERE lease_id = ? AND status = 'signee' ORDER BY person_id", [leaseId])),
     ];
     const shared = (await leaseCotenants(this.db, leaseId)).length > 0;
     for (const s of sessions) {
@@ -428,7 +428,12 @@ export class SignaturesBail implements LeaseSignatureState {
       if (result.status !== 'sent') continue;
       if (s.party === 'colocataire') await this.db.run('INSERT INTO rental_lease_cotenant_copy_deliveries (lease_id, person_id, copy_sha256, sent_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [leaseId, s.person_id, copy.content_sha256, this.now().toISOString()]);
       else await this.db.run('INSERT INTO rental_lease_copy_deliveries (lease_id, party, copy_sha256, sent_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [leaseId, s.party, copy.content_sha256, this.now().toISOString()]);
-      await appendEvent(this.journal, { type: 'location.bail_exemplaire', actor: this.actor(viewer), subject: `rental:${listingId}`, data: { rule: 'R108', party: s.party, copy: copy.content_sha256 } }, this.now);
+      await appendEvent(
+        this.journal,
+        // Un colocataire est nommé par sa session de signature : l'avis est à lui seul dans sa réponse d'accès (AU097).
+        { type: 'location.bail_exemplaire', actor: this.actor(viewer), subject: `rental:${listingId}`, data: { rule: 'R108', party: s.party, copy: copy.content_sha256, ...(s.party === 'colocataire' ? { session: s.id } : {}) } },
+        this.now,
+      );
     }
     const sent = await this.db.all<{ party: LeaseParty }>('SELECT party FROM rental_lease_copy_deliveries WHERE lease_id = ? ORDER BY party', [leaseId]);
     return { ok: true, value: { copySha256: copy.content_sha256, sent: sent.map((r) => r.party) } };

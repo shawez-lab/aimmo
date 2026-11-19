@@ -479,8 +479,13 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     await event(9201, 'location.signature_ouverte', { session: 'sig-coloc', party: 'colocataire', lease: 'rental_lease:bail-c', mode: 'essai' });
     await event(9202, 'location.signature_essai', { rule: 'R108', session: 'sig-coloc', party: 'colocataire' });
     await insert('journal', { seq: 9203, at: 't', type: 'location.signature_code_faux', actor: 'ag', subject: 'lease_signature:sig-coloc', data: JSON.stringify({ attempts: 1, blocked: false }), prev_hash: 'p', hash: 'h9203' });
-    expect(await seqs(coloc)).toEqual(expect.arrayContaining([9201, 9202, 9203]));
-    for (const seq of [9201, 9202, 9203]) expect(await seqs(C)).not.toContain(seq);
+    // Son avis d'exemplaire nomme sa session : à elle seule, jamais à C ni au bailleur A.
+    await event(9204, 'location.bail_exemplaire', { rule: 'R108', party: 'colocataire', copy: 'exemplaire-de-c', session: 'sig-coloc' });
+    expect(await seqs(coloc)).toEqual(expect.arrayContaining([9201, 9202, 9203, 9204]));
+    for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(C)).not.toContain(seq);
+    for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(A)).not.toContain(seq);
+    // Ni l'avis du locataire C ni celui du bailleur ne sont à elle.
+    for (const seq of [9105, 9106]) expect(await seqs(coloc)).not.toContain(seq);
     // Un bail et un état des lieux à deux parties ne sont jamais proposés à l'effacement : « à examiner ».
     const tenantPlan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [C]));
     for (const table of ['rental_leases', 'rental_inventories']) expect(tenantPlan.lines.filter((l) => l.table === table).map((l) => l.action)).not.toContain('effacer');

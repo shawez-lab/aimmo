@@ -44,8 +44,8 @@ export interface ViaLocator {
   startsWith?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent que si ces champs du JSON de `data` ont ces valeurs (champ → valeur). */
   jsonIs?: Readonly<Record<string, string>>;
-  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
-  jsonNot?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur, ou l'une de ces valeurs. */
+  jsonNot?: Readonly<Record<string, string | readonly string[]>>;
   /** Les lignes ne comptent que si ces colonnes ont l'une de ces valeurs. */
   only?: Readonly<Record<string, readonly string[]>>;
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
@@ -891,7 +891,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // propre session, ci-dessous), jamais à l'autre partie.
       // Ce qui est fait par le locataire en tant que partie (sa signature de l'état des lieux, son exemplaire du bail)
       // est au locataire seul.
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: 'locataire' } }),
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: ['locataire', 'colocataire'] } }),
       // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
@@ -901,7 +901,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // L'état des lieux du locataire, retrouvé par son bail : le logement et la version au journal, jamais ce que le
       // propriétaire y a signé ; son exemplaire du bail, par l'empreinte de l'exemplaire.
       via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
-      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: 'bailleur' } }),
+      // L'avis d'exemplaire d'un colocataire nomme sa session : il est à lui seul, jamais au locataire ni au bailleur (AU097).
+      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: ['bailleur', 'colocataire'] } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
       via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
