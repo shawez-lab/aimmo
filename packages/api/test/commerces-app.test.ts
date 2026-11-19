@@ -514,6 +514,19 @@ describe('CE12 · la cession avance depuis l’écran', () => {
     expect(text(off.body())).toContain('Vos étapes de cession ne se lisent pas pour le moment.');
   });
 
+  it('[R10] AU101b · l’agent voit ses congés de bail à donner, aux dates du serveur ; une liste illisible le dit', async () => {
+    const t = await run({ 'GET /v1/commerces/taches-bail': ok([{ propertyId: 'b1', reference: 'CE-1', kind: 'conge_triennal', deadline: '2027-10-30', expiry: '2028-04-30' }, { propertyId: 'autre', reference: 'X', kind: 'conge_fin', deadline: '2027-11-01', expiry: '2028-05-01' }]) });
+    await t.click(t.els['commerces-ouvrir']);
+    await t.loadScript();
+    expect(text(t.body())).toContain('Congés de bail à donner');
+    expect(text(t.body())).toContain('Échéance triennale du 30/04/2028 : congé au plus tard le 30/10/2027.');
+    expect(text(t.body())).not.toContain('01/05/2028');
+    const off = await run({ 'GET /v1/commerces/taches-bail': no(500, { ok: false }) });
+    await off.click(off.els['commerces-ouvrir']);
+    await off.loadScript();
+    expect(text(off.body())).toContain('Vos congés de bail ne se lisent pas pour le moment.');
+  });
+
   it('une lecture manquée ne retire aucun geste en silence : demandes, rôle, tâches', async () => {
     const t = await run({ ...OPEN, 'GET /v1/commerces/b1/demandes': no(500, { ok: false }) });
     await t.openB1();

@@ -6,6 +6,7 @@ import {
   PUBLIC_PROPERTY_COLUMNS,
   SHEET_FIELDS,
   SHEET_VISIBILITY,
+  TachesBail,
   checkSheetChanges,
   leaseMilestones,
   minusMonths,
@@ -244,5 +245,30 @@ describe('AU101 · les dates utiles du bail commercial', () => {
     expect(text).toContain('révision indice des loyers commerciaux');
     expect(text).toContain('Prochaine échéance triennale : 2027-03-14, congé du preneur à donner au plus tard le 2026-09-14.');
     expect(text).toContain('Fin du bail : 2030-03-14');
+  });
+});
+
+describeWithSqlite('AU101b · les jours limites de congé en tâches de l’agent', () => {
+  it('[R10] une tâche, une seule, 60 jours avant le jour limite ; rien sans début ni durée ; plus rien quand la fiche change', async () => {
+    const t = await setup();
+    const agent = t.as('agent', t.alex.id);
+    // Aujourd'hui le 7 septembre 2027. Bail du 1er janvier 2019 sur 9 ans : échéance triennale le 31 décembre 2027,
+    // congé au plus tard le 30 juin 2027 (passé) ; fin le 31 décembre 2027, congé au plus tard le 30 juin 2027 aussi.
+    // Un bail du 1er mai 2022 : échéance triennale le 30 avril 2028, congé au plus tard le 30 octobre 2027, dans 53 jours.
+    const near = await t.property('business');
+    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-05-01', leaseYears: 9 })).ok).toBe(true);
+    const far = await t.property('commercial');
+    expect((await t.fiches.update(t.acces, agent, far.id, { leaseStart: '2026-05-01', leaseYears: 9 })).ok).toBe(true);
+    const none = await t.property('business');
+    expect((await t.fiches.update(t.acces, agent, none.id, { leaseYears: 9 })).ok).toBe(true);
+    const bail = new TachesBail(t.db, t.journal, t.fiches, { now: () => new Date(TUESDAY_10H) });
+    expect(await bail.run(t.network.id)).toBe(1);
+    expect(await bail.run(t.network.id)).toBe(0);
+    const r = await bail.tasksOf(agent);
+    expect(r).toEqual({ ok: true, value: [{ propertyId: near.id, reference: near.reference, kind: 'conge_triennal', deadline: '2027-10-30', expiry: '2028-04-30' }] });
+    expect(await bail.tasksOf(t.as('direction', 'd1'))).toMatchObject({ ok: false, rule: 'R16' });
+    // Le début du bail corrigé : l'ancienne tâche ne se montre plus.
+    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-07-01' })).ok).toBe(true);
+    expect(await bail.tasksOf(agent)).toEqual({ ok: true, value: [] });
   });
 });
