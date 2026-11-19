@@ -896,6 +896,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
       via('data', 'rental_lease_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
+      // AU097 · la signature d'un colocataire : ses événements sont à lui seul.
+      via('data', 'rental_lease_cotenant_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
       // L'état des lieux du locataire, retrouvé par son bail : le logement et la version au journal, jamais ce que le
       // propriétaire y a signé ; son exemplaire du bail, par l'empreinte de l'exemplaire.
       via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
@@ -926,6 +928,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
       via('subject', 'offer_proposals', 'id', { prefix: 'proposal:' }),
       via('subject', 'rental_lease_signatures', 'id', { prefix: 'lease_signature:' }),
+      via('subject', 'rental_lease_cotenant_signatures', 'id', { prefix: 'lease_signature:' }),
     ],
     // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
     foreignPersons: ['actor', 'data'],

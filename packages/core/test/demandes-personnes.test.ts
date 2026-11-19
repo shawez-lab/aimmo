@@ -474,6 +474,13 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     const ofColoc = await assembleAccess(db, [coloc]);
     expect(ofColoc.sections.find((s) => s.table === 'rental_lease_copies')!.rows.map((r) => r.lease_id)).toContain('bail-c');
     for (const table of ['rental_inventory_signatures', 'rental_inventory_copies']) expect(ofColoc.sections.find((s) => s.table === table)?.rows ?? []).toEqual([]);
+    // Ses événements de signature (ouverture, signature, code faux) sont à elle, jamais à C [R96].
+    await insert('rental_lease_cotenant_signatures', { ...seeded.get('rental_lease_signatures')![B]!, id: 'sig-coloc', party: 'colocataire', person_id: coloc, lease_id: 'bail-c' });
+    await event(9201, 'location.signature_ouverte', { session: 'sig-coloc', party: 'colocataire', lease: 'rental_lease:bail-c', mode: 'essai' });
+    await event(9202, 'location.signature_essai', { rule: 'R108', session: 'sig-coloc', party: 'colocataire' });
+    await insert('journal', { seq: 9203, at: 't', type: 'location.signature_code_faux', actor: 'ag', subject: 'lease_signature:sig-coloc', data: JSON.stringify({ attempts: 1, blocked: false }), prev_hash: 'p', hash: 'h9203' });
+    expect(await seqs(coloc)).toEqual(expect.arrayContaining([9201, 9202, 9203]));
+    for (const seq of [9201, 9202, 9203]) expect(await seqs(C)).not.toContain(seq);
     // Un bail et un état des lieux à deux parties ne sont jamais proposés à l'effacement : « à examiner ».
     const tenantPlan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [C]));
     for (const table of ['rental_leases', 'rental_inventories']) expect(tenantPlan.lines.filter((l) => l.table === table).map((l) => l.action)).not.toContain('effacer');
