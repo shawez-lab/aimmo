@@ -1466,3 +1466,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 08:11 · VOIE 2 : AU013 puis AU018, b1421bfc (main) et 252e757 (branche, #684), relancé oui
 - 2026-11-19 08:39 · AU006 · étiquettes énergie et climat en couleur sur la page et la fiche, classe du bien en avant ; relecture forte 2 P1 corrigés, Codex rien ; fusionnée (#695, afa6ff4e) · prochaine : AU007
 - 2026-11-19 08:39 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié (AU007)
+- 2026-11-19 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:13 par la séance relancée à 08:11, qui travaille sur AU019 #698)
