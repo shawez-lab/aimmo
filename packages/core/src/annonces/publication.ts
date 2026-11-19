@@ -129,7 +129,7 @@ export class Publication {
   }
 
   /** Ce qui doit être publié maintenant, ou la raison du retrait. Toute publication passe par la porte de D05 [R42]. */
-  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string; mediaSheet: number | null } | { retract: RetractReason }> {
+  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string; mediaSheet: number | null; draftSheet: number | null } | { retract: RetractReason }> {
     const state = STATE_OF[status];
     if (state === null) return { retract: 'bien_retire' };
     const gate = await this.diffusion.canDiffuse(networkId, propertyId, this.now());
@@ -145,6 +145,7 @@ export class Publication {
     return {
       draftId: draft.id,
       mediaSheet,
+      draftSheet: draft.sheetVersion,
       publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet) },
     };
   }
@@ -203,7 +204,10 @@ export class Publication {
     if ('publish' in want || (before && before.state !== 'retiree')) {
       const content: Omit<ListingPayload, 'version'> =
         'publish' in want ? want.publish : { reference: property.reference, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] };
-      const hash = await sha256(JSON.stringify(content));
+      // Une fiche changée depuis la validation du texte (une photo dite retouchée, par exemple) fait une version de plus,
+      // même au contenu identique : ses légendes se lisent sur la fiche de cette version (AU066). Sinon, l'empreinte
+      // reste celle du seul contenu.
+      const hash = await sha256(JSON.stringify(content) + ('publish' in want && want.mediaSheet !== want.draftSheet ? `|fiche:${want.mediaSheet}` : ''));
       const reason = 'publish' in want ? 'publication' : want.retract;
       // La version n'est créée que si son contenu diffère de la dernière, dans la même instruction : deux passages
       // simultanés ne créent jamais deux fois la même version.
