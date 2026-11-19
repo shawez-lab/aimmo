@@ -261,7 +261,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
-- Statut : en cours (voie 2)
+- Statut : bloquée : vérification GitHub en échec sur des délais de 5 s dépassés (runner chargé), tests sans lien ; à fusionner dès qu'elle passe
+- Reste : proposition #700 (`324a04f4`), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
 - Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
 - Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
