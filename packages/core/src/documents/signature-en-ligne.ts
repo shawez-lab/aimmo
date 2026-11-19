@@ -35,7 +35,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
-import { ControlesSignature, documentMandants, type SignatureCheck } from './controles.ts';
+import { ControlesSignature, documentMandants, documentProxies, type SignatureCheck } from './controles.ts';
 import { escapeHtml, sha256 } from './modeles.ts';
 import { SignaturePapier } from './signature-papier.ts';
 import type { OutboundChannel } from '../envoi/canaux.ts';
@@ -148,7 +148,13 @@ export class SignatureEnLigne {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    private readonly options: { now?: () => Date; newId?: () => string; channels?: readonly OutboundChannel[] } = {},
+    private readonly options: {
+      now?: () => Date;
+      newId?: () => string;
+      channels?: readonly OutboundChannel[];
+      /** Le stockage des scans du mandat, où la procuration d'un mandant représenté se vérifie (AU059). */
+      scans?: { has(ref: string): Promise<boolean> } | null;
+    } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -270,9 +276,13 @@ export class SignatureEnLigne {
     const docKind = (await this.db.first<{ kind: string }>('SELECT kind FROM documents WHERE id = ?', [documentId]))!.kind;
     const mode: SignatureMode = MANDATE_KINDS.includes(docKind) ? (await this.modeFor(viewer.networkId)).mode : 'essai';
     if (await this.signedBy(documentId, doc.person_id, signer, contentHash, mode === 'reel' ? 'reel' : undefined)) return { ok: false, rule: null, code: 'already_signed' };
-    // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
-    const consent = await this.fiche.hasConsentInForce(signer, ONLINE_SIGNATURE_PURPOSE, 'email');
-    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: signer, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
+    // Un mandant représenté par procuration (AU059) : le code part à son représentant, qui signe pour lui.
+    const proxy = (await documentProxies(this.db, documentId)).find((p) => p.mandantId === signer) ?? null;
+    if (proxy && !(await this.seesInFull(viewer, proxy.proxyId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    const recipient = proxy ? proxy.proxyId : signer;
+    // Celui qui reçoit le code accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
+    const consent = await this.fiche.hasConsentInForce(recipient, ONLINE_SIGNATURE_PURPOSE, 'email');
+    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: recipient, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
@@ -280,16 +290,26 @@ export class SignatureEnLigne {
       `INSERT INTO signature_sessions (id, network_id, document_id, content_hash, code_hash, expires_at, attempts, status, created_by, created_at, signer_person_id, mode) VALUES (?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?, ?, ?)`,
       [id, viewer.networkId, documentId, contentHash, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString(), signer, mode],
     );
-    const hello = await this.greeting(signer);
+    if (proxy) {
+      await this.db.run('INSERT INTO signature_session_proxies (session_id, network_id, document_id, mandant_person_id, proxy_person_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+        id,
+        viewer.networkId,
+        documentId,
+        signer,
+        proxy.proxyId,
+        this.now().toISOString(),
+      ]);
+    }
+    const hello = await this.greeting(recipient);
     const sent = await this.envoisFor(mode)!.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
-      personId: signer,
+      personId: recipient,
       channel: 'email',
       kind: 'alert',
       purpose: ONLINE_SIGNATURE_PURPOSE,
       subject: `signature:${id}`,
-      fallbackTexts: [`${hello}Votre code de signature AIMMO : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.${mode === 'essai' ? ' Signature d’essai, sans valeur juridique.' : ''}`],
+      fallbackTexts: [`${hello}${proxy ? 'Vous signez en vertu de votre procuration. ' : ''}Votre code de signature AIMMO : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.${mode === 'essai' ? ' Signature d’essai, sans valeur juridique.' : ''}`],
       figures: [code, CODE_TTL_MINUTES],
       secrets: [{ kind: 'code', value: code }],
     });

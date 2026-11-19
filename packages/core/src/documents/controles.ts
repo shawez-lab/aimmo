@@ -41,8 +41,22 @@ export async function documentMandants(db: SqlDatabase, documentId: string, firs
   const rows = await db.all<{ person_id: string }>('SELECT person_id FROM document_co_mandants WHERE document_id = ? ORDER BY position', [documentId]);
   return [firstPersonId, ...rows.map((r) => r.person_id)];
 }
+export const POWER_KINDS = ['notariee', 'sous_seing_prive'] as const;
+export type PowerKind = (typeof POWER_KINDS)[number];
+
+/** Les procurations d'un document (AU059) : qui est représenté, par qui ; vide pour un document sans procuration. */
+export async function documentProxies(db: SqlDatabase, documentId: string): Promise<{ mandantId: string; proxyId: string; powerKind: PowerKind; grantedOn: string; powerRef: string }[]> {
+  // Une base d'avant la migration 4020 n'a aucune procuration.
+  if (!(await db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_proxies'`))) return [];
+  const rows = await db.all<{ mandant_person_id: string; proxy_person_id: string; power_kind: PowerKind; granted_on: string; power_ref: string }>(
+    'SELECT mandant_person_id, proxy_person_id, power_kind, granted_on, power_ref FROM document_proxies WHERE document_id = ? ORDER BY mandant_person_id',
+    [documentId],
+  );
+  return rows.map((r) => ({ mandantId: r.mandant_person_id, proxyId: r.proxy_person_id, powerKind: r.power_kind, grantedOn: r.granted_on, powerRef: r.power_ref }));
+}
+
 export { IDENTITY_PIECES, type IdentityPiece } from '../conformite/pieces-identite.ts';
-export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire'] as const;
+export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire', 'procuration'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 export interface CheckLine {
@@ -82,7 +96,16 @@ export class ControlesSignature {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; newId?: () => string; settings?: ControlSettings } = {},
+    private readonly options: {
+      now?: () => Date;
+      newId?: () => string;
+      settings?: ControlSettings;
+      /**
+       * Le stockage des scans du mandat (D14), où la procuration d'un mandant représenté doit se trouver (AU059). Nul :
+       * aucun stockage, la procuration ne se vérifie pas et rien ne se signe ; absent : non vérifié (appelants internes).
+       */
+      scans?: { has(ref: string): Promise<boolean> } | null;
+    } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -196,6 +219,10 @@ export class ControlesSignature {
     lines.push(await this.fees(doc.network_id, doc.facts, amendment));
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
+    // Un mandant représenté (AU059) : la procuration est dans le stockage, l'identité du représentant vérifiée, et le
+    // représentant n'est pas devenu, par une réunion de fiches, l'un des mandants [R41].
+    const proxies = await documentProxies(this.db, doc.id);
+    if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
     // Un mandat préparé par questionnaire (HX33) : un écart de prix, un avis ou un prix absents doivent avoir été
@@ -225,6 +252,21 @@ export class ControlesSignature {
       this.now,
     );
     return { ok: true, value: result };
+  }
+
+  private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'procuration', ok, code });
+    const mandantRoots = new Set<string>();
+    for (const id of mandants) mandantRoots.add(await this.unique.rootOf(id));
+    for (const p of proxies) {
+      if (mandantRoots.has(await this.unique.rootOf(p.proxyId))) return line(false, 'proxy_is_mandant');
+      const scans = this.options.scans;
+      if (scans === null) return line(false, 'depot_ferme');
+      if (scans && !(await scans.has(p.powerRef))) return line(false, 'power_absent');
+      const identity = signedAt ? await this.identityAtSignature(networkId, p.proxyId, signedAt) : await this.identity(networkId, p.proxyId, at);
+      if (!identity.ok) return line(false, `proxy_${identity.code}`);
+    }
+    return line(true, 'power_checked');
   }
 
   private async linkedMandate(networkId: string, mandateId: string | null): Promise<CheckLine> {

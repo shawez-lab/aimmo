@@ -19,7 +19,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { mandateExpired } from './conditions.ts';
-import { documentMandants } from './controles.ts';
+import { POWER_KINDS, documentMandants, type PowerKind } from './controles.ts';
 import { MANDATE_DESIGNATION_FIELDS, formatAddress, formatParcels, latestDesignation, latestDomicile } from './designation.ts';
 
 /** Prénom et nom : l'un sans l'autre ne suffit pas à identifier un mandant. */
@@ -126,13 +126,32 @@ export interface GenerateRequest {
    * mandat qu'il modifie.
    */
   coMandantIds?: string[];
+  /**
+   * Les mandants représentés par procuration (AU059) : le mandant (le premier ou un autre mandant), son représentant
+   * (une autre fiche, vue en entier, qui n'est pas un mandant), la sorte de procuration, son jour, et son scan rangé
+   * avec ceux du mandat du bien. Le document nomme la partie et son représentant ; le représentant signe pour elle.
+   */
+  proxies?: ProxyInput[];
 }
+
+export interface ProxyInput {
+  mandantId: string;
+  proxyId: string;
+  powerKind: PowerKind;
+  /** Le jour de la procuration, `AAAA-MM-JJ`. */
+  grantedOn: string;
+  /** Le scan de la procuration, déposé comme celui du mandat : `mandats/<bien>/<identifiant>.<ext>`. */
+  powerRef: string;
+}
+const POWER_LABEL: Record<PowerKind, string> = { notariee: 'notariée', sous_seing_prive: 'sous seing privé' };
+const POWER_REF = /^mandats\/([A-Za-z0-9_-]{1,64})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:pdf|jpg|png)$/;
+
 
 /** Au plus dix mandants par document : le premier et neuf autres. */
 export const MAX_CO_MANDANTS = 9;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' | 'no_designation_field' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' | 'no_designation_field' | 'bad_proxies' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -379,6 +398,48 @@ export class Modeles {
       }
     }
 
+    // Les procurations (AU059) : chacune pour un mandant du document, une fois ; le représentant est une autre fiche,
+    // vue en entier, qui n'est ni un mandant ni réunie à l'un d'eux [R16, R41].
+    const proxies: (ProxyInput & { proxyName: string | null; memberIds: string[] })[] = [];
+    if (request.proxies !== undefined) {
+      const list = request.proxies;
+      const mandantRoots = [fiche.person.id, ...coMandants.map((c) => c.id)];
+      const mandantMembers = new Set([...fiche.members.map((m) => m.id), ...coMandants.flatMap((c) => c.memberIds)]);
+      const today = localTime(this.now(), TIME_ZONE).date;
+      if (!Array.isArray(list) || list.length === 0 || list.length > mandantRoots.length) return { ok: false, rule: null, code: 'bad_proxies' };
+      for (const raw of list as unknown[]) {
+        const p = raw as Partial<ProxyInput> | null;
+        if (!p || typeof p !== 'object' || Object.keys(p).some((k) => !['mandantId', 'proxyId', 'powerKind', 'grantedOn', 'powerRef'].includes(k))) return { ok: false, rule: null, code: 'bad_proxies' };
+        if (typeof p.mandantId !== 'string' || !mandantRoots.includes(p.mandantId) || proxies.some((q) => q.mandantId === p.mandantId)) return { ok: false, rule: null, code: 'bad_proxies' };
+        if (typeof p.powerKind !== 'string' || !(POWER_KINDS as readonly string[]).includes(p.powerKind)) return { ok: false, rule: null, code: 'bad_proxies' };
+        if (typeof p.grantedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.grantedOn) || new Date(`${p.grantedOn}T12:00:00Z`).toISOString().slice(0, 10) !== p.grantedOn || p.grantedOn > today) return { ok: false, rule: null, code: 'bad_proxies' };
+        // Le scan de la procuration est rangé avec ceux du mandat de ce bien, jamais d'un autre.
+        const ref = typeof p.powerRef === 'string' ? POWER_REF.exec(p.powerRef) : null;
+        if (!ref || ref[1] !== property.id) return { ok: false, rule: null, code: 'bad_proxies' };
+        if (typeof p.proxyId !== 'string' || p.proxyId === '') return { ok: false, rule: null, code: 'bad_proxies' };
+        const proxy = await this.acces.readFiche(viewer, p.proxyId);
+        if (!proxy.ok) return proxy;
+        if (proxy.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${p.proxyId}`);
+        if (proxy.value.members.some((m) => mandantMembers.has(m.id))) return { ok: false, rule: null, code: 'bad_proxies' };
+        proxies.push({
+          mandantId: p.mandantId,
+          proxyId: proxy.value.person.id,
+          powerKind: p.powerKind as PowerKind,
+          grantedOn: p.grantedOn,
+          powerRef: p.powerRef!,
+          proxyName: fullName(proxy.value.person.first_name, proxy.value.person.last_name),
+          memberIds: proxy.value.members.map((m) => m.id),
+        });
+      }
+    }
+    // Le nom d'un mandant représenté dit son représentant et la procuration ; un représentant sans nom rend le champ manquant.
+    const represented = (id: string, name: string | null): string | null => {
+      const p = proxies.find((q) => q.mandantId === id);
+      if (!p || name === null) return name;
+      if (p.proxyName === null) return null;
+      return `${name}, ayant pour représentant ${p.proxyName} en vertu d’une procuration ${POWER_LABEL[p.powerKind]} du ${p.grantedOn.slice(8, 10)}/${p.grantedOn.slice(5, 7)}/${p.grantedOn.slice(0, 4)}`;
+    };
+
     const agentId = viewer.role === 'agent' ? viewer.userId : (fiche.members.map((m) => m.agent_id).find((a) => a !== null) ?? property.agent_id);
     if (!agentId) return this.refuse(viewer, 'person', 'not_assigned', `person:${request.personId}`);
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ? AND network_id = ?', [agentId, viewer.networkId]);
@@ -398,7 +459,7 @@ export class Modeles {
     const base: Record<string, string | null> = {
       // Le mandant est identifié par son prénom et son nom : l'un sans l'autre ne suffit pas.
       // Plusieurs mandants : tous nommés, dans l'ordre ; un seul nom qui manque rend le champ manquant.
-      'mandant.nom': namesOf([fullName(fiche.person.first_name, fiche.person.last_name), ...coMandants.map((c) => c.name)]),
+      'mandant.nom': namesOf([represented(fiche.person.id, fullName(fiche.person.first_name, fiche.person.last_name)), ...coMandants.map((c) => represented(c.id, c.name))]),
       'bien.reference': text(property.reference),
       'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
       'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
@@ -435,6 +496,8 @@ export class Modeles {
     const fields = JSON.parse(template.fields) as string[];
     // Plusieurs mandants : le modèle doit les nommer tous, sinon le document ne dirait pas qui s'engage [R40, R41].
     if (coMandants.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_co_mandants' };
+    // Un mandant représenté : le modèle doit nommer la partie et son représentant (AU059) [R40, R41].
+    if (proxies.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_proxies' };
     // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
     const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
     const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
@@ -465,9 +528,15 @@ export class Modeles {
     for (const co of coMandants) {
       await this.db.run('INSERT INTO document_co_mandants (document_id, person_id, network_id, position, added_at) VALUES (?, ?, ?, ?, ?)', [id, co.id, viewer.networkId, ++position, at]);
     }
+    for (const p of proxies) {
+      await this.db.run(
+        'INSERT INTO document_proxies (document_id, network_id, mandant_person_id, proxy_person_id, power_kind, granted_on, power_ref, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, viewer.networkId, p.mandantId, p.proxyId, p.powerKind, p.grantedOn, p.powerRef, this.actor(viewer), at],
+      );
+    }
     await appendEvent(
       this.journal,
-      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length, ...(coMandants.length > 0 ? { coMandants: coMandants.length } : {}) } },
+      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length, ...(coMandants.length > 0 ? { coMandants: coMandants.length } : {}), ...(proxies.length > 0 ? { proxies: proxies.length } : {}) } },
       this.now,
     );
     return {
