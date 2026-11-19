@@ -35,7 +35,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ConfidentialiteCommerce } from './confidentialite.ts';
 import { ACTIVITY_LABEL } from './presentation.ts';
-import type { BusinessSheet, FicheCommerce } from './fiche.ts';
+import { leaseMilestones, type BusinessSheet, type FicheCommerce } from './fiche.ts';
 
 /** Le stockage des documents du dossier : un texte par référence, ou rien. */
 export interface DossierStorage {
@@ -181,10 +181,11 @@ const euros = (cents: number): string => {
 };
 
 const LEASE_USE: Record<string, string> = { all_trades: 'tous commerces', named_activity: 'activité désignée', named_and_related: 'activité désignée et connexes' };
+const LEASE_INDEX: Record<string, string> = { ilc: 'indice des loyers commerciaux', ilat: 'indice des loyers des activités tertiaires', icc: 'indice du coût de la construction', aucun: 'sans indexation' };
 const LEASE_ASSIGNMENT: Record<string, string> = { free: 'libre', landlord_approval: 'avec l’accord du bailleur', with_business_only: 'avec le fonds seulement' };
 
 /** La fiche complète, en texte, pour la première page du dossier. */
-export function sheetText(sheet: BusinessSheet, reference: string): string {
+export function sheetText(sheet: BusinessSheet, reference: string, today: string | null = null): string {
   const lines = [`Bien : ${reference}.`];
   if (sheet.activity) lines.push(`Activité : ${ACTIVITY_LABEL[sheet.activity]}.`);
   if (sheet.signName) lines.push(`Enseigne : ${sheet.signName}.`);
@@ -198,7 +199,14 @@ export function sheetText(sheet: BusinessSheet, reference: string): string {
   if (sheet.leaseAnnualRentCents !== null) lease.push(`loyer annuel ${euros(sheet.leaseAnnualRentCents)}`);
   if (sheet.leaseUse) lease.push(`destination ${LEASE_USE[sheet.leaseUse]}`);
   if (sheet.leaseAssignment) lease.push(`cession ${LEASE_ASSIGNMENT[sheet.leaseAssignment]}`);
+  if (sheet.leaseIndex) lease.push(`révision ${LEASE_INDEX[sheet.leaseIndex]}`);
   if (lease.length > 0) lines.push(`Bail commercial : ${lease.join(', ')}.`);
+  // Les dates utiles à la cession, calculées par le code depuis le début et la durée du bail (AU101).
+  const dates = today ? leaseMilestones(sheet, today) : null;
+  if (dates) {
+    if (dates.nextTriennial) lines.push(`Prochaine échéance triennale : ${dates.nextTriennial}, congé du preneur à donner au plus tard le ${dates.triennialNoticeBy}.`);
+    lines.push(dates.ended ? `Bail arrivé à son terme le ${dates.leaseEnd} : il se prolonge tant qu’aucun congé n’est donné.` : `Fin du bail : ${dates.leaseEnd}, congé à donner au plus tard le ${dates.endNoticeBy}.`);
+  }
   if (sheet.employees !== null) lines.push(`Salariés : ${sheet.employees}.`);
   if (sheet.equipment.length > 0) lines.push(`Matériel : ${sheet.equipment.join(', ')}.`);
   if (sheet.licenses.length > 0) lines.push(`Autorisations : ${sheet.licenses.join(', ')}.`);
@@ -669,7 +677,7 @@ export class DossierCommerce {
       // Un document changé depuis qu'il a été rangé n'est pas servi : ce n'est plus celui que l'agent a mis au dossier.
       documents.push({ title: d.title, content: content !== null && (await sha256(content)) === d.content_sha256 ? content : null });
     }
-    return { name, sheet: sheet ? sheetText(sheet.sheet, property?.reference ?? '') : null, documents };
+    return { name, sheet: sheet ? sheetText(sheet.sheet, property?.reference ?? '', this.now().toISOString().slice(0, 10)) : null, documents };
   }
 
   /** Qui voit le bien en entier lit ; l'agent du bien et la direction écrivent [R16]. */

@@ -96,6 +96,7 @@ const LICENSE_LABELS: Record<License, string> = {
   autre: 'Autre autorisation',
 };
 const LEASE_USE_LABELS = { all_trades: 'Tous commerces', named_activity: 'Activité nommée', named_and_related: 'Activité nommée et connexes' };
+const LEASE_INDEX_LABELS = { ilc: 'Indice des loyers commerciaux', ilat: 'Indice des activités tertiaires', icc: 'Coût de la construction', aucun: 'Sans indexation' };
 const LEASE_ASSIGNMENT_LABELS = { free: 'Cession libre', landlord_approval: 'Avec l’accord du bailleur', with_business_only: 'Avec le fonds seulement' };
 /** Le nom de chaque champ de la fiche, pour dire lequel le serveur a refusé. */
 const SHEET_LABELS = {
@@ -192,6 +193,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
   var CE_LICENSES = ${JSON.stringify(LICENSE_LABELS)};
   var CE_LEASE_USE = ${JSON.stringify(LEASE_USE_LABELS)};
   var CE_LEASE_ASSIGN = ${JSON.stringify(LEASE_ASSIGNMENT_LABELS)};
+  var CE_LEASE_INDEX = ${JSON.stringify(LEASE_INDEX_LABELS)};
   var CE_SHEET = ${JSON.stringify(SHEET_LABELS)};
   var CE_SCALE = ${JSON.stringify(SCALE_LABELS)};
   var CE_DATES = ${JSON.stringify(DATE_LABELS)};
@@ -223,13 +225,15 @@ globalThis.AIMMO_COMMERCES = function (t) {
       if (!me.ok) return me;
       return me.body.data && me.body.data.role === 'agent' ? send('/v1/commerces/taches-cession', 'GET') : null;
     });
-    return Promise.all([send('/v1/commerces', 'GET'), tasks, scales]).then(function (both) {
+    var lease = who.then(function (me) { return me.ok && me.body.data && me.body.data.role === 'agent' ? send('/v1/commerces/taches-bail', 'GET') : null; });
+    return Promise.all([send('/v1/commerces', 'GET'), tasks, scales, lease]).then(function (both) {
       var res = both[0];
       if (mine !== t.session() || res.gone) return false;
       if (!res.ok) { ceState(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'); return false; }
       var list = Array.isArray(res.body.data) ? res.body.data : [];
       var body = $('commerces-corps');
       ceTasks(body, both[1], list);
+      ceLease(body, both[3], list);
       ceScales(body, both[2]);
       if (both[2]) ceModel(body);
       if (both[1] || both[2]) ceRepreneurs(body);
@@ -265,6 +269,26 @@ globalThis.AIMMO_COMMERCES = function (t) {
       li.appendChild(el('strong', title));
       li.appendChild(el('p', (CE_STEPS[k.step] || 'Étape') + (k.due ? ', avant le ' + ceDay(k.due) : ' : à saisir')));
       li.appendChild(button('Ouvrir ce commerce', function () { openCommerce(c.propertyId, title, c.kind); }));
+      ul.appendChild(li);
+    });
+    b.appendChild(ul);
+    body.appendChild(b);
+  }
+  /* AU101b · Les jours limites de congé des baux, lus du serveur, jamais calculés ici. */
+  function ceLease(body, res, list) {
+    if (!res || res.gone) return;
+    if (!res.ok) { body.appendChild(el('p', 'Vos congés de bail ne se lisent pas pour le moment.', 'doux')); return; }
+    var tasks = Array.isArray(res.body.data) ? res.body.data : [];
+    if (!tasks.length) return;
+    var b = el('section', null, 'bloc');
+    b.appendChild(el('h3', 'Congés de bail à donner'));
+    var ul = el('ul', null, 'liste');
+    /* La tâche porte sa référence : elle se montre même pour un bien hors des 200 premiers de la liste. */
+    tasks.forEach(function (k) {
+      if (!k || !ID.test(k.propertyId) || typeof k.reference !== 'string') return;
+      var li = el('li');
+      li.appendChild(el('strong', 'Bien ' + k.reference));
+      li.appendChild(el('p', (k.kind === 'conge_triennal' ? 'Échéance triennale du ' : 'Fin du bail le ') + ceDay(k.expiry) + ' : congé au plus tard le ' + ceDay(k.deadline) + '.'));
       ul.appendChild(li);
     });
     b.appendChild(ul);
@@ -376,6 +400,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var mbasis = business ? null : ceInput(f, 'ce-fiche-vl-base', 'Ce qui la fonde : comparables, source', cur.marketRentBasis);
     var use = ceSelect(f, 'ce-fiche-bail-destination', 'Destination du bail', CE_LEASE_USE, cur.leaseUse);
     var assign = ceSelect(f, 'ce-fiche-bail-cession', 'Clause de cession du bail', CE_LEASE_ASSIGN, cur.leaseAssignment);
+    var index = ceSelect(f, 'ce-fiche-bail-indice', 'Indice de révision du loyer', CE_LEASE_INDEX, cur.leaseIndex);
     var staff = business ? ceInput(f, 'ce-fiche-salaries', 'Nombre de salariés', cur.employees) : null;
     var gear = field(f, 'ce-fiche-materiel', 'Matériel, une ligne par élément', 'textarea');
     gear.value = (cur.equipment || []).join('\\n');
@@ -418,6 +443,7 @@ globalThis.AIMMO_COMMERCES = function (t) {
       if (mrent) { next.marketAnnualRentCents = money(mrent, CE_SHEET.marketAnnualRentCents); next.marketRentBasis = text(mbasis); }
       next.leaseUse = use.value || null;
       next.leaseAssignment = assign.value || null;
+      next.leaseIndex = index.value || null;
       next.equipment = String(gear.value || '').split('\\n').map(function (x) { return x.trim(); }).filter(Boolean);
       next.licenses = Object.keys(CE_LICENSES).filter(function (k) { return boxes[k].checked; });
       if (staff) next.employees = whole(staff, CE_SHEET.employees);

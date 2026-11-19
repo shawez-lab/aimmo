@@ -1443,3 +1443,11 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 00:07 · VOIE 3 : AU098 (#671, outre-mer) et AU102 (#673, local libre) fusionnées ; AU017 (#668) remise à jour après conflit ; AU098b ajoutée ; question AU100 posée à l'avocat (H72)
 - 2026-11-19 00:22 · AU012 · titre de l'agent réglé par la direction dans une liste fermée, « agent immobilier » par défaut (H24) ; page du bien, page et accueil du site de l'agent, supports imprimés ; relecture forte 1 P1 et Codex 1 P0 corrigés ; fusionnée (#672, 9e156f5d) · prochaine : AU013
 - 2026-11-19 00:22 · VOIE 2 : AU012, 9e156f5d, relancé non (les trois questions répondent oui, mais la séance horaire part vers 00:53 : une relance ne gagnerait qu’une demi-heure et ferait deux séances voie 2 à la suite)
+- 2026-11-19 01:11 · VOIE 3 : AU098b (#674) fusionnée ; AU101 (#676) corrigée après Codex (expiration la veille de l'anniversaire) ; AU017 (#668) relancée (délai dépassé hors sujet)
+- 2026-11-19 01:48 · VOIE 3 : AU017 (#668, décence et règle locale) et AU101 (#676, bail commercial) fusionnées ; AU101b (#677) corrigée après Codex (journal, reprise du bien, échéance du jour)
+- 2026-11-19 02:27 · VOIE 3 : AU016 (#679, gel des loyers F/G) fusionnée ; AU101b (#677) : carte des demandes et écran corrigés
+- 2026-11-19 03:00 · VOIE 3 : réserve le rapprochement acquéreurs de l'audit (AU070-074, AU115), même fichier, encore non commencé
+- 2026-11-19 03:32 · AU013 · factures réelles (suite à part, mentions des identités, dépôt avec XML, suivi de la plateforme) prête dans #678, Codex sans remarque, mais la vérification GitHub dépasse 25 minutes (deux essais, main aussi touché) : non fusionnée · prochaine : fusionner #678 dès que la vérification passe
+- 2026-11-19 03:32 · VOIE 2 : relance refusée, question 2 (la tâche de cette séance n'a pas pu être terminée : vérification GitHub hors délai, une relance attendrait la même chose)
+- 2026-11-19 03:32 · VOIE 2 : AU013, d2b7399 (branche, #678), relancé non
+- 2026-11-19 03:39 · VOIE 3 : AU101b (#677, congés de bail en tâches) fusionnée ; #681 (AU071, AU115) corrigée après Codex

@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import {
   ACTIVITIES,
@@ -6,7 +6,12 @@ import {
   PUBLIC_PROPERTY_COLUMNS,
   SHEET_FIELDS,
   SHEET_VISIBILITY,
+  TachesBail,
   checkSheetChanges,
+  leaseMilestones,
+  minusMonths,
+  sheetText,
+  EMPTY_SHEET,
   visibilityOf,
 } from '../src/commerces/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -110,7 +115,7 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     expect(cols.sort()).toEqual(Object.keys(SHEET_VISIBILITY).sort());
     expect(cols.filter((c) => visibilityOf(c) === 'public')).toEqual(['activity']);
     // Chaque champ de la fiche a sa colonne.
-    expect(SHEET_FIELDS.length).toBe(13);
+    expect(SHEET_FIELDS.length).toBe(14);
   });
 
   it('[R110] [R09] la vue publique ne porte ni enseigne, ni exercice, ni loyer, ni bail, ni prix, même quand la fiche les porte', async () => {
@@ -213,5 +218,75 @@ describeWithSqlite('CE01 · fiche du commerce', () => {
     const home = await t.property('home');
     expect(await t.fiches.update(t.acces, t.as('agent', t.alex.id), home.id, { activity: 'restaurant' })).toMatchObject({ ok: false, code: 'sorte' });
     expect(await t.count('SELECT count(*) AS n FROM business_sheets')).toBe(0);
+  });
+});
+
+describe('AU101 · les dates utiles du bail commercial', () => {
+  it('[R10] échéances triennales, fin et jours limites des congés, par le code ; rien sans début ni durée', () => {
+    // L'exemple de service-public.fr : un bail du 1er juillet 2014 sur 9 ans expire le 30 juin 2023.
+    expect(leaseMilestones({ leaseStart: '2014-07-01', leaseYears: 9 }, '2014-07-01')).toMatchObject({ nextTriennial: '2017-06-30', leaseEnd: '2023-06-30', endNoticeBy: '2022-12-30' });
+    const lease = { leaseStart: '2021-03-15', leaseYears: 9 };
+    expect(leaseMilestones(lease, '2026-11-19')).toEqual({ nextTriennial: '2027-03-14', triennialNoticeBy: '2026-09-14', leaseEnd: '2030-03-14', endNoticeBy: '2029-09-14', ended: false });
+    // Le jour même de l'échéance, elle est encore la prochaine ; le lendemain, seule la fin compte.
+    expect(leaseMilestones(lease, '2027-03-14')).toMatchObject({ nextTriennial: '2027-03-14' });
+    expect(leaseMilestones(lease, '2027-03-15')).toMatchObject({ nextTriennial: null, triennialNoticeBy: null, leaseEnd: '2030-03-14' });
+    expect(leaseMilestones(lease, '2030-03-14')).toMatchObject({ ended: false });
+    expect(leaseMilestones(lease, '2030-03-15')).toMatchObject({ ended: true });
+    // Un bail commencé un 29 février : l'anniversaire tombe le 28 les années ordinaires, l'échéance la veille.
+    expect(leaseMilestones({ leaseStart: '2024-02-29', leaseYears: 9 }, '2025-01-01')).toMatchObject({ nextTriennial: '2027-02-27', triennialNoticeBy: '2026-08-27' });
+    expect(minusMonths('2027-08-31', 6)).toBe('2027-02-28');
+    expect(leaseMilestones({ leaseStart: null, leaseYears: 9 }, '2026-11-19')).toBeNull();
+    expect(leaseMilestones({ leaseStart: '2021-03-15', leaseYears: null }, '2026-11-19')).toBeNull();
+  });
+  it('[R110] l’indice de révision se range dans la liste fermée, et le dossier écrit les dates', () => {
+    expect(checkSheetChanges({ leaseIndex: 'ilc' })).toMatchObject({ ok: true, value: { leaseIndex: 'ilc' } });
+    expect(checkSheetChanges({ leaseIndex: 'irl' })).toMatchObject({ ok: false, field: 'leaseIndex' });
+    const text = sheetText({ ...EMPTY_SHEET, fiscalYears: [], equipment: [], licenses: [], leaseStart: '2021-03-15', leaseYears: 9, leaseIndex: 'ilc' }, 'C-1', '2026-11-19');
+    expect(text).toContain('révision indice des loyers commerciaux');
+    expect(text).toContain('Prochaine échéance triennale : 2027-03-14, congé du preneur à donner au plus tard le 2026-09-14.');
+    expect(text).toContain('Fin du bail : 2030-03-14');
+  });
+});
+
+describeWithSqlite('AU101b · les jours limites de congé en tâches de l’agent', () => {
+  it('[R10] une tâche, une seule, 60 jours avant le jour limite ; rien sans début ni durée ; plus rien quand la fiche change', async () => {
+    const t = await setup();
+    const agent = t.as('agent', t.alex.id);
+    // Aujourd'hui le 7 septembre 2027. Bail du 1er janvier 2019 sur 9 ans : échéance triennale le 31 décembre 2027,
+    // congé au plus tard le 30 juin 2027 (passé) ; fin le 31 décembre 2027, congé au plus tard le 30 juin 2027 aussi.
+    // Un bail du 1er mai 2022 : échéance triennale le 30 avril 2028, congé au plus tard le 30 octobre 2027, dans 53 jours.
+    const near = await t.property('business');
+    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-05-01', leaseYears: 9 })).ok).toBe(true);
+    const far = await t.property('commercial');
+    expect((await t.fiches.update(t.acces, agent, far.id, { leaseStart: '2026-05-01', leaseYears: 9 })).ok).toBe(true);
+    const none = await t.property('business');
+    expect((await t.fiches.update(t.acces, agent, none.id, { leaseYears: 9 })).ok).toBe(true);
+    const bail = new TachesBail(t.db, t.journal, t.fiches, { now: () => new Date(TUESDAY_10H) });
+    expect(await bail.run(t.network.id)).toBe(1);
+    expect(await bail.run(t.network.id)).toBe(0);
+    const r = await bail.tasksOf(agent);
+    expect(r).toEqual({ ok: true, value: [{ propertyId: near.id, reference: near.reference, kind: 'conge_triennal', deadline: '2027-10-30', expiry: '2028-04-30' }] });
+    expect(await bail.tasksOf(t.as('direction', 'd1'))).toMatchObject({ ok: false, rule: 'R16' });
+    // Chaque fiche lue pour la liste est au journal, avant la réponse [R16].
+    expect(await t.count("SELECT COUNT(*) AS n FROM journal WHERE type = 'commerces.bail.lu' AND subject = ?", [`property:${near.id}`])).toBe(1);
+    // Le bien repris par Sam : la tâche passe avec lui, Alex ne la voit plus.
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, near.id]);
+    expect((await bail.tasksOf(t.as('agent', t.sam.id))).ok && (await bail.tasksOf(t.as('agent', t.sam.id)))).toMatchObject({ value: [{ propertyId: near.id, deadline: '2027-10-30' }] });
+    expect(await bail.tasksOf(agent)).toEqual({ ok: true, value: [] });
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.alex.id, near.id]);
+    // Une correction qui garde le jour limite montre l'échéance de la fiche du jour (le cas relevé par Codex) : au
+    // 15 mars 2028, un bail du 31 octobre 2022 expire le 30 octobre 2028, congé au plus tard le 30 avril 2028 ; corrigé au
+    // 1er novembre 2022, il expire le 31 octobre 2028, et le jour limite reste le 30 avril 2028.
+    const edge = await t.property('commercial');
+    expect((await t.fiches.update(t.acces, agent, edge.id, { leaseStart: '2022-10-31', leaseYears: 9 })).ok).toBe(true);
+    const later = new TachesBail(t.db, t.journal, t.fiches, { now: () => new Date('2028-03-15T09:00:00.000Z') });
+    await later.run(t.network.id);
+    expect((await t.fiches.update(t.acces, agent, edge.id, { leaseStart: '2022-11-01' })).ok).toBe(true);
+    const shown = await later.tasksOf(agent);
+    expect(shown.ok && shown.value.find((x) => x.propertyId === edge.id)).toMatchObject({ deadline: '2028-04-30', expiry: '2028-10-31' });
+    // Le début du bail corrigé autrement : l'ancienne tâche ne se montre plus.
+    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-07-01' })).ok).toBe(true);
+    const after = await bail.tasksOf(agent);
+    expect(after.ok && after.value.filter((x) => x.propertyId === near.id)).toEqual([]);
   });
 });

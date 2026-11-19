@@ -8,6 +8,7 @@ import { EtatCoffre } from '../conformite/coffre.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { CessionCommerce } from './cession.ts';
+import { TachesBail } from './bail-taches.ts';
 import { FicheCommerce } from './fiche.ts';
 import { VigilanceCession, type VaultDeposits } from './vigilance-cession.ts';
 
@@ -27,6 +28,10 @@ export function commercesDailyJob(db: SqlDatabase, journal: JournalStore, option
         await cessions.run(n.network_id);
         await vigilance.run(n.network_id);
       }
+      // AU101b · Les jours limites de congé des baux commerciaux, pour chaque réseau qui a une fiche de commerce.
+      const bail = new TachesBail(db, journal, fiches, { now });
+      const withSheets = await db.all<{ network_id: string }>('SELECT DISTINCT network_id FROM business_sheets ORDER BY network_id');
+      for (const n of withSheets) await bail.run(n.network_id);
     },
   };
 }
