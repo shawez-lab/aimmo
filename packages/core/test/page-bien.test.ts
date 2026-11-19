@@ -150,11 +150,13 @@ describe('AU006 · les deux étiquettes du DPE sur la page et la fiche imprimabl
         expect(fig.match(/<li/g)).toHaveLength(7);
         expect([...fig.matchAll(/<i>([A-G])<\/i>/g)].map((m) => m[1])).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
         expect(fig.match(/aria-current="true"/g)).toHaveLength(1);
-        expect(fig).toMatch(new RegExp(`<li class="ce-bien" aria-current="true"><b>[^<]*<i>${current}</i></b><strong>◂ ce bien</strong>`));
-        expect(fig).toContain(`classe ${current}<span>`);
+        expect(fig).toContain(`<li class="ce-bien" aria-current="true"><b><i>${current}</i></b><strong>◂ ce bien</strong>`);
+        expect(fig).toContain(`classe ${current}</figcaption>`);
+        // Aucun seuil chiffré : il dépend de la surface et des émissions, il pourrait contredire le diagnostic.
+        expect(fig).not.toMatch(/\d|kWh|CO/);
       }
-      expect(energie).toContain('kWh/m²/an');
-      expect(climat).toContain('kg CO₂/m²/an');
+      expect(energie).toContain('Performance énergétique : classe E');
+      expect(climat).toContain('Émissions de gaz à effet de serre : classe C');
     }
     // Sur la fiche, les étiquettes sont sur la première page, avec le prix et les mentions.
     const page1 = renderListingPrint(WITH_DPE)!.split('<section class="page">')[1]!;
@@ -166,8 +168,7 @@ describe('AU006 · les deux étiquettes du DPE sur la page et la fiche imprimabl
     // Chaque barre a sa couleur, celle du modèle officiel, posée par le système.
     for (const [kind, colors] of Object.entries(ETIQUETTES_DPE)) {
       colors.forEach(([fond], i) => {
-        expect(ETIQUETTES_CSS).toContain(`--${kind}-${'abcdefg'[i]}:${fond}`);
-        expect(ETIQUETTES_CSS).toContain(`.${kind} li:nth-child(${i + 1}) b{background:var(--${kind}-${'abcdefg'[i]})`);
+        expect(ETIQUETTES_CSS).toContain(`.${kind} li:nth-child(${i + 1}) b{background:${fond};`);
       });
     }
     expect(html.indexOf('class="mentions"')).toBeLessThan(html.indexOf('class="etiquettes"'));
@@ -184,6 +185,9 @@ describe('AU006 · les deux étiquettes du DPE sur la page et la fiche imprimabl
     }
     // Une couleur à soi ajoutée après les étiquettes est toujours refusée.
     expect(screenCssProblems(`${DESIGN_CSS}${ETIQUETTES_CSS}.x{color:#ff0000}`)).toEqual(['couleur hors système : #ff0000']);
+    // Les couleurs des étiquettes ne sont pas des jetons : un texte ne peut pas les reprendre sans être vu.
+    expect(ETIQUETTES_CSS).not.toMatch(/--(?:energie|climat)-/);
+    expect(screenCssProblems(`${DESIGN_CSS}${ETIQUETTES_CSS}p{color:#f4e70f}`)).toEqual(['couleur hors système : #f4e70f']);
   });
 
   it('[R43] les classes viennent des mentions publiées seules ; sans elles (terrain), aucune étiquette', () => {

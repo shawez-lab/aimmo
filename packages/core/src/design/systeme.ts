@@ -255,8 +255,8 @@ export const PUBLIC_PAGE_CSS =
  * du vert au rouge, et l'échelle « climat » de A à G, du bleu clair au violet sombre, aux couleurs du modèle officiel
  * du DPE de 2021. Ce sont les seules couleurs hors palette du système : elles ne suivent pas le mode sombre, parce que
  * l'étiquette est un dessin réglementaire, et chaque barre porte le texte (noir ou blanc) qui lui donne un contraste
- * de 4,5 au moins, vérifié dans les tests. Les seuils écrits sur les barres sont ceux de l'arrêté du 31 mars 2021
- * (énergie en kWh/m²/an, climat en kg CO₂/m²/an).
+ * de 4,5 au moins, vérifié dans les tests. Aucun seuil chiffré sur les barres : ils changent avec la surface (moins
+ * de 40 m²) et la classe énergie tient aussi aux émissions ; seules la lettre et la couleur sont sûres.
  */
 export const ETIQUETTES_DPE = Object.freeze({
   energie: Object.freeze([
@@ -279,11 +279,10 @@ export const ETIQUETTES_DPE = Object.freeze({
   ] as const),
 });
 
-const etiquetteTokens = (['energie', 'climat'] as const)
-  .flatMap((k) => ETIQUETTES_DPE[k].map(([fond, texte], i) => `--${k}-${'abcdefg'[i]}:${fond};--${k}-${'abcdefg'[i]}-t:${texte}`))
-  .join(';');
+// Les couleurs sont écrites dans les seules barres, jamais en jetons : aucun écran ne peut les reprendre pour son
+// texte sans passer par le contrôle de contraste [R201].
 const etiquetteBars = (['energie', 'climat'] as const)
-  .flatMap((k) => ETIQUETTES_DPE[k].map((_, i) => `.${k} li:nth-child(${i + 1}) b{background:var(--${k}-${'abcdefg'[i]});color:var(--${k}-${'abcdefg'[i]}-t);width:${40 + i * 10}%}`))
+  .flatMap((k) => ETIQUETTES_DPE[k].map(([fond, texte], i) => `.${k} li:nth-child(${i + 1}) b{background:${fond};color:${texte};width:${40 + i * 10}%}`))
   .join('');
 
 /**
@@ -292,11 +291,10 @@ const etiquetteBars = (['energie', 'climat'] as const)
  * d'encre et dite en mots ; les couleurs sont imprimées telles quelles.
  */
 export const ETIQUETTES_CSS =
-  `:root{${etiquetteTokens}}` +
   '.etiquettes{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:var(--e-5);margin:var(--e-6) 0}' +
-  '.etiquette{margin:0}.etiquette figcaption{font-weight:700;margin-bottom:var(--e-2)}.etiquette figcaption span{display:block;font-weight:400;font-size:.8em;color:var(--doux)}' +
+  '.etiquette{margin:0}.etiquette figcaption{font-weight:700;margin-bottom:var(--e-2)}' +
   '.echelle{list-style:none;margin:0;padding:0;display:grid;gap:3px}.echelle li{display:flex;align-items:center;gap:var(--e-2)}' +
-  '.echelle b{display:flex;justify-content:space-between;align-items:center;min-height:1.7em;padding:0 1.1em 0 .5em;font-size:.85em;clip-path:polygon(0 0,calc(100% - .8em) 0,100% 50%,calc(100% - .8em) 100%,0 100%);-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+  '.echelle b{display:flex;justify-content:flex-end;align-items:center;min-height:1.7em;padding:0 1.1em 0 .5em;font-size:.85em;clip-path:polygon(0 0,calc(100% - .8em) 0,100% 50%,calc(100% - .8em) 100%,0 100%);-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
   '.echelle b i{font-style:normal;font-size:1.35em}' +
   '.echelle .ce-bien b{min-height:2.4em;font-size:1em;box-shadow:inset 0 0 0 3px var(--encre)}.echelle .ce-bien strong{white-space:nowrap}' +
   etiquetteBars;
