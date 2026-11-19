@@ -14,14 +14,17 @@ CREATE TABLE IF NOT EXISTS invoice_real_numbers (
 CREATE TRIGGER IF NOT EXISTS invoice_real_numbers_fige BEFORE UPDATE ON invoice_real_numbers BEGIN SELECT RAISE(ABORT, 'invoice_real_numbers : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS invoice_real_numbers_garde BEFORE DELETE ON invoice_real_numbers BEGIN SELECT RAISE(ABORT, 'invoice_real_numbers : rien ne s''efface'); END;
 -- Sans trou, dans l'ordre des jours, et seulement pour une facture du même émetteur, de la même année et du même jour,
--- dont le contenu figé se dit réel.
+-- qui n'a jamais été réservée à un envoi : une facture d'essai l'est dès qu'elle est rangée, une réelle prend son numéro
+-- dans la même écriture que sa ligne.
 CREATE TRIGGER IF NOT EXISTS invoice_real_numbers_suite
 BEFORE INSERT ON invoice_real_numbers
 WHEN NEW.number <> 1 + COALESCE((SELECT MAX(number) FROM invoice_real_numbers WHERE network_id = NEW.network_id AND issuer = NEW.issuer AND year = NEW.year), 0)
   OR NEW.issued_on < COALESCE((SELECT MAX(issued_on) FROM invoice_real_numbers WHERE network_id = NEW.network_id AND issuer = NEW.issuer AND year = NEW.year), '')
   OR NOT EXISTS (
     SELECT 1 FROM invoices i WHERE i.id = NEW.invoice_id AND i.network_id = NEW.network_id AND i.issuer = NEW.issuer AND i.year = NEW.year
-      AND i.issued_on = NEW.issued_on AND json_extract(i.content, '$.mode') = 'reel')
+      AND i.issued_on = NEW.issued_on)
+  OR EXISTS (SELECT 1 FROM invoice_transmission_claims c WHERE c.invoice_id = NEW.invoice_id)
+  OR EXISTS (SELECT 1 FROM invoice_transmissions t WHERE t.invoice_id = NEW.invoice_id)
 BEGIN SELECT RAISE(ABORT, 'invoice_real_numbers : numéro hors suite'); END;
 
 -- Le dépôt d'une facture réelle à la plateforme agréée : une seule fois, jamais pour une facture d'essai.
