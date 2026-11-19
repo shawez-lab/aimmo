@@ -16,7 +16,7 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     # Marge d'au moins 30 % sur la durée mesurée (X28) : `scripts/controle-verifications.mjs` y veille.
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,7 +45,7 @@ jobs:
       group: deployer-api
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       WRANGLER: wrangler@4.149.0
       WRANGLER_SEND_METRICS: 'false'
