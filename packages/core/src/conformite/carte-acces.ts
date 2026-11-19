@@ -741,6 +741,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   diffusion_portal_texts: { locate: [via('property_id', 'properties')] },
   diffusion_portal_text_validations: { locate: [via('text_id', 'diffusion_portal_texts')] },
   diffusion_photo_subjects: { locate: [via('property_id', 'properties')] },
+  diffusion_photo_descriptions: { locate: [via('property_id', 'properties')] },
   // HX07 : la boutique de l'agent, sans donnée d'un client.
   shop_tariffs: out('sans_client', 'Tarifs des supports imprimés, depuis le devis d\'un imprimeur.'),
   shop_orders: out('agent', 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle.'),

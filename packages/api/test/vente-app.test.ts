@@ -89,7 +89,7 @@ describe('P10 · écran « Mettre en vente »', () => {
     const text = t.els['vente-corps']!.textContent;
     expect(text).toContain('Il manque des mentions : l’annonce ne peut pas partir.');
     expect(text).toContain('Prix et honoraires : présente');
-    expect(text).toContain('Performance énergétique : manque, diagnostic énergétique absent');
+    expect(text).toContain('Performance énergétique : manque, absent');
     expect(text).toContain('Copropriété : sans objet');
     expect(text).toContain('62 m² : surface, lu dans la fiche du bien');
     expect(text).toContain('À corriger : fait absent de la fiche (« gare »)');

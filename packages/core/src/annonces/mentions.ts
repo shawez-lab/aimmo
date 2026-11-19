@@ -15,7 +15,13 @@
  * - un terrain n'a pas de diagnostic énergétique ; tout autre bien d'habitation en exige un [R45] ; les commerces et
  *   entreprises suivront M16 et ne passent pas encore ;
  * - « très énergivore » : classe F ou G, avec la mention « Logement à consommation énergétique excessive » ;
- * - le numéro de carte professionnelle est un réglage du réseau, réglé par la direction (H09 pour le vrai).
+ * - le numéro de carte professionnelle est un réglage du réseau, réglé par la direction (H09 pour le vrai) ;
+ * - un diagnostic énergétique n'est retenu que s'il est encore valable au jour de Paris du calcul (AU005, R45) :
+ *   fait avant le 1er janvier 2018, valable au plus tard jusqu'au 31 décembre 2022 ; fait du 1er janvier 2018 au
+ *   30 juin 2021, jusqu'au 31 décembre 2024 ; fait depuis le 1er juillet 2021, dix ans, jusqu'à la veille du même jour
+ *   dix ans plus tard (code de la construction et de l'habitation, art. D126-19 et décret n° 2020-1610, lus le
+ *   2026-11-19 sur service-public.gouv.fr F16096). Le jour est donné à chaque calcul : chaque passage de publication
+ *   le relit, une annonce dont le diagnostic expire est retirée au passage suivant.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -28,6 +34,11 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 
+/** Le jour à Paris, `AAAA-MM-JJ`. */
+function parisDay(at: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}
+
 export const MENTION_IDS = ['prix', 'energie', 'copropriete', 'risques', 'carte'] as const;
 export type MentionId = (typeof MENTION_IDS)[number];
 
@@ -36,6 +47,7 @@ export type MissingReason =
   | 'prix_inconnu'
   | 'honoraires_inconnus'
   | 'pas_de_diagnostic'
+  | 'diagnostic_perime'
   | 'copropriete_inconnue'
   | 'risques_inconnus'
   | 'carte_inconnue'
@@ -59,6 +71,8 @@ export interface MentionsInput {
   terms: PriceTerms | null;
   sheet: PropertySheet | null;
   cardNumber: string | null;
+  /** Le jour de Paris du calcul, `AAAA-MM-JJ` : la validité du diagnostic énergétique se juge ce jour-là [R45]. */
+  today: string;
 }
 
 export interface Checklist {
@@ -88,6 +102,38 @@ export function feePercent(feeEur: number, netPriceEur: number): string {
   const rest = hundredths % 100;
   const decimals = rest === 0 ? '' : `,${String(rest).padStart(2, '0').replace(/0$/, '')}`;
   return `${whole}${decimals}${NBSP}%`;
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function realDay(v: unknown): v is string {
+  if (typeof v !== 'string' || !ISO_DAY.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/**
+ * Le dernier jour de validité d'un diagnostic énergétique fait le jour donné, ou null si la date n'est pas un vrai jour
+ * [R45]. Dix ans au plus ; les diagnostics d'avant le 1er juillet 2021 ont une fin fixée par le décret n° 2020-1610.
+ */
+export function dpeValidUntil(diagnosedOn: string): string | null {
+  if (!realDay(diagnosedOn)) return null;
+  const d = new Date(`${diagnosedOn}T00:00:00Z`);
+  // Dix ans, jusqu'à la veille du même jour : un 29 février donne le 28 février, dix ans plus tard.
+  const tenYears = new Date(Date.UTC(d.getUTCFullYear() + 10, d.getUTCMonth(), d.getUTCDate()));
+  if (tenYears.getUTCMonth() !== d.getUTCMonth()) tenYears.setUTCDate(1);
+  tenYears.setUTCDate(tenYears.getUTCDate() - 1);
+  const decennial = tenYears.toISOString().slice(0, 10);
+  if (diagnosedOn >= '2021-07-01') return decennial;
+  const cap = diagnosedOn >= '2018-01-01' ? '2024-12-31' : '2022-12-31';
+  return decennial < cap ? decennial : cap;
+}
+
+/** Vrai seulement si le diagnostic fait ce jour-là est encore valable le jour donné, et n'est pas daté après lui. */
+export function dpeValidOn(diagnosedOn: string, today: string): boolean {
+  const until = dpeValidUntil(diagnosedOn);
+  if (until === null || !realDay(today)) return false;
+  return diagnosedOn <= today && today <= until;
 }
 
 const HOMES: readonly PropertyKind[] = ['home', 'building', 'land'];
@@ -122,6 +168,7 @@ export function computeMentions(input: MentionsInput): Checklist {
   if (!supported) items.push({ id: 'energie', status: 'manquante', reason: 'type_de_bien_non_pris_en_charge' });
   else if (input.kind === 'land') items.push({ id: 'energie', status: 'sans_objet' });
   else if (!sheet?.energy) items.push({ id: 'energie', status: 'manquante', reason: 'pas_de_diagnostic' });
+  else if (!dpeValidOn(sheet.energy.diagnosedOn, input.today)) items.push({ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' });
   else {
     const e = sheet.energy;
     const excessive = e.energyClass === 'F' || e.energyClass === 'G' ? ' Logement à consommation énergétique excessive.' : '';
@@ -229,7 +276,7 @@ export class MentionsAnnonce {
     }
     const sheetRow = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
-    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null };
+    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null, today: parisDay(this.now()) };
   }
 
   /** La liste de contrôle d'un bien, pour qui voit le bien en entier : l'agent du bien, la direction, la conformité [R16]. */

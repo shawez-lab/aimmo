@@ -55,7 +55,7 @@ export const AVIS_JS = `
     session += 1;
     var mine = session;
     wipeAvis();
-    show('avis');
+    show('avis', [id, reference]);
     $('avis-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -96,7 +96,7 @@ globalThis.AIMMO_AVIS = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
     $('avis-titre').textContent = 'Avis de valeur · ' + cur.reference;
-    show('avis');
+    show('avis', [id, reference]);
     return load();
   }
   function base() { return '/v1/biens/' + encodeURIComponent(cur.id) + '/avis'; }
