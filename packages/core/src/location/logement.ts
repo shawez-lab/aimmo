@@ -448,12 +448,13 @@ function parseRentControl(input: unknown, rentCents: number): RentControlFacts |
   const r = input as Record<string, unknown>;
   const keys = ['decree', 'readOn', 'referenceCentsPerM2', 'majoredCentsPerM2', 'complementCents', 'complementReason'];
   if (Object.keys(r).some((k) => !keys.includes(k))) return 'bad';
-  if (typeof r.decree !== 'string' || r.decree.trim().length < 3 || r.decree.length > 200 || !validDay(r.readOn)) return 'bad';
+  // Une seule ligne : le bail les reprend tels quels, et les relit tels quels.
+  if (typeof r.decree !== 'string' || r.decree.trim().length < 3 || r.decree.length > 200 || /[\r\n]/.test(r.decree) || !validDay(r.readOn)) return 'bad';
   if (!isInt(r.referenceCentsPerM2, 1, 100_000) || !isInt(r.majoredCentsPerM2, 1, 100_000) || r.majoredCentsPerM2 < r.referenceCentsPerM2) return 'bad';
   const complement = r.complementCents ?? 0;
   if (!isInt(complement, 0, 100_000_000) || complement >= rentCents) return 'bad';
   const reason = r.complementReason ?? null;
-  if (reason !== null && (typeof reason !== 'string' || reason.trim().length < 10 || reason.length > 600)) return 'bad';
+  if (reason !== null && (typeof reason !== 'string' || reason.trim().length < 10 || reason.length > 600 || /[\r\n]/.test(reason))) return 'bad';
   // Une justification sans complément ne veut rien dire ; un complément sans justification est dit au contrôle.
   if (reason !== null && complement === 0) return 'bad';
   return {
@@ -534,6 +535,12 @@ export class MisesEnLocation {
       [row.network_id, c.insee_code, day],
     );
     return r !== null && (r.effective_until === null || r.effective_until >= day);
+  }
+
+  /** L'encadrement au début du bail, ou aujourd'hui (heure de Paris) s'il est plus tard : le jour même que le contrôle (AU015). */
+  async rentControlledFor(row: Pick<ListingRow, 'id' | 'network_id'>, leaseStart: string): Promise<boolean> {
+    const today = this.today();
+    return this.rentControlledOn(row, leaseStart > today ? leaseStart : today);
   }
 
   private async judge(row: Pick<ListingRow, 'id' | 'property_id' | 'network_id'>, facts: RentalFacts, annexes: Awaited<ReturnType<MisesEnLocation['latestAnnexes']>>, today: string): Promise<CheckReason[]> {

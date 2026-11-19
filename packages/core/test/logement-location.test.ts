@@ -488,4 +488,24 @@ describeWithSqlite('AU015 · encadrement des loyers, à la mise en location', ()
     expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-09-01')).toBe(false);
     expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-08-31')).toBe(true);
   });
+
+  it('[R101] le jour jugé est celui de Paris : une règle qui commence à minuit à Paris vaut déjà quand il est 23 h 30 en temps universel', async () => {
+    const t = await setup();
+    const id = await t.open({ leaseStart: '2027-07-12' });
+    await t.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [id, '21999', 'agent:a', '2027-07-12T08:00:00.000Z']);
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-07-14', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-07-01T00:00:00.000Z')",
+      [t.network.id],
+    );
+    clock = Date.parse('2027-07-13T21:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(false);
+    // 23 h 30 en temps universel le 13 : déjà le 14 à Paris.
+    clock = Date.parse('2027-07-13T22:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(true);
+  });
+
+  it('[R101] l’arrêté et la justification tiennent sur une ligne : le bail les reprend et les relit tels quels', () => {
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, decree: 'Arrêté\nn° 1' } })).toEqual({ ok: false, field: 'rentControl' });
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, complementCents: 1_000, complementReason: 'Terrasse de 40 m²\navec vue' } })).toEqual({ ok: false, field: 'rentControl' });
+  });
 });

@@ -344,7 +344,7 @@ export class BauxLocation {
     const agentRow = p?.agent_id ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM agents WHERE id = ?', [p.agent_id]) : null;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);
     const annexes = leaseAnnexes(requiredAnnexes(facts), facts.furnished);
-    const controlled = await this.listings.rentControlledOn({ id: listing.id, network_id: listing.networkId }, facts.leaseStart > today ? facts.leaseStart : today);
+    const controlled = await this.listings.rentControlledFor({ id: listing.id, network_id: listing.networkId }, facts.leaseStart);
     const values: Record<string, string | null> = {
       'bailleur.nom': owner,
       'bailleur.domicile': ownerAddress as string | null,
@@ -451,8 +451,7 @@ export class BauxLocation {
     if (key(joined) !== key(valid)) return null;
     // Une commune devenue encadrée depuis le bail : le bail qui ne dit pas l'encadrement de ce jour n'est plus celui
     // qui se signe, il en faut un nouveau (AU015).
-    const today = localTime(this.now(), 'Europe/Paris').date;
-    if (await this.listings.rentControlledOn({ id: listingId, network_id: networkId }, facts!.leaseStart > today ? facts!.leaseStart : today)) {
+    if (await this.listings.rentControlledFor({ id: listingId, network_id: networkId }, facts!.leaseStart)) {
       const said = rentControlText(true, facts!);
       if (said === null || !r.content.includes(escapeHtml(said))) return null;
     }

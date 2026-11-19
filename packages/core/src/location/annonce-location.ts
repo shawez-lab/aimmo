@@ -286,8 +286,7 @@ export class AnnoncesLocation {
       climateClass: sheet.energy.climateClass,
       furnished: facts.furnished,
     };
-    const today = this.now().toISOString().slice(0, 10);
-    const controlled = await this.listings.rentControlledOn({ id: listingId, network_id: networkId }, facts.leaseStart > today ? facts.leaseStart : today);
+    const controlled = await this.listings.rentControlledFor({ id: listingId, network_id: networkId }, facts.leaseStart);
     const mentions = rentalMentions(facts, fees, p.city, sheet.energy, controlled);
     return { networkId, propertyId: row!.property_id, facts, fees, sheetVersion: Number(sheetRow!.version), adFacts, mentions };
   }
