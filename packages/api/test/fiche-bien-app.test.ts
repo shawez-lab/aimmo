@@ -111,7 +111,7 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts().map((p) => p.body)).toEqual([{ ref, subject: 'cuisine' }, { ref, subject: null }]);
   });
 
-  it('la dernière version est pré-remplie, 0 reste 0, et les photos repartent telles quelles sur la version lue', async () => {
+  it('[R51] la dernière version est pré-remplie, 0 reste 0, et les photos repartent telles quelles sur la version lue', async () => {
     const t = await run({ [POST]: ok({ version: 5 }) });
     await t.open();
     expect(t.f('fiche-bien-floor').value).toBe('0');
@@ -124,10 +124,22 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.f('fiche-bien-risques').value).toBe('non');
     expect(t.body().textContent).toContain('1 photo ou vidéo rangée reste sur la fiche.');
     t.f('fiche-bien-bedrooms').value = '3';
+    // AU070 · maison ou appartement se dit sur la fiche et part avec elle.
+    expect(t.f('fiche-bien-logement').value).toBe('');
+    t.f('fiche-bien-logement').value = 'apartment';
     await t.save();
-    expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/annonces/b1/fiche?siVersion=4', body: { ...SHEET, characteristics: { ...SHEET.characteristics, bedrooms: 3 } } }]);
+    expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/annonces/b1/fiche?siVersion=4', body: { ...SHEET, characteristics: { ...SHEET.characteristics, bedrooms: 3, dwelling: 'apartment' } } }]);
     expect(t.els['vente-etat']!.textContent).toContain('Fiche rangée, version 5.');
     expect(t.calls.at(-1)!.url).toBe('/v1/annonces/b1/publication');
+  });
+
+  it('AU065 · les années des prix, telles que le diagnostic les écrit, partent avec la dernière pour année des prix', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    expect(t.f('fiche-bien-cout-annee').value).toBe('2025');
+    t.f('fiche-bien-cout-annee').value = '2021, 2022 et 2023';
+    await t.save();
+    expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
   });
 
   it('sans fiche : un formulaire vide à la version 0, où un champ vide reste « je ne sais pas »', async () => {

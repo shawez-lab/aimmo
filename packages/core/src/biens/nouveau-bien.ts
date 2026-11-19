@@ -4,7 +4,7 @@ import type { Acces } from '../acces/acces.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
-import type { PropertyKind } from '../db/types.ts';
+import { DWELLINGS, type Dwelling, type PropertyKind } from '../db/types.ts';
 import type { Viewer } from '../acces/droits.ts';
 
 export const NEW_PROPERTY_KINDS: readonly PropertyKind[] = Object.freeze(['home', 'building', 'land', 'commercial', 'business_walls', 'business']);
@@ -33,10 +33,11 @@ interface Clean {
   surfaceM2: number;
   rooms: number | null;
   priceEur: number | null;
+  dwelling: Dwelling | null;
 }
 
 function validate(input: Record<string, unknown>): Clean | string {
-  const { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur } = input;
+  const { requestId, kind, postalCode, city, surfaceM2, rooms, priceEur, dwelling } = input;
   if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestId)) return 'bad_request';
   if (typeof kind !== 'string' || !(NEW_PROPERTY_KINDS as readonly string[]).includes(kind)) return 'bad_kind';
   if (typeof postalCode !== 'string' || !/^\d{5}$/.test(postalCode)) return 'bad_postal_code';
@@ -46,7 +47,18 @@ function validate(input: Record<string, unknown>): Clean | string {
   if (typeof surfaceM2 !== 'number' || !Number.isFinite(surfaceM2) || surfaceM2 <= 0 || surfaceM2 > 1_000_000 || Number(surfaceM2.toFixed(2)) !== surfaceM2) return 'bad_surface';
   if (rooms !== undefined && rooms !== null && !isCount(rooms, 200)) return 'bad_rooms';
   if (priceEur !== undefined && priceEur !== null && !isCount(priceEur, 1_000_000_000)) return 'bad_price';
-  return { requestId, kind: kind as PropertyKind, postalCode, city: town, surfaceM2, rooms: (rooms as number | null | undefined) ?? null, priceEur: (priceEur as number | null | undefined) ?? null };
+  // Maison ou appartement : seulement pour un logement (AU070).
+  if (dwelling !== undefined && dwelling !== null && (kind !== 'home' || !(DWELLINGS as readonly unknown[]).includes(dwelling))) return 'bad_dwelling';
+  return {
+    requestId,
+    kind: kind as PropertyKind,
+    postalCode,
+    city: town,
+    surfaceM2,
+    rooms: (rooms as number | null | undefined) ?? null,
+    priceEur: (priceEur as number | null | undefined) ?? null,
+    dwelling: (dwelling as Dwelling | null | undefined) ?? null,
+  };
 }
 
 export class NouveauBien {
@@ -140,8 +152,8 @@ export class NouveauBien {
         ? []
         : [{ sql: "INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'new', ?, ?)", params: [projectId, viewer.networkId, g.agentId, g.personId, projectKind, at, at] }]),
       {
-        sql: "INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)",
-        params: [propertyId, viewer.networkId, g.agentId, reference, clean.kind, clean.postalCode, clean.city, clean.surfaceM2, clean.rooms, clean.priceEur, at, at],
+        sql: "INSERT INTO properties (id, network_id, agent_id, reference, kind, dwelling, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)",
+        params: [propertyId, viewer.networkId, g.agentId, reference, clean.kind, clean.dwelling, clean.postalCode, clean.city, clean.surfaceM2, clean.rooms, clean.priceEur, at, at],
       },
       { sql: "INSERT INTO project_properties (project_id, property_id, network_id, agent_id, role, created_at) VALUES (?, ?, ?, ?, 'owned', ?)", params: [projectId, propertyId, viewer.networkId, g.agentId, at] },
     ];

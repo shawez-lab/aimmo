@@ -32,7 +32,7 @@ import type { DocumentFacts } from '../documents/modeles.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { EnergyClass, PropertySheet } from './fiche-bien.ts';
+import { energyPriceText, type EnergyClass, type PropertySheet } from './fiche-bien.ts';
 
 /** Le jour à Paris, `AAAA-MM-JJ`. */
 function parisDay(at: Date): string {
@@ -188,7 +188,7 @@ export function computeMentions(input: MentionsInput): Checklist {
       text:
         `Classe énergie ${e.energyClass}, classe climat ${e.climateClass}.${excessive} ` +
         `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${euros(e.annualCostMinEur)} et ${euros(e.annualCostMaxEur)} par an. ` +
-        `Prix moyens des énergies indexés au 1er janvier ${e.costReferenceYear} (abonnements compris).`,
+        energyPriceText(e),
     });
   }
 

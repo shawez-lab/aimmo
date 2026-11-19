@@ -104,7 +104,7 @@ async function setup() {
     return p;
   };
   const property = (ref: string, p: { city: string; price: number; surface: number; rooms: number }) =>
-    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: p.city, priceEur: p.price, surfaceM2: p.surface, rooms: p.rooms, status: 'available' });
+    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', dwelling: 'house', city: p.city, priceEur: p.price, surfaceM2: p.surface, rooms: p.rooms, status: 'available' });
   const sent = (personId?: string) =>
     db.all<{ id: string; body: string; channel: string; person_id: string }>(
       `SELECT m.id, m.body, m.channel, m.person_id FROM messages m JOIN trial_outbox t ON t.message_id = m.id ${personId ? 'WHERE m.person_id = ?' : ''} ORDER BY m.occurred_at`,

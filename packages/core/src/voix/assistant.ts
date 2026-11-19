@@ -190,7 +190,7 @@ export function propertyFacts(p: Pick<Property, 'city' | 'surface_m2' | 'rooms' 
   }
   const e = sheet?.energy;
   if (e) {
-    f.energie = `La classe énergie est ${e.energyClass} et la classe climat ${e.climateClass}. Les dépenses d’énergie sont estimées entre ${spoken(e.annualCostMinEur)} et ${spoken(e.annualCostMaxEur)} € par an, aux prix de ${e.costReferenceYear}.`;
+    f.energie = `La classe énergie est ${e.energyClass} et la classe climat ${e.climateClass}. Les dépenses d’énergie sont estimées entre ${spoken(e.annualCostMinEur)} et ${spoken(e.annualCostMaxEur)} € par an, aux prix ${e.costReferenceYears && e.costReferenceYears.length > 1 ? `des années ${e.costReferenceYears[0]} à ${e.costReferenceYears.at(-1)}` : `de ${e.costReferenceYear}`}.`;
   }
   const co = sheet?.coownership;
   if (co) {
