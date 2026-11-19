@@ -149,6 +149,15 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['grenier', 'combles'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('grenier') },
   { terms: ['véranda'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('veranda') },
   { terms: ['climatisation', 'climatisé', 'climatisée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('climatisation') },
+  // Un état nié (« non rénové », « jamais refait », « pas en bon état ») ne se prouve pas par la fiche : jamais de source,
+  // et il se lit avant le terme positif (AU061).
+  {
+    terms: ['non', 'pas', 'ni', 'jamais', 'pas encore', 'pas été', 'jamais été', 'pas vraiment'].flatMap((n) =>
+      ['rénové', 'rénovée', 'rénovés', 'rénovées', 'refait', 'refaite', 'refaits', 'refaites', 'refait à neuf', 'neuf', 'neuve', 'en bon état'].map((t) => `${n} ${t}`),
+    ),
+    field: null,
+    has: () => false,
+  },
   // « Sans travaux » se lit avant « travaux » : vrai seulement pour un bien dit neuf, refait ou en bon état.
   { terms: ['sans travaux', 'aucun travaux', 'aucuns travaux', 'pas de travaux', 'aucun travail', 'sans travaux à prévoir', 'aucun travaux à prévoir', 'aucuns travaux à prévoir', 'pas de travaux à prévoir', 'rien à prévoir'], field: 'condition', has: (f) => f.condition === 'neuf' || f.condition === 'refait_a_neuf' || f.condition === 'bon_etat' },
   { terms: ['travaux à prévoir', 'des travaux', 'travaux'], field: 'condition', has: (f) => f.condition === 'travaux_a_prevoir' || f.condition === 'a_renover' },

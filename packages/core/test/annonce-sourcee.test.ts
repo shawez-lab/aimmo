@@ -97,6 +97,13 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
       expect(traceListing('Appartement à Dijon', body, { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'] }).ok).toBe(false);
       expect(traceListing('Appartement à Dijon', body, FACTS).ok).toBe(false);
     }
+    // Un état nié ne se prouve pas non plus : « non rénové » est refusé, même sur une fiche « refait à neuf ».
+    for (const body of ['Non rénové.', 'Jamais refait.', 'Pas en bon état.', 'Cuisine pas encore refaite.', 'Pas neuf.']) {
+      for (const condition of ['refait_a_neuf', 'bon_etat', 'neuf', 'a_renover'] as const) {
+        expect(traceListing('Logement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+      }
+    }
+    expect(traceListing('Logement à Dijon', 'Rénové.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
