@@ -400,6 +400,18 @@ export class AnnoncesTraduites {
     return LISTING_LANGUAGES.filter((l) => spoken.includes(l) || reviewed.includes(l));
   }
 
+  /**
+   * Celui qui a validé compte-t-il encore pour cette langue (AU113) [R258] ? L'agent du bien qui la déclare toujours, ou
+   * le relecteur toujours désigné pour ce bien et cette langue. Un relecteur retiré ou remplacé : la validation tombe.
+   */
+  private async stillQualified(networkId: string, agentId: string | null, propertyId: string, language: ListingLanguage, by: string): Promise<boolean> {
+    const m = /^agent:(.+)$/.exec(by);
+    if (!m) return false;
+    const who = m[1]!;
+    if (who === agentId && (await this.languagesOf(networkId, who)).includes(language)) return true;
+    return (await this.reviewers(networkId, propertyId)).get(language) === who;
+  }
+
   /** Les relecteurs désignés d'un bien, par langue : seulement ceux qui déclarent toujours la langue et sont en activité. */
   async reviewers(networkId: string, propertyId: string): Promise<Map<ListingLanguage, string>> {
     const rows = await this.db.all<{ language: ListingLanguage; reviewer_agent_id: string | null }>(
@@ -563,8 +575,12 @@ export class AnnoncesTraduites {
 
   /** La dernière traduction du bien dans une langue, avec sa validation. */
   async read(viewer: Viewer, propertyId: string, language: unknown): Promise<{ ok: true; value: ListingTranslation | null } | Refusal | Problem> {
-    const g = await this.gate(viewer, propertyId, 'read');
-    if (!g.ok) return g;
+    // AU113 · le relecteur désigné lit la traduction de sa langue sur ce bien, et elle seule, pour la relire.
+    const reviewing = viewer.role === 'agent' && isListingLanguage(language) && (await this.reviewers(viewer.networkId, propertyId)).get(language) === viewer.userId;
+    if (!reviewing) {
+      const g = await this.gate(viewer, propertyId, 'read');
+      if (!g.ok) return g;
+    }
     if (!isListingLanguage(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND t.language = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
     return { ok: true, value: row ? toTranslation(row) : null };
@@ -619,7 +635,7 @@ export class AnnoncesTraduites {
     const t = toTranslation(row);
     if (!t.validated || t.draftId !== draft.id) return null;
     const property = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
-    if (!property || !(await this.languagesFor(networkId, property.agent_id, propertyId)).includes(language)) return null;
+    if (!property || !(await this.stillQualified(networkId, property.agent_id, propertyId, language, t.validated.by))) return null;
     return controlTranslation(draft, t, language).ok ? t : null;
   }
 

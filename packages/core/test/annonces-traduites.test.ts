@@ -278,6 +278,20 @@ describeWithSqlite('AU113 · un relecteur désigné pour une langue que l’agen
     expect(await s.tr.validate(s.agent, p.value.id)).toMatchObject({ ok: false, code: 'langue_non_parlee' });
     expect(await s.tr.validate(s.sam, p.value.id)).toMatchObject({ ok: true, value: { validated: { by: `agent:${s.sam.userId}` } } });
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('ar');
+    // Le relecteur, qui n'est pas l'agent du bien, lit la traduction de sa langue, et seulement elle.
+    expect(await s.tr.read(s.sam, s.propertyId, 'ar')).toMatchObject({ ok: true, value: { id: p.value.id } });
+    expect(await s.tr.read(s.sam, s.propertyId, 'en')).toMatchObject({ ok: false });
+    // Remplacé par un autre relecteur : la validation de l'ancien ne vaut plus, rien ne part avant la sienne.
+    const nour = await s.store.createAgent({ networkId: s.network.id, firstName: 'Nour', lastName: 'Relectrice' });
+    const asNour = { role: 'agent', userId: nour.id, networkId: s.network.id } as typeof s.sam;
+    await s.tr.declareLanguages(asNour, nour.id, ['ar']);
+    expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', nour.id)).toEqual({ ok: true });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).not.toContain('ar');
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ar')).toBeNull();
+    const again = await s.tr.propose(s.agent, s.propertyId, 'ar');
+    if (!again.ok) throw new Error(again.code);
+    expect((await s.tr.validate(asNour, again.value.id)).ok).toBe(true);
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('ar');
     // Retiré, la langue se ferme et sa traduction ne part plus.
     expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', null)).toEqual({ ok: true });
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).not.toContain('ar');
