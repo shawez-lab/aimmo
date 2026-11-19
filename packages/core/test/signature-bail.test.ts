@@ -360,8 +360,9 @@ describeWithSqlite('AU097 · un bail commun de colocation', () => {
     expect(await t.apps.addGuarantor(t.agent, chosen.applicationId, { kind: 'personne', personId: elise.id })).toMatchObject({ ok: false, code: 'already_cotenant' });
     // Le bail fait avant ne nomme pas Élise : il ne se signe plus.
     expect(await t.baux.current(t.network.id, id)).toBeNull();
-    // Ses propres pièces, à son nom : le dossier n'est complet qu'avec elles.
+    // Ses propres pièces, à son nom : le dossier n'est complet qu'avec elles, et sans elles aucun bail ne se fait.
     const holder = `colocataire:${elise.id}`;
+    expect(await t.baux.generate(t.agent, id, { ...INPUT, noticeRef: t.put(`location/${id}/bail`) })).toMatchObject({ ok: false, code: 'dossier_incomplet' });
     const before = await t.apps.read(t.agent, chosen.applicationId);
     expect(before.ok && before.value.cotenants).toEqual([elise.id]);
     expect(before.ok && before.value.missing.filter((m) => m.holder === holder).map((m) => m.what)).toEqual(['domicile', 'activite', 'ressources']);
@@ -399,6 +400,9 @@ describeWithSqlite('AU097 · un bail commun de colocation', () => {
     // Élise retirée : le bail signé ne nomme plus les bons locataires, il en faut un nouveau.
     expect((await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: elise.id, action: 'retrait' })).ok).toBe(true);
     expect(await t.baux.current(t.network.id, id)).toBeNull();
-    expect(await t.db.all('SELECT action FROM rental_cotenant_changes ORDER BY seq')).toEqual([{ action: 'ajout' }, { action: 'retrait' }]);
+    // Revenue ensuite, Élise ne ranime pas l'ancien bail : la liste a changé depuis, il en faut un nouveau.
+    expect((await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: elise.id, action: 'ajout' })).ok).toBe(true);
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    expect(await t.db.all('SELECT action FROM rental_cotenant_changes ORDER BY seq')).toEqual([{ action: 'ajout' }, { action: 'retrait' }, { action: 'ajout' }]);
   });
 });

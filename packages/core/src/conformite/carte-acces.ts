@@ -966,6 +966,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU097 · chaque colocataire : sa ligne, sa place au bail, sa signature et son avis d'exemplaire sont à lui.
   rental_cotenant_changes: { locate: by('person_id') },
   rental_lease_cotenants: { locate: by('person_id') },
+  rental_lease_cotenant_revisions: { locate: [via('lease_id', 'rental_leases')] },
   rental_lease_cotenant_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
   rental_lease_cotenant_copy_deliveries: { locate: by('person_id') },
   // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).

@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS rental_lease_cotenants (
 CREATE TRIGGER IF NOT EXISTS rental_lease_cotenants_garde BEFORE DELETE ON rental_lease_cotenants BEGIN SELECT RAISE(ABORT, 'rental_lease_cotenants : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS rental_lease_cotenants_fige BEFORE UPDATE ON rental_lease_cotenants BEGIN SELECT RAISE(ABORT, 'rental_lease_cotenants : rien ne se réécrit'); END;
 
+-- La version de la liste des colocataires sur laquelle chaque bail est fait : la liste changée depuis, même revenue à
+-- l'identique, le bail ne vaut plus.
+CREATE TABLE IF NOT EXISTS rental_lease_cotenant_revisions (
+  lease_id TEXT PRIMARY KEY REFERENCES rental_leases (id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (revision >= 0)
+);
+CREATE TRIGGER IF NOT EXISTS rental_lease_cotenant_revisions_garde BEFORE DELETE ON rental_lease_cotenant_revisions BEGIN SELECT RAISE(ABORT, 'rental_lease_cotenant_revisions : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS rental_lease_cotenant_revisions_fige BEFORE UPDATE ON rental_lease_cotenant_revisions BEGIN SELECT RAISE(ABORT, 'rental_lease_cotenant_revisions : rien ne se réécrit'); END;
+
 -- La signature de chaque colocataire, comme celle des deux parties : une seule par personne et par bail.
 CREATE TABLE IF NOT EXISTS rental_lease_cotenant_signatures (
   id TEXT PRIMARY KEY,

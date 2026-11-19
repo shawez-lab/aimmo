@@ -353,6 +353,18 @@ export class ChoixProprietaire {
     return r ? { applicationId: r.application_id, personId: r.person_id } : null;
   }
 
+  /**
+   * Le dossier choisi est-il toujours complet (AU097) ? Un colocataire ajouté après le choix doit avoir ses pièces
+   * avant que le bail se fasse ou se signe [R104].
+   */
+  async chosenComplete(networkId: string, listingId: string): Promise<boolean> {
+    const r = await this.db.first<ApplicationRow>(
+      'SELECT a.id, a.listing_id, a.network_id, a.person_id, a.arrival, a.dossierfacile_url, a.arrived_at FROM rental_choices c JOIN rental_applications a ON a.id = c.application_id WHERE c.listing_id = ? AND a.network_id = ?',
+      [listingId, networkId],
+    );
+    return r ? (await this.applications.completeness(r)).complete : false;
+  }
+
   /** Les reçus préparés d'une présentation, pour l'agent ; la lecture est au journal avant d'être rendue [R16]. */
   async receipts(viewer: Viewer, listingId: unknown, presentationId: unknown): Promise<ChoiceResult<{ recipient: 'candidat' | 'proprietaire'; applicationId: string | null; text: string }[]>> {
     const listing = await this.listings.listing(viewer, listingId, false);

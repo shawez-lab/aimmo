@@ -213,6 +213,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   rental_lease_copy_deliveries: { via: [['lease_id', 'rental_lease_copies', 'lease_id']] },
   rental_lease_cotenant_copy_deliveries: { via: [['lease_id', 'rental_lease_copies', 'lease_id'], ['person_id', 'persons', 'id']] },
   rental_lease_cotenants: { via: [['lease_id', 'rental_leases', 'id'], ['person_id', 'persons', 'id']] },
+  rental_lease_cotenant_revisions: { via: [['lease_id', 'rental_leases', 'id']] },
   rental_listing_communes: { via: [['listing_id', 'rental_listings', 'id']] },
   rental_owner_notices: { via: [['listing_id', 'rental_listings', 'id']] },
   rental_piece_deposits: { via: [['application_id', 'rental_applications', 'id']] },
@@ -287,7 +288,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
  * ce qu'elle désigne : aucune ligne du fichier ne désigne une ligne absente du fichier (test) [R658].
  */
 export const ORDRE_REPRISE: readonly string[] = `
-  rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_cotenant_changes rental_lease_cotenant_signatures
+  rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
   academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
   ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates

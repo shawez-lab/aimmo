@@ -157,6 +157,11 @@ export function leaseAnnexes(required: readonly string[], furnished: boolean): s
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const NOTICE_FILE = new RegExp(`^${UUID}\\.pdf$`);
 
+/** La version de la liste des colocataires d'une candidature : le nombre de changements, 0 sans colocataire (AU097). */
+export async function cotenantRevision(db: SqlDatabase, applicationId: string): Promise<number> {
+  return Number((await db.first<{ n: number | null }>('SELECT MAX(seq) AS n FROM rental_cotenant_changes WHERE application_id = ?', [applicationId]))?.n ?? 0);
+}
+
 /** Les colocataires nommés dans une version du bail, dans leur ordre (AU097). */
 export async function leaseCotenants(db: SqlDatabase, leaseId: string): Promise<string[]> {
   return (await db.all<{ person_id: string }>('SELECT person_id FROM rental_lease_cotenants WHERE lease_id = ? ORDER BY position', [leaseId])).map((r) => r.person_id);
@@ -287,6 +292,8 @@ export class BauxLocation {
     if ('ok' in listing) return listing;
     const chosen = await this.choices.chosen(listing.networkId, listing.id);
     if (!chosen) return { ok: false, rule: 'R105', code: 'no_choice' };
+    // AU097 · un colocataire ajouté depuis le choix doit avoir ses pièces avant que le bail se fasse [R104].
+    if (!(await this.choices.chosenComplete(listing.networkId, listing.id))) return { ok: false, rule: 'R105', code: 'dossier_incomplet' };
     if (!(await this.listings.advertisable(listing.networkId, listing.id))) return { ok: false, rule: 'R101', code: 'not_rentable' };
     const fees = await this.fees.current(listing.networkId, listing.id);
     if (!fees) return { ok: false, rule: 'R102', code: 'no_fees' };
@@ -338,7 +345,9 @@ export class BauxLocation {
     };
     // Les noms du bailleur et du locataire passent par la lecture des fiches sous droits : refus s'ils ne sont pas lisibles
     // en entier par celui qui fait le bail [R16].
-    // AU097 · en colocation, chaque colocataire est un locataire du même bail, nommé après le candidat choisi.
+    // AU097 · en colocation, chaque colocataire est un locataire du même bail, nommé après le candidat choisi. La
+    // version de la liste est lue d'abord : une liste changée pendant ce temps rend ce bail caduc, jamais l'inverse.
+    const revision = await cotenantRevision(this.db, chosen.applicationId);
     const cotenants = await cotenantsOfApplication(this.db, chosen.applicationId);
     const names: (string | null)[] = [];
     for (const personId of [listing.ownerPersonId, chosen.personId, ...cotenants]) {
@@ -428,6 +437,7 @@ export class BauxLocation {
       }
       const version = Number((await this.db.first<{ version: number }>('SELECT version FROM rental_leases WHERE id = ?', [id]))!.version);
       for (const [i, personId] of cotenants.entries()) await this.db.run('INSERT INTO rental_lease_cotenants (lease_id, person_id, position) VALUES (?, ?, ?)', [id, personId, i + 1]);
+      await this.db.run('INSERT INTO rental_lease_cotenant_revisions (lease_id, revision) VALUES (?, ?)', [id, revision]);
       await appendEvent(
         this.journal,
         { type: 'location.bail', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { version, mode: trial ? 'essai' : 'reel', status: missing.length === 0 ? 'complet' : 'incomplet', missing } },
@@ -452,8 +462,13 @@ export class BauxLocation {
     const facts = await this.listings.currentFacts(listingId);
     const fees = await this.fees.current(networkId, listingId);
     if (!chosen || chosen.applicationId !== r.application_id || facts?.version !== Number(r.facts_version) || fees?.version !== Number(r.fees_version)) return null;
-    // Un colocataire ajouté ou retiré depuis : ce bail ne nomme plus les bons locataires, il en faut un nouveau (AU097).
+    // Un colocataire ajouté ou retiré depuis, même revenu ensuite : il en faut un nouveau bail (AU097). Un bail d'avant
+    // la colocation compte pour la version 0.
+    const made = await this.db.first<{ revision: number }>('SELECT revision FROM rental_lease_cotenant_revisions WHERE lease_id = ?', [r.id]);
+    if (Number(made?.revision ?? 0) !== (await cotenantRevision(this.db, chosen.applicationId))) return null;
     if (JSON.stringify(await leaseCotenants(this.db, r.id)) !== JSON.stringify(await cotenantsOfApplication(this.db, chosen.applicationId))) return null;
+    // Le dossier choisi doit être encore complet, colocataires compris [R104].
+    if (!(await this.choices.chosenComplete(networkId, listingId))) return null;
     if (!(await this.listings.advertisable(networkId, listingId))) return null;
     if ((await sha256(r.content)) !== r.content_sha256) return null;
     // Les diagnostics joints au bail doivent être ceux qui valent aujourd'hui : une annexe remplacée depuis demande un
