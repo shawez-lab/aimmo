@@ -149,6 +149,8 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['grenier', 'combles'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('grenier') },
   { terms: ['véranda'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('veranda') },
   { terms: ['climatisation', 'climatisé', 'climatisée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('climatisation') },
+  // « Sans travaux » se lit avant « travaux » : vrai seulement pour un bien dit neuf, refait ou en bon état.
+  { terms: ['sans travaux', 'aucun travaux', 'aucuns travaux', 'pas de travaux', 'aucun travail', 'sans travaux à prévoir', 'aucun travaux à prévoir', 'aucuns travaux à prévoir', 'pas de travaux à prévoir', 'rien à prévoir'], field: 'condition', has: (f) => f.condition === 'neuf' || f.condition === 'refait_a_neuf' || f.condition === 'bon_etat' },
   { terms: ['travaux à prévoir', 'des travaux', 'travaux'], field: 'condition', has: (f) => f.condition === 'travaux_a_prevoir' || f.condition === 'a_renover' },
   { terms: ['à rénover'], field: 'condition', has: (f) => f.condition === 'a_renover' },
   { terms: ['refait à neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits'], field: 'condition', has: (f) => f.condition === 'refait_a_neuf' },

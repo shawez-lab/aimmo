@@ -86,6 +86,12 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'travaux_a_prevoir' }).ok).toBe(false);
     expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
     expect(traceListing('Appartement à Dijon', 'Logement neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(false);
+    // Une négation ne passe pas pour l'état dit : « sans travaux » est faux pour un bien à rénover.
+    for (const condition of ['a_renover', 'travaux_a_prevoir'] as const) {
+      for (const body of ['Sans travaux.', 'Aucun travaux à prévoir.', 'Pas de travaux.']) expect(traceListing('Appartement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+    }
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', { ...FACTS, condition: 'bon_etat' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', FACTS).ok).toBe(false);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
