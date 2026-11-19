@@ -45,6 +45,7 @@ Le même flux, une annonce par bien et par langue traduite et validée par l'age
     <titre>… traduit …</titre>
     <texte>… traduit …</texte>
     <mentions langue="fr">… mentions françaises, au caractère près …</mentions>
+    <dpe …/> (le même élément que le flux français, AU064)
     <medias>…</medias>
   </annonce>
 </flux>

@@ -10,7 +10,7 @@
  * le logiciel de l'agence. Le flux est déterministe : une même version donne le même flux, au caractère près.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import type { ListingPayload } from './publication.ts';
+import type { ListingDpe, ListingPayload } from './publication.ts';
 
 export interface PortalFormat {
   readonly name: string;
@@ -28,6 +28,15 @@ const xml = (s: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
+/**
+ * AU064 · le diagnostic repris tel quel, pour les portails français et étrangers : numéro ADEME, valeurs et classes,
+ * jour du diagnostic ; seuls les attributs connus ; rien sans numéro ni valeurs.
+ */
+export function dpeXml(d: ListingDpe | undefined): string {
+  if (!d) return '';
+  return `<dpe${d.ademeNumber ? ` numero="${xml(d.ademeNumber)}"` : ''}${d.primaryEnergyKwhM2 !== null ? ` energie_primaire="${d.primaryEnergyKwhM2}"` : ''}${d.ghgKgM2 !== null ? ` ges="${d.ghgKgM2}"` : ''} classe_energie="${xml(d.energyClass)}" classe_climat="${xml(d.climateClass)}" date="${xml(d.diagnosedOn)}"/>`;
+}
+
 /** Le format d'essai AIMMO, décrit dans `docs/PORTAILS.md`. */
 export const TRIAL_FORMAT: PortalFormat = {
   name: 'aimmo-essai-1',
@@ -43,10 +52,7 @@ export const TRIAL_FORMAT: PortalFormat = {
         `<titre>${xml(l.title ?? '')}</titre>` +
         `<texte>${xml(l.body ?? '')}</texte>` +
         `<mentions>${xml(l.mentions ?? '')}</mentions>` +
-        // AU064 · le diagnostic repris tel quel : numéro ADEME, valeurs et classes, jour du diagnostic.
-        (l.dpe
-          ? `<dpe${l.dpe.ademeNumber ? ` numero="${xml(l.dpe.ademeNumber)}"` : ''}${l.dpe.primaryEnergyKwhM2 !== null ? ` energie_primaire="${l.dpe.primaryEnergyKwhM2}"` : ''}${l.dpe.ghgKgM2 !== null ? ` ges="${l.dpe.ghgKgM2}"` : ''} classe_energie="${xml(l.dpe.energyClass)}" classe_climat="${xml(l.dpe.climateClass)}" date="${xml(l.dpe.diagnosedOn)}"/>`
-          : '') +
+        dpeXml(l.dpe) +
         `<medias>${media}</medias>` +
         `</annonce>`
       );
