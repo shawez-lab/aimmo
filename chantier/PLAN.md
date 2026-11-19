@@ -187,6 +187,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU013 · Je ne peux émettre que des factures d’essai
 - Statut : en cours (voie 2)
+- Reste : proposition #678 (`d2b7399`), code fini, relecture forte (2 P0, 5 P1) et Codex (1 P0) corrigés, Codex sans remarque ensuite ; tests locaux verts hors ce qui a été corrigé depuis, garde-fous verts. Bloquée à la fusion : la vérification GitHub « Vérifier » dépasse sa limite de 25 minutes (deux fois sur #678, une fois sur main à 01:53) : à fusionner dès qu'elle passe. Décidé, lecture prudente : suite réelle à part (`FAC-`, `REV-`, `AVO-`, table `invoice_real_numbers`, migration `3997`, sans refaire `invoices`), numéro réel seulement avec des identités complètes, mentions tirées des identités, dépôt seulement avec XML, cycle de vie 200 à 213 rangé par `track()` au passage horaire. Restent après la fusion : plateforme et identités réelles branchées dans l'API (`packages/api/src/pilotage.ts`) à H26 ; anciennes factures d'essai à sortir des relances et du rapprochement derrière la plateforme réelle.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A013 (bloquant), endroit : C/pilotage/factures.ts, `PlateformeFacturation`, `PlateformeEssai`, H26.
 - Constat de l'audit : Je ne peux émettre que des factures d’essai, sans valeur comptable, puis je dois refaire ma facturation ailleurs.
