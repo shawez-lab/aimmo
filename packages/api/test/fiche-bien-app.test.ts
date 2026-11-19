@@ -83,6 +83,24 @@ async function run(answers: Record<string, Answer> = {}) {
 }
 
 describe('X19 · la fiche du bien à l’écran', () => {
+  it('AU114 · chaque photo se dit, dans ce que la fiche porte ; le choix part tout de suite, et « je ne sais pas » le retire', async () => {
+    const ref = MEDIA[0]!.ref;
+    const t = await run({
+      'GET /v1/annonces/b1/photos/sujets': ok({ photos: [{ ref, subject: null }], allowed: ['piece_principale', 'chambre', 'cuisine', 'balcon'] }),
+      'POST /v1/annonces/b1/photos/sujet': ok(null),
+    });
+    await t.open();
+    const s = t.f('fiche-bien-photo-1');
+    expect(s.all().filter((e: FakeElement) => e.tagName === 'option').map((e: FakeElement) => e.textContent)).toEqual(['Je ne sais pas encore', 'Une pièce principale', 'Une chambre', 'La cuisine', 'Le balcon']);
+    s.value = 'cuisine';
+    s.listeners.change!({});
+    await new Promise((r) => setTimeout(r, 0));
+    s.value = '';
+    s.listeners.change!({});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.posts().map((p) => p.body)).toEqual([{ ref, subject: 'cuisine' }, { ref, subject: null }]);
+  });
+
   it('la dernière version est pré-remplie, 0 reste 0, et les photos repartent telles quelles sur la version lue', async () => {
     const t = await run({ [POST]: ok({ version: 5 }) });
     await t.open();

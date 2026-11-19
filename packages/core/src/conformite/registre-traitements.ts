@@ -350,6 +350,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       diffusion_portal_texts: ['body', 'created_by'],
       diffusion_portal_text_validations: ['text_id', 'by_actor'],
       diffusion_photo_subjects: ['subject', 'by_actor'],
+      diffusion_photo_descriptions: ['subject', 'by_actor'],
     },
   },
   {
@@ -1217,6 +1218,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   diffusion_portal_texts: ['id', 'network_id', 'property_id', 'portal', 'listing_seq', 'title', 'origin', 'created_at'],
   diffusion_portal_text_validations: ['at'],
   diffusion_photo_subjects: ['id', 'network_id', 'property_id', 'media_ref', 'at'],
+  diffusion_photo_descriptions: ['id', 'network_id', 'property_id', 'media_ref', 'at'],
   property_key_loans: ['id', 'key_id', 'network_id', 'purpose', 'appointment_id', 'due_at', 'out_at'],
   property_key_returns: ['loan_id', 'outcome', 'returned_at'],
   property_key_retirements: ['key_id', 'retired_at'],

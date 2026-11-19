@@ -1,4 +1,5 @@
 import { ENERGY_CLASSES, HEATING_KINDS, OUTDOOR_KINDS } from '../../core/src/annonces/fiche-bien.ts';
+import type { PhotoSubject } from '../../core/src/diffusion/textes.ts';
 
 /**
  * La fiche du bien à l'écran (X19), depuis « Mettre en vente » : ce que l'écran demandait de compléter sans donner de quoi
@@ -9,6 +10,24 @@ import { ENERGY_CLASSES, HEATING_KINDS, OUTDOOR_KINDS } from '../../core/src/ann
  * vide reste « on ne sait pas » : rien n'est deviné [R10] ; 0 reste 0 (rez-de-chaussée, aucune charge). Une fiche sans
  * changement n'ajoute pas de version : une nouvelle version fait tomber l'annonce validée [R47].
  */
+/** Ce qu'une photo peut montrer, à l'écran (AU114) : le code n'offre que ce que la fiche porte [R478]. */
+const SUBJECTS: Record<PhotoSubject, string> = {
+  piece_principale: 'Une pièce principale',
+  chambre: 'Une chambre',
+  cuisine: 'La cuisine',
+  salle_de_bain: 'Une salle d’eau',
+  toilettes: 'Les toilettes',
+  entree: 'L’entrée',
+  facade: 'La façade',
+  balcon: 'Le balcon',
+  terrasse: 'La terrasse',
+  jardin: 'Le jardin',
+  cour: 'La cour',
+  terrain: 'Le terrain',
+  stationnement: 'Le stationnement',
+  ascenseur: 'L’ascenseur',
+};
+
 const HEATING: Record<(typeof HEATING_KINDS)[number], string> = {
   individuel_gaz: 'Individuel au gaz',
   individuel_electrique: 'Individuel électrique',
@@ -51,7 +70,7 @@ const LABELS: Record<string, string> = {
 export const FICHE_BIEN_SCRIPT = `'use strict';
 globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
-  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)};
+  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
   function select(box, id, label, options, value) {
     var f = field(box, id, label, 'select');
@@ -109,6 +128,23 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     var proceedings = select(zone, 'fiche-bien-procedure', 'Procédure en cours', YES_NO, yesNo(k.proceedings));
     var risk = select(zone, 'fiche-bien-risques', 'Le bien est en zone de risque', YES_NO, sheet.risks ? yesNo(sheet.risks.inRiskZone) : '');
     if (media.length) zone.appendChild(el('p', media.length + (media.length > 1 ? ' photos ou vidéos rangées restent' : ' photo ou vidéo rangée reste') + ' sur la fiche.', 'doux'));
+    // AU114 · ce que montre chaque photo : sa légende sur la page publique, la fiche imprimable et les portails [R478].
+    var shown = el('div');
+    zone.appendChild(shown);
+    send(o.base + '/photos/sujets', 'GET').then(function (res) {
+      if (!res.ok || !res.body.data || !(res.body.data.photos || []).length) return;
+      var allowed = {};
+      (res.body.data.allowed || []).forEach(function (k) { if (SUBJECTS[k]) allowed[k] = SUBJECTS[k]; });
+      shown.appendChild(el('h4', 'Ce que montre chaque photo'));
+      res.body.data.photos.forEach(function (p, i) {
+        var s = select(shown, 'fiche-bien-photo-' + (i + 1), 'Photo ' + (i + 1), allowed, p.subject);
+        s.addEventListener('change', function () {
+          send(o.base + '/photos/sujet', 'POST', { ref: p.ref, subject: s.value || null }).then(function (r) {
+            said.textContent = r.ok ? 'Légende de la photo ' + (i + 1) + ' rangée.' : 'La légende n’est pas rangée.';
+          });
+        });
+      });
+    });
     /** Lit le formulaire ; un nombre mal écrit est nommé, jamais rangé comme « je ne sais pas ». */
     function read() {
       var bad = null;
