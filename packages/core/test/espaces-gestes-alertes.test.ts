@@ -28,7 +28,7 @@ async function setup() {
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: person.id, kind: 'buy' });
   const r = await new FicheAcquereur(db, journal, { now }).update(acces, direction, project.id, { propertyKinds: ['house'], communes: ['Talant'], budgetMaxEur: 300_000 });
   if (!r.ok) throw new Error(r.code);
-  const property = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'B-1', kind: 'home', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
+  const property = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'B-1', kind: 'home', dwelling: 'house', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
   const unused = async () => { throw new Error('non appelé'); };
   const gestes = new GestesModules({ db, journal, fiche, consents: store, visites: { schedule: unused }, offres: { record: unused }, financement: { declareByBuyer: unused }, signedOffers: { has: async () => false } }, { now });
   const viewer: ClientViewer = { kind: 'client', networkId: network.id, personId: person.id, sessionId: 's-bruno', sides: ['acquereur'] };

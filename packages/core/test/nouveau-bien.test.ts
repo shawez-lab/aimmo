@@ -45,6 +45,15 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     expect(await t.biens.list(t.alex, t.person.id)).toMatchObject({ ok: true, value: [{ propertyId: r.value.propertyId }] });
   });
 
+  it('[R51] AU070 · un logement est dit maison ou appartement à la création ; jamais pour un autre type', async () => {
+    const t = await setup();
+    const r = await t.biens.create(t.alex, t.person.id, { ...INPUT, dwelling: 'house' });
+    if (!r.ok) throw new Error('refus');
+    expect(await t.db.first('SELECT dwelling FROM properties WHERE id = ?', [r.value.propertyId])).toEqual({ dwelling: 'house' });
+    expect(await t.biens.create(t.alex, t.person.id, { ...INPUT, requestId: key(3), dwelling: 'chateau' })).toMatchObject({ ok: false, code: 'bad_dwelling' });
+    expect(await t.biens.create(t.alex, t.person.id, { ...INPUT, requestId: key(4), kind: 'land', dwelling: 'house' })).toMatchObject({ ok: false, code: 'bad_dwelling' });
+  });
+
   it('un projet de vente qui existe sert, il n’en est pas ouvert un autre', async () => {
     const t = await setup();
     const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: t.person.id, kind: 'sell' });

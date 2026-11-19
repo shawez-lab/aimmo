@@ -17,7 +17,7 @@
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Channel, Person, PropertyKind } from '../db/types.ts';
+import type { Channel, Dwelling, Person, PropertyKind } from '../db/types.ts';
 import type { DecisionEnvoi } from '../envoi/service.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey } from '../fiche/normalize.ts';
@@ -323,12 +323,28 @@ export interface AgentPropertyLine {
   origin: string;
   reference: string;
   kind: PropertyKind;
+  /** Maison ou appartement, lu dans le type d'origine ; null s'il ne le dit pas (AU070). */
+  dwelling: Dwelling | null;
   postalCode: string | null;
   city: string | null;
   surfaceM2: number | null;
   rooms: number | null;
   priceEur: number | null;
 }
+
+/** Le type d'origine qui dit maison ou appartement (AU070). */
+const DWELLING_WORDS: Readonly<Record<string, Dwelling>> = Object.freeze({
+  maison: 'house',
+  villa: 'house',
+  house: 'house',
+  appartement: 'apartment',
+  appart: 'apartment',
+  studio: 'apartment',
+  duplex: 'apartment',
+  loft: 'apartment',
+  apartment: 'apartment',
+  flat: 'apartment',
+});
 
 export interface AgentPropertiesReading {
   lines: AgentPropertyLine[];
@@ -370,6 +386,7 @@ export async function readAgentProperties(text: string, format: AgentExportForma
       origin: `import:${agentId}:${format}:bien:${await digest(reference)}`,
       reference,
       kind,
+      dwelling: kind === 'home' && rawKind !== null ? (DWELLING_WORDS[key(rawKind)] ?? DWELLING_WORDS[key(rawKind.split(/\s+/)[0] ?? '')] ?? null) : null,
       postalCode: postal !== null && /^\d{5}$/.test(postal) ? postal : null,
       city: cell(row, 'city')?.slice(0, 80) ?? null,
       surfaceM2: number(cell(row, 'surface'), false),
@@ -578,9 +595,9 @@ export class ImportAgent {
       const propertyId = await stableId(`${networkId}:${line.origin}`);
       const stamp = at.toISOString();
       const { changes } = await this.db.run(
-        `INSERT INTO properties (id, network_id, agent_id, reference, kind, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?) ON CONFLICT DO NOTHING`,
-        [propertyId, networkId, agentId, `IMP-${propertyId.slice(0, 18).toUpperCase()}`, line.kind, line.postalCode, line.city, line.surfaceM2, line.rooms, line.priceEur, stamp, stamp],
+        `INSERT INTO properties (id, network_id, agent_id, reference, kind, dwelling, postal_code, city, surface_m2, rooms, price_eur, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?) ON CONFLICT DO NOTHING`,
+        [propertyId, networkId, agentId, `IMP-${propertyId.slice(0, 18).toUpperCase()}`, line.kind, line.dwelling ?? null, line.postalCode, line.city, line.surfaceM2, line.rooms, line.priceEur, stamp, stamp],
       );
       await this.db.run(
         `INSERT INTO agent_import_properties (network_id, origin_key, agent_id, property_id, export_reference, created_at) VALUES (?, ?, ?, ?, ?, ?)

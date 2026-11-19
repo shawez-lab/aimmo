@@ -140,7 +140,13 @@ export interface Property extends Scoped {
   status: PropertyStatus;
   created_at: string;
   updated_at: string;
+  /** Pour un logement (« home ») : maison ou appartement ; null tant qu'on ne sait pas (AU070). */
+  dwelling?: Dwelling | null;
 }
+
+/** Maison ou appartement, pour un logement du socle (AU070). */
+export const DWELLINGS = ['house', 'apartment'] as const;
+export type Dwelling = (typeof DWELLINGS)[number];
 
 export interface ProjectProperty extends Scoped {
   project_id: string;

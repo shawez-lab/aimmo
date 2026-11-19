@@ -1057,7 +1057,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   exclusions: ['id', 'network_id', 'channel', 'noted_at', 'lifted_at', 'created_at', 'undone_merge_id'],
   projects: ['id', 'network_id', 'kind', 'stage', 'deadline', 'created_at', 'updated_at'],
   sources: ['id', 'network_id', 'project_id', 'channel', 'occurred_at', 'created_at'],
-  properties: ['id', 'network_id', 'reference', 'kind', 'surface_m2', 'rooms', 'price_eur', 'status', 'created_at', 'updated_at'],
+  properties: ['id', 'network_id', 'reference', 'kind', 'dwelling', 'surface_m2', 'rooms', 'price_eur', 'status', 'created_at', 'updated_at'],
   project_properties: ['project_id', 'property_id', 'network_id', 'role', 'created_at'],
   messages: ['id', 'network_id', 'project_id', 'channel', 'direction', 'author_kind', 'cost_cents', 'occurred_at', 'created_at'],
   journal: ['seq', 'at', 'type', 'prev_hash', 'hash'],
