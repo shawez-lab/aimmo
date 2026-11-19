@@ -11,7 +11,7 @@
  * Décidé, lecture prudente : le type « logement » du socle répond à une recherche de maison comme d'appartement, tant
  * que la fiche ne les distingue pas ; une valeur du bien inconnue ne remplit pas le critère qui la demande ; le prix
  * rapproché est celui de la fiche de base du bien ; un acquéreur est actif si son projet n'est pas clos et que sa
- * recherche a bougé depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
+ * recherche a bougé, ou a été dite toujours d'actualité, depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
  * direction voit tout le réseau [R16].
  */
 import { shownPrice } from '../biens/prix-publie.ts';
@@ -390,8 +390,9 @@ export class Rapprochement {
   private async candidates(networkId: string): Promise<Candidate[]> {
     const at = this.now();
     const since = new Date(at.getTime() - this.activeDays * 86_400_000).toISOString();
-    const rows = await this.db.all<BuyerSearchRow & { stage: string }>(
-      `SELECT s.*, p.stage FROM buyer_searches s JOIN projects p ON p.id = s.project_id
+    const rows = await this.db.all<BuyerSearchRow & { stage: string; confirmed_at: string | null }>(
+      `SELECT s.*, p.stage, (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = s.project_id) AS confirmed_at
+       FROM buyer_searches s JOIN projects p ON p.id = s.project_id
        WHERE s.network_id = ? AND p.kind = 'buy'
          AND s.version = (SELECT max(version) FROM buyer_searches WHERE project_id = s.project_id)
        ORDER BY s.created_at DESC, s.project_id`,
@@ -401,7 +402,9 @@ export class Rapprochement {
     const byRoot = new Map<string, Candidate>();
     for (const row of rows) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
-      if (row.created_at < since) continue;
+      // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
+      const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
+      if (movedAt < since) continue;
       const search = toVersion(row).search;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
@@ -416,7 +419,7 @@ export class Rapprochement {
       const root = view.person.id;
       const known = byRoot.get(root);
       if (known) {
-        known.projects.push({ projectId: row.project_id, search, movedAt: row.created_at });
+        known.projects.push({ projectId: row.project_id, search, movedAt });
         continue;
       }
       const ids = view.members.map((m) => m.id);
@@ -430,7 +433,7 @@ export class Rapprochement {
         memberIds: ids,
         agentIds: view.members.map((m) => m.agent_id),
         firstName: view.members.map((m) => m.first_name).find((n) => n) ?? null,
-        projects: [{ projectId: row.project_id, search, movedAt: row.created_at }],
+        projects: [{ projectId: row.project_id, search, movedAt }],
       });
     }
     return [...byRoot.values()];
