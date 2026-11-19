@@ -648,7 +648,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU062 · Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A062 (majeur), endroit : C/biens/nouveau-bien.ts, `surfaceM2` ; UI/biens-fiche.ts.
 - Constat de l'audit : Ma surface de 63,42 m² est refusée à la création, qui n’accepte que des mètres carrés entiers.
@@ -747,7 +747,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
 - Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.
@@ -981,7 +981,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : un meublé étudiant se fait avec son modèle validé, jamais avec celui du meublé ordinaire (test) ; un bail mobilité porte sa durée et son motif, sans dépôt (test) ; sans modèle, refus (test).
 - Attend : H08 (textes validés par la conformité) pour un usage réel ; le code et les tests avant.
 ### AU097 · Manque
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A097 (majeur), endroit : C/location/bail.ts, `locataire.nom` ; C/location/choix.ts.
 - Constat de l'audit : Manque : un bail commun de colocation avec plusieurs cotitulaires et leurs signatures n’a pas de modèle de parties adapté.
