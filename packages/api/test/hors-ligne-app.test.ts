@@ -495,6 +495,21 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(await t.H.pending()).toEqual([]);
   });
 
+  it('[R16] l’écran demandé par un agent qui se déconnecte aussitôt n’est jamais dessiné', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const t = await phone(w, idb, { network: true });
+    const open = t.els.accueil!.all().find((e) => e.textContent === 'Mes visites sans réseau')!;
+    // Le geste, puis la sortie avant que les lectures répondent.
+    open.listeners.click!({});
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    expect(t.root().hidden).toBe(true);
+    expect(t.root().all().some((e) => e.tagName === 'h3')).toBe(false);
+    expect(t.els.connexion!.hidden).toBe(false);
+  });
+
   it('[R278] passé minuit, le paquet est effacé du téléphone : sans réseau, l’application dit « Pas de réseau »', async () => {
     const w = await setup();
     const idb = new Map<string, unknown>();

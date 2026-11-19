@@ -296,7 +296,11 @@ function prepare(key, show, back) {
   }, function () { return null; });
 }
 /** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
-function stop() { ui = null; }
+function stop() {
+  ui = null;
+  var root = $('hors-ligne');
+  if (root) clear(root);
+}
 /** Sans réseau au démarrage : la visite préparée s'ouvre, si un paquet du jour est là. */
 /**
  * Sans réseau au démarrage. Le paquet du jour de cette clé ouvre la visite. Sinon, none() dit « Pas de réseau » ; mais si
@@ -311,7 +315,7 @@ function start(key, show, back, alive, none) {
     if (alive && !alive()) return null;
     if (got && got.p) {
       ui = { key: key, owner: got.o, show: show, back: back, open: true };
-      return render().then(function () { show('hors-ligne'); return true; });
+      return render().then(function (shown) { if (!shown) return null; show('hors-ligne'); return true; });
     }
     if (none) none();
     // Après none() : le message qu'il affiche ne détache pas la boîte de la clé encore gardée par l'appareil.
@@ -322,28 +326,31 @@ function start(key, show, back, alive, none) {
 function entry() {
   var home = $('accueil');
   if (!home || $('hors-ligne-ouvrir')) return;
-  var b = btn('Mes visites sans réseau', function () { if (ui) { ui.open = true; render().then(function () { ui.show('hors-ligne'); }); } }, 'secondaire');
+  var b = btn('Mes visites sans réseau', function () { var mine = ui; if (mine && mine.owner) { mine.open = true; render().then(function (shown) { if (shown && ui === mine) mine.show('hors-ligne'); }); } }, 'secondaire');
   b.id = 'hors-ligne-ouvrir';
   home.appendChild(b);
 }
+/* L'écran de la session qui l'a demandé, et d'elle seule : si elle a changé pendant les lectures, rien n'est dessiné [R16]. */
 function render() {
-  var root = $('hors-ligne');
-  if (!root || !ui) return Promise.resolve();
-  var o = ui.owner;
+  var root = $('hors-ligne'), mine = ui;
+  if (!root || !mine || !mine.owner) return Promise.resolve(false);
+  var o = mine.owner;
   return Promise.all([readPack(o), box(o)]).then(function (got) {
+    if (ui !== mine) return false;
     var p = got[0], box = got[1];
     clear(root);
-    if (ui.back) root.appendChild(btn('Retour à ma journée', function () { ui.open = false; ui.back(ui.key); }, 'retour'));
+    if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
     var etat = el('p', '', 'etat');
     etat.setAttribute('role', 'status');
     etat.textContent = box.pending.length ? box.pending.length + (box.pending.length > 1 ? ' saisies attendent' : ' saisie attend') + ' le réseau : elles partiront seules.' : 'Tout est envoyé.';
     root.appendChild(etat);
-    if (box.pending.length && ui.key) root.appendChild(btn('Envoyer maintenant', function () { sync(ui.key); }));
+    if (box.pending.length) root.appendChild(btn('Envoyer maintenant', function () { sync(mine.key); }));
     box.refused.forEach(function (r) { root.appendChild(el('p', 'Refusée par le serveur : ' + (CODES[r.code] || r.code) + '.', 'doux')); });
-    if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return; }
+    if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return true; }
     if (!p.appointments.length) root.appendChild(el('p', 'Aucune visite ni estimation prévue ce jour.'));
     p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o)); });
+    return true;
   });
 }
 function card(a, pending, o) {
