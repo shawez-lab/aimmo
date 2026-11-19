@@ -1247,7 +1247,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   pige_properties: ['network_id', 'source', 'ad_id', 'fingerprint', 'ad_site', 'ad_kind', 'energy_class', 'diagnosed_on', 'published_at', 'proposal_id', 'created_at'],
   listing_pushes: ['id', 'version_id', 'channel', 'outcome', 'error_code', 'at'],
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
-  portal_operations: ['id', 'network_id', 'property_id', 'portal', 'n', 'version_id', 'seq', 'action', 'outcome', 'receipt', 'portal_listing_id', 'error_code', 'at'],
+  portal_operations: ['id', 'network_id', 'property_id', 'portal', 'n', 'op_key', 'version_id', 'seq', 'action', 'outcome', 'receipt', 'portal_listing_id', 'error_code', 'at'],
   portal_sync_leases: ['property_id', 'token', 'expires_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
   agent_legal_mentions: ['id', 'network_id', 'legal_status', 'set_at'],

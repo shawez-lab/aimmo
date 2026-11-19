@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS portal_operations (
   n INTEGER NOT NULL CHECK (n >= 1),
   version_id TEXT NOT NULL REFERENCES listing_versions (id) ON DELETE RESTRICT,
   seq INTEGER NOT NULL,
+  -- La clé d'envoi du geste : la même à chaque nouvel essai d'un geste resté sans accusé, une autre pour tout autre geste.
+  op_key TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('publier', 'modifier', 'retirer')),
   outcome TEXT NOT NULL CHECK (outcome IN ('accuse', 'essai', 'echec')),
   receipt TEXT,

@@ -41,10 +41,14 @@ export interface PortalConnector {
   readonly portal: string;
   readonly mode: 'reel' | 'essai';
   /**
-   * Contrat : idempotent sur `key` (bien, portail, cycle de retraits, version, geste) ; un retrait d'une annonce qu'il ne connaît pas rend un accusé. Un geste dont l'accusé n'a pas pu être rangé est
+   * Contrat : `publier` et `modifier` remplacent l'annonce de la référence, `retirer` l'enlève, et un retrait d'une
+   * annonce inconnue rend un accusé. Idempotent sur `key` : une clé déjà appliquée n'est pas appliquée de nouveau, son
+   * accusé est rendu. Ordonné par `order` : un geste dont l'ordre est plus petit que celui d'un geste déjà appliqué pour
+   * la même référence est ignoré, pour qu'un envoi en retard (délai dépassé) ne remette jamais en ligne une annonce
+   * retirée depuis. Un geste dont l'accusé n'a pas pu être rangé est
    * renvoyé avec la même clé au passage suivant ; le connecteur rend alors le même accusé sans rien déposer deux fois.
    */
-  send(operation: { key: string; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null>;
+  send(operation: { key: string; order: number; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null>;
 }
 
 export const trialPortal = (portal: string): PortalConnector => ({ portal, mode: 'essai', send: async () => null });
@@ -80,6 +84,14 @@ interface VersionRow {
   seq: number;
   state: ListingState;
   payload: string;
+}
+
+interface Presence {
+  ack: AckRow | null;
+  acknowledgedLive: boolean;
+  maybePublished: boolean;
+  maybeWithdrawn: boolean;
+  pending: { seq: number; action: PortalAction; key: string } | null;
 }
 
 interface AckRow {
@@ -133,32 +145,40 @@ export class DiffusionPortails {
   }
 
   /**
-   * Ce que l'on sait de l'annonce chez ce portail : le dernier accusé ; `live`, une annonce accusée en ligne ;
-   * `maybe`, un dépôt tenté depuis le dernier accusé sans accusé reçu (délai dépassé, accusé absent, panne) : le portail
-   * a pu l'appliquer, on la tient donc pour peut-être en ligne, à retirer si elle ne doit plus y être ; `cycle`, le
-   * nombre de retraits accusés, pour qu'une annonce remise après un retrait ait une autre clé d'envoi.
+   * Ce que l'on sait de l'annonce chez ce portail. `ack` : le dernier accusé. Puis les gestes tentés depuis sans accusé
+   * (délai dépassé, accusé absent, panne) : le portail a pu les appliquer. `maybePublished` : un dépôt ou une
+   * modification incertaine, l'annonce est peut-être en ligne ; `maybeWithdrawn` : un retrait incertain, elle est
+   * peut-être absente. `pending` : le dernier geste incertain, que l'on renvoie avec la même clé tant qu'il reste voulu.
    */
-  private async presence(propertyId: string, portal: string): Promise<{ ack: AckRow | null; live: boolean; maybe: boolean; cycle: number }> {
+  private async presence(propertyId: string, portal: string): Promise<Presence> {
     const ack = await this.lastAck(propertyId, portal);
-    const tried = await this.db.first<{ n: number }>(
-      `SELECT count(*) AS n FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec'
-       AND action IN ('publier', 'modifier') AND error_code <> 'connecteur_absent' AND n > ?`,
+    const after = await this.db.all<{ n: number; seq: number; action: PortalAction; op_key: string }>(
+      `SELECT n, seq, action, op_key FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec'
+       AND error_code <> 'connecteur_absent' AND n > ? ORDER BY n`,
       [propertyId, portal, ack ? Number(ack.n) : 0],
     );
-    const cycle = await this.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'accuse' AND action = 'retirer'", [propertyId, portal]);
-    return { ack, live: ack !== null && ack.action !== 'retirer', maybe: Number(tried?.n ?? 0) > 0, cycle: Number(cycle?.n ?? 0) };
+    const last = after.at(-1) ?? null;
+    return {
+      ack,
+      acknowledgedLive: ack !== null && ack.action !== 'retirer',
+      maybePublished: after.some((x) => x.action !== 'retirer'),
+      maybeWithdrawn: after.some((x) => x.action === 'retirer'),
+      pending: last ? { seq: Number(last.seq), action: last.action, key: last.op_key } : null,
+    };
   }
 
   /** Ce que ce portail doit recevoir maintenant, ou rien. */
-  private static due(version: VersionRow | null, listing: ListingPayload | null, toDiffuse: boolean, p: { ack: AckRow | null; live: boolean; maybe: boolean }): PortalAction | null {
-    const { ack, live } = p;
+  private static due(version: VersionRow | null, listing: ListingPayload | null, toDiffuse: boolean, p: Presence): PortalAction | null {
+    const { ack } = p;
+    // En ligne avec certitude : accusée, et aucun retrait tenté depuis.
+    const live = p.acknowledgedLive && !p.maybeWithdrawn;
     const show = toDiffuse && version !== null && listing !== null && ON_PORTALS.has(version.state) && listing.priceEur !== null && listing.mentions !== null;
     if (show) {
       if (live && ack !== null && ack.seq >= Number(version.seq)) return null;
       return live ? 'modifier' : 'publier';
     }
     // Plus à diffuser sur ce portail : retirer ce qui est, ou peut être, encore en ligne [R42].
-    return live || p.maybe ? 'retirer' : null;
+    return p.acknowledgedLive || p.maybePublished || p.maybeWithdrawn ? 'retirer' : null;
   }
 
   private async acquire(propertyId: string): Promise<string | null> {
@@ -209,7 +229,12 @@ export class DiffusionPortails {
         if (!action || !version || !listing) continue;
         // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
         const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
-        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, presence.live || presence.maybe, `${propertyId}:${portal}:${presence.cycle}:${Number(version.seq)}:${action}`, lease);
+        // Le rang du geste, sous le bail : personne d'autre n'écrit pour ce bien pendant le passage.
+        const order = Number((await this.db.first<{ n: number }>('SELECT COALESCE(MAX(n), 0) + 1 AS n FROM portal_operations WHERE property_id = ? AND portal = ?', [propertyId, portal]))!.n);
+        const p = presence.pending;
+        const key = p && p.action === action && p.seq === Number(version.seq) ? p.key : `${propertyId}:${portal}:${order}`;
+        const mayBeOnline = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn;
+        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, mayBeOnline, key, order, lease);
         out[outcome === 'accuse' ? 'acknowledged' : outcome === 'essai' ? 'trial' : 'failed'].push(portal);
       }
       return out;
@@ -218,17 +243,17 @@ export class DiffusionPortails {
     }
   }
 
-  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload, live: boolean, key: string, lease: string): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
+  private async send(networkId: string, propertyId: string, portal: string, version: VersionRow, action: PortalAction, listing: ListingPayload, live: boolean, key: string, order: number, lease: string): Promise<'accuse' | 'essai' | 'echec' | 'deja'> {
     const c = this.connector(portal);
     const record = async (outcome: 'accuse' | 'essai' | 'echec', extra: { receipt?: string; portalRef?: string | null; code?: string }): Promise<boolean> => {
       // Seul le passage qui tient encore le bail range un geste : un passage en retard n'écrit rien par-dessus le suivant.
       const { changes } = await this.db
         .run(
-          `INSERT INTO portal_operations (id, network_id, property_id, portal, n, version_id, seq, action, outcome, receipt, portal_listing_id, error_code, at)
-           SELECT ?, ?, ?, ?, (SELECT COALESCE(MAX(n), 0) + 1 FROM portal_operations WHERE property_id = ? AND portal = ?), ?, ?, ?, ?, ?, ?, ?, ?
+          `INSERT INTO portal_operations (id, network_id, property_id, portal, n, op_key, version_id, seq, action, outcome, receipt, portal_listing_id, error_code, at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
            WHERE EXISTS (SELECT 1 FROM portal_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
           [
-            this.newId(), networkId, propertyId, portal, propertyId, portal, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
+            this.newId(), networkId, propertyId, portal, order, key, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
             propertyId, lease, this.now().toISOString(),
           ],
         )
@@ -255,7 +280,7 @@ export class DiffusionPortails {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('delai_depasse')), PORTAL_SEND_TIMEOUT_MS)));
       try {
-        receipt = await Promise.race([c.send({ key, action, listing: structuredClone(listing) }), timeout]);
+        receipt = await Promise.race([c.send({ key, order, action, listing: structuredClone(listing) }), timeout]);
       } finally {
         clearTimeout(timer);
       }
@@ -317,7 +342,7 @@ export class DiffusionPortails {
       const live = ack !== null && ack.action !== 'retirer';
       let state: PortalState;
       if (due === null) state = live ? 'publiee' : ack ? 'retiree' : 'non_publiee';
-      else if (mode === 'essai') state = presence.live || presence.maybe ? 'echec' : 'essai';
+      else if (mode === 'essai') state = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn ? 'echec' : 'essai';
       else if (lastError && version && lastError.seq === Number(version.seq)) state = 'echec';
       else state = 'en_attente';
       out.push({

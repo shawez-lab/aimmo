@@ -148,7 +148,7 @@ describeWithSqlite('AU004 · routes des portails', () => {
     const s: AnnonceServices = { db: t.db, journal: t.journal, acces: t.acces, now: t.now };
     let n = 0;
     const received: string[] = [];
-    const portals = [{ portal: 'seloger', mode: 'reel' as const, send: async (op: { key: string; action: string }) => (received.push(op.action), { receipt: `ACK-${++n}` }) }];
+    const portals = [{ portal: 'seloger', mode: 'reel' as const, send: async (op: { key: string; order: number; action: string }) => (received.push(op.action), { receipt: `ACK-${++n}` }) }];
     const routes = annonceRoutes({ channels: t.channels, portals });
     const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown) => {
       const url = new URL(`https://api.exemple.test/v1${path}`);

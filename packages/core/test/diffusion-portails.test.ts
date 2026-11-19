@@ -6,12 +6,12 @@ import { describeWithSqlite } from './sqlite.ts';
 /** Un portail réel de test : il garde chaque geste reçu et rend un accusé, ou tombe en panne à la demande. */
 class FakePortal implements PortalConnector {
   readonly mode = 'reel' as const;
-  received: { key: string; action: PortalAction; listing: ListingPayload }[] = [];
+  received: { key: string; order: number; action: PortalAction; listing: ListingPayload }[] = [];
   failNext = 0;
   noReceipt = 0;
   private n = 0;
   constructor(readonly portal: string) {}
-  async send(op: { key: string; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null> {
+  async send(op: { key: string; order: number; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null> {
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error('portail_indisponible');
@@ -198,7 +198,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await p.sync(t.network.id, t.propertyId);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(0);
     await p.sync(t.network.id, t.propertyId);
-    expect(keys).toEqual([`${t.propertyId}:seloger:0:1:publier`, `${t.propertyId}:seloger:0:1:publier`]);
+    expect(keys).toEqual([`${t.propertyId}:seloger:1`, `${t.propertyId}:seloger:1`]);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(1);
   });
 
@@ -226,7 +226,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     t.setClock(new Date('2027-03-01T09:00:00.000Z'));
     await t.surveillance.choose(t.agent, t.propertyId, 'seloger', true);
     await t.portails.sync(t.network.id, t.propertyId);
-    expect(t.a.received.map((r) => r.key)).toEqual([`${t.propertyId}:seloger:0:1:publier`, `${t.propertyId}:seloger:0:1:retirer`, `${t.propertyId}:seloger:1:1:publier`]);
+    expect(t.a.received.map((r) => [r.key, r.order])).toEqual([[`${t.propertyId}:seloger:1`, 1], [`${t.propertyId}:seloger:2`, 2], [`${t.propertyId}:seloger:3`, 3]]);
   });
 
   it('[R668] [R42] un dépôt sans accusé a pu être appliqué : le bien retiré est quand même retiré de ce portail', async () => {
@@ -254,5 +254,75 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received).toEqual([]);
     expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'non_publiee' });
+  });
+
+  it('[R668] [R42] un dépôt resté sans réponse puis un retrait : le retrait porte un ordre plus grand, le dépôt en retard ne remet rien en ligne', async () => {
+    const t = await published();
+    // Un portail qui respecte le contrat : il applique chaque clé une fois et ignore un geste d'ordre plus petit.
+    let online = false;
+    let lastOrder = 0;
+    const late: (() => void)[] = [];
+    const apply = (op: { order: number; action: PortalAction }) => {
+      if (op.order < lastOrder) return;
+      lastOrder = op.order;
+      online = op.action !== 'retirer';
+    };
+    let first = true;
+    const portal: PortalConnector = {
+      portal: 'seloger',
+      mode: 'reel',
+      send: async (op) => {
+        if (first) {
+          first = false;
+          late.push(() => apply(op));
+          throw new Error('delai_depasse');
+        }
+        apply(op);
+        return { receipt: `ACK-${op.order}` };
+      },
+    };
+    const p = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [portal] });
+    await p.sync(t.network.id, t.propertyId);
+    await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [t.propertyId]);
+    t.setClock(new Date('2027-03-02T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+    await p.sync(t.network.id, t.propertyId);
+    expect(online).toBe(false);
+    // Le dépôt d'ordre 1 arrive enfin chez le portail : ignoré, l'annonce reste retirée.
+    late.forEach((f) => f());
+    expect(online).toBe(false);
+    const st = await p.status(t.agent, t.propertyId);
+    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ state: 'retiree', acknowledged: { action: 'retirer', receipt: 'ACK-2' } });
+  });
+
+  it('[R668] un retrait resté sans accusé puis le portail rechoisi : l’annonce est déposée de nouveau, jamais dite « publiée » sur le vieil accusé', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    await t.surveillance.choose(t.agent, t.propertyId, 'seloger', false);
+    t.a.noReceipt = 1;
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'echec', lastError: { action: 'retirer', code: 'accuse_absent' } });
+    t.setClock(new Date('2027-03-01T09:00:00.000Z'));
+    await t.surveillance.choose(t.agent, t.propertyId, 'seloger', true);
+    expect(await stateOf(t, 'seloger')).not.toMatchObject({ state: 'publiee' });
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received.map((r) => [r.action, r.order])).toEqual([['publier', 1], ['retirer', 2], ['publier', 3]]);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'publiee', acknowledged: { action: 'publier', receipt: 'seloger-ACK-2' } });
+  });
+
+  it('[R668] un retrait sans accusé est renvoyé avec la même clé tant qu’il reste voulu', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    await t.surveillance.choose(t.agent, t.propertyId, 'seloger', false);
+    t.a.failNext = 1;
+    await t.portails.sync(t.network.id, t.propertyId);
+    t.setClock(new Date('2027-03-01T08:15:00.000Z'));
+    t.a.noReceipt = 1;
+    await t.portails.sync(t.network.id, t.propertyId);
+    t.setClock(new Date('2027-03-01T08:30:00.000Z'));
+    await t.portails.sync(t.network.id, t.propertyId);
+    const retraits = t.a.received.filter((r) => r.action === 'retirer');
+    expect(new Set(retraits.map((r) => r.key)).size).toBe(1);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'retiree' });
   });
 });
