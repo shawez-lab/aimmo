@@ -77,6 +77,8 @@ export interface IgnoredWords {
 export interface ParsedPhrase {
   criteria: PhraseCriterion[];
   ignored: IgnoredWords[];
+  /** La phrase dit le budget infranchissable (AU115). */
+  budgetStrict?: boolean;
 }
 
 /** Les raisons d'un refus, en liste fermée : chacune ajuste un critère d'une façon écrite. */
@@ -95,6 +97,8 @@ export interface PhraseSearch {
   excludedCommunes: string[];
   excludedKinds: BuyerPropertyKind[];
   refusedPropertyIds: string[];
+  /** Le budget dit infranchissable : la recherche en direct comme la fiche rangée n'ont aucune tolérance (AU115). */
+  budgetStrict?: boolean;
 }
 
 /** Les communes proches de chaque commune, réglage de la direction ; la relation vaut dans les deux sens. */
@@ -339,7 +343,7 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   }
   criteria.sort((a, b) => (a.source.kind === 'phrase' && b.source.kind === 'phrase' ? a.source.start - b.source.start : 0));
   ignored.sort((a, b) => a.start - b.start);
-  return { criteria, ignored };
+  return { criteria, ignored, budgetStrict: STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH)) };
 }
 
 // ————— Refus et voisines —————
@@ -448,6 +452,7 @@ export function toBuyerSearch(search: PhraseSearch, strength: Strength = 'must')
       if (!list.includes(String(c.value))) list.push(String(c.value));
     } else if (typeof c.value === 'number') out[c.field] = c.value;
   }
+  if (strength === 'must' && out.budgetMaxEur !== null) out.budgetStrict = search.budgetStrict === true;
   out.propertyKinds = out.propertyKinds.filter((k) => !search.excludedKinds.includes(k));
   out.communes = out.communes.filter((c) => !search.excludedCommunes.includes(c));
   return out;
@@ -627,7 +632,7 @@ export class RechercheLangage {
    */
   async build(networkId: string, phrase: string, steps: readonly SearchStep[] = []): Promise<PhraseSearch> {
     const parsed = parsePhrase(phrase, this.communes);
-    let search: PhraseSearch = { criteria: parsed.criteria, ignored: parsed.ignored, excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] };
+    let search: PhraseSearch = { criteria: parsed.criteria, ignored: parsed.ignored, excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [], budgetStrict: parsed.budgetStrict === true };
     for (const step of steps.slice(0, 50)) {
       if ('acceptNeighbour' in step) {
         const proposal = proposedNeighbours(search, this.neighbours).find((n) => n.commune === step.acceptNeighbour);
@@ -745,7 +750,7 @@ export class RechercheLangage {
       } else (changes as Record<string, unknown>)[field] = must[field];
     }
     if ('features' in changes) changes.requiredFeatures = must.features;
-    if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetMaxEur !== null && STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
+    if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetStrict === true;
     const checked = checkSearchChanges(changes, this.communes);
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);
     const updated = await fiche.update(acces, viewer, projectId, checked.value);
