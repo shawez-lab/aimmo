@@ -18,6 +18,7 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { DEFAULT_PROFESSIONAL_TITLE, professionalTitle, type ProfessionalTitle } from '../attirer/qualite.ts';
+import { TextesPortails } from '../diffusion/textes.ts';
 import type { PublishedMedia } from './medias.ts';
 import { euros } from './mentions.ts';
 import type { ListingPayload, ListingState } from './publication.ts';
@@ -34,8 +35,8 @@ export interface AgentCard {
 export interface PageInput {
   payload: ListingPayload;
   agent: AgentCard | null;
-  /** Les photos de la version publiée, dans l'ordre, avec leur mention [R48]. */
-  photos: PublishedMedia[];
+  /** Les photos de la version publiée, dans l'ordre, avec leur mention [R48] et leur légende [R478] quand elle est faite. */
+  photos: (PublishedMedia & { caption?: string | null })[];
 }
 
 const STATE_LABEL: Record<ListingState, string> = { en_vente: 'En vente', sous_offre: 'Sous offre', vendu: 'Vendu', retiree: 'Retiré de la vente' };
@@ -58,6 +59,7 @@ h1{margin:var(--e-6) 0 var(--e-3);max-width:24ch}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4));padding:0;list-style:none}
 .photos li{position:relative;margin:0}.photos img{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait)}
 .virtuel{position:absolute;left:var(--e-2);bottom:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-xs);font-weight:700;padding:2px var(--e-2);border-radius:var(--r-s);letter-spacing:.04em}
+.legende{display:block;font-size:var(--t-xs);color:var(--doux);padding-top:var(--e-1)}
 .texte{white-space:pre-line;font-size:var(--t-l);line-height:1.6;max-width:38rem}
 .mentions{background:var(--surface);border-radius:var(--r-m);box-shadow:inset 4px 0 0 var(--moutarde);padding:var(--e-4) var(--e-5);margin:var(--e-6) 0;font-size:var(--t-s);white-space:pre-line;max-width:38rem}
 .agent{border-top:1px solid var(--trait);padding-top:var(--e-5);margin-top:var(--e-6)}.agent a{font-weight:600}
@@ -76,18 +78,20 @@ h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-we
 .etat{display:inline-block;border:1.5pt solid var(--accent);color:var(--accent);padding:1mm 3mm;font:700 8pt var(--police-texte);letter-spacing:.1em;text-transform:uppercase}
 .mentions{border-left:2pt solid var(--moutarde);padding:2mm 4mm;margin:6mm 0;font-size:9pt;white-space:pre-line}
 .photos{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:0;padding:0;list-style:none}.photos li{position:relative}
-.photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:var(--encre);color:var(--papier);font:700 7pt var(--police-texte);padding:1mm 2mm}
+.photos img{width:100%;height:52mm;object-fit:cover}.virtuel{position:absolute;left:2mm;bottom:2mm;background:var(--encre);color:var(--papier);font:700 7pt var(--police-texte);padding:1mm 2mm}.legende{display:block;font:7pt var(--police-texte);padding-top:1mm}
 .page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid var(--accent);padding-top:3mm;font-size:9.5pt}`;
 
-function photoList(photos: PublishedMedia[], limit: number): string {
+function photoList(photos: PageInput['photos'], limit: number): string {
   const items = photos
     .filter((p) => p.kind === 'photo')
     .slice(0, limit)
     .map((p) => {
       // Une photo d'aménagement virtuel porte la mention sur l'image elle-même [R48].
       const virtual = p.overlay ? `<span class="virtuel">${escapeHtml(p.overlay)}</span>` : '';
-      const alt = p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien';
-      return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${alt}" loading="lazy" decoding="async">${virtual}</li>`;
+      // La légende des portails [R478], quand la version publiée en a une : texte de remplacement et légende visible (AU114).
+      const alt = p.caption ?? (p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien');
+      const caption = p.caption ? `<span class="legende">${escapeHtml(p.caption)}</span>` : '';
+      return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async">${virtual}${caption}</li>`;
     });
   return items.length > 0 ? `<ul class="photos">${items.join('')}</ul>` : '';
 }
@@ -186,7 +190,8 @@ export class PageBien {
     );
     if (!v || v.network_id !== networkId) return null;
     const payload = { ...(JSON.parse(v.payload) as Omit<ListingPayload, 'version'>), version: Number(v.seq) };
-    const photos = (payload.media ?? []).filter((m) => m.kind === 'photo');
+    const captions = await new TextesPortails(this.db, this.acces, this.journal, { now: this.now }).publishedCaptions(networkId, propertyId);
+    const photos = (payload.media ?? []).filter((m) => m.kind === 'photo').map((m) => (captions.has(m.ref) ? { ...m, caption: captions.get(m.ref)! } : m));
     const a = await this.db.first<{ id: string; first_name: string; last_name: string; status: string }>('SELECT a.id, a.first_name, a.last_name, a.status FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?', [propertyId]);
     const card = await this.db.first<{ phone: string; email: string }>(
       'SELECT c.phone, c.email FROM agent_public_cards c JOIN properties p ON p.agent_id = c.agent_id WHERE p.id = ? ORDER BY c.set_at DESC, c.rowid DESC LIMIT 1',

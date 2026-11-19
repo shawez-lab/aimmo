@@ -11,3 +11,4 @@ export * from './mesure.ts';
 export * from './traductions.ts';
 export * from './diffusion-portails.ts';
 export { DiffusionSurveillee } from '../diffusion/surveillance.ts';
+export { TextesPortails, PHOTO_SUBJECTS, type PhotoSubject } from '../diffusion/textes.ts';

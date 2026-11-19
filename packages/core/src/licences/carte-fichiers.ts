@@ -29,6 +29,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   // Fichiers du stockage.
   'business_dossier_documents.storage_ref': F,
   'calls.recording_ref': F,
+  'diffusion_photo_descriptions.media_ref': F,
   'diffusion_photo_subjects.media_ref': F,
   'generated_videos.video_ref': F,
   'notary_drafts.document_ref': F,

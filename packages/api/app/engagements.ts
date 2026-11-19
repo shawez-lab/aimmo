@@ -36,37 +36,12 @@ export const ENGAGEMENTS_ENTRY_HTML = `<section class="bloc" aria-labelledby="ti
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const ENGAGEMENTS_JS = `
   /* ---------- Les engagements de service sur l'écran du réseau (G15), chargés au premier geste [R16, R141, R201]. ---------- */
-  var engagementsTools = null, engagementsLoading = false;
   function wipeEngagements() {
     clear($('engagements-corps'));
     $('engagements-etat').textContent = '';
   }
   function withEngagements(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (engagementsTools) return act(engagementsTools);
-    if (engagementsLoading) return Promise.resolve(false);
-    engagementsLoading = true;
-    var mine = session;
-    $('engagements-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/engagements.js');
-      s.addEventListener('load', function () {
-        engagementsLoading = false;
-        var make = globalThis.AIMMO_ENGAGEMENTS;
-        try { delete globalThis.AIMMO_ENGAGEMENTS; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('engagements-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        engagementsTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, checkbox: checkbox, details: details, date: date, session: function () { return session; } });
-        resolve(act(engagementsTools));
-      });
-      s.addEventListener('error', function () {
-        engagementsLoading = false;
-        if (mine === session) $('engagements-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('engagements', 'AIMMO_ENGAGEMENTS', 'engagements-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, checkbox: checkbox, details: details, date: date, session: function () { return session; } }; });
   }
 `;
 

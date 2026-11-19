@@ -161,7 +161,7 @@ export const MANDAT_JS = `
     session += 1;
     var mine = session;
     wipeMandat();
-    show('mandat');
+    show('mandat', [id, reference]);
     $('mandat-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -216,7 +216,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
     $('mandat-titre').textContent = 'Mandat · ' + cur.reference;
-    show('mandat');
+    show('mandat', [id, reference]);
     return load();
   }
   function base() { return '/v1/biens/' + encodeURIComponent(cur.id); }

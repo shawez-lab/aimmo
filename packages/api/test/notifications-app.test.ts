@@ -45,7 +45,8 @@ async function run(answers: Record<string, Answer> = {}, hash = '') {
     Date,
     Promise,
     location,
-    history: { replaceState: (_s: unknown, _t: string, url: string) => { replaced.push(url); location.hash = ''; } },
+    // Comme un navigateur : sans adresse donnée, l'adresse ne change pas (l'historique des écrans, AU117).
+    history: { replaceState: (_s: unknown, _t: string, url?: string) => { if (url === undefined) return; replaced.push(url); location.hash = ''; }, pushState: () => undefined },
     localStorage: { getItem: () => KEY, setItem: () => undefined, removeItem: () => undefined },
     fetch: (url: string, init: { method?: string; body?: string } = {}) => {
       const method = init.method ?? 'GET';
