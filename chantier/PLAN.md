@@ -942,7 +942,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU096 · Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A096 (majeur), endroit : C/location/bail.ts, `LEASE_KINDS`, durée.
 - Constat de l'audit : Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique.
@@ -1129,7 +1129,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU114 · Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A114 (mineur), endroit : C/annonces/page-bien.ts, `photoList`.
 - Constat de l'audit : Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu utile sans vision des images.
@@ -1147,7 +1147,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU116 · « Place
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A116 (mineur), endroit : UI/fichiers.ts, `renderPlan` ; capture app-journee-clair.png.
 - Constat de l'audit : « Place : règle 1 » ou un ordre interne occupe ma journée au lieu de m’aider à exécuter le rappel.
@@ -1156,7 +1156,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU117 · Les écrans internes ne portent pas d’historique de navigation général
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A117 (mineur), endroit : UI/fichiers.ts, navigation par sections.
 - Constat de l'audit : Les écrans internes ne portent pas d’historique de navigation général : le retour du navigateur n’est pas raccordé au retour métier.
