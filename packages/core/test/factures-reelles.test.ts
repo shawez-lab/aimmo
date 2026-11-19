@@ -7,6 +7,7 @@ import {
   Factures,
   PlateformeEssai,
   TRIAL_NOTICE,
+  pilotageHourlyJob,
   realMentions,
   totauxFacturX,
   type IdentitesFacturation,
@@ -317,5 +318,66 @@ describeWithSqlite('AU013 · factures réelles, à côté des factures d’essai
     expect(labels.map((l) => l.label)).toEqual(['F-2027-00001', 'FAC-2027-00001']);
     const bare = await t.db.first<{ label: string }>(`SELECT ${LABEL_SQL()} AS label FROM invoices WHERE number = 3`);
     expect(bare?.label).toBe('FAC-2027-00001');
+  });
+
+  it('[R71] [R254] une facture réelle numérotée dont le XML ne s’écrit plus ne part pas, est dite une fois, et part au passage qui le retrouve', async () => {
+    const t = await deed();
+    // Les identités répondent au moment du numéro, puis tombent en panne quand le XML s'écrit.
+    let calls = 0;
+    const fragile: IdentitesFacturation = {
+      emetteur: IDENTITES.emetteur,
+      client: async (n, p) => {
+        calls += 1;
+        if (calls > 1) throw new Error('panne');
+        return IDENTITES.client(n, p);
+      },
+    };
+    const f = t.enReel(fragile);
+    await f.prepare(t.network.id);
+    const [h] = await drafts(t, f);
+    const real = await f.validate(t.direction, h!.id);
+    if (!real.ok) throw new Error('real');
+    expect(real.value.content.label).toBe('FAC-2027-00001');
+    expect(real.value.transmitted).toBeNull();
+    await f.reconcile(t.network.id);
+    // Rien de déposé, ni au réel ni en essai, aucun envoi réservé ; dit une seule fois.
+    expect(t.reelle.received).toEqual([]);
+    expect(t.essai.received).toEqual([]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM invoice_transmission_claims WHERE invoice_id = ?', [real.value.id]))!.n).toBe(0);
+    const codes = (await t.journal.all()).filter((e) => e.type === 'facture.attente').map((e) => e.data.code);
+    expect(codes.filter((c) => c === 'reelle_sans_xml:FAC-2027-00001')).toHaveLength(1);
+    // Les identités revenues : déposée avec son XML, une fois.
+    await t.enReel().reconcile(t.network.id);
+    await t.enReel().reconcile(t.network.id);
+    expect(t.reelle.received).toEqual(['FAC-2027-00001']);
+    expect(totauxFacturX(t.reelle.xml.get('FAC-2027-00001')!)).toMatchObject({ id: 'FAC-2027-00001' });
+  });
+
+  it('[R71] huit validations réelles simultanées d’un même émetteur : huit numéros réels qui se suivent, sans trou ni doublon', async () => {
+    const t = await deed();
+    const f = t.enReel();
+    const ids: string[] = [];
+    for (let round = 1; round <= 8; round += 1) {
+      const id = `brouillon-${round}`;
+      ids.push(id);
+      await t.db.run("INSERT INTO invoice_drafts (id, network_id, file_id, kind, issuer, recipient_person_id, amount_cents, vat_bp, round, created_at) VALUES (?, ?, ?, 'reversement', ?, NULL, 1000, 0, ?, ?)", [id, t.network.id, t.fileId, `agent:${t.alexId}`, round, t.now().toISOString()]);
+    }
+    const results = await Promise.all(ids.map((id) => f.validate(t.direction, id)));
+    expect(results.every((r) => r.ok)).toBe(true);
+    const numbers = await t.db.all<{ number: number }>('SELECT number FROM invoice_real_numbers WHERE issuer = ? ORDER BY number', [`agent:${t.alexId}`]);
+    expect(numbers.map((n) => n.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(new Set(t.reelle.received).size).toBe(8);
+  });
+
+  it('[R71] le passage horaire, derrière la plateforme réelle, émet à l’acte une facture réelle puis range son cycle', async () => {
+    const t = await deed();
+    const job = pilotageHourlyJob(t.db, t.journal, { now: t.now, facturation: { plateforme: t.reelle, identites: IDENTITES } });
+    await job.run({ job: 'pilotage.passage', slot: 's', at: t.now() } as never);
+    expect(t.reelle.received).toEqual(['FAC-2027-00001', `REV-${code(t.alexId)}-2027-00001`]);
+    expect(t.essai.received).toEqual([]);
+    const id = (await t.db.first<{ invoice_id: string }>("SELECT invoice_id FROM invoice_real_numbers WHERE issuer = 'reseau'"))!.invoice_id;
+    t.reelle.cycle.set(`pdp-fictive:${id}`, [{ code: 200, at: '2027-06-10T08:00:05Z' }]);
+    await job.run({ job: 'pilotage.passage', slot: 's2', at: t.now() } as never);
+    expect((await t.db.all<{ code: number }>('SELECT code FROM invoice_real_statuses WHERE invoice_id = ?', [id])).map((r) => r.code)).toEqual([200]);
   });
 });

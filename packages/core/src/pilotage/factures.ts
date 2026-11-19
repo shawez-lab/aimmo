@@ -357,8 +357,9 @@ export class Factures {
             params: [id, networkId, issuer, year, networkId, issuer, year, issuedOn, id],
           });
         }
-        const [first] = await runBatch(this.db, statements);
-        return first!.changes === 1 ? id : null;
+        // Une facture d'essai reste une seule écriture, comme avant ; une réelle, un lot tout ou rien.
+        const first = statements.length === 1 ? await this.db.run(statements[0]!.sql, statements[0]!.params) : (await runBatch(this.db, statements))[0]!;
+        return first.changes === 1 ? id : null;
       } catch (error) {
         if (correctsId && (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [correctsId]))) return null;
         if (draftId && (await this.db.first('SELECT 1 FROM invoices WHERE draft_id = ?', [draftId]))) return null;
@@ -485,7 +486,14 @@ export class Factures {
     // Une facture ne part qu'à une plateforme de son mode : jamais une facture d'essai à la plateforme réelle, ni une
     // réelle à celle d'essai. Une facture réelle ne part qu'avec son XML [R71, R254].
     const mode: InvoiceMode = v.content.mode === 'reel' ? 'reel' : 'essai';
-    const sendable = !v.transmitted && mode === this.plateforme.mode;
+    // Une facture réelle sans XML (identités tombées en panne après le numéro) ne réserve aucun envoi : elle est dite
+    // une fois à la direction, et part au passage qui retrouve son XML.
+    let realXml: string | null = null;
+    if (!v.transmitted && mode === 'reel' && this.plateforme.mode === 'reel') {
+      realXml = await this.facturX(invoiceId, row.network_id, v);
+      if (realXml === null) await this.waiting(v.fileId, `reelle_sans_xml:${v.content.label}`);
+    }
+    const sendable = !v.transmitted && mode === this.plateforme.mode && (mode === 'essai' || realXml !== null);
     const attempt = sendable ? await this.claimTransmission(invoiceId, v.fileId, v.content.label) : null;
     if (sendable && attempt === null) return;
     const type = row.kind === 'avoir' ? 'facture.avoir' : 'facture.emise';
@@ -500,10 +508,7 @@ export class Factures {
     }
     // Le XML s'écrit dès que les identités sont là, même pour une facture déjà partie en essai sans lui [R254].
     const facturX = await this.facturX(invoiceId, row.network_id, v);
-    if (sendable && mode === 'reel' && facturX === null) {
-      // Sans XML, une facture réelle ne part pas : l'essai réservé est rendu, et le passage suivant la reprend.
-      await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, attempt, error: 'sans_xml' } }, this.now);
-    } else if (sendable) {
+    if (sendable) {
       let ref: string | null = null;
       try {
         ref = (await this.plateforme.transmit({ id: invoiceId, content: v.content, facturX })).ref;
@@ -711,7 +716,7 @@ export class Factures {
     const rows = await this.db.all<{ invoice_id: string; platform_ref: string; file_id: string }>(
       `SELECT d.invoice_id, d.platform_ref, i.file_id FROM invoice_real_deposits d JOIN invoices i ON i.id = d.invoice_id
        WHERE i.network_id = ? AND NOT EXISTS (SELECT 1 FROM invoice_real_statuses s WHERE s.invoice_id = d.invoice_id AND s.code IN (${FINAL_STATUSES.join(', ')}))
-       ORDER BY d.at, d.invoice_id`,
+       ORDER BY d.at, CASE i.issuer WHEN 'reseau' THEN 0 ELSE 1 END, i.issuer, i.year, i.number`,
       [networkId],
     );
     let added = 0;

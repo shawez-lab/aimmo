@@ -60,7 +60,7 @@ export const TABLES_RESEAU: readonly string[] = `
   dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
-  investment_notes investor_alerts investor_profiles invoice_drafts invoice_reminders invoices legal_basis_checks
+  investment_notes investor_alerts investor_profiles invoice_drafts invoice_real_numbers invoice_reminders invoices legal_basis_checks
   licence_data_exports licence_tariffs licensed_assets life_tables listing_drafts listing_settings
   listing_translation_validations listing_translations listing_validations listing_versions listing_views
   mailbox_attachments mailbox_drafts mailbox_mails mandate_clause_versions mandate_early_starts
@@ -154,6 +154,8 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   invoice_facturx: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmissions: { via: [['invoice_id', 'invoices', 'id']] },
+  invoice_real_deposits: { via: [['invoice_id', 'invoice_real_numbers', 'invoice_id']] },
+  invoice_real_statuses: { via: [['invoice_id', 'invoice_real_deposits', 'invoice_id']] },
   journal: { hors: 'commun', why: 'Le journal est commun à toute la base et chaîné ligne à ligne : ses lignes ne portent pas de réseau, et en sortir une partie casserait la chaîne.' },
   // La licence de l'agence elle-même : sa ligne porte le réseau qui la donne dans `network_id`, et l'agence dans
   // `licensee_network_id`. Ce qui vient du réseau qui la donne est masqué [R657].
@@ -319,7 +321,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   proposal_responses proposal_tasks proposal_transmissions offer_proposals offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts commission_payout_alerts commission_payouts commission_receipts
   commission_shares commission_steps bank_reconciliations invoice_facturx invoice_reminders
-  invoice_transmission_claims invoice_transmissions invoices invoice_drafts commissions coownership_summaries
+  invoice_real_statuses invoice_real_deposits invoice_real_numbers invoice_transmission_claims invoice_transmissions invoices invoice_drafts commissions coownership_summaries
   notary_draft_differences notary_drafts pre_contract_briefs pre_contract_deposits registered_letter_events
   registered_letters risk_statements sale_commissions sale_file_buyer_notices sale_file_closings sale_file_dates sale_file_financing
   sale_file_financing_alerts sale_file_pieces sale_file_reminders sale_file_sellers sale_file_steps sale_file_stops
