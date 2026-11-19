@@ -292,9 +292,13 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(await t.annonces.validate(t.agent, d2.value.id)).toEqual({ ok: false, rule: 'R47', code: 'already_validated' });
     expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     expect(await t.annonces.publishable('autre-reseau', t.propertyId)).toBeNull();
-    // Une nouvelle version de la fiche : plus rien de publiable tant qu'un brouillon n'est pas revalidé.
+    // Une nouvelle version de la fiche qui ne rend aucune phrase fausse : la version validée reste publiable (AU066).
     await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
-    expect(await t.annonces.publishable(t.network.id, t.propertyId)).toBeNull();
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Une correction en cours, pas encore validée, ne la retire pas non plus.
+    const draft = await t.annonces.correct(t.agent, t.propertyId, { title: 'Appartement 3 pièces à Dijon', body: 'Au 3e étage, avec ascenseur.' });
+    expect(draft.ok).toBe(true);
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     const d3 = await t.annonces.propose(t.agent, t.propertyId);
     if (!d3.ok) throw new Error(d3.code);
     await t.fiches.save(t.agent, t.propertyId, SHEET(t.propertyId));

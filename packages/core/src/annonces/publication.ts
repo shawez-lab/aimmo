@@ -141,7 +141,8 @@ export class Publication {
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
     return {
       draftId: draft.id,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion) },
+      // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus (AU066).
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, (await this.annonces.factsFor(propertyId))?.sheetVersion ?? draft.sheetVersion) },
     };
   }
 
