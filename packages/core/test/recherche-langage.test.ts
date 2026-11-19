@@ -468,7 +468,7 @@ describeWithSqlite('AU071 · AU115 · l’indispensable et le budget ferme de la
 
 describe('AU115 · le budget ferme dans la recherche en direct', () => {
   const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
-  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
+  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
   it('[R51] un bien à 260 000 € n’est pas proposé pour « budget ferme 250 000 euros », il l’est, toléré, sans « ferme »', () => {
     expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(260_000))).toBeNull();
     expect(judge(base('Appartement à Dijon, budget 250 000 euros'), prop(260_000))).toMatchObject({ status: 'tolerated' });
