@@ -165,6 +165,8 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     const r = await t.biens.create(t.alex, t.person.id, { ...INPUT, surfaceM2: 63.42 });
     if (!r.ok) throw new Error(r.code);
     expect(r.value.surfaceM2).toBe(63.42);
+    // Des centièmes que le calcul en virgule flottante écrit mal (64,01 × 100) restent acceptés.
+    for (const s of [64.01, 65.01, 0.07, 1234.56]) expect((await t.biens.create(t.alex, t.person.id, { ...INPUT, requestId: `0b6f1d2e-9999-4a2b-8c3d-${String(Math.round(s * 100)).padStart(12, '0')}`, surfaceM2: s })).ok).toBe(true);
     expect(await t.db.first('SELECT surface_m2 FROM properties WHERE id = ?', [r.value.propertyId])).toEqual({ surface_m2: 63.42 });
     const facts = { kind: 'home' as const, city: 'Dijon', postalCode: '21000', surfaceM2: 63.42, rooms: 3, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], elevator: null, parkingSpaces: null, landM2: null, energyClass: null, climateClass: null };
     const text = fallbackListing(facts as never);
