@@ -312,6 +312,12 @@ export class Annonces {
     if (!draft.validated) return null;
     const f = await this.factsFor(propertyId);
     if (!f) return null;
-    return traceListing(draft.title, draft.body, f.facts).ok ? draft : null;
+    const fresh = traceListing(draft.title, draft.body, f.facts);
+    if (!fresh.ok) return null;
+    if (f.sheetVersion === draft.sheetVersion) return draft;
+    // La fiche a changé depuis la validation : chaque nombre et chaque fait doit encore venir du même champ, avec la même
+    // valeur. Un étage corrigé que le nombre d'étages de l'immeuble « explique » encore rend la phrase fausse [R47].
+    const bindings = (list: SourcedSentence[]) => JSON.stringify(list.map((s) => [s.text, s.sources.map((x) => `${String(x.field)}=${x.value}`).sort()]));
+    return bindings(fresh.sentences) === bindings(draft.sentences) ? draft : null;
   }
 }

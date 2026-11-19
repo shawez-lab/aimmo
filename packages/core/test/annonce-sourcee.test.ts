@@ -295,6 +295,12 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     // Une nouvelle version de la fiche qui ne rend aucune phrase fausse : la version validée reste publiable (AU066).
     await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
     expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Un étage corrigé que le nombre d'étages de l'immeuble « explique » encore : la phrase est fausse, retirée.
+    const sheet = SHEET(t.propertyId) as { characteristics: Record<string, unknown> };
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), characteristics: { ...sheet.characteristics, floor: 2, floorsTotal: 3 } });
+    expect(await t.annonces.publishable(t.network.id, t.propertyId)).toBeNull();
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     // Une correction en cours, pas encore validée, ne la retire pas non plus.
     const draft = await t.annonces.correct(t.agent, t.propertyId, { title: 'Appartement 3 pièces à Dijon', body: 'Au 3e étage, avec ascenseur.' });
     expect(draft.ok).toBe(true);
