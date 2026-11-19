@@ -16,7 +16,8 @@ const OTHER = 'https://autre-rs02.example.test';
 const KEYS = { direction: 'test-cle-rs02-dir-cccccccccccccccccccccccccccccc', autre: 'test-cle-rs02-autre-ddddddddddddddddddddddddddd' };
 
 async function setup(recruiting = true) {
-  const t = await setupAnnonce();
+  // Le statut de l'agent n'est rangé que par `mentions` : ce fichier vérifie le site avant et après (R152).
+  const t = await setupAnnonce({ statut: false });
   const other = (await new FicheClient(t.db).createNetwork('Autre réseau')).id;
   const apiKeys = JSON.stringify([
     { sha256: await sha256Hex(KEYS.direction), role: 'direction', userId: 'dir-1', networkId: t.network.id },
@@ -33,17 +34,19 @@ async function setup(recruiting = true) {
   await post('direction', 'sites', { kind: 'agent', agentId: t.sam.userId, baseUrl: SAM_SITE, active: true });
   await post('autre', 'sites', { kind: 'reseau', baseUrl: OTHER, active: true });
   const page = (url: string, method = 'GET') => handleRequest(new Request(url, { method }), config);
+  const mentions = async () => {
+    await post('direction', `agents/${t.alexId}/mentions`, { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' });
+    await post('direction', 'titulaire', { holder: 'Société Exemple' });
+  };
   const publish = async () => {
+    // Sans statut rangé, l'annonce ne se valide pas (AU007) [R43].
+    await mentions();
     const v = await t.annonces.validate(t.agent, t.draftId);
     if (!v.ok) throw new Error(v.code);
     t.setClock(new Date(DELAY_END.getTime() + 5 * MIN));
     await runListingSync(t.db, t.now);
     const version = await t.db.first<{ payload: string }>('SELECT payload FROM listing_versions ORDER BY seq DESC LIMIT 1');
     for (const m of (JSON.parse(version!.payload) as { media: { ref: string }[] }).media) stored.set(m.ref, 'photo');
-  };
-  const mentions = async () => {
-    await post('direction', `agents/${t.alexId}/mentions`, { rsacNumber: 'RSAC 123456789', rsacRegistry: 'Dijon' });
-    await post('direction', 'titulaire', { holder: 'Société Exemple' });
   };
   return { ...t, page, publish, mentions, post };
 }

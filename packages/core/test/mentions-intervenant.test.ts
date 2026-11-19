@@ -24,7 +24,7 @@ describe('AU007 · mention de l’intervenant', () => {
   it('[R43] [R152] la mention dit le statut d’agent commercial, le greffe et le numéro RSAC, et le titulaire qui l’habilite', () => {
     const r = computeMentions(BASE);
     expect(r.complete).toBe(true);
-    expect(r.text).toContain('Annonce présentée par Alex Agent, agent commercial immatriculé au registre spécial des agents commerciaux (RSAC) de Dijon sous le n° 900 000 001, habilité par Réseau Test SAS');
+    expect(r.text).toContain('Votre agent : Alex Agent, agent commercial, RSAC de Dijon n° 900 000 001, habilité par Réseau Test SAS, titulaire de la carte.');
     expect(r.text).not.toMatch(/mandataire/i);
     // La carte reste celle du titulaire, juste après.
     expect(r.text.split('\n').slice(-2)[1]).toBe('Carte professionnelle n° CPI 2101 2027 000 000 001.');
@@ -70,7 +70,7 @@ describeWithSqlite('AU007 · page, fiche et exports suivent le statut réel de l
     const t = await publish();
     await t.publication.sync(t.network.id, t.propertyId);
     const pages = new PageBien(t.db, t.acces, t.journal, { now: t.now });
-    const line = 'Annonce présentée par Alex Agent, agent commercial immatriculé au registre spécial des agents commerciaux (RSAC) de Dijon sous le n° 900 000 001, habilité par Réseau Test SAS';
+    const line = 'Votre agent : Alex Agent, agent commercial, RSAC de Dijon n° 900 000 001, habilité par Réseau Test SAS, titulaire de la carte.';
     expect(await pages.page(t.network.id, t.propertyId)).toContain(line);
     expect(await pages.print(t.network.id, t.propertyId)).toContain(line);
     for (const c of t.channels) expect(c.received.at(-1)!.mentions).toContain(line);
@@ -83,11 +83,11 @@ describeWithSqlite('AU007 · page, fiche et exports suivent le statut réel de l
     // La direction range une nouvelle immatriculation : la version suivante la porte.
     await new PageAgent(t.db, t.journal, { now: t.now }).setLegalMentions(t.direction, t.alexId, { rsacNumber: '900000002', rsacRegistry: 'Beaune' });
     await t.publication.sync(t.network.id, t.propertyId);
-    expect(await latest()).toContain('RSAC) de Beaune sous le n° 900 000 002');
+    expect(await latest()).toContain('RSAC de Beaune n° 900 000 002');
     // Le bien passe à Sam : ses mentions à lui.
     await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.userId, t.propertyId]);
     await t.publication.sync(t.network.id, t.propertyId);
-    expect(await latest()).toContain('Annonce présentée par Sam Agent, agent commercial');
+    expect(await latest()).toContain('Votre agent : Sam Agent, agent commercial');
     expect(await latest()).not.toContain('Alex Agent');
     // Sam part sans successeur : la mention manque, l'annonce est retirée au passage suivant.
     await t.db.run("UPDATE agents SET status = 'left' WHERE id = ?", [t.sam.userId]);

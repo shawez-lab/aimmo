@@ -39,7 +39,7 @@ const sheet = (patch: Partial<PropertySheet> = {}): PropertySheet => ({
 
 // L'agent du bien et son statut, inventés (AU007).
 const PRO = { firstName: 'Camille', lastName: 'Exemple', status: 'agent_commercial', rsacNumber: '900 000 001', rsacRegistry: 'Dijon', cardHolder: 'Réseau Test SAS' } as const;
-const INTERVENANT = 'Annonce présentée par Camille Exemple, agent commercial immatriculé au registre spécial des agents commerciaux (RSAC) de Dijon sous le n° 900 000 001, habilité par Réseau Test SAS, titulaire de la carte professionnelle ci-dessous.';
+const INTERVENANT = 'Votre agent : Camille Exemple, agent commercial, RSAC de Dijon n° 900 000 001, habilité par Réseau Test SAS, titulaire de la carte.';
 const CARTE = `${INTERVENANT}\nCarte professionnelle n° ${CARD}.`;
 const energie = (e: string, c: string, min: string, max: string, year: number, excessive = false) =>
   `Classe énergie ${e}, classe climat ${c}.${excessive ? ' Logement à consommation énergétique excessive.' : ''} Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${min}${N}€ et ${max}${N}€ par an. Prix moyens des énergies indexés au 1er janvier ${year} (abonnements compris).`;

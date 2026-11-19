@@ -172,7 +172,7 @@ export function energyClassesOf(mentions: string | null): { energy: EnergyClass;
 /** La phrase de l'intervenant, jamais « mandataire » [R07, R152]. */
 export function intervenantLine(who: Intervenant): string {
   const name = `${who.firstName.trim()} ${who.lastName.trim()}`.trim();
-  return `Annonce présentée par ${name}, agent commercial immatriculé au registre spécial des agents commerciaux (RSAC) de ${who.rsacRegistry.trim()} sous le n° ${who.rsacNumber.trim()}, habilité par ${who.cardHolder!.trim()}, titulaire de la carte professionnelle ci-dessous.`;
+  return `Votre agent : ${name}, agent commercial, RSAC de ${who.rsacRegistry.trim()} n° ${who.rsacNumber.trim()}, habilité par ${who.cardHolder!.trim()}, titulaire de la carte.`;
 }
 
 /** Calcule chaque mention et la liste de contrôle. Fonction pure : mêmes données, même texte, au caractère près. */
@@ -330,11 +330,11 @@ export class MentionsAnnonce {
     );
     if (!a || a.network_id !== networkId || a.status !== 'active') return null;
     const legal = await this.db.first<{ legal_status: string; rsac_number: string; rsac_registry: string }>(
-      'SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
+      'SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1',
       [a.id, networkId],
     );
     if (!legal || legal.legal_status !== 'agent_commercial') return null;
-    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [networkId]);
     return { firstName: a.first_name, lastName: a.last_name, status: 'agent_commercial', rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardHolder: holder?.holder_name ?? null };
   }
 
