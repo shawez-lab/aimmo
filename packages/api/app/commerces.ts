@@ -283,11 +283,11 @@ globalThis.AIMMO_COMMERCES = function (t) {
     var b = el('section', null, 'bloc');
     b.appendChild(el('h3', 'Congés de bail à donner'));
     var ul = el('ul', null, 'liste');
+    /* La tâche porte sa référence : elle se montre même pour un bien hors des 200 premiers de la liste. */
     tasks.forEach(function (k) {
-      var c = list.filter(function (x) { return x.propertyId === k.propertyId; })[0];
-      if (!c || !ID.test(c.propertyId)) return;
+      if (!k || !ID.test(k.propertyId) || typeof k.reference !== 'string') return;
       var li = el('li');
-      li.appendChild(el('strong', 'Bien ' + c.reference));
+      li.appendChild(el('strong', 'Bien ' + k.reference));
       li.appendChild(el('p', (k.kind === 'conge_triennal' ? 'Échéance triennale du ' : 'Fin du bail le ') + ceDay(k.expiry) + ' : congé au plus tard le ' + ceDay(k.deadline) + '.'));
       ul.appendChild(li);
     });

@@ -1035,6 +1035,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_transfer_dates: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_ready: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_tasks: { locate: [via('file_id', 'business_transfer_files')] },
+  business_lease_tasks: { locate: [via('property_id', 'properties')] },
   business_transfer_buyers: { locate: by('person_id') },
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
