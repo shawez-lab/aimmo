@@ -96,7 +96,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H10).
 
 ### AU005 · Un DPE de 2019 passe encore la checklist de publication en novembre 2026
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A005 (bloquant), endroit : C/annonces/fiche-bien.ts, `parseSheet` ; C/annonces/mentions.ts.
 - Constat de l'audit : Un DPE de 2019 passe encore la checklist de publication en novembre 2026, alors que sa validité transitoire est terminée.
@@ -197,7 +197,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H26).
 
 ### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
-- Statut : à faire
+- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
 - Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
@@ -743,7 +743,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A074 (majeur), endroit : C/acquereurs/rapprochement.ts, `DEFAULT_ACTIVE_DAYS`.
 - Constat de l'audit : Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous échangeons encore.
@@ -942,7 +942,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU096 · Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A096 (majeur), endroit : C/location/bail.ts, `LEASE_KINDS`, durée.
 - Constat de l'audit : Le bail ne traite que le vide trois ans et le meublé un an avec bailleur personne physique.
@@ -952,7 +952,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
-- Statut : à faire
+- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
 - Cahier : M15 Louer ; audit A096.
 - Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.
@@ -1129,7 +1129,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU114 · Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A114 (mineur), endroit : C/annonces/page-bien.ts, `photoList`.
 - Constat de l'audit : Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu utile sans vision des images.
@@ -1147,7 +1147,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU116 · « Place
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A116 (mineur), endroit : UI/fichiers.ts, `renderPlan` ; capture app-journee-clair.png.
 - Constat de l'audit : « Place : règle 1 » ou un ordre interne occupe ma journée au lieu de m’aider à exécuter le rappel.
@@ -1156,7 +1156,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU117 · Les écrans internes ne portent pas d’historique de navigation général
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A117 (mineur), endroit : UI/fichiers.ts, navigation par sections.
 - Constat de l'audit : Les écrans internes ne portent pas d’historique de navigation général : le retour du navigateur n’est pas raccordé au retour métier.

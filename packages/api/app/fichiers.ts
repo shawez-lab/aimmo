@@ -562,7 +562,11 @@ export const APP_JS = `'use strict';
     body.appendChild(block('Rappels', callbacks));
     body.appendChild(block('Projets', (f.projects || []).map(function (p) {
       var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
-      return line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+      var li = line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+      if (p.kind === 'buy' && ID.test(p.id)) var still = li.appendChild(button('Recherche toujours d’actualité', function () {
+        send('/v1/acquereurs/projets/' + p.id + '/recherche/confirmation', 'POST').then(function (r) { if (!r.gone) still.textContent = r.ok ? 'Confirmée' : 'Échec, réessayez'; });
+      }));
+      return li;
     })));
     body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
     if (f.qualification) classementBlock(personId, body, f.qualification);
@@ -795,7 +799,7 @@ export const APP_JS = `'use strict';
     send_refused: 'Le SMS n’est pas parti : le contrôle des envois l’a bloqué.',
     buyer_named: 'Le compte rendu nomme le visiteur : retirez son nom avant l’envoi au vendeur.',
     contact: 'Le compte rendu contient une coordonnée : retirez-la avant l’envoi au vendeur.',
-    shape: 'Compte rendu incomplet : un avis de 300 caractères au plus, l’intérêt, et des listes courtes.',
+    shape: 'Compte rendu incomplet : avis de 300 caractères au plus, intérêt, listes courtes.',
     invented_figure: 'Un chiffre n’est pas dans la dictée : retirez-le.',
     invented_offer: 'La dictée ne dit pas que le visiteur veut faire une offre.',
     no_report: 'Écrivez d’abord le compte rendu.',
@@ -903,7 +907,7 @@ export const APP_JS = `'use strict';
   var DELIVERY = {
     sent: 'Envoyé au vendeur, sans le nom du visiteur.',
     waiting: 'Validé : il part au vendeur au prochain créneau d’envoi permis.',
-    refused: 'Validé, mais le vendeur ne reçoit pas de message : accord retiré ou exclusion. Dites-le-lui de vive voix.',
+    refused: 'Validé. Vendeur non prévenu (accord retiré ou exclusion) : dites-le-lui.',
     failed: 'Validé ; l’envoi a échoué, il sera repris.',
   };
   function reportLines(box, r) {
@@ -958,7 +962,7 @@ export const APP_JS = `'use strict';
       return box;
     }
     if (r) {
-      box.appendChild(el('p', 'Votre dictée est gardée. Le compte rendu n’a pas pu être rédigé pour vous : écrivez-le ici, le nom du visiteur ne doit pas y figurer.', 'doux'));
+      box.appendChild(el('p', 'Dictée gardée, compte rendu non rédigé : écrivez-le ici, sans le nom du visiteur.', 'doux'));
       reportForm(box, base, null);
     }
     var dictation = field(box, 'v-dictee', r ? 'Dicter de nouveau' : 'Ce que le visiteur a dit', 'textarea');
@@ -1032,7 +1036,7 @@ export const APP_JS = `'use strict';
       if (buyers.gone || map.gone) return false;
       if (buyers.offline) { $('bien-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       if (buyers.status === 403 || buyers.status === 404) { $('bien-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
-      if (buyers.body && buyers.body.rule === 'R42') { $('bien-etat').textContent = 'Ce bien ne peut pas encore être proposé : le mandat n’est pas en vigueur ou le délai de rétractation court.'; return false; }
+      if (buyers.body && buyers.body.rule === 'R42') { $('bien-etat').textContent = 'Bien pas encore proposable : mandat pas en vigueur ou rétractation en cours.'; return false; }
       if (!buyers.ok) { $('bien-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
       $('bien-etat').textContent = '';
       renderBien(propertyId, buyers.body.data, map.ok ? map.body.data : null);
@@ -1269,7 +1273,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Cette annonce est validée. Une correction enregistrée annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce que l’agent du bien valide le nouveau texte.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Toute correction annule la validation : l’annonce est retirée des canaux jusqu’à ce que l’agent du bien la valide de nouveau.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
@@ -1496,7 +1500,7 @@ export const APP_JS = `'use strict';
   var DESTINATIONS = { property: 'rangée dans le bien', sale_file: 'rangée dans le dossier de vente', financing: 'rangée au financement', referral: 'gardée avec la demande', agent_queue: 'à ranger par vous' };
   var PARTNER_REFUSALS = {
     no_partner: 'Aucun professionnel de ce métier n’est disponible dans cette zone aujourd’hui.',
-    partner_unavailable: 'Ce professionnel n’est plus disponible : un justificatif a expiré. Proposez de nouveau.',
+    partner_unavailable: 'Professionnel indisponible : un justificatif a expiré. Proposez de nouveau.',
     fees_not_disclosed: 'Montrez d’abord au client le texte des rémunérations, puis notez son accord.',
     not_shown: 'Le client choisit parmi les professionnels tirés au sort, et seulement eux.',
     bad_postcode: 'Indiquez le code postal du lieu, en 5 chiffres.',

@@ -95,7 +95,10 @@ export class AlerteWhatsApp {
     if (!gate.allowed) return stop('R42', gate.reason);
     // Comme le rapprochement : un projet clos, ou une recherche sans nouvelle depuis trop longtemps, ne compte plus.
     const search = await this.acquereurs.current(projectId);
-    const stale = search !== null && Date.parse(search.createdAt) < this.now().getTime() - DEFAULT_ACTIVE_DAYS * 86_400_000;
+    // AU074 · une recherche dite toujours d'actualité compte depuis sa dernière confirmation.
+    const confirmed = await this.db.first<{ at: string | null }>('SELECT max(confirmed_at) AS at FROM buyer_search_confirmations WHERE project_id = ?', [projectId]);
+    const movedAt = search && confirmed?.at && confirmed.at > search.createdAt ? confirmed.at : search?.createdAt;
+    const stale = movedAt !== undefined && Date.parse(movedAt) < this.now().getTime() - DEFAULT_ACTIVE_DAYS * 86_400_000;
     if (!search || CLOSED_STAGES.includes(project.stage) || stale) return stop('R51', 'inactive');
     const property = await this.rapprochement.propertyForMatch(read.value);
     if (matchBuyer(property, search.search).status === 'miss') return stop('R51', 'not_matching');
