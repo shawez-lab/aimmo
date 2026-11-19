@@ -13,7 +13,7 @@ import {
   type SqlDatabase,
   type Viewer,
 } from '../src/index.ts';
-import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
+import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, bindingHolds, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
@@ -72,6 +72,21 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Chauffage au gaz.')).toEqual(['fait_sans_source:chauffage au gaz']);
     expect(codes('Au rez-de-chaussée.')).toEqual(['fait_sans_source:rez-de-chaussée']);
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
+  });
+
+  it('[R47] AU066 · une source rangée reste vraie si son champ dit encore la même chose, même quand un autre champ devient égal', () => {
+    // « 5 étages » relié au nombre d'étages : l'étage du bien corrigé de 3 à 5 ne le rend pas faux.
+    expect(bindingHolds({ field: 'floorsTotal', value: '5' }, { ...FACTS, floor: 5, floorsTotal: 5 })).toBe(true);
+    // « 3e étage » relié à l'étage : l'étage corrigé à 2 le rend faux, même si l'immeuble a 3 étages.
+    expect(bindingHolds({ field: 'floor', value: '3' }, { ...FACTS, floor: 2, floorsTotal: 3 })).toBe(false);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: ['balcon'] })).toBe(true);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: [] })).toBe(false);
+    expect(bindingHolds({ field: 'city', value: 'Dijon' }, FACTS)).toBe(true);
+    expect(bindingHolds({ field: 'energyClass', value: 'D' }, { ...FACTS, energyClass: 'E' })).toBe(false);
+    // Un nombre en lettres se relit comme le contrôle le lit.
+    expect(bindingHolds({ field: 'rooms', value: 'Trois' }, { ...FACTS, rooms: 3 })).toBe(true);
+    expect(bindingHolds({ field: 'rooms', value: 'trois' }, { ...FACTS, rooms: 4 })).toBe(false);
+    expect(bindingHolds({ field: 'rooms', value: 'beaucoup' }, { ...FACTS, rooms: 3 })).toBe(false);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
@@ -276,6 +291,17 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(good).toMatchObject({ ok: true, value: { origin: 'agent', seq: 1 } });
   });
 
+  it('[R47] AU066 · un nombre écrit en lettres dans l’annonce validée reste vrai après une nouvelle version de la fiche qui ne le touche pas', async () => {
+    const t = await setup();
+    await t.mentions.setCardNumber(t.direction, 'CPI 2101 2027 000 000 001');
+    await t.signMandate();
+    const d = await t.annonces.correct(t.agent, t.propertyId, { title: 'Trois pièces à Dijon', body: 'Au 3e étage avec ascenseur.' });
+    if (!d.ok) throw new Error(d.code);
+    expect((await t.annonces.validate(t.agent, d.value.id)).ok).toBe(true);
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d.value.id);
+  });
+
   it('[R47] rien n’est publiable sans la validation de l’agent du bien ; seul le dernier brouillon, sur la dernière fiche, se valide', async () => {
     const t = await setup();
     await t.mentions.setCardNumber(t.direction, 'CPI 2101 2027 000 000 001');
@@ -295,9 +321,19 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(await t.annonces.validate(t.agent, d2.value.id)).toEqual({ ok: false, rule: 'R47', code: 'already_validated' });
     expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     expect(await t.annonces.publishable('autre-reseau', t.propertyId)).toBeNull();
-    // Une nouvelle version de la fiche : plus rien de publiable tant qu'un brouillon n'est pas revalidé.
+    // Une nouvelle version de la fiche qui ne rend aucune phrase fausse : la version validée reste publiable (AU066).
     await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Un étage corrigé que le nombre d'étages de l'immeuble « explique » encore : la phrase est fausse, retirée.
+    const sheet = SHEET(t.propertyId) as { characteristics: Record<string, unknown> };
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), characteristics: { ...sheet.characteristics, floor: 2, floorsTotal: 3 } });
     expect(await t.annonces.publishable(t.network.id, t.propertyId)).toBeNull();
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Une correction en cours, pas encore validée, ne la retire pas non plus.
+    const draft = await t.annonces.correct(t.agent, t.propertyId, { title: 'Appartement 3 pièces à Dijon', body: 'Au 3e étage, avec ascenseur.' });
+    expect(draft.ok).toBe(true);
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     const d3 = await t.annonces.propose(t.agent, t.propertyId);
     if (!d3.ok) throw new Error(d3.code);
     await t.fiches.save(t.agent, t.propertyId, SHEET(t.propertyId));

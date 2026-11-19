@@ -578,6 +578,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   listing_translation_validations: { locate: [via('property_id', 'properties')] },
   translation_reviewers: { locate: [via('property_id', 'properties')] },
   listing_versions: { locate: [via('property_id', 'properties')] },
+  listing_version_media_sheets: { locate: [via('version_id', 'listing_versions')] },
   video_text_checks: { locate: [via('property_id', 'properties')] },
   agent_import_properties: { locate: [via('property_id', 'properties')] },
   // acquereurs

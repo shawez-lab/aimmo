@@ -1272,7 +1272,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Toute correction annule la validation : l’annonce est retirée des canaux jusqu’à ce que l’agent du bien la valide de nouveau.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Une correction reste en préparation : l’annonce en ligne y reste jusqu’à ce que l’agent du bien valide la nouvelle.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');

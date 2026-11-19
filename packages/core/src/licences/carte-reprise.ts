@@ -164,6 +164,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   licensed_asset_withdrawals: { via: [['asset_id', 'licensed_assets', 'id']] },
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
+  listing_version_media_sheets: { via: [['version_id', 'listing_versions', 'id']] },
   portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
@@ -346,7 +347,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   diffusion_portal_checks diffusion_portal_choices diffusion_portal_feedback diffusion_portal_resumptions
   diffusion_portal_suspensions diffusion_portal_task_closures diffusion_portal_tasks
   diffusion_portal_text_validations diffusion_portal_texts virtual_tours floor_plans translation_reviewers listing_translation_validations
-  listing_translations listing_validations listing_pushes portal_operations listing_versions listing_drafts listing_views
+  listing_translations listing_validations listing_pushes listing_version_media_sheets portal_operations listing_versions listing_drafts listing_views
   neighbourhood_letters neighbourhood_campaigns photo_exports virtual_stagings photo_certificates photo_guide_shots
   photo_guide_validations property_communes property_details property_key_retirements property_keys property_links
   property_sheets rental_ad_validations rental_ads rental_annexes rental_piece_findings rental_application_pieces
