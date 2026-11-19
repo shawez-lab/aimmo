@@ -6,6 +6,16 @@
  * dont le script `/app/recherche.js` n'est chargé qu'au geste, et les visites réservées en ligne à rattacher (BR64), dont
  * le script `/app/visites-en-ligne.js` n'est chargé qu'au geste.
  */
+/** Ce que l'écran dit d'un secteur refusé (AU073). */
+const AREA_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  rayon: 'Le rayon : de 0,1 à 50 km.',
+  centre: 'Dites le lieu précis : une adresse, une gare, une école…',
+  nom: 'Donnez un nom au secteur : quelques mots, sans numéro.',
+  lieu_introuvable: 'Ce lieu n’a pas été trouvé : précisez la commune.',
+  geocodage_absent: 'La recherche des lieux n’est pas branchée : le secteur attend.',
+  not_assigned: 'Ce client est suivi par un autre agent.',
+});
+
 export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
   home: 'Maison ou appartement',
   building: 'Immeuble',
@@ -46,6 +56,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
   var el = t.el;
   var KINDS = ${JSON.stringify(KIND_LABELS)};
   var CODES = ${JSON.stringify(CODES)};
+  var AREA_REFUSALS = ${JSON.stringify(AREA_REFUSALS)};
   var REASONS = ${JSON.stringify(CORRECTION_REASONS)};
   var LOST = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez sans changer la saisie : il ne sera pas créé deux fois.';
   function line(b) {
@@ -205,6 +216,37 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     });
     inner.appendChild(open);
   }
+  // AU073 · Le secteur privé d'une recherche : un rayon autour d'un lieu précis, géocodé par le serveur.
+  function areaBlock(box, projects) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Secteur de la recherche'));
+    var state = t.cState();
+    var id = t.cSeq();
+    var p = projects[0];
+    var base = '/v1/acquereurs/projets/' + encodeURIComponent(p.id) + '/secteur';
+    var now = el('p', null, 'doux');
+    section.appendChild(now);
+    var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
+    var km = field(section, id + '-rayon', 'Rayon, en km', true);
+    var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
+    function said(a) { now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
+    function answer(res) {
+      if (res.gone) return false;
+      if (!res.ok) { state.textContent = AREA_REFUSALS[res.body && res.body.code] || 'Le secteur n’est pas rangé.'; return false; }
+      said(res.body.data);
+      state.textContent = 'Secteur rangé.';
+      return true;
+    }
+    section.appendChild(t.accordButton('Ranger le secteur', function () {
+      var r = Number(String(km.value).replace(',', '.'));
+      if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
+      return t.send(base, 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer);
+    }));
+    section.appendChild(t.accordButton('Retirer le secteur', function () { return t.send(base, 'POST', { shape: 'aucun' }).then(answer); }));
+    section.appendChild(state);
+    box.appendChild(section);
+    t.send(base, 'GET').then(function (res) { if (!res.gone && res.ok) said(res.body.data); });
+  }
   var onlineTool = null, onlineBusy = false;
   function onlineBlock(box, personId, projects) {
     var section = el('section', null, 'bloc');
@@ -297,6 +339,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     // La recherche en langage courant (BR40) : seulement sur un projet d'achat, pour le ranger au bon endroit.
     var buying = (f && Array.isArray(f.projects) ? f.projects : []).filter(function (p) { return p && p.kind === 'buy' && /^[A-Za-z0-9_-]{1,64}$/.test(String(p.id)); });
     if (buying.length) searchBlock(box, buying);
+    if (buying.length) areaBlock(box, buying);
     // Les visites réservées en ligne, rattachées à la recherche (BR64) : seulement avec un projet d'achat.
     if (buying.length) onlineBlock(box, personId, buying);
   };

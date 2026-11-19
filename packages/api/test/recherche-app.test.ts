@@ -313,3 +313,37 @@ describe('BR40 · la recherche en langage courant depuis la fiche de l’acquér
     expect(text).not.toContain('Réf. R-002');
   });
 });
+
+describe('AU073 · le secteur de la recherche depuis la fiche de l’acquéreur', () => {
+  it('un rayon autour d’un lieu dit part au serveur, qui le géocode ; « aucun » le retire ; un refus est dit', async () => {
+    const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const t = await opened({
+      answers: {
+        [`GET ${base}`]: ok(null),
+        [`POST ${base}`]: async () => Response.json({ ok: true, mode: 'essai', data: { shape: 'cercle', center: { lat: 47.3, lon: 5.0 }, radiusM: 1500, label: 'Autour de la gare' } }),
+      },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Aucun secteur : les communes de la recherche suffisent.');
+    const input = (label: string) => {
+      const l = area().all().find((e) => e.tagName === 'label' && e.textContent === label)!;
+      return area().all().find((e) => (e.tagName === 'input') && e.attributes.id === l.attributes.for)!;
+    };
+    input('Lieu précis (adresse, gare, école…)').value = 'Gare de Dijon';
+    input('Rayon, en km').value = '1,5';
+    input('Nom du secteur, pour vous').value = 'Autour de la gare';
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'cercle', place: 'Gare de Dijon', radiusM: 1500, label: 'Autour de la gare' } });
+    expect(area().textContent).toContain('Secteur « Autour de la gare » : 1,5 km autour du lieu dit.');
+    input('Rayon, en km').value = '80';
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Le rayon : de 0,1 à 50 km.');
+    t.table[`POST ${base}`] = ok(null);
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'aucun' } });
+    expect(area().textContent).toContain('Aucun secteur');
+  });
+});

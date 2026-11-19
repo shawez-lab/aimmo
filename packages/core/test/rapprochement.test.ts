@@ -5,13 +5,16 @@ import {
   FicheClient,
   FicheUnique,
   Rapprochement,
+  Secteurs,
   SqlJournalStore,
   applyMigrations,
   fromSyncSqlite,
+  insideArea,
   matchBuyer,
   verifyChain,
   type BuyerSearch,
   type DiffusionGate,
+  type Geocoder,
   type PropertyKind,
   type SqlDatabase,
 } from '../src/index.ts';
@@ -149,6 +152,54 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     };
     expect(await proposed(lift.id)).toEqual([b.project.id]);
     expect(await proposed(stairs.id)).toEqual([]);
+  });
+
+  it('AU073 · un rayon autour d’un lieu précis ou un secteur dessiné filtre les biens par leur position ; un bien non situé n’est pas proposé', async () => {
+    const t = await setup();
+    // Une Base adresse nationale de test : deux lieux inventés, à 1,1 km l'un de l'autre.
+    const PLACES: Record<string, { lat: number; lon: number }> = { 'Gare de Dijon': { lat: 47.3233, lon: 5.0275 }, '1 rue Inventée 21000 Dijon': { lat: 47.3233, lon: 5.0421 }, '9 rue Lointaine 21000 Dijon': { lat: 47.36, lon: 5.1 } };
+    const geocoder = { geocode: async (q: string) => (PLACES[q] ? { label: q, ...PLACES[q]!, postalCode: '21000', inseeCode: '21231' } : null) } as unknown as Geocoder;
+    const secteurs = new Secteurs(t.db, t.acces, t.journal, geocoder, { now: () => new Date('2026-06-01T08:00:00.000Z') });
+    const near = await t.buyer(t.alex.id, 'Près de la gare', { communes: ['Dijon'] });
+    const free = await t.buyer(t.alex.id, 'Partout', { communes: ['Dijon'] });
+    const agent = t.as('agent', t.alex.id);
+    expect(await secteurs.set(agent, near.project.id, { shape: 'cercle', place: 'Gare de Dijon', radiusM: 1_500, label: 'Autour de la gare' })).toMatchObject({ ok: true, value: { shape: 'cercle', radiusM: 1_500 } });
+    expect(await secteurs.set(t.as('agent', t.sam.id), near.project.id, { shape: 'aucun' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await secteurs.set(agent, near.project.id, { shape: 'cercle', place: 'Nulle part', radiusM: 1_000, label: 'Ailleurs' })).toMatchObject({ ok: false, code: 'lieu_introuvable' });
+    expect(await secteurs.set(agent, near.project.id, { shape: 'cercle', place: 'Gare de Dijon', radiusM: 60_000, label: 'Trop grand' })).toMatchObject({ ok: false, code: 'rayon' });
+    const designate = (id: string, street: string) =>
+      t.db.run("INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, 1, ?, '21000', 'Dijon', '[]', 'direction:d1', '2026-01-01T00:00:00.000Z')", [`d-${id}`, t.network.id, id, street]);
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId).sort();
+    };
+    const close = await t.property(t.alex.id, 'PRES', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    const far = await t.property(t.alex.id, 'LOIN', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    // Pas encore situé : seul celui qui n'a pas de secteur le reçoit.
+    expect(await proposed(close.id)).toEqual([free.project.id]);
+    await designate(close.id, '1 rue Inventée');
+    await designate(far.id, '9 rue Lointaine');
+    expect(await secteurs.locate(t.as('agent', t.sam.id), close.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect((await secteurs.locate(agent, close.id)).ok).toBe(true);
+    expect((await secteurs.locate(t.direction, far.id)).ok).toBe(true);
+    expect(await proposed(close.id)).toEqual([near.project.id, free.project.id].sort());
+    expect(await proposed(far.id)).toEqual([free.project.id]);
+    // Les alertes lisent le même rapprochement : le bien hors du secteur ne part pas à l'acquéreur du secteur.
+    expect((await t.rapprochement.systemMatches(t.network.id, far.id)).map((m) => m.projectId)).toEqual([free.project.id]);
+    expect((await t.rapprochement.systemMatches(t.network.id, close.id)).map((m) => m.projectId).sort()).toEqual([near.project.id, free.project.id].sort());
+    expect(insideArea({ shape: 'cercle', center: { lat: 47.3233, lon: 5.0275 }, radiusM: 1_150, label: 'x' }, { lat: 47.3233, lon: 5.0421 })).toBe(true);
+    expect(insideArea({ shape: 'cercle', center: { lat: 47.3233, lon: 5.0275 }, radiusM: 1_050, label: 'x' }, { lat: 47.3233, lon: 5.0421 })).toBe(false);
+    // Un secteur dessiné autour du bien lointain : la recherche le reçoit, plus le proche.
+    expect((await secteurs.set(agent, near.project.id, { shape: 'polygone', points: [{ lat: 47.35, lon: 5.08 }, { lat: 47.37, lon: 5.08 }, { lat: 47.37, lon: 5.12 }, { lat: 47.35, lon: 5.12 }], label: 'Le plateau' })).ok).toBe(true);
+    expect(await proposed(far.id)).toEqual([near.project.id, free.project.id].sort());
+    expect(await proposed(close.id)).toEqual([free.project.id]);
+    // « aucun » retire le secteur ; rien ne s'efface, les versions restent.
+    expect((await secteurs.set(agent, near.project.id, { shape: 'aucun' })).ok).toBe(true);
+    expect(await proposed(close.id)).toEqual([near.project.id, free.project.id].sort());
+    expect(await t.db.all('SELECT version FROM buyer_search_areas WHERE project_id = ? ORDER BY version', [near.project.id])).toHaveLength(3);
+    // Le journal ne garde ni lieu ni coordonnée.
+    expect(JSON.stringify(await t.journal.all())).not.toMatch(/47\.3|Gare de Dijon|rue Inventée/);
   });
 
   it('le classement ne tient jamais compte du financement [R14] ; à égalité, l’urgence déclarée puis la recherche la plus fraîche', async () => {

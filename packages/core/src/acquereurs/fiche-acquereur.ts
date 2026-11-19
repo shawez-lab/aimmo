@@ -9,6 +9,7 @@
  * chaque geste au journal, sans aucune valeur de la recherche [R13].
  */
 import type { Acces } from '../acces/acces.ts';
+import type { SearchArea } from './secteurs.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Project } from '../db/types.ts';
@@ -53,6 +54,8 @@ export interface BuyerSearch {
   requiredFeatures?: BuyerFeature[];
   /** Le budget dit infranchissable : aucune tolérance au-dessus (AU115). */
   budgetStrict?: boolean;
+  /** Le secteur privé de la recherche, rangé à part et joint au rapprochement (AU073) ; jamais modifié par ici. */
+  area?: SearchArea | null;
   /** Tel que la personne l'a déclaré, jamais évalué [R24]. */
   financing: Financing | null;
   urgency: Deadline | null;

@@ -9,6 +9,7 @@
  * soit jamais proposé deux fois même si l'agent oublie de confirmer [R05] ; la confirmation dit qu'il est parti. Le
  * texte est celui du code, sans IA. Ni le lien, ni le numéro, ni le texte ne vont au journal [R13].
  */
+import { areaOfProject } from './secteurs.ts';
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import { trialChannels } from '../captation/essai.ts';
@@ -101,7 +102,9 @@ export class AlerteWhatsApp {
     const stale = movedAt !== undefined && Date.parse(movedAt) < this.now().getTime() - DEFAULT_ACTIVE_DAYS * 86_400_000;
     if (!search || CLOSED_STAGES.includes(project.stage) || stale) return stop('R51', 'inactive');
     const property = await this.rapprochement.propertyForMatch(read.value);
-    if (matchBuyer(property, search.search).status === 'miss') return stop('R51', 'not_matching');
+    // Le secteur privé de la recherche compte aussi pour l'alerte de l'agent (AU073).
+    const area = await areaOfProject(this.db, projectId);
+    if (matchBuyer(property, area ? { ...search.search, area } : search.search).status === 'miss') return stop('R51', 'not_matching');
 
     const at = this.now();
     const line = await newUnsubscribeLine(this.db, viewer.networkId, root.id, this.unsubscribeBase, at);

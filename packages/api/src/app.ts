@@ -2428,7 +2428,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.estimation?.geocoder ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),

@@ -734,7 +734,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
 - Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.

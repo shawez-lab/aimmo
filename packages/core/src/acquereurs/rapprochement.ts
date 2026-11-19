@@ -23,11 +23,12 @@ import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
+import { areasOfNetwork, insideArea, positionOf, type GeoPoint } from './secteurs.ts';
 import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
 const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'features'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'area', 'budget', 'surface', 'rooms', 'bedrooms', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -56,6 +57,8 @@ export interface MatchProperty {
   rooms: number | null;
   bedrooms: number | null;
   features: BuyerFeature[];
+  /** La position du bien, géocodée depuis son adresse désignée ; absente tant qu'il n'est pas situé (AU073). */
+  position?: GeoPoint | null;
 }
 
 export type CriterionState = 'met' | 'tolerated' | 'unmet';
@@ -117,6 +120,13 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     const city = property.city;
     if (city !== null && search.communes.some((c) => same(c, city))) add('commune', 'met', `Commune cherchée : ${city}.`);
     else add('commune', 'unmet', 'Commune hors de la recherche.');
+  }
+  // AU073 · le secteur privé : un bien hors du secteur, ou pas encore situé, n'est pas proposé.
+  if (search.area) {
+    const at = property.position ?? null;
+    if (at === null) add('area', 'unmet', 'Position du bien inconnue.');
+    else if (insideArea(search.area, at)) add('area', 'met', `Dans le secteur « ${search.area.label} ».`);
+    else add('area', 'unmet', 'Hors du secteur cherché.');
   }
   if (search.budgetMaxEur !== null) {
     const price = property.priceEur;
@@ -389,7 +399,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
+    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, position: await positionOf(this.db, p.id) };
   }
 
   /**
@@ -408,6 +418,8 @@ export class Rapprochement {
       [networkId],
     );
     const nowIso = at.toISOString();
+    // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
+    const areas = await areasOfNetwork(this.db, networkId);
     const byRoot = new Map<string, Candidate>();
     for (const row of rows) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
@@ -415,6 +427,8 @@ export class Rapprochement {
       const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
       if (movedAt < since) continue;
       const search = toVersion(row).search;
+      const area = areas.get(row.project_id);
+      if (area) search.area = area;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
         search.propertyKinds.length === 0 &&
@@ -423,7 +437,8 @@ export class Rapprochement {
         search.surfaceMinM2 === null &&
         search.roomsMin === null &&
         search.bedroomsMin === null &&
-        (search.requiredFeatures ?? []).length === 0
+        (search.requiredFeatures ?? []).length === 0 &&
+        !search.area
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
