@@ -110,6 +110,7 @@ export const TABLES_RESEAU: readonly string[] = `
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
 export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
+  fee_schedule_tiers: { via: [['schedule_id', 'fee_schedules', 'id']] },
   ad_campaign_approvals: { via: [['campaign_id', 'ad_campaigns', 'id']] },
   ad_campaign_launches: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_repauses: { via: [['approval_id', 'ad_campaign_stops', 'approval_id']] },
@@ -284,6 +285,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
  * ce qu'elle désigne : aucune ligne du fichier ne désigne une ligne absente du fichier (test) [R658].
  */
 export const ORDRE_REPRISE: readonly string[] = `
+  fee_schedule_tiers
   academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
   ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
