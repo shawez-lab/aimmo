@@ -237,6 +237,8 @@ export class Visites {
     },
   ): Promise<{ ok: true; visit: ScheduledVisit } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role');
+    // La durée propre d'une visite est choisie par l'agent seul (AU056) ; la direction fixe une visite à la durée du type.
+    if (request.durationMinutes !== undefined && (viewer.role !== 'agent' || request.byClient)) return { ok: false, rule: null, code: 'bad_duration' };
     const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
     if (!project) return this.refuse(viewer, 'visit', 'unknown', `project:${request.projectId}`);
     const fiche = await this.acces.readFiche(viewer, project.person_id);

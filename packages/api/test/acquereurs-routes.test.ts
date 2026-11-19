@@ -212,6 +212,20 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: later })).body).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
     expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: new Date(Date.parse(start) + 90 * 60_000).toISOString(), durationMinutes: 10 })).status).toBe(200);
   });
+
+  it('[R32] AU056 · POST /visites : une contre-visite de 20 minutes, durée choisie par l’agent seul', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const visit = { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H };
+    // La direction fixe une visite à la durée du type, jamais une durée propre.
+    expect((await t.call('direction', 'POST', '/visites', { ...visit, durationMinutes: 20 })).body).toMatchObject({ ok: false, code: 'bad_duration' });
+    expect((await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 7 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    const contre = await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 20 });
+    expect(contre.status).toBe(200);
+    const a = contre.body.data.visit.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(20);
+  });
 });
 
 describeWithSqlite('AU073 · le secteur par les routes, sans le service DVF', () => {
