@@ -8,7 +8,8 @@
  *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
  *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
  *   POST /acquereurs/whatsapp/:message/envoye           l'agent dit que son message est parti
- *   POST /visites                                       fixer une visite, avec son bon [R40]
+ *   POST /visites                                       fixer une visite, avec son bon [R40] ; durationMinutes ? (AU056)
+ *   POST /rendez-vous                                   { personId, propertyId?, kind, start, durationMinutes? } (AU056)
  *   GET  /visites/alertes                               les alertes de sécurité du réseau (direction)
  *   POST /visites/alertes/:alerte                       l'alerte en un geste
  *   GET  /visites/alertes/:alerte                       l'état de son alerte : palier, accusé réel, acquittement (AU008)
@@ -33,7 +34,9 @@
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
 import {
+  APPOINTMENT_KINDS,
   AlerteWhatsApp,
+  CUSTOM_DURATION,
   ComptesRendus,
   Diffusion,
   FicheAcquereur,
@@ -42,10 +45,13 @@ import {
   INTEREST_LEVELS,
   PointSemaine,
   Rapprochement,
+  RendezVous,
   Visites,
   VisiteSecurisee,
   appendEvent,
+  validDuration,
   type Acces,
+  type AppointmentKind,
   type DirectionNotifier,
   type JournalStore,
   type ReportWriter,
@@ -124,6 +130,15 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+const AGENT_BOOKING_FIELDS = new Set(['personId', 'propertyId', 'kind', 'start', 'durationMinutes']);
+const durationHelp = `durationMinutes : des minutes entières, par pas de ${CUSTOM_DURATION.step}, de ${CUSTOM_DURATION.min} à ${CUSTOM_DURATION.max}.`;
+
+/** La durée propre d'un rendez-vous (AU056) : absente, `{}` ; recevable, `{ durationMinutes }` ; sinon `null`. */
+function durationOf(value: unknown): { durationMinutes?: number } | null {
+  if (value === undefined || value === null) return {};
+  return validDuration(value) ? { durationMinutes: value } : null;
+}
+
 /** Une saisie de compte rendu : seulement la forme connue, le contenu est contrôlé par la couche métier [R52]. */
 function reportOf(value: unknown): VisitReport | undefined | null {
   if (value === undefined || value === null) return undefined;
@@ -175,7 +190,23 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
         return failure(400, 'invalid_ids', 'propertyId et projectId attendus.');
       }
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
-      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start) }));
+      const duration = durationOf(body.durationMinutes);
+      if (duration === null) return failure(400, 'invalid_duration', durationHelp);
+      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start), ...duration }));
+    }),
+    // AU056 · Un rendez-vous de l'agent pour son client, avec sa durée propre : notaire 90 minutes, appel 10 minutes.
+    post('rendez-vous.agent', '/rendez-vous', async (s, v, _p, body) => {
+      const unknown = Object.keys(body).find((k) => !AGENT_BOOKING_FIELDS.has(k));
+      if (unknown) return failure(400, 'unknown_field', `Champ non prévu : ${unknown}.`);
+      const { personId, propertyId, kind, start } = body;
+      if (typeof personId !== 'string' || !new RegExp(`^${ID}$`).test(personId)) return failure(400, 'invalid_ids', 'personId attendu.');
+      if (propertyId !== undefined && propertyId !== null && (typeof propertyId !== 'string' || !new RegExp(`^${ID}$`).test(propertyId))) return failure(400, 'invalid_ids', 'propertyId non valable.');
+      if (typeof kind !== 'string' || !(APPOINTMENT_KINDS as readonly string[]).includes(kind)) return failure(400, 'invalid_kind', `kind attendu parmi : ${APPOINTMENT_KINDS.join(', ')}.`);
+      if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
+      const duration = durationOf(body.durationMinutes);
+      if (duration === null) return failure(400, 'invalid_duration', durationHelp);
+      const rdv = new RendezVous(s.db, s.journal, { now: s.now });
+      return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {

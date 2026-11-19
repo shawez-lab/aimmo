@@ -191,4 +191,24 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'GET', '/acquereurs/inconnu')).status).toBe(404);
     expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
   });
+
+  it('[R32] AU056 · POST /rendez-vous : l’agent fixe un rendez-vous chez le notaire de 90 minutes, le conflit se contrôle sur 90 minutes', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    const start = WEDNESDAY_14H;
+    const body = { personId: t.buyer.id, kind: 'signature', start, durationMinutes: 90 };
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, durationMinutes: 22 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, salle: 'B' })).body).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'notaire' })).status).toBe(400);
+    expect((await t.call('sam', 'POST', '/rendez-vous', body)).status).toBe(403);
+    expect((await t.call('direction', 'POST', '/rendez-vous', body)).status).toBe(403);
+    const booked = await t.call('alex', 'POST', '/rendez-vous', body);
+    expect(booked.status).toBe(200);
+    const a = booked.body.data.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(90);
+    // Un appel 75 minutes après le début tombe dans les 90 minutes : refusé [R32].
+    const later = new Date(Date.parse(start) + 75 * 60_000).toISOString();
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: later })).body).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: new Date(Date.parse(start) + 90 * 60_000).toISOString(), durationMinutes: 10 })).status).toBe(200);
+  });
 });
