@@ -540,12 +540,30 @@ describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de 
     await t.consent(person.id, 'buyer_search');
     const agent = t.as('agent', t.alex.id);
     expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, si possible pas de rez-de-chaussée')).ok).toBe(true);
-    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, softCriteria: ['floor'] });
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, softCriteria: ['floorMin'] });
     expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, DPE D minimum')).ok).toBe(true);
-    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, energyClassMax: 'D', softCriteria: ['floor'] });
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, energyClassMax: 'D', softCriteria: ['floorMin'] });
+    // Chaque borne garde sa force : le minimum impératif, le maximum souhaité.
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, floorMax: 3, softCriteria: ['floorMax'] });
     // Les bornes se contrôlent sur la recherche qui en résulte : un minimum au-dessus du maximum déjà rangé est refusé.
     const direction = t.as('direction', 'd1');
-    expect((await t.acquereurs.update(t.acces, direction, project.id, { floorMax: 2 })).ok).toBe(true);
-    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 3 })).toMatchObject({ ok: false, field: 'floorMin' });
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 4 })).toMatchObject({ ok: false, field: 'floorMin' });
+  });
+});
+
+describe('AU072 · les forces et les sources de chaque borne', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const flat = (floor: number | null) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor, energyClass: 'C', landM2: null });
+  it('[R420] « terrain de 500 m² à Dijon » cherche un terrain ; la raison de l’étage cite la borne dite', () => {
+    expect(parsePhrase('Terrain de 500 m² à Dijon').criteria.map((c) => [c.field, c.value])).toEqual(expect.arrayContaining([['propertyKinds', 'land'], ['landMinM2', 500], ['communes', 'Dijon']]));
+    expect(judge(base('Terrain de 500 m² à Dijon'), { ...flat(null), landM2: 600 })).toBeNull();
+    const r = judge(base('Appartement à Dijon, 3e étage maximum'), flat(2));
+    expect(r!.reasons.find((x) => x.text.includes('étage'))!.from).toContain('3e étage maximum');
+  });
+  it('[R51] « pas de rez-de-chaussée, si possible 3e étage maximum » : le minimum écarte, le maximum ne fait que classer', () => {
+    const s = base('Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum');
+    expect(judge(s, flat(4))).toMatchObject({ status: 'match', preferencesMet: 0 });
+    expect(judge(s, flat(0))).toBeNull();
   });
 });

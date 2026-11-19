@@ -175,28 +175,28 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   // remplit pas un impératif, et un souhait non rempli n'écarte rien.
   const soft = search.softCriteria ?? [];
   let softMet = 0;
-  const judgeOne = (criterion: 'floor' | 'energy' | 'land', ok: boolean | null, met: string, unmet: string, unknown: string) => {
+  const judgeOne = (criterion: 'floor' | 'energy' | 'land', isSoft: boolean, ok: boolean | null, met: string, unmet: string, unknown: string) => {
     if (ok === true) {
       add(criterion, 'met', met);
-      if (soft.includes(criterion)) softMet += 1;
-    } else if (!soft.includes(criterion)) add(criterion, 'unmet', ok === null ? unknown : unmet);
+      if (isSoft) softMet += 1;
+    } else if (!isSoft) add(criterion, 'unmet', ok === null ? unknown : unmet);
   };
+  // Chaque borne d'étage se juge avec sa propre force.
   const fMin = search.floorMin ?? null;
   const fMax = search.floorMax ?? null;
-  if (fMin !== null || fMax !== null) {
-    const floor = property.floor ?? null;
-    const at = floor === null ? '' : floor === 0 ? 'Rez-de-chaussée' : `${floor === 1 ? '1er' : `${floor}e`} étage`;
-    judgeOne('floor', floor === null ? null : (fMin === null || floor >= fMin) && (fMax === null || floor <= fMax), `${at}, dans la recherche.`, `${at}, hors de la recherche.`, 'Étage du bien inconnu.');
-  }
+  const floor = property.floor ?? null;
+  const at = floor === null ? '' : floor === 0 ? 'Rez-de-chaussée' : `${floor === 1 ? '1er' : `${floor}e`} étage`;
+  if (fMin !== null) judgeOne('floor', soft.includes('floorMin'), floor === null ? null : floor >= fMin, `${at}, au-dessus du minimum demandé.`, `${at}, sous l’étage demandé.`, 'Étage du bien inconnu.');
+  if (fMax !== null) judgeOne('floor', soft.includes('floorMax'), floor === null ? null : floor <= fMax, `${at}, sous le maximum demandé.`, `${at}, au-dessus de l’étage demandé.`, 'Étage du bien inconnu.');
   const eMax = search.energyClassMax ?? null;
   if (eMax !== null) {
     const cls = property.energyClass ?? null;
-    judgeOne('energy', cls === null ? null : cls <= eMax, `Classe énergie ${cls} pour ${eMax} au moins.`, `Classe énergie ${cls}, moins bonne que ${eMax}.`, 'Classe énergie du bien inconnue.');
+    judgeOne('energy', soft.includes('energy'), cls === null ? null : cls <= eMax, `Classe énergie ${cls} pour ${eMax} au moins.`, `Classe énergie ${cls}, moins bonne que ${eMax}.`, 'Classe énergie du bien inconnue.');
   }
   const lMin = search.landMinM2 ?? null;
   if (lMin !== null) {
     const land = property.landM2 ?? null;
-    judgeOne('land', land === null ? null : land >= lMin, `Terrain de ${land} m² pour ${lMin} m² au moins.`, 'Terrain plus petit que demandé.', 'Terrain du bien inconnu.');
+    judgeOne('land', soft.includes('land'), land === null ? null : land >= lMin, `Terrain de ${land} m² pour ${lMin} m² au moins.`, 'Terrain plus petit que demandé.', 'Terrain du bien inconnu.');
   }
 
   // Les équipements impératifs sont éliminatoires, chaque absence nommée ; une valeur inconnue ne les remplit pas (AU071).

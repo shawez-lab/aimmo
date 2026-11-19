@@ -70,7 +70,8 @@ export type SearchField = keyof BuyerSearch;
 
 export const SEARCH_ENERGY_CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
 export type SearchEnergyClass = (typeof SEARCH_ENERGY_CLASSES)[number];
-export const SOFT_CRITERIA = ['floor', 'energy', 'land'] as const;
+/** Chaque borne d'étage a sa propre force : « pas de rez-de-chaussée » impératif, « si possible 3e au plus » souhait. */
+export const SOFT_CRITERIA = ['floorMin', 'floorMax', 'energy', 'land'] as const;
 export type SoftCriterion = (typeof SOFT_CRITERIA)[number];
 
 export const SEARCH_FIELDS: readonly SearchField[] = [

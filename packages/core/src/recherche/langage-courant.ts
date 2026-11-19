@@ -378,6 +378,9 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
       add('features', feature, start, end);
     });
   }
+  // AU072 · « terrain de 500 m² » sans autre type dit : c'est un terrain qui est cherché, et son type reste dans la recherche.
+  const land = criteria.find((c) => c.field === 'landMinM2');
+  if (land && !criteria.some((c) => c.field === 'propertyKinds')) criteria.push({ field: 'propertyKinds', value: 'land', strength: land.strength, source: land.source });
   criteria.sort((a, b) => (a.source.kind === 'phrase' && b.source.kind === 'phrase' ? a.source.start - b.source.start : 0));
   ignored.sort((a, b) => a.start - b.start);
   const budgetStrict = STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
@@ -604,6 +607,8 @@ export function judge(
   const reasons: Reason[] = [];
   // Le critère qui a servi : la commune du bien, son type, ou le nombre retenu dans la recherche passée au rapprochement.
   const sourceOf = (criterion: string, strength: Strength, used: BuyerSearch): PhraseCriterion | undefined => {
+    // L'étage vient de la borne dite, minimum ou maximum (AU072).
+    if (criterion === 'floor') return search.criteria.find((c) => (c.field === 'floorMin' || c.field === 'floorMax') && c.strength === strength);
     const field = CRITERION_FIELD[criterion]!;
     const candidates = search.criteria.filter((c) => c.field === field && c.strength === strength);
     if (field === 'communes') return candidates.find((c) => property.city !== null && key(String(c.value)) === key(property.city));
@@ -803,7 +808,7 @@ export class RechercheLangage {
     }
     if ('features' in changes) changes.requiredFeatures = must.features;
     // AU072 · étage, classe et terrain : un souhait se range aussi, marqué comme tel, jamais éliminatoire.
-    const softOf: Record<string, SoftCriterion> = { floorMin: 'floor', floorMax: 'floor', energyClassMax: 'energy', landMinM2: 'land' };
+    const softOf: Record<string, SoftCriterion> = { floorMin: 'floorMin', floorMax: 'floorMax', energyClassMax: 'energy', landMinM2: 'land' };
     const soft: SoftCriterion[] = [];
     for (const field of ['floorMin', 'floorMax', 'energyClassMax', 'landMinM2'] as const) {
       if (!search.criteria.some((c) => c.field === field)) continue;

@@ -155,7 +155,7 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
   it('AU072 · étage, classe énergie et terrain lus dans la fiche du bien ; impératifs, ils écartent, souhaits, ils n’écartent pas', async () => {
     const t = await setup();
     const strict = await t.buyer(t.alex.id, 'Étage', { communes: ['Dijon'], floorMin: 1, energyClassMax: 'D' });
-    const soft = await t.buyer(t.alex.id, 'Souhait', { communes: ['Dijon'], floorMin: 1, energyClassMax: 'D', softCriteria: ['floor', 'energy'] });
+    const soft = await t.buyer(t.alex.id, 'Souhait', { communes: ['Dijon'], floorMin: 1, energyClassMax: 'D', softCriteria: ['floorMin', 'energy'] });
     const sheet = (id: string, ref: string, data: object) =>
       t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [`sheet-${ref}`, id, t.network.id, JSON.stringify(data), 'direction:d1', '2026-01-01T00:00:00.000Z']);
     const proposed = async (id: string) => {
