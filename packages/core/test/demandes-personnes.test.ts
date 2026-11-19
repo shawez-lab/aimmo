@@ -467,6 +467,31 @@ describeWithSqlite('L07 · réponse d’accès assemblée par le code', () => {
     expect(await parties(A, 'rental_inventory_signatures')).toEqual(['bailleur']);
     expect(await parties(C, 'rental_inventory_copies')).toEqual(['locataire']);
     expect(await parties(A, 'rental_inventory_copies')).toEqual(['bailleur']);
+    // AU097 · une colocataire nommée au bail de C : elle retrouve le bail et son exemplaire, jamais la signature ni
+    // l'exemplaire d'état des lieux de C [R96].
+    const coloc = 'pc-0008';
+    await insert('rental_lease_cotenants', { lease_id: 'bail-c', person_id: coloc, position: 1 });
+    const ofColoc = await assembleAccess(db, [coloc]);
+    expect(ofColoc.sections.find((s) => s.table === 'rental_lease_copies')!.rows.map((r) => r.lease_id)).toContain('bail-c');
+    for (const table of ['rental_inventory_signatures', 'rental_inventory_copies']) expect(ofColoc.sections.find((s) => s.table === table)?.rows ?? []).toEqual([]);
+    // Ses événements de signature (ouverture, signature, code faux) sont à elle, jamais à C [R96].
+    await insert('rental_lease_cotenant_signatures', { ...seeded.get('rental_lease_signatures')![B]!, id: 'sig-coloc', party: 'colocataire', person_id: coloc, lease_id: 'bail-c' });
+    await event(9201, 'location.signature_ouverte', { session: 'sig-coloc', party: 'colocataire', lease: 'rental_lease:bail-c', mode: 'essai' });
+    await event(9202, 'location.signature_essai', { rule: 'R108', session: 'sig-coloc', party: 'colocataire' });
+    await insert('journal', { seq: 9203, at: 't', type: 'location.signature_code_faux', actor: 'ag', subject: 'lease_signature:sig-coloc', data: JSON.stringify({ attempts: 1, blocked: false }), prev_hash: 'p', hash: 'h9203' });
+    // Son avis d'exemplaire nomme sa session : à elle seule, jamais à C ni au bailleur A.
+    await event(9204, 'location.bail_exemplaire', { rule: 'R108', party: 'colocataire', copy: 'exemplaire-de-c', session: 'sig-coloc' });
+    expect(await seqs(coloc)).toEqual(expect.arrayContaining([9201, 9202, 9203, 9204]));
+    for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(C)).not.toContain(seq);
+    for (const seq of [9201, 9202, 9203, 9204]) expect(await seqs(A)).not.toContain(seq);
+    // Son ajout comme colocataire nomme sa ligne : il est à elle ; celui d'une autre personne ne l'est pas.
+    await insert('rental_cotenant_changes', { id: 'chg-coloc', network_id: seeded.get('rental_applications')![B]!.network_id as string, application_id: 'cand-c', person_id: coloc, seq: 1, action: 'ajout', changed_by: 'ag', changed_at: 't' });
+    await insert('journal', { seq: 9205, at: 't', type: 'location.colocataire', actor: 'ag', subject: 'rental_application:cand-c', data: JSON.stringify({ action: 'ajout', change: 'chg-coloc' }), prev_hash: 'p', hash: 'h9205' });
+    await insert('journal', { seq: 9206, at: 't', type: 'location.colocataire', actor: 'ag', subject: 'rental_application:cand-c', data: JSON.stringify({ action: 'ajout', change: 'chg-autre' }), prev_hash: 'p', hash: 'h9206' });
+    expect(await seqs(coloc)).toContain(9205);
+    expect(await seqs(coloc)).not.toContain(9206);
+    // Ni l'avis du locataire C ni celui du bailleur ne sont à elle.
+    for (const seq of [9105, 9106]) expect(await seqs(coloc)).not.toContain(seq);
     // Un bail et un état des lieux à deux parties ne sont jamais proposés à l'effacement : « à examiner ».
     const tenantPlan = conformite.erasurePlan(await conformite.assembleAccessDetail(db, [C]));
     for (const table of ['rental_leases', 'rental_inventories']) expect(tenantPlan.lines.filter((l) => l.table === table).map((l) => l.action)).not.toContain('effacer');

@@ -239,6 +239,8 @@ async function setup() {
       agentId: alex.id,
       reference: ref,
       kind: p.kind ?? 'home',
+      // Les logements de ce jeu sont des maisons, dites à la création (AU070).
+      dwelling: (p.kind ?? 'home') === 'home' ? 'house' : null,
       city: p.city,
       priceEur: p.price,
       surfaceM2: p.surface,
@@ -467,7 +469,7 @@ describeWithSqlite('AU071 · AU115 · l’indispensable et le budget ferme de la
 
 describe('AU115 · le budget ferme dans la recherche en direct', () => {
   const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
-  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
+  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
   it('[R51] un bien à 260 000 € n’est pas proposé pour « budget ferme 250 000 euros », il l’est, toléré, sans « ferme »', () => {
     expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(260_000))).toBeNull();
     expect(judge(base('Appartement à Dijon, budget 250 000 euros'), prop(260_000))).toMatchObject({ status: 'tolerated' });
@@ -488,7 +490,7 @@ describe('AU115 · le budget ferme dans la recherche en direct', () => {
 
 describe('AU072 · étage, classe énergie et terrain dans la recherche', () => {
   const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
-  const flat = (p: { floor?: number | null; energyClass?: string | null; landM2?: number | null } = {}) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 2, energyClass: 'C', landM2: null, ...p });
+  const flat = (p: { floor?: number | null; energyClass?: string | null; landM2?: number | null } = {}) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 2, energyClass: 'C', landM2: null, ...p });
   it('[R420] la phrase dit l’étage, la classe la moins bonne acceptée et le terrain, chacun avec ses mots', () => {
     const fields = (phrase: string) => parsePhrase(phrase).criteria.map((c) => [c.field, c.value, c.strength]);
     expect(fields('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum')).toEqual([
@@ -516,8 +518,8 @@ describe('AU072 · étage, classe énergie et terrain dans la recherche', () => 
     // Une valeur inconnue ne remplit pas un impératif.
     expect(judge(noGround, flat({ floor: null }))).toBeNull();
     const land = base('Maison à Dijon, terrain de 500 m²');
-    expect(judge(land, flat({ landM2: 500 }))).toMatchObject({ status: 'match' });
-    expect(judge(land, flat({ landM2: 499 }))).toBeNull();
+    expect(judge(land, { ...flat({ landM2: 500 }), dwelling: 'house' as const })).toMatchObject({ status: 'match' });
+    expect(judge(land, { ...flat({ landM2: 499 }), dwelling: 'house' as const })).toBeNull();
     const wish = base('Appartement à Dijon, si possible classe C au moins');
     expect(judge(wish, flat({ energyClass: 'E' }))).toMatchObject({ status: 'match', preferencesMet: 0 });
     expect(judge(wish, flat({ energyClass: 'B' }))).toMatchObject({ status: 'match', preferencesMet: 1 });
@@ -533,7 +535,7 @@ describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de 
     expect(saved.ok).toBe(true);
     const current = await t.acquereurs.current(project.id);
     expect(current!.search).toMatchObject({ floorMin: 1, floorMax: null, energyClassMax: 'C', landMinM2: 200, softCriteria: ['energy'] });
-    const property = (p: Partial<{ floor: number | null; energyClass: string | null; landM2: number | null }>) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 1, energyClass: 'E', landM2: 250, ...p });
+    const property = (p: Partial<{ floor: number | null; energyClass: string | null; landM2: number | null }>) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 1, energyClass: 'E', landM2: 250, ...p });
     expect(matchBuyer(property({}), current!.search)).toMatchObject({ status: 'match' });
     expect(matchBuyer(property({ floor: 0 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['floor'] });
     expect(matchBuyer(property({ landM2: 100 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['land'] });
@@ -561,7 +563,7 @@ describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de 
 
 describe('AU072 · les forces et les sources de chaque borne', () => {
   const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
-  const flat = (floor: number | null) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor, energyClass: 'C', landM2: null });
+  const flat = (floor: number | null) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor, energyClass: 'C', landM2: null });
   it('[R420] « terrain de 500 m² à Dijon » cherche un terrain ; la raison de l’étage cite la borne dite', () => {
     expect(parsePhrase('Terrain de 500 m² à Dijon').criteria.map((c) => [c.field, c.value])).toEqual(expect.arrayContaining([['propertyKinds', 'land'], ['landMinM2', 500], ['communes', 'Dijon']]));
     expect(judge(base('Terrain de 500 m² à Dijon'), { ...flat(null), landM2: 600 })).toBeNull();

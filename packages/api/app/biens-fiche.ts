@@ -6,6 +6,16 @@
  * dont le script `/app/recherche.js` n'est chargé qu'au geste, et les visites réservées en ligne à rattacher (BR64), dont
  * le script `/app/visites-en-ligne.js` n'est chargé qu'au geste.
  */
+/** Ce que l'écran dit d'un secteur refusé (AU073). */
+const AREA_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  rayon: 'Le rayon : de 0,1 à 50 km.',
+  centre: 'Dites le lieu précis : une adresse, une gare, une école…',
+  nom: 'Donnez un nom au secteur : quelques mots, sans numéro.',
+  lieu_introuvable: 'Ce lieu n’a pas été trouvé : précisez la commune.',
+  geocodage_absent: 'La recherche des lieux n’est pas branchée : le secteur attend.',
+  not_assigned: 'Ce client est suivi par un autre agent.',
+});
+
 export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
   home: 'Maison ou appartement',
   building: 'Immeuble',
@@ -17,9 +27,10 @@ export const KIND_LABELS: Readonly<Record<string, string>> = Object.freeze({
 
 const CODES: Readonly<Record<string, string>> = Object.freeze({
   bad_kind: 'Choisissez le type de bien.',
+  bad_dwelling: 'Maison ou appartement : seulement pour un logement.',
   bad_postal_code: 'Le code postal : cinq chiffres.',
   bad_city: 'La commune : en toutes lettres, sans chiffre.',
-  bad_surface: 'La surface : un nombre entier de m².',
+  bad_surface: 'La surface : un nombre de m², au centième près (par exemple 63,42).',
   bad_rooms: 'Le nombre de pièces : un nombre entier.',
   bad_price: 'Le prix : un nombre entier d’euros.',
   name_in_first_name: 'Ce nom est déjà écrit comme prénom : il manque le vrai prénom. Voyez avec la direction.',
@@ -46,10 +57,11 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
   var el = t.el;
   var KINDS = ${JSON.stringify(KIND_LABELS)};
   var CODES = ${JSON.stringify(CODES)};
+  var AREA_REFUSALS = ${JSON.stringify(AREA_REFUSALS)};
   var REASONS = ${JSON.stringify(CORRECTION_REASONS)};
   var LOST = 'La réponse n’est pas arrivée : le bien est peut-être créé. Réessayez sans changer la saisie : il ne sera pas créé deux fois.';
   function line(b) {
-    var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? b.surfaceM2 + ' m²' : null].filter(Boolean).join(', ');
+    var facts = [KINDS[b.kind] || 'Bien', b.city, typeof b.surfaceM2 === 'number' ? String(b.surfaceM2).replace('.', ',') + ' m²' : null].filter(Boolean).join(', ');
     return el('li', 'Réf. ' + b.reference + ' : ' + facts + '.');
   }
   function field(form, id, label, numeric) {
@@ -205,6 +217,63 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     });
     inner.appendChild(open);
   }
+  // AU073 · Le secteur privé d'une recherche : un rayon autour d'un lieu précis, géocodé par le serveur.
+  function areaBlock(box, projects) {
+    var section = el('section', null, 'bloc');
+    section.appendChild(el('h3', 'Secteur de la recherche'));
+    var state = t.cState();
+    var id = t.cSeq();
+    // Plusieurs projets d'achat : l'agent choisit celui dont il range le secteur.
+    var labels = {};
+    projects.forEach(function (q, n) { labels[q.id] = 'Projet d’achat ' + (n + 1); });
+    var pick = projects.length > 1 ? t.cSelect(section, id + '-projet', 'Le projet', labels, projects[0].id) : null;
+    var seen = 0, known = false;
+    // Sans le secteur en place lu, rien ne se range ni ne se retire : on ne remplace pas ce qu'on n'a pas vu.
+    var retry = el('button', 'Réessayer de lire le secteur');
+    retry.setAttribute('type', 'button');
+    retry.addEventListener('click', function () { load(); });
+    function unread() { state.textContent = 'Le secteur en place n’est pas lu : réessayez de le lire d’abord.'; return Promise.resolve(false); }
+    function base() { return '/v1/acquereurs/projets/' + encodeURIComponent(pick ? pick.value : projects[0].id) + '/secteur'; }
+    var now = el('p', null, 'doux');
+    section.appendChild(now);
+    var fix = section.appendChild(el('div'));
+    var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
+    var km = field(section, id + '-rayon', 'Rayon, en km', true);
+    var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
+    function said(a) { now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
+    // Une réponse arrivée après un changement de projet ne s'affiche pas sous le nouveau projet.
+    function answer(mine) { return function (res) {
+      if (res.gone || mine !== seen) return false;
+      if (!res.ok) { state.textContent = AREA_REFUSALS[res.body && res.body.code] || 'Le secteur n’est pas rangé.'; return false; }
+      said(res.body.data);
+      state.textContent = 'Secteur rangé.';
+      return true;
+    }; }
+    section.appendChild(t.accordButton('Ranger le secteur', function () {
+      if (!known) return unread();
+      var r = Number(String(km.value).replace(',', '.'));
+      if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
+      return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer(seen));
+    }));
+    section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer(seen)) : unread(); }));
+    section.appendChild(state);
+    box.appendChild(section);
+    function load() {
+      var mine = ++seen;
+      known = false;
+      now.textContent = 'Lecture du secteur…';
+      state.textContent = '';
+      fix.textContent = '';
+      t.send(base(), 'GET').then(function (res) {
+        if (res.gone || mine !== seen) return;
+        if (res.ok) { known = true; said(res.body.data); return; }
+        now.textContent = res.offline ? 'Pas de réseau : le secteur en place n’est pas lu.' : 'Le secteur en place n’a pas pu être lu.';
+        fix.appendChild(retry);
+      });
+    }
+    if (pick) pick.addEventListener('change', load);
+    load();
+  }
   var onlineTool = null, onlineBusy = false;
   function onlineBlock(box, personId, projects) {
     var section = el('section', null, 'bloc');
@@ -255,20 +324,25 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var id = t.cSeq();
     var state = t.cState();
     var kind = t.cSelect(form, id + '-type', 'Type de bien', KINDS, 'home');
+    // AU070 · une recherche de maison ne reçoit pas un appartement.
+    var dwelling = t.cSelect(form, id + '-logement', 'Maison ou appartement', { '': 'Je ne sais pas encore', house: 'Maison', apartment: 'Appartement' }, '');
     var postal = field(form, id + '-cp', 'Code postal', true);
     var city = field(form, id + '-commune', 'Commune', false);
     var surface = field(form, id + '-surface', 'Surface, en m²', true);
+    // AU062 · une surface décimale se saisit telle quelle, virgule ou point.
+    surface.setAttribute('inputmode', 'decimal');
     var rooms = field(form, id + '-pieces', 'Pièces (facultatif)', true);
     var price = field(form, id + '-prix', 'Prix voulu, en euros (facultatif)', true);
     form.appendChild(t.accordButton('Créer le bien', function () {
-      var n = { surfaceM2: count(surface), rooms: count(rooms), priceEur: count(price) };
+      var sv = surface.value.trim().replace(',', '.');
+      var n = { surfaceM2: /^[0-9]+(\\.[0-9]{1,2})?$/.test(sv) && Number(sv) > 0 ? Number(sv) : NaN, rooms: count(rooms), priceEur: count(price) };
       if (!/^[0-9]{5}$/.test(postal.value.trim())) { state.textContent = CODES.bad_postal_code; return Promise.resolve(false); }
       if (!city.value.trim()) { state.textContent = CODES.bad_city; return Promise.resolve(false); }
       if (!n.surfaceM2) { state.textContent = CODES.bad_surface; return Promise.resolve(false); }
       if (n.rooms !== null && !n.rooms) { state.textContent = CODES.bad_rooms; return Promise.resolve(false); }
       if (n.priceEur !== null && !n.priceEur) { state.textContent = CODES.bad_price; return Promise.resolve(false); }
       state.textContent = 'Enregistrement…';
-      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { requestId: requestId, kind: kind.value, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
+      return t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'POST', { requestId: requestId, kind: kind.value, dwelling: kind.value === 'home' ? dwelling.value || null : null, postalCode: postal.value.trim(), city: city.value.trim(), surfaceM2: n.surfaceM2, rooms: n.rooms, priceEur: n.priceEur }).then(function (res) {
         if (res.gone) return false;
         if (!res.ok) {
           var code = res.body && res.body.code;
@@ -297,6 +371,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     // La recherche en langage courant (BR40) : seulement sur un projet d'achat, pour le ranger au bon endroit.
     var buying = (f && Array.isArray(f.projects) ? f.projects : []).filter(function (p) { return p && p.kind === 'buy' && /^[A-Za-z0-9_-]{1,64}$/.test(String(p.id)); });
     if (buying.length) searchBlock(box, buying);
+    if (buying.length) areaBlock(box, buying);
     // Les visites réservées en ligne, rattachées à la recherche (BR64) : seulement avec un projet d'achat.
     if (buying.length) onlineBlock(box, personId, buying);
   };

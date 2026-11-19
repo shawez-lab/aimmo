@@ -17,7 +17,7 @@ const SAM_SITE = 'https://sam-br44.example.test';
 const OTHER = 'https://autre-br44.example.test';
 const KEYS = { direction: 'test-cle-br44-dir-cccccccccccccccccccccccccccccc', autre: 'test-cle-br44-autre-ddddddddddddddddddddddddddd' };
 const BROWSER = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
-const PHRASE = 'Un appartement de 3 pièces à Dijon, budget 250 000 €';
+const PHRASE = 'Une maison de 3 pièces à Dijon, budget 250 000 €';
 
 async function setup() {
   const t = await setupAnnonce();
@@ -92,7 +92,7 @@ describeWithSqlite('BR44 · la recherche en langage courant sur le site public',
     await t.publish();
     const before = (await t.journal.all()).length;
     const views = await t.db.all('SELECT * FROM site_page_views').catch(() => []);
-    const res = await t.search(NET, { q: 'Un appartement à Dijon près de la rue Zanzibarienne, budget 250 000 €' });
+    const res = await t.search(NET, { q: 'Une maison à Dijon près de la rue Zanzibarienne, budget 250 000 €' });
     expect(res.status).toBe(200);
     expect((await t.journal.all()).length).toBe(before);
     expect(JSON.stringify(await t.journal.all())).not.toContain('Zanzibarienne');
@@ -146,7 +146,7 @@ describeWithSqlite('BR44 · la recherche en langage courant sur le site public',
   it('[R423] une commune voisine est proposée à part, et n’entre que par le lien que suit le visiteur ; le bien y est marqué', async () => {
     const t = await setup();
     await t.publish();
-    const phrase = 'Un appartement de 3 pièces à Talant, budget 250 000 €';
+    const phrase = 'Une maison de 3 pièces à Talant, budget 250 000 €';
     const first = await (await t.search(NET, { q: phrase })).text();
     // Sans geste, le bien de Dijon n'est montré qu'à part, marqué comme voisin.
     const main = first.slice(0, first.indexOf('Dans les communes voisines'));
@@ -166,7 +166,7 @@ describeWithSqlite('BR44 · la recherche en langage courant sur le site public',
   it('[R50] les mots sur les personnes sont écartés et dits ; une phrase sans critère le dit', async () => {
     const t = await setup();
     await t.publish();
-    const html = await (await t.search(NET, { q: 'Nous sommes un couple de religion juive, on cherche un appartement à Dijon' })).text();
+    const html = await (await t.search(NET, { q: 'Nous sommes un couple de religion juive, on cherche une maison à Dijon' })).text();
     expect(html).toContain('Mots écartés');
     expect(html).toContain('un critère sur les personnes, que nous ne prenons jamais en compte');
     const none = await (await t.search(NET, { q: 'bonjour' })).text();

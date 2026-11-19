@@ -104,7 +104,7 @@ describe('D12 · écran « Mandat »', () => {
   });
 
   it('[R40] AU002 : la désignation du bien et le domicile du mandant se saisissent en champs, l’écran envoie ce qui est saisi', async () => {
-    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/fiches/p1/domicile': ok({}) });
+    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/biens/b1/position': ok({ lat: 47.3, lon: 5.04 }), 'POST /v1/fiches/p1/domicile': ok({}) });
     await t.open();
     expect(t.body().textContent).toContain('Adresse du bien : à saisir.');
     expect(t.body().textContent).toContain('Domicile de Léa Exemple : à saisir.');
@@ -119,11 +119,14 @@ describe('D12 · écran « Mandat »', () => {
     await t.press('Enregistrer la désignation');
     expect(t.posts()[0]).toEqual({ method: 'POST', url: '/v1/biens/b1/designation', body: { address: { street: '12 rue des Essais', postalCode: '21000', city: 'Dijon' }, parcels: [{ section: 'AB', number: '123' }, { prefix: '012', section: 'C', number: '45' }] } });
     expect(t.state()).toContain('Désignation enregistrée');
+    expect(t.state()).not.toContain('non situé');
     t.input('domicile-p1-voie').value = '3 place du Test';
     t.input('domicile-p1-cp').value = '21121';
     t.input('domicile-p1-commune').value = 'Fontaine-lès-Dijon';
     await t.press('Enregistrer le domicile de Léa Exemple');
-    expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
+    // AU073 · la désignation rangée, le bien est situé.
+    expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/biens/b1/position', body: {} });
+    expect(t.posts()[2]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
     expect(t.state()).toContain('Domicile enregistré');
     // Un domicile à l'étranger : le pays s'envoie avec lui.
     t.input('domicile-p1-voie').value = '1 Test Street';
@@ -131,7 +134,19 @@ describe('D12 · écran « Mandat »', () => {
     t.input('domicile-p1-commune').value = 'London';
     t.input('domicile-p1-pays').value = 'Royaume-Uni';
     await t.press('Enregistrer le domicile de Léa Exemple');
-    expect(t.posts()[2]!.body).toEqual({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' });
+    expect(t.posts()[3]!.body).toEqual({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' });
+  });
+
+  it('AU073 : un bien que l’adresse ne permet pas de situer est dit à l’agent', async () => {
+    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/biens/b1/position': no(422, 'lieu_introuvable') });
+    await t.open();
+    t.input('bien-adresse-voie').value = '12 rue des Essais';
+    t.input('bien-adresse-cp').value = '21000';
+    t.input('bien-adresse-commune').value = 'Dijon';
+    t.input('bien-parcelles').value = 'AB 123';
+    await t.press('Enregistrer la désignation');
+    expect(t.state()).toContain('Désignation enregistrée');
+    expect(t.state()).toContain('Bien non situé : il n’entre dans aucun secteur d’acquéreur.');
   });
 
   it('[R40] AU002 : ce qui est déjà saisi est montré et prérempli ; un refus du serveur est dit en français', async () => {

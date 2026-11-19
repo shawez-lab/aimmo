@@ -54,7 +54,7 @@ describeWithSqlite('T08 · routes de M08', () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
     // L'agent pose la recherche de son acquéreur.
-    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
+    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
     expect(search.status).toBe(200);
     expect((await t.call('alex', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).body).toMatchObject({ ok: true, data: { current: { version: 1 } } });
     // Le bien est diffusable : l'acquéreur est proposé, avec les raisons, et la carte de la demande le compte.
@@ -128,7 +128,7 @@ describeWithSqlite('T08 · routes de M08', () => {
   it('[R16] chaque route passe par les droits ; chaque refus rend 403 ou 404 et écrit une ligne au journal', async () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
-    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000 });
+    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000 });
     await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
     const wa = await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`);
     const id = (await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H })).body.data.visit.appointment.id as string;
@@ -190,5 +190,22 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'GET', '/points?semaine=lundi')).status).toBe(400);
     expect((await t.call('alex', 'GET', '/acquereurs/inconnu')).status).toBe(404);
     expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
+  });
+});
+
+describeWithSqlite('AU073 · le secteur par les routes, sans le service DVF', () => {
+  it('la Base adresse nationale des secteurs se règle seule : un lieu dit se géocode même sans estimation', async () => {
+    const t = await setup();
+    const geocoder = { geocode: async (q: string) => (q === 'Gare de Dijon' ? { label: q, lat: 47.3233, lon: 5.0275, postalCode: '21000', inseeCode: '21231' } : null) };
+    const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEYS.alex), role: 'agent', userId: t.alexId, networkId: t.network.id }]);
+    const post = async (config: Record<string, unknown>) => {
+      const r = await handleRequest(
+        new Request(`${BASE}/v1/acquereurs/projets/${t.project.id}/secteur`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify({ shape: 'cercle', place: 'Gare de Dijon', radiusM: 1500, label: 'Autour de la gare' }) }),
+        { db: t.db, apiKeys, mode: 'essai', now: t.now, ...config } as never,
+      );
+      return (await r.json()) as { ok: boolean; code?: string };
+    };
+    expect(await post({})).toMatchObject({ ok: false, code: 'geocodage_absent' });
+    expect(await post({ secteursGeocoder: geocoder })).toMatchObject({ ok: true });
   });
 });

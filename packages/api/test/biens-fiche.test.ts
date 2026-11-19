@@ -142,19 +142,39 @@ describe('SV06 · le bloc de la fiche', () => {
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);
   });
 
-  it('[R16] le bien part sans identifiant à saisir, une seule fois, et s’ajoute à la liste', async () => {
+  it('[R16] [R51] le bien part sans identifiant à saisir, une seule fois, et s’ajoute à la liste', async () => {
     const a = await opened(POST_THEN(ok({ ...BIEN, already: false })));
     await a.load();
     a.fill(GOOD);
+    // AU070 · maison ou appartement, dit dès la création d'un logement.
+    a.body.all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-logement'))!.value = 'house';
     const b = a.named(a.body, 'Créer le bien')[0]!;
     b.listeners.click!({});
     b.listeners.click!({});
     await a.tick();
-    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { requestId: '0b6f1d2e-6666-4a2b-8c3d-000000000001', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
+    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { requestId: '0b6f1d2e-6666-4a2b-8c3d-000000000001', kind: 'home', dwelling: 'house', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
     // Le formulaire est vidé, prêt pour un autre bien, avec une demande neuve.
     expect(a.input('-commune').value).toBe('');
     expect(a.body.textContent).toContain('Bien créé, réf. B-ABCD1234');
     expect(a.body.textContent).toContain('Réf. B-ABCD1234');
+  });
+
+  it('AU062 · une surface au centième près part telle quelle, virgule comprise, et se lit à la française', async () => {
+    const a = await opened(POST_THEN(ok({ ...BIEN, surfaceM2: 63.42, already: false })));
+    await a.load();
+    a.fill({ ...GOOD, '-surface': '63,42' });
+    a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
+    await a.tick();
+    expect(a.posts()[0]!.body).toMatchObject({ surfaceM2: 63.42 });
+    expect(a.body.textContent).toContain('63,42 m²');
+    // Plus fin que le centième : refusé avant tout envoi, jamais arrondi.
+    const b = await opened();
+    await b.load();
+    b.fill({ ...GOOD, '-surface': '63,425' });
+    b.named(b.body, 'Créer le bien')[0]!.listeners.click!({});
+    await b.tick();
+    expect(b.posts()).toEqual([]);
+    expect(b.body.textContent).toContain('La surface');
   });
 
   it('une saisie fausse se dit avant tout envoi', async () => {
@@ -231,7 +251,9 @@ describe('SV06 · le bloc de la fiche', () => {
     const fields = a.body.all().filter((e) => ['input', 'select'].includes(e.tagName) && /-(type|cp|commune|surface|pieces|prix)$/.test(e.attributes.id ?? ''));
     expect(fields).toHaveLength(6);
     for (const f of fields) expect(a.body.all().some((l) => l.tagName === 'label' && l.attributes.for === f.attributes.id), f.attributes.id).toBe(true);
-    for (const s of ['-cp', '-surface', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
+    for (const s of ['-cp', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
+    // La surface ouvre le clavier des nombres à virgule (AU062).
+    expect(a.input('-surface').attributes.inputmode).toBe('decimal');
   });
 
   describe('SV07 · le nom du client', () => {

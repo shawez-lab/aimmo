@@ -261,7 +261,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
-- Statut : en cours (voie 2)
+- Statut : bloquée : vérification GitHub en échec sur des délais de 5 s dépassés (runner chargé), tests sans lien ; à fusionner dès qu'elle passe
+- Reste : proposition #700 (`324a04f4`), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
 - Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
 - Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
@@ -592,7 +593,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU056 · Mes rendez-vous sont limités à quatre types et à leurs durées de réglage
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A056 (majeur), endroit : C/rendezvous/creneaux.ts, `APPOINTMENT_KINDS` et durées.
 - Constat de l'audit : Mes rendez-vous sont limités à quatre types et à leurs durées de réglage, sans durée propre à un cas réel dans le modèle de créneau.
@@ -610,7 +611,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU058 · Le barème de vente se résume à un taux maximal et un minimum
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A058 (majeur), endroit : C/documents/controles.ts, `setFeeSchedule`.
 - Constat de l'audit : Le barème de vente se résume à un taux maximal et un minimum, sans tranches ni forfaits par prestation.
@@ -638,7 +639,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
 - Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
@@ -719,7 +720,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A070 (majeur), endroit : C/acquereurs/rapprochement.ts, `KINDS_OF_PROPERTY`.
 - Constat de l'audit : Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home ».

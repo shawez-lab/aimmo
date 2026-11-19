@@ -572,7 +572,11 @@ globalThis.AIMMO_MANDAT = function (t) {
       var mine = ++seq;
       return send('/v1/biens/' + cur.id + '/designation', 'POST', { address: read(), parcels: list }).then(function (res) {
         if (res.gone || mine !== seq) return false;
-        if (res.ok) return load('Désignation enregistrée : le prochain mandat la reprend.');
+        // AU073 · le bien est situé depuis sa nouvelle adresse, pour les secteurs des acquéreurs ; un échec est dit.
+        if (res.ok) return send('/v1/biens/' + cur.id + '/position', 'POST', {}).then(function (pos) {
+          if (pos.gone || mine !== seq) return false;
+          return load('Désignation enregistrée : le prochain mandat la reprend.' + (pos.ok ? '' : ' Bien non situé : il n’entre dans aucun secteur d’acquéreur. Réenregistrez plus tard.'));
+        });
         state(why(res, 'La désignation n’est pas enregistrée : vérifiez l’adresse et les parcelles.'));
         return false;
       });

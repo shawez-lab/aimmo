@@ -18,16 +18,17 @@ import { shownPrice } from '../biens/prix-publie.ts';
 import type { Acces } from '../acces/acces.ts';
 import { decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Property, PropertyKind } from '../db/types.ts';
+import type { Dwelling, Property, PropertyKind } from '../db/types.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
-import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+import { areasOfNetwork, insideArea, positionOf, type GeoPoint } from './secteurs.ts';
+import { EMPTY_SEARCH, toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
 const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'area', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -50,12 +51,16 @@ export const CLOSED_STAGES: readonly string[] = Object.freeze(['lost', 'closed',
 /** Ce que le code sait d'un bien pour le rapprocher : rien sur son vendeur, rien de son adresse. */
 export interface MatchProperty {
   kind: PropertyKind;
+  /** Pour un logement : maison ou appartement ; null tant que ni la fiche ni le bien ne le disent (AU070). */
+  dwelling?: Dwelling | null;
   city: string | null;
   priceEur: number | null;
   surfaceM2: number | null;
   rooms: number | null;
   bedrooms: number | null;
   features: BuyerFeature[];
+  /** La position du bien, géocodée depuis son adresse désignée ; absente tant qu'il n'est pas situé (AU073). */
+  position?: GeoPoint | null;
   /** Étage (0 : rez-de-chaussée), classe énergie et terrain, lus dans la fiche du bien ; absents s'ils ne sont pas dits (AU072). */
   floor?: number | null;
   energyClass?: string | null;
@@ -105,6 +110,16 @@ const KINDS_OF_PROPERTY: Record<PropertyKind, readonly BuyerPropertyKind[]> = {
   business: ['commercial'],
 };
 
+/**
+ * Le type cherché que ce bien remplit : un logement dit maison ou appartement ne répond qu'à ce type ; un logement dont
+ * on ne sait pas lequel il est ne remplit qu'une recherche qui accepte les deux, et reste dans la tolérance sinon (AU070).
+ */
+export function kindMet(property: Pick<MatchProperty, 'kind' | 'dwelling'>, wanted: readonly BuyerPropertyKind[]): BuyerPropertyKind | undefined {
+  if (property.kind === 'home' && !property.dwelling) return wanted.includes('house') && wanted.includes('apartment') ? 'house' : undefined;
+  const offered = property.kind === 'home' ? [property.dwelling!] : (KINDS_OF_PROPERTY[property.kind] ?? []);
+  return wanted.find((k) => offered.includes(k));
+}
+
 const same = (a: string, b: string): boolean => a.normalize('NFC').toLocaleLowerCase('fr') === b.normalize('NFC').toLocaleLowerCase('fr');
 
 /** Le rapprochement d'une recherche et d'un bien : une fonction pure, chaque critère avec sa raison [R51]. */
@@ -116,15 +131,23 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   };
 
   if (search.propertyKinds.length > 0) {
-    const offered = KINDS_OF_PROPERTY[property.kind] ?? [];
-    const hit = search.propertyKinds.find((k) => offered.includes(k));
-    if (hit) add('kind', 'met', `Type cherché : ${KIND_LABEL[hit]}.`);
+    const hit = kindMet(property, search.propertyKinds);
+    if (hit) add('kind', 'met', property.kind === 'home' && !property.dwelling ? 'Type cherché : maison ou appartement.' : `Type cherché : ${KIND_LABEL[hit]}.`);
+    else if (property.kind === 'home' && !property.dwelling && search.propertyKinds.some((k) => k === 'house' || k === 'apartment'))
+      add('kind', 'tolerated', 'Maison ou appartement : pas encore dit sur la fiche du bien.');
     else add('kind', 'unmet', `Type cherché : ${search.propertyKinds.map((k) => KIND_LABEL[k]).join(', ')}.`);
   }
   if (search.communes.length > 0) {
     const city = property.city;
     if (city !== null && search.communes.some((c) => same(c, city))) add('commune', 'met', `Commune cherchée : ${city}.`);
     else add('commune', 'unmet', 'Commune hors de la recherche.');
+  }
+  // AU073 · le secteur privé : un bien hors du secteur, ou pas encore situé, n'est pas proposé.
+  if (search.area) {
+    const at = property.position ?? null;
+    if (at === null) add('area', 'unmet', 'Position du bien inconnue.');
+    else if (insideArea(search.area, at)) add('area', 'met', `Dans le secteur « ${search.area.label} ».`);
+    else add('area', 'unmet', 'Hors du secteur cherché.');
   }
   if (search.budgetMaxEur !== null) {
     const price = property.priceEur;
@@ -411,6 +434,8 @@ export class Rapprochement {
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   async propertyForMatch(p: Property): Promise<MatchProperty> {
     let bedrooms: number | null = null;
+    // La fiche du bien, plus récente, l'emporte sur ce qui a été dit à la création ou à l'import (AU070).
+    let dwelling: Dwelling | null = p.kind === 'home' ? (p.dwelling ?? null) : null;
     let floor: number | null = null;
     let landM2: number | null = null;
     let energyClass: string | null = null;
@@ -421,8 +446,9 @@ export class Rapprochement {
         const parsed: unknown = JSON.parse(sheet.data);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
-        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; floor?: unknown; landM2?: unknown };
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown; floor?: unknown; landM2?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
+        if (c.dwelling === 'house' || c.dwelling === 'apartment') dwelling = c.dwelling;
         if (typeof c.floor === 'number') floor = c.floor;
         if (typeof c.landM2 === 'number') landM2 = c.landM2;
         const e = (parsed as { energy?: { energyClass?: unknown } | null }).energy;
@@ -439,7 +465,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2 };
+    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2, position: await positionOf(this.db, p.id) };
   }
 
   /**
@@ -458,13 +484,32 @@ export class Rapprochement {
       [networkId],
     );
     const nowIso = at.toISOString();
+    // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
+    const areas = await areasOfNetwork(this.db, networkId);
+    const areaSetAt = new Map((await this.db.all<{ project_id: string; at: string }>('SELECT project_id, max(set_at) AS at FROM buyer_search_areas WHERE network_id = ? GROUP BY project_id', [networkId])).map((r) => [r.project_id, r.at]));
     const byRoot = new Map<string, Candidate>();
-    for (const row of rows) {
+    // Un projet dont le seul critère est un secteur, sans recherche rangée : il compte aussi, avec une recherche vide (AU073).
+    const areaOnly = await this.db.all<{ project_id: string; person_id: string; stage: string; set_at: string; confirmed_at: string | null }>(
+      `SELECT a.project_id, p.person_id, p.stage, max(a.set_at) AS set_at,
+         (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = a.project_id) AS confirmed_at
+       FROM buyer_search_areas a JOIN projects p ON p.id = a.project_id
+       WHERE a.network_id = ? AND p.kind = 'buy' AND NOT EXISTS (SELECT 1 FROM buyer_searches s WHERE s.project_id = a.project_id)
+       GROUP BY a.project_id, p.person_id, p.stage ORDER BY set_at DESC, a.project_id`,
+      [networkId],
+    );
+    const entries: { project_id: string; person_id: string; stage: string; created_at: string; confirmed_at: string | null; search: () => BuyerSearch }[] = [
+      ...rows.map((row) => ({ project_id: row.project_id, person_id: row.person_id, stage: row.stage, created_at: row.created_at, confirmed_at: row.confirmed_at, search: () => toVersion(row).search })),
+      ...areaOnly.map((r) => ({ project_id: r.project_id, person_id: r.person_id, stage: r.stage, created_at: r.set_at, confirmed_at: r.confirmed_at, search: (): BuyerSearch => ({ ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] }) })),
+    ];
+    for (const row of entries) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
       // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
-      const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
+      // Un secteur rangé depuis rafraîchit aussi la recherche (AU073).
+      const movedAt = [row.created_at, row.confirmed_at, areaSetAt.get(row.project_id)].filter((d): d is string => typeof d === 'string').sort().at(-1)!;
       if (movedAt < since) continue;
-      const search = toVersion(row).search;
+      const search = row.search();
+      const area = areas.get(row.project_id);
+      if (area) search.area = area;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
         search.propertyKinds.length === 0 &&
@@ -477,7 +522,8 @@ export class Rapprochement {
         (search.floorMin ?? null) === null &&
         (search.floorMax ?? null) === null &&
         (search.energyClassMax ?? null) === null &&
-        (search.landMinM2 ?? null) === null
+        (search.landMinM2 ?? null) === null &&
+        !search.area
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
