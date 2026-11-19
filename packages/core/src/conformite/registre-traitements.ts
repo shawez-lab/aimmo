@@ -213,6 +213,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_positions: ['lat', 'lon', 'set_by'],
       person_domiciles: ['person_id', 'street', 'postal_code', 'city', 'country', 'set_by'],
       fee_schedules: ['set_by'],
+      fee_schedule_tiers: [],
       identity_checks: ['person_id', 'checked_by'],
       document_checks: ['lines', 'checked_by'],
       // HX33 : le mandat par questionnaire ; ses clauses écrites et validées nomment leur auteur et leur relecteur.
@@ -1164,6 +1165,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
+  fee_schedule_tiers: ['schedule_id', 'position', 'up_to_eur', 'rate_bp', 'flat_eur'],
   identity_checks: ['id', 'network_id', 'piece', 'seen_at', 'created_at'],
   document_checks: ['id', 'network_id', 'document_id', 'passed', 'checked_at'],
   mandate_clause_versions: ['id', 'network_id', 'code', 'version', 'hash', 'created_at'],
