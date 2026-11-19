@@ -20,7 +20,7 @@
  *   copie de la seule base), si un stockage manque, si un objet diffère, ou si la base cite un fichier absent.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import { COPY_ID, openAt, openBytesAt, restoreCopy, sealAt, sealBytesAt, type CopyKey, type CopyStore, type RestoreOutcome } from './copie.ts';
+import { COPY_ID, pagesOf, ROWID_COLUMN, openAt, openBytesAt, restoreCopy, sealAt, sealBytesAt, type CopyKey, type CopyStore, type RestoreOutcome } from './copie.ts';
 
 /** Les stockages d'objets du Worker : médias des biens, pièces des dossiers, dossiers des commerces, coffre. */
 export const OBJECT_STORAGES = ['MEDIA', 'PIECES', 'COMMERCES', 'COFFRE'] as const;
@@ -276,20 +276,15 @@ export const fileReferences: ReferenceReader = async (db) => {
     found.set(key, { storage: prefix ? REFERENCE_PREFIXES[prefix]! : 'COMMERCES', key });
   };
   for (const { name } of tables) {
-    const q = `"${name.replaceAll('"', '""')}"`;
-    let after = -9_007_199_254_740_991;
-    for (;;) {
-      const rows = await db.all<Record<string, unknown>>(`SELECT rowid AS __rang__, * FROM ${q} WHERE rowid > ? ORDER BY rowid LIMIT 500`, [after]);
+    for await (const rows of pagesOf(db, name)) {
       for (const row of rows) {
         for (const [column, value] of Object.entries(row)) {
-          if (column === '__rang__' || typeof value !== 'string') continue;
+          if (column === ROWID_COLUMN || typeof value !== 'string') continue;
           if (STORAGE_REF_COLUMNS.has(column)) add(value, true);
           else if (WHOLE_REFERENCE.test(value)) add(value);
           else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
         }
       }
-      if (rows.length < 500) break;
-      after = Number(rows[rows.length - 1]!['__rang__']);
     }
   }
   return [...found.values()];
