@@ -674,7 +674,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU065 · Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A065 (majeur), endroit : C/annonces/fiche-bien.ts, `costReferenceYear` ; C/annonces/mentions.ts.
 - Constat de l'audit : Le coût énergétique n’admet qu’une année et impose « au 1er janvier », au lieu de conserver la période exacte du diagnostic.
