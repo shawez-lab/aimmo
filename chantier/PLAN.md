@@ -593,7 +593,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU056 · Mes rendez-vous sont limités à quatre types et à leurs durées de réglage
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A056 (majeur), endroit : C/rendezvous/creneaux.ts, `APPOINTMENT_KINDS` et durées.
 - Constat de l'audit : Mes rendez-vous sont limités à quatre types et à leurs durées de réglage, sans durée propre à un cas réel dans le modèle de créneau.
