@@ -561,15 +561,10 @@ export const APP_JS = `'use strict';
     body.appendChild(block('Projets', (f.projects || []).map(function (p) {
       var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
       var li = line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
-      // AU074 · L'acquéreur dit sa recherche toujours d'actualité : elle reste au rapprochement, sans changer un critère.
-      if (p.kind === 'buy' && ID.test(p.id)) {
-        var still = el('button', 'Recherche toujours d’actualité');
-        still.setAttribute('type', 'button');
-        still.addEventListener('click', function () {
-          if (!currentKey) return;
-          api('/v1/acquereurs/projets/' + encodeURIComponent(p.id) + '/recherche/confirmation', currentKey, 'POST').then(function (r) {
-            still.textContent = r.ok ? 'Recherche confirmée aujourd’hui' : 'La confirmation n’est pas passée : réessayez.';
-          }, function () { still.textContent = 'Pas de réseau : réessayez.'; });
+      // AU074 · La recherche dite toujours d'actualité reste au rapprochement.
+      if (p.kind === 'buy' && ID.test(p.id) && currentKey) {
+        var still = button('Recherche toujours d’actualité', function () {
+          api('/v1/acquereurs/projets/' + p.id + '/recherche/confirmation', currentKey, 'POST').then(function (r) { still.textContent = r.ok ? 'Confirmée aujourd’hui' : 'Échec : réessayez'; }, function () { still.textContent = 'Pas de réseau'; });
         });
         li.appendChild(still);
       }

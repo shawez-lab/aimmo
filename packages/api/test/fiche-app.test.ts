@@ -102,7 +102,7 @@ describe('A03 · fiche du client dans l’application', () => {
     const still = buttons(body, 'Recherche toujours d’actualité')[0]!;
     still.listeners.click!({});
     await a.tick();
-    expect(still.textContent).toBe('Recherche confirmée aujourd’hui');
+    expect(still.textContent).toBe('Confirmée aujourd’hui');
     // Un projet de vente n'a pas ce geste.
     expect(buttons(body, 'Recherche toujours d’actualité')).toHaveLength(0);
   });
