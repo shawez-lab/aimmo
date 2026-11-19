@@ -73,6 +73,21 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
   });
 
+  it('[R47] AU061 · piscine, cave, cheminée et état du bien se disent quand la fiche les porte, et alors seulement', () => {
+    const rich: ListingFacts = { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'], condition: 'travaux_a_prevoir' };
+    const text = fallbackListing(rich);
+    expect(text.body).toContain('Piscine, cave et cheminée.');
+    expect(text.body).toContain('Travaux à prévoir.');
+    const r = traceListing(text.title, text.body, rich);
+    expect(r.ok).toBe(true);
+    expect(r.sentences.flatMap((s) => s.sources).filter((s) => s.field === 'amenities' || s.field === 'condition').map((s) => `${String(s.field)}:${s.value}`).sort()).toEqual(['amenities:cave', 'amenities:cheminée', 'amenities:piscine', 'condition:travaux à prévoir']);
+    // Sans la fiche, aucun de ces mots n'a de source.
+    expect(traceListing('Appartement à Dijon', 'Avec piscine.', FACTS).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'travaux_a_prevoir' }).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Logement neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(false);
+  });
+
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
     expect(codes('Situé 12 rue des Essais.')).toContain('adresse:12 rue');
     expect(codes('Situé rue des Essais.')).toEqual(['adresse:rue des Essais.']);

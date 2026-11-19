@@ -231,6 +231,24 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(await proposed(small.id)).toEqual([]);
   });
 
+  it('[R51] AU061 · une piscine, une cave ou une cheminée dites sur la fiche répondent aux recherches qui les exigent', async () => {
+    const t = await setup();
+    const want = await t.buyer(t.alex.id, 'Piscine', { communes: ['Dijon'], features: ['pool'], requiredFeatures: ['pool'] });
+    const sheet = (id: string, ref: string, amenities: string[]) =>
+      t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [`sheet-${ref}`, id, t.network.id, JSON.stringify({ characteristics: { amenities }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z']);
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId);
+    };
+    const withPool = await t.property(t.alex.id, 'PISC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await sheet(withPool.id, 'PISC', ['piscine', 'cave']);
+    expect(await proposed(withPool.id)).toContain(want.project.id);
+    const without = await t.property(t.alex.id, 'SANS', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await sheet(without.id, 'SANS', ['cave']);
+    expect(await proposed(without.id)).not.toContain(want.project.id);
+  });
+
   it('AU072 · un souhait d’étage, de classe ou de terrain rempli fait passer devant, à critères égaux', async () => {
     const t = await setup();
     const plain = await t.buyer(t.alex.id, 'Sans souhait', { communes: ['Dijon'], urgency: 'now' });

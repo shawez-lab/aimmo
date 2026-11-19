@@ -155,6 +155,8 @@ export class Annonces {
       elevator: c?.elevator ?? null,
       energyClass: sheet?.energy?.energyClass ?? null,
       climateClass: sheet?.energy?.climateClass ?? null,
+      amenities: c?.amenities ?? [],
+      condition: c?.condition ?? null,
     };
     return { facts, sheetVersion: row ? Number(row.version) : null };
   }
