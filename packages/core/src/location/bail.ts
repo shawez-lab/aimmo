@@ -14,9 +14,9 @@
  * correction est une nouvelle version [R17].
  *
  * La durée vient de la qualité du bailleur et de la sorte de location, dites par l'agent (AU096 ; loi de 1989, art. 10 et
- * 25-7) : logement vide, 3 ans pour un bailleur personne physique, 6 ans pour une personne morale ; meublé, 1 an, ou
- * 9 mois loué à un étudiant. Le bail mobilité, qui demande son propre modèle et ses mentions, est refusé avant toute
- * saisie, jamais fait avec un modèle qui n'est pas le sien ; la signature en ligne du bail par D08 est une tâche à part (W12), en mode essai tant que H08 et H24 ne sont
+ * 25-7) : logement vide, 3 ans pour un bailleur personne physique, 6 ans pour une personne morale ; meublé, 1 an. Le bail
+ * meublé étudiant (9 mois) et le bail mobilité demandent chacun leur propre modèle validé et leurs mentions : tant
+ * qu'AIMMO n'a pas ces modèles, ils sont refusés avant toute saisie, jamais faits avec un modèle qui n'est pas le leur ; la signature en ligne du bail par D08 est une tâche à part (W12), en mode essai tant que H08 et H24 ne sont
  * pas faits.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -300,6 +300,7 @@ export class BauxLocation {
     const variant = input.variant === undefined || input.variant === null ? 'standard' : input.variant;
     if (typeof variant !== 'string' || !(LEASE_VARIANTS as readonly string[]).includes(variant)) return { ok: false, rule: null, code: 'bad_variant' };
     if (variant === 'mobilite') return { ok: false, rule: null, code: 'bail_mobilite_refuse' };
+    if (variant === 'etudiant') return { ok: false, rule: null, code: 'bail_etudiant_refuse' };
     const duration = leaseDuration(facts.furnished, landlord as keyof typeof LANDLORDS, variant as LeaseVariant);
     if (duration === null) return { ok: false, rule: null, code: 'bad_variant' };
     const kind: LeaseKind = facts.furnished ? 'bail_meuble' : 'bail_vide';
@@ -342,7 +343,7 @@ export class BauxLocation {
       'logement.commune': p?.city ?? null,
       'logement.surface_habitable': `${euros(facts.livingAreaHundredths)} m²`,
       'logement.classe_energie': facts.energyClass,
-      'bail.type': facts.furnished ? (variant === 'etudiant' ? 'location meublée à un étudiant' : 'location meublée') : 'location vide',
+      'bail.type': facts.furnished ? 'location meublée' : 'location vide',
       'bail.debut': dayInFrench(facts.leaseStart),
       'bail.duree': duration,
       'loyer.hors_charges': `${euros(facts.rentCents)} € par mois`,

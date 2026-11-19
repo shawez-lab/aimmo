@@ -224,7 +224,6 @@ globalThis.AIMMO_LOUER = function (t) {
     trop_lourd: 'Ce fichier dépasse 20 Mo.',
     bad_habitat: 'Choisissez le type d’habitat.',
     missing_landlord: 'Dites qui est le bailleur.',
-    bad_variant: 'Le bail étudiant de 9 mois est seulement meublé.',
     no_template: 'Aucun modèle de bail validé dans le réseau.',
     bad_party: 'Partie inconnue.',
     bad_consent: 'Notez comment la partie a accepté de signer en ligne.',
@@ -813,7 +812,6 @@ globalThis.AIMMO_LOUER = function (t) {
     var owner = field(d, 'bail-domicile-' + n, 'Domicile du bailleur');
     var habitat = select(d, 'bail-habitat-' + n, 'Type d’habitat', HABITATS, 'collectif');
     var owner2 = select(d, 'bail-qualite-' + n, 'Le bailleur est', { '': 'À choisir', physique: 'Une personne', morale: 'Une société' }, '');
-    var student = checkbox(d, 'bail-etudiant-' + n, 'Meublé loué à un étudiant, 9 mois');
     var equipment = field(d, 'bail-equipements-' + n, 'Équipements du logement', 'textarea');
     equipment.setAttribute('rows', '3');
     equipment.setAttribute('maxlength', '400');
@@ -821,7 +819,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var notice = piece(d, 'bail-notice-' + n, 'La notice d’information, en PDF', 'notice');
     [address, owner, card].forEach(function (x) { x.setAttribute('autocomplete', 'off'); });
     d.appendChild(button('Préparer le bail', once(function () {
-      var b = { habitat: habitat.value, landlord: owner2.value, variant: student.checked ? 'etudiant' : 'standard' };
+      var b = { habitat: habitat.value, landlord: owner2.value };
       [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
       var joined = notice.picked() ? notice.ref(base) : Promise.resolve(undefined);
       return joined.then(function (ref) {

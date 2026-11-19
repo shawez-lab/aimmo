@@ -283,14 +283,16 @@ describe('AU096 · la durée du bail par la loi, selon le bailleur et la sorte d
 });
 
 describeWithSqlite('AU096 · la qualité du bailleur dite, jamais supposée', () => {
-  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; le bail mobilité est refusé avant tout', async () => {
+  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; bail mobilité et meublé étudiant refusés avant tout', async () => {
     const t = await setup();
     await t.template();
     const id = await t.ready();
     const { landlord: _l, ...noLandlord } = t.inp(id) as Record<string, unknown>;
     expect(await t.baux.generate(t.agent, id, noLandlord)).toEqual({ ok: false, rule: null, code: 'missing_landlord' });
     expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite' })).toEqual({ ok: false, rule: null, code: 'bail_mobilite_refuse' });
-    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    // Le meublé étudiant n'a pas encore son modèle validé : refusé, jamais fait avec le modèle du meublé ordinaire.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bail_etudiant_refuse' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'autre' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
     const r = await t.baux.generate(t.agent, id, { ...t.inp(id), landlord: 'morale' });
     expect(r.ok && r.value.content).toContain('six ans');
   });
