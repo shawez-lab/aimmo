@@ -96,7 +96,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H10).
 
 ### AU005 · Un DPE de 2019 passe encore la checklist de publication en novembre 2026
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#683, `6ca82082`). Constat confirmé (aucune date jugée). Décidé : `MentionsInput.today` obligatoire, posé par `inputFor` au jour de Paris ; DPE d'avant 2018 jusqu'au 31/12/2022 au plus tard, 2018 à juin 2021 jusqu'au 31/12/2024, depuis juillet 2021 dix ans jusqu'à la veille (`dpeValidUntil`) ; raison `diagnostic_perime` ; chaque passage de publication la relit, l'annonce en ligne est retirée au premier passage du jour d'expiration. R45 complétée. Relecture forte 1 P1 (test du retrait) corrigé ; Codex rien à signaler. Place de l'application à 1 octet du plafond du test BR103 (libellés « absent », « périmé ») : la prochaine tâche qui touche `app.js` devra faire de la place.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A005 (bloquant), endroit : C/annonces/fiche-bien.ts, `parseSheet` ; C/annonces/mentions.ts.
 - Constat de l'audit : Un DPE de 2019 passe encore la checklist de publication en novembre 2026, alors que sa validité transitoire est terminée.
