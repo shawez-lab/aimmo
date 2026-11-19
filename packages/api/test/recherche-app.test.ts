@@ -368,6 +368,27 @@ describe('AU073 · le secteur de la recherche depuis la fiche de l’acquéreur'
     expect(t.posts().some((x) => x.url === first)).toBe(false);
   });
 
+  it('une réponse du projet quitté ne s’affiche pas sous le projet choisi ensuite', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const first = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    let release: (r: Response) => void = () => {};
+    const t = await opened({
+      projects: [BUY, other],
+      answers: { [`GET ${first}`]: ok({ shape: 'polygone', points: [], label: 'Le centre' }), [`GET ${second}`]: ok({ shape: 'polygone', points: [], label: 'Le plateau' }), [`POST ${first}`]: () => new Promise<Response>((r) => { release = r; }) },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    const pick = area().all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-projet'))!;
+    pick.value = other.id;
+    pick.listeners.change!({});
+    await tick();
+    release(Response.json({ ok: true, mode: 'essai', data: null }));
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    expect(area().textContent).not.toContain('Secteur rangé.');
+  });
+
   it('le secteur en place non lu est dit, avec Réessayer ; rien ne se range sans l’avoir lu', async () => {
     const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
     const t = await opened({ answers: { [`GET ${base}`]: no(500, { ok: false }) } });

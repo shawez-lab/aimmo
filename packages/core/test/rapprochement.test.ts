@@ -206,6 +206,13 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(await secteurs.locate(agent, close.id)).toMatchObject({ ok: false, code: 'lieu_introuvable' });
     expect((await t.journal.all()).filter((e) => e.type === 'bien.non_situe').map((e) => e.data)).toEqual([{ code: 'lieu_introuvable' }]);
     expect(await proposed(close.id)).toEqual([free.project.id]);
+    // Un projet neuf dont le seul critère est un secteur compte aussi.
+    const person = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Secteur seul' });
+    const only = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: person.id, kind: 'buy' });
+    const fresh = new Secteurs(t.db, t.acces, t.journal, geocoder, { now: () => new Date(START) });
+    expect((await fresh.set(agent, only.id, { shape: 'polygone', points: [{ lat: 47.35, lon: 5.08 }, { lat: 47.37, lon: 5.08 }, { lat: 47.37, lon: 5.12 }, { lat: 47.35, lon: 5.12 }], label: 'Le plateau' })).ok).toBe(true);
+    expect(await proposed(far.id)).toContain(only.id);
+    expect(await proposed(close.id)).not.toContain(only.id);
     // Le journal ne garde ni lieu ni coordonnée.
     expect(JSON.stringify(await t.journal.all())).not.toMatch(/47\.3|Gare de Dijon|rue Inventée/);
   });

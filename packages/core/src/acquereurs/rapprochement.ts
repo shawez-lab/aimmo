@@ -24,7 +24,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
 import { areasOfNetwork, insideArea, positionOf, type GeoPoint } from './secteurs.ts';
-import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+import { EMPTY_SEARCH, toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
 const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
@@ -421,12 +421,25 @@ export class Rapprochement {
     // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
     const areas = await areasOfNetwork(this.db, networkId);
     const byRoot = new Map<string, Candidate>();
-    for (const row of rows) {
+    // Un projet dont le seul critère est un secteur, sans recherche rangée : il compte aussi, avec une recherche vide (AU073).
+    const areaOnly = await this.db.all<{ project_id: string; person_id: string; stage: string; set_at: string; confirmed_at: string | null }>(
+      `SELECT a.project_id, p.person_id, p.stage, max(a.set_at) AS set_at,
+         (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = a.project_id) AS confirmed_at
+       FROM buyer_search_areas a JOIN projects p ON p.id = a.project_id
+       WHERE a.network_id = ? AND p.kind = 'buy' AND NOT EXISTS (SELECT 1 FROM buyer_searches s WHERE s.project_id = a.project_id)
+       GROUP BY a.project_id, p.person_id, p.stage ORDER BY set_at DESC, a.project_id`,
+      [networkId],
+    );
+    const entries: { project_id: string; person_id: string; stage: string; created_at: string; confirmed_at: string | null; search: () => BuyerSearch }[] = [
+      ...rows.map((row) => ({ project_id: row.project_id, person_id: row.person_id, stage: row.stage, created_at: row.created_at, confirmed_at: row.confirmed_at, search: () => toVersion(row).search })),
+      ...areaOnly.map((r) => ({ project_id: r.project_id, person_id: r.person_id, stage: r.stage, created_at: r.set_at, confirmed_at: r.confirmed_at, search: (): BuyerSearch => ({ ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] }) })),
+    ];
+    for (const row of entries) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
       // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
       const movedAt = row.confirmed_at && row.confirmed_at > row.created_at ? row.confirmed_at : row.created_at;
       if (movedAt < since) continue;
-      const search = toVersion(row).search;
+      const search = row.search();
       const area = areas.get(row.project_id);
       if (area) search.area = area;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.

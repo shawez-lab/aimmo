@@ -240,20 +240,21 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var km = field(section, id + '-rayon', 'Rayon, en km', true);
     var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
     function said(a) { now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
-    function answer(res) {
-      if (res.gone) return false;
+    // Une réponse arrivée après un changement de projet ne s'affiche pas sous le nouveau projet.
+    function answer(mine) { return function (res) {
+      if (res.gone || mine !== seen) return false;
       if (!res.ok) { state.textContent = AREA_REFUSALS[res.body && res.body.code] || 'Le secteur n’est pas rangé.'; return false; }
       said(res.body.data);
       state.textContent = 'Secteur rangé.';
       return true;
-    }
+    }; }
     section.appendChild(t.accordButton('Ranger le secteur', function () {
       if (!known) return unread();
       var r = Number(String(km.value).replace(',', '.'));
       if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
-      return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer);
+      return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer(seen));
     }));
-    section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer) : unread(); }));
+    section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer(seen)) : unread(); }));
     section.appendChild(state);
     box.appendChild(section);
     function load() {
