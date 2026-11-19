@@ -1,9 +1,10 @@
 // X28 : ce que le fichier des vérifications doit garder. Lu par les garde-fous à chaque vérification,
 // pour que personne ne retire un contrôle ni ne rapproche le délai de la durée réelle sans que cela se voie.
 
-// Plus longue vérification réussie, mesurée sur les 100 dernières le 2026-11-03 : 15,5 minutes.
+// Plus longue vérification réussie, mesurée sur les 100 dernières le 2026-11-19 : 23,4 minutes, et des vérifications
+// arrêtées par le délai à 25 minutes encore en cours ce jour-là : 25 minutes retenues.
 // À relever quand la suite grandit ; le délai doit garder 30 % de marge au-dessus.
-export const DUREE_MESUREE_MINUTES = 15.5;
+export const DUREE_MESUREE_MINUTES = 25;
 const DELAI_MINIMUM = Math.ceil(DUREE_MESUREE_MINUTES * 1.3);
 
 const COMMANDES = [
