@@ -29,7 +29,7 @@ import { LABEL_SQL, actorOf, directionRefusal, parisMidnight, sha256, todayInPar
 
 export const MAX_STATEMENT_LINES = 5000;
 /** Un numéro de facture d'honoraires du réseau, tel que K02 les écrit. */
-const INVOICE_REF = /\bF-\d{4}-\d{5}\b/g;
+const INVOICE_REF = /\b(?:FAC|F)-\d{4}-\d{5}\b/g;
 
 export interface StatementLine {
   day: string;
