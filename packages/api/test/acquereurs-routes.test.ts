@@ -54,7 +54,7 @@ describeWithSqlite('T08 · routes de M08', () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
     // L'agent pose la recherche de son acquéreur.
-    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
+    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
     expect(search.status).toBe(200);
     expect((await t.call('alex', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).body).toMatchObject({ ok: true, data: { current: { version: 1 } } });
     // Le bien est diffusable : l'acquéreur est proposé, avec les raisons, et la carte de la demande le compte.
@@ -128,7 +128,7 @@ describeWithSqlite('T08 · routes de M08', () => {
   it('[R16] chaque route passe par les droits ; chaque refus rend 403 ou 404 et écrit une ligne au journal', async () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
-    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000 });
+    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000 });
     await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
     const wa = await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`);
     const id = (await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H })).body.data.visit.appointment.id as string;

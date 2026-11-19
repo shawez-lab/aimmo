@@ -229,6 +229,8 @@ describeWithSqlite('RC34 · la chaîne de captation joint l’annonce traduite v
     t.setClock(new Date('2027-03-01T08:00:00.000Z'));
     await t.publication.sync(t.network.id, t.propertyId);
     const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator: new EchoTranslator() });
+    // L'agent déclare parler anglais : l'anglais n'est plus ouvert d'office (AU113).
+    await tr.declareLanguages(t.agent, t.agent.userId, ['en']);
     const proposed = await tr.propose(t.agent, t.propertyId, 'en');
     if (!proposed.ok) throw new Error(proposed.code);
     const valid = await tr.validate(t.agent, proposed.value.id);

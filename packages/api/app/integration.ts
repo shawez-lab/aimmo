@@ -241,6 +241,10 @@ globalThis.AIMMO_INTEGRATION = function (t) {
     else {
       box.appendChild(el('strong', r.firstName));
       box.appendChild(el('p', 'Votre référent jusqu’au ' + day(r.until) + '. Posez-lui vos questions, sans attendre.', 'doux'));
+      // AU112 · ses coordonnées professionnelles : un toucher pour l'appeler ou lui écrire.
+      var ways = [['tel:', r.phone, 'Appeler '], ['mailto:', r.email, 'Écrire à ']].map(function (w) { return [w[0], typeof w[1] === 'string' ? w[1].replace(/\\s/g, '') : '', w[2] + r.firstName]; }).filter(function (w) { return /^[^<>"'\\s]{3,120}$/.test(w[1]); });
+      ways.forEach(function (w) { var a = el('a', w[2], 'bouton'); a.setAttribute('href', w[0] + w[1]); box.appendChild(a); });
+      if (!ways.length) box.appendChild(el('p', 'Ses coordonnées ne sont pas encore réglées : demandez-les à la direction.', 'doux'));
     }
     return box;
   }

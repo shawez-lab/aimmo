@@ -9,6 +9,7 @@ import type {
   ExclusionReason,
   IdentifierKind,
   Message,
+  Dwelling,
   MessageAuthor,
   MessageChannel,
   MessageDirection,
@@ -109,6 +110,8 @@ export interface NewProperty extends InScope {
   rooms?: number | null;
   priceEur?: number | null;
   status?: PropertyStatus;
+  /** Pour un logement : maison ou appartement (AU070). */
+  dwelling?: Dwelling | null;
 }
 
 export interface NewProjectProperty extends InScope {
@@ -406,6 +409,7 @@ export class FicheClient {
       status: input.status ?? 'draft',
       created_at: at,
       updated_at: at,
+      ...(input.dwelling ? { dwelling: input.dwelling } : {}),
     });
   }
 

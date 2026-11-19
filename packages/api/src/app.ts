@@ -142,6 +142,7 @@ import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from 
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { dicteeRoutes, type DicteeRoute } from './dictee.ts';
+import { horsLigneRoutes, type HorsLigneRoute } from './hors-ligne.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -1825,6 +1826,16 @@ function appelsFicheRoutes(): RouteDef[] {
   }));
 }
 
+/** La visite sans réseau (AU018) : l'agent en activité seul, le rôle contrôlé avant le corps [R16, R276, R278]. */
+function horsLigneRoutesDef(): RouteDef[] {
+  return horsLigneRoutes().map((r: HorsLigneRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
 /** Les notifications de l'agent (BR66) : l'agent en activité seul, pour lui seul, contrôlé avant le corps [R16, R412]. */
 function notificationsRoutesDef(): RouteDef[] {
   return notificationsRoutes().map((r: NotificationsRoute) => ({
@@ -2480,6 +2491,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...dicteeRoutesDef(config.reportWriter ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
+    ...horsLigneRoutesDef(),
     ...m01Routes(config),
     ...avisRoutes(config),
     ...repriseRoutes(),
