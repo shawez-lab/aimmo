@@ -590,8 +590,15 @@ export function minusMonths(day: string, months: number): string {
   return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
 
+/** La veille d'un jour. */
+function dayBefore(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export interface LeaseMilestones {
-  /** La prochaine échéance triennale à venir avant la fin du bail, ou `null`. */
+  /** La prochaine échéance triennale à venir avant la fin du bail, ou `null` : le dernier jour de la période de 3 ans. */
   nextTriennial: string | null;
   /** Le dernier jour pour donner congé à cette échéance : six mois avant (code de commerce, art. L145-4 et L145-9). */
   triennialNoticeBy: string | null;
@@ -607,10 +614,11 @@ export interface LeaseMilestones {
  */
 export function leaseMilestones(sheet: Pick<BusinessSheet, 'leaseStart' | 'leaseYears'>, today: string): LeaseMilestones | null {
   if (!sheet.leaseStart || sheet.leaseYears === null) return null;
-  const leaseEnd = addYears(sheet.leaseStart, sheet.leaseYears);
+  // Le bail couvre ses années jour pour jour : il expire la veille de l'anniversaire (2014-07-01 sur 9 ans : 2023-06-30).
+  const leaseEnd = dayBefore(addYears(sheet.leaseStart, sheet.leaseYears));
   let nextTriennial: string | null = null;
   for (let k = 3; k < sheet.leaseYears; k += 3) {
-    const at = addYears(sheet.leaseStart, k);
+    const at = dayBefore(addYears(sheet.leaseStart, k));
     if (at >= today) {
       nextTriennial = at;
       break;
@@ -621,6 +629,6 @@ export function leaseMilestones(sheet: Pick<BusinessSheet, 'leaseStart' | 'lease
     triennialNoticeBy: nextTriennial ? minusMonths(nextTriennial, 6) : null,
     leaseEnd,
     endNoticeBy: minusMonths(leaseEnd, 6),
-    ended: leaseEnd <= today,
+    ended: leaseEnd < today,
   };
 }
