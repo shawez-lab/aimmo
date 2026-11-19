@@ -120,6 +120,13 @@ describe('P02 · mentions obligatoires', () => {
     });
   }
 
+  it('[R45] AU065 : un diagnostic qui cite plusieurs années de prix les garde, telles qu’il les écrit', () => {
+    const energy = { energyClass: 'D', climateClass: 'D', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023], diagnosedOn: '2026-11-02' } as const;
+    const r = computeMentions({ kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { ...energy, costReferenceYears: [...energy.costReferenceYears] } }), cardNumber: CARD, today: TODAY });
+    expect(r.text).toContain('Prix moyens des énergies indexés sur les années 2021, 2022 et 2023 (abonnements compris).');
+    expect(r.text).not.toContain('1er janvier');
+  });
+
   it('[R43] chaque mention manquante bloque, nommée avec sa raison', () => {
     const base = CASES[0]!.input;
     const missing = (input: MentionsInput) => computeMentions(input).items.flatMap((i) => (i.status === 'manquante' ? [`${i.id}:${i.reason}`] : []));

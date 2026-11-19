@@ -11,7 +11,7 @@ import { CompleterNom, CorrigerNom, NouveauBien, appendEvent, type Acces, type J
 
 export const MAX_BIEN_BODY_BYTES = 2048;
 const ID = '([0-9a-f-]{36})';
-const FIELDS = new Set(['requestId', 'kind', 'postalCode', 'city', 'surfaceM2', 'rooms', 'priceEur']);
+const FIELDS = new Set(['requestId', 'kind', 'dwelling', 'postalCode', 'city', 'surfaceM2', 'rooms', 'priceEur']);
 const ROLES: readonly string[] = ['agent', 'direction'];
 
 export interface BiensFicheServices {

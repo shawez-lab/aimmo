@@ -56,11 +56,13 @@ const LABELS: Record<string, string> = {
   'characteristics.buildYear': 'Année de construction',
   'characteristics.landM2': 'Terrain',
   'characteristics.parkingSpaces': 'Places de stationnement',
+  'characteristics.dwelling': 'Logement : maison ou appartement',
   'energy.energyClass': 'Classe énergie du diagnostic',
   'energy.climateClass': 'Classe climat du diagnostic',
   'energy.annualCostMinEur': 'Coût annuel le plus bas du diagnostic, qui ne dépasse pas le plus haut',
   'energy.annualCostMaxEur': 'Coût annuel le plus haut du diagnostic',
   'energy.costReferenceYear': 'Année des prix de l’énergie du diagnostic',
+  'energy.costReferenceYears': 'Années des prix de l’énergie : celles du diagnostic, qui se suivent',
   'energy.diagnosedOn': 'Jour du diagnostic, jamais dans le futur',
   'coownership.lots': 'Nombre de lots de la copropriété',
   'coownership.annualChargesEur': 'Charges annuelles de la copropriété',
@@ -72,6 +74,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
   var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
+  var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
     var f = field(box, id, label, 'select');
     var blank = el('option', 'Je ne sais pas encore');
@@ -103,6 +106,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     NUMBERS.forEach(function (n) { nums[n[0]] = number(zone, 'fiche-bien-' + n[0], n[1], c[n[0]]); });
     var heating = select(zone, 'fiche-bien-chauffage', 'Chauffage', HEATING, c.heating);
     var elevator = select(zone, 'fiche-bien-ascenseur', 'Ascenseur', YES_NO, yesNo(c.elevator));
+    // AU070 · une recherche de maison ne reçoit pas un appartement.
+    var dwelling = select(zone, 'fiche-bien-logement', 'Logement : maison ou appartement', DWELLING, c.dwelling);
     var outs = {};
     Object.keys(OUTDOOR).forEach(function (kind) {
       outs[kind] = checkbox(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
@@ -116,9 +121,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       climateClass: select(zone, 'fiche-bien-climat', 'Classe climat', classes, e.climateClass),
       annualCostMinEur: number(zone, 'fiche-bien-cout-min', 'Coût annuel le plus bas, en euros', e.annualCostMinEur),
       annualCostMaxEur: number(zone, 'fiche-bien-cout-max', 'Coût annuel le plus haut, en euros', e.annualCostMaxEur),
-      costReferenceYear: number(zone, 'fiche-bien-cout-annee', 'Année des prix de l’énergie', e.costReferenceYear),
+      // AU065 · une année, ou celles que le diagnostic cite (« 2021, 2022, 2023 »), telles qu'il les écrit.
+      costReferenceYear: field(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
       diagnosedOn: field(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
     };
+    energy.costReferenceYear.setAttribute('inputmode', 'numeric');
+    energy.costReferenceYear.value = Array.isArray(e.costReferenceYears) && e.costReferenceYears.length > 1 ? e.costReferenceYears.join(', ') : text(e.costReferenceYear);
     energy.diagnosedOn.setAttribute('type', 'date');
     energy.diagnosedOn.value = text(e.diagnosedOn);
     zone.appendChild(el('h4', 'Copropriété et risques'));
@@ -166,6 +174,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         return Number(v);
       }
       var out = { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: heating.value || null, outdoor: Object.keys(OUTDOOR).filter(function (x) { return outs[x].checked; }), landM2: null, parkingSpaces: null, elevator: bool(elevator.value) };
+      if (dwelling.value) out.dwelling = dwelling.value;
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
       var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear];
@@ -175,9 +184,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
           climateClass: energy.climateClass.value,
           annualCostMinEur: int(energy.annualCostMinEur, 'Coût annuel le plus bas'),
           annualCostMaxEur: int(energy.annualCostMaxEur, 'Coût annuel le plus haut'),
-          costReferenceYear: int(energy.costReferenceYear, 'Année des prix de l’énergie'),
           diagnosedOn: energy.diagnosedOn.value,
         };
+        var ys = String(energy.costReferenceYear.value || '').split(/[^0-9]+/).filter(Boolean).map(Number);
+        if (!ys.length) bad = bad || 'Année des prix de l’énergie';
+        en.costReferenceYear = ys.length ? ys[ys.length - 1] : null;
+        if (ys.length > 1) en.costReferenceYears = ys;
       }
       var co = null;
       if (isCo.value === 'non') co = { isCoownership: false };

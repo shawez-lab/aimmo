@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { FicheBien, parseSheet } from '../src/annonces/index.ts';
+import { FicheBien, energyPriceText, parseSheet } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -45,6 +45,14 @@ async function setup() {
   return { db, journal, fiches, propertyId: b.id, full: forProperty(FULL, b.id), agent: as('agent', alex.id), sam: as('agent', sam.id), direction: as('direction', 'd-1'), compliance: as('compliance', 'c-1'), partner: as('partner', 'p-1'), stranger: as('direction', 'd-2', other.id), setClock: (d: Date) => (clock = d) };
 }
 
+it('[R51] AU070 · la fiche dit maison ou appartement, ou rien ; une autre valeur est refusée et nommée', () => {
+  const r = parseSheet({ characteristics: { dwelling: 'apartment' } }, TODAY, PID);
+  expect(r.ok && r.value.characteristics.dwelling).toBe('apartment');
+  const none = parseSheet({}, TODAY, PID);
+  expect(none.ok && 'dwelling' in none.value.characteristics).toBe(false);
+  expect(parseSheet({ characteristics: { dwelling: 'villa' } }, TODAY, PID)).toEqual({ ok: false, field: 'characteristics.dwelling' });
+});
+
 it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () => {
   const r = parseSheet(FULL, TODAY, PID);
   expect(r.ok).toBe(true);
@@ -65,6 +73,14 @@ it('P01 · chaque champ est contrôlé et le premier champ fautif est nommé', (
   expect(withEnergy({ annualCostMinEur: 2000 })).toEqual({ ok: false, field: 'energy.annualCostMinEur' });
   expect(withEnergy({ annualCostMaxEur: 1550.5 })).toEqual({ ok: false, field: 'energy.annualCostMaxEur' });
   expect(withEnergy({ costReferenceYear: 2028 })).toEqual({ ok: false, field: 'energy.costReferenceYear' });
+  // AU065 · les années des prix que le diagnostic cite : qui se suivent, la dernière étant l'année des prix.
+  const span = withEnergy({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
+  expect(span.ok && span.value.energy).toMatchObject({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
+  for (const years of [[2021, 2023], [2023], [2021, 2022], [2022, 2021, 2023], [2019, 2020, 2021, 2022, 2023, 2024]]) {
+    expect(withEnergy({ costReferenceYear: 2023, costReferenceYears: years })).toEqual({ ok: false, field: 'energy.costReferenceYears' });
+  }
+  expect(energyPriceText({ costReferenceYear: 2021 })).toBe('Prix moyens des énergies indexés au 1er janvier 2021 (abonnements compris).');
+  expect(energyPriceText({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] })).toBe('Prix moyens des énergies indexés sur les années 2021, 2022 et 2023 (abonnements compris).');
   // Date du diagnostic : jamais dans le futur, à l'heure de Paris ; jamais une date impossible.
   expect(withEnergy({ diagnosedOn: '2027-03-11' })).toEqual({ ok: false, field: 'energy.diagnosedOn' });
   expect(withEnergy({ diagnosedOn: '2027-02-30' })).toEqual({ ok: false, field: 'energy.diagnosedOn' });
