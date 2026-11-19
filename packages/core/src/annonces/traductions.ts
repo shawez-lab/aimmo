@@ -27,6 +27,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import { replyLanguage } from '../captation/premiere-reponse.ts';
 import { publicTextProblems, sentences } from './annonce-sourcee.ts';
 import { Annonces } from './annonces.ts';
@@ -422,8 +423,8 @@ export class AnnoncesTraduites {
     const out = new Map<ListingLanguage, string>();
     for (const r of rows) {
       if (!r.reviewer_agent_id) continue;
-      const active = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [r.reviewer_agent_id, networkId]);
-      if (active?.status === 'active' && (await this.languagesOf(networkId, r.reviewer_agent_id)).includes(r.language)) out.set(r.language, r.reviewer_agent_id);
+      // Un relecteur parti (même le jour de son départ, avant le passage du planificateur) ou au dossier incomplet ne relit plus [R86].
+      if ((await agentState(this.db, networkId, r.reviewer_agent_id, this.now())) === 'actif' && (await this.languagesOf(networkId, r.reviewer_agent_id)).includes(r.language)) out.set(r.language, r.reviewer_agent_id);
     }
     return out;
   }
@@ -580,6 +581,9 @@ export class AnnoncesTraduites {
     if (!reviewing) {
       const g = await this.gate(viewer, propertyId, 'read');
       if (!g.ok) return g;
+    } else {
+      // La lecture du relecteur s'écrit au journal comme toute lecture d'un bien, avant de rendre le texte [R16].
+      await appendEvent(this.journal, { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: 'agent', view: 'relecteur', language: language as string } }, this.now);
     }
     if (!isListingLanguage(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND t.language = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);

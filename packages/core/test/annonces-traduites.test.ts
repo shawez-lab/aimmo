@@ -281,6 +281,8 @@ describeWithSqlite('AU113 · un relecteur désigné pour une langue que l’agen
     // Le relecteur, qui n'est pas l'agent du bien, lit la traduction de sa langue, et seulement elle.
     expect(await s.tr.read(s.sam, s.propertyId, 'ar')).toMatchObject({ ok: true, value: { id: p.value.id } });
     expect(await s.tr.read(s.sam, s.propertyId, 'en')).toMatchObject({ ok: false });
+    // Cette lecture s'écrit au journal, comme toute lecture d'un bien [R16].
+    expect((await s.journal.all()).filter((e) => e.type === 'bien.lu' && e.actor === `agent:${s.sam.userId}` && (e.data as { view?: string }).view === 'relecteur')).toHaveLength(1);
     // Remplacé par un autre relecteur : la validation de l'ancien ne vaut plus, rien ne part avant la sienne.
     const nour = await s.store.createAgent({ networkId: s.network.id, firstName: 'Nour', lastName: 'Relectrice' });
     const asNour = { role: 'agent', userId: nour.id, networkId: s.network.id } as typeof s.sam;
@@ -292,6 +294,11 @@ describeWithSqlite('AU113 · un relecteur désigné pour une langue que l’agen
     if (!again.ok) throw new Error(again.code);
     expect((await s.tr.validate(asNour, again.value.id)).ok).toBe(true);
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('ar');
+    // Le jour de son départ, même avant le passage du planificateur, le relecteur ne lit ni ne valide plus [R86].
+    const today = s.now().toISOString().slice(0, 10);
+    await s.db.run("INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-nour', ?, ?, ?, ?, 'demission_agent', 1, 'direction:d', ?)", [s.network.id, nour.id, today, today, s.now().toISOString()]);
+    expect((await s.tr.read(asNour, s.propertyId, 'ar')).ok).toBe(false);
+    expect((await s.tr.forBuyer(s.network.id, s.propertyId, 'ar'))?.language).not.toBe('ar');
     // Retiré, la langue se ferme et sa traduction ne part plus.
     expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', null)).toEqual({ ok: true });
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).not.toContain('ar');
