@@ -383,6 +383,8 @@ export function applyRefusal(
     ignored: search.ignored,
     excludedCommunes: [...search.excludedCommunes],
     excludedKinds: [...search.excludedKinds],
+    // Le budget ferme survit à chaque refus (AU115).
+    budgetStrict: search.budgetStrict === true,
     refusedPropertyIds: search.refusedPropertyIds.includes(property.id) ? [...search.refusedPropertyIds] : [...search.refusedPropertyIds, property.id],
   };
   const source: CriterionSource = { kind: 'refus', propertyId: property.id, reason };

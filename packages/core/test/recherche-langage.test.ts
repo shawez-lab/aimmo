@@ -471,5 +471,9 @@ describe('AU115 · le budget ferme dans la recherche en direct', () => {
     expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(260_000))).toBeNull();
     expect(judge(base('Appartement à Dijon, budget 250 000 euros'), prop(260_000))).toMatchObject({ status: 'tolerated' });
     expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(250_000))).toMatchObject({ status: 'match' });
+    // Après un refus « trop petit », le budget reste ferme.
+    const refused = applyRefusal(base('Appartement à Dijon, budget ferme 250 000 euros'), { id: 'p-30', match: { ...prop(240_000), surfaceM2: 30 } }, 'trop_petit');
+    expect(refused.budgetStrict).toBe(true);
+    expect(judge(refused, prop(260_000))).toBeNull();
   });
 });
