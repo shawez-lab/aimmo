@@ -83,7 +83,7 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
   it('[R224] constat : une copie de la seule base ne se dit pas restaurée, ses fichiers manquent', async () => {
     const w = await world();
     const { targets } = freshTargets();
-    const out = await restoreExercise({ target: emptyDb(), targets, store: w.copies.store, key: w.key, copyId: w.receipt.copyId });
+    const out = await restoreExercise({ target: emptyDb(), targets, store: w.copies.store, key: w.key, copyId: w.receipt.copyId, references: async () => [] });
     expect(out).toEqual({ ok: false, part: 'objets', objects: { ok: false, code: 'objects_missing' } });
   });
 
@@ -95,7 +95,17 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
     for (const s of OBJECT_STORAGES) w.sources[s].objects.clear();
     const { made, targets } = freshTargets();
     const target = emptyDb();
-    const out = await restoreExercise({ target, targets, store: w.copies.store, key: w.key, copyId: w.receipt.copyId });
+    const out = await restoreExercise({
+      target,
+      targets,
+      store: w.copies.store,
+      key: w.key,
+      copyId: w.receipt.copyId,
+      references: async () => [
+        { storage: 'MEDIA', key: 'biens/b1/salon.jpg' },
+        { storage: 'COFFRE', key: 'coffre/k1/piece-identite.pdf' },
+      ],
+    });
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.objects).toMatchObject({ storages: 4, objects: 6 });
@@ -186,5 +196,16 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
       ],
     });
     expect(out).toEqual({ ok: false, part: 'objets', objects: { ok: false, code: 'not_identical', problems: [{ kind: 'reference_missing', storage: 'PIECES' }] } });
+  });
+
+  it('[R224] sans lecteur des fichiers cités par la base, l’exercice n’est jamais « restauré », même si la liste des stockages est vide', async () => {
+    const w = await world();
+    const vides = Object.fromEntries(OBJECT_STORAGES.map((s) => [s, memoryBucket().bucket])) as Record<ObjectStorage, ObjectTarget>;
+    expect(await copyObjects(vides, w.copies.store, w.key, w.receipt.copyId)).toMatchObject({ objects: 0 });
+    const target = emptyDb();
+    const out = await restoreExercise({ target, targets: freshTargets().targets, store: w.copies.store, key: w.key, copyId: w.receipt.copyId, references: null });
+    expect(out).toEqual({ ok: false, part: 'objets', objects: { ok: false, code: 'references_unchecked' } });
+    // Refusé avant d'écrire : la base neuve reste vide.
+    expect(await target.all("SELECT name FROM sqlite_master WHERE type = 'table'")).toEqual([]);
   });
 });

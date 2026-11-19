@@ -69,7 +69,7 @@ export interface ObjectsReceipt {
   vanished: number;
 }
 
-export type ObjectsRefusal = 'bad_copy_id' | 'objects_missing' | 'undecryptable' | 'bad_format' | 'storage_missing' | 'target_not_empty';
+export type ObjectsRefusal = 'bad_copy_id' | 'objects_missing' | 'references_unchecked' | 'undecryptable' | 'bad_format' | 'storage_missing' | 'target_not_empty';
 export type ObjectsProblem =
   | { kind: 'object_missing'; storage: ObjectStorage }
   | { kind: 'object_corrupt'; storage: ObjectStorage }
@@ -195,14 +195,19 @@ export async function restoreExercise(input: {
   store: CopyStore;
   key: CopyKey;
   copyId: string;
-  references?: ReferenceReader;
+  /**
+   * Obligatoire : sans lui, une liste de stockage vide ou tronquée passerait pour une copie complète. Un appelant sans
+   * lecteur reçoit `references_unchecked`, jamais « restauré ».
+   */
+  references: ReferenceReader | null;
   clock?: () => number;
 }): Promise<ExerciseOutcome> {
   const clock = input.clock ?? (() => Date.now());
   const started = clock();
+  if (typeof input.references !== 'function') return { ok: false, part: 'objets', objects: { ok: false, code: 'references_unchecked' } };
   const base = await restoreCopy(input.target, input.store, input.key, input.copyId, { clock });
   if (!base.ok) return { ok: false, part: 'base', base };
-  const references = input.references ? await input.references(input.target) : [];
+  const references = await input.references(input.target);
   const objects = await restoreObjects(input.targets, input.store, input.key, input.copyId, references);
   if (!objects.ok) return { ok: false, part: 'objets', objects };
   return { ok: true, base, objects, durationMs: clock() - started };
