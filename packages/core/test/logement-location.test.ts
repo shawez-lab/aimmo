@@ -6,6 +6,7 @@ import {
   annexValidUntil,
   banDate,
   checkDwelling,
+  decencyOf,
   territoryOf,
   ownerNoticeText,
   parseFacts,
@@ -29,6 +30,9 @@ const FACTS: RentalFacts = {
   finalEnergyKwh: 210,
   buildYear: 1985,
   electricityOver15: false,
+  mainRoomHundredths: 1_800,
+  ceilingHeightCm: 250,
+  localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
   gas: 'aucune',
   leaseStart: '2027-09-01',
 };
@@ -69,8 +73,9 @@ describe('W01 · règles écrites du contrôle du logement', () => {
 
   it('[R101] moins de 9 m² habitables, ou une annexe manquante, échue ou datée du futur, bloque avec sa raison', () => {
     const today = '2027-07-12';
-    expect(checkDwelling({ ...FACTS, livingAreaHundredths: 899 }, ALL_VALID, today)).toEqual([{ code: 'living_area', livingAreaHundredths: 899 }]);
-    expect(checkDwelling({ ...FACTS, livingAreaHundredths: 900 }, ALL_VALID, today)).toEqual([]);
+    const small = { ...FACTS, livingAreaHundredths: 899, mainRoomHundredths: 899, ceilingHeightCm: 250 };
+    expect(checkDwelling(small, ALL_VALID, today)).toEqual([{ code: 'living_area', livingAreaHundredths: 899, mainRoomHundredths: 899, ceilingHeightCm: 250, habitableVolumeHundredths: null }]);
+    expect(checkDwelling({ ...small, livingAreaHundredths: 900, mainRoomHundredths: 900 }, ALL_VALID, today)).toEqual([]);
     expect(checkDwelling(FACTS, ALL_VALID.filter((a) => a.kind !== 'erp'), today)).toEqual([{ code: 'annex_missing', kind: 'erp' }]);
     // L'état des risques vaut 6 mois : échu avant le début du bail.
     const oldErp = [...ALL_VALID.filter((a) => a.kind !== 'erp'), { kind: 'erp' as const, diagnosedOn: '2027-01-15', validUntil: annexValidUntil('erp', '2027-01-15') }];
@@ -291,6 +296,65 @@ describeWithSqlite('W01 · mise en location contrôlée avant toute annonce', ()
     }
     const columns = await t.db.all<{ name: string }>("SELECT p.name FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type = 'table' AND m.name LIKE 'rental_%'");
     for (const c of columns) expect(c.name).not.toMatch(/iban|bic|paid|received|deposit_received|encaiss/i);
+  });
+});
+
+describe('AU017 · décence : pièce principale et hauteur, ou volume', () => {
+  const today = '2026-11-18';
+  const base = { ...FACTS, leaseStart: '2027-09-01' };
+  const without = (f: typeof base) => {
+    const { mainRoomHundredths: _r, ceilingHeightCm: _h, ...rest } = f;
+    return rest;
+  };
+  it('[R101] 9 m² sans hauteur ni volume : jamais « louable », la raison dit ce qui manque', () => {
+    const f = { ...without(base), livingAreaHundredths: 900 };
+    expect(decencyOf(f)).toBe('inconnue');
+    const reasons = checkDwelling(f, ALL_VALID, today);
+    expect(reasons).toContainEqual({ code: 'dimensions_missing' });
+    expect(reasons.some((r) => r.code === 'living_area')).toBe(false);
+    // Une hauteur seule ne suffit pas à juger : il faut la pièce principale avec.
+    expect(decencyOf({ ...f, ceilingHeightCm: 250 })).toBe('inconnue');
+  });
+  it('[R101] 9 m² sous 2,20 m : décent ; sous 2,19 m sans volume : non décent', () => {
+    const f = { ...without(base), mainRoomHundredths: 900, ceilingHeightCm: 220 };
+    expect(decencyOf(f)).toBe('oui');
+    expect(decencyOf({ ...f, ceilingHeightCm: 219 })).toBe('non');
+    expect(checkDwelling({ ...f, ceilingHeightCm: 219 }, ALL_VALID, today)[0]).toMatchObject({ code: 'living_area', ceilingHeightCm: 219 });
+    expect(decencyOf({ ...f, mainRoomHundredths: 899 })).toBe('non');
+  });
+  it('[R101] la voie du volume : 20 m³ suffisent même avec une pièce de 8 m², 19,99 m³ non', () => {
+    const f = { ...without(base), mainRoomHundredths: 800, ceilingHeightCm: 250 };
+    expect(decencyOf({ ...f, habitableVolumeHundredths: 2_000 })).toBe('oui');
+    expect(decencyOf({ ...f, habitableVolumeHundredths: 1_999 })).toBe('non');
+    expect(decencyOf({ ...without(base), habitableVolumeHundredths: 2_000 })).toBe('oui');
+  });
+  it('[R101] une pièce principale plus grande que le logement, une hauteur hors bornes : refusées à la saisie', () => {
+    const raw = { ...without(base), chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, mainRoomHundredths: 4_251 })).toEqual({ ok: false, field: 'mainRoomHundredths' });
+    expect(parseFacts({ ...raw, ceilingHeightCm: 99 })).toEqual({ ok: false, field: 'ceilingHeightCm' });
+    expect(parseFacts({ ...raw, habitableVolumeHundredths: 0 })).toEqual({ ok: false, field: 'habitableVolumeHundredths' });
+    expect(parseFacts({ ...raw, mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 })).toMatchObject({ ok: true, value: { mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 } });
+  });
+});
+
+describe('AU017 · la règle locale plus stricte, lue et datée, avant « louable »', () => {
+  const today = '2026-11-18';
+  const { localRules: _l, ...national } = FACTS;
+  it('[R101] le seuil national rempli ne suffit pas : sans règle locale lue, jamais « louable »', () => {
+    expect(decencyOf(national)).toBe('oui');
+    expect(checkDwelling(national, ALL_VALID, today)).toContainEqual({ code: 'local_rules_unchecked' });
+    expect(checkDwelling(FACTS, ALL_VALID, today).some((r) => r.code.startsWith('local_rules'))).toBe(false);
+  });
+  it('[R101] une règle locale non respectée bloque avec sa référence, même au-dessus du seuil national', () => {
+    const f = { ...FACTS, localRules: { reference: 'Règlement sanitaire départemental, art. 40-1', checkedOn: '2027-01-04', compliant: false } };
+    expect(checkDwelling(f, ALL_VALID, today)).toContainEqual({ code: 'local_rules_failed', reference: 'Règlement sanitaire départemental, art. 40-1' });
+  });
+  it('[R101] la règle locale se saisit avec sa référence et son jour, rien d’autre', () => {
+    const raw = { ...national, chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, localRules: { reference: 'RS', checkedOn: '2027-01-04', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: 'hier', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true, note: 'x' } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: ' RSD art. 40 ', checkedOn: '2027-01-04', compliant: true } })).toMatchObject({ ok: true, value: { localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true } } });
   });
 });
 
