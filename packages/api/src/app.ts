@@ -190,6 +190,8 @@ export interface ApiConfig {
   reportWriter?: ReportWriter;
   /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
+  /** AU073 : la Base adresse nationale pour les secteurs des recherches et la position des biens, sans lien avec DVF. */
+  secteursGeocoder?: Geocoder;
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
   fetchPublicData?: Fetcher;
   /** Les sources du score par adresse (BR27) ; absentes, celles de `estimation` et de `fetchPublicData`, sinon aucune. */
@@ -2440,7 +2442,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),

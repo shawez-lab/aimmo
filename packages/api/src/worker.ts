@@ -181,6 +181,8 @@ export default {
       registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       // BR87 : la zone du résumé de copropriété lue en GET à la Base adresse nationale puis au Géoportail, au seul appui
       // de l'agent du bien ; aucun secret, jamais un envoi. Sans lecteur IA (H13), la prélecture laisse tout à lire.
+      // AU073 : les secteurs des recherches et la position des biens, à la Base adresse nationale, même sans DVF.
+      secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),
       copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },
       meta: {
         appSecret: env.META_APP_SECRET,

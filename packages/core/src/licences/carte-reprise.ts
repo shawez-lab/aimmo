@@ -47,7 +47,7 @@ export const TABLES_RESEAU: readonly string[] = `
   business_presentation_validations business_presentations business_safeguard_communes business_sheets
   business_transfer_buyers business_transfer_dates business_transfer_files business_transfer_ready
   business_transfer_tasks business_transfer_third_parties business_lease_tasks
-  business_valuation_scales business_valuation_validations business_valuations buyer_searches buyer_search_confirmations call_notes
+  business_valuation_scales business_valuation_validations business_valuations buyer_searches buyer_search_areas buyer_search_confirmations call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
   candidate_interviews candidate_replies candidates card_holders agent_title_settings portal_operations client_date_messages client_date_texts client_dates
    client_space_favorites client_space_links client_space_sessions commission_grids
@@ -56,7 +56,7 @@ export const TABLES_RESEAU: readonly string[] = `
   contact_keys contact_origins contact_scores contact_vitrines conversation_handovers coownership_summaries
   custom_reports daily_plans data_breach_cuts data_breaches diffusion_photo_descriptions diffusion_photo_subjects diffusion_portal_checks
   diffusion_portal_choices diffusion_portal_feedback diffusion_portal_settings diffusion_portal_suspensions
-  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_templates documents person_domiciles property_designations property_sanitation local_hazard_orders dpe_alert_items
+  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_templates documents person_domiciles property_designations property_positions property_sanitation local_hazard_orders dpe_alert_items
   dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
@@ -88,7 +88,7 @@ export const TABLES_RESEAU: readonly string[] = `
   recruiting_content_withdrawals recruiting_contents recruiting_tasks referral_requests referral_settings referrals
   region_decisions registered_letter_events registered_letters registry_review_alerts registry_reviews
   remote_slip_signatures remote_visits rental_ads rental_applications rental_handovers rental_inventories
-  rental_lease_copies rental_lease_signatures rental_lease_templates rental_leases rental_listings
+  rental_lease_copies rental_lease_signatures rental_lease_cotenant_signatures rental_cotenant_changes rental_lease_templates rental_leases rental_listings
   rental_management_links rental_piece_findings rental_presentations rental_sends reprise_avancement reprise_depots
   review_requests risk_statements safety_alerts sale_commissions sale_file_buyer_notices sale_file_closings
   sale_file_dates sale_file_financing sale_file_financing_alerts sale_file_fund_alerts sale_file_pieces
@@ -212,6 +212,9 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   rental_inventory_copies: { via: [['inventory_id', 'rental_inventories', 'id']] },
   rental_inventory_signatures: { via: [['inventory_id', 'rental_inventories', 'id']] },
   rental_lease_copy_deliveries: { via: [['lease_id', 'rental_lease_copies', 'lease_id']] },
+  rental_lease_cotenant_copy_deliveries: { via: [['lease_id', 'rental_lease_copies', 'lease_id'], ['person_id', 'persons', 'id']] },
+  rental_lease_cotenants: { via: [['lease_id', 'rental_leases', 'id'], ['person_id', 'persons', 'id']] },
+  rental_lease_cotenant_revisions: { via: [['lease_id', 'rental_leases', 'id']] },
   rental_listing_communes: { via: [['listing_id', 'rental_listings', 'id']] },
   rental_owner_notices: { via: [['listing_id', 'rental_listings', 'id']] },
   rental_piece_deposits: { via: [['application_id', 'rental_applications', 'id']] },
@@ -267,6 +270,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   referral_requests: ['key_hash'],
   remote_slip_signatures: ['code_hash', 'token_hash'],
   rental_lease_signatures: ['code_hash'],
+  rental_lease_cotenant_signatures: ['code_hash'],
   satisfaction_tokens: ['token_hash'],
   licence_states: ['decided_by'],
   security_challenges: ['challenge'],
@@ -286,6 +290,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
  */
 export const ORDRE_REPRISE: readonly string[] = `
   fee_schedule_tiers
+  rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
   academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
   ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
@@ -306,7 +311,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers
   signature_validations signature_sessions signed_amendments
-  signed_documents document_co_mandants documents person_domiciles property_designations property_sanitation local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
+  signed_documents document_co_mandants documents person_domiciles property_designations property_positions property_sanitation local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
   person_request_answers person_request_outputs person_requests exclusions gbp_claims gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
@@ -330,7 +335,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   registered_letters risk_statements sale_commissions sale_file_buyer_notices sale_file_closings sale_file_dates sale_file_financing
   sale_file_financing_alerts sale_file_pieces sale_file_reminders sale_file_sellers sale_file_steps sale_file_stops
   sale_file_tasks signature_circuit_annexes signature_circuit_events signature_circuit_signers signature_circuits
-  sale_files offer_co_buyers offer_register person_name_corrections business_buyer_profiles buyer_searches buyer_search_confirmations investment_notes
+  sale_files offer_co_buyers offer_register person_name_corrections business_buyer_profiles buyer_searches buyer_search_areas buyer_search_confirmations investment_notes
   investment_calculations investor_profiles partner_documents partner_followups partner_referral_disclosures
   partner_referral_fees partner_referral_options partner_referral_steps partner_review_reads partner_reviews
   rental_management_links studio_option_requests partner_referrals project_properties sources projects

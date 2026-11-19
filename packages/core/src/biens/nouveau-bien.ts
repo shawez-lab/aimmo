@@ -43,7 +43,8 @@ function validate(input: Record<string, unknown>): Clean | string {
   if (typeof postalCode !== 'string' || !/^\d{5}$/.test(postalCode)) return 'bad_postal_code';
   const town = typeof city === 'string' ? city.trim() : '';
   if (town.length < 1 || town.length > 80 || /\d/.test(town)) return 'bad_city';
-  if (!isCount(surfaceM2, 1_000_000)) return 'bad_surface';
+  // AU062 · une surface au centième de m² près (63,42 m²), gardée telle quelle : jamais arrondie en silence.
+  if (typeof surfaceM2 !== 'number' || !Number.isFinite(surfaceM2) || surfaceM2 <= 0 || surfaceM2 > 1_000_000 || Number(surfaceM2.toFixed(2)) !== surfaceM2) return 'bad_surface';
   if (rooms !== undefined && rooms !== null && !isCount(rooms, 200)) return 'bad_rooms';
   if (priceEur !== undefined && priceEur !== null && !isCount(priceEur, 1_000_000_000)) return 'bad_price';
   // Maison ou appartement : seulement pour un logement (AU070).

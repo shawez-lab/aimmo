@@ -9,6 +9,7 @@
  * chaque geste au journal, sans aucune valeur de la recherche [R13].
  */
 import type { Acces } from '../acces/acces.ts';
+import { areaOfProject, type SearchArea } from './secteurs.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Project } from '../db/types.ts';
@@ -53,6 +54,8 @@ export interface BuyerSearch {
   requiredFeatures?: BuyerFeature[];
   /** Le budget dit infranchissable : aucune tolérance au-dessus (AU115). */
   budgetStrict?: boolean;
+  /** Le secteur privé de la recherche, rangé à part et joint au rapprochement (AU073) ; jamais modifié par ici. */
+  area?: SearchArea | null;
   /** Étages acceptés, 0 pour le rez-de-chaussée : « pas de rez-de-chaussée » donne 1 au moins (AU072). */
   floorMin?: number | null;
   floorMax?: number | null;
@@ -449,7 +452,8 @@ export class FicheAcquereur {
     const read = await acces.readFiche(viewer, project.person_id);
     if (!read.ok) return refuse(read.code, undefined, 'R16');
     if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
-    if (!(await this.current(project.id))) return refuse('sans_recherche', undefined, 'R16');
+    // Une recherche rangée, ou le seul secteur d'un projet (AU073) : l'une ou l'autre se confirme.
+    if (!(await this.current(project.id)) && !(await areaOfProject(this.db, project.id))) return refuse('sans_recherche', undefined, 'R16');
     const at = this.now().toISOString();
     await this.db.run('INSERT INTO buyer_search_confirmations (project_id, network_id, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?)', [project.id, project.network_id, at, `${viewer.role}:${viewer.userId}`]);
     await appendEvent(this.journal, { type: 'acquereur.recherche_confirmee', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${project.person_id}`, data: { project: project.id } }, this.now);

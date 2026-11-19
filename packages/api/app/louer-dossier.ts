@@ -20,6 +20,9 @@ const REFUSALS = {
   not_stored: 'Le fichier n’est pas rangé. Réessayez.',
   ref_used: 'Ce fichier est déjà rangé.',
   depot_ferme: 'Le dépôt des fichiers n’est pas ouvert pour le moment : rien n’est rangé.',
+  already_cotenant: 'Cette personne est colocataire : elle n’est pas aussi garant.',
+  already_guarantor: 'Cette personne est garant : elle n’est pas aussi colocataire.',
+  too_many: 'Cinq colocataires au plus, en plus du candidat.',
 };
 const VAULT_REFUSALS = {
   bad_date: 'La date de vérification n’est pas valable : elle ne peut pas être dans l’avenir.',
@@ -73,6 +76,7 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     var verified = a.identityVerifiedOn || {};
     var people = [{ holder: 'candidat', personId: a.personId, name: 'Le candidat' }];
     guarantors.forEach(function (g, i) { if (g.kind === 'personne') people.push({ holder: g.guarantorId, personId: g.personId, name: guarantorName(g, i) }); });
+    cotenants(a).forEach(function (c, i) { people.push({ holder: 'colocataire:' + c, personId: c, name: 'Colocataire ' + (i + 1) }); });
     box.appendChild(el('h4', 'Identité'));
     var todo = {};
     people.forEach(function (p) {
@@ -113,6 +117,8 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
       });
     }));
   }
+  /* AU097 · les colocataires : chacun locataire du même bail, avec ses pièces, son identité, sa signature. */
+  function cotenants(a) { return Array.isArray(a.cotenants) ? a.cotenants.filter(function (c) { return t.ID.test(String(c)); }) : []; }
   function guarantorName(g, i) { return g.kind === 'visale' ? 'Garant Visale' : 'Garant ' + (i + 1); }
   function open(box, base, a) {
     clear(box);
@@ -127,6 +133,7 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     } else box.appendChild(el('p', 'Aucune pièce rangée.', 'doux'));
     box.appendChild(el('p', 'Seules les pièces de la liste officielle. Le dossier garde sa place d’arrivée.', 'doux'));
     var who = { candidat: 'Le candidat' };
+    cotenants(a).forEach(function (c, i) { who['colocataire:' + c] = 'Colocataire ' + (i + 1); });
     guarantors.forEach(function (g, i) { who[g.guarantorId] = guarantorName(g, i); });
     var holder = select(box, 'dossier-qui-' + n, 'Qui fournit la pièce', who, 'candidat');
     var slot = el('div');
@@ -135,6 +142,7 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     function drawSorts() {
       clear(slot);
       var g = guarantors.filter(function (x) { return x.guarantorId === holder.value; })[0];
+      // Un colocataire fournit les pièces d'un candidat (annexe I).
       var hasDomicile = held.some(function (p) { return p.holder === holder.value && p.category === 'domicile'; });
       sort = select(slot, 'dossier-piece-' + n, 'La pièce', sortsFor(g ? g.kind : 'candidat', hasDomicile), '');
     }
@@ -158,9 +166,25 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
     if (!guarantors.some(function (g) { return g.kind === 'visale'; })) box.appendChild(button('Garant Visale', function () {
       act(appBase + '/garants', { kind: 'visale' }, 'Le garant n’est pas ajouté.', 'Garant ajouté.');
     }));
+    chooser(box, base, n, 'garant', 'Choisir un garant parmi mes contacts', 'Le garant', 'Ajouter ce garant', function (id) {
+      act(appBase + '/garants', { kind: 'personne', personId: id }, 'Le garant n’est pas ajouté.', 'Garant ajouté.');
+    });
+    if (a.dossierFacile) return;
+    box.appendChild(el('h4', 'Colocataires'));
+    box.appendChild(el('p', 'Un seul bail : chaque colocataire y est locataire, avec ses pièces, sa signature et son exemplaire.', 'doux'));
+    cotenants(a).forEach(function (c, i) {
+      box.appendChild(button('Retirer le colocataire ' + (i + 1), function () {
+        act(appBase + '/colocataires', { personId: c, action: 'retrait' }, 'Le colocataire n’est pas retiré.', 'Colocataire retiré : le bail est à refaire.');
+      }));
+    });
+    chooser(box, base, n, 'colocataire', 'Ajouter un colocataire parmi mes contacts', 'Le colocataire', 'Ajouter ce colocataire', function (id) {
+      act(appBase + '/colocataires', { personId: id, action: 'ajout' }, 'Le colocataire n’est pas ajouté.', 'Colocataire ajouté : le bail est à refaire.');
+    });
+  }
+  function chooser(box, base, n, tag, open, label, confirm, done) {
     var people = el('div');
     box.appendChild(people);
-    people.appendChild(button('Choisir un garant parmi mes contacts', function () {
+    people.appendChild(button(open, function () {
       say('Chargement…');
       send(base + '/contacts', 'GET').then(function (res) {
         if (res.gone) return;
@@ -171,10 +195,10 @@ globalThis.AIMMO_LOUER_DOSSIER = function (t) {
         clear(people);
         var options = { '': 'Choisir une personne' };
         list.forEach(function (p) { options[p.personId] = [p.firstName, p.lastName].filter(Boolean).join(' ') || 'Contact sans nom'; });
-        var person = select(people, 'dossier-garant-' + n, 'Le garant', options, '');
-        people.appendChild(button('Ajouter ce garant', function () {
+        var person = select(people, 'dossier-' + tag + '-' + n, label, options, '');
+        people.appendChild(button(confirm, function () {
           if (!person.value) { say('Choisissez d’abord la personne.'); return; }
-          act(appBase + '/garants', { kind: 'personne', personId: person.value }, 'Le garant n’est pas ajouté.', 'Garant ajouté.');
+          done(person.value);
         }));
       });
     }));
