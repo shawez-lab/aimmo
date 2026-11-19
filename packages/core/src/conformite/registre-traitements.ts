@@ -748,7 +748,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)'],
     tables: {
       rental_listings: ['owner_person_id', 'created_by'],
-      rental_facts: ['rent_cents', 'charges_cents', 'recorded_by'],
+      rental_facts: ['rent_cents', 'charges_cents', 'rent_control', 'recorded_by'],
       rental_annexes: ['ref', 'recorded_by'],
       rental_checks: ['facts_version', 'checked_by'],
       rental_owner_notices: ['owner_person_id', 'text'],
