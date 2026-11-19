@@ -275,6 +275,29 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect(await mandateTerms(t.db, t.mandateId)).toMatchObject({ priceEur: 200000, feeEur: 9500, feeCharge: 'acquereur' });
   });
 
+  it('[R41] des honoraires en effet tout de suite restent au barème du prix de ce jour, pas d’un prix à venir', async () => {
+    const t = await setup();
+    // Signé le 1er mars : le prix passe à 300 000 € au 1er avril.
+    const up = await t.amendment({ 'avenant.prix': 300000, 'avenant.date_effet': '2027-04-01' });
+    if (!up.ok) throw new Error(up.code);
+    expect((await sign(t, up.document.id, 'h11')).ok).toBe(true);
+    // 15 000 € d'honoraires dès maintenant dépassent 5 % de 200 000 €, le prix de mars.
+    const fee = await t.amendment({ 'avenant.honoraires': 15000 });
+    if (!fee.ok) throw new Error(fee.code);
+    const r = await sign(t, fee.document.id, 'h12');
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+    // Au 1er avril, ils passent : avec la même date d'effet, l'avenant est au barème.
+    const later = await t.amendment({ 'avenant.honoraires': 15000, 'avenant.date_effet': '2027-04-01' });
+    if (!later.ok) throw new Error(later.code);
+    expect((await sign(t, later.document.id, 'h13')).ok).toBe(true);
+    // Une baisse de prix à venir se contrôle à sa date : 9 000 € d'honoraires dépassent 5 % de 150 000 € au 1er mai.
+    const t2 = await setup();
+    const down = await t2.amendment({ 'avenant.prix': 150000, 'avenant.date_effet': '2027-05-01' });
+    if (!down.ok) throw new Error(down.code);
+    const r0 = await sign(t2, down.document.id, 'h14');
+    expect(r0.ok === false && 'check' in r0 && r0.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+  });
+
   it('[R40] devenir exclusif demande la clause mise en évidence ; le même type n’est pas un avenant', async () => {
     const t = await setup();
     expect(await t.amendment({ 'avenant.type': 'exclusif' })).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });

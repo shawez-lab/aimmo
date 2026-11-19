@@ -28,6 +28,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
 import { mandateExpired, mandateTerms } from './conditions.ts';
+import { localTime } from '../envoi/horaires.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
 import { MANDATE_DESIGNATION_FIELDS } from './designation.ts';
@@ -251,17 +252,34 @@ export class ControlesSignature {
     // restent au barème, sur le prix en vigueur après lui (AU057).
     if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true && facts.feeChargeChanged !== true) return line(true, 'fees_unchanged');
     // Ce que l'avenant ne change pas se lit au contrôle, dans les conditions en vigueur, avenants signés depuis sa
-    // préparation compris : jamais une copie prise à la préparation, qui a pu changer depuis (AU057).
+    // préparation compris : jamais une copie prise à la préparation, qui a pu changer depuis. Et chaque jour compte, du
+    // jour où il prend effet à chaque date d'effet d'un avenant déjà signé qui viendra après lui (AU057).
     if (amendment && facts) {
-      const inForce = facts.mandateId ? await mandateTerms(this.db, facts.mandateId) : null;
-      facts = {
-        ...facts,
-        priceEur: facts.priceEur ?? inForce?.priceEur ?? null,
-        feeEur: facts.feeChanged === true ? facts.feeEur : (inForce?.feeEur ?? facts.feeEur),
-        feeCharge: facts.feeChargeChanged === true ? facts.feeCharge : (inForce?.feeCharge ?? facts.feeCharge),
-      };
+      if (!facts.mandateId) return line(false, 'fee_or_price_unknown');
+      const today = localTime(this.now(), 'Europe/Paris').date;
+      const from = typeof facts.effectiveOn === 'string' && facts.effectiveOn > today ? facts.effectiveOn : today;
+      const all = await mandateTerms(this.db, facts.mandateId);
+      const days = [from, ...new Set((all?.amendments ?? []).map((a) => a.effectiveOn).filter((d) => d > from))].sort();
+      let last: CheckLine = line(false, 'fee_or_price_unknown');
+      for (const day of days) {
+        const inForce = await mandateTerms(this.db, facts.mandateId, new Date(`${day}T12:00:00.000Z`));
+        last = await this.scheduleLine(networkId, {
+          priceEur: facts.priceEur ?? inForce?.priceEur ?? null,
+          feeEur: facts.feeChanged === true ? facts.feeEur : (inForce?.feeEur ?? null),
+          feeCharge: facts.feeChargeChanged === true ? facts.feeCharge : (inForce?.feeCharge ?? null),
+        });
+        if (!last.ok) return last;
+      }
+      return last;
     }
-    if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
+    if (!facts) return line(false, 'fee_or_price_unknown');
+    return this.scheduleLine(networkId, facts);
+  }
+
+  /** Des honoraires au barème du réseau, sur un prix, avec qui les paie [R41]. */
+  private async scheduleLine(networkId: string, facts: Pick<DocumentFacts, 'priceEur' | 'feeEur' | 'feeCharge'>): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
+    if (facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
     const schedule = await this.db.first<{ max_rate_bp: number; min_eur: number }>('SELECT max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     if (!schedule) return line(false, 'no_fee_schedule');
