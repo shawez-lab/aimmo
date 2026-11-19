@@ -249,3 +249,54 @@ export const PUBLIC_PAGE_CSS =
   '.carte{padding:var(--e-6) var(--e-5)}.carte h1{font-size:var(--t-xl)}' +
   '.carte form button[type=submit]{width:100%;margin-top:var(--e-4)}' +
   'ul{padding-left:1.2rem}';
+
+/**
+ * Les deux étiquettes du diagnostic de performance énergétique (AU006) [R43, R201] : l'échelle « énergie » de A à G,
+ * du vert au rouge, et l'échelle « climat » de A à G, du bleu clair au violet sombre, aux couleurs du modèle officiel
+ * du DPE de 2021. Ce sont les seules couleurs hors palette du système : elles ne suivent pas le mode sombre, parce que
+ * l'étiquette est un dessin réglementaire, et chaque barre porte le texte (noir ou blanc) qui lui donne un contraste
+ * de 4,5 au moins, vérifié dans les tests. Les seuils écrits sur les barres sont ceux de l'arrêté du 31 mars 2021
+ * (énergie en kWh/m²/an, climat en kg CO₂/m²/an).
+ */
+export const ETIQUETTES_DPE = Object.freeze({
+  energie: Object.freeze([
+    ['#009c6d', '#000000'],
+    ['#52b153', '#000000'],
+    ['#78bd76', '#000000'],
+    ['#f4e70f', '#000000'],
+    ['#f0b40f', '#000000'],
+    ['#eb8235', '#000000'],
+    ['#d7221f', '#ffffff'],
+  ] as const),
+  climat: Object.freeze([
+    ['#a4dbf8', '#000000'],
+    ['#8cb4d3', '#000000'],
+    ['#7792b1', '#000000'],
+    ['#5f6e8c', '#ffffff'],
+    ['#4d5271', '#ffffff'],
+    ['#393551', '#ffffff'],
+    ['#281b35', '#ffffff'],
+  ] as const),
+});
+
+const etiquetteTokens = (['energie', 'climat'] as const)
+  .flatMap((k) => ETIQUETTES_DPE[k].map(([fond, texte], i) => `--${k}-${'abcdefg'[i]}:${fond};--${k}-${'abcdefg'[i]}-t:${texte}`))
+  .join(';');
+const etiquetteBars = (['energie', 'climat'] as const)
+  .flatMap((k) => ETIQUETTES_DPE[k].map((_, i) => `.${k} li:nth-child(${i + 1}) b{background:var(--${k}-${'abcdefg'[i]});color:var(--${k}-${'abcdefg'[i]}-t);width:${40 + i * 10}%}`))
+  .join('');
+
+/**
+ * Le dessin des deux étiquettes, à placer juste après la base (écran ou papier) : il fait partie du système, le
+ * contrôle des écrans le reconnaît. Barres en flèche de largeur croissante, la classe du bien plus haute, cerclée
+ * d'encre et dite en mots ; les couleurs sont imprimées telles quelles.
+ */
+export const ETIQUETTES_CSS =
+  `:root{${etiquetteTokens}}` +
+  '.etiquettes{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:var(--e-5);margin:var(--e-6) 0}' +
+  '.etiquette{margin:0}.etiquette figcaption{font-weight:700;margin-bottom:var(--e-2)}.etiquette figcaption span{display:block;font-weight:400;font-size:.8em;color:var(--doux)}' +
+  '.echelle{list-style:none;margin:0;padding:0;display:grid;gap:3px}.echelle li{display:flex;align-items:center;gap:var(--e-2)}' +
+  '.echelle b{display:flex;justify-content:space-between;align-items:center;min-height:1.7em;padding:0 1.1em 0 .5em;font-size:.85em;clip-path:polygon(0 0,calc(100% - .8em) 0,100% 50%,calc(100% - .8em) 100%,0 100%);-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+  '.echelle b i{font-style:normal;font-size:1.35em}' +
+  '.echelle .ce-bien b{min-height:2.4em;font-size:1em;box-shadow:inset 0 0 0 3px var(--encre)}.echelle .ce-bien strong{white-space:nowrap}' +
+  etiquetteBars;

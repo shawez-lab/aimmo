@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DESIGN_CSS } from '../src/design/systeme.ts';
-import { PageBien, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
+import { DESIGN_CSS, ETIQUETTES_CSS, ETIQUETTES_DPE } from '../src/design/systeme.ts';
+import { contrastRatio, htmlProblems, screenCssProblems } from '../src/design/audit.ts';
+import { PageBien, computeMentions, energyClassesOf, energyLabels, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -131,5 +132,75 @@ describeWithSqlite('P05 · page et fiche depuis la version publiée', () => {
     expect(await pages.setAgentCard(t.direction, t.alexId, { phone: '0300000002', email: 'b@exemple.test' })).toEqual({ ok: false, rule: 'R16', code: 'agent_inactive' });
     expect((await t.journal.bySubject(`agent:${t.alexId}`)).filter((e) => e.type === 'acces.refuse' && (e.data as { code: string }).code === 'agent_inactive')).toHaveLength(2);
     expect(await t.db.all('SELECT id FROM agent_public_cards')).toHaveLength(1);
+  });
+});
+
+describe('AU006 · les deux étiquettes du DPE sur la page et la fiche imprimable', () => {
+  const WITH_DPE: PageInput = {
+    ...INPUT,
+    payload: { ...INPUT.payload, mentions: `${INPUT.payload.mentions!.split('\n')[0]}\nClasse énergie E, classe climat C. Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre 900${N}€ et 1${S}300${N}€ par an.\nCarte professionnelle n° CPI 0000.` },
+  };
+
+  it('[R43] la page et la fiche montrent les deux échelles de A à G, la classe du bien en avant et dite en mots', () => {
+    for (const html of [renderListingPage(WITH_DPE), renderListingPrint(WITH_DPE)!]) {
+      expect(html).toContain(ETIQUETTES_CSS);
+      const energie = /<figure class="etiquette energie">([\s\S]*?)<\/figure>/.exec(html)![1]!;
+      const climat = /<figure class="etiquette climat">([\s\S]*?)<\/figure>/.exec(html)![1]!;
+      for (const [fig, current] of [[energie, 'E'], [climat, 'C']] as const) {
+        expect(fig.match(/<li/g)).toHaveLength(7);
+        expect([...fig.matchAll(/<i>([A-G])<\/i>/g)].map((m) => m[1])).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
+        expect(fig.match(/aria-current="true"/g)).toHaveLength(1);
+        expect(fig).toMatch(new RegExp(`<li class="ce-bien" aria-current="true"><b>[^<]*<i>${current}</i></b><strong>◂ ce bien</strong>`));
+        expect(fig).toContain(`classe ${current}<span>`);
+      }
+      expect(energie).toContain('kWh/m²/an');
+      expect(climat).toContain('kg CO₂/m²/an');
+    }
+    // Sur la fiche, les étiquettes sont sur la première page, avec le prix et les mentions.
+    const page1 = renderListingPrint(WITH_DPE)!.split('<section class="page">')[1]!;
+    expect(page1).toContain('class="etiquettes"');
+  });
+
+  it('[R43] le constat de l’audit : avant, les classes n’étaient que du texte ; un dessin en couleur les montre', () => {
+    const html = renderListingPage(WITH_DPE);
+    // Chaque barre a sa couleur, celle du modèle officiel, posée par le système.
+    for (const [kind, colors] of Object.entries(ETIQUETTES_DPE)) {
+      colors.forEach(([fond], i) => {
+        expect(ETIQUETTES_CSS).toContain(`--${kind}-${'abcdefg'[i]}:${fond}`);
+        expect(ETIQUETTES_CSS).toContain(`.${kind} li:nth-child(${i + 1}) b{background:var(--${kind}-${'abcdefg'[i]})`);
+      });
+    }
+    expect(html.indexOf('class="mentions"')).toBeLessThan(html.indexOf('class="etiquettes"'));
+  });
+
+  it('[R201] chaque barre a un texte lisible : contraste de 4,5 au moins', () => {
+    for (const colors of Object.values(ETIQUETTES_DPE)) for (const [fond, texte] of colors) expect(contrastRatio(fond, texte)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('[R201] les étiquettes font partie du système : le contrôle des écrans les accepte, rien d’autre n’y entre', () => {
+    for (const html of [renderListingPage(WITH_DPE), renderListingPrint(WITH_DPE)!]) {
+      expect(screenCssProblems(/<style>([\s\S]*?)<\/style>/.exec(html)![1]!)).toEqual([]);
+      expect(htmlProblems(html, { print: html.includes('@page') })).toEqual([]);
+    }
+    // Une couleur à soi ajoutée après les étiquettes est toujours refusée.
+    expect(screenCssProblems(`${DESIGN_CSS}${ETIQUETTES_CSS}.x{color:#ff0000}`)).toEqual(['couleur hors système : #ff0000']);
+  });
+
+  it('[R43] les classes viennent des mentions publiées seules ; sans elles (terrain), aucune étiquette', () => {
+    expect(energyClassesOf(WITH_DPE.payload.mentions)).toEqual({ energy: 'E', climate: 'C' });
+    expect(energyClassesOf('Classe énergie H, classe climat C.')).toBeNull();
+    expect(energyClassesOf(null)).toBeNull();
+    expect(energyLabels(INPUT.payload.mentions)).toBe('');
+    expect(renderListingPage(INPUT)).not.toContain('class="etiquettes"');
+    expect(renderListingPrint(INPUT)).not.toContain('class="etiquettes"');
+    // La phrase lue est exactement celle que le calcul des mentions écrit.
+    const mentions = computeMentions({
+      kind: 'home',
+      terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'vendeur' },
+      sheet: { characteristics: null, energy: { energyClass: 'F', climateClass: 'D', annualCostMinEur: 900, annualCostMaxEur: 1300, costReferenceYear: 2025, diagnosedOn: '2024-03-01' }, coownership: { isCoownership: false }, risks: { inRiskZone: false }, media: [] } as never,
+      cardNumber: 'CPI 0000',
+      today: '2026-11-19',
+    });
+    expect(energyClassesOf(mentions.text)).toEqual({ energy: 'F', climate: 'D' });
   });
 });

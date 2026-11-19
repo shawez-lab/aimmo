@@ -30,7 +30,7 @@ const LISTING: PageInput = {
     state: 'en_vente',
     title: 'Maison 5 pièces à Talant',
     body: 'Un jardin clos.\nTrois chambres.',
-    mentions: `Prix : 320${S}000${N}€ honoraires inclus.\nCarte professionnelle n° CPI 0000.`,
+    mentions: `Prix : 320${S}000${N}€ honoraires inclus.\nClasse énergie D, classe climat B. Logement à consommation énergétique moyenne.\nCarte professionnelle n° CPI 0000.`,
     priceEur: 320000,
     media: [],
   },
