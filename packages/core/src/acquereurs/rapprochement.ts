@@ -195,7 +195,8 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   }
   const lMin = search.landMinM2 ?? null;
   if (lMin !== null) {
-    const land = property.landM2 ?? null;
+    // Un terrain seul n'a pas de fiche de terrain : sa surface enregistrée est celle du terrain.
+    const land = property.landM2 ?? (property.kind === 'land' ? property.surfaceM2 : null);
     judgeOne('land', soft.includes('land'), land === null ? null : land >= lMin, `Terrain de ${land} m² pour ${lMin} m² au moins.`, 'Terrain plus petit que demandé.', 'Terrain du bien inconnu.');
   }
 

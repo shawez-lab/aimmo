@@ -179,6 +179,20 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(check({ softCriteria: ['budget'] })).toMatchObject({ ok: false, field: 'softCriteria' });
   });
 
+  it('AU072 · un terrain seul se rapproche par sa surface enregistrée', async () => {
+    const t = await setup();
+    const want = await t.buyer(t.alex.id, 'Terrain', { propertyKinds: ['land'], communes: ['Dijon'], landMinM2: 500 });
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId);
+    };
+    const big = await t.property(t.alex.id, 'T600', { kind: 'land', city: 'Dijon', price: 80_000, surface: 600, rooms: 0 });
+    expect(await proposed(big.id)).toEqual([want.project.id]);
+    const small = await t.property(t.alex.id, 'T300', { kind: 'land', city: 'Dijon', price: 80_000, surface: 300, rooms: 0 });
+    expect(await proposed(small.id)).toEqual([]);
+  });
+
   it('AU072 · un souhait d’étage, de classe ou de terrain rempli fait passer devant, à critères égaux', async () => {
     const t = await setup();
     const plain = await t.buyer(t.alex.id, 'Sans souhait', { communes: ['Dijon'], urgency: 'now' });
