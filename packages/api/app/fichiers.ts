@@ -602,7 +602,7 @@ export const APP_JS = `'use strict';
     var key = currentKey;
     wipeFiche();
     $('fiche-etat').textContent = 'Chargement…';
-    show('fiche');
+    show('fiche', [personId]);
     return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
       if (mine !== session) return false;
       if (res.refused) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
@@ -831,7 +831,7 @@ export const APP_JS = `'use strict';
     clear($('visite-corps'));
     $('visite-titre').textContent = '';
     $('visite-etat').textContent = 'Chargement…';
-    show('visite');
+    show('visite', [id]);
     return send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {
       if (res.gone) return false;
       if (res.offline) { $('visite-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
@@ -1024,7 +1024,7 @@ export const APP_JS = `'use strict';
     clear($('bien-corps'));
     $('bien-titre').textContent = 'Acquéreurs pour ' + reference;
     $('bien-etat').textContent = 'Chargement…';
-    show('bien');
+    show('bien', [propertyId, reference]);
     var path = '/v1/acquereurs/biens/' + encodeURIComponent(propertyId);
     return Promise.all([send(path, 'GET'), send(path + '/carte', 'GET')]).then(function (both) {
       var buyers = both[0];
@@ -1151,7 +1151,7 @@ export const APP_JS = `'use strict';
     clear($('vente-corps'));
     $('vente-titre').textContent = 'Mettre en vente · ' + reference;
     $('vente-etat').textContent = 'Chargement…';
-    show('vente');
+    show('vente', [propertyId, reference]);
     var base = '/v1/annonces/' + encodeURIComponent(propertyId);
     return Promise.all([send(base + '/controle', 'GET'), send(base + '/brouillon', 'GET'), send(base + '/publication', 'GET')]).then(function (all) {
       if (all[0].gone || all[1].gone || all[2].gone) return false;
@@ -2074,6 +2074,35 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
+  // Les écrans chargés au premier geste : un seul chargeur, une seule fois chacun, jamais pour une session finie [R201].
+  var toolCache = {}, toolBusy = {};
+  function withTool(src, name, state, host, act, tools) {
+    if (!currentKey) return Promise.resolve(false);
+    if (toolCache[src]) return act(toolCache[src]);
+    if (toolBusy[src]) return Promise.resolve(false);
+    toolBusy[src] = true;
+    var mine = session;
+    $(state).textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/' + src + '.js');
+      s.addEventListener('load', function () {
+        toolBusy[src] = false;
+        var make = globalThis[name];
+        try { delete globalThis[name]; } catch (e) { /* rien */ }
+        if (mine !== session) { resolve(false); return; }
+        if (typeof make !== 'function') { $(state).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
+        toolCache[src] = make(tools());
+        resolve(act(toolCache[src]));
+      });
+      s.addEventListener('error', function () {
+        toolBusy[src] = false;
+        if (mine === session) $(state).textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $(host).appendChild(s);
+    });
+  }
 ${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${CHARGEUR_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECLAMATIONS_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
@@ -2090,9 +2119,16 @@ ${LOUER_JS}
     $('fiche-nom').textContent = '';
     $('fiche-etat').textContent = '';
   }
-  function show(id) {
+  // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
+  var shownId = null, shownArgs = 'null', fromHistory = false;
+  function show(id, args) {
     ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
-    $('sortir').hidden = id === 'connexion' || id === 'attente' || id === 'invitation';
+    var out = id === 'connexion' || id === 'attente' || id === 'invitation';
+    $('sortir').hidden = out;
+    var a = JSON.stringify(args || null);
+    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
+    shownId = out ? null : id;
+    shownArgs = a;
   }
   function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };
@@ -2202,6 +2238,19 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Réessayez dans un moment.');
     });
   }
+  try {
+    addEventListener('popstate', function (e) {
+      var s = e.state && e.state.s, a = e.state && e.state.a;
+      if (!currentKey || !s || !$(s)) return;
+      // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
+      var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+      // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
+      session += 1;
+      fromHistory = true;
+      if (again && Array.isArray(a)) again.apply(null, a); else show(s);
+      fromHistory = false;
+    });
+  } catch (e) { /* sans historique */ }
   document.addEventListener('DOMContentLoaded', function () {
     $('form-connexion').addEventListener('submit', function (event) {
       event.preventDefault();
