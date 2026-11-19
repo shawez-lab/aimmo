@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExportPortails, INTERNATIONAL_TRIAL_FORMAT, TRIAL_FORMAT, type ListingPayload } from '../src/annonces/index.ts';
+import { ExportPortails, INTERNATIONAL_TRIAL_FORMAT, TRIAL_FORMAT, type ListingPayload, type TranslatedListingPayload } from '../src/annonces/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -37,7 +37,7 @@ describe('P07 · format d’essai des portails', () => {
     // Sans numéro ni valeurs, rien : le flux d'une annonce d'avant ne change pas.
     expect(TRIAL_FORMAT.render([L])).not.toContain('<dpe');
     // Les portails étrangers reçoivent le même diagnostic, tel quel.
-    const abroad = INTERNATIONAL_TRIAL_FORMAT.render([{ ...L, language: 'en', dpe: { ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, energyClass: 'D', climateClass: 'D', diagnosedOn: '2027-01-15' } }]);
+    const abroad = INTERNATIONAL_TRIAL_FORMAT.render([{ ...L, language: 'en', dpe: { ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, energyClass: 'D', climateClass: 'D', diagnosedOn: '2027-01-15' } } as TranslatedListingPayload]);
     expect(abroad).toContain('<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="D" classe_climat="D" date="2027-01-15"/>');
   });
 });
