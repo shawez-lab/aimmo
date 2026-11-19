@@ -118,7 +118,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU007 · Mon annonce de bien affiche mon nom et une carte T
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#705, `d4638f59`). Constat confirmé. Décidé, lecture prudente : nouvelle mention `intervenant` dans `computeMentions`, depuis l'agent du bien, son dernier statut rangé (AT03, `latestLegalMention`) et le titulaire (`latestCardHolder`), lus comme sur la page de l'agent ; phrase courte et sans parenthèse (« Votre agent : …, agent commercial, RSAC de <greffe> n° <numéro>, habilité par <titulaire>, titulaire de la carte. ») pour tenir dans la première réponse ; absente, la validation est refusée et le passage retire l'annonce. Relecture forte 1 P1 (jeux de test) corrigé ; Codex 1 P0 (égalité de dates, ordre d'écriture) corrigé, puis rien.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A007 (bloquant), endroit : C/annonces/page-bien.ts, `AgentCard`, `agentBlock` ; C/annonces/mentions.ts.
 - Constat de l'audit : Mon annonce de bien affiche mon nom et une carte T, mais aucun statut d’agent commercial ni numéro et lieu RSAC propres à moi.
