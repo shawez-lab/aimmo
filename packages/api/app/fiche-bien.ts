@@ -181,7 +181,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       var out = { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: heating.value || null, outdoor: Object.keys(OUTDOOR).filter(function (x) { return outs[x].checked; }), landM2: null, parkingSpaces: null, elevator: bool(elevator.value) };
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
-      var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear];
+      // AU064 · le numéro ADEME ou une valeur saisis seuls ouvrent aussi le diagnostic : il est contrôlé, jamais perdu.
+      var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear, energy.ademeNumber, energy.primaryEnergyKwhM2, energy.ghgKgM2];
       if (energy.energyClass.value || energy.climateClass.value || energy.diagnosedOn.value || costs.some(function (f) { return String(f.value || '').trim() !== ''; })) {
         en = {
           energyClass: energy.energyClass.value,

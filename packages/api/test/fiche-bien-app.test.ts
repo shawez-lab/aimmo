@@ -161,6 +161,16 @@ describe('X19 · la fiche du bien à l’écran', () => {
     });
   });
 
+  it('AU064 · un numéro ADEME saisi seul ouvre le diagnostic : il part et se contrôle, jamais perdu', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
+    await t.open();
+    t.f('fiche-bien-dpe-numero').value = '2321E0123456J';
+    await t.save();
+    // Le diagnostic n'est pas complet : rien ne part, et ce qui manque est dit ; la saisie n'est jamais jetée en silence.
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('À vérifier : ');
+  });
+
   it('[R10] un nombre mal écrit est nommé et ne part pas : jamais rangé comme « je ne sais pas »', async () => {
     const t = await run({ [POST]: ok({ version: 5 }) });
     await t.open();
