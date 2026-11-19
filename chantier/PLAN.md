@@ -107,7 +107,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU006 · Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A006 (bloquant), endroit : C/annonces/page-bien.ts, `renderListingPage`, `renderListingPrint`.
 - Constat de l'audit : Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte, sans les deux graphiques réglementaires en couleur.
@@ -209,7 +209,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Découpé (2026-11-18, voie 3) : constat confirmé, et plus large que prévu : AIMMO n'a aucun mandat de location. `DOCUMENT_KINDS` ne connaît que les mandats de vente et l'avenant (CHECK de `document_templates`, migration 0033), `mandates` n'a pas d'objet, et `Diffusion.canDiffuse` (R42) ne regarde pas l'objet du mandat. À faire dans l'ordre : AU014a, un modèle « mandat de location » (sorte de document, champs, contrôles, écran Mandats, table des modèles reconstruite) et l'objet du mandat (`vente` ou `location`) rangé à la signature ; AU014b, `canDiffuse` par objet, puis l'annonce de location publiable et le barème d'honoraires seulement sous un mandat de location en cours (tests : sans mandat, annonce non publiable et barème refusé ; un mandat de vente n'ouvre pas la location).
 
 ### AU015 · Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A015 (bloquant), endroit : C/location/logement.ts, `RentalFacts` ; C/location/annonce-location.ts.
 - Constat de l'audit : Je peux préparer une location sans loyer de référence majoré ni contrôle du plafond applicable à l’adresse.
@@ -240,6 +240,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
 - Statut : en cours (voie 2)
+- Reste : proposition #684 (`252e757`), Codex sans remarque après sept tours (P0 et P1 tous corrigés avec leur test : boîte et paquet propres à chaque agent, transaction IndexedDB unique, lots arrêtés à la sortie, script chargé à la demande pour le budget R201, paquet périmé, préparation interrompue, brouillon gardé, envoi lu par morceaux, refus sans IndexedDB, envoi aussitôt gardé). Suite de l'API verte en local. Bloquée à la fusion : la vérification GitHub échoue deux fois sur des tests du cœur sans lien qui dépassent 5 s sur un runner chargé ; à fusionner dès qu'elle passe (mettre la branche à jour avec main relance la vérification). Restent après la fusion : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
 - Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
@@ -672,7 +673,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
 - Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
@@ -726,7 +727,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU072 · Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A072 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `BuyerSearch`.
 - Constat de l'audit : Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée.
@@ -735,12 +736,21 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
 - Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.
 - Objectif : Un périmètre privé enregistré filtre les biens par position et se réutilise dans les alertes.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU073b · Dessiner le secteur d'une recherche au doigt, sur une carte
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU073
+- Cahier : M08 Acquéreurs et visites ; suite de l'audit A073 (relecture de Codex sur #692).
+- Constat : le secteur dessiné existe dans le serveur (polygone de 3 à 40 points) mais l'écran ne propose que le rayon autour d'un lieu.
+- Objectif : sur la fiche de l'acquéreur, l'agent trace le secteur sur une carte, au doigt, et le range ; la carte se charge à la demande, hors du budget de l'application.
+- Critères : un test d'écran envoie le polygone tracé ; le budget de l'application tient ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
 ### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
@@ -960,7 +970,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : un meublé étudiant se fait avec son modèle validé, jamais avec celui du meublé ordinaire (test) ; un bail mobilité porte sa durée et son motif, sans dépôt (test) ; sans modèle, refus (test).
 - Attend : H08 (textes validés par la conformité) pour un usage réel ; le code et les tests avant.
 ### AU097 · Manque
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A097 (majeur), endroit : C/location/bail.ts, `locataire.nom` ; C/location/choix.ts.
 - Constat de l'audit : Manque : un bail commun de colocation avec plusieurs cotitulaires et leurs signatures n’a pas de modèle de parties adapté.
@@ -1112,7 +1122,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU112 · Mon référent n’est présenté que par son prénom et une date
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A112 (mineur), endroit : UI/integration.ts, `renderReferent`.
 - Constat de l'audit : Mon référent n’est présenté que par son prénom et une date, sans moyen direct de le joindre depuis ce bloc.
@@ -1121,7 +1131,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU113 · L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A113 (mineur), endroit : C/annonces/traductions.ts, validation de langue.
 - Constat de l'audit : L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue.
@@ -1130,7 +1140,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU114 · Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A114 (mineur), endroit : C/annonces/page-bien.ts, `photoList`.
 - Constat de l'audit : Toutes les photos publiques ont le même texte alternatif « Photo du bien », ce qui rend la galerie peu utile sans vision des images.
