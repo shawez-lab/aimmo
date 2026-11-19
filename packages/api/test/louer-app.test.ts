@@ -597,6 +597,25 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(rail.children[5]!.textContent).toBe('Bail');
   });
 
+  it('AU097 · chaque colocataire signe le même bail en son nom ; le bail n’est signé qu’avec tous', async () => {
+    const lease = { ...LEASE, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z', colocataires: [{ personId: 'p-elise', signedAt: null }], cotenantCopiesSent: [] };
+    const t = await run({
+      'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease, inventoryClosed: false }),
+      'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
+      'POST /v1/location/l1/bail/signatures': ok({ sessionId: 's2', leaseId: 'bl1', contentSha256: 'c'.repeat(64), expiresAt: '2027-07-12T09:15:00.000Z', mode: 'essai' }),
+    });
+    await t.openL1();
+    expect(t.body().textContent).toContain('Signature du colocataire 1');
+    // Le bailleur et le locataire ont signé, pas la colocataire : pas d'exemplaire, le rail ne dit pas « essai ».
+    expect(t.byText('Préparer un exemplaire pour chacun')).toBeUndefined();
+    const rail = t.body().all().find((e) => e.className === 'parcours')!;
+    expect(rail.children[5]!.className).not.toContain('essai');
+    t.input('Comment le colocataire 1 a accepté de signer en ligne').value = 'Accord donné au rendez-vous.';
+    await t.click(t.byText('Envoyer le code de signature au colocataire 1'));
+    expect(t.posts()[0]).toMatchObject({ url: '/v1/location/l1/bail/signatures', body: JSON.stringify({ party: 'colocataire', personId: 'p-elise', consentProof: 'Accord donné au rendez-vous.' }) });
+    expect(t.state()).toContain('Code préparé pour le colocataire 1 (mode essai)');
+  });
+
   it('[R106] l’état des lieux pièce par pièce : aucun état choisi d’avance, chaque élément constaté, puis signé des deux parties par une trace', async () => {
     const t = await run({
       'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease: { ...LEASE, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z' }, inventoryClosed: false }),
@@ -1165,6 +1184,20 @@ describe('W11 · écran « Louer » de l’application', () => {
       t.table['POST /v1/location/candidatures/c3/garants'] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
       await t.click(t.byText('Garant Visale'));
       expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
+    });
+
+    it('AU097 · un colocataire s’ajoute parmi ses contacts ; il fournit ses pièces et se retire d’un geste', async () => {
+      const t = await run({
+        'POST /v1/location/candidatures/c3/colocataires': ok({ cotenants: ['p9'] }),
+        'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p9', firstName: 'Coloc', lastName: 'Inventé' }], more: false }),
+      });
+      await t.openL1();
+      await t.openDossier(0);
+      await t.click(t.byText('Ajouter un colocataire parmi mes contacts'));
+      t.input('Le colocataire').value = 'p9';
+      await t.click(t.byText('Ajouter ce colocataire'));
+      expect(t.posts()[0]).toMatchObject({ url: '/v1/location/candidatures/c3/colocataires', body: JSON.stringify({ personId: 'p9', action: 'ajout' }) });
+      expect(t.state()).toBe('Colocataire ajouté : le bail est à refaire.');
     });
   });
 });

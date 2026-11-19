@@ -213,3 +213,20 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: new Date(Date.parse(start) + 90 * 60_000).toISOString(), durationMinutes: 10 })).status).toBe(200);
   });
 });
+
+describeWithSqlite('AU073 · le secteur par les routes, sans le service DVF', () => {
+  it('la Base adresse nationale des secteurs se règle seule : un lieu dit se géocode même sans estimation', async () => {
+    const t = await setup();
+    const geocoder = { geocode: async (q: string) => (q === 'Gare de Dijon' ? { label: q, lat: 47.3233, lon: 5.0275, postalCode: '21000', inseeCode: '21231' } : null) };
+    const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEYS.alex), role: 'agent', userId: t.alexId, networkId: t.network.id }]);
+    const post = async (config: Record<string, unknown>) => {
+      const r = await handleRequest(
+        new Request(`${BASE}/v1/acquereurs/projets/${t.project.id}/secteur`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify({ shape: 'cercle', place: 'Gare de Dijon', radiusM: 1500, label: 'Autour de la gare' }) }),
+        { db: t.db, apiKeys, mode: 'essai', now: t.now, ...config } as never,
+      );
+      return (await r.json()) as { ok: boolean; code?: string };
+    };
+    expect(await post({})).toMatchObject({ ok: false, code: 'geocodage_absent' });
+    expect(await post({ secteursGeocoder: geocoder })).toMatchObject({ ok: true });
+  });
+});

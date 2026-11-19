@@ -4,6 +4,9 @@
  *   GET  /acquereurs/projets/:projet/recherche          la recherche de l'acquéreur et ses versions
  *   POST /acquereurs/projets/:projet/recherche          une nouvelle version de la recherche [R50]
  *   POST /acquereurs/projets/:projet/recherche/confirmation  la recherche dite toujours d'actualité (AU074)
+ *   GET  /acquereurs/projets/:projet/secteur            le secteur privé de la recherche (AU073)
+ *   POST /acquereurs/projets/:projet/secteur            un rayon autour d'un lieu, un secteur dessiné, ou « aucun »
+ *   POST /biens/:bien/position                          situer le bien depuis son adresse désignée
  *   GET  /acquereurs/biens/:bien                        les acquéreurs proposés pour un bien diffusable [R51]
  *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
  *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
@@ -46,6 +49,7 @@ import {
   PointSemaine,
   Rapprochement,
   RendezVous,
+  Secteurs,
   Visites,
   VisiteSecurisee,
   appendEvent,
@@ -53,6 +57,7 @@ import {
   type Acces,
   type AppointmentKind,
   type DirectionNotifier,
+  type Geocoder,
   type JournalStore,
   type ReportWriter,
   type SqlDatabase,
@@ -80,6 +85,8 @@ export interface M08Options {
   reportWriter?: ReportWriter;
   /** Qui prévient la direction d'une alerte ; absent, l'essai : une ligne au journal. */
   notifier?: DirectionNotifier;
+  /** La Base adresse nationale, pour situer un bien et le centre d'un rayon (AU073) ; absente, rien n'est géocodé. */
+  geocoder?: Geocoder | null;
 }
 
 export interface M08Route {
@@ -161,6 +168,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
   const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
   const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
   const points = (s: M08Services) => new PointSemaine(s.db, s.journal, s.acces, { now: s.now });
+  const secteurs = (s: M08Services) => new Secteurs(s.db, s.acces, s.journal, options.geocoder ?? null, { now: s.now });
   const post = (name: string, path: string, run: (s: M08Services, v: Viewer, p: string[], body: Record<string, unknown>) => Promise<Response>): M08Route => ({
     method: 'POST',
     pattern: new RegExp(`^${path}$`),
@@ -178,6 +186,10 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     post('acquereurs.recherche.modifier', `/acquereurs/projets/${ID}/recherche`, async (s, v, [p], body) => reply(await recherche(s).update(s.acces, v, p!, body))),
     // AU074 · L'acquéreur dit sa recherche toujours d'actualité : elle reste active, sans changer de critère.
     post('acquereurs.recherche.confirmer', `/acquereurs/projets/${ID}/recherche/confirmation`, async (s, v, [p]) => reply(await recherche(s).confirm(s.acces, v, p!))),
+    // AU073 · le secteur privé de la recherche ; la position d'un bien, depuis son adresse désignée.
+    get('acquereurs.secteur', `/acquereurs/projets/${ID}/secteur`, async (s, v, [p]) => reply(await secteurs(s).read(v, p!))),
+    post('acquereurs.secteur.ranger', `/acquereurs/projets/${ID}/secteur`, async (s, v, [p], body) => reply(await secteurs(s).set(v, p!, body))),
+    post('biens.position', `/biens/${ID}/position`, async (s, v, [b]) => reply(await secteurs(s).locate(v, b!))),
     get('acquereurs.bien', `/acquereurs/biens/${ID}`, async (s, v, [b]) => reply(await rapprochement(s).propose(s.acces, v, b!))),
     get('acquereurs.carte', `/acquereurs/biens/${ID}/carte`, async (s, v, [b]) => reply(await rapprochement(s).demandMap(s.acces, v, b!))),
     post('acquereurs.whatsapp', `/acquereurs/biens/${ID}/whatsapp/${ID}`, async (s, v, [b, p]) => reply(await whatsapp(s).prepare(v, b!, p!))),
