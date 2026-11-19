@@ -1472,3 +1472,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 09:03 · AU019 · copie chiffrée des objets des quatre stockages et exercice qui restaure base et fichiers contre leurs empreintes, lecteur des références obligatoire ; relecture forte 1 P1 corrigé, Codex rien ; fusionnée (#698, d1ecc0fd) · prochaine : AU019b
 - 2026-11-19 09:03 · VOIE 2 : AU018 puis AU019, 0ce44fa0 et d1ecc0fd (main), relancé non
 - 2026-11-19 09:03 · VOIE 2 : relance refusée, « Mes trois dernières séances ont-elles produit au moins un commit ? » : non (séance de 07:04 sans commit)
+- 2026-11-19 09:35 · VOIE 3 : AU065 (#699, période des prix de l'énergie telle que le DPE l'écrit) fusionnée ; ouverte : #701 (AU062, surface au centième) ; AU069 bloquée par H73 (tables des traductions) ; AU064 prise
