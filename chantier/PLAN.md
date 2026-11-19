@@ -226,7 +226,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU017 · Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A017 (bloquant), endroit : C/location/logement.ts, `checkDwelling`.
 - Constat de l'audit : Le contrôle accepte 9 m² sans connaître la hauteur sous plafond ni le volume : « louable » est trop affirmatif.
@@ -994,7 +994,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU101 · Le bail commercial est réduit à durée, loyer et grandes catégories
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A101 (majeur), endroit : C/commerces/fiche.ts, `BusinessSheet`.
 - Constat de l'audit : Le bail commercial est réduit à durée, loyer et grandes catégories, sans échéances triennales ni indexation structurée.

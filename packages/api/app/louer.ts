@@ -501,6 +501,8 @@ globalThis.AIMMO_LOUER = function (t) {
     if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
     if (r.code === 'living_area') return 'Trop petit pour être décent.';
     if (r.code === 'local_rules_unchecked') return 'Règle locale non vérifiée.';
+    if (r.code === 'previous_rent_missing') return 'Classé F ou G : dites le loyer du locataire précédent, ou « aucun ».';
+    if (r.code === 'rent_freeze') return 'Classé F ou G : le loyer ne peut dépasser celui du locataire précédent, ' + centsText(r.previousRentCents) + ' €.';
     if (r.code === 'local_rules_failed') return 'Règle locale non respectée.';
     if (r.code === 'dimensions_missing') return 'Dimensions manquantes.';
     if (r.code === 'annex_missing') return a + ' : manquant.';
@@ -547,6 +549,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var room = field(d, 'piece-' + n, 'Pièce principale, en m²');
     var height = field(d, 'hauteur-' + n, 'Hauteur sous plafond, en m');
     var volume = field(d, 'volume-' + n, 'Volume habitable, en m³');
+    var prev = field(d, 'prec-' + n, 'Loyer du locataire précédent, hors charges, en euros, ou « aucun »');
     var localRef = field(d, 'rsd-' + n, 'Règle locale lue');
     var localDay = field(d, 'rsd-j-' + n, 'Lue le');
     localDay.type = 'date';
@@ -565,6 +568,7 @@ globalThis.AIMMO_LOUER = function (t) {
       area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
       if (f.mainRoomHundredths) room.value = String(f.mainRoomHundredths / 100).replace('.', ',');
       if (f.ceilingHeightCm) height.value = String(f.ceilingHeightCm / 100).replace('.', ',');
+      prev.value = f.firstLetting ? 'aucun' : centsText(f.previousRentCents);
       if (f.localRules) { localRef.value = f.localRules.reference; localDay.value = f.localRules.checkedOn; localOk.checked = !!f.localRules.compliant; }
       if (f.habitableVolumeHundredths) volume.value = String(f.habitableVolumeHundredths / 100).replace('.', ',');
       kwh.value = String(f.finalEnergyKwh);
@@ -578,6 +582,8 @@ globalThis.AIMMO_LOUER = function (t) {
       var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
       Object.keys(dims).forEach(function (k) { var t = dims[k].value.trim(); if (t) { var c = toCents(t); if (c === null) bad = true; else b[k] = c; } });
       if (bad) { louerState('Dimensions : des nombres.'); return; }
+      var pv = prev.value.trim().toLowerCase();
+      if (pv === 'aucun') b.firstLetting = true; else if (pv) { b.previousRentCents = toCents(pv); if (b.previousRentCents === null) { louerState('Loyer précédent : un nombre, ou « aucun ».'); return; } }
       if (localRef.value.trim()) b.localRules = { reference: localRef.value.trim(), checkedOn: localDay.value, compliant: !!localOk.checked };
       if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
       louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
@@ -974,4 +980,6 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   return { open: openLouer, wipe: wipeLouer, forget: forgetLouer };
 };
-`.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '');
+`.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '')
+  // L'indentation ne sert qu'à lire la source : elle ne part pas au téléphone (R201). Aucune chaîne du script ne court sur deux lignes.
+  .replace(/^[ \t]+/gm, '');
