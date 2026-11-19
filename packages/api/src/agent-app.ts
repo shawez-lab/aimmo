@@ -30,6 +30,7 @@ import { ESPACE_AGENT_SCRIPT } from '../app/espace-agent.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
+import { LOUER_LOYER_SCRIPT } from '../app/louer-loyer.ts';
 import { LOUER_MODELES_SCRIPT } from '../app/louer-modeles.ts';
 import { MANDAT_MODELES_SCRIPT } from '../app/mandat-modeles.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
@@ -186,6 +187,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/mandat-modeles.js': { body: MANDAT_MODELES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-dossier.js': { body: LOUER_DOSSIER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-edl.js': { body: LOUER_EDL_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/louer-loyer.js': { body: LOUER_LOYER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-remise.js': { body: LOUER_REMISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   // L'écran « Avis de valeur » (E10), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].

@@ -555,6 +555,8 @@ globalThis.AIMMO_LOUER = function (t) {
     var localDay = field(d, 'rsd-j-' + n, 'Lue le');
     localDay.type = 'date';
     var localOk = checkbox(d, 'rsd-ok-' + n, 'Respectée');
+    var rc = null;
+    d.appendChild(button('Loyer encadré', function () { lazy('louer-loyer', 'AIMMO_LOUER_LOYER', function (x) { rc = rc || x.form(d, f); }); }));
     var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
     var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
     var year = field(d, 'annee-' + n, 'Année de construction');
@@ -586,6 +588,9 @@ globalThis.AIMMO_LOUER = function (t) {
       var pv = prev.value.trim().toLowerCase();
       if (pv === 'aucun') b.firstLetting = true; else if (pv) { b.previousRentCents = toCents(pv); if (b.previousRentCents === null) { louerState('Loyer précédent : un nombre, ou « aucun ».'); return; } }
       if (localRef.value.trim()) b.localRules = { reference: localRef.value.trim(), checkedOn: localDay.value, compliant: !!localOk.checked };
+      var r = rc ? rc() : f && f.rentControl;
+      if (r === false) return;
+      if (r) b.rentControl = r;
       if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
       louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
     }));
@@ -782,7 +787,7 @@ globalThis.AIMMO_LOUER = function (t) {
   function leaseBlock(base, lease) {
     var box = section('Le bail');
     if (lease) {
-      box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur tant que les modèles ne sont pas validés.' : '.'), lease.complete ? 'fait' : 'alerte'));
+      box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur avant validation des modèles.' : '.'), lease.complete ? 'fait' : 'alerte'));
       var reading = el('div');
       box.appendChild(reading);
       var showLease = function (text) {

@@ -18,8 +18,8 @@
  * dans ce que lit le public [R06].
  *
  * Décidé, lecture prudente : sans dépenses d'énergie estimées dans la fiche du bien (P01), ou avec une classe énergie de
- * la fiche différente de celle de la mise en location, aucune annonce n'est faite ; le complément de loyer, propre aux
- * communes à loyer encadré, n'est pas encore proposé : aucune annonce n'en porte.
+ * la fiche différente de celle de la mise en location, aucune annonce n'est faite. Dans une commune à loyer encadré
+ * (AU015), l'annonce porte la zone, le loyer de référence majoré, le loyer de base et le complément de loyer s'il y en a.
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { PropertyKind } from '../db/types.ts';
@@ -29,7 +29,7 @@ import type { PropertySheet } from '../annonces/fiche-bien.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { HonorairesLocation, RentalFees } from './honoraires.ts';
-import type { LocationRefusal, MisesEnLocation, RentalFacts } from './logement.ts';
+import { rentCeilingCents, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 
 const MAX_TITLE = 120;
 const MAX_BODY = 3000;
@@ -127,10 +127,18 @@ export interface EnergyCost {
 }
 
 /** Les mentions obligatoires, écrites par le code depuis les données contrôlées : rien d'autre [R102, R103]. */
-export function rentalMentions(facts: RentalFacts, fees: Pick<RentalFees, 'tenantCents' | 'tenantInventoryCents' | 'depositCents'>, city: string, energy: EnergyCost): string {
+export function rentalMentions(
+  facts: RentalFacts,
+  fees: Pick<RentalFees, 'tenantCents' | 'tenantInventoryCents' | 'depositCents'>,
+  city: string,
+  energy: EnergyCost,
+  rentControlled = false,
+): string {
   const lines = [
     `Location ${facts.furnished ? 'meublée' : 'vide'}.`,
     `Loyer : ${euros(facts.rentCents + facts.chargesCents)} € par mois charges comprises, dont ${euros(facts.chargesCents)} € de charges ${facts.chargesMode === 'forfait' ? 'forfaitaires' : 'en provision, avec régularisation annuelle'}.`,
+    // Encadrement des loyers : les trois montants, dans les mots de l'arrêté du 21 avril 2022 (AU015).
+    ...(rentControlled && facts.rentControl ? rentControlMentions(facts) : []),
     `Honoraires à la charge du locataire : ${euros(fees.tenantCents + fees.tenantInventoryCents)} € TTC, dont ${euros(fees.tenantInventoryCents)} € pour l'état des lieux.`,
     `Dépôt de garantie : ${euros(fees.depositCents)} €.`,
     `Surface habitable : ${surface(facts.livingAreaHundredths)} m².`,
@@ -142,6 +150,17 @@ export function rentalMentions(facts: RentalFacts, fees: Pick<RentalFees, 'tenan
     `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. Prix moyens des énergies indexés au 1er janvier ${energy.costReferenceYear} (abonnements compris).`,
   );
   return lines.join('\n');
+}
+
+/** Les mentions d'une commune à loyer encadré : la zone, le loyer de référence majoré, le loyer de base, le complément s'il y en a un. */
+export function rentControlMentions(facts: RentalFacts): string[] {
+  const rc = facts.rentControl!;
+  return [
+    'Zone soumise à encadrement des loyers.',
+    `Loyer de référence majoré (loyer de base à ne pas dépasser) : ${euros(rentCeilingCents(rc, facts.livingAreaHundredths))} € par mois.`,
+    `Loyer de base : ${euros(facts.rentCents - rc.complementCents)} € par mois.`,
+    ...(rc.complementCents > 0 ? [`Complément de loyer : ${euros(rc.complementCents)} € par mois.`] : []),
+  ];
 }
 
 export interface RentalAd {
@@ -267,7 +286,9 @@ export class AnnoncesLocation {
       climateClass: sheet.energy.climateClass,
       furnished: facts.furnished,
     };
-    const mentions = rentalMentions(facts, fees, p.city, sheet.energy);
+    const today = this.now().toISOString().slice(0, 10);
+    const controlled = await this.listings.rentControlledOn({ id: listingId, network_id: networkId }, facts.leaseStart > today ? facts.leaseStart : today);
+    const mentions = rentalMentions(facts, fees, p.city, sheet.energy, controlled);
     return { networkId, propertyId: row!.property_id, facts, fees, sheetVersion: Number(sheetRow!.version), adFacts, mentions };
   }
 

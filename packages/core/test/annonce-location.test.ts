@@ -171,6 +171,30 @@ describeWithSqlite('W03 · annonce de location conforme', () => {
     expect(pub?.mentions).toContain('Classe énergie D, classe climat C.');
   });
 
+  it('AU015 · dans une commune encadrée, l’annonce porte la zone, le loyer de référence majoré, le loyer de base et le complément', async () => {
+    const t = await setup();
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-01-01', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-01-02T00:00:00.000Z')",
+      [t.agent.networkId],
+    );
+    const rentControl = { decree: 'Arrêté préfectoral inventé n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 5_000, complementReason: 'Terrasse de 40 m² avec vue dégagée, rare dans le quartier' };
+    const id = await t.ready({ rentControl });
+    const r = await t.ads.draft(t.agent, id);
+    expect(r.ok).toBe(true);
+    const lines = r.ok ? r.value.mentions.split('\n') : [];
+    expect(lines.slice(2, 6)).toEqual([
+      'Zone soumise à encadrement des loyers.',
+      'Loyer de référence majoré (loyer de base à ne pas dépasser) : 1020 € par mois.',
+      'Loyer de base : 600 € par mois.',
+      'Complément de loyer : 50 € par mois.',
+    ]);
+    // Hors commune encadrée, aucune de ces lignes.
+    const free = await setup();
+    const other = await free.ready({ rentControl });
+    const plain = await free.ads.draft(free.agent, other);
+    expect(plain.ok && plain.value.mentions).not.toContain('encadrement');
+  });
+
   it('[R103] un texte de l’IA discriminant, inventé, trop lent ou absent laisse place au secours, qui passe le contrôle', async () => {
     for (const writer of [
       async () => ({ title: 'Deux pièces', body: 'Idéal pour étudiant, garant en France exigé.' }),
