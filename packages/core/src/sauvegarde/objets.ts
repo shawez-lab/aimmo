@@ -170,8 +170,9 @@ export async function restoreObjects(
     const back = await target.get(entry.key);
     if (!back || back.bytes.length !== entry.size || (await sha256(back.bytes)) !== entry.digest) problems.push({ kind: 'object_differs', storage: entry.storage });
   }
-  const present = new Set(manifest.objects.map((o) => `${o.storage}\n${o.key}`));
-  for (const ref of references) if (!present.has(`${ref.storage}\n${ref.key}`)) problems.push({ kind: 'reference_missing', storage: ref.storage });
+  // Cherché dans tous les stockages : une référence libre (dossier d'un commerce) peut vivre ailleurs que son début le dit.
+  const present = new Set(manifest.objects.map((o) => o.key));
+  for (const ref of references) if (!present.has(ref.key)) problems.push({ kind: 'reference_missing', storage: ref.storage });
 
   if (problems.length > 0) return { ok: false, code: 'not_identical', problems };
   return { ok: true, storages: manifest.storages.length, objects: manifest.objects.length, bytes: manifest.objects.reduce((n, o) => n + o.size, 0), digest: await digestOfAll(manifest.objects) };
@@ -233,16 +234,30 @@ export function verifyingTarget(): ObjectTarget {
   };
 }
 
-/** Le stockage de chaque sorte de fichier, d'après le début de sa clé : la clé est toujours donnée par le stockage. */
+/**
+ * Le stockage où vit d'habitude chaque sorte de fichier, d'après le début de sa clé ; la clé est toujours donnée par le
+ * code. Le contrôle cherche un fichier cité dans tous les stockages : ce stockage ne sert qu'à dire où chercher d'abord
+ * et quoi rapporter. Un test du dépôt échoue si le code construit une clé d'un début absent d'ici.
+ */
 export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Object.freeze({
   'biens/': 'MEDIA',
   'dossiers/': 'PIECES',
   'preuves/': 'PIECES',
   'agents/': 'PIECES',
   'partenaires/': 'PIECES',
+  'relations/': 'PIECES',
+  'mandats/': 'PIECES',
+  'signature-en-ligne/': 'PIECES',
+  'location/': 'PIECES',
+  'boite/': 'PIECES',
+  'mesure-sources/': 'PIECES',
+  'commerces/': 'COMMERCES',
   'coffre/': 'COFFRE',
 });
-const WHOLE_REFERENCE = /^(?:biens|dossiers|preuves|agents|partenaires|coffre)\/[A-Za-z0-9._\/-]{1,300}$/;
+const PREFIXES = Object.keys(REFERENCE_PREFIXES).map((p) => p.slice(0, -1).replace(/-/g, '\\-'));
+const WHOLE_REFERENCE = new RegExp(`^(?:${PREFIXES.join('|')})\\/[A-Za-z0-9._\\/-]{1,300}$`);
+/** Une colonne qui ne garde que des références de stockage, quel que soit leur début. */
+const STORAGE_REF_COLUMNS = new Set(['storage_ref']);
 
 /**
  * Les fichiers cités par la base : chaque valeur texte de chaque table, entière ou dans un JSON, qui a la forme d'une
@@ -253,9 +268,11 @@ const WHOLE_REFERENCE = /^(?:biens|dossiers|preuves|agents|partenaires|coffre)\/
 export const fileReferences: ReferenceReader = async (db) => {
   const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' ORDER BY name");
   const found = new Map<string, { storage: ObjectStorage; key: string }>();
-  const add = (key: string): void => {
+  const add = (key: string, any = false): void => {
     const prefix = Object.keys(REFERENCE_PREFIXES).find((p) => key.startsWith(p));
-    if (prefix && !key.endsWith('/') && !key.includes('//') && !key.split('/').some((s) => s === '.' || s === '..')) found.set(key, { storage: REFERENCE_PREFIXES[prefix]!, key });
+    if (!prefix && !any) return;
+    if (key.endsWith('/') || key.includes('//') || key.split('/').some((s) => s === '.' || s === '..')) return;
+    found.set(key, { storage: prefix ? REFERENCE_PREFIXES[prefix]! : 'COMMERCES', key });
   };
   for (const { name } of tables) {
     const q = `"${name.replaceAll('"', '""')}"`;
@@ -265,7 +282,8 @@ export const fileReferences: ReferenceReader = async (db) => {
       for (const row of rows) {
         for (const [column, value] of Object.entries(row)) {
           if (column === '__rang__' || typeof value !== 'string') continue;
-          if (WHOLE_REFERENCE.test(value)) add(value);
+          if (STORAGE_REF_COLUMNS.has(column)) add(value, true);
+          else if (WHOLE_REFERENCE.test(value)) add(value);
           else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
         }
       }

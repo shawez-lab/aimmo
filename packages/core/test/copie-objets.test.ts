@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import {
   applyMigrations,
@@ -11,6 +14,7 @@ import {
   ObjectCopyError,
   restoreExercise,
   fileReferences,
+  REFERENCE_PREFIXES,
   restoreObjects,
   SqlJournalStore,
   type CopyStore,
@@ -225,5 +229,47 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
       { storage: 'COFFRE', key: 'coffre/n1/k1' },
       { storage: 'PIECES', key: 'preuves/p.pdf' },
     ]);
+  });
+
+  it('[R224] garde-fou : chaque début de clé de fichier construit par le code est connu du contrôle des références', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory()) walk(join(dir, e.name));
+        else if (e.name.endsWith('.ts')) files.push(join(dir, e.name));
+      }
+    };
+    for (const pkg of ['core/src', 'api/src']) walk(join(root, pkg));
+    // Pas des fichiers des stockages : les copies elles-mêmes, et les fichiers publics des ventes (DVF) servis à part.
+    const autres = new Set(['copies/', 't/', 'd/', 'candidatures/']);
+    const seen = new Set<string>();
+    for (const f of files) {
+      const text = readFileSync(f, 'utf8');
+      for (const m of text.matchAll(/`([a-z][a-z0-9-]*\/)\$\{/g)) seen.add(m[1]!);
+      for (const m of text.matchAll(/_PREFIX = '([a-z][a-z0-9-]*\/)'/g)) seen.add(m[1]!);
+    }
+    expect(seen.size).toBeGreaterThan(10);
+    expect([...seen].filter((p) => !autres.has(p) && !(p in REFERENCE_PREFIXES)).sort()).toEqual([]);
+  });
+
+  it('[R224] dans les vraies tables : le dossier d’un commerce et le coffre, par leur référence de stockage, même libre', async () => {
+    const db = emptyDb();
+    await applyMigrations(db, loadMigrations());
+    await db.exec('PRAGMA foreign_keys = OFF');
+    const sha = 'a'.repeat(64);
+    await db.run("INSERT INTO business_dossier_documents (id, network_id, property_id, kind, title, storage_ref, content_sha256, added_by, added_at) VALUES ('x1', 'n1', 'p1', 'bilan', 'Bilan', 'commerces/n1/p1/' || ?, ?, 'u1', '2027-01-01'), ('x2', 'n1', 'p1', 'autre', 'Libre', 'depot-libre-42.pdf', ?, 'u1', '2027-01-01')", [sha, sha, sha]);
+    await db.run("INSERT INTO compliance_vault_pieces (id, network_id, person_id, kind, storage_ref, sha256, content_type, size_bytes, verified_on, deposited_by, deposited_at) VALUES ('v1', 'n1', 'pe1', 'passeport', 'coffre/n1/v1', ?, 'application/pdf', 10, '2027-01-01', 'u1', '2027-01-01')", [sha]);
+    await db.exec('PRAGMA foreign_keys = ON');
+    const keys = (await fileReferences(db)).map((r) => r.key).sort();
+    expect(keys).toEqual(['coffre/n1/v1', `commerces/n1/p1/${sha}`, 'depot-libre-42.pdf']);
+    // La copie a le document libre dans COMMERCES et la pièce du coffre, pas le bilan : « non identique ».
+    const w = await world();
+    const sources = sourcesOf(w);
+    sources.COMMERCES = memoryBucket({ 'depot-libre-42.pdf': { bytes: bytes('libre') } }).bucket;
+    sources.COFFRE = memoryBucket({ 'coffre/n1/v1': { bytes: bytes('piece') } }).bucket;
+    await copyObjects(sources, w.copies.store, w.key, w.receipt.copyId);
+    const out = await restoreObjects(freshTargets().targets, w.copies.store, w.key, w.receipt.copyId, await fileReferences(db));
+    expect(out).toEqual({ ok: false, code: 'not_identical', problems: [{ kind: 'reference_missing', storage: 'COMMERCES' }] });
   });
 });
