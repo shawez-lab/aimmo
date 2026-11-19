@@ -204,7 +204,7 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
@@ -242,6 +242,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       if (!net.network) throw new TypeError('hors ligne');
       expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
+        if (net.dropPack) throw new TypeError('hors ligne');
         if (method === 'POST' && net.hold) await net.hold;
         const r = await w.call(viewer, method, url, init.body);
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
@@ -472,6 +473,26 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     const alex = await phone(w, idb, { network: false });
     expect(((await alex.H.pending()) as { kind: string }[]).map((o) => o.kind)).toEqual(['visite.photo']);
     expect(await w.count('offline_ops')).toBe(0);
+  });
+
+  it('[R276] la journée s’ouvre mais le paquet ne vient pas : la boîte déjà gardée part quand même au retour du réseau', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    const field = await phone(w, idb, { network: false });
+    field.find('textarea')!.value = 'Note gardée.';
+    await field.click(field.find('button', 'Garder la note'));
+    // La journée répond, puis le réseau tombe juste avant le paquet.
+    const net = { network: true, dropPack: true };
+    const t = await phone(w, idb, net);
+    expect(t.els.accueil!.hidden).toBe(false);
+    expect(await w.count('visit_field_notes')).toBe(0);
+    net.dropPack = false;
+    await t.online();
+    expect(await w.count('visit_field_notes')).toBe(1);
+    expect(await t.H.pending()).toEqual([]);
   });
 
   it('[R278] passé minuit, le paquet est effacé du téléphone : sans réseau, l’application dit « Pas de réseau »', async () => {

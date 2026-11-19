@@ -278,7 +278,11 @@ function sync(key) {
 /** Avec du réseau : le paquet du jour est préparé et gardé, puis la boîte part [R278, R276]. */
 function prepare(key, show, back) {
   var mine = ui = { key: key, owner: null, show: show, back: back, open: false };
-  return call(key, R_PAQUET, 'GET').then(function (d) {
+  // La marque déjà connue de cette clé d'abord : si le paquet ne vient pas, la boîte reste attachée et partira [R276].
+  return tag(key).then(get).then(null, function () { return null; }).then(function (known) {
+    if (ui === mine && typeof known === 'string') { mine.owner = known; entry(); }
+    return call(key, R_PAQUET, 'GET');
+  }).then(function (d) {
     if (d.batchLimit > 0) limit = d.batchLimit;
     if (typeof d.owner !== 'string' || !/^[a-f0-9]{16,64}$/.test(d.owner)) return null;
     return tag(key).then(function (t) { return put(t, d.owner); }).then(function () {
@@ -406,7 +410,8 @@ function shotTools(li, a, s, o) {
   REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add(o, 'visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render); }, 'secondaire')); });
   li.appendChild(said);
 }
-if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) sync(ui.key); });
+// Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
+if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) (ui.owner ? sync(ui.key) : prepare(ui.key, ui.show, ui.back)); });
 
 G.AimmoHorsLigne = Object.freeze({
   preparer: prepare,
