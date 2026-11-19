@@ -273,7 +273,9 @@ function sync(key) {
   // Seulement la boîte de l'agent connecté, avec sa clé : après une sortie, plus rien ne part [R16].
   if (!key || !ui || ui.key !== key || !ui.owner) return Promise.resolve(null);
   var o = ui.owner;
-  return flush(o, key, sender(key), limit).then(function (r) { return mark(o, r.applied).then(function () { if (ui) render(); return r; }); }).then(null, function () { return null; });
+  // Après l'envoi, seul l'état change à l'écran : une note en cours ou une première prise ne sont jamais effacées. Une
+  // saisie refusée redessine l'écran, pour qu'elle redevienne à faire.
+  return flush(o, key, sender(key), limit).then(function (r) { return mark(o, r.applied).then(function () { if (ui && ui.owner === o) (r.refused ? render() : status()); return r; }); }).then(null, function () { return null; });
 }
 /** Avec du réseau : le paquet du jour est préparé et gardé, puis la boîte part [R278, R276]. */
 function prepare(key, show, back) {
@@ -330,6 +332,17 @@ function entry() {
   b.id = 'hors-ligne-ouvrir';
   home.appendChild(b);
 }
+function said(mine, box) {
+  var n = box.pending.length;
+  mine.etat.textContent = n ? n + (n > 1 ? ' saisies attendent' : ' saisie attend') + ' le réseau : elles partiront seules.' : 'Tout est envoyé.';
+  mine.send.hidden = !n;
+}
+/* L'état de la boîte seul, sans toucher au reste de l'écran. */
+function status() {
+  var mine = ui;
+  if (!mine || !mine.etat) return Promise.resolve();
+  return box(mine.owner).then(function (b) { if (ui === mine) said(mine, b); });
+}
 /* L'écran de la session qui l'a demandé, et d'elle seule : si elle a changé pendant les lectures, rien n'est dessiné [R16]. */
 function render() {
   var root = $('hors-ligne'), mine = ui;
@@ -341,11 +354,12 @@ function render() {
     clear(root);
     if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
-    var etat = el('p', '', 'etat');
-    etat.setAttribute('role', 'status');
-    etat.textContent = box.pending.length ? box.pending.length + (box.pending.length > 1 ? ' saisies attendent' : ' saisie attend') + ' le réseau : elles partiront seules.' : 'Tout est envoyé.';
-    root.appendChild(etat);
-    if (box.pending.length) root.appendChild(btn('Envoyer maintenant', function () { sync(mine.key); }));
+    mine.etat = el('p', '', 'etat');
+    mine.etat.setAttribute('role', 'status');
+    root.appendChild(mine.etat);
+    mine.send = btn('Envoyer maintenant', function () { sync(mine.key); });
+    root.appendChild(mine.send);
+    said(mine, box);
     box.refused.forEach(function (r) { root.appendChild(el('p', 'Refusée par le serveur : ' + (CODES[r.code] || r.code) + '.', 'doux')); });
     if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return true; }
     if (!p.appointments.length) root.appendChild(el('p', 'Aucune visite ni estimation prévue ce jour.'));

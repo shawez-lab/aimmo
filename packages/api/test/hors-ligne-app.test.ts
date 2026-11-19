@@ -350,7 +350,12 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(await w.count('offline_ops')).toBe(3);
     // Le renvoi : reconnu, sans aucun doublon, et la boîte se vide.
     lost.loseAnswer = false;
+    // Une note en cours d'écriture quand le réseau revient : l'envoi ne l'efface pas.
+    await back.click(back.els.accueil!.all().find((e) => e.textContent === 'Mes visites sans réseau'));
+    expect(back.root().hidden).toBe(false);
+    back.find('textarea')!.value = 'Note pas encore gardée';
     await back.online();
+    expect(back.find('textarea')!.value).toBe('Note pas encore gardée');
     expect(await back.H.pending()).toEqual([]);
     expect(await back.H.refused()).toEqual([]);
     expect(await w.count('offline_ops')).toBe(3);
