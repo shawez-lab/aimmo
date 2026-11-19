@@ -638,7 +638,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
 - Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
