@@ -267,8 +267,26 @@ describeWithSqlite('AU101b · les jours limites de congé en tâches de l’agen
     const r = await bail.tasksOf(agent);
     expect(r).toEqual({ ok: true, value: [{ propertyId: near.id, reference: near.reference, kind: 'conge_triennal', deadline: '2027-10-30', expiry: '2028-04-30' }] });
     expect(await bail.tasksOf(t.as('direction', 'd1'))).toMatchObject({ ok: false, rule: 'R16' });
-    // Le début du bail corrigé : l'ancienne tâche ne se montre plus.
-    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-07-01' })).ok).toBe(true);
+    // Chaque fiche lue pour la liste est au journal, avant la réponse [R16].
+    expect(await t.count("SELECT COUNT(*) AS n FROM journal WHERE type = 'commerces.bail.lu' AND subject = ?", [`property:${near.id}`])).toBe(1);
+    // Le bien repris par Sam : la tâche passe avec lui, Alex ne la voit plus.
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.id, near.id]);
+    expect((await bail.tasksOf(t.as('agent', t.sam.id))).ok && (await bail.tasksOf(t.as('agent', t.sam.id)))).toMatchObject({ value: [{ propertyId: near.id, deadline: '2027-10-30' }] });
     expect(await bail.tasksOf(agent)).toEqual({ ok: true, value: [] });
+    await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.alex.id, near.id]);
+    // Une correction qui garde le jour limite montre l'échéance de la fiche du jour (le cas relevé par Codex) : au
+    // 15 mars 2028, un bail du 31 octobre 2022 expire le 30 octobre 2028, congé au plus tard le 30 avril 2028 ; corrigé au
+    // 1er novembre 2022, il expire le 31 octobre 2028, et le jour limite reste le 30 avril 2028.
+    const edge = await t.property('commercial');
+    expect((await t.fiches.update(t.acces, agent, edge.id, { leaseStart: '2022-10-31', leaseYears: 9 })).ok).toBe(true);
+    const later = new TachesBail(t.db, t.journal, t.fiches, { now: () => new Date('2028-03-15T09:00:00.000Z') });
+    await later.run(t.network.id);
+    expect((await t.fiches.update(t.acces, agent, edge.id, { leaseStart: '2022-11-01' })).ok).toBe(true);
+    const shown = await later.tasksOf(agent);
+    expect(shown.ok && shown.value.find((x) => x.propertyId === edge.id)).toMatchObject({ deadline: '2028-04-30', expiry: '2028-10-31' });
+    // Le début du bail corrigé autrement : l'ancienne tâche ne se montre plus.
+    expect((await t.fiches.update(t.acces, agent, near.id, { leaseStart: '2022-07-01' })).ok).toBe(true);
+    const after = await bail.tasksOf(agent);
+    expect(after.ok && after.value.filter((x) => x.propertyId === near.id)).toEqual([]);
   });
 });

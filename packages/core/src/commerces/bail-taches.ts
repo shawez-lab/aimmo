@@ -85,20 +85,29 @@ export class TachesBail {
     return created;
   }
 
-  /** Les tâches de l'agent, pour lui seul, encore utiles : jour limite à venir et toujours celui de la fiche. */
+  /**
+   * Les tâches de l'agent du bien, aujourd'hui (un bien repris passe ses tâches à son nouvel agent), encore utiles : jour
+   * limite à venir et toujours celui de la fiche ; l'échéance montrée est celle de la fiche du jour. Chaque fiche lue
+   * est écrite au journal avant d'être rendue [R16].
+   */
   async tasksOf(viewer: Viewer): Promise<{ ok: true; value: LeaseTask[] } | { ok: false; rule: 'R16'; code: 'role' }> {
     if (viewer.role !== 'agent') return { ok: false, rule: 'R16', code: 'role' };
     const today = this.today();
     const rows = await this.db.all<{ property_id: string; reference: string; kind: LeaseTaskKind; deadline: string; expiry: string }>(
       `SELECT t.property_id, p.reference, t.kind, t.deadline, t.expiry FROM business_lease_tasks t JOIN properties p ON p.id = t.property_id
-       WHERE t.network_id = ? AND t.agent_id = ? AND p.agent_id = ? AND t.deadline >= ? ORDER BY t.deadline, t.created_at`,
-      [viewer.networkId, viewer.userId, viewer.userId, today],
+       WHERE t.network_id = ? AND p.network_id = t.network_id AND p.agent_id = ? AND t.deadline >= ? ORDER BY t.deadline, t.created_at`,
+      [viewer.networkId, viewer.userId, today],
     );
     const out: LeaseTask[] = [];
+    const read = new Set<string>();
     for (const r of rows) {
+      if (!read.has(r.property_id)) {
+        await appendEvent(this.journal, { type: 'commerces.bail.lu', actor: `agent:${viewer.userId}`, subject: `property:${r.property_id}`, data: { rule: 'R16', what: 'lease_tasks' } }, this.now);
+        read.add(r.property_id);
+      }
       const sheet = await this.fiches.current(r.property_id);
-      const still = sheet ? deadlinesOf(sheet.sheet, today).some((d) => d.kind === r.kind && d.deadline === r.deadline) : false;
-      if (still) out.push({ propertyId: r.property_id, reference: r.reference, kind: r.kind, deadline: r.deadline, expiry: r.expiry });
+      const match = sheet ? deadlinesOf(sheet.sheet, today).find((d) => d.kind === r.kind && d.deadline === r.deadline) : undefined;
+      if (match) out.push({ propertyId: r.property_id, reference: r.reference, kind: r.kind, deadline: match.deadline, expiry: match.expiry });
     }
     return { ok: true, value: out };
   }
