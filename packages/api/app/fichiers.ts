@@ -1116,7 +1116,7 @@ export const APP_JS = `'use strict';
   }
   var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', carte: 'Carte professionnelle' };
   var MISSING_MENTION = {
-    pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'diagnostic énergétique absent', diagnostic_perime: 'diagnostic énergétique plus valable, à refaire',
+    pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'diagnostic énergétique absent', diagnostic_perime: 'DPE périmé',
     copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
   };
   var FIELDS = {
