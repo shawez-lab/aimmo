@@ -198,7 +198,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await p.sync(t.network.id, t.propertyId);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(0);
     await p.sync(t.network.id, t.propertyId);
-    expect(keys).toEqual([`${t.propertyId}:seloger:1:publier`, `${t.propertyId}:seloger:1:publier`]);
+    expect(keys).toEqual([`${t.propertyId}:seloger:0:1:publier`, `${t.propertyId}:seloger:0:1:publier`]);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(1);
   });
 
@@ -216,5 +216,43 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     // Le connecteur revient : le retrait part.
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received.at(-1)!.action).toBe('retirer');
+  });
+
+  it('[R668] une annonce remise après un retrait accusé part avec une autre clé : le portail ne rend pas l’ancien accusé', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    await t.surveillance.choose(t.agent, t.propertyId, 'seloger', false);
+    await t.portails.sync(t.network.id, t.propertyId);
+    t.setClock(new Date('2027-03-01T09:00:00.000Z'));
+    await t.surveillance.choose(t.agent, t.propertyId, 'seloger', true);
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received.map((r) => r.key)).toEqual([`${t.propertyId}:seloger:0:1:publier`, `${t.propertyId}:seloger:0:1:retirer`, `${t.propertyId}:seloger:1:1:publier`]);
+  });
+
+  it('[R668] [R42] un dépôt sans accusé a pu être appliqué : le bien retiré est quand même retiré de ce portail', async () => {
+    const t = await published();
+    t.a.noReceipt = 1;
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'echec', acknowledged: null });
+    await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [t.propertyId]);
+    t.setClock(new Date('2027-03-02T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received.map((r) => r.action)).toEqual(['publier', 'retirer']);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'retiree', acknowledged: { action: 'retirer' } });
+    // Leboncoin n'a jamais rien tenté de plus que son accusé : retiré aussi, une seule fois.
+    expect(t.b.received.map((r) => r.action)).toEqual(['publier', 'retirer']);
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received).toHaveLength(2);
+  });
+
+  it('[R668] un portail jamais tenté ni accusé ne reçoit pas de retrait', async () => {
+    const t = await published();
+    await t.db.run("UPDATE properties SET status = 'withdrawn' WHERE id = ?", [t.propertyId]);
+    t.setClock(new Date('2027-03-02T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received).toEqual([]);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'non_publiee' });
   });
 });
