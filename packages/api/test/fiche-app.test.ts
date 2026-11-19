@@ -16,7 +16,7 @@ const HTML = AGENT_APP_FILES['/app/']!;
 
 type Answer = (init: { method?: string }) => Promise<Response>;
 
-async function app(answers: Record<string, Answer>) {
+async function app(answers: Record<string, Answer>, extra: Record<string, unknown> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   const calls: { url: string; method: string }[] = [];
@@ -30,6 +30,7 @@ async function app(answers: Record<string, Answer>) {
       return answer ? answer(init) : Promise.reject(new TypeError('hors ligne'));
     },
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
+    ...extra,
   });
   listeners.DOMContentLoaded!();
   const tick = async () => {
@@ -91,6 +92,51 @@ describe('A03 · fiche du client dans l’application', () => {
     await a.tick();
     expect(a.els.accueil!.hidden).toBe(false);
     expect(a.els['fiche-corps']!.children).toHaveLength(0);
+  });
+
+  it('AU117 · Retour et Avancer du navigateur parcourent les écrans ouverts, et rouvrent la fiche relue', async () => {
+    const states: { how: string; state: unknown }[] = [];
+    let onPop: ((e: { state: unknown }) => void) | null = null;
+    const history = {
+      pushState: (state: unknown) => states.push({ how: 'push', state }),
+      replaceState: (state: unknown) => states.push({ how: 'replace', state }),
+    };
+    const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok(FICHE) }, { history, addEventListener: (type: string, f: (e: { state: unknown }) => void) => { if (type === 'popstate') onPop = f; } });
+    expect(states).toEqual([{ how: 'replace', state: { s: 'accueil', a: null } }]);
+    buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    expect(states.at(-1)).toEqual({ how: 'push', state: { s: 'fiche', a: ['p-1'] } });
+    // Retour du navigateur : la journée, sans rien pousser de plus.
+    onPop!({ state: { s: 'accueil', a: null } });
+    await a.tick();
+    expect(a.els.accueil!.hidden).toBe(false);
+    expect(a.els.fiche!.hidden).toBe(true);
+    // Avancer : la fiche est relue et rouverte.
+    const reads = a.calls.filter((c) => c.url === '/v1/fiches/p-1/resume').length;
+    onPop!({ state: { s: 'fiche', a: ['p-1'] } });
+    await a.tick();
+    expect(a.els.fiche!.hidden).toBe(false);
+    expect(a.els['fiche-nom']!.textContent).toBe('Léa Exemple');
+    expect(a.calls.filter((c) => c.url === '/v1/fiches/p-1/resume').length).toBe(reads + 1);
+    expect(states).toHaveLength(2);
+  });
+
+  it('AU117 · une fiche encore en lecture ne remplace jamais celle qu’un retour a rouverte', async () => {
+    let onPop: ((e: { state: unknown }) => void) | null = null;
+    let releaseA: (() => void) | null = null;
+    const slowA: Answer = () => new Promise((resolve) => { releaseA = () => resolve(Response.json({ ok: true, mode: 'essai', data: { ...FICHE, personId: 'p-1', firstName: 'Anne', lastName: 'Lente' } })); });
+    const a = await app(
+      { ...base(), '/v1/fiches/p-1/resume': slowA, '/v1/fiches/p-2/resume': ok({ ...FICHE, personId: 'p-2', firstName: 'Bruno', lastName: 'Rapide' }) },
+      { history: { pushState: () => undefined, replaceState: () => undefined }, addEventListener: (type: string, f: (e: { state: unknown }) => void) => { if (type === 'popstate') onPop = f; } },
+    );
+    buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    onPop!({ state: { s: 'fiche', a: ['p-2'] } });
+    await a.tick();
+    expect(a.els['fiche-nom']!.textContent).toBe('Bruno Rapide');
+    releaseA!();
+    await a.tick();
+    expect(a.els['fiche-nom']!.textContent).toBe('Bruno Rapide');
   });
 
   it('AU074 · un projet d’achat se confirme d’un geste, sans changer la recherche', async () => {

@@ -21,14 +21,14 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { renderDocument, sha256, templateFields, type FieldSource } from '../documents/modeles.ts';
+import { escapeHtml, renderDocument, sha256, templateFields, type FieldSource } from '../documents/modeles.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { euros } from './annonce-location.ts';
 import type { ChoixProprietaire } from './choix.ts';
 import type { HonorairesLocation } from './honoraires.ts';
-import { ANNEX_KINDS, dayInFrench, requiredAnnexes, type LocationRefusal, type MisesEnLocation } from './logement.ts';
+import { ANNEX_KINDS, dayInFrench, rentCeilingCents, requiredAnnexes, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 
 export const LEASE_KINDS = ['bail_vide', 'bail_meuble'] as const;
 export type LeaseKind = (typeof LEASE_KINDS)[number];
@@ -50,6 +50,8 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'bail.debut': { source: 'base', label: 'date de prise d’effet' },
   'bail.duree': { source: 'base', label: 'durée du bail' },
   'loyer.hors_charges': { source: 'base', label: 'loyer hors charges' },
+  // Dans une commune à loyer encadré, le modèle doit porter ce champ : sans lui, le bail reste à compléter (AU015).
+  'loyer.encadrement': { source: 'base', label: 'loyer de référence, loyer de référence majoré et complément de loyer' },
   'charges.montant': { source: 'base', label: 'montant des charges' },
   'charges.mode': { source: 'base', label: 'mode de règlement des charges' },
   'depot.montant': { source: 'base', label: 'dépôt de garantie' },
@@ -62,6 +64,18 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'signature.date': { source: 'signature', label: 'date de signature' },
   'signature.lieu': { source: 'signature', label: 'lieu de signature' },
 });
+
+/**
+ * Ce que le bail dit de l'encadrement des loyers (AU015) : hors commune encadrée, « sans objet » ; dans une commune
+ * encadrée, les loyers de référence lus dans l'arrêté, le plafond, le loyer de base et le complément ; null s'il manque.
+ */
+export function rentControlText(controlled: boolean, facts: RentalFacts): string | null {
+  if (!controlled) return 'sans objet : la commune n’est pas soumise à l’encadrement des loyers';
+  const rc = facts.rentControl ?? null;
+  if (rc === null) return null;
+  const complement = rc.complementCents > 0 ? ` ; complément de loyer ${euros(rc.complementCents)} € par mois, justifié par : ${rc.complementReason ?? ''}` : '';
+  return `loyer de référence ${euros(rc.referenceCentsPerM2)} € par m² et par mois, loyer de référence majoré ${euros(rc.majoredCentsPerM2)} € par m² et par mois (${euros(rentCeilingCents(rc, facts.livingAreaHundredths))} € par mois pour ce logement), arrêté ${rc.decree} ; loyer de base ${euros(facts.rentCents - rc.complementCents)} € par mois${complement}`;
+}
 
 /** Les champs qu'un modèle de bail doit porter : sans eux, il est refusé [R101, R102]. */
 export const REQUIRED_LEASE_FIELDS: readonly string[] = [
@@ -330,6 +344,7 @@ export class BauxLocation {
     const agentRow = p?.agent_id ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM agents WHERE id = ?', [p.agent_id]) : null;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);
     const annexes = leaseAnnexes(requiredAnnexes(facts), facts.furnished);
+    const controlled = await this.listings.rentControlledFor({ id: listing.id, network_id: listing.networkId }, facts.leaseStart);
     const values: Record<string, string | null> = {
       'bailleur.nom': owner,
       'bailleur.domicile': ownerAddress as string | null,
@@ -347,6 +362,7 @@ export class BauxLocation {
       'bail.debut': dayInFrench(facts.leaseStart),
       'bail.duree': duration,
       'loyer.hors_charges': `${euros(facts.rentCents)} € par mois`,
+      'loyer.encadrement': rentControlText(controlled, facts),
       'charges.montant': `${euros(facts.chargesCents)} € par mois`,
       'charges.mode': facts.chargesMode === 'forfait' ? 'forfait' : 'provision, avec régularisation annuelle',
       'depot.montant': `${euros(fees.depositCents)} €`,
@@ -359,6 +375,8 @@ export class BauxLocation {
     };
     const fields = JSON.parse(template.fields) as string[];
     const missing = fields.filter((f) => LEASE_FIELDS[f]!.source !== 'signature' && (values[f] === null || values[f] === undefined));
+    // Un modèle sans la place de l'encadrement ne fait pas un bail complet dans une commune où il s'applique (AU015).
+    if (controlled && !fields.includes('loyer.encadrement')) missing.push('loyer.encadrement');
     // Les annexes jointes : chaque diagnostic exigé par sa référence (W01 les a dits présents et valides), et la notice.
     const attached = (await this.listings.annexRefs(listing.id)).filter((a) => requiredAnnexes(facts).includes(a.kind));
     if (noticeRef === null) missing.push('annexe.notice_information');
@@ -431,6 +449,12 @@ export class BauxLocation {
     const valid = (await this.listings.annexRefs(listingId)).filter((a) => requiredAnnexes(facts!).includes(a.kind));
     const key = (list: readonly { kind: string; ref: string }[]) => JSON.stringify([...list].map((a) => `${a.kind}:${a.ref}`).sort());
     if (key(joined) !== key(valid)) return null;
+    // Une commune devenue encadrée depuis le bail : le bail qui ne dit pas l'encadrement de ce jour n'est plus celui
+    // qui se signe, il en faut un nouveau (AU015).
+    if (await this.listings.rentControlledFor({ id: listingId, network_id: networkId }, facts!.leaseStart)) {
+      const said = rentControlText(true, facts!);
+      if (said === null || !r.content.includes(escapeHtml(said))) return null;
+    }
     return { leaseId: r.id, contentSha256: r.content_sha256, mode: r.mode, complete: r.status === 'complet' };
   }
 }

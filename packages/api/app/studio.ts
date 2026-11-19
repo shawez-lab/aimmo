@@ -101,7 +101,7 @@ export const STUDIO_JS = `
     session += 1;
     var mine = session;
     wipeStudio();
-    show('studio');
+    show('studio', [id, reference]);
     $('studio-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -155,7 +155,7 @@ globalThis.AIMMO_STUDIO = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien', part: 'guide', atelier: null };
     $('studio-titre').textContent = 'Studio · ' + cur.reference;
-    show('studio');
+    show('studio', [id, reference]);
     return part('guide');
   }
   // Une partie à la fois, sur téléphone ; une réponse arrivée après un autre choix est ignorée.
