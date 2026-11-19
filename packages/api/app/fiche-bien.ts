@@ -131,8 +131,17 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     // AU114 · ce que montre chaque photo : sa légende sur la page publique, la fiche imprimable et les portails [R478].
     var shown = el('div');
     zone.appendChild(shown);
-    send(o.base + '/photos/sujets', 'GET').then(function (res) {
-      if (!res.ok || !res.body.data || !(res.body.data.photos || []).length) return;
+    function subjects() {
+      clear(shown);
+      return send(o.base + '/photos/sujets', 'GET').then(function (res) {
+      if (res.gone) return;
+      // Une lecture ratée est dite, avec de quoi réessayer : jamais confondue avec un bien sans photo.
+      if (!res.ok || !res.body || !res.body.data) {
+        shown.appendChild(el('p', res.offline ? 'Pas de réseau : ce que montre chaque photo n’a pas pu être lu.' : 'Ce que montre chaque photo n’a pas pu être lu.', 'alerte'));
+        shown.appendChild(button('Réessayer', subjects));
+        return;
+      }
+      if (!(res.body.data.photos || []).length) return;
       var allowed = {};
       (res.body.data.allowed || []).forEach(function (k) { if (SUBJECTS[k]) allowed[k] = SUBJECTS[k]; });
       shown.appendChild(el('h4', 'Ce que montre chaque photo'));
@@ -144,7 +153,9 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
           });
         });
       });
-    });
+      });
+    }
+    subjects();
     /** Lit le formulaire ; un nombre mal écrit est nommé, jamais rangé comme « je ne sais pas ». */
     function read() {
       var bad = null;

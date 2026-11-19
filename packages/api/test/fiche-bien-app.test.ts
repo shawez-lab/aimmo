@@ -83,6 +83,16 @@ async function run(answers: Record<string, Answer> = {}) {
 }
 
 describe('X19 · la fiche du bien à l’écran', () => {
+  it('AU114 · une lecture ratée des légendes est dite, avec « Réessayer » ; jamais confondue avec un bien sans photo', async () => {
+    const t = await run();
+    await t.open();
+    expect(t.body().textContent).toContain('Pas de réseau : ce que montre chaque photo n’a pas pu être lu.');
+    t.table['GET /v1/annonces/b1/photos/sujets'] = ok({ photos: [{ ref: MEDIA[0]!.ref, subject: 'cuisine' }], allowed: ['cuisine'] });
+    await t.click(t.find('Réessayer'));
+    expect(t.body().textContent).not.toContain('n’a pas pu être lu');
+    expect(t.f('fiche-bien-photo-1').value).toBe('cuisine');
+  });
+
   it('AU114 · chaque photo se dit, dans ce que la fiche porte ; le choix part tout de suite, et « je ne sais pas » le retire', async () => {
     const ref = MEDIA[0]!.ref;
     const t = await run({
