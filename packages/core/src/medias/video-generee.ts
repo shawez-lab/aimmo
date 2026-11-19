@@ -157,7 +157,8 @@ export interface VideoTextCheck {
 }
 /** Les langues ouvertes pour un bien : l'anglais et celles de son agent (HX05). */
 export interface OpenLanguages {
-  languagesFor(networkId: string, agentId: string | null): Promise<ListingLanguage[]>;
+  /** Les langues ouvertes sur ce bien : celles que son agent déclare, et celles d'un relecteur désigné pour lui (AU113). */
+  languagesFor(networkId: string, agentId: string | null, propertyId?: string): Promise<ListingLanguage[]>;
 }
 
 export interface LikenessConsent {
@@ -347,7 +348,7 @@ export class VideosGenerees {
         plan,
         planSha256: await planSha256(plan),
         mention: GENERATED_VIDEO_MENTION,
-        languages: ['fr', ...(await this.languages.languagesFor(seen.value.networkId, seen.value.agentId))],
+        languages: ['fr', ...(await this.languages.languagesFor(seen.value.networkId, seen.value.agentId, propertyId))],
         voice: own && (await this.activeConsent(viewer.userId, 'voix')) !== null,
         avatar: own && (await this.activeConsent(viewer.userId, 'avatar')) !== null,
       },
@@ -406,7 +407,7 @@ export class VideosGenerees {
     // Les sous-titres : le français, puis chaque langue ouverte pour le bien, ligne pour ligne [R497].
     const subs = input.subtitles;
     if (!isRecord(subs)) return bad('R497', 'sous_titres_invalides');
-    const open = ['fr', ...(await this.languages.languagesFor(seen.value.networkId, seen.value.agentId))] as SubtitleLanguage[];
+    const open = ['fr', ...(await this.languages.languagesFor(seen.value.networkId, seen.value.agentId, propertyId))] as SubtitleLanguage[];
     const fr = subs.fr;
     const okLines = (v: unknown): v is string[] => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SUBTITLE_LINES && v.every((s) => typeof s === 'string' && s.trim() !== '' && s.length <= MAX_SUBTITLE_CHARS);
     if (!okLines(fr)) return bad('R497', 'sous_titres_invalides');
