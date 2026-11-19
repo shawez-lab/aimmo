@@ -82,8 +82,10 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: [] })).toBe(false);
     expect(bindingHolds({ field: 'city', value: 'Dijon' }, FACTS)).toBe(true);
     expect(bindingHolds({ field: 'energyClass', value: 'D' }, { ...FACTS, energyClass: 'E' })).toBe(false);
-    // Un nombre en lettres n'est pas relu : il ne vaut plus.
-    expect(bindingHolds({ field: 'rooms', value: 'trois' }, { ...FACTS, rooms: 3 })).toBe(false);
+    // Un nombre en lettres se relit comme le contrôle le lit.
+    expect(bindingHolds({ field: 'rooms', value: 'Trois' }, { ...FACTS, rooms: 3 })).toBe(true);
+    expect(bindingHolds({ field: 'rooms', value: 'trois' }, { ...FACTS, rooms: 4 })).toBe(false);
+    expect(bindingHolds({ field: 'rooms', value: 'beaucoup' }, { ...FACTS, rooms: 3 })).toBe(false);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
@@ -284,6 +286,17 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(await t.annonces.read(t.agent, t.propertyId)).toEqual({ ok: false, rule: null, code: 'no_draft' });
     const good = await t.annonces.correct(t.agent, t.propertyId, { title: 'Appartement 3 pièces à Dijon', body: 'Au 3e étage sur 5 avec ascenseur. Balcon et deux chambres.' });
     expect(good).toMatchObject({ ok: true, value: { origin: 'agent', seq: 1 } });
+  });
+
+  it('[R47] AU066 · un nombre écrit en lettres dans l’annonce validée reste vrai après une nouvelle version de la fiche qui ne le touche pas', async () => {
+    const t = await setup();
+    await t.mentions.setCardNumber(t.direction, 'CPI 2101 2027 000 000 001');
+    await t.signMandate();
+    const d = await t.annonces.correct(t.agent, t.propertyId, { title: 'Trois pièces à Dijon', body: 'Au 3e étage avec ascenseur.' });
+    if (!d.ok) throw new Error(d.code);
+    expect((await t.annonces.validate(t.agent, d.value.id)).ok).toBe(true);
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d.value.id);
   });
 
   it('[R47] rien n’est publiable sans la validation de l’agent du bien ; seul le dernier brouillon, sur la dernière fiche, se valide', async () => {

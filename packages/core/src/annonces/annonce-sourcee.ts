@@ -313,8 +313,8 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
 
 /**
  * Une source rangée à la validation est-elle encore vraie pour la fiche du jour (AU066) ? Le nombre vaut encore son
- * champ, l'équipement ou l'état est encore dit, la ville et la classe sont les mêmes. Un nombre écrit en lettres n'est
- * pas relu : prudence, il ne vaut plus.
+ * champ, l'équipement ou l'état est encore dit, la ville et la classe sont les mêmes. Un nombre écrit en lettres se
+ * relit comme le contrôle le lit ; un nombre qu'il ne sait pas relire ne vaut plus.
  */
 export function bindingHolds(source: { field: keyof ListingFacts; value: string }, facts: ListingFacts): boolean {
   const { field, value } = source;
@@ -322,8 +322,10 @@ export function bindingHolds(source: { field: keyof ListingFacts; value: string 
   if (field === 'energyClass' || field === 'climateClass') return facts[field] === value;
   const feature = FEATURES.find((f) => f.field === field && f.terms.some((t) => norm(t) === norm(value)));
   if (feature) return feature.has(facts);
-  const n = parseNumber(value);
-  if (!Number.isFinite(n)) return false;
+  // Un nombre en chiffres, ou en lettres comme le contrôle les lit (« trois »).
+  const digits = parseNumber(value);
+  const n = Number.isFinite(digits) ? digits : SPELLED_NORM.get(norm(value).trim());
+  if (n === undefined || !Number.isFinite(n)) return false;
   return numericSources(facts).some((s) => s.field === field && s.value === n);
 }
 
