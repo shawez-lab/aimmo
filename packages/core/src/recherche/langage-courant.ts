@@ -812,7 +812,13 @@ export class RechercheLangage {
         if (!soft.includes(softOf[field]!)) soft.push(softOf[field]!);
       }
     }
-    if (Object.keys(softOf).some((f) => f in changes)) changes.softCriteria = soft.filter((c) => !Object.keys(softOf).some((f) => softOf[f] === c && (must as unknown as Record<string, unknown>)[f] != null));
+    if (Object.keys(softOf).some((f) => f in changes)) {
+      // Un souhait que la phrase ne touche pas le reste : ses bornes restent dans la fiche, et leur nature avec elles.
+      const said = new Set(search.criteria.map((c) => softOf[c.field]).filter((c): c is SoftCriterion => c !== undefined));
+      const before = ((await fiche.current(project.id))?.search.softCriteria ?? []).filter((c) => !said.has(c));
+      const now = soft.filter((c) => !Object.keys(softOf).some((f) => softOf[f] === c && (must as unknown as Record<string, unknown>)[f] != null));
+      changes.softCriteria = [...new Set([...before, ...now])];
+    }
     if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetStrict === true;
     const checked = checkSearchChanges(changes, this.communes);
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);

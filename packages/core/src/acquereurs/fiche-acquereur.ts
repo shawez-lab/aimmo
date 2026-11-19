@@ -585,6 +585,8 @@ export class FicheAcquereur {
         sources[field] = source;
       }
       if (changed.length === 0) return { ok: true, created: false, value: last };
+      // Les bornes d'étage se lisent ensemble, sur la recherche qui en résulte : un minimum au-dessus du maximum ne laisse aucun bien (AU072).
+      if (next.floorMin != null && next.floorMax != null && next.floorMin > next.floorMax) return refuse('valeur', 'floorMin');
       const version = (last?.version ?? 0) + 1;
       const id = this.newId();
       const { changes: inserted } = await this.db.run(

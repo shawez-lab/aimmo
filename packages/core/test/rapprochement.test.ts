@@ -179,6 +179,17 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(check({ softCriteria: ['budget'] })).toMatchObject({ ok: false, field: 'softCriteria' });
   });
 
+  it('AU072 · un souhait d’étage, de classe ou de terrain rempli fait passer devant, à critères égaux', async () => {
+    const t = await setup();
+    const plain = await t.buyer(t.alex.id, 'Sans souhait', { communes: ['Dijon'], urgency: 'now' });
+    const wish = await t.buyer(t.alex.id, 'Souhait', { communes: ['Dijon'], energyClassMax: 'C', softCriteria: ['energy'], urgency: 'later' });
+    const p = await t.property(t.alex.id, 'CLASSE', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', ['sheet-classe', p.id, t.network.id, JSON.stringify({ characteristics: {}, energy: { energyClass: 'B' }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z']);
+    const r = await t.rapprochement.propose(t.acces, t.direction, p.id);
+    if (!r.ok) throw new Error('refus');
+    expect(r.value.map((x) => x.projectId)).toEqual([wish.project.id, plain.project.id]);
+  });
+
   it('le classement ne tient jamais compte du financement [R14] ; à égalité, l’urgence déclarée puis la recherche la plus fraîche', async () => {
     const t = await setup();
     const base = { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 200_000 } as const;

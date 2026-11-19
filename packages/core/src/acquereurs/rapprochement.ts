@@ -79,6 +79,8 @@ export interface BuyerMatch {
   featuresMet: BuyerFeature[];
   /** Somme des écarts tolérés, en pour cent, pour classer. */
   gap: number;
+  /** Les souhaits d'étage, de classe énergie ou de terrain que le bien remplit, pour classer (AU072). */
+  softMet?: number;
 }
 
 const eur = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ')} €`;
@@ -172,9 +174,12 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   // AU072 · étage, classe énergie et terrain : impératifs, sauf s'ils sont dits souhaits ; une valeur inconnue ne
   // remplit pas un impératif, et un souhait non rempli n'écarte rien.
   const soft = search.softCriteria ?? [];
+  let softMet = 0;
   const judgeOne = (criterion: 'floor' | 'energy' | 'land', ok: boolean | null, met: string, unmet: string, unknown: string) => {
-    if (ok === true) add(criterion, 'met', met);
-    else if (!soft.includes(criterion)) add(criterion, 'unmet', ok === null ? unknown : unmet);
+    if (ok === true) {
+      add(criterion, 'met', met);
+      if (soft.includes(criterion)) softMet += 1;
+    } else if (!soft.includes(criterion)) add(criterion, 'unmet', ok === null ? unknown : unmet);
   };
   const fMin = search.floorMin ?? null;
   const fMax = search.floorMax ?? null;
@@ -203,10 +208,10 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   }
   const featuresMet = search.features.filter((f) => property.features.includes(f));
   // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
-  if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0 };
+  if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0, softMet };
   const unmet = checks.filter((c) => c.state === 'unmet').map((c) => c.criterion);
   const status = unmet.length > 0 ? 'miss' : checks.some((c) => c.state === 'tolerated') ? 'tolerated' : 'match';
-  return { status, checks, unmet, featuresMet, gap };
+  return { status, checks, unmet, featuresMet, gap, softMet };
 }
 
 const URGENCY_RANK: Record<Deadline, number> = { now: 0, within_3_months: 1, within_6_months: 2, within_1_year: 3, later: 4 };
@@ -260,7 +265,10 @@ function compareScored(a: Scored, b: Scored): number {
   const strict = Number(a.m.status !== 'match') - Number(b.m.status !== 'match');
   if (strict !== 0) return strict;
   if (a.m.gap !== b.m.gap) return a.m.gap - b.m.gap;
-  if (a.m.featuresMet.length !== b.m.featuresMet.length) return b.m.featuresMet.length - a.m.featuresMet.length;
+  // Les souhaits remplis classent : équipements souhaités, et étage, classe ou terrain souhaités (AU072).
+  const wa = a.m.featuresMet.length + (a.m.softMet ?? 0);
+  const wb = b.m.featuresMet.length + (b.m.softMet ?? 0);
+  if (wa !== wb) return wb - wa;
   const ua = a.search.urgency === null ? 5 : URGENCY_RANK[a.search.urgency];
   const ub = b.search.urgency === null ? 5 : URGENCY_RANK[b.search.urgency];
   if (ua !== ub) return ua - ub;

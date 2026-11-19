@@ -533,4 +533,19 @@ describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de 
     expect(matchBuyer(property({ floor: 0 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['floor'] });
     expect(matchBuyer(property({ landM2: 100 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['land'] });
   });
+
+  it('[R420] une phrase suivante qui ne dit rien de l’étage garde l’étage souhaité comme souhait', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const agent = t.as('agent', t.alex.id);
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, si possible pas de rez-de-chaussée')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, softCriteria: ['floor'] });
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, DPE D minimum')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, energyClassMax: 'D', softCriteria: ['floor'] });
+    // Les bornes se contrôlent sur la recherche qui en résulte : un minimum au-dessus du maximum déjà rangé est refusé.
+    const direction = t.as('direction', 'd1');
+    expect((await t.acquereurs.update(t.acces, direction, project.id, { floorMax: 2 })).ok).toBe(true);
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 3 })).toMatchObject({ ok: false, field: 'floorMin' });
+  });
 });
