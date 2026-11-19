@@ -288,3 +288,23 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(known).toMatchObject({ status: 'match', unmet: [], featuresMet: ['garden'] });
   });
 });
+
+it('[R51] AU071 · un équipement impératif absent ou inconnu écarte le bien, nommé ; un souhait ne fait que classer', () => {
+  const base: BuyerSearch = { propertyKinds: [], communes: ['Talant'], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, requiredFeatures: [], budgetStrict: false, financing: null, urgency: null };
+  const flat = { kind: 'home' as const, city: 'Talant', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerSearch['features'] };
+  expect(matchBuyer(flat, { ...base, features: ['elevator'] })).toMatchObject({ status: 'match', featuresMet: [] });
+  const m = matchBuyer(flat, { ...base, requiredFeatures: ['elevator'] });
+  expect(m).toMatchObject({ status: 'miss', unmet: ['features'] });
+  expect(m.checks.find((c) => c.criterion === 'features')?.reason).toBe('Impératif absent ou inconnu : ascenseur.');
+  expect(matchBuyer({ ...flat, features: ['elevator'] }, { ...base, requiredFeatures: ['elevator'] })).toMatchObject({ status: 'match' });
+});
+
+it('[R51] AU115 · un budget dit infranchissable n’a aucune tolérance ; sans cette mention, 5 % au plus', () => {
+  const base: BuyerSearch = { propertyKinds: [], communes: [], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: 200_000, requiredFeatures: [], budgetStrict: false, financing: null, urgency: null };
+  const p = { kind: 'home' as const, city: 'Talant', priceEur: 205_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerSearch['features'] };
+  expect(matchBuyer(p, base)).toMatchObject({ status: 'tolerated' });
+  const strict = matchBuyer(p, { ...base, budgetStrict: true });
+  expect(strict).toMatchObject({ status: 'miss', unmet: ['budget'] });
+  expect(strict.checks[0]!.reason).toBe('Prix au-dessus du budget, que l’acquéreur dit infranchissable.');
+  expect(matchBuyer({ ...p, priceEur: 200_000 }, { ...base, budgetStrict: true })).toMatchObject({ status: 'match' });
+});

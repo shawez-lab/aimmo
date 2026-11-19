@@ -24,9 +24,10 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
 import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -126,10 +127,11 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
       // En centièmes de pour cent, pour éviter les arrondis à la limite.
       // La limite se compare sans arrondi ; l'arrondi ne sert qu'à l'affichage.
       const over = Math.round(((price - budget) * 10_000) / budget) / 100;
-      if ((price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
+      // Un budget dit infranchissable n'a aucune tolérance (AU115).
+      if (search.budgetStrict !== true && (price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
         gap += over;
         add('budget', 'tolerated', `Prix ${over.toLocaleString('fr-FR')} % au-dessus du budget, dans la tolérance de ${tolerances.budgetOverPct} %.`);
-      } else add('budget', 'unmet', 'Prix au-dessus du budget.');
+      } else add('budget', 'unmet', search.budgetStrict === true ? 'Prix au-dessus du budget, que l’acquéreur dit infranchissable.' : 'Prix au-dessus du budget.');
     }
   }
   if (search.surfaceMinM2 !== null) {
@@ -163,6 +165,13 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     else add('bedrooms', 'unmet', 'Pas assez de chambres.');
   }
 
+  // Les équipements impératifs sont éliminatoires, chaque absence nommée ; une valeur inconnue ne les remplit pas (AU071).
+  const required = search.requiredFeatures ?? [];
+  if (required.length > 0) {
+    const missing = required.filter((f) => !property.features.includes(f));
+    if (missing.length === 0) add('features', 'met', `Impératifs présents : ${required.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+    else add('features', 'unmet', `Impératif absent ou inconnu : ${missing.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+  }
   const featuresMet = search.features.filter((f) => property.features.includes(f));
   // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
   if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0 };

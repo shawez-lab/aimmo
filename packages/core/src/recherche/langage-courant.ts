@@ -41,6 +41,9 @@ import { DEFAULT_TOLERANCES, matchBuyer, type DiffusionGate, type MatchProperty,
 
 export const PHRASE_MAX_LENGTH = 500;
 
+/** Un budget dit infranchissable dans la phrase : aucune tolérance au rapprochement (AU115). */
+export const STRICT_BUDGET = /\b(?:budget ferme|maximum absolu|max absolu|infranchissable|pas un euro de plus|sans d[ée]passer)\b/i;
+
 /** Les champs qu'une phrase peut remplir : ceux de la fiche acquéreur, hors financement et urgence. */
 export const PHRASE_FIELDS = ['propertyKinds', 'communes', 'features', 'surfaceMinM2', 'roomsMin', 'bedroomsMin', 'budgetMaxEur'] as const;
 export type PhraseField = (typeof PHRASE_FIELDS)[number];
@@ -730,8 +733,8 @@ export class RechercheLangage {
     // dit ce qui est cherché ; sinon la fiche garderait ce qui a été refusé [R424].
     const cleared = (search.excludedCommunes.length > 0 && must.communes.length === 0) || (search.excludedKinds.length > 0 && must.propertyKinds.length === 0);
     if (cleared) return this.refused(viewer, projectId, 'R424', 'a_preciser');
-    // La fiche n'a pas de préférences : les indispensables y vont, et les contraintes souhaitées s'y ajoutent pour
-    // classer, sans jamais écarter un bien dans le rapprochement.
+    // Les contraintes souhaitées et indispensables vont dans la fiche pour classer ; les indispensables y sont aussi
+    // rangées comme impératives, éliminatoires au rapprochement (AU071). Un budget dit infranchissable perd sa tolérance (AU115).
     const changes: Partial<BuyerSearch> = {};
     for (const field of PHRASE_FIELDS) {
       const excluded = (field === 'communes' && search.excludedCommunes.length > 0) || (field === 'propertyKinds' && search.excludedKinds.length > 0);
@@ -741,6 +744,8 @@ export class RechercheLangage {
         (changes as Record<string, unknown>)[field] = list;
       } else (changes as Record<string, unknown>)[field] = must[field];
     }
+    if ('features' in changes) changes.requiredFeatures = must.features;
+    if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetMaxEur !== null && STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
     const checked = checkSearchChanges(changes, this.communes);
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);
     const updated = await fiche.update(acces, viewer, projectId, checked.value);

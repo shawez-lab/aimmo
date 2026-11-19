@@ -381,6 +381,9 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
       surfaceMinM2: 100,
       roomsMin: 4,
       budgetMaxEur: 350_000,
+      // Le garage n'est qu'un souhait : il classe, il n'écarte pas (AU071) ; le budget garde sa tolérance (AU115).
+      requiredFeatures: [],
+      budgetStrict: false,
     });
     const rows = await t.db.all<{ consent_id: string; criteria: string; buyer_search_id: string }>('SELECT * FROM phrase_searches');
     expect(rows).toHaveLength(1);
@@ -443,5 +446,20 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
     const again = await t.recherche.save(t.acces, t.as('direction', 'd1'), t.acquereurs, project.id, PHRASE);
     expect(again.ok && again.value.buyerSearchId).toBeNull();
     expect(await t.db.all('SELECT id FROM buyer_searches')).toHaveLength(1);
+  });
+});
+
+describeWithSqlite('AU071 · AU115 · l’indispensable et le budget ferme de la phrase', () => {
+  it('[R420] « avec ascenseur » devient un impératif, « si possible une cave » un souhait ; « budget ferme » ôte la tolérance', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const saved = await t.recherche.save(t.acces, t.as('agent', t.alex.id), t.acquereurs, project.id, 'Appartement à Dijon avec ascenseur, si possible une cave, budget ferme 250 000 euros');
+    expect(saved.ok).toBe(true);
+    const current = await t.acquereurs.current(project.id);
+    expect(current?.search.requiredFeatures).toEqual(['elevator']);
+    expect(current?.search.features?.sort()).toEqual(['cellar', 'elevator']);
+    expect(current?.search.budgetStrict).toBe(true);
+    expect(current?.search.budgetMaxEur).toBe(250_000);
   });
 });
