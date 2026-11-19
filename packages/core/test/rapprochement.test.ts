@@ -214,6 +214,8 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect((await fresh.set(agent, only.id, { shape: 'polygone', points: [{ lat: 47.35, lon: 5.08 }, { lat: 47.37, lon: 5.08 }, { lat: 47.37, lon: 5.12 }, { lat: 47.35, lon: 5.12 }], label: 'Le plateau' })).ok).toBe(true);
     expect(await proposed(far.id)).toContain(only.id);
     expect(await proposed(close.id)).not.toContain(only.id);
+    // Son acquéreur dit sa recherche toujours d'actualité : le seul secteur se confirme aussi.
+    expect(await t.acquereurs.confirm(t.acces, agent, only.id)).toMatchObject({ ok: true });
     // Une recherche ancienne de plus de 180 jours, rafraîchie par un secteur rangé aujourd'hui, compte de nouveau.
     const later = START + 200 * 86_400_000;
     t.setClock(later);
