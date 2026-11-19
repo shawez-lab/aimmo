@@ -783,17 +783,6 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/controle$`),
-    name: 'document.controle',
-    // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
-    handle: async (s, viewer, [id]) => {
-      const r = await controles(s).check(viewer, id!);
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
     method: 'GET',
     pattern: new RegExp(`^/documents/${ID}/exemplaire$`),
     name: 'document.exemplaire',
@@ -2045,6 +2034,18 @@ function espacesAgentRoutes(config: Pick<ApiConfig, 'espaces' | 'estimation' | '
 function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
   const mandats = (s: Services) => new MandatDuBien(s.db, s.acces, s.journal, { now: s.now });
   return [
+    // Le contrôle avant signature : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/controle$`),
+      name: 'document.controle',
+      // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
+      handle: async (s, viewer, [id]) => {
+        const r = await new ControlesSignature(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).check(viewer, id!);
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+      },
+    },
     // La signature en ligne : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
     {
       method: 'POST',

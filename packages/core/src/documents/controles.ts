@@ -41,6 +41,15 @@ export async function documentMandants(db: SqlDatabase, documentId: string, firs
   const rows = await db.all<{ person_id: string }>('SELECT person_id FROM document_co_mandants WHERE document_id = ? ORDER BY position', [documentId]);
   return [firstPersonId, ...rows.map((r) => r.person_id)];
 }
+/**
+ * Les fiches qu'un document nomme : ses mandants, puis les représentants de ceux qui le sont (AU059). Qui lit le
+ * document, son exemplaire ou son dossier les voit toutes en entier [R16].
+ */
+export async function documentPersons(db: SqlDatabase, documentId: string, firstPersonId: string): Promise<string[]> {
+  const mandants = await documentMandants(db, documentId, firstPersonId);
+  return [...mandants, ...(await documentProxies(db, documentId)).map((p) => p.proxyId)];
+}
+
 export const POWER_KINDS = ['notariee', 'sous_seing_prive'] as const;
 export type PowerKind = (typeof POWER_KINDS)[number];
 
@@ -101,10 +110,12 @@ export class ControlesSignature {
       newId?: () => string;
       settings?: ControlSettings;
       /**
-       * Le stockage des scans du mandat (D14), où la procuration d'un mandant représenté doit se trouver (AU059). Nul :
-       * aucun stockage, la procuration ne se vérifie pas et rien ne se signe ; absent : non vérifié (appelants internes).
+       * Le stockage des scans du mandat (D14), où la procuration d'un mandant représenté doit se trouver (AU059). Nul ou
+       * absent : la procuration ne se vérifie pas, et le document ne passe pas.
        */
       scans?: { has(ref: string): Promise<boolean> } | null;
+      /** Où vérifier la procuration, quand ce n'est pas `scans` (la signature en ligne, qui n'a pas de scan) (AU059). */
+      powers?: { has(ref: string): Promise<boolean> } | null;
     } = {},
   ) {
     this.now = options.now ?? (() => new Date());
@@ -207,6 +218,14 @@ export class ControlesSignature {
       if (co.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
     }
 
+    // Chaque représentant nommé au document (AU059) : qui le contrôle le voit aussi en entier [R16].
+    const proxies = await documentProxies(this.db, doc.id);
+    for (const p of proxies) {
+      const proxy = await this.acces.readFiche(viewer, p.proxyId);
+      if (!proxy.ok) return proxy;
+      if (proxy.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
+    }
+
     const at = this.now();
     const lines: CheckLine[] = [];
     // Un mandat de vente préparé avant AU002 a pu se dire « complet » sans désignation : son modèle n'en avait pas la
@@ -221,7 +240,6 @@ export class ControlesSignature {
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un mandant représenté (AU059) : la procuration est dans le stockage, l'identité du représentant vérifiée, et le
     // représentant n'est pas devenu, par une réunion de fiches, l'un des mandants [R41].
-    const proxies = await documentProxies(this.db, doc.id);
     if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
@@ -260,9 +278,10 @@ export class ControlesSignature {
     for (const id of mandants) mandantRoots.add(await this.unique.rootOf(id));
     for (const p of proxies) {
       if (mandantRoots.has(await this.unique.rootOf(p.proxyId))) return line(false, 'proxy_is_mandant');
-      const scans = this.options.scans;
-      if (scans === null) return line(false, 'depot_ferme');
-      if (scans && !(await scans.has(p.powerRef))) return line(false, 'power_absent');
+      // Sans stockage où la vérifier, la procuration n'est pas vérifiée : le document ne passe pas.
+      const store = this.options.powers !== undefined ? this.options.powers : this.options.scans;
+      if (!store) return line(false, 'depot_ferme');
+      if (!(await store.has(p.powerRef))) return line(false, 'power_absent');
       const identity = signedAt ? await this.identityAtSignature(networkId, p.proxyId, signedAt) : await this.identity(networkId, p.proxyId, at);
       if (!identity.ok) return line(false, `proxy_${identity.code}`);
     }

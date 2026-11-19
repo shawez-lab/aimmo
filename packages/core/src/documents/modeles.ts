@@ -19,7 +19,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { mandateExpired } from './conditions.ts';
-import { POWER_KINDS, documentMandants, type PowerKind } from './controles.ts';
+import { POWER_KINDS, documentMandants, documentPersons, type PowerKind } from './controles.ts';
 import { MANDATE_DESIGNATION_FIELDS, formatAddress, formatParcels, latestDesignation, latestDomicile } from './designation.ts';
 
 /** Prénom et nom : l'un sans l'autre ne suffit pas à identifier un mandant. */
@@ -412,7 +412,8 @@ export class Modeles {
         if (!p || typeof p !== 'object' || Object.keys(p).some((k) => !['mandantId', 'proxyId', 'powerKind', 'grantedOn', 'powerRef'].includes(k))) return { ok: false, rule: null, code: 'bad_proxies' };
         if (typeof p.mandantId !== 'string' || !mandantRoots.includes(p.mandantId) || proxies.some((q) => q.mandantId === p.mandantId)) return { ok: false, rule: null, code: 'bad_proxies' };
         if (typeof p.powerKind !== 'string' || !(POWER_KINDS as readonly string[]).includes(p.powerKind)) return { ok: false, rule: null, code: 'bad_proxies' };
-        if (typeof p.grantedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(p.grantedOn) || new Date(`${p.grantedOn}T12:00:00Z`).toISOString().slice(0, 10) !== p.grantedOn || p.grantedOn > today) return { ok: false, rule: null, code: 'bad_proxies' };
+        const granted = typeof p.grantedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.grantedOn) ? new Date(`${p.grantedOn}T12:00:00Z`) : null;
+        if (!granted || Number.isNaN(granted.getTime()) || granted.toISOString().slice(0, 10) !== p.grantedOn || p.grantedOn! > today) return { ok: false, rule: null, code: 'bad_proxies' };
         // Le scan de la procuration est rangé avec ceux du mandat de ce bien, jamais d'un autre.
         const ref = typeof p.powerRef === 'string' ? POWER_REF.exec(p.powerRef) : null;
         if (!ref || ref[1] !== property.id) return { ok: false, rule: null, code: 'bad_proxies' };
@@ -599,8 +600,8 @@ export class Modeles {
     const read = await this.acces.readFiche(viewer, row.person_id);
     if (!read.ok) return read;
     if (read.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);
-    // Le texte nomme chaque mandant : qui le lit voit chacune de leurs fiches en entier (AU001) [R16].
-    for (const person_id of (await documentMandants(this.db, documentId, row.person_id)).slice(1)) {
+    // Le texte nomme chaque mandant et chaque représentant : qui le lit voit chacune de leurs fiches en entier (AU001, AU059) [R16].
+    for (const person_id of (await documentPersons(this.db, documentId, row.person_id)).slice(1)) {
       const co = await this.acces.readFiche(viewer, person_id);
       if (!co.ok) return co;
       if (co.view !== 'full') return this.refuse(viewer, 'document', 'not_assigned', `document:${documentId}`);

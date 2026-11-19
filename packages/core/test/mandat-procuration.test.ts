@@ -128,15 +128,18 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     await t.identify(lea);
     const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id)] });
     if (!d.ok) throw new Error(d.code);
-    expect(failed(await t.controles.check(t.agent, d.document.id))).toEqual(['proxy_identity_missing']);
-    await t.identify(paul);
-    expect(failed(await t.controles.check(t.agent, d.document.id))).toEqual([]);
     const stored = new Set<string>();
     const withScans = (scans: { has(ref: string): Promise<boolean> } | null) => new ControlesSignature(t.db, t.acces, t.journal, { now: t.now, scans });
-    expect(failed(await withScans({ has: async (r) => stored.has(r) }).check(t.agent, d.document.id))).toEqual(['power_absent']);
+    const store = { has: async (r: string) => stored.has(r) };
+    // Sans stockage où la vérifier, la procuration ne passe jamais.
+    expect(failed(await t.controles.check(t.agent, d.document.id))).toEqual(['depot_ferme']);
     expect(failed(await withScans(null).check(t.agent, d.document.id))).toEqual(['depot_ferme']);
+    expect(failed(await withScans(store).check(t.agent, d.document.id))).toEqual(['power_absent']);
     stored.add(REF(t.property.id));
-    const ok = await withScans({ has: async (r) => stored.has(r) }).check(t.agent, d.document.id);
+    expect(failed(await withScans(store).check(t.agent, d.document.id))).toEqual(['proxy_identity_missing']);
+    await t.identify(paul);
+    const ok = await withScans(store).check(t.agent, d.document.id);
+    expect(failed(ok)).toEqual([]);
     expect(ok.ok && ok.value.lines.find((l) => l.check === 'procuration')).toEqual({ check: 'procuration', ok: true, code: 'power_checked' });
   });
 
@@ -148,11 +151,32 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     await t.identify(paul);
     const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id)] });
     if (!d.ok) throw new Error(d.code);
-    const session = await t.online.start(t.agent, d.document.id, CONSENT);
+    const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, scans: { has: async (r) => r === REF(t.property.id) } });
+    const session = await online.start(t.agent, d.document.id, CONSENT);
     if (!session.ok) throw new Error(session.code);
     const sent = await t.codes();
     expect(sent.map((c) => c.personId)).toEqual([paul]);
     expect(await t.db.all('SELECT mandant_person_id, proxy_person_id FROM signature_session_proxies WHERE session_id = ?', [session.value.sessionId])).toEqual([{ mandant_person_id: lea, proxy_person_id: paul }]);
-    expect(await t.online.sign(t.agent, session.value.sessionId, { code: sent[0]!.code })).toMatchObject({ ok: true, value: { allSigned: true } });
+    expect(await online.sign(t.agent, session.value.sessionId, { code: sent[0]!.code })).toMatchObject({ ok: true, value: { allSigned: true } });
+    // L'exemplaire part au représentant, qui a donné son accord ; le mandant n'en reçoit rien sans le sien [R03].
+    expect(await online.sendCopy(t.agent, session.value.sessionId)).toBe(true);
+    const copies = await enClair(t.db.all<{ id: string; body: string; person_id: string }>("SELECT m.id, m.body, m.person_id FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.body LIKE '%enregistré sous la référence%'"));
+    expect(copies.map((c) => c.person_id)).toEqual([paul]);
+  });
+
+  it('[R16] le document nomme le représentant : qui ne voit plus sa fiche ne lit plus le document', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const paul = await t.owner('Paul', 'Tiers', undefined, false);
+    const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id)] });
+    if (!d.ok) throw new Error(d.code);
+    expect((await t.modeles.read(t.agent, d.document.id)).ok).toBe(true);
+    // Le représentant confié à un autre agent : sa fiche n'est plus vue en entier.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, paul]);
+    expect(await t.modeles.read(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.controles.check(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
+    // Une date du calendrier mal formée est refusée, jamais une erreur.
+    const marc = await t.owner('Marc', 'Tiers', undefined, false);
+    expect(await t.generate(lea, { proxies: [proxyOf(lea, marc, t.property.id, { grantedOn: '2027-13-01' })] })).toEqual({ ok: false, rule: null, code: 'bad_proxies' });
   });
 });

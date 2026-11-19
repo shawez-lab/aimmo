@@ -78,6 +78,8 @@ export interface PaperSignatureOptions {
    * pour les appelants internes ; la route donne toujours l'un ou l'autre. Une reprise garde son scan et ne repasse pas ici.
    */
   scans?: { has(ref: string): Promise<boolean> } | null;
+  /** Où vérifier la procuration d'un mandant représenté, quand ce n'est pas `scans` (la signature en ligne) (AU059). */
+  powers?: { has(ref: string): Promise<boolean> } | null;
 }
 
 export class SignaturePapier {
