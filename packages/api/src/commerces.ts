@@ -17,6 +17,7 @@
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
   CessionCommerce,
+  TachesBail,
   ConfidentialiteCommerce,
   DossierCommerce,
   EstimationCommerce,
@@ -165,6 +166,7 @@ export function commercesCore(s: CommercesServices) {
     dossier,
     repreneurs: new RepreneursCommerce(s.db, s.journal, fiches, estimations, presentations, s.diffusion, opts),
     cessions: new CessionCommerce(s.db, s.journal, fiches, opts),
+    bail: new TachesBail(s.db, s.journal, fiches, opts),
     vigilance: new VigilanceCession(s.db, s.journal, s.vault, opts),
   };
 }
@@ -232,6 +234,8 @@ const ROUTES: CommercesRoute[] = [
   { method: 'POST', pattern: new RegExp(`^/commerces/cessions/${ID}/sequestre$`), name: 'commerces.cession.sequestre', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.cessions.setEscrow(c.acces, v, id!, { kind: b.kind, name: b.name })); }) },
   { method: 'POST', pattern: new RegExp(`^/commerces/cessions/${ID}/prete$`), name: 'commerces.cession.prete', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.cessions.declareReady(c.acces, v, id!)); } },
   { method: 'GET', pattern: /^\/commerces\/taches-cession$/, name: 'commerces.cession.taches', roles: ['agent'], handle: async (s, v) => reply(await core(s).cessions.tasksOf(v)) },
+  /* AU101b · Les jours limites de congé des baux commerciaux de l'agent. */
+  { method: 'GET', pattern: /^\/commerces\/taches-bail$/, name: 'commerces.bail.taches', roles: ['agent'], handle: async (s, v) => reply(await core(s).bail.tasksOf(v)) },
   /* La vigilance de la cession (CE08) [R118, R14]. */
   { method: 'POST', pattern: new RegExp(`^/commerces/cessions/${ID}/acquereur$`), name: 'commerces.cession.acquereur', roles: WRITERS, handle: withBody(async (s, v, [id], b) => { const c = core(s); return reply(await c.vigilance.setBuyer(c.acces, v, id!, { personId: b.personId, legalPerson: b.legalPerson })); }) },
   { method: 'GET', pattern: new RegExp(`^/commerces/cessions/${ID}/acquereur$`), name: 'commerces.cession.acquereur_lu', roles: WRITERS, handle: async (s, v, [id]) => { const c = core(s); return reply(await c.vigilance.buyer(c.acces, v, id!)); } },
