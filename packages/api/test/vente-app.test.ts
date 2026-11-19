@@ -249,7 +249,7 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
 
   it('[R47] sur une annonce validée, le retrait est dit avant d’enregistrer ; sur un brouillon, rien', async () => {
     const validated = await open({ 'GET /v1/annonces/b1/brouillon': ok({ ...FULL, validated: { at: '2027-02-12T11:00:00.000Z' } }) });
-    expect(validated.els['vente-corps']!.textContent).toContain('l’annonce est retirée de tous les canaux');
+    expect(validated.els['vente-corps']!.textContent).toContain('l’annonce est retirée des canaux');
     const draft = await open();
     expect(draft.els['vente-corps']!.textContent).not.toContain('retirée de tous les canaux');
   });
