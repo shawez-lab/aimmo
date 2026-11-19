@@ -711,8 +711,7 @@ export const APP_JS = `'use strict';
   }
   function wipe() {
     // AU018 : la session finie, la visite sans réseau oublie la clé et l'agent.
-    var H = offlineApp();
-    if (H) H.stop();
+    if (OFF) OFF.stop();
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     clear($('dictee-accueil'));
     clear($('remises-accueil'));
@@ -2153,7 +2152,7 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
-  function offlineApp() { return typeof AimmoHorsLigne === 'undefined' ? null : AimmoHorsLigne; }
+  var OFF = typeof AimmoHorsLigne === 'undefined' ? null : AimmoHorsLigne;
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2198,13 +2197,12 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) { notifLink(); var H = offlineApp(); if (H) H.prepare(key, show, function () { enter(key); }); } return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); if (OFF) OFF.prepare(key, show, enter); } return true; });
     }, function () {
       if (mine !== session) return false;
       // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
-      var H = offlineApp();
       var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
-      return H ? H.start(key, show, function () { enter(key); }, function () { return mine === session; }).then(function (ok) { return ok || no(); }, no) : no();
+      return OFF ? OFF.start(key, show, enter, function () { return mine === session; }).then(function (ok) { return ok || no(); }, no) : no();
     });
   }
   document.addEventListener('DOMContentLoaded', function () {

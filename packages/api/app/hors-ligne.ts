@@ -289,7 +289,7 @@ function render() {
   return Promise.all([readPack(o), excl(function () { return current(o); })]).then(function (got) {
     var p = got[0], box = got[1];
     clear(root);
-    if (ui.back) root.appendChild(btn('Retour à ma journée', function () { ui.open = false; ui.back(); }, 'retour'));
+    if (ui.back) root.appendChild(btn('Retour à ma journée', function () { ui.open = false; ui.back(ui.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
     var etat = el('p', '', 'etat');
     etat.setAttribute('role', 'status');
