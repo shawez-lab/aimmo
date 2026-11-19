@@ -13,7 +13,7 @@ import {
   type SqlDatabase,
   type Viewer,
 } from '../src/index.ts';
-import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
+import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, bindingHolds, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
@@ -71,6 +71,19 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Chauffage au gaz.')).toEqual(['fait_sans_source:chauffage au gaz']);
     expect(codes('Au rez-de-chaussée.')).toEqual(['fait_sans_source:rez-de-chaussée']);
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
+  });
+
+  it('[R47] AU066 · une source rangée reste vraie si son champ dit encore la même chose, même quand un autre champ devient égal', () => {
+    // « 5 étages » relié au nombre d'étages : l'étage du bien corrigé de 3 à 5 ne le rend pas faux.
+    expect(bindingHolds({ field: 'floorsTotal', value: '5' }, { ...FACTS, floor: 5, floorsTotal: 5 })).toBe(true);
+    // « 3e étage » relié à l'étage : l'étage corrigé à 2 le rend faux, même si l'immeuble a 3 étages.
+    expect(bindingHolds({ field: 'floor', value: '3' }, { ...FACTS, floor: 2, floorsTotal: 3 })).toBe(false);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: ['balcon'] })).toBe(true);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: [] })).toBe(false);
+    expect(bindingHolds({ field: 'city', value: 'Dijon' }, FACTS)).toBe(true);
+    expect(bindingHolds({ field: 'energyClass', value: 'D' }, { ...FACTS, energyClass: 'E' })).toBe(false);
+    // Un nombre en lettres n'est pas relu : il ne vaut plus.
+    expect(bindingHolds({ field: 'rooms', value: 'trois' }, { ...FACTS, rooms: 3 })).toBe(false);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {

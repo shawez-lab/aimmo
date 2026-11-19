@@ -17,7 +17,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
+import { bindingHolds, fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 import { computeMentions, MentionsAnnonce, type MentionItem } from './mentions.ts';
 
@@ -315,9 +315,9 @@ export class Annonces {
     const fresh = traceListing(draft.title, draft.body, f.facts);
     if (!fresh.ok) return null;
     if (f.sheetVersion === draft.sheetVersion) return draft;
-    // La fiche a changé depuis la validation : chaque nombre et chaque fait doit encore venir du même champ, avec la même
-    // valeur. Un étage corrigé que le nombre d'étages de l'immeuble « explique » encore rend la phrase fausse [R47].
-    const bindings = (list: SourcedSentence[]) => JSON.stringify(list.map((s) => [s.text, s.sources.map((x) => `${String(x.field)}=${x.value}`).sort()]));
-    return bindings(fresh.sentences) === bindings(draft.sentences) ? draft : null;
+    // La fiche a changé depuis la validation : chaque source rangée doit encore être vraie, dans son champ. Un étage
+    // corrigé que le nombre d'étages de l'immeuble « explique » encore rend la phrase fausse ; un autre champ devenu
+    // égal ne la rend pas fausse [R47].
+    return draft.sentences.every((s) => s.sources.every((x) => bindingHolds(x, f.facts))) ? draft : null;
   }
 }

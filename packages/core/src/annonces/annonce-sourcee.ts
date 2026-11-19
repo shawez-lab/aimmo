@@ -311,6 +311,22 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
   return { text: sentence, sources, problems };
 }
 
+/**
+ * Une source rangée à la validation est-elle encore vraie pour la fiche du jour (AU066) ? Le nombre vaut encore son
+ * champ, l'équipement ou l'état est encore dit, la ville et la classe sont les mêmes. Un nombre écrit en lettres n'est
+ * pas relu : prudence, il ne vaut plus.
+ */
+export function bindingHolds(source: { field: keyof ListingFacts; value: string }, facts: ListingFacts): boolean {
+  const { field, value } = source;
+  if (field === 'city') return facts.city !== null && norm(facts.city) === norm(value);
+  if (field === 'energyClass' || field === 'climateClass') return facts[field] === value;
+  const feature = FEATURES.find((f) => f.field === field && f.terms.some((t) => norm(t) === norm(value)));
+  if (feature) return feature.has(facts);
+  const n = parseNumber(value);
+  if (!Number.isFinite(n)) return false;
+  return numericSources(facts).some((s) => s.field === field && s.value === n);
+}
+
 /** Contrôle tout un texte, titre compris : chaque phrase avec ses sources et ses problèmes. */
 export function traceListing(title: string, body: string, facts: ListingFacts): TraceResult {
   const all = [...sentences(title), ...sentences(body)].map((s) => traceSentence(s, facts));
