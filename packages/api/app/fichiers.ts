@@ -2197,7 +2197,7 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) { notifLink(); if (OFF) OFF.prepare(key, show, enter); } return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); if (OFF) OFF.preparer(key, show, enter); } return true; });
     }, function () {
       if (mine !== session) return false;
       // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.

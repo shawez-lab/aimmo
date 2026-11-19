@@ -369,7 +369,7 @@ function shotTools(li, a, s) {
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) sync(ui.key); });
 
 G.AimmoHorsLigne = Object.freeze({
-  prepare: prepare,
+  preparer: prepare,
   start: start,
   sync: sync,
   add: add,
