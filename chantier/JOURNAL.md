@@ -1468,3 +1468,7 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 08:39 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié (AU007)
 - 2026-11-19 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:13 par la séance relancée à 08:11, qui travaille sur AU019 #698)
 - 2026-11-19 08:50 · VOIE 3 : AU112 (#694, joindre son référent d'un toucher) et AU113 (#693, langue ouverte par déclaration ou relecteur désigné ; relecteur parti ou remplacé, validation tombée) fusionnées ; ouverte : #697 (AU066, la correction ne retire plus l'annonce en ligne) ; corrections poussées sur #685, #692, #696, #697
+- 2026-11-19 09:03 · AU018 · fusionnée (#684, 0ce44fa0) après une vérification GitHub verte, branche mise à jour avec main · prochaine : AU019
+- 2026-11-19 09:03 · AU019 · copie chiffrée des objets des quatre stockages et exercice qui restaure base et fichiers contre leurs empreintes, lecteur des références obligatoire ; relecture forte 1 P1 corrigé, Codex rien ; fusionnée (#698, d1ecc0fd) · prochaine : AU019b
+- 2026-11-19 09:03 · VOIE 2 : AU018 puis AU019, 0ce44fa0 et d1ecc0fd (main), relancé non
+- 2026-11-19 09:03 · VOIE 2 : relance refusée, « Mes trois dernières séances ont-elles produit au moins un commit ? » : non (séance de 07:04 sans commit)

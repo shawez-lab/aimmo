@@ -250,8 +250,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU019 · La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre
-- Statut : en cours (voie 2)
-- Reste : proposition #698 (copie et restauration des objets des quatre stockages, exercice complet, lecteur des références obligatoire), en vérification. Suite : AU019b.
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#698) (copie et restauration des objets des quatre stockages, exercice complet, lecteur des références obligatoire) ; Codex rien. Suite : AU019b.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A019 (bloquant), endroit : C/sauvegarde/copie.ts ; docs/SAUVEGARDE.md.
 - Constat de l'audit : La sauvegarde décrite copie la base SQL, pas les octets des photos, scans signés et pièces du coffre : restaurer les références ne restaure pas mes dossiers.
