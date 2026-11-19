@@ -705,6 +705,14 @@ export class Factures {
     };
   }
 
+  /** La ligne du journal d'un statut rangé, et l'alerte d'une facture rejetée ou refusée : une seule fois chacune. */
+  private async noteStatus(fileId: string, label: string, code: number, at: string): Promise<void> {
+    const seen = (await this.journal.bySubject(`sale_file:${fileId}`)).some((e) => e.type === 'facture.statut' && e.data.label === label && e.data.code === code && e.data.at === at);
+    if (!seen) await appendEvent(this.journal, { type: 'facture.statut', actor: 'system:pilotage', subject: `sale_file:${fileId}`, data: { rule: 'R71', label, code, at } }, this.now);
+    if (code === 213) await this.waiting(fileId, 'rejetee:' + label);
+    if (code === 210) await this.waiting(fileId, 'refusee:' + label);
+  }
+
   /**
    * Le suivi réel : pour chaque facture réelle déposée dont le cycle n'est pas fini, les statuts nouveaux que la
    * plateforme rend sont rangés dans l'ordre, une seule fois chacun ; un code hors de la liste de la réforme n'est
@@ -713,6 +721,14 @@ export class Factures {
    */
   async track(networkId: string): Promise<number> {
     if (this.plateforme.mode !== 'reel' || !this.plateforme.statuses) return 0;
+    // D'abord, ce qu'une coupure aurait laissé après un statut rangé : sa ligne du journal et l'alerte d'une facture
+    // rejetée ou refusée, repris même pour une facture au cycle fini.
+    const stored = await this.db.all<{ invoice_id: string; file_id: string; code: number; at: string }>(
+      `SELECT s.invoice_id, i.file_id, s.code, s.at FROM invoice_real_statuses s JOIN invoices i ON i.id = s.invoice_id
+       WHERE i.network_id = ? ORDER BY s.invoice_id, s.seq`,
+      [networkId],
+    );
+    for (const st of stored) await this.noteStatus(st.file_id, (await this.byId(st.invoice_id))!.content.label, st.code, st.at);
     const rows = await this.db.all<{ invoice_id: string; platform_ref: string; file_id: string }>(
       `SELECT d.invoice_id, d.platform_ref, i.file_id FROM invoice_real_deposits d JOIN invoices i ON i.id = d.invoice_id
        WHERE i.network_id = ? AND NOT EXISTS (SELECT 1 FROM invoice_real_statuses s WHERE s.invoice_id = d.invoice_id AND s.code IN (${FINAL_STATUSES.join(', ')}))
@@ -742,9 +758,7 @@ export class Factures {
         );
         if (changes !== 1) continue;
         added += 1;
-        await appendEvent(this.journal, { type: 'facture.statut', actor: 'system:pilotage', subject: `sale_file:${r.file_id}`, data: { rule: 'R71', label, code: st.code } }, this.now);
-        if (st.code === 213) await this.waiting(r.file_id, `rejetee:${label}`);
-        if (st.code === 210) await this.waiting(r.file_id, `refusee:${label}`);
+        await this.noteStatus(r.file_id, label, st.code, st.at);
         if ((FINAL_STATUSES as readonly number[]).includes(st.code)) break;
       }
     }

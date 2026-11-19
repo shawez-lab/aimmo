@@ -380,4 +380,33 @@ describeWithSqlite('AU013 · factures réelles, à côté des factures d’essai
     await job.run({ job: 'pilotage.passage', slot: 's2', at: t.now() } as never);
     expect((await t.db.all<{ code: number }>('SELECT code FROM invoice_real_statuses WHERE invoice_id = ?', [id])).map((r) => r.code)).toEqual([200]);
   });
+
+  it('[R71] une panne du journal après un statut rangé : la ligne et l’alerte de la facture rejetée sont reprises au suivi suivant', async () => {
+    const t = await deed();
+    let broken = true;
+    const journal = {
+      ...t.journal,
+      all: () => t.journal.all(),
+      last: () => t.journal.last(),
+      bySubject: (s: string) => t.journal.bySubject(s),
+      byPeriod: (a: string, b: string) => t.journal.byPeriod(a, b),
+      append: async (e: Parameters<typeof t.journal.append>[0]) => {
+        if (broken && e.type === 'facture.statut') throw new Error('journal en panne');
+        return t.journal.append(e);
+      },
+    };
+    const f = new Factures(t.db, t.acces, journal, { now: t.now, plateforme: t.reelle, identites: IDENTITES });
+    await f.prepare(t.network.id);
+    const [h] = await drafts(t, f);
+    const real = await f.validate(t.direction, h!.id);
+    if (!real.ok) throw new Error('real');
+    t.reelle.cycle.set(real.value.transmitted!.platformRef, [{ code: 213, at: '2027-06-10T08:01:00Z' }]);
+    await expect(f.track(t.network.id)).rejects.toThrow(/journal en panne/);
+    broken = false;
+    await f.track(t.network.id);
+    await f.track(t.network.id);
+    const all = await t.journal.all();
+    expect(all.filter((e) => e.type === 'facture.statut').map((e) => [e.data.label, e.data.code])).toEqual([['FAC-2027-00001', 213]]);
+    expect(all.filter((e) => e.type === 'facture.attente' && e.data.code === 'rejetee:FAC-2027-00001')).toHaveLength(1);
+  });
 });
