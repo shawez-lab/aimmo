@@ -22,6 +22,7 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { designerTout } from './designation-jeu.ts';
+import { mandateFeeAt } from '../src/dossiers/acte.ts';
 
 // Modèles, registre et personnes inventés.
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
@@ -212,5 +213,79 @@ describeWithSqlite('D07 · avenant au mandat', () => {
     const day = localTime(new Date(row!.signed_at), 'Europe/Paris').date;
     const r = await t.avenants.register(t.agent, a.document.id, { signedAt: new Date(`${day}T00:00:00.000Z`), place: 'agence', scanRef: 'scans/a.pdf' });
     expect(r).not.toMatchObject({ code: 'before_mandate' });
+  });
+});
+
+describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et date d’effet', () => {
+  const sign = (t: Awaited<ReturnType<typeof setup>>, documentId: string, ref: string, signedAt = LATER) =>
+    t.avenants.register(t.agent, documentId, { signedAt, place: 'agence', scanRef: `scans/${ref}.pdf` });
+
+  it('[R41] de nouveaux honoraires et leur charge ne valent qu’une fois l’avenant signé', async () => {
+    const t = await setup();
+    const a = await t.amendment({ 'avenant.honoraires': 8000, 'avenant.honoraires_charge': 'acquereur' });
+    if (!a.ok) throw new Error(a.code);
+    expect(a.document.status).toBe('complet');
+    expect(a.document.content).toContain('honoraires portés à 8');
+    expect(a.document.content).toContain('honoraires désormais à la charge de l’acquéreur');
+    expect(await mandateTerms(t.db, t.mandateId)).toMatchObject({ priceEur: 200000, feeEur: 9000, feeCharge: 'vendeur', mandateType: 'simple' });
+    const s1 = await sign(t, a.document.id, 'h1');
+    expect(s1).toMatchObject({ ok: true });
+    const terms = await mandateTerms(t.db, t.mandateId);
+    expect(terms).toMatchObject({ priceEur: 200000, durationMonths: 12, feeEur: 8000, feeCharge: 'acquereur' });
+    expect(terms?.amendments).toMatchObject([{ documentId: a.document.id, feeEur: 8000, feeCharge: 'acquereur', priceEur: null, effectiveOn: '2027-03-01' }]);
+    // Un avenant suivant, sur le seul prix, garde les honoraires changés : il ne les ramène pas à ceux du mandat.
+    const b = await t.amendment({ 'avenant.prix': 190000 });
+    if (!b.ok) throw new Error(b.code);
+    expect((await sign(t, b.document.id, 'h2')).ok).toBe(true);
+    expect(await mandateTerms(t.db, t.mandateId)).toMatchObject({ priceEur: 190000, feeEur: 8000, feeCharge: 'acquereur' });
+  });
+
+  it('[R41] de nouveaux honoraires sans nouveau prix restent au barème du prix en vigueur', async () => {
+    const t = await setup();
+    // 5 % de 200 000 € : 10 000 € au plus.
+    const high = await t.amendment({ 'avenant.honoraires': 11000 });
+    if (!high.ok) throw new Error(high.code);
+    const r = await sign(t, high.document.id, 'h3');
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+    const fair = await t.amendment({ 'avenant.honoraires': 10000 });
+    if (!fair.ok) throw new Error(fair.code);
+    expect((await sign(t, fair.document.id, 'h4')).ok).toBe(true);
+  });
+
+  it('[R40] devenir exclusif demande la clause mise en évidence ; le même type n’est pas un avenant', async () => {
+    const t = await setup();
+    expect(await t.amendment({ 'avenant.type': 'exclusif' })).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });
+    expect(await t.amendment({ 'avenant.type': 'simple' })).toEqual({ ok: false, rule: 'R40', code: 'bad_input' });
+    expect(await t.amendment({ 'avenant.type': 'semi' })).toMatchObject({ ok: false, code: 'bad_input' });
+    const v = await t.modeles.createVersion(t.direction, 'avenant_mandat', `${AMENDMENT}\n\n!! Le mandant s’interdit de vendre par un autre intermédiaire.`);
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate(t.as('compliance', 'c-1'), v.template.id);
+    const a = await t.amendment({ 'avenant.type': 'exclusif' });
+    if (!a.ok) throw new Error(a.code);
+    expect(a.document.content).toContain('mandat transformé en mandat de vente exclusif');
+    expect((await sign(t, a.document.id, 'h5')).ok).toBe(true);
+    expect((await mandateTerms(t.db, t.mandateId))?.mandateType).toBe('exclusif');
+  });
+
+  it('[R44] la date d’effet : rien ne change avant elle, prix et honoraires de l’annonce comme du calcul suivent', async () => {
+    const t = await setup();
+    for (const bad of ['2027-02-28', '2028-03-02', '01/04/2027', '2027-02-30']) {
+      expect(await t.amendment({ 'avenant.prix': 190000, 'avenant.date_effet': bad })).toMatchObject({ ok: false, code: 'bad_input' });
+    }
+    const a = await t.amendment({ 'avenant.prix': 190000, 'avenant.honoraires': 7000, 'avenant.date_effet': '2027-04-01' });
+    if (!a.ok) throw new Error(a.code);
+    expect(a.document.content).toContain(', à compter du 01/04/2027');
+    expect((await sign(t, a.document.id, 'h6')).ok).toBe(true);
+    const before = await mandateTerms(t.db, t.mandateId, new Date('2027-03-31T12:00:00.000Z'));
+    expect(before).toMatchObject({ priceEur: 200000, feeEur: 9000, amendments: [] });
+    const after = await mandateTerms(t.db, t.mandateId, new Date('2027-04-01T08:00:00.000Z'));
+    expect(after).toMatchObject({ priceEur: 190000, feeEur: 7000, amendments: [{ effectiveOn: '2027-04-01' }] });
+    // Une date d'effet seule ne change rien : l'objet manque.
+    const alone = await t.amendment({ 'avenant.date_effet': '2027-04-01' });
+    expect(alone.ok && alone.document.missing).toEqual(['avenant.objet']);
+    // Les honoraires d'un compromis suivent la date d'effet (calcul de la commission).
+    const diffusion = new Diffusion(t.db, t.acces, t.journal);
+    expect(await mandateFeeAt(t.db, diffusion, t.network.id, t.propertyId, '2027-03-20')).toMatchObject({ ok: true, feeEur: 9000, feeCharge: 'vendeur' });
+    expect(await mandateFeeAt(t.db, diffusion, t.network.id, t.propertyId, '2027-04-02')).toMatchObject({ ok: true, feeEur: 7000, feeCharge: 'vendeur' });
   });
 });

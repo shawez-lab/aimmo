@@ -247,8 +247,10 @@ export class ControlesSignature {
       facts = null;
     }
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
-    // Un avenant sans nouveau prix ne change pas les honoraires ; avec un nouveau prix, ils doivent rester au barème.
-    if (amendment && facts && facts.priceEur === null) return line(true, 'fees_unchanged');
+    // Un avenant qui ne touche ni au prix ni aux honoraires ne les change pas ; sinon, les honoraires en vigueur après lui
+    // restent au barème, sur le prix en vigueur après lui (AU057).
+    if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true) return line(true, 'fees_unchanged');
+    if (amendment && facts && facts.priceEur === null) facts = { ...facts, priceEur: facts.priceInForceEur ?? null };
     if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
     const schedule = await this.db.first<{ max_rate_bp: number; min_eur: number }>('SELECT max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);

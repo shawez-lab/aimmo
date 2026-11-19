@@ -307,19 +307,31 @@ globalThis.AIMMO_MANDAT = function (t) {
     price.setAttribute('inputmode', 'numeric');
     var months = field(box, 'avenant-duree', 'Nouvelle durée, en mois');
     months.setAttribute('inputmode', 'numeric');
+    // AU057 · honoraires, leur charge, type du mandat et date d'effet : chacun facultatif, rien ne change s'il est vide.
+    var fee = field(box, 'avenant-honoraires', 'Nouveaux honoraires, en euros');
+    fee.setAttribute('inputmode', 'numeric');
+    var charge = choice(box, 'avenant-charge', 'Honoraires à la charge', ['vendeur', 'acquereur'], { vendeur: 'du vendeur', acquereur: 'de l’acquéreur' }, 'Sans changement');
+    var kind = choice(box, 'avenant-type', 'Type du mandat', ['simple', 'exclusif'], { simple: 'Mandat simple', exclusif: 'Mandat exclusif' }, 'Sans changement');
+    var effect = field(box, 'avenant-effet', 'Prend effet le (vide : à la signature)');
+    effect.setAttribute('type', 'date');
     box.appendChild(button('Préparer l’avenant', act(function () {
-      var inputs = {}, p = price.value.trim(), d = months.value.trim();
+      var inputs = {}, p = price.value.trim(), d = months.value.trim(), h = fee.value.trim(), e = effect.value.trim();
       if (!who.value) { state('Choisissez le mandant.'); return false; }
-      if (!p && !d) { state('Dites le nouveau prix, la nouvelle durée, ou les deux.'); return false; }
-      if ((p && !/^[0-9]+$/.test(p)) || (d && !/^[0-9]+$/.test(d))) { state('Le prix et la durée : des nombres entiers, sans espace.'); return false; }
+      if (!p && !d && !h && !charge.value && !kind.value) { state('Dites ce qui change : le nouveau prix, la nouvelle durée, les honoraires, leur charge ou le type du mandat.'); return false; }
+      if ((p && !/^[0-9]+$/.test(p)) || (d && !/^[0-9]+$/.test(d)) || (h && !/^[0-9]+$/.test(h))) { state('Le prix, la durée et les honoraires : des nombres entiers, sans espace.'); return false; }
+      if (e && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(e)) { state('La date d’effet : un jour du calendrier.'); return false; }
       if (p) inputs['avenant.prix'] = Number(p);
       if (d) inputs['avenant.duree_mois'] = Number(d);
+      if (h) inputs['avenant.honoraires'] = Number(h);
+      if (charge.value) inputs['avenant.honoraires_charge'] = charge.value;
+      if (kind.value) inputs['avenant.type'] = kind.value;
+      if (e) inputs['avenant.date_effet'] = e;
       var mine = ++seq;
       state('Préparation…');
       return send('/v1/documents', 'POST', { kind: 'avenant_mandat', personId: who.value, propertyId: cur.id, mandateId: m.id, inputs: inputs }).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (res.ok) return load('Avenant préparé : contrôlez-le avant signature.');
-        state(res.body && res.body.code === 'bad_input' ? 'Le prix ou la durée ne convient pas : vérifiez la saisie.' : why(res, 'L’avenant n’est pas préparé : réessayez.'));
+        state(res.body && res.body.code === 'bad_input' ? 'Un changement ne convient pas (même type de mandat, date d’effet passée ou à plus d’un an) : vérifiez la saisie.' : res.body && res.body.code === 'no_evidence' ? 'Le modèle d’avenant n’a pas de clause d’exclusivité mise en évidence : l’avenant ne peut pas rendre le mandat exclusif.' : why(res, 'L’avenant n’est pas préparé : réessayez.'));
         return false;
       });
     })));

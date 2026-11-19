@@ -4,7 +4,7 @@
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
-import type { DocumentFacts } from './modeles.ts';
+import type { DocumentFacts, MandateType } from './modeles.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -23,8 +23,22 @@ export function mandateEndDay(signedAt: Date, months: number): string {
 export interface MandateTerms {
   priceEur: number | null;
   durationMonths: number | null;
-  /** Les avenants signés, dans l'ordre de leur signature. */
-  amendments: { documentId: string; signedAt: string; priceEur: number | null; durationMonths: number | null }[];
+  /** Les honoraires en vigueur et qui les paie, avenants compris (AU057). */
+  feeEur: number | null;
+  feeCharge: 'vendeur' | 'acquereur' | null;
+  /** Le type du mandat en vigueur : celui du mandat signé, ou celui qu'un avenant lui a donné (AU057). */
+  mandateType: MandateType;
+  /** Les avenants signés, dans l'ordre de leur signature, chacun avec le jour où il prend effet (AU057). */
+  amendments: {
+    documentId: string;
+    signedAt: string;
+    effectiveOn: string;
+    priceEur: number | null;
+    durationMonths: number | null;
+    feeEur: number | null;
+    feeCharge: 'vendeur' | 'acquereur' | null;
+    mandateType: MandateType | null;
+  }[];
 }
 
 const readFacts = (raw: string | null): DocumentFacts | null => {
@@ -37,17 +51,21 @@ const readFacts = (raw: string | null): DocumentFacts | null => {
 
 /**
  * Les conditions en vigueur d'un mandat : celles du mandat signé, modifiées par ses avenants signés, dans l'ordre.
- * Avec `asOf`, celles de ce jour-là, à Paris : un avenant signé plus tard ne compte pas encore (D10).
+ * Avec `asOf`, celles de ce jour-là, à Paris : un avenant signé plus tard, ou dont la date d'effet n'est pas encore
+ * venue, ne compte pas encore (D10, AU057). Un avenant ne change les honoraires que s'il le dit (`feeChanged`).
  */
 export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Date): Promise<MandateTerms | null> {
-  const base = await db.first<{ facts: string | null }>(
-    'SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
+  const base = await db.first<{ facts: string | null; kind: string }>(
+    'SELECT d.facts, d.kind FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
     [mandateId],
   );
   if (!base) return null;
   const facts = readFacts(base.facts);
   let priceEur = facts?.priceEur ?? null;
   let durationMonths = facts?.durationMonths ?? null;
+  let feeEur = facts?.feeEur ?? null;
+  let feeCharge = facts?.feeCharge ?? null;
+  let mandateType: MandateType = base.kind === 'mandat_vente_exclusif' ? 'exclusif' : 'simple';
   const rows = await db.all<{ document_id: string; signed_at: string; facts: string | null }>(
     'SELECT a.document_id, a.signed_at, d.facts FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE a.mandate_id = ? ORDER BY a.signed_at, a.created_at, a.document_id',
     [mandateId],
@@ -55,13 +73,30 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Da
   const amendments: MandateTerms['amendments'] = [];
   const lastDay = asOf ? localTime(asOf, TIME_ZONE).date : null;
   for (const row of rows) {
-    if (lastDay !== null && localTime(new Date(row.signed_at), TIME_ZONE).date > lastDay) continue;
     const f = readFacts(row.facts);
+    const signedDay = localTime(new Date(row.signed_at), TIME_ZONE).date;
+    // Il prend effet à sa signature, ou plus tard au jour qu'il dit ; jamais avant d'être signé.
+    const effectiveOn = typeof f?.effectiveOn === 'string' && f.effectiveOn > signedDay ? f.effectiveOn : signedDay;
+    if (lastDay !== null && effectiveOn > lastDay) continue;
     if (f?.priceEur !== null && f?.priceEur !== undefined) priceEur = f.priceEur;
     if (f?.durationMonths !== null && f?.durationMonths !== undefined) durationMonths = f.durationMonths;
-    amendments.push({ documentId: row.document_id, signedAt: row.signed_at, priceEur: f?.priceEur ?? null, durationMonths: f?.durationMonths ?? null });
+    if (f?.feeChanged === true) {
+      feeEur = f.feeEur ?? null;
+      feeCharge = f.feeCharge ?? null;
+    }
+    if (f?.mandateType === 'simple' || f?.mandateType === 'exclusif') mandateType = f.mandateType;
+    amendments.push({
+      documentId: row.document_id,
+      signedAt: row.signed_at,
+      effectiveOn,
+      priceEur: f?.priceEur ?? null,
+      durationMonths: f?.durationMonths ?? null,
+      feeEur: f?.feeChanged === true ? (f.feeEur ?? null) : null,
+      feeCharge: f?.feeChanged === true ? (f.feeCharge ?? null) : null,
+      mandateType: f?.mandateType ?? null,
+    });
   }
-  return { priceEur, durationMonths, amendments };
+  return { priceEur, durationMonths, feeEur, feeCharge, mandateType, amendments };
 }
 
 /** Le mandat est-il échu à cette date (jour de Paris), selon sa durée en vigueur ? Inconnue : échu, par prudence. */
