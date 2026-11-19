@@ -743,6 +743,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU073b · Dessiner le secteur d'une recherche au doigt, sur une carte
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU073
+- Cahier : M08 Acquéreurs et visites ; suite de l'audit A073 (relecture de Codex sur #692).
+- Constat : le secteur dessiné existe dans le serveur (polygone de 3 à 40 points) mais l'écran ne propose que le rayon autour d'un lieu.
+- Objectif : sur la fiche de l'acquéreur, l'agent trace le secteur sur une carte, au doigt, et le range ; la carte se charge à la demande, hors du budget de l'application.
+- Critères : un test d'écran envoie le polygone tracé ; le budget de l'application tient ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
 ### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
 - Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
@@ -960,7 +969,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : un meublé étudiant se fait avec son modèle validé, jamais avec celui du meublé ordinaire (test) ; un bail mobilité porte sa durée et son motif, sans dépôt (test) ; sans modèle, refus (test).
 - Attend : H08 (textes validés par la conformité) pour un usage réel ; le code et les tests avant.
 ### AU097 · Manque
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A097 (majeur), endroit : C/location/bail.ts, `locataire.nom` ; C/location/choix.ts.
 - Constat de l'audit : Manque : un bail commun de colocation avec plusieurs cotitulaires et leurs signatures n’a pas de modèle de parties adapté.
@@ -1112,7 +1121,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU112 · Mon référent n’est présenté que par son prénom et une date
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A112 (mineur), endroit : UI/integration.ts, `renderReferent`.
 - Constat de l'audit : Mon référent n’est présenté que par son prénom et une date, sans moyen direct de le joindre depuis ce bloc.
@@ -1121,7 +1130,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU113 · L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A113 (mineur), endroit : C/annonces/traductions.ts, validation de langue.
 - Constat de l'audit : L’anglais reste toujours ouvert à la validation même si je n’ai déclaré aucune maîtrise de cette langue.
