@@ -725,7 +725,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU072 · Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A072 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `BuyerSearch`.
 - Constat de l'audit : Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée.
