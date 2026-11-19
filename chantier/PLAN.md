@@ -186,7 +186,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : H24 (l'avocat dit quel titre afficher pour un agent commercial sans carte personnelle ; la règle R07 de Shawez impose « agent immobilier »). En attendant, préparer le réglage du titre par statut, sans changer le texte affiché.
 
 ### AU013 · Je ne peux émettre que des factures d’essai
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A013 (bloquant), endroit : C/pilotage/factures.ts, `PlateformeFacturation`, `PlateformeEssai`, H26.
 - Constat de l'audit : Je ne peux émettre que des factures d’essai, sans valeur comptable, puis je dois refaire ma facturation ailleurs.
@@ -969,7 +969,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU098b · Le calendrier de l'outre-mer pour les autres lecteurs de l'interdiction de louer
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU098
 - Cahier : M17 Investir ; M15 Louer ; audit A098.
 - Objectif : les contraintes Investir, la veille DPE et le score d'adresse appellent `banDate` sans territoire et appliquent le calendrier métropolitain à un bien ultramarin ; leur passer le territoire du bien (`territoryOf`).
@@ -1002,6 +1002,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+
+### AU101b · Les jours limites de congé du bail commercial, en tâche et à l'écran
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU101
+- Cahier : M16 Commerces et entreprises ; audit A101.
+- Objectif : la tâche quotidienne de M16 range une tâche à l'agent du bien 60 jours avant chaque jour limite de congé (triennale et fin) donné par `leaseMilestones` ; l'écran du commerce montre ces dates, lues du serveur.
+- Critères : une tâche, une seule, 60 jours avant le jour limite (test) ; aucune sans début ni durée (test) ; l'écran affiche les dates du serveur sans les calculer (test).
+- Attend : rien.
 ### AU102 · Un local vacant sans loyer n’a pas de méthode d’estimation exploitable
 - Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien

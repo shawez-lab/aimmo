@@ -44,7 +44,7 @@ describeWithSqlite('W10 · M15 branché dans le socle', () => {
     const created = await t.call('alex', 'POST', '/location', { propertyId: t.home, ownerPersonId: t.owner });
     expect(created).toMatchObject({ status: 200, body: { ok: true } });
     const id = created.body.data.listingId as string;
-    const facts = { furnished: false, rentCents: 65_000, chargesCents: 5_000, livingAreaHundredths: 4_250, energyClass: 'G', finalEnergyKwh: 430, buildYear: 1985, electricityOver15: false, gas: 'aucune', leaseStart: '2027-09-01' };
+    const facts = { furnished: false, rentCents: 65_000, chargesCents: 5_000, livingAreaHundredths: 4_250, energyClass: 'G', finalEnergyKwh: 430, buildYear: 1985, electricityOver15: false, mainRoomHundredths: 1_800, ceilingHeightCm: 250, localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true }, gas: 'aucune', leaseStart: '2027-09-01' };
     expect((await t.call('alex', 'POST', `/location/${id}/faits`, facts)).status).toBe(200);
     expect(await t.call('alex', 'POST', `/location/${id}/controle`)).toMatchObject({ status: 200, body: { ok: true, data: { decision: 'bloque' } } });
     // La conformité lit, n'écrit pas : refusée avant la lecture du corps, et le refus au journal [R16].
