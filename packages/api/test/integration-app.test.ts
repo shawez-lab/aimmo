@@ -79,7 +79,7 @@ const AGENT: Record<string, Answer> = {
   'GET /v1/annonces': ok([]),
   'GET /v1/apres-vente/journee': ok({ remercier: [], recommandations: [], taches: [] }),
   'GET /v1/reseau/mon-dossier': ok(FILE),
-  'GET /v1/reseau/mon-referent': ok({ firstName: 'Bérénice', until: '2027-10-10' }),
+  'GET /v1/reseau/mon-referent': ok({ firstName: 'Bérénice', until: '2027-10-10', phone: '06 00 00 00 01', email: 'berenice@exemple.test' }),
   'GET /v1/reseau/mon-bac-a-sable': ok(SANDBOX),
   'GET /v1/reseau/ma-formation': ok(COUNTER),
   'GET /v1/reseau/academie': ok(TRACKS),
@@ -197,6 +197,9 @@ describe('J14 · écrans de M14 dans l’application', () => {
     expect(text).toContain('l’accès aux clients reste fermé');
     expect(text).toContain('Bérénice');
     expect(text).toContain('Votre référent jusqu’au ');
+    // AU112 · un toucher pour joindre le référent, par ses coordonnées professionnelles.
+    const links = t.body().all().filter((e) => e.tagName === 'a').map((e) => [e.textContent, e.attributes.href]);
+    expect(links).toEqual(expect.arrayContaining([['Appeler Bérénice', 'tel:0600000001'], ['Écrire à Bérénice', 'mailto:berenice@exemple.test']]));
     expect(text).toContain('Contact reçu');
     expect(text).toContain('Qualifiez le contact inventé.');
     expect(text).toContain(INJECTED);
