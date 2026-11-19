@@ -23,6 +23,7 @@ import type { JournalStore } from '../journal/types.ts';
 export const COPY_FORMAT = 1;
 const PAGE_ROWS = 500;
 const ROWID = '__copie_rang__';
+export const ROWID_COLUMN = ROWID;
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 export const COPY_ID = /^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$/;
@@ -138,8 +139,8 @@ async function readSchema(db: SqlDatabase): Promise<SchemaObject[]> {
   );
 }
 
-/** Une table, page après page, dans l'ordre de ses rangs. */
-async function* pagesOf(db: SqlDatabase, table: string): AsyncGenerator<Row[]> {
+/** Une table, page après page, dans l'ordre de ses rangs ; la colonne `ROWID_COLUMN` porte le rang. */
+export async function* pagesOf(db: SqlDatabase, table: string): AsyncGenerator<Row[]> {
   let after = -9_007_199_254_740_991;
   for (;;) {
     const rows = await db.all<Row>(`SELECT rowid AS ${ROWID}, * FROM ${q(table)} WHERE rowid > ? ORDER BY rowid LIMIT ?`, [after, PAGE_ROWS]);
