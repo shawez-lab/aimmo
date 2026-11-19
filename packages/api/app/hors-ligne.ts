@@ -293,7 +293,10 @@ function prepare(key, show, back) {
 /** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
 function stop() { ui = null; }
 /** Sans réseau au démarrage : la visite préparée s'ouvre, si un paquet du jour est là. */
-function start(key, show, back, alive) {
+function start(key, show, back, alive, none) {
+  return open(key, show, back, alive).then(function (ok) { return ok || (none ? none() : false); }, function () { return none ? none() : false; });
+}
+function open(key, show, back, alive) {
   // Seule la clé qui a préparé le paquet l'ouvre : une autre clé tapée sans réseau ne voit rien [R16].
   return tag(key).then(get).then(function (o) {
     return typeof o === 'string' ? readPack(o).then(function (p) { return p ? { o: o, p: p } : null; }) : null;

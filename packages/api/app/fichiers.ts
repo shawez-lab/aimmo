@@ -2206,7 +2206,7 @@ ${LOUER_JS}
       if (mine !== session) return false;
       // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
       var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
-      return OFF ? OFF.start(key, show, enter, function () { return mine === session; }).then(function (ok) { return ok || no(); }, no) : no();
+      return OFF ? OFF.start(key, show, enter, function () { return mine === session; }, no) : no();
     });
   }
   document.addEventListener('DOMContentLoaded', function () {

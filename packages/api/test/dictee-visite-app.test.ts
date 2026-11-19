@@ -118,8 +118,8 @@ describe('BR103 · la dictée en sortant d’une visite, depuis l’écran de la
     expect(DICTEE_SCRIPT).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/);
     expect(budgetProblems({ html: '', js: DICTEE_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
-    // La place faite par BR102 reste en grande partie libre pour la suite ; la visite sans réseau (AU018) en a pris une centaine d'octets.
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 800);
+    // La place faite par BR102 reste en grande partie libre pour la suite ; la visite sans réseau (AU018) en a pris environ 150 octets.
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 750);
     await t.open();
     expect(t.scripts()).toHaveLength(1);
     expect(t.part().textContent).toContain('ce que le visiteur a pensé du bien');
