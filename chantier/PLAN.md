@@ -86,7 +86,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H24).
 
 ### AU004 · Je dois garder mon ancien logiciel pour publier sur les portails
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#675, `1d14b873`), migration `4010`, R668 en service. Constat confirmé (seul le flux XML d'essai). Décidé, lecture prudente : les portails sont ceux de HX38 (réglés actifs par la direction, choisis pour le bien, sans retrait temporaire, champs exigés remplis) ; chaque passage envoie à chacun `publier`, `modifier` ou `retirer` depuis la version publiée ; « publiée » seulement sur l'accusé du portail ; chaque geste rangé (« envoi », clé, ordre, version) avant d'être envoyé, renvoyé avec la même clé tant qu'il reste incertain ; connecteur idempotent sur la clé et qui ignore un geste d'ordre plus petit ; sans connecteur : « essai », ou échec `connecteur_absent` pour une annonce déjà en ligne. Routes `GET/POST /v1/annonces-portails`, `POST/GET /v1/annonces/<id>/portails`. Relecture forte 2 P1, Codex 5 P0 en quatre tours, tous corrigés avec tests, puis rien. Restent : connecteurs réels de chaque portail (H10) ; écran de la direction et vue par portail dans « Mettre en vente » (`app.ts`).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A004 (bloquant), endroit : docs/PORTAILS.md, P07, H10.
 - Constat de l'audit : Je dois garder mon ancien logiciel pour publier sur les portails : AIMMO ne fournit que ses formats XML d’essai.

@@ -1451,3 +1451,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 03:32 · VOIE 2 : relance refusée, question 2 (la tâche de cette séance n'a pas pu être terminée : vérification GitHub hors délai, une relance attendrait la même chose)
 - 2026-11-19 03:32 · VOIE 2 : AU013, d2b7399 (branche, #678), relancé non
 - 2026-11-19 03:39 · VOIE 3 : AU101b (#677, congés de bail en tâches) fusionnée ; #681 (AU071, AU115) corrigée après Codex
+- 2026-11-19 03:53 · AU004 · diffusion accusée sur chaque portail de HX38 : publier, modifier, retirer depuis la version publiée, « publiée » seulement sur accusé, gestes rangés avant envoi, clé et ordre pour les reprises, essai sans connecteur ; relecture forte 2 P1, Codex 5 P0 corrigés ; fusionnée (#675, 1d14b873) · prochaine : AU005
