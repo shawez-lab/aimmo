@@ -1473,3 +1473,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 09:03 · VOIE 2 : AU018 puis AU019, 0ce44fa0 et d1ecc0fd (main), relancé non
 - 2026-11-19 09:03 · VOIE 2 : relance refusée, « Mes trois dernières séances ont-elles produit au moins un commit ? » : non (séance de 07:04 sans commit)
 - 2026-11-19 09:35 · VOIE 3 : AU065 (#699, période des prix de l'énergie telle que le DPE l'écrit) fusionnée ; ouverte : #701 (AU062, surface au centième) ; AU069 bloquée par H73 (tables des traductions) ; AU064 prise
+- 2026-11-19 10:05 · VOIE 3 : AU070 (#685, maison ou appartement, à la création, à l'import ou sur la fiche) fusionnée ; ouverte : #702 (AU064, numéro ADEME et valeurs du DPE au flux des portails) ; corrections poussées sur #696, #697, #701
