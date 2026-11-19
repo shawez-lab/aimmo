@@ -20,6 +20,7 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Biens, mandats et numéro de carte inventés.
 const S = ' ';
@@ -36,7 +37,10 @@ const sheet = (patch: Partial<PropertySheet> = {}): PropertySheet => ({
   ...patch,
 });
 
-const CARTE = `Carte professionnelle n° ${CARD}.`;
+// L'agent du bien et son statut, inventés (AU007).
+const PRO = { firstName: 'Camille', lastName: 'Exemple', status: 'agent_commercial', rsacNumber: '900 000 001', rsacRegistry: 'Dijon', cardHolder: 'Réseau Test SAS' } as const;
+const INTERVENANT = 'Votre agent : Camille Exemple, agent commercial, RSAC de Dijon n° 900 000 001, habilité par Réseau Test SAS, titulaire de la carte.';
+const CARTE = `${INTERVENANT}\nCarte professionnelle n° ${CARD}.`;
 const energie = (e: string, c: string, min: string, max: string, year: number, excessive = false) =>
   `Classe énergie ${e}, classe climat ${c}.${excessive ? ' Logement à consommation énergétique excessive.' : ''} Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${min}${N}€ et ${max}${N}€ par an. Prix moyens des énergies indexés au 1er janvier ${year} (abonnements compris).`;
 const GEO = 'Les informations sur les risques auxquels ce bien est exposé sont disponibles sur le site Géorisques : www.georisques.gouv.fr.';
@@ -45,61 +49,61 @@ const GEO = 'Les informations sur les risques auxquels ce bien est exposé sont 
 const CASES: { name: string; input: MentionsInput; price: number; text: string }[] = [
   {
     name: '1 · appartement, honoraires acquéreur, 5 %',
-    input: { kind: 'home', terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 210000,
     text: [`Prix : 210${S}000${N}€ honoraires inclus, soit 200${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '2 · maison, honoraires vendeur',
-    input: { kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet(), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 315000,
     text: [`Prix : 315${S}000${N}€, honoraires à la charge du vendeur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '3 · pourcentage arrondi au centième',
-    input: { kind: 'home', terms: { priceEur: 210000, feeEur: 9500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 210000, feeEur: 9500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 219500,
     text: [`Prix : 219${S}500${N}€ honoraires inclus, soit 210${S}000${N}€ hors honoraires et 4,52${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '4 · pourcentage à un chiffre après la virgule',
-    input: { kind: 'home', terms: { priceEur: 100000, feeEur: 4500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 100000, feeEur: 4500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 104500,
     text: [`Prix : 104${S}500${N}€ honoraires inclus, soit 100${S}000${N}€ hors honoraires et 4,5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '5 · logement classé F, très énergivore',
-    input: { kind: 'home', terms: { priceEur: 98000, feeEur: 7000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 2400, annualCostMaxEur: 3300, costReferenceYear: 2021, diagnosedOn: '2026-11-02' } }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 98000, feeEur: 7000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 2400, annualCostMaxEur: 3300, costReferenceYear: 2021, diagnosedOn: '2026-11-02' } }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 98000,
     text: [`Prix : 98${S}000${N}€, honoraires à la charge du vendeur.`, energie('F', 'E', `2${S}400`, `3${S}300`, 2021, true), CARTE].join('\n'),
   },
   {
     name: '6 · logement classé G',
-    input: { kind: 'home', terms: { priceEur: 75000, feeEur: 6000, feeCharge: 'acquereur' }, sheet: sheet({ energy: { energyClass: 'G', climateClass: 'G', annualCostMinEur: 3900, annualCostMaxEur: 5300, costReferenceYear: 2023, diagnosedOn: '2027-02-20' } }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 75000, feeEur: 6000, feeCharge: 'acquereur' }, sheet: sheet({ energy: { energyClass: 'G', climateClass: 'G', annualCostMinEur: 3900, annualCostMaxEur: 5300, costReferenceYear: 2023, diagnosedOn: '2027-02-20' } }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 81000,
     text: [`Prix : 81${S}000${N}€ honoraires inclus, soit 75${S}000${N}€ hors honoraires et 8${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('G', 'G', `3${S}900`, `5${S}300`, 2023, true), CARTE].join('\n'),
   },
   {
     name: '7 · copropriété sans procédure',
-    input: { kind: 'home', terms: { priceEur: 180000, feeEur: 9000, feeCharge: 'acquereur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 180000, feeEur: 9000, feeCharge: 'acquereur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 189000,
     text: [`Prix : 189${S}000${N}€ honoraires inclus, soit 180${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 24 lots, charges annuelles moyennes de 1${S}800${N}€. Aucune procédure en cours.`, CARTE].join('\n'),
   },
   {
     name: '8 · copropriété avec procédure, un seul lot',
-    input: { kind: 'home', terms: { priceEur: 120000, feeEur: 8000, feeCharge: 'vendeur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 1, annualChargesEur: 0, proceedings: true } }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 120000, feeEur: 8000, feeCharge: 'vendeur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 1, annualChargesEur: 0, proceedings: true } }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 120000,
     text: [`Prix : 120${S}000${N}€, honoraires à la charge du vendeur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 1 lot, charges annuelles moyennes de 0${N}€. Le syndicat des copropriétaires fait l'objet d'une procédure en cours.`, CARTE].join('\n'),
   },
   {
     name: '9 · bien en zone de risque',
-    input: { kind: 'home', terms: { priceEur: 1250000, feeEur: 50000, feeCharge: 'acquereur' }, sheet: sheet({ risks: { inRiskZone: true } }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'home', terms: { priceEur: 1250000, feeEur: 50000, feeCharge: 'acquereur' }, sheet: sheet({ risks: { inRiskZone: true } }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 1300000,
     text: [`Prix : 1${S}300${S}000${N}€ honoraires inclus, soit 1${S}250${S}000${N}€ hors honoraires et 4${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), GEO, CARTE].join('\n'),
   },
   {
     name: '10 · terrain, sans diagnostic énergétique',
-    input: { kind: 'land', terms: { priceEur: 65000, feeEur: 5000, feeCharge: 'vendeur' }, sheet: sheet({ energy: null }), cardNumber: CARD, today: TODAY },
+    input: { kind: 'land', terms: { priceEur: 65000, feeEur: 5000, feeCharge: 'vendeur' }, sheet: sheet({ energy: null }), cardNumber: CARD, intervenant: PRO, today: TODAY },
     price: 65000,
     text: [`Prix : 65${S}000${N}€, honoraires à la charge du vendeur.`, CARTE].join('\n'),
   },
@@ -118,7 +122,7 @@ describe('P02 · mentions obligatoires', () => {
 
   it('[R45] AU065 : un diagnostic qui cite plusieurs années de prix les garde, telles qu’il les écrit', () => {
     const energy = { energyClass: 'D', climateClass: 'D', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023], diagnosedOn: '2026-11-02' } as const;
-    const r = computeMentions({ kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { ...energy, costReferenceYears: [...energy.costReferenceYears] } }), cardNumber: CARD, today: TODAY });
+    const r = computeMentions({ kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { ...energy, costReferenceYears: [...energy.costReferenceYears] } }), cardNumber: CARD, intervenant: PRO, today: TODAY });
     expect(r.text).toContain('Prix moyens des énergies indexés sur les années 2021, 2022 et 2023 (abonnements compris).');
     expect(r.text).not.toContain('1er janvier');
   });
@@ -230,6 +234,8 @@ async function setup(feeCharge: 'vendeur' | 'acquereur' = 'acquereur', place: 'a
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
   await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: new Date('2027-02-10T09:00:00.000Z') });
+  // Le statut de l'agent du bien, rangé par la direction (AU007).
+  await rangerStatut(db, journal, now, direction, [alex.id]);
   const mentions = new MentionsAnnonce(db, acces, journal, { now });
   const fiches = new FicheBien(db, acces, journal, { now });
   const signMandate = async () => {

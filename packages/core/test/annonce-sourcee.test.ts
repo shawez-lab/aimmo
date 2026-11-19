@@ -18,6 +18,7 @@ import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Biens et textes inventés.
 const FACTS: ListingFacts = {
@@ -196,6 +197,8 @@ async function setup(writer?: ListingWriter, options: { timeoutMs?: number } = {
   await modeles.validate(as('compliance', 'c-1'), v.template.id);
   await controles.setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+  // Le statut des agents, rangé par la direction (AU007) [R152].
+  await rangerStatut(db, journal, now, direction, [alex.id, sam.id]);
   const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Exemple' });
   const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });

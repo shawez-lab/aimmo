@@ -203,6 +203,7 @@ describe('AU006 · les deux étiquettes du DPE sur la page et la fiche imprimabl
       terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'vendeur' },
       sheet: { characteristics: null, energy: { energyClass: 'F', climateClass: 'D', annualCostMinEur: 900, annualCostMaxEur: 1300, costReferenceYear: 2025, diagnosedOn: '2024-03-01' }, coownership: { isCoownership: false }, risks: { inRiskZone: false }, media: [] } as never,
       cardNumber: 'CPI 0000',
+      intervenant: null,
       today: '2026-11-19',
     });
     expect(energyClassesOf(mentions.text)).toEqual({ energy: 'F', climate: 'D' });
