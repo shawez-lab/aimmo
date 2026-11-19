@@ -252,7 +252,9 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
   // Un étage minimal au-dessus du maximal ne laisse aucun bien : refusé, nommé.
   const fMin = 'floorMin' in out ? out.floorMin : undefined;
   const fMax = 'floorMax' in out ? out.floorMax : undefined;
-  if (typeof fMin === 'number' && typeof fMax === 'number' && fMin > fMax) return refuse('valeur', 'floorMin');
+  // Un souhait n'écarte rien : seules deux bornes impératives inversées ne laissent aucun bien (R51).
+  const softs = Array.isArray(out.softCriteria) ? (out.softCriteria as string[]) : [];
+  if (typeof fMin === 'number' && typeof fMax === 'number' && fMin > fMax && !softs.includes('floorMin') && !softs.includes('floorMax')) return refuse('valeur', 'floorMin');
   return { ok: true, value: out as Partial<BuyerSearch> };
 }
 
@@ -587,7 +589,9 @@ export class FicheAcquereur {
       }
       if (changed.length === 0) return { ok: true, created: false, value: last };
       // Les bornes d'étage se lisent ensemble, sur la recherche qui en résulte : un minimum au-dessus du maximum ne laisse aucun bien (AU072).
-      if (next.floorMin != null && next.floorMax != null && next.floorMin > next.floorMax) return refuse('valeur', 'floorMin');
+      // Un souhait d'étage n'écarte rien : seules deux bornes impératives inversées sont refusées (R51).
+      const softs = next.softCriteria ?? [];
+      if (next.floorMin != null && next.floorMax != null && next.floorMin > next.floorMax && !softs.includes('floorMin') && !softs.includes('floorMax')) return refuse('valeur', 'floorMin');
       const version = (last?.version ?? 0) + 1;
       const id = this.newId();
       const { changes: inserted } = await this.db.run(

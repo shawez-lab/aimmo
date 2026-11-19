@@ -551,9 +551,11 @@ describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de 
     // Chaque borne garde sa force : le minimum impératif, le maximum souhaité.
     expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum')).ok).toBe(true);
     expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, floorMax: 3, softCriteria: ['floorMax'] });
-    // Les bornes se contrôlent sur la recherche qui en résulte : un minimum au-dessus du maximum déjà rangé est refusé.
+    // Les bornes se contrôlent sur la recherche qui en résulte : le maximum n'est qu'un souhait, un minimum plus haut passe.
     const direction = t.as('direction', 'd1');
-    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 4 })).toMatchObject({ ok: false, field: 'floorMin' });
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 4 })).toMatchObject({ ok: true });
+    // Deux bornes impératives inversées ne laissent aucun bien : refusé.
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { softCriteria: [] })).toMatchObject({ ok: false, field: 'floorMin' });
   });
 });
 
@@ -565,6 +567,10 @@ describe('AU072 · les forces et les sources de chaque borne', () => {
     expect(judge(base('Terrain de 500 m² à Dijon'), { ...flat(null), landM2: 600 })).toBeNull();
     const r = judge(base('Appartement à Dijon, 3e étage maximum'), flat(2));
     expect(r!.reasons.find((x) => x.text.includes('étage'))!.from).toContain('3e étage maximum');
+    // Deux bornes de même force : chaque raison cite sa propre borne.
+    const two = judge(base('Appartement à Dijon, à partir du 1er étage, 3e étage maximum'), flat(2))!;
+    expect(two.reasons.find((x) => x.text.includes('au-dessus du minimum'))!.from).toContain('1er étage');
+    expect(two.reasons.find((x) => x.text.includes('sous le maximum'))!.from).toContain('3e étage maximum');
   });
   it('[R51] « pas de rez-de-chaussée, si possible 3e étage maximum » : le minimum écarte, le maximum ne fait que classer', () => {
     const s = base('Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum');

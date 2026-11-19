@@ -68,6 +68,8 @@ export interface CriterionCheck {
   criterion: MandatoryCriterion;
   state: CriterionState;
   reason: string;
+  /** Pour l'étage : la borne jugée, minimum ou maximum, pour citer les mots qui l'ont dite (AU072). */
+  bound?: 'floorMin' | 'floorMax';
 }
 
 export interface BuyerMatch {
@@ -175,19 +177,21 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   // remplit pas un impératif, et un souhait non rempli n'écarte rien.
   const soft = search.softCriteria ?? [];
   let softMet = 0;
-  const judgeOne = (criterion: 'floor' | 'energy' | 'land', isSoft: boolean, ok: boolean | null, met: string, unmet: string, unknown: string) => {
+  const judgeOne = (criterion: 'floor' | 'energy' | 'land', isSoft: boolean, ok: boolean | null, met: string, unmet: string, unknown: string, bound?: 'floorMin' | 'floorMax') => {
+    const before = checks.length;
     if (ok === true) {
       add(criterion, 'met', met);
       if (isSoft) softMet += 1;
     } else if (!isSoft) add(criterion, 'unmet', ok === null ? unknown : unmet);
+    if (bound && checks.length > before) checks[checks.length - 1]!.bound = bound;
   };
   // Chaque borne d'étage se juge avec sa propre force.
   const fMin = search.floorMin ?? null;
   const fMax = search.floorMax ?? null;
   const floor = property.floor ?? null;
   const at = floor === null ? '' : floor === 0 ? 'Rez-de-chaussée' : `${floor === 1 ? '1er' : `${floor}e`} étage`;
-  if (fMin !== null) judgeOne('floor', soft.includes('floorMin'), floor === null ? null : floor >= fMin, `${at}, au-dessus du minimum demandé.`, `${at}, sous l’étage demandé.`, 'Étage du bien inconnu.');
-  if (fMax !== null) judgeOne('floor', soft.includes('floorMax'), floor === null ? null : floor <= fMax, `${at}, sous le maximum demandé.`, `${at}, au-dessus de l’étage demandé.`, 'Étage du bien inconnu.');
+  if (fMin !== null) judgeOne('floor', soft.includes('floorMin'), floor === null ? null : floor >= fMin, `${at}, au-dessus du minimum demandé.`, `${at}, sous l’étage demandé.`, 'Étage du bien inconnu.', 'floorMin');
+  if (fMax !== null) judgeOne('floor', soft.includes('floorMax'), floor === null ? null : floor <= fMax, `${at}, sous le maximum demandé.`, `${at}, au-dessus de l’étage demandé.`, 'Étage du bien inconnu.', 'floorMax');
   const eMax = search.energyClassMax ?? null;
   if (eMax !== null) {
     const cls = property.energyClass ?? null;
@@ -210,7 +214,8 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   const featuresMet = search.features.filter((f) => property.features.includes(f));
   // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
   if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0, softMet };
-  const unmet = checks.filter((c) => c.state === 'unmet').map((c) => c.criterion);
+  // Un critère manqué compte une fois, même jugé sur ses deux bornes (l'étage inconnu, par exemple).
+  const unmet = [...new Set(checks.filter((c) => c.state === 'unmet').map((c) => c.criterion))];
   const status = unmet.length > 0 ? 'miss' : checks.some((c) => c.state === 'tolerated') ? 'tolerated' : 'match';
   return { status, checks, unmet, featuresMet, gap, softMet };
 }

@@ -177,6 +177,17 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(check({ floorMin: 3, floorMax: 1 })).toMatchObject({ ok: false, field: 'floorMin' });
     expect(check({ energyClassMax: 'H' })).toMatchObject({ ok: false, field: 'energyClassMax' });
     expect(check({ softCriteria: ['budget'] })).toMatchObject({ ok: false, field: 'softCriteria' });
+    // Un souhait n'écarte rien : un minimum impératif au-dessus d'un maximum souhaité reste valable.
+    expect(check({ floorMin: 4, floorMax: 3, softCriteria: ['floorMax'] })).toMatchObject({ ok: true });
+    // Saisi en deux fois : le maximum souhaité, puis un minimum impératif plus haut, la recherche est rangée.
+    const later = await t.buyer(t.alex.id, 'Plus tard', { communes: ['Dijon'], floorMax: 3, softCriteria: ['floorMax'] });
+    expect(await t.acquereurs.update(t.acces, t.direction, later.project.id, { floorMin: 4 })).toMatchObject({ ok: true });
+    // Deux bornes impératives inversées restent refusées.
+    const strictTwo = await t.buyer(t.alex.id, 'Strict', { communes: ['Dijon'], floorMax: 3 });
+    expect(await t.acquereurs.update(t.acces, t.direction, strictTwo.project.id, { floorMin: 4 })).toMatchObject({ ok: false });
+    // L'étage inconnu manque une seule fois, même jugé sur ses deux bornes.
+    const both: BuyerSearch = { propertyKinds: [], communes: ['Dijon'], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, financing: null, urgency: null, floorMin: 0, floorMax: 0 };
+    expect(matchBuyer({ kind: 'home', city: 'Dijon', priceEur: 1, surfaceM2: 50, rooms: 2, bedrooms: null, features: [], floor: null }, both)).toMatchObject({ status: 'miss', unmet: ['floor'] });
   });
 
   it('AU072 · un terrain seul se rapproche par sa surface enregistrée', async () => {
