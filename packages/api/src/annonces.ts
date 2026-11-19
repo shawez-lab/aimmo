@@ -13,7 +13,7 @@ import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type View
 import { commerces as m16, Diffusion } from '@aimmo/core';
 import { annonces as m07 } from '@aimmo/core';
 
-const { Annonces, DiffusionPortails, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
+const { Annonces, DiffusionPortails, DiffusionSurveillee, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
 type ListingChannel = m07.ListingChannel;
 type PortalConnector = m07.PortalConnector;
 type ListingWriter = m07.ListingWriter;
@@ -86,6 +86,7 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
   const mentions = (s: AnnonceServices) => new MentionsAnnonce(s.db, s.acces, s.journal, { now: s.now });
   const annonces = (s: AnnonceServices) => new Annonces(s.db, s.acces, s.journal, { now: s.now, ...(options.writer ? { writer: options.writer } : {}) });
   const publication = (s: AnnonceServices) => new Publication(s.db, s.acces, s.journal, { now: s.now, ...(options.channels ? { channels: options.channels } : {}) });
+  const surveillance = (s: AnnonceServices) => new DiffusionSurveillee(s.db, s.acces, s.journal, { now: s.now });
   const portails = (s: AnnonceServices) => new DiffusionPortails(s.db, s.acces, s.journal, { now: s.now, ...(options.portals ? { connectors: options.portals } : {}) });
   const medias = (s: AnnonceServices) => new MediasBien(s.db, s.acces, s.journal, { now: s.now });
   const mesure = (s: AnnonceServices) => new MesureBiens(s.db, s.acces, s.journal, { now: s.now });
@@ -163,26 +164,38 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
     },
     // AU004 : le statut du bien sur chaque portail souscrit, avec son dernier accusé [R668, R16].
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/portails$`), name: 'annonces.portails', handle: async (s, v, [id]) => reply(await portails(s).status(v, id!)) },
+    // Les portails réglés par la direction (HX38) : code (domaine), champs exigés, photos minimum, actif ou arrêté.
     {
       method: 'GET',
-      pattern: /^\/annonces-portails\/abonnements$/,
-      name: 'annonces.portails.abonnements',
+      pattern: /^\/annonces-portails$/,
+      name: 'annonces.portails.reglages',
       handle: async (s, v) => {
         if (v.role !== 'direction') {
-          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R16', role: String(v.role), kind: 'portal_subscription', code: 'role' } }, s.now);
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R16', role: String(v.role), kind: 'portal_settings', code: 'role' } }, s.now);
           return reply({ ok: false, rule: 'R16', code: 'role' });
         }
-        return reply({ ok: true, value: await portails(s).subscriptions(v.networkId) });
+        return reply({ ok: true, value: await surveillance(s).portals(v.networkId) });
       },
     },
     {
       method: 'POST',
-      pattern: /^\/annonces-portails\/abonnements$/,
-      name: 'annonces.portails.abonner',
+      pattern: /^\/annonces-portails$/,
+      name: 'annonces.portails.regler',
       handle: async (s, v, _p, request) => {
         const body = await readJson(request);
         if (!body) return badBody();
-        return reply(await portails(s).subscribe(v, { portal: body.portal, active: body.active }));
+        return reply(await surveillance(s).setPortal(v, { code: body.code, label: body.label, host: body.host, requiredFields: body.requiredFields, minPhotos: body.minPhotos, active: body.active }));
+      },
+    },
+    // L'agent du bien choisit ou écarte un portail pour son bien (HX38) ; écarté, l'annonce y est retirée au passage.
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/annonces/${ID}/portails$`),
+      name: 'annonces.portails.choisir',
+      handle: async (s, v, [id], request) => {
+        const body = await readJson(request);
+        if (!body) return badBody();
+        return reply(await surveillance(s).choose(v, id!, body.portal, body.chosen));
       },
     },
     {

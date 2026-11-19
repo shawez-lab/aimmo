@@ -143,12 +143,12 @@ it('P09 · chaque route a un nom stable, sans identifiant, et une adresse unique
 });
 
 describeWithSqlite('AU004 · routes des portails', () => {
-  it('[R668] [R16] la direction souscrit un portail ; le passage le diffuse ; le statut par portail se lit par la route', async () => {
+  it('[R668] [R16] la direction règle un portail, l’agent le choisit ; le passage le diffuse ; le statut par portail se lit par la route', async () => {
     const t = await setupAnnonce();
     const s: AnnonceServices = { db: t.db, journal: t.journal, acces: t.acces, now: t.now };
     let n = 0;
     const received: string[] = [];
-    const portals = [{ portal: 'portail-a', mode: 'reel' as const, send: async (op: { key: string; action: string }) => (received.push(op.action), { receipt: `ACK-${++n}` }) }];
+    const portals = [{ portal: 'seloger', mode: 'reel' as const, send: async (op: { key: string; action: string }) => (received.push(op.action), { receipt: `ACK-${++n}` }) }];
     const routes = annonceRoutes({ channels: t.channels, portals });
     const call = async (viewer: Viewer, method: 'GET' | 'POST', path: string, body?: unknown) => {
       const url = new URL(`https://api.exemple.test/v1${path}`);
@@ -158,17 +158,20 @@ describeWithSqlite('AU004 · routes des portails', () => {
       const response = await route.handle(s, viewer, params, request);
       return { status: response.status, body: (await response.json()) as { ok: boolean; data?: any; code?: string; rule?: string } };
     };
-    expect((await call(t.agent, 'POST', '/annonces-portails/abonnements', { portal: 'portail-a', active: true })).status).toBe(403);
-    expect((await call(t.agent, 'GET', '/annonces-portails/abonnements')).status).toBe(403);
-    expect((await call(t.direction, 'POST', '/annonces-portails/abonnements', { portal: 'portail-a', active: true })).body).toMatchObject({ ok: true, data: { portal: 'portail-a', active: true } });
-    expect((await call(t.direction, 'GET', '/annonces-portails/abonnements')).body).toMatchObject({ ok: true, data: [{ portal: 'portail-a', active: true }] });
+    const reglage = { code: 'seloger', label: 'SeLoger', host: 'www.seloger.com', requiredFields: ['prix'], minPhotos: 0 };
+    expect((await call(t.agent, 'POST', '/annonces-portails', reglage)).status).toBe(403);
+    expect((await call(t.agent, 'GET', '/annonces-portails')).status).toBe(403);
+    expect((await call(t.direction, 'POST', '/annonces-portails', reglage)).body).toMatchObject({ ok: true });
+    expect((await call(t.direction, 'GET', '/annonces-portails')).body).toMatchObject({ ok: true, data: [{ code: 'seloger', active: true }] });
+    expect((await call(t.sam, 'POST', `/annonces/${t.propertyId}/portails`, { portal: 'seloger', chosen: true })).status).toBe(403);
+    expect((await call(t.agent, 'POST', `/annonces/${t.propertyId}/portails`, { portal: 'seloger', chosen: true })).body).toMatchObject({ ok: true });
     t.setClock(new Date('2027-02-12T10:00:00.000Z'));
     await t.annonces.validate(t.agent, t.draftId);
     t.setClock(new Date('2027-03-01T08:00:00.000Z'));
     await syncAnnonces(s, t.network.id, { channels: t.channels, portals });
     expect(received).toEqual(['publier']);
     const st = await call(t.agent, 'GET', `/annonces/${t.propertyId}/portails`);
-    expect(st.body).toMatchObject({ ok: true, data: [{ portal: 'portail-a', mode: 'reel', state: 'publiee', acknowledged: { seq: 1, action: 'publier', receipt: 'ACK-1' } }] });
+    expect(st.body).toMatchObject({ ok: true, data: [{ portal: 'seloger', plan: 'a_diffuser', mode: 'reel', state: 'publiee', acknowledged: { seq: 1, action: 'publier', receipt: 'ACK-1' } }] });
     expect((await call(t.sam, 'GET', `/annonces/${t.propertyId}/portails`)).status).toBe(403);
     // Le passage immédiat de l'agent fait suivre les portails : un avenant y part tout de suite.
     t.setClock(new Date('2027-03-01T08:07:00.000Z'));

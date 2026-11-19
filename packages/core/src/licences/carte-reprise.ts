@@ -49,7 +49,7 @@ export const TABLES_RESEAU: readonly string[] = `
   business_transfer_tasks business_transfer_third_parties  
   business_valuation_scales business_valuation_validations business_valuations buyer_searches call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
-  candidate_interviews candidate_replies candidates card_holders agent_title_settings client_date_messages client_date_texts client_dates
+  candidate_interviews candidate_replies candidates card_holders agent_title_settings portal_operations client_date_messages client_date_texts client_dates
    client_space_favorites client_space_links client_space_sessions commission_grids
   commission_payouts commission_receipts commissions commune_rental_rules complaint_alerts complaint_answers
   complaint_mediator_offers complaint_settings complaints consents contact_ai_engines
@@ -162,6 +162,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   licensed_asset_withdrawals: { via: [['asset_id', 'licensed_assets', 'id']] },
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
+  portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
   mandate_clause_validations: { via: [['clause_id', 'mandate_clause_versions', 'id']] },
@@ -253,6 +254,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   client_space_sessions: ['token_hash'],
   gbp_reviews: ['author_token_hashes'],
   listing_sync_leases: ['token'],
+  portal_sync_leases: ['token'],
   newsletter_unsubscribe_tokens: ['token_hash'],
   owner_booklet_links: ['token_hash'],
   partner_prospect_mails: ['optout_token_sha256'],
@@ -337,7 +339,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   diffusion_portal_checks diffusion_portal_choices diffusion_portal_feedback diffusion_portal_resumptions
   diffusion_portal_suspensions diffusion_portal_task_closures diffusion_portal_tasks
   diffusion_portal_text_validations diffusion_portal_texts virtual_tours floor_plans listing_translation_validations
-  listing_translations listing_validations listing_pushes listing_versions listing_drafts listing_views
+  listing_translations listing_validations listing_pushes portal_operations listing_versions listing_drafts listing_views
   neighbourhood_letters neighbourhood_campaigns photo_exports virtual_stagings photo_certificates photo_guide_shots
   photo_guide_validations property_communes property_details property_key_retirements property_keys property_links
   property_sheets rental_ad_validations rental_ads rental_annexes rental_piece_findings rental_application_pieces

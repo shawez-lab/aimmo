@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DiffusionPortails, type ListingPayload, type PortalAction, type PortalConnector, type PortalReceipt } from '../src/annonces/index.ts';
+import { DiffusionPortails, DiffusionSurveillee, type ListingPayload, type PortalAction, type PortalConnector, type PortalReceipt } from '../src/annonces/index.ts';
 import { setupAnnonce as setup } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -31,12 +31,19 @@ async function published() {
   await t.annonces.validate(t.agent, t.draftId);
   t.setClock(new Date('2027-03-01T08:00:00.000Z'));
   await t.publication.sync(t.network.id, t.propertyId);
-  const a = new FakePortal('portail-a');
-  const b = new FakePortal('portail-b');
+  const a = new FakePortal('seloger');
+  const b = new FakePortal('leboncoin');
   const portails = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [a, b] });
-  await portails.subscribe(t.direction, { portal: 'portail-a', active: true });
-  await portails.subscribe(t.direction, { portal: 'portail-b', active: true });
-  return { ...t, a, b, portails };
+  const surveillance = new DiffusionSurveillee(t.db, t.acces, t.journal, { now: t.now });
+  await enable(t, surveillance, 'seloger', 'www.seloger.com');
+  await enable(t, surveillance, 'leboncoin', 'www.leboncoin.fr');
+  return { ...t, a, b, portails, surveillance };
+}
+
+/** La direction règle le portail actif (HX38), l'agent le choisit pour son bien. */
+async function enable(t: Awaited<ReturnType<typeof setup>>, d: DiffusionSurveillee, code: string, host: string, active = true) {
+  expect(await d.setPortal(t.direction, { code, label: code, host, requiredFields: [], minPhotos: 0, active })).toEqual({ ok: true });
+  expect(await d.choose(t.agent, t.propertyId, code, true)).toEqual({ ok: true });
 }
 
 const stateOf = async (t: Awaited<ReturnType<typeof published>>, portal: string) => {
@@ -53,20 +60,20 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     t.setClock(new Date('2027-03-01T08:00:00.000Z'));
     await t.publication.sync(t.network.id, t.propertyId);
     const portails = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now });
-    await portails.subscribe(t.direction, { portal: 'portail-a', active: true });
-    expect(await portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: [], trial: ['portail-a'], failed: [] });
+    await enable(t, new DiffusionSurveillee(t.db, t.acces, t.journal, { now: t.now }), 'seloger', 'www.seloger.com');
+    expect(await portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: [], trial: ['seloger'], failed: [] });
     // Un deuxième passage ne range pas un second essai.
     await portails.sync(t.network.id, t.propertyId);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'essai'"))!.n).toBe(1);
     const st = await portails.status(t.agent, t.propertyId);
-    expect(st.ok && st.value).toEqual([{ portal: 'portail-a', subscribed: true, mode: 'essai', state: 'essai', acknowledged: null, expectedSeq: 1, lastError: null }]);
+    expect(st.ok && st.value).toEqual([{ portal: 'seloger', plan: 'a_diffuser', mode: 'essai', state: 'essai', acknowledged: null, expectedSeq: 1, lastError: null }]);
   });
 
   it('[R668] [R44] publier puis modifier sur chaque portail : accusé réel et statut par portail, au prix publié', async () => {
     const t = await published();
-    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: ['portail-a', 'portail-b'], failed: [] });
+    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: ['leboncoin', 'seloger'], failed: [] });
     expect(t.a.received.map((r) => [r.action, r.listing.version, r.listing.priceEur])).toEqual([['publier', 1, 210000]]);
-    expect(await stateOf(t, 'portail-a')).toMatchObject({ state: 'publiee', mode: 'reel', acknowledged: { seq: 1, action: 'publier', receipt: 'portail-a-ACK-1', portalRef: 'portail-a-annonce-1' } });
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'publiee', mode: 'reel', acknowledged: { seq: 1, action: 'publier', receipt: 'seloger-ACK-1', portalRef: 'seloger-annonce-1' } });
     // Rien n'a changé : rien ne repart.
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received).toHaveLength(1);
@@ -74,13 +81,13 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     t.setClock(new Date('2027-03-01T08:07:00.000Z'));
     await t.amend(190000);
     await t.publication.sync(t.network.id, t.propertyId);
-    expect(await stateOf(t, 'portail-a')).toMatchObject({ state: 'en_attente', expectedSeq: 2, acknowledged: { seq: 1 } });
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'en_attente', expectedSeq: 2, acknowledged: { seq: 1 } });
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received.map((r) => [r.action, r.listing.version, r.listing.priceEur])).toEqual([['publier', 1, 210000], ['modifier', 2, 200000]]);
     expect(t.b.received.at(-1)!.listing.priceEur).toBe(200000);
-    expect(await stateOf(t, 'portail-b')).toMatchObject({ state: 'publiee', acknowledged: { seq: 2, action: 'modifier' } });
+    expect(await stateOf(t, 'leboncoin')).toMatchObject({ state: 'publiee', acknowledged: { seq: 2, action: 'modifier' } });
     const ev = await t.db.all<{ type: string }>("SELECT type FROM journal WHERE type LIKE 'portail.%' ORDER BY rowid");
-    expect(ev.map((e) => e.type)).toEqual(['portail.abonnement', 'portail.abonnement', 'portail.publiee', 'portail.publiee', 'portail.modifiee', 'portail.modifiee']);
+    expect(ev.map((e) => e.type)).toEqual(['portail.publiee', 'portail.publiee', 'portail.modifiee', 'portail.modifiee']);
   });
 
   it('[R668] [R42] retirer : un bien retiré de la vente est retiré de chaque portail, avec son accusé', async () => {
@@ -91,52 +98,72 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await t.publication.sync(t.network.id, t.propertyId);
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received.at(-1)).toMatchObject({ action: 'retirer', listing: { reference: 'REF-T-1', state: 'retiree', title: null, priceEur: null, media: [] } });
-    expect(await stateOf(t, 'portail-a')).toMatchObject({ state: 'retiree', expectedSeq: null, acknowledged: { action: 'retirer', receipt: 'portail-a-ACK-2' } });
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'retiree', expectedSeq: null, acknowledged: { action: 'retirer', receipt: 'seloger-ACK-2' } });
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.a.received).toHaveLength(2);
   });
 
-  it('[R668] un abonnement arrêté retire l’annonce de ce portail seulement ; repris, elle y revient', async () => {
+  it('[R668] [R470] un portail écarté du bien retire l’annonce de ce portail seulement ; repris, elle y revient', async () => {
     const t = await published();
     await t.portails.sync(t.network.id, t.propertyId);
-    await t.portails.subscribe(t.direction, { portal: 'portail-b', active: false });
+    expect(await t.surveillance.choose(t.agent, t.propertyId, 'leboncoin', false)).toEqual({ ok: true });
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.b.received.map((r) => r.action)).toEqual(['publier', 'retirer']);
     expect(t.a.received.map((r) => r.action)).toEqual(['publier']);
-    expect(await stateOf(t, 'portail-b')).toMatchObject({ subscribed: false, state: 'retiree' });
+    expect(await stateOf(t, 'leboncoin')).toMatchObject({ plan: 'non_choisi', state: 'retiree' });
     t.setClock(new Date('2027-03-01T09:00:00.000Z'));
-    await t.portails.subscribe(t.direction, { portal: 'portail-b', active: true });
+    await t.surveillance.choose(t.agent, t.propertyId, 'leboncoin', true);
     await t.portails.sync(t.network.id, t.propertyId);
     expect(t.b.received.map((r) => r.action)).toEqual(['publier', 'retirer', 'publier']);
-    expect(await stateOf(t, 'portail-b')).toMatchObject({ subscribed: true, state: 'publiee' });
+    expect(await stateOf(t, 'leboncoin')).toMatchObject({ plan: 'a_diffuser', state: 'publiee' });
+  });
+
+  it('[R668] [R472] [R42] un retrait temporaire ou un portail arrêté par la direction retirent l’annonce, avec accusé', async () => {
+    const t = await published();
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(await t.surveillance.suspend(t.agent, { propertyId: t.propertyId, portal: 'seloger', reason: 'travaux' })).toMatchObject({ ok: true });
+    expect(await t.surveillance.setPortal(t.direction, { code: 'leboncoin', label: 'leboncoin', host: 'www.leboncoin.fr', requiredFields: [], minPhotos: 0, active: false })).toEqual({ ok: true });
+    await t.portails.sync(t.network.id, t.propertyId);
+    expect(t.a.received.map((r) => r.action)).toEqual(['publier', 'retirer']);
+    expect(t.b.received.map((r) => r.action)).toEqual(['publier', 'retirer']);
+    expect(await stateOf(t, 'seloger')).toMatchObject({ plan: 'suspendu', state: 'retiree' });
+    expect(await stateOf(t, 'leboncoin')).toMatchObject({ plan: 'inactif', state: 'retiree' });
+  });
+
+  it('[R668] [R470] un portail réglé mais pas choisi pour le bien ne reçoit rien', async () => {
+    const t = await published();
+    const c = new FakePortal('bienici');
+    const p = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [c] });
+    await t.surveillance.setPortal(t.direction, { code: 'bienici', label: 'Bien’ici', host: 'www.bienici.com', requiredFields: [], minPhotos: 0 });
+    await p.sync(t.network.id, t.propertyId);
+    expect(c.received).toEqual([]);
+    const st = await p.status(t.agent, t.propertyId);
+    expect(st.ok && st.value.find((x) => x.portal === 'bienici')).toMatchObject({ plan: 'non_choisi', state: 'non_publiee', expectedSeq: null });
   });
 
   it('[R668] sans accusé ou en panne : échec dit par portail, réessayé au passage suivant, jamais « publiée »', async () => {
     const t = await published();
     t.a.failNext = 1;
     t.b.noReceipt = 1;
-    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: [], failed: ['portail-a', 'portail-b'] });
-    expect(await stateOf(t, 'portail-a')).toMatchObject({ state: 'echec', acknowledged: null, lastError: { code: 'portail_indisponible', action: 'publier', seq: 1 } });
-    expect(await stateOf(t, 'portail-b')).toMatchObject({ state: 'echec', lastError: { code: 'accuse_absent' } });
+    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: [], failed: ['leboncoin', 'seloger'] });
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'echec', acknowledged: null, lastError: { code: 'portail_indisponible', action: 'publier', seq: 1 } });
+    expect(await stateOf(t, 'leboncoin')).toMatchObject({ state: 'echec', lastError: { code: 'accuse_absent' } });
     t.setClock(new Date('2027-03-01T08:15:00.000Z'));
-    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: ['portail-a', 'portail-b'] });
-    expect(await stateOf(t, 'portail-a')).toMatchObject({ state: 'publiee', lastError: null });
+    expect(await t.portails.sync(t.network.id, t.propertyId)).toMatchObject({ acknowledged: ['leboncoin', 'seloger'] });
+    expect(await stateOf(t, 'seloger')).toMatchObject({ state: 'publiee', lastError: null });
   });
 
-  it('[R668] [R16] seule la direction souscrit ; le statut se lit par qui voit le bien en entier', async () => {
+  it('[R668] [R16] le statut par portail se lit par qui voit le bien en entier', async () => {
     const t = await published();
-    expect(await t.portails.subscribe(t.agent, { portal: 'portail-c', active: true })).toEqual({ ok: false, rule: 'R16', code: 'role' });
-    expect(await t.portails.subscribe(t.direction, { portal: 'Portail C!', active: true })).toEqual({ ok: false, rule: null, code: 'invalid_portal' });
-    expect(await t.portails.subscribe(t.direction, { portal: 'portail-c', active: 'oui' })).toEqual({ ok: false, rule: null, code: 'invalid_active' });
     expect(await t.portails.status(t.sam, t.propertyId)).toMatchObject({ ok: false, rule: 'R16' });
-    expect(await t.portails.subscriptions(t.network.id)).toEqual([{ portal: 'portail-a', active: true }, { portal: 'portail-b', active: true }]);
+    expect(await t.portails.status(t.agent, 'inconnu')).toMatchObject({ ok: false, code: 'unknown_property' });
   });
 
   it('[R668] deux passages en même temps n’envoient jamais deux fois la même version', async () => {
     const t = await published();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const slow: PortalConnector = { portal: 'portail-a', mode: 'reel', send: async (op) => { await gate; t.a.received.push(op); return { receipt: 'LENT-1' }; } };
+    const slow: PortalConnector = { portal: 'seloger', mode: 'reel', send: async (op) => { await gate; t.a.received.push(op); return { receipt: 'LENT-1' }; } };
     const p1 = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [slow] });
     const first = p1.sync(t.network.id, t.propertyId);
     const second = await p1.sync(t.network.id, t.propertyId);
@@ -151,7 +178,6 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await t.portails.sync(t.network.id, t.propertyId);
     await expect(t.db.run('DELETE FROM portal_operations')).rejects.toThrow(/rien ne s'efface/);
     await expect(t.db.run("UPDATE portal_operations SET receipt = 'x'")).rejects.toThrow(/rien ne se réécrit/);
-    await expect(t.db.run('DELETE FROM portal_subscriptions')).rejects.toThrow(/rien ne s'efface/);
   });
 
   it('[R668] un accusé arrivé après la fin du bail n’est pas rangé ; le geste repart avec la même clé, sans doublon côté portail', async () => {
@@ -159,7 +185,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     const keys: string[] = [];
     let first = true;
     const late: PortalConnector = {
-      portal: 'portail-a',
+      portal: 'seloger',
       mode: 'reel',
       send: async (op) => {
         keys.push(op.key);
@@ -172,7 +198,7 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     await p.sync(t.network.id, t.propertyId);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(0);
     await p.sync(t.network.id, t.propertyId);
-    expect(keys).toEqual([`${t.propertyId}:portail-a:1:publier`, `${t.propertyId}:portail-a:1:publier`]);
+    expect(keys).toEqual([`${t.propertyId}:seloger:1:publier`, `${t.propertyId}:seloger:1:publier`]);
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM portal_operations WHERE outcome = 'accuse'"))!.n).toBe(1);
   });
 
@@ -183,9 +209,9 @@ describeWithSqlite('AU004 · publier, modifier, retirer sur chaque portail sousc
     t.setClock(new Date('2027-03-02T08:00:00.000Z'));
     await t.publication.sync(t.network.id, t.propertyId);
     const sans = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now });
-    expect(await sans.sync(t.network.id, t.propertyId)).toMatchObject({ trial: [], failed: ['portail-a', 'portail-b'] });
+    expect(await sans.sync(t.network.id, t.propertyId)).toMatchObject({ trial: [], failed: ['leboncoin', 'seloger'] });
     const st = await sans.status(t.agent, t.propertyId);
-    expect(st.ok && st.value.find((x) => x.portal === 'portail-a')).toMatchObject({ mode: 'essai', state: 'echec', lastError: { code: 'connecteur_absent', action: 'retirer' } });
+    expect(st.ok && st.value.find((x) => x.portal === 'seloger')).toMatchObject({ mode: 'essai', state: 'echec', lastError: { code: 'connecteur_absent', action: 'retirer' } });
     expect((await t.db.first<{ n: number }>("SELECT count(*) AS n FROM journal WHERE type = 'portail.echec' AND data LIKE '%connecteur_absent%'"))!.n).toBe(2);
     // Le connecteur revient : le retrait part.
     await t.portails.sync(t.network.id, t.propertyId);

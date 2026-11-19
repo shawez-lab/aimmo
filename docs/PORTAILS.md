@@ -57,9 +57,9 @@ Le même flux, une annonce par bien et par langue traduite et validée par l'age
 
 AIMMO publie, modifie et retire lui-même chaque bien sur chaque portail souscrit, sans l'ancien logiciel de l'agence :
 
-- la direction souscrit ou arrête un portail : `POST /v1/annonces-portails/abonnements` `{ "portal": "<nom>", "active": true }`, liste par `GET` ;
-- à chaque passage de publication (toutes les 15 minutes, ou le passage immédiat de l'agent), chaque portail souscrit reçoit le geste qui lui manque : `publier`, `modifier` (nouvelle version publiée) ou `retirer` (bien sorti de la vente, ou abonnement arrêté) ;
-- un geste n'est tenu pour fait que sur l'accusé du portail (son identifiant de dépôt), rangé avec la version, la date et la référence de l'annonce chez le portail ;
+- la direction règle chaque portail (HX38) : `POST /v1/annonces-portails` `{ "code", "label", "host", "requiredFields", "minPhotos", "active" }`, liste par `GET` ; l'agent du bien le choisit ou l'écarte : `POST /v1/annonces/<id du bien>/portails` `{ "portal", "chosen" }` ; un retrait temporaire (HX38) compte aussi ;
+- à chaque passage de publication (toutes les 15 minutes, ou le passage immédiat de l'agent), chaque portail souscrit reçoit le geste qui lui manque : `publier`, `modifier` (nouvelle version publiée) ou `retirer` (bien sorti de la vente, portail écarté, suspendu ou arrêté) ;
+- un geste n'est tenu pour fait que sur l'accusé du portail (son identifiant de dépôt), rangé avec la version, la date et l'identifiant de l'annonce chez le portail ; chaque geste porte une clé stable (bien, portail, version, geste) et le connecteur doit être idempotent sur elle ;
 - le statut par portail se lit par `GET /v1/annonces/<id du bien>/portails` : `publiee`, `en_attente`, `echec` (avec son code), `retiree`, `non_publiee`, ou `essai` quand le portail n'a pas encore de connecteur réel (rien ne part).
 
 ## Ajouter un portail

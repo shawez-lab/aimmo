@@ -4,9 +4,10 @@
  * Constat de l'audit : AIMMO ne fournissait que son flux XML d'essai (`portails.ts`) ; l'agent devait garder son ancien
  * logiciel pour publier sur les portails, sans savoir ce qui y était vraiment en ligne.
  *
- * Ici, chaque portail souscrit par la direction reçoit la dernière version publiée du bien (P04), la même que les
+ * Ici, chaque portail réglé actif par la direction (HX38, `diffusion_portal_settings`) et choisi pour le bien, sans
+ * retrait temporaire et aux champs exigés remplis (plan « à diffuser » de HX38), reçoit la dernière version publiée du bien (P04), la même que les
  * autres canaux [R44] : il la publie la première fois, la modifie ensuite, la retire quand le bien sort de la vente ou
- * que l'abonnement s'arrête [R42]. Un geste n'est « accusé » que sur l'accusé rendu par le portail ; sans accusé, c'est
+ * que le portail n'est plus à diffuser (écarté, suspendu, champs manquants, portail arrêté) [R42]. Un geste n'est « accusé » que sur l'accusé rendu par le portail ; sans accusé, c'est
  * un échec, réessayé au passage suivant. Un portail sans connecteur réel (accord de flux H10 pas encore là) passe en
  * essai : rien ne part, et le statut le dit « essai », jamais « publiée ».
  *
@@ -17,6 +18,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { DiffusionSurveillee, type PlanStatus } from '../diffusion/surveillance.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ListingPayload, ListingState } from './publication.ts';
@@ -47,8 +49,8 @@ export interface PortalConnector {
 
 export const trialPortal = (portal: string): PortalConnector => ({ portal, mode: 'essai', send: async () => null });
 
-/** Le nom d'un portail : minuscules, chiffres et traits d'union. */
-export const PORTAL_NAME = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])$/;
+/** Le code d'un portail, celui de HX38 : son domaine. */
+export const PORTAL_NAME = /^[a-z0-9](?:[a-z0-9.-]{0,98}[a-z0-9])$/;
 const RECEIPT = /^[\x21-\x7e]{1,200}$/;
 const ON_PORTALS: ReadonlySet<ListingState> = new Set(['en_vente', 'sous_offre']);
 export const PORTAL_LEASE_MS = 5 * 60_000;
@@ -59,7 +61,8 @@ export type PortalState = 'publiee' | 'retiree' | 'en_attente' | 'echec' | 'essa
 
 export interface PortalStatus {
   portal: string;
-  subscribed: boolean;
+  /** Le plan de HX38 pour ce bien et ce portail ; `inactif` : portail arrêté par la direction. */
+  plan: PlanStatus | 'inactif';
   mode: 'reel' | 'essai';
   /** `publiee` : la dernière version est accusée en ligne ; `en_attente` : une version plus récente reste à accuser. */
   state: PortalState;
@@ -80,10 +83,11 @@ interface VersionRow {
 }
 
 interface AckRow {
+  n: number;
   seq: number;
   action: PortalAction;
   receipt: string;
-  portal_ref: string | null;
+  portal_listing_id: string | null;
   at: string;
 }
 
@@ -91,6 +95,7 @@ export class DiffusionPortails {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly connectors: Map<string, PortalConnector>;
+  private readonly surveillance: DiffusionSurveillee;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -105,6 +110,7 @@ export class DiffusionPortails {
       if (!PORTAL_NAME.test(c.portal) || this.connectors.has(c.portal)) throw new Error(`Portail inconnu ou en double : ${c.portal}`);
       this.connectors.set(c.portal, c);
     }
+    this.surveillance = new DiffusionSurveillee(db, acces, journal, { now: this.now, newId: this.newId });
   }
 
   private connector(portal: string): PortalConnector {
@@ -115,52 +121,26 @@ export class DiffusionPortails {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  /** La direction souscrit ou arrête un portail. Chaque réglage s'ajoute ; un portail arrêté voit ses annonces retirées. */
-  async subscribe(viewer: Viewer, input: { portal: unknown; active: unknown }): Promise<{ ok: true; value: { portal: string; active: boolean } } | Refusal | { ok: false; rule: null; code: 'invalid_portal' | 'invalid_active' }> {
-    if (viewer.role !== 'direction') {
-      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'portal_subscription', code: 'role' } }, this.now);
-      return { ok: false, rule: 'R16', code: 'role' };
-    }
-    if (typeof input.portal !== 'string' || !PORTAL_NAME.test(input.portal)) return { ok: false, rule: null, code: 'invalid_portal' };
-    if (typeof input.active !== 'boolean') return { ok: false, rule: null, code: 'invalid_active' };
-    await this.db.run('INSERT INTO portal_subscriptions (id, network_id, portal, active, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)', [
-      this.newId(), viewer.networkId, input.portal, input.active ? 1 : 0, this.actor(viewer), this.now().toISOString(),
-    ]);
-    await appendEvent(this.journal, { type: 'portail.abonnement', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { rule: 'R668', portal: input.portal, active: input.active } }, this.now);
-    return { ok: true, value: { portal: input.portal, active: input.active } };
-  }
-
-  /** Les portails réglés du réseau, souscrits ou arrêtés, d'après le dernier réglage de chacun. */
-  async subscriptions(networkId: string): Promise<{ portal: string; active: boolean }[]> {
-    const rows = await this.db.all<{ portal: string; active: number }>(
-      `SELECT s.portal, s.active FROM portal_subscriptions s
-       WHERE s.network_id = ? AND s.id = (SELECT t.id FROM portal_subscriptions t WHERE t.network_id = s.network_id AND t.portal = s.portal ORDER BY t.set_at DESC, t.id DESC LIMIT 1)
-       ORDER BY s.portal`,
-      [networkId],
-    );
-    return rows.map((r) => ({ portal: r.portal, active: Number(r.active) === 1 }));
-  }
-
   private async latestVersion(propertyId: string): Promise<VersionRow | null> {
     return this.db.first<VersionRow>('SELECT id, seq, state, payload FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
   }
 
   private async lastAck(propertyId: string, portal: string): Promise<AckRow | null> {
     return this.db.first<AckRow>(
-      "SELECT seq, action, receipt, portal_ref, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'accuse' ORDER BY seq DESC, at DESC, id DESC LIMIT 1",
+      "SELECT n, seq, action, receipt, portal_listing_id, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'accuse' ORDER BY n DESC LIMIT 1",
       [propertyId, portal],
     );
   }
 
   /** Ce que ce portail doit recevoir maintenant, ou rien. */
-  private static due(version: VersionRow | null, listing: ListingPayload | null, subscribed: boolean, ack: AckRow | null): PortalAction | null {
+  private static due(version: VersionRow | null, listing: ListingPayload | null, toDiffuse: boolean, ack: AckRow | null): PortalAction | null {
     const live = ack !== null && ack.action !== 'retirer';
-    const show = subscribed && version !== null && listing !== null && ON_PORTALS.has(version.state) && listing.priceEur !== null && listing.mentions !== null;
+    const show = toDiffuse && version !== null && listing !== null && ON_PORTALS.has(version.state) && listing.priceEur !== null && listing.mentions !== null;
     if (show) {
       if (live && ack.seq >= Number(version.seq)) return null;
       return live ? 'modifier' : 'publier';
     }
-    // Ni en vente ni souscrit : retirer ce qui est encore en ligne, une fois [R42].
+    // Plus à diffuser sur ce portail : retirer ce qui est encore en ligne, une fois [R42].
     return live ? 'retirer' : null;
   }
 
@@ -181,12 +161,15 @@ export class DiffusionPortails {
     return held?.token === token && held.expires_at > this.now().toISOString();
   }
 
-  /** Les portails à suivre pour ce bien : ceux réglés pour le réseau, et ceux qui en ont déjà accusé une version. */
-  private async portalsFor(networkId: string, propertyId: string): Promise<{ portal: string; subscribed: boolean }[]> {
-    const subs = new Map((await this.subscriptions(networkId)).map((s) => [s.portal, s.active]));
+  /**
+   * Les portails à suivre pour ce bien : ceux que la direction a réglés actifs, avec le plan de HX38, et ceux qui en
+   * ont déjà accusé une version, même arrêtés depuis, pour pouvoir l'y retirer.
+   */
+  private async portalsFor(networkId: string, propertyId: string): Promise<{ portal: string; plan: PlanStatus | 'inactif' }[]> {
+    const plans = new Map<string, PlanStatus | 'inactif'>((await this.surveillance.plan(networkId, propertyId)).map((x) => [x.portal, x.status]));
     const seen = await this.db.all<{ portal: string }>("SELECT DISTINCT portal FROM portal_operations WHERE property_id = ? AND outcome = 'accuse'", [propertyId]);
-    for (const s of seen) if (!subs.has(s.portal)) subs.set(s.portal, false);
-    return [...subs.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([portal, subscribed]) => ({ portal, subscribed }));
+    for (const x of seen) if (!plans.has(x.portal)) plans.set(x.portal, 'inactif');
+    return [...plans.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([portal, plan]) => ({ portal, plan }));
   }
 
   /**
@@ -202,10 +185,10 @@ export class DiffusionPortails {
     try {
       const version = await this.latestVersion(propertyId);
       const listing = version ? ({ ...(JSON.parse(version.payload) as Omit<ListingPayload, 'version'>), version: Number(version.seq) } as ListingPayload) : null;
-      for (const { portal, subscribed } of await this.portalsFor(networkId, propertyId)) {
+      for (const { portal, plan } of await this.portalsFor(networkId, propertyId)) {
         if (!(await this.holds(propertyId, lease))) break;
         const ack = await this.lastAck(propertyId, portal);
-        const action = DiffusionPortails.due(version, listing, subscribed, ack);
+        const action = DiffusionPortails.due(version, listing, plan === 'a_diffuser', ack);
         if (!action || !version || !listing) continue;
         // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
         const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
@@ -224,10 +207,11 @@ export class DiffusionPortails {
       // Seul le passage qui tient encore le bail range un geste : un passage en retard n'écrit rien par-dessus le suivant.
       const { changes } = await this.db
         .run(
-          `INSERT INTO portal_operations (id, network_id, property_id, portal, version_id, seq, action, outcome, receipt, portal_ref, error_code, at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM portal_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
+          `INSERT INTO portal_operations (id, network_id, property_id, portal, n, version_id, seq, action, outcome, receipt, portal_listing_id, error_code, at)
+           SELECT ?, ?, ?, ?, (SELECT COALESCE(MAX(n), 0) + 1 FROM portal_operations WHERE property_id = ? AND portal = ?), ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM portal_sync_leases WHERE property_id = ? AND token = ? AND expires_at > ?)`,
           [
-            this.newId(), networkId, propertyId, portal, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
+            this.newId(), networkId, propertyId, portal, propertyId, portal, version.id, Number(version.seq), action, outcome, extra.receipt ?? null, extra.portalRef ?? null, extra.code ?? null, this.now().toISOString(),
             propertyId, lease, this.now().toISOString(),
           ],
         )
@@ -303,15 +287,15 @@ export class DiffusionPortails {
     const version = await this.latestVersion(propertyId);
     const listing = version ? ({ ...(JSON.parse(version.payload) as Omit<ListingPayload, 'version'>), version: Number(version.seq) } as ListingPayload) : null;
     const out: PortalStatus[] = [];
-    for (const { portal, subscribed } of await this.portalsFor(viewer.networkId, propertyId)) {
+    for (const { portal, plan } of await this.portalsFor(viewer.networkId, propertyId)) {
       const mode = this.connector(portal).mode;
       const ack = await this.lastAck(propertyId, portal);
-      const due = DiffusionPortails.due(version, listing, subscribed, ack);
-      const err = await this.db.first<{ seq: number; action: PortalAction; error_code: string; at: string }>(
-        "SELECT seq, action, error_code, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec' ORDER BY at DESC, id DESC LIMIT 1",
+      const due = DiffusionPortails.due(version, listing, plan === 'a_diffuser', ack);
+      const err = await this.db.first<{ n: number; seq: number; action: PortalAction; error_code: string; at: string }>(
+        "SELECT n, seq, action, error_code, at FROM portal_operations WHERE property_id = ? AND portal = ? AND outcome = 'echec' ORDER BY n DESC LIMIT 1",
         [propertyId, portal],
       );
-      const lastError = err && (!ack || err.at > ack.at) ? { seq: Number(err.seq), action: err.action, code: err.error_code, at: err.at } : null;
+      const lastError = err && (!ack || Number(err.n) > Number(ack.n)) ? { seq: Number(err.seq), action: err.action, code: err.error_code, at: err.at } : null;
       const live = ack !== null && ack.action !== 'retirer';
       let state: PortalState;
       if (due === null) state = live ? 'publiee' : ack ? 'retiree' : 'non_publiee';
@@ -320,11 +304,11 @@ export class DiffusionPortails {
       else state = 'en_attente';
       out.push({
         portal,
-        subscribed,
+        plan,
         mode,
         state,
-        acknowledged: ack ? { seq: Number(ack.seq), action: ack.action, receipt: ack.receipt, portalRef: ack.portal_ref, at: ack.at } : null,
-        expectedSeq: subscribed && version && ON_PORTALS.has(version.state) ? Number(version.seq) : null,
+        acknowledged: ack ? { seq: Number(ack.seq), action: ack.action, receipt: ack.receipt, portalRef: ack.portal_listing_id, at: ack.at } : null,
+        expectedSeq: plan === 'a_diffuser' && version ? Number(version.seq) : null,
         lastError,
       });
     }

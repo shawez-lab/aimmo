@@ -10,3 +10,4 @@ export * from './portails.ts';
 export * from './mesure.ts';
 export * from './traductions.ts';
 export * from './diffusion-portails.ts';
+export { DiffusionSurveillee } from '../diffusion/surveillance.ts';
