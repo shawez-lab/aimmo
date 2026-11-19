@@ -130,6 +130,15 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.calls.at(-1)!.url).toBe('/v1/annonces/b1/publication');
   });
 
+  it('AU065 · les années des prix, telles que le diagnostic les écrit, partent avec la dernière pour année des prix', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    expect(t.f('fiche-bien-cout-annee').value).toBe('2025');
+    t.f('fiche-bien-cout-annee').value = '2021, 2022 et 2023';
+    await t.save();
+    expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
+  });
+
   it('sans fiche : un formulaire vide à la version 0, où un champ vide reste « je ne sais pas »', async () => {
     const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
     await t.open();

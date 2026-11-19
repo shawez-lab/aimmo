@@ -49,13 +49,28 @@ export interface Characteristics {
   elevator: boolean | null;
 }
 
+/**
+ * La période des prix de l'énergie, dans les mots du diagnostic : « au 1er janvier 2021 » pour une année, « sur les
+ * années 2021, 2022 et 2023 » quand il en cite plusieurs (modèle de DPE du 1er juillet 2024) (AU065).
+ */
+export function energyPriceText(e: { costReferenceYear: number; costReferenceYears?: number[] | null }): string {
+  const ys = e.costReferenceYears ?? [];
+  const when = ys.length > 1 ? `sur les années ${ys.slice(0, -1).join(', ')} et ${ys.at(-1)}` : `au 1er janvier ${e.costReferenceYear}`;
+  return `Prix moyens des énergies indexés ${when} (abonnements compris).`;
+}
+
 export interface EnergyDiagnosis {
   energyClass: EnergyClass;
   climateClass: EnergyClass;
   annualCostMinEur: number;
   annualCostMaxEur: number;
-  /** L'année des prix de l'énergie utilisés par le diagnostic. */
+  /** L'année des prix de l'énergie utilisés par le diagnostic ; s'il en cite plusieurs, la dernière. */
   costReferenceYear: number;
+  /**
+   * Les années des prix quand le diagnostic en cite plusieurs, telles qu'il les écrit (« indexés sur les années 2021,
+   * 2022 et 2023 ») : de 2 à 5 années qui se suivent, la dernière étant `costReferenceYear` (AU065).
+   */
+  costReferenceYears?: number[];
   /** `AAAA-MM-JJ`. */
   diagnosedOn: string;
 }
@@ -173,7 +188,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (input.energy !== null && input.energy !== undefined) {
     const e = input.energy;
     if (!isRecord(e)) return bad('energy');
-    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'diagnosedOn'], 'energy');
+    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'costReferenceYears', 'diagnosedOn'], 'energy');
     if (eExtra) return bad(eExtra);
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.energyClass)) return bad('energy.energyClass');
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.climateClass)) return bad('energy.climateClass');
@@ -181,6 +196,13 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     if (!isInt(e.annualCostMaxEur, 1, 1_000_000)) return bad('energy.annualCostMaxEur');
     if (e.annualCostMinEur > e.annualCostMaxEur) return bad('energy.annualCostMinEur');
     if (!isInt(e.costReferenceYear, 2000, year)) return bad('energy.costReferenceYear');
+    // Plusieurs années : celles du diagnostic, qui se suivent, la dernière étant l'année des prix (AU065).
+    const years = e.costReferenceYears;
+    if (years !== undefined && years !== null) {
+      if (!Array.isArray(years) || years.length < 2 || years.length > 5 || !years.every((y, i) => isInt(y, 2000, year) && (i === 0 || y === years[i - 1] + 1)) || years.at(-1) !== e.costReferenceYear) {
+        return bad('energy.costReferenceYears');
+      }
+    }
     if (!validDay(e.diagnosedOn) || e.diagnosedOn > todayDay) return bad('energy.diagnosedOn');
     energy = {
       energyClass: e.energyClass as EnergyClass,
@@ -188,6 +210,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
       annualCostMinEur: e.annualCostMinEur,
       annualCostMaxEur: e.annualCostMaxEur,
       costReferenceYear: e.costReferenceYear,
+      ...(Array.isArray(years) ? { costReferenceYears: [...(years as number[])] } : {}),
       diagnosedOn: e.diagnosedOn,
     };
   }
