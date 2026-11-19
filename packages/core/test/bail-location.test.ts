@@ -8,6 +8,7 @@ import {
   MisesEnLocation,
   REQUIRED_LEASE_FIELDS,
   leaseAnnexes,
+  leaseDuration,
   type RentalFacts,
 } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -35,7 +36,7 @@ const FACTS: RentalFacts = {
   leaseStart: '2027-09-01',
   chargesMode: 'provision',
 };
-const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
+const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', landlord: 'physique', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
 const FEES = { tenantCents: 34_000, tenantInventoryCents: 12_750, landlordCents: 34_000, landlordInventoryCents: 12_750, depositCents: 65_000 };
 const BODY = [
   'Bail de {{bail.type}} entre {{bailleur.nom}}, domicilié {{bailleur.domicile}}, bailleur, et {{locataire.nom}}, locataire.',
@@ -183,7 +184,7 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const r = await t.baux.generate(t.agent, id, { ...t.inp(id), address: undefined });
     expect(r).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['logement.adresse'] } });
     // Chaque mention exigée de la loi de 1989 sans valeur laisse le bail incomplet.
-    const bare = await t.baux.generate(t.agent, id);
+    const bare = await t.baux.generate(t.agent, id, { landlord: 'physique' });
     expect(bare.ok && bare.value.missing.sort()).toEqual(['annexe.notice_information', 'bailleur.domicile', 'logement.adresse', 'logement.equipements', 'logement.habitat', 'mandataire.carte']);
     expect(bare.ok && bare.value.content).toContain('[à compléter : carte professionnelle de l’agent immobilier]');
     expect(bare.ok && bare.value.content).not.toMatch(/\[à compléter : [^\]]*mandataire/);
@@ -267,5 +268,32 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const r = await t.baux.generate(t.agent, id, t.inp(id));
     expect(r).toMatchObject({ ok: false, rule: 'R16' });
     expect(JSON.stringify(r)).not.toContain('Bailleur');
+  });
+});
+
+describe('AU096 · la durée du bail par la loi, selon le bailleur et la sorte de location', () => {
+  it('[R40] vide : 3 ans pour une personne, 6 ans pour une société ; meublé : 1 an, 9 mois pour un étudiant ; mobilité : aucun', () => {
+    expect(leaseDuration(false, 'physique', 'standard')).toBe('trois ans');
+    expect(leaseDuration(false, 'morale', 'standard')).toBe('six ans');
+    expect(leaseDuration(true, 'morale', 'standard')).toBe('un an');
+    expect(leaseDuration(true, 'physique', 'etudiant')).toBe('neuf mois');
+    expect(leaseDuration(false, 'physique', 'etudiant')).toBeNull();
+    expect(leaseDuration(true, 'physique', 'mobilite')).toBeNull();
+  });
+});
+
+describeWithSqlite('AU096 · la qualité du bailleur dite, jamais supposée', () => {
+  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; bail mobilité et meublé étudiant refusés avant tout', async () => {
+    const t = await setup();
+    await t.template();
+    const id = await t.ready();
+    const { landlord: _l, ...noLandlord } = t.inp(id) as Record<string, unknown>;
+    expect(await t.baux.generate(t.agent, id, noLandlord)).toEqual({ ok: false, rule: null, code: 'missing_landlord' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite' })).toEqual({ ok: false, rule: null, code: 'bail_mobilite_refuse' });
+    // Le meublé étudiant n'a pas encore son modèle validé : refusé, jamais fait avec le modèle du meublé ordinaire.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bail_etudiant_refuse' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'autre' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    const r = await t.baux.generate(t.agent, id, { ...t.inp(id), landlord: 'morale' });
+    expect(r.ok && r.value.content).toContain('six ans');
   });
 });

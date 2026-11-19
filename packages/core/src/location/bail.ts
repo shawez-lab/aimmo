@@ -13,8 +13,10 @@
  * bail d'essai, marqué comme tel. Le bail garde la version et l'empreinte du modèle et son contenu, figé ; une
  * correction est une nouvelle version [R17].
  *
- * Décidé, lecture prudente : le bailleur est une personne physique (durée de 3 ans pour un logement vide, 1 an pour un
- * meublé) ; la signature en ligne du bail par D08 est une tâche à part (W12), en mode essai tant que H08 et H24 ne sont
+ * La durée vient de la qualité du bailleur et de la sorte de location, dites par l'agent (AU096 ; loi de 1989, art. 10 et
+ * 25-7) : logement vide, 3 ans pour un bailleur personne physique, 6 ans pour une personne morale ; meublé, 1 an. Le bail
+ * meublé étudiant (9 mois) et le bail mobilité demandent chacun leur propre modèle validé et leurs mentions : tant
+ * qu'AIMMO n'a pas ces modèles, ils sont refusés avant toute saisie, jamais faits avec un modèle qui n'est pas le leur ; la signature en ligne du bail par D08 est une tâche à part (W12), en mode essai tant que H08 et H24 ne sont
  * pas faits.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -74,6 +76,16 @@ const ADDRESS = /^[\p{L}\p{N} ,.'’-]{5,160}$/u;
 const CARD = /^CPI [0-9A-Z ]{6,30}$/;
 const EQUIPMENT = /^[\p{L}\p{N} ,.'’()-]{3,400}$/u;
 export const HABITATS = { collectif: 'immeuble collectif', individuel: 'habitat individuel' } as const;
+export const LANDLORDS = { physique: 'personne physique', morale: 'personne morale' } as const;
+export const LEASE_VARIANTS = ['standard', 'etudiant', 'mobilite'] as const;
+export type LeaseVariant = (typeof LEASE_VARIANTS)[number];
+
+/** La durée écrite au bail, par la loi seule ; `null` quand la combinaison n'existe pas. */
+export function leaseDuration(furnished: boolean, landlord: keyof typeof LANDLORDS, variant: LeaseVariant): string | null {
+  if (variant === 'mobilite') return null;
+  if (!furnished) return variant === 'standard' ? (landlord === 'morale' ? 'six ans' : 'trois ans') : null;
+  return variant === 'etudiant' ? 'neuf mois' : 'un an';
+}
 
 export interface LeaseTemplate {
   id: string;
@@ -249,7 +261,7 @@ export class BauxLocation {
   async generate(
     viewer: Viewer,
     listingId: unknown,
-    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown; noticeRef?: unknown } = {},
+    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown; noticeRef?: unknown; landlord?: unknown; variant?: unknown } = {},
   ): Promise<LeaseResult<Lease>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
@@ -282,6 +294,15 @@ export class BauxLocation {
     }
     const habitat = input.habitat === undefined || input.habitat === null ? null : input.habitat;
     if (habitat !== null && (typeof habitat !== 'string' || !Object.prototype.hasOwnProperty.call(HABITATS, habitat))) return { ok: false, rule: null, code: 'bad_habitat' };
+    // La qualité du bailleur est dite, jamais supposée : elle fait la durée du bail vide (AU096).
+    const landlord = input.landlord;
+    if (typeof landlord !== 'string' || !Object.prototype.hasOwnProperty.call(LANDLORDS, landlord)) return { ok: false, rule: null, code: 'missing_landlord' };
+    const variant = input.variant === undefined || input.variant === null ? 'standard' : input.variant;
+    if (typeof variant !== 'string' || !(LEASE_VARIANTS as readonly string[]).includes(variant)) return { ok: false, rule: null, code: 'bad_variant' };
+    if (variant === 'mobilite') return { ok: false, rule: null, code: 'bail_mobilite_refuse' };
+    if (variant === 'etudiant') return { ok: false, rule: null, code: 'bail_etudiant_refuse' };
+    const duration = leaseDuration(facts.furnished, landlord as keyof typeof LANDLORDS, variant as LeaseVariant);
+    if (duration === null) return { ok: false, rule: null, code: 'bad_variant' };
     const kind: LeaseKind = facts.furnished ? 'bail_meuble' : 'bail_vide';
     // Le modèle en vigueur : la dernière version validée ; à défaut, la dernière d'essai, qui ne fait qu'un bail d'essai.
     const template = await this.db.first<TemplateRow>(
@@ -324,7 +345,7 @@ export class BauxLocation {
       'logement.classe_energie': facts.energyClass,
       'bail.type': facts.furnished ? 'location meublée' : 'location vide',
       'bail.debut': dayInFrench(facts.leaseStart),
-      'bail.duree': facts.furnished ? 'un an' : 'trois ans',
+      'bail.duree': duration,
       'loyer.hors_charges': `${euros(facts.rentCents)} € par mois`,
       'charges.montant': `${euros(facts.chargesCents)} € par mois`,
       'charges.mode': facts.chargesMode === 'forfait' ? 'forfait' : 'provision, avec régularisation annuelle',

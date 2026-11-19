@@ -164,6 +164,7 @@ async function setup() {
       address: '12 allée des Essais',
       ownerAddress: '3 chemin des Exemples, Ailleurs-Essai',
       habitat: 'collectif',
+      landlord: 'physique',
       equipment: 'Cuisine équipée, cave',
       professionalCard: 'CPI 2101 2027 000 000 001',
       noticeRef: put(`location/${id}/bail`),
@@ -301,7 +302,7 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     // La direction du réseau lit.
     expect((await t.ok(t.dir, 'GET', path)).content).toBe(first.content);
     // Un nouveau bail remplace l'ancien : seul le nouveau se relit.
-    const next = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { address: '40 rue du Bail Nouveau', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
+    const next = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { landlord: 'physique', address: '40 rue du Bail Nouveau', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
     const again = await t.ok(t.agent, 'GET', path);
     expect(again.leaseId).toBe(next.leaseId);
     expect(again.content).toContain('40 rue du Bail Nouveau');
@@ -427,7 +428,7 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
     const text = JSON.stringify([mine, p, pres]);
     expect(text).not.toMatch(/Ambre|Basile|Céleste|Inventé|Bailleur|personId|\b(?:score|note|rang|rank)\b/);
     // Un nouveau bail : son état des lieux rangé et signé d'une seule partie est relu par l'avancée, sans être refait [R106].
-    const bail2 = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
+    const bail2 = await t.ok(t.agent, 'POST', `/location/${r.id}/bail`, { landlord: 'physique', address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'individuel', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001', noticeRef: t.put(`location/${r.id}/bail`) });
     // Le texte du bail en vigueur se relit tel que rangé, et la lecture est au journal, sans le texte (W15) [R16].
     const reread = await t.ok(t.agent, 'GET', `/location/${r.id}/bail/texte`);
     expect(reread).toEqual({ leaseId: bail2.leaseId, content: bail2.content, contentSha256: bail2.contentSha256 });
