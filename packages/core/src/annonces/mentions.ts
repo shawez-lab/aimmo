@@ -38,6 +38,7 @@ import { Diffusion } from '../documents/retractation.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { energyPriceText, type EnergyClass, type PropertySheet } from './fiche-bien.ts';
+import { latestCardHolder, latestLegalMention } from '../attirer/page-agent.ts';
 
 /** Le jour à Paris, `AAAA-MM-JJ`. */
 function parisDay(at: Date): string {
@@ -329,12 +330,10 @@ export class MentionsAnnonce {
       [propertyId],
     );
     if (!a || a.network_id !== networkId || a.status !== 'active') return null;
-    const legal = await this.db.first<{ legal_status: string; rsac_number: string; rsac_registry: string }>(
-      'SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1',
-      [a.id, networkId],
-    );
+    // Les mêmes lectures que la page de l'agent : statut et titulaire y sont toujours les mêmes [R152].
+    const legal = await latestLegalMention(this.db, networkId, a.id);
     if (!legal || legal.legal_status !== 'agent_commercial') return null;
-    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [networkId]);
+    const holder = await latestCardHolder(this.db, networkId);
     return { firstName: a.first_name, lastName: a.last_name, status: 'agent_commercial', rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardHolder: holder?.holder_name ?? null };
   }
 

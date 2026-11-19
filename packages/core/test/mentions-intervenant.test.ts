@@ -84,6 +84,11 @@ describeWithSqlite('AU007 · page, fiche et exports suivent le statut réel de l
     await new PageAgent(t.db, t.journal, { now: t.now }).setLegalMentions(t.direction, t.alexId, { rsacNumber: '900000002', rsacRegistry: 'Beaune' });
     await t.publication.sync(t.network.id, t.propertyId);
     expect(await latest()).toContain('RSAC de Beaune n° 900 000 002');
+    // Deux réglages à la même milliseconde : le dernier écrit l'emporte, comme sur la page de l'agent.
+    await new PageAgent(t.db, t.journal, { now: t.now }).setLegalMentions(t.direction, t.alexId, { rsacNumber: '900000003', rsacRegistry: 'Auxonne' });
+    await new PageAgent(t.db, t.journal, { now: t.now, newId: () => '00000000-0000-4000-8000-000000000000' }).setLegalMentions(t.direction, t.alexId, { rsacNumber: '900000004', rsacRegistry: 'Nuits' });
+    await t.publication.sync(t.network.id, t.propertyId);
+    expect(await latest()).toContain('RSAC de Nuits n° 900 000 004');
     // Le bien passe à Sam : ses mentions à lui.
     await t.db.run('UPDATE properties SET agent_id = ? WHERE id = ?', [t.sam.userId, t.propertyId]);
     await t.publication.sync(t.network.id, t.propertyId);
