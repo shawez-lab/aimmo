@@ -5,7 +5,7 @@ import { LEASE_FIELDS } from '../../core/src/location/index.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
-import { LOUER_LOYER_SCRIPT } from '../app/louer-loyer.ts';
+import { LOUER_FAITS_SCRIPT } from '../app/louer-faits.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
@@ -462,22 +462,31 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.byText('Préparer l’annonce')).toBeUndefined();
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
     expect(rail.children[0]!.textContent).toBe('Logement · bloqué');
-    // Les faits se corrigent : des euros et des m² saisis, rangés en centimes et centièmes.
+    // Les faits se corrigent : des euros et des m² saisis, rangés en centimes et centièmes ; le formulaire est chargé à part, au geste.
+    expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-faits.js')).toHaveLength(0);
+    await t.click(t.byText('Corriger les faits du logement'));
+    await t.lazyLoad('/app/louer-faits.js', LOUER_FAITS_SCRIPT);
     t.input('Loyer hors charges, en euros par mois').value = '640,50';
     t.input('Surface habitable, en m²').value = '42,5';
     t.input('Classe énergie du DPE').value = 'E';
     t.table['POST /v1/location/l1/faits'] = ok({ version: 2 });
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ ...Object.fromEntries(Object.entries(FACTS).filter(([k]) => k !== 'version')), rentCents: 64_050, livingAreaHundredths: 4_250, energyClass: 'E' });
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
     // AU016 · Le loyer du locataire précédent : « aucun » pour une première location, sinon des euros en centimes.
     t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'Aucun';
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[1]!.body!)).toMatchObject({ firstLetting: true });
     expect(JSON.parse(t.posts()[1]!.body!)).not.toHaveProperty('previousRentCents');
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
     t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = '600';
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[2]!.body!)).toMatchObject({ previousRentCents: 60_000 });
     expect(JSON.parse(t.posts()[2]!.body!)).not.toHaveProperty('firstLetting');
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
     t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'cher';
     await t.click(t.byText('Ranger les faits'));
     expect(t.posts()).toHaveLength(3);
@@ -489,10 +498,7 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.posts()).toHaveLength(3);
     expect(t.state()).toBe('Remplissez chaque champ : des nombres, et la date du bail.');
     t.input('Loyer hors charges, en euros par mois').value = '640,50';
-    // AU015 · L'encadrement des loyers, chargé à part au geste : ce que dit l'arrêté, en centimes.
-    expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-loyer.js')).toHaveLength(0);
-    await t.click(t.byText('Loyer encadré'));
-    await t.lazyLoad('/app/louer-loyer.js', LOUER_LOYER_SCRIPT);
+    // AU015 · L'encadrement des loyers : ce que dit l'arrêté pour ce logement, en centimes.
     t.input('Arrêté préfectoral lu (référence)').value = 'Arrêté inventé n° 0000-00';
     t.input('Lu le').value = '2027-07-01';
     t.input('Loyer de référence, en euros par m² et par mois').value = '20';
@@ -503,6 +509,25 @@ describe('W11 · écran « Louer » de l’application', () => {
     t.input('Loyer de référence majoré, en euros par m² et par mois').value = '24,50';
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[3]!.body!).rentControl).toEqual({ decree: 'Arrêté inventé n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_450, complementCents: 0, complementReason: null });
+  });
+
+  it('AU015 · un logement bloqué par l’encadrement des loyers dit pourquoi, plafond compris', async () => {
+    const t = await run({
+      'GET /v1/location/l1': ok({
+        check: { checkId: 'k1', listingId: 'l1', factsVersion: 1, decision: 'bloque', reasons: [{ code: 'rent_control_missing' }, { code: 'rent_above_ceiling', baseRentCents: 105_000, ceilingCents: 102_000 }, { code: 'complement_forbidden', energyClass: 'F' }, { code: 'complement_unjustified' }], bannedFrom: null, checkedAt: '2027-07-12T08:00:00.000Z' },
+        stale: false,
+        required: ['dpe', 'erp', 'surface_habitable'],
+      }),
+      'GET /v1/location/l1/annonces': ok([]),
+      'GET /v1/location/l1/echeances': ok([]),
+    });
+    await t.openL1();
+    const text = t.body().textContent;
+    expect(text).toContain('Loyer encadré dans la commune : saisissez l’arrêté.');
+    expect(text).toContain('Loyer de base 1050 € : plafond 1020 €.');
+    expect(text).toContain('Pas de complément de loyer pour un F ou un G.');
+    expect(text).toContain('Complément de loyer sans justification.');
+    expect(text).not.toContain('Raison inconnue.');
   });
 
   it('[R102] [R107] les plafonds viennent du code ; les honoraires sont proposés au plafond et partent en centimes ; aucun champ d’argent pour AIMMO', async () => {

@@ -21,14 +21,14 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { renderDocument, sha256, templateFields, type FieldSource } from '../documents/modeles.ts';
+import { escapeHtml, renderDocument, sha256, templateFields, type FieldSource } from '../documents/modeles.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { euros } from './annonce-location.ts';
 import type { ChoixProprietaire } from './choix.ts';
 import type { HonorairesLocation } from './honoraires.ts';
-import { ANNEX_KINDS, dayInFrench, rentCeilingCents, requiredAnnexes, type LocationRefusal, type MisesEnLocation } from './logement.ts';
+import { ANNEX_KINDS, dayInFrench, rentCeilingCents, requiredAnnexes, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 
 export const LEASE_KINDS = ['bail_vide', 'bail_meuble'] as const;
 export type LeaseKind = (typeof LEASE_KINDS)[number];
@@ -64,6 +64,18 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'signature.date': { source: 'signature', label: 'date de signature' },
   'signature.lieu': { source: 'signature', label: 'lieu de signature' },
 });
+
+/**
+ * Ce que le bail dit de l'encadrement des loyers (AU015) : hors commune encadrée, « sans objet » ; dans une commune
+ * encadrée, les loyers de référence lus dans l'arrêté, le plafond, le loyer de base et le complément ; null s'il manque.
+ */
+export function rentControlText(controlled: boolean, facts: RentalFacts): string | null {
+  if (!controlled) return 'sans objet : la commune n’est pas soumise à l’encadrement des loyers';
+  const rc = facts.rentControl ?? null;
+  if (rc === null) return null;
+  const complement = rc.complementCents > 0 ? ` ; complément de loyer ${euros(rc.complementCents)} € par mois, justifié par : ${rc.complementReason ?? ''}` : '';
+  return `loyer de référence ${euros(rc.referenceCentsPerM2)} € par m² et par mois, loyer de référence majoré ${euros(rc.majoredCentsPerM2)} € par m² et par mois (${euros(rentCeilingCents(rc, facts.livingAreaHundredths))} € par mois pour ce logement), arrêté ${rc.decree} ; loyer de base ${euros(facts.rentCents - rc.complementCents)} € par mois${complement}`;
+}
 
 /** Les champs qu'un modèle de bail doit porter : sans eux, il est refusé [R101, R102]. */
 export const REQUIRED_LEASE_FIELDS: readonly string[] = [
@@ -333,7 +345,6 @@ export class BauxLocation {
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);
     const annexes = leaseAnnexes(requiredAnnexes(facts), facts.furnished);
     const controlled = await this.listings.rentControlledOn({ id: listing.id, network_id: listing.networkId }, facts.leaseStart > today ? facts.leaseStart : today);
-    const rc = controlled ? (facts.rentControl ?? null) : null;
     const values: Record<string, string | null> = {
       'bailleur.nom': owner,
       'bailleur.domicile': ownerAddress as string | null,
@@ -351,11 +362,7 @@ export class BauxLocation {
       'bail.debut': dayInFrench(facts.leaseStart),
       'bail.duree': duration,
       'loyer.hors_charges': `${euros(facts.rentCents)} € par mois`,
-      'loyer.encadrement': !controlled
-        ? 'sans objet : la commune n’est pas soumise à l’encadrement des loyers'
-        : rc === null
-          ? null
-          : `loyer de référence ${euros(rc.referenceCentsPerM2)} € par m² et par mois, loyer de référence majoré ${euros(rc.majoredCentsPerM2)} € par m² et par mois (${euros(rentCeilingCents(rc, facts.livingAreaHundredths))} € par mois pour ce logement), arrêté ${rc.decree} ; loyer de base ${euros(facts.rentCents - rc.complementCents)} € par mois${rc.complementCents > 0 ? ` ; complément de loyer ${euros(rc.complementCents)} € par mois, justifié par : ${rc.complementReason ?? ''}` : ''}`,
+      'loyer.encadrement': rentControlText(controlled, facts),
       'charges.montant': `${euros(facts.chargesCents)} € par mois`,
       'charges.mode': facts.chargesMode === 'forfait' ? 'forfait' : 'provision, avec régularisation annuelle',
       'depot.montant': `${euros(fees.depositCents)} €`,
@@ -442,6 +449,13 @@ export class BauxLocation {
     const valid = (await this.listings.annexRefs(listingId)).filter((a) => requiredAnnexes(facts!).includes(a.kind));
     const key = (list: readonly { kind: string; ref: string }[]) => JSON.stringify([...list].map((a) => `${a.kind}:${a.ref}`).sort());
     if (key(joined) !== key(valid)) return null;
+    // Une commune devenue encadrée depuis le bail : le bail qui ne dit pas l'encadrement de ce jour n'est plus celui
+    // qui se signe, il en faut un nouveau (AU015).
+    const today = localTime(this.now(), 'Europe/Paris').date;
+    if (await this.listings.rentControlledOn({ id: listingId, network_id: networkId }, facts!.leaseStart > today ? facts!.leaseStart : today)) {
+      const said = rentControlText(true, facts!);
+      if (said === null || !r.content.includes(escapeHtml(said))) return null;
+    }
     return { leaseId: r.id, contentSha256: r.content_sha256, mode: r.mode, complete: r.status === 'complet' };
   }
 }

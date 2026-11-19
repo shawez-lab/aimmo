@@ -36,7 +36,7 @@ const modelesEntry = (p: string, about: string): string => `<section class="bloc
 <div id="${p}-corps"></div>
 </section>
 `;
-export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direction range les versions, la conformité les valide. Une nouvelle version s’ajoute, l’ancienne reste.');
+export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direction range les versions, la conformité les valide.');
 export const LOUER_MODELES_CONFORMITE_HTML = modelesEntry('louer-modeles-c', 'Valider seulement un texte relu par l’avocat.');
 
 export const LOUER_HTML = `<section id="louer" hidden>
@@ -179,8 +179,6 @@ globalThis.AIMMO_LOUER = function (t) {
   var LEASE_LABELS = ${JSON.stringify(LEASE_LABELS)};
   var HABITATS = ${JSON.stringify(HABITATS)};
   var CHOICE_CHANNELS = ${JSON.stringify(CHANNEL_LABELS)};
-  var CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-  var GAS = { aucune: 'Pas d’installation de gaz', moins_de_15_ans: 'Gaz, installation de moins de 15 ans', plus_de_15_ans: 'Gaz, installation de plus de 15 ans' };
   var PIECES_MISSING = { identite: 'pièce d’identité vérifiée', domicile: 'justificatif de domicile', activite: 'justificatif d’activité', ressources: 'justificatif de ressources', visa_visale: 'visa Visale' };
   var PARTY_NAMES = { bailleur: 'le bailleur', locataire: 'le locataire' };
   var PARTY_TO = { bailleur: 'au bailleur', locataire: 'au locataire' };
@@ -463,7 +461,7 @@ globalThis.AIMMO_LOUER = function (t) {
       var make = globalThis[global];
       try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') { if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.'); return; }
-      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, upload: louerUpload, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
+      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, checkbox: checkbox, toCents: toCents, centsText: centsText, details: details, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, upload: louerUpload, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
       if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
     });
     s.addEventListener('error', function () {
@@ -500,12 +498,10 @@ globalThis.AIMMO_LOUER = function (t) {
     var a = ANNEXES[r.kind] || 'Annexe';
     if (r.code === 'energy_class') return 'Classe énergie ' + r.energyClass + ' : interdite à la location depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
     if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
-    if (r.code === 'living_area') return 'Trop petit pour être décent.';
-    if (r.code === 'local_rules_unchecked') return 'Règle locale non vérifiée.';
-    if (r.code === 'previous_rent_missing') return 'Classé F ou G : dites le loyer du locataire précédent, ou « aucun ».';
+    var said = { living_area: 'Trop petit pour être décent.', local_rules_unchecked: 'Règle locale non vérifiée.', previous_rent_missing: 'Classé F ou G : dites le loyer du locataire précédent, ou « aucun ».', local_rules_failed: 'Règle locale non respectée.', dimensions_missing: 'Dimensions manquantes.', rent_control_missing: 'Loyer encadré dans la commune : saisissez l’arrêté.', complement_forbidden: 'Pas de complément de loyer pour un F ou un G.', complement_unjustified: 'Complément de loyer sans justification.' }[r.code];
+    if (said) return said;
     if (r.code === 'rent_freeze') return 'Classé F ou G : le loyer ne peut dépasser celui du locataire précédent, ' + centsText(r.previousRentCents) + ' €.';
-    if (r.code === 'local_rules_failed') return 'Règle locale non respectée.';
-    if (r.code === 'dimensions_missing') return 'Dimensions manquantes.';
+    if (r.code === 'rent_above_ceiling') return 'Loyer de base ' + centsText(r.baseRentCents) + ' € : plafond ' + centsText(r.ceilingCents) + ' €.';
     if (r.code === 'annex_missing') return a + ' : manquant.';
     if (r.code === 'annex_expired') return a + ' : échu le ' + date(r.validUntil + 'T12:00:00Z') + '.';
     if (r.code === 'annex_future') return a + ' : daté dans le futur.';
@@ -515,7 +511,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var box = section('Le logement');
     var c = status.check;
     if (!c) box.appendChild(el('p', 'Pas encore contrôlé : saisissez les faits et les annexes, puis contrôlez.', 'doux'));
-    else if (status.stale) box.appendChild(el('p', 'Les faits ou les annexes ont changé depuis le dernier contrôle, ou le temps l’a rendu caduc : contrôlez de nouveau.', 'alerte'));
+    else if (status.stale) box.appendChild(el('p', 'Contrôle caduc (faits, annexes, règle ou date) : contrôlez de nouveau.', 'alerte'));
     else if (c.decision === 'louable') box.appendChild(el('p', 'Louable : contrôlé le ' + date(c.checkedAt) + '.', 'fait'));
     else {
       box.appendChild(el('p', 'Bloqué avant toute annonce : ce logement ne peut pas être proposé.', 'alerte'));
@@ -527,7 +523,9 @@ globalThis.AIMMO_LOUER = function (t) {
     if (facts) {
       box.appendChild(el('p', (facts.furnished ? 'Meublé' : 'Vide') + ' · ' + centsText(facts.rentCents) + ' € hors charges · ' + String(facts.livingAreaHundredths / 100).replace('.', ',') + ' m² · classe ' + facts.energyClass + ' · bail au ' + date(facts.leaseStart + 'T12:00:00Z'), 'doux'));
     }
-    box.appendChild(factsForm(base, facts));
+    var held = el('div');
+    box.appendChild(button(facts ? 'Corriger les faits du logement' : 'Saisir les faits du logement', function () { lazy('louer-faits', 'AIMMO_LOUER_FAITS', function (x) { clear(held); x.form(held, base, facts); }); }));
+    box.appendChild(held);
     var need = (status.required || []).map(function (k) { return ANNEXES[k] || k; });
     if (need.length) box.appendChild(el('p', 'Annexes exigées : ' + need.join(', ') + '.', 'doux'));
     box.appendChild(annexForm(base, status.required || []));
@@ -538,63 +536,6 @@ globalThis.AIMMO_LOUER = function (t) {
       box.appendChild(el('p', n.text, 'brouillon'));
     });
     return box;
-  }
-  function factsForm(base, f) {
-    var n = ++louerSeq;
-    var d = details(el('div'), f ? 'Corriger les faits du logement' : 'Saisir les faits du logement');
-    var furnished = select(d, 'meuble-' + n, 'Location', { vide: 'Vide', meuble: 'Meublée' }, f && f.furnished ? 'meuble' : 'vide');
-    var rent = field(d, 'loyer-' + n, 'Loyer hors charges, en euros par mois');
-    var charges = field(d, 'charges-' + n, 'Charges, en euros par mois');
-    var mode = select(d, 'mode-' + n, 'Les charges sont', { provision: 'Une provision, régularisée chaque année', forfait: 'Un forfait (meublé seulement)' }, (f && f.chargesMode) || 'provision');
-    var area = field(d, 'surface-' + n, 'Surface habitable, en m²');
-    var room = field(d, 'piece-' + n, 'Pièce principale, en m²');
-    var height = field(d, 'hauteur-' + n, 'Hauteur sous plafond, en m');
-    var volume = field(d, 'volume-' + n, 'Volume habitable, en m³');
-    var prev = field(d, 'prec-' + n, 'Loyer du locataire précédent, hors charges, en euros, ou « aucun »');
-    var localRef = field(d, 'rsd-' + n, 'Règle locale lue');
-    var localDay = field(d, 'rsd-j-' + n, 'Lue le');
-    localDay.type = 'date';
-    var localOk = checkbox(d, 'rsd-ok-' + n, 'Respectée');
-    var rc = null;
-    d.appendChild(button('Loyer encadré', function () { lazy('louer-loyer', 'AIMMO_LOUER_LOYER', function (x) { rc = rc || x.form(d, f); }); }));
-    var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
-    var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
-    var year = field(d, 'annee-' + n, 'Année de construction');
-    var elec = checkbox(d, 'elec-' + n, 'Installation électrique de plus de 15 ans');
-    var gas = select(d, 'gaz-' + n, 'Gaz', GAS, (f && f.gas) || 'aucune');
-    var start = field(d, 'debut-' + n, 'Début du bail envisagé');
-    start.setAttribute('type', 'date');
-    [rent, charges, area, room, height, volume, kwh, year].forEach(function (x) { x.setAttribute('inputmode', 'decimal'); x.setAttribute('autocomplete', 'off'); });
-    if (f) {
-      rent.value = centsText(f.rentCents);
-      charges.value = centsText(f.chargesCents);
-      area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
-      if (f.mainRoomHundredths) room.value = String(f.mainRoomHundredths / 100).replace('.', ',');
-      if (f.ceilingHeightCm) height.value = String(f.ceilingHeightCm / 100).replace('.', ',');
-      prev.value = f.firstLetting ? 'aucun' : centsText(f.previousRentCents);
-      if (f.localRules) { localRef.value = f.localRules.reference; localDay.value = f.localRules.checkedOn; localOk.checked = !!f.localRules.compliant; }
-      if (f.habitableVolumeHundredths) volume.value = String(f.habitableVolumeHundredths / 100).replace('.', ',');
-      kwh.value = String(f.finalEnergyKwh);
-      year.value = String(f.buildYear);
-      elec.checked = !!f.electricityOver15;
-      start.value = f.leaseStart;
-    }
-    d.appendChild(button('Ranger les faits', function () {
-      var a = toCents(area.value);
-      var dims = { mainRoomHundredths: room, ceilingHeightCm: height, habitableVolumeHundredths: volume }, bad = false;
-      var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
-      Object.keys(dims).forEach(function (k) { var t = dims[k].value.trim(); if (t) { var c = toCents(t); if (c === null) bad = true; else b[k] = c; } });
-      if (bad) { louerState('Dimensions : des nombres.'); return; }
-      var pv = prev.value.trim().toLowerCase();
-      if (pv === 'aucun') b.firstLetting = true; else if (pv) { b.previousRentCents = toCents(pv); if (b.previousRentCents === null) { louerState('Loyer précédent : un nombre, ou « aucun ».'); return; } }
-      if (localRef.value.trim()) b.localRules = { reference: localRef.value.trim(), checkedOn: localDay.value, compliant: !!localOk.checked };
-      var r = rc ? rc() : f && f.rentControl;
-      if (r === false) return;
-      if (r) b.rentControl = r;
-      if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
-      louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
-    }));
-    return d;
   }
   function annexForm(base, required) {
     var n = ++louerSeq;
@@ -617,7 +558,7 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   function feesBlock(base, c, ceilingsBody, fees) {
     var box = section('Honoraires et dépôt de garantie');
-    box.appendChild(el('p', 'Plafonds calculés par le code, depuis la surface et la zone de la commune. AIMMO ne reçoit jamais ni loyer ni dépôt.', 'doux'));
+    box.appendChild(el('p', 'Plafonds selon la surface et la zone. AIMMO ne reçoit jamais ni loyer ni dépôt.', 'doux'));
     if (!c) {
       var code = ceilingsBody && ceilingsBody.code;
       box.appendChild(el('p', code === 'no_commune' ? 'Indiquez la commune du logement pour connaître les plafonds.' : louerRefusal(ceilingsBody, 'Plafonds indisponibles pour le moment.'), 'doux'));
@@ -711,7 +652,7 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   function applicationsBlock(base, apps, pres, chosen) {
     var box = section('Les candidatures');
-    box.appendChild(el('p', 'Dans leur ordre d’arrivée, et lui seul. Seules les pièces de la liste officielle sont demandées ; l’IA ne regarde que la complétude.', 'doux'));
+    box.appendChild(el('p', 'Dans leur ordre d’arrivée. Seules les pièces de la liste officielle sont demandées.', 'doux'));
     if (!chosen) box.appendChild(applyBlock(base));
     if (!apps.length) { box.appendChild(el('p', 'Aucune candidature pour le moment.', 'doux')); return box; }
     var ol = el('ol', null, 'dossiers');
@@ -810,7 +751,7 @@ globalThis.AIMMO_LOUER = function (t) {
         if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
         else box.appendChild(button('Préparer un exemplaire pour chacun', function () { louerAct(base + '/bail/exemplaires', undefined, 'Les exemplaires ne sont pas préparés.', 'Exemplaires préparés : ils partiront par le contrôle central, en mode essai.'); }));
       }
-    } else box.appendChild(el('p', 'Le bail se fait depuis le modèle validé du réseau, avec les faits, les honoraires et le dossier choisi.', 'doux'));
+    } else box.appendChild(el('p', 'Bail fait du modèle validé, des faits, des honoraires et du dossier choisi.', 'doux'));
     var n = ++louerSeq;
     var d = details(box, lease ? 'Refaire le bail (les signatures seront à refaire)' : 'Préparer le bail');
     var address = field(d, 'bail-adresse-' + n, 'Adresse du logement');

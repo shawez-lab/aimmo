@@ -145,6 +145,25 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     expect(full.ok && full.value.content).toContain(
       'loyer de référence 20 € par m² et par mois, loyer de référence majoré 24 € par m² et par mois (1020 € par mois pour ce logement), arrêté n° 0000-00 ; loyer de base 600 € par mois ; complément de loyer 50 € par mois, justifié par : Terrasse de 40 m² avec vue dégagée, rare dans le quartier',
     );
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
+  });
+
+  it('AU015 · un bail fait avant que la commune soit dite encadrée ne se signe plus : il en faut un nouveau, qui dit l’encadrement', async () => {
+    const t = await setup();
+    const rentControl = { decree: 'n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 0, complementReason: null };
+    await t.template('bail_vide', `${BODY}\nEncadrement des loyers : {{loyer.encadrement}}.`);
+    const id = await t.ready({ rentControl });
+    const before = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(before.ok && before.value.content).toContain('sans objet : la commune n’est pas soumise à l’encadrement des loyers');
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-01-01', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-01-02T00:00:00.000Z')",
+      [t.network.id],
+    );
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    const again = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(again.ok && again.value.content).toContain('loyer de base 650 € par mois');
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
   });
 
   it('[R105] [R102] le bail se fait pour le candidat choisi, chaque montant venant des données contrôlées', async () => {
