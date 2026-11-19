@@ -187,8 +187,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : H24 (l'avocat dit quel titre afficher pour un agent commercial sans carte personnelle ; la règle R07 de Shawez impose « agent immobilier »). En attendant, préparer le réglage du titre par statut, sans changer le texte affiché.
 
 ### AU013 · Je ne peux émettre que des factures d’essai
-- Statut : en cours (voie 2)
-- Reste : proposition #678 (`d2b7399`), code fini, relecture forte (2 P0, 5 P1) et Codex (1 P0) corrigés, Codex sans remarque ensuite ; tests locaux verts hors ce qui a été corrigé depuis, garde-fous verts. Bloquée à la fusion : la vérification GitHub « Vérifier » dépasse sa limite de 25 minutes (deux fois sur #678, une fois sur main à 01:53) : à fusionner dès qu'elle passe. Décidé, lecture prudente : suite réelle à part (`FAC-`, `REV-`, `AVO-`, table `invoice_real_numbers`, migration `3997`, sans refaire `invoices`), numéro réel seulement avec des identités complètes, mentions tirées des identités, dépôt seulement avec XML, cycle de vie 200 à 213 rangé par `track()` au passage horaire. Restent après la fusion : plateforme et identités réelles branchées dans l'API (`packages/api/src/pilotage.ts`) à H26 ; anciennes factures d'essai à sortir des relances et du rapprochement derrière la plateforme réelle.
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#678, b1421bfc) après une vérification GitHub passée en 20 minutes. Restent : plateforme et identités réelles branchées dans l'API (`packages/api/src/pilotage.ts`) à H26 ; anciennes factures d'essai à sortir des relances et du rapprochement derrière la plateforme réelle.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A013 (bloquant), endroit : C/pilotage/factures.ts, `PlateformeFacturation`, `PlateformeEssai`, H26.
 - Constat de l'audit : Je ne peux émettre que des factures d’essai, sans valeur comptable, puis je dois refaire ma facturation ailleurs.
@@ -238,7 +238,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
 - Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
