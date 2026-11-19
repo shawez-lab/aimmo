@@ -1446,3 +1446,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 01:11 · VOIE 3 : AU098b (#674) fusionnée ; AU101 (#676) corrigée après Codex (expiration la veille de l'anniversaire) ; AU017 (#668) relancée (délai dépassé hors sujet)
 - 2026-11-19 01:48 · VOIE 3 : AU017 (#668, décence et règle locale) et AU101 (#676, bail commercial) fusionnées ; AU101b (#677) corrigée après Codex (journal, reprise du bien, échéance du jour)
 - 2026-11-19 02:27 · VOIE 3 : AU016 (#679, gel des loyers F/G) fusionnée ; AU101b (#677) : carte des demandes et écran corrigés
+- 2026-11-19 03:00 · VOIE 3 : réserve le rapprochement acquéreurs de l'audit (AU070-074, AU115), même fichier, encore non commencé

@@ -706,7 +706,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A070 (majeur), endroit : C/acquereurs/rapprochement.ts, `KINDS_OF_PROPERTY`.
 - Constat de l'audit : Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home ».
 - Objectif : Un acquéreur cherchant exclusivement une maison ne reçoit pas un appartement, y compris après import.
@@ -715,7 +715,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU071 · Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A071 (majeur), endroit : C/acquereurs/rapprochement.ts, `featuresMet`.
 - Constat de l'audit : Un ascenseur impératif absent du bien n’empêche pas un rapprochement déclaré parfait.
 - Objectif : Les équipements choisis comme indispensables deviennent éliminatoires et leurs absences sont expliquées.
@@ -724,7 +724,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU072 · Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A072 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `BuyerSearch`.
 - Constat de l'audit : Je ne peux pas conserver une limite d’étage, un DPE minimal ou un terrain minimal dans la recherche structurée.
 - Objectif : Ces contraintes se saisissent et filtrent les biens, avec une distinction entre souhait et impératif.
@@ -733,7 +733,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU073 · Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A073 (majeur), endroit : C/acquereurs/fiche-acquereur.ts, `communes`.
 - Constat de l'audit : Ma recherche ne peut pas dessiner un secteur ni fixer un rayon autour d’un lieu précis.
 - Objectif : Un périmètre privé enregistré filtre les biens par position et se réutilise dans les alertes.
@@ -742,7 +742,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU074 · Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous…
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A074 (majeur), endroit : C/acquereurs/rapprochement.ts, `DEFAULT_ACTIVE_DAYS`.
 - Constat de l'audit : Après 180 jours sans modification de critères, un acquéreur disparaît des rapprochements même si nous échangeons encore.
 - Objectif : Une confirmation récente de recherche prolonge l’activité sans obliger à modifier artificiellement les critères.
@@ -1137,7 +1137,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU115 · La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant…
 - Statut : à faire
-- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A115 (mineur), endroit : C/acquereurs/rapprochement.ts, tolérances.
 - Constat de l'audit : La tolérance automatique de 5 % peut me proposer un bien au-dessus d’un budget que l’acquéreur a pourtant déclaré infranchissable.
 - Objectif : L’acquéreur ou l’agent peut déclarer le plafond strict ; aucune tolérance ne le dépasse ensuite.
