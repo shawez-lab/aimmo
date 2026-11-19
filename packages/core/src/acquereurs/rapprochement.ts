@@ -18,7 +18,7 @@ import { shownPrice } from '../biens/prix-publie.ts';
 import type { Acces } from '../acces/acces.ts';
 import { decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Property, PropertyKind } from '../db/types.ts';
+import type { Dwelling, Property, PropertyKind } from '../db/types.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -49,6 +49,8 @@ export const CLOSED_STAGES: readonly string[] = Object.freeze(['lost', 'closed',
 /** Ce que le code sait d'un bien pour le rapprocher : rien sur son vendeur, rien de son adresse. */
 export interface MatchProperty {
   kind: PropertyKind;
+  /** Pour un logement : maison ou appartement ; null tant que ni la fiche ni le bien ne le disent (AU070). */
+  dwelling?: Dwelling | null;
   city: string | null;
   priceEur: number | null;
   surfaceM2: number | null;
@@ -96,6 +98,16 @@ const KINDS_OF_PROPERTY: Record<PropertyKind, readonly BuyerPropertyKind[]> = {
   business: ['commercial'],
 };
 
+/**
+ * Le type cherché que ce bien remplit : un logement dit maison ou appartement ne répond qu'à ce type ; un logement dont
+ * on ne sait pas lequel il est ne remplit qu'une recherche qui accepte les deux, et reste dans la tolérance sinon (AU070).
+ */
+export function kindMet(property: Pick<MatchProperty, 'kind' | 'dwelling'>, wanted: readonly BuyerPropertyKind[]): BuyerPropertyKind | undefined {
+  if (property.kind === 'home' && !property.dwelling) return wanted.includes('house') && wanted.includes('apartment') ? 'house' : undefined;
+  const offered = property.kind === 'home' ? [property.dwelling!] : (KINDS_OF_PROPERTY[property.kind] ?? []);
+  return wanted.find((k) => offered.includes(k));
+}
+
 const same = (a: string, b: string): boolean => a.normalize('NFC').toLocaleLowerCase('fr') === b.normalize('NFC').toLocaleLowerCase('fr');
 
 /** Le rapprochement d'une recherche et d'un bien : une fonction pure, chaque critère avec sa raison [R51]. */
@@ -107,9 +119,10 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   };
 
   if (search.propertyKinds.length > 0) {
-    const offered = KINDS_OF_PROPERTY[property.kind] ?? [];
-    const hit = search.propertyKinds.find((k) => offered.includes(k));
-    if (hit) add('kind', 'met', `Type cherché : ${KIND_LABEL[hit]}.`);
+    const hit = kindMet(property, search.propertyKinds);
+    if (hit) add('kind', 'met', property.kind === 'home' && !property.dwelling ? 'Type cherché : maison ou appartement.' : `Type cherché : ${KIND_LABEL[hit]}.`);
+    else if (property.kind === 'home' && !property.dwelling && search.propertyKinds.some((k) => k === 'house' || k === 'apartment'))
+      add('kind', 'tolerated', 'Maison ou appartement : pas encore dit sur la fiche du bien.');
     else add('kind', 'unmet', `Type cherché : ${search.propertyKinds.map((k) => KIND_LABEL[k]).join(', ')}.`);
   }
   if (search.communes.length > 0) {
@@ -359,6 +372,8 @@ export class Rapprochement {
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   async propertyForMatch(p: Property): Promise<MatchProperty> {
     let bedrooms: number | null = null;
+    // La fiche du bien, plus récente, l'emporte sur ce qui a été dit à la création ou à l'import (AU070).
+    let dwelling: Dwelling | null = p.kind === 'home' ? (p.dwelling ?? null) : null;
     const features: BuyerFeature[] = [];
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
     if (sheet) {
@@ -366,8 +381,9 @@ export class Rapprochement {
         const parsed: unknown = JSON.parse(sheet.data);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
-        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown };
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
+        if (c.dwelling === 'house' || c.dwelling === 'apartment') dwelling = c.dwelling;
         if (Array.isArray(c.outdoor)) for (const o of c.outdoor) if (typeof o === 'string' && OUTDOOR_FEATURE[o]) features.push(OUTDOOR_FEATURE[o]);
         if (c.elevator === true) features.push('elevator');
         if (typeof c.parkingSpaces === 'number' && c.parkingSpaces > 0) features.push('parking');
@@ -380,7 +396,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
+    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
   }
 
   /**

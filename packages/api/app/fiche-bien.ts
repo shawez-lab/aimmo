@@ -37,6 +37,7 @@ const LABELS: Record<string, string> = {
   'characteristics.buildYear': 'Année de construction',
   'characteristics.landM2': 'Terrain',
   'characteristics.parkingSpaces': 'Places de stationnement',
+  'characteristics.dwelling': 'Logement : maison ou appartement',
   'energy.energyClass': 'Classe énergie du diagnostic',
   'energy.climateClass': 'Classe climat du diagnostic',
   'energy.annualCostMinEur': 'Coût annuel le plus bas du diagnostic, qui ne dépasse pas le plus haut',
@@ -53,6 +54,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
   var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
+  var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
     var f = field(box, id, label, 'select');
     var blank = el('option', 'Je ne sais pas encore');
@@ -84,6 +86,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     NUMBERS.forEach(function (n) { nums[n[0]] = number(zone, 'fiche-bien-' + n[0], n[1], c[n[0]]); });
     var heating = select(zone, 'fiche-bien-chauffage', 'Chauffage', HEATING, c.heating);
     var elevator = select(zone, 'fiche-bien-ascenseur', 'Ascenseur', YES_NO, yesNo(c.elevator));
+    // AU070 · une recherche de maison ne reçoit pas un appartement.
+    var dwelling = select(zone, 'fiche-bien-logement', 'Logement : maison ou appartement', DWELLING, c.dwelling);
     var outs = {};
     Object.keys(OUTDOOR).forEach(function (kind) {
       outs[kind] = checkbox(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
@@ -119,6 +123,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         return Number(v);
       }
       var out = { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: heating.value || null, outdoor: Object.keys(OUTDOOR).filter(function (x) { return outs[x].checked; }), landM2: null, parkingSpaces: null, elevator: bool(elevator.value) };
+      if (dwelling.value) out.dwelling = dwelling.value;
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
       var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear];

@@ -54,7 +54,7 @@ async function setup() {
     return { person, project };
   };
   const property = (ref = 'B1') =>
-    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
+    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', dwelling: 'house', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
   const messages = (personId: string) => db.all<{ id: string; author_kind: string; channel: string; body: string }>("SELECT id, author_kind, channel, body FROM messages WHERE person_id = ? AND direction = 'out'", [personId]);
   return { db, store, journal, whatsapp, network, alex, sam, buyer, property, as, blocked, messages, diffusion, setClock: (t: number) => (clock = t) };

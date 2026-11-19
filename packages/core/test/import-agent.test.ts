@@ -247,6 +247,7 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     expect(await count('SELECT count(*) AS n FROM properties')).toBe(2);
     expect(await count('SELECT count(*) AS n FROM agent_import_properties')).toBe(2);
     expect((a.ok ? a.report.properties.created : 0) + (b.ok ? b.report.properties.created : 0)).toBe(2);
+    expect(await count("SELECT count(*) AS n FROM properties WHERE dwelling = 'house'")).toBe(1);
   });
 
   it('[R04] une désinscription dans l\'export vaut arrêt', async () => {
@@ -326,6 +327,8 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
       { agent_id: w.agent, kind: 'land', postal_code: '21121', city: 'Fontaine-lès-Dijon', surface_m2: null, rooms: null, price_eur: 95000, status: 'draft' },
     ]);
     expect(snapshot()).not.toContain('rue Inventée');
+    // AU070 · « Appartement T3 » reste un appartement après import ; un terrain n'est ni l'un ni l'autre.
+    expect(await w.db.all('SELECT kind, dwelling FROM properties ORDER BY price_eur DESC')).toEqual([{ kind: 'home', dwelling: 'apartment' }, { kind: 'land', dwelling: null }]);
     const again = await w.importer.run(viewer(), w.agent, { format: 'hektor', properties: csv });
     expect(again.ok && again.report.properties).toEqual({ read: 2, created: 0, known: 2, unreadableLines: [4, 5] });
     expect(await count('SELECT count(*) AS n FROM properties')).toBe(2);

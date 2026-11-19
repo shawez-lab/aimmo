@@ -238,6 +238,8 @@ async function setup() {
       agentId: alex.id,
       reference: ref,
       kind: p.kind ?? 'home',
+      // Les logements de ce jeu sont des maisons, dites à la création (AU070).
+      dwelling: (p.kind ?? 'home') === 'home' ? 'house' : null,
       city: p.city,
       priceEur: p.price,
       surfaceM2: p.surface,

@@ -146,11 +146,13 @@ describe('SV06 · le bloc de la fiche', () => {
     const a = await opened(POST_THEN(ok({ ...BIEN, already: false })));
     await a.load();
     a.fill(GOOD);
+    // AU070 · maison ou appartement, dit dès la création d'un logement.
+    a.body.all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-logement'))!.value = 'house';
     const b = a.named(a.body, 'Créer le bien')[0]!;
     b.listeners.click!({});
     b.listeners.click!({});
     await a.tick();
-    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { requestId: '0b6f1d2e-6666-4a2b-8c3d-000000000001', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
+    expect(a.posts()).toEqual([{ url: PATH, method: 'POST', body: { requestId: '0b6f1d2e-6666-4a2b-8c3d-000000000001', kind: 'home', dwelling: 'house', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 } }]);
     // Le formulaire est vidé, prêt pour un autre bien, avec une demande neuve.
     expect(a.input('-commune').value).toBe('');
     expect(a.body.textContent).toContain('Bien créé, réf. B-ABCD1234');

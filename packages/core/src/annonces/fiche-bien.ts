@@ -14,6 +14,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { DWELLINGS, type Dwelling } from '../db/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -47,6 +48,8 @@ export interface Characteristics {
   landM2: number | null;
   parkingSpaces: number | null;
   elevator: boolean | null;
+  /** Maison ou appartement, dit sur la fiche ; absent tant qu'on ne l'a pas dit (AU070). */
+  dwelling?: Dwelling;
 }
 
 export interface EnergyDiagnosis {
@@ -134,7 +137,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   // Caractéristiques.
   const c = input.characteristics ?? {};
   if (!isRecord(c)) return bad('characteristics');
-  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator'], 'characteristics');
+  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling'], 'characteristics');
   if (cExtra) return bad(cExtra);
   const bedrooms = intOrNull(c.bedrooms, 0, 50);
   if (!bedrooms.ok) return bad('characteristics.bedrooms');
@@ -155,6 +158,8 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (!parking.ok) return bad('characteristics.parkingSpaces');
   const elevator = c.elevator ?? null;
   if (elevator !== null && typeof elevator !== 'boolean') return bad('characteristics.elevator');
+  const dwelling = c.dwelling ?? null;
+  if (dwelling !== null && !(DWELLINGS as readonly unknown[]).includes(dwelling)) return bad('characteristics.dwelling');
   const characteristics: Characteristics = {
     bedrooms: bedrooms.value,
     floor: floor.value,
@@ -166,6 +171,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     landM2: landM2.value,
     parkingSpaces: parking.value,
     elevator: elevator as boolean | null,
+    ...(dwelling !== null ? { dwelling: dwelling as Dwelling } : {}),
   };
 
   // Diagnostic énergétique.

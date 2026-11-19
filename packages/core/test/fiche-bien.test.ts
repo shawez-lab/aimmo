@@ -45,6 +45,14 @@ async function setup() {
   return { db, journal, fiches, propertyId: b.id, full: forProperty(FULL, b.id), agent: as('agent', alex.id), sam: as('agent', sam.id), direction: as('direction', 'd-1'), compliance: as('compliance', 'c-1'), partner: as('partner', 'p-1'), stranger: as('direction', 'd-2', other.id), setClock: (d: Date) => (clock = d) };
 }
 
+it('AU070 · la fiche dit maison ou appartement, ou rien ; une autre valeur est refusée et nommée', () => {
+  const r = parseSheet({ characteristics: { dwelling: 'apartment' } }, TODAY, PID);
+  expect(r.ok && r.value.characteristics.dwelling).toBe('apartment');
+  const none = parseSheet({}, TODAY, PID);
+  expect(none.ok && 'dwelling' in none.value.characteristics).toBe(false);
+  expect(parseSheet({ characteristics: { dwelling: 'villa' } }, TODAY, PID)).toEqual({ ok: false, field: 'characteristics.dwelling' });
+});
+
 it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () => {
   const r = parseSheet(FULL, TODAY, PID);
   expect(r.ok).toBe(true);
