@@ -115,10 +115,11 @@ export interface DocumentFacts {
   /** Pour un avenant : le mandat modifié. Ses prix et durée sont alors les nouveaux, s'ils changent. */
   mandateId?: string | null;
   /**
-   * Pour un avenant (AU057) : vrai s'il change les honoraires ou leur charge ; `feeEur` et `feeCharge` sont alors les
-   * nouveaux, et sinon ceux en vigueur à sa préparation.
+   * Pour un avenant (AU057) : vrai s'il change le montant des honoraires (`feeEur` est alors le nouveau), ou leur charge
+   * (`feeCharge` est alors la nouvelle). Sinon, la valeur gardée n'est qu'une copie de la préparation, jamais appliquée.
    */
   feeChanged?: boolean;
+  feeChargeChanged?: boolean;
   /** Pour un avenant (AU057) : le nouveau type du mandat, s'il change. */
   mandateType?: MandateType;
   /** Pour un avenant (AU057) : le jour, `AAAA-MM-JJ` à Paris, où il prend effet ; absent, le jour de sa signature. */
@@ -469,7 +470,8 @@ export class Modeles {
           feeCharge: newCharge ?? inForce?.feeCharge ?? linked.facts?.feeCharge ?? null,
           durationMonths: typeof raw['avenant.duree_mois'] === 'number' ? raw['avenant.duree_mois'] : null,
           mandateId: linked.id,
-          feeChanged: newFee !== null || newCharge !== null,
+          feeChanged: newFee !== null,
+          feeChargeChanged: newCharge !== null,
           ...(newType !== null ? { mandateType: newType } : {}),
           ...(effectiveOn !== null ? { effectiveOn } : {}),
           priceInForceEur: inForce?.priceEur ?? linked.facts?.priceEur ?? null,

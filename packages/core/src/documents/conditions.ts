@@ -52,7 +52,7 @@ const readFacts = (raw: string | null): DocumentFacts | null => {
 /**
  * Les conditions en vigueur d'un mandat : celles du mandat signé, modifiées par ses avenants signés, dans l'ordre.
  * Avec `asOf`, celles de ce jour-là, à Paris : un avenant signé plus tard, ou dont la date d'effet n'est pas encore
- * venue, ne compte pas encore (D10, AU057). Un avenant ne change les honoraires que s'il le dit (`feeChanged`).
+ * venue, ne compte pas encore (D10, AU057). Un avenant ne change les honoraires ou leur charge que s'il le dit.
  */
 export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Date): Promise<MandateTerms | null> {
   const base = await db.first<{ facts: string | null; kind: string }>(
@@ -80,10 +80,8 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Da
     if (lastDay !== null && effectiveOn > lastDay) continue;
     if (f?.priceEur !== null && f?.priceEur !== undefined) priceEur = f.priceEur;
     if (f?.durationMonths !== null && f?.durationMonths !== undefined) durationMonths = f.durationMonths;
-    if (f?.feeChanged === true) {
-      feeEur = f.feeEur ?? null;
-      feeCharge = f.feeCharge ?? null;
-    }
+    if (f?.feeChanged === true) feeEur = f.feeEur ?? null;
+    if (f?.feeChargeChanged === true) feeCharge = f.feeCharge ?? null;
     if (f?.mandateType === 'simple' || f?.mandateType === 'exclusif') mandateType = f.mandateType;
     amendments.push({
       documentId: row.document_id,
@@ -92,7 +90,7 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Da
       priceEur: f?.priceEur ?? null,
       durationMonths: f?.durationMonths ?? null,
       feeEur: f?.feeChanged === true ? (f.feeEur ?? null) : null,
-      feeCharge: f?.feeChanged === true ? (f.feeCharge ?? null) : null,
+      feeCharge: f?.feeChargeChanged === true ? (f.feeCharge ?? null) : null,
       mandateType: f?.mandateType ?? null,
     });
   }

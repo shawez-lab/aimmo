@@ -27,7 +27,7 @@ import { Identification } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
-import { mandateExpired } from './conditions.ts';
+import { mandateExpired, mandateTerms } from './conditions.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
 import { MANDATE_DESIGNATION_FIELDS } from './designation.ts';
@@ -249,8 +249,18 @@ export class ControlesSignature {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
     // Un avenant qui ne touche ni au prix ni aux honoraires ne les change pas ; sinon, les honoraires en vigueur après lui
     // restent au barème, sur le prix en vigueur après lui (AU057).
-    if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true) return line(true, 'fees_unchanged');
-    if (amendment && facts && facts.priceEur === null) facts = { ...facts, priceEur: facts.priceInForceEur ?? null };
+    if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true && facts.feeChargeChanged !== true) return line(true, 'fees_unchanged');
+    // Ce que l'avenant ne change pas se lit au contrôle, dans les conditions en vigueur, avenants signés depuis sa
+    // préparation compris : jamais une copie prise à la préparation, qui a pu changer depuis (AU057).
+    if (amendment && facts) {
+      const inForce = facts.mandateId ? await mandateTerms(this.db, facts.mandateId) : null;
+      facts = {
+        ...facts,
+        priceEur: facts.priceEur ?? inForce?.priceEur ?? null,
+        feeEur: facts.feeChanged === true ? facts.feeEur : (inForce?.feeEur ?? facts.feeEur),
+        feeCharge: facts.feeChargeChanged === true ? facts.feeCharge : (inForce?.feeCharge ?? facts.feeCharge),
+      };
+    }
     if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
     const schedule = await this.db.first<{ max_rate_bp: number; min_eur: number }>('SELECT max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);

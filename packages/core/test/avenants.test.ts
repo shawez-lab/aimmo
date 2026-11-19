@@ -252,6 +252,29 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect((await sign(t, fair.document.id, 'h4')).ok).toBe(true);
   });
 
+  it('[R41] un avenant préparé avant un autre se contrôle sur les conditions en vigueur à sa signature', async () => {
+    const t = await setup();
+    // Préparé à 9 000 € d'honoraires : le prix baisse à 190 000 € (plafond 9 500 €).
+    const price = await t.amendment({ 'avenant.prix': 190000 });
+    if (!price.ok) throw new Error(price.code);
+    // Entre-temps, les honoraires passent à 10 000 €, signés.
+    const fee = await t.amendment({ 'avenant.honoraires': 10000 });
+    if (!fee.ok) throw new Error(fee.code);
+    expect((await sign(t, fee.document.id, 'h7')).ok).toBe(true);
+    // Le prix seul ne passe plus : 10 000 € dépassent 5 % de 190 000 €.
+    const r = await sign(t, price.document.id, 'h8');
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+    // Une charge seule ne ramène jamais le montant de la préparation.
+    const charge = await t.amendment({ 'avenant.honoraires_charge': 'acquereur' });
+    if (!charge.ok) throw new Error(charge.code);
+    const fee2 = await t.amendment({ 'avenant.honoraires': 9500 });
+    if (!fee2.ok) throw new Error(fee2.code);
+    t.now(new Date('2027-03-02T10:00:00.000Z'));
+    expect((await sign(t, fee2.document.id, 'h9', new Date('2027-03-01T15:00:00.000Z'))).ok).toBe(true);
+    expect((await sign(t, charge.document.id, 'h10', new Date('2027-03-02T09:00:00.000Z'))).ok).toBe(true);
+    expect(await mandateTerms(t.db, t.mandateId)).toMatchObject({ priceEur: 200000, feeEur: 9500, feeCharge: 'acquereur' });
+  });
+
   it('[R40] devenir exclusif demande la clause mise en évidence ; le même type n’est pas un avenant', async () => {
     const t = await setup();
     expect(await t.amendment({ 'avenant.type': 'exclusif' })).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });
