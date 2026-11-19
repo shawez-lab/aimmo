@@ -272,7 +272,7 @@ export class EffacementReel {
     } catch {
       return { ok: false, rule: 'R231', code: 'ledger_unwritable' };
     }
-    const { plan, outcome } = await eraseForReal(this.db, members, { carte: this.options.carte, registre: this.options.registre, objects: this.options.objects });
+    const { plan, outcome } = await eraseForReal(this.db, members, { ...(this.options.carte ? { carte: this.options.carte } : {}), ...(this.options.registre ? { registre: this.options.registre } : {}), objects: this.options.objects });
     const receipt: ErasureReceipt = {
       format: 1,
       requestId: row.id,
