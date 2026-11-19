@@ -667,7 +667,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU064 · Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A064 (majeur), endroit : C/annonces/fiche-bien.ts, `EnergyDiagnosis`.
 - Constat de l'audit : Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux reprises fiables.
@@ -685,7 +685,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
 - Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
