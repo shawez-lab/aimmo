@@ -5,6 +5,7 @@ export * from './annonce-sourcee.ts';
 export * from './annonces.ts';
 export * from './publication.ts';
 export * from './page-bien.ts';
+export * from './etiquettes.ts';
 export * from './medias.ts';
 export * from './portails.ts';
 export * from './mesure.ts';

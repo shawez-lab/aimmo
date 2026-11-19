@@ -72,7 +72,9 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean; di
   await controles.setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Exemple' });
-  const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
+  // AU070 : la nature du logement n'existe qu'après la migration 4011 (certains tests rejouent une base plus ancienne).
+  const dwelling = (await db.all<{ name: string }>('PRAGMA table_info(properties)')).some((c) => c.name === 'dwelling') ? { dwelling: 'house' as const } : {};
+  const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', ...dwelling, postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
   await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: signedAt });

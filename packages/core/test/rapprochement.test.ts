@@ -8,10 +8,12 @@ import {
   SqlJournalStore,
   applyMigrations,
   fromSyncSqlite,
+  checkSearchChanges,
   matchBuyer,
   verifyChain,
   type BuyerSearch,
   type DiffusionGate,
+  type Dwelling,
   type PropertyKind,
   type SqlDatabase,
 } from '../src/index.ts';
@@ -71,8 +73,8 @@ async function setup(gate?: DiffusionGate) {
     if (!r.ok) throw new Error(`recherche refusée : ${r.code}`);
     return { person, project };
   };
-  const property = (agentId: string, ref: string, p: { kind?: PropertyKind; city: string; price: number; surface: number; rooms: number }) =>
-    store.createProperty({ networkId: network.id, agentId, reference: ref, kind: p.kind ?? 'home', city: p.city, priceEur: p.price, surfaceM2: p.surface, rooms: p.rooms, status: 'available' });
+  const property = (agentId: string, ref: string, p: { kind?: PropertyKind; dwelling?: Dwelling | null; city: string; price: number; surface: number; rooms: number }) =>
+    store.createProperty({ networkId: network.id, agentId, reference: ref, kind: p.kind ?? 'home', dwelling: p.dwelling ?? null, city: p.city, priceEur: p.price, surfaceM2: p.surface, rooms: p.rooms, status: 'available' });
   const as = (role: 'agent' | 'direction' | 'compliance' | 'partner', userId: string) => ({ role, userId, networkId: network.id });
   return { db, store, fiche, journal, acces, acquereurs, rapprochement, network, alex, sam, direction, buyer, property, as, blocked, setClock: (t: number) => (clock = t) };
 }
@@ -123,7 +125,7 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     const tol = await t.buyer(t.alex.id, 'Tolérée', { propertyKinds: ['house'], communes: ['Talant'], budgetMaxEur: 290_000 });
     const ok = await t.buyer(t.alex.id, 'Remplie', { propertyKinds: ['house'], communes: ['Talant'], budgetMaxEur: 320_000, surfaceMinM2: 80 });
     await t.buyer(t.alex.id, 'Écartée', { communes: ['Dijon'] });
-    const prop = await t.property(t.alex.id, 'B1', { city: 'Talant', price: 300_000, surface: 95, rooms: 4 });
+    const prop = await t.property(t.alex.id, 'B1', { dwelling: 'house', city: 'Talant', price: 300_000, surface: 95, rooms: 4 });
     const r = await t.rapprochement.propose(t.acces, t.as('agent', t.alex.id), prop.id);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -132,6 +134,32 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(r.value[0]!.reasons).toEqual(['Type cherché : maison.', 'Commune cherchée : Talant.', 'Prix 300 000 € dans le budget de 320 000 €.', 'Surface 95 m² pour 80 m² au moins.']);
     expect(r.value[1]!.status).toBe('tolerated');
     expect(r.value[1]!.reasons).toContain('Prix 3,45 % au-dessus du budget, dans la tolérance de 5 %.');
+  });
+
+  it('[R51] AU070 · une maison ne répond qu’à une recherche de maison, un appartement qu’à une recherche d’appartement, y compris après import', async () => {
+    const t = await setup();
+    const house = await t.buyer(t.alex.id, 'Maison', { propertyKinds: ['house'], communes: ['Dijon'] });
+    const flat = await t.buyer(t.alex.id, 'Appartement', { propertyKinds: ['apartment'], communes: ['Dijon'] });
+    const both = await t.buyer(t.alex.id, 'Les deux', { propertyKinds: ['house', 'apartment'], communes: ['Dijon'] });
+    const ids = async (propertyId: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, propertyId);
+      if (!r.ok) throw new Error('refus');
+      return Object.fromEntries(r.value.map((x) => [x.projectId, x.status]));
+    };
+    const a = await t.property(t.alex.id, 'APT', { dwelling: 'apartment', city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    expect(await ids(a.id)).toEqual({ [flat.project.id]: 'match', [both.project.id]: 'match' });
+    const m = await t.property(t.alex.id, 'MAI', { dwelling: 'house', city: 'Dijon', price: 250_000, surface: 100, rooms: 4 });
+    expect(await ids(m.id)).toEqual({ [house.project.id]: 'match', [both.project.id]: 'match' });
+    // Un logement dont on ne sait pas lequel il est : rempli pour « les deux », seulement toléré sinon, et dit.
+    const u = await t.property(t.alex.id, 'INC', { city: 'Dijon', price: 200_000, surface: 70, rooms: 3 });
+    expect(await ids(u.id)).toEqual({ [house.project.id]: 'tolerated', [flat.project.id]: 'tolerated', [both.project.id]: 'match' });
+    // La fiche du bien, plus récente, l'emporte : dite appartement, la recherche de maison ne la reçoit plus.
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [
+      'sheet-mai',
+      m.id, t.network.id, JSON.stringify({ characteristics: { dwelling: 'apartment' }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z',
+    ]);
+    expect(await ids(m.id)).toEqual({ [flat.project.id]: 'match', [both.project.id]: 'match' });
+    expect(matchBuyer({ kind: 'home', dwelling: 'apartment', city: 'Dijon', priceEur: 1, surfaceM2: 50, rooms: 2, bedrooms: null, features: [] }, { propertyKinds: ['house'], communes: [], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, financing: null, urgency: null })).toMatchObject({ status: 'miss', unmet: ['kind'] });
   });
 
   it('AU071 · une recherche au seul équipement impératif compte : proposée pour un bien qui l’a, pas pour un autre', async () => {
@@ -151,19 +179,82 @@ describeWithSqlite('T02 · rapprochement des acquéreurs', () => {
     expect(await proposed(stairs.id)).toEqual([]);
   });
 
+  it('AU072 · étage, classe énergie et terrain lus dans la fiche du bien ; impératifs, ils écartent, souhaits, ils n’écartent pas', async () => {
+    const t = await setup();
+    const strict = await t.buyer(t.alex.id, 'Étage', { communes: ['Dijon'], floorMin: 1, energyClassMax: 'D' });
+    const soft = await t.buyer(t.alex.id, 'Souhait', { communes: ['Dijon'], floorMin: 1, energyClassMax: 'D', softCriteria: ['floorMin', 'energy'] });
+    const sheet = (id: string, ref: string, data: object) =>
+      t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', [`sheet-${ref}`, id, t.network.id, JSON.stringify(data), 'direction:d1', '2026-01-01T00:00:00.000Z']);
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId).sort();
+    };
+    const up = await t.property(t.alex.id, 'HAUT', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await sheet(up.id, 'HAUT', { characteristics: { floor: 3 }, energy: { energyClass: 'C' }, media: [] });
+    expect(await proposed(up.id)).toEqual([strict.project.id, soft.project.id].sort());
+    const ground = await t.property(t.alex.id, 'RDC', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await sheet(ground.id, 'RDC', { characteristics: { floor: 0 }, energy: { energyClass: 'F' }, media: [] });
+    expect(await proposed(ground.id)).toEqual([soft.project.id]);
+    // Sans fiche, l'étage et la classe sont inconnus : un impératif n'est pas rempli.
+    const bare = await t.property(t.alex.id, 'NU', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    expect(await proposed(bare.id)).toEqual([soft.project.id]);
+    // La recherche se refuse hors bornes ou hors liste.
+    const check = (v: object) => checkSearchChanges(v);
+    expect(check({ floorMin: 3, floorMax: 1 })).toMatchObject({ ok: false, field: 'floorMin' });
+    expect(check({ energyClassMax: 'H' })).toMatchObject({ ok: false, field: 'energyClassMax' });
+    expect(check({ softCriteria: ['budget'] })).toMatchObject({ ok: false, field: 'softCriteria' });
+    // Un souhait n'écarte rien : un minimum impératif au-dessus d'un maximum souhaité reste valable.
+    expect(check({ floorMin: 4, floorMax: 3, softCriteria: ['floorMax'] })).toMatchObject({ ok: true });
+    // Saisi en deux fois : le maximum souhaité, puis un minimum impératif plus haut, la recherche est rangée.
+    const later = await t.buyer(t.alex.id, 'Plus tard', { communes: ['Dijon'], floorMax: 3, softCriteria: ['floorMax'] });
+    expect(await t.acquereurs.update(t.acces, t.direction, later.project.id, { floorMin: 4 })).toMatchObject({ ok: true });
+    // Deux bornes impératives inversées restent refusées.
+    const strictTwo = await t.buyer(t.alex.id, 'Strict', { communes: ['Dijon'], floorMax: 3 });
+    expect(await t.acquereurs.update(t.acces, t.direction, strictTwo.project.id, { floorMin: 4 })).toMatchObject({ ok: false });
+    // L'étage inconnu manque une seule fois, même jugé sur ses deux bornes.
+    const both: BuyerSearch = { propertyKinds: [], communes: ['Dijon'], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: null, financing: null, urgency: null, floorMin: 0, floorMax: 0 };
+    expect(matchBuyer({ kind: 'home', city: 'Dijon', priceEur: 1, surfaceM2: 50, rooms: 2, bedrooms: null, features: [], floor: null }, both)).toMatchObject({ status: 'miss', unmet: ['floor'] });
+  });
+
+  it('AU072 · un terrain seul se rapproche par sa surface enregistrée', async () => {
+    const t = await setup();
+    const want = await t.buyer(t.alex.id, 'Terrain', { propertyKinds: ['land'], communes: ['Dijon'], landMinM2: 500 });
+    const proposed = async (id: string) => {
+      const r = await t.rapprochement.propose(t.acces, t.direction, id);
+      if (!r.ok) throw new Error('refus');
+      return r.value.map((x) => x.projectId);
+    };
+    const big = await t.property(t.alex.id, 'T600', { kind: 'land', city: 'Dijon', price: 80_000, surface: 600, rooms: 0 });
+    expect(await proposed(big.id)).toEqual([want.project.id]);
+    const small = await t.property(t.alex.id, 'T300', { kind: 'land', city: 'Dijon', price: 80_000, surface: 300, rooms: 0 });
+    expect(await proposed(small.id)).toEqual([]);
+  });
+
+  it('AU072 · un souhait d’étage, de classe ou de terrain rempli fait passer devant, à critères égaux', async () => {
+    const t = await setup();
+    const plain = await t.buyer(t.alex.id, 'Sans souhait', { communes: ['Dijon'], urgency: 'now' });
+    const wish = await t.buyer(t.alex.id, 'Souhait', { communes: ['Dijon'], energyClassMax: 'C', softCriteria: ['energy'], urgency: 'later' });
+    const p = await t.property(t.alex.id, 'CLASSE', { city: 'Dijon', price: 150_000, surface: 50, rooms: 2 });
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', ['sheet-classe', p.id, t.network.id, JSON.stringify({ characteristics: {}, energy: { energyClass: 'B' }, media: [] }), 'direction:d1', '2026-01-01T00:00:00.000Z']);
+    const r = await t.rapprochement.propose(t.acces, t.direction, p.id);
+    if (!r.ok) throw new Error('refus');
+    expect(r.value.map((x) => x.projectId)).toEqual([wish.project.id, plain.project.id]);
+  });
+
   it('le classement ne tient jamais compte du financement [R14] ; à égalité, l’urgence déclarée puis la recherche la plus fraîche', async () => {
     const t = await setup();
     const base = { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 200_000 } as const;
     const cash = await t.buyer(t.alex.id, 'Comptant', { ...base, propertyKinds: [...base.propertyKinds], communes: [...base.communes], financing: 'cash', urgency: 'later' });
     const loan = await t.buyer(t.alex.id, 'Prêt', { ...base, propertyKinds: [...base.propertyKinds], communes: [...base.communes], financing: 'loan_needed', urgency: 'now' });
-    const prop = await t.property(t.alex.id, 'B1', { city: 'Dijon', price: 180_000, surface: 50, rooms: 2 });
+    const prop = await t.property(t.alex.id, 'B1', { dwelling: 'apartment', city: 'Dijon', price: 180_000, surface: 50, rooms: 2 });
     const r = await t.rapprochement.propose(t.acces, t.direction, prop.id);
     if (!r.ok) throw new Error('refus');
     expect(r.value.map((x) => x.projectId)).toEqual([loan.project.id, cash.project.id]);
     // Même recherche, seul le financement change : l'ordre ne bouge pas.
     for (const financing of ['cash', 'loan_approved', 'loan_in_progress', 'loan_needed', null] as const) {
       const s: BuyerSearch = { propertyKinds: ['apartment'], communes: ['Dijon'], features: [], surfaceMinM2: null, roomsMin: null, bedroomsMin: null, budgetMaxEur: 200_000, financing, urgency: 'now' };
-      expect(matchBuyer({ kind: 'home', city: 'Dijon', priceEur: 180_000, surfaceM2: 50, rooms: 2, bedrooms: null, features: [] }, s)).toMatchObject({ status: 'match', gap: 0 });
+      expect(matchBuyer({ kind: 'home', dwelling: 'apartment', city: 'Dijon', priceEur: 180_000, surfaceM2: 50, rooms: 2, bedrooms: null, features: [] }, s)).toMatchObject({ status: 'match', gap: 0 });
     }
   });
 

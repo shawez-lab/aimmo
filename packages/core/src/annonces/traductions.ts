@@ -14,7 +14,8 @@
  *   aucune adresse mail [R257].
  * - Les mentions légales et le prix ne sont jamais traduits : ils restent ceux de la version française publiée, au
  *   caractère près, calculés par le code (P02).
- * - Seul l'agent du bien valide, et seulement une langue qu'il parle (l'anglais est toujours ouvert) ; seule la
+ * - Seul l'agent du bien valide, et seulement une langue qu'il déclare parler, ou le relecteur que la direction a désigné
+ *   pour ce bien et cette langue, qui la déclare aussi ; l'anglais n'est plus ouvert d'office (AU113) ; seule la
  *   dernière traduction d'une langue compte, et seulement sur l'annonce française encore publiable : une nouvelle
  *   annonce française rend toutes ses traductions caduques [R258].
  * - Le flux des portails étrangers et la réponse à un acheteur étranger ne portent qu'une traduction validée et à
@@ -26,6 +27,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import { replyLanguage } from '../captation/premiere-reponse.ts';
 import { publicTextProblems, sentences } from './annonce-sourcee.ts';
 import { Annonces } from './annonces.ts';
@@ -389,10 +391,73 @@ export class AnnoncesTraduites {
     return { ok: false, rule: null, code: 'busy' };
   }
 
-  /** Les langues ouvertes pour un bien : l'anglais, et celles que parle son agent. */
-  async languagesFor(networkId: string, agentId: string | null): Promise<ListingLanguage[]> {
+  /**
+   * Les langues ouvertes pour un bien : celles que parle son agent, et celles où la direction a désigné un relecteur qui
+   * la déclare toujours. L'anglais n'est plus ouvert d'office : il faut une compétence déclarée ou un relecteur (AU113).
+   */
+  async languagesFor(networkId: string, agentId: string | null, propertyId?: string): Promise<ListingLanguage[]> {
     const spoken = agentId ? await this.languagesOf(networkId, agentId) : [];
-    return LISTING_LANGUAGES.filter((l) => l === 'en' || spoken.includes(l));
+    const reviewed = propertyId ? [...(await this.reviewers(networkId, propertyId)).keys()] : [];
+    return LISTING_LANGUAGES.filter((l) => spoken.includes(l) || reviewed.includes(l));
+  }
+
+  /**
+   * Celui qui a validé compte-t-il encore pour cette langue (AU113) [R258] ? L'agent du bien qui la déclare toujours, ou
+   * le relecteur toujours désigné pour ce bien et cette langue. Un relecteur retiré ou remplacé : la validation tombe.
+   */
+  private async stillQualified(networkId: string, agentId: string | null, propertyId: string, language: ListingLanguage, by: string): Promise<boolean> {
+    const m = /^agent:(.+)$/.exec(by);
+    if (!m) return false;
+    const who = m[1]!;
+    if (who === agentId && (await this.languagesOf(networkId, who)).includes(language)) return true;
+    return (await this.reviewers(networkId, propertyId)).get(language) === who;
+  }
+
+  /** Les relecteurs désignés d'un bien, par langue : seulement ceux qui déclarent toujours la langue et sont en activité. */
+  async reviewers(networkId: string, propertyId: string): Promise<Map<ListingLanguage, string>> {
+    const rows = await this.db.all<{ language: ListingLanguage; reviewer_agent_id: string | null }>(
+      `SELECT r.language, r.reviewer_agent_id FROM translation_reviewers r
+       WHERE r.network_id = ? AND r.property_id = ? AND r.seq = (SELECT MAX(x.seq) FROM translation_reviewers x WHERE x.property_id = r.property_id AND x.language = r.language)`,
+      [networkId, propertyId],
+    );
+    const out = new Map<ListingLanguage, string>();
+    for (const r of rows) {
+      if (!r.reviewer_agent_id) continue;
+      // Un relecteur parti (même le jour de son départ, avant le passage du planificateur) ou au dossier incomplet ne relit plus [R86].
+      if ((await agentState(this.db, networkId, r.reviewer_agent_id, this.now())) === 'actif' && (await this.languagesOf(networkId, r.reviewer_agent_id)).includes(r.language)) out.set(r.language, r.reviewer_agent_id);
+    }
+    return out;
+  }
+
+  /**
+   * La direction désigne, pour un bien et une langue, un relecteur : un agent du réseau en activité qui déclare la langue
+   * (AU113). Lui seul valide alors les traductions de cette langue que l'agent du bien ne parle pas. `null` le retire.
+   */
+  async designateReviewer(viewer: Viewer, propertyId: string, language: unknown, reviewerAgentId: unknown): Promise<{ ok: true } | Refusal | Problem> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `property:${propertyId}`, 'role');
+    const p = await this.db.first<{ id: string }>('SELECT id FROM properties WHERE id = ? AND network_id = ?', [propertyId, viewer.networkId]);
+    if (!p) return { ok: false, rule: null, code: 'unknown_property' };
+    if (!isListingLanguage(language)) return { ok: false, rule: null, code: 'bad_languages' };
+    if (reviewerAgentId !== null) {
+      if (typeof reviewerAgentId !== 'string') return { ok: false, rule: null, code: 'bad_languages' };
+      const a = await this.db.first<{ status: string }>('SELECT status FROM agents WHERE id = ? AND network_id = ?', [reviewerAgentId, viewer.networkId]);
+      if (a?.status !== 'active' || !(await this.languagesOf(viewer.networkId, reviewerAgentId)).includes(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
+    }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await this.db.run(
+          `INSERT INTO translation_reviewers (id, network_id, property_id, language, seq, reviewer_agent_id, designated_by, designated_at)
+           SELECT ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM translation_reviewers WHERE property_id = ? AND language = ?`,
+          [this.newId(), viewer.networkId, propertyId, language, reviewerAgentId, this.actor(viewer), this.now().toISOString(), propertyId, language],
+        );
+      } catch (error) {
+        if (/UNIQUE/i.test(String(error))) continue;
+        throw error;
+      }
+      await appendEvent(this.journal, { type: 'annonce.relecteur', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R258', language, designated: reviewerAgentId !== null } }, this.now);
+      return { ok: true };
+    }
+    return { ok: false, rule: null, code: 'busy' };
   }
 
   // ——— Brouillons de traduction ———
@@ -463,7 +528,7 @@ export class AnnoncesTraduites {
   async propose(viewer: Viewer, propertyId: string, language: unknown): Promise<{ ok: true; value: ListingTranslation } | Refusal | Problem> {
     const g = await this.gate(viewer, propertyId, 'write');
     if (!g.ok) return g;
-    if (!isListingLanguage(language) || !(await this.languagesFor(g.networkId, g.agentId)).includes(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
+    if (!isListingLanguage(language) || !(await this.languagesFor(g.networkId, g.agentId, propertyId)).includes(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     const draft = await this.source(g.networkId, propertyId);
     if (!draft) return { ok: false, rule: null, code: 'no_listing' };
     if (!this.translator) return { ok: false, rule: null, code: 'no_translator' };
@@ -495,7 +560,7 @@ export class AnnoncesTraduites {
   async correct(viewer: Viewer, propertyId: string, language: unknown, text: { title: unknown; body: unknown }): Promise<{ ok: true; value: ListingTranslation } | Refusal | Problem> {
     const g = await this.gate(viewer, propertyId, 'write');
     if (!g.ok) return g;
-    if (!isListingLanguage(language) || !(await this.languagesFor(g.networkId, g.agentId)).includes(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
+    if (!isListingLanguage(language) || !(await this.languagesFor(g.networkId, g.agentId, propertyId)).includes(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     if (typeof text.title !== 'string' || typeof text.body !== 'string') return { ok: false, rule: null, code: 'bad_text' };
     const draft = await this.source(g.networkId, propertyId);
     if (!draft) return { ok: false, rule: null, code: 'no_listing' };
@@ -511,15 +576,22 @@ export class AnnoncesTraduites {
 
   /** La dernière traduction du bien dans une langue, avec sa validation. */
   async read(viewer: Viewer, propertyId: string, language: unknown): Promise<{ ok: true; value: ListingTranslation | null } | Refusal | Problem> {
-    const g = await this.gate(viewer, propertyId, 'read');
-    if (!g.ok) return g;
+    // AU113 · le relecteur désigné lit la traduction de sa langue sur ce bien, et elle seule, pour la relire.
+    const reviewing = viewer.role === 'agent' && isListingLanguage(language) && (await this.reviewers(viewer.networkId, propertyId)).get(language) === viewer.userId;
+    if (!reviewing) {
+      const g = await this.gate(viewer, propertyId, 'read');
+      if (!g.ok) return g;
+    } else {
+      // La lecture du relecteur s'écrit au journal comme toute lecture d'un bien, avant de rendre le texte [R16].
+      await appendEvent(this.journal, { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: 'agent', view: 'relecteur', language: language as string } }, this.now);
+    }
     if (!isListingLanguage(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND t.language = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
     return { ok: true, value: row ? toTranslation(row) : null };
   }
 
   /**
-   * L'agent du bien valide la dernière traduction d'une langue qu'il parle (l'anglais toujours) [R258], faite sur
+   * L'agent du bien valide la dernière traduction d'une langue qu'il parle, ou le relecteur désigné (AU113) [R258], faite sur
    * l'annonce française encore publiable, et qui passe encore le contrôle [R257].
    */
   async validate(viewer: Viewer, translationId: string): Promise<{ ok: true; value: ListingTranslation } | Refusal | Problem> {
@@ -528,11 +600,19 @@ export class AnnoncesTraduites {
       await this.refuse(viewer, `listing_translation:${translationId}`, 'unknown');
       return { ok: false, rule: null, code: 'unknown_translation' };
     }
-    const g = await this.gate(viewer, row.property_id, 'validate');
-    if (!g.ok) return g;
     const t = toTranslation(row);
+    // AU113 · valide l'agent du bien qui parle la langue, ou le relecteur que la direction a désigné pour ce bien et cette langue.
+    const reviewer = (await this.reviewers(viewer.networkId, row.property_id)).get(t.language);
+    let g: { ok: true; networkId: string; agentId: string | null } | Refusal | Problem;
+    if (viewer.role === 'agent' && reviewer === viewer.userId) {
+      const p = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [row.property_id, viewer.networkId]);
+      g = { ok: true, networkId: viewer.networkId, agentId: p?.agent_id ?? null };
+    } else {
+      g = await this.gate(viewer, row.property_id, 'validate');
+      if (!g.ok) return g;
+      if (!(await this.languagesOf(g.networkId, viewer.userId)).includes(t.language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
+    }
     if (t.validated) return { ok: false, rule: 'R258', code: 'already_validated' };
-    if (!(await this.languagesFor(g.networkId, g.agentId)).includes(t.language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     const latest = await this.db.first<{ id: string }>('SELECT id FROM listing_translations WHERE property_id = ? AND language = ? ORDER BY seq DESC LIMIT 1', [t.propertyId, t.language]);
     if (latest?.id !== t.id) return { ok: false, rule: 'R258', code: 'not_latest' };
     const draft = await this.source(g.networkId, t.propertyId);
@@ -559,7 +639,7 @@ export class AnnoncesTraduites {
     const t = toTranslation(row);
     if (!t.validated || t.draftId !== draft.id) return null;
     const property = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [propertyId, networkId]);
-    if (!property || !(await this.languagesFor(networkId, property.agent_id)).includes(language)) return null;
+    if (!property || !(await this.stillQualified(networkId, property.agent_id, propertyId, language, t.validated.by))) return null;
     return controlTranslation(draft, t, language).ok ? t : null;
   }
 
