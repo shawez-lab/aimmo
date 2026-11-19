@@ -238,18 +238,17 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
     // L'anglais n'est plus ouvert d'office : sans langue déclarée, plus rien ne part (AU113).
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toEqual([]);
     await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ar']);
-    // L'agent écrit une nouvelle annonce française, pas encore validée : plus rien n'est publiable, ni traduit.
-    const fresh = await s.annonces.propose(s.agent, s.propertyId);
+    // L'agent écrit une nouvelle annonce française, pas encore validée : la version validée reste en ligne, avec ses
+    // traductions, pendant qu'il prépare la révision (AU066).
+    const fresh = await s.annonces.correct(s.agent, s.propertyId, { title: 'Trois pièces à Dijon', body: 'Au 3e étage avec ascenseur.' });
     if (!fresh.ok) throw new Error(fresh.code);
     const before = (await s.tr.read(s.agent, s.propertyId, 'en')) as { ok: true; value: { id: string } };
-    // Tant que le passage n'a pas retiré l'annonce, l'acheteur reçoit ce qui est publié, comme les portails.
-    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toMatchObject({ language: 'en' });
     await s.publication.sync(s.network.id, s.propertyId);
-    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toBeNull();
-    expect(await s.exporter.listings(s.network.id)).toEqual([]);
-    expect((await s.tr.validate(s.agent, before.value.id)).ok).toBe(false);
-    expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, code: 'no_listing' });
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toMatchObject({ language: 'en' });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('en');
+    // Validée, la révision remplace la version en ligne : la traduction de l'ancienne ne vaut plus.
     expect((await s.annonces.validate(s.agent, fresh.value.id)).ok).toBe(true);
+    expect((await s.tr.validate(s.agent, before.value.id)).ok).toBe(false);
     await s.publication.sync(s.network.id, s.propertyId);
     expect(await s.exporter.listings(s.network.id)).toEqual([]);
     // Validée, la nouvelle annonce : l'ancienne traduction ne vaut plus pour elle.

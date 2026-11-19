@@ -10,6 +10,7 @@ import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
 import { designerTout } from '../../core/test/designation-jeu.ts';
+import { rangerStatut } from '../../core/test/statut-agent-jeu.ts';
 
 // Réseau, agents, biens, photos, empreintes et clés inventés.
 const BASE = 'https://aimmo-api.example.test';
@@ -41,6 +42,7 @@ async function setup(opts: { files?: boolean; extra?: Record<string, unknown> } 
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   // La carte professionnelle du réseau, inventée : les mentions obligatoires sont complètes [R43].
   await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 0000 2027 000 000 001');
+  await rangerStatut(db, journal, now, direction as Viewer, [alex]);
   const property = async (i: number, withMandate = true) => {
     const p = (await store.createProperty({ networkId: network, agentId: alex, reference: `STU-${i}`, kind: 'home', city: 'Villebrune', priceEur: 150_000 + i * 1000, surfaceM2: 45, rooms: 2, status: 'available' })).id;
     const photos = VIEWS.map((_, k) => `biens/${p}/${uuid(i * 10 + k)}.jpg`);

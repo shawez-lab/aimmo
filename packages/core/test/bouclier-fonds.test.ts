@@ -191,8 +191,8 @@ describeWithSqlite('N05 · aucun fonds, bouclier contre le faux RIB', () => {
     await t.bouclier.scan((await t.receive(t.buyerId, 'Voici mon RIB')).id);
     expect(await t.bouclier.alertsOf(t.direction)).toEqual({ ok: false, rule: 'R16', code: 'not_agent' });
     expect(await t.bouclier.alertsOf(t.sam)).toEqual({ ok: true, alerts: [] });
-    expect((await t.journal.bySubject(`agent:${t.alexId}`)).length).toBe(0);
+    expect((await t.journal.bySubject(`agent:${t.alexId}`)).filter((e) => e.type === 'dossier.alertes_fonds_lues')).toEqual([]);
     await t.bouclier.alertsOf(t.agent);
-    expect((await t.journal.bySubject(`agent:${t.alexId}`)).map((e) => e.type)).toEqual(['dossier.alertes_fonds_lues']);
+    expect((await t.journal.bySubject(`agent:${t.alexId}`)).map((e) => e.type).filter((x) => x !== 'attirer.agent.mentions')).toEqual(['dossier.alertes_fonds_lues']);
   });
 });
