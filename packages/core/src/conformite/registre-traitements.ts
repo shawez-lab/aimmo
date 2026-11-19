@@ -363,6 +363,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)', 'Meta (WhatsApp, Messenger, Instagram)', 'Google (agenda, messagerie)'],
     tables: {
       buyer_searches: ['person_id', 'communes', 'budget_max_eur', 'financing'],
+      buyer_search_confirmations: ['confirmed_by'],
       phrase_searches: ['buyer_search_id', 'criteria', 'saved_by'],
       property_alerts: ['person_id'],
       alert_unsubscribe_tokens: ['person_id'],
@@ -1254,6 +1255,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_legal_mentions: ['id', 'network_id', 'legal_status', 'set_at'],
   video_text_checks: ['id', 'property_id', 'network_id', 'media_ref', 'outcome', 'checked_at'],
   listing_views: ['id', 'property_id', 'network_id', 'channel', 'day', 'views', 'recorded_at'],
+  buyer_search_confirmations: ['project_id', 'network_id', 'confirmed_at'],
   buyer_searches: ['id', 'network_id', 'project_id', 'version', 'property_kinds', 'features', 'surface_min_m2', 'rooms_min', 'bedrooms_min', 'urgency', 'sources', 'origin', 'created_at'],
   phrase_searches: ['id', 'network_id', 'project_id', 'consent_id', 'created_at'],
   property_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'created_at', 'updated_at'],
