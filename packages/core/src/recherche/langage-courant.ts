@@ -321,7 +321,7 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
       if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
     },
   );
-  scan(/(?<![a-z])(budget|max(imum)?|jusqu'?a|moins de|pas plus de|au plus)\s*(de\s*)?(\d{1,3}(?:[ .  ]\d{3})+|\d{5,10})(?![a-z0-9])/g, (m, start, end) => {
+  scan(/(?<![a-z])(budget(?:\s+ferme)?|max(imum)?(?:\s+absolu)?|jusqu'?a|moins de|pas plus de|au plus|sans depasser)\s*(de\s*)?(\d{1,3}(?:[ .  ]\d{3})+|\d{5,10})(?![a-z0-9])/g, (m, start, end) => {
     const v = amount(m[4] ?? '', '');
     if (v === null) return false;
     if (!skipNegated(start, end)) budgets.push({ value: v, start, end });
@@ -343,7 +343,10 @@ export function parsePhrase(phrase: string, communes: readonly string[] = DEFAUL
   }
   criteria.sort((a, b) => (a.source.kind === 'phrase' && b.source.kind === 'phrase' ? a.source.start - b.source.start : 0));
   ignored.sort((a, b) => a.start - b.start);
-  return { criteria, ignored, budgetStrict: STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH)) };
+  const budgetStrict = STRICT_BUDGET.test(phrase.slice(0, PHRASE_MAX_LENGTH));
+  // Un budget dit ferme est une exigence, même relié par « et » à un souhait (AU115).
+  if (budgetStrict) for (const c of criteria) if (c.field === 'budgetMaxEur') c.strength = 'must';
+  return { criteria, ignored, budgetStrict };
 }
 
 // ————— Refus et voisines —————

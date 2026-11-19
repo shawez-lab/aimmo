@@ -476,4 +476,11 @@ describe('AU115 · le budget ferme dans la recherche en direct', () => {
     expect(refused.budgetStrict).toBe(true);
     expect(judge(refused, prop(260_000))).toBeNull();
   });
+  it('[R51] « budget ferme 250 000 » sans unité et « si possible un jardin et budget ferme » gardent le plafond strict', () => {
+    for (const phrase of ['Appartement à Dijon, budget ferme 250 000', 'Appartement à Dijon, si possible un jardin et budget ferme 250 000 euros', 'Appartement à Dijon, sans dépasser 250 000']) {
+      const s = base(phrase);
+      expect(s.criteria.find((c) => c.field === 'budgetMaxEur')).toMatchObject({ value: 250_000, strength: 'must' });
+      expect(judge(s, prop(260_000))).toBeNull();
+    }
+  });
 });
