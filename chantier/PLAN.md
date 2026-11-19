@@ -969,7 +969,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU098b · Le calendrier de l'outre-mer pour les autres lecteurs de l'interdiction de louer
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU098
 - Cahier : M17 Investir ; M15 Louer ; audit A098.
 - Objectif : les contraintes Investir, la veille DPE et le score d'adresse appellent `banDate` sans territoire et appliquent le calendrier métropolitain à un bien ultramarin ; leur passer le territoire du bien (`territoryOf`).

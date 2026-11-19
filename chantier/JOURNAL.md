@@ -1443,3 +1443,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 00:07 · VOIE 3 : AU098 (#671, outre-mer) et AU102 (#673, local libre) fusionnées ; AU017 (#668) remise à jour après conflit ; AU098b ajoutée ; question AU100 posée à l'avocat (H72)
 - 2026-11-19 00:22 · AU012 · titre de l'agent réglé par la direction dans une liste fermée, « agent immobilier » par défaut (H24) ; page du bien, page et accueil du site de l'agent, supports imprimés ; relecture forte 1 P1 et Codex 1 P0 corrigés ; fusionnée (#672, 9e156f5d) · prochaine : AU013
 - 2026-11-19 00:22 · VOIE 2 : AU012, 9e156f5d, relancé non (les trois questions répondent oui, mais la séance horaire part vers 00:53 : une relance ne gagnerait qu’une demi-heure et ferait deux séances voie 2 à la suite)
+- 2026-11-19 01:11 · VOIE 3 : AU098b (#674) fusionnée ; AU101 (#676) corrigée après Codex (expiration la veille de l'anniversaire) ; AU017 (#668) relancée (délai dépassé hors sujet)
