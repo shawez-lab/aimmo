@@ -33,6 +33,7 @@ const FACTS: RentalFacts = {
   mainRoomHundredths: 1_800,
   ceilingHeightCm: 250,
   localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
+  firstLetting: true,
   gas: 'aucune',
   leaseStart: '2027-09-01',
 };
@@ -390,5 +391,36 @@ describeWithSqlite('AU098 · un logement ultramarin contrôlé avec son calendri
     expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { stale: false } });
     const notices = await t.location.notices(t.agent, id);
     expect(notices.ok && notices.value[0]).toMatchObject({ energyClass: 'G', bannedFrom: '2028-01-01' });
+  });
+});
+
+describe('AU016 · le gel des loyers des logements F et G', () => {
+  const today = '2026-11-18';
+  const { firstLetting: _f, ...unknown } = { ...FACTS, energyClass: 'F' as const, finalEnergyKwh: 330, leaseStart: '2027-09-01' };
+  it('[R100] un F sans loyer précédent ni première location n’est jamais louable ; un D n’est pas concerné', () => {
+    expect(checkDwelling(unknown, ALL_VALID, today)).toContainEqual({ code: 'previous_rent_missing' });
+    expect(checkDwelling({ ...unknown, energyClass: 'D' }, ALL_VALID, today).some((r) => r.code === 'previous_rent_missing')).toBe(false);
+    expect(checkDwelling({ ...unknown, firstLetting: true }, ALL_VALID, today).some((r) => r.code === 'previous_rent_missing' || r.code === 'rent_freeze')).toBe(false);
+  });
+  it('[R100] un F reloué plus cher que le dernier loyer est bloqué ; au même loyer ou moins, il passe', () => {
+    expect(checkDwelling({ ...unknown, previousRentCents: FACTS.rentCents - 1 }, ALL_VALID, today)).toContainEqual({ code: 'rent_freeze', previousRentCents: FACTS.rentCents - 1 });
+    expect(checkDwelling({ ...unknown, previousRentCents: FACTS.rentCents }, ALL_VALID, today).some((r) => r.code === 'rent_freeze')).toBe(false);
+    expect(checkDwelling({ ...unknown, energyClass: 'G', previousRentCents: FACTS.rentCents - 1 }, ALL_VALID, today, 'outre_mer')).toContainEqual({ code: 'rent_freeze', previousRentCents: FACTS.rentCents - 1 });
+  });
+  it('[R100] la saisie : un loyer précédent positif, ou la première location, jamais les deux', () => {
+    const raw = { ...unknown, chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, previousRentCents: 0 })).toEqual({ ok: false, field: 'previousRentCents' });
+    expect(parseFacts({ ...raw, firstLetting: true, previousRentCents: 60_000 })).toEqual({ ok: false, field: 'firstLetting' });
+    expect(parseFacts({ ...raw, firstLetting: 'oui' })).toEqual({ ok: false, field: 'firstLetting' });
+    expect(parseFacts({ ...raw, previousRentCents: 60_000 })).toMatchObject({ ok: true, value: { previousRentCents: 60_000 } });
+  });
+});
+
+describeWithSqlite('AU016 · le loyer précédent rangé avec les faits', () => {
+  it('[R100] rangé, relu au contrôle : un F reloué plus cher est bloqué de bout en bout', async () => {
+    const t = await setup();
+    const id = await t.open({ energyClass: 'F', finalEnergyKwh: 330, leaseStart: '2027-12-31', firstLetting: null, previousRentCents: 60_000 });
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', reasons: [{ code: 'rent_freeze', previousRentCents: 60_000 }] } });
   });
 });

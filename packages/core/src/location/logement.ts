@@ -100,6 +100,13 @@ export interface RentalFacts {
    * logement le respecte. Le décret fixe un minimum ; une règle locale plus stricte l'emporte.
    */
   localRules?: { reference: string; checkedOn: string; compliant: boolean } | null;
+  /**
+   * Gel des loyers des logements F et G (AU016 ; loi de 1989, art. 17 et 17-1, depuis le 24 août 2022 en métropole et
+   * le 1er juillet 2024 outre-mer) : le dernier loyer hors charges du locataire précédent, en centimes, ou `firstLetting`
+   * quand le logement n'a jamais été loué. Sans l'un ou l'autre, un F ou un G n'est jamais dit louable.
+   */
+  previousRentCents?: number | null;
+  firstLetting?: boolean | null;
 }
 
 export const CHARGES_MODES = ['provision', 'forfait'] as const;
@@ -111,6 +118,8 @@ export type CheckReason =
   | { code: 'living_area'; livingAreaHundredths: number; mainRoomHundredths: number | null; ceilingHeightCm: number | null; habitableVolumeHundredths: number | null }
   | { code: 'dimensions_missing' }
   | { code: 'local_rules_unchecked' }
+  | { code: 'previous_rent_missing' }
+  | { code: 'rent_freeze'; previousRentCents: number }
   | { code: 'local_rules_failed'; reference: string }
   | { code: 'annex_missing'; kind: AnnexKind }
   | { code: 'annex_expired'; kind: AnnexKind; validUntil: string }
@@ -239,6 +248,12 @@ export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: Anne
       ceilingHeightCm: facts.ceilingHeightCm ?? null,
       habitableVolumeHundredths: facts.habitableVolumeHundredths ?? null,
     });
+  // Un F ou un G ne se reloue pas plus cher que le dernier loyer du locataire précédent.
+  if (facts.energyClass === 'F' || facts.energyClass === 'G') {
+    const previous = facts.previousRentCents ?? null;
+    if (previous === null && facts.firstLetting !== true) reasons.push({ code: 'previous_rent_missing' });
+    else if (previous !== null && facts.rentCents > previous) reasons.push({ code: 'rent_freeze', previousRentCents: previous });
+  }
   // Le seuil national ne suffit jamais seul : la règle locale lue et datée, sinon pas « louable ».
   const local = facts.localRules ?? null;
   if (local === null) reasons.push({ code: 'local_rules_unchecked' });
@@ -286,6 +301,8 @@ interface FactsRow {
   ceiling_height_cm: number | null;
   habitable_volume_hundredths: number | null;
   local_rules: string | null;
+  previous_rent_cents: number | null;
+  first_letting: number | null;
 }
 
 const toFacts = (r: FactsRow): RentalFacts => ({
@@ -303,6 +320,8 @@ const toFacts = (r: FactsRow): RentalFacts => ({
   ...(r.main_room_hundredths != null ? { mainRoomHundredths: Number(r.main_room_hundredths) } : {}),
   ...(r.ceiling_height_cm != null ? { ceilingHeightCm: Number(r.ceiling_height_cm) } : {}),
   ...(r.habitable_volume_hundredths != null ? { habitableVolumeHundredths: Number(r.habitable_volume_hundredths) } : {}),
+  ...(r.previous_rent_cents != null ? { previousRentCents: Number(r.previous_rent_cents) } : {}),
+  ...(r.first_letting != null ? { firstLetting: Number(r.first_letting) === 1 } : {}),
   ...(r.local_rules ? { localRules: JSON.parse(r.local_rules) as { reference: string; checkedOn: string; compliant: boolean } } : {}),
 });
 
@@ -312,7 +331,7 @@ const isInt = (v: unknown, min: number, max: number): v is number => typeof v ==
 export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | { ok: false; field: string } {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, field: '' };
   const v = input as Record<string, unknown>;
-  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode', 'mainRoomHundredths', 'ceilingHeightCm', 'habitableVolumeHundredths', 'localRules'];
+  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode', 'mainRoomHundredths', 'ceilingHeightCm', 'habitableVolumeHundredths', 'localRules', 'previousRentCents', 'firstLetting'];
   for (const k of Object.keys(v)) if (!keys.includes(k)) return { ok: false, field: k };
   if (typeof v.furnished !== 'boolean') return { ok: false, field: 'furnished' };
   if (!isInt(v.rentCents, 1, 100_000_000)) return { ok: false, field: 'rentCents' };
@@ -334,6 +353,12 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
   if (height !== null && !isInt(height, 100, 1_500)) return { ok: false, field: 'ceilingHeightCm' };
   const volume = v.habitableVolumeHundredths ?? null;
   if (volume !== null && !isInt(volume, 1, 1_000_000_000)) return { ok: false, field: 'habitableVolumeHundredths' };
+  const previous = v.previousRentCents ?? null;
+  if (previous !== null && !isInt(previous, 1, 100_000_000)) return { ok: false, field: 'previousRentCents' };
+  const first = v.firstLetting ?? null;
+  if (first !== null && typeof first !== 'boolean') return { ok: false, field: 'firstLetting' };
+  // Un premier loyer n'a pas de loyer précédent : les deux ensemble se contredisent.
+  if (first === true && previous !== null) return { ok: false, field: 'firstLetting' };
   const local = v.localRules ?? null;
   if (local !== null) {
     if (typeof local !== 'object' || Array.isArray(local)) return { ok: false, field: 'localRules' };
@@ -358,6 +383,8 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
       ...(room !== null ? { mainRoomHundredths: room } : {}),
       ...(height !== null ? { ceilingHeightCm: height } : {}),
       ...(volume !== null ? { habitableVolumeHundredths: volume } : {}),
+      ...(previous !== null ? { previousRentCents: previous } : {}),
+      ...(first !== null ? { firstLetting: first } : {}),
       ...(local !== null ? { localRules: { reference: String((local as Record<string, unknown>).reference).trim(), checkedOn: (local as Record<string, unknown>).checkedOn as string, compliant: (local as Record<string, unknown>).compliant as boolean } } : {}),
     },
   };
@@ -504,9 +531,9 @@ export class MisesEnLocation {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, recorded_by, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, f.mainRoomHundredths ?? null, f.ceilingHeightCm ?? null, f.habitableVolumeHundredths ?? null, f.localRules ? JSON.stringify(f.localRules) : null, this.actor(viewer), this.now().toISOString()],
+        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting, recorded_by, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, f.mainRoomHundredths ?? null, f.ceilingHeightCm ?? null, f.habitableVolumeHundredths ?? null, f.localRules ? JSON.stringify(f.localRules) : null, f.previousRentCents ?? null, f.firstLetting == null ? null : f.firstLetting ? 1 : 0, this.actor(viewer), this.now().toISOString()],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
@@ -574,7 +601,7 @@ export class MisesEnLocation {
 
   private async latestFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
     const r = await this.db.first<FactsRow>(
-      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
+      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
       [listingId],
     );
     return r ? { ...toFacts(r), version: Number(r.version) } : null;

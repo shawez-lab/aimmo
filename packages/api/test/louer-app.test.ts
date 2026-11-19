@@ -462,10 +462,24 @@ describe('W11 · écran « Louer » de l’application', () => {
     t.table['POST /v1/location/l1/faits'] = ok({ version: 2 });
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ ...Object.fromEntries(Object.entries(FACTS).filter(([k]) => k !== 'version')), rentCents: 64_050, livingAreaHundredths: 4_250, energyClass: 'E' });
+    // AU016 · Le loyer du locataire précédent : « aucun » pour une première location, sinon des euros en centimes.
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'Aucun';
+    await t.click(t.byText('Ranger les faits'));
+    expect(JSON.parse(t.posts()[1]!.body!)).toMatchObject({ firstLetting: true });
+    expect(JSON.parse(t.posts()[1]!.body!)).not.toHaveProperty('previousRentCents');
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = '600';
+    await t.click(t.byText('Ranger les faits'));
+    expect(JSON.parse(t.posts()[2]!.body!)).toMatchObject({ previousRentCents: 60_000 });
+    expect(JSON.parse(t.posts()[2]!.body!)).not.toHaveProperty('firstLetting');
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'cher';
+    await t.click(t.byText('Ranger les faits'));
+    expect(t.posts()).toHaveLength(3);
+    expect(t.state()).toBe('Loyer précédent : un nombre, ou « aucun ».');
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = '';
     // Un montant illisible : dit, rien ne part.
     t.input('Loyer hors charges, en euros par mois').value = 'six cents';
     await t.click(t.byText('Ranger les faits'));
-    expect(t.posts()).toHaveLength(1);
+    expect(t.posts()).toHaveLength(3);
     expect(t.state()).toBe('Remplissez chaque champ : des nombres, et la date du bail.');
   });
 

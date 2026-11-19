@@ -32,6 +32,7 @@ const FACTS: RentalFacts = {
   mainRoomHundredths: 1_800,
   ceilingHeightCm: 250,
   localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
+  firstLetting: true,
   gas: 'aucune',
   leaseStart: '2027-09-01',
   chargesMode: 'provision',
