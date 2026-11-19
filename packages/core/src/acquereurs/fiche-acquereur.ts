@@ -49,6 +49,10 @@ export interface BuyerSearch {
   roomsMin: number | null;
   bedroomsMin: number | null;
   budgetMaxEur: number | null;
+  /** Les équipements sans lesquels la personne ne veut pas du bien : éliminatoires, quand `features` n'en fait que des souhaits (AU071). */
+  requiredFeatures?: BuyerFeature[];
+  /** Le budget dit infranchissable : aucune tolérance au-dessus (AU115). */
+  budgetStrict?: boolean;
   /** Tel que la personne l'a déclaré, jamais évalué [R24]. */
   financing: Financing | null;
   urgency: Deadline | null;
@@ -63,6 +67,8 @@ export const SEARCH_FIELDS: readonly SearchField[] = [
   'roomsMin',
   'bedroomsMin',
   'budgetMaxEur',
+  'requiredFeatures',
+  'budgetStrict',
   'financing',
   'urgency',
 ];
@@ -137,7 +143,7 @@ export type SearchRefusal = {
 };
 export type SearchCheck = { ok: true; value: Partial<BuyerSearch> } | SearchRefusal;
 
-const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features'];
+const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features', 'requiredFeatures'];
 const INT_LIMITS: Partial<Record<SearchField, [number, number]>> = {
   surfaceMinM2: [1, 100_000],
   roomsMin: [1, 50],
@@ -151,7 +157,7 @@ const refuse = (code: string, field?: SearchField, rule: 'R50' | 'R16' = 'R50'):
 function isListed(key: string, value: string, communes: readonly string[]): boolean {
   if (key === 'communes') return communes.some((c) => termKey(c) === termKey(value));
   if (key === 'propertyKinds') return (BUYER_PROPERTY_KINDS as readonly string[]).includes(value);
-  if (key === 'features') return (BUYER_FEATURES as readonly string[]).includes(value);
+  if (key === 'features' || key === 'requiredFeatures') return (BUYER_FEATURES as readonly string[]).includes(value);
   if (key === 'financing') return (FINANCINGS as readonly string[]).includes(value);
   if (key === 'urgency') return (DEADLINES as readonly string[]).includes(value);
   return false;
@@ -198,6 +204,11 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
       out[field] = kept;
       continue;
     }
+    if (field === 'budgetStrict') {
+      if (value !== null && typeof value !== 'boolean') return refuse('valeur', field);
+      out[field] = value === true;
+      continue;
+    }
     if (value === null) {
       out[field] = null;
       continue;
@@ -228,6 +239,8 @@ export interface BuyerSearchRow {
   rooms_min: number | null;
   bedrooms_min: number | null;
   budget_max_eur: number | null;
+  required_features?: string | null;
+  budget_strict?: number | null;
   financing: Financing | null;
   urgency: Deadline | null;
   sources: string;
@@ -256,6 +269,8 @@ export const EMPTY_SEARCH: Readonly<BuyerSearch> = Object.freeze({
   roomsMin: null,
   bedroomsMin: null,
   budgetMaxEur: null,
+  requiredFeatures: [],
+  budgetStrict: false,
   financing: null,
   urgency: null,
 });
@@ -290,6 +305,8 @@ export function toVersion(row: BuyerSearchRow): BuyerSearchVersion {
       roomsMin: row.rooms_min,
       bedroomsMin: row.bedrooms_min,
       budgetMaxEur: row.budget_max_eur,
+      requiredFeatures: parseList<BuyerFeature>(row.required_features ?? '[]'),
+      budgetStrict: Number(row.budget_strict ?? 0) === 1,
       financing: row.financing,
       urgency: row.urgency,
     },
@@ -374,6 +391,24 @@ export class FicheAcquereur {
    * L'agent de la fiche ou la direction modifie la recherche : une nouvelle version, l'ancienne gardée [R17]. Un
    * champ hors liste ou discriminant est refusé, et le refus va au journal sans la valeur [R13, R50].
    */
+  /**
+   * L'acquéreur dit sa recherche toujours d'actualité (AU074) : elle reste active au rapprochement sans que l'agent
+   * modifie un critère. Mêmes droits qu'une modification ; une ligne par confirmation, rien ne change ni ne s'efface.
+   */
+  async confirm(acces: Acces, viewer: Viewer, projectId: string): Promise<{ ok: true; value: { confirmedAt: string } } | SearchRefusal> {
+    const project = await this.buyProject(viewer, projectId);
+    if (!project) return this.refused(viewer, projectId, 'unknown');
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, projectId, 'role');
+    const read = await acces.readFiche(viewer, project.person_id);
+    if (!read.ok) return refuse(read.code, undefined, 'R16');
+    if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
+    if (!(await this.current(project.id))) return refuse('sans_recherche', undefined, 'R16');
+    const at = this.now().toISOString();
+    await this.db.run('INSERT INTO buyer_search_confirmations (project_id, network_id, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?)', [project.id, project.network_id, at, `${viewer.role}:${viewer.userId}`]);
+    await appendEvent(this.journal, { type: 'acquereur.recherche_confirmee', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${project.person_id}`, data: { project: project.id } }, this.now);
+    return { ok: true, value: { confirmedAt: at } };
+  }
+
   async update(acces: Acces, viewer: Viewer, projectId: string, input: unknown): Promise<UpdateResult> {
     const project = await this.buyProject(viewer, projectId);
     if (!project) return this.refused(viewer, projectId, 'unknown');
@@ -491,7 +526,7 @@ export class FicheAcquereur {
   ): Promise<UpdateResult> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const last = await this.current(project.id);
-      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [] };
+      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] };
       const sources: Partial<Record<SearchField, string>> = last ? { ...last.sources } : {};
       const changes = changesOf(previous, sources);
       const next: BuyerSearch = { ...previous };
@@ -510,8 +545,8 @@ export class FicheAcquereur {
       const id = this.newId();
       const { changes: inserted } = await this.db.run(
         `INSERT INTO buyer_searches (id, network_id, project_id, person_id, version, property_kinds, communes, features, surface_min_m2,
-           rooms_min, bedrooms_min, budget_max_eur, financing, urgency, sources, origin, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+           rooms_min, bedrooms_min, budget_max_eur, required_features, budget_strict, financing, urgency, sources, origin, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [
           id,
           project.network_id,
@@ -525,6 +560,8 @@ export class FicheAcquereur {
           next.roomsMin,
           next.bedroomsMin,
           next.budgetMaxEur,
+          JSON.stringify(next.requiredFeatures ?? []),
+          next.budgetStrict ? 1 : 0,
           next.financing,
           next.urgency,
           JSON.stringify(sources),

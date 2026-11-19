@@ -138,7 +138,7 @@ describe('T08 · écran de la visite', () => {
     t.table['GET /v1/visites/v1'] = ok({ ...VISIT, report: { status: 'brouillon', source: null, report: null, delivery: null } });
     await t.click(t.byText(corps, 'Envoyer la dictée'));
     expect(t.calls.find((c) => c.url.endsWith('/dictee'))!.body).toEqual({ dictation: 'Elle a aimé le séjour, cuisine à refaire.' });
-    expect(corps.textContent).toContain('Votre dictée est gardée.');
+    expect(corps.textContent).toContain('Dictée gardée');
     t.byId(corps, 'v-avis').value = 'Inès a aimé le séjour.';
     t.byId(corps, 'v-forts').value = 'séjour, , lumière';
     t.byId(corps, 'v-interet').value = 'fort';
@@ -286,7 +286,7 @@ describe('T08 · écran des acquéreurs d’un bien', () => {
   it('[R42] un bien pas encore diffusable est dit ; le retour ramène à la visite', async () => {
     const t = await openVisit({ ...answers('x'), 'GET /v1/acquereurs/biens/b1': no(409, { ok: false, rule: 'R42', code: 'withdrawal_period' }) });
     await t.click(t.byText(t.els['visite-corps']!, 'Acquéreurs pour ce bien'));
-    expect(t.els['bien-etat']!.textContent).toMatch(/délai de rétractation/);
+    expect(t.els['bien-etat']!.textContent).toMatch(/rétractation en cours/);
     await t.click(t.els['bien-retour']!);
     expect(t.els.visite!.hidden).toBe(false);
   });

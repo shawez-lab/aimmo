@@ -1453,3 +1453,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 03:39 · VOIE 3 : AU101b (#677, congés de bail en tâches) fusionnée ; #681 (AU071, AU115) corrigée après Codex
 - 2026-11-19 03:53 · AU004 · diffusion accusée sur chaque portail de HX38 : publier, modifier, retirer depuis la version publiée, « publiée » seulement sur accusé, gestes rangés avant envoi, clé et ordre pour les reprises, essai sans connecteur ; relecture forte 2 P1, Codex 5 P0 corrigés ; fusionnée (#675, 1d14b873) · prochaine : AU005
 - 2026-11-19 03:55 · VOIE 1 : relance de la séance suivante refusée par le contrôle des permissions ; la prochaine séance prévue reprendra à AU005
+- 2026-11-19 05:10 · VOIE 3 : AU074 (#682, recherche dite toujours d'actualité, alerte WhatsApp comprise) fusionnée ; en relecture : #681 (AU071, AU115), #685 (AU070), #686 (AU015) ; H73 demandée (AU014, AU096b)

@@ -3,6 +3,7 @@
  *
  *   GET  /acquereurs/projets/:projet/recherche          la recherche de l'acquéreur et ses versions
  *   POST /acquereurs/projets/:projet/recherche          une nouvelle version de la recherche [R50]
+ *   POST /acquereurs/projets/:projet/recherche/confirmation  la recherche dite toujours d'actualité (AU074)
  *   GET  /acquereurs/biens/:bien                        les acquéreurs proposés pour un bien diffusable [R51]
  *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
  *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
@@ -160,6 +161,8 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     // Acquéreurs.
     get('acquereurs.recherche', `/acquereurs/projets/${ID}/recherche`, async (s, v, [p]) => reply(await recherche(s).read(s.acces, v, p!))),
     post('acquereurs.recherche.modifier', `/acquereurs/projets/${ID}/recherche`, async (s, v, [p], body) => reply(await recherche(s).update(s.acces, v, p!, body))),
+    // AU074 · L'acquéreur dit sa recherche toujours d'actualité : elle reste active, sans changer de critère.
+    post('acquereurs.recherche.confirmer', `/acquereurs/projets/${ID}/recherche/confirmation`, async (s, v, [p]) => reply(await recherche(s).confirm(s.acces, v, p!))),
     get('acquereurs.bien', `/acquereurs/biens/${ID}`, async (s, v, [b]) => reply(await rapprochement(s).propose(s.acces, v, b!))),
     get('acquereurs.carte', `/acquereurs/biens/${ID}/carte`, async (s, v, [b]) => reply(await rapprochement(s).demandMap(s.acces, v, b!))),
     post('acquereurs.whatsapp', `/acquereurs/biens/${ID}/whatsapp/${ID}`, async (s, v, [b, p]) => reply(await whatsapp(s).prepare(v, b!, p!))),
