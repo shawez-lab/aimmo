@@ -107,7 +107,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU006 · Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#695, `afa6ff4e`). Constat confirmé. Décidé, lecture prudente : les deux échelles A à G en couleur du modèle officiel, la classe du bien en avant et dite en mots, lues dans les mentions de la version publiée (`energyClassesOf`) ; couleurs dans le système (`ETIQUETTES_CSS`), écrites dans les seules barres. Relecture forte 2 P1 corrigés : couleurs sorties des jetons ; aucun seuil chiffré (petites surfaces depuis juillet 2024, double seuil). Codex rien à signaler ; vérification GitHub verte au second passage (premier : 7 délais de 5 s dépassés dans des tests sans lien).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A006 (bloquant), endroit : C/annonces/page-bien.ts, `renderListingPage`, `renderListingPrint`.
 - Constat de l'audit : Ma page et ma fiche imprimable remplacent les échelles DPE/GES par du texte, sans les deux graphiques réglementaires en couleur.
