@@ -197,7 +197,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H26).
 
 ### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
-- Statut : à faire
+- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
 - Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
@@ -952,7 +952,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
-- Statut : à faire
+- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
 - Cahier : M15 Louer ; audit A096.
 - Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.
