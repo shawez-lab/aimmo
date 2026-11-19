@@ -10,6 +10,7 @@ import {
   territoryOf,
   ownerNoticeText,
   parseFacts,
+  rentCeilingCents,
   requiredAnnexes,
   type RentalFacts,
 } from '../src/location/index.ts';
@@ -422,5 +423,89 @@ describeWithSqlite('AU016 · le loyer précédent rangé avec les faits', () => 
     const id = await t.open({ energyClass: 'F', finalEnergyKwh: 330, leaseStart: '2027-12-31', firstLetting: null, previousRentCents: 60_000 });
     await t.annexes(id);
     expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', reasons: [{ code: 'rent_freeze', previousRentCents: 60_000 }] } });
+  });
+});
+
+// Arrêté préfectoral inventé : 20 € de référence, 24 € majoré, par m² et par mois.
+const RC = { decree: 'Arrêté préfectoral inventé n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 0, complementReason: null };
+
+describe('AU015 · encadrement des loyers, règles écrites', () => {
+  it('[R101] dans une commune encadrée, le loyer de base ne dépasse pas le loyer de référence majoré fois la surface ; au centime près', () => {
+    const today = '2027-07-12';
+    // 42,50 m² × 24 € = 1 020 € par mois.
+    const at = (rentCents: number, complementCents = 0, complementReason: string | null = null) =>
+      checkDwelling({ ...FACTS, rentCents, rentControl: { ...RC, complementCents, complementReason } }, ALL_VALID, today, 'metropole', true);
+    expect(rentCeilingCents(RC, 4_250)).toBe(102_000);
+    expect(at(102_000)).toEqual([]);
+    expect(at(102_001)).toEqual([{ code: 'rent_above_ceiling', baseRentCents: 102_001, ceilingCents: 102_000 }]);
+    // Un complément justifié s'ajoute au loyer de base ; sans justification, il est dit.
+    expect(at(112_000, 10_000, 'Terrasse de 40 m² avec vue dégagée, rare dans le quartier')).toEqual([]);
+    expect(at(112_000, 10_000)).toEqual([{ code: 'complement_unjustified' }]);
+    // Jamais de complément pour un F ou un G.
+    expect(checkDwelling({ ...FACTS, energyClass: 'F', rentControl: { ...RC, complementCents: 1_000, complementReason: 'Terrasse de 40 m² avec vue dégagée' } }, ALL_VALID, today, 'metropole', true)).toEqual([{ code: 'complement_forbidden', energyClass: 'F' }]);
+    // Encadrée sans l'arrêté lu : jamais louable ; hors encadrement, l'arrêté n'est pas demandé.
+    expect(checkDwelling(FACTS, ALL_VALID, today, 'metropole', true)).toEqual([{ code: 'rent_control_missing' }]);
+    expect(checkDwelling(FACTS, ALL_VALID, today, 'metropole', false)).toEqual([]);
+  });
+
+  it('[R101] l’arrêté se saisit avec sa référence, son jour, deux loyers au m² dont le majoré au moins égal ; un complément vient avec sa justification', () => {
+    expect(parseFacts({ ...FACTS, rentControl: RC })).toMatchObject({ ok: true, value: { rentControl: RC } });
+    for (const bad of [
+      { ...RC, majoredCentsPerM2: 1_999 },
+      { ...RC, decree: '' },
+      { ...RC, readOn: '2027-02-30' },
+      { ...RC, complementCents: 0, complementReason: 'Une justification sans complément' },
+      { ...RC, complementCents: 65_000 },
+      { ...RC, inconnu: 1 },
+    ]) expect(parseFacts({ ...FACTS, rentControl: bad })).toEqual({ ok: false, field: 'rentControl' });
+  });
+});
+
+describeWithSqlite('AU015 · encadrement des loyers, à la mise en location', () => {
+  it('[R101] la commune encadrée par une règle rangée : sans l’arrêté, bloqué ; au-dessus du plafond, bloqué ; dans le plafond, louable ; une règle finie ne compte plus', async () => {
+    const t = await setup();
+    const id = await t.open();
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable' } });
+    await t.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [id, '21999', 'agent:a', '2027-07-12T08:00:00.000Z']);
+    const rule = (rid: string, until: string | null, recordedAt: string) =>
+      t.db.run(
+        "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES (?, ?, '21999', 'encadrement_loyers', '2027-01-01', ?, 'Arrêté inventé', '2026-12-01', 'direction:d', ?)",
+        [rid, t.network.id, until, recordedAt],
+      );
+    await rule('r1', null, '2027-01-02T00:00:00.000Z');
+    // La règle rangée rend le dernier contrôle caduc : plus annonçable sans nouveau contrôle.
+    expect(await t.location.advertisable(t.network.id, id)).toBe(false);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', reasons: [{ code: 'rent_control_missing' }] } });
+    // 650 € pour 42,50 m² : sous un majoré de 15 € (637,50 €) ? Non : bloqué ; sous 24 € : louable.
+    expect((await t.location.recordFacts(t.agent, id, { ...FACTS, rentControl: { ...RC, majoredCentsPerM2: 1_500, referenceCentsPerM2: 1_250 } })).ok).toBe(true);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ value: { decision: 'bloque', reasons: [{ code: 'rent_above_ceiling', baseRentCents: 65_000, ceilingCents: 63_750 }] } });
+    expect((await t.location.recordFacts(t.agent, id, { ...FACTS, rentControl: RC })).ok).toBe(true);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ value: { decision: 'louable' } });
+    expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    // La fin de l'encadrement rangée plus tard (au 31 août 2027, avant le bail) : l'arrêté n'est plus demandé.
+    await rule('r2', '2027-08-31', '2027-07-12T09:00:00.000Z');
+    expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-09-01')).toBe(false);
+    expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-08-31')).toBe(true);
+  });
+
+  it('[R101] le jour jugé est celui de Paris : une règle qui commence à minuit à Paris vaut déjà quand il est 23 h 30 en temps universel', async () => {
+    const t = await setup();
+    const id = await t.open({ leaseStart: '2027-07-12' });
+    await t.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [id, '21999', 'agent:a', '2027-07-12T08:00:00.000Z']);
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-07-14', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-07-01T00:00:00.000Z')",
+      [t.network.id],
+    );
+    clock = Date.parse('2027-07-13T21:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(false);
+    // 23 h 30 en temps universel le 13 : déjà le 14 à Paris.
+    clock = Date.parse('2027-07-13T22:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(true);
+  });
+
+  it('[R101] l’arrêté et la justification tiennent sur une ligne : le bail les reprend et les relit tels quels', () => {
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, decree: 'Arrêté\nn° 1' } })).toEqual({ ok: false, field: 'rentControl' });
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, complementCents: 1_000, complementReason: 'Terrasse de 40 m²\navec vue' } })).toEqual({ ok: false, field: 'rentControl' });
   });
 });

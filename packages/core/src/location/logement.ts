@@ -107,6 +107,29 @@ export interface RentalFacts {
    */
   previousRentCents?: number | null;
   firstLetting?: boolean | null;
+  /**
+   * Encadrement des loyers (AU015 ; loi ELAN du 23 novembre 2018, art. 140) : dans une commune où il est en vigueur, ce
+   * que l'agent a lu dans l'arrêté préfectoral pour ce logement (nombre de pièces, époque, vide ou meublé, quartier).
+   */
+  rentControl?: RentControlFacts | null;
+}
+
+export interface RentControlFacts {
+  /** La référence de l'arrêté préfectoral lu, et le jour de la lecture. */
+  decree: string;
+  readOn: string;
+  /** Loyer de référence et loyer de référence majoré, en centimes par m² habitable et par mois. */
+  referenceCentsPerM2: number;
+  majoredCentsPerM2: number;
+  /** Complément de loyer, en centimes par mois, compris dans `rentCents` ; 0 sans complément. */
+  complementCents: number;
+  /** Les caractéristiques de localisation ou de confort qui justifient le complément ; null sans complément. */
+  complementReason: string | null;
+}
+
+/** Le loyer de base à ne pas dépasser : le loyer de référence majoré au m², fois la surface habitable, arrondi au centime inférieur. */
+export function rentCeilingCents(rc: Pick<RentControlFacts, 'majoredCentsPerM2'>, livingAreaHundredths: number): number {
+  return Math.floor((rc.majoredCentsPerM2 * livingAreaHundredths) / 100);
 }
 
 export const CHARGES_MODES = ['provision', 'forfait'] as const;
@@ -121,6 +144,10 @@ export type CheckReason =
   | { code: 'previous_rent_missing' }
   | { code: 'rent_freeze'; previousRentCents: number }
   | { code: 'local_rules_failed'; reference: string }
+  | { code: 'rent_control_missing' }
+  | { code: 'rent_above_ceiling'; baseRentCents: number; ceilingCents: number }
+  | { code: 'complement_forbidden'; energyClass: RentalEnergyClass }
+  | { code: 'complement_unjustified' }
   | { code: 'annex_missing'; kind: AnnexKind }
   | { code: 'annex_expired'; kind: AnnexKind; validUntil: string }
   | { code: 'annex_future'; kind: AnnexKind };
@@ -231,7 +258,13 @@ export function decencyOf(facts: RentalFacts): 'oui' | 'non' | 'inconnue' {
   return roomKnown || volumeKnown ? 'non' : 'inconnue';
 }
 
-export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[], today: string, territory: Territory = 'metropole'): CheckReason[] {
+export function checkDwelling(
+  facts: RentalFacts,
+  annexes: readonly { kind: AnnexKind; diagnosedOn: string; validUntil: string | null }[],
+  today: string,
+  territory: Territory = 'metropole',
+  rentControlled = false,
+): CheckReason[] {
   const reasons: CheckReason[] = [];
   // La classe est jugée au plus tard du début du bail et du jour du contrôle : une date de bail passée ne rouvre rien.
   const on = facts.leaseStart > today ? facts.leaseStart : today;
@@ -258,6 +291,19 @@ export function checkDwelling(facts: RentalFacts, annexes: readonly { kind: Anne
   const local = facts.localRules ?? null;
   if (local === null) reasons.push({ code: 'local_rules_unchecked' });
   else if (!local.compliant) reasons.push({ code: 'local_rules_failed', reference: local.reference });
+  // Encadrement des loyers : le loyer de base ne dépasse pas le loyer de référence majoré ; un complément n'est possible
+  // que justifié, et jamais pour un logement F ou G (loi de 1989, art. 2-1 ; loi ELAN, art. 140, III B).
+  if (rentControlled) {
+    const rc = facts.rentControl ?? null;
+    if (rc === null) reasons.push({ code: 'rent_control_missing' });
+    else {
+      const ceiling = rentCeilingCents(rc, facts.livingAreaHundredths);
+      const base = facts.rentCents - rc.complementCents;
+      if (base > ceiling) reasons.push({ code: 'rent_above_ceiling', baseRentCents: base, ceilingCents: ceiling });
+      if (rc.complementCents > 0 && (facts.energyClass === 'F' || facts.energyClass === 'G')) reasons.push({ code: 'complement_forbidden', energyClass: facts.energyClass });
+      else if (rc.complementCents > 0 && rc.complementReason === null) reasons.push({ code: 'complement_unjustified' });
+    }
+  }
   for (const kind of requiredAnnexes(facts)) {
     const a = annexes.find((x) => x.kind === kind);
     if (!a) reasons.push({ code: 'annex_missing', kind });
@@ -303,6 +349,7 @@ interface FactsRow {
   local_rules: string | null;
   previous_rent_cents: number | null;
   first_letting: number | null;
+  rent_control?: string | null;
 }
 
 const toFacts = (r: FactsRow): RentalFacts => ({
@@ -323,6 +370,7 @@ const toFacts = (r: FactsRow): RentalFacts => ({
   ...(r.previous_rent_cents != null ? { previousRentCents: Number(r.previous_rent_cents) } : {}),
   ...(r.first_letting != null ? { firstLetting: Number(r.first_letting) === 1 } : {}),
   ...(r.local_rules ? { localRules: JSON.parse(r.local_rules) as { reference: string; checkedOn: string; compliant: boolean } } : {}),
+  ...(r.rent_control ? { rentControl: JSON.parse(r.rent_control) as RentControlFacts } : {}),
 });
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
@@ -331,7 +379,7 @@ const isInt = (v: unknown, min: number, max: number): v is number => typeof v ==
 export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | { ok: false; field: string } {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, field: '' };
   const v = input as Record<string, unknown>;
-  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode', 'mainRoomHundredths', 'ceilingHeightCm', 'habitableVolumeHundredths', 'localRules', 'previousRentCents', 'firstLetting'];
+  const keys = ['furnished', 'rentCents', 'chargesCents', 'livingAreaHundredths', 'energyClass', 'finalEnergyKwh', 'buildYear', 'electricityOver15', 'gas', 'leaseStart', 'chargesMode', 'mainRoomHundredths', 'ceilingHeightCm', 'habitableVolumeHundredths', 'localRules', 'previousRentCents', 'firstLetting', 'rentControl'];
   for (const k of Object.keys(v)) if (!keys.includes(k)) return { ok: false, field: k };
   if (typeof v.furnished !== 'boolean') return { ok: false, field: 'furnished' };
   if (!isInt(v.rentCents, 1, 100_000_000)) return { ok: false, field: 'rentCents' };
@@ -366,6 +414,8 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
     if (Object.keys(l).some((k) => !['reference', 'checkedOn', 'compliant'].includes(k))) return { ok: false, field: 'localRules' };
     if (typeof l.reference !== 'string' || l.reference.trim().length < 3 || l.reference.length > 200 || !validDay(l.checkedOn) || typeof l.compliant !== 'boolean') return { ok: false, field: 'localRules' };
   }
+  const rc = parseRentControl(v.rentControl ?? null, v.rentCents);
+  if (rc === 'bad') return { ok: false, field: 'rentControl' };
   return {
     ok: true,
     value: {
@@ -386,7 +436,34 @@ export function parseFacts(input: unknown): { ok: true; value: RentalFacts } | {
       ...(previous !== null ? { previousRentCents: previous } : {}),
       ...(first !== null ? { firstLetting: first } : {}),
       ...(local !== null ? { localRules: { reference: String((local as Record<string, unknown>).reference).trim(), checkedOn: (local as Record<string, unknown>).checkedOn as string, compliant: (local as Record<string, unknown>).compliant as boolean } } : {}),
+      ...(rc !== null ? { rentControl: rc } : {}),
     },
+  };
+}
+
+/** L'encadrement lu par l'agent : chaque champ contrôlé ; le loyer majoré n'est jamais sous le loyer de référence. */
+function parseRentControl(input: unknown, rentCents: number): RentControlFacts | null | 'bad' {
+  if (input === null) return null;
+  if (typeof input !== 'object' || Array.isArray(input)) return 'bad';
+  const r = input as Record<string, unknown>;
+  const keys = ['decree', 'readOn', 'referenceCentsPerM2', 'majoredCentsPerM2', 'complementCents', 'complementReason'];
+  if (Object.keys(r).some((k) => !keys.includes(k))) return 'bad';
+  // Une seule ligne : le bail les reprend tels quels, et les relit tels quels.
+  if (typeof r.decree !== 'string' || r.decree.trim().length < 3 || r.decree.length > 200 || /[\r\n]/.test(r.decree) || !validDay(r.readOn)) return 'bad';
+  if (!isInt(r.referenceCentsPerM2, 1, 100_000) || !isInt(r.majoredCentsPerM2, 1, 100_000) || r.majoredCentsPerM2 < r.referenceCentsPerM2) return 'bad';
+  const complement = r.complementCents ?? 0;
+  if (!isInt(complement, 0, 100_000_000) || complement >= rentCents) return 'bad';
+  const reason = r.complementReason ?? null;
+  if (reason !== null && (typeof reason !== 'string' || reason.trim().length < 10 || reason.length > 600 || /[\r\n]/.test(reason))) return 'bad';
+  // Une justification sans complément ne veut rien dire ; un complément sans justification est dit au contrôle.
+  if (reason !== null && complement === 0) return 'bad';
+  return {
+    decree: r.decree.trim(),
+    readOn: r.readOn as string,
+    referenceCentsPerM2: r.referenceCentsPerM2,
+    majoredCentsPerM2: r.majoredCentsPerM2,
+    complementCents: complement,
+    complementReason: reason === null ? null : (reason as string).trim(),
   };
 }
 
@@ -443,6 +520,34 @@ export class MisesEnLocation {
   }
 
   /** Le territoire du logement, par le code postal de son bien : outre-mer ou métropole (AU098). */
+  /**
+   * L'encadrement des loyers est-il en vigueur pour ce logement au début du bail (ou aujourd'hui, si c'est plus tard) ?
+   * La commune vient de la mise en location (W02) ; la règle, de celles que la direction a rangées avec leur source
+   * (Y04) : pour cette commune, la plus récente déjà commencée décide. Commune pas encore dite : rien à juger ici, et ni
+   * l'annonce (W03) ni le bail (W06) ne se font sans elle (AU015).
+   */
+  async rentControlledOn(row: Pick<ListingRow, 'id' | 'network_id'>, day: string): Promise<boolean> {
+    const c = await this.db.first<{ insee_code: string }>('SELECT insee_code FROM rental_listing_communes WHERE listing_id = ?', [row.id]);
+    if (!c) return false;
+    const r = await this.db.first<{ effective_until: string | null }>(
+      `SELECT effective_until FROM commune_rental_rules WHERE network_id = ? AND insee_code = ? AND rule = 'encadrement_loyers' AND effective_from <= ?
+       ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+      [row.network_id, c.insee_code, day],
+    );
+    return r !== null && (r.effective_until === null || r.effective_until >= day);
+  }
+
+  /** L'encadrement au début du bail, ou aujourd'hui (heure de Paris) s'il est plus tard : le jour même que le contrôle (AU015). */
+  async rentControlledFor(row: Pick<ListingRow, 'id' | 'network_id'>, leaseStart: string): Promise<boolean> {
+    const today = this.today();
+    return this.rentControlledOn(row, leaseStart > today ? leaseStart : today);
+  }
+
+  private async judge(row: Pick<ListingRow, 'id' | 'property_id' | 'network_id'>, facts: RentalFacts, annexes: Awaited<ReturnType<MisesEnLocation['latestAnnexes']>>, today: string): Promise<CheckReason[]> {
+    const day = facts.leaseStart > today ? facts.leaseStart : today;
+    return checkDwelling(facts, annexes, today, await this.territoryOfListing(row), await this.rentControlledOn(row, day));
+  }
+
   private async territoryOfListing(row: Pick<ListingRow, 'property_id' | 'network_id'>): Promise<Territory> {
     const p = await this.db.first<{ postal_code: string | null }>('SELECT postal_code FROM properties WHERE id = ? AND network_id = ?', [row.property_id, row.network_id]);
     return territoryOf(p?.postal_code ?? null);
@@ -531,9 +636,9 @@ export class MisesEnLocation {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting, recorded_by, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, f.mainRoomHundredths ?? null, f.ceilingHeightCm ?? null, f.habitableVolumeHundredths ?? null, f.localRules ? JSON.stringify(f.localRules) : null, f.previousRentCents ?? null, f.firstLetting == null ? null : f.firstLetting ? 1 : 0, this.actor(viewer), this.now().toISOString()],
+        `INSERT INTO rental_facts (listing_id, version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting, rent_control, recorded_by, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, version, f.furnished ? 1 : 0, f.rentCents, f.chargesCents, f.livingAreaHundredths, f.energyClass, f.finalEnergyKwh, f.buildYear, f.electricityOver15 ? 1 : 0, f.gas, f.leaseStart, f.chargesMode ?? null, f.mainRoomHundredths ?? null, f.ceilingHeightCm ?? null, f.habitableVolumeHundredths ?? null, f.localRules ? JSON.stringify(f.localRules) : null, f.previousRentCents ?? null, f.firstLetting == null ? null : f.firstLetting ? 1 : 0, f.rentControl ? JSON.stringify(f.rentControl) : null, this.actor(viewer), this.now().toISOString()],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
@@ -601,7 +706,7 @@ export class MisesEnLocation {
 
   private async latestFacts(listingId: string): Promise<(RentalFacts & { version: number }) | null> {
     const r = await this.db.first<FactsRow>(
-      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
+      'SELECT version, furnished, rent_cents, charges_cents, living_area_hundredths, energy_class, final_energy_kwh, build_year, electricity_over_15, gas, lease_start, charges_mode, main_room_hundredths, ceiling_height_cm, habitable_volume_hundredths, local_rules, previous_rent_cents, first_letting, rent_control FROM rental_facts WHERE listing_id = ? ORDER BY version DESC LIMIT 1',
       [listingId],
     );
     return r ? { ...toFacts(r), version: Number(r.version) } : null;
@@ -633,7 +738,7 @@ export class MisesEnLocation {
     const annexes = await this.latestAnnexes(row.id);
     const today = this.today();
     const territory = await this.territoryOfListing(row);
-    const reasons = checkDwelling(facts, annexes, today, territory);
+    const reasons = await this.judge(row, facts, annexes, today);
     const decision = reasons.length === 0 ? 'louable' : 'bloque';
     const id = this.newId();
     const at = this.now().toISOString();
@@ -685,7 +790,7 @@ export class MisesEnLocation {
     let stale = false;
     if (c) {
       stale = !(await this.current(row.id, c.facts_version, c.annexes_key));
-      if (!stale && c.check.decision === 'louable' && facts) stale = checkDwelling(facts, await this.latestAnnexes(row.id), this.today(), await this.territoryOfListing(row)).length > 0;
+      if (!stale && c.check.decision === 'louable' && facts) stale = (await this.judge(row, facts, await this.latestAnnexes(row.id), this.today())).length > 0;
     }
     return { ok: true, value: { check: c?.check ?? null, stale, required } };
   }
@@ -722,7 +827,7 @@ export class MisesEnLocation {
     const c = await this.lastCheck(listingId);
     if (!c || c.check.decision !== 'louable' || !(await this.current(listingId, c.facts_version, c.annexes_key))) return false;
     const facts = (await this.latestFacts(listingId))!;
-    return checkDwelling(facts, await this.latestAnnexes(listingId), this.today(), await this.territoryOfListing(row)).length === 0;
+    return (await this.judge(row, facts, await this.latestAnnexes(listingId), this.today())).length === 0;
   }
 
   /** Les échéances préparées pour ce logement, pour l'agent ; elles attendent leur passage par le contrôle central (W10). */

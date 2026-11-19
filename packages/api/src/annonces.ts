@@ -13,7 +13,7 @@ import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type View
 import { commerces as m16, Diffusion } from '@aimmo/core';
 import { annonces as m07 } from '@aimmo/core';
 
-const { Annonces, DiffusionPortails, DiffusionSurveillee, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
+const { Annonces, DiffusionPortails, DiffusionSurveillee, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, TextesPortails, shootingPlan } = m07;
 type ListingChannel = m07.ListingChannel;
 type PortalConnector = m07.PortalConnector;
 type ListingWriter = m07.ListingWriter;
@@ -84,6 +84,7 @@ const badBody = (): Response => failure(400, 'invalid_body', 'Corps JSON attendu
 export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
   const fiches = (s: AnnonceServices) => new FicheBien(s.db, s.acces, s.journal, { now: s.now });
   const mentions = (s: AnnonceServices) => new MentionsAnnonce(s.db, s.acces, s.journal, { now: s.now });
+  const textes = (s: AnnonceServices) => new TextesPortails(s.db, s.acces, s.journal, { now: s.now });
   const annonces = (s: AnnonceServices) => new Annonces(s.db, s.acces, s.journal, { now: s.now, ...(options.writer ? { writer: options.writer } : {}) });
   const publication = (s: AnnonceServices) => new Publication(s.db, s.acces, s.journal, { now: s.now, ...(options.channels ? { channels: options.channels } : {}) });
   const surveillance = (s: AnnonceServices) => new DiffusionSurveillee(s.db, s.acces, s.journal, { now: s.now });
@@ -131,6 +132,18 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
       },
     },
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/controle$`), name: 'annonces.controle', handle: async (s, v, [id]) => reply(await mentions(s).check(v, id!)) },
+    // AU114 · ce que montre chaque photo : sa légende sur la page, la fiche et les portails [R478].
+    { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/photos/sujets$`), name: 'annonces.photos.sujets', handle: async (s, v, [id]) => reply(await textes(s).photoSubjects(v, id!)) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/annonces/${ID}/photos/sujet$`),
+      name: 'annonces.photos.sujet',
+      handle: async (s, v, [id], request) => {
+        const body = await readJson(request);
+        if (!body || Object.keys(body).some((k) => k !== 'ref' && k !== 'subject')) return badBody();
+        return reply(await textes(s).describePhoto(v, { propertyId: id!, ref: body.ref, subject: body.subject ?? null }));
+      },
+    },
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/brouillon$`), name: 'annonces.brouillon', handle: async (s, v, [id]) => reply(await annonces(s).read(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/annonces/${ID}/brouillon$`), name: 'annonces.brouillon.proposer', handle: async (s, v, [id]) => reply(await annonces(s).propose(v, id!)) },
     {

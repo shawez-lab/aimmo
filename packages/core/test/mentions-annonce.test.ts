@@ -15,7 +15,7 @@ import {
   type SqlDatabase,
   type Viewer,
 } from '../src/index.ts';
-import { FicheBien, MentionsAnnonce, computeMentions, euros, feePercent, type MentionsInput, type PropertySheet } from '../src/annonces/index.ts';
+import { FicheBien, MentionsAnnonce, computeMentions, dpeValidOn, dpeValidUntil, euros, feePercent, type MentionsInput, type PropertySheet } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
@@ -25,6 +25,7 @@ import { designerTout } from './designation-jeu.ts';
 const S = ' ';
 const N = ' ';
 const CARD = 'CPI 2101 2027 000 000 001';
+const TODAY = '2027-03-01';
 
 const sheet = (patch: Partial<PropertySheet> = {}): PropertySheet => ({
   characteristics: { bedrooms: 2, floor: 1, floorsTotal: 3, buildYear: 1970, heating: 'collectif', outdoor: [], landM2: null, parkingSpaces: null, elevator: null },
@@ -44,61 +45,61 @@ const GEO = 'Les informations sur les risques auxquels ce bien est exposé sont 
 const CASES: { name: string; input: MentionsInput; price: number; text: string }[] = [
   {
     name: '1 · appartement, honoraires acquéreur, 5 %',
-    input: { kind: 'home', terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 200000, feeEur: 10000, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
     price: 210000,
     text: [`Prix : 210${S}000${N}€ honoraires inclus, soit 200${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '2 · maison, honoraires vendeur',
-    input: { kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet(), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 315000, feeEur: 12000, feeCharge: 'vendeur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
     price: 315000,
     text: [`Prix : 315${S}000${N}€, honoraires à la charge du vendeur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '3 · pourcentage arrondi au centième',
-    input: { kind: 'home', terms: { priceEur: 210000, feeEur: 9500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 210000, feeEur: 9500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
     price: 219500,
     text: [`Prix : 219${S}500${N}€ honoraires inclus, soit 210${S}000${N}€ hors honoraires et 4,52${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '4 · pourcentage à un chiffre après la virgule',
-    input: { kind: 'home', terms: { priceEur: 100000, feeEur: 4500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 100000, feeEur: 4500, feeCharge: 'acquereur' }, sheet: sheet(), cardNumber: CARD, today: TODAY },
     price: 104500,
     text: [`Prix : 104${S}500${N}€ honoraires inclus, soit 100${S}000${N}€ hors honoraires et 4,5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), CARTE].join('\n'),
   },
   {
     name: '5 · logement classé F, très énergivore',
-    input: { kind: 'home', terms: { priceEur: 98000, feeEur: 7000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 2400, annualCostMaxEur: 3300, costReferenceYear: 2021, diagnosedOn: '2026-11-02' } }), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 98000, feeEur: 7000, feeCharge: 'vendeur' }, sheet: sheet({ energy: { energyClass: 'F', climateClass: 'E', annualCostMinEur: 2400, annualCostMaxEur: 3300, costReferenceYear: 2021, diagnosedOn: '2026-11-02' } }), cardNumber: CARD, today: TODAY },
     price: 98000,
     text: [`Prix : 98${S}000${N}€, honoraires à la charge du vendeur.`, energie('F', 'E', `2${S}400`, `3${S}300`, 2021, true), CARTE].join('\n'),
   },
   {
     name: '6 · logement classé G',
-    input: { kind: 'home', terms: { priceEur: 75000, feeEur: 6000, feeCharge: 'acquereur' }, sheet: sheet({ energy: { energyClass: 'G', climateClass: 'G', annualCostMinEur: 3900, annualCostMaxEur: 5300, costReferenceYear: 2023, diagnosedOn: '2027-02-20' } }), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 75000, feeEur: 6000, feeCharge: 'acquereur' }, sheet: sheet({ energy: { energyClass: 'G', climateClass: 'G', annualCostMinEur: 3900, annualCostMaxEur: 5300, costReferenceYear: 2023, diagnosedOn: '2027-02-20' } }), cardNumber: CARD, today: TODAY },
     price: 81000,
     text: [`Prix : 81${S}000${N}€ honoraires inclus, soit 75${S}000${N}€ hors honoraires et 8${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('G', 'G', `3${S}900`, `5${S}300`, 2023, true), CARTE].join('\n'),
   },
   {
     name: '7 · copropriété sans procédure',
-    input: { kind: 'home', terms: { priceEur: 180000, feeEur: 9000, feeCharge: 'acquereur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } }), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 180000, feeEur: 9000, feeCharge: 'acquereur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false } }), cardNumber: CARD, today: TODAY },
     price: 189000,
     text: [`Prix : 189${S}000${N}€ honoraires inclus, soit 180${S}000${N}€ hors honoraires et 5${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 24 lots, charges annuelles moyennes de 1${S}800${N}€. Aucune procédure en cours.`, CARTE].join('\n'),
   },
   {
     name: '8 · copropriété avec procédure, un seul lot',
-    input: { kind: 'home', terms: { priceEur: 120000, feeEur: 8000, feeCharge: 'vendeur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 1, annualChargesEur: 0, proceedings: true } }), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 120000, feeEur: 8000, feeCharge: 'vendeur' }, sheet: sheet({ coownership: { isCoownership: true, lots: 1, annualChargesEur: 0, proceedings: true } }), cardNumber: CARD, today: TODAY },
     price: 120000,
     text: [`Prix : 120${S}000${N}€, honoraires à la charge du vendeur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), `Bien en copropriété : 1 lot, charges annuelles moyennes de 0${N}€. Le syndicat des copropriétaires fait l'objet d'une procédure en cours.`, CARTE].join('\n'),
   },
   {
     name: '9 · bien en zone de risque',
-    input: { kind: 'home', terms: { priceEur: 1250000, feeEur: 50000, feeCharge: 'acquereur' }, sheet: sheet({ risks: { inRiskZone: true } }), cardNumber: CARD },
+    input: { kind: 'home', terms: { priceEur: 1250000, feeEur: 50000, feeCharge: 'acquereur' }, sheet: sheet({ risks: { inRiskZone: true } }), cardNumber: CARD, today: TODAY },
     price: 1300000,
     text: [`Prix : 1${S}300${S}000${N}€ honoraires inclus, soit 1${S}250${S}000${N}€ hors honoraires et 4${N}% TTC du prix hors honoraires, à la charge de l'acquéreur.`, energie('D', 'D', `1${S}100`, `1${S}550`, 2023), GEO, CARTE].join('\n'),
   },
   {
     name: '10 · terrain, sans diagnostic énergétique',
-    input: { kind: 'land', terms: { priceEur: 65000, feeEur: 5000, feeCharge: 'vendeur' }, sheet: sheet({ energy: null }), cardNumber: CARD },
+    input: { kind: 'land', terms: { priceEur: 65000, feeEur: 5000, feeCharge: 'vendeur' }, sheet: sheet({ energy: null }), cardNumber: CARD, today: TODAY },
     price: 65000,
     text: [`Prix : 65${S}000${N}€, honoraires à la charge du vendeur.`, CARTE].join('\n'),
   },
@@ -139,6 +140,40 @@ describe('P02 · mentions obligatoires', () => {
     expect(computeMentions({ ...CASES[0]!.input, sheet: null }).items).toContainEqual({ id: 'energie', status: 'manquante', reason: 'pas_de_diagnostic' });
     expect(computeMentions({ ...CASES[0]!.input, kind: 'building', sheet: sheet({ energy: null }) }).complete).toBe(false);
     expect(computeMentions(CASES[9]!.input).items).toContainEqual({ id: 'energie', status: 'sans_objet' });
+  });
+
+  it('[R45] AU005 : un diagnostic de 2019 ne passe plus la liste en novembre 2026', () => {
+    const dpe2019 = sheet({ energy: { energyClass: 'D', climateClass: 'D', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2019, diagnosedOn: '2019-06-12' } });
+    const r = computeMentions({ ...CASES[0]!.input, sheet: dpe2019, today: '2026-11-19' });
+    expect(r.complete).toBe(false);
+    expect(r.publishedPriceEur).toBeNull();
+    expect(r.items).toContainEqual({ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' });
+    expect(r.text).not.toContain('Classe énergie');
+    // Le même diagnostic passait encore à la fin de sa validité transitoire.
+    expect(computeMentions({ ...CASES[0]!.input, sheet: dpe2019, today: '2024-12-31' }).complete).toBe(true);
+    expect(computeMentions({ ...CASES[0]!.input, sheet: dpe2019, today: '2025-01-01' }).complete).toBe(false);
+  });
+
+  it('[R45] validité du diagnostic : fins fixées avant juillet 2021, dix ans depuis, jusqu’à la veille', () => {
+    expect(dpeValidUntil('2012-05-01')).toBe('2022-04-30');
+    expect(dpeValidUntil('2013-01-01')).toBe('2022-12-31');
+    expect(dpeValidUntil('2017-12-31')).toBe('2022-12-31');
+    expect(dpeValidUntil('2018-01-01')).toBe('2024-12-31');
+    expect(dpeValidUntil('2021-06-30')).toBe('2024-12-31');
+    expect(dpeValidUntil('2021-07-01')).toBe('2031-06-30');
+    expect(dpeValidUntil('2024-02-29')).toBe('2034-02-28');
+    expect(dpeValidUntil('2027-01-15')).toBe('2037-01-14');
+    expect(dpeValidUntil('2027-02-30')).toBeNull();
+    expect(dpeValidUntil('15/01/2027')).toBeNull();
+    expect(dpeValidOn('2021-07-01', '2031-06-30')).toBe(true);
+    expect(dpeValidOn('2021-07-01', '2031-07-01')).toBe(false);
+    // Daté après le jour du calcul, ou jour du calcul mal formé : jamais retenu.
+    expect(dpeValidOn('2027-01-15', '2027-01-14')).toBe(false);
+    expect(dpeValidOn('2027-01-15', '')).toBe(false);
+    const late = computeMentions({ ...CASES[0]!.input, today: '2037-01-15' });
+    expect(late.items).toContainEqual({ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' });
+    // Un terrain n'a toujours pas de diagnostic à juger.
+    expect(computeMentions({ ...CASES[9]!.input, today: '2040-01-01' }).complete).toBe(true);
   });
 
   it('pourcentage calculé juste, arrondi au centième le demi vers le haut, et montants écrits à la française', () => {
@@ -242,6 +277,20 @@ describeWithSqlite('P02 · liste de contrôle d’un bien', () => {
     await t.fiches.save(t.agent, t.propertyId, t.fullSheet);
     const ok = await t.mentions.check(t.agent, t.propertyId);
     expect(ok.ok && ok.value).toMatchObject({ complete: true, publishedPriceEur: 200000 });
+  });
+
+  it('[R45] AU005 : la liste juge le diagnostic au jour de Paris de chaque lecture', async () => {
+    const t = await setup('vendeur');
+    await t.signMandate();
+    await t.mentions.setCardNumber(t.direction, CARD);
+    await t.fiches.save(t.agent, t.propertyId, { ...t.fullSheet, energy: { ...t.fullSheet.energy, diagnosedOn: '2019-06-12' } });
+    const r = await t.mentions.check(t.agent, t.propertyId);
+    expect(r.ok && r.value.items.filter((i) => i.status === 'manquante')).toEqual([{ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' }]);
+    // Le jour vient de l'horloge, à l'heure de Paris : 22 h 30 UTC le 30 juin, c'est déjà le 1er juillet à Paris.
+    t.setClock(new Date('2031-06-30T21:30:00.000Z'));
+    expect((await t.mentions.inputFor(t.agent.networkId, t.propertyId))?.today).toBe('2031-06-30');
+    t.setClock(new Date('2031-06-30T22:30:00.000Z'));
+    expect((await t.mentions.inputFor(t.agent.networkId, t.propertyId))?.today).toBe('2031-07-01');
   });
 
   it('[R16] seule la direction règle la carte ; un autre agent ne lit pas la liste ; chaque refus au journal', async () => {
