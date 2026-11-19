@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   applyMigrations,
+  appendEvent,
   CopieBase,
   copyKeyFromSecret,
   copyObjects,
@@ -9,6 +10,7 @@ import {
   OBJECT_STORAGES,
   ObjectCopyError,
   restoreExercise,
+  fileReferences,
   restoreObjects,
   SqlJournalStore,
   type CopyStore,
@@ -207,5 +209,21 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
     expect(out).toEqual({ ok: false, part: 'objets', objects: { ok: false, code: 'references_unchecked' } });
     // Refusé avant d'écrire : la base neuve reste vide.
     expect(await target.all("SELECT name FROM sqlite_master WHERE type = 'table'")).toEqual([]);
+  });
+
+  it('[R224] les fichiers cités se lisent dans toutes les tables, entiers ou dans un JSON, jamais dans le journal', async () => {
+    const db = emptyDb();
+    await applyMigrations(db, loadMigrations());
+    await db.exec('CREATE TABLE essai_a (ref TEXT, n INTEGER)');
+    await db.exec('CREATE TABLE "essai b" (medias TEXT)');
+    await db.run('INSERT INTO essai_a (ref, n) VALUES (?, 1), (?, 2), (?, 3), (?, 4)', ['coffre/n1/k1', 'biens/../coffre/x', 'une phrase qui cite biens/b1/a.jpg', 'dossiers/d1/']);
+    await db.run('INSERT INTO "essai b" (medias) VALUES (?)', [JSON.stringify([{ ref: 'biens/b2/c.jpg' }, { ref: 'preuves/p.pdf' }])]);
+    await appendEvent(new SqlJournalStore(db), { type: 'test.evenement', actor: 'system:test', subject: 'property:b0', data: { ref: 'biens/efface.jpg' } }, () => new Date('2027-01-01T00:00:00.000Z'));
+    const refs = (await fileReferences(db)).sort((a, b) => (a.key < b.key ? -1 : 1));
+    expect(refs).toEqual([
+      { storage: 'MEDIA', key: 'biens/b2/c.jpg' },
+      { storage: 'COFFRE', key: 'coffre/n1/k1' },
+      { storage: 'PIECES', key: 'preuves/p.pdf' },
+    ]);
   });
 });

@@ -2,11 +2,13 @@ import { readFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it, describe } from 'vitest';
-import { applyMigrations, CopieBase, copyKeyFromSecret, FicheClient, fromSyncSqlite, MemoryJournalStore, restoreCopy, SqlJournalStore, type CopyRun, type CopyStore, type SqlDatabase } from '@aimmo/core';
+import { applyMigrations, OBJECT_STORAGES, restoreObjects, type ObjectSource, type ObjectStorage, type ObjectTarget, type StoredObject, CopieBase, copyKeyFromSecret, FicheClient, fromSyncSqlite, MemoryJournalStore, restoreCopy, SqlJournalStore, type CopyRun, type CopyStore, type SqlDatabase } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
-import { isoInstant, loadSnapshot, nightlyCopy, storeFromEnv, type NightlyInput } from '../outils/copie-nuit.ts';
-import { CopyStoreError, r2CopyStore, signV4 } from '../outils/r2-copies.ts';
+import { isoInstant, loadSnapshot, nightlyCopy, objectSourcesFromEnv, OBJECT_BUCKETS, storeFromEnv, type NightlyInput } from '../outils/copie-nuit.ts';
+import { CopyStoreError, parseListPage, r2CopyStore, r2ObjectSource, signV4 } from '../outils/r2-copies.ts';
+// @ts-expect-error script du dépôt, sans déclaration de types
+import { R2_BINDINGS } from '../../../scripts/liaisons-r2.mjs';
 
 // Tout est inventé : la base, les personnes, le stockage, les clés.
 const SECRET = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));
@@ -29,12 +31,22 @@ async function source(): Promise<SqlDatabase> {
   return db;
 }
 
+const fichiers = (): Record<ObjectStorage, ObjectSource> => {
+  const seed: Record<ObjectStorage, Record<string, StoredObject>> = {
+    MEDIA: { 'biens/b1/salon.jpg': { bytes: Uint8Array.from({ length: 900 }, (_, i) => i % 251), contentType: 'image/jpeg' } },
+    PIECES: { 'dossiers/d1/compromis.pdf': { bytes: new TextEncoder().encode(`%PDF ${MARK}`) } },
+    COMMERCES: {},
+    COFFRE: { 'coffre/n1/piece.pdf': { bytes: new TextEncoder().encode('%PDF coffre') } },
+  };
+  return Object.fromEntries(OBJECT_STORAGES.map((n) => [n, { list: async () => Object.keys(seed[n]), get: async (k: string) => seed[n][k] ?? null }])) as Record<ObjectStorage, ObjectSource>;
+};
+
 async function night(over: Partial<NightlyInput> = {}) {
   const runs: CopyRun[] = [];
   const said: string[] = [];
   const { parts, store } = memory();
   const db = await source();
-  const code = await nightlyCopy({ secret: SECRET, store, snapshot: async () => db, startedAt: STARTED, fresh: () => fromSyncSqlite(openMemoryDatabase()), record: async (r) => { runs.push(r); }, ...over }, (t) => said.push(t));
+  const code = await nightlyCopy({ secret: SECRET, store, snapshot: async () => db, startedAt: STARTED, fresh: () => fromSyncSqlite(openMemoryDatabase()), record: async (r) => { runs.push(r); }, objects: fichiers(), ...over }, (t) => said.push(t));
   return { code, runs, said, parts, store, db };
 }
 
@@ -51,6 +63,71 @@ describeWithSqlite('SV02 · la copie de nuit', () => {
     expect(restored).toMatchObject({ ok: true, takenAt: STARTED });
     expect(t.said.join(' ')).toContain('Copie rangée');
     expect(t.said.join(' ')).not.toContain(MARK);
+  });
+
+  it('[R224] AU019b : la nuit copie aussi les fichiers des quatre stockages, relus depuis le compartiment', async () => {
+    const t = await night();
+    const run = t.runs[0]!;
+    if (run.outcome !== 'copiee') throw new Error('refus');
+    expect(t.said.join(' ')).toContain('3 fichiers');
+    const targets = Object.fromEntries(OBJECT_STORAGES.map((n) => {
+      const held = new Map<string, StoredObject>();
+      return [n, { list: async () => [...held.keys()], get: async (k: string) => held.get(k) ?? null, put: async (k: string, o: StoredObject) => { held.set(k, o); } }];
+    })) as Record<ObjectStorage, ObjectTarget>;
+    expect(await restoreObjects(targets, t.store, await copyKeyFromSecret(SECRET), run.copyId)).toMatchObject({ ok: true, storages: 4, objects: 3 });
+    expect(await targets.PIECES.get('dossiers/d1/compromis.pdf')).toEqual({ bytes: new TextEncoder().encode(`%PDF ${MARK}`) });
+  });
+
+  it('[R224] AU019b : sans clé de lecture des stockages, ou s’il en manque un, la nuit n’est pas sauvegardée', async () => {
+    const sans = await night({ objects: null });
+    expect(sans.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_absent' })]);
+    expect(sans.parts.size).toBe(0);
+    const { COFFRE: _c, ...trois } = fichiers();
+    const t = await night({ objects: trois });
+    expect(t.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_absent' })]);
+    expect(t.code).toBe(1);
+  });
+
+  it('[R224] AU019b : un stockage qui ne se lit pas : « stockage en panne », jamais une copie sans ses fichiers', async () => {
+    const objects = fichiers();
+    objects.MEDIA = { list: async () => { throw new CopyStoreError('Stockage des objets injoignable.'); }, get: async () => null };
+    const t = await night({ objects });
+    expect(t.runs).toEqual([expect.objectContaining({ outcome: 'non_sauvegardee', reason: 'stockage_en_panne' })]);
+    expect(t.code).toBe(1);
+  });
+
+  it('[R224] AU019b : les compartiments lus sont ceux du déploiement, avec une clé à part, en Europe', async () => {
+    expect(OBJECT_BUCKETS).toEqual(R2_BINDINGS);
+    expect(objectSourcesFromEnv({ CLOUDFLARE_ACCOUNT_ID: 'compte' })).toBeNull();
+    expect(objectSourcesFromEnv({ CLOUDFLARE_ACCOUNT_ID: 'compte', COPIES_R2_ACCESS_KEY_ID: 'a', COPIES_R2_SECRET_ACCESS_KEY: 'b' })).toBeNull();
+    const seen: string[] = [];
+    const src = r2ObjectSource({ accountId: 'compte', bucket: 'aimmo-coffre', accessKeyId: 'id', secretAccessKey: 'secret', jurisdiction: 'eu', now: () => new Date(STARTED), fetch: (async (url: string) => { seen.push(url); return new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>'); }) as typeof fetch });
+    expect(await src.list()).toEqual([]);
+    expect(seen[0]).toBe('https://compte.eu.r2.cloudflarestorage.com/aimmo-coffre?list-type=2&max-keys=1000');
+  });
+
+  it('[R224] AU019b : la liste suit chaque page jusqu’à la dernière, et lit les clés échappées', async () => {
+    const pages = [
+      '<ListBucketResult><Contents><Key>biens/a&amp;b.jpg</Key><Size>1</Size></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>jeton+/=1</NextContinuationToken></ListBucketResult>',
+      '<ListBucketResult><Contents><Key>biens/c.jpg</Key></Contents><IsTruncated>false</IsTruncated></ListBucketResult>',
+    ];
+    const urls: string[] = [];
+    const src = r2ObjectSource({ accountId: 'compte', bucket: 'aimmo-medias', accessKeyId: 'id', secretAccessKey: 'secret', now: () => new Date(STARTED), fetch: (async (url: string) => { urls.push(url); return new Response(pages[urls.length - 1]); }) as typeof fetch });
+    expect(await src.list()).toEqual(['biens/a&b.jpg', 'biens/c.jpg']);
+    expect(urls[1]).toContain('continuation-token=jeton%2B%2F%3D1');
+    expect(() => parseListPage('<IsTruncated>true</IsTruncated>')).toThrow(CopyStoreError);
+  });
+
+  it('[R224] AU019b : la lecture d’un objet garde son type ; absent, il est dit disparu ; refusée, l’erreur ne cite pas la clé', async () => {
+    const answers = [new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'application/pdf' } }), new Response('', { status: 404 }), new Response('', { status: 403 })];
+    const urls: string[] = [];
+    const src = r2ObjectSource({ accountId: 'compte', bucket: 'aimmo-pieces', accessKeyId: 'id', secretAccessKey: 'secret', now: () => new Date(STARTED), fetch: (async (url: string) => { urls.push(url); return answers.shift()!; }) as typeof fetch });
+    expect(await src.get("dossiers/d1/l'acte (1).pdf")).toEqual({ bytes: new Uint8Array([1, 2, 3]), contentType: 'application/pdf' });
+    expect(urls[0]).toBe('https://compte.r2.cloudflarestorage.com/aimmo-pieces/dossiers/d1/l%27acte%20%281%29.pdf');
+    expect(await src.get('dossiers/d1/parti.pdf')).toBeNull();
+    const error = await src.get('dossiers/d1/secret.pdf').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CopyStoreError);
+    expect(String(error)).not.toContain('secret.pdf');
   });
 
   it('[R230] la copie ne change pas la photo', async () => {

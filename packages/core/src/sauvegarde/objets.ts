@@ -205,10 +205,73 @@ export async function restoreExercise(input: {
   const clock = input.clock ?? (() => Date.now());
   const started = clock();
   if (typeof input.references !== 'function') return { ok: false, part: 'objets', objects: { ok: false, code: 'references_unchecked' } };
-  const base = await restoreCopy(input.target, input.store, input.key, input.copyId, { clock });
+  // La durée dite est celle de l'exercice entier, base et fichiers : l'horloge n'est lue qu'au début et à la fin.
+  const base = await restoreCopy(input.target, input.store, input.key, input.copyId);
   if (!base.ok) return { ok: false, part: 'base', base };
   const references = await input.references(input.target);
   const objects = await restoreObjects(input.targets, input.store, input.key, input.copyId, references);
   if (!objects.ok) return { ok: false, part: 'objets', objects };
   return { ok: true, base, objects, durationMs: clock() - started };
 }
+
+/**
+ * Un stockage neuf de vérification : il garde un objet jusqu'à sa relecture, puis l'oublie. La preuve de chaque nuit et
+ * le test du mois relisent ainsi chaque objet sans tenir en mémoire toutes les photos du réseau.
+ */
+export function verifyingTarget(): ObjectTarget {
+  const held = new Map<string, StoredObject>();
+  return {
+    list: async () => [...held.keys()],
+    put: async (k, o) => {
+      held.set(k, { ...o, bytes: Uint8Array.from(o.bytes) });
+    },
+    get: async (k) => {
+      const o = held.get(k) ?? null;
+      held.delete(k);
+      return o;
+    },
+  };
+}
+
+/** Le stockage de chaque sorte de fichier, d'après le début de sa clé : la clé est toujours donnée par le stockage. */
+export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Object.freeze({
+  'biens/': 'MEDIA',
+  'dossiers/': 'PIECES',
+  'preuves/': 'PIECES',
+  'agents/': 'PIECES',
+  'partenaires/': 'PIECES',
+  'coffre/': 'COFFRE',
+});
+const WHOLE_REFERENCE = /^(?:biens|dossiers|preuves|agents|partenaires|coffre)\/[A-Za-z0-9._\/-]{1,300}$/;
+
+/**
+ * Les fichiers cités par la base : chaque valeur texte de chaque table, entière ou dans un JSON, qui a la forme d'une
+ * clé de stockage. Toutes les tables sont lues, pour qu'une table ajoutée demain soit vérifiée sans y penser. Le journal
+ * n'est pas lu : il garde l'histoire, et cite des fichiers effacés depuis. Lecture prudente : une valeur qui ressemble à
+ * une clé sans en être une fait échouer l'exercice ; une fausse alerte vaut mieux qu'un faux « restauré ».
+ */
+export const fileReferences: ReferenceReader = async (db) => {
+  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' ORDER BY name");
+  const found = new Map<string, { storage: ObjectStorage; key: string }>();
+  const add = (key: string): void => {
+    const prefix = Object.keys(REFERENCE_PREFIXES).find((p) => key.startsWith(p));
+    if (prefix && !key.endsWith('/') && !key.includes('//') && !key.split('/').some((s) => s === '.' || s === '..')) found.set(key, { storage: REFERENCE_PREFIXES[prefix]!, key });
+  };
+  for (const { name } of tables) {
+    const q = `"${name.replaceAll('"', '""')}"`;
+    let after = -9_007_199_254_740_991;
+    for (;;) {
+      const rows = await db.all<Record<string, unknown>>(`SELECT rowid AS __rang__, * FROM ${q} WHERE rowid > ? ORDER BY rowid LIMIT 500`, [after]);
+      for (const row of rows) {
+        for (const [column, value] of Object.entries(row)) {
+          if (column === '__rang__' || typeof value !== 'string') continue;
+          if (WHOLE_REFERENCE.test(value)) add(value);
+          else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
+        }
+      }
+      if (rows.length < 500) break;
+      after = Number(rows[rows.length - 1]!['__rang__']);
+    }
+  }
+  return [...found.values()];
+};
