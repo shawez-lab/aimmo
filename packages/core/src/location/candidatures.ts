@@ -322,19 +322,21 @@ export class Candidatures {
       if (await this.db.first('SELECT 1 FROM rental_guarantors WHERE application_id = ? AND person_id = ?', [app.id, input.personId as string])) return { ok: false, rule: null, code: 'already_guarantor' };
       if (current.length >= MAX_COTENANTS) return { ok: false, rule: null, code: 'too_many' };
     } else if (typeof input.personId !== 'string' || !current.includes(input.personId)) return { ok: false, rule: null, code: 'unknown_person' };
+    let changeId = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
+        changeId = this.newId();
         await this.db.run(
           `INSERT INTO rental_cotenant_changes (id, network_id, application_id, person_id, seq, action, changed_by, changed_at)
            SELECT ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM rental_cotenant_changes WHERE application_id = ?`,
-          [this.newId(), app.network_id, app.id, input.personId as string, input.action, this.actor(viewer), this.now().toISOString(), app.id],
+          [changeId, app.network_id, app.id, input.personId as string, input.action, this.actor(viewer), this.now().toISOString(), app.id],
         );
         break;
       } catch (error) {
         if (!/UNIQUE/i.test(String(error)) || attempt === 4) throw error;
       }
     }
-    await appendEvent(this.journal, { type: 'location.colocataire', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { action: input.action } }, this.now);
+    await appendEvent(this.journal, { type: 'location.colocataire', actor: this.actor(viewer), subject: `rental_application:${app.id}`, data: { action: input.action, change: changeId } }, this.now);
     return { ok: true, value: { cotenants: await this.cotenantsOf(app.id) } };
   }
 

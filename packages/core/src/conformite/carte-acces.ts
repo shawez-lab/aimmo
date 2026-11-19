@@ -886,6 +886,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
+      // AU097 · l'ajout ou le retrait d'un colocataire nomme sa ligne : il est aussi au colocataire concerné, à lui seul.
+      via('data', 'rental_cotenant_changes', 'id', { jsonPath: 'change', startsWith: { subject: 'rental_application:', type: 'location.colocataire' } }),
       // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
       // Les événements d'une session de signature du bail sont à qui signe (le propriétaire reçoit les siens par sa
       // propre session, ci-dessous), jamais à l'autre partie.
