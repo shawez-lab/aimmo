@@ -8,6 +8,7 @@ import {
   SqlJournalStore,
   applyMigrations,
   fromSyncSqlite,
+  matchBuyer,
   verifyChain,
   type BuyerFeature,
   type DiffusionGate,
@@ -482,5 +483,54 @@ describe('AU115 · le budget ferme dans la recherche en direct', () => {
       expect(s.criteria.find((c) => c.field === 'budgetMaxEur')).toMatchObject({ value: 250_000, strength: 'must' });
       expect(judge(s, prop(260_000))).toBeNull();
     }
+  });
+});
+
+describe('AU072 · étage, classe énergie et terrain dans la recherche', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const flat = (p: { floor?: number | null; energyClass?: string | null; landM2?: number | null } = {}) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 2, energyClass: 'C', landM2: null, ...p });
+  it('[R420] la phrase dit l’étage, la classe la moins bonne acceptée et le terrain, chacun avec ses mots', () => {
+    const fields = (phrase: string) => parsePhrase(phrase).criteria.map((c) => [c.field, c.value, c.strength]);
+    expect(fields('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum')).toEqual([
+      ['propertyKinds', 'apartment', 'must'], ['communes', 'Dijon', 'must'], ['floorMin', 1, 'must'], ['energyClassMax', 'D', 'must'],
+    ]);
+    expect(fields('Maison à Dijon avec un terrain de 500 m², 90 m²')).toContainEqual(['landMinM2', 500, 'must']);
+    expect(fields('Maison à Dijon avec un terrain de 500 m², 90 m²')).toContainEqual(['surfaceMinM2', 90, 'must']);
+    expect(fields('Maison, 1 200 m² de terrain')).toContainEqual(['landMinM2', 1200, 'must']);
+    expect(fields('Appartement à Dijon, 3e étage maximum, si possible classe C au moins')).toEqual([
+      ['propertyKinds', 'apartment', 'must'], ['communes', 'Dijon', 'must'], ['floorMax', 3, 'must'], ['energyClassMax', 'C', 'nice'],
+    ]);
+    expect(fields('Appartement à partir du 2e étage')).toContainEqual(['floorMin', 2, 'must']);
+    expect(fields('Appartement en rez-de-chaussée')).toContainEqual(['floorMax', 0, 'must']);
+  });
+  it('[R51] impératifs, ils écartent ; souhaits, ils classent seulement', () => {
+    const noGround = base('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum');
+    expect(judge(noGround, flat())).toMatchObject({ status: 'match' });
+    expect(judge(noGround, flat({ floor: 0 }))).toBeNull();
+    expect(judge(noGround, flat({ energyClass: 'E' }))).toBeNull();
+    // Une valeur inconnue ne remplit pas un impératif.
+    expect(judge(noGround, flat({ floor: null }))).toBeNull();
+    const land = base('Maison à Dijon, terrain de 500 m²');
+    expect(judge(land, flat({ landM2: 500 }))).toMatchObject({ status: 'match' });
+    expect(judge(land, flat({ landM2: 499 }))).toBeNull();
+    const wish = base('Appartement à Dijon, si possible classe C au moins');
+    expect(judge(wish, flat({ energyClass: 'E' }))).toMatchObject({ status: 'match', preferencesMet: 0 });
+    expect(judge(wish, flat({ energyClass: 'B' }))).toMatchObject({ status: 'match', preferencesMet: 1 });
+  });
+});
+
+describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de l’acquéreur', () => {
+  it('[R420] la phrase rangée garde l’impératif et le souhait ; le rapprochement les suit', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const saved = await t.recherche.save(t.acces, t.as('agent', t.alex.id), t.acquereurs, project.id, 'Appartement à Dijon, pas de rez-de-chaussée, si possible DPE C minimum, terrain de 200 m²');
+    expect(saved.ok).toBe(true);
+    const current = await t.acquereurs.current(project.id);
+    expect(current!.search).toMatchObject({ floorMin: 1, floorMax: null, energyClassMax: 'C', landMinM2: 200, softCriteria: ['energy'] });
+    const property = (p: Partial<{ floor: number | null; energyClass: string | null; landM2: number | null }>) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 1, energyClass: 'E', landM2: 250, ...p });
+    expect(matchBuyer(property({}), current!.search)).toMatchObject({ status: 'match' });
+    expect(matchBuyer(property({ floor: 0 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['floor'] });
+    expect(matchBuyer(property({ landM2: 100 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['land'] });
   });
 });

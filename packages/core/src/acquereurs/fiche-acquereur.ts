@@ -53,11 +53,25 @@ export interface BuyerSearch {
   requiredFeatures?: BuyerFeature[];
   /** Le budget dit infranchissable : aucune tolérance au-dessus (AU115). */
   budgetStrict?: boolean;
+  /** Étages acceptés, 0 pour le rez-de-chaussée : « pas de rez-de-chaussée » donne 1 au moins (AU072). */
+  floorMin?: number | null;
+  floorMax?: number | null;
+  /** La classe énergie la moins bonne acceptée : « D au moins » accepte A à D (AU072). */
+  energyClassMax?: SearchEnergyClass | null;
+  /** Le terrain minimal, en m² (AU072). */
+  landMinM2?: number | null;
+  /** Parmi l'étage, la classe et le terrain, ceux qui ne sont que des souhaits : jamais éliminatoires (AU072). */
+  softCriteria?: SoftCriterion[];
   /** Tel que la personne l'a déclaré, jamais évalué [R24]. */
   financing: Financing | null;
   urgency: Deadline | null;
 }
 export type SearchField = keyof BuyerSearch;
+
+export const SEARCH_ENERGY_CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
+export type SearchEnergyClass = (typeof SEARCH_ENERGY_CLASSES)[number];
+export const SOFT_CRITERIA = ['floor', 'energy', 'land'] as const;
+export type SoftCriterion = (typeof SOFT_CRITERIA)[number];
 
 export const SEARCH_FIELDS: readonly SearchField[] = [
   'propertyKinds',
@@ -69,6 +83,11 @@ export const SEARCH_FIELDS: readonly SearchField[] = [
   'budgetMaxEur',
   'requiredFeatures',
   'budgetStrict',
+  'floorMin',
+  'floorMax',
+  'energyClassMax',
+  'landMinM2',
+  'softCriteria',
   'financing',
   'urgency',
 ];
@@ -143,8 +162,11 @@ export type SearchRefusal = {
 };
 export type SearchCheck = { ok: true; value: Partial<BuyerSearch> } | SearchRefusal;
 
-const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features', 'requiredFeatures'];
+const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features', 'requiredFeatures', 'softCriteria'];
 const INT_LIMITS: Partial<Record<SearchField, [number, number]>> = {
+  floorMin: [0, 100],
+  floorMax: [0, 100],
+  landMinM2: [1, 10_000_000],
   surfaceMinM2: [1, 100_000],
   roomsMin: [1, 50],
   bedroomsMin: [1, 50],
@@ -158,6 +180,8 @@ function isListed(key: string, value: string, communes: readonly string[]): bool
   if (key === 'communes') return communes.some((c) => termKey(c) === termKey(value));
   if (key === 'propertyKinds') return (BUYER_PROPERTY_KINDS as readonly string[]).includes(value);
   if (key === 'features' || key === 'requiredFeatures') return (BUYER_FEATURES as readonly string[]).includes(value);
+  if (key === 'softCriteria') return (SOFT_CRITERIA as readonly string[]).includes(value);
+  if (key === 'energyClassMax') return (SEARCH_ENERGY_CLASSES as readonly string[]).includes(value);
   if (key === 'financing') return (FINANCINGS as readonly string[]).includes(value);
   if (key === 'urgency') return (DEADLINES as readonly string[]).includes(value);
   return false;
@@ -197,6 +221,7 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
         let canonical: string | undefined;
         if (field === 'communes') canonical = communes.find((c) => termKey(c) === termKey(v));
         else if (field === 'propertyKinds') canonical = (BUYER_PROPERTY_KINDS as readonly string[]).includes(v) ? v : undefined;
+        else if (field === 'softCriteria') canonical = (SOFT_CRITERIA as readonly string[]).includes(v) ? v : undefined;
         else canonical = (BUYER_FEATURES as readonly string[]).includes(v) ? v : undefined;
         if (canonical === undefined) return refuse('hors_liste', field);
         if (!kept.includes(canonical)) kept.push(canonical);
@@ -219,10 +244,14 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
       out[field] = value;
       continue;
     }
-    const allowed: readonly string[] = field === 'financing' ? FINANCINGS : DEADLINES;
+    const allowed: readonly string[] = field === 'financing' ? FINANCINGS : field === 'energyClassMax' ? SEARCH_ENERGY_CLASSES : DEADLINES;
     if (typeof value !== 'string' || !allowed.includes(value)) return refuse('hors_liste', field);
     out[field] = value;
   }
+  // Un étage minimal au-dessus du maximal ne laisse aucun bien : refusé, nommé.
+  const fMin = 'floorMin' in out ? out.floorMin : undefined;
+  const fMax = 'floorMax' in out ? out.floorMax : undefined;
+  if (typeof fMin === 'number' && typeof fMax === 'number' && fMin > fMax) return refuse('valeur', 'floorMin');
   return { ok: true, value: out as Partial<BuyerSearch> };
 }
 
@@ -241,6 +270,11 @@ export interface BuyerSearchRow {
   budget_max_eur: number | null;
   required_features?: string | null;
   budget_strict?: number | null;
+  floor_min?: number | null;
+  floor_max?: number | null;
+  energy_class_max?: string | null;
+  land_min_m2?: number | null;
+  soft_criteria?: string | null;
   financing: Financing | null;
   urgency: Deadline | null;
   sources: string;
@@ -271,6 +305,11 @@ export const EMPTY_SEARCH: Readonly<BuyerSearch> = Object.freeze({
   budgetMaxEur: null,
   requiredFeatures: [],
   budgetStrict: false,
+  floorMin: null,
+  floorMax: null,
+  energyClassMax: null,
+  landMinM2: null,
+  softCriteria: [],
   financing: null,
   urgency: null,
 });
@@ -307,6 +346,11 @@ export function toVersion(row: BuyerSearchRow): BuyerSearchVersion {
       budgetMaxEur: row.budget_max_eur,
       requiredFeatures: parseList<BuyerFeature>(row.required_features ?? '[]'),
       budgetStrict: Number(row.budget_strict ?? 0) === 1,
+      floorMin: row.floor_min ?? null,
+      floorMax: row.floor_max ?? null,
+      energyClassMax: (row.energy_class_max ?? null) as SearchEnergyClass | null,
+      landMinM2: row.land_min_m2 ?? null,
+      softCriteria: parseList<SoftCriterion>(row.soft_criteria ?? '[]'),
       financing: row.financing,
       urgency: row.urgency,
     },
@@ -526,7 +570,7 @@ export class FicheAcquereur {
   ): Promise<UpdateResult> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const last = await this.current(project.id);
-      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] };
+      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [], softCriteria: [] };
       const sources: Partial<Record<SearchField, string>> = last ? { ...last.sources } : {};
       const changes = changesOf(previous, sources);
       const next: BuyerSearch = { ...previous };
@@ -545,8 +589,9 @@ export class FicheAcquereur {
       const id = this.newId();
       const { changes: inserted } = await this.db.run(
         `INSERT INTO buyer_searches (id, network_id, project_id, person_id, version, property_kinds, communes, features, surface_min_m2,
-           rooms_min, bedrooms_min, budget_max_eur, required_features, budget_strict, financing, urgency, sources, origin, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+           rooms_min, bedrooms_min, budget_max_eur, required_features, budget_strict, floor_min, floor_max, energy_class_max, land_min_m2, soft_criteria,
+           financing, urgency, sources, origin, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [
           id,
           project.network_id,
@@ -562,6 +607,11 @@ export class FicheAcquereur {
           next.budgetMaxEur,
           JSON.stringify(next.requiredFeatures ?? []),
           next.budgetStrict ? 1 : 0,
+          next.floorMin ?? null,
+          next.floorMax ?? null,
+          next.energyClassMax ?? null,
+          next.landMinM2 ?? null,
+          JSON.stringify(next.softCriteria ?? []),
           next.financing,
           next.urgency,
           JSON.stringify(sources),

@@ -27,7 +27,7 @@ import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch,
 const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'features'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -56,6 +56,10 @@ export interface MatchProperty {
   rooms: number | null;
   bedrooms: number | null;
   features: BuyerFeature[];
+  /** Étage (0 : rez-de-chaussée), classe énergie et terrain, lus dans la fiche du bien ; absents s'ils ne sont pas dits (AU072). */
+  floor?: number | null;
+  energyClass?: string | null;
+  landM2?: number | null;
 }
 
 export type CriterionState = 'met' | 'tolerated' | 'unmet';
@@ -163,6 +167,31 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     if (bedrooms === null) add('bedrooms', 'unmet', 'Nombre de chambres inconnu.');
     else if (bedrooms >= min) add('bedrooms', 'met', `${bedrooms} chambres pour ${min} au moins.`);
     else add('bedrooms', 'unmet', 'Pas assez de chambres.');
+  }
+
+  // AU072 · étage, classe énergie et terrain : impératifs, sauf s'ils sont dits souhaits ; une valeur inconnue ne
+  // remplit pas un impératif, et un souhait non rempli n'écarte rien.
+  const soft = search.softCriteria ?? [];
+  const judgeOne = (criterion: 'floor' | 'energy' | 'land', ok: boolean | null, met: string, unmet: string, unknown: string) => {
+    if (ok === true) add(criterion, 'met', met);
+    else if (!soft.includes(criterion)) add(criterion, 'unmet', ok === null ? unknown : unmet);
+  };
+  const fMin = search.floorMin ?? null;
+  const fMax = search.floorMax ?? null;
+  if (fMin !== null || fMax !== null) {
+    const floor = property.floor ?? null;
+    const at = floor === null ? '' : floor === 0 ? 'Rez-de-chaussée' : `${floor === 1 ? '1er' : `${floor}e`} étage`;
+    judgeOne('floor', floor === null ? null : (fMin === null || floor >= fMin) && (fMax === null || floor <= fMax), `${at}, dans la recherche.`, `${at}, hors de la recherche.`, 'Étage du bien inconnu.');
+  }
+  const eMax = search.energyClassMax ?? null;
+  if (eMax !== null) {
+    const cls = property.energyClass ?? null;
+    judgeOne('energy', cls === null ? null : cls <= eMax, `Classe énergie ${cls} pour ${eMax} au moins.`, `Classe énergie ${cls}, moins bonne que ${eMax}.`, 'Classe énergie du bien inconnue.');
+  }
+  const lMin = search.landMinM2 ?? null;
+  if (lMin !== null) {
+    const land = property.landM2 ?? null;
+    judgeOne('land', land === null ? null : land >= lMin, `Terrain de ${land} m² pour ${lMin} m² au moins.`, 'Terrain plus petit que demandé.', 'Terrain du bien inconnu.');
   }
 
   // Les équipements impératifs sont éliminatoires, chaque absence nommée ; une valeur inconnue ne les remplit pas (AU071).
@@ -368,6 +397,9 @@ export class Rapprochement {
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   async propertyForMatch(p: Property): Promise<MatchProperty> {
     let bedrooms: number | null = null;
+    let floor: number | null = null;
+    let landM2: number | null = null;
+    let energyClass: string | null = null;
     const features: BuyerFeature[] = [];
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
     if (sheet) {
@@ -375,8 +407,12 @@ export class Rapprochement {
         const parsed: unknown = JSON.parse(sheet.data);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
-        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown };
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; floor?: unknown; landM2?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
+        if (typeof c.floor === 'number') floor = c.floor;
+        if (typeof c.landM2 === 'number') landM2 = c.landM2;
+        const e = (parsed as { energy?: { energyClass?: unknown } | null }).energy;
+        if (e && typeof e.energyClass === 'string' && /^[A-G]$/.test(e.energyClass)) energyClass = e.energyClass;
         if (Array.isArray(c.outdoor)) for (const o of c.outdoor) if (typeof o === 'string' && OUTDOOR_FEATURE[o]) features.push(OUTDOOR_FEATURE[o]);
         if (c.elevator === true) features.push('elevator');
         if (typeof c.parkingSpaces === 'number' && c.parkingSpaces > 0) features.push('parking');
@@ -389,7 +425,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
+    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2 };
   }
 
   /**
@@ -423,7 +459,11 @@ export class Rapprochement {
         search.surfaceMinM2 === null &&
         search.roomsMin === null &&
         search.bedroomsMin === null &&
-        (search.requiredFeatures ?? []).length === 0
+        (search.requiredFeatures ?? []).length === 0 &&
+        (search.floorMin ?? null) === null &&
+        (search.floorMax ?? null) === null &&
+        (search.energyClassMax ?? null) === null &&
+        (search.landMinM2 ?? null) === null
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
