@@ -2243,7 +2243,9 @@ ${LOUER_JS}
       var s = e.state && e.state.s, a = e.state && e.state.a;
       if (!currentKey || !s || !$(s)) return;
       // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
-      var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente }[s];
+      var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+      // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
+      session += 1;
       fromHistory = true;
       if (again && Array.isArray(a)) again.apply(null, a); else show(s);
       fromHistory = false;

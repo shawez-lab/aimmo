@@ -103,7 +103,7 @@ export const DOSSIER_JS = `
     session += 1;
     var mine = session;
     wipeDossier();
-    show('dossier');
+    show('dossier', [id, reference]);
     $('dossier-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -151,7 +151,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
     $('dossier-titre').textContent = 'Dossier de vente · ' + cur.reference;
-    show('dossier');
+    show('dossier', [id, reference]);
     return load();
   }
   function base() { return '/v1/dossiers/' + encodeURIComponent(cur.id); }

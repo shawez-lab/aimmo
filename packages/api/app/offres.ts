@@ -100,7 +100,7 @@ export const OFFRES_JS = `
     session += 1;
     var mine = session;
     wipeOffres();
-    show('offres');
+    show('offres', [id, reference]);
     $('offres-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -155,7 +155,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
     $('offres-titre').textContent = 'Offres · ' + cur.reference;
-    show('offres');
+    show('offres', [id, reference]);
     return load();
   }
   function base() { return '/v1/offres/biens/' + encodeURIComponent(cur.id); }

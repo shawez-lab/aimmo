@@ -121,6 +121,24 @@ describe('A03 · fiche du client dans l’application', () => {
     expect(states).toHaveLength(2);
   });
 
+  it('AU117 · une fiche encore en lecture ne remplace jamais celle qu’un retour a rouverte', async () => {
+    let onPop: ((e: { state: unknown }) => void) | null = null;
+    let releaseA: (() => void) | null = null;
+    const slowA: Answer = () => new Promise((resolve) => { releaseA = () => resolve(Response.json({ ok: true, mode: 'essai', data: { ...FICHE, personId: 'p-1', firstName: 'Anne', lastName: 'Lente' } })); });
+    const a = await app(
+      { ...base(), '/v1/fiches/p-1/resume': slowA, '/v1/fiches/p-2/resume': ok({ ...FICHE, personId: 'p-2', firstName: 'Bruno', lastName: 'Rapide' }) },
+      { history: { pushState: () => undefined, replaceState: () => undefined }, addEventListener: (type: string, f: (e: { state: unknown }) => void) => { if (type === 'popstate') onPop = f; } },
+    );
+    buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
+    await a.tick();
+    onPop!({ state: { s: 'fiche', a: ['p-2'] } });
+    await a.tick();
+    expect(a.els['fiche-nom']!.textContent).toBe('Bruno Rapide');
+    releaseA!();
+    await a.tick();
+    expect(a.els['fiche-nom']!.textContent).toBe('Bruno Rapide');
+  });
+
   it('AU074 · un projet d’achat se confirme d’un geste, sans changer la recherche', async () => {
     const buy = { id: '00000000-0000-4000-8000-0000000000b1', kind: 'buy', stage: 'new', deadline: null, budgetMinEur: null, budgetMaxEur: 300000 };
     const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok({ ...FICHE, projects: [buy] }), [`/v1/acquereurs/projets/${buy.id}/recherche/confirmation`]: ok({ confirmedAt: '2027-01-01T00:00:00.000Z' }) });
