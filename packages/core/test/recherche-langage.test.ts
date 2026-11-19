@@ -381,6 +381,9 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
       surfaceMinM2: 100,
       roomsMin: 4,
       budgetMaxEur: 350_000,
+      // Le garage n'est qu'un souhait : il classe, il n'écarte pas (AU071) ; le budget garde sa tolérance (AU115).
+      requiredFeatures: [],
+      budgetStrict: false,
     });
     const rows = await t.db.all<{ consent_id: string; criteria: string; buyer_search_id: string }>('SELECT * FROM phrase_searches');
     expect(rows).toHaveLength(1);
@@ -443,5 +446,41 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
     const again = await t.recherche.save(t.acces, t.as('direction', 'd1'), t.acquereurs, project.id, PHRASE);
     expect(again.ok && again.value.buyerSearchId).toBeNull();
     expect(await t.db.all('SELECT id FROM buyer_searches')).toHaveLength(1);
+  });
+});
+
+describeWithSqlite('AU071 · AU115 · l’indispensable et le budget ferme de la phrase', () => {
+  it('[R420] « avec ascenseur » devient un impératif, « si possible une cave » un souhait ; « budget ferme » ôte la tolérance', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const saved = await t.recherche.save(t.acces, t.as('agent', t.alex.id), t.acquereurs, project.id, 'Appartement à Dijon avec ascenseur, si possible une cave, budget ferme 250 000 euros');
+    expect(saved.ok).toBe(true);
+    const current = await t.acquereurs.current(project.id);
+    expect(current?.search.requiredFeatures).toEqual(['elevator']);
+    expect(current?.search.features?.sort()).toEqual(['cellar', 'elevator']);
+    expect(current?.search.budgetStrict).toBe(true);
+    expect(current?.search.budgetMaxEur).toBe(250_000);
+  });
+});
+
+describe('AU115 · le budget ferme dans la recherche en direct', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
+  it('[R51] un bien à 260 000 € n’est pas proposé pour « budget ferme 250 000 euros », il l’est, toléré, sans « ferme »', () => {
+    expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(260_000))).toBeNull();
+    expect(judge(base('Appartement à Dijon, budget 250 000 euros'), prop(260_000))).toMatchObject({ status: 'tolerated' });
+    expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(250_000))).toMatchObject({ status: 'match' });
+    // Après un refus « trop petit », le budget reste ferme.
+    const refused = applyRefusal(base('Appartement à Dijon, budget ferme 250 000 euros'), { id: 'p-30', match: { ...prop(240_000), surfaceM2: 30 } }, 'trop_petit', undefined);
+    expect(refused.budgetStrict).toBe(true);
+    expect(judge(refused, prop(260_000))).toBeNull();
+  });
+  it('[R51] « budget ferme 250 000 » sans unité et « si possible un jardin et budget ferme » gardent le plafond strict', () => {
+    for (const phrase of ['Appartement à Dijon, budget ferme 250 000', 'Appartement à Dijon, si possible un jardin et budget ferme 250 000 euros', 'Appartement à Dijon, sans dépasser 250 000']) {
+      const s = base(phrase);
+      expect(s.criteria.find((c) => c.field === 'budgetMaxEur')).toMatchObject({ value: 250_000, strength: 'must' });
+      expect(judge(s, prop(260_000))).toBeNull();
+    }
   });
 });
