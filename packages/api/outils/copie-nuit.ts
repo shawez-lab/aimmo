@@ -145,7 +145,7 @@ export function storeFromEnv(env: Record<string, string | undefined>): CopyStore
 /** Les compartiments des objets, comme au déploiement (`scripts/liaisons-r2.mjs`). */
 export const OBJECT_BUCKETS: Readonly<Record<ObjectStorage, string>> = Object.freeze({ MEDIA: 'aimmo-medias', PIECES: 'aimmo-pieces', COMMERCES: 'aimmo-commerces', COFFRE: 'aimmo-coffre' });
 
-/** Les quatre stockages lus avec une clé en lecture seule (H76) ; `null` si elle manque : la nuit sera « non sauvegardée ». */
+/** Les quatre stockages lus avec une clé en lecture seule (H74) ; `null` si elle manque : la nuit sera « non sauvegardée ». */
 export function objectSourcesFromEnv(env: Record<string, string | undefined>): Record<ObjectStorage, ObjectSource> | null {
   const accountId = (env['CLOUDFLARE_ACCOUNT_ID'] ?? '').trim();
   const accessKeyId = (env['OBJETS_R2_ACCESS_KEY_ID'] ?? '').trim();
