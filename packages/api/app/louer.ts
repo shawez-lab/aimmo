@@ -423,7 +423,7 @@ globalThis.AIMMO_LOUER = function (t) {
       ['Annonce', ads.some(function (a) { return a.validatedAt; }) ? 'fait' : ''],
       ['Dossiers', pres ? 'fait' : ''],
       ['Choix', chosen ? 'fait' : ''],
-      ['Bail', lease && lease.bailleur && lease.locataire ? (lease.mode === 'essai' ? 'essai' : 'fait') : ''],
+      ['Bail', lease && allSigned(lease) ? (lease.mode === 'essai' ? 'essai' : 'fait') : ''],
       ['État des lieux', p.inventoryClosed ? 'fait' : ''],
       ['Remise des clés', p.handedOn ? 'fait' : ''],
     ];
@@ -747,8 +747,9 @@ globalThis.AIMMO_LOUER = function (t) {
         });
       })));
       ['bailleur', 'locataire'].forEach(function (party) { box.appendChild(signBlock(base, lease, party)); });
-      if (lease.bailleur && lease.locataire) {
-        if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
+      (lease.colocataires || []).forEach(function (c, i) { if (ID.test(String(c.personId))) box.appendChild(signBlock(base, lease, 'colocataire', { personId: c.personId, signedAt: c.signedAt, n: i + 1 })); });
+      if (allSigned(lease)) {
+        if (lease.copiesSent && lease.copiesSent.length === 2 && (lease.cotenantCopiesSent || []).length === (lease.colocataires || []).length) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
         else box.appendChild(button('Préparer un exemplaire pour chacun', function () { louerAct(base + '/bail/exemplaires', undefined, 'Les exemplaires ne sont pas préparés.', 'Exemplaires préparés : ils partiront par le contrôle central, en mode essai.'); }));
       }
     } else box.appendChild(el('p', 'Bail fait du modèle validé, des faits, des honoraires et du dossier choisi.', 'doux'));
@@ -782,37 +783,41 @@ globalThis.AIMMO_LOUER = function (t) {
     return box;
   }
   // La signature d'une partie : son accord pour signer en ligne, le code reçu, et une trace facultative du doigt.
-  function signBlock(base, lease, party) {
+  // Le bail est signé quand le bailleur, le locataire et chaque colocataire l'ont signé (AU097).
+  function allSigned(l) { return !!(l.bailleur && l.locataire) && (l.colocataires || []).every(function (c) { return c.signedAt; }); }
+  function signBlock(base, lease, party, co) {
+    // AU097 · un colocataire signe le même bail, en son nom.
+    var name = co ? 'le colocataire ' + co.n : PARTY_NAMES[party], to = co ? 'au colocataire ' + co.n : PARTY_TO[party], of = co ? 'du colocataire ' + co.n : PARTY_OF[party], at = co ? co.signedAt : lease[party];
     var box = el('div', null, 'client');
-    box.appendChild(el('h4', party === 'bailleur' ? 'Signature du bailleur' : 'Signature du locataire'));
-    if (lease[party]) { box.appendChild(el('p', 'Signé le ' + date(lease[party]) + ' à ' + hour(lease[party]) + ' (essai).', 'fait')); return box; }
+    box.appendChild(el('h4', 'Signature ' + of));
+    if (at) { box.appendChild(el('p', 'Signé le ' + date(at) + ' à ' + hour(at) + ' (essai).', 'fait')); return box; }
     if (!lease.complete) { box.appendChild(el('p', 'À signer une fois le bail complet.', 'doux')); return box; }
     var n = ++louerSeq;
-    var key = lease.leaseId + ':' + party;
+    var key = lease.leaseId + ':' + party + (co ? ':' + co.personId : '');
     var s = signing[key];
     if (!s) {
-      var consent = field(box, 'accord-' + n, 'Comment ' + PARTY_NAMES[party] + ' a accepté de signer en ligne', 'textarea');
+      var consent = field(box, 'accord-' + n, 'Comment ' + name + ' a accepté de signer en ligne', 'textarea');
       consent.setAttribute('rows', '2');
       consent.setAttribute('maxlength', '300');
-      box.appendChild(button('Envoyer le code de signature ' + PARTY_TO[party], function () {
+      box.appendChild(button('Envoyer le code de signature ' + to, function () {
         var text = String(consent.value || '').trim();
         if (!text) { louerState(LOUER_REFUSALS.bad_consent); return; }
-        louerAct(base + '/bail/signatures', { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
+        louerAct(base + '/bail/signatures', co ? { party: party, personId: co.personId, consentProof: text } : { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
           if (!r || !ID.test(r.sessionId)) return;
           signing[key] = r.sessionId;
-          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + PARTY_NAMES[party] + ' (mode essai) : saisissez-le quand il vous le dit.');
+          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + name + ' (mode essai) : saisissez-le quand il vous le dit.');
         });
       }));
       return box;
     }
-    var code = field(box, 'code-' + n, 'Code reçu par ' + PARTY_NAMES[party]);
+    var code = field(box, 'code-' + n, 'Code reçu par ' + name);
     code.setAttribute('inputmode', 'numeric');
     code.setAttribute('maxlength', '6');
     code.setAttribute('autocomplete', 'one-time-code');
     var trace = pad(box, 'Trace de la signature, facultative');
     var resend = button('Renvoyer un code', function () { delete signing[key]; openLocation(louerId, $('louer-titre').textContent, 'Notez de nouveau l’accord, puis envoyez un nouveau code.'); });
     resend.className = 'secondaire';
-    box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
+    box.appendChild(button('Signer pour ' + name, function () {
       var b = { code: String(code.value || '').trim() };
       if (trace.value()) b.drawing = trace.value();
       louerAct('/v1/location/signatures-bail/' + encodeURIComponent(s), b, 'La signature n’est pas rangée.', 'Signature rangée (essai).', true).then(function (r) {
@@ -825,7 +830,7 @@ globalThis.AIMMO_LOUER = function (t) {
         }
         if (!r) return;
         delete signing[key];
-        openLocation(louerId, $('louer-titre').textContent, 'Signature ' + PARTY_OF[party] + ' rangée (essai).');
+        openLocation(louerId, $('louer-titre').textContent, 'Signature ' + of + ' rangée (essai).');
       });
     }));
     box.appendChild(resend);

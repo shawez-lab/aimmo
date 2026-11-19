@@ -962,7 +962,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un garant Visale n'a pas de personne : sa ligne et son visa sont au candidat (W24).
   rental_guarantors: { locate: [...by('person_id'), via('application_id', 'rental_applications', 'id', { where: { kind: 'visale' } })] },
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
-  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
+  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors'), via('holder', 'persons', 'id', { prefix: 'colocataire:' })] },
+  // AU097 · chaque colocataire : sa ligne, sa place au bail, sa signature et son avis d'exemplaire sont à lui.
+  rental_cotenant_changes: { locate: by('person_id') },
+  rental_lease_cotenants: { locate: by('person_id') },
+  rental_lease_cotenant_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
+  rental_lease_cotenant_copy_deliveries: { locate: by('person_id') },
   // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).
   rental_piece_deposits: { locate: by('person_id') },
   // Le constat d'une pièce est à la personne de la pièce, comme la pièce elle-même (HX47).
@@ -975,7 +980,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
   // Le bail retrouvé par la candidature est celui du locataire : marqué, pour lui rendre ce qu'il y a fait en partie.
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' })], shared: ['content'] },
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' }), via('id', 'rental_lease_cotenants', 'lease_id', { tag: 'locataire' })], shared: ['content'] },
   // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
   // montré à aucune, son empreinte reste.
   rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },

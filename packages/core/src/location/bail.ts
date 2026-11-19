@@ -29,6 +29,7 @@ import { euros } from './annonce-location.ts';
 import type { ChoixProprietaire } from './choix.ts';
 import type { HonorairesLocation } from './honoraires.ts';
 import { ANNEX_KINDS, dayInFrench, rentCeilingCents, requiredAnnexes, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
+import { cotenantsOfApplication } from './candidatures.ts';
 
 export const LEASE_KINDS = ['bail_vide', 'bail_meuble'] as const;
 export type LeaseKind = (typeof LEASE_KINDS)[number];
@@ -155,6 +156,11 @@ export function leaseAnnexes(required: readonly string[], furnished: boolean): s
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const NOTICE_FILE = new RegExp(`^${UUID}\\.pdf$`);
+
+/** Les colocataires nommés dans une version du bail, dans leur ordre (AU097). */
+export async function leaseCotenants(db: SqlDatabase, leaseId: string): Promise<string[]> {
+  return (await db.all<{ person_id: string }>('SELECT person_id FROM rental_lease_cotenants WHERE lease_id = ? ORDER BY position', [leaseId])).map((r) => r.person_id);
+}
 
 /** La lecture d'une fiche sous les droits du lecteur (`Acces.readFiche`), écrite au journal avant d'être rendue [R16]. */
 export interface PersonReader {
@@ -332,14 +338,18 @@ export class BauxLocation {
     };
     // Les noms du bailleur et du locataire passent par la lecture des fiches sous droits : refus s'ils ne sont pas lisibles
     // en entier par celui qui fait le bail [R16].
+    // AU097 · en colocation, chaque colocataire est un locataire du même bail, nommé après le candidat choisi.
+    const cotenants = await cotenantsOfApplication(this.db, chosen.applicationId);
     const names: (string | null)[] = [];
-    for (const personId of [listing.ownerPersonId, chosen.personId]) {
+    for (const personId of [listing.ownerPersonId, chosen.personId, ...cotenants]) {
       const read = await this.persons.readFiche(viewer, personId);
       if (!read.ok) return { ok: false, rule: 'R16', code: read.code };
       if (read.view !== 'full') return this.refuse(viewer, `person:${personId}`, 'not_assigned');
       names.push(fullName(read.value.person));
     }
-    const [owner, tenant] = names as [string | null, string | null];
+    const [owner, ...tenantNames] = names as [string | null, ...(string | null)[]];
+    // Un nom manquant laisse le champ à compléter : jamais un bail qui oublie un colocataire [R40].
+    const tenant = tenantNames.some((n) => n === null) ? null : tenantNames.length === 1 ? tenantNames[0]! : `${tenantNames.slice(0, -1).join(', ')} et ${tenantNames.at(-1)}, colocataires`;
     const p = await this.db.first<{ city: string | null; rooms: number | null; agent_id: string | null }>('SELECT city, rooms, agent_id FROM properties WHERE id = ?', [listing.propertyId]);
     const agentRow = p?.agent_id ? await this.db.first<{ first_name: string | null; last_name: string | null }>('SELECT first_name, last_name FROM agents WHERE id = ?', [p.agent_id]) : null;
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [listing.networkId]);
@@ -417,6 +427,7 @@ export class BauxLocation {
         throw error;
       }
       const version = Number((await this.db.first<{ version: number }>('SELECT version FROM rental_leases WHERE id = ?', [id]))!.version);
+      for (const [i, personId] of cotenants.entries()) await this.db.run('INSERT INTO rental_lease_cotenants (lease_id, person_id, position) VALUES (?, ?, ?)', [id, personId, i + 1]);
       await appendEvent(
         this.journal,
         { type: 'location.bail', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { version, mode: trial ? 'essai' : 'reel', status: missing.length === 0 ? 'complet' : 'incomplet', missing } },
@@ -441,6 +452,8 @@ export class BauxLocation {
     const facts = await this.listings.currentFacts(listingId);
     const fees = await this.fees.current(networkId, listingId);
     if (!chosen || chosen.applicationId !== r.application_id || facts?.version !== Number(r.facts_version) || fees?.version !== Number(r.fees_version)) return null;
+    // Un colocataire ajouté ou retiré depuis : ce bail ne nomme plus les bons locataires, il en faut un nouveau (AU097).
+    if (JSON.stringify(await leaseCotenants(this.db, r.id)) !== JSON.stringify(await cotenantsOfApplication(this.db, chosen.applicationId))) return null;
     if (!(await this.listings.advertisable(networkId, listingId))) return null;
     if ((await sha256(r.content)) !== r.content_sha256) return null;
     // Les diagnostics joints au bail doivent être ceux qui valent aujourd'hui : une annexe remplacée depuis demande un
