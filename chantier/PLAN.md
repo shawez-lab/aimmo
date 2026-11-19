@@ -240,6 +240,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU018 · Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée
 - Statut : en cours (voie 2)
+- Reste : proposition #684 (`252e757`), Codex sans remarque après sept tours (P0 et P1 tous corrigés avec leur test : boîte et paquet propres à chaque agent, transaction IndexedDB unique, lots arrêtés à la sortie, script chargé à la demande pour le budget R201, paquet périmé, préparation interrompue, brouillon gardé, envoi lu par morceaux, refus sans IndexedDB, envoi aussitôt gardé). Suite de l'API verte en local. Bloquée à la fusion : la vérification GitHub échoue deux fois sur des tests du cœur sans lien qui dépassent 5 s sur un runner chargé ; à fusionner dès qu'elle passe (mettre la branche à jour avec main relance la vérification). Restent après la fusion : envoi de l'image entière, prise des expositions par la caméra elle-même, dictée sans réseau. Marge libre du budget de l'application (test BR103) ramenée de 900 à 700 octets.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A018 (bloquant), endroit : chantier/PLAN.md, HX12 ; A/agent-app.ts ; UI/fichiers.ts, `swJs`.
 - Constat de l'audit : Dans un logement sans réseau, la boîte de saisie prévue n’est pas branchée : je ne dispose pas du parcours de visite hors connexion promis.
