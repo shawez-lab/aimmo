@@ -129,7 +129,7 @@ export class Publication {
   }
 
   /** Ce qui doit être publié maintenant, ou la raison du retrait. Toute publication passe par la porte de D05 [R42]. */
-  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string } | { retract: RetractReason }> {
+  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string; mediaSheet: number | null; draftSheet: number | null } | { retract: RetractReason }> {
     const state = STATE_OF[status];
     if (state === null) return { retract: 'bien_retire' };
     const gate = await this.diffusion.canDiffuse(networkId, propertyId, this.now());
@@ -139,9 +139,14 @@ export class Publication {
     const input = await this.mentions.inputFor(networkId, propertyId);
     const checklist = input ? computeMentions(input) : null;
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
+    // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus, et ses
+    // légendes se lisent sur cette même fiche (AU066).
+    const mediaSheet = (await this.annonces.factsFor(propertyId))?.sheetVersion ?? draft.sheetVersion;
     return {
       draftId: draft.id,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion) },
+      mediaSheet,
+      draftSheet: draft.sheetVersion,
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet) },
     };
   }
 
@@ -199,7 +204,10 @@ export class Publication {
     if ('publish' in want || (before && before.state !== 'retiree')) {
       const content: Omit<ListingPayload, 'version'> =
         'publish' in want ? want.publish : { reference: property.reference, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] };
-      const hash = await sha256(JSON.stringify(content));
+      // Une fiche changée depuis la validation du texte (une photo dite retouchée, par exemple) fait une version de plus,
+      // même au contenu identique : ses légendes se lisent sur la fiche de cette version (AU066). Sinon, l'empreinte
+      // reste celle du seul contenu.
+      const hash = await sha256(JSON.stringify(content) + ('publish' in want && want.mediaSheet !== want.draftSheet ? `|fiche:${want.mediaSheet}` : ''));
       const reason = 'publish' in want ? 'publication' : want.retract;
       // La version n'est créée que si son contenu diffère de la dernière, dans la même instruction : deux passages
       // simultanés ne créent jamais deux fois la même version.
@@ -220,6 +228,16 @@ export class Publication {
         if (/UNIQUE/i.test(String(error))) return { changes: 0 };
         throw error;
       });
+      // La fiche des médias de la dernière version de même contenu, rangée ou réparée : une coupure entre la version et
+      // ce lien ne laisse jamais une version publiée sans la fiche de ses légendes (AU066).
+      if ('publish' in want && want.mediaSheet !== null) {
+        await this.db.run(
+          `INSERT INTO listing_version_media_sheets (version_id, sheet_version)
+           SELECT v.id, ? FROM listing_versions v WHERE v.property_id = ? AND v.payload_hash = ? AND v.seq = (SELECT MAX(seq) FROM listing_versions WHERE property_id = ?)
+           ON CONFLICT (version_id) DO NOTHING`,
+          [want.mediaSheet, propertyId, hash, propertyId],
+        );
+      }
       if (changes === 1) {
         created = true;
         const v = await this.latest(propertyId);

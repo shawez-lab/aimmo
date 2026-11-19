@@ -110,6 +110,7 @@ export const TABLES_RESEAU: readonly string[] = `
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
 export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
+  fee_schedule_tiers: { via: [['schedule_id', 'fee_schedules', 'id']] },
   ad_campaign_approvals: { via: [['campaign_id', 'ad_campaigns', 'id']] },
   ad_campaign_launches: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_repauses: { via: [['approval_id', 'ad_campaign_stops', 'approval_id']] },
@@ -164,6 +165,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   licensed_asset_withdrawals: { via: [['asset_id', 'licensed_assets', 'id']] },
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
+  listing_version_media_sheets: { via: [['version_id', 'listing_versions', 'id']] },
   portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
@@ -288,6 +290,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
  * ce qu'elle désigne : aucune ligne du fichier ne désigne une ligne absente du fichier (test) [R658].
  */
 export const ORDRE_REPRISE: readonly string[] = `
+  fee_schedule_tiers
   rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
   academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
@@ -346,7 +349,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   diffusion_portal_checks diffusion_portal_choices diffusion_portal_feedback diffusion_portal_resumptions
   diffusion_portal_suspensions diffusion_portal_task_closures diffusion_portal_tasks
   diffusion_portal_text_validations diffusion_portal_texts virtual_tours floor_plans translation_reviewers listing_translation_validations
-  listing_translations listing_validations listing_pushes portal_operations listing_versions listing_drafts listing_views
+  listing_translations listing_validations listing_pushes listing_version_media_sheets portal_operations listing_versions listing_drafts listing_views
   neighbourhood_letters neighbourhood_campaigns photo_exports virtual_stagings photo_certificates photo_guide_shots
   photo_guide_validations property_communes property_details property_key_retirements property_keys property_links
   property_sheets rental_ad_validations rental_ads rental_annexes rental_piece_findings rental_application_pieces

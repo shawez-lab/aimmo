@@ -118,7 +118,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU007 · Mon annonce de bien affiche mon nom et une carte T
-- Statut : en cours
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#705, `d4638f59`). Constat confirmé. Décidé, lecture prudente : nouvelle mention `intervenant` dans `computeMentions`, depuis l'agent du bien, son dernier statut rangé (AT03, `latestLegalMention`) et le titulaire (`latestCardHolder`), lus comme sur la page de l'agent ; phrase courte et sans parenthèse (« Votre agent : …, agent commercial, RSAC de <greffe> n° <numéro>, habilité par <titulaire>, titulaire de la carte. ») pour tenir dans la première réponse ; absente, la validation est refusée et le passage retire l'annonce. Relecture forte 1 P1 (jeux de test) corrigé ; Codex 1 P0 (égalité de dates, ordre d'écriture) corrigé, puis rien.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A007 (bloquant), endroit : C/annonces/page-bien.ts, `AgentCard`, `agentBlock` ; C/annonces/mentions.ts.
 - Constat de l'audit : Mon annonce de bien affiche mon nom et une carte T, mais aucun statut d’agent commercial ni numéro et lieu RSAC propres à moi.
@@ -261,15 +262,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
-- Statut : bloquée : vérification GitHub en échec sur des délais de 5 s dépassés (runner chargé), tests sans lien ; à fusionner dès qu'elle passe
-- Reste : proposition #700 (`324a04f4`), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#700, 72e89c4a), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
 - Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
 - Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
 - Critères : un stockage illisible donne « non sauvegardé » avec sa raison (migration de `base_copy_runs`) ; le lecteur des références couvre chaque table qui cite un fichier, avec un test par table ; R224, R230 et R232 mis à jour.
 - Attend : une clé R2 en lecture seule sur les quatre compartiments des objets (à noter dans HUMAIN.md au moment de la tâche).
 ### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A020 (bloquant), endroit : chantier/PLAN.md, SV05 ; H29, `ERASURE_MODE`.
 - Constat de l'audit : L’effacement réel et sa procédure validée restent à mettre en service : je n’ai pas de parcours de suppression de production démontré.
@@ -602,7 +603,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU057 · Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A057 (majeur), endroit : C/documents/avenants.ts ; C/documents/modeles.ts.
 - Constat de l'audit : Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat.
@@ -611,7 +612,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU058 · Le barème de vente se résume à un taux maximal et un minimum
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A058 (majeur), endroit : C/documents/controles.ts, `setFeeSchedule`.
 - Constat de l'audit : Le barème de vente se résume à un taux maximal et un minimum, sans tranches ni forfaits par prestation.
@@ -620,7 +621,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU059 · Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A059 (majeur), endroit : C/documents/modeles.ts ; C/documents/controles.ts.
 - Constat de l'audit : Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration.
@@ -684,7 +685,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
 - Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
@@ -1124,7 +1125,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU111 · Une fois « parti », je perds l’export agent
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A111 (majeur), endroit : C/reseau/depart.ts ; C/rapports/export-agent.ts, `make`.
 - Constat de l'audit : Une fois « parti », je perds l’export agent, alors que mon solde et mes pièces personnelles restent à récupérer.

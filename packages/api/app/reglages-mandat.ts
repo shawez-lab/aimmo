@@ -11,6 +11,7 @@ import type { CancelReason, IntegrityReport } from '../../core/src/mandats/regis
 const REFUSALS: Record<string, string> = {
   role: 'Ce n’est pas dans vos droits.',
   bad_schedule: 'Le taux : un pourcentage de 0,01 à 100, au centième au plus. Le minimum : un nombre entier d’euros.',
+  bad_tiers: 'Les tranches : une par ligne, « jusqu’à 100 000 : 8 000 € » ou « jusqu’à 250 000 : 4 % », des prix croissants, « au-delà : 3 % » en dernier.',
   bad_settings: 'Le préfixe : 20 caractères au plus, lettres, chiffres, espace, / . _ -. Le premier numéro : 1 ou plus. Le nombre de chiffres : de 1 à 10.',
   already_configured: 'Le format est déjà réglé : il ne change plus.',
   already_cancelled: 'Ce mandat est déjà annulé.',
@@ -132,21 +133,48 @@ globalThis.AIMMO_REGLAGES_MANDAT = function (t) {
     return box;
   }
   function euros(n) { return Number(n).toLocaleString('fr-FR') + ' €'; }
+  /* « jusqu’à 100 000 : 8 000 € », « jusqu’à 250 000 : 4 % », « au-delà : 3 % » ; null si une ligne ne se lit pas. */
+  function readTiers(text) {
+    var out = [], bad = false;
+    text.split(/\\n/).forEach(function (line) {
+      var l = line.replace(/[\\u00a0\\u202f]/g, ' ').trim().toLowerCase();
+      if (!l) return;
+      var m = /^(?:jusqu['’]?\\s*[aà]\\s*([\\d\\s]+)\\s*€?|au-?\\s*del[aà])\\s*:\\s*([\\d\\s]+(?:[.,]\\d{1,2})?)\\s*(%|€)$/.exec(l);
+      if (!m) { bad = true; return; }
+      var n = Number(m[2].replace(/\\s/g, '').replace(',', '.'));
+      var t = { upToEur: m[1] ? Number(m[1].replace(/\\s/g, '')) : null };
+      if (m[3] === '%') t.ratePercent = n; else t.flatEur = n;
+      out.push(t);
+    });
+    return bad ? null : out;
+  }
   function percent(n) { return String(n).replace('.', ',') + ' %'; }
   function renderFees(res) {
     var box = part('Barème des honoraires');
     if (!res.ok) { box.appendChild(el('p', why(res, 'Barème indisponible pour le moment.'), 'etat')); return; }
     var v = res.body.data;
     box.appendChild(el('p', v ? 'En vigueur depuis le ' + date(v.setAt) + ' : ' + percent(v.maxRatePercent) + ' du prix au plus, ' + euros(v.minEur) + ' au moins.' : 'Aucun barème : aucun mandat ne passe ses contrôles.', v ? null : 'etat'));
+    // AU058 · les tranches en vigueur, chacune avec son plafond.
+    if (v && Array.isArray(v.tiers) && v.tiers.length) {
+      var ul = el('ul', null, 'liste');
+      v.tiers.forEach(function (x) { ul.appendChild(el('li', (x.upToEur === null ? 'Au-delà' : 'Jusqu’à ' + euros(x.upToEur)) + ' : ' + (x.flatEur !== undefined ? euros(x.flatEur) + ' au plus' : percent(x.ratePercent) + ' du prix au plus'))); });
+      box.appendChild(ul);
+    }
     var rate = field(box, 'regmandat-taux', 'Taux maximal, en % du prix');
     rate.setAttribute('inputmode', 'decimal');
     var min = field(box, 'regmandat-minimum', 'Minimum, en euros');
     min.setAttribute('inputmode', 'numeric');
+    var tiersField = field(box, 'regmandat-tranches', 'Tranches (facultatif), une par ligne : « jusqu’à 100 000 : 8 000 € », « jusqu’à 250 000 : 4 % », « au-delà : 3 % »', 'textarea');
+    tiersField.setAttribute('rows', '4');
     box.appendChild(el('p', 'Un nouveau barème s’ajoute au précédent, qui reste au journal. Il vaut pour les prochains contrôles.', 'doux'));
     box.appendChild(button('Ranger le barème', function () {
       var r = number(rate), m = number(min);
       if (r === null || m === null) { state(REFUSALS.bad_schedule); return; }
-      write('/v1/honoraires/bareme', { maxRatePercent: r, minEur: m }, function (x, text) {
+      var tiers = readTiers(String(tiersField.value || ''));
+      if (tiers === null) { state(REFUSALS.bad_tiers); return; }
+      var body = { maxRatePercent: r, minEur: m };
+      if (tiers.length) body.tiers = tiers;
+      write('/v1/honoraires/bareme', body, function (x, text) {
         if (!x.ok) { state(text); return false; }
         return show('Barème rangé.');
       }, 'Le barème n’est pas rangé.');

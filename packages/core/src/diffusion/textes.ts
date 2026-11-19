@@ -389,7 +389,8 @@ export class TextesPortails {
     if (!f) return null;
     const row = await this.db.first<{ data: string }>(
       `SELECT s.data FROM listing_versions v JOIN listing_drafts d ON d.id = v.draft_id
-       JOIN property_sheets s ON s.property_id = v.property_id AND s.version = d.sheet_version
+       JOIN property_sheets s ON s.property_id = v.property_id
+         AND s.version = COALESCE((SELECT m.sheet_version FROM listing_version_media_sheets m WHERE m.version_id = v.id), d.sheet_version)
        WHERE v.property_id = ? AND v.seq = ?`,
       [propertyId, seq],
     );

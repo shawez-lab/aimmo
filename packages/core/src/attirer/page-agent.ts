@@ -135,6 +135,16 @@ export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more:
   );
 }
 
+/** Le dernier statut rangé d'un agent par la direction : le plus récent, puis le dernier écrit (AT03, AU007) [R152]. */
+export function latestLegalMention(db: SqlDatabase, networkId: string, agentId: string): Promise<{ legal_status: string; rsac_number: string; rsac_registry: string } | null> {
+  return db.first('SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [agentId, networkId]);
+}
+
+/** Le dernier titulaire de la carte du réseau rangé par la direction, de la même façon [R152]. */
+export function latestCardHolder(db: SqlDatabase, networkId: string): Promise<{ holder_name: string } | null> {
+  return db.first('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+}
+
 export class PageAgent {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -241,14 +251,11 @@ export class PageAgent {
     );
     if (!agent) return { ok: false, rule: 'R16', reason: 'agent_inconnu' };
     if (agent.status !== 'active') return { ok: false, rule: 'R16', reason: 'agent_parti' };
-    const legal = await this.db.first<{ rsac_number: string; rsac_registry: string }>(
-      'SELECT rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
-      [agentId, networkId],
-    );
+    const legal = await latestLegalMention(this.db, networkId, agentId);
     if (!legal) return { ok: false, rule: 'R152', reason: 'statut_manquant' };
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     if (!card || card.card_number.trim() === '') return { ok: false, rule: 'R152', reason: 'carte_manquante' };
-    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const holder = await latestCardHolder(this.db, networkId);
     if (!holder) return { ok: false, rule: 'R152', reason: 'titulaire_manquant' };
     const contact = await this.db.first<{ phone: string; email: string }>(
       'SELECT phone, email FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',

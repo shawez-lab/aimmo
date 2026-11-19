@@ -1121,10 +1121,10 @@ export const APP_JS = `'use strict';
     });
     return items.length === 0 ? 'Aucun bien à mettre en vente.' : null;
   }
-  var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', carte: 'Carte professionnelle' };
+  var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', intervenant: 'Statut de l’agent', carte: 'Carte professionnelle' };
   var MISSING_MENTION = {
     pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'absent', diagnostic_perime: 'périmé',
-    copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
+    copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', statut_intervenant_inconnu: 'statut et RSAC de l’agent non rangés', titulaire_inconnu: 'titulaire de la carte non réglé', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
   };
   var FIELDS = {
     kind: 'type de bien', city: 'commune', postalCode: 'code postal', surfaceM2: 'surface', rooms: 'pièces', bedrooms: 'chambres', floor: 'étage', floorsTotal: 'étages de l’immeuble', buildYear: 'année de construction',
@@ -1272,7 +1272,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Toute correction annule la validation : l’annonce est retirée des canaux jusqu’à ce que l’agent du bien la valide de nouveau.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Une correction reste en préparation : l’annonce en ligne y reste jusqu’à ce que l’agent du bien valide la nouvelle.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');

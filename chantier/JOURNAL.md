@@ -1478,3 +1478,8 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 11:10 · AU019b · copie de nuit avec les fichiers des quatre stockages (S3 de R2 en Europe, liste paginée), fichiers cités vérifiés chaque nuit et au test du mois ; relecture forte 1 P0, Codex 2 P0 1 P1 corrigés ; #700 non fusionnée : trois vérifications rouges (1 réelle corrigée, 2 délais de 5 s sur runner chargé) ; H74 demandée · prochaine : fusionner #700, puis AU020
 - 2026-11-19 11:10 · VOIE 2 : AU019b, 324a04f4 (branche, #700), relancé non (la séance horaire de :52 passe à 11:52 et reprendra #700, dont la vérification dure environ 30 minutes)
 - 2026-11-19 · voie 3 · AU073 (#692), AU097 (#696), AU062 (#701) fusionnées ; AU056 ouverte (#707) ; AU066 : test d'écran mis à jour, AU064 : main fusionné (délai des tests).
+- 2026-11-19 11:27 · AU007 · mention de l'intervenant (statut d'agent commercial, greffe et n° RSAC, titulaire) sur page, fiche et exports, absente elle bloque ; relecture forte 1 P1, Codex 1 P0 corrigés ; fusionnée (#705, d4638f59) · prochaine : AU009
+- 2026-11-19 11:27 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié
+- 2026-11-19 11:38 · AU019b · fusionnée (#700, 72e89c4a) après une vérification GitHub verte sur le dernier commit · prochaine : AU020
+- 2026-11-19 · voie 3 · AU066 (#697) fusionnée, AU064 (#702) en conflit avec main ; AU057 (#708) et AU059 (#709) ouvertes ; AU056 (#707), AU058 (#706), AU061 (#703) corrigées après relecture.
+- 2026-11-19 · voie 3 · AU058 (#706) fusionnée ; AU111 ouverte (#710).
