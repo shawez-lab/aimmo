@@ -228,9 +228,18 @@ export class Publication {
         if (/UNIQUE/i.test(String(error))) return { changes: 0 };
         throw error;
       });
+      // La fiche des médias de la dernière version de même contenu, rangée ou réparée : une coupure entre la version et
+      // ce lien ne laisse jamais une version publiée sans la fiche de ses légendes (AU066).
+      if ('publish' in want && want.mediaSheet !== null) {
+        await this.db.run(
+          `INSERT INTO listing_version_media_sheets (version_id, sheet_version)
+           SELECT v.id, ? FROM listing_versions v WHERE v.property_id = ? AND v.payload_hash = ? AND v.seq = (SELECT MAX(seq) FROM listing_versions WHERE property_id = ?)
+           ON CONFLICT (version_id) DO NOTHING`,
+          [want.mediaSheet, propertyId, hash, propertyId],
+        );
+      }
       if (changes === 1) {
         created = true;
-        if ('publish' in want && want.mediaSheet !== null) await this.db.run('INSERT INTO listing_version_media_sheets (version_id, sheet_version) VALUES (?, ?)', [id, want.mediaSheet]);
         const v = await this.latest(propertyId);
         await appendEvent(
           this.journal,

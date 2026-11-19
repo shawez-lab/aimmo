@@ -306,7 +306,12 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     // La même photo, dite retouchée ensuite, sans autre changement : une version de plus, et la légende le dit.
     added.edit = 'lumiere_cadrage';
     await version(2);
-    expect((await t.publication.sync(t.network.id, t.propertyId)).created).toBe(true);
+    // Même si le passage est coupé juste après la version, avant le lien vers sa fiche : le suivant répare le lien.
+    await t.db.exec("CREATE TRIGGER coupure BEFORE INSERT ON listing_version_media_sheets BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.publication.sync(t.network.id, t.propertyId)).rejects.toThrow(/coupure/);
+    await t.db.exec('DROP TRIGGER coupure');
+    await t.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ?', [new Date(0).toISOString(), t.propertyId]);
+    expect((await t.publication.sync(t.network.id, t.propertyId)).created).toBe(false);
     expect(await caption()).toContain('Lumière et cadrage retouchés.');
   });
 
