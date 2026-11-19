@@ -13,18 +13,25 @@
  * comptable, au format tableur, recompte les montants au centime.
  *
  * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau ; aucune TVA sur les reversements tant que
- * l'expert-comptable n'a pas validé leurs modalités (H26), ce que la facture dit ; chaque facture porte « facture
- * d'essai, sans valeur comptable » ; la prime de parrainage n'est facturée qu'après l'encaissement (K03, R83) ; une
- * part nulle ne donne pas de facture ; aucune coordonnée bancaire nulle part [R15].
+ * l'expert-comptable n'a pas validé leurs modalités (H26), ce que la facture dit ; chaque facture d'essai porte
+ * « facture d'essai, sans valeur comptable » ; la prime de parrainage n'est facturée qu'après l'encaissement (K03, R83) ;
+ * une part nulle ne donne pas de facture ; aucune coordonnée bancaire nulle part [R15].
+ *
+ * Factures réelles (AU013) [R71] : derrière une plateforme agréée réelle (H26), une facture validée est réelle. Elle
+ * n'est numérotée que si ses identités sont complètes (son XML Factur-X s'écrira, R254) ; elle prend alors, dans la même
+ * écriture, son numéro officiel dans une suite réelle à elle (`FAC-`, `REV-`, `AVO-`), sans trou ni numéro d'essai ;
+ * ses mentions sont tirées des identités réelles, jamais de l'essai ; elle n'est déposée qu'avec son XML, et le cycle de
+ * vie que la plateforme renvoie (déposée, rejetée, refusée, encaissée…) est rangé statut après statut. Une facture
+ * d'essai ne part jamais à la plateforme réelle, ni une facture réelle à celle d'essai.
  */
 import { ROLES, decideAccess, type Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Acces } from '../acces/acces.ts';
 import { Commissions } from './commissions.ts';
-import { FACTURX_PROFILE, factureElectronique, type IdentiteClient, type IdentiteEmetteur } from './facturx.ts';
+import { FACTURX_PROFILE, factureElectronique, manquesFacturX, type IdentiteClient, type IdentiteEmetteur } from './facturx.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const TRIAL_NOTICE = 'Facture d’essai, sans valeur comptable.';
@@ -51,14 +58,43 @@ export interface InvoiceContent {
   saleDay: string | null;
   /** La raison d'un avoir. */
   reason: (typeof REASONS)[number] | null;
+  /** `reel` pour une facture réelle (AU013) ; absent ou `essai` sinon, comme toutes les factures d'avant. */
+  mode?: InvoiceMode;
 }
+
+export type InvoiceMode = 'essai' | 'reel';
+
+/**
+ * Le cycle de vie d'une facture électronique, dans la liste fermée de la réforme (codes 200 à 213). Déposée, rejetée,
+ * refusée et encaissée sont les statuts que toute plateforme agréée doit transmettre ; les autres sont facultatifs.
+ */
+export const STATUTS_CYCLE: Readonly<Record<number, string>> = {
+  200: 'Déposée',
+  201: 'Émise par la plateforme',
+  202: 'Reçue par la plateforme',
+  203: 'Mise à disposition',
+  204: 'Prise en charge',
+  205: 'Approuvée',
+  206: 'Approuvée partiellement',
+  207: 'En litige',
+  208: 'Suspendue',
+  209: 'Complétée',
+  210: 'Refusée',
+  211: 'Paiement transmis',
+  212: 'Encaissée',
+  213: 'Rejetée',
+};
+/** Les statuts après lesquels plus rien n'est demandé à la plateforme. */
+const FINAL_STATUSES = [210, 212, 213] as const;
 
 export interface InvoiceView {
   id: string;
   fileId: string;
   issuer: string;
   content: InvoiceContent;
-  transmitted: { mode: 'essai'; platformRef: string } | null;
+  transmitted: { mode: InvoiceMode; platformRef: string } | null;
+  /** Le dernier statut du cycle de vie dit par la plateforme réelle ; `null` en essai ou avant le premier statut. */
+  status: { code: number; name: string; at: string } | null;
   /** Le XML Factur-X écrit pour cette facture, par son empreinte ; `null` tant qu'une identité manque (HX04). */
   facturX: { profile: string; sha256: string } | null;
 }
@@ -89,10 +125,16 @@ export interface DraftView {
   createdAt: string;
 }
 
-/** La plateforme agréée de facturation électronique, derrière une interface ; seule celle d'essai existe [R26]. */
+/**
+ * La plateforme agréée de facturation électronique, derrière une interface [R26]. Celle d'essai ne transmet rien ; la
+ * réelle (H26) reçoit chaque facture réelle avec son XML, écarte un second dépôt du même identifiant, et rend le cycle
+ * de vie de chaque dépôt.
+ */
 export interface PlateformeFacturation {
-  readonly mode: 'essai';
+  readonly mode: InvoiceMode;
   transmit(invoice: { id: string; content: InvoiceContent; facturX: string | null }): Promise<{ ref: string }>;
+  /** Les statuts du cycle de vie d'un dépôt, dans l'ordre où la plateforme les a pris (code de 200 à 213, horodatage). */
+  statuses?(ref: string): Promise<{ code: number; at: string }[]>;
 }
 
 /** La plateforme d'essai : elle reçoit, ne transmet rien à personne. */
@@ -109,7 +151,7 @@ export class PlateformeEssai implements PlateformeFacturation {
 }
 
 export type InvoiceRefusal = { ok: false; rule: 'R16'; code: string };
-type InvoiceProblem = { ok: false; rule: null | 'R71'; code: 'unknown' | 'already' | 'bad_reason' | 'not_creditable' | 'bad_day' | 'busy' | 'sale_cancelled' };
+type InvoiceProblem = { ok: false; rule: null | 'R71' | 'R254'; code: 'unknown' | 'already' | 'bad_reason' | 'not_creditable' | 'bad_day' | 'busy' | 'sale_cancelled' | 'identity_missing' | 'platform_essai' };
 
 /** Hors taxe et TVA d'un montant toutes taxes, au centime ; la TVA est le reste, pour que tout se recompte. */
 export function splitVat(ttcCents: number, vatBp: number): { htCents: number; vatCents: number } {
@@ -124,6 +166,24 @@ const euros = (cents: number): string => {
 };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Les mentions d'une facture réelle, toutes tirées des identités réelles, jamais inventées [R71, R254] : la catégorie de
+ * l'opération (une prestation de services), les identifiants de l'émetteur, celui du client professionnel, le motif
+ * d'exonération de TVA quand il y en a un, l'option pour la TVA d'après les débits quand l'émetteur l'a prise, et ses
+ * conditions de paiement (pénalités et indemnité de recouvrement comprises, dites par lui).
+ */
+export function realMentions(kind: InvoiceKind, seller: IdentiteEmetteur, buyer: IdentiteClient): string[] {
+  return [
+    'Catégorie de l’opération : prestation de services.',
+    `SIREN de l’émetteur : ${seller.siren}.`,
+    ...(seller.vatId ? [`TVA intracommunautaire de l’émetteur : ${seller.vatId}.`] : []),
+    ...(buyer.siren ? [`SIREN du client : ${buyer.siren}.`] : []),
+    ...(seller.regime.category === 'E' ? [`${seller.regime.exemptionReason.trim().replace(/\.$/, '')}.`] : []),
+    ...(seller.vatOnDebits === true && kind !== 'avoir' ? ['Option pour le paiement de la taxe d’après les débits.'] : []),
+    seller.paymentTerms.trim(),
+  ];
+}
 
 export class Factures {
   private readonly now: () => Date;
@@ -142,7 +202,7 @@ export class Factures {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.plateforme = options.plateforme ?? new PlateformeEssai();
-    if (this.plateforme.mode !== 'essai') throw new Error('Aucune facture réelle tant que H26 n’est pas fait [R26].');
+    if (this.plateforme.mode !== 'essai' && this.plateforme.mode !== 'reel') throw new Error('Plateforme de facturation inconnue [R71].');
     this.vat = options.vatBp ?? { ...DEFAULT_VAT_BP };
     this.identites = options.identites ?? AUCUNE_IDENTITE;
     this.commissions = new Commissions(db, acces, journal, { now: this.now });
@@ -258,8 +318,12 @@ export class Factures {
     return issuer === 'reseau' ? '' : `${issuer.slice(6).toUpperCase().replace(/[^A-Z0-9-]/g, '')}-`;
   }
 
-  private label(kind: InvoiceKind, issuer: string, year: number, number: number): string {
-    const prefix = kind === 'honoraires' ? 'F' : kind === 'reversement' ? 'RV' : 'AV';
+  /**
+   * Le numéro lisible. Une facture réelle a son préfixe à elle (`FAC`, `REV`, `AVO`) et son numéro officiel : jamais le
+   * même texte qu'une facture d'essai, dont les numéros d'avant restent ce qu'ils étaient.
+   */
+  private label(kind: InvoiceKind, issuer: string, year: number, number: number, mode: InvoiceMode = 'essai'): string {
+    const prefix = mode === 'reel' ? (kind === 'honoraires' ? 'FAC' : kind === 'reversement' ? 'REV' : 'AVO') : kind === 'honoraires' ? 'F' : kind === 'reversement' ? 'RV' : 'AV';
     return `${prefix}-${this.issuerCode(issuer)}${year}-${String(number).padStart(5, '0')}`;
   }
 
@@ -275,13 +339,26 @@ export class Factures {
       const year = Number(issuedOn.slice(0, 4));
       const id = this.newId();
       try {
-        const { changes } = await this.db.run(
-          `INSERT INTO invoices (id, network_id, issuer, year, number, kind, file_id, draft_id, corrects_invoice_id, content, amount_cents, issued_on, validated_by, created_at)
+        const statements: SqlStatement[] = [
+          {
+            sql: `INSERT INTO invoices (id, network_id, issuer, year, number, kind, file_id, draft_id, corrects_invoice_id, content, amount_cents, issued_on, validated_by, created_at)
            SELECT ?, ?, ?, ?, COALESCE(MAX(number), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM invoices WHERE network_id = ? AND issuer = ? AND year = ?
            ON CONFLICT (draft_id) DO NOTHING`,
-          [id, networkId, issuer, year, kind, fileId, draftId, correctsId, JSON.stringify({ ...content, issuedOn }), content.ttcCents, issuedOn, by, this.now().toISOString(), networkId, issuer, year],
-        );
-        return changes === 1 ? id : null;
+            params: [id, networkId, issuer, year, kind, fileId, draftId, correctsId, JSON.stringify({ ...content, issuedOn }), content.ttcCents, issuedOn, by, this.now().toISOString(), networkId, issuer, year],
+          },
+        ];
+        // Une facture réelle prend, dans la même écriture, le numéro suivant de sa suite réelle : les deux lignes
+        // existent ensemble ou pas du tout [R71].
+        if (content.mode === 'reel') {
+          statements.push({
+            sql: `INSERT INTO invoice_real_numbers (invoice_id, network_id, issuer, year, number, issued_on)
+             SELECT ?, ?, ?, ?, COALESCE((SELECT MAX(number) FROM invoice_real_numbers WHERE network_id = ? AND issuer = ? AND year = ?), 0) + 1, ?
+             WHERE EXISTS (SELECT 1 FROM invoices WHERE id = ?)`,
+            params: [id, networkId, issuer, year, networkId, issuer, year, issuedOn, id],
+          });
+        }
+        const [first] = await runBatch(this.db, statements);
+        return first!.changes === 1 ? id : null;
       } catch (error) {
         if (correctsId && (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [correctsId]))) return null;
         if (draftId && (await this.db.first('SELECT 1 FROM invoices WHERE draft_id = ?', [draftId]))) return null;
@@ -310,15 +387,9 @@ export class Factures {
       [invoiceId],
     ))?.person_id ?? null;
     let seller: IdentiteEmetteur | null = null;
-    // Le client d'une facture d'honoraires est la personne qui paie ; celui d'un reversement, la société du réseau.
     let buyer: IdentiteClient | null = null;
     try {
-      seller = await this.identites.emetteur(networkId, v.issuer);
-      if (recipient) buyer = await this.identites.client(networkId, recipient);
-      else {
-        const reseau = await this.identites.emetteur(networkId, 'reseau');
-        buyer = reseau ? { name: reseau.name, siren: reseau.siren, address: reseau.address } : null;
-      }
+      ({ seller, buyer } = await this.parties(networkId, v.issuer, recipient));
     } catch (error) {
       // Une panne des identités n'arrête ni la facture ni le passage : sans XML cette fois, repris au suivant.
       await appendEvent(this.journal, { type: 'facture.facturx_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { rule: 'R254', label: v.content.label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
@@ -339,6 +410,48 @@ export class Factures {
     }
     await this.db.run('INSERT INTO invoice_facturx (invoice_id, profile, xml, sha256, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [invoiceId, FACTURX_PROFILE, built.xml, await sha256(built.xml), this.now().toISOString()]);
     return (await this.db.first<{ xml: string }>('SELECT xml FROM invoice_facturx WHERE invoice_id = ?', [invoiceId]))!.xml;
+  }
+
+  /** Les identités de la facture : l'émetteur ; le client d'honoraires qui paie, ou la société du réseau pour un reversement. */
+  private async parties(networkId: string, issuer: string, recipient: string | null): Promise<{ seller: IdentiteEmetteur | null; buyer: IdentiteClient | null }> {
+    const seller = await this.identites.emetteur(networkId, issuer);
+    if (recipient) return { seller, buyer: await this.identites.client(networkId, recipient) };
+    const reseau = await this.identites.emetteur(networkId, 'reseau');
+    return { seller, buyer: reseau ? { name: reseau.name, siren: reseau.siren, address: reseau.address } : null };
+  }
+
+  /**
+   * Avant de numéroter une facture réelle : ses identités, et ce qui manquerait à son XML [R254]. Le manque va une fois
+   * au journal, par règle, sans donnée [R13] ; aucun numéro réel n'est pris, la facture attend. Rend les identités
+   * complètes, ou `null`.
+   */
+  private async realParties(
+    networkId: string,
+    fileId: string,
+    issuer: string,
+    recipient: string | null,
+    content: Omit<InvoiceContent, 'label' | 'issuedOn'>,
+  ): Promise<{ seller: IdentiteEmetteur; buyer: IdentiteClient } | null> {
+    let seller: IdentiteEmetteur | null = null;
+    let buyer: IdentiteClient | null = null;
+    try {
+      ({ seller, buyer } = await this.parties(networkId, issuer, recipient));
+    } catch (error) {
+      await appendEvent(this.journal, { type: 'facture.facturx_panne', actor: 'system:pilotage', subject: `sale_file:${fileId}`, data: { rule: 'R254', mode: 'reel', error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+      return null;
+    }
+    const probe: InvoiceContent = { ...content, label: 'AVANT-NUMERO', issuedOn: localTime(this.now(), TIME_ZONE).date, mentions: seller && buyer ? realMentions(content.kind, seller, buyer) : [] };
+    const missing = manquesFacturX({ content: probe, seller, buyer });
+    if (missing.length === 0 && seller && buyer) return { seller, buyer };
+    const key = `${content.kind}:${issuer}`;
+    const before = new Set(
+      (await this.journal.bySubject(`sale_file:${fileId}`))
+        .filter((e) => e.type === 'facture.reelle_attente' && e.data.key === key)
+        .flatMap((e) => (Array.isArray(e.data.missing) ? (e.data.missing as string[]) : [])),
+    );
+    const fresh = missing.filter((m) => !before.has(m));
+    if (fresh.length > 0) await appendEvent(this.journal, { type: 'facture.reelle_attente', actor: 'system:pilotage', subject: `sale_file:${fileId}`, data: { rule: 'R254', key, missing: fresh } }, this.now);
+    return null;
   }
 
   /**
@@ -369,8 +482,12 @@ export class Factures {
     // Un seul envoi à la fois : l'essai est réservé en base avant d'appeler la plateforme ; un autre passage qui le
     // trouve en cours s'arrête là, et le gagnant fait la suite, ligne du journal comprise, avant l'envoi (HX04) [R255].
     // L'identifiant de la facture va aussi à la plateforme, qui écarte un second envoi du même identifiant.
-    const attempt = v.transmitted ? null : await this.claimTransmission(invoiceId, v.fileId, v.content.label);
-    if (!v.transmitted && attempt === null) return;
+    // Une facture ne part qu'à une plateforme de son mode : jamais une facture d'essai à la plateforme réelle, ni une
+    // réelle à celle d'essai. Une facture réelle ne part qu'avec son XML [R71, R254].
+    const mode: InvoiceMode = v.content.mode === 'reel' ? 'reel' : 'essai';
+    const sendable = !v.transmitted && mode === this.plateforme.mode;
+    const attempt = sendable ? await this.claimTransmission(invoiceId, v.fileId, v.content.label) : null;
+    if (sendable && attempt === null) return;
     const type = row.kind === 'avoir' ? 'facture.avoir' : 'facture.emise';
     if (!(await this.journal.bySubject(`sale_file:${v.fileId}`)).some((e) => e.type === type && e.data.label === v.content.label)) {
       // Au journal : la sorte, le numéro et le client qui paie (sa fiche, pour sa demande d'accès), jamais un montant
@@ -379,11 +496,14 @@ export class Factures {
         'SELECT d.recipient_person_id AS person_id FROM invoices i LEFT JOIN invoices o ON o.id = i.corrects_invoice_id JOIN invoice_drafts d ON d.id = COALESCE(i.draft_id, o.draft_id) WHERE i.id = ?',
         [invoiceId],
       ))?.person_id ?? null;
-      await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode: 'essai', ...(v.content.corrects ? { corrects: v.content.corrects } : {}), ...(recipient ? { client: `person:${recipient}` } : {}) } }, this.now);
+      await appendEvent(this.journal, { type, actor, subject: `sale_file:${v.fileId}`, data: { rule: 'R71', kind: row.kind, label: v.content.label, mode, ...(v.content.corrects ? { corrects: v.content.corrects } : {}), ...(recipient ? { client: `person:${recipient}` } : {}) } }, this.now);
     }
     // Le XML s'écrit dès que les identités sont là, même pour une facture déjà partie en essai sans lui [R254].
     const facturX = await this.facturX(invoiceId, row.network_id, v);
-    if (!v.transmitted) {
+    if (sendable && mode === 'reel' && facturX === null) {
+      // Sans XML, une facture réelle ne part pas : l'essai réservé est rendu, et le passage suivant la reprend.
+      await appendEvent(this.journal, { type: 'facture.envoi_en_panne', actor: 'system:pilotage', subject: `sale_file:${v.fileId}`, data: { label: v.content.label, attempt, error: 'sans_xml' } }, this.now);
+    } else if (sendable) {
       let ref: string | null = null;
       try {
         ref = (await this.plateforme.transmit({ id: invoiceId, content: v.content, facturX })).ref;
@@ -392,7 +512,8 @@ export class Factures {
       }
       // Hors du bloc de panne : une écriture ratée après un envoi reçu ne se dit jamais en panne, l'essai reste
       // réservé et ne se reprend qu'après l'heure, la plateforme écartant le doublon par l'identifiant [R255].
-      if (ref !== null) await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, ref, this.now().toISOString()]);
+      if (ref !== null && mode === 'reel') await this.db.run('INSERT INTO invoice_real_deposits (invoice_id, platform_ref, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [invoiceId, ref, this.now().toISOString()]);
+      else if (ref !== null) await this.db.run("INSERT INTO invoice_transmissions (invoice_id, mode, platform_ref, at) VALUES (?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [invoiceId, ref, this.now().toISOString()]);
     }
     if (row.kind === 'honoraires' && !(await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId]))) {
       const step = await this.commissions.recordStep(row.network_id, v.fileId, 'facturee', `facture:${v.content.label}`, actor);
@@ -406,6 +527,7 @@ export class Factures {
     }
   }
 
+  /** Les mentions d'une facture d'essai : jamais sur une facture réelle. */
   private mentions(vatBp: number): string[] {
     return [
       TRIAL_NOTICE,
@@ -472,29 +594,28 @@ export class Factures {
     const reference = (await this.db.first<{ reference: string }>('SELECT p.reference FROM sale_files f JOIN properties p ON p.id = f.property_id WHERE f.id = ?', [d.file_id]))?.reference ?? '';
     const saleDay = (await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [d.file_id]))?.signed_on ?? null;
     const { htCents, vatCents } = splitVat(d.amount_cents, d.vat_bp);
-    const id = await this.insert(
-      d.network_id,
-      d.issuer,
-      d.kind,
-      d.file_id,
-      d.id,
-      null,
-      {
-        kind: d.kind,
-        issuer: await this.nameOf(d.network_id, d.issuer),
-        recipient: d.kind === 'honoraires' ? await this.nameOf(d.network_id, `person:${d.recipient_person_id}`) : await this.nameOf(d.network_id, 'reseau'),
-        designation: d.kind === 'honoraires' ? `Honoraires de transaction, bien ${reference}` : `Reversement de commission, vente du bien ${reference}`,
-        saleDay,
-        htCents,
-        vatBp: d.vat_bp,
-        vatCents,
-        ttcCents: d.amount_cents,
-        mentions: this.mentions(d.vat_bp),
-        corrects: null,
-        reason: null,
-      },
-      actor,
-    );
+    const content: Omit<InvoiceContent, 'label' | 'issuedOn'> = {
+      kind: d.kind,
+      issuer: await this.nameOf(d.network_id, d.issuer),
+      recipient: d.kind === 'honoraires' ? await this.nameOf(d.network_id, `person:${d.recipient_person_id}`) : await this.nameOf(d.network_id, 'reseau'),
+      designation: d.kind === 'honoraires' ? `Honoraires de transaction, bien ${reference}` : `Reversement de commission, vente du bien ${reference}`,
+      saleDay,
+      htCents,
+      vatBp: d.vat_bp,
+      vatCents,
+      ttcCents: d.amount_cents,
+      mentions: this.mentions(d.vat_bp),
+      corrects: null,
+      reason: null,
+    };
+    if (this.plateforme.mode === 'reel') {
+      // Une facture réelle : identités complètes d'abord, ou rien n'est numéroté ; ses mentions viennent d'elles [R71, R254].
+      const parties = await this.realParties(d.network_id, d.file_id, d.issuer, d.kind === 'honoraires' ? d.recipient_person_id : null, content);
+      if (!parties) return { ok: false, rule: 'R254', code: 'identity_missing' };
+      content.mode = 'reel';
+      content.mentions = realMentions(d.kind, parties.seller, parties.buyer);
+    }
+    const id = await this.insert(d.network_id, d.issuer, d.kind, d.file_id, d.id, null, content, actor);
     if (id === 'busy') return { ok: false, rule: null, code: 'busy' };
     if (!id) return { ok: false, rule: null, code: 'already' };
     await this.follow(id, actor);
@@ -516,29 +637,31 @@ export class Factures {
       return { ok: false, rule: null, code: 'already' };
     }
     const o = original.content;
-    const id = await this.insert(
-      row.network_id,
-      row.issuer,
-      'avoir',
-      row.file_id,
-      null,
-      invoiceId,
-      {
-        kind: 'avoir',
-        issuer: o.issuer,
-        recipient: o.recipient,
-        designation: `Avoir sur la facture ${o.label}`,
-        saleDay: o.saleDay,
-        htCents: -o.htCents,
-        vatBp: o.vatBp,
-        vatCents: -o.vatCents,
-        ttcCents: -o.ttcCents,
-        mentions: [...this.mentions(o.vatBp), `Annule la facture ${o.label}.`],
-        corrects: o.label,
-        reason: reason as (typeof REASONS)[number],
-      },
-      this.actor(viewer),
-    );
+    const content: Omit<InvoiceContent, 'label' | 'issuedOn'> = {
+      kind: 'avoir',
+      issuer: o.issuer,
+      recipient: o.recipient,
+      designation: `Avoir sur la facture ${o.label}`,
+      saleDay: o.saleDay,
+      htCents: -o.htCents,
+      vatBp: o.vatBp,
+      vatCents: -o.vatCents,
+      ttcCents: -o.ttcCents,
+      mentions: [...this.mentions(o.vatBp), `Annule la facture ${o.label}.`],
+      corrects: o.label,
+      reason: reason as (typeof REASONS)[number],
+    };
+    // L'avoir suit sa facture : réel pour une facture réelle, par la plateforme réelle seulement ; d'essai sinon, jamais
+    // numéroté dans la suite réelle [R71].
+    if (o.mode === 'reel') {
+      if (this.plateforme.mode !== 'reel') return { ok: false, rule: 'R71', code: 'platform_essai' };
+      const recipient = (await this.db.first<{ person_id: string | null }>('SELECT d.recipient_person_id AS person_id FROM invoices i JOIN invoice_drafts d ON d.id = i.draft_id WHERE i.id = ?', [invoiceId]))?.person_id ?? null;
+      const parties = await this.realParties(row.network_id, row.file_id, row.issuer, row.kind === 'honoraires' ? recipient : null, content);
+      if (!parties) return { ok: false, rule: 'R254', code: 'identity_missing' };
+      content.mode = 'reel';
+      content.mentions = [...realMentions('avoir', parties.seller, parties.buyer), `Annule la facture ${o.label}.`];
+    }
+    const id = await this.insert(row.network_id, row.issuer, 'avoir', row.file_id, null, invoiceId, content, this.actor(viewer));
     if (id === 'busy') return { ok: false, rule: null, code: 'busy' };
     if (!id) return { ok: false, rule: null, code: 'already' };
     await this.follow(id, this.actor(viewer));
@@ -554,13 +677,73 @@ export class Factures {
   }
 
   private async byId(id: string): Promise<InvoiceView | null> {
-    const r = await this.db.first<{ id: string; file_id: string; issuer: string; kind: InvoiceKind; year: number; number: number; content: string; platform_ref: string | null; profile: string | null; sha256: string | null }>(
-      'SELECT i.id, i.file_id, i.issuer, i.kind, i.year, i.number, i.content, t.platform_ref, x.profile, x.sha256 FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id LEFT JOIN invoice_facturx x ON x.invoice_id = i.id WHERE i.id = ?',
+    const r = await this.db.first<{ id: string; file_id: string; issuer: string; kind: InvoiceKind; year: number; number: number; real_number: number | null; content: string; platform_ref: string | null; real_ref: string | null; profile: string | null; sha256: string | null }>(
+      `SELECT i.id, i.file_id, i.issuer, i.kind, i.year, i.number, n.number AS real_number, i.content, t.platform_ref, rd.platform_ref AS real_ref, x.profile, x.sha256
+       FROM invoices i LEFT JOIN invoice_transmissions t ON t.invoice_id = i.id LEFT JOIN invoice_real_numbers n ON n.invoice_id = i.id
+       LEFT JOIN invoice_real_deposits rd ON rd.invoice_id = i.id LEFT JOIN invoice_facturx x ON x.invoice_id = i.id WHERE i.id = ?`,
       [id],
     );
     if (!r) return null;
-    const content = { ...(JSON.parse(r.content) as Omit<InvoiceContent, 'label'>), label: this.label(r.kind, r.issuer, r.year, r.number) };
-    return { id: r.id, fileId: r.file_id, issuer: r.issuer, content, transmitted: r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null, facturX: r.profile && r.sha256 ? { profile: r.profile, sha256: r.sha256 } : null };
+    const stored = JSON.parse(r.content) as Omit<InvoiceContent, 'label'>;
+    // Réelle seulement avec son numéro réel : la base les écrit ensemble [R71].
+    const real = stored.mode === 'reel' && r.real_number !== null;
+    const content: InvoiceContent = { ...stored, label: real ? this.label(r.kind, r.issuer, r.year, r.real_number!, 'reel') : this.label(r.kind, r.issuer, r.year, r.number) };
+    const last = real ? await this.db.first<{ code: number; at: string }>('SELECT code, at FROM invoice_real_statuses WHERE invoice_id = ? ORDER BY seq DESC LIMIT 1', [id]) : null;
+    return {
+      id: r.id,
+      fileId: r.file_id,
+      issuer: r.issuer,
+      content,
+      transmitted: real ? (r.real_ref ? { mode: 'reel', platformRef: r.real_ref } : null) : r.platform_ref ? { mode: 'essai', platformRef: r.platform_ref } : null,
+      status: last ? { code: last.code, name: STATUTS_CYCLE[last.code] ?? String(last.code), at: last.at } : null,
+      facturX: r.profile && r.sha256 ? { profile: r.profile, sha256: r.sha256 } : null,
+    };
+  }
+
+  /**
+   * Le suivi réel : pour chaque facture réelle déposée dont le cycle n'est pas fini, les statuts nouveaux que la
+   * plateforme rend sont rangés dans l'ordre, une seule fois chacun ; un code hors de la liste de la réforme n'est
+   * jamais rangé et va une fois au journal. Une facture rejetée ou refusée est dite à la direction, une fois. Au
+   * journal : le numéro et le code, jamais un montant ni un nom [R13]. Rend le nombre de statuts rangés.
+   */
+  async track(networkId: string): Promise<number> {
+    if (this.plateforme.mode !== 'reel' || !this.plateforme.statuses) return 0;
+    const rows = await this.db.all<{ invoice_id: string; platform_ref: string; file_id: string }>(
+      `SELECT d.invoice_id, d.platform_ref, i.file_id FROM invoice_real_deposits d JOIN invoices i ON i.id = d.invoice_id
+       WHERE i.network_id = ? AND NOT EXISTS (SELECT 1 FROM invoice_real_statuses s WHERE s.invoice_id = d.invoice_id AND s.code IN (${FINAL_STATUSES.join(', ')}))
+       ORDER BY d.at, d.invoice_id`,
+      [networkId],
+    );
+    let added = 0;
+    for (const r of rows) {
+      const label = (await this.byId(r.invoice_id))!.content.label;
+      let statuses: { code: number; at: string }[];
+      try {
+        statuses = await this.plateforme.statuses(r.platform_ref);
+      } catch (error) {
+        await appendEvent(this.journal, { type: 'facture.suivi_en_panne', actor: 'system:pilotage', subject: `sale_file:${r.file_id}`, data: { label, error: error instanceof Error ? error.name : 'unknown' } }, this.now);
+        continue;
+      }
+      for (const st of statuses) {
+        if (!Number.isInteger(st.code) || STATUTS_CYCLE[st.code] === undefined || Number.isNaN(Date.parse(st.at))) {
+          await this.waiting(r.file_id, `statut_inconnu:${label}`);
+          continue;
+        }
+        if (await this.db.first('SELECT 1 FROM invoice_real_statuses WHERE invoice_id = ? AND code = ? AND at = ?', [r.invoice_id, st.code, st.at])) continue;
+        const { changes } = await this.db.run(
+          `INSERT INTO invoice_real_statuses (invoice_id, seq, code, at, recorded_at)
+           SELECT ?, COALESCE((SELECT MAX(seq) FROM invoice_real_statuses WHERE invoice_id = ?), 0) + 1, ?, ?, ? ON CONFLICT DO NOTHING`,
+          [r.invoice_id, r.invoice_id, st.code, st.at, this.now().toISOString()],
+        );
+        if (changes !== 1) continue;
+        added += 1;
+        await appendEvent(this.journal, { type: 'facture.statut', actor: 'system:pilotage', subject: `sale_file:${r.file_id}`, data: { rule: 'R71', label, code: st.code } }, this.now);
+        if (st.code === 213) await this.waiting(r.file_id, `rejetee:${label}`);
+        if (st.code === 210) await this.waiting(r.file_id, `refusee:${label}`);
+        if ((FINAL_STATUSES as readonly number[]).includes(st.code)) break;
+      }
+    }
+    return added;
   }
 
   /** Les factures : la direction voit le réseau ; un agent, seulement les reversements émis à son nom [R16, R68]. */
@@ -585,20 +768,23 @@ export class Factures {
 
   /**
    * L'export comptable d'une période, au format tableur (séparateur « ; », montants en euros à la virgule) : une ligne
-   * par facture et avoir, dans l'ordre des suites ; la dernière ligne totalise, au centime [R69].
+   * par facture et avoir, dans l'ordre des suites ; la dernière ligne totalise, au centime [R69]. Derrière la plateforme
+   * réelle, seules les factures réelles y sont : une facture d'essai n'entre jamais dans la comptabilité [R71].
    */
   async exportCsv(viewer: Viewer, fromDay: string, toDay: string): Promise<{ ok: true; value: string } | InvoiceRefusal | InvoiceProblem> {
     const refusal = await this.directionRefusal(viewer, 'invoice_export');
     if (refusal) return refusal;
     if (!DAY.test(fromDay) || !DAY.test(toDay) || fromDay > toDay) return { ok: false, rule: null, code: 'bad_day' };
     const rows = await this.db.all<{ id: string }>(
-      "SELECT id FROM invoices WHERE network_id = ? AND issued_on >= ? AND issued_on <= ? ORDER BY CASE issuer WHEN 'reseau' THEN 0 ELSE 1 END, issuer, year, number",
-      [viewer.networkId, fromDay, toDay],
+      `SELECT id FROM invoices i WHERE network_id = ? AND issued_on >= ? AND issued_on <= ?
+         AND EXISTS (SELECT 1 FROM invoice_real_numbers n WHERE n.invoice_id = i.id) = ?
+       ORDER BY CASE issuer WHEN 'reseau' THEN 0 ELSE 1 END, issuer, year, number`,
+      [viewer.networkId, fromDay, toDay, this.plateforme.mode === 'reel' ? 1 : 0],
     );
     // Un texte qui commence comme une formule de tableur est neutralisé ; les montants ne passent pas par là.
     const text = (v: string) => (/^[=+\-@\t\r]/.test(v) ? `'${v}` : v);
     const cell = (v: string) => (/[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    const lines = ['numero;date;sorte;emetteur;destinataire;designation;ht;tva;ttc;facture_corrigee'];
+    const lines = ['numero;date;sorte;emetteur;destinataire;designation;ht;tva;ttc;facture_corrigee;mode'];
     let ht = 0;
     let vat = 0;
     let ttc = 0;
@@ -607,9 +793,9 @@ export class Factures {
       ht += c.htCents;
       vat += c.vatCents;
       ttc += c.ttcCents;
-      lines.push([text(c.label), c.issuedOn, c.kind, text(c.issuer), text(c.recipient), text(c.designation), euros(c.htCents), euros(c.vatCents), euros(c.ttcCents), text(c.corrects ?? '')].map(cell).join(';'));
+      lines.push([text(c.label), c.issuedOn, c.kind, text(c.issuer), text(c.recipient), text(c.designation), euros(c.htCents), euros(c.vatCents), euros(c.ttcCents), text(c.corrects ?? ''), c.mode === 'reel' ? 'reel' : 'essai'].map(cell).join(';'));
     }
-    lines.push(['total', '', '', '', '', '', euros(ht), euros(vat), euros(ttc), ''].join(';'));
+    lines.push(['total', '', '', '', '', '', euros(ht), euros(vat), euros(ttc), '', ''].join(';'));
     await appendEvent(this.journal, { type: 'facture.export', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { from: fromDay, to: toDay, count: rows.length } }, this.now);
     return { ok: true, value: `${lines.join('\r\n')}\r\n` };
   }

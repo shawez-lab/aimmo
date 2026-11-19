@@ -1107,7 +1107,7 @@ globalThis.AIMMO_FINANCES = function (t) {
         var li = el('li');
         li.appendChild(el('strong', (KIND_NAMES[c.kind] || 'Facture') + ' ' + c.label));
         li.appendChild(el('p', 'De ' + c.issuer + ' à ' + c.recipient + ', le ' + date(c.issuedOn + 'T12:00:00Z') + ' : ' + euros(c.ttcCents) + ' TTC.'));
-        li.appendChild(el('p', 'Dossier ' + i.fileId + (i.transmitted ? ', en mode essai.' : ', pas encore transmise.'), 'doux'));
+        li.appendChild(el('p', 'Dossier ' + i.fileId + (i.transmitted ? (i.transmitted.mode === 'reel' ? ', déposée à la plateforme agréée' + (i.status ? ' : ' + i.status.name.toLowerCase() : '') + '.' : ', en mode essai.') : ', pas encore transmise.'), 'doux'));
         if (c.corrects) li.appendChild(el('p', 'Corrige la facture ' + c.corrects + '.', 'doux'));
         if (corrected[c.label]) li.appendChild(el('p', 'Corrigée par un avoir.', 'doux'));
         else if (c.kind !== 'avoir') li.appendChild(creditForm(i));

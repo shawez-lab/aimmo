@@ -39,6 +39,8 @@ export interface IdentiteEmetteur {
   regime: RegimeTva;
   /** Conditions de paiement, pénalités de retard et indemnité de recouvrement comprises (BT-20, BR-CO-25). */
   paymentTerms: string;
+  /** L'émetteur a opté pour le paiement de la TVA d'après les débits : dit par lui, jamais déduit (AU013). */
+  vatOnDebits?: boolean;
 }
 
 export interface IdentiteClient {

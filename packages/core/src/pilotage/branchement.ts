@@ -63,6 +63,7 @@ export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, option
         await commissions.sync(n.id);
         await factures.prepare(n.id);
         await factures.issueOnDeed(n.id);
+        await factures.track(n.id);
         await factures.reconcile(n.id);
         await encaissements.run(n.id);
         await manques.syncIfDue(n.id);
