@@ -45,7 +45,7 @@ describeWithSqlite('SV06 · l’agent crée un bien et le lie à son vendeur', (
     expect(await t.biens.list(t.alex, t.person.id)).toMatchObject({ ok: true, value: [{ propertyId: r.value.propertyId }] });
   });
 
-  it('AU070 · un logement est dit maison ou appartement à la création ; jamais pour un autre type', async () => {
+  it('[R51] AU070 · un logement est dit maison ou appartement à la création ; jamais pour un autre type', async () => {
     const t = await setup();
     const r = await t.biens.create(t.alex, t.person.id, { ...INPUT, dwelling: 'house' });
     if (!r.ok) throw new Error('refus');
