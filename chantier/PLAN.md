@@ -216,7 +216,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU016 · Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A016 (bloquant), endroit : C/location/logement.ts, `RentalFacts`, `checkDwelling`.
 - Constat de l'audit : Je peux saisir un nouveau loyer F sans historique du précédent loyer ni contrôle du gel à la relocation.
