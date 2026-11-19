@@ -61,6 +61,7 @@ const LABELS: Record<string, string> = {
   'energy.annualCostMinEur': 'Coût annuel le plus bas du diagnostic, qui ne dépasse pas le plus haut',
   'energy.annualCostMaxEur': 'Coût annuel le plus haut du diagnostic',
   'energy.costReferenceYear': 'Année des prix de l’énergie du diagnostic',
+  'energy.costReferenceYears': 'Années des prix de l’énergie : celles du diagnostic, qui se suivent',
   'energy.diagnosedOn': 'Jour du diagnostic, jamais dans le futur',
   'coownership.lots': 'Nombre de lots de la copropriété',
   'coownership.annualChargesEur': 'Charges annuelles de la copropriété',
@@ -116,9 +117,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       climateClass: select(zone, 'fiche-bien-climat', 'Classe climat', classes, e.climateClass),
       annualCostMinEur: number(zone, 'fiche-bien-cout-min', 'Coût annuel le plus bas, en euros', e.annualCostMinEur),
       annualCostMaxEur: number(zone, 'fiche-bien-cout-max', 'Coût annuel le plus haut, en euros', e.annualCostMaxEur),
-      costReferenceYear: number(zone, 'fiche-bien-cout-annee', 'Année des prix de l’énergie', e.costReferenceYear),
+      // AU065 · une année, ou celles que le diagnostic cite (« 2021, 2022, 2023 »), telles qu'il les écrit.
+      costReferenceYear: field(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
       diagnosedOn: field(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
     };
+    energy.costReferenceYear.setAttribute('inputmode', 'numeric');
+    energy.costReferenceYear.value = Array.isArray(e.costReferenceYears) && e.costReferenceYears.length > 1 ? e.costReferenceYears.join(', ') : text(e.costReferenceYear);
     energy.diagnosedOn.setAttribute('type', 'date');
     energy.diagnosedOn.value = text(e.diagnosedOn);
     zone.appendChild(el('h4', 'Copropriété et risques'));
@@ -175,9 +179,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
           climateClass: energy.climateClass.value,
           annualCostMinEur: int(energy.annualCostMinEur, 'Coût annuel le plus bas'),
           annualCostMaxEur: int(energy.annualCostMaxEur, 'Coût annuel le plus haut'),
-          costReferenceYear: int(energy.costReferenceYear, 'Année des prix de l’énergie'),
           diagnosedOn: energy.diagnosedOn.value,
         };
+        var ys = String(energy.costReferenceYear.value || '').split(/[^0-9]+/).filter(Boolean).map(Number);
+        if (!ys.length) bad = bad || 'Année des prix de l’énergie';
+        en.costReferenceYear = ys.length ? ys[ys.length - 1] : null;
+        if (ys.length > 1) en.costReferenceYears = ys;
       }
       var co = null;
       if (isCo.value === 'non') co = { isCoownership: false };
