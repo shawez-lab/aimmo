@@ -319,3 +319,8 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     await expect(t.db.run('DELETE FROM address_scores')).rejects.toThrow(/rien ne s'efface/);
   });
 });
+
+it('[R100] AU098b · une adresse de La Réunion classée G suit le calendrier de l’outre-mer : interdite à partir de 2028', () => {
+  const r = computeScore(facts({ address: { key: 'ban:97411_0001_00007', label: '7 Rue des Essais 97400 Saint-Denis', postcode: '97400', commune: 'Saint-Denis', inseeCode: '97411' } }), TODAY);
+  expect(r.points.find((p) => p.signal === 'interdiction_louer')?.fact).toContain('à partir du 1er janvier 2028');
+});
