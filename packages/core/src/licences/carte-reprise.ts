@@ -46,10 +46,10 @@ export const TABLES_RESEAU: readonly string[] = `
   business_nda_revocations business_nda_signatures business_nda_templates business_ndas
   business_presentation_validations business_presentations business_safeguard_communes business_sheets
   business_transfer_buyers business_transfer_dates business_transfer_files business_transfer_ready
-  business_transfer_tasks business_transfer_third_parties  
-  business_valuation_scales business_valuation_validations business_valuations buyer_searches call_notes
+  business_transfer_tasks business_transfer_third_parties business_lease_tasks
+  business_valuation_scales business_valuation_validations business_valuations buyer_searches buyer_search_confirmations call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
-  candidate_interviews candidate_replies candidates card_holders agent_title_settings client_date_messages client_date_texts client_dates
+  candidate_interviews candidate_replies candidates card_holders agent_title_settings portal_operations client_date_messages client_date_texts client_dates
    client_space_favorites client_space_links client_space_sessions commission_grids
   commission_payouts commission_receipts commissions commune_rental_rules complaint_alerts complaint_answers
   complaint_mediator_offers complaint_settings complaints consents contact_ai_engines
@@ -60,7 +60,7 @@ export const TABLES_RESEAU: readonly string[] = `
   dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
-  investment_notes investor_alerts investor_profiles invoice_drafts invoice_reminders invoices legal_basis_checks
+  investment_notes investor_alerts investor_profiles invoice_drafts invoice_real_numbers invoice_reminders invoices legal_basis_checks
   licence_data_exports licence_tariffs licensed_assets life_tables listing_drafts listing_settings
   listing_translation_validations listing_translations listing_validations listing_versions listing_views
   mailbox_attachments mailbox_drafts mailbox_mails mandate_clause_versions mandate_early_starts
@@ -154,6 +154,8 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   invoice_facturx: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmissions: { via: [['invoice_id', 'invoices', 'id']] },
+  invoice_real_deposits: { via: [['invoice_id', 'invoice_real_numbers', 'invoice_id']] },
+  invoice_real_statuses: { via: [['invoice_id', 'invoice_real_deposits', 'invoice_id']] },
   journal: { hors: 'commun', why: 'Le journal est commun à toute la base et chaîné ligne à ligne : ses lignes ne portent pas de réseau, et en sortir une partie casserait la chaîne.' },
   // La licence de l'agence elle-même : sa ligne porte le réseau qui la donne dans `network_id`, et l'agence dans
   // `licensee_network_id`. Ce qui vient du réseau qui la donne est masqué [R657].
@@ -162,6 +164,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   licensed_asset_withdrawals: { via: [['asset_id', 'licensed_assets', 'id']] },
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
+  portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
   mandate_clause_validations: { via: [['clause_id', 'mandate_clause_versions', 'id']] },
@@ -253,6 +256,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   client_space_sessions: ['token_hash'],
   gbp_reviews: ['author_token_hashes'],
   listing_sync_leases: ['token'],
+  portal_sync_leases: ['token'],
   newsletter_unsubscribe_tokens: ['token_hash'],
   owner_booklet_links: ['token_hash'],
   partner_prospect_mails: ['optout_token_sha256'],
@@ -319,12 +323,12 @@ export const ORDRE_REPRISE: readonly string[] = `
   proposal_responses proposal_tasks proposal_transmissions offer_proposals offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts commission_payout_alerts commission_payouts commission_receipts
   commission_shares commission_steps bank_reconciliations invoice_facturx invoice_reminders
-  invoice_transmission_claims invoice_transmissions invoices invoice_drafts commissions coownership_summaries
+  invoice_real_statuses invoice_real_deposits invoice_real_numbers invoice_transmission_claims invoice_transmissions invoices invoice_drafts commissions coownership_summaries
   notary_draft_differences notary_drafts pre_contract_briefs pre_contract_deposits registered_letter_events
   registered_letters risk_statements sale_commissions sale_file_buyer_notices sale_file_closings sale_file_dates sale_file_financing
   sale_file_financing_alerts sale_file_pieces sale_file_reminders sale_file_sellers sale_file_steps sale_file_stops
   sale_file_tasks signature_circuit_annexes signature_circuit_events signature_circuit_signers signature_circuits
-  sale_files offer_co_buyers offer_register person_name_corrections business_buyer_profiles buyer_searches investment_notes
+  sale_files offer_co_buyers offer_register person_name_corrections business_buyer_profiles buyer_searches buyer_search_confirmations investment_notes
   investment_calculations investor_profiles partner_documents partner_followups partner_referral_disclosures
   partner_referral_fees partner_referral_options partner_referral_steps partner_review_reads partner_reviews
   rental_management_links studio_option_requests partner_referrals project_properties sources projects
@@ -332,12 +336,12 @@ export const ORDRE_REPRISE: readonly string[] = `
   valuation_follow_ups valuation_deliveries value_tracking_sends value_tracking persons pige_property_keys
   pige_properties pige_address_proposals pige_handovers pige_drafts pilot_before_declarations pilot_agents
   business_dossier_documents business_presentation_validations business_presentations business_sheets
-  business_transfer_dates business_transfer_ready business_transfer_tasks business_transfer_third_parties
+  business_transfer_dates business_transfer_ready business_transfer_tasks business_transfer_third_parties business_lease_tasks
   business_transfer_files business_valuation_validations business_valuations diffusion_photo_subjects
   diffusion_portal_checks diffusion_portal_choices diffusion_portal_feedback diffusion_portal_resumptions
   diffusion_portal_suspensions diffusion_portal_task_closures diffusion_portal_tasks
   diffusion_portal_text_validations diffusion_portal_texts virtual_tours floor_plans listing_translation_validations
-  listing_translations listing_validations listing_pushes listing_versions listing_drafts listing_views
+  listing_translations listing_validations listing_pushes portal_operations listing_versions listing_drafts listing_views
   neighbourhood_letters neighbourhood_campaigns photo_exports virtual_stagings photo_certificates photo_guide_shots
   photo_guide_validations property_communes property_details property_key_retirements property_keys property_links
   property_sheets rental_ad_validations rental_ads rental_annexes rental_piece_findings rental_application_pieces

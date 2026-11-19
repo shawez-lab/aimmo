@@ -391,6 +391,24 @@ export class FicheAcquereur {
    * L'agent de la fiche ou la direction modifie la recherche : une nouvelle version, l'ancienne gardée [R17]. Un
    * champ hors liste ou discriminant est refusé, et le refus va au journal sans la valeur [R13, R50].
    */
+  /**
+   * L'acquéreur dit sa recherche toujours d'actualité (AU074) : elle reste active au rapprochement sans que l'agent
+   * modifie un critère. Mêmes droits qu'une modification ; une ligne par confirmation, rien ne change ni ne s'efface.
+   */
+  async confirm(acces: Acces, viewer: Viewer, projectId: string): Promise<{ ok: true; value: { confirmedAt: string } } | SearchRefusal> {
+    const project = await this.buyProject(viewer, projectId);
+    if (!project) return this.refused(viewer, projectId, 'unknown');
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, projectId, 'role');
+    const read = await acces.readFiche(viewer, project.person_id);
+    if (!read.ok) return refuse(read.code, undefined, 'R16');
+    if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
+    if (!(await this.current(project.id))) return refuse('sans_recherche', undefined, 'R16');
+    const at = this.now().toISOString();
+    await this.db.run('INSERT INTO buyer_search_confirmations (project_id, network_id, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?)', [project.id, project.network_id, at, `${viewer.role}:${viewer.userId}`]);
+    await appendEvent(this.journal, { type: 'acquereur.recherche_confirmee', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${project.person_id}`, data: { project: project.id } }, this.now);
+    return { ok: true, value: { confirmedAt: at } };
+  }
+
   async update(acces: Acces, viewer: Viewer, projectId: string, input: unknown): Promise<UpdateResult> {
     const project = await this.buyProject(viewer, projectId);
     if (!project) return this.refused(viewer, projectId, 'unknown');

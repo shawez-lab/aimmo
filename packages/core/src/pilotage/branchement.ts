@@ -25,7 +25,7 @@ import type { EcheancesDocumentsAgent } from './alertes.ts';
 import { Commissions } from './commissions.ts';
 import { Encaissements } from './encaissements.ts';
 import { EngagementsManques } from './engagements-manques.ts';
-import { Factures } from './factures.ts';
+import { Factures, type IdentitesFacturation, type PlateformeFacturation } from './factures.ts';
 import { TableauReseau } from './tableau-reseau.ts';
 
 export const PILOTAGE_HOURLY_JOB = 'pilotage.passage';
@@ -47,7 +47,11 @@ export class SqlEcheancesDocumentsAgent implements EcheancesDocumentsAgent {
 }
 
 /** Le passage de chaque heure : commissions, puis factures (émises seules le jour de l'acte, HX04), puis reversements, pour chaque réseau, dans cet ordre. */
-export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
+export function pilotageHourlyJob(
+  db: SqlDatabase,
+  journal: JournalStore,
+  options: { now?: () => Date; facturation?: { plateforme?: PlateformeFacturation; identites?: IdentitesFacturation } } = {},
+): ScheduledJob {
   const now = options.now ?? (() => new Date());
   return {
     name: PILOTAGE_HOURLY_JOB,
@@ -56,13 +60,16 @@ export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, option
       const store = new FicheClient(db, { now });
       const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
       const commissions = new Commissions(db, acces, journal, { now });
-      const factures = new Factures(db, acces, journal, { now });
+      // La même plateforme et les mêmes identités que l'API : une facture d'acte n'est jamais émise en essai derrière
+      // une plateforme réelle (AU013).
+      const factures = new Factures(db, acces, journal, { now, ...(options.facturation ?? {}) });
       const encaissements = new Encaissements(db, acces, journal, { now });
       const manques = new EngagementsManques(db, journal, { now });
       for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) {
         await commissions.sync(n.id);
         await factures.prepare(n.id);
         await factures.issueOnDeed(n.id);
+        await factures.track(n.id);
         await factures.reconcile(n.id);
         await encaissements.run(n.id);
         await manques.syncIfDue(n.id);

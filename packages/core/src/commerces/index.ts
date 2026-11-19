@@ -8,3 +8,4 @@ export * from './disponibilite.ts';
 export * from './cession.ts';
 export * from './vigilance-cession.ts';
 export * from './taches.ts';
+export * from './bail-taches.ts';

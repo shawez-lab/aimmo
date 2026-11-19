@@ -13,8 +13,9 @@ import { appendEvent, type Acces, type JournalStore, type SqlDatabase, type View
 import { commerces as m16, Diffusion } from '@aimmo/core';
 import { annonces as m07 } from '@aimmo/core';
 
-const { Annonces, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
+const { Annonces, DiffusionPortails, DiffusionSurveillee, FicheBien, MediasBien, MentionsAnnonce, MesureBiens, Publication, shootingPlan } = m07;
 type ListingChannel = m07.ListingChannel;
+type PortalConnector = m07.PortalConnector;
 type ListingWriter = m07.ListingWriter;
 type PropertySheet = m07.PropertySheet;
 
@@ -32,6 +33,8 @@ export interface AnnonceServices {
 export interface AnnonceOptions {
   writer?: ListingWriter;
   channels?: readonly ListingChannel[];
+  /** Les connecteurs réels des portails, un par accord de flux (H10). Absents : chaque portail souscrit est en essai. */
+  portals?: readonly PortalConnector[];
 }
 
 export interface AnnonceRoute {
@@ -83,6 +86,8 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
   const mentions = (s: AnnonceServices) => new MentionsAnnonce(s.db, s.acces, s.journal, { now: s.now });
   const annonces = (s: AnnonceServices) => new Annonces(s.db, s.acces, s.journal, { now: s.now, ...(options.writer ? { writer: options.writer } : {}) });
   const publication = (s: AnnonceServices) => new Publication(s.db, s.acces, s.journal, { now: s.now, ...(options.channels ? { channels: options.channels } : {}) });
+  const surveillance = (s: AnnonceServices) => new DiffusionSurveillee(s.db, s.acces, s.journal, { now: s.now });
+  const portails = (s: AnnonceServices) => new DiffusionPortails(s.db, s.acces, s.journal, { now: s.now, ...(options.portals ? { connectors: options.portals } : {}) });
   const medias = (s: AnnonceServices) => new MediasBien(s.db, s.acces, s.journal, { now: s.now });
   const mesure = (s: AnnonceServices) => new MesureBiens(s.db, s.acces, s.journal, { now: s.now });
   return [
@@ -151,7 +156,46 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
           await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: `property:${id}`, data: { rule: 'R16', role: String(v.role), kind: 'listing_sync', code: 'role' } }, s.now);
           return reply({ ok: false, rule: 'R16', code: 'role' });
         }
-        return reply({ ok: true, value: await publication(s).sync(v.networkId, id!) });
+        const result = await publication(s).sync(v.networkId, id!);
+        // Les portails souscrits suivent la version publiée, dans le même passage (AU004) [R668].
+        if (!result.busy) await portails(s).sync(v.networkId, id!);
+        return reply({ ok: true, value: result });
+      },
+    },
+    // AU004 : le statut du bien sur chaque portail souscrit, avec son dernier accusé [R668, R16].
+    { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/portails$`), name: 'annonces.portails', handle: async (s, v, [id]) => reply(await portails(s).status(v, id!)) },
+    // Les portails réglés par la direction (HX38) : code (domaine), champs exigés, photos minimum, actif ou arrêté.
+    {
+      method: 'GET',
+      pattern: /^\/annonces-portails$/,
+      name: 'annonces.portails.reglages',
+      handle: async (s, v) => {
+        if (v.role !== 'direction') {
+          await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R16', role: String(v.role), kind: 'portal_settings', code: 'role' } }, s.now);
+          return reply({ ok: false, rule: 'R16', code: 'role' });
+        }
+        return reply({ ok: true, value: await surveillance(s).portals(v.networkId) });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/annonces-portails$/,
+      name: 'annonces.portails.regler',
+      handle: async (s, v, _p, request) => {
+        const body = await readJson(request);
+        if (!body) return badBody();
+        return reply(await surveillance(s).setPortal(v, { code: body.code, label: body.label, host: body.host, requiredFields: body.requiredFields, minPhotos: body.minPhotos, active: body.active }));
+      },
+    },
+    // L'agent du bien choisit ou écarte un portail pour son bien (HX38) ; écarté, l'annonce y est retirée au passage.
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/annonces/${ID}/portails$`),
+      name: 'annonces.portails.choisir',
+      handle: async (s, v, [id], request) => {
+        const body = await readJson(request);
+        if (!body) return badBody();
+        return reply(await surveillance(s).choose(v, id!, body.portal, body.chosen));
       },
     },
     {
@@ -191,6 +235,8 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
  */
 export async function syncAnnonces(s: AnnonceServices, networkId: string, options: AnnonceOptions = {}): Promise<{ properties: number; failed: number }> {
   const all = await new Publication(s.db, s.acces, s.journal, { now: s.now, ...(options.channels ? { channels: options.channels } : {}) }).syncAll(networkId);
+  // AU004 : chaque portail souscrit reçoit la version publiée, la modification ou le retrait, avec son accusé [R668].
+  await new DiffusionPortails(s.db, s.acces, s.journal, { now: s.now, ...(options.portals ? { connectors: options.portals } : {}) }).syncAll(networkId);
   // SV11 : un commerce suit sa présentation validée, sans annonce ni portail.
   const fiches = new m16.FicheCommerce(s.db, s.journal, { now: s.now });
   const presentations = new m16.PresentationCommerce(s.db, s.journal, fiches, new m16.EstimationCommerce(s.db, s.journal, fiches, { now: s.now }), { now: s.now });

@@ -98,6 +98,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'inbound_messages.post_ref': externe('L’identifiant de la publication commentée chez le réseau social.'),
   'inbound_messages.property_ref': externe('La référence de bien citée par le message : un texte, pas un fichier.'),
   'invoice_transmissions.platform_ref': externe('Le numéro de dépôt de la facture chez la plateforme de facturation.'),
+  'invoice_real_deposits.platform_ref': externe('Le numéro de dépôt de la facture réelle chez la plateforme agréée.'),
   'new_program_lot_versions.lot_ref': externe('Le numéro du lot dans son programme neuf.'),
   'pending_human_replies.conversation_ref': externe('L’identifiant de la conversation chez la messagerie.'),
   'pige_ad_sightings.source_ref': externe('L’identifiant de l’annonce chez sa source publique.'),

@@ -233,6 +233,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'facture.envoi_en_panne': INTERNE('Plateforme de facturation en panne : fonctionnement du réseau.'),
   'facture.facturx_attente': INTERNE('Facture électronique en attente d\'identités : fonctionnement du réseau, sans donnée du client.'),
   'facture.facturx_panne': INTERNE('Identités de facturation en panne : fonctionnement du réseau.'),
+  'facture.reelle_attente': INTERNE('Facture réelle en attente d\'identités : fonctionnement du réseau, sans donnée du client.'),
+  'facture.statut': INTERNE('Statut d\'une facture chez la plateforme agréée : fonctionnement du réseau, sans donnée du client.'),
+  'facture.suivi_en_panne': INTERNE('Suivi de la plateforme de facturation en panne : fonctionnement du réseau.'),
   'commission.attente': INTERNE('Rémunération de l\'agent.'),
   'commission.ecart': INTERNE('Rémunération de l\'agent.'),
   'commission.etape': INTERNE('Rémunération de l\'agent.'),
@@ -577,6 +580,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   agent_import_properties: { locate: [via('property_id', 'properties')] },
   // acquereurs
   buyer_searches: { locate: by('person_id') },
+  buyer_search_confirmations: { locate: [via('project_id', 'projects')] },
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
@@ -679,6 +683,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   invoice_transmissions: { locate: [via('invoice_id', 'invoices')] },
   invoice_facturx: { locate: [via('invoice_id', 'invoices')] },
   invoice_transmission_claims: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_numbers: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_deposits: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_statuses: { locate: [via('invoice_id', 'invoices')] },
   commission_receipts: out('agent', 'Encaissement des honoraires par le réseau.'),
   // HX49 : les factures fournisseurs et le relevé de la banque du réseau ne portent aucune donnée d'un client (le
   // libellé du relevé n'est pas gardé) ; le rapprochement suit la facture du client, la relance est à son destinataire.
@@ -1035,6 +1042,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_transfer_dates: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_ready: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_tasks: { locate: [via('file_id', 'business_transfer_files')] },
+  business_lease_tasks: { locate: [via('property_id', 'properties')] },
   business_transfer_buyers: { locate: by('person_id') },
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
