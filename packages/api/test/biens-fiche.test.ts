@@ -159,6 +159,24 @@ describe('SV06 · le bloc de la fiche', () => {
     expect(a.body.textContent).toContain('Réf. B-ABCD1234');
   });
 
+  it('AU062 · une surface au centième près part telle quelle, virgule comprise, et se lit à la française', async () => {
+    const a = await opened(POST_THEN(ok({ ...BIEN, surfaceM2: 63.42, already: false })));
+    await a.load();
+    a.fill({ ...GOOD, '-surface': '63,42' });
+    a.named(a.body, 'Créer le bien')[0]!.listeners.click!({});
+    await a.tick();
+    expect(a.posts()[0]!.body).toMatchObject({ surfaceM2: 63.42 });
+    expect(a.body.textContent).toContain('63,42 m²');
+    // Plus fin que le centième : refusé avant tout envoi, jamais arrondi.
+    const b = await opened();
+    await b.load();
+    b.fill({ ...GOOD, '-surface': '63,425' });
+    b.named(b.body, 'Créer le bien')[0]!.listeners.click!({});
+    await b.tick();
+    expect(b.posts()).toEqual([]);
+    expect(b.body.textContent).toContain('La surface');
+  });
+
   it('une saisie fausse se dit avant tout envoi', async () => {
     const a = await opened();
     await a.load();
@@ -233,7 +251,9 @@ describe('SV06 · le bloc de la fiche', () => {
     const fields = a.body.all().filter((e) => ['input', 'select'].includes(e.tagName) && /-(type|cp|commune|surface|pieces|prix)$/.test(e.attributes.id ?? ''));
     expect(fields).toHaveLength(6);
     for (const f of fields) expect(a.body.all().some((l) => l.tagName === 'label' && l.attributes.for === f.attributes.id), f.attributes.id).toBe(true);
-    for (const s of ['-cp', '-surface', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
+    for (const s of ['-cp', '-pieces', '-prix']) expect(a.input(s).attributes.inputmode).toBe('numeric');
+    // La surface ouvre le clavier des nombres à virgule (AU062).
+    expect(a.input('-surface').attributes.inputmode).toBe('decimal');
   });
 
   describe('SV07 · le nom du client', () => {
