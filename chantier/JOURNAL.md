@@ -1450,3 +1450,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 03:32 · AU013 · factures réelles (suite à part, mentions des identités, dépôt avec XML, suivi de la plateforme) prête dans #678, Codex sans remarque, mais la vérification GitHub dépasse 25 minutes (deux essais, main aussi touché) : non fusionnée · prochaine : fusionner #678 dès que la vérification passe
 - 2026-11-19 03:32 · VOIE 2 : relance refusée, question 2 (la tâche de cette séance n'a pas pu être terminée : vérification GitHub hors délai, une relance attendrait la même chose)
 - 2026-11-19 03:32 · VOIE 2 : AU013, d2b7399 (branche, #678), relancé non
+- 2026-11-19 03:39 · VOIE 3 : AU101b (#677, congés de bail en tâches) fusionnée ; #681 (AU071, AU115) corrigée après Codex

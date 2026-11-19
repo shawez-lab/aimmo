@@ -1013,7 +1013,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU101b · Les jours limites de congé du bail commercial, en tâche et à l'écran
-- Statut : à faire
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU101
 - Cahier : M16 Commerces et entreprises ; audit A101.
 - Objectif : la tâche quotidienne de M16 range une tâche à l'agent du bien 60 jours avant chaque jour limite de congé (triennale et fin) donné par `leaseMilestones` ; l'écran du commerce montre ces dates, lues du serveur.
