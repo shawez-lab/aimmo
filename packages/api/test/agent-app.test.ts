@@ -90,6 +90,9 @@ describe('A01 · fichiers de l’application', () => {
       });
       docListeners.DOMContentLoaded!();
       await new Promise((r) => setTimeout(r, 0));
+      // AU018 : la visite sans réseau n'est pas sur cet appareil : son script ne se charge pas.
+      for (const e of els['hors-ligne']!.all()) if (e.tagName === 'script') e.listeners.error?.({});
+      await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
       return { els, storage, calls };
     };

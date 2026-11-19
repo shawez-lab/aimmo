@@ -62,7 +62,6 @@ export const INDEX_HTML = `<!doctype html>
 <link rel="manifest" href="/app/manifest.webmanifest">
 <link rel="icon" href="/app/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/app/app.css">
-<script src="/app/hors-ligne.js" defer></script>
 <script src="/app/app.js" defer></script>
 </head>
 <body>
@@ -2156,7 +2155,18 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
-  var OFF = typeof AimmoHorsLigne === 'undefined' ? null : AimmoHorsLigne;
+  /* AU018 : la visite sans réseau, chargée seulement quand elle sert (après la journée, ou sans réseau au démarrage) ; gardée par l'appareil avec la coquille [R201]. */
+  var OFF = null;
+  function offline(f) {
+    if (OFF) return Promise.resolve(f(OFF));
+    return new Promise(function (ok) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/hors-ligne.js');
+      s.addEventListener('load', function () { OFF = globalThis.AimmoHorsLigne || null; ok(OFF && f(OFF)); });
+      s.addEventListener('error', function () { ok(false); });
+      $('hors-ligne').appendChild(s);
+    });
+  }
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2201,12 +2211,12 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) { notifLink(); if (OFF) OFF.preparer(key, show, enter); } return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); } return true; });
     }, function () {
       if (mine !== session) return false;
       // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
       var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
-      return OFF ? OFF.start(key, show, enter, function () { return mine === session; }, no) : no();
+      return offline(function (H) { return H.start(key, show, enter, function () { return mine === session; }); }).then(function (ok) { return ok || no(); });
     });
   }
   document.addEventListener('DOMContentLoaded', function () {

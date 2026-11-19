@@ -253,8 +253,21 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       return stub(null);
     },
   };
-  runInNewContext(OFFLINE, ctx);
   runInNewContext(APP, ctx);
+  // La page ne charge pas la visite sans réseau : l'application la demande quand elle sert, et l'appareil la sert.
+  const loads: string[] = [];
+  const settle = async () => {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      for (const e of els['hors-ligne']!.all()) {
+        if (e.tagName !== 'script' || e.attributes['data-lu']) continue;
+        e.setAttribute('data-lu', '1');
+        loads.push(e.attributes.src!);
+        if (!ctx.AimmoHorsLigne) runInNewContext(OFFLINE, ctx);
+        e.listeners.load!({});
+      }
+    }
+  };
   listeners.DOMContentLoaded!();
   await settle();
   const root = () => els['hors-ligne']!;
@@ -265,8 +278,8 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     b.listeners.click!({});
     await settle();
   };
-  const H = ctx.AimmoHorsLigne as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
+  return { els, ctx, calls, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -278,6 +291,7 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     const online = await phone(w, idb, { network: true });
     expect(online.els.accueil!.hidden).toBe(false);
     expect(online.calls).toContain('GET /v1/hors-ligne/paquet');
+    expect(online.loads).toEqual(['/app/hors-ligne.js']);
     expect(online.els.accueil!.all().some((e) => e.textContent === 'Mes visites sans réseau')).toBe(true);
     const pack = packOf(idb)!;
     expect(pack.appointments.map((a) => a.appointmentId)).toEqual([w.visitId]);
@@ -522,8 +536,8 @@ describe('AU018 · la visite sans réseau dans la coquille', () => {
 
   it('la visite sans réseau est gardée avec la coquille, servie sans rien d’extérieur ; le budget de l’application tient', () => {
     expect(AGENT_APP_SHELL).toContain('/app/hors-ligne.js');
-    expect(HTML).toContain('<script src="/app/hors-ligne.js" defer></script>');
-    expect(HTML.indexOf('/app/hors-ligne.js')).toBeLessThan(HTML.indexOf('/app/app.js'));
+    // Pas chargée avec la page : elle n'entre pas dans le premier chargement de l'application [R201].
+    expect(HTML).not.toContain('hors-ligne.js');
     expect(OFFLINE).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|localStorage|https?:\/\//);
     expect(OFFLINE).not.toMatch(/caches\./);
     expect(budgetProblems({ html: '', js: OFFLINE }, BUDGETS.page)).toEqual([]);
