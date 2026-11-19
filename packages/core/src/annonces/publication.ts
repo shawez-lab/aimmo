@@ -129,7 +129,7 @@ export class Publication {
   }
 
   /** Ce qui doit être publié maintenant, ou la raison du retrait. Toute publication passe par la porte de D05 [R42]. */
-  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string } | { retract: RetractReason }> {
+  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string; mediaSheet: number | null } | { retract: RetractReason }> {
     const state = STATE_OF[status];
     if (state === null) return { retract: 'bien_retire' };
     const gate = await this.diffusion.canDiffuse(networkId, propertyId, this.now());
@@ -139,10 +139,13 @@ export class Publication {
     const input = await this.mentions.inputFor(networkId, propertyId);
     const checklist = input ? computeMentions(input) : null;
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
+    // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus, et ses
+    // légendes se lisent sur cette même fiche (AU066).
+    const mediaSheet = (await this.annonces.factsFor(propertyId))?.sheetVersion ?? draft.sheetVersion;
     return {
       draftId: draft.id,
-      // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus (AU066).
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, (await this.annonces.factsFor(propertyId))?.sheetVersion ?? draft.sheetVersion) },
+      mediaSheet,
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet) },
     };
   }
 
@@ -223,6 +226,7 @@ export class Publication {
       });
       if (changes === 1) {
         created = true;
+        if ('publish' in want && want.mediaSheet !== null) await this.db.run('INSERT INTO listing_version_media_sheets (version_id, sheet_version) VALUES (?, ?)', [id, want.mediaSheet]);
         const v = await this.latest(propertyId);
         await appendEvent(
           this.journal,

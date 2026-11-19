@@ -292,6 +292,18 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     expect(media[0]!.caption).toBe('Photo 1 sur 2 du bien. Lumière et cadrage retouchés.');
   });
 
+  it('[R478] AU066 · une photo retouchée ajoutée sans toucher au texte validé garde sa mention de retouche', async () => {
+    const t = await setup();
+    const row = await t.db.first<{ network_id: string; version: number; data: string; created_by: string }>('SELECT * FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const sheet = JSON.parse(row!.data) as { media: { ref: string; kind: string; edit: string }[] };
+    sheet.media.push({ ref: `biens/${t.propertyId}/0b6f1d2e-1111-4a2b-8c3d-0000000000aa.jpg`, kind: 'photo', edit: 'lumiere_cadrage' });
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['fiche-photo', t.propertyId, row!.network_id, Number(row!.version) + 1, JSON.stringify(sheet), row!.created_by, t.now().toISOString()]);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const media = (await t.tp.portalPayload(t.network.id, t.propertyId, 'seloger'))!.media;
+    expect(media).toHaveLength(sheet.media.filter((m) => m.kind === 'photo').length);
+    expect(media.at(-1)!.caption).toContain('Lumière et cadrage retouchés.');
+  });
+
   it('AU114 · la page publique et la fiche imprimable portent la légende de chaque photo, en texte de remplacement et en légende visible', async () => {
     const t = await setup();
     const [p1, p2] = t.photos;
