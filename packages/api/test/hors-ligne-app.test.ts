@@ -204,7 +204,7 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
@@ -229,6 +229,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     btoa,
     indexedDB: fakeIndexedDb(idb),
     ...camera,
+    createImageBitmap: async (file: { luma: Luma }) => (net.decode && (await net.decode), camera.createImageBitmap(file)),
     TextEncoder,
     crypto: { subtle: crypto.subtle, randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
     setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
@@ -431,6 +432,32 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     // La dernière note reste dans la boîte d'Alex, pour son prochain retour.
     const again = await phone(w, idb, { network: false });
     expect(await again.H.pending()).toHaveLength(1);
+  });
+
+  it('[R16] [R276] une photo encore en contrôle quand l’agent se déconnecte va dans sa boîte à lui', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    let open: () => void = () => undefined;
+    const net: { network: boolean; decode?: Promise<void> } = { network: false, decode: new Promise<void>((r) => (open = r)) };
+    const t = await phone(w, idb, net);
+    const [a, b] = t.root().all().filter((e) => e.tagName === 'input' && e.attributes.type === 'file');
+    (a as unknown as { files: unknown[] }).files = [{ luma: dark }];
+    a!.listeners.change!({});
+    (b as unknown as { files: unknown[] }).files = [{ luma: bright }];
+    b!.listeners.change!({});
+    await settle();
+    t.els.sortir!.listeners.click!({});
+    await settle();
+    // Béa se connecte avec du réseau sur le même téléphone pendant que la photo d'Alex est contrôlée.
+    await phone(w, idb, { network: true }, { key: KEY_B, viewer: w.agentB });
+    open();
+    await settle();
+    const alex = await phone(w, idb, { network: false });
+    expect(((await alex.H.pending()) as { kind: string }[]).map((o) => o.kind)).toEqual(['visite.photo']);
+    expect(await w.count('offline_ops')).toBe(0);
   });
 
   it('[R278] passé minuit, le paquet est effacé du téléphone : sans réseau, l’application dit « Pas de réseau »', async () => {

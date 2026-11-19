@@ -105,8 +105,9 @@ var flushing = {};
 function uuid() { return G.crypto.randomUUID(); }
 function fresh(s) { return s || { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] }; }
 function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: s } : (s = fresh(s), { next: s, value: s }); }); }
-function add(kind, appointmentId, payload) {
-  var o = ui && ui.owner;
+/* o : la marque de l'agent dont l'écran a reçu le geste, prise avant tout calcul ; une saisie va toujours dans sa boîte à
+   lui, même si un autre agent s'est connecté entre-temps [R16, R276]. */
+function add(o, kind, appointmentId, payload) {
   if (!o) return Promise.reject(new Error('aucun agent'));
   var id = uuid(), at = new Date().toISOString();
   return update(BOITE + ':' + o, function (s) {
@@ -330,10 +331,10 @@ function render() {
     box.refused.forEach(function (r) { root.appendChild(el('p', 'Refusée par le serveur : ' + (CODES[r.code] || r.code) + '.', 'doux')); });
     if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return; }
     if (!p.appointments.length) root.appendChild(el('p', 'Aucune visite ni estimation prévue ce jour.'));
-    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending)); });
+    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o)); });
   });
 }
-function card(a, pending) {
+function card(a, pending, o) {
   var c = el('article', '', 'carte');
   var b = a.property;
   c.appendChild(el('h3', (a.kind === 'estimation' ? 'Estimation' : 'Visite') + ' à ' + hour(a.start) + (b ? ' · ' + b.reference + (b.city ? ', ' + b.city : '') : '')));
@@ -348,7 +349,7 @@ function card(a, pending) {
     var li = el('li');
     var st = done[s.key] ? 'faite' : skip[s.key] ? 'sans objet' : 'à faire';
     li.appendChild(el('strong', s.label + ' : ' + st));
-    if (st === 'à faire') { missing.push(s.label); shotTools(li, a, s); }
+    if (st === 'à faire') { missing.push(s.label); shotTools(li, a, s, o); }
     list.appendChild(li);
   });
   if (a.shots.length) c.appendChild(list);
@@ -361,12 +362,12 @@ function card(a, pending) {
   c.appendChild(btn('Garder la note', function () {
     var t = String(note.value || '').trim();
     if (!t || t.length > MAX_NOTE) { said.textContent = 'Une note de 1 à 2 000 caractères.'; return; }
-    add('visite.note', a.appointmentId, { text: t }).then(function () { note.value = ''; said.textContent = 'Note gardée sur le téléphone.'; return render(); });
+    add(o, 'visite.note', a.appointmentId, { text: t }).then(function () { note.value = ''; said.textContent = 'Note gardée sur le téléphone.'; return render(); });
   }));
   c.appendChild(said);
   return c;
 }
-function shotTools(li, a, s) {
+function shotTools(li, a, s, o) {
   if (s.advice) li.appendChild(el('p', s.advice, 'doux'));
   var said = el('p', '', 'doux'), shots = [null, null];
   function input(i, label) {
@@ -389,12 +390,12 @@ function shotTools(li, a, s) {
     }).then(function (list) {
       var r = hdr(list);
       if (!r.ok) { shots = [null, null]; said.textContent = 'Photo refusée. ' + r.advice; return; }
-      return add('visite.photo', a.appointmentId, { shot: s.key, exposures: list.map(encode) }).then(render);
+      return add(o, 'visite.photo', a.appointmentId, { shot: s.key, exposures: list.map(encode) }).then(render);
     }, function () { said.textContent = 'Photo illisible : reprenez-la.'; });
   }
   input(0, '1re prise, vers la fenêtre');
   input(1, '2e prise, vers le coin sombre');
-  REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add('visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render); }, 'secondaire')); });
+  REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add(o, 'visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render); }, 'secondaire')); });
   li.appendChild(said);
 }
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) sync(ui.key); });
