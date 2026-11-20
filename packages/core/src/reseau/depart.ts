@@ -528,19 +528,7 @@ export class Departs {
   async settlement(viewer: Viewer, agentId: string): Promise<{ ok: true; value: SettlementLine[] } | DepartureRefusal> {
     const agent = await this.gate(viewer, agentId, false);
     if ('ok' in agent) return agent;
-    const rows = await this.db.all<{ file_id: string; fee_cents: number; status: SettlementLine['status'] | 'payee'; share: number | null }>(
-      `SELECT c.file_id, c.fee_cents,
-         (SELECT s.status FROM commission_steps s WHERE s.file_id = c.file_id
-           ORDER BY CASE s.status WHEN 'payee' THEN 4 WHEN 'facturee' THEN 3 WHEN 'due' THEN 2 ELSE 1 END DESC LIMIT 1) AS status,
-         (SELECT sum(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.beneficiary_id = ? AND x.kind <> 'reseau') AS share
-       FROM commissions c
-       WHERE c.network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = c.file_id) AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM commission_shares y WHERE y.file_id = c.file_id AND y.beneficiary_id = ? AND y.kind <> 'reseau'))
-       ORDER BY c.compromis_on, c.file_id`,
-      [agentId, viewer.networkId, agentId, agentId],
-    );
-    const value = rows
-      .filter((r) => r.status !== 'payee')
-      .map((r) => ({ fileId: r.file_id, status: (r.status ?? 'prevue') as SettlementLine['status'], feeCents: Number(r.fee_cents), agentShareCents: Number(r.share ?? 0) }));
+    const value = await settlementOf(this.db, viewer.networkId, agentId);
     await appendEvent(this.journal, { type: 'agent_depart.solde_lu', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R16', count: value.length } }, this.now);
     return { ok: true, value };
   }
@@ -549,18 +537,41 @@ export class Departs {
   async personalContents(viewer: Viewer, agentId: string): Promise<{ ok: true; value: PersonalContents } | DepartureRefusal> {
     const agent = await this.gate(viewer, agentId, false);
     if ('ok' in agent) return agent;
-    const pieces = await this.db.all<{ kind: string; version: number; ref: string }>(
-      `SELECT p.kind, p.version, p.ref FROM agent_file_pieces p
-       WHERE p.agent_id = ? AND p.is_draft = 0 AND p.version = (SELECT MAX(q.version) FROM agent_file_pieces q WHERE q.agent_id = p.agent_id AND q.kind = p.kind AND q.is_draft = 0)
-       ORDER BY p.kind`,
-      [agentId],
-    );
-    const minutes = await this.db.first<{ m: number | null }>(
-      `SELECT (SELECT COALESCE(sum(s.duration_minutes), 0) FROM academy_attendance a JOIN academy_sessions s ON s.id = a.session_id WHERE a.agent_id = ?)
-            + (SELECT COALESCE(sum(t.minutes), 0) FROM training_sessions t WHERE t.agent_id = ? AND t.minutes IS NOT NULL) AS m`,
-      [agentId, agentId],
-    );
-    await appendEvent(this.journal, { type: 'agent_depart.contenus_lus', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R16', pieces: pieces.length } }, this.now);
-    return { ok: true, value: { pieces: pieces.map((p) => ({ kind: p.kind, version: Number(p.version), ref: p.ref })), trainingMinutes: Number(minutes?.m ?? 0) } };
+    const value = await personalContentsOf(this.db, agentId);
+    await appendEvent(this.journal, { type: 'agent_depart.contenus_lus', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R16', pieces: value.pieces.length } }, this.now);
+    return { ok: true, value };
   }
+}
+
+/** Les commissions d'un agent pas encore payées, et ses parts (J11) : lu pour la direction, et par l'accès de sortie (AU111). */
+export async function settlementOf(db: SqlDatabase, networkId: string, agentId: string): Promise<SettlementLine[]> {
+  const rows = await db.all<{ file_id: string; fee_cents: number; status: SettlementLine['status'] | 'payee'; share: number | null }>(
+    `SELECT c.file_id, c.fee_cents,
+       (SELECT s.status FROM commission_steps s WHERE s.file_id = c.file_id
+         ORDER BY CASE s.status WHEN 'payee' THEN 4 WHEN 'facturee' THEN 3 WHEN 'due' THEN 2 ELSE 1 END DESC LIMIT 1) AS status,
+       (SELECT sum(x.amount_cents) FROM commission_shares x WHERE x.file_id = c.file_id AND x.beneficiary_id = ? AND x.kind <> 'reseau') AS share
+     FROM commissions c
+     WHERE c.network_id = ? AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = c.file_id) AND (c.agent_id = ? OR EXISTS (SELECT 1 FROM commission_shares y WHERE y.file_id = c.file_id AND y.beneficiary_id = ? AND y.kind <> 'reseau'))
+     ORDER BY c.compromis_on, c.file_id`,
+    [agentId, networkId, agentId, agentId],
+  );
+  return rows
+    .filter((r) => r.status !== 'payee')
+    .map((r) => ({ fileId: r.file_id, status: (r.status ?? 'prevue') as SettlementLine['status'], feeCents: Number(r.fee_cents), agentShareCents: Number(r.share ?? 0) }));
+}
+
+/** Ce qui est à rendre à un agent : ses pièces signées et son temps de formation (J11, AU111). */
+export async function personalContentsOf(db: SqlDatabase, agentId: string): Promise<PersonalContents> {
+  const pieces = await db.all<{ kind: string; version: number; ref: string }>(
+    `SELECT p.kind, p.version, p.ref FROM agent_file_pieces p
+     WHERE p.agent_id = ? AND p.is_draft = 0 AND p.version = (SELECT MAX(q.version) FROM agent_file_pieces q WHERE q.agent_id = p.agent_id AND q.kind = p.kind AND q.is_draft = 0)
+     ORDER BY p.kind`,
+    [agentId],
+  );
+  const minutes = await db.first<{ m: number | null }>(
+    `SELECT (SELECT COALESCE(sum(s.duration_minutes), 0) FROM academy_attendance a JOIN academy_sessions s ON s.id = a.session_id WHERE a.agent_id = ?)
+          + (SELECT COALESCE(sum(t.minutes), 0) FROM training_sessions t WHERE t.agent_id = ? AND t.minutes IS NOT NULL) AS m`,
+    [agentId, agentId],
+  );
+  return { pieces: pieces.map((p) => ({ kind: p.kind, version: Number(p.version), ref: p.ref })), trainingMinutes: Number(minutes?.m ?? 0) };
 }

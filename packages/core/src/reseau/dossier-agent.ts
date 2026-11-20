@@ -49,6 +49,8 @@ export interface AgentPieceStore {
   has(ref: string): Promise<boolean>;
   /** Range un document préparé par le réseau, rend sa référence. */
   putDraft(agentId: string, text: string): Promise<string>;
+  /** Relit une pièce, pour la remettre à l'agent parti par son lien de sortie (AU111) ; absent, rien ne se remet. */
+  read?(ref: string): Promise<{ body: Uint8Array; contentType: string } | null>;
   /** Range le fichier d'une pièce déposée depuis l'écran (AU024), rend sa référence ; absent, le dépôt est fermé. */
   putFile?(agentId: string, bytes: Uint8Array, ext: AgentPieceExt, contentType: string): Promise<string>;
 }
