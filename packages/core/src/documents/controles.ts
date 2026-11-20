@@ -283,7 +283,7 @@ export class ControlesSignature {
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un mandant représenté (AU059) : la procuration est dans le stockage, l'identité du représentant vérifiée, et le
     // représentant n'est pas devenu, par une réunion de fiches, l'un des mandants [R41].
-    if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.identitySignedAt));
+    if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.signedAt ?? options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
     // Une date d'effet se revoit à la signature : jamais après la fin du mandat telle qu'elle est ce jour-là, avenants
@@ -321,12 +321,14 @@ export class ControlesSignature {
     return { ok: true, value: result };
   }
 
-  private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
+  private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string; grantedOn: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'procuration', ok, code });
     const mandantRoots = new Set<string>();
     for (const id of mandants) mandantRoots.add(await this.unique.rootOf(id));
     for (const p of proxies) {
       if (mandantRoots.has(await this.unique.rootOf(p.proxyId))) return line(false, 'proxy_is_mandant');
+      // Le représentant ne signe qu'à partir du jour de sa procuration (AU059b).
+      if (localTime(signedAt ?? at, 'Europe/Paris').date < p.grantedOn) return line(false, 'signed_before_power');
       // Sans stockage où la vérifier, la procuration n'est pas vérifiée : le document ne passe pas.
       const store = this.options.powers !== undefined ? this.options.powers : this.options.scans;
       if (!store) return line(false, 'depot_ferme');
