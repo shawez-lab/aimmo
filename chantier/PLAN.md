@@ -1168,7 +1168,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU111 · Une fois « parti », je perds l’export agent
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A111 (majeur), endroit : C/reseau/depart.ts ; C/rapports/export-agent.ts, `make`.
 - Constat de l'audit : Une fois « parti », je perds l’export agent, alors que mon solde et mes pièces personnelles restent à récupérer.
