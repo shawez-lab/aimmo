@@ -681,4 +681,34 @@ describeWithSqlite('AU077 · visite groupée : plusieurs acquéreurs, un seul cr
     expect(await visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id })).toMatchObject({ ok: false, rule: 'R33', code: 'agenda_busy' });
     expect(await t.db.all("SELECT id FROM appointments WHERE person_id = ?", [leo.person.id])).toEqual([]);
   });
+
+  it('AU077 · un décalage raté ne fait pas revenir un acquéreur dans un groupe déjà plein entre-temps', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: (await t.buyer('Inès')).project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const join = (projectId: string) => t.visites.schedule(alex, { propertyId: p.id, projectId, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    const members: string[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const r = await join((await t.buyer(`Acheteur${i}`, `Nom${i}`)).project.id);
+      if (!r.ok) throw new Error(r.code);
+      members.push(r.visit.appointment.id);
+    }
+    const late = await t.buyer('Tardif', 'Nom');
+    const later = new Date(WEDNESDAY_10H.getTime() + 3 * 3_600_000);
+    // Pendant le décalage, la place libérée est prise ; puis l'agenda refuse le nouveau créneau.
+    const agenda = {
+      busy: async () => {
+        expect(await join(late.project.id)).toMatchObject({ ok: true });
+        return [{ start: later, end: new Date(later.getTime() + 60 * 60_000) }];
+      },
+    };
+    const rdv = new RendezVous(t.db, t.journal, { now: () => new Date(TUESDAY_10H), agenda });
+    expect(await rdv.moveFromAgenda(members[0]!, later)).toMatchObject({ ok: false, code: 'agenda_busy' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked'")).toHaveLength(8);
+    expect(await t.rdv.get(members[0]!)).toMatchObject({ status: 'cancelled' });
+    expect(await t.db.first("SELECT 1 AS hit FROM journal WHERE type = 'rdv.perdu' AND subject = ?", [`appointment:${members[0]}`])).not.toBeNull();
+  });
 });

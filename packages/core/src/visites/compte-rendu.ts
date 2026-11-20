@@ -321,9 +321,10 @@ export class ComptesRendus {
    * noms et coordonnées ne vont jamais au vendeur [R52], et ne sont jamais lus par l'IA.
    */
   private async visitBuyers(appointmentId: string, personId: string): Promise<string[]> {
+    // Les rendez-vous du groupe, rattachés ou non à une visite : une visite prise en ligne compte aussi.
     const rows = await this.db.all<{ person_id: string }>(
-      `SELECT DISTINCT v.person_id FROM visits v JOIN appointments a ON a.id = v.appointment_id
-       WHERE a.group_id IS NOT NULL AND a.group_id = (SELECT group_id FROM appointments WHERE id = ?)`,
+      `SELECT DISTINCT person_id FROM appointments
+       WHERE group_id IS NOT NULL AND group_id = (SELECT group_id FROM appointments WHERE id = ?)`,
       [appointmentId],
     );
     return [personId, ...rows.map((r) => r.person_id).filter((p) => p !== personId)];

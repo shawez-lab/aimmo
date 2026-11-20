@@ -270,4 +270,18 @@ describeWithSqlite('AU077 · comptes rendus d’une visite groupée', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).not.toMatch(/Inès|Léo|Martin|example\.test/);
   });
+
+  it('AU077 · une visite prise en ligne, pas encore rattachée, compte aussi : son acquéreur n’est jamais nommé dans le compte rendu de l’autre [R52]', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const alex = t.as('agent', t.alex.id);
+    const ines = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durand' });
+    const rdv = new RendezVous(t.db, t.journal, { now: () => new Date(MONDAY_9H) });
+    const online = await rdv.book({ networkId: t.network.id, agentId: t.alex.id, personId: ines.id, propertyId: t.property.id, kind: 'visite', start: new Date(MONDAY_9H + 26 * HOUR), source: 'site' });
+    if (!online.ok) throw new Error(online.code);
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Léo', lastName: 'Martin' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: leo.id, kind: 'buy' });
+    const joined = await t.visites.schedule(alex, { propertyId: t.property.id, projectId: project.id, start: new Date(online.appointment.start_at), joinVisit: online.appointment.id });
+    if (!joined.ok) throw new Error(joined.code);
+    expect(await t.comptes.refusalFor(joined.visit.appointment.id, { ...GOOD, opinion: 'Comme Inès, le visiteur a aimé le séjour.' })).toMatchObject({ ok: false, rule: 'R52', code: 'buyer_named' });
+  });
 });

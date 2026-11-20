@@ -632,9 +632,18 @@ export class RendezVous {
     await this.release(old.id);
     // L'ancien rendez-vous revient, avec ses tranches. Si un autre les a prises entre-temps, il reste annulé, et c'est noté.
     const restore = async (): Promise<void> => {
-      // AU077 : un rendez-vous d'une visite groupée encore tenue la rejoint simplement, sans reprendre de tranche.
+      // AU077 : un rendez-vous d'une visite groupée encore tenue la rejoint, sans reprendre de tranche, s'il y reste une
+      // place : la place et la tenue se revérifient dans l'instruction même. Sinon il reste annulé, et c'est noté.
       if (old.group_id !== null && (await this.groupHeld(old.group_id))) {
-        await this.db.run("UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ? WHERE id = ? AND status = 'cancelled'", [this.now().toISOString(), old.id]);
+        const back = await this.db.run(
+          `UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ?
+           WHERE id = ? AND status = 'cancelled'
+             AND (SELECT COUNT(*) FROM appointments WHERE group_id = ? AND status = 'booked') < ?
+             AND NOT EXISTS (SELECT 1 FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?)
+             AND EXISTS (SELECT 1 FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id WHERE a.group_id = ? AND a.status = 'booked' AND h.released_at IS NULL)`,
+          [this.now().toISOString(), old.id, old.group_id, GROUP_VISIT_MAX, old.group_id, old.person_id, old.group_id],
+        );
+        if (back.changes !== 1) await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
         return;
       }
       if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at))) {
