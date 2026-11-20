@@ -399,6 +399,202 @@ export async function readAgentProperties(text: string, format: AgentExportForma
   return reading;
 }
 
+/* ---------- AU030 · Le dossier des biens repris : photos, diagnostics, mandats signés, diffusion. ---------- */
+
+/** Ce qu'une pièce du dossier d'un bien est : média, diagnostic, mandat, annonce diffusée, ou autre document. */
+export const PIECE_CATEGORIES = ['photo', 'diagnostic', 'mandate', 'diffusion', 'document'] as const;
+export type PieceCategory = (typeof PIECE_CATEGORIES)[number];
+
+/** Pourquoi une pièce n'est pas reprise. Chaque raison est comptée, ligne par ligne, avant comme après validation. */
+export const PIECE_SKIPS = ['no_property', 'unknown_property', 'other_agent', 'unknown_type', 'no_source', 'unsafe_link'] as const;
+export type PieceSkip = (typeof PIECE_SKIPS)[number];
+
+type PieceField = 'reference' | 'type' | 'file' | 'link' | 'date' | 'signed' | 'portal';
+
+const PIECE_HEADERS: Record<PieceField, string[]> = {
+  reference: ['referencebien', 'refbien', 'idbien', 'reference', 'ref', 'bien', 'referenceannonce'],
+  type: ['typedepiece', 'typepiece', 'typededocument', 'typedocument', 'type', 'categorie', 'nature'],
+  file: ['nomdufichier', 'nomfichier', 'fichier', 'filename', 'file', 'nom', 'titre', 'libelle'],
+  link: ['lien', 'url', 'lienannonce', 'urlannonce', 'adresseweb', 'link'],
+  date: ['date', 'datedocument', 'datesignature', 'datedesignature', 'datediagnostic', 'datepublication'],
+  signed: ['signe', 'signee', 'signature', 'statutsignature', 'etatsignature'],
+  portal: ['portail', 'site', 'diffuseur', 'support'],
+};
+
+/** Le type d'une pièce, tel que les logiciels l'écrivent, sans accents ni espaces. */
+const PIECE_WORDS: Readonly<Record<string, PieceCategory>> = Object.freeze({
+  photo: 'photo', photos: 'photo', image: 'photo', images: 'photo', visuel: 'photo', media: 'photo', medias: 'photo', video: 'photo', visitevirtuelle: 'photo',
+  diagnostic: 'diagnostic', diagnostics: 'diagnostic', diag: 'diagnostic', ddt: 'diagnostic', dpe: 'diagnostic', ges: 'diagnostic', amiante: 'diagnostic', plomb: 'diagnostic',
+  crep: 'diagnostic', electricite: 'diagnostic', gaz: 'diagnostic', termites: 'diagnostic', erp: 'diagnostic', ernmt: 'diagnostic', carrez: 'diagnostic', boutin: 'diagnostic',
+  assainissement: 'diagnostic', merule: 'diagnostic', audit: 'diagnostic', auditenergetique: 'diagnostic',
+  mandat: 'mandate', mandats: 'mandate', mandatsigne: 'mandate', mandatdevente: 'mandate', avenant: 'mandate',
+  annonce: 'diffusion', annonces: 'diffusion', diffusion: 'diffusion', portail: 'diffusion', publication: 'diffusion', lienannonce: 'diffusion',
+  document: 'document', documents: 'document', piece: 'document', titredepropriete: 'document', acte: 'document', plan: 'document', plans: 'document',
+  taxefonciere: 'document', reglementdecopropriete: 'document', pvag: 'document', autre: 'document',
+});
+
+/** Le début d'un type plus long (« Diagnostic amiante », « Mandat exclusif signé », « Annonce SeLoger »). */
+const PIECE_STEMS: readonly [string, PieceCategory][] = [
+  ['photo', 'photo'], ['diagnostic', 'diagnostic'], ['dpe', 'diagnostic'], ['audit', 'diagnostic'], ['mandat', 'mandate'], ['avenant', 'mandate'], ['annonce', 'diffusion'], ['diffusion', 'diffusion'],
+];
+
+export const pieceCategory = (raw: string): PieceCategory | undefined => {
+  const k = key(raw);
+  return PIECE_WORDS[k] ?? PIECE_WORDS[key(raw.split(/[\s/-]+/)[0] ?? '')] ?? PIECE_STEMS.find(([stem]) => k.startsWith(stem))?.[1];
+};
+
+/** Ce qu'une colonne de signature dit d'un mandat : signé, non signé, ou rien de sûr (non renseigné, inconnu, `?`…). */
+const UNSIGNED = new Set(['non', 'no', 'n', 'false', 'faux', '0', 'nonsigne', 'nonsignee', 'passigne', 'passignee', 'pasencoresigne', 'asigner', 'ensignature', 'enattente', 'unsigned']);
+export const signatureSaid = (raw: string): boolean | null => {
+  const k = key(raw);
+  if (UNSIGNED.has(k)) return false;
+  // Une valeur inconnue n'est ni « signé » ni « non signé » : rien n'est deviné.
+  if (/nonrenseign|inconnu|arenseigner|\?/.test(raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')) || ['nc', 'na', 'nr', 'nsp'].includes(k)) return null;
+  if (DONE.has(k) || /^signe/.test(k) || exportDay(raw) !== null) return true;
+  return null;
+};
+
+/** Ce que le type d'une pièce dit de la signature d'un mandat : une négation l'emporte toujours sur « signé ». */
+export const signatureInType = (raw: string): boolean | null => {
+  // Les mots tels qu'écrits, sans accents : « Mandat SCA signé » reste signé, « Mandat à signer » ne l'est pas.
+  const words = ` ${raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  if (/ (?:non|pas|pas encore|jamais) signee? | a signer | en (?:cours de )?signature | en attente | unsigned | nonsignee? /.test(words)) return false;
+  if (/ non renseigne| inconnue? /.test(words)) return null;
+  return / signee? /.test(words) ? true : null;
+};
+
+/** Un lien gardé : https seulement, sans identifiant ni mot de passe dans l'adresse, 500 signes au plus. */
+export const safeLink = (raw: string | null): string | null => {
+  if (raw === null || raw.length > 500) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.hostname === '') return null;
+    return url.toString().length <= 500 ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+export interface PieceLine {
+  line: number;
+  /** La clé d'origine du bien, comme l'import des biens la forme. */
+  propertyOrigin: string;
+  category: PieceCategory;
+  label: string;
+  fileName: string | null;
+  link: string | null;
+  datedOn: string | null;
+  signed: boolean | null;
+  portal: string | null;
+  identity: string;
+}
+
+export interface PiecesReading {
+  lines: PieceLine[];
+  skipped: { line: number; reason: PieceSkip }[];
+}
+
+/**
+ * Lit un export « dossier des biens » : une pièce par ligne, rattachée au bien par la référence de l'export des biens.
+ * Rien n'est deviné : une pièce sans bien, d'un type inconnu, sans nom de fichier ni lien, ou avec un seul lien qui
+ * n'est pas sûr est rendue avec sa raison.
+ */
+export async function readAgentPieces(text: string, format: AgentExportFormat, agentId: string): Promise<PiecesReading> {
+  const [header, ...rows] = parseCsv(text);
+  const columns = columnsOf(header ?? [], PIECE_HEADERS);
+  if (!columns.has('reference') || (!columns.has('file') && !columns.has('link'))) {
+    throw new Error("Export du dossier des biens sans colonne de référence ni de fichier : voir docs/REPRISE.md, section « Import d'un agent ».");
+  }
+  const cell = (row: string[], field: PieceField): string | null => (columns.get(field) ?? []).map((i) => clean(row[i])).find((v) => v !== null) ?? null;
+  const reading: PiecesReading = { lines: [], skipped: [] };
+  for (const [index, row] of rows.entries()) {
+    const line = index + 2;
+    if (row.every((c) => c.trim() === '')) continue;
+    const reference = cell(row, 'reference');
+    if (reference === null || reference.length > 60) {
+      reading.skipped.push({ line, reason: 'no_property' });
+      continue;
+    }
+    const rawType = cell(row, 'type');
+    // Sans colonne de type, une ligne dont le seul lien est une annonce reste un document : rien n'est deviné.
+    const category = rawType === null ? 'document' : pieceCategory(rawType);
+    if (category === undefined) {
+      reading.skipped.push({ line, reason: 'unknown_type' });
+      continue;
+    }
+    const rawFile = cell(row, 'file');
+    const fileName = rawFile !== null && rawFile.length <= 200 ? rawFile : null;
+    const rawLink = cell(row, 'link');
+    const link = safeLink(rawLink);
+    if (fileName === null && link === null) {
+      reading.skipped.push({ line, reason: rawLink !== null ? 'unsafe_link' : 'no_source' });
+      continue;
+    }
+    const rawSigned = cell(row, 'signed');
+    const signed =
+      category !== 'mandate' ? null
+      : rawSigned !== null ? signatureSaid(rawSigned)
+      : rawType !== null ? signatureInType(rawType)
+      : null;
+    const rawPortal = cell(row, 'portal');
+    reading.lines.push({
+      line,
+      propertyOrigin: `import:${agentId}:${format}:bien:${await digest(reference)}`,
+      category,
+      label: (rawType ?? 'Document').slice(0, 120),
+      fileName,
+      link,
+      datedOn: exportDay(cell(row, 'date')),
+      signed,
+      portal: category === 'diffusion' && rawPortal !== null ? rawPortal.slice(0, 80) : null,
+      // La pièce telle que l'export l'écrit : relancé, le même fichier du même bien n'est jamais doublé.
+      identity: await digest([reference, key(rawType ?? ''), rawFile ?? '', rawLink ?? '', cell(row, 'date') ?? ''].join('|')),
+    });
+  }
+  return reading;
+}
+
+/** Une pièce reprise, telle que le dossier du bien la montre. */
+export interface ImportedPiece {
+  id: string;
+  category: PieceCategory;
+  label: string;
+  fileName: string | null;
+  link: string | null;
+  datedOn: string | null;
+  signed: boolean | null;
+  portal: string | null;
+  from: string;
+}
+
+/** Le bilan d'un dossier des biens : ce qui est repris par sorte, et chaque pièce écartée avec sa raison. */
+export interface DossierReport {
+  read: number;
+  kept: Record<PieceCategory, number>;
+  /** Déjà reprises par un import précédent, ou deux fois dans l'export : rien n'est doublé. */
+  known: number;
+  notTaken: Record<PieceSkip, number[]>;
+  /** Mandats repris sans signature dite : à regarder avant de travailler le bien. */
+  unsignedMandateLines: number[];
+}
+
+const emptyDossier = (reading: PiecesReading): DossierReport => ({
+  read: reading.lines.length + reading.skipped.length,
+  kept: Object.fromEntries(PIECE_CATEGORIES.map((c) => [c, 0])) as Record<PieceCategory, number>,
+  known: 0,
+  notTaken: Object.fromEntries(PIECE_SKIPS.map((r) => [r, reading.skipped.filter((x) => x.reason === r).map((x) => x.line)])) as Record<PieceSkip, number[]>,
+  unsignedMandateLines: [],
+});
+
+/** Le compte rendu de l'aperçu, avant toute écriture : ce qui sera repris et tout ce qui ne le sera pas. */
+export interface AgentImportPreview {
+  format: AgentExportFormat;
+  contacts: { read: number; unreadableLines: number[] };
+  properties: { read: number; new: number; known: number; unreadableLines: number[] };
+  dossier: DossierReport;
+  summary: string[];
+}
+
 /* ---------- AU029 · Les échanges, notes de suivi et prochains rappels de l'ancien logiciel. ---------- */
 
 /** Ce qui s'est passé avec un contact, repris tel quel sur sa fiche. */
@@ -591,6 +787,11 @@ export interface AgentImportReport {
     /** Repris, mais le texte dépassait la longueur gardée : coupé, à regarder. */
     truncatedLines: number[];
   };
+  /**
+   * Le dossier des biens repris (AU030) : photos, diagnostics, mandats, annonces et documents rangés sur chaque bien,
+   * et chaque pièce écartée, ligne par ligne, avec sa raison.
+   */
+  dossier: DossierReport;
   /** Ce que l'agent peut faire maintenant, en une phrase par base. */
   summary: string[];
 }
@@ -604,7 +805,7 @@ export interface ImportAgentOptions {
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** Le compte rendu d'un import, en français, sans aucune donnée personnelle. */
-export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'> & Partial<Pick<AgentImportReport, 'followUp'>>): string[] {
+export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'> & Partial<Pick<AgentImportReport, 'followUp' | 'dossier'>>): string[] {
   const c = report.contacts;
   const plural = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
   const lines = [
@@ -627,6 +828,29 @@ export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'prop
         : `${plural(skipped, 'élément non repris', 'éléments non repris')}, listés par leur numéro de ligne et leur raison.`,
     );
   }
+  const d = report.dossier;
+  if (d && d.read > 0) lines.push(...dossierSummary(d));
+  return lines;
+}
+
+/** Le bilan du dossier des biens, en français, sans aucune donnée personnelle (AU030). */
+export function dossierSummary(d: DossierReport, future = false): string[] {
+  const plural = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
+  const k = d.kept;
+  const verb = future ? 'seront rangés' : 'rangés';
+  const lines = [
+    `Dossier des biens : ${plural(k.photo, 'photo ou média', 'photos et médias')}, ${plural(k.diagnostic, 'diagnostic', 'diagnostics')}, ${plural(k.mandate, 'mandat', 'mandats')}, ${plural(k.diffusion, 'annonce', 'annonces')} et ${plural(k.document, 'document', 'documents')} ${verb} sur leur bien.`,
+  ];
+  if (k.diffusion > 0) lines.push("Les annonces de l'ancien logiciel restent des liens : rien n'est republié, le bien reste en brouillon.");
+  if (d.unsignedMandateLines.length > 0) {
+    lines.push(d.unsignedMandateLines.length > 1 ? `${d.unsignedMandateLines.length} mandats sans signature dite, listés par leur numéro de ligne.` : '1 mandat sans signature dite, listé par son numéro de ligne.');
+  }
+  const skipped = Object.values(d.notTaken).reduce((n, l) => n + l.length, 0);
+  lines.push(
+    skipped === 0
+      ? `Toutes les pièces de l'export ${future ? 'seront reprises' : 'sont reprises'}.`
+      : `${plural(skipped, 'pièce non reprise', 'pièces non reprises')}, listées par leur numéro de ligne et leur raison.`,
+  );
   return lines;
 }
 
@@ -669,7 +893,7 @@ export class ImportAgent {
   async run(
     viewer: Viewer,
     agentId: string,
-    input: { format: unknown; contacts?: string; properties?: string; history?: string },
+    input: { format: unknown; contacts?: string; properties?: string; history?: string; pieces?: string },
   ): Promise<{ ok: true; report: AgentImportReport } | AgentImportRefusal> {
     const denied = await this.gate(viewer, agentId);
     if (denied) return denied;
@@ -680,10 +904,12 @@ export class ImportAgent {
     let contacts: AgentContactsReading;
     let properties: AgentPropertiesReading;
     let followUp: FollowUpReading;
+    let pieces: PiecesReading;
     try {
       contacts = input.contacts === undefined ? { lines: [], unreadableLines: [], partialLines: [], incompleteConsentLines: [] } : await readAgentContacts(input.contacts, format, agentId, at);
       properties = input.properties === undefined ? { lines: [], unreadableLines: [] } : await readAgentProperties(input.properties, format, agentId);
       followUp = input.history === undefined ? { lines: [], skipped: [] } : await readAgentFollowUp(input.history, format, agentId, at);
+      pieces = input.pieces === undefined ? { lines: [], skipped: [] } : await readAgentPieces(input.pieces, format, agentId);
     } catch (error) {
       await appendEvent(this.journal, { type: 'reseau.import_refuse', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { format, code: 'unreadable_file' } }, this.now);
       return { ok: false, rule: null, code: error instanceof Error && error.message.includes('guillemets') ? 'malformed_file' : 'missing_columns' };
@@ -713,6 +939,7 @@ export class ImportAgent {
         notTaken: Object.fromEntries(FOLLOW_UP_SKIPS.map((r) => [r, followUp.skipped.filter((x) => x.reason === r).map((x) => x.line)])) as Record<FollowUpSkip, number[]>,
         truncatedLines: [],
       },
+      dossier: emptyDossier(pieces),
       summary: [],
     };
     let changed = false;
@@ -810,7 +1037,30 @@ export class ImportAgent {
       }
     }
 
-    // 5. L'historique : chaque ligne rejoint la fiche de l'agent qui porte son contact, sinon elle est au bilan (AU029).
+    // 5. Le dossier des biens : chaque pièce rejoint le bien repris de l'agent, sinon elle est au bilan (AU030).
+    for (const line of pieces.lines) {
+      // Les biens de ce dépôt sont déjà rangés (étape 4) : sans bien de l'agent, la pièce est au bilan.
+      const target = (await this.pieceTarget(networkId, agentId, line, new Set())) ?? 'unknown_property';
+      if ((PIECE_SKIPS as readonly string[]).includes(target)) {
+        report.dossier.notTaken[target as PieceSkip].push(line.line);
+        continue;
+      }
+      const origin = `import:${agentId}:${format}:piece:${line.identity}`;
+      const { changes } = await this.db.run(
+        `INSERT INTO agent_import_property_pieces (network_id, origin_key, agent_id, property_id, category, label, file_name, link_url, dated_on, signed, portal, source_format, export_line, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        [networkId, origin, agentId, target, line.category, line.label, line.fileName, line.link, line.datedOn, line.signed === null ? null : line.signed ? 1 : 0, line.portal, format, line.line, at.toISOString()],
+      );
+      if (changes === 1) {
+        changed = true;
+        report.dossier.kept[line.category] += 1;
+        if (line.category === 'mandate' && line.signed !== true) report.dossier.unsignedMandateLines.push(line.line);
+      } else {
+        report.dossier.known += 1;
+      }
+    }
+
+    // 6. L'historique : chaque ligne rejoint la fiche de l'agent qui porte son contact, sinon elle est au bilan (AU029).
     for (const line of followUp.lines) {
       const found = await this.followUpTarget(networkId, agentId, line);
       if (typeof found === 'string') {
@@ -855,7 +1105,8 @@ export class ImportAgent {
     report.summary = importSummary(report);
     const signaled = report.contacts.unreadableLines.length + report.contacts.partialLines.length + report.contacts.incompleteConsentLines.length + report.properties.unreadableLines.length;
     const followUpSkipped = Object.values(report.followUp.notTaken).reduce((n, l) => n + l.length, 0);
-    if (changed || signaled > 0 || followUpSkipped > 0) {
+    const piecesSkipped = Object.values(report.dossier.notTaken).reduce((n, l) => n + l.length, 0);
+    if (changed || signaled > 0 || followUpSkipped > 0 || piecesSkipped > 0) {
       await appendEvent(
         this.journal,
         {
@@ -876,12 +1127,145 @@ export class ImportAgent {
             history: report.followUp.history,
             reminders: report.followUp.reminders,
             followUpNotTaken: followUpSkipped,
+            pieces: Object.values(report.dossier.kept).reduce((n, v) => n + v, 0),
+            piecesNotTaken: piecesSkipped,
           },
         },
         this.now,
       );
     }
     return { ok: true, report };
+  }
+
+  /**
+   * L'aperçu d'un import, avant toute écriture (AU030) : chaque bien et chaque pièce du dossier qui sera repris, et
+   * chaque élément qui ne le sera pas, compté avec son numéro de ligne et sa raison. Rien n'est rangé, rien n'est
+   * envoyé ; la validation se fait ensuite par `run`, qui rend le même bilan.
+   */
+  async preview(
+    viewer: Viewer,
+    agentId: string,
+    input: { format: unknown; contacts?: string; properties?: string; pieces?: string },
+  ): Promise<{ ok: true; report: AgentImportPreview } | AgentImportRefusal> {
+    const denied = await this.gate(viewer, agentId);
+    if (denied) return denied;
+    if (typeof input.format !== 'string' || !(AGENT_EXPORT_FORMATS as readonly string[]).includes(input.format)) return { ok: false, rule: null, code: 'unknown_format' };
+    const format = input.format as AgentExportFormat;
+    const at = this.now();
+    let contacts: AgentContactsReading;
+    let properties: AgentPropertiesReading;
+    let pieces: PiecesReading;
+    try {
+      contacts = input.contacts === undefined ? { lines: [], unreadableLines: [], partialLines: [], incompleteConsentLines: [] } : await readAgentContacts(input.contacts, format, agentId, at);
+      properties = input.properties === undefined ? { lines: [], unreadableLines: [] } : await readAgentProperties(input.properties, format, agentId);
+      pieces = input.pieces === undefined ? { lines: [], skipped: [] } : await readAgentPieces(input.pieces, format, agentId);
+    } catch (error) {
+      return { ok: false, rule: null, code: error instanceof Error && error.message.includes('guillemets') ? 'malformed_file' : 'missing_columns' };
+    }
+    const networkId = viewer.networkId;
+    const report: AgentImportPreview = {
+      format,
+      contacts: { read: contacts.lines.length, unreadableLines: [...contacts.unreadableLines, ...contacts.partialLines, ...contacts.incompleteConsentLines].sort((a, b) => a - b) },
+      properties: { read: properties.lines.length, new: 0, known: 0, unreadableLines: properties.unreadableLines },
+      dossier: emptyDossier(pieces),
+      summary: [],
+    };
+    // Les biens de ce dépôt seront rangés avant leurs pièces : une pièce de l'un d'eux sera reprise.
+    const coming = new Set<string>();
+    for (const line of properties.lines) {
+      const known = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_import_properties WHERE network_id = ? AND origin_key = ?', [networkId, line.origin]);
+      if (Number(known?.n ?? 0) > 0 || coming.has(line.origin)) report.properties.known += 1;
+      else report.properties.new += 1;
+      coming.add(line.origin);
+    }
+    const seen = new Set<string>();
+    for (const line of pieces.lines) {
+      const target = await this.pieceTarget(networkId, agentId, line, coming);
+      if (target !== null && (PIECE_SKIPS as readonly string[]).includes(target)) {
+        report.dossier.notTaken[target as PieceSkip].push(line.line);
+        continue;
+      }
+      const origin = `import:${agentId}:${format}:piece:${line.identity}`;
+      const known = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_import_property_pieces WHERE network_id = ? AND origin_key = ?', [networkId, origin]);
+      if (Number(known?.n ?? 0) > 0 || seen.has(origin)) {
+        report.dossier.known += 1;
+        continue;
+      }
+      seen.add(origin);
+      report.dossier.kept[line.category] += 1;
+      if (line.category === 'mandate' && line.signed !== true) report.dossier.unsignedMandateLines.push(line.line);
+    }
+    report.summary = [
+      `${report.properties.new} ${report.properties.new > 1 ? 'biens seront rangés' : 'bien sera rangé'} en brouillon, ${report.properties.unreadableLines.length} ${report.properties.unreadableLines.length > 1 ? 'lignes de biens à regarder' : 'ligne de biens à regarder'}.`,
+      ...(report.dossier.read > 0 ? dossierSummary(report.dossier, true) : []),
+      "Rien n'est encore rangé : validez pour lancer l'import.",
+    ];
+    // Au journal, des nombres seulement [R13].
+    await appendEvent(
+      this.journal,
+      {
+        type: 'reseau.import_apercu',
+        actor: this.actor(viewer),
+        subject: `agent:${agentId}`,
+        data: { format, properties: report.properties.new, pieces: Object.values(report.dossier.kept).reduce((n, v) => n + v, 0), piecesNotTaken: Object.values(report.dossier.notTaken).reduce((n, l) => n + l.length, 0) },
+      },
+      this.now,
+    );
+    return { ok: true, report };
+  }
+
+  /**
+   * Le bien repris auquel une pièce revient : celui que le même agent a repris depuis le même logiciel, sous la même
+   * référence, et qu'il suit toujours. Rend son identifiant, null s'il arrive dans ce dépôt (aperçu), ou la raison.
+   */
+  private async pieceTarget(networkId: string, agentId: string, line: PieceLine, coming: Set<string>): Promise<string | PieceSkip | null> {
+    const row = await this.db.first<{ property_id: string }>('SELECT property_id FROM agent_import_properties WHERE network_id = ? AND origin_key = ? AND agent_id = ?', [networkId, line.propertyOrigin, agentId]);
+    if (!row) return coming.has(line.propertyOrigin) ? null : 'unknown_property';
+    const property = await this.db.first<{ agent_id: string | null; network_id: string }>('SELECT agent_id, network_id FROM properties WHERE id = ?', [row.property_id]);
+    if (!property || property.network_id !== networkId) return 'unknown_property';
+    if (property.agent_id !== agentId) return 'other_agent';
+    return row.property_id;
+  }
+
+  /**
+   * Le dossier repris d'un bien : ses pièces par sorte, dans l'ordre de l'export. L'agent qui suit le bien, ou la
+   * direction ; personne d'autre [R16]. Une annonce reprise est un lien, jamais une diffusion.
+   */
+  async dossierOf(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: { propertyId: string; pieces: ImportedPiece[]; counts: Record<PieceCategory, number> } } | AgentImportRefusal> {
+    const property = await this.db.first<{ agent_id: string | null; network_id: string }>('SELECT agent_id, network_id FROM properties WHERE id = ?', [propertyId]);
+    let code: string | null = null;
+    if (!property || property.network_id !== viewer.networkId) code = 'unknown';
+    else if (viewer.role === 'direction') code = null;
+    else if (viewer.role !== 'agent') code = 'role';
+    else if (property.agent_id !== viewer.userId) code = 'not_assigned';
+    if (code !== null) {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_import_dossier', code } }, this.now);
+      return { ok: false, rule: code === 'unknown' ? null : 'R16', code };
+    }
+    const rows = await this.db.all<{ origin_key: string; category: PieceCategory; label: string; file_name: string | null; link_url: string | null; dated_on: string | null; signed: number | null; portal: string | null; source_format: AgentExportFormat }>(
+      `SELECT origin_key, category, label, file_name, link_url, dated_on, signed, portal, source_format FROM agent_import_property_pieces
+       WHERE network_id = ? AND property_id = ? ORDER BY CASE category WHEN 'mandate' THEN 0 WHEN 'diagnostic' THEN 1 WHEN 'photo' THEN 2 WHEN 'diffusion' THEN 3 ELSE 4 END, export_line, origin_key`,
+      [viewer.networkId, propertyId],
+    );
+    const pieces: ImportedPiece[] = rows.map((r) => ({
+      id: r.origin_key,
+      category: r.category,
+      label: r.label,
+      fileName: r.file_name,
+      link: r.link_url,
+      datedOn: r.dated_on,
+      signed: r.signed === null ? null : r.signed === 1,
+      portal: r.portal,
+      from: FORMAT_LABEL[r.source_format],
+    }));
+    const counts = Object.fromEntries(PIECE_CATEGORIES.map((c) => [c, pieces.filter((p) => p.category === c).length])) as Record<PieceCategory, number>;
+    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres seulement, jamais un fichier ni un lien [R13].
+    await appendEvent(
+      this.journal,
+      { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: String(viewer.role), via: 'import.dossier', pieces: pieces.length } },
+      this.now,
+    );
+    return { ok: true, value: { propertyId, pieces, counts } };
   }
 
   /** Les contacts importés à passer à la direction, dans l'ordre d'arrivée. Direction seule [R16]. */

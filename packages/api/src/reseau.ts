@@ -338,20 +338,42 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
       `${P}/import`,
       'import',
       write(
-        ['format', 'contacts', 'properties', 'history'],
+        ['format', 'contacts', 'properties', 'history', 'pieces'],
         async (m, v, _p, b) => {
-          if ((['contacts', 'properties', 'history'] as const).some((k) => b[k] !== undefined && typeof b[k] !== 'string')) return badBody();
+          if ((['contacts', 'properties', 'history', 'pieces'] as const).some((k) => b[k] !== undefined && typeof b[k] !== 'string')) return badBody();
           const r = await m.import.run(v, v.userId, {
             format: b.format,
             ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }),
             ...(b.properties === undefined ? {} : { properties: b.properties as string }),
             ...(b.history === undefined ? {} : { history: b.history as string }),
+            ...(b.pieces === undefined ? {} : { pieces: b.pieces as string }),
           });
           return reply(r.ok ? { ok: true, value: r.report } : r);
         },
         MAX_IMPORT_BYTES,
       ),
     ),
+    // AU030 : l'aperçu avant validation (rien n'est rangé), et le dossier repris d'un bien.
+    route(
+      'POST',
+      `${P}/import/apercu`,
+      'import_apercu',
+      write(
+        ['format', 'contacts', 'properties', 'pieces'],
+        async (m, v, _p, b) => {
+          if ((['contacts', 'properties', 'pieces'] as const).some((k) => b[k] !== undefined && typeof b[k] !== 'string')) return badBody();
+          const r = await m.import.preview(v, v.userId, {
+            format: b.format,
+            ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }),
+            ...(b.properties === undefined ? {} : { properties: b.properties as string }),
+            ...(b.pieces === undefined ? {} : { pieces: b.pieces as string }),
+          });
+          return reply(r.ok ? { ok: true, value: r.report } : r);
+        },
+        MAX_IMPORT_BYTES,
+      ),
+    ),
+    route('GET', `${P}/import/dossier/${ID}`, 'import_dossier', read(async (m, v, [id]) => reply(await m.import.dossierOf(v, id!)))),
     route('GET', `${P}/import/a-reprendre`, 'import_direction', read(async (m, v) => reply(await m.import.referrals(v)))),
     // AU029 : le suivi repris d'une fiche (échanges, notes, rappels), et les rappels repris de l'agent. Rien n'est envoyé.
     route('GET', `${P}/import/suivi/${ID}`, 'import_suivi', read(async (m, v, [id]) => reply(await m.import.followUpOf(v, id!)))),

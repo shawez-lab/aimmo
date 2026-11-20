@@ -285,6 +285,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       agent_language_declarations: ['agent_id', 'languages', 'declared_by'],
       video_text_checks: ['text_hash', 'checked_by'],
       agent_import_properties: ['agent_id'],
+      // AU030 : le dossier repris d'un bien (nom de fichier, lien, intitulé, portail de l'ancien logiciel).
+      agent_import_property_pieces: ['agent_id', 'label', 'file_name', 'link_url', 'portal'],
       // HX07 : la boutique de l'agent ; le support garde l'annonce publiée et la carte professionnelle de l'agent.
       shop_tariffs: ['set_by'],
       shop_orders: ['agent_id', 'target_url', 'html', 'content_hash', 'prepared_by'],
@@ -1454,6 +1456,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_import_reminders: ['network_id', 'origin_key', 'action', 'due_on', 'source_format', 'created_at'],
   agent_import_reminder_closures: ['network_id', 'origin_key', 'closed_at'],
   agent_import_properties: ['network_id', 'origin_key', 'property_id', 'export_reference', 'created_at'],
+  agent_import_property_pieces: ['network_id', 'origin_key', 'property_id', 'category', 'dated_on', 'signed', 'source_format', 'export_line', 'created_at'],
   academy_modules: ['id', 'network_id', 'title', 'track', 'position', 'video_id', 'script_ref', 'duration_minutes', 'mandatory', 'created_at'],
   academy_completions: ['module_id', 'network_id', 'completed_at', 'completed_on'],
   academy_sessions: ['id', 'network_id', 'kind', 'title', 'duration_minutes', 'mandatory', 'created_at'],
