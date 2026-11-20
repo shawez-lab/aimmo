@@ -12,6 +12,7 @@
 import type { SqlDatabase } from '../db/sql.ts';
 import type { OutboundChannelName } from '../db/types.ts';
 import type { Viewer } from '../acces/droits.ts';
+import type { Acces } from '../acces/acces.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
@@ -30,6 +31,7 @@ import {
   conflictOf,
   freeSlots,
   isOnSite,
+  validDuration,
   withinAvailability,
   type AppointmentKind,
   type Availability,
@@ -72,6 +74,7 @@ export type BookingRefusal =
   | 'unknown_property'
   | 'bad_kind'
   | 'bad_time'
+  | 'bad_duration'
   | 'too_soon'
   | 'no_availability'
   | 'outside_availability'
@@ -97,6 +100,11 @@ export interface BookingRequest {
   kind: AppointmentKind;
   start: Date;
   source: AppointmentSource;
+  /**
+   * La durée propre de ce rendez-vous, en minutes (AU056) : l'agent seul la choisit (`source: 'agent'`), le conflit se
+   * contrôle sur elle. Absente, celle du type dans les réglages.
+   */
+  durationMinutes?: number;
   /** Le canal de la confirmation ; absent, pas de message (la confirmation est rendue à l'appelant). */
   channel?: OutboundChannelName | null;
   /** La coordonnée choisie par la personne pour ce canal, normalisée (V09) ; absente : la première de la fiche. */
@@ -256,13 +264,13 @@ export class RendezVous {
   }
 
   /** Les créneaux libres d'un agent pour un type, entre deux instants (V01, avec la base et l'agenda). */
-  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date): Promise<Slot[]> {
+  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date, durationMinutes?: number): Promise<Slot[]> {
     const availability = await this.availabilityOf(agentId);
     if (!availability) return [];
     const travel = this.settings.travelMinutes * MINUTE;
     const booked = await this.bookedAround(agentId, new Date(from.getTime() - travel - 86_400_000), new Date(to.getTime() + travel + 86_400_000));
     const busy = await this.busyAround(agentId, from, to);
-    return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings });
+    return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings, ...(durationMinutes !== undefined ? { durationMinutes } : {}) });
   }
 
   /**
@@ -318,6 +326,10 @@ export class RendezVous {
     if (!APPOINTMENT_SOURCES.includes(req.source)) throw new Error('Source de réservation inconnue.');
     const start = req.start;
     if (Number.isNaN(start.getTime()) || start.getTime() % UNIT_MS !== 0) return { ok: false, rule: null, code: 'bad_time' };
+    // Une durée propre vient de l'agent, ou d'un rendez-vous décalé qui garde la sienne (AU056) ; jamais du site.
+    if (req.durationMinutes !== undefined && (!validDuration(req.durationMinutes) || (req.source !== 'agent' && replacesId === null))) {
+      return { ok: false, rule: null, code: 'bad_duration' };
+    }
     const agent = await this.db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [req.agentId, req.networkId]);
     if (!agent) return { ok: false, rule: null, code: 'unknown_agent' };
     const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ? AND network_id = ?', [req.personId, req.networkId]);
@@ -328,7 +340,7 @@ export class RendezVous {
     }
     const now = this.now();
     if (start.getTime() < now.getTime() + this.settings.minNoticeMinutes * MINUTE) return { ok: false, rule: null, code: 'too_soon' };
-    const end = new Date(start.getTime() + this.settings.durations[req.kind] * MINUTE);
+    const end = new Date(start.getTime() + (req.durationMinutes ?? this.settings.durations[req.kind]) * MINUTE);
     const slot: Slot = { kind: req.kind, start, end };
     const availability = await this.availabilityOf(req.agentId);
     if (!availability) return { ok: false, rule: 'R33', code: 'no_availability' };
@@ -393,6 +405,44 @@ export class RendezVous {
       }
     }
     return { ok: true, appointment: (await this.get(id))!, token, confirmation };
+  }
+
+  /**
+   * Un rendez-vous pris par l'agent pour l'un de ses clients, avec sa durée propre s'il la choisit (AU056) : la
+   * signature chez le notaire de 90 minutes, l'appel de 10 minutes. Une visite (la contre-visite de 20 minutes comprise)
+   * passe par `Visites.schedule`, qui prend la même durée. Le conflit se contrôle sur cette durée
+   * [R32, R33]. Aucune confirmation ne part. La direction n'a pas d'agenda ; une fiche hors du portefeuille de l'agent,
+   * ou un bien qu'il ne peut pas lire, est refusé et le refus écrit au journal [R16].
+   */
+  async bookAsAgent(
+    viewer: Viewer,
+    acces: Acces,
+    input: { personId: string; propertyId?: string | null; kind: AppointmentKind; start: Date; durationMinutes?: number },
+  ): Promise<BookingResult | { ok: false; rule: 'R16' | 'R40'; code: string }> {
+    // Une visite passe par la sienne (`Visites.schedule`) : bien diffusable, bon de visite et fiche de visite [R40, R42].
+    if (input.kind === 'visite') return { ok: false, rule: 'R40', code: 'visit_route' };
+    if (viewer.role !== 'agent') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${input.personId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'appointment', code: 'not_agent' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_agent' };
+    }
+    const fiche = await acces.readFiche(viewer, input.personId);
+    if (!fiche.ok) return fiche;
+    if (fiche.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
+    if (input.propertyId) {
+      const property = await acces.readProperty(viewer, input.propertyId);
+      if (!property.ok) return property;
+    }
+    return this.book({
+      networkId: viewer.networkId,
+      agentId: viewer.userId,
+      personId: fiche.value.person.id,
+      propertyId: input.propertyId ?? null,
+      kind: input.kind,
+      start: input.start,
+      source: 'agent',
+      channel: null,
+      ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
+    });
   }
 
   /** Défait une réservation qui n'a pas pu être menée au bout : annulée, créneau libéré, sans journal. */
@@ -480,7 +530,7 @@ export class RendezVous {
     let result: BookingResult;
     try {
       result = await this.book(
-        { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel, to: channel === old.confirmation_channel ? old.confirmation_to : null },
+        { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel, to: channel === old.confirmation_channel ? old.confirmation_to : null, ...this.keptDuration(old) },
         old.id,
       );
     } catch (error) {
@@ -500,6 +550,15 @@ export class RendezVous {
       () => false,
     );
     return logged ? result : { ...result, warning: 'journal_failed' };
+  }
+
+  /**
+   * Un rendez-vous décalé garde sa durée quand elle n'est pas celle du type (AU056) : la contre-visite de 20 minutes
+   * reste de 20 minutes. Une durée hors des bornes revient à celle du type.
+   */
+  private keptDuration(old: Appointment): { durationMinutes?: number } {
+    const minutes = (Date.parse(old.end_at) - Date.parse(old.start_at)) / MINUTE;
+    return minutes !== this.settings.durations[old.kind] && validDuration(minutes) ? { durationMinutes: minutes } : {};
   }
 
   /** Les rendez-vous tenus d'un agent, pour vérifier qu'aucun ne se chevauche. */

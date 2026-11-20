@@ -227,6 +227,8 @@ export class Visites {
       projectId: string;
       start: Date;
       channel?: OutboundChannelName | null;
+      /** La durée propre de la visite, choisie par l'agent : une contre-visite de 20 minutes (AU056). */
+      durationMinutes?: number;
       /**
        * Le client qui réserve lui-même depuis son espace (EC10) : `client:<séance>`, fixé par le serveur. Le rendez-vous
        * porte alors la source `espace`, et la visite cet auteur ; les contrôles restent ceux du lecteur [R165].
@@ -235,6 +237,8 @@ export class Visites {
     },
   ): Promise<{ ok: true; visit: ScheduledVisit } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role');
+    // La durée propre d'une visite est choisie par l'agent seul (AU056) ; la direction fixe une visite à la durée du type.
+    if (request.durationMinutes !== undefined && (viewer.role !== 'agent' || request.byClient)) return { ok: false, rule: null, code: 'bad_duration' };
     const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
     if (!project) return this.refuse(viewer, 'visit', 'unknown', `project:${request.projectId}`);
     const fiche = await this.acces.readFiche(viewer, project.person_id);
@@ -263,6 +267,7 @@ export class Visites {
       start: request.start,
       source: request.byClient ? 'espace' : 'agent',
       channel: request.channel ?? null,
+      ...(request.durationMinutes !== undefined ? { durationMinutes: request.durationMinutes } : {}),
     });
     if (!booking.ok) return { ok: false, rule: booking.rule, code: booking.code satisfies BookingRefusal };
     const appointment = booking.appointment;

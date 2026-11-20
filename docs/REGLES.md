@@ -35,7 +35,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R29 | Ventes anonymes. Les données publiques de ventes ne servent jamais à identifier une personne : une vente citée n'a ni nom, ni numéro de voie. | oui | E02 |
 | R30 | Avis validé. Aucun avis de valeur ne part sans la validation de l'agent qui suit le bien. | oui | E04 |
 | R31 | Estimation en ligne. Sans visite, seule la fourchette de la commune est donnée, jamais le prix d'un bien précis. | oui | E05 |
-| R32 | Pas de double réservation. Deux rendez-vous d'un agent ne se chevauchent jamais, et le temps de trajet entre deux rendez-vous sur place est toujours laissé. | oui | V01, V02 |
+| R32 | Pas de double réservation. Deux rendez-vous d'un agent ne se chevauchent jamais, et le temps de trajet entre deux rendez-vous sur place est toujours laissé. Le chevauchement se contrôle sur la durée réelle du rendez-vous : celle du type, ou la durée propre que l'agent seul choisit (de 10 minutes à 8 heures, par pas de 5), qu'un déplacement garde (AU056). | oui | V01, V02, AU056 |
 | R33 | Disponibilités de l'agent. Aucun créneau n'est proposé hors des disponibilités que l'agent a fixées, ni sur un événement occupé de son agenda. | oui | V01 |
 | R34 | Brief vrai. Le brief d'un rendez-vous ne porte que des données de la base ou d'une source citée ; ce qui manque est dit, rien n'est inventé. | oui | V05 |
 | R35 | Plan du jour par règles écrites. L'ordre du plan du jour suit des règles écrites dans le code, les mêmes pour tous, chaque ligne avec sa raison ; jamais une note de l'IA sur les personnes. | oui | G01 |
