@@ -365,6 +365,45 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect((await mandateTerms(t.db, t.mandateId, new Date('2027-12-01T10:00:00.000Z')))?.durationMonths).toBe(24);
   });
 
+  it('[R44] AU057b · les conditions se lisent au jour présent, un avenant à venir à part ; devenu exclusif, le rappel de fin de période suit', async () => {
+    const t = await setup();
+    const v = await t.modeles.createVersion(t.direction, 'avenant_mandat', `${AMENDMENT}\n\n!! Le mandant s’interdit de vendre par un autre intermédiaire.`);
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate(t.as('compliance', 'c-1'), v.template.id);
+    const a = await t.amendment({ 'avenant.type': 'exclusif', 'avenant.prix': 190000, 'avenant.date_effet': '2027-04-01' });
+    if (!a.ok) throw new Error(a.code);
+    expect((await sign(t, a.document.id, 'h30')).ok).toBe(true);
+    const now = await t.avenants.terms(t.agent, t.mandateId);
+    expect(now).toMatchObject({ ok: true, value: { priceEur: 200000, mandateType: 'simple', pending: [{ documentId: a.document.id, effectiveOn: '2027-04-01', priceEur: 190000, mandateType: 'exclusif' }] } });
+    // Exclusif depuis le 1er avril : la période de 3 mois finit le 1er juillet ; le rappel vient 15 jours avant.
+    const june = new EcheancesMandats(t.db, t.journal, { now: () => new Date('2027-06-20T10:00:00.000Z') });
+    expect(await june.run()).toBe(1);
+    const listed = await june.list(t.agent);
+    expect(listed.ok && listed.tasks.map((x) => [x.kind, x.dueDay])).toEqual([['fin_periode_exclusive', '2027-07-01']]);
+  });
+
+  it('[R42] AU057b · redevenu simple à une date d’effet : le rappel d’exclusivité se voit avant, disparaît après, et ne revient pas', async () => {
+    const t = await setup();
+    const v = await t.modeles.createVersion(t.direction, 'avenant_mandat', `${AMENDMENT}\n\n!! Le mandant s’interdit de vendre par un autre intermédiaire.`);
+    if (!v.ok) throw new Error(v.code);
+    await t.modeles.validate(t.as('compliance', 'c-1'), v.template.id);
+    const excl = await t.amendment({ 'avenant.type': 'exclusif' });
+    if (!excl.ok) throw new Error(excl.code);
+    expect((await sign(t, excl.document.id, 'h31')).ok).toBe(true);
+    const at = (iso: string) => new EcheancesMandats(t.db, t.journal, { now: () => new Date(iso) });
+    expect(await at('2027-05-25T10:00:00.000Z').run()).toBe(1);
+    t.now(new Date('2027-05-25T10:00:00.000Z'));
+    const simple = await t.amendment({ 'avenant.type': 'simple', 'avenant.date_effet': '2027-05-30' });
+    if (!simple.ok) throw new Error(simple.code);
+    expect((await sign(t, simple.document.id, 'h32', new Date('2027-05-25T09:00:00.000Z'))).ok).toBe(true);
+    const before = await at('2027-05-26T10:00:00.000Z').list(t.agent);
+    expect(before.ok && before.tasks.map((x) => [x.kind, x.dueDay])).toEqual([['fin_periode_exclusive', '2027-06-01']]);
+    const after = at('2027-05-31T10:00:00.000Z');
+    expect(await after.list(t.agent)).toEqual({ ok: true, tasks: [] });
+    expect(await after.run()).toBe(0);
+    expect(await after.list(t.agent)).toEqual({ ok: true, tasks: [] });
+  });
+
   it('[R40] devenir exclusif demande la clause mise en évidence ; le même type n’est pas un avenant', async () => {
     const t = await setup();
     expect(await t.amendment({ 'avenant.type': 'exclusif' })).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });
