@@ -818,7 +818,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU076 · Mon bon de visite ne peut désigner le bien que par référence et commune
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A076 (majeur), endroit : C/visites/visites.ts, `VISIT_SLIP_FIELDS`, R19.
 - Constat de l'audit : Mon bon de visite ne peut désigner le bien que par référence et commune, sans adresse privée sur l’exemplaire signé.
