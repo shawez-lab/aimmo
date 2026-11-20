@@ -288,7 +288,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU022 · Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A022 (majeur), endroit : `/rejoindre` en production ; A/worker.ts, `CANDIDATURE_NETWORK_ID`.
 - Constat de l'audit : Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande.
