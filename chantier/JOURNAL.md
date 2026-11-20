@@ -1546,3 +1546,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 23:40 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU032
 - 2026-11-20 23:40 · voie 3 · AU059b (#736) fusionnée ; AU060 ouverte (#737) ; AU063 (#733) corrigée, relecture en cours.
 - 2026-11-20 23:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:55 par une autre séance voie 2, active : push sur chantier/AU082 à 23:51)
+- 2026-11-21 00:15 · voie 3 · AU110 ouverte (#738) : export de reprise autorisé par contrat ; AU060 (#737) relu sans remarque, main fusionné ; AU063 (#733) relu sans remarque, vérifications en cours.
