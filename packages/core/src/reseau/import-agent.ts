@@ -443,6 +443,17 @@ export const pieceCategory = (raw: string): PieceCategory | undefined => {
   return PIECE_WORDS[k] ?? PIECE_WORDS[key(raw.split(/[\s/-]+/)[0] ?? '')] ?? PIECE_STEMS.find(([stem]) => k.startsWith(stem))?.[1];
 };
 
+/** Ce qu'une colonne de signature dit d'un mandat : signé, non signé, ou rien de sûr (non renseigné, inconnu, `?`…). */
+const UNSIGNED = new Set(['non', 'no', 'n', 'false', 'faux', '0', 'nonsigne', 'nonsignee', 'passigne', 'passignee', 'pasencoresigne', 'asigner', 'ensignature', 'enattente', 'unsigned']);
+export const signatureSaid = (raw: string): boolean | null => {
+  const k = key(raw);
+  if (UNSIGNED.has(k)) return false;
+  // Une valeur inconnue n'est ni « signé » ni « non signé » : rien n'est deviné.
+  if (/nonrenseign|inconnu|arenseigner|\?/.test(raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')) || ['nc', 'na', 'nr', 'nsp'].includes(k)) return null;
+  if (DONE.has(k) || /^signe/.test(k) || exportDay(raw) !== null) return true;
+  return null;
+};
+
 /** Un lien gardé : https seulement, sans identifiant ni mot de passe dans l'adresse, 500 signes au plus. */
 export const safeLink = (raw: string | null): string | null => {
   if (raw === null || raw.length > 500) return null;
@@ -513,7 +524,7 @@ export async function readAgentPieces(text: string, format: AgentExportFormat, a
     const rawSigned = cell(row, 'signed');
     const signed =
       category !== 'mandate' ? null
-      : rawSigned !== null ? (NO.has(key(rawSigned)) || negative(rawSigned) ? false : DONE.has(key(rawSigned)) || /^signe/.test(key(rawSigned)) || exportDay(rawSigned) !== null ? true : null)
+      : rawSigned !== null ? signatureSaid(rawSigned)
       : rawType !== null && /nonsigne|asigner/.test(key(rawType)) ? false
       : rawType !== null && /signe/.test(key(rawType)) ? true
       : null;

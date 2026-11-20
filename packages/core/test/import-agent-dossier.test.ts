@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest';
 import { DecisionEnvoi, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type SqlValue } from '../src/index.ts';
-import { ImportAgent, pieceCategory, readAgentPieces, safeLink } from '../src/reseau/index.ts';
+import { ImportAgent, pieceCategory, readAgentPieces, safeLink, signatureSaid } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from './sqlite.ts';
 
@@ -182,6 +182,10 @@ describeWithSqlite('AU030 · les biens repris gardent leur dossier : photos, dia
       'agent-x',
     );
     expect(reading.lines.map((l) => [l.category, l.signed])).toEqual([['mandate', true], ['mandate', false], ['mandate', true], ['mandate', null], ['photo', null]]);
+    // Une signature inconnue reste non dite : jamais « non signé ».
+    expect(['non', 'Non signé', 'à signer', 'non renseigné', 'Inconnu', '?', 'NC', 'oui', 'Signé', '2027-03-12', 'peut-être'].map(signatureSaid)).toEqual([
+      false, false, false, null, null, null, null, true, true, true, null,
+    ]);
     await expect(readAgentPieces('Type;Commentaire\nPhoto;x', 'excel', 'agent-x')).rejects.toThrow(/référence/);
   });
 });
