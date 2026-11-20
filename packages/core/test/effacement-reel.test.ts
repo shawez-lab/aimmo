@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DecisionEnvoi, FicheUnique, Rattachement, Reception, conformite, contactKeyHash, identifierHash, isHashedIdentifier, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { DecisionEnvoi, FicheUnique, Rattachement, Reception, RepriseSite, conformite, contactKeyHash, identifierHash, isHashedIdentifier, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { sealAt } from '../src/sauvegarde/copie.ts';
@@ -456,6 +456,50 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     for (const table of ['persons', 'consents', 'sources', 'contact_keys', 'person_identifiers']) expect(after[table], table).toBe(before[table]);
     expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null });
     expect(JSON.stringify(await t.db.all('SELECT key FROM contact_keys'))).not.toContain('ig-lea');
+  });
+
+  it('[R04] [R17] une reprise du site qui la retrouve n’ajoute ni nom, ni source, ni demande, ni accord', async () => {
+    const t = await erased();
+    const agent = (await t.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [t.personId]))!.agent_id;
+    const reprise = new RepriseSite(t.db, t.store, t.fiche, t.decisions, t.journal, { networkId: t.network.id, agentId: agent ?? 'agent-inconnu', actor: 'reprise:test', now: t.now });
+    const before = await countAll(t.db);
+    await reprise.run({
+      contacts: [
+        {
+          origin: 'site:compte:lea-ancienne',
+          emails: ['lea.vendeuse@example.test'],
+          phones: [],
+          civility: null,
+          firstName: 'Léa',
+          lastName: 'Exemple',
+          createdAt: NOW.toISOString(),
+          consentAt: NOW.toISOString(),
+          verified: true,
+          requests: [{ reference: 'est-lea-1', type: 'maison', postalCode: '21000', city: 'Dijon', status: 'recue', reason: null, createdAt: NOW.toISOString(), statusAt: null }],
+          problems: [],
+        },
+      ],
+      skipped: { suspect: 0, test: 0 },
+      flagged: 0,
+    });
+    const after = await countAll(t.db);
+    for (const table of ['persons', 'consents', 'sources', 'projects', 'person_identifiers']) expect(after[table], table).toBe(before[table]);
+    expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null, last_name: null });
+    expect(JSON.stringify(await t.db.all('SELECT key FROM contact_keys'))).not.toContain('lea');
+  });
+
+  it('[R17] une adresse qui commence par « #sha256: » n’est pas une empreinte : elle passe sous empreinte comme les autres', async () => {
+    const t = await setup();
+    const odd = '#sha256:invente@example.test';
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.other.id, kind: 'email', value: odd });
+    expect(isHashedIdentifier(odd)).toBe(false);
+    expect(isHashedIdentifier(await identifierHash(t.network.id, 'email', odd))).toBe(true);
+    // Une fiche ordinaire qui la porte n'est pas une fiche effacée.
+    expect(await t.fiche.isErased(t.other.id)).toBe(false);
+    const { outcome } = await eraseForReal(t.db, [t.other.id], { objects: t.objects.eraser });
+    expect(outcome.hashed).toEqual([{ table: 'person_identifiers', rows: 2 }]);
+    expect(JSON.stringify(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.other.id]))).not.toContain('example');
+    expect(await t.fiche.isErased(t.other.id)).toBe(true);
   });
 
   it('[R04] une fiche neuve qui porte son adresse est retrouvée comme doublon de la fiche effacée, et son arrêt la suit', async () => {

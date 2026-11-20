@@ -53,6 +53,9 @@ export interface FicheUniqueOptions {
   newId?: () => string;
 }
 
+/** Une empreinte entière en SQL (voir `isHashedIdentifier`) : préfixe, puis 64 chiffres hexadécimaux. */
+const HASHED_SQL = (column: string): string => `length(${column}) = 72 AND substr(${column}, 1, ?) = ? AND NOT substr(${column}, 9) GLOB '*[^0-9a-f]*'`;
+
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /**
@@ -133,11 +136,11 @@ export class FicheUnique {
   async isErased(personId: string): Promise<boolean> {
     const members = await this.membersOf(personId);
     const q = placeholders(members.length);
-    const hashedId = await this.db.first(`SELECT 1 AS x FROM person_identifiers WHERE person_id IN (${q}) AND substr(value, 1, ?) = ? LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    const hashedId = await this.db.first(`SELECT 1 AS x FROM person_identifiers WHERE person_id IN (${q}) AND ${HASHED_SQL('value')} LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
     if (hashedId !== null) return true;
     // Les clés de contact (migration 0007) : une fiche qui n'a écrit qu'en message privé n'est reconnue que par elles.
     if (!(await this.db.first("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'contact_keys'"))) return false;
-    const hashedKey = await this.db.first(`SELECT 1 AS x FROM contact_keys WHERE person_id IN (${q}) AND substr(key, 1, ?) = ? LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    const hashedKey = await this.db.first(`SELECT 1 AS x FROM contact_keys WHERE person_id IN (${q}) AND ${HASHED_SQL('key')} LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
     return hashedKey !== null;
   }
 

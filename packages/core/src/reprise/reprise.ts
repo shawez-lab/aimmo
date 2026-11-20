@@ -219,14 +219,16 @@ export class RepriseSite {
     if (merged > 0) changed = true;
     if (apart.length > 0) outcome = 'apart';
 
-    // 3. Compléter : identifiants, nom, source.
+    // 3. Compléter : identifiants, nom, source. Une fiche effacée ne reprend que des empreintes : ni nom, ni source, ni
+    // demande, ni accord ; seules les exclusions passent, elles renforcent son arrêt [R04, R17] (AU020c).
+    const erased = await this.fiche.isErased(target.id);
     if (await this.complete(target, identifiers, contact)) changed = true;
-    if (await this.addContactSource(target, contact)) changed = true;
+    if (!erased && (await this.addContactSource(target, contact))) changed = true;
 
     // 4. Un projet par demande d'estimation, avec son accord et, pour « Perdu », l'exclusion.
     const exclusionsBefore = report.exclusions;
     for (const request of contact.requests) {
-      if (await this.importRequest(target, contact, request, identifiers, report)) changed = true;
+      if (!erased && (await this.importRequest(target, contact, request, identifiers, report))) changed = true;
       const reason = lostExclusion(request);
       if (reason) {
         const notedAt = new Date(request.statusAt ?? request.createdAt);
@@ -248,7 +250,7 @@ export class RepriseSite {
     if (report.exclusions > exclusionsBefore) changed = true;
 
     // 5. L'accord donné en ouvrant son compte sur le site, pour le suivi de ses demandes seulement.
-    if (contact.consentAt !== null) {
+    if (contact.consentAt !== null && !erased) {
       const proof = `${contact.origin} · accord du site`;
       if (await this.addConsents(target, identifiers, proof, new Date(contact.consentAt), report)) changed = true;
     }
