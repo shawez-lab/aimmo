@@ -312,7 +312,7 @@ const thanks = (): Response => html(200, 'Candidature reçue · AIMMO', `<p clas
 
 export interface CandidatureConfig {
   db: SqlDatabase;
-  /** Le réseau qui reçoit les candidatures. Absent : la page dit que les candidatures ne sont pas encore ouvertes. */
+  /** Le réseau qui reçoit les candidatures. Absent : le seul réseau de la base s'il n'y en a qu'un (AU022), sinon la page dit que les candidatures ne sont pas encore ouvertes. */
   networkId: string | null;
   now?: () => Date;
   /** Le contrôle des textes avant de servir la page [R80] ; remplacé seulement par les tests. */
@@ -352,7 +352,17 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     await appendEvent(journal, { type: 'candidature.page_fermee', actor: 'system:candidature', subject: 'page:rejoindre', data: { rule: 'R80', count: problems.length } }, now);
     return html(503, 'Page fermée · AIMMO', '<h1>Page fermée</h1><p>Cette page est en cours de relecture. Revenez bientôt.</p>');
   }
-  if (!config.networkId) return html(503, 'Bientôt · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><div class="frise" aria-hidden="true"></div><h1>Bientôt</h1><p class="chapeau">Les candidatures au réseau ne sont pas encore ouvertes. Revenez bientôt.</p>`);
+  // Sans variable réglée, la page ne devine que s'il n'y a qu'un réseau : c'est lui qui reçoit (AU022). Aucun ou
+  // plusieurs réseaux : rien n'est rangé, la page le dit.
+  let networkId = config.networkId;
+  if (!networkId) {
+    const rows = await config.db.all<{ id: string }>('SELECT id FROM networks ORDER BY id LIMIT 2');
+    if (rows.length === 1) {
+      networkId = rows[0]!.id;
+      if (request.method === 'POST') await appendEvent(journal, { type: 'candidature.reseau_unique', actor: 'system:candidature', subject: `network:${networkId}`, data: {} }, now);
+    }
+  }
+  if (!networkId) return html(503, 'Bientôt · AIMMO', `<p class="marque">${escape(PAGE_TEXT.kicker)}</p><div class="frise" aria-hidden="true"></div><h1>Bientôt</h1><p class="chapeau">Les candidatures au réseau ne sont pas encore ouvertes. Revenez bientôt.</p>`);
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const parrain = url.searchParams.get('parrain') ?? undefined;
@@ -361,7 +371,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     const values: FormValues = {};
     if (parrain !== undefined) values.parrain = parrain;
     if (contenu !== undefined) values.contenu = contenu;
-    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(values, null, await openCommunes(config.db, config.networkId, now)));
+    const res = html(200, 'Rejoindre AIMMO · réseau d’agents immobiliers', candidaturePage(values, null, await openCommunes(config.db, networkId, now)));
     return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res;
   }
   if (request.method !== 'POST') return html(405, 'Méthode non admise · AIMMO', '<h1>Méthode non admise</h1><p>Utilisez le formulaire de la page.</p>');
@@ -391,7 +401,7 @@ export async function handleCandidature(request: Request, config: CandidatureCon
   };
   // Le champ piège, invisible aux personnes : rempli, c'est un robot. Même réponse, rien n'est rangé.
   if ((form.get('site') ?? '') !== '') {
-    await appendEvent(journal, { type: 'candidature.robot', actor: 'candidat', subject: `network:${config.networkId}`, data: {} }, now);
+    await appendEvent(journal, { type: 'candidature.robot', actor: 'candidat', subject: `network:${networkId}`, data: {} }, now);
     return thanks();
   }
   const blank = (v: string | undefined): string | null => (v === undefined || v.trim() === '' ? null : v);
@@ -411,8 +421,8 @@ export async function handleCandidature(request: Request, config: CandidatureCon
     // La preuve dit ce que le candidat a coché et sur quelle version de la page : jamais son adresse ni son appareil.
     contactConsent: values.consent ? { given: true, proof: `Case cochée sur la page ${CANDIDATURE_PATH}, version ${CANDIDATURE_PAGE_VERSION}, le ${now().toISOString()}` } : { given: false },
   };
-  const outcome = await new Candidatures(config.db, journal, { now }).apply(config.networkId, input);
+  const outcome = await new Candidatures(config.db, journal, { now }).apply(networkId, input);
   if (outcome.ok) return thanks();
   const [message, target] = ERRORS[outcome.code] ?? ['Votre candidature n’a pas pu être rangée. Vérifiez vos réponses et réessayez.', null];
-  return html(400, 'À corriger · Rejoindre AIMMO', candidaturePage(values, { message, field: target }, await openCommunes(config.db, config.networkId, now)));
+  return html(400, 'À corriger · Rejoindre AIMMO', candidaturePage(values, { message, field: target }, await openCommunes(config.db, networkId, now)));
 }
