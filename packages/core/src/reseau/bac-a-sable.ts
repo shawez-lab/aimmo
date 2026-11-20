@@ -51,7 +51,10 @@ export const SANDBOX_STEP_LABELS: Readonly<Record<SandboxStep, string>> = Object
 export const SANDBOX_GESTURES = ['contact_recu', 'rappel_fait', 'rendez_vous', 'avis_valide'] as const satisfies readonly SandboxStep[];
 export type SandboxGesture = (typeof SANDBOX_GESTURES)[number];
 
-/** La base à part du bac à sable d'un agent : toujours la même pour lui, jamais celle du réseau. */
+/**
+ * La base à part du bac à sable d'un agent : toujours la même pour lui, jamais celle du réseau. Elle peut être partagée
+ * entre les bacs à sable des agents : chacun y a son réseau d'entraînement, et rien d'un autre n'y coche une étape.
+ */
 export interface SandboxStorage {
   open(agentId: string): Promise<SqlDatabase>;
 }
@@ -239,11 +242,13 @@ export class BacASable {
 
     // Les contacts inventés arrivés, dans l'ordre. Le parcours suit le premier qui a été qualifié ; sans aucun qualifié
     // (une qualification tombée en panne), le premier arrivé, et un nouveau contact peut alors être reçu (AU025).
+    // Une base partagée entre bacs à sable ne mêle rien : seuls comptent les contacts du réseau d'entraînement de l'agent.
+    const own = await stableId(`reseau:${agentId}`);
     const arrivals: { root: string | null; seq: number; at: string }[] = [];
     for (const e of entries) {
       if (e.type !== 'bac_a_sable.contact_recu' || e.actor !== 'system:bac_a_sable') continue;
       const p = id(e.subject, 'person');
-      const invented = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value LIKE '%@essai.example'", [p]);
+      const invented = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM person_identifiers WHERE person_id = ? AND network_id = ? AND kind = 'email' AND value LIKE '%@essai.example'", [p, own]);
       const inbound = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM messages WHERE person_id = ? AND direction = 'in'", [p]);
       if (invented && inbound) arrivals.push({ root: await rootOf(p), seq: e.seq, at: e.at });
     }
@@ -374,7 +379,7 @@ export class BacASable {
   private async gesture(world: SandboxWorld, gesture: SandboxGesture): Promise<boolean> {
     if (gesture === 'contact_recu') {
       // Un nouveau contact inventé à chaque essai : un essai interrompu ne bloque jamais le suivant.
-      const n = Number((await world.db.first<{ n: number }>('SELECT count(*) AS n FROM persons'))?.n ?? 0);
+      const n = Number((await world.db.first<{ n: number }>('SELECT count(*) AS n FROM persons WHERE network_id = ?', [world.networkId]))?.n ?? 0);
       return (await world.inventedContact(n)).status === 'replied';
     }
     const { person } = await this.walk(world.db, await new SqlJournalStore(world.db).all(), world.agentId);

@@ -404,14 +404,7 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               'copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },',
               'dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),',
             ]
-          : file === 'bac-a-sable.ts'
-            ? // AU025 : l'objet durable du bac à sable de l'agent, joint par sa seule liaison, à une adresse qui ne mène nulle
-              // part (`.invalid`) ; rien ne sort du compte Cloudflare, jamais un envoi.
-              [
-                'async fetch(request: Request): Promise<Response> {',
-                "const res = await stub.fetch(new Request('https://bac-a-sable.invalid/sql', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(op) }));",
-              ]
-            : [],
+          : [],
       );
     }
   });

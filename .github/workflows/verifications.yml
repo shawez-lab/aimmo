@@ -100,6 +100,29 @@ jobs:
           fi
           sed -i "s/$D1_PLACEHOLDER/$id/" wrangler.toml
       - if: steps.h04.outputs.pret == 'oui'
+        # AU025 : la base à part des bacs à sable, en Europe, jamais celle du réseau [R82, R602].
+        name: Base du bac à sable en Europe
+        working-directory: packages/api
+        run: |
+          find_id() {
+            npx -y "$WRANGLER" d1 list --json | node -e '
+              let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => {
+                const base = JSON.parse(s).find((d) => d.name === "aimmo-bac-a-sable");
+                process.stdout.write(base ? base.uuid : "");
+              });'
+          }
+          id="$(find_id)"
+          if [ -z "$id" ]; then
+            node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+            npx -y "$WRANGLER" d1 create aimmo-bac-a-sable --jurisdiction eu
+            id="$(find_id)"
+          fi
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "::error::Base D1 aimmo-bac-a-sable introuvable après création."
+            exit 1
+          fi
+          sed -i "s/00000000-0000-0000-0000-0000000000b5/$id/" wrangler.toml
+      - if: steps.h04.outputs.pret == 'oui'
         # Avant toute migration : une base hors d'Europe arrête tout, rien n'y est écrit [R602].
         name: Base en Europe (HX56, R602)
         run: |
@@ -111,6 +134,8 @@ jobs:
         run: |
           node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
           npx -y "$WRANGLER" d1 migrations apply aimmo --remote
+          node "$GITHUB_WORKSPACE/scripts/require-current-main.mjs"
+          npx -y "$WRANGLER" d1 migrations apply aimmo-bac-a-sable --remote
       - if: steps.h04.outputs.pret == 'oui'
         name: Liaisons des compartiments R2
         run: node scripts/liaisons-r2.mjs packages/api/wrangler.toml
