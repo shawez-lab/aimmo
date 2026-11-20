@@ -12,6 +12,12 @@
  * Décidé, lecture prudente : sans condition de prêt dans l'offre, le suivi n'a pas d'objet et rien ne se range ; une
  * étape déclarée ne se corrige pas, une nouvelle s'ajoute ; les étapes ne sont pas contrôlées dans leur ordre, car un
  * acquéreur peut changer de banque ; seule l'offre de prêt émise ou acceptée éteint l'alerte de la date limite.
+ *
+ * AU083 : quand deux banques (ou un courtier et une banque) travaillent sur le dossier, chaque étape peut dire à quelle
+ * demande elle appartient (`demande` : le nom de la banque ou du courtier, tel qu'il est dit, sans numéro de compte ni de
+ * dossier). Les suites de chaque demande restent séparées : un refus ne clôt que sa demande, et seule une offre de prêt
+ * encore vivante dans une demande (pas suivie d'un refus de cette même demande) éteint l'alerte de la date limite. Les
+ * étapes sans demande dite forment une seule demande, comme avant.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -34,6 +40,45 @@ export interface DeclaredStep {
   day: string;
   declaredBy: DeclaredBy;
   recordedAt: string;
+  /** La demande de financement (banque ou courtier) à laquelle l'étape appartient ; absente si personne ne l'a dite. */
+  demande?: string;
+}
+
+export const REQUEST_LABEL_MAX = 60;
+/** Un nom de banque ou de courtier : lettres, chiffres, espaces et ponctuation courte, jamais 4 chiffres de suite. */
+const REQUEST_LABEL = /^[\p{L}\p{N}][\p{L}\p{N} '’&.\-]*$/u;
+
+/** Le nom d'une demande, nettoyé ; null s'il n'est pas un nom de banque ou de courtier. */
+export function requestLabel(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const label = v.normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (!label || label.length > REQUEST_LABEL_MAX || !REQUEST_LABEL.test(label) || /\d{4}/.test(label)) return null;
+  return label;
+}
+
+/** La clé d'une demande : deux façons d'écrire le même nom sont la même demande. */
+export function requestKey(step: Pick<DeclaredStep, 'demande'>): string {
+  return (step.demande ?? '').normalize('NFC').toLocaleLowerCase('fr');
+}
+
+/** Les étapes réparties par demande, chacune dans l'ordre où elles ont été rangées. */
+export function byRequest<T extends Pick<DeclaredStep, 'demande'>>(steps: readonly T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const s of steps) {
+    const k = requestKey(s);
+    const g = groups.get(k);
+    if (g) g.push(s);
+    else groups.set(k, [s]);
+  }
+  return [...groups.values()];
+}
+
+/** Une offre de prêt est vivante dans une demande quand elle vient après le dernier refus de cette même demande. */
+export function hasLiveOffer(steps: readonly Pick<DeclaredStep, 'step' | 'demande'>[]): boolean {
+  return byRequest(steps).some((g) => {
+    const tail = g.slice(g.map((x) => x.step).lastIndexOf('refus') + 1);
+    return tail.some((x) => x.step === 'offre_pret_emise' || x.step === 'offre_pret_acceptee');
+  });
 }
 
 /** Ce que le suivi rend : des faits déclarés, dans l'ordre où ils ont été rangés. Rien d'autre [R14]. */
@@ -52,7 +97,7 @@ export interface FinancingAlert {
   createdAt: string;
 }
 
-export type FinancingProblem = { ok: false; rule: null; code: 'bad_input' | 'unknown_step' | 'bad_day' | 'future_day' | 'no_loan_condition' | 'busy' | 'closed' };
+export type FinancingProblem = { ok: false; rule: null; code: 'bad_input' | 'unknown_step' | 'bad_day' | 'future_day' | 'bad_request' | 'no_loan_condition' | 'busy' | 'closed' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 function validDay(v: unknown): v is string {
@@ -88,8 +133,15 @@ export class FinancementDossier {
   }
 
   private async read(fileId: string, offerId: string): Promise<Financing> {
-    const rows = await this.db.all<{ step: FinancingStep; day: string; declared_by: DeclaredBy; at: string }>('SELECT step, day, declared_by, at FROM sale_file_financing WHERE file_id = ? ORDER BY seq', [fileId]);
-    return { fileId, hasLoanCondition: await this.hasLoanCondition(offerId), steps: rows.map((r) => ({ step: r.step, day: r.day, declaredBy: r.declared_by, recordedAt: r.at })) };
+    const rows = await this.db.all<{ step: FinancingStep; day: string; declared_by: DeclaredBy; at: string; request_label: string }>(
+      'SELECT step, day, declared_by, at, request_label FROM sale_file_financing WHERE file_id = ? ORDER BY seq',
+      [fileId],
+    );
+    return {
+      fileId,
+      hasLoanCondition: await this.hasLoanCondition(offerId),
+      steps: rows.map((r) => ({ step: r.step, day: r.day, declaredBy: r.declared_by, recordedAt: r.at, ...(r.request_label ? { demande: r.request_label } : {}) })),
+    };
   }
 
   /** Le suivi : agent du bien, direction, conformité [R16]. */
@@ -105,7 +157,7 @@ export class FinancementDossier {
     if (!g.ok) return g;
     // Un dossier clos par l'acte ne reçoit plus rien, de l'agent comme de l'acquéreur (N13).
     if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
-    return this.write(g.file, input, ['step', 'day', 'declaredBy'], null, actorOf(viewer));
+    return this.write(g.file, input, ['step', 'day', 'declaredBy', 'demande'], null, actorOf(viewer));
   }
 
   /**
@@ -129,7 +181,7 @@ export class FinancementDossier {
     }
     if (await this.db.first('SELECT 1 FROM sale_file_closings WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'closed' };
     if (await this.db.first('SELECT 1 FROM sale_file_stops WHERE file_id = ?', [fileId])) return { ok: false, rule: null, code: 'file_stopped' };
-    return this.write(file, input, ['step', 'day'], 'acquereur', actor);
+    return this.write(file, input, ['step', 'day', 'demande'], 'acquereur', actor);
   }
 
   private async write(
@@ -148,18 +200,21 @@ export class FinancementDossier {
     if (typeof declaredBy !== 'string' || !(DECLARED_BY as readonly string[]).includes(declaredBy)) return { ok: false, rule: null, code: 'bad_input' };
     if (!validDay(i.day)) return { ok: false, rule: null, code: 'bad_day' };
     if (i.day > localTime(this.now(), TIME_ZONE).date) return { ok: false, rule: null, code: 'future_day' };
+    // La demande est facultative ; dite, elle doit être un nom de banque ou de courtier, jamais un numéro.
+    const demande = i.demande === undefined ? '' : requestLabel(i.demande);
+    if (demande === null) return { ok: false, rule: null, code: 'bad_request' };
     if (!(await this.hasLoanCondition(file.offer_id))) return { ok: false, rule: null, code: 'no_loan_condition' };
     const last = await this.db.first<{ n: number | null }>('SELECT MAX(seq) AS n FROM sale_file_financing WHERE file_id = ?', [fileId]);
     try {
       await this.db.run(
-        'INSERT INTO sale_file_financing (file_id, seq, network_id, step, day, declared_by, at, by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [fileId, Number(last?.n ?? 0) + 1, file.network_id, i.step, i.day, declaredBy, this.now().toISOString(), actor],
+        'INSERT INTO sale_file_financing (file_id, seq, network_id, step, day, declared_by, at, by, request_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [fileId, Number(last?.n ?? 0) + 1, file.network_id, i.step, i.day, declaredBy, this.now().toISOString(), actor, demande],
       );
     } catch (error) {
       if (/UNIQUE|PRIMARY/i.test(String(error))) return { ok: false, rule: null, code: 'busy' };
       throw error;
     }
-    await appendEvent(this.journal, { type: 'dossier.financement', actor, subject: `sale_file:${fileId}`, data: { step: i.step, declaredBy } }, this.now);
+    await appendEvent(this.journal, { type: 'dossier.financement', actor, subject: `sale_file:${fileId}`, data: { step: i.step, declaredBy, request: demande !== '' } }, this.now);
     return { ok: true, value: await this.read(fileId, file.offer_id) };
   }
 
@@ -189,7 +244,7 @@ export class FinancementDossier {
       for (const [i, s] of fin.steps.entries()) if (s.step === 'refus') await alert({ id: f.id, agent_id: f.agent_id }, 'refus_declare', s.day, String(i + 1));
       const limit = (await this.echeancier.scheduleOf(f)).lines.find((l) => l.deadline === 'date_limite_pret')?.day ?? null;
       if (!limit || today > limit || addDays(limit, -this.notice) > today) continue;
-      if (fin.steps.some((s) => s.step === 'offre_pret_emise' || s.step === 'offre_pret_acceptee')) continue;
+      if (hasLiveOffer(fin.steps)) continue;
       await alert({ id: f.id, agent_id: f.agent_id }, 'sans_offre_de_pret', limit);
     }
     return created;
@@ -214,9 +269,9 @@ export class FinancementDossier {
     const alerts: FinancingAlert[] = [];
     for (const r of rows) {
       if (r.kind === 'sans_offre_de_pret') {
-        // Éteinte par une offre de prêt déclarée depuis, ou par une date limite passée ou déplacée.
+        // Éteinte par une offre de prêt encore vivante dans une demande, ou par une date limite passée ou déplacée.
         const fin = await this.read(r.file_id, r.offer_id);
-        if (fin.steps.some((s) => s.step === 'offre_pret_emise' || s.step === 'offre_pret_acceptee')) continue;
+        if (hasLiveOffer(fin.steps)) continue;
         const limit = (await this.echeancier.scheduleOf({ id: r.file_id, offer_id: r.offer_id, property_id: r.property_id })).lines.find((l) => l.deadline === 'date_limite_pret')?.day;
         if (limit !== r.due_day || r.due_day < today) continue;
       }
