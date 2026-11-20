@@ -85,6 +85,15 @@ export interface EnergyDiagnosis {
    * 2022 et 2023 ») : de 2 à 5 années qui se suivent, la dernière étant `costReferenceYear` (AU065).
    */
   costReferenceYears?: number[];
+  /**
+   * AU064 · ce qui permet de reprendre le diagnostic sans le ressaisir : son numéro d'enregistrement à l'ADEME (13
+   * caractères, vérifiable à l'observatoire des DPE), la consommation d'énergie primaire (kWh/m²/an) et les émissions
+   * (kg CO₂/m²/an) qu'il écrit, et le document lui-même (`biens/<bien>/<uuid>.pdf`).
+   */
+  ademeNumber?: string;
+  primaryEnergyKwhM2?: number;
+  ghgKgM2?: number;
+  documentRef?: string;
   /** `AAAA-MM-JJ`. */
   diagnosedOn: string;
 }
@@ -125,6 +134,10 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 const MAX_MEDIA = 80;
 // La référence est donnée par le stockage, jamais écrite à la main : le dossier du bien, puis un identifiant tiré au
 // hasard. Aucun nom de fichier libre, qui pourrait porter une adresse [R46], ni la photo d'un autre bien.
+/** Le numéro d'enregistrement d'un DPE à l'ADEME : 13 caractères, chiffres et lettres capitales (AU064). */
+export const ADEME_NUMBER = /^[0-9A-Z]{13}$/;
+/** Le diagnostic lui-même, rangé comme une photo du bien, en PDF. */
+const DPE_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 const MEDIA_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp|mp4)$/;
 const MEDIA_EXT: Record<MediaKind, readonly string[]> = { photo: ['jpg', 'png', 'webp'], video: ['mp4'], visite_virtuelle: ['mp4'] };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -211,7 +224,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (input.energy !== null && input.energy !== undefined) {
     const e = input.energy;
     if (!isRecord(e)) return bad('energy');
-    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'costReferenceYears', 'diagnosedOn'], 'energy');
+    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'costReferenceYears', 'diagnosedOn', 'ademeNumber', 'primaryEnergyKwhM2', 'ghgKgM2', 'documentRef'], 'energy');
     if (eExtra) return bad(eExtra);
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.energyClass)) return bad('energy.energyClass');
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.climateClass)) return bad('energy.climateClass');
@@ -227,6 +240,12 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
       }
     }
     if (!validDay(e.diagnosedOn) || e.diagnosedOn > todayDay) return bad('energy.diagnosedOn');
+    // AU064 · numéro, valeurs et document du diagnostic : chacun contrôlé, facultatif, jamais deviné.
+    const given = (v: unknown) => v !== undefined && v !== null;
+    if (given(e.ademeNumber) && (typeof e.ademeNumber !== 'string' || !ADEME_NUMBER.test(e.ademeNumber))) return bad('energy.ademeNumber');
+    if (given(e.primaryEnergyKwhM2) && !isInt(e.primaryEnergyKwhM2, 0, 2000)) return bad('energy.primaryEnergyKwhM2');
+    if (given(e.ghgKgM2) && !isInt(e.ghgKgM2, 0, 500)) return bad('energy.ghgKgM2');
+    if (given(e.documentRef) && (typeof e.documentRef !== 'string' || !e.documentRef.startsWith(`biens/${propertyId}/`) || !DPE_FILE.test(e.documentRef.slice(`biens/${propertyId}/`.length)))) return bad('energy.documentRef');
     energy = {
       energyClass: e.energyClass as EnergyClass,
       climateClass: e.climateClass as EnergyClass,
@@ -235,6 +254,10 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
       costReferenceYear: e.costReferenceYear,
       ...(Array.isArray(years) ? { costReferenceYears: [...(years as number[])] } : {}),
       diagnosedOn: e.diagnosedOn,
+      ...(given(e.ademeNumber) ? { ademeNumber: e.ademeNumber as string } : {}),
+      ...(given(e.primaryEnergyKwhM2) ? { primaryEnergyKwhM2: e.primaryEnergyKwhM2 as number } : {}),
+      ...(given(e.ghgKgM2) ? { ghgKgM2: e.ghgKgM2 as number } : {}),
+      ...(given(e.documentRef) ? { documentRef: e.documentRef as string } : {}),
     };
   }
 

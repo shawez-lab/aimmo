@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExportPortails, TRIAL_FORMAT, type ListingPayload } from '../src/annonces/index.ts';
+import { ExportPortails, INTERNATIONAL_TRIAL_FORMAT, TRIAL_FORMAT, type ListingPayload, type TranslatedListingPayload } from '../src/annonces/index.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -30,6 +30,16 @@ describe('P07 · format d’essai des portails', () => {
         '</annonce></flux>\n',
     );
   });
+
+  it('AU064 · le diagnostic part tel qu’il est rangé : numéro ADEME, valeurs, classes et jour, sans ressaisie', () => {
+    const out = TRIAL_FORMAT.render([{ ...L, dpe: { ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, energyClass: 'D', climateClass: 'D', diagnosedOn: '2027-01-15' } }]);
+    expect(out).toContain('<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="D" classe_climat="D" date="2027-01-15"/>');
+    // Sans numéro ni valeurs, rien : le flux d'une annonce d'avant ne change pas.
+    expect(TRIAL_FORMAT.render([L])).not.toContain('<dpe');
+    // Les portails étrangers reçoivent le même diagnostic, tel quel.
+    const abroad = INTERNATIONAL_TRIAL_FORMAT.render([{ ...L, language: 'en', dpe: { ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, energyClass: 'D', climateClass: 'D', diagnosedOn: '2027-01-15' } } as TranslatedListingPayload]);
+    expect(abroad).toContain('<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="D" classe_climat="D" date="2027-01-15"/>');
+  });
 });
 
 describeWithSqlite('P07 · flux depuis les versions publiées', () => {
@@ -48,6 +58,17 @@ describeWithSqlite('P07 · flux depuis les versions publiées', () => {
     expect(first.body).toContain('mention="Aménagement virtuel"');
     expect(first.body).not.toMatch(/Léa|Exemple|rue /);
     expect((await exporter.feed(t.network.id)).body).toBe(first.body);
+    expect(first.body).not.toContain('<dpe');
+    // AU064 · le numéro ADEME et les valeurs rangés dans la fiche partent au flux, sans ressaisie.
+    const row = await t.db.first<{ version: number; data: string; network_id: string; created_by: string }>('SELECT * FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const sheet = JSON.parse(row!.data) as { energy: Record<string, unknown> };
+    sheet.energy = { ...sheet.energy, ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 };
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['fiche-dpe', t.propertyId, row!.network_id, Number(row!.version) + 1, JSON.stringify(sheet), row!.created_by, t.now().toISOString()]);
+    const again = await t.annonces.propose(t.agent, t.propertyId);
+    if (!again.ok) throw new Error(again.code);
+    expect((await t.annonces.validate(t.agent, again.value.id)).ok).toBe(true);
+    await t.publication.sync(t.network.id, t.propertyId);
+    expect((await exporter.feed(t.network.id)).body).toContain(`<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="${String(sheet.energy.energyClass)}" classe_climat="${String(sheet.energy.climateClass)}" date="${String(sheet.energy.diagnosedOn)}"/>`);
     // Un avenant de prix : le flux suit la nouvelle version.
     await t.amend(190000);
     await t.publication.sync(t.network.id, t.propertyId);
