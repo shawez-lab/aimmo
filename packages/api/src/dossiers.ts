@@ -12,7 +12,7 @@ import { journalError } from './app.ts';
 import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, DepotsDossier, Echeancier, FinancementDossier, ObligationsLocales, PiecesDossier, RelancesPieces } = m10;
+const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, ConditionsDossier, DepotsDossier, Echeancier, FinancementDossier, ObligationsLocales, PiecesDossier, RelancesPieces } = m10;
 export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
@@ -95,6 +95,7 @@ const services = (s: DossierServices) => ({
   pieces: new PiecesDossier(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   echeancier: new Echeancier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   financement: new FinancementDossier(s.db, s.acces, s.journal, { now: s.now }),
+  conditions: new ConditionsDossier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   acte: new ActeVente(s.db, s.acces, s.journal, s.pieces, { now: s.now, proofs: s.pieces }),
   arret: new ArretDossier(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   chemin: new CheminCritique(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
@@ -139,6 +140,14 @@ export function dossierRoutes(): DossierRoute[] {
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/preuves$`), name: 'dossiers.preuve', handle: depositAs('preuve') },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/echeancier$`), name: 'dossiers.echeancier', handle: async (s, v, [id]) => reply(await services(s).echeancier.schedule(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/dates$`), name: 'dossiers.date', handle: withBody(async (s, v, [id], b) => reply(await services(s).echeancier.record(v, id!, { kind: b.kind, day: b.day, proofRef: b.proofRef, personId: b.personId }))) },
+    // Les conditions suspensives autres que le prêt, chacune son responsable, sa date, son état, sa preuve (AU082).
+    { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/conditions$`), name: 'dossiers.conditions', handle: async (s, v, [id]) => reply(await services(s).conditions.conditions(v, id!)) },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/dossiers/${ID}/conditions$`),
+      name: 'dossiers.condition',
+      handle: withBody(async (s, v, [id], b) => reply(await services(s).conditions.record(v, id!, { kind: b.kind, responsible: b.responsible, day: b.day, state: b.state, proofRef: b.proofRef }))),
+    },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement', handle: async (s, v, [id]) => reply(await services(s).financement.financing(v, id!)) },
     { method: 'POST', pattern: new RegExp(`^/dossiers/${ID}/financement$`), name: 'dossiers.financement.etape', handle: withBody(async (s, v, [id], b) => reply(await services(s).financement.declare(v, id!, b))) },
     { method: 'GET', pattern: new RegExp(`^/dossiers/${ID}/arret$`), name: 'dossiers.arret', handle: async (s, v, [id]) => reply(await services(s).arret.of(v, id!)) },
@@ -170,14 +179,16 @@ export function dossierRoutes(): DossierRoute[] {
       method: 'GET',
       pattern: /^\/dossiers\/alertes$/,
       name: 'dossiers.alertes',
-      // Les alertes de l'agent : financement et bouclier contre le faux RIB, pour lui seul [R16].
+      // Les alertes de l'agent : financement, bouclier contre le faux RIB, conditions suspensives (AU082), pour lui seul [R16].
       handle: async (s, v) => {
         const sv = services(s);
         const financing = await sv.financement.alertsOf(v);
         if (!financing.ok) return reply(financing);
         const funds = await sv.bouclier.alertsOf(v);
         if (!funds.ok) return reply(funds);
-        return reply({ ok: true, value: { financement: financing.alerts, fonds: funds.alerts } });
+        const conditions = await sv.conditions.tasksOf(v);
+        if (!conditions.ok) return reply(conditions);
+        return reply({ ok: true, value: { financement: financing.alerts, fonds: funds.alerts, conditions: conditions.tasks } });
       },
     },
   ];
@@ -188,7 +199,7 @@ export function dossierRoutes(): DossierRoute[] {
  * est indépendante : la panne de l'une n'empêche pas les autres ; la première panne est relancée à la fin. Rejoué, il
  * n'ajoute rien.
  */
-export async function syncDossiers(s: DossierServices, networkId: string): Promise<{ deadlines: number; financing: number; funds: number; reminders: number }> {
+export async function syncDossiers(s: DossierServices, networkId: string): Promise<{ deadlines: number; financing: number; funds: number; reminders: number; conditions: number }> {
   const sv = services(s);
   let failure: unknown = null;
   // Chaque panne est écrite au journal sous le nom de son étape, sans donnée [R13] ; la première est relancée à la fin.
@@ -203,11 +214,12 @@ export async function syncDossiers(s: DossierServices, networkId: string): Promi
   };
   const deadlines = await step('echeances', () => sv.echeancier.run(networkId));
   const financing = await step('financement', () => sv.financement.run(networkId));
+  const conditions = await step('conditions', () => sv.conditions.run(networkId));
   const funds = await step('bouclier', () => sv.bouclier.run(networkId, new Date(s.now().getTime() - SHIELD_LOOKBACK_HOURS * 3_600_000)));
   // Le dimanche, aucune relance ne part [R01] : le passage ne les prépare pas, pour ne laisser aucune attente vaine.
   const reminders = localTime(s.now(), 'Europe/Paris').weekday === 7 ? 0 : await step('relances', () => sv.relances.run(networkId));
   if (failure !== null) throw failure;
-  return { deadlines, financing, funds, reminders };
+  return { deadlines, financing, funds, reminders, conditions };
 }
 
 export const DOSSIERS_JOB = 'dossiers.passage';

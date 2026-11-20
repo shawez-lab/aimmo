@@ -171,6 +171,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.date': 'partage',
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
+  // Les conditions suspensives sont celles du compromis, signé par les deux parties (AU082).
+  'dossier.condition': 'partage',
+  'dossier.condition_alerte': 'partage',
   'dossier.piece_recue': 'partage',
   'dossier.depot': INTERNE('Fichier déposé par l\'agent, pas encore rangé comme pièce : sa référence, sans donnée d\'un client.'),
   'dossier.depot.refuse': INTERNE('Dépôt refusé pour un motif technique, sans donnée d\'un client.'),
@@ -647,6 +650,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // La notification d'un coacquéreur est la sienne (AU009).
   sale_file_buyer_notices: { locate: by('person_id') },
   sale_file_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  // Les conditions suspensives du dossier et leurs alertes (AU082).
+  sale_file_conditions: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  sale_file_condition_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   sale_file_reminders: { locate: by('person_id') },
   // Le financement est celui de l'acquéreur : le vendeur ne le voit pas.
   sale_file_financing: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
