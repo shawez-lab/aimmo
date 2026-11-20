@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
+import { sealAt } from '../src/sauvegarde/copie.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -329,6 +330,14 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [twin.id])).toEqual({ first_name: null });
     // Un périmètre qui ne contient pas la fiche de l'entrée n'est pas noté.
     await expect(recordErasure(t.ledger.store, t.key, { requestId: 'x', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString(), members: [twin.id] })).rejects.toThrow();
+    // Et à la lecture : une entrée bien chiffrée dont le périmètre oublie sa fiche rend le registre illisible, avant tout
+    // effacement.
+    const place = 'effacements/20270211T100000000Z-badbadbadbadbad0';
+    await t.ledger.store.put(place, await sealAt(t.key, place, JSON.stringify({ requestId: 'x', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString(), members: [twin.id] })));
+    let called = 0;
+    const counting = { erase: async () => ++called };
+    expect(await replayErasures(t.db, t.ledger.store, t.key, counting, { copyTakenAt: NOW.toISOString(), now: t.now })).toEqual({ ok: false, code: 'ledger_unreadable', replayed: 0 });
+    expect(called).toBe(0);
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
