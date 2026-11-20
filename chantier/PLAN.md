@@ -377,7 +377,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#725, `888895fb`), migration `4040` (`academy_prior_entries`, ajout seul). Décidé : la direction range la période de référence du cycle d'avant (la dernière l'emporte) et chaque attestation d'avant (une fois par pièce), pièce et nom à l'appui, jamais après l'arrivée ; elles comptent comme justifiées ; routes `/v1/reseau/agents/<id>/formation/periode-anterieure` et `/anterieures`. Codex 1 P0 (attestation rangée deux fois) corrigé, puis rien. Écran de saisie côté direction à faire avec l'écran du réseau si besoin.
 
 ### AU029 · Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A029 (majeur), endroit : docs/REPRISE.md, J05 ; C/reseau/import-agent.ts.
 - Constat de l'audit : Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel.
