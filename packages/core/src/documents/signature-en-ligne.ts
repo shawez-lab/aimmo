@@ -35,7 +35,7 @@ import { SqlSendJournal } from '../envoi/journal-envois.ts';
 import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
-import { ControlesSignature, documentMandants, type SignatureCheck } from './controles.ts';
+import { ControlesSignature, documentMandants, documentPersons, documentProxies, type SignatureCheck } from './controles.ts';
 import { escapeHtml, sha256 } from './modeles.ts';
 import { SignaturePapier } from './signature-papier.ts';
 import type { OutboundChannel } from '../envoi/canaux.ts';
@@ -148,7 +148,13 @@ export class SignatureEnLigne {
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
     private readonly journal: JournalStore,
-    private readonly options: { now?: () => Date; newId?: () => string; channels?: readonly OutboundChannel[] } = {},
+    private readonly options: {
+      now?: () => Date;
+      newId?: () => string;
+      channels?: readonly OutboundChannel[];
+      /** Le stockage des scans du mandat, où la procuration d'un mandant représenté se vérifie (AU059). */
+      scans?: { has(ref: string): Promise<boolean> } | null;
+    } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -270,9 +276,13 @@ export class SignatureEnLigne {
     const docKind = (await this.db.first<{ kind: string }>('SELECT kind FROM documents WHERE id = ?', [documentId]))!.kind;
     const mode: SignatureMode = MANDATE_KINDS.includes(docKind) ? (await this.modeFor(viewer.networkId)).mode : 'essai';
     if (await this.signedBy(documentId, doc.person_id, signer, contentHash, mode === 'reel' ? 'reel' : undefined)) return { ok: false, rule: null, code: 'already_signed' };
-    // Le signataire accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
-    const consent = await this.fiche.hasConsentInForce(signer, ONLINE_SIGNATURE_PURPOSE, 'email');
-    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: signer, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
+    // Un mandant représenté par procuration (AU059) : le code part à son représentant, qui signe pour lui.
+    const proxy = (await documentProxies(this.db, documentId)).find((p) => p.mandantId === signer) ?? null;
+    if (proxy && !(await this.seesInFull(viewer, proxy.proxyId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
+    const recipient = proxy ? proxy.proxyId : signer;
+    // Celui qui reçoit le code accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
+    const consent = await this.fiche.hasConsentInForce(recipient, ONLINE_SIGNATURE_PURPOSE, 'email');
+    if (!consent) await this.store.addConsent({ networkId: viewer.networkId, personId: recipient, purpose: ONLINE_SIGNATURE_PURPOSE, channel: 'email', proof: input.consentProof.trim(), givenAt: this.now() });
     const id = this.newId();
     const code = newCode();
     const expiresAt = new Date(this.now().getTime() + CODE_TTL_MINUTES * 60_000).toISOString();
@@ -280,16 +290,26 @@ export class SignatureEnLigne {
       `INSERT INTO signature_sessions (id, network_id, document_id, content_hash, code_hash, expires_at, attempts, status, created_by, created_at, signer_person_id, mode) VALUES (?, ?, ?, ?, ?, ?, 0, 'ouverte', ?, ?, ?, ?)`,
       [id, viewer.networkId, documentId, contentHash, await sha256(`${id}:${code}`), expiresAt, this.actor(viewer), this.now().toISOString(), signer, mode],
     );
-    const hello = await this.greeting(signer);
+    if (proxy) {
+      await this.db.run('INSERT INTO signature_session_proxies (session_id, network_id, document_id, mandant_person_id, proxy_person_id, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+        id,
+        viewer.networkId,
+        documentId,
+        signer,
+        proxy.proxyId,
+        this.now().toISOString(),
+      ]);
+    }
+    const hello = await this.greeting(recipient);
     const sent = await this.envoisFor(mode)!.send({
       networkId: viewer.networkId,
       agentId: doc.agent_id,
-      personId: signer,
+      personId: recipient,
       channel: 'email',
       kind: 'alert',
       purpose: ONLINE_SIGNATURE_PURPOSE,
       subject: `signature:${id}`,
-      fallbackTexts: [`${hello}Votre code de signature AIMMO : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.${mode === 'essai' ? ' Signature d’essai, sans valeur juridique.' : ''}`],
+      fallbackTexts: [`${hello}${proxy ? 'Vous signez en vertu de votre procuration. ' : ''}Votre code de signature AIMMO : ${code}. Il est valable ${CODE_TTL_MINUTES} minutes. Ne le donnez à personne, pas même à votre agent.${mode === 'essai' ? ' Signature d’essai, sans valeur juridique.' : ''}`],
       figures: [code, CODE_TTL_MINUTES],
       secrets: [{ kind: 'code', value: code }],
     });
@@ -320,7 +340,8 @@ export class SignatureEnLigne {
     }
     // Chaque mandant aussi : une fiche confiée depuis à un autre agent arrête la signature, dont le résultat dit l'état de
     // tous [R16].
-    for (const personId of await documentMandants(this.db, session.document_id, doc.person_id)) {
+    // Chaque représentant aussi, avant que le code ne serve (AU059).
+    for (const personId of await documentPersons(this.db, session.document_id, doc.person_id)) {
       if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     if (session.status === 'signee') return { ok: false, rule: null, code: 'already_signed' };
@@ -388,8 +409,12 @@ export class SignatureEnLigne {
     // Seul celui qui voit la fiche en entier, agent ou direction, demande l'envoi [R16].
     const read = await this.acces.readFiche(viewer, doc.person_id);
     if (!read.ok || read.view !== 'full' || (viewer.role !== 'agent' && viewer.role !== 'direction')) return false;
-    const signer = session.signer_person_id ?? doc.person_id;
-    if (signer !== doc.person_id && !(await this.seesInFull(viewer, signer, `signature:${sessionId}`))) return false;
+    const mandant = session.signer_person_id ?? doc.person_id;
+    if (mandant !== doc.person_id && !(await this.seesInFull(viewer, mandant, `signature:${sessionId}`))) return false;
+    // Signé par un représentant (AU059) : la référence part à lui, qui a reçu le code et donné son accord.
+    const proxy = await this.db.first<{ proxy_person_id: string }>('SELECT proxy_person_id FROM signature_session_proxies WHERE session_id = ?', [sessionId]);
+    if (proxy && !(await this.seesInFull(viewer, proxy.proxy_person_id, `signature:${sessionId}`))) return false;
+    const signer = proxy?.proxy_person_id ?? mandant;
     const hello = await this.greeting(signer);
     const real = session.mode === 'reel';
     const envois = this.envoisFor(session.mode);
@@ -423,7 +448,7 @@ export class SignatureEnLigne {
     if (!read.ok) return read;
     // L'exemplaire nomme chaque mandant : chacune de leurs fiches est vue en entier (AU001).
     let others = true;
-    for (const personId of (await documentMandants(this.db, session.document_id, doc.person_id)).slice(1)) {
+    for (const personId of (await documentPersons(this.db, session.document_id, doc.person_id)).slice(1)) {
       if (!(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) others = false;
     }
     if (read.view !== 'full' || !others) {
@@ -447,7 +472,7 @@ export class SignatureEnLigne {
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     // Chaque signataire est une fiche : son état n'est rendu qu'à qui les voit toutes en entier [R16].
-    for (const personId of await documentMandants(this.db, documentId, doc.person_id)) {
+    for (const personId of await documentPersons(this.db, documentId, doc.person_id)) {
       if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     const hash = await sha256(doc.content);
@@ -469,7 +494,12 @@ export class SignatureEnLigne {
   private async distinctMandants(documentId: string, firstPersonId: string): Promise<boolean> {
     const ids = await documentMandants(this.db, documentId, firstPersonId);
     const roots = new Set(await Promise.all(ids.map((id) => this.fiche.rootOf(id))));
-    return roots.size === ids.length;
+    if (roots.size !== ids.length) return false;
+    // Un représentant réuni depuis à un mandant n'en est plus un : rien ne se signe (AU059) [R41].
+    for (const p of await documentProxies(this.db, documentId)) {
+      if (roots.has(await this.fiche.rootOf(p.proxyId))) return false;
+    }
+    return true;
   }
 
   /** Le viewer voit-il cette fiche en entier, agent ou direction ? Sinon le refus va au journal [R16]. */
@@ -517,7 +547,8 @@ export class SignatureEnLigne {
     if (!doc || doc.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_document' };
     if (!MANDATE_KINDS.includes(doc.kind)) return { ok: false, rule: null, code: 'not_a_mandate' };
     const mandants = await documentMandants(this.db, documentId, doc.person_id);
-    for (const personId of mandants) {
+    // Chaque mandant et chaque représentant, à chaque reprise de la remise aussi (AU059) [R16].
+    for (const personId of await documentPersons(this.db, documentId, doc.person_id)) {
       if (!(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     const contentHash = await sha256(doc.content);
@@ -546,7 +577,7 @@ export class SignatureEnLigne {
       // et une reprise continue là où elle s'était arrêtée [R39, R41].
       let numbered = doc.content;
       if (MANDATE_KINDS.includes(doc.kind)) {
-        const registered = await new SignaturePapier(this.db, this.acces, this.journal, { now: this.now }).register(viewer, documentId, {
+        const registered = await new SignaturePapier(this.db, this.acces, this.journal, { now: this.now, ...(this.options.scans !== undefined ? { powers: this.options.scans } : {}) }).register(viewer, documentId, {
           signedAt: new Date(signedAt),
           place: 'distance',
           scanRef: `signature-en-ligne/${documentId}`,
@@ -562,8 +593,10 @@ export class SignatureEnLigne {
       }
       const copyOfNumbered = await sha256(numbered);
       const fmt = (iso: string) => escapeHtml(iso);
+      // Qui a signé pour qui (AU059) : la session d'un mandant représenté a envoyé son code au représentant.
+      const byProxy = new Set((await this.db.all<{ session_id: string }>('SELECT session_id FROM signature_session_proxies WHERE document_id = ?', [documentId])).map((r) => r.session_id));
       const lines = sessions.map((r, i) =>
-        `<li>Mandant ${i + 1} : session ${escapeHtml(r.id)} ; code à usage unique envoyé par mail le ${fmt(r.created_at)} ; signé le ${fmt(r.signed_at!)} ; ${r.drawing_hash ? `code et signature tracée à l’écran (empreinte du tracé ${escapeHtml(r.drawing_hash)})` : 'code'}.</li>`);
+        `<li>Mandant ${i + 1} : session ${escapeHtml(r.id)} ; ${byProxy.has(r.id) ? 'signé par son représentant, en vertu de la procuration nommée au document ; ' : ''}code à usage unique envoyé par mail le ${fmt(r.created_at)} ; signé le ${fmt(r.signed_at!)} ; ${r.drawing_hash ? `code et signature tracée à l’écran (empreinte du tracé ${escapeHtml(r.drawing_hash)})` : 'code'}.</li>`);
       const dossier = [
         '<section class="dossier-preuve">',
         '<h2>Dossier de preuve de la signature électronique AIMMO</h2>',
@@ -599,7 +632,10 @@ export class SignatureEnLigne {
     // La remise : chaque mandant, son exemplaire et le dossier, par le mail réel et le contrôle central [R16, R26].
     const remises: { position: number; sent: boolean }[] = [];
     const markSent = (personId: string) => this.db.run(`UPDATE signature_remises SET status = 'envoyee', sent_at = ? WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer'`, [this.now().toISOString(), documentId, personId]);
-    for (const r of await this.db.all<{ person_id: string; position: number; status: string; attempt: number }>('SELECT person_id, position, status, attempt FROM signature_remises WHERE document_id = ? ORDER BY position', [documentId])) {
+    // Un mandant représenté (AU059) : son exemplaire part à son représentant, qui a reçu le code et donné son accord.
+    const proxies = await documentProxies(this.db, documentId);
+    for (const row of await this.db.all<{ person_id: string; position: number; status: string; attempt: number }>('SELECT person_id, position, status, attempt FROM signature_remises WHERE document_id = ? ORDER BY position', [documentId])) {
+      const r = { ...row, mandant_id: row.person_id, person_id: proxies.find((p) => p.mandantId === row.person_id)?.proxyId ?? row.person_id };
       if (r.status === 'envoyee') { remises.push({ position: r.position, sent: true }); continue; }
       const envois = this.envoisFor('reel');
       // Sans mail réel, rien ne part : la remise reste à envoyer.
@@ -609,14 +645,14 @@ export class SignatureEnLigne {
       // Déjà partie par un essai, puis une panne avant d'être notée : elle est notée, jamais renvoyée.
       let delivered = false;
       for (let a = 1; a <= r.attempt && !delivered; a++) delivered = await this.deliveredBefore(r.person_id, subjectOf(a));
-      if (delivered) { await markSent(r.person_id); remises.push({ position: r.position, sent: true }); continue; }
+      if (delivered) { await markSent(r.mandant_id); remises.push({ position: r.position, sent: true }); continue; }
       let attempt = r.attempt;
       // Un essai réservé, sans accusé du canal ni échec écrit, depuis plus d'une heure : abandonné (panne avant la
       // remise). Un nouvel essai, sous un nouveau sujet et avec un texte qui porte son rang (l'anti-doublon du texte,
       // R05, refuserait sinon le même texte), le remplace ; au pire, le mandant reçoit deux fois son exemplaire.
       const stale = await this.db.first<{ created_at: string }>('SELECT created_at FROM message_subjects WHERE person_id = ? AND subject = ? ORDER BY created_at DESC LIMIT 1', [r.person_id, subjectOf(attempt)]);
       if (stale && this.now().getTime() - Date.parse(stale.created_at) > ABANDONED_SEND_MS) {
-        const { changes } = await this.db.run(`UPDATE signature_remises SET attempt = attempt + 1 WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer' AND attempt = ?`, [documentId, r.person_id, attempt]);
+        const { changes } = await this.db.run(`UPDATE signature_remises SET attempt = attempt + 1 WHERE document_id = ? AND person_id = ? AND status = 'a_envoyer' AND attempt = ?`, [documentId, r.mandant_id, attempt]);
         // Une autre demande vient de prendre le nouvel essai : elle l'envoie.
         if (changes !== 1) { remises.push({ position: r.position, sent: false }); continue; }
         attempt += 1;
@@ -641,7 +677,7 @@ export class SignatureEnLigne {
         figures: [attempt, ...(number?.match(/\d+/g) ?? []), ...(documentId.match(/\d+/g) ?? []), ...(dossierRow.copy_hash.match(/\d+/g) ?? [])],
       });
       const ok = sent.status === 'sent';
-      if (ok) await markSent(r.person_id);
+      if (ok) await markSent(r.mandant_id);
       remises.push({ position: r.position, sent: ok });
     }
     return { ok: true, value: { documentId, contentHash, dossierHash: dossierRow.dossier_hash, copyHash: dossierRow.copy_hash, number, remises } };
@@ -651,7 +687,7 @@ export class SignatureEnLigne {
   async dossier(viewer: Viewer, documentId: string): Promise<{ ok: true; value: { copy: string; dossier: string; dossierHash: string; copyHash: string } } | Refusal | { ok: false; rule: null; code: 'unknown_document' | 'not_finished' }> {
     const doc = await this.db.first<{ network_id: string; person_id: string }>('SELECT network_id, person_id FROM documents WHERE id = ?', [documentId]);
     if (!doc || doc.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_document' };
-    for (const personId of await documentMandants(this.db, documentId, doc.person_id)) {
+    for (const personId of await documentPersons(this.db, documentId, doc.person_id)) {
       if (!(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     const row = await this.db.first<{ copy_content: string; dossier: string; dossier_hash: string; copy_hash: string }>('SELECT copy_content, dossier, dossier_hash, copy_hash FROM signature_dossiers WHERE document_id = ?', [documentId]);

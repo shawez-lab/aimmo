@@ -21,7 +21,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { Mandats } from '../mandats/source.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
-import { ControlesSignature, documentMandants, type SignatureCheck } from './controles.ts';
+import { ControlesSignature, documentPersons, type SignatureCheck } from './controles.ts';
 import { mandateScanPrefix } from './mandat-du-bien.ts';
 import { Diffusion } from './retractation.ts';
 import { escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
@@ -78,6 +78,8 @@ export interface PaperSignatureOptions {
    * pour les appelants internes ; la route donne toujours l'un ou l'autre. Une reprise garde son scan et ne repasse pas ici.
    */
   scans?: { has(ref: string): Promise<boolean> } | null;
+  /** Où vérifier la procuration d'un mandant représenté, quand ce n'est pas `scans` (la signature en ligne) (AU059). */
+  powers?: { has(ref: string): Promise<boolean> } | null;
 }
 
 export class SignaturePapier {
@@ -294,7 +296,8 @@ export class SignaturePapier {
     if (!read.ok) return read;
     // L'exemplaire nomme chaque mandant : chacune de leurs fiches est vue en entier (AU001) [R16].
     let others = true;
-    for (const personId of (await documentMandants(this.db, documentId, row.person_id)).slice(1)) {
+    // Chaque mandant et chaque représentant nommés à l'exemplaire (AU001, AU059) [R16].
+    for (const personId of (await documentPersons(this.db, documentId, row.person_id)).slice(1)) {
       const co = await this.acces.readFiche(viewer, personId);
       if (!co.ok) return co;
       if (co.view !== 'full') others = false;

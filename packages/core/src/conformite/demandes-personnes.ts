@@ -122,7 +122,11 @@ async function sharedRow(db: SqlDatabase, entry: Extract<AccessMapEntry, { locat
   if (!entry.sharedIf) return true;
   const value = row[entry.sharedIf.key];
   if (value === null || value === undefined) return false;
-  return (await db.first(`SELECT 1 AS x FROM ${entry.sharedIf.from} WHERE ${entry.sharedIf.column} = ? LIMIT 1`, [value])) !== null;
+  // Partagée dès qu'une des tables qui la désignent la nomme (co-mandants, représentants : AU001, AU059).
+  for (const from of [entry.sharedIf.from, ...(entry.sharedIf.alsoFrom ?? [])]) {
+    if ((await db.first(`SELECT 1 AS x FROM ${from} WHERE ${entry.sharedIf.column} = ? LIMIT 1`, [value])) !== null) return true;
+  }
+  return false;
 }
 
 export async function assembleAccess(
