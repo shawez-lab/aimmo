@@ -41,6 +41,8 @@ export interface AgentExport {
     clients?: Row[];
     clientIdentifiers?: Row[];
     clientConsents?: Row[];
+    /** AU110 · les projets de ses clients (vendre, acheter…), que ses mandats désignent. */
+    projects?: Row[];
     /** AU110 · périmètre « avec pièces » : les références des pièces de son portefeuille, chacune avec sa table. */
     files?: Row[];
   };
@@ -81,6 +83,7 @@ export function exportOrphans(doc: AgentExport): string[] {
     // L'export de reprise : chaque part a sa vente, chaque pièce signée son mandat, chaque photo son bien.
     const sales = new Set((t.sales ?? []).map((r) => String(r.file_id)));
     check('commissionShares', t.commissionShares, 'file_id', sales);
+    check('mandates', t.mandates, 'project_id', new Set((t.projects ?? []).map((r) => String(r.id))));
     check('files', (t.files ?? []).filter((r) => r.mandate_id !== undefined), 'mandate_id', mandates);
     check('files', (t.files ?? []).filter((r) => r.property_id !== undefined), 'property_id', props);
   }
@@ -89,6 +92,7 @@ export function exportOrphans(doc: AgentExport): string[] {
     for (const id of persons) if (!clients.has(id)) out.push(`clients.id:${id}`);
     check('clientIdentifiers', t.clientIdentifiers, 'person_id', clients);
     check('clientConsents', t.clientConsents, 'person_id', clients);
+    check('projects', t.projects, 'person_id', clients);
   }
   return out.sort();
 }
@@ -217,10 +221,15 @@ export class ExportAgent {
       tables.clients = await q('SELECT id, first_name, last_name, created_at FROM persons WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id');
       const mine = new Set(tables.clients.map((r) => String(r.id)));
       tables.clientIdentifiers = (await q('SELECT i.person_id, i.kind, i.value FROM person_identifiers i JOIN persons p ON p.id = i.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY i.person_id, i.kind, i.value'));
+      tables.projects = await q('SELECT j.id, j.person_id, j.kind, j.stage, j.deadline, j.budget_min_eur, j.budget_max_eur, j.created_at FROM projects j JOIN persons p ON p.id = j.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY j.created_at, j.id');
       tables.clientConsents = await q('SELECT c.person_id, c.purpose, c.channel, c.given_at, c.withdrawn_at FROM consents c JOIN persons p ON p.id = c.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY c.person_id, c.given_at, c.id');
       // Une ligne qui désigne un client hors de ses fiches, ou un bien hors des siens, n'est pas à lui : écartée et comptée.
       const props = new Set(tables.properties.map((r) => String(r.id)));
-      const keep = (r: Row) => (r.person_id === null || r.person_id === undefined || mine.has(String(r.person_id))) && (r.property_id === null || r.property_id === undefined || props.has(String(r.property_id)));
+      const projectIds = new Set(tables.projects.map((r) => String(r.id)));
+      const keep = (r: Row) =>
+        (r.person_id === null || r.person_id === undefined || mine.has(String(r.person_id))) &&
+        (r.property_id === null || r.property_id === undefined || props.has(String(r.property_id))) &&
+        (r.project_id === null || r.project_id === undefined || projectIds.has(String(r.project_id)));
       const excluded: Record<string, number> = {};
       for (const key of ['attributions', 'appointments', 'mandates'] as const) {
         const before = tables[key].length;

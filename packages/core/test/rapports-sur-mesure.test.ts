@@ -262,6 +262,10 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('fiche-alex', 'bien-alex', ?, 1, ?, 'agent', '2027-05-02')", [t.network.id, JSON.stringify({ media: [{ ref: 'biens/bien-alex/photo-1.jpg', kind: 'photo' }] })]);
     // Deux mandats signés d'Alex : l'un pour son client, l'autre pour un client confié depuis à Sam.
     await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES ('man-autre', ?, ?, ?, NULL, NULL, '2027-06-21', 'site', NULL, NULL, ?, '2027-06-21')", [t.network.id, t.alex.id, autre, t.alex.id]);
+    // Un mandat de son client qui désigne son projet de vente : le projet part avec lui [AU110].
+    await t.db.run("INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, created_at, updated_at) VALUES ('proj-1', ?, ?, ?, 'sell', 'new', '2027-06-01', '2027-06-01')", [t.network.id, t.alex.id, client]);
+    await t.db.run("INSERT INTO projects (id, network_id, agent_id, person_id, kind, stage, created_at, updated_at) VALUES ('proj-autre', ?, ?, ?, 'sell', 'new', '2027-06-01', '2027-06-01')", [t.network.id, t.alex.id, autre]);
+    await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES ('man-p', ?, ?, ?, 'proj-1', NULL, '2027-06-22', 'site', NULL, NULL, ?, '2027-06-22')", [t.network.id, t.alex.id, client, t.alex.id]);
     await t.db.run('PRAGMA foreign_keys = OFF');
     for (const [doc, mandate, person, scan] of [['doc-a', 'man-9', client, 'mandats/x/scan-a.pdf'], ['doc-b', 'man-autre', autre, 'mandats/x/scan-b.pdf']] as const) {
       await t.db.run("INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at) VALUES (?, ?, 't', 1, 'h', 'mandat_vente_simple', 'reel', 'complet', '[]', ?, ?, NULL, 'x', 'h', 'agent', '2027-06-20')", [doc, t.network.id, t.alex.id, person]);
@@ -297,6 +301,8 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     // de l'export ; rien d'orphelin ne reste ; rien d'un autre agent n'y entre.
     expect(doc.excluded).toEqual({ appointments: 1, mandates: 1, sales: 3, commissionShares: 2, files: 1 });
     expect(doc.tables.commissionShares).toEqual([]);
+    expect(doc.tables.projects!.map((r) => r.id)).toEqual(['proj-1']);
+    expect(doc.tables.mandates!.find((r) => r.id === 'man-p')).toMatchObject({ project_id: 'proj-1' });
     expect(exportOrphans(doc)).toEqual([]);
     expect(JSON.stringify(doc)).not.toContain(autre);
     expect(JSON.stringify(doc)).not.toContain(t.sam.id);
