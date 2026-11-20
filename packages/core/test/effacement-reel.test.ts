@@ -310,6 +310,20 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(await t.fiche.membersOf(twin.id)).toEqual(expect.arrayContaining([t.personId, twin.id]));
   });
 
+  it('[R231] le rejeu efface la personne entière : toutes ses fiches réunies, pas la seule fiche de l’entrée', async () => {
+    const t = await setup();
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noé', lastName: 'Double' });
+    await t.fiche.merge({ survivorId: t.other.id, mergedId: twin.id, reason: 'Même personne (inventé)' });
+    await t.db.run(
+      "INSERT INTO calls (id, network_id, provider, call_id, status, failure, person_id, consent_given_at, recording_ref, created_at) VALUES ('appel-double', ?, 'essai', 'appel-double', 'impossible', 'echec', ?, ?, NULL, ?)",
+      [t.network.id, twin.id, NOW.toISOString(), NOW.toISOString()],
+    );
+    const eraser = new SqlPersonEraser({ objects: t.objects.eraser });
+    expect(await eraser.erase(t.db, { requestId: 'demande-double', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() })).toBeGreaterThan(0);
+    expect(await t.db.first("SELECT id FROM calls WHERE id = 'appel-double'")).toBeNull();
+    expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [twin.id])).toEqual({ first_name: null });
+  });
+
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
     const t = await setup();
     const { plan, outcome } = await eraseForReal(t.db, [t.other.id], { objects: t.objects.eraser });
