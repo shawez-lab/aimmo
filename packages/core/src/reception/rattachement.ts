@@ -5,7 +5,7 @@
  * répondre (S05). Une demande d'arrêt [R04], un refus ou « vendu » [R02] excluent dès la réception.
  * N'envoie rien : toute réponse sortira par le contrôle central (S06). Rien n'est jamais effacé [R17].
  */
-import { storedForms } from '../fiche/empreinte.ts';
+import { contactKeyHash, keyLookupForms, storedForms } from '../fiche/empreinte.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
@@ -302,9 +302,11 @@ export class Rattachement {
 
   private async keyOwners(networkId: string, keys: readonly string[]): Promise<Person[]> {
     if (keys.length === 0) return [];
+    // En clair ou sous empreinte : la clé d'une fiche effacée n'est gardée que sous son empreinte (AU020c) [R04].
+    const forms = await keyLookupForms(networkId, keys);
     const rows = await this.db.all<{ person_id: string }>(
-      `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(keys.length)})`,
-      [networkId, ...keys],
+      `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(forms.length)})`,
+      [networkId, ...forms],
     );
     const persons = await Promise.all(rows.map((r) => this.store.getPerson(r.person_id)));
     return persons.filter((p): p is Person => p !== null);
@@ -320,6 +322,8 @@ export class Rattachement {
   /** Une seule instruction par clé : la première fiche qui la réserve la garde. */
   private async claimKeys(networkId: string, personId: string, keys: readonly string[], at: Date): Promise<void> {
     if (keys.length === 0) return;
+    // Une fiche effacée ne reçoit ses clés que sous empreinte (AU020c).
+    if (await this.fiche.isErased(personId)) keys = await Promise.all(keys.map((k) => contactKeyHash(networkId, k)));
     await this.db.run(
       `INSERT INTO contact_keys (network_id, key, person_id, created_at)
        VALUES ${keys.map(() => '(?, ?, ?, ?)').join(', ')}

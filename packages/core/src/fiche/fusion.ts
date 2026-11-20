@@ -129,14 +129,15 @@ export class FicheUnique {
     return this.store.addIdentifier(input);
   }
 
-  /** Vrai si la fiche, ou une fiche qui lui est réunie, a été effacée : ses identifiants sont sous empreinte (AU020c). */
+  /** Vrai si la fiche, ou une fiche qui lui est réunie, a été effacée : ses identifiants ou ses clés sont sous empreinte (AU020c). */
   async isErased(personId: string): Promise<boolean> {
     const members = await this.membersOf(personId);
-    const row = await this.db.first(`SELECT 1 AS x FROM person_identifiers WHERE person_id IN (${placeholders(members.length)}) AND substr(value, 1, ?) = ? LIMIT 1`, [
-      ...members,
-      HASHED_PREFIX.length,
-      HASHED_PREFIX,
-    ]);
+    const q = placeholders(members.length);
+    const row = await this.db.first(
+      `SELECT 1 AS x WHERE EXISTS (SELECT 1 FROM person_identifiers WHERE person_id IN (${q}) AND substr(value, 1, ?) = ?)
+         OR EXISTS (SELECT 1 FROM contact_keys WHERE person_id IN (${q}) AND substr(key, 1, ?) = ?)`,
+      [...members, HASHED_PREFIX.length, HASHED_PREFIX, ...members, HASHED_PREFIX.length, HASHED_PREFIX],
+    );
     return row !== null;
   }
 

@@ -25,7 +25,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase, SqlValue } from '../db/sql.ts';
-import { identifierHash, isHashedIdentifier } from '../fiche/empreinte.ts';
+import { contactKeyHash, identifierHash, isHashedIdentifier } from '../fiche/empreinte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { normalizeIdentifier } from '../fiche/normalize.ts';
 import type { IdentifierKind } from '../db/types.ts';
@@ -104,7 +104,7 @@ export interface RealErasureOutcome {
   erased: RealErasureCount[];
   /** Lignes gardées parce qu'une pièce gardée les cite, leurs colonnes nominatives vidées. */
   pseudonymized: RealErasureCount[];
-  /** Identifiants dont la valeur en clair a été remplacée par son empreinte (AU020c). */
+  /** Identifiants et clés de contact dont la valeur en clair a été remplacée par son empreinte (AU020c). */
   hashed: RealErasureCount[];
   /** Arrêts posés par l'effacement, sur une fiche qui n'en avait pas sur tous les canaux [R04]. */
   stopped: RealErasureCount[];
@@ -264,6 +264,25 @@ export async function eraseForReal(
         bump(changes > 0 ? hashed : remaining, 'person_identifiers');
       } catch {
         bump(remaining, 'person_identifiers');
+      }
+    }
+    // Les clés de contact aussi (identifiant chez Instagram, Messenger…) : seule une clé retrouve une personne qui écrit
+    // en message privé sans adresse ni numéro [R04].
+    const keys = await db.all<{ network_id: string; key: string; person_id: string }>(
+      `SELECT network_id, key, person_id FROM contact_keys WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY key`,
+      [...personIds],
+    );
+    for (const k of keys) {
+      if (isHashedIdentifier(k.key)) continue;
+      const print = await contactKeyHash(k.network_id, k.key);
+      try {
+        const twin = await db.first('SELECT 1 AS x FROM contact_keys WHERE network_id = ? AND key = ?', [k.network_id, print]);
+        const { changes } = twin
+          ? await db.run('DELETE FROM contact_keys WHERE network_id = ? AND key = ? AND person_id = ?', [k.network_id, k.key, k.person_id])
+          : await db.run('UPDATE contact_keys SET key = ? WHERE network_id = ? AND key = ? AND person_id = ?', [print, k.network_id, k.key, k.person_id]);
+        bump(changes > 0 ? hashed : remaining, 'contact_keys');
+      } catch {
+        bump(remaining, 'contact_keys');
       }
     }
     // L'arrêt de la personne tient sur tous les canaux : posé s'il ne l'est pas déjà, jamais levé ici [R04].

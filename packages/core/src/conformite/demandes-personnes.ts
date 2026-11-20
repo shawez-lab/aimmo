@@ -442,7 +442,7 @@ export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[
     const base = { table: s.table, traitement: s.traitement };
     if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
     else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
-    else if (s.table === 'person_identifiers') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (s.table === 'person_identifiers' || s.table === 'contact_keys') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
     else {
       const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
       if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });

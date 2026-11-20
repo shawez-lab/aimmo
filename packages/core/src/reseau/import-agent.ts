@@ -14,6 +14,7 @@
  * direction, qui attribue [R16]. Les biens sont rangés comme biens de l'agent, en brouillon : l'import ne publie rien.
  * Aucune adresse exacte n'est lue. Rien n'est envoyé. Au journal, des nombres et des identifiants internes [R13].
  */
+import { keyLookupForms } from '../fiche/empreinte.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -666,7 +667,7 @@ export class ImportAgent {
     const ids = contactIdentifiers(contact);
     const found: Person[] = [];
     for (const id of ids) found.push(...(await this.fiche.findByIdentifier(networkId, id.kind, id.value)));
-    const keys = ids.map((id) => matchKey(id.kind, id.value));
+    const keys = await keyLookupForms(networkId, ids.map((id) => matchKey(id.kind, id.value)));
     const rows = keys.length === 0 ? [] : await this.db.all<{ person_id: string }>(
       `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(keys.length)})`,
       [networkId, ...keys],

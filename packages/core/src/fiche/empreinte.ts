@@ -36,3 +36,15 @@ export async function storedForms(networkId: string, kind: IdentifierKind, raw: 
   if (value === null) return [];
   return [value, await identifierHash(networkId, kind, value)];
 }
+
+/** L'empreinte d'une clé de contact (`instagram:direct:<id>`, `email:<adresse>`…), rangée à sa place après un effacement. */
+export async function contactKeyHash(networkId: string, key: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`aimmo-cle\n${networkId}\n${key}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return HASHED_PREFIX + Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Les clés à chercher : chacune en clair et sous son empreinte, pour retrouver aussi une fiche effacée (AU020c). */
+export async function keyLookupForms(networkId: string, keys: readonly string[]): Promise<string[]> {
+  return [...keys, ...(await Promise.all(keys.map((k) => contactKeyHash(networkId, k))))];
+}

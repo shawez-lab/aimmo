@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DecisionEnvoi, FicheUnique, Rattachement, Reception, conformite, identifierHash, isHashedIdentifier, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { DecisionEnvoi, FicheUnique, Rattachement, Reception, conformite, contactKeyHash, identifierHash, isHashedIdentifier, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { sealAt } from '../src/sauvegarde/copie.ts';
@@ -362,6 +362,8 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     const t = await setup();
     // Un numéro aussi, pour vérifier que WhatsApp et téléphone se reconnaissent sous empreinte.
     await t.store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'phone', value: '06 12 34 56 78' });
+    // Et une clé de contact : son compte Instagram, seul moyen de la retrouver quand elle écrit en message privé.
+    await t.db.run("INSERT INTO contact_keys (network_id, key, person_id, created_at) VALUES (?, 'instagram:direct:ig-lea-42', ?, ?)", [t.network.id, t.personId, NOW.toISOString()]);
     await t.demandes.prepareErasure(t.responsable, t.request.id);
     t.setClock(LATER);
     const r = await t.reel.erase(t.responsable, t.request.id);
@@ -370,11 +372,11 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     const decisions = new DecisionEnvoi(t.db, t.store, t.fiche, { now: t.now });
     const rattachement = new Rattachement(t.db, t.store, t.fiche, decisions, reception, { now: t.now });
     let seq = 0;
-    const receive = async (channel: 'email' | 'whatsapp', identifiers: { kind: 'email' | 'phone' | 'whatsapp'; value: string }[], name: string | null = 'Léa') => {
+    const receive = async (channel: 'email' | 'whatsapp' | 'instagram', identifiers: { kind: 'email' | 'phone' | 'whatsapp'; value: string }[], name: string | null = 'Léa', channelId: string | null = null) => {
       seq += 1;
       const [m] = (
         await reception.store(t.network.id, {
-          messages: [{ channel, kind: channel === 'email' ? 'email' : 'direct', externalId: `ext-effacee-${seq}`, conversationRef: `conv-effacee-${seq}`, sender: { channelId: null, name, identifiers }, subject: null, text: 'Bonjour, le bien est-il encore à vendre ?', receivedAt: new Date(LATER.getTime() + seq * 60_000), postRef: null, propertyRef: null, portal: null, hasAttachment: false }],
+          messages: [{ channel, kind: channel === 'email' ? 'email' : 'direct', externalId: `ext-effacee-${seq}`, conversationRef: `conv-effacee-${seq}`, sender: { channelId, name, identifiers }, subject: null, text: 'Bonjour, le bien est-il encore à vendre ?', receivedAt: new Date(LATER.getTime() + seq * 60_000), postRef: null, propertyRef: null, portal: null, hasAttachment: false }],
           unreadable: [],
           ignored: 0,
         } as Parameters<Reception['store']>[1])
@@ -392,7 +394,9 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
       expect(isHashedIdentifier(v)).toBe(true);
       for (const clear of ['lea', 'example', '612345678']) expect(v).not.toContain(clear);
     }
-    expect(t.receipt).toMatchObject({ hashed: [{ table: 'person_identifiers', rows: 2 }] });
+    expect(t.receipt).toMatchObject({ hashed: [{ table: 'contact_keys', rows: 1 }, { table: 'person_identifiers', rows: 2 }] });
+    expect(await t.db.all('SELECT key FROM contact_keys WHERE person_id = ?', [t.personId])).toEqual([{ key: await contactKeyHash(t.network.id, 'instagram:direct:ig-lea-42') }]);
+    expect(t.receipt.kept).toEqual(expect.arrayContaining([{ table: 'contact_keys', action: 'empreinte', rows: 1, why: IDENTIFIERS_KEPT }]));
     expect(t.receipt.kept).toEqual(expect.arrayContaining([{ table: 'person_identifiers', action: 'empreinte', rows: 2, why: IDENTIFIERS_KEPT }]));
     // L'autre personne garde ses identifiants en clair.
     expect(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.other.id])).toEqual([{ value: 'noe.autre@example.test' }]);
@@ -413,6 +417,11 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     expect(after.sources).toBe(before.sources);
     expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null, last_name: null });
     expect(JSON.stringify(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.personId]))).not.toContain('example');
+    // Ses clés de contact non plus ne reviennent pas en clair.
+    expect(JSON.stringify(await t.db.all('SELECT key FROM contact_keys'))).not.toContain('lea');
+    // La clé du message est réservée, sous empreinte seulement : la même que retrouvera le prochain message.
+    expect(after.contact_keys).toBe(before.contact_keys + 1);
+    expect(await t.db.first('SELECT person_id FROM contact_keys WHERE key = ?', [await contactKeyHash(t.network.id, 'email:lea.vendeuse@example.test')])).toEqual({ person_id: t.personId });
     // Rien ne lui répond, sur aucun canal.
     const conversationId = (await t.db.first<{ conversation_id: string }>('SELECT conversation_id FROM messages WHERE person_id = ? ORDER BY created_at DESC LIMIT 1', [t.personId]))!.conversation_id;
     for (const channel of ['email', 'sms', 'whatsapp'] as const) {
@@ -436,6 +445,17 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     const b = await t.fiche.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'LEA.encore@example.test' });
     expect(a.id).toBe(b.id);
     expect(isHashedIdentifier(a.value)).toBe(true);
+  });
+
+  it('[R04] un message privé Instagram, sans adresse ni numéro, la retrouve par sa clé sous empreinte et ne reçoit aucune réponse', async () => {
+    const t = await erased();
+    const before = await countAll(t.db);
+    const res = await t.receive('instagram', [], 'lea_insta', 'ig-lea-42');
+    expect(res).toMatchObject({ personId: t.personId, outcome: 'matched', silenced: true });
+    const after = await countAll(t.db);
+    for (const table of ['persons', 'consents', 'sources', 'contact_keys', 'person_identifiers']) expect(after[table], table).toBe(before[table]);
+    expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null });
+    expect(JSON.stringify(await t.db.all('SELECT key FROM contact_keys'))).not.toContain('ig-lea');
   });
 
   it('[R04] une fiche neuve qui porte son adresse est retrouvée comme doublon de la fiche effacée, et son arrêt la suit', async () => {
