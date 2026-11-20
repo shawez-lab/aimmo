@@ -1240,6 +1240,12 @@ export class ImportAgent {
       from: FORMAT_LABEL[r.source_format],
     }));
     const counts = Object.fromEntries(PIECE_CATEGORIES.map((c) => [c, pieces.filter((p) => p.category === c).length])) as Record<PieceCategory, number>;
+    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres seulement, jamais un fichier ni un lien [R13].
+    await appendEvent(
+      this.journal,
+      { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: String(viewer.role), via: 'import.dossier', pieces: pieces.length } },
+      this.now,
+    );
     return { ok: true, value: { propertyId, pieces, counts } };
   }
 

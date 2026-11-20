@@ -151,6 +151,9 @@ describeWithSqlite('AU030 · les biens repris gardent leur dossier : photos, dia
     expect(other).toEqual({ ok: false, rule: 'R16', code: 'not_assigned' });
     const direction = await w.importer.dossierOf({ role: 'direction', userId: 'dir-1', networkId: w.net }, id);
     expect(direction.ok && direction.value.pieces.length).toBe(7);
+    // Chaque lecture réussie est au journal avant d'être rendue [R16].
+    const reads = (await w.journal.all()).filter((e) => e.type === 'bien.lu');
+    expect(reads.map((e) => [e.subject, (e.data as { via: string; pieces: number }).via, (e.data as { pieces: number }).pieces])).toEqual([[`property:${id}`, 'import.dossier', 7]]);
     const refused = (await w.journal.all()).filter((e) => e.type === 'acces.refuse');
     expect(refused.map((e) => [e.subject, (e.data as { kind: string }).kind])).toEqual([[`property:${id}`, 'agent_import_dossier']]);
     // Un agent ne prévisualise pas l'import d'un autre [R16].
