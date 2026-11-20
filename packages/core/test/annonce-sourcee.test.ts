@@ -131,10 +131,22 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(traceListing('Logement à Dijon', 'Surface utile de 61,35 m².', f).ok).toBe(false);
     // Deux surfaces dans une phrase : chacune la sienne.
     expect(traceListing('Logement à Dijon', `Logement de ${String(FACTS.surfaceM2).replace('.', ',')} m², surface Carrez de 61,35 m².`, f).ok).toBe(true);
+    // Chaque mesure a son qualificatif : celui d'une autre mesure de la phrase ne déteint pas.
+    const g: ListingFacts = { ...FACTS, surfaceM2: 62, carrezM2: 60, usableM2: null };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 60 m² habitables.', g).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 62 m² habitables.', g).ok).toBe(true);
+    // Le texte de secours suit la règle de l'annonce : un logement dit l'habitable puis la Carrez, jamais l'utile.
     const text = fallbackListing({ ...f, usableM2: 70 });
     expect(text.body).toContain('Surface Carrez de 61,35 m².');
-    expect(text.body).toContain('Surface utile de 70 m².');
+    expect(text.body).not.toContain('utile');
     expect(traceListing(text.title, text.body, { ...f, usableM2: 70 }).ok).toBe(true);
+    // Un local s'annonce d'abord par sa surface utile, au titre comme au texte.
+    const local: ListingFacts = { ...FACTS, kind: 'commercial', surfaceM2: 90, usableM2: 82, carrezM2: null };
+    const shop = fallbackListing(local);
+    expect(shop.title).toContain('82 m² utiles');
+    expect(shop.body.startsWith('Local de 82 m² utiles')).toBe(true);
+    expect(shop.body).toContain('Surface habitable de 90 m².');
+    expect(traceListing(shop.title, shop.body, local).ok).toBe(true);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {

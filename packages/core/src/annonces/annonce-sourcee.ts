@@ -15,7 +15,7 @@
  * - « gratuit », « mandataire » et toute mention de l'IA sont refusés (AGENTS.md).
  */
 import type { PropertyKind } from '../db/types.ts';
-import type { Amenity, Condition, EnergyClass, HeatingKind, OutdoorKind } from './fiche-bien.ts';
+import { surfacesFor, type Amenity, type Condition, type EnergyClass, type HeatingKind, type OutdoorKind } from './fiche-bien.ts';
 
 /** Ce que l'IA reçoit du bien : ni nom, ni coordonnée, ni adresse, ni texte libre [R15, R46]. */
 export interface ListingFacts {
@@ -293,13 +293,13 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
     else fields = NO_UNIT_FIELDS;
     // AU063 · une surface dite « Carrez », « utile » ou « habitable » est celle-là, jamais une autre de même valeur.
     if (unit && unit.fields.includes('surfaceM2')) {
-      // Le qualificatif se lit juste avant le nombre (depuis la dernière virgule), ou juste après son unité.
-      const ahead = before.slice(-30).split(/[,;:]/u).at(-1) ?? '';
+      // Le qualificatif d'une mesure est le sien : juste après son unité d'abord, sinon juste avant le nombre, depuis la
+      // mesure ou la ponctuation qui précède ; celui d'une autre mesure de la phrase ne compte jamais.
       const behind = /^\s*(?:m²|m2|metres? carres?|metres?)\s+([\p{L}]+)/u.exec(after)?.[1] ?? '';
-      const near = `${ahead} ${behind}`;
-      if (/(?<![\p{L}])carrez(?![\p{L}])/u.test(near)) fields = ['carrezM2'];
-      else if (/(?<![\p{L}])utiles?(?![\p{L}])/u.test(near)) fields = ['usableM2'];
-      else if (/(?<![\p{L}])habitables?(?![\p{L}])/u.test(near)) fields = ['surfaceM2'];
+      const ahead = before.slice(-40).split(/[,;:]|\d/u).at(-1) ?? '';
+      const qualifier = (text: string): (keyof ListingFacts)[] | null =>
+        /(?<![\p{L}])carrez(?![\p{L}])/u.test(text) ? ['carrezM2'] : /(?<![\p{L}])utiles?(?![\p{L}])/u.test(text) ? ['usableM2'] : /(?<![\p{L}])habitables?(?![\p{L}])/u.test(text) ? ['surfaceM2'] : null;
+      fields = qualifier(behind) ?? qualifier(ahead) ?? fields;
     }
     const src = numbers.find((n) => fields.includes(n.field) && n.value === value);
     if (src) addSource(src.field, raw);
@@ -410,14 +410,19 @@ const CONDITION_LABEL: Record<Condition, string> = { neuf: 'Logement neuf.', ref
 /** Le texte de secours, fait par le code depuis la fiche seule : sobre, vrai, et qui passe toujours le contrôle. */
 export function fallbackListing(f: ListingFacts): { title: string; body: string } {
   const label = KIND_LABEL[f.kind];
+  // AU063 · les surfaces que l'annonce affiche, dans l'ordre de sa règle : la première ouvre le titre et le texte.
+  const shown = surfacesFor('annonce', { kind: f.kind, surfaceM2: f.surfaceM2, carrezM2: f.carrezM2 ?? null, usableM2: f.usableM2 ?? null });
+  const main = shown[0] ?? null;
+  const QUALIFIED: Record<string, string> = { habitable: '', carrez: ' Carrez', utile: ' utiles' };
+  const mainText = main ? `${fr(main.m2)} m²${QUALIFIED[main.kind]}` : null;
   const titleParts = [label];
   if (f.rooms !== null && f.kind !== 'land') titleParts.push(`${f.rooms} pièce${f.rooms > 1 ? 's' : ''}`);
-  if (f.surfaceM2 !== null) titleParts.push(`${fr(f.surfaceM2)} m²`);
+  if (mainText) titleParts.push(mainText);
   if (f.city) titleParts.push(f.city);
   const title = titleParts.join(', ');
   const lines: string[] = [];
   const first: string[] = [];
-  if (f.surfaceM2 !== null) first.push(`${label} de ${fr(f.surfaceM2)} m²`);
+  if (mainText) first.push(`${label} de ${mainText}`);
   else first.push(label);
   if (f.city) first.push(`à ${f.city}`);
   let s1 = first.join(' ');
@@ -434,9 +439,8 @@ export function fallbackListing(f: ListingFacts): { title: string; body: string 
     lines.push(`${list.charAt(0).toUpperCase()}${list.slice(1)}.`);
   }
   if (f.landM2 !== null && f.kind !== 'land') lines.push(`Terrain de ${fr(f.landM2)} m².`);
-  // AU063 · les autres surfaces, chacune nommée, telles que la fiche les porte.
-  if (f.carrezM2 !== null && f.carrezM2 !== undefined) lines.push(`Surface Carrez de ${fr(f.carrezM2)} m².`);
-  if (f.usableM2 !== null && f.usableM2 !== undefined) lines.push(`Surface utile de ${fr(f.usableM2)} m².`);
+  // AU063 · les autres surfaces que l'annonce affiche, chacune nommée.
+  for (const x of shown.slice(1)) lines.push(`${x.label.charAt(0).toUpperCase()}${x.label.slice(1)} de ${fr(x.m2)} m².`);
   if (f.parkingSpaces !== null && f.parkingSpaces > 0) lines.push(`${f.parkingSpaces} place${f.parkingSpaces > 1 ? 's' : ''} de stationnement.`);
   const heating = f.heating ? HEATING_LABEL[f.heating] : null;
   if (heating) lines.push(`${heating}.`);
