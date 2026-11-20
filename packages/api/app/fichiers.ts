@@ -2275,7 +2275,7 @@ ${LOUER_JS}
     // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
     $('entrer-appareil').addEventListener('click', function () {
       withCles(0, function (c) { return c.login(); }).then(function (r) {
-        if (r && r.token && writeKey(r.token)) enter(r.token); else if (r && r.text) { $('erreur').textContent = r.text; $('erreur').hidden = false; }
+        if (r && r.token && writeKey(r.token)) enter(r.token); else { $('erreur').textContent = (r && r.text) || 'Pas de réseau. Réessayez dans un moment.'; $('erreur').hidden = false; }
       });
     });
     $('form-connexion').addEventListener('submit', function (event) {

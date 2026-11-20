@@ -129,6 +129,17 @@ describe('AU023 · l’écran de connexion passe par la clé de l’appareil, sa
     expect(u.calls).toEqual([]);
   });
 
+  it('[R600] le script des clés ne se charge pas (sans réseau) : dit en mots, on peut réessayer', async () => {
+    const t = await run({}, { 'aimmo.appareil': JSON.stringify(WHO) });
+    await t.click(t.els['entrer-appareil']);
+    t.scripts()[0]!.listeners.error!({});
+    await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(t.els.erreur!.hidden).toBe(false);
+    expect(t.els.erreur!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.storage.get('aimmo.cle')).toBeUndefined();
+  });
+
   it('[R600] l’appareil retient qui il sert dès qu’une clé active est rangée : réseau, rôle, identifiant, rien de secret', async () => {
     const t = await run(
       {
@@ -141,6 +152,17 @@ describe('AU023 · l’écran de connexion passe par la clé de l’appareil, sa
     await t.load();
     expect(JSON.parse(t.storage.get('aimmo.appareil')!)).toEqual(WHO);
     expect(t.storage.get('aimmo.appareil')).not.toContain(KEY);
+    // Une clé encore en attente de l'accord compte aussi : acceptée plus tard, elle connecte sans rouvrir la liste.
+    const p = await run(
+      {
+        'GET /v1/cles/mes-appareils': ok([{ id: 'd-5', userRole: 'agent', userId: 'agent-2', label: 'Neuf', status: 'en_attente', createdAt: '2027-03-01T09:00:00.000Z', approvedAt: null, revokedAt: null }]),
+        'GET /v1/cles/identite': ok(WHO),
+      },
+      { 'aimmo.cle': KEY },
+    );
+    await p.click(p.els['cles-accueil-voir']);
+    await p.load();
+    expect(JSON.parse(p.storage.get('aimmo.appareil')!)).toEqual(WHO);
     // La sortie efface la clé, garde l'identité : le bouton de l'appareil reste proposé.
     await t.click(t.els.sortir);
     expect(t.storage.get('aimmo.cle')).toBeUndefined();

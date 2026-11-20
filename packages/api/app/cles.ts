@@ -245,7 +245,8 @@ globalThis.AIMMO_CLES = function (t) {
   /* AU023 · l'appareil retient qui il sert (réseau, rôle, identifiant : rien de secret), pour proposer sa clé à la connexion. */
   var WHO = 'aimmo.appareil';
   function remember(own) {
-    if (!own.some(function (d) { return d && d.status === 'actif'; })) return;
+    /* Une clé en attente compte aussi : acceptée plus tard par la direction, elle connecte sans que l'agent rouvre la liste. */
+    if (!own.some(function (d) { return d && (d.status === 'actif' || d.status === 'en_attente'); })) return;
     send('/v1/cles/identite', 'GET').then(function (x) {
       var d = x.ok && x.body.data;
       if (d && ID.test(String(d.networkId)) && ID.test(String(d.userId)) && ROLES[d.role]) try { localStorage.setItem(WHO, JSON.stringify({ networkId: d.networkId, role: d.role, userId: d.userId })); } catch (e) { /* sans mémoire */ }
