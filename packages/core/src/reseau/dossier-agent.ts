@@ -213,7 +213,8 @@ export class DossierAgent {
     const checked = await this.checkPiece(viewer, agentId, input);
     if (!checked.ok) return checked;
     const type = typeof file.contentType === 'string' ? file.contentType.split(';')[0]!.trim().toLowerCase() : '';
-    const ext = (AGENT_PIECE_FILE_TYPES as Record<string, AgentPieceExt>)[type];
+    // Seules les clés propres de la liste : `__proto__` ou `constructor` ne sont pas un type admis.
+    const ext = Object.hasOwn(AGENT_PIECE_FILE_TYPES, type) ? (AGENT_PIECE_FILE_TYPES as Record<string, AgentPieceExt>)[type] : undefined;
     if (!ext) return { ok: false, rule: null, code: 'bad_file_type' };
     if (file.bytes.length === 0) return { ok: false, rule: null, code: 'empty_file' };
     if (file.bytes.length > AGENT_PIECE_MAX_BYTES) return { ok: false, rule: null, code: 'file_too_large' };

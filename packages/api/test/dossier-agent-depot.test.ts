@@ -88,6 +88,8 @@ describeWithSqlite('AU024 · chaque pièce manquante se dépose depuis l’écra
     const cases: [string, Uint8Array, string, number, string][] = [
       ['kind=assurance_rcp&issuedOn=2027-01-05&validUntil=2027-12-31', PDF, 'text/html', 400, 'bad_file_type'],
       ['kind=assurance_rcp&issuedOn=2027-01-05&validUntil=2027-12-31', JPG, 'application/pdf', 400, 'bad_file'],
+      ['kind=assurance_rcp&issuedOn=2027-01-05&validUntil=2027-12-31', PNG, '__proto__', 400, 'bad_file_type'],
+      ['kind=assurance_rcp&issuedOn=2027-01-05&validUntil=2027-12-31', PNG, 'constructor', 400, 'bad_file_type'],
       ['kind=assurance_rcp&issuedOn=2027-01-05&validUntil=2027-12-31', new Uint8Array(0), 'application/pdf', 400, 'empty_file'],
       ['kind=assurance_rcp&issuedOn=2027-01-05', PDF, 'application/pdf', 409, 'valid_until_required'],
       ['kind=assurance_rcp&issuedOn=2027-09-01&validUntil=2027-12-31', PDF, 'application/pdf', 400, 'bad_date'],
