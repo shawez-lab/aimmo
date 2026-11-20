@@ -92,6 +92,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'social_visual_checks.consent_ref': P,
   'virtual_tours.tour_ref': P,
   // Identifiants chez un autre service, ou numéros : pas des fichiers.
+  'agent_export_authorizations.contract_ref': externe('La référence du contrat qui autorise un export de reprise (AU110) : un numéro de contrat, pas un fichier.'),
   'public_contents.ref': externe('L’identifiant interne du contenu porté par un lien : un bien, un agent, une publication, un portail.'),
   'diffusion_portal_task_closures.ref': externe('La référence de l’annonce chez le portail à la clôture de la tâche : un identifiant chez le portail.'),
   'automation_runs.trigger_ref': externe('Ce qui a lancé une automatisation : un identifiant de tâche, pas un fichier.'),

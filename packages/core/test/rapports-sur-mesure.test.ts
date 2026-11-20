@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { ExportAgent, RapportsSurMesure, canonicalJson, fingerprintOf, parseDefinition } from '../src/rapports/index.ts';
+import { ExportAgent, RapportsSurMesure, canonicalJson, exportOrphans, fingerprintOf, parseDefinition } from '../src/rapports/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -249,5 +249,47 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
       ['vente-alex-1', 'parrainage'],
       ['vente-sam', 'agent'],
     ]);
+  });
+
+  it('[R561] [R16] AU110 · l’export de reprise autorisé par contrat : ses clients, leurs coordonnées, ses pièces, sans référence orpheline', async () => {
+    const t = await setup();
+    const client = (await t.db.first<{ person_id: string }>("SELECT person_id FROM attributions WHERE id = 'att-1'"))!.person_id;
+    await t.store.addIdentifier({ networkId: t.network.id, personId: client, kind: 'email', value: 'client.un@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: client, purpose: 'suivi', channel: 'email', proof: 'formulaire test', givenAt: new Date('2027-05-01T08:00:00.000Z') });
+    // Une ligne qui désigne la fiche d'un autre agent (un rendez-vous resté à son nom) : hors de ses fiches.
+    const autre = (await t.db.first<{ person_id: string }>("SELECT person_id FROM attributions WHERE id = 'att-4'"))!.person_id;
+    await t.db.run("INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES ('rdv-autre', ?, ?, ?, NULL, 'visite', '2027-06-05T08:00:00.000Z', '2027-06-05T09:00:00.000Z', 'honored', 'hx', 'agent', NULL, '2027-06-05', '2027-06-05')", [t.network.id, t.alex.id, autre]);
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('fiche-alex', 'bien-alex', ?, 1, ?, 'agent', '2027-05-02')", [t.network.id, JSON.stringify({ media: [{ ref: 'biens/bien-alex/photo-1.jpg', kind: 'photo' }] })]);
+    // Le constat : l'export de l'agent seul porte des identifiants, sans fiche, et des références orphelines.
+    const plain = await t.exports.make(t.agent);
+    if (!plain.ok) throw new Error(plain.code);
+    expect(plain.value.document.tables.clients).toBeUndefined();
+    expect(exportOrphans(plain.value.document).length).toBeGreaterThan(0);
+    // La direction seule autorise, au vu d'un contrat, pour 90 jours au plus.
+    expect(await t.exports.authorize(t.agent, t.alex.id, { scope: 'clients', contractRef: 'C-1' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.exports.authorize(t.direction, t.alex.id, { scope: 'tout', contractRef: 'C-1' })).toEqual({ ok: false, rule: null, code: 'bad_scope' });
+    expect(await t.exports.authorize(t.direction, t.alex.id, { scope: 'clients', contractRef: ' ' })).toEqual({ ok: false, rule: null, code: 'bad_contract' });
+    expect(await t.exports.authorize(t.direction, t.alex.id, { scope: 'clients', contractRef: 'C-1', days: 91 })).toEqual({ ok: false, rule: null, code: 'bad_days' });
+    const given = await t.exports.authorize(t.direction, t.alex.id, { scope: 'clients_pieces', contractRef: 'Contrat de reprise R-2027-04', days: 30 });
+    if (!given.ok) throw new Error(given.code);
+    // Une autorisation d'un autre agent ne sert pas.
+    expect(await t.exports.make(t.other, undefined, { authorizationId: given.value.id })).toMatchObject({ ok: false, rule: 'R16', code: 'no_authorization' });
+    const e = await t.exports.make(t.agent, undefined, { authorizationId: given.value.id });
+    if (!e.ok) throw new Error(e.code);
+    const doc = e.value.document;
+    expect(doc.authorization).toEqual({ id: given.value.id, scope: 'clients_pieces', contractRef: 'Contrat de reprise R-2027-04', expiresOn: '2027-08-14' });
+    expect(doc.tables.clients).toHaveLength(3);
+    expect(doc.tables.clientIdentifiers).toEqual([{ person_id: client, kind: 'email', value: 'client.un@example.test' }]);
+    expect(doc.tables.clientConsents).toMatchObject([{ person_id: client, purpose: 'suivi', channel: 'email' }]);
+    expect(doc.tables.files).toEqual([{ table: 'property_sheets', ref: 'biens/bien-alex/photo-1.jpg', property_id: 'bien-alex' }]);
+    // Ce qui n'est pas à lui est écarté et compté ; rien d'orphelin ne reste ; rien d'un autre agent n'y entre.
+    expect(doc.excluded).toEqual({ appointments: 1, sales: 3 });
+    expect(exportOrphans(doc)).toEqual([]);
+    expect(JSON.stringify(doc)).not.toContain(autre);
+    expect(JSON.stringify(doc)).not.toContain(t.sam.id);
+    expect(await t.exports.verify(JSON.parse(JSON.stringify(doc)))).toEqual({ verified: true, fingerprint: e.value.fingerprint });
+    // Échue, l'autorisation ne sert plus.
+    const late = new ExportAgent(t.db, t.journal, { requireSecondFactor: async () => ({ ok: true }) }, { now: () => new Date('2027-08-15T10:00:00.000Z') });
+    expect(await late.make(t.agent, undefined, { authorizationId: given.value.id })).toMatchObject({ ok: false, rule: 'R16', code: 'no_authorization' });
   });
 });

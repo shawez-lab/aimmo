@@ -293,7 +293,18 @@ export function clesRoutes(): ClesRoute[] {
       pattern: /^\/export\/agent$/,
       name: 'export.agent',
       roles: AGENT,
-      handle: withBody(['stepUpId'], async (s, v, _p, b) => reply(await new ExportAgent(s.db, s.journal, cles(s), { now: s.now }).make(v, b.stepUpId))),
+      // AU110 · avec l'autorisation de reprise de la direction, l'export porte aussi ses clients et, s'il le dit, ses pièces.
+      handle: withBody(['stepUpId', 'authorizationId'], async (s, v, _p, b) =>
+        reply(await new ExportAgent(s.db, s.journal, cles(s), { now: s.now }).make(v, b.stepUpId, typeof b.authorizationId === 'string' ? { authorizationId: b.authorizationId } : {})),
+      ),
+    },
+    // AU110 · la direction autorise l'export de reprise d'un agent, au vu d'un contrat : périmètre, contrat, durée [R16].
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/export/agents/${ID}/autorisation$`),
+      name: 'export.agent.autorisation',
+      roles: DIRECTION,
+      handle: withBody(['scope', 'contractRef', 'days'], async (s, v, [id], b) => reply(await new ExportAgent(s.db, s.journal, cles(s), { now: s.now }).authorize(v, id!, { scope: b.scope, contractRef: b.contractRef, ...(b.days !== undefined ? { days: b.days } : {}) }))),
     },
     // Vérifier un fichier d'export : son empreinte recalculée est-elle celle qu'AIMMO a rangée ? Rien n'est gardé [R561].
     {
