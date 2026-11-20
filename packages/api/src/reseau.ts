@@ -24,6 +24,8 @@ import {
   ImportAgent,
   Parrainage,
   ReponsesCandidats,
+  AGENT_PIECE_MAX_BYTES,
+  type AgentPieceExt,
   type AgentPieceStore,
   type BacASableOptions,
   type ObjectionCoach,
@@ -32,7 +34,7 @@ import {
 /** Le stockage R2 des pièces des dossiers d'agent : l'existence d'une référence, et le rangement d'un projet. */
 export interface R2AgentBucket {
   head(key: string): Promise<unknown | null>;
-  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  put(key: string, value: string | Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
 }
 
 /**
@@ -54,6 +56,44 @@ export class R2AgentPieceStore implements AgentPieceStore {
     await this.bucket.put(ref, text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
     return ref;
   }
+
+  /** AU024 · Le fichier d'une pièce déposée depuis l'écran, sous un nom tiré au hasard ; jamais relu d'ici. */
+  async putFile(agentId: string, bytes: Uint8Array, ext: AgentPieceExt, contentType: string): Promise<string> {
+    const ref = `agents/${agentId}/${this.newId()}.${ext}`;
+    await this.bucket.put(ref, bytes, { httpMetadata: { contentType } });
+    return ref;
+  }
+}
+
+/**
+ * AU024 · Le fichier d'une pièce, lu dans le corps brut sans jamais dépasser le poids admis : la longueur annoncée
+ * d'abord, puis les octets reçus, par morceaux.
+ */
+async function readPieceFile(request: Request): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  const contentType = request.headers.get('content-type') ?? '';
+  const announced = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(announced) && announced > AGENT_PIECE_MAX_BYTES) return null;
+  if (!request.body) return { bytes: new Uint8Array(0), contentType };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > AGENT_PIECE_MAX_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.byteLength;
+  }
+  return { bytes, contentType };
 }
 
 export const TRIAL_MODE = 'essai';
@@ -162,6 +202,7 @@ const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
   contenus: 'direction_or_compliance',
   dossier: 'self_or_compliance',
   piece: 'self',
+  piece_fichier: 'self',
   absence: 'self',
   formation: 'self',
   primes: 'self',
@@ -265,6 +306,16 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
         m.dossier ? reply(await m.dossier.addPiece(v, id!, { kind: b.kind, ref: b.ref, issuedOn: b.issuedOn, ...(b.validUntil === undefined ? {} : { validUntil: b.validUntil }) })) : noPieces(),
       ),
     ),
+    // AU024 · Le fichier même d'une pièce, déposé depuis l'écran : corps brut (PDF, JPEG, PNG), pièce et dates dans l'adresse.
+    route('POST', `${A}/pieces/fichier`, 'piece_fichier', async (s, v, [id], request) => {
+      const m = reseauServices(s, options);
+      if (!m.dossier) return noPieces();
+      const file = await readPieceFile(request);
+      if (!file) return json(413, { ok: false, rule: null, code: 'file_too_large' });
+      const q = new URL(request.url).searchParams;
+      const validUntil = q.get('validUntil');
+      return reply(await m.dossier.addPieceFile(v, id!, { kind: q.get('kind'), issuedOn: q.get('issuedOn'), ...(validUntil === null ? {} : { validUntil }) }, file));
+    }),
     route('POST', `${A}/projets`, 'projet_piece', write(['kind'], async (m, v, [id], b) => (m.dossier ? reply(await m.dossier.prepareDraft(v, id!, b.kind)) : noPieces()))),
 
     /* ---------- Import des contacts et des biens de l'agent : rien n'est envoyé [R84]. ---------- */
