@@ -408,6 +408,12 @@ describeWithSqlite("Départ d'un agent (J11)", () => {
     s.goTo(s.daysFrom(2));
     expect(await sortie.read(other.value.token)).toEqual({ ok: false, rule: 'R16', code: 'unknown_link' });
     expect(await sortie.read('pas-un-lien')).toEqual({ ok: false, rule: 'R16', code: 'unknown_link' });
+    // Une pièce demandée par un lien retiré : refusée, et le refus écrit au journal, sans le lien.
+    const refusals = async () => (await s.journal.all()).filter((e) => e.type === 'acces.refuse' && (e.data as { kind?: string }).kind === 'agent_exit_piece').length;
+    const before = await refusals();
+    expect(await sortie.pieceRef(given.value.token, 'assurance_rcp')).toBeNull();
+    expect(await refusals()).toBe(before + 1);
+    expect(JSON.stringify(await s.journal.all())).not.toContain(given.value.token);
     await expect(s.db.run('DELETE FROM agent_exit_accesses')).rejects.toThrow();
   });
 });

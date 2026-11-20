@@ -185,7 +185,11 @@ export class AccesSortie {
   /** La référence de stockage d'une de ses pièces signées, par sa sorte, pour la remettre par le lien ; sinon `null`. */
   async pieceRef(token: string, kind: string): Promise<string | null> {
     const access = await this.accessOf(token);
-    if (!access) return null;
+    if (!access) {
+      // Un refus est toujours écrit au journal, sans le lien [R16].
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: 'public:sortie', subject: null, data: { rule: 'R16', kind: 'agent_exit_piece', code: 'unknown_link' } }, this.now);
+      return null;
+    }
     const piece = (await personalContentsOf(this.db, access.agent_id)).pieces.find((p) => p.kind === kind);
     if (!piece) return null;
     await appendEvent(this.journal, { type: 'agent_sortie.piece', actor: `agent:${access.agent_id}`, subject: `agent:${access.agent_id}`, data: { access: access.id, kind } }, this.now);

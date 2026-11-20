@@ -249,6 +249,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   access_invitations: ['token_sha256'],
   access_keys: ['sha256'],
   after_sale_unsubscribe_tokens: ['token_hash'],
+  agent_exit_accesses: ['token_hash'],
   alert_unsubscribe_tokens: ['token_hash'],
   appointment_links: ['token_hash'],
   appointments: ['token_hash'],

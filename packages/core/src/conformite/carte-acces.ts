@@ -271,6 +271,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   ad_campaign: { excluded: 'sans_client', why: 'Une campagne de publicité payante (HX54) : sa création, ses validations, son lancement, son arrêt et ses contacts comptés, sans donnée d\'un client ; les contacts se lisent dans ad_campaign_contacts par person_id.' },
   device: { excluded: 'agent', why: 'Une clé d\'accès d\'un appareil d\'un utilisateur du réseau (HX56) : rangement, accord, retrait, connexion.' },
   user: { excluded: 'agent', why: 'Un utilisateur du réseau, objet d\'une preuve de second facteur (HX56) : « ajouter un appareil ».' },
+  exit_access: { excluded: 'agent', why: 'Un accès de sortie d\'un agent parti (AU111) : un refus de son retrait, sans le lien ni donnée d\'un client.' },
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
   lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   bien: ENVOI('bien proposé à une personne, une seule fois [R05], relu par la lettre d\'information, HX53'),
