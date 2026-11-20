@@ -219,7 +219,7 @@ export interface ApiConfig {
    * la présentation (absente, le secours sans IA [R12]) et le début des liens du dossier (`DOSSIER_LINK_BASE`).
    */
   commerces?: Partial<Pick<CommercesServices, 'storage' | 'presentationWriter' | 'baseUrl'>>;
-  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
+  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, le seul réseau de la base s'il n'y en a qu'un (AU022), sinon page « bientôt ». */
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
   coffre?: VaultFiles | null;
