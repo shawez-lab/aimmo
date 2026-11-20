@@ -75,7 +75,7 @@ export const CLES_JS = `
     ['accueil', 'reseau', 'conformite'].forEach(function (p) { clear($('cles-' + p + '-corps')); $('cles-' + p + '-etat').textContent = ''; });
   }
   function withCles(p, act) {
-    if (!currentKey) return Promise.resolve(false);
+    if (!currentKey && p !== 0) return Promise.resolve(false);
     if (clesTools) return act(clesTools);
     if (clesLoading) return Promise.resolve(false);
     clesLoading = true;
@@ -242,6 +242,107 @@ globalThis.AIMMO_CLES = function (t) {
     });
   }
 
+  /* AU023 · l'appareil retient qui il sert (réseau, rôle, identifiant : rien de secret), pour proposer sa clé à la connexion. */
+  var WHO = 'aimmo.appareil';
+  function remember(own) {
+    if (!own.some(function (d) { return d && d.status === 'actif'; })) return;
+    send('/v1/cles/identite', 'GET').then(function (x) {
+      var d = x.ok && x.body.data;
+      if (d && ID.test(String(d.networkId)) && ID.test(String(d.userId)) && ROLES[d.role]) try { localStorage.setItem(WHO, JSON.stringify({ networkId: d.networkId, role: d.role, userId: d.userId })); } catch (e) { /* sans mémoire */ }
+    });
+  }
+  /* Une demande sans clé : la connexion est publique, la clé de l'appareil fait la preuve [R600]. */
+  function post(path, payload) {
+    var init = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
+    return fetch(path, init).then(function (r) {
+      return r.json().then(function (b) { return { status: r.status, ok: r.ok && !!b && b.ok === true, body: b }; }, function () { return { status: r.status, ok: false, body: null }; });
+    }, function () { return { offline: true }; });
+  }
+  var NO_LOGIN = 'Cette clé n’ouvre pas AIMMO : retirée, en attente de l’accord de la direction, ou absente de cet appareil. Demandez votre lien d’accès à la direction.';
+  function loginWhy(x) {
+    if (x.offline) return OFFLINE;
+    if (x.status === 429) return 'Trop d’essais : réessayez dans une heure.';
+    if (x.status === 503) return REFUSALS.cles_non_configurees;
+    return NO_LOGIN;
+  }
+  /* La connexion par la clé de cet appareil : un défi, l'empreinte ou le code de l'appareil, une séance ; rien à taper. */
+  function login() {
+    var who = null;
+    try { who = JSON.parse(localStorage.getItem(WHO) || 'null'); } catch (e) { who = null; }
+    if (!who || !ID.test(String(who.networkId)) || !ID.test(String(who.userId)) || !ROLES[who.role]) return Promise.resolve({ text: NO_LOGIN });
+    if (!supported()) return Promise.resolve({ text: NO_WEBAUTHN });
+    return post('/v1/cles/connexion/debut', { networkId: who.networkId, role: who.role, userId: who.userId }).then(function (x) {
+      var c = x.ok ? challengeOf(x) : null;
+      if (!c) return { text: loginWhy(x) };
+      var ask = { challenge: unb64(c.challenge), rpId: c.rpId, allowCredentials: allowed(c), userVerification: 'required', timeout: 120000 };
+      return navigator.credentials.get({ publicKey: ask }).then(function (a) {
+        var r = a && a.response;
+        if (!r) return { text: deviceError(null) };
+        return post('/v1/cles/connexion/fin', { challengeId: c.challengeId, credentialId: b64(a.rawId), clientDataJSON: b64(r.clientDataJSON), authenticatorData: b64(r.authenticatorData), signature: b64(r.signature) }).then(function (y) {
+          var d = y.ok && y.body.data;
+          return d && typeof d.token === 'string' && d.token.length >= 32 ? { token: d.token } : { text: loginWhy(y) };
+        });
+      }, function (e) { return { text: deviceError(e) }; });
+    });
+  }
+  /* AU023 · la direction prépare le lien d'accès nominatif d'un agent, sur la preuve de sa clé pour cet agent [R601]. */
+  function invite(a, lost, out, shown) {
+    return once(function () {
+      shown.textContent = '';
+      out.textContent = 'Preuve de votre clé…';
+      return prove('modifier_droits', 'agent:' + a.id).then(function (p) {
+        if (p.gone) return false;
+        if (!p.ok) { out.textContent = p.text; return false; }
+        out.textContent = 'Envoi…';
+        return send('/v1/cles/invitations', 'POST', { userId: a.id, stepUpId: p.stepUpId, retirerAnciens: lost.checked === true }).then(function (x) {
+          if (x.gone) return false;
+          if (x.offline || !x.body || x.status >= 500) { out.textContent = LOST; return false; }
+          var d = x.ok && x.body.data;
+          if (!d || typeof d.lien !== 'string' || d.lien.indexOf('/app/#invitation=') !== 0) { out.textContent = x.body.code === 'unknown' ? 'Cet agent n’est plus actif dans votre réseau.' : why(x, 'Le lien n’est pas préparé.'); return false; }
+          shown.textContent = location.origin + d.lien;
+          out.textContent = 'Lien prêt pour ' + a.name + ', valable une fois, jusqu’au ' + date(d.expiresAt) + '. Remettez-le-lui vous-même, à lui seul : il l’ouvre sur son téléphone et entre d’un appui.' +
+            (lost.checked === true ? ' Anciens accès coupés : ' + (Number(d.keysRevoked) + Number(d.linksVoided)) + ' lien ou clé d’application, ' + Number(d.devicesRevoked) + ' clé d’appareil. Sa clé neuve attendra votre accord ici. Une clé personnelle remise à la main reste ouverte : faites-la retirer des réglages du service.' : '');
+          return true;
+        });
+      });
+    });
+  }
+  function renderInvite(body) {
+    var box = el('details');
+    box.appendChild(el('summary', 'Inviter un agent sur un nouvel appareil'));
+    box.appendChild(el('p', 'Un lien nominatif, pour un appui sur son téléphone : il n’a aucune clé à voir ni à taper, puis il y range la clé de l’appareil.', 'doux'));
+    var lost = el('input');
+    lost.setAttribute('type', 'checkbox');
+    lost.setAttribute('id', 'cles-perdu');
+    var lab = el('label', 'Téléphone perdu ou volé : couper d’abord tous ses anciens accès');
+    lab.setAttribute('for', 'cles-perdu');
+    box.appendChild(lost);
+    box.appendChild(lab);
+    var list = el('ul', null, 'liste');
+    var out = el('p', null, 'etat');
+    out.setAttribute('role', 'status');
+    var shown = el('p', null, 'lien');
+    box.appendChild(button('Choisir l’agent', function () {
+      clear(list);
+      out.textContent = 'Chargement…';
+      send('/v1/cles/invitations/agents', 'GET').then(function (x) {
+        if (x.gone) return;
+        var all = listOf(x);
+        if (!all) { out.textContent = why(x, 'La liste des agents est indisponible pour le moment.'); return; }
+        out.textContent = all.length ? '' : 'Aucun agent actif dans votre réseau.';
+        all.forEach(function (a) {
+          if (!a || typeof a.id !== 'string' || !ID.test(a.id) || typeof a.name !== 'string') return;
+          var li = el('li');
+          li.appendChild(button('Lien pour ' + a.name, function () { invite(a, lost, out, shown); }));
+          list.appendChild(li);
+        });
+      });
+    }));
+    box.appendChild(list);
+    box.appendChild(out);
+    box.appendChild(shown);
+    body.appendChild(box);
+  }
   function write(path, payload, okText, failText) {
     state('Envoi…');
     return send(path, 'POST', payload).then(function (x) {
@@ -315,7 +416,9 @@ globalThis.AIMMO_CLES = function (t) {
       body.appendChild(el('h4', 'Mes clés'));
       if (!own.length) body.appendChild(el('p', 'Aucune clé rangée pour vous : rangez celle de cet appareil.', 'doux'));
       else renderList(body, own, false, place === 'reseau');
+      remember(own);
       renderRegister(body);
+      if (place === 'reseau') renderInvite(body);
       if (all[1]) {
         var net = listOf(all[1]);
         body.appendChild(el('h4', 'Les clés du réseau'));
@@ -334,6 +437,6 @@ globalThis.AIMMO_CLES = function (t) {
       return true;
     });
   }
-  return { show: show, prove: prove };
+  return { show: show, prove: prove, login: login };
 };
 `;

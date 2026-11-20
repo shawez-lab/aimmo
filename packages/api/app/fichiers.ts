@@ -70,12 +70,14 @@ export const INDEX_HTML = `<!doctype html>
 <main>
 <section id="connexion" hidden>
 <h2>Connexion</h2>
-<p>Saisissez votre clé personnelle. Elle reste sur cet appareil.</p>
+<button id="entrer-appareil" type="button" hidden>Entrer avec la clé de cet appareil</button>
+<p>Nouveau téléphone, ou téléphone perdu : demandez à la direction votre lien d’accès. Il ouvre AIMMO d’un appui, rien à taper.</p>
+<details><summary>J’ai une clé personnelle</summary>
 <form id="form-connexion" autocomplete="off">
 <label for="cle">Clé personnelle</label>
 <input id="cle" name="cle" type="password" minlength="32" required autocomplete="off" spellcheck="false">
 <button type="submit">Entrer</button>
-</form>
+</form></details>
 <p id="erreur" role="alert" hidden></p>
 </section>
 <section id="invitation" hidden>
@@ -2127,6 +2129,7 @@ ${LOUER_JS}
   function show(id, args) {
     ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
+    if (id === 'connexion') try { $('entrer-appareil').hidden = !localStorage.getItem('aimmo.appareil'); } catch (e) { /* sans mémoire */ }
     $('sortir').hidden = out;
     var a = JSON.stringify(args || null);
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
@@ -2269,6 +2272,12 @@ ${LOUER_JS}
     });
   } catch (e) { /* sans historique */ }
   document.addEventListener('DOMContentLoaded', function () {
+    // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
+    $('entrer-appareil').addEventListener('click', function () {
+      withCles(0, function (c) { return c.login(); }).then(function (r) {
+        if (r && r.token && writeKey(r.token)) enter(r.token); else if (r && r.text) { $('erreur').textContent = r.text; $('erreur').hidden = false; }
+      });
+    });
     $('form-connexion').addEventListener('submit', function (event) {
       event.preventDefault();
       var key = $('cle').value.trim();
