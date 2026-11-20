@@ -147,6 +147,7 @@ const parisDateTime = (iso: string): string =>
 const COPY_CSS =
   'main{max-width:40rem;margin:0 auto;padding:var(--e-4)}' +
   '.preuve{border-top:1px solid var(--trait);margin-top:var(--e-5);padding-top:var(--e-4)}.preuve dt{font-weight:600}.preuve dd{margin:0 0 var(--e-2);overflow-wrap:anywhere}';
+const CSS = DESIGN_CSS + COPY_CSS;
 
 const ENTITIES: Readonly<Record<string, string>> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 
@@ -186,7 +187,7 @@ export function renderSlipCopy(content: string, proof: SlipSignatureProof): stri
   return (
     '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     `<meta name="theme-color" content="${THEME_COLOR}"><meta name="robots" content="noindex"><title>Votre bon de visite signé</title>` +
-    `<style>${DESIGN_CSS}${COPY_CSS}</style></head><body><main><h1>Votre bon de visite signé</h1>` +
+    `<style>${CSS}</style></head><body><main><h1>Votre bon de visite signé</h1>` +
     slipParagraphs(content).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('') +
     `<section class="preuve" aria-label="Preuve de la signature"><h2>Preuve de la signature</h2><dl>` +
     rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
