@@ -871,7 +871,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU081 · Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A081 (majeur), endroit : C/offres/registre-offres.ts, contrôle d’accès de l’acquéreur.
 - Constat de l'audit : Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction.
