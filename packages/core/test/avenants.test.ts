@@ -313,6 +313,29 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect((await sign(t, fee.document.id, 'h16', new Date('2027-03-11T09:00:00.000Z'))).ok).toBe(true);
   });
 
+  it('[R41] un avenant antidaté se rejoue dans l’ordre des signatures : un avenant signé après lui garde le dernier mot', async () => {
+    const t = await setup();
+    const fee = await t.amendment({ 'avenant.honoraires': 10000 });
+    const both = await t.amendment({ 'avenant.prix': 150000, 'avenant.honoraires': 7000 });
+    if (!fee.ok || !both.ok) throw new Error('préparation');
+    t.now(new Date('2027-03-11T10:00:00.000Z'));
+    expect((await sign(t, fee.document.id, 'h18', new Date('2027-03-10T09:00:00.000Z'))).ok).toBe(true);
+    // Signé le 5 mars : le 10, les honoraires repassent à 10 000 € sur 150 000 €, au-delà de 7 500 €.
+    const r = await sign(t, both.document.id, 'h19', new Date('2027-03-05T09:00:00.000Z'));
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+  });
+
+  it('[R42] une date d’effet se revoit à la signature : un mandat raccourci entre-temps n’est jamais ressuscité', async () => {
+    const t = await setup();
+    const longer = await t.amendment({ 'avenant.duree_mois': 24, 'avenant.date_effet': '2027-12-01' });
+    const shorter = await t.amendment({ 'avenant.duree_mois': 6 });
+    if (!longer.ok || !shorter.ok) throw new Error('préparation');
+    expect((await sign(t, shorter.document.id, 'h20')).ok).toBe(true);
+    // Le mandat finit désormais le 10 août 2027 : un effet au 1er décembre viendrait après sa fin.
+    const r = await sign(t, longer.document.id, 'h21');
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['effect_after_end']);
+  });
+
   it('[R42] une échéance n’est déplacée qu’à la date d’effet de l’avenant ; jamais au-delà de la fin du mandat', async () => {
     const t = await setup();
     // Le mandat finit le 10 février 2028 : une date d'effet ce jour-là ou après est refusée.

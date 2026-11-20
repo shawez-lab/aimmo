@@ -54,7 +54,13 @@ const readFacts = (raw: string | null): DocumentFacts | null => {
  * Avec `asOf`, celles de ce jour-là, à Paris : un avenant signé plus tard, ou dont la date d'effet n'est pas encore
  * venue, ne compte pas encore (D10, AU057). Un avenant ne change les honoraires ou leur charge que s'il le dit.
  */
-export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Date): Promise<MandateTerms | null> {
+export async function mandateTerms(
+  db: SqlDatabase,
+  mandateId: string,
+  asOf?: Date,
+  /** Un avenant pas encore enregistré, placé à sa date de signature parmi les signés : pour le contrôler (AU057). */
+  candidate?: { documentId: string; signedAt: string; facts: DocumentFacts },
+): Promise<MandateTerms | null> {
   const base = await db.first<{ facts: string | null; kind: string }>(
     'SELECT d.facts, d.kind FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
     [mandateId],
@@ -70,6 +76,11 @@ export async function mandateTerms(db: SqlDatabase, mandateId: string, asOf?: Da
     'SELECT a.document_id, a.signed_at, d.facts FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE a.mandate_id = ? ORDER BY a.signed_at, a.created_at, a.document_id',
     [mandateId],
   );
+  if (candidate && !rows.some((r) => r.document_id === candidate.documentId)) {
+    // Après les avenants signés au même instant : il est enregistré le dernier.
+    const at = rows.findIndex((r) => r.signed_at > candidate.signedAt);
+    rows.splice(at === -1 ? rows.length : at, 0, { document_id: candidate.documentId, signed_at: candidate.signedAt, facts: JSON.stringify(candidate.facts) });
+  }
   const amendments: MandateTerms['amendments'] = [];
   const lastDay = asOf ? localTime(asOf, TIME_ZONE).date : null;
   for (const row of rows) {
