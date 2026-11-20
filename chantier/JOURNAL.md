@@ -1539,3 +1539,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 21:55 · VOIE 2 : AU081, 19179940 (main), relancé non
 - 2026-11-20 21:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 18:55 et de la dernière heure n'ont produit ni commit ni tâche finie : verrou occupé)
 - 2026-11-20 22:13 · AU030 · le dossier des biens repris (photos, diagnostics, mandats et leur signature dite, annonces en simple lien, documents) rejoint chaque bien de l'agent, chaque pièce écartée comptée avec sa raison dès l'aperçu avant validation, rien publié ; PLAN.md rétabli (tronqué à 386 lignes par 5f2999d7) ; R84 précisée ; Codex 3 P0 corrigés ; fusionnée (#730, b5335306) · prochaine : AU031
+- 2026-11-20 22:14 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU031
