@@ -33,7 +33,7 @@ export const TABLES_RESEAU: readonly string[] = `
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_handovers
-  agent_departure_reassignments agent_departures agent_exports agent_file_alerts agent_file_pieces
+  agent_departure_reassignments agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces
   agent_import_contacts agent_import_history agent_import_properties agent_import_property_pieces agent_import_referrals
   agent_import_reminder_closures agent_import_reminders agent_language_declarations
   agent_legal_mentions agent_likeness_consents agent_notification_settings agent_notifications agent_onboardings
@@ -251,6 +251,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   access_invitations: ['token_sha256'],
   access_keys: ['sha256'],
   after_sale_unsubscribe_tokens: ['token_hash'],
+  agent_exit_accesses: ['token_hash'],
   alert_unsubscribe_tokens: ['token_hash'],
   appointment_links: ['token_hash'],
   appointments: ['token_hash'],
@@ -301,7 +302,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   agency_delegation_files agency_delegation_steps agency_partner_invoices agency_fee_statements agency_visits_done
   agency_visits commission_agency_shares agency_delegations agency_shares agenda_cursors agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_reassignments
-  agent_departure_handovers agent_departures agent_exports agent_file_alerts agent_file_pieces agent_import_reminder_closures
+  agent_departure_handovers agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces agent_import_reminder_closures
   agent_import_reminders agent_import_history agent_import_contacts
   agent_import_properties agent_import_property_pieces agent_import_referrals agent_language_declarations agent_legal_mentions
   agent_likeness_revocations generated_videos agent_likeness_consents agent_notification_settings

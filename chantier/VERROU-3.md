@@ -1,1 +1,1 @@
-occupé depuis 2026-11-18 19:35 (heure de Paris)
+occupé depuis 2026-11-20 20:25 (heure de Paris), suivi de #708, #709, #710

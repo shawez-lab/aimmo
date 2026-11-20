@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { AGENT_FILE_PIECES, checkRecruitingText, type AgentPieceStore } from '../../core/src/reseau/index.ts';
 import { handleCandidature } from '../src/candidature.ts';
-import { reseauRoutes, type ReseauServices } from '../src/reseau.ts';
+import { handleSortiePublic, reseauRoutes, type ReseauServices } from '../src/reseau.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -185,6 +185,40 @@ describeWithSqlite('J12 · routes de M14', () => {
     expect((await t.call(t.direction, 'GET', `/reseau/agents/${leaver}/depart`)).body.data).toBeNull();
     // Aucun agent n'est effacé [R17].
     expect(await t.db.all('SELECT id FROM agents WHERE id = ?', [leaver])).toHaveLength(1);
+  });
+
+  it('[R16, R86] AU111 · l’accès de sortie : donné par la direction, ouvert par le lien seul, la pièce remise, puis retiré', async () => {
+    const t = await setup();
+    const leaver = await t.admitted('Tom', 'tom@exemple.test');
+    const asLeaver: Viewer = { role: 'agent', userId: leaver, networkId: t.network.id };
+    expect((await t.call(t.direction, 'POST', `/reseau/agents/${leaver}/acces-sortie`, {})).body).toMatchObject({ ok: false, code: 'not_gone' });
+    expect((await t.call(t.direction, 'POST', `/reseau/agents/${leaver}/depart`, { noticeGivenOn: t.today(), leavesOn: t.today(), reason: 'faute_grave', contractStartedOn: t.today() })).status).toBe(200);
+    expect((await t.call(asLeaver, 'POST', `/reseau/agents/${leaver}/acces-sortie`, {})).status).toBe(403);
+    const given = await t.call(t.direction, 'POST', `/reseau/agents/${leaver}/acces-sortie`, { days: 30 });
+    expect(given.status).toBe(200);
+    const token = given.body.data.token as string;
+    await t.db.run("INSERT INTO agent_file_pieces (id, network_id, agent_id, kind, version, ref, issued_on, valid_until, is_draft, recorded_by, recorded_at) VALUES ('k-sortie', ?, ?, 'assurance_rcp', 1, ?, ?, NULL, 0, 'test', ?)", [t.network.id, leaver, t.pieces.put(leaver), t.today(), t.now().toISOString()]);
+    const s = { db: t.db, journal: t.journal, now: t.now };
+    const open = async (path: string, pieces: AgentPieceStore | null = t.pieces) => {
+      const r = (await handleSortiePublic(new Request(`https://api.exemple.test/v1${path}`), path, s, pieces))!;
+      return { status: r.status, type: r.headers.get('content-type'), body: r.headers.get('content-type')?.startsWith('application/json') ? ((await r.json()) as any) : await r.text() };
+    };
+    const seen = await open(`/sortie/${token}`);
+    expect(seen.status).toBe(200);
+    expect(seen.body.data.statement).toMatchObject({ format: 'aimmo-sortie-agent/1', agentId: leaver });
+    const kind = 'assurance_rcp';
+    expect(seen.body.data.statement.pieces).toEqual([{ kind, version: 1 }]);
+    // Sans relecture possible du stockage : « indisponible », jamais un faux fichier.
+    expect((await open(`/sortie/${token}/pieces/${kind}`)).status).toBe(503);
+    const readable: AgentPieceStore = { has: t.pieces.has.bind(t.pieces), putDraft: t.pieces.putDraft.bind(t.pieces), read: async () => ({ body: new TextEncoder().encode('pièce inventée'), contentType: 'application/pdf' }) };
+    const file = await open(`/sortie/${token}/pieces/${kind}`, readable);
+    expect([file.status, file.type, file.body]).toEqual([200, 'application/pdf', 'pièce inventée']);
+    // Un lien faux, ou retiré : la même réponse.
+    expect((await open('/sortie/abcdefghijklmnopqrstuvwxyz234567')).status).toBe(404);
+    expect((await open('/sortie/pas-un-lien')).status).toBe(404);
+    expect((await t.call(t.direction, 'POST', `/reseau/acces-sortie/${given.body.data.accessId}/retrait`)).status).toBe(200);
+    expect((await open(`/sortie/${token}`)).status).toBe(404);
+    expect(await handleSortiePublic(new Request('https://api.exemple.test/v1/autre'), '/autre', s, null)).toBeNull();
   });
 
   it('un corps illisible ou porteur d’une clé de plus est refusé sans rien ranger', async () => {
