@@ -669,7 +669,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU059b · Une signature papier datée avant la procuration est refusée
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU059
 - Cahier : M06 Mandats et documents ; remarque P2 de Codex sur #709.
 - Objectif : un mandat signé par un représentant avant le jour de sa procuration n'est jamais inscrit au registre.
