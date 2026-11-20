@@ -141,6 +141,10 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(traceListing('Logement à Dijon', 'Surface utile : 62 m².', h).ok).toBe(false);
     expect(traceListing('Logement à Dijon', 'Surface Carrez : 60 m².', h).ok).toBe(true);
     expect(traceListing('Logement à Dijon', 'Surface utile : 70 m².', h).ok).toBe(true);
+    // Le qualificatif après l'unité, quels que soient les mots qui l'en séparent.
+    for (const [body, ok] of [['62 m² loi Carrez.', false], ['60 m² loi Carrez.', true], ['62 m² (Carrez).', false], ['60 m² (Carrez).', true], ['62 m² de surface utile.', false], ['70 m² de surface utile.', true], ['60 m² Carrez et 62 m² habitables.', true]] as const) {
+      expect([body, traceListing('Logement à Dijon', body, h).ok]).toEqual([body, ok]);
+    }
     // Le texte de secours suit la règle de l'annonce : un logement dit l'habitable puis la Carrez, jamais l'utile.
     const text = fallbackListing({ ...f, usableM2: 70 });
     expect(text.body).toContain('Surface Carrez de 61,35 m².');
