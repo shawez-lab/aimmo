@@ -137,6 +137,35 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
     expect(snapshot()).toBe(before);
   });
 
+  it("[R18] relancé une fois l'échéance passée, un rappel repris reste le même rappel : jamais un échange de plus", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
+    const before = snapshot();
+    const later = new ImportAgent(w.db, w.fiches, w.unique, new DecisionEnvoi(w.db, w.fiches, w.unique, { now: () => new Date('2027-09-01T08:00:00.000Z') }), w.journal, { now: () => new Date('2027-09-01T08:00:00.000Z') });
+    const again = await later.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
+    expect(again.ok && [again.report.followUp.history, again.report.followUp.reminders, again.report.followUp.known]).toEqual([0, 0, 6]);
+    expect(snapshot()).toBe(before);
+    const open = await later.openReminders(me());
+    expect(open.ok && open.value.map((x) => [x.dueOn, x.late])).toEqual([
+      ['2027-06-30', true],
+      ['2027-07-20', true],
+      ['2027-08-01', true],
+    ]);
+  });
+
+  it("[R16] [R13] chaque lecture du suivi d'une fiche, et des rappels, est au journal avant d'être rendue", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
+    const one = await personOf('un@example.org');
+    const before = (await w.journal.all()).length;
+    const r = await w.importer.followUpOf(me(), one);
+    expect(r.ok).toBe(true);
+    const read = (await w.journal.all()).slice(before);
+    expect(read.map((e) => [e.type, e.subject])).toEqual([['fiche.lue', `person:${one}`]]);
+    expect(read[0]!.data).toMatchObject({ rule: 'R16', via: 'import.suivi', history: 2, reminders: 1 });
+    await w.importer.openReminders(me());
+    expect((await w.journal.all()).at(-1)).toMatchObject({ type: 'reseau.import_rappels_lus', data: { count: 3 } });
+    expect(JSON.stringify(await w.journal.all())).not.toMatch(/Relancer|Préfère|example\.org/);
+  });
+
   it('[R03] [R17] un rappel repris est une tâche de l’agent : rien ne part, il se marque fait une fois, jamais défait', async () => {
     let out = await count("SELECT count(*) AS n FROM messages WHERE direction = 'out'");
     await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
@@ -169,8 +198,12 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
     await w.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [w.other, one]);
     const open = await w.importer.openReminders(me());
     expect(open.ok && open.value.map((x) => x.dueOn)).toEqual(['2027-06-30', '2027-08-01']);
-    const theirs = await w.importer.followUpOf({ role: 'agent', userId: w.other, networkId: w.net }, one);
+    const other = { role: 'agent' as const, userId: w.other, networkId: w.net };
+    const theirs = await w.importer.followUpOf(other, one);
     expect(theirs.ok && theirs.value.reminders).toHaveLength(1);
+    // Le nouvel agent les trouve dans ses rappels, sans les avoir importés.
+    const hers = await w.importer.openReminders(other);
+    expect(hers.ok && hers.value.map((x) => [x.dueOn, x.personId])).toEqual([['2027-07-20', one]]);
   });
 
   it('[R84] un contact que deux fiches de l’agent portent n’est pas deviné ; un texte trop long est coupé et signalé', async () => {
@@ -207,16 +240,17 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
 
 it("lecture d'un historique : passé, futur, fait ou non", async () => {
   const at = new Date('2027-07-15T08:00:00.000Z');
-  const csv = ['Email;Date;Type;Statut', 'a@example.org;2027-07-10;Appel;', 'a@example.org;2027-07-20;Appel;', 'a@example.org;2027-07-20;Appel;fait', 'a@example.org;2027-07-01;Rappel;terminé', 'a@example.org;2027-07-01;Rappel;'].join('\n');
+  const csv = ['Email;Date;Type;Statut', 'a@example.org;2027-07-10;Appel;', 'a@example.org;2027-07-02;Appel;à faire', 'a@example.org;2027-07-20;Appel;', 'a@example.org;2027-07-20;Appel;fait', 'a@example.org;2027-07-01;Rappel;terminé', 'a@example.org;2027-07-01;Rappel;'].join('\n');
   const r = await readAgentFollowUp(csv, 'excel', 'agent', at);
   expect(r.lines.map((l) => l.entry)).toEqual([
     { as: 'history', kind: 'call', on: '2027-07-10' },
+    { as: 'reminder', action: 'call', on: '2027-07-02' },
     { as: 'reminder', action: 'call', on: '2027-07-20' },
     { as: 'reminder', action: 'task', on: '2027-07-01' },
   ]);
   // Un appel daté dans le futur et dit « fait » : la date ne dit pas vrai. Un rappel fait, sans texte : rien à garder.
   expect(r.skipped).toEqual([
-    { line: 4, reason: 'no_date' },
-    { line: 5, reason: 'empty' },
+    { line: 5, reason: 'no_date' },
+    { line: 6, reason: 'empty' },
   ]);
 });

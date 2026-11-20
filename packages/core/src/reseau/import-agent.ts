@@ -22,6 +22,7 @@ import type { Channel, Dwelling, Person, PropertyKind } from '../db/types.ts';
 import type { DecisionEnvoi } from '../envoi/service.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey } from '../fiche/normalize.ts';
+import { personSubject } from '../acces/acces.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { parseCsv } from '../reprise/csv.ts';
@@ -447,6 +448,11 @@ export interface FollowUpLine {
   emails: string[];
   phones: string[];
   entry: { as: 'history'; kind: ExchangeKind; on: string } | { as: 'reminder'; action: ReminderAction; on: string };
+  /**
+   * Ce qui identifie l'élément dans l'ancien logiciel (type, date, échéance), indépendamment de son classement du jour :
+   * une action à venir reprise en rappel reste le même élément quand sa date est passée [R18].
+   */
+  identity: string;
   body: string | null;
   truncated: boolean;
 }
@@ -504,8 +510,10 @@ export async function readAgentFollowUp(text: string, format: AgentExportFormat,
     const body = rawBody === null ? null : rawBody.slice(0, FOLLOW_UP_TEXT_MAX);
 
     let entry: FollowUpLine['entry'] | null = null;
+    // Un statut dit et qui n'est pas « fait » : l'action reste à faire, même passée.
+    const open = !done && rawStatus !== null;
     if (!done && due !== null) entry = { as: 'reminder', action: type === 'note' ? 'task' : type, on: due };
-    else if (!done && day !== null && (type === 'task' || day > today)) entry = { as: 'reminder', action: type === 'note' ? 'task' : type, on: day };
+    else if (!done && day !== null && (type === 'task' || open || day > today)) entry = { as: 'reminder', action: type === 'note' ? 'task' : type, on: day };
     else if (day !== null || due !== null) {
       const on = day !== null && day <= today ? day : due !== null && due <= today ? due : null;
       // Un échange daté dans le futur et déjà « fait » : la date ne dit pas vrai, rien n'est deviné.
@@ -520,7 +528,8 @@ export async function readAgentFollowUp(text: string, format: AgentExportFormat,
       reading.skipped.push({ line, reason: 'empty' });
       continue;
     }
-    reading.lines.push({ line, contactOrigin: id === null ? null : await contactOriginById(agentId, format, id), emails, phones, entry, body, truncated });
+    const identity = [type, day ?? '', due ?? ''].join('|');
+    reading.lines.push({ line, contactOrigin: id === null ? null : await contactOriginById(agentId, format, id), emails, phones, entry, identity, body, truncated });
   }
   return reading;
 }
@@ -806,11 +815,16 @@ export class ImportAgent {
       }
       const personId = found.id;
       const e = line.entry;
-      const what = e.as === 'history' ? e.kind : e.action;
-      const origin = `import:${agentId}:${format}:suivi:${await digest([personId, e.as, what, e.on, line.body ?? ''].join('|'))}`;
+      const origin = `import:${agentId}:${format}:suivi:${await digest([personId, line.identity, line.body ?? ''].join('|'))}`;
       const stamp = at.toISOString();
-      const { changes } =
-        e.as === 'history'
+      // Déjà repris, en échange ou en rappel : le même élément ne change pas de forme et n'est jamais doublé [R18].
+      const already = await this.db.first<{ n: number }>(
+        `SELECT (SELECT count(*) FROM agent_import_history WHERE network_id = ? AND origin_key = ?) + (SELECT count(*) FROM agent_import_reminders WHERE network_id = ? AND origin_key = ?) AS n`,
+        [networkId, origin, networkId, origin],
+      );
+      const { changes } = Number(already?.n ?? 0) > 0
+        ? { changes: 0 }
+        : e.as === 'history'
           ? await this.db.run(
               `INSERT INTO agent_import_history (network_id, origin_key, agent_id, person_id, kind, happened_on, body, source_format, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
@@ -935,6 +949,17 @@ export class ImportAgent {
       [viewer.networkId, ...members],
     );
     const reminders = await this.remindersWhere(viewer.networkId, `r.person_id IN (${placeholders(members.length)})`, members);
+    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres et des identifiants internes [R13].
+    await appendEvent(
+      this.journal,
+      {
+        type: 'fiche.lue',
+        actor: this.actor(viewer),
+        subject: personSubject(gate.person.id),
+        data: { rule: 'R16', role: String(viewer.role), via: 'import.suivi', history: history.length, reminders: reminders.length, members: members.map((m) => personSubject(m)) },
+      },
+      this.now,
+    );
     return {
       ok: true,
       value: {
@@ -950,14 +975,21 @@ export class ImportAgent {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_import_reminders', code: 'role' } }, this.now);
       return { ok: false, rule: 'R16', code: 'role' };
     }
-    const all = await this.remindersWhere(viewer.networkId, 'r.agent_id = ?', [viewer.userId]);
-    // Une fiche passée depuis à un autre agent : ses rappels le suivent, ils ne restent pas chez l'ancien.
+    // Les rappels suivent la fiche : ceux que l'agent a repris, et ceux des fiches qu'il suit aujourd'hui, réunies
+    // comprises ; puis seule compte la fiche gardée et son agent du moment.
+    const all = await this.remindersWhere(
+      viewer.networkId,
+      `(r.agent_id = ? OR r.person_id IN (SELECT id FROM persons WHERE agent_id = ? AND network_id = r.network_id)
+        OR r.person_id IN (SELECT m.merged_id FROM person_merges m JOIN persons p ON p.id = m.survivor_id WHERE m.undone_at IS NULL AND p.agent_id = ?))`,
+      [viewer.userId, viewer.userId, viewer.userId],
+    );
     const open: ImportedReminder[] = [];
     for (const r of all) {
       if (r.done) continue;
       const person = await this.store.getPerson(await this.fiche.rootOf(r.personId));
       if (person && person.agent_id === viewer.userId) open.push({ ...r, personId: person.id });
     }
+    await appendEvent(this.journal, { type: 'reseau.import_rappels_lus', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', count: open.length } }, this.now);
     return { ok: true, value: open };
   }
 
