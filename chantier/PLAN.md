@@ -357,16 +357,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU027 · Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo
-- Statut : en cours
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A027 (majeur), endroit : C/reseau/academie.ts, `complete`, `compute`.
 - Constat de l'audit : Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo, sans preuve de suivi associée.
 - Objectif : Les heures déclarées sont distinguées des heures justifiées ; le compteur utilisable pour les obligations ne retient que des justificatifs vérifiables.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#724, `2b9b491d`). Décidé : justifié = présence rangée par la direction, ou module fait couvert par une attestation de quiz réussi (compté au jour de la première attestation) ; un « J'ai fini » seul est déclaré (`declaredMinutes`), montré à part, jamais compté ni dans les alertes ; R85 précisée. Codex rien à signaler. Le module crédité par le bac à sable (AU025) reste déclaré tant que son quiz n'est pas réussi.
 
 ### AU028 · Les périodes de formation repartent de mon arrivée au réseau
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A028 (majeur), endroit : C/reseau/academie.ts, `periodOf`, `startedOn`.
 - Constat de l'audit : Les périodes de formation repartent de mon arrivée au réseau, sans reprendre explicitement mon cycle antérieur.

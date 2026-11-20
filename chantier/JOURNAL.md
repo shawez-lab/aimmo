@@ -1517,3 +1517,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 16:05 · AU077 · visite groupée : plusieurs acquéreurs au même créneau de l'agent, chacun son rendez-vous, son bon et son compte rendu, l'agent tenu une fois ; Codex 4 P0 corrigés puis rien ; vérification GitHub verte ; fusionnée (#723, bdafbaff) · prochaine : AU078
 - 2026-11-20 16:05 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
 - 2026-11-20 16:05 · VOIE 2 : AU077, bdafbaff (main), relancé non
+- 2026-11-20 16:07 · AU027 · un « J'ai fini » seul n'est plus qu'une heure déclarée, montrée à part ; seules les présences rangées et les modules couverts par un quiz réussi comptent ; R85 précisée ; Codex rien ; fusionnée (#724, 2b9b491d) · prochaine : AU028
