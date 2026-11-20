@@ -160,6 +160,14 @@ describeWithSqlite("AU031 · l'adresse exacte des biens repris, gardée dans un 
     expect(other.ok && other.value.address).toBeNull();
   });
 
+  it("[R84] le même bien deux fois dans l'export, d'abord sans adresse : l'aperçu compte l'adresse comme l'import la range", async () => {
+    const csv = ['Référence;Type;Adresse;Code postal;Ville', 'V100;Maison;;21000;Dijon', 'V100;Maison;12 rue des Essais;21000;Dijon'].join('\n');
+    const preview = await w.importer.preview(me(), w.agent, { format: 'hektor', properties: csv });
+    const run = await w.importer.run(me(), w.agent, { format: 'hektor', properties: csv });
+    expect(preview.ok && preview.report.addresses).toEqual({ kept: 1, known: 0, notTakenLines: [] });
+    expect(run.ok && run.report.addresses).toEqual({ kept: 1, known: 0, notTakenLines: [] });
+  });
+
   it('lecture : le numéro de voie à part, une adresse mal formée ou sans code postal à cinq chiffres non reprise', async () => {
     const csv = [
       'Référence;Type;Numéro de voie;Rue;CP;Commune',

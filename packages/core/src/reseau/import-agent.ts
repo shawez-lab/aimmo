@@ -1234,6 +1234,8 @@ export class ImportAgent {
     };
     // Les biens de ce dépôt seront rangés avant leurs pièces : une pièce de l'un d'eux sera reprise.
     const coming = new Set<string>();
+    // Les biens dont une adresse de ce dépôt sera rangée : une seconde adresse pour le même bien sera « déjà là ».
+    const addressComing = new Set<string>();
     for (const line of properties.lines) {
       const known = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_import_properties WHERE network_id = ? AND origin_key = ?', [networkId, line.origin]);
       if (Number(known?.n ?? 0) > 0 || coming.has(line.origin)) report.properties.known += 1;
@@ -1246,8 +1248,9 @@ export class ImportAgent {
           [networkId, line.origin],
         );
         if (row && row.agent_id !== agentId) report.addresses.notTakenLines.push(line.line);
-        else if ((row && Number(row.has_address) > 0) || coming.has(line.origin)) report.addresses.known += 1;
+        else if ((row && Number(row.has_address) > 0) || addressComing.has(line.origin)) report.addresses.known += 1;
         else report.addresses.kept += 1;
+        addressComing.add(line.origin);
       }
       coming.add(line.origin);
     }
