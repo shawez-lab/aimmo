@@ -7,8 +7,9 @@
  *
  * Décidé, lecture prudente : la bibliothèque de D02 n'admet que les types de mandat (contrainte de sa table, qu'il
  * faudrait reconstruire) ; le bon de visite a ses propres modèles, aux mêmes règles : versions figées, créées par la
- * direction, validées par la conformité seule ; tant qu'aucune version n'est validée (H08), le bon est d'essai. La
- * signature se range sur papier (date et scan) ; la signature en ligne de D08 viendra pour le bon avec H24.
+ * direction, validées par la conformité seule ; tant qu'aucune version n'est validée (H08), le bon est d'essai. Le
+ * visiteur signe sans papier, sur le téléphone de l'agent ou à distance (`signature-bon.ts`, AU075) ; la signature sur
+ * papier (date et scan) reste en secours ; tant que H24 n'est pas réglé, la signature en ligne est d'essai.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -24,6 +25,9 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { RendezVous, type Appointment, type BookingRefusal } from '../rendezvous/reservation.ts';
 import { RemiseAudit, type AuditNotice } from './remise-audit.ts';
+
+/** Qui a signé un bon en ligne, tel que `visit_slips.signed_by` le garde (AU075). */
+export const ONLINE_SLIP_SIGNER = 'visiteur:en_ligne';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -412,7 +416,9 @@ export class Visites {
     if (changes === 1) {
       await appendEvent(this.journal, { type: 'bon_visite.signe', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { slip: row.id, mode: row.mode } }, this.now);
     }
-    const after = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE id = ?', [row.id]);
+    const after = await this.db.first<SlipRow & { signed_by: string | null }>('SELECT * FROM visit_slips WHERE id = ?', [row.id]);
+    // AU075 : un bon déjà signé en ligne par le visiteur ne reçoit pas de scan ; le papier n'y range rien.
+    if (changes !== 1 && after?.signed_by === ONLINE_SLIP_SIGNER) return { ok: false, rule: null, code: 'signed_online' };
     return { ok: true, slip: toSlip(after!) };
   }
 
