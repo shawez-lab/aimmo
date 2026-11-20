@@ -198,6 +198,13 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
     ]);
   });
 
+  it("[R18] deux appels du même jour au même texte, à deux heures dites, restent deux appels", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS });
+    const csv = ['Id contact;Date;Type;Note', 'C1;10/07/2027 09:00;Appel;Sans réponse', 'C1;10/07/2027 17:00;Appel;Sans réponse', 'C1;10/07/2027 17:00;Appel;Sans réponse'].join('\n');
+    const r = await w.importer.run(me(), w.agent, { format: 'hektor', history: csv });
+    expect(r.ok && [r.report.followUp.history, r.report.followUp.known]).toEqual([2, 1]);
+  });
+
   it('[R03] [R17] un rappel repris est une tâche de l’agent : rien ne part, il se marque fait une fois, jamais défait', async () => {
     let out = await count("SELECT count(*) AS n FROM messages WHERE direction = 'out'");
     await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });

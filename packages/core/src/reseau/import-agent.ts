@@ -528,7 +528,8 @@ export async function readAgentFollowUp(text: string, format: AgentExportFormat,
       reading.skipped.push({ line, reason: 'empty' });
       continue;
     }
-    const identity = [type, day ?? '', due ?? ''].join('|');
+    // Le jour et l'heure tels que l'export les écrit : deux appels du même jour, au même texte, restent deux appels.
+    const identity = [type, (first(row, 'date') ?? '').replace(/\s+/g, ' '), (first(row, 'due') ?? '').replace(/\s+/g, ' ')].join('|');
     reading.lines.push({ line, contactOrigin: id === null ? null : await contactOriginById(agentId, format, id), emails, phones, entry, identity, body, truncated });
   }
   return reading;
