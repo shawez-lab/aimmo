@@ -135,6 +135,12 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     const g: ListingFacts = { ...FACTS, surfaceM2: 62, carrezM2: 60, usableM2: null };
     expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 60 m² habitables.', g).ok).toBe(false);
     expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 62 m² habitables.', g).ok).toBe(true);
+    // Un libellé suivi de deux-points garde son qualificatif.
+    const h: ListingFacts = { ...g, usableM2: 70 };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez : 62 m².', h).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface utile : 62 m².', h).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface Carrez : 60 m².', h).ok).toBe(true);
+    expect(traceListing('Logement à Dijon', 'Surface utile : 70 m².', h).ok).toBe(true);
     // Le texte de secours suit la règle de l'annonce : un logement dit l'habitable puis la Carrez, jamais l'utile.
     const text = fallbackListing({ ...f, usableM2: 70 });
     expect(text.body).toContain('Surface Carrez de 61,35 m².');

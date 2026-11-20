@@ -294,9 +294,9 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
     // AU063 · une surface dite « Carrez », « utile » ou « habitable » est celle-là, jamais une autre de même valeur.
     if (unit && unit.fields.includes('surfaceM2')) {
       // Le qualificatif d'une mesure est le sien : juste après son unité d'abord, sinon juste avant le nombre, depuis la
-      // mesure ou la ponctuation qui précède ; celui d'une autre mesure de la phrase ne compte jamais.
+      // mesure ou la virgule qui précède (« Surface Carrez : 60 m² » garde le sien) ; celui d'une autre mesure ne compte jamais.
       const behind = /^\s*(?:m²|m2|metres? carres?|metres?)\s+([\p{L}]+)/u.exec(after)?.[1] ?? '';
-      const ahead = before.slice(-40).split(/[,;:]|\d/u).at(-1) ?? '';
+      const ahead = before.slice(-40).split(/[,;]|\d/u).at(-1) ?? '';
       const qualifier = (text: string): (keyof ListingFacts)[] | null =>
         /(?<![\p{L}])carrez(?![\p{L}])/u.test(text) ? ['carrezM2'] : /(?<![\p{L}])utiles?(?![\p{L}])/u.test(text) ? ['usableM2'] : /(?<![\p{L}])habitables?(?![\p{L}])/u.test(text) ? ['surfaceM2'] : null;
       fields = qualifier(behind) ?? qualifier(ahead) ?? fields;
