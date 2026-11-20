@@ -432,19 +432,20 @@ export const ERASURE_WHY = {
 } as const;
 
 /**
- * Les tables qui décrivent et diffusent un bien, en ajout seul (la base refuse de les effacer) : fiche, détails, liens,
- * brouillons, validations, versions et traductions de l'annonce, contrôles des vidéos, choix et retours des portails,
+ * Les tables qui décrivent et diffusent un bien, en ajout seul (la base refuse de les effacer) : fiche, liens, brouillons,
+ *, validations, versions et traductions de l'annonce, contrôles des vidéos, choix des portails,
  * sujets des photos (AU020b), toutes du traitement des biens. Aucune ne porte le nom du vendeur ni l'adresse exacte [R19, R46] ; elles restent avec le
  * bien, et c'est le lien de la personne au bien (son projet) qui part. Le plan les dit gardées, avec leur raison, au
  * lieu de promettre un effacement que la base refuse.
  *
- * Pas ici, parce qu'elles portent l'adresse exacte : `sign_placements` (le panneau posé) et `pige_properties` (le bien
- * venu de la pige). Elles restent à effacer, la base le refuse, et l'effacement n'est pas dit complet (AU020d), comme pour les tables en
- * ajout seul d'autres traitements (commerces, départ d'un agent, assainissement).
+ * Pas ici, parce qu'elles portent l'adresse exacte ou un texte libre que rien ne contrôle : `sign_placements` (le
+ * panneau posé), `pige_properties` (le bien venu de la pige), `property_details` (quartier et atout, importés) et
+ * `diffusion_portal_feedback` (le motif écrit par le portail). Elles restent à effacer, la base le refuse, et
+ * l'effacement n'est pas dit complet (AU020d), comme pour les tables en ajout seul d'autres traitements (commerces,
+ * départ d'un agent, assainissement).
  */
 export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
   'property_sheets',
-  'property_details',
   'property_links',
   'listing_drafts',
   'listing_validations',
@@ -458,7 +459,6 @@ export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
   'diffusion_portal_choices',
   'diffusion_portal_suspensions',
   'diffusion_portal_resumptions',
-  'diffusion_portal_feedback',
   'diffusion_portal_checks',
   'diffusion_portal_texts',
   'diffusion_portal_text_validations',
@@ -466,8 +466,13 @@ export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
   'diffusion_photo_descriptions',
 ]);
 
-/** Les tables en ajout seul du bien qui portent l'adresse exacte : jamais gardées d'office (AU020d). */
-export const PROPERTY_ADDRESS_HELD: ReadonlySet<string> = new Set(['sign_placements', 'pige_properties']);
+/** Les tables en ajout seul du bien jamais gardées d'office : adresse exacte ou texte libre non contrôlé (AU020d). */
+export const PROPERTY_NOT_KEPT: Readonly<Record<string, string>> = Object.freeze({
+  sign_placements: 'street',
+  pige_properties: 'street',
+  property_details: 'highlight',
+  diffusion_portal_feedback: 'detail',
+});
 
 /**
  * Le plan d'effacement : chaque table de la réponse d'accès. Une obligation légale garde la table (registre des mandats

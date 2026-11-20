@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
-import { ERASURE_WHY, PROPERTY_ADDRESS_HELD, PROPERTY_DESCRIPTION } from '../src/conformite/demandes-personnes.ts';
+import { ERASURE_WHY, PROPERTY_DESCRIPTION, PROPERTY_NOT_KEPT } from '../src/conformite/demandes-personnes.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { sealAt } from '../src/sauvegarde/copie.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -382,11 +382,19 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
       expect(columns.get(table)!.filter((c) => /street|person|name|phone|email/.test(c)), table).toEqual([]);
     }
     // Et l'inverse : toute table en ajout seul du traitement des biens que la carte retrouve par le bien (ou par une table
-    // de la description) est dans la liste, sauf celles qui portent l'adresse exacte du bien (AU020d).
+    // de la description) est dans la liste, sauf celles qui portent l'adresse exacte ou un texte libre non contrôlé (AU020d).
     const carte = conformite.CARTE_ACCES as Record<string, { locate?: readonly { from?: string }[] }>;
     const viaProperty = [...columns.keys()].filter((table) => guarded.has(table) && (carte[table]?.locate ?? []).some((l) => l.from === 'properties' || (l.from !== undefined && PROPERTY_DESCRIPTION.has(l.from))));
-    expect(viaProperty.filter((table) => !PROPERTY_DESCRIPTION.has(table)).sort()).toEqual([...PROPERTY_ADDRESS_HELD].sort());
-    for (const table of PROPERTY_ADDRESS_HELD) expect(columns.get(table), table).toEqual(expect.arrayContaining(['street']));
+    expect(viaProperty.filter((table) => !PROPERTY_DESCRIPTION.has(table)).sort()).toEqual(Object.keys(PROPERTY_NOT_KEPT).sort());
+    // Celles-là portent l'adresse exacte ou un texte libre que rien ne contrôle : la colonne qui les écarte existe.
+    for (const [table, column] of Object.entries(PROPERTY_NOT_KEPT)) {
+      expect((await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name), table).toContain(column);
+    }
+    // Et aucune table gardée n'inscrit une de ces colonnes de texte libre non contrôlé.
+    for (const table of PROPERTY_DESCRIPTION) {
+      const names = (await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name);
+      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number'].includes(c)), table).toEqual([]);
+    }
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
