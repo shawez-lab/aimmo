@@ -1,6 +1,6 @@
 import { beforeEach, expect, it } from 'vitest';
 import { DecisionEnvoi, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type SqlValue } from '../src/index.ts';
-import { ImportAgent, pieceCategory, readAgentPieces, safeLink, signatureSaid } from '../src/reseau/index.ts';
+import { ImportAgent, pieceCategory, readAgentPieces, safeLink, signatureInType, signatureSaid } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from './sqlite.ts';
 
@@ -182,6 +182,12 @@ describeWithSqlite('AU030 · les biens repris gardent leur dossier : photos, dia
       'agent-x',
     );
     expect(reading.lines.map((l) => [l.category, l.signed])).toEqual([['mandate', true], ['mandate', false], ['mandate', true], ['mandate', null], ['photo', null]]);
+    // Sans colonne de signature, le type la dit : une négation l'emporte toujours sur « signé ».
+    expect(['Mandat signé', 'Mandat pas signé', 'Mandat non signé', 'Mandat pas encore signé', 'Mandat à signer', 'Mandat en signature', 'Mandat exclusif', 'Mandat signature inconnue', 'Mandat SCA signé'].map(signatureInType)).toEqual([
+      true, false, false, false, false, false, null, null, true,
+    ]);
+    const typed = await readAgentPieces(['Ref;Type;Fichier', 'A;Mandat pas signé;m.pdf'].join('\n'), 'excel', 'agent-x');
+    expect(typed.lines.map((l) => l.signed)).toEqual([false]);
     // Une signature inconnue reste non dite : jamais « non signé ».
     expect(['non', 'Non signé', 'à signer', 'non renseigné', 'Inconnu', '?', 'NC', 'oui', 'Signé', '2027-03-12', 'peut-être'].map(signatureSaid)).toEqual([
       false, false, false, null, null, null, null, true, true, true, null,

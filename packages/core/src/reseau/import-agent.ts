@@ -454,6 +454,15 @@ export const signatureSaid = (raw: string): boolean | null => {
   return null;
 };
 
+/** Ce que le type d'une pièce dit de la signature d'un mandat : une négation l'emporte toujours sur « signé ». */
+export const signatureInType = (raw: string): boolean | null => {
+  // Les mots tels qu'écrits, sans accents : « Mandat SCA signé » reste signé, « Mandat à signer » ne l'est pas.
+  const words = ` ${raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  if (/ (?:non|pas|pas encore|jamais) signee? | a signer | en (?:cours de )?signature | en attente | unsigned | nonsignee? /.test(words)) return false;
+  if (/ non renseigne| inconnue? /.test(words)) return null;
+  return / signee? /.test(words) ? true : null;
+};
+
 /** Un lien gardé : https seulement, sans identifiant ni mot de passe dans l'adresse, 500 signes au plus. */
 export const safeLink = (raw: string | null): string | null => {
   if (raw === null || raw.length > 500) return null;
@@ -525,8 +534,7 @@ export async function readAgentPieces(text: string, format: AgentExportFormat, a
     const signed =
       category !== 'mandate' ? null
       : rawSigned !== null ? signatureSaid(rawSigned)
-      : rawType !== null && /nonsigne|asigner/.test(key(rawType)) ? false
-      : rawType !== null && /signe/.test(key(rawType)) ? true
+      : rawType !== null ? signatureInType(rawType)
       : null;
     const rawPortal = cell(row, 'portal');
     reading.lines.push({
