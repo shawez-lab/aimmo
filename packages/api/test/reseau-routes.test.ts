@@ -78,7 +78,7 @@ describeWithSqlite('J12 · routes de M14', () => {
   /** L'adresse d'une route, ses identifiants remplacés par `id`. */
   const pathOf = (pattern: RegExp, id: string): string => pattern.source.replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, id).replace(/^\^/, '').replace(/\$$/, '');
   /** Les routes où l'appelant agit seulement sur ce qui est à lui : le rôle d'agent suffit, la couche métier fait le reste. */
-  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable'];
+  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable', 'reseau.mon_bac_a_sable_ouvrir', 'reseau.mon_bac_a_sable_etape'];
   /** Les routes d'agent sur la chose d'un autre : la couche métier refuse un agent tiers. */
   const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin'];
   const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
