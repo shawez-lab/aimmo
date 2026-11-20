@@ -394,6 +394,20 @@ Tout refus (réseau, utilisateur, rôle, clé, défi, signature) a la même rép
 
 Le jeton s'envoie comme une clé : `Authorization: Bearer <jeton>`. L'API essaie d'abord les clés d'API, qui restent acceptées comme avant, puis la séance, relue dans la base à chaque demande : une clé retirée, une séance finie ou un agent parti la coupent à la demande suivante (401) [R600, R82]. Sans clé d'API configurée, l'API reste fermée (503), sauf si le site WebAuthn est réglé : seules les séances ouvrent alors.
 
+### Démarrer sur un nouvel appareil, et le recours (AU023)
+
+Un agent n'a jamais de clé à voir ni à taper. Le parcours :
+
+1. **La direction prépare le lien.** Écran du réseau, bloc « Clés de mes appareils », « Inviter un agent sur un nouvel appareil », « Choisir l'agent », puis « Lien pour … ». Routes : `GET /v1/cles/invitations/agents` (les agents actifs du réseau, `{id, name}`) et `POST /v1/cles/invitations` (`{userId, stepUpId, retirerAnciens}`), rôle `direction` seul, sur une preuve de sa propre clé d'appareil `modifier_droits` pour `agent:<id>` [R601]. Réponse : `{lien, expiresAt, keysRevoked, linksVoided, devicesRevoked}` ; `lien` vaut `/app/#invitation=<jeton>`, il sert une fois, 24 heures. Le jeton n'existe que dans cette réponse : la base garde son empreinte, le journal (`acces.invitation_creee`) ni l'un ni l'autre [R13]. Un agent parti, inconnu ou d'un autre réseau : 404 `unknown`, rien n'est préparé.
+2. **La direction le remet elle-même**, à l'agent seul (de vive voix, par un message à lui seul). AIMMO n'envoie rien.
+3. **L'agent l'ouvre sur son téléphone** et appuie sur « Entrer sur ce téléphone » (Z05) : l'application reçoit une clé d'application, gardée sur l'appareil, que l'agent ne voit jamais.
+4. **Il range la clé de cet appareil** (bloc « Clés de mes appareils » de sa journée). La première est active d'emblée ; l'appareil retient alors qui il sert (`GET /v1/cles/identite` : réseau, rôle, identifiant, rien de secret).
+5. **Ensuite**, sur l'écran de connexion, « Entrer avec la clé de cet appareil » : l'empreinte, le visage ou le code du téléphone ouvre une séance de 12 heures (BR06). Se déconnecter efface de l'appareil la clé d'application ou le jeton de la séance, pas l'identité retenue : le bouton reste proposé.
+
+**Recours : téléphone perdu, volé ou changé.** L'agent appelle la direction. Elle coche « Téléphone perdu ou volé : couper d'abord tous ses anciens accès » avant « Lien pour … » (`retirerAnciens: true`) : les clés d'application déjà remises à cet agent par un lien sont retirées, ses liens encore inutilisés ne servent plus, les clés de ses appareils sont retirées ; rien n'est effacé, tout est daté [R600, R17]. L'agent ouvre le nouveau lien sur le nouveau téléphone et y range sa clé : elle attend l'accord de la direction (deuxième clé de cet agent), qui l'accepte dans le même bloc après l'avoir appelé [R600, R601]. Sans la case (un second appareil, un lien égaré non ouvert), les anciens accès restent. Une clé personnelle rangée à la main dans le secret `API_KEYS` (H22) ne se lit pas depuis l'application : elle reste ouverte, et se retire du secret.
+
+La clé personnelle tapée reste possible, repliée sous « J'ai une clé personnelle », pour le secours technique seulement.
+
 ## Quiz et attestations de formation (BR07)
 
 Sous `/v1/formation`, chaque route dit les rôles qu'elle admet, contrôlés avant le corps ; un refus est écrit au journal [R16]. Un champ non prévu : 400 `unknown_field`. Rien n'est envoyé.

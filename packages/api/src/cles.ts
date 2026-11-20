@@ -31,6 +31,7 @@
  * compartiment de fichiers, ces routes sont fermées (503).
  */
 import { SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { invitableAgents, inviteAgent } from './acces.ts';
 import { takeSlot } from './assistant.ts';
 import { sha256Hex } from './auth.ts';
 import { ContenusRepriseAgence, RepriseDonneesAgence, TRANCHE_OCTETS, type StockageFichiersPlages } from '../../core/src/licences/index.ts';
@@ -195,6 +196,46 @@ export function clesRoutes(): ClesRoute[] {
       name: 'cles.appareils.retrait',
       roles: DEVICE_USERS,
       handle: async (s, v, [id]) => reply(await cles(s as ClesServices & { site: ClesConfig }).revokeDevice(v, id)),
+    },
+    // AU023 · Qui je suis, pour que l'appareil se souvienne à qui proposer sa clé à la connexion : rien de secret.
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/identite$`),
+      name: 'cles.identite',
+      roles: DEVICE_USERS,
+      handle: async (_s, v) => reply({ ok: true, value: { networkId: v.networkId, role: v.role, userId: v.userId } }),
+    },
+    // AU023 · La direction invite un agent de son réseau sur un nouvel appareil, par un lien nominatif à usage unique,
+    // sur la preuve de sa propre clé ; appareil perdu : les anciens accès de l'agent sont retirés d'abord [R600, R601, R13].
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/invitations/agents$`),
+      name: 'cles.invitations.agents',
+      roles: DIRECTION,
+      handle: async (s, v) => reply(await invitableAgents(s.db, v)),
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/invitations$`),
+      name: 'cles.invitations',
+      roles: DIRECTION,
+      handle: withBody(['userId', 'stepUpId', 'retirerAnciens'], async (s, v, _p, b) => {
+        const service = cles(s);
+        return reply(
+          await inviteAgent(
+            s.db,
+            s.journal,
+            v,
+            b,
+            async (subject, stepUpId) => {
+              const r = await service.requireSecondFactor(v, 'modifier_droits', subject, stepUpId);
+              return r.ok ? { ok: true } : r;
+            },
+            async (deviceId) => (await service.revokeDevice(v, deviceId)).ok,
+            s.now(),
+          ),
+        );
+      }),
     },
     // La preuve d'une action sensible précise, sur un objet précis [R601].
     {
