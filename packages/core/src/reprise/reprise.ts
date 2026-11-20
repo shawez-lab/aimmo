@@ -5,6 +5,7 @@
  * Ne crée jamais d'accord de prospection [R03], n'efface rien [R17], n'écrit au journal que des identifiants
  * internes et des nombres [R13]. N'envoie rien.
  */
+import { storedForms } from '../fiche/empreinte.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, IdentifierKind, Person } from '../db/types.ts';
@@ -471,16 +472,19 @@ export class RepriseSite {
     let changed = false;
     for (const id of identifiers) {
       const kinds = id.kind === 'phone' ? ['phone', 'whatsapp'] : [id.kind];
+      const forms = await storedForms(target.network_id, id.kind, id.value);
       const known = await this.db.first<{ n: number }>(
         `SELECT count(*) AS n FROM person_identifiers
-         WHERE person_id IN (${placeholders(members.length)}) AND kind IN (${placeholders(kinds.length)}) AND value = ?`,
-        [...members, ...kinds, id.value],
+         WHERE person_id IN (${placeholders(members.length)}) AND kind IN (${placeholders(kinds.length)}) AND value IN (?, ?)`,
+        [...members, ...kinds, forms[0] ?? id.value, forms[1] ?? id.value],
       );
       if (Number(known?.n ?? 0) > 0) continue;
       await this.fiche.addIdentifier({ networkId: target.network_id, agentId: target.agent_id, personId: target.id, kind: id.kind, value: id.value });
       changed = true;
     }
     const at = this.now().toISOString();
+    // Une fiche effacée ne reprend pas de nom : seuls ses identifiants, sous empreinte, la reconnaissent (AU020c).
+    if (await this.fiche.isErased(target.id)) return changed;
     for (const [column, value] of [['first_name', contact.firstName], ['last_name', contact.lastName]] as const) {
       if (value === null) continue;
       const { changes } = await this.db.run(

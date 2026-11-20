@@ -12,8 +12,9 @@
  * - il est noté au registre des effacements AVANT d'effacer, une entrée par fiche réunie : un effacement non noté n'est
  *   pas fait [R231] ; si la note échoue, rien n'est effacé ; s'il échoue après la note, le refaire ne change rien de
  *   plus, et la restauration le refera ;
- * - seules les lignes `effacer` du plan partent ; `garder` (obligation légale, arrêt de la personne), `empreinte` et
- *   `examiner` (partagé avec une autre personne) restent, et le reçu dit pourquoi ;
+ * - seules les lignes `effacer` du plan partent ; `garder` (obligation légale, arrêt de la personne) et `examiner`
+ *   (partagé avec une autre personne) restent, et le reçu dit pourquoi ; `empreinte` : les identifiants restent sous leur
+ *   seule empreinte (AU020c), et l'arrêt de la personne est posé sur tous les canaux s'il ne l'était pas [R04] ;
  * - une ligne qu'une pièce gardée cite encore (la fiche citée par un mandat ou par la demande elle-même, le bien d'un
  *   mandat) ne peut pas partir, la base le refuse : ses colonnes nominatives listées dans `PSEUDONYMIZE` sont vidées,
  *   sinon elle est gardée et dite « citée » ; une ligne qu'une table en ajout seul refuse d'effacer est dite
@@ -24,7 +25,10 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase, SqlValue } from '../db/sql.ts';
+import { identifierHash, isHashedIdentifier } from '../fiche/empreinte.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
+import { normalizeIdentifier } from '../fiche/normalize.ts';
+import type { IdentifierKind } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CopyKey } from '../sauvegarde/copie.ts';
@@ -52,8 +56,8 @@ export interface ObjectEraser {
   remove(storage: ObjectStorage, key: string): Promise<void>;
 }
 
-/** Ce que le reçu dit des identifiants gardés : en clair, pour reconnaître la personne et tenir son arrêt [R04]. */
-export const IDENTIFIERS_KEPT = 'Identifiants gardés en clair, seulement pour reconnaître la personne et respecter son arrêt [R04] ; leur passage sous empreinte est à venir (AU020c).';
+/** Ce que le reçu dit des identifiants gardés : sous leur seule empreinte, pour reconnaître la personne et tenir son arrêt [R04]. */
+export const IDENTIFIERS_KEPT = 'Identifiants gardés sous leur seule empreinte, pour reconnaître la personne et respecter son arrêt [R04].';
 
 /**
  * Les tables jamais effacées par la procédure : `person_merges` relie les fiches réunies, et l'arrêt posé sur l'une
@@ -100,6 +104,10 @@ export interface RealErasureOutcome {
   erased: RealErasureCount[];
   /** Lignes gardées parce qu'une pièce gardée les cite, leurs colonnes nominatives vidées. */
   pseudonymized: RealErasureCount[];
+  /** Identifiants dont la valeur en clair a été remplacée par son empreinte (AU020c). */
+  hashed: RealErasureCount[];
+  /** Arrêts posés par l'effacement, sur une fiche qui n'en avait pas sur tous les canaux [R04]. */
+  stopped: RealErasureCount[];
   /** Lignes gardées telles quelles parce qu'une pièce gardée ou une autre personne les cite (le bien d'un mandat). */
   cited: RealErasureCount[];
   /** Lignes à effacer qui sont encore là, ni supprimées ni vidées. */
@@ -216,6 +224,7 @@ export async function eraseForReal(
   const vidées = new Map<string, number>();
   const kept = new Map<string, number>();
   const remaining = new Map<string, number>();
+  const stopped = new Map<string, number>();
   for (const p of [...pending, ...held]) {
     const columns = PSEUDONYMIZE[p.table] ?? [];
     // Citée ailleurs, sans colonne nominative à vider : gardée telle quelle, et dite.
@@ -233,6 +242,47 @@ export async function eraseForReal(
       }
     }
     bump(done ? vidées : remaining, p.table);
+  }
+
+  // Les identifiants ne restent que sous leur empreinte (AU020c) : la valeur en clair est remplacée, ligne par ligne.
+  // Une valeur dont l'empreinte est déjà là (rangée sous empreinte après l'effacement) part : l'empreinte suffit.
+  // Une ligne qui ne passe pas est dite restante [R04, R17].
+  const hashed = new Map<string, number>();
+  if (personIds.length > 0) {
+    const ids = await db.all<{ id: string; network_id: string; person_id: string; kind: IdentifierKind; value: string }>(
+      `SELECT id, network_id, person_id, kind, value FROM person_identifiers WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY id`,
+      [...personIds],
+    );
+    for (const id of ids) {
+      if (isHashedIdentifier(id.value)) continue;
+      const print = await identifierHash(id.network_id, id.kind, normalizeIdentifier(id.kind, id.value) ?? id.value);
+      try {
+        const twin = await db.first('SELECT 1 AS x FROM person_identifiers WHERE person_id = ? AND kind = ? AND value = ?', [id.person_id, id.kind, print]);
+        const { changes } = twin
+          ? await db.run('DELETE FROM person_identifiers WHERE id = ? AND value = ?', [id.id, id.value])
+          : await db.run('UPDATE person_identifiers SET value = ? WHERE id = ? AND value = ?', [print, id.id, id.value]);
+        bump(changes > 0 ? hashed : remaining, 'person_identifiers');
+      } catch {
+        bump(remaining, 'person_identifiers');
+      }
+    }
+    // L'arrêt de la personne tient sur tous les canaux : posé s'il ne l'est pas déjà, jamais levé ici [R04].
+    for (const personId of personIds) {
+      const person = await db.first<{ network_id: string; agent_id: string | null }>('SELECT network_id, agent_id FROM persons WHERE id = ?', [personId]);
+      if (!person) continue;
+      const active = await db.first("SELECT 1 AS x FROM exclusions WHERE person_id = ? AND channel IS NULL AND lifted_at IS NULL AND reason = 'stop'", [personId]);
+      if (active) continue;
+      const at = options.target?.at ?? new Date().toISOString();
+      await db.run("INSERT INTO exclusions (id, network_id, agent_id, person_id, reason, channel, noted_at, lifted_at, created_at) VALUES (?, ?, ?, ?, 'stop', NULL, ?, NULL, ?)", [
+        crypto.randomUUID(),
+        person.network_id,
+        person.agent_id,
+        personId,
+        at,
+        at,
+      ]);
+      bump(stopped, 'exclusions');
+    }
   }
 
   const objectsRemoved: Partial<Record<ObjectStorage, number>> = {};
@@ -255,7 +305,7 @@ export async function eraseForReal(
       }
     }
   }
-  return { plan, outcome: { erased: count(erased), pseudonymized: count(vidées), cited: count(kept), remaining: count(remaining), objectsRemoved, objectsRemaining } };
+  return { plan, outcome: { erased: count(erased), pseudonymized: count(vidées), hashed: count(hashed), stopped: count(stopped), cited: count(kept), remaining: count(remaining), objectsRemoved, objectsRemaining } };
 }
 
 /** L'effaceur réel, pour le rejeu du registre après une restauration : la fiche de l'entrée seule, sans viewer. */
@@ -269,7 +319,7 @@ export class SqlPersonEraser implements PersonEraser {
     const { outcome } = await eraseForReal(db, members, { ...this.options, target: { requestId: entry.requestId, networkId: entry.networkId, at: entry.erasedAt } });
     // Un rejeu qui laisse ce qui devait partir n'est pas un rejeu : la restauration n'est pas dite finie [R231].
     if (outcome.remaining.length > 0 || outcome.objectsRemaining > 0) throw new Error('effacement incomplet');
-    return [...outcome.erased, ...outcome.pseudonymized].reduce((n, c) => n + c.rows, 0);
+    return [...outcome.erased, ...outcome.pseudonymized, ...outcome.hashed, ...outcome.stopped].reduce((n, c) => n + c.rows, 0);
   }
 }
 
@@ -285,6 +335,8 @@ export interface ErasureReceipt {
   planSha256: string;
   erased: RealErasureCount[];
   pseudonymized: RealErasureCount[];
+  hashed: RealErasureCount[];
+  stopped: RealErasureCount[];
   cited: RealErasureCount[];
   remaining: RealErasureCount[];
   objectsRemoved: Partial<Record<ObjectStorage, number>>;
@@ -376,11 +428,9 @@ export class EffacementReel {
       records: members.length,
       planSha256: await sha256Of(plan),
       ...outcome,
-      // Les identifiants restent en clair tant que la fiche ne reconnaît pas une personne par leur empreinte (AU020c) :
-      // le reçu le dit tel quel, il ne promet pas une empreinte qui n'est pas faite.
       kept: plan.lines
         .filter((l): l is typeof l & { action: 'garder' | 'empreinte' | 'examiner' } => l.action !== 'effacer')
-        .map((l) => (l.action === 'empreinte' ? { table: l.table, action: 'garder' as const, rows: l.rows, why: IDENTIFIERS_KEPT } : { table: l.table, action: l.action, rows: l.rows, why: l.why })),
+        .map((l) => ({ table: l.table, action: l.action, rows: l.rows, why: l.action === 'empreinte' ? IDENTIFIERS_KEPT : l.why })),
       alwaysKept: plan.alwaysKept,
       complete: outcome.remaining.length === 0 && outcome.objectsRemaining === 0,
     };
@@ -402,6 +452,7 @@ export class EffacementReel {
           sha256,
           erased: total(outcome.erased),
           pseudonymized: total(outcome.pseudonymized),
+          hashed: total(outcome.hashed),
           remaining: total(outcome.remaining),
           objects: Object.values(outcome.objectsRemoved).reduce((n, v) => n + (v ?? 0), 0),
           complete: receipt.complete,

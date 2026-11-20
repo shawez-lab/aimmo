@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { DecisionEnvoi, FicheUnique, Rattachement, Reception, conformite, identifierHash, isHashedIdentifier, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { sealAt } from '../src/sauvegarde/copie.ts';
@@ -145,7 +145,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La fiche reste, citée par le mandat et la demande, mais son nom est vidé ; l'autre fiche ne change pas.
     expect(await t.db.first('SELECT first_name, last_name, last_contact_at FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null, last_name: null, last_contact_at: null });
     expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [t.other.id])).toEqual({ first_name: 'Noé', last_name: 'Autre' });
-    // Ce que la loi garde, l'arrêt et les identifiants restent tels quels ; le reçu ne promet pas d'empreinte (AU020c).
+    // Ce que la loi garde et l'arrêt restent tels quels ; les identifiants restent, sous leur seule empreinte (AU020c).
     const after = await countAll(t.db);
     for (const table of ['mandates', 'mandate_register', 'documents', 'signed_documents', 'exclusions', 'person_identifiers', 'person_requests', 'persons']) expect(after[table], table).toBe(before[table]);
     // Le fichier qu'elle seule citait est retiré ; le fichier partagé et le coffre restent.
@@ -159,8 +159,10 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(receipt.cited).toEqual([{ table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }, { table: 'properties', rows: 1 }]);
     expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }]);
     expect(receipt.pseudonymized).toEqual([{ table: 'persons', rows: 1 }]);
-    expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'garder', why: IDENTIFIERS_KEPT })]));
-    expect(receipt.kept.some((k) => k.action === 'empreinte')).toBe(false);
+    expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'empreinte', why: IDENTIFIERS_KEPT })]));
+    expect(receipt.hashed).toEqual([{ table: 'person_identifiers', rows: 1 }]);
+    expect(receipt.stopped).toEqual([]);
+    expect(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.personId])).toEqual([{ value: await identifierHash(t.network.id, 'email', 'lea.vendeuse@example.test') }]);
     expect(receipt.alwaysKept.join(' ')).toContain('L561');
     const text = JSON.stringify(receipt);
     for (const secret of ['Exemple', 'Léa', 'example.test', t.personId, 'appel-a', 'seule-a']) expect(text).not.toContain(secret);
@@ -168,7 +170,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La preuve : l'empreinte du reçu gardée, au journal, puis reprise par la réponse notée.
     expect(await t.db.all("SELECT kind, mode, output_sha256 FROM person_request_outputs WHERE request_id = ? AND mode = 'reel'", [t.request.id])).toEqual([{ kind: 'plan_effacement', mode: 'reel', output_sha256: sha256 }]);
     const event = (await t.journal.bySubject(`person_request:${t.request.id}`)).at(-1)!;
-    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 1, remaining: 2, objects: 1, complete: false } });
+    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 1, hashed: 1, remaining: 2, objects: 1, complete: false } });
     expect(JSON.stringify(event)).not.toContain('example.test');
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
     expect(await t.demandes.answer(t.responsable, t.request.id, { answeredOn: '2027-02-11' })).toMatchObject({ ok: true, value: { answerSha256: sha256 } });
@@ -352,5 +354,118 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Le fichier partagé reste : la vendeuse le cite encore.
     expect(t.objects.held.has('PIECES:boite/appels/partage.ogg')).toBe(true);
     expect(await t.db.all('SELECT id FROM calls ORDER BY id')).toEqual([{ id: 'appel-a1' }, { id: 'appel-a2' }, { id: 'appel-a3' }]);
+  });
+});
+
+describeWithSqlite('AU020c · après un effacement, les identifiants ne restent que sous leur empreinte', () => {
+  async function erased() {
+    const t = await setup();
+    // Un numéro aussi, pour vérifier que WhatsApp et téléphone se reconnaissent sous empreinte.
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'phone', value: '06 12 34 56 78' });
+    await t.demandes.prepareErasure(t.responsable, t.request.id);
+    t.setClock(LATER);
+    const r = await t.reel.erase(t.responsable, t.request.id);
+    if (!r.ok) throw new Error(r.code);
+    const reception = new Reception(t.db, undefined, t.now);
+    const decisions = new DecisionEnvoi(t.db, t.store, t.fiche, { now: t.now });
+    const rattachement = new Rattachement(t.db, t.store, t.fiche, decisions, reception, { now: t.now });
+    let seq = 0;
+    const receive = async (channel: 'email' | 'whatsapp', identifiers: { kind: 'email' | 'phone' | 'whatsapp'; value: string }[], name: string | null = 'Léa') => {
+      seq += 1;
+      const [m] = (
+        await reception.store(t.network.id, {
+          messages: [{ channel, kind: channel === 'email' ? 'email' : 'direct', externalId: `ext-effacee-${seq}`, conversationRef: `conv-effacee-${seq}`, sender: { channelId: null, name, identifiers }, subject: null, text: 'Bonjour, le bien est-il encore à vendre ?', receivedAt: new Date(LATER.getTime() + seq * 60_000), postRef: null, propertyRef: null, portal: null, hasAttachment: false }],
+          unreadable: [],
+          ignored: 0,
+        } as Parameters<Reception['store']>[1])
+      ).received;
+      return rattachement.attach((m as { inboundId: string }).inboundId);
+    };
+    return { ...t, receipt: r.value.receipt, decisions, rattachement, receive };
+  }
+
+  it('[R04] [R17] constat : avant AU020c, l’adresse restait en clair ; désormais aucune valeur en clair ne reste', async () => {
+    const t = await erased();
+    const values = (await t.db.all<{ value: string }>('SELECT value FROM person_identifiers WHERE person_id = ? ORDER BY kind', [t.personId])).map((r) => r.value);
+    expect(values).toEqual([await identifierHash(t.network.id, 'email', 'lea.vendeuse@example.test'), await identifierHash(t.network.id, 'phone', '+33612345678')]);
+    for (const v of values) {
+      expect(isHashedIdentifier(v)).toBe(true);
+      for (const clear of ['lea', 'example', '612345678']) expect(v).not.toContain(clear);
+    }
+    expect(t.receipt).toMatchObject({ hashed: [{ table: 'person_identifiers', rows: 2 }] });
+    expect(t.receipt.kept).toEqual(expect.arrayContaining([{ table: 'person_identifiers', action: 'empreinte', rows: 2, why: IDENTIFIERS_KEPT }]));
+    // L'autre personne garde ses identifiants en clair.
+    expect(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.other.id])).toEqual([{ value: 'noe.autre@example.test' }]);
+    // L'empreinte dépend du réseau : la même adresse dans un autre réseau ne donne pas la même.
+    expect(await identifierHash('autre-reseau', 'email', 'lea.vendeuse@example.test')).not.toBe(values[0]);
+  });
+
+  it('[R04] un message reçu de son adresse est rattaché à la fiche arrêtée, sans rien reprendre en clair, et ne reçoit aucune réponse', async () => {
+    const t = await erased();
+    const before = await countAll(t.db);
+    const res = await t.receive('email', [{ kind: 'email', value: '  LEA.Vendeuse@Example.TEST ' }]);
+    expect(res).toMatchObject({ personId: t.personId, outcome: 'matched', silenced: true });
+    // Aucune fiche neuve, aucune valeur en clair, aucun nom repris, aucun accord de réponse, aucune source.
+    const after = await countAll(t.db);
+    expect(after.persons).toBe(before.persons);
+    expect(after.person_identifiers).toBe(before.person_identifiers);
+    expect(after.consents).toBe(before.consents);
+    expect(after.sources).toBe(before.sources);
+    expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null, last_name: null });
+    expect(JSON.stringify(await t.db.all('SELECT value FROM person_identifiers WHERE person_id = ?', [t.personId]))).not.toContain('example');
+    // Rien ne lui répond, sur aucun canal.
+    const conversationId = (await t.db.first<{ conversation_id: string }>('SELECT conversation_id FROM messages WHERE person_id = ? ORDER BY created_at DESC LIMIT 1', [t.personId]))!.conversation_id;
+    for (const channel of ['email', 'sms', 'whatsapp'] as const) {
+      expect(await t.decisions.decide(t.personId, { channel, kind: 'reply', conversationId, at: new Date(LATER.getTime() + 600_000) })).toMatchObject({ allowed: false });
+    }
+    expect(after.send_log).toBe(before.send_log);
+  });
+
+  it('[R04] un message WhatsApp de son numéro la retrouve aussi, et un identifiant nouveau n’y est rangé que sous empreinte', async () => {
+    const t = await erased();
+    const res = await t.receive('whatsapp', [{ kind: 'whatsapp', value: '+33 6 12 34 56 78' }, { kind: 'email', value: 'lea.nouvelle@example.test' }]);
+    expect(res).toMatchObject({ personId: t.personId, silenced: true });
+    const values = (await t.db.all<{ value: string }>('SELECT value FROM person_identifiers WHERE person_id = ?', [t.personId])).map((r) => r.value);
+    // Le numéro WhatsApp est rangé à part, comme pour toute fiche, mais sous empreinte : la même que celle du téléphone.
+    expect(values).toHaveLength(4);
+    expect(new Set(values).size).toBe(3);
+    expect(values).toContain(await identifierHash(t.network.id, 'email', 'lea.nouvelle@example.test'));
+    expect(values.every(isHashedIdentifier)).toBe(true);
+    // Saisie à la main : même chose, et l'ajouter deux fois ne double rien.
+    const a = await t.fiche.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'lea.encore@example.test' });
+    const b = await t.fiche.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'LEA.encore@example.test' });
+    expect(a.id).toBe(b.id);
+    expect(isHashedIdentifier(a.value)).toBe(true);
+  });
+
+  it('[R04] une fiche neuve qui porte son adresse est retrouvée comme doublon de la fiche effacée, et son arrêt la suit', async () => {
+    const t = await erased();
+    const fresh = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Léa', lastName: null });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: fresh.id, kind: 'email', value: 'lea.vendeuse@example.test' });
+    const groups = await t.fiche.findDuplicateGroups(t.network.id);
+    expect(groups).toContainEqual([fresh.id, t.personId].sort());
+    expect((await t.fiche.findByIdentifier(t.network.id, 'email', 'lea.vendeuse@example.test')).map((p) => p.id).sort()).toEqual([fresh.id, t.personId].sort());
+  });
+
+  it('[R04] [R17] une personne effacée sans arrêt reçoit l’arrêt sur tous les canaux ; refait ou rejoué, rien de plus', async () => {
+    const t = await setup();
+    const { outcome } = await eraseForReal(t.db, [t.other.id], { objects: t.objects.eraser, target: { requestId: 'demande-autre', networkId: t.network.id, at: LATER.toISOString() } });
+    expect(outcome.stopped).toEqual([{ table: 'exclusions', rows: 1 }]);
+    expect(outcome.hashed).toEqual([{ table: 'person_identifiers', rows: 1 }]);
+    expect(await t.db.all('SELECT reason, channel, lifted_at, noted_at FROM exclusions WHERE person_id = ?', [t.other.id])).toEqual([{ reason: 'stop', channel: null, lifted_at: null, noted_at: LATER.toISOString() }]);
+    const again = await eraseForReal(t.db, [t.other.id], { objects: t.objects.eraser });
+    expect(again.outcome).toMatchObject({ stopped: [], hashed: [], remaining: [] });
+    expect(await new SqlPersonEraser({ objects: t.objects.eraser }).erase(t.db, { requestId: 'demande-autre', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() })).toBe(0);
+  });
+
+  it('[R04] [R231] restaurée depuis une copie d’avant, la valeur en clair revient ; le rejeu la repasse sous empreinte', async () => {
+    const t = await erased();
+    const print = await identifierHash(t.network.id, 'email', 'lea.vendeuse@example.test');
+    // La copie d'avant l'effacement : la valeur en clair, et la même valeur déjà rangée sous empreinte depuis.
+    await t.db.run("UPDATE person_identifiers SET value = 'lea.vendeuse@example.test' WHERE person_id = ? AND kind = 'email'", [t.personId]);
+    await t.db.run("INSERT INTO person_identifiers (id, network_id, agent_id, person_id, kind, value, created_at) VALUES ('id-empreinte', ?, NULL, ?, 'email', ?, ?)", [t.network.id, t.personId, print, LATER.toISOString()]);
+    const { outcome } = await eraseForReal(t.db, [t.personId], { objects: t.objects.eraser });
+    expect(outcome.hashed).toEqual([{ table: 'person_identifiers', rows: 1 }]);
+    expect(await t.db.all("SELECT value FROM person_identifiers WHERE person_id = ? AND kind = 'email'", [t.personId])).toEqual([{ value: print }]);
   });
 });

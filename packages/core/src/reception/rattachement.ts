@@ -5,6 +5,7 @@
  * répondre (S05). Une demande d'arrêt [R04], un refus ou « vendu » [R02] excluent dès la réception.
  * N'envoie rien : toute réponse sortira par le contrôle central (S06). Rien n'est jamais effacé [R17].
  */
+import { storedForms } from '../fiche/empreinte.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, Exclusion, IdentifierKind, Person } from '../db/types.ts';
@@ -223,8 +224,9 @@ export class Rattachement {
     if (roots.length > 1) outcome = 'merged';
     if (apart.length > 0) outcome = 'ambiguous';
 
-    // 4. Compléter la fiche : identifiants, prénom, source.
-    await this.complete(target, identifiers, row);
+    // 4. Compléter la fiche : identifiants, prénom, source. Une fiche effacée ne reprend que des empreintes (AU020c).
+    const erased = await this.fiche.isErased(target.id);
+    await this.complete(target, identifiers, row, erased);
 
     // 5. Le message, rangé une seule fois même après une reprise [R18] : son numéro est noté aussitôt sur le message reçu.
     const occurredAt = new Date(row.received_at);
@@ -262,7 +264,7 @@ export class Rattachement {
     if (apart.length > 0) await this.shareExclusions([target, ...apart], at);
 
     // 6. L'accord pour lui répondre, quand la personne a écrit d'elle-même et n'a pas demandé l'arrêt (S05, R03).
-    if (!exclusionReason) {
+    if (!exclusionReason && !erased) {
       for (const channel of replyChannels(row, identifiers)) await this.addReplyConsent(target, channel, inboundId, new Date(row.received_at));
     }
 
@@ -352,17 +354,22 @@ export class Rattachement {
   }
 
   /** Ajoute les identifiants que la fiche n'a pas encore, et le prénom s'il manque. Rien n'est remplacé. */
-  private async complete(target: Person, identifiers: readonly SenderIdentifier[], row: InboundRow): Promise<void> {
+  private async complete(target: Person, identifiers: readonly SenderIdentifier[], row: InboundRow, erased: boolean): Promise<void> {
     const members = await this.fiche.membersOf(target.id);
     for (const id of identifiers) {
+      // En clair ou sous empreinte : une fiche effacée qui reconnaît la personne ne reçoit pas sa valeur en clair (AU020c).
+      const forms = await storedForms(target.network_id, id.kind, id.value);
+      if (forms.length === 0) continue;
       const known = await this.db.first<{ n: number }>(
-        `SELECT count(*) AS n FROM person_identifiers WHERE person_id IN (${placeholders(members.length)}) AND kind = ? AND value = ?`,
-        [...members, id.kind, id.value],
+        `SELECT count(*) AS n FROM person_identifiers WHERE person_id IN (${placeholders(members.length)}) AND kind = ? AND value IN (?, ?)`,
+        [...members, id.kind, ...forms],
       );
       if (Number(known?.n ?? 0) === 0) {
         await this.fiche.addIdentifier({ networkId: target.network_id, agentId: target.agent_id, personId: target.id, kind: id.kind, value: id.value });
       }
     }
+    // Une fiche effacée ne reprend ni nom ni source : la personne a demandé l'effacement, son arrêt tient [R04, R17].
+    if (erased) return;
     if (row.sender_name && target.first_name === null) {
       await this.db.run('UPDATE persons SET first_name = ?, updated_at = ? WHERE id = ? AND first_name IS NULL', [
         row.sender_name,
