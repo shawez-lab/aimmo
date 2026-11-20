@@ -44,6 +44,13 @@ export const SANDBOX_STEP_LABELS: Readonly<Record<SandboxStep, string>> = Object
   avis_valide: "Vous relisez l'avis de valeur préparé par le code et le validez.",
 });
 
+/**
+ * Les gestes que l'agent fait lui-même depuis son écran (AU025). La qualification n'en est pas un : elle se fait à
+ * l'arrivée du contact, par la chaîne de captation.
+ */
+export const SANDBOX_GESTURES = ['contact_recu', 'rappel_fait', 'rendez_vous', 'avis_valide'] as const satisfies readonly SandboxStep[];
+export type SandboxGesture = (typeof SANDBOX_GESTURES)[number];
+
 /** La base à part du bac à sable d'un agent : toujours la même pour lui, jamais celle du réseau. */
 export interface SandboxStorage {
   open(agentId: string): Promise<SqlDatabase>;
@@ -215,6 +222,11 @@ export class BacASable {
    * rendez-vous d'estimation réservé, avis validé par l'agent), pour la même personne, dans l'ordre du parcours.
    */
   private async stepsFrom(sandbox: SqlDatabase, entries: readonly JournalEntry[], agentId: string): Promise<Map<SandboxStep, string>> {
+    return (await this.walk(sandbox, entries, agentId)).done;
+  }
+
+  /** Le parcours lu dans le journal du bac à sable : les étapes franchies, et la personne inventée qu'il suit. */
+  private async walk(sandbox: SqlDatabase, entries: readonly JournalEntry[], agentId: string): Promise<{ done: Map<SandboxStep, string>; person: string | null }> {
     const done = new Map<SandboxStep, string>();
     const store = new FicheClient(sandbox);
     const fiche = new FicheUnique(sandbox, store);
@@ -236,7 +248,7 @@ export class BacASable {
         break;
       }
     }
-    if (person === null) return done;
+    if (person === null) return { done, person };
     const sameRoot = async (p: string | null): Promise<boolean> => (await rootOf(p)) === person;
 
     // La qualification se fait pendant la réception : elle peut précéder l'arrivée rangée, pour la même personne.
@@ -248,7 +260,7 @@ export class BacASable {
         break;
       }
     }
-    if (!done.has('qualification')) return done;
+    if (!done.has('qualification')) return { done, person };
 
     const next = async (step: SandboxStep, check: (e: JournalEntry) => Promise<boolean>): Promise<boolean> => {
       for (const e of entries) {
@@ -264,19 +276,19 @@ export class BacASable {
       const task = await sandbox.first<{ person_id: string }>('SELECT person_id FROM callback_tasks WHERE id = ? AND done_at IS NOT NULL', [e.data.task]);
       return task !== null && (await sameRoot(task.person_id));
     });
-    if (!rappel) return done;
+    if (!rappel) return { done, person };
     const rdv = await next('rendez_vous', async (e) => {
       if (e.type !== 'rdv.reserve') return false;
       const a = await sandbox.first<{ person_id: string }>("SELECT person_id FROM appointments WHERE id = ? AND agent_id = ? AND kind = 'estimation'", [id(e.subject, 'appointment'), agentId]);
       return a !== null && (await sameRoot(a.person_id));
     });
-    if (!rdv) return done;
+    if (!rdv) return { done, person };
     await next('avis_valide', async (e) => {
       if (e.type !== 'avis.valide' || !byAgent(e) || typeof e.data.report !== 'string') return false;
       const r = await sandbox.first("SELECT 1 AS ok FROM valuation_reports WHERE id = ? AND status = 'validated' AND validated_by = ?", [e.data.report, agentId]);
       return r !== null;
     });
-    return done;
+    return { done, person };
   }
 
   /**
@@ -321,5 +333,65 @@ export class BacASable {
     const steps = SANDBOX_STEPS.map((step) => ({ step, label: SANDBOX_STEP_LABELS[step], done: done.has(step), at: done.get(step) ?? null }));
     const next = steps.find((s) => !s.done);
     return { ok: true, value: { agentId, steps, next: next ? next.label : null, completed, countedAtAcademy: counted } };
+  }
+
+  /**
+   * AU025 · L'agent fait, depuis son écran, la prochaine étape de son parcours : un geste réel des vrais modules, joué
+   * dans sa base à part, jamais une case cochée. Seule la prochaine étape s'ouvre ; l'étape est ensuite reconnue par le
+   * journal du bac à sable, comme toujours. Lui seul [R16] ; rien ne sort du bac à sable [R26].
+   */
+  async act(viewer: Viewer, gesture: string): Promise<{ ok: true; value: SandboxProgress } | SandboxRefusal> {
+    if (viewer.role !== 'agent') return this.refuse(viewer, viewer.userId, 'role');
+    const agentId = viewer.userId;
+    if (!(SANDBOX_GESTURES as readonly string[]).includes(gesture)) return { ok: false, rule: null, code: 'invalid_step' };
+    const before = await this.progress(viewer, agentId);
+    if (!before.ok) return before;
+    const next = before.value.steps.find((s) => !s.done);
+    if (!next) return { ok: false, rule: null, code: 'completed' };
+    if (next.step !== gesture) return { ok: false, rule: null, code: 'not_next_step' };
+    if (!(await this.activeAgent(viewer, agentId))) return this.refuse(viewer, agentId, 'agent_inactive');
+    const world = await this.world(agentId);
+    const done = await this.gesture(world, gesture as SandboxGesture);
+    if (!done) return { ok: false, rule: null, code: 'step_failed' };
+    return this.progress(viewer, agentId);
+  }
+
+  private async gesture(world: SandboxWorld, gesture: SandboxGesture): Promise<boolean> {
+    if (gesture === 'contact_recu') {
+      // Un nouveau contact inventé à chaque essai : un essai interrompu ne bloque jamais le suivant.
+      const n = Number((await world.db.first<{ n: number }>('SELECT count(*) AS n FROM persons'))?.n ?? 0);
+      return (await world.inventedContact(n)).status === 'replied';
+    }
+    const { person } = await this.walk(world.db, await new SqlJournalStore(world.db).all(), world.agentId);
+    if (person === null) return false;
+    const fiche = new FicheUnique(world.db, new FicheClient(world.db));
+    const same = async (p: string | null): Promise<boolean> => p !== null && (await fiche.rootOf(p)) === person;
+    if (gesture === 'rappel_fait') {
+      const hot = await world.captation.rappels.hotList(world.captation.acces, world.viewer);
+      if (!hot.ok) return false;
+      for (const c of hot.value.contacts) {
+        if (await same(c.personId)) return world.captation.rappels.done(world.captation.acces, world.viewer, c.taskId);
+      }
+      return false;
+    }
+    if (gesture === 'rendez_vous') {
+      if (!(await world.rendezVous.availabilityOf(world.agentId))) {
+        const set = await world.rendezVous.setAvailability(world.viewer, { weekly: [1, 2, 3, 4, 5].map((weekday) => ({ weekday, from: '09:00', to: '18:00' })) });
+        if (!set.ok) return false;
+      }
+      // Le premier jour ouvré libre à partir de demain, en fin de matinée (heure de Paris, hiver comme été).
+      const today = this.now();
+      for (let d = 1; d <= 14; d += 1) {
+        const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + d, 9, 0));
+        if (start.getUTCDay() === 0 || start.getUTCDay() === 6) continue;
+        const booked = await world.rendezVous.book({ networkId: world.networkId, agentId: world.agentId, personId: person, propertyId: world.propertyId, kind: 'estimation', start, source: 'agent', channel: 'email' });
+        if (booked.ok) return true;
+      }
+      return false;
+    }
+    const range = await world.fourchette.estimate({ kind: 'house', surface: 110, lat: 47.335, lon: 4.99, postalCode: '21240' });
+    if (!range.ok) return false;
+    const report = await world.avis.draft({ networkId: world.networkId, propertyId: world.propertyId, kind: 'house', surface: 110, range });
+    return (await world.avis.validate(world.viewer, report.id)).ok;
   }
 }
