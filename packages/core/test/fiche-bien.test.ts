@@ -106,6 +106,15 @@ it('P01 · chaque champ est contrôlé et le premier champ fautif est nommé', (
   for (const years of [[2021, 2023], [2023], [2021, 2022], [2022, 2021, 2023], [2019, 2020, 2021, 2022, 2023, 2024]]) {
     expect(withEnergy({ costReferenceYear: 2023, costReferenceYears: years })).toEqual({ ok: false, field: 'energy.costReferenceYears' });
   }
+  // AU064 · numéro ADEME, valeurs et document du diagnostic : gardés, contrôlés, jamais devinés.
+  const full = withEnergy({ ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, documentRef: `biens/${PID}/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.pdf` });
+  expect(full.ok && full.value.energy).toMatchObject({ ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 });
+  expect(withEnergy({ ademeNumber: '2321e0123456j' })).toEqual({ ok: false, field: 'energy.ademeNumber' });
+  expect(withEnergy({ ademeNumber: '2321E012345' })).toEqual({ ok: false, field: 'energy.ademeNumber' });
+  expect(withEnergy({ primaryEnergyKwhM2: 212.5 })).toEqual({ ok: false, field: 'energy.primaryEnergyKwhM2' });
+  expect(withEnergy({ ghgKgM2: -1 })).toEqual({ ok: false, field: 'energy.ghgKgM2' });
+  expect(withEnergy({ documentRef: 'biens/autre/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.pdf' })).toEqual({ ok: false, field: 'energy.documentRef' });
+  expect(withEnergy({ documentRef: `biens/${PID}/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.jpg` })).toEqual({ ok: false, field: 'energy.documentRef' });
   expect(energyPriceText({ costReferenceYear: 2021 })).toBe('Prix moyens des énergies indexés au 1er janvier 2021 (abonnements compris).');
   expect(energyPriceText({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] })).toBe('Prix moyens des énergies indexés sur les années 2021, 2022 et 2023 (abonnements compris).');
   // Date du diagnostic : jamais dans le futur, à l'heure de Paris ; jamais une date impossible.

@@ -658,13 +658,21 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU059 · Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A059 (majeur), endroit : C/documents/modeles.ts ; C/documents/controles.ts.
 - Constat de l'audit : Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration.
 - Objectif : Le mandat distingue partie et représentant, contrôle la procuration jointe et conserve qui a signé pour qui.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Source : [Modelo prévoit la représentation](https://support.modelo.fr/aide/ins%C3%A9rer-une-clause-de-repr%C3%A9sentation-1).
+- Attend : rien.
+
+### AU059b · Une signature papier datée avant la procuration est refusée
+- Statut : en cours (voie 3)
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU059
+- Cahier : M06 Mandats et documents ; remarque P2 de Codex sur #709.
+- Objectif : un mandat signé par un représentant avant le jour de sa procuration n'est jamais inscrit au registre.
+- Critères : test dans mandat-procuration.test.ts.
 - Attend : rien.
 
 ### AU060 · Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs
@@ -696,7 +704,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU063 · Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A063 (majeur), endroit : C/annonces/fiche-bien.ts, `Characteristics`.
 - Constat de l'audit : Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce.
@@ -705,7 +713,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU064 · Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A064 (majeur), endroit : C/annonces/fiche-bien.ts, `EnergyDiagnosis`.
 - Constat de l'audit : Le DPE saisi ne garde ni son numéro ADEME ni les valeurs de consommation et d’émission nécessaires aux reprises fiables.
@@ -891,7 +899,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
 - Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.

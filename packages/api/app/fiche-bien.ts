@@ -73,6 +73,9 @@ const LABELS: Record<string, string> = {
   'energy.annualCostMaxEur': 'Coût annuel le plus haut du diagnostic',
   'energy.costReferenceYear': 'Année des prix de l’énergie du diagnostic',
   'energy.costReferenceYears': 'Années des prix de l’énergie : celles du diagnostic, qui se suivent',
+  'energy.ademeNumber': 'Numéro ADEME du diagnostic : 13 chiffres et lettres',
+  'energy.primaryEnergyKwhM2': 'Énergie primaire : un nombre entier de kWh/m²/an',
+  'energy.ghgKgM2': 'Émissions : un nombre entier de kg CO₂/m²/an',
   'energy.diagnosedOn': 'Jour du diagnostic, jamais dans le futur',
   'coownership.lots': 'Nombre de lots de la copropriété',
   'coownership.annualChargesEur': 'Charges annuelles de la copropriété',
@@ -156,7 +159,13 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       // AU065 · une année, ou celles que le diagnostic cite (« 2021, 2022, 2023 »), telles qu'il les écrit.
       costReferenceYear: field(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
       diagnosedOn: field(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
+      // AU064 · repris du diagnostic pour les portails, sans ressaisie ensuite.
+      ademeNumber: field(zone, 'fiche-bien-dpe-numero', 'Numéro ADEME du diagnostic (13 caractères)'),
+      primaryEnergyKwhM2: number(zone, 'fiche-bien-dpe-ep', 'Énergie primaire, en kWh/m²/an', e.primaryEnergyKwhM2),
+      ghgKgM2: number(zone, 'fiche-bien-dpe-ges', 'Émissions, en kg CO₂/m²/an', e.ghgKgM2),
     };
+    energy.ademeNumber.value = text(e.ademeNumber);
+    energy.ademeNumber.setAttribute('autocapitalize', 'characters');
     energy.costReferenceYear.setAttribute('inputmode', 'numeric');
     energy.costReferenceYear.value = Array.isArray(e.costReferenceYears) && e.costReferenceYears.length > 1 ? e.costReferenceYears.join(', ') : text(e.costReferenceYear);
     energy.diagnosedOn.setAttribute('type', 'date');
@@ -224,7 +233,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       if (Object.keys(ss).length) out.surfaceSources = ss;
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
-      var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear];
+      // AU064 · le numéro ADEME ou une valeur saisis seuls ouvrent aussi le diagnostic : il est contrôlé, jamais perdu.
+      var costs = [energy.annualCostMinEur, energy.annualCostMaxEur, energy.costReferenceYear, energy.ademeNumber, energy.primaryEnergyKwhM2, energy.ghgKgM2];
       if (energy.energyClass.value || energy.climateClass.value || energy.diagnosedOn.value || costs.some(function (f) { return String(f.value || '').trim() !== ''; })) {
         en = {
           energyClass: energy.energyClass.value,
@@ -233,6 +243,10 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
           annualCostMaxEur: int(energy.annualCostMaxEur, 'Coût annuel le plus haut'),
           diagnosedOn: energy.diagnosedOn.value,
         };
+        var num = String(energy.ademeNumber.value || '').replace(/\\s/g, '').toUpperCase();
+        if (num) en.ademeNumber = num;
+        ['primaryEnergyKwhM2', 'ghgKgM2'].forEach(function (k) { if (String(energy[k].value || '').trim() !== '') en[k] = int(energy[k], k === 'ghgKgM2' ? 'Émissions' : 'Énergie primaire'); });
+        if (e.documentRef) en.documentRef = e.documentRef;
         var ys = String(energy.costReferenceYear.value || '').split(/[^0-9]+/).filter(Boolean).map(Number);
         if (!ys.length) bad = bad || 'Année des prix de l’énergie';
         en.costReferenceYear = ys.length ? ys[ys.length - 1] : null;

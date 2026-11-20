@@ -142,6 +142,16 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
   });
 
+  it('AU064 · le numéro ADEME et les valeurs du diagnostic se saisissent une fois et partent avec la fiche', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    t.f('fiche-bien-dpe-numero').value = ' 2321e0123456j ';
+    t.f('fiche-bien-dpe-ep').value = '212';
+    t.f('fiche-bien-dpe-ges').value = '41';
+    await t.save();
+    expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 });
+  });
+
   it('AU061 · les équipements et l’état du bien se cochent et partent avec la fiche ; rien coché, rien rangé', async () => {
     const t = await run({ [POST]: ok({ version: 5 }) });
     await t.open();
@@ -178,6 +188,16 @@ describe('X19 · la fiche du bien à l’écran', () => {
       url: '/v1/annonces/b1/fiche?siVersion=0',
       body: { characteristics: { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null }, energy: null, coownership: { isCoownership: false }, risks: null, media: [] },
     });
+  });
+
+  it('AU064 · un numéro ADEME saisi seul ouvre le diagnostic : il part et se contrôle, jamais perdu', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
+    await t.open();
+    t.f('fiche-bien-dpe-numero').value = '2321E0123456J';
+    await t.save();
+    // Le diagnostic n'est pas complet : rien ne part, et ce qui manque est dit ; la saisie n'est jamais jetée en silence.
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('À vérifier : ');
   });
 
   it('[R10] un nombre mal écrit est nommé et ne part pas : jamais rangé comme « je ne sais pas »', async () => {

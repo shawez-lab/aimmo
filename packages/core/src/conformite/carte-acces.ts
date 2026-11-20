@@ -103,7 +103,7 @@ export type AccessMapEntry =
        * Les colonnes `shared` ne le sont que pour les lignes dont `key` figure dans `from.column` : un mandat n'est à deux
        * parties que s'il a un autre mandant (AU001). Sans cela, toute ligne de la table est partagée.
        */
-      sharedIf?: { key: string; from: string; column: string };
+      sharedIf?: { key: string; from: string; column: string; alsoFrom?: readonly string[] };
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
       /**
        * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
@@ -122,7 +122,8 @@ const by = (...columns: string[]): DirectLocator[] => columns.map((column) => ({
 const via = (column: string, from: string, key = 'id', extra: Partial<ViaLocator> = {}): ViaLocator => ({ column, from, key, ...extra });
 const out = (excluded: ExclusionReason, why: string): AccessMapEntry => ({ excluded, why });
 /** Un document qui a d'autres mandants (AU001). */
-const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id' });
+// Un document nommant plusieurs personnes : des co-mandants (AU001) ou un représentant par procuration (AU059).
+const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id', alsoFrom: ['document_proxies'] });
 
 /** Le traitement dont le droit d'accès s'exerce auprès de la CNIL. */
 export const LCB_FT_TRAITEMENT = 'conformite-lcb-ft';
@@ -528,9 +529,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
   // Un mandat qui nomme plusieurs mandants (AU001) est, comme un bail, à plusieurs parties : la fiche de l'autre et le texte
   // qui les nomme tous ne sont jamais montrés, leur empreinte reste ; un mandat à un seul mandant est montré entier [R96].
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id'), via('id', 'document_proxies', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
+  // AU059 : le mandant comme son représentant y trouvent la ligne qui les nomme.
+  document_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
+  signature_session_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },

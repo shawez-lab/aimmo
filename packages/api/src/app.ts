@@ -692,8 +692,10 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds sont admis.');
-      const { kind, personId, propertyId, inputs, mandateId, coMandantIds } = body;
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds', 'proxies'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies sont admis.');
+      const { kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies } = body;
+      // AU059 : les procurations, chacune contrôlée par la couche métier ; ici, seulement une liste courte d'objets.
+      if (proxies !== undefined && (!Array.isArray(proxies) || proxies.length > MAX_CO_MANDANTS + 1 || proxies.some((p) => p === null || typeof p !== 'object' || Array.isArray(p)))) return failure(400, 'invalid_proxies', 'proxies : une liste de procurations.');
       // Les autres mandants (couple, indivision) : une liste d'identifiants de fiches (AU001).
       if (coMandantIds !== undefined && (!Array.isArray(coMandantIds) || coMandantIds.length > MAX_CO_MANDANTS || coMandantIds.some((c) => typeof c !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(c)))) return failure(400, 'invalid_ids', 'coMandantIds : une liste d’identifiants.');
       if (mandateId !== undefined && (typeof mandateId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(mandateId))) return failure(400, 'invalid_ids', 'mandateId mal formé.');
@@ -701,7 +703,7 @@ const ROUTES: RouteDef[] = [
         return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
       }
       if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
-      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}) });
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}), ...(proxies !== undefined ? { proxies: proxies as never } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
@@ -780,17 +782,6 @@ const ROUTES: RouteDef[] = [
       if (typeof body.seenAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.seenAt)) return failure(400, 'invalid_date', 'seenAt : un instant ISO en UTC.');
       const r = await controles(s).recordIdentity(viewer, id!, { piece: String(body.piece), seenAt: new Date(body.seenAt) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
-      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/controle$`),
-    name: 'document.controle',
-    // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
-    handle: async (s, viewer, [id]) => {
-      const r = await controles(s).check(viewer, id!);
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
   },
@@ -915,28 +906,6 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
-    name: 'document.signature_en_ligne',
-    // Ouvre une session de signature en ligne, en essai : le code passe par le contrôle central et reste dans la boîte
-    // d'essai tant que H05 n'est pas fait ; la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => k !== 'consentProof' && k !== 'signerId')) return failure(400, 'unexpected_field', 'Seuls consentProof et signerId sont admis.');
-      // Le mandant qui signe, pour un mandat à plusieurs mandants ; le premier par défaut (AU001).
-      if (body.signerId !== undefined && (typeof body.signerId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.signerId))) return failure(400, 'invalid_ids', 'signerId mal formé.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).start(viewer, id!, {
-        consentProof: typeof body.consentProof === 'string' ? body.consentProof : '',
-        ...(typeof body.signerId === 'string' ? { signerId: body.signerId } : {}),
-      });
-      // Le mode de la session, fixé à son ouverture : d'essai tant que H05 et H24 ne sont pas faits (AU003).
-      if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
-      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
-    },
-  },
-  {
     method: 'GET',
     pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
     name: 'document.signature_en_ligne_etat',
@@ -946,24 +915,6 @@ const ROUTES: RouteDef[] = [
       const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).progress(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/signatures/${ID}$`),
-    name: 'signature.code',
-    // La signature par le code reçu, et le tracé à l'écran s'il y en a un : d'essai ou réelle selon la session (AU003).
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request, 220_000);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).sign(viewer, id!, {
-        code: typeof body.code === 'string' ? body.code : '',
-        drawing: typeof body.drawing === 'string' ? body.drawing : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
-      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
     },
   },
   {
@@ -1015,24 +966,6 @@ const ROUTES: RouteDef[] = [
       });
       if (r.ok) return json(201, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
       return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne/fin$`),
-    name: 'document.signature_en_ligne_fin',
-    // Finit un document signé réellement par chaque mandant : mandat inscrit, dossier de preuve figé, exemplaire et
-    // dossier remis à chacun ; la source du mandat, si la fiche ne la donne pas [R38, R39, R41] (AU003).
-    handle: async (s, viewer, [id], request) => {
-      const body = (await readJson(request)) ?? {};
-      if (Object.keys(body).some((k) => k !== 'source' && k !== 'sourceDetail')) return failure(400, 'unexpected_field', 'Seuls source et sourceDetail sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).finish(viewer, id!, {
-        source: typeof body.source === 'string' ? body.source : null,
-        sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
-      if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(r.code === 'unknown_document' ? 404 : 409, { ok: false, rule: r.rule, code: r.code });
     },
   },
   {
@@ -2068,6 +2001,78 @@ function espacesAgentRoutes(config: Pick<ApiConfig, 'espaces' | 'estimation' | '
 function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
   const mandats = (s: Services) => new MandatDuBien(s.db, s.acces, s.journal, { now: s.now });
   return [
+    // Le contrôle avant signature : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/controle$`),
+      name: 'document.controle',
+      // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
+      handle: async (s, viewer, [id]) => {
+        const r = await new ControlesSignature(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).check(viewer, id!);
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+      },
+    },
+    // La signature et la fin de la signature en ligne : la procuration s'y vérifie aussi (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/signatures/${ID}$`),
+      name: 'signature.code',
+      // La signature par le code reçu, et le tracé à l'écran s'il y en a un : d'essai ou réelle selon la session (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request, 220_000);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).sign(viewer, id!, {
+          code: typeof body.code === 'string' ? body.code : '',
+          drawing: typeof body.drawing === 'string' ? body.drawing : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
+        if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-en-ligne/fin$`),
+      name: 'document.signature_en_ligne_fin',
+      // Finit un document signé réellement par chaque mandant : mandat inscrit, dossier de preuve figé, exemplaire et
+      // dossier remis à chacun ; la source du mandat, si la fiche ne la donne pas [R38, R39, R41] (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = (await readJson(request)) ?? {};
+        if (Object.keys(body).some((k) => k !== 'source' && k !== 'sourceDetail')) return failure(400, 'unexpected_field', 'Seuls source et sourceDetail sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).finish(viewer, id!, {
+          source: typeof body.source === 'string' ? body.source : null,
+          sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
+        if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_document' ? 404 : 409, { ok: false, rule: r.rule, code: r.code });
+      },
+    },
+    // La signature en ligne : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
+      name: 'document.signature_en_ligne',
+      // Ouvre une session de signature en ligne, en essai : le code passe par le contrôle central et reste dans la boîte
+      // d'essai tant que H05 n'est pas fait ; la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => k !== 'consentProof' && k !== 'signerId')) return failure(400, 'unexpected_field', 'Seuls consentProof et signerId sont admis.');
+        // Le mandant qui signe, pour un mandat à plusieurs mandants ; le premier par défaut (AU001).
+        if (body.signerId !== undefined && (typeof body.signerId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.signerId))) return failure(400, 'invalid_ids', 'signerId mal formé.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).start(viewer, id!, {
+          consentProof: typeof body.consentProof === 'string' ? body.consentProof : '',
+          ...(typeof body.signerId === 'string' ? { signerId: body.signerId } : {}),
+        });
+        // Le mode de la session, fixé à son ouverture : d'essai tant que H05 et H24 ne sont pas faits (AU003).
+        if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
+        if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+      },
+    },
     {
       method: 'GET',
       pattern: new RegExp(`^/biens/${ID}/mandat$`),
