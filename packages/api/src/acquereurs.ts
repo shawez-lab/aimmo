@@ -11,7 +11,7 @@
  *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
  *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
  *   POST /acquereurs/whatsapp/:message/envoye           l'agent dit que son message est parti
- *   POST /visites                                       fixer une visite, avec son bon [R40] ; durationMinutes ? (AU056)
+ *   POST /visites                                       fixer une visite, avec son bon [R40] ; durationMinutes ? (AU056) ; joinVisit ? (AU077)
  *   POST /rendez-vous                                   { personId, propertyId?, kind, start, durationMinutes? } (AU056)
  *   GET  /visites/alertes                               les alertes de sécurité du réseau (direction)
  *   POST /visites/alertes/:alerte                       l'alerte en un geste
@@ -211,7 +211,10 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
       const duration = durationOf(body.durationMinutes);
       if (duration === null) return failure(400, 'invalid_duration', durationHelp);
-      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start), ...duration }));
+      // AU077 · rejoindre une visite déjà fixée, même bien, même agent, même heure : une visite groupée.
+      const { joinVisit } = body;
+      if (joinVisit !== undefined && (typeof joinVisit !== 'string' || !new RegExp(`^${ID}$`).test(joinVisit))) return failure(400, 'invalid_ids', 'joinVisit : le rendez-vous de la visite à rejoindre.');
+      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start), ...duration, ...(joinVisit !== undefined ? { joinVisit } : {}) }));
     }),
     // AU056 · Un rendez-vous de l'agent pour son client, avec sa durée propre : notaire 90 minutes, appel 10 minutes.
     post('rendez-vous.agent', '/rendez-vous', async (s, v, _p, body) => {

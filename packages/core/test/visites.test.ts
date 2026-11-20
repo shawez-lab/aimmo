@@ -514,3 +514,129 @@ describeWithSqlite('AU076 · le bon de visite désigne précisément le bien', (
     expect(r.visit.slip.content).not.toContain('Étrangère');
   });
 });
+
+describeWithSqlite('AU077 · visite groupée : plusieurs acquéreurs, un seul créneau de l’agent', () => {
+  const held = (t: Awaited<ReturnType<typeof setup>>) =>
+    t.db.all<{ appointment_id: string; n: number }>('SELECT appointment_id, COUNT(*) AS n FROM appointment_holds WHERE released_at IS NULL GROUP BY appointment_id');
+
+  it('AU077 · deux acquéreurs visitent ensemble : deux rendez-vous, deux bons, l’agent tenu une seule fois [R32, R40]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const ines = await t.buyer('Inès');
+    const leo = await t.buyer('Léo', 'Martin');
+    const p = await t.property();
+    const alex = t.as('agent', t.alex.id);
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    // Le constat : sans visite groupée, le second acquéreur au même créneau est refusé comme un rendez-vous concurrent.
+    expect(await t.visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H })).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+    const second = await t.visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    if (!second.ok) throw new Error(second.code);
+    const a = (await t.rdv.get(first.visit.appointment.id))!;
+    const b = second.visit.appointment;
+    expect(b).toMatchObject({ status: 'booked', person_id: leo.person.id, agent_id: t.alex.id, property_id: p.id, start_at: a.start_at, end_at: a.end_at, group_id: a.id });
+    expect(a.group_id).toBe(a.id);
+    // Chacun son bon, à son nom ; aucun ne nomme l'autre.
+    expect(first.visit.slip.content).toContain('Inès Durand');
+    expect(first.visit.slip.content).not.toContain('Léo');
+    expect(second.visit.slip.content).toContain('Léo Martin');
+    expect(second.visit.slip.content).not.toContain('Inès');
+    expect(second.visit.slip.id).not.toBe(first.visit.slip.id);
+    // Chacun sa visite, signée à part : le bon de Léo signé ne signe pas celui d'Inès.
+    expect(await t.visites.recordPaperSignature(alex, b.id, { signedAt: new Date(TUESDAY_10H), scanRef: 'scans/bon-leo.pdf' })).toMatchObject({ ok: true });
+    expect(await t.visites.slipOf(alex, a.id)).toMatchObject({ ok: true, slip: { signedAt: null } });
+    expect((await t.db.all('SELECT appointment_id FROM visits ORDER BY created_at')).length).toBe(2);
+    // Les tranches de l'agent ne sont tenues qu'une fois, par le premier rendez-vous.
+    expect((await held(t)).map((h) => h.appointment_id)).toEqual([a.id]);
+    // Un autre rendez-vous au même moment reste refusé : l'agent n'est pas libre [R32].
+    const other = await t.buyer('Zoé', 'Petit');
+    expect(await t.visites.schedule(alex, { propertyId: p.id, projectId: other.project.id, start: new Date(WEDNESDAY_10H.getTime() + 15 * 60_000) })).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+  });
+
+  it('AU077 · le premier annulé, le créneau reste tenu par le groupe ; le dernier annulé, il redevient libre [R32, R17]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const ines = await t.buyer('Inès');
+    const leo = await t.buyer('Léo', 'Martin');
+    const zoe = await t.buyer('Zoé', 'Petit');
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const second = await t.visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    if (!second.ok) throw new Error(second.code);
+    expect(await t.visites.cancel(alex, first.visit.appointment.id)).toEqual({ ok: true });
+    // Les tranches passent à Léo : le créneau n'est pas offert à un autre.
+    expect((await held(t)).map((h) => h.appointment_id)).toEqual([second.visit.appointment.id]);
+    expect(await t.visites.schedule(alex, { propertyId: p.id, projectId: zoe.project.id, start: WEDNESDAY_10H })).toMatchObject({ ok: false, code: 'taken' });
+    // Zoé ne rejoint pas par la visite annulée, mais par un rendez-vous encore pris du groupe.
+    const third = await t.visites.schedule(alex, { propertyId: p.id, projectId: zoe.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    expect(third).toMatchObject({ ok: false, code: 'group_closed' });
+    const joined = await t.visites.schedule(alex, { propertyId: p.id, projectId: zoe.project.id, start: WEDNESDAY_10H, joinVisit: second.visit.appointment.id });
+    if (!joined.ok) throw new Error(joined.code);
+    expect(joined.visit.appointment.group_id).toBe(first.visit.appointment.id);
+    expect(await t.visites.cancel(alex, second.visit.appointment.id)).toEqual({ ok: true });
+    expect((await held(t)).map((h) => h.appointment_id)).toEqual([joined.visit.appointment.id]);
+    expect(await t.visites.cancel(alex, joined.visit.appointment.id)).toEqual({ ok: true });
+    expect(await held(t)).toEqual([]);
+    // Les visites annulées gardent leurs bons [R17].
+    expect(await t.db.all('SELECT id FROM visit_slips')).toHaveLength(3);
+    const again = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    expect(again.ok).toBe(true);
+  });
+
+  it('AU077 · on ne rejoint que la même visite : même agent, même bien, même heure, une fois, à huit au plus, jamais depuis l’espace client', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const p2 = await t.store.createProperty({ networkId: t.network.id, agentId: t.sam.id, reference: 'B-AUTRE', kind: 'home', city: 'Talant', priceEur: 300_000, status: 'available' });
+    const ines = await t.buyer('Inès');
+    const leo = await t.buyer('Léo', 'Martin');
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const lead = first.visit.appointment.id;
+    const join = (projectId: string, extra: Record<string, unknown> = {}) =>
+      t.visites.schedule(alex, { propertyId: p.id, projectId, start: WEDNESDAY_10H, joinVisit: lead, ...extra });
+    expect(await join(leo.project.id, { propertyId: p2.id })).toMatchObject({ ok: false, code: 'group_mismatch' });
+    expect(await join(leo.project.id, { start: new Date(WEDNESDAY_10H.getTime() + 5 * 60_000) })).toMatchObject({ ok: false, code: 'group_mismatch' });
+    expect(await join(leo.project.id, { durationMinutes: 20 })).toMatchObject({ ok: false, code: 'group_mismatch' });
+    expect(await join(ines.project.id)).toMatchObject({ ok: false, code: 'already_in_group' });
+    expect(await join(leo.project.id, { byClient: 'client:s1' })).toMatchObject({ ok: false, code: 'group_agent_only' });
+    expect(await join(leo.project.id, { joinVisit: 'inconnu' })).toMatchObject({ ok: false, code: 'group_closed' });
+    // Huit acquéreurs au plus.
+    for (let i = 0; i < 7; i += 1) {
+      const b = await t.buyer(`Acheteur${i}`, `Nom${i}`);
+      expect(await join(b.project.id)).toMatchObject({ ok: true });
+    }
+    const ninth = await t.buyer('Neuvième', 'Nom');
+    expect(await join(ninth.project.id)).toMatchObject({ ok: false, code: 'group_full' });
+    expect((await held(t)).map((h) => h.appointment_id)).toEqual([lead]);
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked'")).toHaveLength(8);
+  });
+
+  it('AU077 · le premier décalé dans l’agenda quitte le groupe ; les autres gardent le créneau [R32]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const ines = await t.buyer('Inès');
+    const leo = await t.buyer('Léo', 'Martin');
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const second = await t.visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    if (!second.ok) throw new Error(second.code);
+    // Décalé sur le créneau même du groupe : refusé, l'ancien revient dans le groupe sans reprendre de tranche.
+    expect(await t.rdv.moveFromAgenda(first.visit.appointment.id, new Date(WEDNESDAY_10H.getTime() + 15 * 60_000))).toMatchObject({ ok: false, code: 'taken' });
+    expect(await t.rdv.get(first.visit.appointment.id)).toMatchObject({ status: 'booked' });
+    expect(await t.rdv.get(second.visit.appointment.id)).toMatchObject({ status: 'booked' });
+    expect((await held(t)).map((h) => h.appointment_id).sort()).toEqual([second.visit.appointment.id]);
+    // Décalé trois heures plus tard : Inès quitte le groupe, Léo garde le sien.
+    const moved = await t.rdv.moveFromAgenda(first.visit.appointment.id, new Date(WEDNESDAY_10H.getTime() + 3 * 3_600_000));
+    if (!moved.ok) throw new Error(moved.code);
+    expect(moved.appointment.group_id).toBeNull();
+    expect((await held(t)).map((h) => h.appointment_id).sort()).toEqual([second.visit.appointment.id, moved.appointment.id].sort());
+    const zoe = await t.buyer('Zoé', 'Petit');
+    expect(await t.visites.schedule(alex, { propertyId: p.id, projectId: zoe.project.id, start: WEDNESDAY_10H })).toMatchObject({ ok: false, code: 'taken' });
+  });
+});

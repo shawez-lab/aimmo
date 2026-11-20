@@ -207,6 +207,22 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
   });
 
+  it('[R32] AU077 · POST /visites avec joinVisit : un second acquéreur rejoint la visite au même créneau ; joinVisit mal formé, 400', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const first = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    expect(first.status).toBe(200);
+    const leadId = first.body.data.visit.appointment.id as string;
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Léo', lastName: 'Martin' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: leo.id, kind: 'buy' });
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: 42 })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, code: 'taken' });
+    const joined = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: leadId });
+    expect(joined.status).toBe(200);
+    expect(joined.body.data.visit.appointment).toMatchObject({ person_id: leo.id, group_id: leadId, status: 'booked' });
+  });
+
   it('[R32] AU056 · POST /rendez-vous : l’agent fixe un rendez-vous chez le notaire de 90 minutes, le conflit se contrôle sur 90 minutes', async () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);

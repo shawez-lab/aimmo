@@ -70,7 +70,7 @@ async function setup(writer?: ReportWriter) {
     return { id: r.visit.appointment.id, start: Date.parse(r.visit.appointment.start_at), end: Date.parse(r.visit.appointment.end_at), project };
   };
   const toSeller = () => db.all<{ body: string; occurred_at: string }>("SELECT m.body, m.occurred_at FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at", [seller.id]);
-  return { db, journal, comptes, network, alex, sam, as, visit, toSeller, seller, setClock: (t: number) => (clock = t) };
+  return { db, journal, comptes, visites, store, property, network, alex, sam, as, visit, toSeller, seller, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('T06 · compte rendu de visite dicté', () => {
@@ -225,5 +225,49 @@ describeWithSqlite('T06 · compte rendu de visite dicté', () => {
     await t.comptes.retry();
     expect(await t.toSeller()).toHaveLength(0);
     expect(await t.db.first("SELECT delivery_status, delivery_rule FROM visit_reports WHERE appointment_id = ?", [v.id])).toEqual({ delivery_status: 'refused', delivery_rule: 'R86' });
+  });
+});
+
+describeWithSqlite('AU077 · comptes rendus d’une visite groupée', () => {
+  it('AU077 · chaque acquéreur a son compte rendu ; aucun ne nomme un autre acquéreur venu ensemble, ni sa coordonnée [R52]', async () => {
+    const t = await setup({ write: async () => GOOD });
+    const alex = t.as('agent', t.alex.id);
+    const first = await t.visit('Inès', 'Durand');
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Léo', lastName: 'Martin' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: leo.id, kind: 'email', value: 'leo.martin@example.test' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: leo.id, kind: 'buy' });
+    const joined = await t.visites.schedule(alex, { propertyId: t.property.id, projectId: project.id, start: new Date(first.start), joinVisit: first.id });
+    if (!joined.ok) throw new Error(joined.code);
+    const second = joined.visit.appointment.id;
+    t.setClock(first.end + 10 * 60_000);
+    // Le compte rendu d'Inès qui nomme Léo, ou porte son mail, est refusé ; celui de Léo qui nomme Inès aussi.
+    expect(await t.comptes.dictate(alex, first.id, 'Visite faite, intérêt fort.', { withoutWriter: true })).toMatchObject({ ok: true });
+    expect(await t.comptes.validate(alex, first.id, { ...GOOD, opinion: 'Comme Léo, le visiteur a aimé le séjour.' })).toMatchObject({ ok: false, rule: 'R52', code: 'buyer_named' });
+    expect(await t.comptes.validate(alex, first.id, { ...GOOD, opinion: 'Le visiteur a aimé le séjour, écrire à leo.martin@example.test.' })).toMatchObject({ ok: false, rule: 'R52' });
+    expect(await t.comptes.dictate(alex, second, 'Visite faite, intérêt moyen.', { withoutWriter: true })).toMatchObject({ ok: true });
+    expect(await t.comptes.validate(alex, second, { ...GOOD, opinion: 'Comme Inès, le visiteur a aimé le séjour.' })).toMatchObject({ ok: false, rule: 'R52', code: 'buyer_named' });
+    // Chacun le sien, validé à part : deux comptes rendus chez le vendeur, sans aucun nom d'acquéreur.
+    expect(await t.comptes.validate(alex, first.id, GOOD)).toEqual({ ok: true, delivery: 'sent', rule: null });
+    expect(await t.comptes.validate(alex, second, { ...GOOD, interest: 'moyen' })).toEqual({ ok: true, delivery: 'sent', rule: null });
+    const sent = await t.toSeller();
+    expect(sent).toHaveLength(2);
+    for (const m of sent) expect(m.body).not.toMatch(/Inès|Durand|Léo|Martin|example\.test/);
+    expect(await t.db.all("SELECT appointment_id FROM visit_reports WHERE status = 'valide'")).toHaveLength(2);
+  });
+
+  it('AU077 · l’IA ne lit le nom ni la coordonnée d’aucun acquéreur de la visite groupée [R15]', async () => {
+    const seen: string[] = [];
+    const t = await setup({ write: async (input) => { seen.push(input.dictation); return GOOD; } });
+    const alex = t.as('agent', t.alex.id);
+    const first = await t.visit('Inès', 'Durand');
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Léo', lastName: 'Martin' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: leo.id, kind: 'email', value: 'leo.martin@example.test' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alex.id, personId: leo.id, kind: 'buy' });
+    const joined = await t.visites.schedule(alex, { propertyId: t.property.id, projectId: project.id, start: new Date(first.start), joinVisit: first.id });
+    if (!joined.ok) throw new Error(joined.code);
+    t.setClock(first.end + 10 * 60_000);
+    expect(await t.comptes.dictate(alex, first.id, 'Inès a aimé la lumière du séjour et le jardin, Léo Martin aussi (leo.martin@example.test), la cuisine est à refaire, intérêt fort.')).toMatchObject({ ok: true });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toMatch(/Inès|Léo|Martin|example\.test/);
   });
 });
