@@ -113,6 +113,43 @@ describeWithSqlite('AU060 · le bien démembré', () => {
     await expect(t.db.run('DELETE FROM document_mandant_rights')).rejects.toThrow();
   });
 
+  it('[R41] la signature : sans justificatif, rien ne se signe ; en ligne, le mandat n’est signé qu’une fois l’usufruitier et chaque nu-propriétaire signés', async () => {
+    const t = await setup();
+    const mere = await t.owner('Léa', 'Exemple');
+    const fils = await t.owner('Noé', 'Exemple');
+    const fille = await t.owner('Ivy', 'Exemple');
+    for (const id of [mere, fils, fille]) await t.identify(id);
+    const d = await t.generate(mere, {
+      coMandantIds: [fils, fille],
+      rights: [
+        { personId: mere, right: 'usufruit', proofRef: REF(t.property.id, 1) },
+        { personId: fils, right: 'nue_propriete', proofRef: REF(t.property.id, 2) },
+        { personId: fille, right: 'nue_propriete', proofRef: REF(t.property.id, 2) },
+      ],
+    });
+    if (!d.ok) throw new Error(d.code);
+    // Sur papier, un justificatif absent du stockage : rien n'est inscrit.
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: t.now, scans: { has: async (r) => r !== REF(t.property.id, 2) } });
+    const r = await papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef: `mandats/${t.property.id}/0000000c-0000-4000-8000-000000000000.pdf`, source: 'referral' });
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['proof_absent']);
+    expect(await t.db.all('SELECT number FROM signed_documents WHERE document_id = ?', [d.document.id])).toEqual([]);
+    // En ligne : sans justificatif vérifiable, aucun code ne part.
+    expect((await t.online.start(t.agent, d.document.id, CONSENT)).ok).toBe(false);
+    expect(await t.codes()).toEqual([]);
+    const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, scans: { has: async () => true } });
+    const sessions = [];
+    for (const signerId of [mere, fils, fille]) {
+      const s = await online.start(t.agent, d.document.id, { ...CONSENT, signerId });
+      if (!s.ok) throw new Error(s.code);
+      sessions.push(s.value.sessionId);
+    }
+    const sent = await t.codes();
+    expect(sent.map((c) => c.personId)).toEqual([mere, fils, fille]);
+    expect(await online.sign(t.agent, sessions[0]!, { code: sent[0]!.code })).toMatchObject({ ok: true, value: { allSigned: false } });
+    expect(await online.sign(t.agent, sessions[1]!, { code: sent[1]!.code })).toMatchObject({ ok: true, value: { allSigned: false } });
+    expect(await online.sign(t.agent, sessions[2]!, { code: sent[2]!.code })).toMatchObject({ ok: true, value: { allSigned: true } });
+  });
+
   it('[R41] un usufruit sans nue-propriété, ou l’inverse, ne se vend pas ; un droit démembré sans justificatif non plus', async () => {
     const t = await setup();
     const mere = await t.owner('Léa', 'Exemple');
