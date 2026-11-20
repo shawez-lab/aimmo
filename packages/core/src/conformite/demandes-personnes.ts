@@ -108,6 +108,8 @@ export interface AccessDetail {
   response: AccessResponse;
   /** Par table, le nombre de lignes qui ne sont qu'à la personne : ni partagées avec une autre, ni en partie masquées. */
   exclusiveRows: Record<string, number>;
+  /** Ces lignes mêmes, telles que la base les garde, pour l'effacement réel (AU020). Jamais rendues à la personne. */
+  exclusiveData?: Record<string, Readonly<Record<string, SqlValue>>[]>;
 }
 
 /**
@@ -392,8 +394,12 @@ export async function assembleAccessDetail(
   }
   const notIncluded = (Object.keys(EXCLUSION_LABELS) as ExclusionReason[]).map((reason) => ({ reason, text: EXCLUSION_LABELS[reason] }));
   const exclusiveRows: Record<string, number> = {};
-  for (const s of sections) exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
-  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows };
+  const exclusiveData: Record<string, Readonly<Record<string, SqlValue>>[]> = {};
+  for (const s of sections) {
+    exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
+    exclusiveData[s.table] = [...(exclusive.get(s.table) ?? [])].map((key) => found.get(s.table)!.get(key)!.row);
+  }
+  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows, exclusiveData };
 }
 
 export interface ErasurePlanLine {
@@ -436,7 +442,7 @@ export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[
     const base = { table: s.table, traitement: s.traitement };
     if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
     else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
-    else if (s.table === 'person_identifiers') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (s.table === 'person_identifiers' || s.table === 'contact_keys') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
     else {
       const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
       if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });

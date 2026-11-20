@@ -74,6 +74,39 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
   });
 
+  it('[R47] AU061 · piscine, cave, cheminée et état du bien se disent quand la fiche les porte, et alors seulement', () => {
+    const rich: ListingFacts = { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'], condition: 'travaux_a_prevoir' };
+    const text = fallbackListing(rich);
+    expect(text.body).toContain('Piscine, cave et cheminée.');
+    expect(text.body).toContain('Travaux à prévoir.');
+    const r = traceListing(text.title, text.body, rich);
+    expect(r.ok).toBe(true);
+    expect(r.sentences.flatMap((s) => s.sources).filter((s) => s.field === 'amenities' || s.field === 'condition').map((s) => `${String(s.field)}:${s.value}`).sort()).toEqual(['amenities:cave', 'amenities:cheminée', 'amenities:piscine', 'condition:travaux à prévoir']);
+    // Sans la fiche, aucun de ces mots n'a de source.
+    expect(traceListing('Appartement à Dijon', 'Avec piscine.', FACTS).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'travaux_a_prevoir' }).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Logement neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(false);
+    // Une négation ne passe pas pour l'état dit : « sans travaux » est faux pour un bien à rénover.
+    for (const condition of ['a_renover', 'travaux_a_prevoir'] as const) {
+      for (const body of ['Sans travaux.', 'Aucun travaux à prévoir.', 'Pas de travaux.']) expect(traceListing('Appartement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+    }
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', { ...FACTS, condition: 'bon_etat' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', FACTS).ok).toBe(false);
+    // L'absence d'un équipement ne se prouve pas : « sans piscine » est refusé, même quand la fiche dit une piscine.
+    for (const body of ['Sans piscine.', 'Pas de cave.', 'Sans cheminée ni cave.']) {
+      expect(traceListing('Appartement à Dijon', body, { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'] }).ok).toBe(false);
+      expect(traceListing('Appartement à Dijon', body, FACTS).ok).toBe(false);
+    }
+    // Un état nié ne se prouve pas non plus : « non rénové » est refusé, même sur une fiche « refait à neuf ».
+    for (const body of ['Non rénové.', 'Jamais refait.', 'Pas en bon état.', 'Cuisine pas encore refaite.', 'Pas neuf.']) {
+      for (const condition of ['refait_a_neuf', 'bon_etat', 'neuf', 'a_renover'] as const) {
+        expect(traceListing('Logement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+      }
+    }
+    expect(traceListing('Logement à Dijon', 'Rénové.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
+  });
+
   it('[R47] AU066 · une source rangée reste vraie si son champ dit encore la même chose, même quand un autre champ devient égal', () => {
     // « 5 étages » relié au nombre d'étages : l'étage du bien corrigé de 3 à 5 ne le rend pas faux.
     expect(bindingHolds({ field: 'floorsTotal', value: '5' }, { ...FACTS, floor: 5, floorsTotal: 5 })).toBe(true);

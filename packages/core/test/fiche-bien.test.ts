@@ -65,6 +65,15 @@ it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () 
 });
 
 it('P01 · chaque champ est contrôlé et le premier champ fautif est nommé', () => {
+  // AU061 · équipements et état : liste fermée, sans doublon ; absents, rien n'est rangé.
+  const withC = (patch: Record<string, unknown>) => parseSheet({ ...FULL, characteristics: { ...FULL.characteristics, ...patch } }, TODAY, PID);
+  const eq = withC({ amenities: ['cheminee', 'piscine'], condition: 'bon_etat' });
+  expect(eq.ok && eq.value.characteristics).toMatchObject({ amenities: ['piscine', 'cheminee'], condition: 'bon_etat' });
+  expect(withC({ amenities: ['jacuzzi'] })).toEqual({ ok: false, field: 'characteristics.amenities' });
+  expect(withC({ amenities: ['cave', 'cave'] })).toEqual({ ok: false, field: 'characteristics.amenities' });
+  expect(withC({ condition: 'parfait' })).toEqual({ ok: false, field: 'characteristics.condition' });
+  const none = withC({});
+  expect(none.ok && 'amenities' in none.value.characteristics).toBe(false);
   const withEnergy = (patch: Record<string, unknown>) => parseSheet({ ...FULL, energy: { ...FULL.energy, ...patch } }, TODAY, PID);
   expect(withEnergy({ energyClass: 'H' })).toEqual({ ok: false, field: 'energy.energyClass' });
   expect(withEnergy({ climateClass: 'b' })).toEqual({ ok: false, field: 'energy.climateClass' });

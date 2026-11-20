@@ -1482,3 +1482,51 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 11:27 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié
 - 2026-11-19 11:38 · AU019b · fusionnée (#700, 72e89c4a) après une vérification GitHub verte sur le dernier commit · prochaine : AU020
 - 2026-11-19 · voie 3 · AU066 (#697) fusionnée, AU064 (#702) en conflit avec main ; AU057 (#708) et AU059 (#709) ouvertes ; AU056 (#707), AU058 (#706), AU061 (#703) corrigées après relecture.
+- 2026-11-19 · voie 3 · AU058 (#706) fusionnée ; AU111 ouverte (#710).
+- 2026-11-20 05:38 · AU022 · /rejoindre s'ouvre sur le seul réseau sans variable, la candidature arrive dans la file ; Codex 1 P1 corrigé ; fusionnée (#711) ; voie 1 a aussi fusionné AU056 (#707) et AU061 (#703), vertes et relues · prochaine : AU023
+- 2026-11-20 05:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:53 par une autre séance voie 2, qui a poussé sur chantier/AU020 à 05:32)
+- 2026-11-20 06:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:55 par une autre séance voie 2, active : push sur chantier/AU020 à 06:44)
+- 2026-11-20 07:30 · AU023 · lien nominatif de la direction → clé de l'appareil → connexion d'un appui, recours téléphone perdu ; Codex P0/P1/P2 corrigés ; fusionnée (#713) · prochaine : AU024
+- 2026-11-20 07:30 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié
+- 2026-11-20 07:52 · AU020 · effacement réel par le responsable seul, après le plan d'essai, noté au registre avant d'effacer, avec reçu-preuve sans donnée personnelle ; fichiers à retirer notés avant (migration 4022), lignes gardées retrouvables, liens des fiches réunies gardés, rejeu sur le périmètre noté ; route fermée sans mode `reel` (H29) ; relecture forte 2 P1, Codex 4 P0 2 P1 corrigés ; fusionnée (#712, da703f02) · prochaine : AU020b
+- 2026-11-20 07:52 · VOIE 2 : AU020, da703f02 (main), relancé non
+- 2026-11-20 07:55 · VOIE 2 : relance non faite, bien que les trois questions répondent oui : le 19/11 au soir, plusieurs tâches planifiées (Relances argent, Diffuseur, Contrôleur, Gardien synchro) ont échoué sur la limite d'usage du compte. La séance horaire suivante reprendra avec AU020b.
+- 2026-11-20 08:47 · AU024 · pièce du dossier d'agent déposée depuis l'écran, aperçu, confirmation, accusé de réception ; Codex P2 corrigé ; fusionnée (#714) · prochaine : AU025
+- 2026-11-20 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 07:56 par une autre séance voie 2, active : push sur chantier/AU020b à 08:51)
+- 2026-11-20 09:15 · AU020b · bloquée : la liste blanche des tables du bien gardées d'office laisse passer un nom de vendeur dans les textes (relecture forte 1 P1, Codex 3 P0 corrigés l'un après l'autre, le troisième touche les brouillons eux-mêmes) ; #715 ouverte sans fusion, branche gardée, nouvelle approche notée au plan · prochaine : AU021
+- 2026-11-20 09:15 · VOIE 2 : AU020b, df14e077 (branche, #715, non fusionnée), relancé non
+- 2026-11-20 09:15 · VOIE 2 : relance refusée, question 2 (les séances de 05:55 et 06:55 n'ont produit ni commit ni tâche finie)
+- 2026-11-20 10:42 · AU021 · restauration complète : base et fichiers, puis registre rejoué par le véritable effaceur sur les stockages restaurés ; registre listé dans le compartiment des copies ; relecture forte 1 P1, Codex 1 P0 corrigés ; fusionnée (#716, a744788b) · prochaine : AU020b (nouvelle approche) ou tâche voie 2 libre
+- 2026-11-20 10:42 · VOIE 2 : AU021, a744788b (main), relancé non
+- 2026-11-20 10:42 · VOIE 2 : relance refusée, question 2 (la séance de 08:54 n'a produit ni commit ni tâche finie)
+- 2026-11-20 11:02 · AU020c · identifiants et clés de contact sous empreinte après un effacement, arrêt posé, message d'une personne effacée reconnu sans réponse ; relecture forte 2 P1 corrigés ; fusionnée (#717) · prochaine : AU025
+- 2026-11-20 11:02 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU025
+- 2026-11-20 11:35 · AU020c · suite #718 : 2 P0 de Codex vus après la fusion de #717 (empreinte entière, reprise sur fiche effacée) et 1 P0 GLOB corrigés ; fusionnée · prochaine : AU025
+- 2026-11-20 12:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 10:53 par une autre séance voie 2, active : push sur chantier/AU075 à 12:49)
+- 2026-11-20 13:44 · AU075 · bon de visite signé sans papier sur le téléphone de l'agent, code du visiteur, exemplaire et preuve à l'écran, preuve avec l'empreinte du bon envoyée par le contrôle central ; signature à distance prête, refusée tant que ses pages publiques ne sont pas servies (AU075b, voie 1) ; Codex 4 P0, 1 P1, 1 P2 corrigés, puis 👍 ; fusionnée (#719, f70c5451) · prochaine : AU076
+- 2026-11-20 13:44 · VOIE 2 : AU075, f70c5451 (main), relancé non
+- 2026-11-20 13:44 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
+- 2026-11-20 14:23 · AU025 · bac à sable servi par le Worker : seconde base D1 en Europe, ouverture et cinq étapes depuis l'écran, progression gardée ; Codex rien de majeur (1 P2 noté) ; fusionnée (#720, e93c90a3) · prochaine : AU026
+- 2026-11-20 14:23 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU026
+- 2026-11-20 14:31 · AU076 · le bon de visite désigne le bien par son adresse exacte (désignation la plus récente du réseau), incomplet sans elle, jamais dans un message ni au journal ; R19 précisée ; Codex rien ; fusionnée (#721, ef3091ff) · prochaine : AU077
+- 2026-11-20 14:31 · VOIE 2 : AU076, ef3091ff (main), relancé non
+- 2026-11-20 14:31 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
+- 2026-11-20 15:16 · AU026 · quiz de chaque parcours et de chaque module passé depuis l'académie, réponses justes ou à revoir sans note, attestation à l'écran avec son empreinte, enregistrable, « Mes attestations » ; Codex rien à signaler ; fusionnée (#722, 69b04884) · prochaine : AU027
+- 2026-11-20 15:18 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU027
+- 2026-11-20 15:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 14:55 par une autre séance voie 2, active : AU077, push à 15:35, proposition #723)
+- 2026-11-20 16:05 · AU077 · visite groupée : plusieurs acquéreurs au même créneau de l'agent, chacun son rendez-vous, son bon et son compte rendu, l'agent tenu une fois ; Codex 4 P0 corrigés puis rien ; vérification GitHub verte ; fusionnée (#723, bdafbaff) · prochaine : AU078
+- 2026-11-20 16:05 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
+- 2026-11-20 16:05 · VOIE 2 : AU077, bdafbaff (main), relancé non
+- 2026-11-20 16:07 · AU027 · un « J'ai fini » seul n'est plus qu'une heure déclarée, montrée à part ; seules les présences rangées et les modules couverts par un quiz réussi comptent ; R85 précisée ; Codex rien ; fusionnée (#724, 2b9b491d) · prochaine : AU028
+- 2026-11-20 17:24 · AU028 · cycle de formation d'avant l'arrivée repris par la direction (période de référence et attestations, pièce et nom à l'appui), compteur et alertes sans remise à zéro ; Codex 1 P0 corrigé puis rien ; fusionnée (#725, 888895fb) · prochaine : AU029
+- 2026-11-20 17:25 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU029
+- 2026-11-20 17:48 · AU078 · le point vendeur consigne une décision de prix déjà convenue, confirmée par l'agent et liée au rendez-vous tenu avec le vendeur, phrase faite par le code, aucune négociation déclenchée ; R53 précisée ; Codex rien ; fusionnée (#726, adcddb1e) · prochaine : AU079
+- 2026-11-20 17:48 · VOIE 2 : AU078, adcddb1e (main), relancé non
+- 2026-11-20 17:48 · VOIE 2 : relance refusée, question 2 (la séance de 15:54 n'a produit ni commit ni tâche finie)
+- 2026-11-20 18:33 · AU079 · condition de prêt avec taux nominal maximal hors assurance et type, gardés au registre (empreinte d'avant inchangée sans eux), repris dans la note au notaire et comparés au projet (différent, absent ou ajouté, avec la page) ; R56 et R511 précisées ; Codex rien ; fusionnée (#727, 9d52d5de) · prochaine : AU080
+- 2026-11-20 18:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:55 par une autre séance voie 2, active : push sur chantier/AU080 à 18:39)
+- 2026-11-20 19:45 · AU080 · offre reçue gardée avec son échéance exacte jusqu'à 730 jours, durée de plus de 60 jours signalée au contrôle et à l'écran, sans refuser le fait reçu ; R59 précisée ; test AU078 stabilisé ; Codex rien ; fusionnée (#728, 2e244f5b) · prochaine : AU081
+- 2026-11-20 19:45 · VOIE 2 : AU079 et AU080, 9d52d5de et 2e244f5b (main), relancé oui
+- 2026-11-20 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, sur AU081)
+- 2026-11-20 19:05 · AU029 · l'import d'un agent reprend ses échanges, notes de suivi et rappels de l'ancien logiciel sur ses seules fiches, avec le bilan des lignes non reprises par raison ; rien envoyé ; Codex 2 P0 et 5 P2 corrigés, 1 P2 restant noté ; vérification GitHub verte ; fusionnée (#729, c6f2e0b7) · prochaine : AU030
+- 2026-11-20 19:07 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU030

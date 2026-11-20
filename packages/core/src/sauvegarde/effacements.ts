@@ -11,8 +11,9 @@
  * - une entrée illisible refuse tout, avant le premier effacement : le registre ne se lit pas à moitié ;
  * - une restauration n'est dite finie qu'après le rejeu.
  *
- * L'effacement réel n'existe pas encore (H29, `ERASURE_MODE`) : rien n'écrit ce registre aujourd'hui. SV05 le branchera,
- * avec la procédure réelle derrière `PersonEraser`.
+ * L'effacement réel (AU020, `conformite/effacement-reel.ts`) écrit ce registre avant d'effacer, et `SqlPersonEraser` est
+ * l'effaceur du rejeu ; il reste fermé tant que le Worker n'a pas le mode `reel` (H29). Son branchement au rejeu après
+ * une restauration réelle est AU021.
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -32,6 +33,11 @@ export interface ErasureEntry {
   networkId: string;
   personId: string;
   erasedAt: string;
+  /**
+   * Les fiches réunies de la personne au moment de l'effacement (AU020) : le rejeu efface ce périmètre, jamais celui
+   * qu'une fusion défaite depuis et revenue avec la copie dirait. Absent dans les entrées d'avant : la fiche seule.
+   */
+  members?: string[];
 }
 
 /** La procédure réelle d'effacement, sans effet si tout est déjà effacé. Rend le nombre de lignes effacées. */
@@ -40,7 +46,8 @@ export interface PersonEraser {
 }
 
 const validEntry = (e: Partial<ErasureEntry> | null): e is ErasureEntry =>
-  !!e && [e.requestId, e.networkId, e.personId].every((v) => typeof v === 'string' && v !== '') && typeof e.erasedAt === 'string' && !Number.isNaN(Date.parse(e.erasedAt));
+  !!e && [e.requestId, e.networkId, e.personId].every((v) => typeof v === 'string' && v !== '') && typeof e.erasedAt === 'string' && !Number.isNaN(Date.parse(e.erasedAt)) &&
+  (e.members === undefined || (Array.isArray(e.members) && e.members.length > 0 && e.members.every((m) => typeof m === 'string' && m !== '') && e.members.includes(e.personId!)));
 
 /** Note un effacement fait, au plus tôt : tant qu'il n'est pas noté, il n'est pas dit fait. */
 export async function recordErasure(store: ErasureLedgerStore, key: CopyKey, entry: ErasureEntry): Promise<void> {

@@ -179,9 +179,28 @@ export function conflictOf(
   return null;
 }
 
+/**
+ * La durée propre d'un rendez-vous, choisie par l'agent (AU056) : une contre-visite de 20 minutes, un rendez-vous
+ * chez le notaire de 90 minutes. En minutes entières, par pas de 5 (la tranche tenue), de 10 minutes à 8 heures.
+ */
+export const CUSTOM_DURATION = Object.freeze({ min: 10, max: 480, step: 5 });
+
+/** Vrai si la durée choisie est recevable. */
+export function validDuration(minutes: unknown): minutes is number {
+  return (
+    typeof minutes === 'number' &&
+    Number.isInteger(minutes) &&
+    minutes >= CUSTOM_DURATION.min &&
+    minutes <= CUSTOM_DURATION.max &&
+    minutes % CUSTOM_DURATION.step === 0
+  );
+}
+
 export interface FreeSlotsInput {
   availability: Availability;
   kind: AppointmentKind;
+  /** La durée propre de ce rendez-vous (AU056) ; absente, celle du type dans les réglages. */
+  durationMinutes?: number;
   from: Date;
   to: Date;
   now: Date;
@@ -197,7 +216,8 @@ export function freeSlots(input: FreeSlotsInput): Slot[] {
   const timeZone = input.timeZone ?? AGENDA_TIME_ZONE;
   checkAvailability(input.availability);
   if (!APPOINTMENT_KINDS.includes(input.kind)) throw new Error('Type de rendez-vous inconnu.');
-  const duration = settings.durations[input.kind];
+  if (input.durationMinutes !== undefined && !validDuration(input.durationMinutes)) throw new Error('Durée non valable.');
+  const duration = input.durationMinutes ?? settings.durations[input.kind];
   if (!(duration > 0) || !(settings.stepMinutes > 0)) throw new Error('Durée ou pas non valable.');
   const earliest = Math.max(input.from.getTime(), input.now.getTime() + settings.minNoticeMinutes * MINUTE);
   const slots: Slot[] = [];

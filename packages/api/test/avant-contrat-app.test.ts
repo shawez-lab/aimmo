@@ -278,6 +278,29 @@ describe('BR91 · l’avant-contrat préparé à l’écran du dossier', () => {
     expect(t.box.textContent).toContain(FULL.texts[1]);
   });
 
+  it('[R511] AU079 · le taux maximal et le type du prêt sont prélus, se corrigent et partent avec la condition', async () => {
+    const loan = { kind: 'pret', page: 3, amountEur: 200000, durationMonths: 240, maxRateBp: 385, loanType: 'amortissable' };
+    const read = ok({ documentRef: REF, pageCount: 6, pagesToRead: [], pagesToReadText: '', reading: { source: 'ia', proposal: { ...PROPOSAL, conditions: [loan] }, toRead: ['acte_prevu', 'depot_garantie.detenteur'] } });
+    const t = mount({ [`GET ${BASE}`]: async () => ok({ ...EMPTY, brief: BRIEF }), [`PDF ${PDF_URL}`]: async () => read, [`POST ${BASE}/projet`]: async () => ok({ draft: DRAFT, differences: [], dates: null }) });
+    await t.show();
+    t.label('Le projet reçu du notaire, en PDF').files = [pdf()];
+    await t.click('Déposer et prélire');
+    const rate = t.label('Taux nominal maximal hors assurance, en % (vide si le projet n’en dit pas)');
+    const type = t.label('Type de prêt selon le projet');
+    expect(rate.value).toBe('3,85');
+    expect(type.value).toBe('amortissable');
+    expect(type.children.map((o) => o.attributes.value)).toEqual(['', 'amortissable', 'in_fine', 'relais', 'ptz']);
+    t.label('Selon le projet, le dépôt est reçu par').value = 'notaire';
+    rate.value = '3,855';
+    await t.click('Relire avant de ranger');
+    expect(t.statuses()).toContain('Le taux maximal du prêt s’écrit en %, de 0,01 à 20, deux décimales au plus, ou se laisse vide.');
+    rate.value = '4,2 %';
+    await t.click('Relire avant de ranger');
+    expect(t.box.textContent).toContain('Obtention du prêt amortissable de 200 000 € sur 240 mois, taux hors assurance 4,20 % au plus, page 3.');
+    await t.click('Confirmer : c’est ce que dit le projet');
+    expect((t.posts()[0]!.body as { conditions: unknown[] }).conditions).toEqual([{ kind: 'pret', page: 3, amountEur: 200000, durationMonths: 240, maxRateBp: 420, loanType: 'amortissable' }]);
+  });
+
   it('[R513] [R512] les dates se reportent d’un geste ; compromis pas signé ou différence bloquante : dits en mots', async () => {
     const t = mount({ [`GET ${BASE}`]: async () => ok(FULL), [`POST ${BASE}/dates`]: async () => ok({ date_limite_pret: 'ecrite', acte_prevu: 'deja_la' }) });
     await t.show();

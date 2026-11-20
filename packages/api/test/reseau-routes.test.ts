@@ -78,9 +78,9 @@ describeWithSqlite('J12 · routes de M14', () => {
   /** L'adresse d'une route, ses identifiants remplacés par `id`. */
   const pathOf = (pattern: RegExp, id: string): string => pattern.source.replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, id).replace(/^\^/, '').replace(/\$$/, '');
   /** Les routes où l'appelant agit seulement sur ce qui est à lui : le rôle d'agent suffit, la couche métier fait le reste. */
-  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable'];
+  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable', 'reseau.mon_bac_a_sable_ouvrir', 'reseau.mon_bac_a_sable_etape', 'reseau.mes_rappels_repris'];
   /** Les routes d'agent sur la chose d'un autre : la couche métier refuse un agent tiers. */
-  const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin'];
+  const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin', 'reseau.import_suivi', 'reseau.rappel_repris_fait'];
   const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
   /** Un appel sans corps lisible : le refus de droits doit venir avant toute lecture du corps. */
   const raw = async (t: Awaited<ReturnType<typeof setup>>, route: ReturnType<typeof reseauRoutes>[number], viewer: Viewer, id: string) => {
@@ -341,6 +341,29 @@ describeWithSqlite('J12 · routes de M14', () => {
     expect(r.body.data.format).toBe('excel');
     // Un format inconnu est refusé.
     expect((await t.call(me, 'POST', '/reseau/import', { format: 'minitel', contacts: csv })).status).toBe(400);
+  });
+
+  it('[R84] [R16] AU029 : l’historique repris par la route, lu sur la fiche et dans les rappels de l’agent, jamais par un autre', async () => {
+    const t = await setup();
+    const agentId = await t.admitted('Remi', 'remi@exemple.test');
+    const me: Viewer = { role: 'agent', userId: agentId, networkId: t.network.id };
+    const contacts = 'Prénom,Mail\nPaul,paul@exemple.test';
+    const history = 'Mail,Date,Type,Note,Échéance\npaul@exemple.test,2020-01-02,Appel,Veut vendre,\npaul@exemple.test,2020-01-03,Rappel,Le relancer,2099-01-01\ninconnu@exemple.test,2020-01-02,Appel,Rien,';
+    const r = await t.call(me, 'POST', '/reseau/import', { format: 'excel', contacts, history });
+    expect(r.status).toBe(200);
+    expect(r.body.data.followUp).toMatchObject({ history: 1, reminders: 1, notTaken: { unknown_contact: [4] } });
+    const rappels = await t.call(me, 'GET', '/reseau/import/rappels');
+    expect(rappels.status).toBe(200);
+    const [rappel] = rappels.body.data as { id: string; personId: string; dueOn: string }[];
+    expect(rappel?.dueOn).toBe('2099-01-01');
+    const suivi = await t.call(me, 'GET', `/reseau/import/suivi/${rappel!.personId}`);
+    expect(suivi.body.data.history).toHaveLength(1);
+    const tiers: Viewer = { role: 'agent', userId: 'agent-tiers', networkId: t.network.id };
+    expect((await t.call(tiers, 'GET', `/reseau/import/suivi/${rappel!.personId}`)).status).toBe(403);
+    expect((await t.call(tiers, 'POST', '/reseau/import/rappels/fait', { id: rappel!.id })).status).toBe(403);
+    expect((await t.call(me, 'POST', '/reseau/import/rappels/fait', { id: rappel!.id })).status).toBe(200);
+    expect((await t.call(me, 'GET', '/reseau/import/rappels')).body.data).toEqual([]);
+    for (const table of ['send_log', 'trial_outbox', 'outbound_refs', 'send_reservations']) expect([table, await t.db.all(`SELECT * FROM ${table}`)]).toEqual([table, []]);
   });
 
   it('[R16] [R85] J14 : l’agent lit son référent, ses modules faits et son premier parcours, sans l’identifiant d’un autre', async () => {

@@ -5,8 +5,11 @@
  *
  * Lecture prudente : un morceau ne se réécrit pas (`If-None-Match: *`). Après une panne (5xx, réseau), l'envoi est refait
  * deux fois ; s'il trouve alors la place prise, seul un contenu identique vaut succès. Aucune erreur ne cite une clé.
+ *
+ * Il sait aussi lister un préfixe, page après page (AU021) : c'est le registre des effacements (`effacements/`), relu et
+ * rejoué après une restauration. Une liste refusée ou coupée sans suite lève : un registre ne se lit pas à moitié.
  */
-import type { CopyStore, ObjectSource, StoredObject } from '@aimmo/core';
+import type { ErasureLedgerStore, ObjectSource, StoredObject } from '@aimmo/core';
 
 export interface R2CopiesConfig {
   accountId: string;
@@ -60,19 +63,23 @@ export async function signV4(input: SignInput): Promise<string> {
 
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
 
-export function r2CopyStore(config: R2CopiesConfig): CopyStore {
+export function r2CopyStore(config: R2CopiesConfig): ErasureLedgerStore {
   const http = config.fetch ?? fetch;
   const now = config.now ?? (() => new Date());
   const wait = config.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const host = `${config.accountId}.r2.cloudflarestorage.com`;
 
-  const call = async (method: 'GET' | 'PUT', key: string, body?: Uint8Array<ArrayBuffer>, extra: Record<string, string> = {}): Promise<Response> => {
-    const path = `/${config.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
+  const call = async (method: 'GET' | 'PUT', key: string | null, body?: Uint8Array<ArrayBuffer>, extra: Record<string, string> = {}, params: Record<string, string> = {}): Promise<Response> => {
+    const path = key === null ? `/${config.bucket}` : `/${config.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
+    const query = Object.keys(params)
+      .sort()
+      .map((k) => `${uriEncode(k)}=${uriEncode(params[k]!)}`)
+      .join('&');
     const bodySha256 = await sha256(body ?? new Uint8Array());
     const amzDate = now().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
     const headers = { ...extra, 'x-amz-content-sha256': bodySha256 };
-    const authorization = await signV4({ method, host, path, headers, bodySha256, amzDate, region: 'auto', accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey });
-    return http(`https://${host}${path}`, { method, headers: { ...headers, 'x-amz-date': amzDate, authorization }, ...(body ? { body } : {}) });
+    const authorization = await signV4({ method, host, path, query, headers, bodySha256, amzDate, region: 'auto', accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey });
+    return http(`https://${host}${path}${query ? `?${query}` : ''}`, { method, headers: { ...headers, 'x-amz-date': amzDate, authorization }, ...(body ? { body } : {}) });
   };
 
   const get = async (key: string): Promise<Uint8Array | null> => {
@@ -89,6 +96,31 @@ export function r2CopyStore(config: R2CopiesConfig): CopyStore {
 
   return {
     get,
+    async list(prefix) {
+      const keys: string[] = [];
+      let token: string | null = null;
+      for (let page = 0; ; page += 1) {
+        if (page > 100_000) throw new CopyStoreError('Stockage des copies : liste sans fin.');
+        const params: Record<string, string> = { 'list-type': '2', 'max-keys': '1000', prefix };
+        if (token) params['continuation-token'] = token;
+        let response: Response;
+        try {
+          response = await call('GET', null, undefined, {}, params);
+        } catch {
+          throw new CopyStoreError('Stockage des copies injoignable.');
+        }
+        if (!response.ok) throw new CopyStoreError(`Stockage des copies : liste refusée (${response.status}).`);
+        const xml = await response.text();
+        // Une réponse coupée ou mal formée ne passe jamais pour un registre complet, même vide [R231].
+        if (!completeListPage(xml)) throw new CopyStoreError('Stockage des copies : liste incomplète.');
+        const { keys: found, next } = parseListPage(xml);
+        // Seules les clés du préfixe demandé : une réponse qui en mêlerait d'autres ne passe pas pour le registre.
+        if (found.some((k) => !k.startsWith(prefix))) throw new CopyStoreError('Stockage des copies : liste hors du préfixe.');
+        keys.push(...found);
+        if (!next) return keys.sort();
+        token = next;
+      }
+    },
     async put(key, bytes) {
       const body = Uint8Array.from(bytes);
       for (let attempt = 0; ; attempt += 1) {
@@ -120,6 +152,21 @@ const unescapeXml = (text: string): string =>
   text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (_, e: string) =>
     e.startsWith('#x') ? String.fromCodePoint(parseInt(e.slice(2), 16)) : e.startsWith('#') ? String.fromCodePoint(Number(e.slice(1))) : XML_ENTITIES[e]!,
   );
+
+/**
+ * Une page de `ListObjectsV2` entière : un seul document `ListBucketResult` fermé, son état de pagination dit, et chaque
+ * `Contents` ouvert, fermé et porteur d'une clé. Le registre des effacements ne se lit pas à moitié (AU021).
+ */
+export function completeListPage(xml: string): boolean {
+  const body = xml.replace(/^\s*<\?xml[^>]*\?>/, '').trim();
+  if (!/^<ListBucketResult[\s>]/.test(body) || !body.endsWith('</ListBucketResult>')) return false;
+  if ((body.match(/<ListBucketResult[\s>]/g) ?? []).length !== 1) return false;
+  if ((body.match(/<IsTruncated>\s*(true|false)\s*<\/IsTruncated>/g) ?? []).length !== 1) return false;
+  const opened = (body.match(/<Contents>/g) ?? []).length;
+  const closed = (body.match(/<\/Contents>/g) ?? []).length;
+  const keyed = (body.match(/<Contents>[\s\S]*?<Key>[\s\S]*?<\/Key>[\s\S]*?<\/Contents>/g) ?? []).length;
+  return opened === closed && opened === keyed;
+}
 
 /** Une page de `ListObjectsV2` : les clés, et le jeton de la suivante si la liste est coupée. */
 export function parseListPage(xml: string): { keys: string[]; next: string | null } {

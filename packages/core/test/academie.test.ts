@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { FormationQuiz } from '../src/formation/index.ts';
 import { ACADEMY_SETTINGS, Academie, addYears, hours } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -21,6 +22,7 @@ async function setup() {
   const journal = new SqlJournalStore(db);
   const store = new FicheClient(db, { now });
   const academie = new Academie(db, journal, { now, newId: uuid });
+  const quiz = new FormationQuiz(db, journal, { now, newId: uuid, random: () => 0.5 });
   const network = await store.createNetwork('Réseau test');
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
   const newAgent = async (first: string) => (await store.createAgent({ networkId: network.id, firstName: first, lastName: 'Test' })).id;
@@ -29,13 +31,31 @@ async function setup() {
   const module = async (minutes: number, topic: 'general' | 'deontologie' | 'non_discrimination' = 'general', mandatory = true) => {
     const r = await academie.addModule(dir, { title: `Module ${pos + 1}`, track: 'entree', position: ++pos, videoId: `vid${String(pos).padStart(8, '0')}`, durationMinutes: minutes, topic, mandatory });
     if (!r.ok) throw new Error(r.code);
+    // Trois questions inventées par module ; la bonne réponse est toujours le choix 1.
+    for (let q = 1; q <= 3; q += 1) {
+      const added = await quiz.addQuestion(dir, { moduleId: r.moduleId, prompt: `Question inventée ${q} du module ${pos} ?`, choices: ['Faux', 'Vrai'], correctIndex: 1 });
+      if (!added.ok) throw new Error(added.code);
+    }
     return r.moduleId;
   };
-  return { db, journal, academie, network, dir, newAgent, as, module };
+  /** L'agent passe le quiz du module sans faute : une attestation le justifie (AU027). */
+  const prove = async (agentId: string, moduleId: string, answer = 1) => {
+    const started = await quiz.start(as(agentId), { moduleId });
+    if (!started.ok) throw new Error(started.code);
+    const r = await quiz.submit(as(agentId), started.attemptId, started.questions.map(() => answer));
+    if (!r.ok) throw new Error(r.code);
+    return r.attestation;
+  };
+  /** « J'ai fini », puis le quiz réussi. */
+  const finish = async (agentId: string, moduleId: string) => {
+    await academie.complete(as(agentId), moduleId);
+    await prove(agentId, moduleId);
+  };
+  return { db, journal, academie, quiz, network, dir, newAgent, as, module, prove, finish };
 }
 
 describeWithSqlite('académie et heures de formation obligatoire', () => {
-  it('[R85] [R10] le compteur ne compte que des modules faits et des présences rangées', async () => {
+  it('[R85] [R10] le compteur ne compte que des modules justifiés et des présences rangées', async () => {
     at('2027-01-04');
     const w = await setup();
     const a = await w.newAgent('Ana');
@@ -45,6 +65,8 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     expect((await w.academie.complete(w.as(a), m1)).ok).toBe(true);
     expect(await w.academie.complete(w.as(a), m1)).toEqual({ ok: true, already: true });
     await w.academie.complete(w.as(a), optional);
+    await w.prove(a, m1);
+    await w.prove(a, optional);
     const past = await w.academie.addSession(w.dir, { kind: 'salle', title: 'Séance de Dijon', heldOn: '2027-01-02', durationMinutes: 180, topic: 'deontologie' });
     const unrecorded = await w.academie.addSession(w.dir, { kind: 'mensuelle', title: 'Séance du mois', heldOn: '2027-01-03', durationMinutes: 120 });
     const future = await w.academie.addSession(w.dir, { kind: 'direct', title: 'Direct à venir', heldOn: '2027-02-01', durationMinutes: 60 });
@@ -72,8 +94,8 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     const deonto = await w.module(120, 'deontologie');
     const nd = await w.module(60, 'non_discrimination');
     at('2028-03-01');
-    await w.academie.complete(w.as(a), deonto);
-    await w.academie.complete(w.as(a), nd);
+    await w.finish(a, deonto);
+    await w.finish(a, nd);
     const c = await w.academie.counter(w.dir, a);
     if (!c.ok) throw new Error('compteur');
     const by = Object.fromEntries(c.value.obligations.map((o) => [o.obligation, o]));
@@ -92,7 +114,7 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     const agents: string[] = [];
     for (let i = 0; i < 10; i += 1) agents.push(await w.newAgent(`Agent${i}`));
     // Les agents pairs font leurs 14 h de l'année ; les autres non.
-    for (const [i, a] of agents.entries()) if (i % 2 === 0) for (const m of big) await w.academie.complete(w.as(a), m);
+    for (const [i, a] of agents.entries()) if (i % 2 === 0) for (const m of big) await w.finish(a, m);
     const seen: { agentId: string; obligation: string; daysBefore: number; day: string; text: string }[] = [];
     // Un passage par jour pendant toute la première année.
     for (let day = Date.parse('2027-01-04T09:00:00.000Z'); day <= Date.parse('2028-01-10T09:00:00.000Z'); day += DAY) {
@@ -112,8 +134,8 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     expect(seen.filter((s) => s.obligation !== 'annuelle')).toEqual([]);
     // Fin de la période de 3 ans : chaque manque de déontologie et de non-discrimination signalé aussi.
     for (const a of agents.slice(0, 3)) {
-      await w.academie.complete(w.as(a), deonto);
-      await w.academie.complete(w.as(a), nd);
+      await w.finish(a, deonto);
+      await w.finish(a, nd);
     }
     const late: typeof seen = [];
     for (let day = Date.parse('2029-09-01T09:00:00.000Z'); day <= Date.parse('2030-01-03T09:00:00.000Z'); day += DAY) {
@@ -139,13 +161,126 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     expect(await w.academie.dueAlerts(w.network.id)).toEqual([]);
     // L'année suivante, il fait ses heures avant les paliers : aucune alerte annuelle.
     at('2028-02-01');
-    for (const m of big) await w.academie.complete(w.as(a), m);
+    for (const m of big) await w.finish(a, m);
     const next: string[] = [];
     for (let day = Date.parse('2028-02-01T09:00:00.000Z'); day <= Date.parse('2029-01-03T09:00:00.000Z'); day += DAY) {
       clock = day;
       next.push(...(await w.academie.dueAlerts(w.network.id)).filter((x) => x.obligation === 'annuelle').map((x) => x.until));
     }
     expect(next).toEqual([]);
+  });
+
+  it('[R85] [R10] AU027 un clic « J\'ai fini » seul ne crédite aucune heure : déclarée à part, comptée seulement avec une attestation', async () => {
+    at('2027-01-04');
+    const w = await setup();
+    const a = await w.newAgent('Gil');
+    const b = await w.newAgent('Hal');
+    const deonto = await w.module(120, 'deontologie');
+    const general = await w.module(60);
+    const line = async (who: string, obligation: string) => {
+      const c = await w.academie.counter(w.dir, who);
+      if (!c.ok) throw new Error('compteur');
+      const o = c.value.obligations.find((x) => x.obligation === obligation)!;
+      return [o.doneMinutes, o.declaredMinutes, o.missingMinutes];
+    };
+    // Le constat : un clic suffisait à créditer toute la durée de la vidéo. Il ne crédite plus rien.
+    at('2027-02-01');
+    expect(await w.academie.complete(w.as(a), deonto)).toEqual({ ok: true, already: false });
+    expect(await line(a, 'deontologie')).toEqual([0, 120, 120]);
+    expect(await line(a, 'annuelle')).toEqual([0, 120, 840]);
+    // Un quiz raté ne justifie rien.
+    expect(await w.prove(a, deonto, 0)).toBeNull();
+    expect(await line(a, 'deontologie')).toEqual([0, 120, 120]);
+    // L'attestation d'un autre agent ne justifie rien pour lui.
+    await w.finish(b, deonto);
+    expect(await line(b, 'deontologie')).toEqual([120, 0, 0]);
+    expect(await line(a, 'deontologie')).toEqual([0, 120, 120]);
+    // Le quiz réussi, rangé avec son empreinte, justifie le module : compté au jour de l'attestation.
+    at('2027-02-03');
+    const attestation = await w.prove(a, deonto);
+    expect(attestation?.document.issuedOn).toBe('2027-02-03');
+    expect(await line(a, 'deontologie')).toEqual([120, 0, 0]);
+    // Un second quiz réussi ne compte pas le module deux fois.
+    await w.prove(a, deonto);
+    expect(await line(a, 'annuelle')).toEqual([120, 0, 720]);
+    // Un module non fait n'a pas d'attestation (le quiz exige le module fait) ; fait ensuite, il reste déclaré sans quiz.
+    expect(await w.prove(a, general)).toBeNull();
+    await w.academie.complete(w.as(a), general);
+    expect(await line(a, 'annuelle')).toEqual([120, 60, 720]);
+    // L'attestation d'un parcours justifie chacun de ses modules faits.
+    const started = await w.quiz.start(w.as(a), { track: 'entree' });
+    if (!started.ok) throw new Error(started.code);
+    const r = await w.quiz.submit(w.as(a), started.attemptId, started.questions.map(() => 1));
+    expect(r.ok && r.attestation !== null).toBe(true);
+    expect(await line(a, 'annuelle')).toEqual([180, 0, 660]);
+    // Les alertes ne lisent que les heures justifiées : un agent qui a seulement cliqué est prévenu.
+    const c = await w.newAgent('Ivy');
+    await w.academie.complete(w.as(c), deonto);
+    // Entrée le 3 février 2027 : la période de 3 ans finit le 2 février 2030, le palier de 90 jours tombe le 4 novembre 2029.
+    at('2029-11-04');
+    const alerts = (await w.academie.dueAlerts(w.network.id)).filter((x) => x.agentId === c && x.obligation === 'deontologie');
+    expect(alerts.map((x) => [x.daysBefore, x.missingMinutes])).toEqual([[90, 120]]);
+  });
+
+  it('[R85] [R10] AU028 la période de référence et les attestations d\'avant l\'arrivée sont reprises, sans remise à zéro', async () => {
+    at('2027-01-04');
+    const w = await setup();
+    const a = await w.newAgent('Jo');
+    const line = async (obligation: string) => {
+      const c = await w.academie.counter(w.as(a), a);
+      if (!c.ok) throw new Error('compteur');
+      const o = c.value.obligations.find((x) => x.obligation === obligation)!;
+      return { startedOn: c.value.startedOn, arrivedOn: c.value.arrivedOn, source: c.value.periodSource, from: o.from, until: o.until, done: o.doneMinutes, missing: o.missingMinutes };
+    };
+    // Le constat : sans reprise, la période de 3 ans repart de l'arrivée, comme si l'agent n'avait jamais été formé.
+    expect(await line('triennale')).toEqual({ startedOn: '2027-01-04', arrivedOn: '2027-01-04', source: 'arrivee', from: '2027-01-04', until: '2030-01-03', done: 0, missing: 2520 });
+    // La direction reprend son cycle d'avant (commencé le 1er septembre 2025) et deux attestations, pièce et nom à l'appui.
+    expect(await w.academie.setPriorPeriod(w.dir, a, { cycleStart: '2025-09-01', proofRef: 'pieces/attestation-cycle-inventee.pdf', recorderName: 'Shawez' })).toEqual({ ok: true });
+    expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-11-02', durationMinutes: 120, topic: 'deontologie', proofRef: 'pieces/formation-inventee-2.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    // La même attestation envoyée deux fois n'est rangée qu'une fois : ses heures ne doublent jamais.
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-04-10', durationMinutes: 1260, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
+    // Les périodes continuent le cycle d'avant : rien n'est remis à zéro, les heures d'avant comptent.
+    expect(await line('triennale')).toEqual({ startedOn: '2025-09-01', arrivedOn: '2027-01-04', source: 'cycle_anterieur', from: '2025-09-01', until: '2028-08-31', done: 720, missing: 1800 });
+    expect(await line('deontologie')).toMatchObject({ done: 120, missing: 0 });
+    expect(await line('annuelle')).toMatchObject({ from: '2026-09-01', until: '2027-08-31', done: 120, missing: 720 });
+    // Une heure faite à l'académie s'ajoute au même cycle.
+    const m = await w.module(60);
+    await w.finish(a, m);
+    expect(await line('triennale')).toMatchObject({ done: 780, missing: 1740 });
+    // Une correction est une nouvelle ligne : la dernière période rangée l'emporte, rien ne s'efface ni ne change.
+    expect((await w.academie.setPriorPeriod(w.dir, a, { cycleStart: '2025-10-01', proofRef: 'pieces/attestation-cycle-corrigee.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    expect(await line('triennale')).toMatchObject({ from: '2025-10-01', until: '2028-09-30', done: 780 });
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_prior_entries'))?.n)).toBe(4);
+    await expect(w.db.run('DELETE FROM academy_prior_entries')).rejects.toThrow();
+    await expect(w.db.run("UPDATE academy_prior_entries SET day = '2020-01-01'")).rejects.toThrow();
+    // Les alertes lisent la même période : l'échéance du cycle repris, pas celle de l'arrivée.
+    at('2028-07-02');
+    const alerts = (await w.academie.dueAlerts(w.network.id)).filter((x) => x.agentId === a && x.obligation === 'triennale');
+    expect(alerts.map((x) => [x.until, x.daysBefore])).toEqual([['2028-09-30', 90]]);
+  });
+
+  it('[R85] [R16] AU028 la reprise du cycle d\'avant : direction seule, pièce et nom exigés, jamais après l\'arrivée ; au journal, des identifiants', async () => {
+    at('2027-01-04');
+    const w = await setup();
+    const a = await w.newAgent('Kim');
+    const ok = { cycleStart: '2025-09-01', proofRef: 'pieces/inventee.pdf', recorderName: 'Shawez' };
+    expect(await w.academie.setPriorPeriod(w.as(a), a, ok)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await w.academie.addPriorTraining(w.as(a), a, { heldOn: '2026-01-01', durationMinutes: 60, proofRef: 'p', recorderName: 'Moi' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await w.academie.setPriorPeriod({ role: 'direction', userId: 'x', networkId: 'ailleurs' }, a, ok)).toEqual({ ok: false, rule: null, code: 'unknown_agent' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, proofRef: ' ' })).toEqual({ ok: false, rule: null, code: 'proof_required' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, recorderName: '' })).toEqual({ ok: false, rule: null, code: 'recorder_required' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, cycleStart: '2025-02-30' })).toEqual({ ok: false, rule: null, code: 'invalid_day' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, cycleStart: '2027-01-05' })).toEqual({ ok: false, rule: null, code: 'not_before_arrival' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2027-02-01', durationMinutes: 60, proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'not_before_arrival' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-02-01', durationMinutes: 0, proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'invalid_duration' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-02-01', durationMinutes: 60, topic: 'cuisine', proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'invalid_topic' });
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_prior_entries'))?.n)).toBe(0);
+    expect((await w.academie.setPriorPeriod(w.dir, a, ok)).ok).toBe(true);
+    const journal = JSON.stringify(await w.journal.all());
+    expect(journal).toContain('academie.periode_reprise');
+    expect(journal).not.toMatch(/Shawez|inventee\.pdf|Kim/);
   });
 
   it('[R14] [R85] l\'académie ne note pas l\'agent et n\'impose aucun horaire', async () => {

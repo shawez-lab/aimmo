@@ -4,7 +4,7 @@
  * Un contrôle écrit, ligne par ligne, rendu à l'agent et gardé : l'identité de l'acquéreur est-elle vérifiée (un état
  * lu dans les vérifications de D03, jamais une pièce) ; l'apport et le prêt déclarés couvrent-ils le prix offert (l'écart
  * est chiffré, sans jugement) ; le prêt de la condition suspensive est-il celui qui est déclaré ; l'offre est-elle encore
- * dans sa durée de validité. Aucun score, aucun classement, aucune évaluation de solvabilité : des constats.
+ * dans sa durée de validité, et cette durée est-elle inhabituelle (plus de 60 jours, AU080). Aucun score, aucun classement, aucune évaluation de solvabilité : des constats.
  *
  * Décidé, lecture prudente : une identité compte comme vérifiée selon la même règle que D03 (même réglage de durée, toutes
  * les fiches réunies de la personne) ; le cahier demande la cohérence « entre le montant et le financement déclaré » :
@@ -18,7 +18,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { RegistreOffres, type Offer, type OfferInput } from './registre-offres.ts';
+import { RegistreOffres, USUAL_VALIDITY_DAYS, validityDays, type Offer, type OfferInput } from './registre-offres.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 
@@ -29,7 +29,9 @@ export type CheckLine =
   | { check: 'financement'; status: 'ecart'; missingEur: number }
   | { check: 'pret'; status: 'coherent' | 'sans_objet' }
   | { check: 'pret'; status: 'different'; conditionLoanEur: number; declaredLoanEur: number }
-  | { check: 'validite'; status: 'en_cours' | 'echue'; lastDay: string };
+  | { check: 'validite'; status: 'en_cours' | 'echue'; lastDay: string }
+  /** Une durée de validité au-delà de l'usage : l'offre est gardée telle quelle, l'agent vérifie la date sur l'offre signée (AU080). */
+  | { check: 'validite_longue'; status: 'atypique'; days: number; usualDays: number };
 
 /**
  * Les lignes du contrôle d'une offre : des constats, dans un ordre fixe. Fonction pure. `identitySeenAt` est la dernière
@@ -47,6 +49,9 @@ export function offerCheckLines(offer: Offer, identitySeenAt: string | null, now
   else lines.push({ check: 'pret', status: 'different', conditionLoanEur: loan.amountEur, declaredLoanEur: offer.loanEur });
   const today = localTime(now, TIME_ZONE).date;
   lines.push({ check: 'validite', status: today <= offer.validUntil ? 'en_cours' : 'echue', lastDay: offer.validUntil });
+  // Seulement quand elle est inhabituelle : une offre d'une durée usuelle garde exactement les lignes d'avant.
+  const days = validityDays(offer.receivedAt, offer.validUntil);
+  if (days > USUAL_VALIDITY_DAYS) lines.push({ check: 'validite_longue', status: 'atypique', days, usualDays: USUAL_VALIDITY_DAYS });
   return lines;
 }
 

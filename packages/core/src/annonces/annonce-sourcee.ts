@@ -15,7 +15,7 @@
  * - « gratuit », « mandataire » et toute mention de l'IA sont refusés (AGENTS.md).
  */
 import type { PropertyKind } from '../db/types.ts';
-import type { EnergyClass, HeatingKind, OutdoorKind } from './fiche-bien.ts';
+import type { Amenity, Condition, EnergyClass, HeatingKind, OutdoorKind } from './fiche-bien.ts';
 
 /** Ce que l'IA reçoit du bien : ni nom, ni coordonnée, ni adresse, ni texte libre [R15, R46]. */
 export interface ListingFacts {
@@ -35,10 +35,13 @@ export interface ListingFacts {
   elevator: boolean | null;
   energyClass: EnergyClass | null;
   climateClass: EnergyClass | null;
+  /** AU061 · équipements et état dits sur la fiche ; absents, ils ne sont jamais une source. */
+  amenities?: Amenity[];
+  condition?: Condition | null;
 }
 
 export const FACT_KEYS: readonly (keyof ListingFacts)[] = [
-  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass',
+  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass', 'amenities', 'condition',
 ];
 
 export type SentenceProblem =
@@ -139,10 +142,40 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['fioul', 'fuel'], field: 'heating', has: (f) => f.heating === 'fioul' },
   { terms: ['poêle', 'chauffage au bois', 'chaudière bois'], field: 'heating', has: (f) => f.heating === 'bois' },
   { terms: ['terrain'], field: 'landM2', has: (f) => f.kind === 'land' || f.landM2 !== null },
+  // AU061 · équipements et état dits sur la fiche : nommés seulement s'ils y sont.
+  { terms: ['piscine'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('piscine') },
+  { terms: ['cave', 'caves'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('cave') },
+  { terms: ['cheminée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('cheminee') },
+  { terms: ['grenier', 'combles'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('grenier') },
+  { terms: ['véranda'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('veranda') },
+  { terms: ['climatisation', 'climatisé', 'climatisée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('climatisation') },
+  // Un état nié (« non rénové », « jamais refait », « pas en bon état ») ne se prouve pas par la fiche : jamais de source,
+  // et il se lit avant le terme positif (AU061).
+  {
+    terms: ['non', 'pas', 'ni', 'jamais', 'pas encore', 'pas été', 'jamais été', 'pas vraiment'].flatMap((n) =>
+      ['rénové', 'rénovée', 'rénovés', 'rénovées', 'refait', 'refaite', 'refaits', 'refaites', 'refait à neuf', 'neuf', 'neuve', 'en bon état'].map((t) => `${n} ${t}`),
+    ),
+    field: null,
+    has: () => false,
+  },
+  // « Sans travaux » se lit avant « travaux » : vrai seulement pour un bien dit neuf, refait ou en bon état.
+  { terms: ['sans travaux', 'aucun travaux', 'aucuns travaux', 'pas de travaux', 'aucun travail', 'sans travaux à prévoir', 'aucun travaux à prévoir', 'aucuns travaux à prévoir', 'pas de travaux à prévoir', 'rien à prévoir'], field: 'condition', has: (f) => f.condition === 'neuf' || f.condition === 'refait_a_neuf' || f.condition === 'bon_etat' },
+  { terms: ['travaux à prévoir', 'des travaux', 'travaux'], field: 'condition', has: (f) => f.condition === 'travaux_a_prevoir' || f.condition === 'a_renover' },
+  { terms: ['à rénover'], field: 'condition', has: (f) => f.condition === 'a_renover' },
+  { terms: ['refait à neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits'], field: 'condition', has: (f) => f.condition === 'refait_a_neuf' },
+  { terms: ['bon état'], field: 'condition', has: (f) => f.condition === 'bon_etat' || f.condition === 'refait_a_neuf' || f.condition === 'neuf' },
+  { terms: ['neuf'], field: 'condition', has: (f) => f.condition === 'neuf' },
+  // L'absence d'un équipement ne se prouve pas par la fiche (une case vide veut dire « je ne sais pas ») : « sans piscine »
+  // n'a jamais de source, et se lit avant « piscine » (AU061).
+  {
+    terms: ['piscine', 'cave', 'cheminée', 'grenier', 'combles', 'véranda', 'climatisation'].flatMap((t) => [`sans ${t}`, `pas de ${t}`, `aucune ${t}`, `ni ${t}`]),
+    field: null,
+    has: () => false,
+  },
   // Sans champ dans la fiche : jamais de source.
   {
-    terms: ['piscine', 'cave', 'caves', 'cellier', 'grenier', 'combles', 'véranda', 'cheminée', 'climatisation', 'climatisé', 'fibre', 'double vitrage', 'parquet', 'dressing', 'buanderie',
-      'neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits', 'travaux', 'vue', 'sans vis-à-vis', 'traversant', 'traversante', 'plein sud', 'exposé', 'exposée', 'interphone',
+    terms: ['cellier', 'fibre', 'double vitrage', 'parquet', 'dressing', 'buanderie',
+      'vue', 'sans vis-à-vis', 'traversant', 'traversante', 'plein sud', 'exposé', 'exposée', 'interphone',
       'digicode', 'gardien', 'gardienne', 'loggia', 'mezzanine', 'sous-sol', 'dépendance', 'dépendances', 'puits', 'portail', 'motorisé', 'alarme', 'domotique', 'tramway', 'gare',
       'écoles', 'école', 'commerces', 'métro'],
     field: null,
@@ -356,6 +389,8 @@ const HEATING_LABEL: Record<HeatingKind, string | null> = {
   autre: null,
 };
 const OUTDOOR_LABEL: Record<OutdoorKind, string> = { balcon: 'balcon', terrasse: 'terrasse', jardin: 'jardin', cour: 'cour' };
+const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation' };
+const CONDITION_LABEL: Record<Condition, string> = { neuf: 'Logement neuf.', refait_a_neuf: 'Refait à neuf.', bon_etat: 'En bon état.', travaux_a_prevoir: 'Travaux à prévoir.', a_renover: 'À rénover.' };
 
 /** Le texte de secours, fait par le code depuis la fiche seule : sobre, vrai, et qui passe toujours le contrôle. */
 export function fallbackListing(f: ListingFacts): { title: string; body: string } {
@@ -387,6 +422,13 @@ export function fallbackListing(f: ListingFacts): { title: string; body: string 
   if (f.parkingSpaces !== null && f.parkingSpaces > 0) lines.push(`${f.parkingSpaces} place${f.parkingSpaces > 1 ? 's' : ''} de stationnement.`);
   const heating = f.heating ? HEATING_LABEL[f.heating] : null;
   if (heating) lines.push(`${heating}.`);
+  // AU061 · équipements et état, dans les mots que le contrôle relie à la fiche.
+  const amenities = (f.amenities ?? []).map((a) => AMENITY_LABEL[a]);
+  if (amenities.length > 0) {
+    const list = amenities.length === 1 ? amenities[0]! : `${amenities.slice(0, -1).join(', ')} et ${amenities[amenities.length - 1]}`;
+    lines.push(`${list.charAt(0).toUpperCase()}${list.slice(1)}.`);
+  }
+  if (f.condition) lines.push(CONDITION_LABEL[f.condition]);
   if (f.energyClass) lines.push(`Classe énergie ${f.energyClass}.`);
   return { title, body: lines.join(' ') };
 }

@@ -147,11 +147,41 @@ describeWithSqlite('J12 · page de candidature', () => {
     expect(await t.db.all('SELECT sponsor_agent_id FROM candidates')).toEqual([{ sponsor_agent_id: null }]);
   });
 
-  it('sans réseau réglé, la page dit que les candidatures ne sont pas ouvertes et ne range rien', async () => {
+  it('[R81] AU022 : sans variable réglée et avec un seul réseau, la page sert le formulaire et la candidature arrive dans la file', async () => {
     const t = await setup();
+    const g = await t.page({}, null);
+    expect(g!.status).toBe(200);
+    expect(g!.html).not.toMatch(/<h1>Bientôt<\/h1>/);
+    expect(g!.html).toMatch(/<form[^>]+method="post"/i);
+    expect(g!.html).toMatch(/name="consent"/);
+    const r = await t.post({ ...VALID, consent: 'oui' }, null);
+    expect(r!.status).toBe(200);
+    const rows = await t.db.all<{ network_id: string }>('SELECT network_id FROM candidates');
+    expect(rows).toEqual([{ network_id: t.network.id }]);
+    const events = await t.db.all<{ type: string }>("SELECT type FROM journal WHERE type = 'candidature.reseau_unique'");
+    expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('AU022 : la variable réglée l’emporte sur le réseau unique', async () => {
+    const t = await setup();
+    const other = await new FicheClient(t.db, { now: () => new Date('2027-07-12T09:00:00.000Z') }).createNetwork('Autre réseau');
+    expect((await t.post({ ...VALID }, other.id))!.status).toBe(200);
+    expect(await t.db.all('SELECT network_id FROM candidates')).toEqual([{ network_id: other.id }]);
+  });
+
+  it('sans variable et avec plusieurs réseaux, la page ne devine pas : elle dit que les candidatures ne sont pas ouvertes et ne range rien', async () => {
+    const t = await setup();
+    await new FicheClient(t.db, { now: () => new Date('2027-07-12T09:00:00.000Z') }).createNetwork('Autre réseau');
     const r = await t.post({ ...VALID }, null);
     expect(r!.status).toBe(503);
     expect(await t.db.all('SELECT id FROM candidates')).toEqual([]);
+  });
+
+  it('sans aucun réseau, la page dit que les candidatures ne sont pas ouvertes', async () => {
+    const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+    await applyMigrations(db, loadMigrations());
+    const res = await handleCandidature(new Request('https://aimmo.exemple.test/rejoindre'), { db, networkId: null });
+    expect(res!.status).toBe(503);
   });
 
   it('un formulaire illisible ou trop long est refusé sans rien ranger', async () => {
