@@ -221,7 +221,9 @@ describe('J14 · écrans de M14 dans l’application', () => {
     await t.ouvrir('integration-ouvrir');
     const text = t.body().textContent;
     expect(text).toContain('Pas encore de référent : la direction vous en attribue un pour vos 90 premiers jours.');
-    expect(text).toContain('Votre premier parcours n’est pas encore ouvert : la direction l’ouvre à votre entrée.');
+    // AU025 : un parcours pas encore ouvert s'ouvre depuis l'écran, par l'agent lui-même.
+    expect(text).toContain('Un exercice à vous seul, sur un contact inventé');
+    expect(t.byText('Ouvrir mon exercice')).toBeDefined();
     expect(text).not.toContain('l’accès aux clients reste fermé');
     const u = await run({ 'GET /v1/reseau/mon-bac-a-sable': no(503, { ok: false, rule: null, code: 'unavailable' }), 'GET /v1/reseau/mon-dossier': no(503, { ok: false, rule: null, code: 'unavailable' }) });
     await u.ouvrir('integration-ouvrir');
@@ -496,5 +498,48 @@ describe('AU024 · déposer une pièce là où elle manque, depuis le téléphon
     b.inputOf('Fin de validité, lue sur le document')!.value = '2028-06-30';
     await t.click(b.confirm());
     expect(b.text()).toContain('Ce fichier ne se lit pas comme il le dit : reprenez la photo ou le PDF.');
+  });
+});
+
+describe('AU025 · le premier parcours se fait depuis l’écran', () => {
+  const steps = (done: number) => ['contact_recu', 'qualification', 'rappel_fait', 'rendez_vous', 'avis_valide'].map((step, i) => ({ step, label: `Étape ${i + 1}`, done: i < done, at: i < done ? '2027-07-12T08:00:00.000Z' : null }));
+  const progress = (done: number) => ({ agentId: 'ag1', steps: steps(done), next: done < 5 ? `Étape ${done + 1}` : null, completed: done === 5, countedAtAcademy: done === 5 });
+
+  it('[R82] l’agent ouvre son exercice, puis seule la prochaine étape porte son geste ; chaque geste part à sa route', async () => {
+    const t = await run({
+      'GET /v1/reseau/mon-bac-a-sable': no(400, { ok: false, rule: null, code: 'not_opened' }),
+      'POST /v1/reseau/mon-bac-a-sable': ok(progress(0)),
+    });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Ouvrir mon exercice'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/reseau/mon-bac-a-sable']);
+    for (const [done, label, step] of [[0, 'Recevoir le message du vendeur', 'contact_recu'], [2, 'Je l’ai rappelé', 'rappel_fait'], [3, 'Fixer le rendez-vous d’estimation', 'rendez_vous'], [4, 'Valider l’avis de valeur', 'avis_valide']] as const) {
+      const u = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(done)), [`POST /v1/reseau/mon-bac-a-sable/etapes/${step}`]: ok(progress(done + 1)) });
+      await u.ouvrir('integration-ouvrir');
+      const gestures = u.body().all().filter((e) => e.tagName === 'button' && Object.values({ a: 'Recevoir le message du vendeur', b: 'Je l’ai rappelé', c: 'Fixer le rendez-vous d’estimation', d: 'Valider l’avis de valeur' }).includes(e.textContent));
+      expect(gestures.map((e) => e.textContent)).toEqual([label]);
+      await u.click(u.byText(label));
+      expect(u.posts().map((c) => c.url)).toEqual([`/v1/reseau/mon-bac-a-sable/etapes/${step}`]);
+      expect(u.state()).toBe('Étape faite : votre progression est gardée.');
+    }
+    // Fini : plus aucun geste, le parcours est dit complet.
+    const f = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(5)) });
+    await f.ouvrir('integration-ouvrir');
+    expect(f.body().textContent).toContain('Parcours complet, compté à l’académie.');
+    expect(f.body().all().filter((e) => e.tagName === 'button' && /vendeur|rappelé|rendez-vous|avis/.test(e.textContent))).toEqual([]);
+  });
+
+  it('une qualification manquée : un nouveau message relance le parcours', async () => {
+    const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(1)), 'POST /v1/reseau/mon-bac-a-sable/etapes/contact_recu': ok(progress(2)) });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Recevoir un nouveau message'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/reseau/mon-bac-a-sable/etapes/contact_recu']);
+  });
+
+  it('une étape refusée est dite en clair, jamais par un code', async () => {
+    const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(2)), 'POST /v1/reseau/mon-bac-a-sable/etapes/rappel_fait': no(400, { ok: false, rule: null, code: 'not_next_step' }) });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Je l’ai rappelé'));
+    expect(t.state()).toBe('Faites d’abord l’étape d’avant : la liste est relue.');
   });
 });
