@@ -55,6 +55,36 @@ export interface ObjectEraser {
 /** Ce que le reçu dit des identifiants gardés : en clair, pour reconnaître la personne et tenir son arrêt [R04]. */
 export const IDENTIFIERS_KEPT = 'Identifiants gardés en clair, seulement pour reconnaître la personne et respecter son arrêt [R04] ; leur passage sous empreinte est à venir (AU020c).';
 
+/**
+ * Les tables jamais effacées par la procédure : `person_merges` relie les fiches réunies, et l'arrêt posé sur l'une
+ * ne vaut pour les autres que par ce lien [R04]. Gardées telles quelles, et dites « citées ».
+ */
+export const KEPT_LINKS: ReadonlySet<string> = new Set(['person_merges']);
+
+/** Les tables qu'un déclencheur garde de tout effacement (`BEFORE DELETE … RAISE`) : leurs lignes resteront. */
+async function guardedTables(db: SqlDatabase): Promise<Set<string>> {
+  const rows = await db.all<{ tbl_name: string; sql: string | null }>("SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger'");
+  return new Set(rows.filter((r) => typeof r.sql === 'string' && /BEFORE\s+DELETE/i.test(r.sql) && /RAISE\s*\(\s*ABORT/i.test(r.sql)).map((r) => r.tbl_name));
+}
+
+/** Les tables par lesquelles la carte retrouve celles données, de proche en proche. */
+function locatedThrough(carte: Readonly<Record<string, AccessMapEntry>>, tables: Iterable<string>): Set<string> {
+  const out = new Set<string>();
+  const stack = [...tables];
+  while (stack.length > 0) {
+    const entry = carte[stack.pop()!];
+    if (!entry || !('locate' in entry)) continue;
+    for (const l of entry.locate as readonly unknown[]) {
+      const from = l !== null && typeof l === 'object' && 'from' in l ? (l as { from: unknown }).from : null;
+      if (typeof from === 'string' && !out.has(from)) {
+        out.add(from);
+        stack.push(from);
+      }
+    }
+  }
+  return out;
+}
+
 /** Le stockage jamais touché : le coffre de la lutte contre le blanchiment. */
 const NEVER_ERASED: ReadonlySet<ObjectStorage> = new Set(['COFFRE']);
 
@@ -127,6 +157,12 @@ export async function eraseForReal(
   // Deux lignes en tout point pareilles partent par la même condition : une seule entrée, pour qu'un DELETE qui ne
   // touche rien veuille toujours dire « la ligne n'est plus celle lue », jamais « déjà partie avec sa jumelle ».
   const seen = new Set<string>();
+  // Une ligne qui restera (table gardée par un déclencheur) doit rester retrouvable au prochain passage, et à la
+  // restauration : les lignes par lesquelles la carte y mène ne partent pas tant qu'elle reste [R17, R231].
+  const guarded = await guardedTables(db);
+  const stuck = order.filter((t) => guarded.has(t) && (detail.exclusiveData?.[t] ?? []).length > 0);
+  const holders = locatedThrough(carte, stuck);
+  for (const t of KEPT_LINKS) holders.add(t);
   let pending: { table: string; row: Row; cited?: boolean }[] = order.flatMap((table) =>
     (detail.exclusiveData?.[table] ?? [])
       .filter((row) => !pseudonymized(table, row))
@@ -152,6 +188,8 @@ export async function eraseForReal(
     for (const e of earlier) if (!cited.has(e.object_key)) cited.set(e.object_key, { storage: e.storage, key: e.object_key });
   }
 
+  const held = pending.filter((p) => holders.has(p.table)).map((p) => ({ ...p, cited: true }));
+  pending = pending.filter((p) => !holders.has(p.table));
   const erased = new Map<string, number>();
   // Une ligne peut en citer une autre de la même liste : on repasse tant qu'une ligne part.
   for (let progress = true; progress && pending.length > 0; ) {
@@ -178,7 +216,7 @@ export async function eraseForReal(
   const vidées = new Map<string, number>();
   const kept = new Map<string, number>();
   const remaining = new Map<string, number>();
-  for (const p of pending) {
+  for (const p of [...pending, ...held]) {
     const columns = PSEUDONYMIZE[p.table] ?? [];
     // Citée ailleurs, sans colonne nominative à vider : gardée telle quelle, et dite.
     if (p.cited && columns.length === 0) {

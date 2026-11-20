@@ -153,9 +153,10 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // et la fiche du bien sont en ajout seul : la base refuse de les effacer, le reçu le dit et l'effacement n'est pas
     // dit complet (AU020b).
     expect(receipt).toMatchObject({ mode: 'reel', records: 1, complete: false, remaining: BLOCKED, objectsRemoved: { PIECES: 1 }, objectsRemaining: 0, at: LATER.toISOString() });
-    // Le bien reste, cité par le mandat que la loi garde.
-    expect(receipt.cited).toEqual([{ table: 'properties', rows: 1 }]);
-    expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }, { table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }]);
+    // Le bien reste, cité par le mandat que la loi garde ; le projet et son lien au bien restent tant que la fiche du
+    // bien, que la base garde, reste : sans eux, le prochain passage ne la retrouverait plus [R17, R231].
+    expect(receipt.cited).toEqual([{ table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }, { table: 'properties', rows: 1 }]);
+    expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }]);
     expect(receipt.pseudonymized).toEqual([{ table: 'persons', rows: 1 }]);
     expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'garder', why: IDENTIFIERS_KEPT })]));
     expect(receipt.kept.some((k) => k.action === 'empreinte')).toBe(false);
@@ -166,7 +167,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La preuve : l'empreinte du reçu gardée, au journal, puis reprise par la réponse notée.
     expect(await t.db.all("SELECT kind, mode, output_sha256 FROM person_request_outputs WHERE request_id = ? AND mode = 'reel'", [t.request.id])).toEqual([{ kind: 'plan_effacement', mode: 'reel', output_sha256: sha256 }]);
     const event = (await t.journal.bySubject(`person_request:${t.request.id}`)).at(-1)!;
-    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 6, pseudonymized: 1, remaining: 2, objects: 1, complete: false } });
+    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 1, remaining: 2, objects: 1, complete: false } });
     expect(JSON.stringify(event)).not.toContain('example.test');
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
     expect(await t.demandes.answer(t.responsable, t.request.id, { answeredOn: '2027-02-11' })).toMatchObject({ ok: true, value: { answerSha256: sha256 } });
@@ -284,6 +285,29 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Un troisième passage ne retire rien de plus, et le fichier partagé, encore cité, reste.
     expect((await eraseForReal(t.db, [t.personId], { objects: flaky, target })).outcome.objectsRemoved).toEqual({});
     expect(removed).toEqual(['boite/appels/seule-a.ogg']);
+  });
+
+  it('[R17] [R231] une ligne gardée par la base reste retrouvable : le passage suivant la dit encore restante', async () => {
+    const t = await setup();
+    const first = await eraseForReal(t.db, [t.personId], { objects: t.objects.eraser });
+    expect(first.outcome.remaining).toEqual(BLOCKED);
+    const again = await eraseForReal(t.db, [t.personId], { objects: t.objects.eraser });
+    expect(again.outcome.remaining).toEqual(BLOCKED);
+    expect(again.outcome.cited.map((c) => c.table)).toEqual(expect.arrayContaining(['project_properties', 'projects']));
+  });
+
+  it('[R04] [R17] des fiches réunies : leur lien reste, et l’arrêt posé sur l’une vaut encore pour l’autre', async () => {
+    const t = await setup();
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Léa', lastName: 'Double' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: twin.id, kind: 'email', value: 'lea.double@example.test' });
+    await t.fiche.merge({ survivorId: t.personId, mergedId: twin.id, reason: 'Même personne (inventé)' });
+    const links = await t.db.all('SELECT * FROM person_merges');
+    expect(links).toHaveLength(1);
+    const { outcome } = await eraseForReal(t.db, await t.fiche.membersOf(t.personId), { objects: t.objects.eraser });
+    expect(await t.db.all('SELECT * FROM person_merges')).toEqual(links);
+    expect(outcome.cited).toEqual(expect.arrayContaining([{ table: 'person_merges', rows: 1 }]));
+    expect(outcome.erased.find((c) => c.table === 'person_merges')).toBeUndefined();
+    expect(await t.fiche.membersOf(twin.id)).toEqual(expect.arrayContaining([t.personId, twin.id]));
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
