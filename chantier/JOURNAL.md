@@ -1528,3 +1528,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 19:45 · AU080 · offre reçue gardée avec son échéance exacte jusqu'à 730 jours, durée de plus de 60 jours signalée au contrôle et à l'écran, sans refuser le fait reçu ; R59 précisée ; test AU078 stabilisé ; Codex rien ; fusionnée (#728, 2e244f5b) · prochaine : AU081
 - 2026-11-20 19:45 · VOIE 2 : AU079 et AU080, 9d52d5de et 2e244f5b (main), relancé oui
 - 2026-11-20 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, sur AU081)
+- 2026-11-20 19:05 · AU029 · l'import d'un agent reprend ses échanges, notes de suivi et rappels de l'ancien logiciel sur ses seules fiches, avec le bilan des lignes non reprises par raison ; rien envoyé ; Codex 2 P0 et 5 P2 corrigés, 1 P2 restant noté ; vérification GitHub verte ; fusionnée (#729, c6f2e0b7) · prochaine : AU030
