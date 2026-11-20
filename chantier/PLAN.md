@@ -289,7 +289,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU020c · Les identifiants gardés après un effacement passent sous empreinte
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (socle) · Relecture : forte · Dépend de : AU020
 - Cahier : Conformité ; endroit : packages/core/src/fiche/fusion.ts, reception/rattachement.ts, conformite/effacement-reel.ts (`IDENTIFIERS_KEPT`).
 - Objectif : après un effacement réel, les adresses et numéros de la personne ne restent que sous leur empreinte, et un message qui arrive de l'un d'eux est quand même reconnu et arrêté [R04].
