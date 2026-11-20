@@ -1500,3 +1500,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 10:42 · VOIE 2 : AU021, a744788b (main), relancé non
 - 2026-11-20 10:42 · VOIE 2 : relance refusée, question 2 (la séance de 08:54 n'a produit ni commit ni tâche finie)
 - 2026-11-20 11:02 · AU020c · identifiants et clés de contact sous empreinte après un effacement, arrêt posé, message d'une personne effacée reconnu sans réponse ; relecture forte 2 P1 corrigés ; fusionnée (#717) · prochaine : AU025
+- 2026-11-20 11:02 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU025
