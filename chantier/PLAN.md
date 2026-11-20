@@ -348,7 +348,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#720, `e93c90a3`). Décidé : pas d'objet durable (R602 ne les admet pas) ; seconde base D1 `aimmo-bac-a-sable` en `eu`, mêmes migrations, créée, vérifiée et migrée par la mise en ligne, gabarit d'identifiant à part ; un réseau d'entraînement par agent dans cette base ; routes d'ouverture et d'étape, écran « Mon intégration ». Vérifié sous workerd. Codex : rien de majeur ; une remarque P2 restante (une tâche « rappeler » qui manquerait après une panne à la réception bloque l'étape du rappel), à reprendre si elle se voit.
 
 ### AU026 · Les quiz et attestations existent côté métier
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A026 (majeur), endroit : UI/integration.ts ; C/formation/quiz.ts.
 - Constat de l'audit : Les quiz et attestations existent côté métier, mais l’académie affichée ne donne pas d’accès pour les passer et les télécharger.
