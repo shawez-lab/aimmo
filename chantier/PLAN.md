@@ -387,13 +387,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#729, `c6f2e0b7`), migration `4041` (ajout seul). Décidé : `POST /reseau/import` accepte `history` ; chaque ligne rejoint la seule fiche de l'agent qui importe (identifiant du contact de l'export, sinon mail ou téléphone), jamais une fiche effacée ni celle d'un autre agent ; échanges passés et notes rangés à leur date, tâches pas faites, échéances et actions à venir en rappels (tâches, rien n'est envoyé), faits une fois ; bilan `followUp` des lignes non reprises par raison ; identité d'un élément tirée de l'export (contact, type, date et heure écrites, texte entier) : relancé, après l'échéance ou une réunion de fiches, rien ne double. Lecture du suivi au journal (`fiche.lue`). Codex : P0 (lecture non journalisée, fiche effacée) et 5 P2 corrigés ; reste un P2 : une fiche de l'agent réunie dans une fiche gardée sans agent cache son suivi à l'agent (à reprendre avec les droits de lecture de la fiche, `decideAccess`). Pas d'écran d'import pour l'instant.
 
 ### AU030 · Mes biens importés perdent leur dossier opérationnel
-- Statut : en cours
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A030 (majeur), endroit : C/reseau/import-agent.ts, champs de biens.
 - Constat de l'audit : Mes biens importés perdent leur dossier opérationnel : photos, diagnostics, mandats signés et diffusion ne sont pas repris.
 - Objectif : Un dossier témoin conserve ses documents, médias et liens ; tout élément exclu est explicitement compté avant validation de migration.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#730, `b5335306`), migration `4042` (ajout seul). Décidé : `POST /reseau/import` accepte `pieces` (dossier des biens, une pièce par ligne, par la référence de l'export des biens) ; sortes photo, diagnostic, mandat (signature dite oui, non ou non dite ; une négation l'emporte, une valeur inconnue reste non dite), annonce (lien et portail, jamais republiée), document ; seulement sur un bien repris par le même agent et le même logiciel, qu'il suit toujours ; `POST /reseau/import/apercu` rend le même bilan sans rien ranger ; `GET /reseau/import/dossier/<bien>` lu par l'agent du bien ou la direction, au journal (`bien.lu`). Codex : 3 P0 corrigés (lecture non journalisée, signature inconnue, négation dans le type). Les octets des fichiers ne sont pas copiés (nom et lien d'origine gardés) ; pas d'écran d'import.
 
 ### AU031 · La migration jette volontairement l’adresse de mes biens, que je dois ressaisir pour travailler
 - Statut : à faire
