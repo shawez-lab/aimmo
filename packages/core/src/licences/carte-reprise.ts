@@ -104,7 +104,7 @@ export const TABLES_RESEAU: readonly string[] = `
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
   viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photos visit_reports
-  visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_templates visit_slips visit_tasks visits vitrine_screens
+  visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_signatures visit_slip_templates visit_slips visit_tasks visits vitrine_screens
   voice_assistant_calls voice_assistant_lines voice_notes weekly_points
 `.trim().split(/\s+/);
 
@@ -270,6 +270,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   photo_exports: ['certificate_token'],
   referral_requests: ['key_hash'],
   remote_slip_signatures: ['code_hash', 'token_hash'],
+  visit_slip_signatures: ['code_hash', 'copy_token_hash', 'token_hash'],
   rental_lease_signatures: ['code_hash'],
   rental_lease_cotenant_signatures: ['code_hash'],
   satisfaction_tokens: ['token_hash'],
@@ -307,7 +308,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
   appointment_reports appointment_tasks presentation_ratings property_key_partner_returns property_key_partner_loans property_key_returns property_key_loans safety_alerts
   visit_field_notes visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
-  visit_safety visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
+  visit_safety visit_slip_signatures visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers

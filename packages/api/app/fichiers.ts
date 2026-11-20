@@ -981,6 +981,8 @@ export const APP_JS = `'use strict';
     if (!slip) { box.appendChild(el('p', 'Le bon de visite n’est pas prêt.', 'alerte')); return box; }
     var state = slip.signed ? 'signé et rangé' : slip.status === 'complet' ? 'prêt à signer' : 'incomplet : complétez la fiche avant la visite';
     box.appendChild(el('p', 'Bon de visite ' + state + (slip.mode === 'essai' ? ' (modèle d’essai, en attente de validation juridique).' : '.'), slip.signed ? 'fait' : 'doux'));
+    if (!slip.signed && slip.status === 'complet') box.appendChild(lazyBlock('Faire signer, sans papier', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
+    else if (slip.online && slip.online.status === 'signee') box.appendChild(lazyBlock('Montrer l’exemplaire signé', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
     return box;
   }
   // L'alerte en un geste : un seul appui, sans confirmation. Le même identifiant sert jusqu'à ce qu'elle soit rangée.
