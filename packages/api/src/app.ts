@@ -915,24 +915,6 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
-    method: 'POST',
-    pattern: new RegExp(`^/signatures/${ID}$`),
-    name: 'signature.code',
-    // La signature par le code reçu, et le tracé à l'écran s'il y en a un : d'essai ou réelle selon la session (AU003).
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request, 220_000);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).sign(viewer, id!, {
-        code: typeof body.code === 'string' ? body.code : '',
-        drawing: typeof body.drawing === 'string' ? body.drawing : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
-      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
-    },
-  },
-  {
     method: 'GET',
     pattern: new RegExp(`^/signatures/${ID}/exemplaire$`),
     name: 'signature.exemplaire',
@@ -981,24 +963,6 @@ const ROUTES: RouteDef[] = [
       });
       if (r.ok) return json(201, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
       return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne/fin$`),
-    name: 'document.signature_en_ligne_fin',
-    // Finit un document signé réellement par chaque mandant : mandat inscrit, dossier de preuve figé, exemplaire et
-    // dossier remis à chacun ; la source du mandat, si la fiche ne la donne pas [R38, R39, R41] (AU003).
-    handle: async (s, viewer, [id], request) => {
-      const body = (await readJson(request)) ?? {};
-      if (Object.keys(body).some((k) => k !== 'source' && k !== 'sourceDetail')) return failure(400, 'unexpected_field', 'Seuls source et sourceDetail sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).finish(viewer, id!, {
-        source: typeof body.source === 'string' ? body.source : null,
-        sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
-      if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(r.code === 'unknown_document' ? 404 : 409, { ok: false, rule: r.rule, code: r.code });
     },
   },
   {
@@ -2044,6 +2008,43 @@ function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
         const r = await new ControlesSignature(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).check(viewer, id!);
         if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
         return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+      },
+    },
+    // La signature et la fin de la signature en ligne : la procuration s'y vérifie aussi (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/signatures/${ID}$`),
+      name: 'signature.code',
+      // La signature par le code reçu, et le tracé à l'écran s'il y en a un : d'essai ou réelle selon la session (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request, 220_000);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).sign(viewer, id!, {
+          code: typeof body.code === 'string' ? body.code : '',
+          drawing: typeof body.drawing === 'string' ? body.drawing : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
+        if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-en-ligne/fin$`),
+      name: 'document.signature_en_ligne_fin',
+      // Finit un document signé réellement par chaque mandant : mandat inscrit, dossier de preuve figé, exemplaire et
+      // dossier remis à chacun ; la source du mandat, si la fiche ne la donne pas [R38, R39, R41] (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = (await readJson(request)) ?? {};
+        if (Object.keys(body).some((k) => k !== 'source' && k !== 'sourceDetail')) return failure(400, 'unexpected_field', 'Seuls source et sourceDetail sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).finish(viewer, id!, {
+          source: typeof body.source === 'string' ? body.source : null,
+          sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
+        if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_document' ? 404 : 409, { ok: false, rule: r.rule, code: r.code });
       },
     },
     // La signature en ligne : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).

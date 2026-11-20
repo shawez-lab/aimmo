@@ -176,6 +176,15 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     expect(await t.modeles.read(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.controles.check(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
     // Une date du calendrier mal formée est refusée, jamais une erreur.
+    // L'exemplaire signé sur papier nomme le représentant : il n'est rendu qu'à qui le voit aussi en entier.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.alex.id, paul]);
+    await t.identify(lea);
+    await t.identify(paul);
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: t.now, scans: { has: async () => true } });
+    expect(await papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef: `mandats/${t.property.id}/00000009-0000-4000-8000-000000000000.pdf`, source: 'referral' })).toMatchObject({ ok: true });
+    expect((await papier.copy(t.agent, d.document.id)).ok).toBe(true);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, paul]);
+    expect(await papier.copy(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
     const marc = await t.owner('Marc', 'Tiers', undefined, false);
     expect(await t.generate(lea, { proxies: [proxyOf(lea, marc, t.property.id, { grantedOn: '2027-13-01' })] })).toEqual({ ok: false, rule: null, code: 'bad_proxies' });
   });
