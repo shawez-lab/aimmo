@@ -1,4 +1,5 @@
 import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES } from '../../core/src/reseau/candidatures.ts';
+import { AGENT_PIECE_FILE_TYPES, AGENT_PIECE_MAX_BYTES, AGENT_PIECE_VALIDITY } from '../../core/src/reseau/dossier-agent.ts';
 
 /**
  * Les écrans de M14 dans l'application (J14), en morceaux posés dans `fichiers.ts` : leurs entrées (sur l'accueil de
@@ -64,6 +65,24 @@ const REFUSALS: Record<string, string> = {
   no_decider: 'Nommez la personne qui décide.',
   no_interview: 'Un « oui » demande un entretien déjà tenu.',
   not_accepted: 'L’intégration s’ouvre seulement après un « oui ».',
+};
+
+/** AU024 · Les refus d'un dépôt de pièce, dits à la personne. */
+const DEPOT_REFUSALS: Record<string, string> = {
+  bad_file_type: 'Ce fichier n’est ni un PDF ni une photo JPEG ou PNG : choisissez-en un autre.',
+  bad_file: 'Ce fichier ne se lit pas comme il le dit : reprenez la photo ou le PDF.',
+  empty_file: 'Ce fichier est vide : choisissez-en un autre.',
+  file_too_large: 'Ce fichier pèse plus de 10 Mo : prenez une photo plus légère ou un PDF plus court.',
+  bad_date: 'La date du document : un jour valide, aujourd’hui ou avant.',
+  bad_valid_until: 'La fin de validité : un jour valide, après la date du document.',
+  valid_until_required: 'Cette pièce a une fin de validité : lisez-la sur le document et indiquez-la.',
+  forbidden_piece: 'Cette pièce ne se range pas dans le dossier d’agent.',
+  upload_unavailable: 'Le dépôt de pièces n’est pas encore en service.',
+  unavailable: 'Le dépôt de pièces n’est pas encore en service.',
+  ref_used: 'Cette pièce vient déjà d’être rangée : rouvrez votre dossier.',
+  busy: 'Une autre pièce se range au même instant : réessayez.',
+  agent_inactive: 'Votre accès n’est plus actif : rien n’est rangé.',
+  not_assigned: 'Ce n’est pas dans vos droits.',
 };
 
 export const INTEGRATION_HOME_HTML = `<section class="bloc" aria-labelledby="titre-integration-accueil">
@@ -153,6 +172,10 @@ globalThis.AIMMO_INTEGRATION = function (t) {
   var TOPICS = ${JSON.stringify(TOPIC_LABELS)};
   var OBLIGATIONS = ${JSON.stringify(OBLIGATION_LABELS)};
   var INTEGRATION_REFUSALS = ${JSON.stringify(REFUSALS)};
+  var VALIDITY = ${JSON.stringify(AGENT_PIECE_VALIDITY)};
+  var TYPES = ${JSON.stringify(AGENT_PIECE_FILE_TYPES)};
+  var MAX_BYTES = ${AGENT_PIECE_MAX_BYTES};
+  var DEPOT = ${JSON.stringify(DEPOT_REFUSALS)};
   var VIDEO = /^[A-Za-z0-9_-]{11}$/;
   var TITLES = { integration: 'Mon intégration', academie: 'Académie', candidatures: 'Candidatures' };
   var mode = 'integration';
@@ -226,10 +249,67 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       if (l.state === 'valide' && l.validUntil) s += ' jusqu’au ' + day(l.validUntil);
       if (l.state === 'echue' && l.validUntil) s += ' le ' + day(l.validUntil);
       li.appendChild(el('p', s, l.state === 'valide' ? 'piece-valide' : 'piece-manque'));
+      if (l.state !== 'valide' && VALIDITY[l.kind] && typeof f.agentId === 'string' && ID.test(f.agentId)) li.appendChild(depositBox(f.agentId, l));
       ul.appendChild(li);
     });
     box.appendChild(ul);
     if (!f.complete) box.appendChild(el('p', 'Tant que le dossier n’est pas complet et valide, l’accès aux clients reste fermé. L’académie et le premier parcours restent ouverts.', 'doux'));
+    return box;
+  }
+  /* AU024 · Déposer une pièce là où elle manque : choisir le fichier ou prendre la photo, le voir décrit avant l'envoi,
+     confirmer, puis lire l'accusé de réception du serveur. Rien n'est gardé sur l'appareil [R82]. */
+  function weight(n) { return n < 1048576 ? Math.max(1, Math.round(n / 1024)) + ' Ko' : (n / 1048576).toFixed(1).replace('.', ',') + ' Mo'; }
+  var depositing = false;
+  function depositBox(agentId, l) {
+    var box = el('details', null, 'depot');
+    box.appendChild(el('summary', l.state === 'projet' ? 'Déposer la version signée' : l.state === 'echue' ? 'Déposer la nouvelle version' : 'Déposer cette pièce'));
+    var id = 'depot-' + l.kind;
+    var file = field(box, id + '-fichier', 'Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus');
+    file.setAttribute('type', 'file');
+    file.setAttribute('accept', 'application/pdf,image/jpeg,image/png');
+    var issued = field(box, id + '-date', 'Date du document');
+    issued.setAttribute('type', 'date');
+    var rule = VALIDITY[l.kind], until = null;
+    if (rule === 'required' || rule === 'optional') {
+      until = field(box, id + '-fin', rule === 'required' ? 'Fin de validité, lue sur le document' : 'Fin de validité, si le document en porte une');
+      until.setAttribute('type', 'date');
+    }
+    if (rule === 'computed') box.appendChild(el('p', 'La fin de validité se calcule seule : 6 mois après la date du document.', 'doux'));
+    var preview = el('p', null, 'doux');
+    var out = el('p', null, 'etat');
+    out.setAttribute('role', 'status');
+    var chosen = null;
+    file.addEventListener('change', function () {
+      chosen = null;
+      out.textContent = '';
+      var x = file.files && file.files[0];
+      if (!x) { preview.textContent = ''; return; }
+      if (!Object.prototype.hasOwnProperty.call(TYPES, x.type)) { preview.textContent = DEPOT.bad_file_type; return; }
+      if (!(x.size > 0)) { preview.textContent = DEPOT.empty_file; return; }
+      if (x.size > MAX_BYTES) { preview.textContent = 'Ce fichier pèse ' + weight(x.size) + ' : 10 Mo au plus.'; return; }
+      chosen = x;
+      preview.textContent = 'Avant l’envoi : « ' + String(x.name || 'sans nom') + ' », ' + (x.type === 'application/pdf' ? 'PDF' : 'photo') + ', ' + weight(x.size) + '. Vérifiez que c’est bien : ' + l.label + '.';
+    });
+    box.appendChild(preview);
+    box.appendChild(button('Confirmer l’envoi', function () {
+      if (depositing) return;
+      if (!chosen) { out.textContent = 'Choisissez d’abord le document, ou prenez-le en photo.'; return; }
+      if (!issued.value) { out.textContent = 'Indiquez la date du document.'; return; }
+      if (rule === 'required' && !until.value) { out.textContent = DEPOT.valid_until_required; return; }
+      var q = 'kind=' + encodeURIComponent(l.kind) + '&issuedOn=' + encodeURIComponent(issued.value) + (until && until.value ? '&validUntil=' + encodeURIComponent(until.value) : '');
+      depositing = true;
+      var mine = t.session();
+      out.textContent = 'Envoi…';
+      send('/v1/reseau/agents/' + encodeURIComponent(agentId) + '/pieces/fichier?' + q, 'POST', chosen, { 'content-type': chosen.type }).then(function (x) {
+        depositing = false;
+        if (x.gone || mine !== t.session()) return;
+        if (x.offline || !x.body || x.status >= 500 && x.status !== 503) { out.textContent = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez votre dossier avant de recommencer.'; return; }
+        var r = x.ok && x.body.data && x.body.data.receipt;
+        if (!r) { out.textContent = DEPOT[x.body.code] || refusal(x, 'La pièce n’est pas rangée.'); return; }
+        open('integration', 'Reçue le ' + when(r.receivedAt) + ' : ' + l.label + ', version ' + Number(r.version) + ', ' + weight(Number(r.bytes)) + '. Elle compte dès maintenant dans votre dossier.');
+      }, function () { depositing = false; out.textContent = 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez votre dossier avant de recommencer.'; });
+    }));
+    box.appendChild(out);
     return box;
   }
   /* Le référent en cours : un prénom et une date. */
