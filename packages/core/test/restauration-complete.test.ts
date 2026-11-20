@@ -84,10 +84,13 @@ async function world() {
   await call('appel-noe', noe.id, 'boite/appels/noe-seul.ogg');
   await call('appel-noe-2', noe.id, 'boite/appels/partage.ogg');
   await call('appel-lea', lea.id, 'boite/appels/partage.ogg');
+  // Une référence libre : son début dit PIECES, le fichier vit dans le stockage des commerces.
+  await call('appel-noe-3', noe.id, 'dossiers/noe-commerce.pdf');
   const live = Object.fromEntries(OBJECT_STORAGES.map((s) => [s, memoryBucket()])) as Record<ObjectStorage, ReturnType<typeof memoryBucket>>;
   live.PIECES.objects.set('boite/appels/noe-seul.ogg', { bytes: bytes('OggS Noé inventé'), contentType: 'audio/ogg' });
   live.PIECES.objects.set('boite/appels/partage.ogg', { bytes: bytes('OggS partagé inventé'), contentType: 'audio/ogg' });
   live.MEDIA.objects.set('biens/b1/salon.jpg', { bytes: bytes('JPEG inventé') });
+  live.COMMERCES.objects.set('dossiers/noe-commerce.pdf', { bytes: bytes('%PDF commerce de Noé inventé') });
   const ledger = memoryLedger();
   const key = await copyKeyFromSecret(SECRET);
   const receipt = await new CopieBase(db, new SqlJournalStore(db), ledger.store, key, { now }).take();
@@ -95,7 +98,7 @@ async function world() {
   // L'effacement réel, après la copie : noté d'abord, puis fait en production (AU020).
   const entry = { requestId: 'demande-noe', networkId: network.id, personId: noe.id, erasedAt: ERASED.toISOString(), members: [noe.id] };
   await recordErasure(ledger.store, key, entry);
-  const done = await eraseForReal(db, [noe.id], { objects: { remove: async (s, k) => live[s].bucket.remove(k) }, target: { requestId: entry.requestId, networkId: network.id, at: entry.erasedAt } });
+  const done = await eraseForReal(db, [noe.id], { objects: { remove: async (_s, k) => { for (const s of OBJECT_STORAGES) if (s !== 'COFFRE') await live[s].bucket.remove(k); } }, target: { requestId: entry.requestId, networkId: network.id, at: entry.erasedAt } });
   expect(done.outcome).toMatchObject({ remaining: [], objectsRemaining: 0 });
   expect(live.PIECES.objects.has('boite/appels/noe-seul.ogg')).toBe(false);
   return { db, network, noe, lea, live, ledger, key, receipt, entry };
@@ -120,8 +123,9 @@ describeWithSqlite('AU021 · la restauration complète rejoue les effacements av
     const target = blank();
     const exercise = await restoreExercise({ target, targets, store: w.ledger.store, key: w.key, copyId: w.receipt.copyId, references: fileReferences });
     expect(exercise.ok).toBe(true);
-    expect(await noeLeft(target, w.noe.id)).toEqual({ calls: ['appel-noe', 'appel-noe-2'], name: { first_name: 'Noé', last_name: 'Effacé' } });
+    expect(await noeLeft(target, w.noe.id)).toEqual({ calls: ['appel-noe', 'appel-noe-2', 'appel-noe-3'], name: { first_name: 'Noé', last_name: 'Effacé' } });
     expect(made.PIECES.objects.has('boite/appels/noe-seul.ogg')).toBe(true);
+    expect(made.COMMERCES.objects.has('dossiers/noe-commerce.pdf')).toBe(true);
     // La restauration de la seule base, rejouée par le véritable effaceur sans les stockages : jamais dite finie.
     const baseOnly = await restoreWithErasures(blank(), w.ledger.store, w.key, w.receipt.copyId, new SqlPersonEraser({ objects: null }), { now: () => RESTORED });
     expect(baseOnly).toEqual({ ok: false, code: 'erasures_not_replayed', cause: 'erase_failed', replayed: 0 });
@@ -132,12 +136,14 @@ describeWithSqlite('AU021 · la restauration complète rejoue les effacements av
     const { made, targets } = fresh();
     const target = blank();
     const out = await restoreEverything({ target, targets, store: w.ledger.store, key: w.key, copyId: w.receipt.copyId, now: () => RESTORED });
-    expect(out).toMatchObject({ ok: true, takenAt: TAKEN.toISOString(), erasuresReplayed: 1, objects: 3 });
+    expect(out).toMatchObject({ ok: true, takenAt: TAKEN.toISOString(), erasuresReplayed: 1, objects: 4 });
     if (!out.ok) throw new Error(out.part);
     expect(out.erasedRows).toBeGreaterThan(0);
     // Noé : ses appels partis, son nom vidé, son fichier retiré du stockage restauré.
     expect(await noeLeft(target, w.noe.id)).toEqual({ calls: [], name: { first_name: null, last_name: null } });
     expect(made.PIECES.objects.has('boite/appels/noe-seul.ogg')).toBe(false);
+    // Même rangé ailleurs que son début le dit, son dossier de commerce ne revient pas.
+    expect(made.COMMERCES.objects.size).toBe(0);
     // Le reste comme en production : Léa, son appel, le fichier qu'elle cite encore, la photo du bien.
     expect(await target.all('SELECT id FROM calls ORDER BY id')).toEqual([{ id: 'appel-lea' }]);
     expect(await target.first('SELECT first_name FROM persons WHERE id = ?', [w.lea.id])).toEqual({ first_name: 'Léa' });
@@ -184,7 +190,7 @@ describeWithSqlite('AU021 · la restauration complète rejoue les effacements av
     const out = await restoreEverything({ target, targets, store: w.ledger.store, key: w.key, copyId: w.receipt.copyId, now: () => RESTORED });
     expect(out).toEqual({ ok: false, part: 'effacements', code: 'ledger_unreadable', replayed: 0 });
     // La base et les stockages restent à jeter : rien n'y a été rejoué, Noé y est encore.
-    expect((await noeLeft(target, w.noe.id)).calls).toHaveLength(2);
+    expect((await noeLeft(target, w.noe.id)).calls).toHaveLength(3);
     expect(made.PIECES.objects.has('boite/appels/noe-seul.ogg')).toBe(true);
   });
 

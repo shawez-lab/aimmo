@@ -11,7 +11,8 @@
  * - la base et les fichiers viennent de la même copie, dans une base neuve et des stockages neufs, chacun relu contre son
  *   empreinte (`restoreExercise`) ; rien n'est rejoué tant que la copie n'est pas prouvée identique ;
  * - le rejeu passe par le véritable effaceur, avec les stockages restaurés : une ligne effacée emporte ses fichiers que
- *   plus rien ne cite, jamais un fichier qu'une autre personne cite encore, jamais le coffre gardé 5 ans ;
+ *   plus rien ne cite, jamais un fichier qu'une autre personne cite encore, jamais le coffre gardé 5 ans ; un fichier est
+ *   retiré de chaque stockage restauré hors du coffre, car il revient là où il vivait, pas forcément là où sa clé le dit ;
  * - un effaceur qui ne sait pas retirer un fichier des stockages restaurés ne se donne pas : sans `remove` sur chacun des
  *   quatre stockages, rien n'est restauré ;
  * - une entrée illisible, une ligne qui reste, un fichier qui reste : la restauration n'est pas dite finie, et la base et
@@ -73,7 +74,14 @@ export async function restoreEverything(input: CompleteRestoreInput): Promise<Co
   });
   if (!exercise.ok && exercise.part === 'base') return { ok: false, part: 'base', code: exercise.base.code };
   if (!exercise.ok) return { ok: false, part: 'objets', code: exercise.objects.code };
-  const objects: ObjectEraser = { remove: (storage, key) => targets[storage].remove(key) };
+  // Un fichier se restaure dans le stockage où il vivait, pas forcément celui que le début de sa clé désigne (la référence
+  // libre d'un dossier de commerce) : il est retiré de chaque stockage restauré, sauf le coffre, gardé 5 ans.
+  const objects: ObjectEraser = {
+    remove: async (storage, key) => {
+      if (storage === 'COFFRE') return;
+      for (const name of OBJECT_STORAGES) if (name !== 'COFFRE') await targets[name].remove(key);
+    },
+  };
   const eraser = input.eraserFor ? input.eraserFor(objects) : new SqlPersonEraser({ objects });
   const replay = await replayErasures(input.target, input.store, input.key, eraser, { copyTakenAt: exercise.base.takenAt, ...(input.now ? { now: input.now } : {}) });
   if (!replay.ok) return { ok: false, part: 'effacements', code: replay.code, replayed: replay.replayed };
