@@ -631,7 +631,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU057 · Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A057 (majeur), endroit : C/documents/avenants.ts ; C/documents/modeles.ts.
 - Constat de l'audit : Mon avenant ne sait modifier que prix et durée, pas les honoraires ni leur charge ni le type de mandat.

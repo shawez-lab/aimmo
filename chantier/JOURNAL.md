@@ -1533,3 +1533,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 20:45 · voie 3 · AU057 (#708), AU059 (#709), AU111 (#710) : remarques Codex corrigées (contrôle au jour de signature, échéances au jour présent ; exemplaire et fin de signature sous la procuration ; refus de pièce au journal), main fusionné, relecture demandée.
 - 2026-11-20 20:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, active : push sur chantier/AU081 à 20:43)
 - 2026-11-20 21:22 · voie 3 · AU111 (#710) fusionnée : accès de sortie d'un agent parti.
+- 2026-11-20 21:48 · voie 3 · AU057 (#708) fusionnée : l'avenant change honoraires, charge, type du mandat, à une date d'effet ; Codex : 2 P2 restants (écran des conditions au jour présent, rappel de fin d'exclusivité selon le type modifié) → AU057b.
