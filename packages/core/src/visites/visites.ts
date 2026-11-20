@@ -3,7 +3,8 @@
  * projet d'achat d'un acquéreur. Le bien doit pouvoir être diffusé [R42]. Le bon de visite est rempli depuis la base
  * selon un modèle daté et versionné, gardé avec lui ; un champ absent le laisse « incomplet », jamais un texte inventé
  * [R40]. Le bon peut porter l'adresse exacte du bien (AU076), jamais la confirmation au visiteur ni le journal [R19]. Une visite annulée garde son bon
- * [R17]. Le rappel de la veille est celui de V04, pour tout rendez-vous.
+ * [R17]. Le rappel de la veille est celui de V04, pour tout rendez-vous. Plusieurs acquéreurs peuvent visiter ensemble
+ * (AU077) : chacun a son rendez-vous, sa visite, son bon et son compte rendu, l'agent n'est tenu qu'une fois [R32].
  *
  * Décidé, lecture prudente : la bibliothèque de D02 n'admet que les types de mandat (contrainte de sa table, qu'il
  * faudrait reconstruire) ; le bon de visite a ses propres modèles, aux mêmes règles : versions figées, créées par la
@@ -243,11 +244,18 @@ export class Visites {
        * porte alors la source `espace`, et la visite cet auteur ; les contrôles restent ceux du lecteur [R165].
        */
       byClient?: string;
+      /**
+       * AU077 : le rendez-vous d'une visite déjà fixée, même bien, même agent, même heure, que cet acquéreur rejoint :
+       * une visite groupée. Il y a son propre rendez-vous, son bon et son compte rendu ; l'agent n'est pas compté deux
+       * fois [R32]. L'agent ou la direction seulement, jamais le client depuis son espace.
+       */
+      joinVisit?: string;
     },
   ): Promise<{ ok: true; visit: ScheduledVisit } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role');
     // La durée propre d'une visite est choisie par l'agent seul (AU056) ; la direction fixe une visite à la durée du type.
     if (request.durationMinutes !== undefined && (viewer.role !== 'agent' || request.byClient)) return { ok: false, rule: null, code: 'bad_duration' };
+    if (request.joinVisit !== undefined && (request.byClient || typeof request.joinVisit !== 'string')) return { ok: false, rule: null, code: 'group_agent_only' };
     const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
     if (!project) return this.refuse(viewer, 'visit', 'unknown', `project:${request.projectId}`);
     const fiche = await this.acces.readFiche(viewer, project.person_id);
@@ -277,6 +285,7 @@ export class Visites {
       source: request.byClient ? 'espace' : 'agent',
       channel: request.channel ?? null,
       ...(request.durationMinutes !== undefined ? { durationMinutes: request.durationMinutes } : {}),
+      ...(request.joinVisit !== undefined ? { joinGroupOf: request.joinVisit } : {}),
     });
     if (!booking.ok) return { ok: false, rule: booking.rule, code: booking.code satisfies BookingRefusal };
     const appointment = booking.appointment;
