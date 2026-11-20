@@ -1512,3 +1512,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 14:31 · VOIE 2 : AU076, ef3091ff (main), relancé non
 - 2026-11-20 14:31 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
 - 2026-11-20 15:16 · AU026 · quiz de chaque parcours et de chaque module passé depuis l'académie, réponses justes ou à revoir sans note, attestation à l'écran avec son empreinte, enregistrable, « Mes attestations » ; Codex rien à signaler ; fusionnée (#722, 69b04884) · prochaine : AU027
+- 2026-11-20 15:18 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU027
