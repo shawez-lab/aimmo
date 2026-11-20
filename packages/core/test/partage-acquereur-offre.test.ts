@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { FicheUnique } from '../src/fiche/fusion.ts';
 import { setupOffre } from './offres-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -97,5 +98,32 @@ describeWithSqlite('AU081 · partage de l’acquéreur d’un collègue pour un 
     if (!s2.ok) throw new Error(s2.code);
     expect(await t.offres.revokeShare(t.direction, s2.value.id)).toMatchObject({ ok: true });
     expect(await t.offres.revokeShare(t.direction, 'inconnu')).toEqual({ ok: false, rule: null, code: 'unknown_share' });
+  });
+
+  it('[R16] un partage donné sous une fiche réunie depuis vaut pour toute la fiche, à l’inscription comme au contrôle', async () => {
+    const t = await setup();
+    // Sam partage la fiche A ; une seconde fiche B du même acquéreur, suivie par Sam, est réunie ensuite (B gardée).
+    await t.offres.shareBuyer(t.sam, t.propertyId, t.colleagueBuyer);
+    const twin = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.userId, firstName: 'Colin', lastName: 'Fictif' });
+    await new FicheUnique(t.db, t.store, { now: t.now }).merge({ survivorId: twin.id, mergedId: t.colleagueBuyer, reason: 'même personne' });
+    const viaB = await t.offres.record(t.agent, t.propertyId, t.input({ buyerPersonId: twin.id }));
+    expect(viaB).toMatchObject({ ok: true, value: { buyerPersonId: twin.id } });
+    const viaA = await t.offres.record(t.agent, t.propertyId, t.input({ buyerPersonId: t.colleagueBuyer, amountEur: 206000 }));
+    expect(viaA).toMatchObject({ ok: true, value: { buyerPersonId: twin.id } });
+    // Le contrôle relit l'acquéreur gardé (B) et reconnaît le même partage.
+    expect(await t.offres.buyerFor(t.agent, t.propertyId, twin.id)).toMatchObject({ ok: true });
+  });
+
+  it('[R16] un partage devenu caduc ne cache pas le partage valable d’un autre collègue', async () => {
+    const t = await setup();
+    const third = await t.store.createAgent({ networkId: t.network.id, firstName: 'Tom', lastName: 'Agent' });
+    const tom = { role: 'agent', userId: third.id, networkId: t.network.id } as never;
+    await t.offres.shareBuyer(t.sam, t.propertyId, t.colleagueBuyer);
+    // L'acquéreur passe à Tom, qui partage à son tour, puis revient à Sam.
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [third.id, t.colleagueBuyer]);
+    t.setClock(new Date('2027-03-01T10:05:00.000Z'));
+    await t.offres.shareBuyer(tom, t.propertyId, t.colleagueBuyer);
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.userId, t.colleagueBuyer]);
+    expect(await t.offres.record(t.agent, t.propertyId, t.input({ buyerPersonId: t.colleagueBuyer }))).toMatchObject({ ok: true });
   });
 });

@@ -19,7 +19,8 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { FicheComplete } from '../fiche/fusion.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique, type FicheComplete } from '../fiche/fusion.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { LIVE_MANDATES } from '../espaces/lecture.ts';
@@ -277,6 +278,7 @@ export class RegistreOffres {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly diffusion: Diffusion;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -287,6 +289,7 @@ export class RegistreOffres {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
+    this.unique = new FicheUnique(db, new FicheClient(db), { now: this.now });
   }
 
   private actor(viewer: Viewer): string {
@@ -327,20 +330,27 @@ export class RegistreOffres {
     // Un acquéreur que l'agent suit lui-même ne passe jamais par un partage.
     const own = viewer.role === 'agent' ? await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [personId]) : null;
     if (viewer.role === 'agent' && own !== null && own.agent_id !== viewer.userId) {
-      const share = await this.db.first<ShareRow>(
+      // Un partage donné sous une fiche réunie depuis vaut pour toute la fiche : il est cherché sur chacune de ses fiches.
+      const ids = await this.unique.membersOf(personId);
+      const shares = await this.db.all<ShareRow>(
         `SELECT s.* FROM offer_buyer_shares s JOIN properties p ON p.id = s.property_id
-         WHERE s.property_id = ? AND s.buyer_person_id = ? AND s.revoked_at IS NULL AND s.network_id = ? AND p.agent_id = ? AND s.granted_by <> ?
-         ORDER BY s.granted_at DESC LIMIT 1`,
-        [propertyId, personId, viewer.networkId, viewer.userId, viewer.userId],
+         WHERE s.property_id = ? AND s.buyer_person_id IN (${ids.map(() => '?').join(', ')}) AND s.revoked_at IS NULL AND s.network_id = ? AND p.agent_id = ? AND s.granted_by <> ?
+         ORDER BY s.granted_at DESC, s.id`,
+        [propertyId, ...ids, viewer.networkId, viewer.userId, viewer.userId],
       );
-      if (share) {
+      // Le premier partage dont le collègue suit encore l'acquéreur sert ; un partage devenu caduc n'en cache pas un valable.
+      const tried = new Set<string>();
+      for (const share of shares) {
+        if (tried.has(share.granted_by)) continue;
+        tried.add(share.granted_by);
         const colleague = { role: 'agent', userId: share.granted_by, networkId: viewer.networkId } as Viewer;
         const read = await this.acces.readFiche(colleague, personId);
-        // Le collègue ne suit plus l'acquéreur, ou ne peut plus l'ouvrir : le partage ne vaut plus.
-        if (!read.ok || read.view !== 'full') return this.refuse(viewer, `person:${personId}`, 'share_lapsed');
+        if (!read.ok || read.view !== 'full') continue;
         await appendEvent(this.journal, { type: 'offre.partage_utilise', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', share: share.id } }, this.now);
         return { ok: true, value: read.value };
       }
+      // Aucun collègue qui a partagé ne suit plus l'acquéreur, ou ne peut plus l'ouvrir : le partage ne vaut plus.
+      if (shares.length > 0) return this.refuse(viewer, `person:${personId}`, 'share_lapsed');
     }
     const read = await this.acces.readFiche(viewer, personId);
     if (!read.ok) return read.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (read as Refusal);
@@ -364,7 +374,7 @@ export class RegistreOffres {
     const buyer = await this.acces.readFiche(viewer, buyerPersonId);
     if (!buyer.ok) return buyer.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (buyer as Refusal);
     if (buyer.view !== 'full') return this.refuse(viewer, `person:${buyerPersonId}`, 'not_assigned');
-    const ids = [...new Set([buyerPersonId, buyer.value.person.id])];
+    const ids = buyer.value.members.map((m) => m.id);
     const live = await this.db.first<ShareRow>(
       `SELECT * FROM offer_buyer_shares WHERE property_id = ? AND granted_by = ? AND revoked_at IS NULL AND buyer_person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY granted_at LIMIT 1`,
       [propertyId, viewer.userId, ...ids],
