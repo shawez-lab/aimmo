@@ -407,7 +407,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#734, `1d00f18e`), migration `4043` (ajout seul). Décidé : l'adresse de l'export des biens (`Adresse`, `Rue`, `Voie`, `Numéro de voie`), validée par `readAddress`, est gardée une fois dans `agent_import_property_addresses`, jamais dans `properties` ; lue dans le dossier repris (`dossierOf`, `address`) par l'agent du bien ou la direction, au journal sans l'adresse ; bilan `addresses` (`kept`, `known`, `notTakenLines`) à l'aperçu et à l'import ; test de structure : seuls l'import et les cartes de conformité nomment la table. Codex : 1 P2 corrigé (aperçu), puis rien. Pas d'écran ; la désignation du mandat ne reprend pas encore cette adresse (parcelles à saisir).
 
 ### AU032 · La captation par mail dépend encore d’un routage et de variables marqués « plus tard »
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A032 (majeur), endroit : chantier/HUMAIN.md, H16 ; A/courrier.ts.
 - Constat de l'audit : La captation par mail dépend encore d’un routage et de variables marqués « plus tard » : aucune réception réelle n’est démontrée dans le dossier de livraison.
