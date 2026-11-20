@@ -2,7 +2,7 @@
  * Visites et bon de visite (M08, T04). Une visite est un rendez-vous de V02 (`kind = 'visite'`) relié à un bien et au
  * projet d'achat d'un acquéreur. Le bien doit pouvoir être diffusé [R42]. Le bon de visite est rempli depuis la base
  * selon un modèle daté et versionné, gardé avec lui ; un champ absent le laisse « incomplet », jamais un texte inventé
- * [R40]. Aucune adresse exacte n'y figure, ni dans la confirmation au visiteur [R19]. Une visite annulée garde son bon
+ * [R40]. Le bon peut porter l'adresse exacte du bien (AU076), jamais la confirmation au visiteur ni le journal [R19]. Une visite annulée garde son bon
  * [R17]. Le rappel de la veille est celui de V04, pour tout rendez-vous.
  *
  * Décidé, lecture prudente : la bibliothèque de D02 n'admet que les types de mandat (contrainte de sa table, qu'il
@@ -31,12 +31,17 @@ export const ONLINE_SLIP_SIGNER = 'visiteur:en_ligne';
 
 const TIME_ZONE = 'Europe/Paris';
 
-/** Les champs d'un bon de visite : rien qui situe le bien plus précisément que sa commune [R19]. */
+/**
+ * Les champs d'un bon de visite. Le bon est un document remis au seul visiteur, signé par lui : il peut désigner le bien
+ * par son adresse exacte, celle de sa désignation (AU002), pour qu'il n'y ait aucun doute sur le bien visité (AU076). Ce
+ * n'est pas un message : l'adresse ne va jamais dans la confirmation, le journal ni une annonce [R19].
+ */
 export const VISIT_SLIP_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
   'visiteur.nom': { source: 'base', label: 'nom du visiteur' },
   'bien.reference': { source: 'base', label: 'référence du bien' },
   'bien.type': { source: 'base', label: 'type de bien' },
   'bien.commune': { source: 'base', label: 'commune du bien' },
+  'bien.adresse': { source: 'base', label: 'adresse du bien' },
   'bien.surface': { source: 'base', label: 'surface du bien' },
   'bien.pieces': { source: 'base', label: 'nombre de pièces' },
   'bien.prix': { source: 'base', label: 'prix du bien' },
@@ -532,11 +537,20 @@ export class Visites {
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [agentId]);
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [networkId]);
     const start = localTime(new Date(appointment.start_at), TIME_ZONE);
+    // L'adresse exacte, seulement si le modèle la demande : la désignation la plus récente du bien, dans le réseau (AU076).
+    // Sans désignation, le champ manque et le bon reste incomplet, jamais une adresse devinée [R40].
+    const designation = (JSON.parse(template.fields) as string[]).includes('bien.adresse')
+      ? await this.db.first<{ street: string; postal_code: string; city: string }>(
+          'SELECT street, postal_code, city FROM property_designations WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1',
+          [networkId, property.id],
+        )
+      : null;
     const values: Record<string, string | null> = {
       'visiteur.nom': first && last ? `${first} ${last}` : null,
       'bien.reference': text(property.reference),
       'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
       'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
+      'bien.adresse': designation ? text(`${designation.street}, ${designation.postal_code} ${designation.city}`) : null,
       'bien.surface': property.surface_m2 === null ? null : `${fmt(property.surface_m2)} m²`,
       'bien.pieces': property.rooms === null ? null : String(property.rooms),
       'bien.prix': property.price_eur === null ? null : `${fmt(property.price_eur)} €`,
