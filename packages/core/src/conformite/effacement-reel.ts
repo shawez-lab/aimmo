@@ -138,6 +138,12 @@ function whereRow(row: Row): { sql: string; params: SqlValue[] } {
   return { sql: parts.join(' AND '), params };
 }
 
+/** Le seul effacement de ligne du code (R17) : la ligne lue, désignée colonne par colonne. */
+async function deleteExact(db: SqlDatabase, p: { table: string; row: Row }): Promise<{ changes: number }> {
+  const where = whereRow(p.row);
+  return db.run(`DELETE FROM "${p.table}" WHERE ${where.sql}`, where.params);
+}
+
 const pseudonymized = (table: string, row: Row): boolean => (PSEUDONYMIZE[table] ?? []).length > 0 && PSEUDONYMIZE[table]!.every((c) => row[c] === null || row[c] === undefined);
 
 /**
@@ -204,9 +210,8 @@ export async function eraseForReal(
     progress = false;
     const next: typeof pending = [];
     for (const p of pending) {
-      const where = whereRow(p.row);
       try {
-        const { changes } = await db.run(`DELETE FROM "${p.table}" WHERE ${where.sql}`, where.params);
+        const { changes } = await deleteExact(db, p);
         if (changes === 0) {
           // La ligne lue n'est plus là telle quelle (changée entre-temps) : elle n'est pas dite partie [R17].
           next.push(p);
@@ -249,8 +254,8 @@ export async function eraseForReal(
   // Une ligne qui ne passe pas est dite restante [R04, R17].
   const hashed = new Map<string, number>();
   if (personIds.length > 0) {
-    const ids = await db.all<{ id: string; network_id: string; person_id: string; kind: IdentifierKind; value: string }>(
-      `SELECT id, network_id, person_id, kind, value FROM person_identifiers WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY id`,
+    const ids = await db.all<{ id: string; network_id: string; person_id: string; kind: IdentifierKind; value: string } & Row>(
+      `SELECT * FROM person_identifiers WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY id`,
       [...personIds],
     );
     for (const id of ids) {
@@ -259,7 +264,7 @@ export async function eraseForReal(
       try {
         const twin = await db.first('SELECT 1 AS x FROM person_identifiers WHERE person_id = ? AND kind = ? AND value = ?', [id.person_id, id.kind, print]);
         const { changes } = twin
-          ? await db.run('DELETE FROM person_identifiers WHERE id = ? AND value = ?', [id.id, id.value])
+          ? await deleteExact(db, { table: 'person_identifiers', row: id })
           : await db.run('UPDATE person_identifiers SET value = ? WHERE id = ? AND value = ?', [print, id.id, id.value]);
         bump(changes > 0 ? hashed : remaining, 'person_identifiers');
       } catch {
@@ -268,8 +273,8 @@ export async function eraseForReal(
     }
     // Les clés de contact aussi (identifiant chez Instagram, Messenger…) : seule une clé retrouve une personne qui écrit
     // en message privé sans adresse ni numéro [R04].
-    const keys = await db.all<{ network_id: string; key: string; person_id: string }>(
-      `SELECT network_id, key, person_id FROM contact_keys WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY key`,
+    const keys = await db.all<{ network_id: string; key: string; person_id: string } & Row>(
+      `SELECT * FROM contact_keys WHERE person_id IN (${personIds.map(() => '?').join(', ')}) ORDER BY key`,
       [...personIds],
     );
     for (const k of keys) {
@@ -278,7 +283,7 @@ export async function eraseForReal(
       try {
         const twin = await db.first('SELECT 1 AS x FROM contact_keys WHERE network_id = ? AND key = ?', [k.network_id, print]);
         const { changes } = twin
-          ? await db.run('DELETE FROM contact_keys WHERE network_id = ? AND key = ? AND person_id = ?', [k.network_id, k.key, k.person_id])
+          ? await deleteExact(db, { table: 'contact_keys', row: k })
           : await db.run('UPDATE contact_keys SET key = ? WHERE network_id = ? AND key = ? AND person_id = ?', [print, k.network_id, k.key, k.person_id]);
         bump(changes > 0 ? hashed : remaining, 'contact_keys');
       } catch {

@@ -133,12 +133,12 @@ export class FicheUnique {
   async isErased(personId: string): Promise<boolean> {
     const members = await this.membersOf(personId);
     const q = placeholders(members.length);
-    const row = await this.db.first(
-      `SELECT 1 AS x WHERE EXISTS (SELECT 1 FROM person_identifiers WHERE person_id IN (${q}) AND substr(value, 1, ?) = ?)
-         OR EXISTS (SELECT 1 FROM contact_keys WHERE person_id IN (${q}) AND substr(key, 1, ?) = ?)`,
-      [...members, HASHED_PREFIX.length, HASHED_PREFIX, ...members, HASHED_PREFIX.length, HASHED_PREFIX],
-    );
-    return row !== null;
+    const hashedId = await this.db.first(`SELECT 1 AS x FROM person_identifiers WHERE person_id IN (${q}) AND substr(value, 1, ?) = ? LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    if (hashedId !== null) return true;
+    // Les clés de contact (migration 0007) : une fiche qui n'a écrit qu'en message privé n'est reconnue que par elles.
+    if (!(await this.db.first("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'contact_keys'"))) return false;
+    const hashedKey = await this.db.first(`SELECT 1 AS x FROM contact_keys WHERE person_id IN (${q}) AND substr(key, 1, ?) = ? LIMIT 1`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    return hashedKey !== null;
   }
 
   /** Les fiches du réseau qui portent cet identifiant, en clair ou sous empreinte, ramenées à leur fiche gardée. */
