@@ -677,7 +677,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU060 · Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A060 (majeur), endroit : C/documents/modeles.ts ; C/mandat-questionnaire/questionnaire.ts.
 - Constat de l'audit : Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs : ma vente avec usufruitier repart sur papier séparé.
