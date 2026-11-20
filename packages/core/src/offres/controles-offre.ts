@@ -110,13 +110,10 @@ export class ControlesOffre {
     const list = await this.registre.list(viewer, row.property_id);
     if (!list.ok) return list as Refusal | { ok: false; rule: null; code: 'unknown_property' };
     const offer = list.value.find((o) => o.id === offerId)!;
-    // L'état d'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, lecture écrite au journal [R16].
-    const buyer = await this.acces.readFiche(viewer, offer.buyerPersonId);
-    if (!buyer.ok) return buyer as Refusal;
-    if (buyer.view !== 'full') {
-      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `person:${offer.buyerPersonId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'offer_check', code: 'not_assigned' } }, this.now);
-      return { ok: false, rule: 'R16', code: 'not_assigned' };
-    }
+    // L'état d'identité est une donnée de l'acquéreur : il faut voir sa fiche en entier, ou que le collègue qui la suit
+    // l'ait partagée pour ce bien (AU081) ; la lecture est écrite au journal [R16]. Seul l'état est rendu, jamais la pièce.
+    const buyer = await this.registre.buyerFor(viewer, row.property_id, offer.buyerPersonId);
+    if (!buyer.ok) return buyer.rule === 'R16' ? buyer : { ok: false, rule: 'R16', code: 'unknown' };
     // L'état de l'identité seulement : la date de la dernière vérification, jamais la pièce [R15].
     const now = this.now();
     const lines = offerCheckLines(offer, await this.identitySeenAt(viewer.networkId, offer.buyerPersonId, now), now);
