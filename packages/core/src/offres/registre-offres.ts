@@ -324,7 +324,9 @@ export class RegistreOffres {
    * l'agent du bien. Rien de la fiche n'est rendu à l'agent du bien : l'offre ne garde que l'identifiant.
    */
   async buyerFor(viewer: Viewer, propertyId: string, personId: string): Promise<BuyerRead> {
-    if (viewer.role === 'agent') {
+    // Un acquéreur que l'agent suit lui-même ne passe jamais par un partage.
+    const own = viewer.role === 'agent' ? await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [personId]) : null;
+    if (viewer.role === 'agent' && own !== null && own.agent_id !== viewer.userId) {
       const share = await this.db.first<ShareRow>(
         `SELECT s.* FROM offer_buyer_shares s JOIN properties p ON p.id = s.property_id
          WHERE s.property_id = ? AND s.buyer_person_id = ? AND s.revoked_at IS NULL AND s.network_id = ? AND p.agent_id = ? AND s.granted_by <> ?
@@ -385,7 +387,7 @@ export class RegistreOffres {
     const row = await this.db.first<ShareRow>('SELECT * FROM offer_buyer_shares WHERE id = ?', [shareId]);
     if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_share' };
     const mine = viewer.role === 'agent' && viewer.userId === row.granted_by;
-    if (!mine && viewer.role !== 'direction') return this.refuse(viewer, `offer_share:${shareId}`, 'not_assigned');
+    if (!mine && viewer.role !== 'direction') return this.refuse(viewer, `property:${row.property_id}`, 'not_assigned');
     if (row.revoked_at !== null) return { ok: true, value: toShare(row) };
     const at = this.now().toISOString();
     await appendEvent(this.journal, { type: 'offre.partage_retire', actor: this.actor(viewer), subject: `property:${row.property_id}`, data: { rule: 'R16', share: row.id } }, this.now);
