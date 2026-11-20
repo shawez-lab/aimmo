@@ -611,6 +611,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Les coacquéreurs (AU009) : leurs fiches ne sont pas montrées à l'acquéreur en tête qui demande ses données.
   // Un coacquéreur trouve l'offre par son lien ; la fiche de l'acquéreur en tête et la liste des autres lui sont masquées.
   offer_co_buyers: { locate: by('person_id') },
+  offer_buyer_shares: { locate: by('buyer_person_id') },
   offer_register: { locate: [...by('buyer_person_id'), via('id', 'offer_co_buyers', 'offer_id', { tag: 'coacquereur' })], own: { buyer_person_id: [] }, shared: ['co_buyers'] },
   // Ce qui suit l'offre est rendu à l'acquéreur en tête seul : son contrôle porte son identité ; un coacquéreur reçoit
   // l'offre et l'avancée du dossier, jamais le contrôle ni les échanges de l'autre (AU009) [R96].

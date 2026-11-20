@@ -397,6 +397,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)'],
     tables: {
       offer_register: ['buyer_person_id', 'co_buyers', 'amount_eur', 'conditions', 'signed_ref', 'agent_id', 'actor'],
+      offer_buyer_shares: ['buyer_person_id', 'granted_by', 'revoked_by'],
       offer_checks: ['lines', 'checked_by'],
       offer_transmissions: ['by'],
       offer_responses: ['proof_ref', 'recorded_by'],
@@ -1324,6 +1325,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'place', 'channel', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
   weekly_points: ['mandate_id', 'week', 'network_id', 'property_id', 'next_actions', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],
   offer_register: ['id', 'network_id', 'property_id', 'seq', 'valid_until', 'down_payment_eur', 'loan_eur', 'received_at', 'at', 'prev_hash', 'hash', 'request_key'],
+  offer_buyer_shares: ['id', 'network_id', 'property_id', 'granted_at', 'revoked_at'],
   offer_checks: ['id', 'offer_id', 'network_id', 'checked_at'],
   offer_transmissions: ['offer_id', 'network_id', 'via', 'message_id', 'at'],
   offer_responses: ['offer_id', 'network_id', 'outcome', 'responded_at', 'at'],

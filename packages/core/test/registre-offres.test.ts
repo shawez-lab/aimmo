@@ -143,7 +143,7 @@ describeWithSqlite('O01 · registre des offres', () => {
     const compliance = { role: 'compliance', userId: 'c-1', networkId: t.network.id } as never;
     expect(await t.offres.record(compliance, t.propertyId, t.input())).toEqual({ ok: false, rule: 'R16', code: 'role' });
     expect(await t.offres.list(t.sam, t.propertyId)).toMatchObject({ ok: false, rule: 'R16' });
-    // Un acquéreur suivi par un autre agent : l'agent du bien ne le voit pas, l'offre passe par la direction.
+    // Un acquéreur suivi par un autre agent : l'agent du bien ne le voit pas ; sans partage du collègue (AU081), l'offre passe par la direction.
     const other = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.userId, firstName: 'Autre', lastName: 'Exemple' });
     expect(await t.offres.record(t.agent, t.propertyId, t.input({ buyerPersonId: other.id }))).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.offres.record(t.direction, t.propertyId, t.input({ buyerPersonId: other.id }))).toMatchObject({ ok: true });
