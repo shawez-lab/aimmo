@@ -399,11 +399,12 @@ globalThis.AIMMO_INTEGRATION = function (t) {
     var box = part('Mes heures de formation');
     var c = data(res);
     if (!c || !Array.isArray(c.obligations)) return missing(box, res);
-    box.appendChild(el('p', 'Comptées par la base depuis vos modules faits et vos présences. Aucun horaire imposé.', 'doux'));
+    box.appendChild(el('p', 'Comptées par la base depuis vos justificatifs : présences rangées et modules dont vous avez réussi le quiz. Aucun horaire imposé.', 'doux'));
     c.obligations.forEach(function (o) {
       box.appendChild(el('h4', OBLIGATIONS[o.obligation] || ''));
       box.appendChild(el('p', hours(o.doneMinutes) + ' sur ' + hours(o.requiredMinutes), 'compte'));
       gauge(box, o.doneMinutes, o.requiredMinutes || 1, hours(o.doneMinutes) + ' sur ' + hours(o.requiredMinutes));
+      if (o.declaredMinutes > 0) box.appendChild(el('p', 'Plus ' + hours(o.declaredMinutes) + ' déclarées sans justificatif : réussissez le quiz du module pour qu’elles comptent.', 'doux'));
       box.appendChild(el('p', o.missingMinutes > 0 ? 'Il reste ' + hours(o.missingMinutes) + ' avant le ' + day(o.until) + ' (' + o.daysLeft + ' jours).' : 'Obligation remplie pour la période du ' + day(o.from) + ' au ' + day(o.until) + '.', o.missingMinutes > 0 ? 'piece-manque' : 'doux'));
     });
     return box;
