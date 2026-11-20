@@ -11,8 +11,9 @@
  * - une entrée illisible refuse tout, avant le premier effacement : le registre ne se lit pas à moitié ;
  * - une restauration n'est dite finie qu'après le rejeu.
  *
- * L'effacement réel n'existe pas encore (H29, `ERASURE_MODE`) : rien n'écrit ce registre aujourd'hui. SV05 le branchera,
- * avec la procédure réelle derrière `PersonEraser`.
+ * L'effacement réel (AU020, `conformite/effacement-reel.ts`) écrit ce registre avant d'effacer, et `SqlPersonEraser` est
+ * l'effaceur du rejeu ; il reste fermé tant que le Worker n'a pas le mode `reel` (H29). Son branchement au rejeu après
+ * une restauration réelle est AU021.
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
