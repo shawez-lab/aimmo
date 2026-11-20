@@ -310,7 +310,7 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
     expect((await verifyChain(await w.journal.all())).ok).toBe(true);
   });
 
-  it('[R51] les biens sont rangés à l\'agent, en brouillon, sans adresse, une seule fois ; une ligne illisible est signalée', async () => {
+  it('[R51] les biens sont rangés à l\'agent, en brouillon, l\'adresse à part (AU031), une seule fois ; une ligne illisible est signalée', async () => {
     const csv = [
       'Référence;Type de bien;Adresse;Code postal;Ville;Surface habitable;Nb pièces;Prix FAI',
       'V100;Appartement T3;3 rue Inventée;21000;Dijon;68,5 m²;3;189 000 €',
@@ -326,7 +326,9 @@ describeWithSqlite("import des contacts et des biens d'un agent", () => {
       { agent_id: w.agent, kind: 'home', postal_code: '21000', city: 'Dijon', surface_m2: 68.5, rooms: 3, price_eur: 189000, status: 'draft' },
       { agent_id: w.agent, kind: 'land', postal_code: '21121', city: 'Fontaine-lès-Dijon', surface_m2: null, rooms: null, price_eur: 95000, status: 'draft' },
     ]);
-    expect(snapshot()).not.toContain('rue Inventée');
+    // AU031 · L'adresse exacte n'est plus jetée : elle n'est que dans l'espace privé du bien, jamais dans le bien.
+    expect(snapshot().replace(/\["agent_import_property_addresses",\[[^\]]*\]\]/, '')).not.toContain('rue Inventée');
+    expect(await w.db.all('SELECT street, postal_code, city FROM agent_import_property_addresses')).toEqual([{ street: '3 rue Inventée', postal_code: '21000', city: 'Dijon' }]);
     // AU070 · « Appartement T3 » reste un appartement après import ; un terrain n'est ni l'un ni l'autre.
     expect(await w.db.all('SELECT kind, dwelling FROM properties ORDER BY price_eur DESC')).toEqual([{ kind: 'home', dwelling: 'apartment' }, { kind: 'land', dwelling: null }]);
     const again = await w.importer.run(viewer(), w.agent, { format: 'hektor', properties: csv });
