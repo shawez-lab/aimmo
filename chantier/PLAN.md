@@ -851,7 +851,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU079 · La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A079 (majeur), endroit : C/offres/registre-offres.ts, `OfferCondition`.
 - Constat de l'audit : La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement l’offre et le compromis.
