@@ -13,6 +13,7 @@
  */
 import { DecisionEnvoi, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import {
+  AccesSortie,
   Academie,
   Accompagnement,
   BacASable,
@@ -35,6 +36,7 @@ import {
 export interface R2AgentBucket {
   head(key: string): Promise<unknown | null>;
   put(key: string, value: string | Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  get?(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer>; httpMetadata?: { contentType?: string } } | null>;
 }
 
 /**
@@ -55,6 +57,13 @@ export class R2AgentPieceStore implements AgentPieceStore {
     const ref = `agents/${agentId}/${this.newId()}.txt`;
     await this.bucket.put(ref, text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
     return ref;
+  }
+
+  /** Relit une pièce pour l'accès de sortie (AU111) : ses octets et son type ; absente, `null`. */
+  async read(ref: string): Promise<{ body: Uint8Array; contentType: string } | null> {
+    const object = this.bucket.get ? await this.bucket.get(ref) : null;
+    if (!object) return null;
+    return { body: new Uint8Array(await object.arrayBuffer()), contentType: object.httpMetadata?.contentType ?? 'application/octet-stream' };
   }
 
   /** AU024 · Le fichier d'une pièce déposée depuis l'écran, sous un nom tiré au hasard ; jamais relu d'ici. */
@@ -200,6 +209,8 @@ const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
   reprises: 'direction',
   reprise: 'direction',
   depart: 'direction_or_compliance',
+  acces_sortie: 'direction',
+  acces_sortie_retrait: 'direction',
   solde: 'direction_or_compliance',
   contenus: 'direction_or_compliance',
   dossier: 'self_or_compliance',
@@ -240,6 +251,7 @@ export function reseauServices(s: ReseauServices, options: ReseauOptions = {}) {
     accompagnement: new Accompagnement(s.db, s.journal, opts),
     parrainage: new Parrainage(s.db, s.journal, opts),
     departs: new Departs(s.db, s.journal, opts),
+    sortie: new AccesSortie(s.db, s.journal, opts),
   };
 }
 
@@ -430,7 +442,38 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('POST', `${A}/successeur/decision`, 'successeur_decision', write(['accept'], async (m, v, [id], b) => reply(await m.departs.decideSuccessor(v, id!, b.accept)))),
     route('GET', `${A}/solde`, 'solde', read(async (m, v, [id]) => reply(await m.departs.settlement(v, id!)))),
     route('GET', `${A}/contenus`, 'contenus', read(async (m, v, [id]) => reply(await m.departs.personalContents(v, id!)))),
+    // AU111 · le lien de sortie d'un agent parti : rendu une fois, à la direction, qui le lui remet ; et son retrait.
+    route('POST', `${A}/acces-sortie`, 'acces_sortie', write(['days'], async (m, v, [id], b) => reply(await m.sortie.grant(v, id!, b.days === undefined ? {} : { days: b.days })))),
+    route('POST', `${P}/acces-sortie/${ID}/retrait`, 'acces_sortie_retrait', read(async (m, v, [id]) => reply(await m.sortie.revoke(v, id!)))),
     route('GET', `${P}/reprises`, 'reprises', read(async (m, v) => reply(await m.departs.queue(v)))),
     route('POST', `${P}/reprises`, 'reprise', write(['kind', 'subjectId', 'toAgentId'], async (m, v, _p, b) => reply(await m.departs.reassign(v, { kind: b.kind, subjectId: b.subjectId, toAgentId: b.toAgentId })))),
   ];
+}
+
+/** L'adresse publique de l'accès de sortie (AU111), sans clé : le lien seul ouvre, et seulement ce qui est à l'agent. */
+export const EXIT_PATH = /^\/sortie\/([a-z2-7]{32})(?:\/pieces\/([a-z_]{1,64}))?$/;
+
+/**
+ * L'accès de sortie d'un agent parti (AU111) : `GET /v1/sortie/<lien>` rend son solde, ses pièces, son temps de
+ * formation et son relevé ; `GET /v1/sortie/<lien>/pieces/<sorte>` remet la pièce, si le stockage sait la relire. Un
+ * lien inconnu, retiré ou échu reçoit toujours la même réponse. `null` si l'adresse n'est pas la sienne.
+ */
+export async function handleSortiePublic(request: Request, path: string, s: ReseauServices, pieces: AgentPieceStore | null): Promise<Response | null> {
+  if (!path.startsWith('/sortie/')) return null;
+  const m = EXIT_PATH.exec(path);
+  if (request.method !== 'GET') return json(405, { ok: false, rule: null, code: 'method_not_allowed' });
+  const gone = json(404, { ok: false, rule: 'R16', code: 'unknown_link' });
+  if (!m) return gone;
+  const sortie = new AccesSortie(s.db, s.journal, { now: s.now });
+  if (!m[2]) {
+    const r = await sortie.read(m[1]!);
+    return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : gone;
+  }
+  const ref = await sortie.pieceRef(m[1]!, m[2]);
+  if (!ref) return gone;
+  const read = pieces?.read?.bind(pieces);
+  if (!read) return unavailable('La remise des pièces');
+  const file = await read(ref);
+  if (!file) return gone;
+  return new Response(file.body, { status: 200, headers: { 'content-type': file.contentType, 'content-disposition': `attachment; filename="${m[2]}"`, ...HEADERS } });
 }

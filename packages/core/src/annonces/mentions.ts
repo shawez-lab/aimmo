@@ -305,7 +305,8 @@ export class MentionsAnnonce {
     // rétractation. Un mandat rétracté, annulé, échu, sans durée ou pas encore numéroté n'en donne aucun [R44].
     const inForceReasons = ['allowed', 'allowed_early_start', 'withdrawal_period'];
     if (decision.mandateId !== null && inForceReasons.includes(decision.reason)) {
-      const inForce = await mandateTerms(this.db, decision.mandateId);
+      // Les conditions de ce jour : un avenant signé dont la date d'effet n'est pas venue ne compte pas encore (AU057).
+      const inForce = await mandateTerms(this.db, decision.mandateId, this.now());
       const base = await this.db.first<{ facts: string | null }>(
         'SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
         [decision.mandateId],
@@ -316,7 +317,8 @@ export class MentionsAnnonce {
       } catch {
         facts = null;
       }
-      if (inForce) terms = { priceEur: inForce.priceEur, feeEur: facts?.feeEur ?? null, feeCharge: facts?.feeCharge ?? null };
+      // Les honoraires et leur charge en vigueur, avenants compris (AU057).
+      if (inForce) terms = { priceEur: inForce.priceEur, feeEur: inForce.feeEur ?? facts?.feeEur ?? null, feeCharge: inForce.feeCharge ?? facts?.feeCharge ?? null };
     }
     const sheetRow = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);

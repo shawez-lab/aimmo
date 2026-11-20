@@ -77,7 +77,7 @@ export class SignatureAvenant {
     if (doc.kind !== 'avenant_mandat') return { ok: false, rule: null, code: 'not_an_amendment' };
     if (!doc.mandate_id) return { ok: false, rule: null, code: 'no_mandate' };
 
-    const checked = await this.controles.check(viewer, documentId);
+    const checked = await this.controles.check(viewer, documentId, { signedAt: input.signedAt });
     if (!checked.ok) return checked;
     const existing = await this.db.first<{ document_id: string; mandate_id: string; copy_hash: string }>('SELECT document_id, mandate_id, copy_hash FROM signed_amendments WHERE document_id = ?', [documentId]);
     if (existing) {
