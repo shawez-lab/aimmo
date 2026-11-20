@@ -33,6 +33,7 @@ const VISIT = {
   report: null,
 };
 const CONTENT = `Bon de visite : Inès Durand visite REF-T-1 le 03/03/2027. ${INJECTED}`;
+const PARAGRAPHS = ['DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.', CONTENT];
 const BASE: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
   'GET /v1/plan-du-jour': ok(null),
@@ -41,10 +42,10 @@ const BASE: Record<string, Answer> = {
   'GET /v1/usage/matin': ok(null),
   'GET /v1/visites/v1': ok(VISIT),
   'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'sur_place', channel: 'sms', codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
-  'GET /v1/visites/v1/bon/a-signer': ok({ content: CONTENT, codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
+  'GET /v1/visites/v1/bon/a-signer': ok({ paragraphs: PARAGRAPHS, slipHash: 'f'.repeat(64), codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', copyLink: false, proof: { method: 'code', realSignature: false } }),
 };
-const COPY = { content: CONTENT, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } };
+const COPY = { paragraphs: PARAGRAPHS, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } };
 const NOT_SIGNED = no(409, { ok: false, rule: null, code: 'not_signed' });
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));

@@ -145,8 +145,32 @@ const parisDateTime = (iso: string): string =>
   new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
 const COPY_CSS =
-  'main{max-width:40rem;margin:0 auto;padding:var(--e-4)}pre{white-space:pre-wrap;font:inherit;line-height:1.5}' +
+  'main{max-width:40rem;margin:0 auto;padding:var(--e-4)}' +
   '.preuve{border-top:1px solid var(--trait);margin-top:var(--e-5);padding-top:var(--e-4)}.preuve dt{font-weight:600}.preuve dd{margin:0 0 var(--e-2);overflow-wrap:anywhere}';
+
+const ENTITIES: Readonly<Record<string, string>> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
+
+/**
+ * Le bon rangé est un document HTML fait par le code (`renderDocument`) : pour être lu sur un téléphone, il est rendu
+ * paragraphe par paragraphe, en texte, dans l'ordre, sans rien y ajouter ni retirer ; l'empreinte reste celle du
+ * document rangé, au caractère près.
+ */
+export function slipParagraphs(html: string): string[] {
+  const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html)?.[1] ?? html;
+  return body
+    .split(/<\/p>/i)
+    .map((part) =>
+      part
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES[e] ?? e)
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .join('\n')
+        .trim(),
+    )
+    .filter((p) => p !== '');
+}
 
 /** L'exemplaire du visiteur : le bon tel qu'il est rangé, puis sa preuve. Rendu par le code, sans rien venu d'ailleurs. */
 export function renderSlipCopy(content: string, proof: SlipSignatureProof): string {
@@ -163,7 +187,8 @@ export function renderSlipCopy(content: string, proof: SlipSignatureProof): stri
     '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     `<meta name="theme-color" content="${THEME_COLOR}"><meta name="robots" content="noindex"><title>Votre bon de visite signé</title>` +
     `<style>${DESIGN_CSS}${COPY_CSS}</style></head><body><main><h1>Votre bon de visite signé</h1>` +
-    `<pre>${escapeHtml(content)}</pre><section class="preuve" aria-label="Preuve de la signature"><h2>Preuve de la signature</h2><dl>` +
+    slipParagraphs(content).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('') +
+    `<section class="preuve" aria-label="Preuve de la signature"><h2>Preuve de la signature</h2><dl>` +
     rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
     '</dl></section></main></body></html>'
   );
@@ -337,14 +362,14 @@ export class SignatureBon {
   }
 
   /** Le bon à lire sur le téléphone de l'agent, pendant que la signature sur place est ouverte. */
-  async readOnSite(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { content: string; codeExpiresAt: string; mode: 'essai' } } | SlipSignatureRefusal> {
+  async readOnSite(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { paragraphs: string[]; slipHash: string; codeExpiresAt: string; mode: 'essai' } } | SlipSignatureRefusal> {
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
     const s = await this.db.first<SessionRow>(`SELECT * FROM visit_slip_signatures WHERE appointment_id = ? AND status = 'ouverte' AND place = 'sur_place'`, [appointmentId]);
     if (!s) return { ok: false, rule: null, code: 'not_open' };
     const slip = await this.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE id = ?', [s.slip_id]);
     if (!slip || slip.content_hash !== s.slip_hash) return { ok: false, rule: null, code: 'slip_changed' };
-    return { ok: true, value: { content: slip.content, codeExpiresAt: s.code_expires_at, mode: 'essai' } };
+    return { ok: true, value: { paragraphs: slipParagraphs(slip.content), slipHash: slip.content_hash, codeExpiresAt: s.code_expires_at, mode: 'essai' } };
   }
 
   /** Sur place : le visiteur tape son code sur le téléphone de l'agent, avec son tracé s'il veut. */
@@ -365,14 +390,14 @@ export class SignatureBon {
   }
 
   /** À distance : le bon à lire, pour qui tient le lien, tant que la signature est ouverte et le lien valable. */
-  async readByLink(token: unknown): Promise<{ ok: true; content: string } | SlipSignatureRefusal> {
+  async readByLink(token: unknown): Promise<{ ok: true; paragraphs: string[]; slipHash: string } | SlipSignatureRefusal> {
     const s = await this.byToken(token);
     if (!s || s.status === 'remplacee') return { ok: false, rule: null, code: 'unknown' };
     if (s.status !== 'ouverte') return { ok: false, rule: null, code: s.status === 'signee' ? 'already_signed' : 'blocked' };
     if (this.now().getTime() > Date.parse(s.link_expires_at)) return { ok: false, rule: null, code: 'expired' };
     const slip = await this.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE id = ?', [s.slip_id]);
     if (!slip || slip.content_hash !== s.slip_hash) return { ok: false, rule: null, code: 'slip_changed' };
-    return { ok: true, content: slip.content };
+    return { ok: true, paragraphs: slipParagraphs(slip.content), slipHash: slip.content_hash };
   }
 
   /** À distance : le visiteur signe par le lien, avec le code reçu. */
@@ -493,14 +518,14 @@ export class SignatureBon {
   }
 
   /** L'exemplaire signé, montré sur l'écran de l'agent au visiteur : le bon rangé et sa preuve [R506]. */
-  async copyOnSite(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { content: string; proof: SlipSignatureProof } } | SlipSignatureRefusal> {
+  async copyOnSite(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { paragraphs: string[]; proof: SlipSignatureProof } } | SlipSignatureRefusal> {
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
     const s = await this.db.first<SessionRow>(`SELECT * FROM visit_slip_signatures WHERE appointment_id = ? AND status = 'signee'`, [appointmentId]);
     if (!s || !s.proof) return { ok: false, rule: null, code: 'not_signed' };
     const slip = await this.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE id = ?', [s.slip_id]);
     if (!slip || slip.content_hash !== s.slip_hash || (await sha256(slip.content)) !== slip.content_hash) throw new Error('Bon de visite : contenu changé depuis la signature.');
-    return { ok: true, value: { content: slip.content, proof: JSON.parse(s.proof) as SlipSignatureProof } };
+    return { ok: true, value: { paragraphs: slipParagraphs(slip.content), proof: JSON.parse(s.proof) as SlipSignatureProof } };
   }
 
   /** L'état de la signature en ligne d'une visite, pour l'écran de l'agent : jamais un code ni un lien. */

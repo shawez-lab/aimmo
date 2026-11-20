@@ -87,8 +87,12 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     expect((await t.db.first<{ body: string }>('SELECT body FROM messages WHERE id = ?', [box[0]!.id]))!.body).toContain(MASKED_SECRET.code);
     expect(await tablesContenant(t.db, '234567')).toEqual([]);
     // L'agent montre le bon à lire, puis le visiteur tape son code et trace sa signature.
+    // Le bon rangé est un document HTML : il se lit en texte, paragraphe par paragraphe, jamais en balises.
     const read = await t.signature.readOnSite(alex, v.id);
-    expect(read.ok && read.value.content).toContain('Durand1 visite B1');
+    const stored = await t.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE appointment_id = ?', [v.id]);
+    expect(stored!.content).toMatch(/^<!doctype html>/);
+    expect(read.ok && read.value.paragraphs).toEqual(['DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.', expect.stringMatching(/^Bon de visite : Inès Durand1 visite B1 le \d{2}\/12\/2026\.$/)]);
+    expect(read.ok && read.value.slipHash).toBe(stored!.content_hash);
     const signed = await t.signature.signOnSite(alex, v.id, { code: '234567', drawing: 'M0 0 L10 10' });
     expect(signed).toMatchObject({ ok: true, value: { copy: 'remis', proof: { place: 'sur_place', method: 'code_et_trace', channel: 'sms', mode: 'essai', realSignature: false } } });
     // Le bon est rangé signé, sans scan, par le visiteur en ligne.
@@ -98,7 +102,7 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     expect(await t.signature.state(alex, v.id)).toMatchObject({ ok: true, value: { status: 'signee', place: 'sur_place', copy: 'remis' } });
     // L'exemplaire s'affiche aussitôt sur l'écran de l'agent : le bon rangé et sa preuve.
     const shown = await t.signature.copyOnSite(alex, v.id);
-    expect(shown.ok && shown.value.content).toContain('Durand1 visite B1');
+    expect(shown.ok && shown.value.paragraphs.join(' ')).toContain('Durand1 visite B1');
     expect(shown.ok && shown.value.proof.method).toBe('code_et_trace');
     expect(await t.signature.copyOnSite(t.as('agent', t.sam.id), v.id)).toMatchObject({ ok: false, rule: 'R16' });
   });
@@ -162,6 +166,7 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     const html = copy.ok ? copy.html : '';
     const slip = await t.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE appointment_id = ?', [v.id]);
     expect(html).toContain('Durand1 visite B1');
+    expect(html).not.toContain('&lt;');
     expect(html).toContain(slip!.content_hash);
     expect(html).toContain('Signature d’essai');
     expect(html).toContain('heure de Paris');
@@ -193,7 +198,7 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     expect(box[1]!.body).not.toContain(t.issued[0]);
     // Le lien seul ne signe pas : il faut le code.
     const read = await t.signature.readByLink(t.issued[0]);
-    expect(read.ok && read.content).toContain('visite B1');
+    expect(read.ok && read.paragraphs.join(' ')).toContain('visite B1');
     expect(await t.signature.signByLink(t.issued[0], { code: '000000' })).toEqual({ ok: false, rule: null, code: 'wrong_code' });
     const done = await t.signature.signByLink(t.issued[0], { code: '234567' });
     expect(done).toMatchObject({ ok: true, value: { copy: 'remis', proof: { place: 'distance', method: 'code', channel: 'email' } } });
@@ -302,7 +307,7 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
 });
 
 it('[R506] l’exemplaire est rendu par le code, sans rien venu d’ailleurs', () => {
-  const html = renderSlipCopy('Bon <b>de</b> visite', {
+  const html = renderSlipCopy('<!doctype html>\n<html><head><title>x</title><style>p{}</style></head>\n<body>\n<p>Bon &lt;b&gt;de&lt;/b&gt; visite<br>ligne 2</p>\n<p class="evidence"><span class="manque">[à compléter : date]</span></p>\n</body></html>', {
     appointmentId: 'a',
     slipId: 's',
     slipHash: 'f'.repeat(64),
@@ -314,7 +319,8 @@ it('[R506] l’exemplaire est rendu par le code, sans rien venu d’ailleurs', (
     mode: 'essai',
     realSignature: false,
   });
-  expect(html).toContain('Bon &lt;b&gt;de&lt;/b&gt; visite');
+  expect(html).toContain('<p>Bon &lt;b&gt;de&lt;/b&gt; visite<br>ligne 2</p><p>[à compléter : date]</p>');
+  expect(html).not.toContain('p{}');
   expect(html).toContain('08/12/2026 10:30');
   expect(html).toContain('e'.repeat(64));
   expect(htmlProblems(html)).toEqual([]);

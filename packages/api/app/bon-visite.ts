@@ -46,6 +46,16 @@ globalThis.AIMMO_BON_VISITE = function (t) {
     if (res.offline) { said.textContent = 'Pas de réseau. Réessayez dans un moment.'; return; }
     said.textContent = own(res.body && res.body.code) || fallback;
   }
+  // Le bon, paragraphe par paragraphe, en texte : jamais du HTML reçu posé tel quel.
+  function paragraphs(list) {
+    if (!Array.isArray(list) || !list.length || list.length > 200) return null;
+    var out = el('div', null, 'brouillon');
+    for (var i = 0; i < list.length; i++) {
+      if (typeof list[i] !== 'string' || list[i].length > 5000) return null;
+      list[i].split('\\n').forEach(function (line) { out.appendChild(el('p', line)); });
+    }
+    return out;
+  }
   function pad(box) {
     var c = el('canvas', null, 'brouillon'), path = '', down = false, r = null;
     if (c.style) { c.style.width = '100%'; c.style.height = 'auto'; c.style.touchAction = 'none'; }
@@ -63,10 +73,11 @@ globalThis.AIMMO_BON_VISITE = function (t) {
   function signHere(id, box, said) {
     t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/a-signer', 'GET').then(function (res) {
       if (res.gone) return;
-      if (!res.ok || !res.body || !res.body.data || typeof res.body.data.content !== 'string') { say(said, res, 'Le bon ne se lit pas pour le moment.'); return; }
+      var bon = res.ok && res.body && res.body.data && paragraphs(res.body.data.paragraphs);
+      if (!bon) { say(said, res, 'Le bon ne se lit pas pour le moment.'); return; }
       t.clear(box);
       box.appendChild(el('p', 'Donnez le téléphone au visiteur : il lit son bon, tape le code reçu, et signe du doigt s’il le veut.', 'doux'));
-      box.appendChild(el('p', res.body.data.content, 'brouillon'));
+      box.appendChild(bon);
       var code = t.field(box, 'bon-code', 'Code reçu par le visiteur');
       code.setAttribute('inputmode', 'numeric');
       code.setAttribute('autocomplete', 'one-time-code');
@@ -94,8 +105,8 @@ globalThis.AIMMO_BON_VISITE = function (t) {
   function showCopy(id, box, said, otherwise) {
     return t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/exemplaire', 'GET').then(function (res) {
       if (res.gone) return;
-      var d = res.ok && res.body && res.body.data, p = (d && d.proof) || {};
-      if (!d || typeof d.content !== 'string' || typeof p.slipHash !== 'string' || typeof p.signedAt !== 'string') {
+      var d = res.ok && res.body && res.body.data, p = (d && d.proof) || {}, bon = d && paragraphs(d.paragraphs);
+      if (!bon || typeof p.slipHash !== 'string' || typeof p.signedAt !== 'string') {
         if (otherwise && res.body && res.body.code === 'not_signed') return otherwise();
         var why = el('p', (res.offline ? 'Pas de réseau : l’' : 'L’') + 'exemplaire ne s’affiche pas pour le moment. Réessayez.', 'alerte');
         var again = t.button('Montrer l’exemplaire', function () { box.removeChild(why); box.removeChild(again); showCopy(id, box, said, otherwise); });
@@ -105,7 +116,7 @@ globalThis.AIMMO_BON_VISITE = function (t) {
         return;
       }
       box.appendChild(el('h3', 'Exemplaire du visiteur'));
-      box.appendChild(el('p', d.content, 'brouillon'));
+      box.appendChild(bon);
       box.appendChild(el('p', 'Signé le ' + t.date(p.signedAt) + ' à ' + t.hour(p.signedAt) + ', par ' + (p.method === 'code_et_trace' ? 'code et tracé' : 'code') + '. Empreinte du bon : ' + p.slipHash + (typeof p.drawingHash === 'string' ? '. Empreinte du tracé : ' + p.drawingHash : '') + '.', 'doux'));
     });
   }
