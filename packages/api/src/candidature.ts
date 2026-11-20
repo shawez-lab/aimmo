@@ -356,7 +356,13 @@ export async function handleCandidature(request: Request, config: CandidatureCon
   // plusieurs réseaux : rien n'est rangé, la page le dit.
   let networkId = config.networkId;
   if (!networkId) {
-    const rows = await config.db.all<{ id: string }>('SELECT id FROM networks ORDER BY id LIMIT 2');
+    // Une base illisible laisse la page fermée : elle ne range rien, et ne tombe pas.
+    let rows: { id: string }[] = [];
+    try {
+      rows = await config.db.all<{ id: string }>('SELECT id FROM networks ORDER BY id LIMIT 2');
+    } catch {
+      rows = [];
+    }
     if (rows.length === 1) {
       networkId = rows[0]!.id;
       if (request.method === 'POST') await appendEvent(journal, { type: 'candidature.reseau_unique', actor: 'system:candidature', subject: `network:${networkId}`, data: {} }, now);
