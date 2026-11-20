@@ -616,6 +616,8 @@ globalThis.AIMMO_FINANCES = function (t) {
       var ul = el('ul', null, 'liste');
       if (v.lastFailure) ul.appendChild(el('li', 'Dernier essai, le ' + copyDay(v.lastFailure.at) + ' : ' + (COPY_WHY[v.lastFailure.reason] || 'il a échoué') + '.'));
       if (v.missedNights.length) ul.appendChild(el('li', 'Nuits sans copie : ' + v.missedNights.map(day).join(', ') + '.'));
+      // AU109 · la preuve que la copie tourne : une copie à jour et un test de restauration réussi ce mois-ci.
+      ul.appendChild(el('li', v.activation === 'prouvee' ? 'Copie prouvée : copie à jour et restauration réussie le ' + copyDay(v.exerciseAt) + '.' : 'Copie non prouvée : il faut une copie à jour et une restauration réussie ce mois-ci.'));
       if (ul.children.length) body.appendChild(ul);
       if (v.state === 'jamais') return 'Non sauvegardé : aucune copie réussie à ce jour.';
       var last = 'Dernière copie réussie : le ' + copyDay(v.lastSuccessAt) + '.';

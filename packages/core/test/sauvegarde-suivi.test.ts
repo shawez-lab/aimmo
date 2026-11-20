@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { applyMigrations, COPY_KEEP_DAYS, copyWatchJob, copyWindowStart, fromSyncSqlite, Planificateur, recordCopyRun, SqlJournalStore, SuiviCopies, type CopyRun, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { applyMigrations, COPY_KEEP_DAYS, copyWatchJob, copyWindowStart, fromSyncSqlite, Planificateur, RecusRestauration, recordCopyRun, recordRestoreReceipt, restoreWatchJob, SqlJournalStore, SuiviCopies, type CopyRun, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { REGISTRE_TRAITEMENTS } from '../src/conformite/registre-traitements.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -22,7 +22,7 @@ describeWithSqlite('SV02 · la copie de chaque nuit, vue par la direction', () =
   it('[R230] sans aucune copie : « jamais », et jamais un faux succès', async () => {
     const t = await world();
     clock = new Date('2027-03-10T10:00:00.000Z');
-    expect(await t.suivi.status(direction)).toEqual({ ok: true, value: { state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [] } });
+    expect(await t.suivi.status(direction)).toEqual({ ok: true, value: { state: 'jamais', lastSuccessAt: null, lastFailure: null, missedNights: [], activation: 'non_prouvee', exerciseAt: null } });
   });
 
   it('[R230] un échec rapporté ne compte jamais comme une copie, et sa raison se lit', async () => {
@@ -124,5 +124,31 @@ describeWithSqlite('SV02 · la copie de chaque nuit, vue par la direction', () =
     expect(t!.duree).toContain(`${COPY_KEEP_DAYS} jours`);
     expect(t!.duree).toMatch(/effacement.*refait/i);
     expect(t!.sousTraitants.join(' ')).toMatch(/GitHub/);
+  });
+
+  it('[R230] [R232] AU109 · l’allumage se prouve : une copie à jour et un test de restauration réussi du mois ; sinon, « non prouvée » et une alerte par mois', async () => {
+    const t = await world();
+    const recus = new RecusRestauration(t.db, t.journal, { now });
+    clock = new Date('2027-03-10T10:00:00.000Z');
+    await recordCopyRun(t.db, success('2027-03-10T02:00:00.000Z', 'c1'));
+    // Une copie à jour sans test du mois : rien n'est prouvé, et le Worker alerte, une seule fois pour ce mois.
+    expect((await t.suivi.status(direction)).ok && ((await t.suivi.status(direction)) as { value: { activation: string } }).value.activation).toBe('non_prouvee');
+    expect(await recus.watch()).toBe(true);
+    expect(await recus.watch()).toBe(false);
+    const alerts = (await t.journal.all()).filter((e) => e.type === 'base.restauration_manquee');
+    expect(alerts.map((e) => e.data)).toEqual([{ rule: 'R232', month: '2027-03' }]);
+    // Un reçu réussi du mois : prouvé, plus d'alerte.
+    await recordRestoreReceipt(t.db, { id: 'rr1', testedAt: '2027-03-10T03:00:00.000Z', month: '2027-03', outcome: 'reussie', copyTakenAt: '2027-03-10T02:05:00.000Z', durationMs: 60_000, tables: 3, rows: 10, digest: 'a'.repeat(64) });
+    const s = await t.suivi.status(direction);
+    expect(s.ok && s.value).toMatchObject({ state: 'a_jour', activation: 'prouvee', exerciseAt: '2027-03-10T03:00:00.000Z' });
+    // Le mois suivant, sans nouveau reçu une fois le jour attendu passé : de nouveau non prouvée, une alerte.
+    clock = new Date('2027-04-05T10:00:00.000Z');
+    await recordCopyRun(t.db, success('2027-04-05T02:00:00.000Z', 'c2'));
+    const april = await t.suivi.status(direction);
+    expect(april.ok && april.value.activation).toBe('non_prouvee');
+    expect(await recus.watch()).toBe(true);
+    // Le passage tourne de 6 h à 8 h, heure de Paris.
+    expect(restoreWatchJob(t.db, t.journal, { now }).hours).toEqual([6, 7, 8]);
+    await expect(t.db.run('DELETE FROM base_restore_alerts')).rejects.toThrow();
   });
 });
