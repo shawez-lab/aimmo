@@ -223,15 +223,16 @@ export async function inviteAgent(
   let linksVoided = 0;
   let devicesRevoked = 0;
   if (retirerAnciens) {
-    keysRevoked = (
-      await db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND role = 'agent' AND user_id = ? AND revoked_at IS NULL", [nowIso, viewer.networkId, userId])
-    ).changes;
-    // Un lien encore inutilisé pour cet agent ne sert plus : il est daté comme servi, jamais effacé.
+    // D'abord les liens encore inutilisés : datés comme servis, jamais effacés. Un échange en cours ne peut plus les
+    // marquer, il retire lui-même ses clés ; un échange déjà marqué a rangé les siennes, retirées juste après.
     const open = await db.all<{ id: string; grants: string }>('SELECT id, grants FROM access_invitations WHERE network_id = ? AND used_at IS NULL AND expires_at > ?', [viewer.networkId, nowIso]);
     for (const inv of open) {
       if (!(parseGrants(inv.grants) ?? []).some((g) => g.role === 'agent' && g.userId === userId)) continue;
       linksVoided += (await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL', [nowIso, inv.id])).changes;
     }
+    keysRevoked = (
+      await db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND role = 'agent' AND user_id = ? AND revoked_at IS NULL", [nowIso, viewer.networkId, userId])
+    ).changes;
     const devices = await db.all<{ id: string }>("SELECT id FROM security_devices WHERE network_id = ? AND user_role = 'agent' AND user_id = ? AND status <> 'retire'", [viewer.networkId, userId]);
     for (const d of devices) if (await revokeDevice(d.id)) devicesRevoked += 1;
   }

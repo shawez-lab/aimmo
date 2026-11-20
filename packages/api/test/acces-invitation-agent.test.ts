@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import { FicheClient } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
+import { exchangeInvitation, invitedKeys, inviteAgent } from '../src/acces.ts';
+import type { SqlDatabase } from '@aimmo/core';
 import type { Challenge } from '../../core/src/securite/index.ts';
 import { FakeAuthenticator, ORIGIN, RP } from '../../core/test/appareil-simule.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
@@ -156,5 +158,38 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     expect(await t.db.all("SELECT status FROM security_devices WHERE user_id = ? ORDER BY created_at, id", [t.sam.userId])).toEqual(expect.arrayContaining([{ status: 'retire' }, { status: 'actif' }]));
     const event = (await t.journal.all()).filter((e) => e.type === 'acces.invitation_creee').at(-1);
     expect(event?.data).toMatchObject({ retirerAnciens: true, keysRevoked: 1, linksVoided: 1, devicesRevoked: 1 });
+  });
+
+  it('[R600] appareil perdu : un ancien lien ouvert pendant le recours n’échappe jamais au retrait', async () => {
+    for (const moment of ['après la lecture des liens', 'avant le retrait des clés']) {
+      const t = await setup();
+      const old = ((await t.invite(t.sam.userId, false)).body.data.lien as string).split('=')[1]!;
+      let fired = false;
+      // Le téléphone perdu ouvre son lien au pire moment du recours.
+      const db = new Proxy(t.db, {
+        get(target, prop) {
+          const real = (target as unknown as Record<string | symbol, unknown>)[prop];
+          if (typeof real !== 'function') return real;
+          return async (sql: string, params?: unknown[]) => {
+            const hit = moment === 'avant le retrait des clés' ? /^UPDATE access_keys SET revoked_at/.test(sql) : /^SELECT id, grants FROM access_invitations/.test(sql);
+            if (hit && !fired) {
+              fired = true;
+              if (moment === 'avant le retrait des clés') await exchangeInvitation(t.db, old, t.now());
+              else {
+                const r = await (real as (...a: unknown[]) => Promise<unknown>).call(target, sql, params);
+                await exchangeInvitation(t.db, old, t.now());
+                return r;
+              }
+            }
+            return (real as (...a: unknown[]) => Promise<unknown>).call(target, sql, params);
+          };
+        },
+      }) as SqlDatabase;
+      const v = { networkId: t.network.id, role: 'direction', userId: t.direction.userId };
+      const done = await inviteAgent(db, t.journal, v, { userId: t.sam.userId, stepUpId: 'p', retirerAnciens: true }, async () => ({ ok: true }), async () => true, t.now());
+      expect(done.ok).toBe(true);
+      expect(fired).toBe(true);
+      expect((await invitedKeys(t.db)).filter((k) => k.userId === t.sam.userId)).toEqual([]);
+    }
   });
 });
