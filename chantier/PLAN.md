@@ -338,7 +338,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU025 · Le premier parcours pédagogique annonce un outil d’exercice
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A025 (majeur), endroit : A/worker.ts, configuration `reseau` ; C/reseau/bac-a-sable.ts.
 - Constat de l'audit : Le premier parcours pédagogique annonce un outil d’exercice, mais le Worker ne lui fournit pas son stockage isolé.
