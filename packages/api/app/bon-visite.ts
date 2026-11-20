@@ -47,11 +47,12 @@ globalThis.AIMMO_BON_VISITE = function (t) {
     said.textContent = own(res.body && res.body.code) || fallback;
   }
   // Le bon, paragraphe par paragraphe, en texte : jamais du HTML reçu posé tel quel.
+  // Un modèle admet 20 000 caractères : le bon rempli reste lu en entier, jusqu'à 100 000.
   function paragraphs(list) {
-    if (!Array.isArray(list) || !list.length || list.length > 200) return null;
-    var out = el('div', null, 'brouillon');
+    if (!Array.isArray(list) || !list.length) return null;
+    var out = el('div', null, 'brouillon'), total = 0;
     for (var i = 0; i < list.length; i++) {
-      if (typeof list[i] !== 'string' || list[i].length > 5000) return null;
+      if (typeof list[i] !== 'string' || (total += list[i].length) > 100000) return null;
       list[i].split('\\n').forEach(function (line) { out.appendChild(el('p', line)); });
     }
     return out;
@@ -118,6 +119,8 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       box.appendChild(el('h3', 'Exemplaire du visiteur'));
       box.appendChild(bon);
       box.appendChild(el('p', 'Signé le ' + t.date(p.signedAt) + ' à ' + t.hour(p.signedAt) + ', par ' + (p.method === 'code_et_trace' ? 'code et tracé' : 'code') + '. Empreinte du bon : ' + p.slipHash + (typeof p.drawingHash === 'string' ? '. Empreinte du tracé : ' + p.drawingHash : '') + '.', 'doux'));
+      // La signature reste d'essai, quel que soit le modèle du bon : l'exemplaire le dit toujours.
+      if (p.realSignature !== true) box.appendChild(el('p', 'Signature d’essai : sans valeur juridique tant que le dossier de preuve n’est pas validé.', 'alerte'));
     });
   }
   // Un bon déjà signé en ligne montre son exemplaire ; sinon, le bloc de signature.

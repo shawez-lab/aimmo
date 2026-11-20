@@ -45,7 +45,7 @@ const BASE: Record<string, Answer> = {
   'GET /v1/visites/v1/bon/a-signer': ok({ paragraphs: PARAGRAPHS, slipHash: 'f'.repeat(64), codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', copyLink: false, proof: { method: 'code', realSignature: false } }),
 };
-const COPY = { paragraphs: PARAGRAPHS, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } };
+const COPY = { paragraphs: PARAGRAPHS, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place', mode: 'essai', realSignature: false } };
 const NOT_SIGNED = no(409, { ok: false, rule: null, code: 'not_signed' });
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
@@ -123,6 +123,15 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     expect(t.part()!.textContent).toContain('Exemplaire du visiteur');
     expect(t.part()!.textContent).toContain(CONTENT);
     expect(t.part()!.textContent).not.toContain('ne s’affiche pas');
+    // Même rouvert, et même d'un modèle validé (sans bandeau d'essai), l'exemplaire dit la signature d'essai.
+    expect(t.part()!.textContent).toContain('Signature d’essai : sans valeur juridique');
+    // Un bon long, d'un modèle de 20 000 caractères, se lit en entier.
+    const long = 'Clause. '.repeat(2500);
+    const w = await visit({ 'GET /v1/visites/v1/bon/a-signer': ok({ paragraphs: [long, CONTENT], slipHash: 'f'.repeat(64), codeExpiresAt: 'x', mode: 'essai' }) });
+    await w.open();
+    await w.click(w.btn('Signer ici, sur mon téléphone'));
+    expect(w.part()!.textContent).toContain(long.trim());
+    expect(w.btn('Signer le bon')).toBeDefined();
     // Signé sur papier : ni signature ni exemplaire en ligne à l'écran.
     const u = await visit({ 'GET /v1/visites/v1': ok({ ...VISIT, slip: { ...VISIT.slip, signed: true, online: null } }) });
     expect(u.part()).toBeUndefined();
