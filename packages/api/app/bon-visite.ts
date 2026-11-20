@@ -5,7 +5,9 @@
  *
  * Sur place : l'agent ouvre la signature (`POST /v1/visites/<id>/bon/signature-en-ligne`), le visiteur reçoit son code
  * sur son téléphone, lit le bon sur l'écran de l'agent (`GET …/bon/a-signer`), tape lui-même son code et trace sa
- * signature s'il le veut (`POST …/bon/signature-sur-place`). À distance : le lien et le code partent au visiteur.
+ * signature s'il le veut (`POST …/bon/signature-sur-place`) ; son exemplaire et sa preuve s'affichent aussitôt
+ * (`GET …/bon/exemplaire`), et la preuve lui part par le contrôle central. La signature à distance attend ses pages
+ * publiques (voie 1) : l'écran ne la propose pas.
  * Tout texte reçu est posé en texte ; chaque refus est dit en mots, jamais par son code ; le code tapé n'est gardé
  * nulle part sur l'appareil.
  */
@@ -32,6 +34,7 @@ export const BON_VISITE_REFUSALS: Readonly<Record<string, string>> = Object.free
   expired: 'Le code a expiré : ouvrez une nouvelle signature.',
   slip_changed: 'Le bon a changé : rouvrez la visite.',
   bad_drawing: 'Le tracé n’a pas pu être lu : effacez-le et recommencez.',
+  not_signed: 'Le bon n’est pas encore signé.',
 });
 
 export const BON_VISITE_SCRIPT = `'use strict';
@@ -81,15 +84,27 @@ globalThis.AIMMO_BON_VISITE = function (t) {
           code.value = '';
           t.clear(box);
           var d = r.body.data || {};
-          said.textContent = 'Bon signé, sans papier. ' + (d.copy === 'remis' ? 'Le visiteur a reçu son exemplaire avec la preuve de sa signature.' : 'L’exemplaire n’a pas pu partir : il est gardé avec la visite.') + ' Signature d’essai tant que le dossier de preuve n’est pas validé.';
+          said.textContent = 'Bon signé, sans papier. ' + (d.copy === 'remis' ? 'Le visiteur a reçu la preuve de sa signature, avec l’empreinte du bon.' : 'La preuve n’a pas pu partir au visiteur : elle est gardée avec la visite.') + ' Signature d’essai tant que le dossier de preuve n’est pas validé.';
+          showCopy(id, box, said);
         }, function () { busy = false; said.textContent = 'La réponse n’est pas arrivée : relisez la visite avant de recommencer.'; });
       }));
+    });
+  }
+  // L'exemplaire du visiteur, à lui montrer : le bon tel qu'il l'a signé, puis sa preuve.
+  function showCopy(id, box, said) {
+    t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/exemplaire', 'GET').then(function (res) {
+      if (res.gone || !res.ok || !res.body || !res.body.data) return;
+      var d = res.body.data, p = d.proof || {};
+      if (typeof d.content !== 'string' || typeof p.slipHash !== 'string' || typeof p.signedAt !== 'string') return;
+      box.appendChild(el('h3', 'Exemplaire du visiteur'));
+      box.appendChild(el('p', d.content, 'brouillon'));
+      box.appendChild(el('p', 'Signé le ' + t.date(p.signedAt) + ' à ' + t.hour(p.signedAt) + ', par ' + (p.method === 'code_et_trace' ? 'code et tracé' : 'code') + '. Empreinte du bon : ' + p.slipHash + (typeof p.drawingHash === 'string' ? '. Empreinte du tracé : ' + p.drawingHash : '') + '.', 'doux'));
     });
   }
   return function (id, box, said) {
     if (typeof id !== 'string' || !ID.test(id)) return;
     t.clear(box);
-    box.appendChild(el('p', 'Le visiteur signe sans papier : ici, sur votre téléphone, ou plus tard par un lien. Il reçoit son exemplaire avec la preuve.', 'doux'));
+    box.appendChild(el('p', 'Le visiteur signe sans papier, ici, sur votre téléphone, avec le code qu’il reçoit. Il voit aussitôt son exemplaire et reçoit la preuve.', 'doux'));
     var agreed = t.checkbox(box, 'bon-accord', 'Le visiteur accepte de recevoir son code et son exemplaire');
     var bySms = t.checkbox(box, 'bon-sms', 'Par SMS plutôt que par mail');
     bySms.checked = true;
@@ -100,12 +115,11 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       return t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/signature-en-ligne', 'POST', body).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { say(said, res, 'Rien n’est parti.'); return; }
-        said.textContent = place === 'sur_place' ? 'Code envoyé au visiteur, valable 10 minutes.' : 'Lien et code envoyés au visiteur : il signe seul, le lien vit 48 heures.';
-        if (place === 'sur_place') signHere(id, box, said);
+        said.textContent = 'Code envoyé au visiteur, valable 10 minutes.';
+        signHere(id, box, said);
       });
     }
     box.appendChild(t.button('Signer ici, sur mon téléphone', function () { open('sur_place'); }));
-    box.appendChild(t.button('Envoyer le lien pour signer à distance', function () { open('distance'); }));
   };
 };
 `;

@@ -35,8 +35,10 @@ async function setup() {
   const issued: string[] = [];
   let tokens = 0;
   let codes = 0;
-  const signature = new SignatureBon(db, journal, visites, {
+  const options = {
     now,
+    signUrl: (t: string) => `https://aimmo.example.test/visite/signer/${t}`,
+    copyUrl: (t: string) => `https://aimmo.example.test/visite/exemplaire/${t}`,
     newToken: () => {
       tokens += 1;
       const t = tokens.toString(16).padStart(64, 'b');
@@ -44,7 +46,11 @@ async function setup() {
       return t;
     },
     newCode: () => String(234567 + codes++),
-  });
+  };
+  const signature = new SignatureBon(db, journal, visites, options);
+  /** La même signature, sans page publique servie : ni lien de signature à distance, ni lien d'exemplaire. */
+  const { signUrl: _s, copyUrl: _c, ...unserved } = options;
+  const withoutPages = new SignatureBon(db, journal, visites, unserved);
   let n = 0;
   /** Un visiteur inventé d'Alex, avec son téléphone et son mail, et sa visite du bien demain. */
   const visit = async (o: { phone?: boolean; email?: boolean } = {}) => {
@@ -59,7 +65,7 @@ async function setup() {
   };
   const outbox = (personId: string) => enClair(db.all<{ id: string; body: string; channel: string }>('SELECT m.id, m.body, m.channel FROM messages m JOIN trial_outbox t ON t.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.created_at', [personId]));
   const copyToken = (body: string) => /exemplaire\/([0-9a-f]{64})/.exec(body)?.[1] ?? '';
-  return { db, journal, visites, signature, store, network, alex, sam, seller, as, visit, outbox, issued, copyToken, property: p, setClock: (t: number) => (clock = t) };
+  return { db, journal, visites, signature, withoutPages, options, store, network, alex, sam, seller, as, visit, outbox, issued, copyToken, property: p, setClock: (t: number) => (clock = t) };
 }
 
 const ACCORD = 'Accord du visiteur pour recevoir le code et l’exemplaire de son bon, recueilli à la visite.';
@@ -90,6 +96,50 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     expect(slip.ok && slip.slip.signedAt).toBe(new Date(v.start - 10 * 60_000).toISOString());
     expect(await t.db.first('SELECT scan_ref, signed_by FROM visit_slips WHERE appointment_id = ?', [v.id])).toEqual({ scan_ref: null, signed_by: 'visiteur:en_ligne' });
     expect(await t.signature.state(alex, v.id)).toMatchObject({ ok: true, value: { status: 'signee', place: 'sur_place', copy: 'remis' } });
+    // L'exemplaire s'affiche aussitôt sur l'écran de l'agent : le bon rangé et sa preuve.
+    const shown = await t.signature.copyOnSite(alex, v.id);
+    expect(shown.ok && shown.value.content).toContain('Durand1 visite B1');
+    expect(shown.ok && shown.value.proof.method).toBe('code_et_trace');
+    expect(await t.signature.copyOnSite(t.as('agent', t.sam.id), v.id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R506] sans page publique servie : pas de signature à distance, et la preuve part sans lien inutilisable', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    const alex = t.as('agent', t.alex.id);
+    t.setClock(v.end + HOUR);
+    expect(await t.withoutPages.open(alex, v.id, { place: 'distance', consentProof: ACCORD })).toEqual({ ok: false, rule: null, code: 'distance_not_served' });
+    expect(await t.outbox(v.buyer.id)).toEqual([]);
+    expect((await t.withoutPages.open(alex, v.id, { place: 'sur_place', consentProof: ACCORD })).ok).toBe(true);
+    const done = await t.withoutPages.signOnSite(alex, v.id, { code: '234567' });
+    expect(done).toMatchObject({ ok: true, value: { copy: 'remis', copyLink: false } });
+    const slip = await t.db.first<{ content_hash: string }>('SELECT content_hash FROM visit_slips WHERE appointment_id = ?', [v.id]);
+    const box = await t.outbox(v.buyer.id);
+    expect(box.at(-1)!.body).toContain(`Empreinte du bon signé : ${slip!.content_hash}`);
+    expect(box.at(-1)!.body).toContain('montré sur l’écran de votre agent');
+    expect(box.at(-1)!.body).not.toMatch(/https?:/);
+  });
+
+  it('[R506] une signature remplacée entre la lecture et le rangement : rien n’est rangé, ni le bon ni la signature', async () => {
+    const t = await setup();
+    const v = await t.visit();
+    const alex = t.as('agent', t.alex.id);
+    t.setClock(v.start);
+    await t.signature.open(alex, v.id, { place: 'sur_place', consentProof: ACCORD });
+    // Une autre requête remplace la signature juste avant le lot qui range le bon.
+    const racing = Object.assign(Object.create(Object.getPrototypeOf(t.db)), t.db, {
+      batch: async (statements: Parameters<NonNullable<SqlDatabase['batch']>>[0]) => {
+        await t.db.run(`UPDATE visit_slip_signatures SET status = 'remplacee' WHERE appointment_id = ? AND status = 'ouverte'`, [v.id]);
+        return t.db.batch!(statements);
+      },
+    }) as SqlDatabase;
+    const raced = new SignatureBon(racing, t.journal, t.visites, t.options);
+    expect(await raced.signOnSite(alex, v.id, { code: '234567' })).toEqual({ ok: false, rule: null, code: 'not_open' });
+    expect(await t.db.first('SELECT signed_at, signed_by FROM visit_slips WHERE appointment_id = ?', [v.id])).toEqual({ signed_at: null, signed_by: null });
+    expect(await t.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM visit_slip_signatures WHERE appointment_id = ? AND status = 'signee'`, [v.id])).toEqual({ n: 0 });
+    // Une nouvelle ouverture signe normalement.
+    await t.signature.open(alex, v.id, { place: 'sur_place' });
+    expect((await t.signature.signOnSite(alex, v.id, { code: '234568' })).ok).toBe(true);
   });
 
   it('[R506] le visiteur reçoit son exemplaire : le bon tel qu’il l’a signé, avec sa preuve, sans adresse ni vendeur', async () => {
@@ -102,7 +152,7 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     expect(done.ok).toBe(true);
     const box = await t.outbox(v.buyer.id);
     expect(box).toHaveLength(2);
-    expect(box[1]!.body).toContain('Votre exemplaire, avec la preuve de votre signature');
+    expect(box[1]!.body).toContain('Elle permet de vérifier votre exemplaire');
     // Le lien de l'exemplaire est rangé masqué ; le visiteur, qui l'a reçu, l'ouvre.
     const token = t.copyToken(box[1]!.body);
     expect(token).toHaveLength(64);

@@ -42,7 +42,8 @@ const BASE: Record<string, Answer> = {
   'GET /v1/visites/v1': ok(VISIT),
   'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'sur_place', channel: 'sms', codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'GET /v1/visites/v1/bon/a-signer': ok({ content: CONTENT, codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
-  'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', proof: { method: 'code', realSignature: false } }),
+  'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', copyLink: false, proof: { method: 'code', realSignature: false } }),
+  'GET /v1/visites/v1/bon/exemplaire': ok({ content: CONTENT, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } }),
 };
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
@@ -114,7 +115,9 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
   it('[R506] sur place : code au visiteur, bon lu à l’écran, code tapé et tracé, puis l’exemplaire dit remis', async () => {
     const t = await visit();
     await t.open();
-    expect(t.part()!.textContent).toContain('Il reçoit son exemplaire avec la preuve');
+    expect(t.part()!.textContent).toContain('Il voit aussitôt son exemplaire et reçoit la preuve');
+    // La signature à distance attend ses pages publiques : l'écran ne la propose pas.
+    expect(t.btn('Envoyer le lien pour signer à distance')).toBeUndefined();
     // Sans l'accord coché, aucune preuve d'accord n'est envoyée : la couche métier refuse si aucun accord n'est en cours.
     t.boxes()[0]!.checked = true;
     await t.click(t.btn('Signer ici, sur mon téléphone'));
@@ -126,17 +129,23 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     code.value = ' 234567 ';
     await t.click(t.btn('Signer le bon'));
     expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/visites/v1/bon/signature-sur-place', body: { code: '234567', drawing: null } });
-    expect(t.answer()).toContain('Bon signé, sans papier. Le visiteur a reçu son exemplaire avec la preuve de sa signature.');
+    expect(t.answer()).toContain('Bon signé, sans papier. Le visiteur a reçu la preuve de sa signature, avec l’empreinte du bon.');
     expect(t.answer()).toContain('Signature d’essai');
+    // L'exemplaire s'affiche aussitôt, en texte, avec sa preuve.
+    expect(t.calls.at(-1)).toMatchObject({ method: 'GET', url: '/v1/visites/v1/bon/exemplaire' });
+    const text = t.part()!.textContent;
+    expect(text).toContain('Exemplaire du visiteur');
+    expect(text).toContain(CONTENT);
+    expect(text).toContain('Signé le 03/03/2027 à 13:45, par code. Empreinte du bon : ' + 'f'.repeat(64));
+    expect(t.part()!.all().some((e) => e.tagName === 'img')).toBe(false);
   });
 
-  it('[R506] à distance, par mail : lien et code envoyés, l’écran le dit ; un refus est dit en mots', async () => {
-    const t = await visit({ 'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'distance', channel: 'email', codeExpiresAt: 'x', mode: 'essai' }) });
+  it('[R506] le code par mail, sans accord coché ; un refus est dit en mots', async () => {
+    const t = await visit();
     await t.open();
     t.boxes()[1]!.checked = false;
-    await t.click(t.btn('Envoyer le lien pour signer à distance'));
-    expect(t.posts()[0]!.body).toEqual({ place: 'distance', channel: 'email' });
-    expect(t.answer()).toContain('Lien et code envoyés au visiteur');
+    await t.click(t.btn('Signer ici, sur mon téléphone'));
+    expect(t.posts()[0]!.body).toEqual({ place: 'sur_place', channel: 'email' });
     const u = await visit({ 'POST /v1/visites/v1/bon/signature-en-ligne': no(409, { ok: false, rule: 'R03', code: 'no_consent' }) });
     await u.open();
     await u.click(u.btn('Signer ici, sur mon téléphone'));

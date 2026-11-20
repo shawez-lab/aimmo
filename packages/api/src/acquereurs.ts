@@ -22,9 +22,11 @@
  *   GET  /visites/:visite                               l'écran de la visite : bien, heure, bon, sécurité, compte rendu
  *   GET  /visites/:visite/bon                           le bon de visite
  *   POST /visites/:visite/bon/signature                 le bon signé sur papier, en secours
- *   POST /visites/:visite/bon/signature-en-ligne        { place: sur_place|distance, channel?, consentProof? } (AU075)
+ *   POST /visites/:visite/bon/signature-en-ligne        { place: sur_place, channel?, consentProof? } (AU075) ; « distance »
+ *                                                       attend les pages publiques (voie 1) : refusé d'ici là
  *   GET  /visites/:visite/bon/a-signer                  le bon à lire sur le téléphone de l'agent, sur place (AU075)
  *   POST /visites/:visite/bon/signature-sur-place       { code, drawing? } : le visiteur signe sur place (AU075)
+ *   GET  /visites/:visite/bon/exemplaire                l'exemplaire signé et sa preuve, à montrer au visiteur (AU075)
  *   POST /visites/:visite/annulation                    annuler la visite
  *   GET  /fiches/:fiche/visites-en-ligne                les visites réservées en ligne qui attendent (BR64)
  *   POST /visites/:rendez-vous/rattachement             { projectId } : la rattacher à la recherche, avec son bon (BR64)
@@ -262,6 +264,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'code et drawing seulement.');
       return reply(await signature(s).signOnSite(v, a!, { code: body.code, drawing: body.drawing }));
     }),
+    get('visites.bon.exemplaire', `/visites/${ID}/bon/exemplaire`, async (s, v, [a]) => reply(await signature(s).copyOnSite(v, a!))),
     post('visites.annulation', `/visites/${ID}/annulation`, async (s, v, [a]) => reply(await visites(s).cancel(v, a!))),
     // BR64 · Les visites réservées en ligne d'une fiche, puis leur rattachement à la recherche [R16, R40, R42].
     get('visites.en_ligne', `/fiches/${ID}/visites-en-ligne`, async (s, v, [f], request) => {

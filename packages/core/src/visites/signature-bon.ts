@@ -9,9 +9,10 @@
  *   téléphone, sans l'agent.
  * Le code expire, ne sert qu'une fois, et cinq essais faux bloquent la signature ; seules les empreintes sont gardées
  * (code, lien, tracé). Le bon signé est celui qui est rangé, au caractère près : son empreinte entre dans la preuve.
- * Signé, le bon est rangé signé (`visit_slips.signed_at`, `signed_by = 'visiteur:en_ligne'`) et le visiteur reçoit
- * aussitôt, par le contrôle central, le lien de son exemplaire : le bon tel qu'il l'a signé, suivi de sa preuve (heure,
- * manière, empreinte du bon, empreinte du tracé) [R506].
+ * Signé, le bon est rangé signé (`visit_slips.signed_at`, `signed_by = 'visiteur:en_ligne'`) ; l'exemplaire, le bon tel
+ * qu'il a été signé suivi de sa preuve (heure, manière, empreinte du bon, empreinte du tracé), s'affiche aussitôt sur
+ * l'écran de l'agent, et le visiteur reçoit par le contrôle central la preuve elle-même : l'heure, la manière et
+ * l'empreinte du bon, qui lui permet de vérifier tout exemplaire [R506].
  *
  * Décidé, lecture prudente :
  * - la signature d'une visite faite à distance reste celle de HX44 (`VisiteDistance`), qui garde aussi le registre des
@@ -24,8 +25,10 @@
  *   distance, à partir de l'heure de la visite et jusqu'à 7 jours après sa fin ;
  * - l'exemplaire n'a ni adresse exacte ni nom du vendeur : c'est le bon rangé, déjà sans eux [R19].
  *
- * Les routes de l'agent vivent dans `packages/api/src/acquereurs.ts` ; les pages publiques du lien (lecture, signature
- * et exemplaire) se branchent au Worker par la voie 1, comme celles de HX44.
+ * Les routes de l'agent vivent dans `packages/api/src/acquereurs.ts`. Les pages publiques (signature à distance et
+ * exemplaire par lien : `readByLink`, `signByLink`, `copy`, `renderSlipCopy`) sont prêtes ici et se branchent au Worker
+ * par la voie 1 (`app.ts`, socle), qui donne alors `signUrl` et `copyUrl` : sans eux, la signature à distance est
+ * refusée et aucun lien ne part, pour qu'aucun lien inutilisable ne soit jamais envoyé.
  */
 import type { Viewer } from '../acces/droits.ts';
 import { trialChannels } from '../captation/essai.ts';
@@ -78,16 +81,24 @@ export interface SlipSignatureProof {
 
 export interface SlipSignatureDone {
   proof: SlipSignatureProof;
-  /** La remise du lien de l'exemplaire au visiteur, par le contrôle central. */
+  /** La remise au visiteur, par le contrôle central, de la preuve et, si sa page est servie, du lien de l'exemplaire. */
   copy: 'remis' | 'refuse';
+  /** Le lien de l'exemplaire est-il parti avec la preuve ? Faux tant que la page publique n'est pas branchée. */
+  copyLink: boolean;
 }
 
 export interface SignatureBonOptions {
   /** Le contrôle central des envois ; par défaut, celui du mode essai (boîte d'essai, rien ne part) [R26]. */
   envois?: ControleEnvois;
-  /** L'adresse de la page de signature, pour un jeton. */
+  /**
+   * L'adresse de la page publique de signature, pour un jeton. Absente tant que la page n'est pas servie par le Worker
+   * (voie 1) : la signature à distance est alors refusée (`distance_not_served`), aucun lien inutilisable ne part.
+   */
   signUrl?: (token: string) => string;
-  /** L'adresse de l'exemplaire signé, pour un jeton. */
+  /**
+   * L'adresse publique de l'exemplaire signé, pour un jeton. Absente tant que la page n'est pas servie : le visiteur
+   * reçoit la preuve (heure, manière, empreinte du bon) et voit son exemplaire sur l'écran de l'agent.
+   */
   copyUrl?: (token: string) => string;
   now?: () => Date;
   newId?: () => string;
@@ -166,8 +177,8 @@ export class SignatureBon {
   private readonly store: FicheClient;
   private readonly fiche: FicheUnique;
   private readonly envois: ControleEnvois;
-  private readonly signUrl: (token: string) => string;
-  private readonly copyUrl: (token: string) => string;
+  private readonly signUrl: ((token: string) => string) | null;
+  private readonly copyUrl: ((token: string) => string) | null;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -188,8 +199,8 @@ export class SignatureBon {
         journal: new SqlSendJournal(db, undefined, this.now),
         now: this.now,
       });
-    this.signUrl = options.signUrl ?? ((t) => `https://aimmo.fr/visite/signer/${t}`);
-    this.copyUrl = options.copyUrl ?? ((t) => `https://aimmo.fr/visite/exemplaire/${t}`);
+    this.signUrl = options.signUrl ?? null;
+    this.copyUrl = options.copyUrl ?? null;
   }
 
   private actor(viewer: Viewer): string {
@@ -244,6 +255,7 @@ export class SignatureBon {
     if (place !== 'sur_place' && place !== 'distance') return { ok: false, rule: null, code: 'bad_place' };
     if (asked !== 'sms' && asked !== 'email') return { ok: false, rule: null, code: 'bad_channel' };
     const channel: SlipChannel = asked;
+    if (place === 'distance' && !this.signUrl) return { ok: false, rule: null, code: 'distance_not_served' };
     const found = await this.visit(viewer, appointmentId);
     if (!found.ok) return found;
     const v = found.v;
@@ -297,7 +309,7 @@ export class SignatureBon {
     }
     const hello = await this.greeting(v.person_id, channel);
     const base = { networkId: v.network_id, agentId: v.agent_id, personId: v.person_id, projectId: v.project_id, channel, kind: 'follow_up' as const, purpose: SLIP_SIGNATURE_PURPOSE };
-    if (token) {
+    if (token && this.signUrl) {
       const link = this.signUrl(token);
       const sentLink = await this.envois.send({
         ...base,
@@ -414,7 +426,12 @@ export class SignatureBon {
     const copyToken = this.newToken();
     // Le bon et la signature se rangent ensemble, ou rien : un bon signé sur papier entre-temps ferme cette signature.
     const results = await runBatch(this.db, [
-      { sql: `UPDATE visit_slips SET signed_at = ?, signed_by = ? WHERE id = ? AND signed_at IS NULL AND content_hash = ?`, params: [signedAt, ONLINE_SLIP_SIGNER, s.slip_id, s.slip_hash] },
+      // La signature doit être encore ouverte au moment même du lot : remplacée ou bloquée entre-temps, rien n'est rangé.
+      {
+        sql: `UPDATE visit_slips SET signed_at = ?, signed_by = ? WHERE id = ? AND signed_at IS NULL AND content_hash = ?
+               AND EXISTS (SELECT 1 FROM visit_slip_signatures WHERE id = ? AND status = 'ouverte')`,
+        params: [signedAt, ONLINE_SLIP_SIGNER, s.slip_id, s.slip_hash, s.id],
+      },
       {
         sql: `UPDATE visit_slip_signatures SET status = 'signee', signed_at = ?, drawing_hash = ?, proof = ?, copy_token_hash = ?
                WHERE id = ? AND status = 'ouverte' AND EXISTS (SELECT 1 FROM visit_slips WHERE id = ? AND signed_at = ? AND signed_by = ?)`,
@@ -423,20 +440,28 @@ export class SignatureBon {
     ]);
     if (results[0]?.changes !== 1 || results[1]?.changes !== 1) {
       if (results[0]?.changes === 1) throw new Error('bon de visite : rangé signé sans sa signature');
+      const now = await this.db.first<{ status: string }>('SELECT status FROM visit_slip_signatures WHERE id = ?', [s.id]);
+      if (now && now.status !== 'ouverte' && now.status !== 'signee') return { ok: false, rule: null, code: now.status === 'bloquee' ? 'blocked' : 'not_open' };
       return { ok: false, rule: null, code: 'already_signed' };
     }
     await appendEvent(this.journal, { type: 'bon_visite.signe', actor, subject: `visit:${s.appointment_id}`, data: { slip: s.slip_id, mode: 'en_ligne', place: s.place, method: proof.method, realSignature: false } }, this.now);
-    const copy = await this.sendCopy(s, copyToken, signedAt);
-    return { ok: true, value: { proof, copy } };
+    const copy = await this.sendCopy(s, copyToken, proof);
+    return { ok: true, value: { proof, copy, copyLink: this.copyUrl !== null } };
   }
 
-  /** Le lien de l'exemplaire part au visiteur par le contrôle central, sur le canal du code ; l'issue est notée une fois [R506]. */
-  private async sendCopy(s: SessionRow, copyToken: string, signedAt: string): Promise<'remis' | 'refuse'> {
+  /**
+   * La preuve part au visiteur par le contrôle central, sur le canal du code : l'heure, la manière et l'empreinte du bon
+   * signé, avec le lien de son exemplaire quand sa page est servie ; l'issue est notée une fois [R506].
+   */
+  private async sendCopy(s: SessionRow, copyToken: string, proof: SlipSignatureProof): Promise<'remis' | 'refuse'> {
     const v = (await this.db.first<VisitRow>('SELECT network_id, property_id, project_id, person_id, agent_id FROM visits WHERE appointment_id = ?', [s.appointment_id]))!;
     const hello = await this.greeting(v.person_id, s.channel);
-    const link = this.copyUrl(copyToken);
-    const when = parisDateTime(signedAt);
-    const text = `${hello}${s.channel === 'sms' ? 'v' : 'V'}otre bon de visite est signé, le ${when}. Votre exemplaire, avec la preuve de votre signature : ${link}`;
+    const link = this.copyUrl ? this.copyUrl(copyToken) : null;
+    const how = proof.method === 'code_et_trace' ? 'code et tracé' : 'code';
+    const text =
+      `${hello}${s.channel === 'sms' ? 'v' : 'V'}otre bon de visite est signé, le ${parisDateTime(proof.signedAt)}, par ${how}. ` +
+      `Empreinte du bon signé : ${proof.slipHash}. Elle permet de vérifier votre exemplaire` +
+      (link ? ` : ${link}` : ', montré sur l’écran de votre agent.');
     const sent = await this.envois.send({
       networkId: v.network_id,
       agentId: v.agent_id,
@@ -448,7 +473,7 @@ export class SignatureBon {
       subject: `bon-visite:${s.id}:exemplaire`,
       fallbackTexts: [text],
       figures: text.match(/\d+/g) ?? [],
-      secrets: [{ kind: 'lien', value: link }],
+      ...(link ? { secrets: [{ kind: 'lien' as const, value: link }] } : {}),
     });
     const status = sent.status === 'sent' ? 'remis' : 'refuse';
     await this.db.run('UPDATE visit_slip_signatures SET copy_status = ? WHERE id = ? AND copy_status IS NULL', [status, s.id]);
@@ -465,6 +490,17 @@ export class SignatureBon {
     const slip = await this.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE id = ?', [s.slip_id]);
     if (!slip || slip.content_hash !== s.slip_hash || (await sha256(slip.content)) !== slip.content_hash) throw new Error('Bon de visite : contenu changé depuis la signature.');
     return { ok: true, html: renderSlipCopy(slip.content, JSON.parse(s.proof) as SlipSignatureProof) };
+  }
+
+  /** L'exemplaire signé, montré sur l'écran de l'agent au visiteur : le bon rangé et sa preuve [R506]. */
+  async copyOnSite(viewer: Viewer, appointmentId: string): Promise<{ ok: true; value: { content: string; proof: SlipSignatureProof } } | SlipSignatureRefusal> {
+    const found = await this.visit(viewer, appointmentId);
+    if (!found.ok) return found;
+    const s = await this.db.first<SessionRow>(`SELECT * FROM visit_slip_signatures WHERE appointment_id = ? AND status = 'signee'`, [appointmentId]);
+    if (!s || !s.proof) return { ok: false, rule: null, code: 'not_signed' };
+    const slip = await this.db.first<{ content: string; content_hash: string }>('SELECT content, content_hash FROM visit_slips WHERE id = ?', [s.slip_id]);
+    if (!slip || slip.content_hash !== s.slip_hash || (await sha256(slip.content)) !== slip.content_hash) throw new Error('Bon de visite : contenu changé depuis la signature.');
+    return { ok: true, value: { content: slip.content, proof: JSON.parse(s.proof) as SlipSignatureProof } };
   }
 
   /** L'état de la signature en ligne d'une visite, pour l'écran de l'agent : jamais un code ni un lien. */

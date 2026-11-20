@@ -90,11 +90,13 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.safety).toBe('confirmee');
 
     // AU075 · Le bon signé sur le téléphone de l'agent : code au visiteur par SMS, bon lu à l'écran, code tapé, sans papier.
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
     expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent', extra: 1 })).status).toBe(400);
     expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent' })).body).toMatchObject({ ok: true, data: { place: 'sur_place', channel: 'sms', mode: 'essai' } });
     expect((await t.call('alex', 'GET', `/visites/${id}/bon/a-signer`)).body).toMatchObject({ ok: true, data: { content: expect.stringContaining('REF-T-1') } });
     expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '000000' })).body).toMatchObject({ ok: false, code: 'wrong_code' });
-    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: await t.sms(), drawing: 'M0 0 L4 4' })).body).toMatchObject({ ok: true, data: { copy: 'remis', proof: { method: 'code_et_trace', realSignature: false } } });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: await t.sms(), drawing: 'M0 0 L4 4' })).body).toMatchObject({ ok: true, data: { copy: 'remis', copyLink: false, proof: { method: 'code_et_trace', realSignature: false } } });
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon/exemplaire`)).body).toMatchObject({ ok: true, data: { content: expect.stringContaining('REF-T-1'), proof: { place: 'sur_place' } } });
     expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ signed: true, online: { status: 'signee', place: 'sur_place', copy: 'remis' } });
     expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature`, { signedAt: '2027-03-03T12:39:00.000Z', scanRef: 'scans/bon.pdf' })).body).toMatchObject({ ok: false, code: 'signed_online' });
 
@@ -163,6 +165,7 @@ describeWithSqlite('T08 · routes de M08', () => {
       ['sam', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord' }],
       ['sam', 'GET', `/visites/${id}/bon/a-signer`],
       ['sam', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '123456' }],
+      ['sam', 'GET', `/visites/${id}/bon/exemplaire`],
       ['sam', 'POST', `/visites/${id}/annulation`],
       ['sam', 'POST', `/visites/${id}/code`, { consentProof: 'accord' }],
       ['sam', 'POST', `/visites/${id}/confirmation`, { code: '123456', lastName: 'Durand' }],
