@@ -12,8 +12,11 @@
  *
  * Une fiche déjà suivie par un autre agent, ou par personne, n'est jamais reprise ni complétée : le contact va à la
  * direction, qui attribue [R16]. Les biens sont rangés comme biens de l'agent, en brouillon : l'import ne publie rien.
- * Aucune adresse exacte n'est lue. Rien n'est envoyé. Au journal, des nombres et des identifiants internes [R13].
+ * L'adresse exacte d'un bien, si l'export la donne, est reprise à part, dans un espace privé que seuls l'agent du bien
+ * et la direction lisent ; elle n'entre jamais dans le bien, une sortie publique ni un message [R46, R19] (AU031).
+ * Rien n'est envoyé. Au journal, des nombres et des identifiants internes [R13].
  */
+import { readAddress, type PostalAddress } from '../documents/designation.ts';
 import { keyLookupForms } from '../fiche/empreinte.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
@@ -140,7 +143,7 @@ const CONTACT_HEADERS: Record<ContactField, string[]> = {
   optOut: ['desinscrit', 'desabonne', 'optout', 'unsubscribed', 'stop', 'nepascontacter', 'nepasderanger', 'opposition', 'bloctel', 'donotcontact', 'dnd'],
 };
 
-type PropertyField = 'reference' | 'kind' | 'postalCode' | 'city' | 'surface' | 'rooms' | 'price';
+type PropertyField = 'reference' | 'kind' | 'postalCode' | 'city' | 'surface' | 'rooms' | 'price' | 'street' | 'streetNumber';
 
 const PROPERTY_HEADERS: Record<PropertyField, string[]> = {
   reference: ['reference', 'ref', 'refbien', 'referencebien', 'nmandat', 'numeromandat', 'mandat', 'id', 'identifiant'],
@@ -150,6 +153,9 @@ const PROPERTY_HEADERS: Record<PropertyField, string[]> = {
   surface: ['surface', 'surfacehabitable', 'surfacem2', 'surfacecarrez', 'm2', 'livingarea'],
   rooms: ['pieces', 'nbpieces', 'nombredepieces', 'rooms'],
   price: ['prix', 'prixdevente', 'prixfai', 'prixhonorairesinclus', 'price'],
+  // AU031 : l'adresse exacte, reprise à part, jamais dans le bien.
+  street: ['adresse', 'adressedubien', 'adressebien', 'adresse1', 'adressepostale', 'rue', 'voie', 'address', 'street', 'streetaddress', 'adresseexacte'],
+  streetNumber: ['numerodevoie', 'numerovoie', 'numerorue', 'nvoie', 'nderue', 'streetnumber'],
 };
 
 /** Une case qui dit « non » : rien. Toute autre valeur non vide dit « oui ». */
@@ -332,6 +338,13 @@ export interface AgentPropertyLine {
   surfaceM2: number | null;
   rooms: number | null;
   priceEur: number | null;
+  /**
+   * L'adresse exacte du bien, si l'export la donne entière (voie, code postal à cinq chiffres, commune) ; elle est
+   * rangée à part, dans l'espace privé du bien, jamais dans le bien (AU031). Null sinon.
+   */
+  address: PostalAddress | null;
+  /** Une adresse est écrite, mais incomplète ou mal formée : elle n'est pas reprise, la ligne est au bilan. */
+  addressUnreadable: boolean;
 }
 
 /** Le type d'origine qui dit maison ou appartement (AU070). */
@@ -363,7 +376,10 @@ const number = (raw: string | null, integer: boolean): number | null => {
   return integer ? (Number.isInteger(value) ? value : null) : value;
 };
 
-/** Lit un export de biens d'agent. Aucune adresse n'est lue : seulement la commune et le code postal. */
+/**
+ * Lit un export de biens d'agent. L'adresse exacte, si elle est là, est lue à part (AU031) : elle ne rejoint jamais le
+ * bien, seulement l'espace privé de l'adresse reprise.
+ */
 export async function readAgentProperties(text: string, format: AgentExportFormat, agentId: string): Promise<AgentPropertiesReading> {
   const [header, ...rows] = parseCsv(text);
   const columns = columnsOf(header ?? [], PROPERTY_HEADERS);
@@ -383,6 +399,8 @@ export async function readAgentProperties(text: string, format: AgentExportForma
       continue;
     }
     const postal = cell(row, 'postalCode');
+    const street = [cell(row, 'streetNumber'), cell(row, 'street')].filter((v): v is string => v !== null).join(' ');
+    const address = street === '' ? null : readAddress({ street, postalCode: postal ?? '', city: cell(row, 'city') ?? '' });
     reading.lines.push({
       line,
       origin: `import:${agentId}:${format}:bien:${await digest(reference)}`,
@@ -394,6 +412,8 @@ export async function readAgentProperties(text: string, format: AgentExportForma
       surfaceM2: number(cell(row, 'surface'), false),
       rooms: number(cell(row, 'rooms'), true),
       priceEur: number(cell(row, 'price'), true),
+      address,
+      addressUnreadable: street !== '' && address === null,
     });
   }
   return reading;
@@ -586,11 +606,29 @@ const emptyDossier = (reading: PiecesReading): DossierReport => ({
   unsignedMandateLines: [],
 });
 
+/**
+ * Le bilan des adresses exactes (AU031) : combien sont rangées dans l'espace privé de leur bien, combien l'étaient déjà,
+ * et chaque ligne dont l'adresse est écrite mais incomplète ou mal formée, non reprise. Jamais une adresse.
+ */
+export interface AddressReport {
+  kept: number;
+  known: number;
+  /** Adresse incomplète ou mal formée, ou bien que l'agent ne suit plus : non reprise. */
+  notTakenLines: number[];
+}
+
+const addressReport = (properties: AgentPropertiesReading): AddressReport => ({
+  kept: 0,
+  known: 0,
+  notTakenLines: properties.lines.filter((l) => l.addressUnreadable).map((l) => l.line),
+});
+
 /** Le compte rendu de l'aperçu, avant toute écriture : ce qui sera repris et tout ce qui ne le sera pas. */
 export interface AgentImportPreview {
   format: AgentExportFormat;
   contacts: { read: number; unreadableLines: number[] };
   properties: { read: number; new: number; known: number; unreadableLines: number[] };
+  addresses: AddressReport;
   dossier: DossierReport;
   summary: string[];
 }
@@ -773,6 +811,8 @@ export interface AgentImportReport {
     incompleteConsentLines: number[];
   };
   properties: { read: number; created: number; known: number; unreadableLines: number[] };
+  /** L'adresse exacte des biens repris, rangée à part dans leur espace privé (AU031). */
+  addresses: AddressReport;
   /**
    * Les échanges, notes de suivi et prochains rappels de l'ancien logiciel (AU029) : ce qui est repris sur chaque fiche,
    * et le bilan de ce qui ne l'est pas, ligne par ligne, avec sa raison.
@@ -805,7 +845,7 @@ export interface ImportAgentOptions {
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** Le compte rendu d'un import, en français, sans aucune donnée personnelle. */
-export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'> & Partial<Pick<AgentImportReport, 'followUp' | 'dossier'>>): string[] {
+export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'> & Partial<Pick<AgentImportReport, 'followUp' | 'dossier' | 'addresses'>>): string[] {
   const c = report.contacts;
   const plural = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
   const lines = [
@@ -817,6 +857,7 @@ export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'prop
   const signaled = c.unreadableLines.length + c.partialLines.length + c.incompleteConsentLines.length + report.properties.unreadableLines.length;
   if (signaled > 0) lines.push(`${plural(signaled, 'ligne à regarder', 'lignes à regarder')}, listées par leur numéro.`);
   lines.push(`${plural(report.properties.created + report.properties.known, 'bien rangé', 'biens rangés')} en brouillon : rien n'est publié.`);
+  if (report.addresses) lines.push(...addressSummary(report.addresses));
   const f = report.followUp;
   if (f && f.read + Object.values(f.notTaken).reduce((n, l) => n + l.length, 0) > 0) {
     lines.push(`${plural(f.history, 'échange ou note repris', 'échanges et notes repris')} sur ${f.history > 1 ? 'leurs fiches' : 'sa fiche'}, à leur date d'origine.`);
@@ -830,6 +871,20 @@ export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'prop
   }
   const d = report.dossier;
   if (d && d.read > 0) lines.push(...dossierSummary(d));
+  return lines;
+}
+
+/** Le bilan des adresses exactes, en français, sans aucune adresse (AU031). Rien à dire si l'export n'en porte pas. */
+export function addressSummary(a: AddressReport, future = false): string[] {
+  const lines: string[] = [];
+  const total = a.kept + a.known;
+  if (total > 0) {
+    lines.push(
+      `${total} ${total > 1 ? 'adresses exactes' : 'adresse exacte'} ${future ? (total > 1 ? 'seront gardées' : 'sera gardée') : total > 1 ? 'gardées' : 'gardée'} dans l'espace privé de ${total > 1 ? 'leur bien' : 'son bien'} : jamais publiée${total > 1 ? 's' : ''}, ni dans l'annonce ni dans un message.`,
+    );
+  }
+  const n = a.notTakenLines.length;
+  if (n > 0) lines.push(`${n} ${n > 1 ? 'adresses non reprises' : 'adresse non reprise'} (incomplète, ou bien suivi par un autre agent), ${n > 1 ? 'listées par leur numéro de ligne' : 'listée par son numéro de ligne'}.`);
   return lines;
 }
 
@@ -931,6 +986,7 @@ export class ImportAgent {
         incompleteConsentLines: contacts.incompleteConsentLines,
       },
       properties: { read: properties.lines.length, created: 0, known: 0, unreadableLines: properties.unreadableLines },
+      addresses: addressReport(properties),
       followUp: {
         read: followUp.lines.length + followUp.skipped.length,
         history: 0,
@@ -1013,6 +1069,7 @@ export class ImportAgent {
       const known = await this.db.first<{ property_id: string }>('SELECT property_id FROM agent_import_properties WHERE network_id = ? AND origin_key = ?', [networkId, line.origin]);
       if (known) {
         report.properties.known += 1;
+        if (await this.keepAddress(networkId, agentId, known.property_id, line, format, report.addresses)) changed = true;
         continue;
       }
       // Identifiant et référence tirés de la clé d'origine : deux imports en même temps, ou une relance après une
@@ -1035,6 +1092,7 @@ export class ImportAgent {
       } else {
         report.properties.known += 1;
       }
+      if (await this.keepAddress(networkId, agentId, propertyId, line, format, report.addresses)) changed = true;
     }
 
     // 5. Le dossier des biens : chaque pièce rejoint le bien repris de l'agent, sinon elle est au bilan (AU030).
@@ -1102,11 +1160,12 @@ export class ImportAgent {
       }
     }
 
+    report.addresses.notTakenLines.sort((x, y) => x - y);
     report.summary = importSummary(report);
     const signaled = report.contacts.unreadableLines.length + report.contacts.partialLines.length + report.contacts.incompleteConsentLines.length + report.properties.unreadableLines.length;
     const followUpSkipped = Object.values(report.followUp.notTaken).reduce((n, l) => n + l.length, 0);
     const piecesSkipped = Object.values(report.dossier.notTaken).reduce((n, l) => n + l.length, 0);
-    if (changed || signaled > 0 || followUpSkipped > 0 || piecesSkipped > 0) {
+    if (changed || signaled > 0 || followUpSkipped > 0 || piecesSkipped > 0 || report.addresses.notTakenLines.length > 0) {
       await appendEvent(
         this.journal,
         {
@@ -1123,6 +1182,8 @@ export class ImportAgent {
             none: report.contacts.basis.none,
             consents: report.contacts.consents,
             properties: report.properties.created,
+            addresses: report.addresses.kept,
+            addressesNotTaken: report.addresses.notTakenLines.length,
             signaledLines: signaled,
             history: report.followUp.history,
             reminders: report.followUp.reminders,
@@ -1167,6 +1228,7 @@ export class ImportAgent {
       format,
       contacts: { read: contacts.lines.length, unreadableLines: [...contacts.unreadableLines, ...contacts.partialLines, ...contacts.incompleteConsentLines].sort((a, b) => a - b) },
       properties: { read: properties.lines.length, new: 0, known: 0, unreadableLines: properties.unreadableLines },
+      addresses: addressReport(properties),
       dossier: emptyDossier(pieces),
       summary: [],
     };
@@ -1176,6 +1238,17 @@ export class ImportAgent {
       const known = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM agent_import_properties WHERE network_id = ? AND origin_key = ?', [networkId, line.origin]);
       if (Number(known?.n ?? 0) > 0 || coming.has(line.origin)) report.properties.known += 1;
       else report.properties.new += 1;
+      // L'adresse exacte, comptée comme l'import la rangera : une fois par bien, au seul bien que l'agent suit (AU031).
+      if (line.address !== null) {
+        const row = await this.db.first<{ agent_id: string | null; has_address: number }>(
+          `SELECT p.agent_id, (SELECT count(*) FROM agent_import_property_addresses a WHERE a.network_id = i.network_id AND a.property_id = i.property_id) AS has_address
+           FROM agent_import_properties i JOIN properties p ON p.id = i.property_id WHERE i.network_id = ? AND i.origin_key = ?`,
+          [networkId, line.origin],
+        );
+        if (row && row.agent_id !== agentId) report.addresses.notTakenLines.push(line.line);
+        else if ((row && Number(row.has_address) > 0) || coming.has(line.origin)) report.addresses.known += 1;
+        else report.addresses.kept += 1;
+      }
       coming.add(line.origin);
     }
     const seen = new Set<string>();
@@ -1195,8 +1268,10 @@ export class ImportAgent {
       report.dossier.kept[line.category] += 1;
       if (line.category === 'mandate' && line.signed !== true) report.dossier.unsignedMandateLines.push(line.line);
     }
+    report.addresses.notTakenLines.sort((x, y) => x - y);
     report.summary = [
       `${report.properties.new} ${report.properties.new > 1 ? 'biens seront rangés' : 'bien sera rangé'} en brouillon, ${report.properties.unreadableLines.length} ${report.properties.unreadableLines.length > 1 ? 'lignes de biens à regarder' : 'ligne de biens à regarder'}.`,
+      ...addressSummary(report.addresses, true),
       ...(report.dossier.read > 0 ? dossierSummary(report.dossier, true) : []),
       "Rien n'est encore rangé : validez pour lancer l'import.",
     ];
@@ -1207,11 +1282,32 @@ export class ImportAgent {
         type: 'reseau.import_apercu',
         actor: this.actor(viewer),
         subject: `agent:${agentId}`,
-        data: { format, properties: report.properties.new, pieces: Object.values(report.dossier.kept).reduce((n, v) => n + v, 0), piecesNotTaken: Object.values(report.dossier.notTaken).reduce((n, l) => n + l.length, 0) },
+        data: { format, properties: report.properties.new, addresses: report.addresses.kept, addressesNotTaken: report.addresses.notTakenLines.length, pieces: Object.values(report.dossier.kept).reduce((n, v) => n + v, 0), piecesNotTaken: Object.values(report.dossier.notTaken).reduce((n, l) => n + l.length, 0) },
       },
       this.now,
     );
     return { ok: true, report };
+  }
+
+  /**
+   * Range l'adresse exacte d'un bien repris dans son espace privé, une seule fois, et seulement si l'agent qui importe
+   * le suit toujours (AU031) ; jamais dans le bien. Rend vrai si une adresse vient d'être rangée.
+   */
+  private async keepAddress(networkId: string, agentId: string, propertyId: string, line: AgentPropertyLine, format: AgentExportFormat, report: AddressReport): Promise<boolean> {
+    if (line.address === null) return false;
+    const property = await this.db.first<{ agent_id: string | null; network_id: string }>('SELECT agent_id, network_id FROM properties WHERE id = ?', [propertyId]);
+    if (!property || property.network_id !== networkId || property.agent_id !== agentId) {
+      report.notTakenLines.push(line.line);
+      return false;
+    }
+    const { changes } = await this.db.run(
+      `INSERT INTO agent_import_property_addresses (network_id, property_id, agent_id, street, postal_code, city, source_format, export_line, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+      [networkId, propertyId, agentId, line.address.street, line.address.postalCode, line.address.city, format, line.line, this.now().toISOString()],
+    );
+    if (changes === 1) report.kept += 1;
+    else report.known += 1;
+    return changes === 1;
   }
 
   /**
@@ -1231,7 +1327,10 @@ export class ImportAgent {
    * Le dossier repris d'un bien : ses pièces par sorte, dans l'ordre de l'export. L'agent qui suit le bien, ou la
    * direction ; personne d'autre [R16]. Une annonce reprise est un lien, jamais une diffusion.
    */
-  async dossierOf(viewer: Viewer, propertyId: string): Promise<{ ok: true; value: { propertyId: string; pieces: ImportedPiece[]; counts: Record<PieceCategory, number> } } | AgentImportRefusal> {
+  async dossierOf(
+    viewer: Viewer,
+    propertyId: string,
+  ): Promise<{ ok: true; value: { propertyId: string; address: PostalAddress | null; pieces: ImportedPiece[]; counts: Record<PieceCategory, number> } } | AgentImportRefusal> {
     const property = await this.db.first<{ agent_id: string | null; network_id: string }>('SELECT agent_id, network_id FROM properties WHERE id = ?', [propertyId]);
     let code: string | null = null;
     if (!property || property.network_id !== viewer.networkId) code = 'unknown';
@@ -1259,13 +1358,20 @@ export class ImportAgent {
       from: FORMAT_LABEL[r.source_format],
     }));
     const counts = Object.fromEntries(PIECE_CATEGORIES.map((c) => [c, pieces.filter((p) => p.category === c).length])) as Record<PieceCategory, number>;
-    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres seulement, jamais un fichier ni un lien [R13].
+    // L'adresse exacte reprise (AU031) : l'espace privé du bien, que seuls son agent et la direction lisent.
+    const row = await this.db.first<{ street: string; postal_code: string; city: string }>(
+      'SELECT street, postal_code, city FROM agent_import_property_addresses WHERE network_id = ? AND property_id = ?',
+      [viewer.networkId, propertyId],
+    );
+    const address: PostalAddress | null = row ? { street: row.street, postalCode: row.postal_code, city: row.city } : null;
+    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres seulement, jamais un fichier, un lien
+    // ni une adresse [R13].
     await appendEvent(
       this.journal,
-      { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: String(viewer.role), via: 'import.dossier', pieces: pieces.length } },
+      { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: String(viewer.role), via: 'import.dossier', pieces: pieces.length, address: address !== null } },
       this.now,
     );
-    return { ok: true, value: { propertyId, pieces, counts } };
+    return { ok: true, value: { propertyId, address, pieces, counts } };
   }
 
   /** Les contacts importés à passer à la direction, dans l'ordre d'arrivée. Direction seule [R16]. */
