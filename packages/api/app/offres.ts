@@ -8,6 +8,7 @@
  * tri ni note [R14] ; le prochain pas vient du serveur. Tout texte reçu est posé avec `textContent`.
  */
 import { OFFER_DEPOSIT_MAX_BYTES, OFFER_DEPOSIT_TYPES } from '../../core/src/offres/depot-offres.ts';
+import { LOAN_TYPE_LABEL } from '../../core/src/offres/registre-offres.ts';
 
 /** Les raisons d'un refus, dites à l'agent : jamais un code interne. */
 const REFUSALS = {
@@ -57,6 +58,7 @@ const FIELDS = {
   loanEur: 'Le prêt s’écrit en euros, en chiffres seulement (0 s’il n’y en a pas).',
   signedRef: 'Joignez l’offre signée.',
   conditions: 'Vérifiez les conditions : le prêt demande son montant et sa durée.',
+  'conditions.taux': 'Taux maximal du prêt : en %, de 0,01 à 20, deux décimales au plus, ou laissé vide.',
 };
 const STATES = { recue: 'reçue', transmise: 'transmise au vendeur', acceptee: 'acceptée', refusee: 'refusée', contre_offre: 'contre-offre en cours', echue: 'échue' };
 const STEPS = {
@@ -69,6 +71,8 @@ const STEPS = {
   preparer_compromis: 'Prochain pas : préparer le compromis, une fois l’identité vérifiée.',
   aucun: 'Rien n’attend sur cette offre.',
 };
+/** Les types de prêt, dans l'ordre de la liste fermée du registre (AU079). */
+const LOAN_TYPES = LOAN_TYPE_LABEL;
 const CONDITIONS = { pret: 'prêt', vente_autre_bien: 'vente d’un autre bien', permis_construire: 'permis de construire', certificat_urbanisme: 'certificat d’urbanisme', autre: 'autre condition, voir l’offre signée' };
 const EVENTS = {
   recue: 'Reçue', enregistree: 'Enregistrée au registre', controlee: 'Contrôlée',
@@ -126,12 +130,21 @@ export const OFFRES_SCRIPT = `'use strict';
 globalThis.AIMMO_OFFRES = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)}, FIELDS = ${JSON.stringify(FIELDS)}, STATES = ${JSON.stringify(STATES)}, STEPS = ${JSON.stringify(STEPS)};
+  var LOAN_TYPES = ${JSON.stringify(LOAN_TYPES)};
   var CONDITIONS = ${JSON.stringify(CONDITIONS)}, EVENTS = ${JSON.stringify(EVENTS)}, PROPOSAL_EVENTS = ${JSON.stringify(PROPOSAL_EVENTS)};
   var TYPES = ${JSON.stringify(OFFER_DEPOSIT_TYPES)}, MAX = ${OFFER_DEPOSIT_MAX_BYTES};
   var cur = null, seq = 0, busy = null;
   function state(x) { $('offres-etat').textContent = x; }
   function body() { return $('offres-corps'); }
   function money(n) { return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €'; }
+  /** Un taux écrit « 3,85 » ou « 3.85 % », en centièmes de point ; vide : null ; illisible ou hors de 0,01 à 20 % : NaN. */
+  function rate(f) {
+    var s = String(f.value).replace(/[\\s%]/g, '').replace(',', '.');
+    if (!s) return null;
+    if (!/^\\d{1,2}(\\.\\d{1,2})?$/.test(s)) return NaN;
+    var bp = Math.round(Number(s) * 100);
+    return bp >= 1 && bp <= 2000 ? bp : NaN;
+  }
   function amount(f) { var s = String(f.value).replace(/[\\s€]/g, ''); return /^\\d+$/.test(s) ? Number(s) : NaN; }
   function when(iso) {
     var d = new Date(iso);
@@ -264,7 +277,10 @@ globalThis.AIMMO_OFFRES = function (t) {
   }
   function buyerName(b) { return b ? [b.firstName, b.lastName].filter(Boolean).join(' ') : ''; }
   function condition(c) {
-    if (c.kind === 'pret' && c.amountEur) return 'prêt de ' + money(c.amountEur) + ' sur ' + c.durationMonths + ' mois';
+    if (c.kind === 'pret' && c.amountEur) {
+      return 'prêt' + (c.loanType && LOAN_TYPES[c.loanType] ? ' ' + LOAN_TYPES[c.loanType] : '') + ' de ' + money(c.amountEur) + ' sur ' + c.durationMonths + ' mois' +
+        (typeof c.maxRateBp === 'number' ? ', taux hors assurance ' + Math.floor(c.maxRateBp / 100) + ',' + String(c.maxRateBp % 100).padStart(2, '0') + ' % au plus' : '');
+    }
     return CONDITIONS[c.kind] || 'condition';
   }
   function card(o) {
@@ -412,6 +428,10 @@ globalThis.AIMMO_OFFRES = function (t) {
     condAmount.setAttribute('inputmode', 'numeric');
     var condMonths = field(box, 'of-c-duree', 'Durée de la condition de prêt, en mois');
     condMonths.setAttribute('inputmode', 'numeric');
+    // Le taux maximal et le type, quand l'offre les déclare : comparés ensuite au projet du notaire (AU079).
+    var condRate = field(box, 'of-c-taux', 'Taux nominal maximal hors assurance, en % (si l’offre le dit)');
+    condRate.setAttribute('inputmode', 'decimal');
+    var condType = select(box, 'of-c-type', 'Type de prêt (si l’offre le dit)', [['', 'Non précisé']].concat(Object.keys(LOAN_TYPES).map(function (k) { return [k, LOAN_TYPES[k]]; })));
     var signed = piece(box, 'of-signee', 'Offre signée', 'signee');
     // La même clé tant que l'écran reste ouvert : un envoi rejoué après une coupure ne crée pas une seconde ligne [R56].
     var requestKey = crypto.randomUUID();
@@ -424,8 +444,14 @@ globalThis.AIMMO_OFFRES = function (t) {
       var conditions = [];
       Object.keys(marks).forEach(function (k) {
         if (!marks[k].checked) return;
-        conditions.push(k === 'pret' ? { kind: 'pret', amountEur: amount(condAmount), durationMonths: amount(condMonths) } : { kind: k });
+        if (k !== 'pret') { conditions.push({ kind: k }); return; }
+        var p = { kind: 'pret', amountEur: amount(condAmount), durationMonths: amount(condMonths) };
+        var bp = rate(condRate);
+        if (bp !== null) p.maxRateBp = bp;
+        if (condType.value) p.loanType = condType.value;
+        conditions.push(p);
       });
+      if (marks.pret.checked && Number.isNaN(rate(condRate))) { state(FIELDS['conditions.taux']); return false; }
       if (marks.pret.checked && (Number.isNaN(amount(condAmount)) || Number.isNaN(amount(condMonths)))) { state(FIELDS.conditions); return false; }
       return signed().then(function (ref) {
         if (ref === false) return false;
