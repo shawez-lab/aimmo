@@ -1551,3 +1551,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 00:27 · VOIE 2 : AU082, 3ddaecb4 (main), relancé non
 - 2026-11-21 00:27 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:53 n'ont produit ni commit ni tâche finie : verrou occupé)
 - 2026-11-21 00:37 · voie 3 · AU063 (#733) fusionnée : surfaces habitable, Carrez et utile.
+- 2026-11-21 00:50 · voie 3 · AU060 (#737) fusionnée : droits démembrés (usufruit, nue-propriété) et leurs preuves ; AU110 (#738) et AU109 (#740) corrigés après Codex, relecture demandée.
