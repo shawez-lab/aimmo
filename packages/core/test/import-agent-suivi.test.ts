@@ -1,6 +1,7 @@
 import { beforeEach, expect, it } from 'vitest';
 import { DecisionEnvoi, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase, type SqlValue } from '../src/index.ts';
 import { FOLLOW_UP_TEXT_MAX, ImportAgent, readAgentFollowUp } from '../src/reseau/index.ts';
+import { identifierHash } from '../src/fiche/empreinte.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from './sqlite.ts';
 
@@ -164,6 +165,37 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
     await w.importer.openReminders(me());
     expect((await w.journal.all()).at(-1)).toMatchObject({ type: 'reseau.import_rappels_lus', data: { count: 3 } });
     expect(JSON.stringify(await w.journal.all())).not.toMatch(/Relancer|Préfère|example\.org/);
+  });
+
+  it("[R17] une fiche effacée ne reçoit aucun texte repris : la ligne est dite introuvable, rien n'est rangé", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS });
+    const one = await personOf('un@example.org');
+    const hashed = await identifierHash(w.net, 'email', 'un@example.org');
+    await w.db.run("UPDATE person_identifiers SET value = ? WHERE person_id = ? AND kind = 'email'", [hashed, one]);
+    expect(await w.unique.isErased(one)).toBe(true);
+    const r = await w.importer.run(me(), w.agent, { format: 'hektor', history: 'Email;Date;Type;Note\nun@example.org;2027-01-02;Note;Texte à ne jamais remettre' });
+    expect(r.ok && r.report.followUp.notTaken.unknown_contact).toEqual([2]);
+    expect(await count('SELECT count(*) AS n FROM agent_import_history')).toBe(0);
+    expect(JSON.stringify(w.raw.prepare('SELECT * FROM agent_import_reminders').all())).not.toContain('ne jamais');
+  });
+
+  it("[R18] deux fiches réunies après la reprise : relancé, rien ne revient, un rappel fait reste fait", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
+    const one = await personOf('un@example.org');
+    const two = await personOf('deux@example.org');
+    const reminder = (await w.importer.followUpOf(me(), one));
+    if (!reminder.ok) throw new Error(reminder.code);
+    await w.importer.closeReminder(me(), reminder.value.reminders[0]!.id);
+    await w.unique.merge({ survivorId: two, mergedId: one, reason: 'décision de l’agent', agentId: w.agent });
+    const before = snapshot();
+    const again = await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
+    expect(again.ok && [again.report.followUp.history, again.report.followUp.reminders]).toEqual([0, 0]);
+    expect(snapshot()).toBe(before);
+    const merged = await w.importer.followUpOf(me(), two);
+    expect(merged.ok && merged.value.reminders.map((x) => [x.dueOn, x.done])).toEqual([
+      ['2027-06-30', false],
+      ['2027-07-20', true],
+    ]);
   });
 
   it('[R03] [R17] un rappel repris est une tâche de l’agent : rien ne part, il se marque fait une fois, jamais défait', async () => {

@@ -815,7 +815,10 @@ export class ImportAgent {
       }
       const personId = found.id;
       const e = line.entry;
-      const origin = `import:${agentId}:${format}:suivi:${await digest([personId, line.identity, line.body ?? ''].join('|'))}`;
+      // Le contact tel que l'export le désigne, jamais la fiche du moment : deux fiches réunies depuis ne font pas
+      // revenir un élément déjà repris, ni un rappel déjà fait [R18].
+      const sourceContact = line.contactOrigin ?? contactIdentifiers({ emails: line.emails, phones: line.phones }).map((i) => `${i.kind}:${i.value}`).sort().join(',');
+      const origin = `import:${agentId}:${format}:suivi:${await digest([sourceContact, line.identity, line.body ?? ''].join('|'))}`;
       const stamp = at.toISOString();
       // Déjà repris, en échange ou en rappel : le même élément ne change pas de forme et n'est jamais doublé [R18].
       const already = await this.db.first<{ n: number }>(
@@ -919,6 +922,8 @@ export class ImportAgent {
     const mine = persons.filter((p) => p.agent_id === agentId);
     if (mine.length === 0) return persons.length === 0 ? 'unknown_contact' : 'other_agent';
     if (persons.length > 1) return 'ambiguous_contact';
+    // Une fiche effacée ne reçoit jamais de texte en clair [R17] ; elle est dite introuvable, sans dire pourquoi.
+    if (await this.fiche.isErased(mine[0]!.id)) return 'unknown_contact';
     return mine[0]!;
   }
 
