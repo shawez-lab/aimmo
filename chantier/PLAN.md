@@ -851,7 +851,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU079 · La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#727, 9d52d5de). Constat confirmé (un taux dans la condition de prêt était refusé). La condition `pret` garde, facultatifs, `maxRateBp` (taux nominal maximal hors assurance, centièmes de point, 0,01 à 20 %) et `loanType` (amortissable, in fine, relais, à taux zéro), dans un ordre fixe : sans eux, l'offre et son empreinte restent celles d'avant. Note au notaire [R510], comparaison du projet (différent, absent ou ajouté, avec la page) [R511], prélecture qui ne propose taux et type que retrouvés sur la page, écrans de l'offre et du projet. R56 et R511 précisées. Jamais vu : un plafond de taux ajouté par le projet alors que l'offre n'en portait pas est signalé. Codex : rien ; vérification GitHub verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A079 (majeur), endroit : C/offres/registre-offres.ts, `OfferCondition`.
 - Constat de l'audit : La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement l’offre et le compromis.
@@ -860,7 +861,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU080 · Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A080 (majeur), endroit : C/offres/registre-offres.ts, `MAX_VALIDITY_DAYS`.
 - Constat de l'audit : Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement.

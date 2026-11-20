@@ -1523,3 +1523,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 17:48 · AU078 · le point vendeur consigne une décision de prix déjà convenue, confirmée par l'agent et liée au rendez-vous tenu avec le vendeur, phrase faite par le code, aucune négociation déclenchée ; R53 précisée ; Codex rien ; fusionnée (#726, adcddb1e) · prochaine : AU079
 - 2026-11-20 17:48 · VOIE 2 : AU078, adcddb1e (main), relancé non
 - 2026-11-20 17:48 · VOIE 2 : relance refusée, question 2 (la séance de 15:54 n'a produit ni commit ni tâche finie)
+- 2026-11-20 18:33 · AU079 · condition de prêt avec taux nominal maximal hors assurance et type, gardés au registre (empreinte d'avant inchangée sans eux), repris dans la note au notaire et comparés au projet (différent, absent ou ajouté, avec la page) ; R56 et R511 précisées ; Codex rien ; fusionnée (#727, 9d52d5de) · prochaine : AU080
