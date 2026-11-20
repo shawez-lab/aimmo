@@ -39,6 +39,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'photo_exports.result_ref': F,
   'photo_guide_shots.media_ref': F,
   // AU059 : le scan de la procuration d'un mandant représenté, rangé avec ceux du mandat.
+  'document_mandant_rights.proof_ref': F,
   'document_proxies.power_ref': F,
   'registered_letters.document_ref': F,
   'signature_circuits.document_ref': F,
@@ -125,6 +126,7 @@ export const CLES_LIGNES: Readonly<Record<string, readonly string[]>> = {
   commission_payouts: ['file_id'],
   commission_receipts: ['file_id'],
   commission_steps: ['file_id', 'status'],
+  document_mandant_rights: ['document_id', 'person_id'],
   document_proxies: ['document_id', 'mandant_person_id'],
   offer_responses: ['offer_id'],
   partner_referral_steps: ['referral_id', 'seq'],

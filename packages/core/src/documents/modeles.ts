@@ -164,7 +164,23 @@ export interface GenerateRequest {
    * avec ceux du mandat du bien. Le document nomme la partie et son représentant ; le représentant signe pour elle.
    */
   proxies?: ProxyInput[];
+  /**
+   * Le droit de chaque mandant sur le bien (AU060) : pleine propriété, usufruit ou nue-propriété. Donné pour un mandant,
+   * il l'est pour tous ; un bien démembré se vend par l'usufruitier et les nus-propriétaires ensemble, chacun avec le
+   * justificatif de son droit, rangé avec les scans du mandat.
+   */
+  rights?: RightInput[];
 }
+
+export const RIGHT_KINDS = ['pleine_propriete', 'usufruit', 'nue_propriete'] as const;
+export type RightKind = (typeof RIGHT_KINDS)[number];
+export interface RightInput {
+  personId: string;
+  right: RightKind;
+  /** Le justificatif du droit démembré (acte, attestation du notaire), déposé comme le scan du mandat. */
+  proofRef?: string;
+}
+const RIGHT_LABEL: Record<RightKind, string> = { pleine_propriete: 'titulaire de la pleine propriété', usufruit: 'titulaire de l’usufruit', nue_propriete: 'titulaire de la nue-propriété' };
 
 export interface ProxyInput {
   mandantId: string;
@@ -183,7 +199,7 @@ const POWER_REF = /^mandats\/([A-Za-z0-9_-]{1,64})\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9
 export const MAX_CO_MANDANTS = 9;
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' | 'no_designation_field' | 'bad_proxies' };
+type Problem = { ok: false; rule: 'R40' | null; code: 'unknown_kind' | 'unknown_field' | 'no_evidence' | 'no_number_field' | 'empty_body' | 'body_too_long' | 'no_template' | 'not_essai' | 'bad_input' | 'unknown_template' | 'bad_mandate' | 'bad_co_mandants' | 'no_designation_field' | 'bad_proxies' | 'bad_rights' | 'dismembered_incomplete' };
 
 const PLACEHOLDER = /\{\{\s*([a-z_.]+)\s*\}\}/g;
 const MAX_BODY = 50_000;
@@ -467,8 +483,34 @@ export class Modeles {
         });
       }
     }
+    // Les droits des mandants (AU060) : tous ou aucun ; un usufruit ne se vend pas sans la nue-propriété, ni l'inverse ;
+    // un droit démembré a son justificatif, rangé avec les scans du mandat de ce bien.
+    const rights: RightInput[] = [];
+    if (request.rights !== undefined) {
+      const list = request.rights;
+      const roots = [fiche.person.id, ...coMandants.map((c) => c.id)];
+      if (!Array.isArray(list) || list.length !== roots.length) return { ok: false, rule: null, code: 'bad_rights' };
+      for (const raw of list as unknown[]) {
+        const r = raw as Partial<RightInput> | null;
+        if (!r || typeof r !== 'object' || Object.keys(r).some((k) => !['personId', 'right', 'proofRef'].includes(k))) return { ok: false, rule: null, code: 'bad_rights' };
+        if (typeof r.personId !== 'string' || !roots.includes(r.personId) || rights.some((x) => x.personId === r.personId)) return { ok: false, rule: null, code: 'bad_rights' };
+        if (typeof r.right !== 'string' || !(RIGHT_KINDS as readonly string[]).includes(r.right)) return { ok: false, rule: null, code: 'bad_rights' };
+        const split = r.right !== 'pleine_propriete';
+        const ref = typeof r.proofRef === 'string' ? POWER_REF.exec(r.proofRef) : null;
+        if (split ? !ref || ref[1] !== property.id : r.proofRef !== undefined && (!ref || ref[1] !== property.id)) return { ok: false, rule: null, code: 'bad_rights' };
+        rights.push({ personId: r.personId, right: r.right as RightKind, ...(r.proofRef !== undefined ? { proofRef: r.proofRef } : {}) });
+      }
+      const has = (k: RightKind) => rights.some((x) => x.right === k);
+      if (has('usufruit') !== has('nue_propriete')) return { ok: false, rule: null, code: 'dismembered_incomplete' };
+    }
     // Le nom d'un mandant représenté dit son représentant et la procuration ; un représentant sans nom rend le champ manquant.
-    const represented = (id: string, name: string | null): string | null => {
+    // Son droit sur le bien suit son nom, s'il est dit (AU060).
+    const titled = (id: string, name: string | null): string | null => {
+      const r = rights.find((x) => x.personId === id);
+      return r && name !== null ? `${name}, ${RIGHT_LABEL[r.right]}` : name;
+    };
+    const represented = (id: string, bare: string | null): string | null => {
+      const name = titled(id, bare);
       const p = proxies.find((q) => q.mandantId === id);
       if (!p || name === null) return name;
       if (p.proxyName === null) return null;
@@ -554,6 +596,8 @@ export class Modeles {
     if (coMandants.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_co_mandants' };
     // Un mandant représenté : le modèle doit nommer la partie et son représentant (AU059) [R40, R41].
     if (proxies.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_proxies' };
+    // Des droits démembrés : le modèle doit nommer chaque mandant et son droit (AU060).
+    if (rights.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_rights' };
     // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
     const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
     const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (AMENDMENT_INPUTS as readonly string[]).includes(k));
@@ -584,6 +628,12 @@ export class Modeles {
     for (const co of coMandants) {
       await this.db.run('INSERT INTO document_co_mandants (document_id, person_id, network_id, position, added_at) VALUES (?, ?, ?, ?, ?)', [id, co.id, viewer.networkId, ++position, at]);
     }
+    for (const r of rights) {
+      await this.db.run(
+        'INSERT INTO document_mandant_rights (document_id, network_id, person_id, right_kind, proof_ref, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [id, viewer.networkId, r.personId, r.right, r.proofRef ?? null, this.actor(viewer), at],
+      );
+    }
     for (const p of proxies) {
       await this.db.run(
         'INSERT INTO document_proxies (document_id, network_id, mandant_person_id, proxy_person_id, power_kind, granted_on, power_ref, recorded_by, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -592,7 +642,7 @@ export class Modeles {
     }
     await appendEvent(
       this.journal,
-      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length, ...(coMandants.length > 0 ? { coMandants: coMandants.length } : {}), ...(proxies.length > 0 ? { proxies: proxies.length } : {}) } },
+      { type: 'document.genere', actor: this.actor(viewer), subject: `person:${fiche.person.id}`, data: { document: id, kind: template.kind, version: Number(template.version), mode, status, missing: missing.length, ...(coMandants.length > 0 ? { coMandants: coMandants.length } : {}), ...(proxies.length > 0 ? { proxies: proxies.length } : {}), ...(rights.length > 0 ? { rights: rights.map((r) => r.right) } : {}) } },
       this.now,
     );
     return {

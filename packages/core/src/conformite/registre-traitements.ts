@@ -216,6 +216,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       document_co_mandants: ['person_id'],
       // AU059 : le mandant représenté et son représentant, la procuration rangée par sa référence.
       document_proxies: ['mandant_person_id', 'proxy_person_id', 'power_ref', 'recorded_by'],
+      // AU060 : le droit de chaque mandant sur le bien et son justificatif.
+      document_mandant_rights: ['person_id', 'proof_ref', 'recorded_by'],
       // AU002 : l'adresse et les parcelles du bien, le domicile du mandant, repris par le mandat.
       property_designations: ['street', 'postal_code', 'city', 'parcels', 'set_by'],
       property_positions: ['lat', 'lon', 'set_by'],
@@ -1184,6 +1186,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
   document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   document_proxies: ['document_id', 'network_id', 'power_kind', 'granted_on', 'recorded_at'],
+  document_mandant_rights: ['document_id', 'network_id', 'right_kind', 'recorded_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
