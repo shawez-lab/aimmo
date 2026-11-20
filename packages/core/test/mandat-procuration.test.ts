@@ -164,6 +164,23 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     expect(copies.map((c) => c.person_id)).toEqual([paul]);
   });
 
+  it('[R41] un représentant réuni à un mandant après l’envoi du code : le code ne signe plus rien', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const paul = await t.owner('Paul', 'Tiers', undefined, false);
+    await t.identify(lea);
+    await t.identify(paul);
+    const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id)] });
+    if (!d.ok) throw new Error(d.code);
+    const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, scans: { has: async (r) => r === REF(t.property.id) } });
+    const session = await online.start(t.agent, d.document.id, CONSENT);
+    if (!session.ok) throw new Error(session.code);
+    const sent = await t.codes();
+    await t.unique.merge({ survivorId: lea, mergedId: paul, reason: 'test : même personne', agentId: t.alex.id });
+    expect(await online.sign(t.agent, session.value.sessionId, { code: sent[0]!.code })).toEqual({ ok: false, rule: 'R41', code: 'mandants_merged' });
+    expect(await t.db.first("SELECT status FROM signature_sessions WHERE id = ?", [session.value.sessionId])).not.toEqual({ status: 'signee' });
+  });
+
   it('[R16] le document nomme le représentant : qui ne voit plus sa fiche ne lit plus le document', async () => {
     const t = await setup();
     const lea = await t.owner('Léa', 'Exemple');

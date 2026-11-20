@@ -493,7 +493,12 @@ export class SignatureEnLigne {
   private async distinctMandants(documentId: string, firstPersonId: string): Promise<boolean> {
     const ids = await documentMandants(this.db, documentId, firstPersonId);
     const roots = new Set(await Promise.all(ids.map((id) => this.fiche.rootOf(id))));
-    return roots.size === ids.length;
+    if (roots.size !== ids.length) return false;
+    // Un représentant réuni depuis à un mandant n'en est plus un : rien ne se signe (AU059) [R41].
+    for (const p of await documentProxies(this.db, documentId)) {
+      if (roots.has(await this.fiche.rootOf(p.proxyId))) return false;
+    }
+    return true;
   }
 
   /** Le viewer voit-il cette fiche en entier, agent ou direction ? Sinon le refus va au journal [R16]. */
