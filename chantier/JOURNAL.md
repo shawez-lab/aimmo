@@ -1496,3 +1496,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 09:15 · AU020b · bloquée : la liste blanche des tables du bien gardées d'office laisse passer un nom de vendeur dans les textes (relecture forte 1 P1, Codex 3 P0 corrigés l'un après l'autre, le troisième touche les brouillons eux-mêmes) ; #715 ouverte sans fusion, branche gardée, nouvelle approche notée au plan · prochaine : AU021
 - 2026-11-20 09:15 · VOIE 2 : AU020b, df14e077 (branche, #715, non fusionnée), relancé non
 - 2026-11-20 09:15 · VOIE 2 : relance refusée, question 2 (les séances de 05:55 et 06:55 n'ont produit ni commit ni tâche finie)
+- 2026-11-20 10:42 · AU021 · restauration complète : base et fichiers, puis registre rejoué par le véritable effaceur sur les stockages restaurés ; registre listé dans le compartiment des copies ; relecture forte 1 P1, Codex 1 P0 corrigés ; fusionnée (#716, a744788b) · prochaine : AU020b (nouvelle approche) ou tâche voie 2 libre
+- 2026-11-20 10:42 · VOIE 2 : AU021, a744788b (main), relancé non
+- 2026-11-20 10:42 · VOIE 2 : relance refusée, question 2 (la séance de 08:54 n'a produit ni commit ni tâche finie)

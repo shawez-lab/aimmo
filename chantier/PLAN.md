@@ -297,7 +297,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU021 · Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire »
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#716, a744788b). Constat confirmé : `restoreWithErasures` ne restaurait que la base, `restoreExercise` rendait base et fichiers sans rejeu, et le compartiment des copies ne listait pas le registre. `sauvegarde/restauration-complete.ts`, `restoreEverything` : base et fichiers, puis rejeu par `SqlPersonEraser` sur les stockages restaurés ; un fichier est retiré de chaque stockage restauré hors du coffre ; `r2CopyStore.list(prefix)`, une page incomplète refusée (`completeListPage`). R231 en service. Relecture forte 1 P1 corrigé (fichier rangé hors du stockage de son préfixe) ; Codex 1 P0 corrigé (XML coupé lu comme registre vide), puis rien ; vérification GitHub verte. Restent : un outil de restauration réelle vers des compartiments R2 neufs qui savent retirer un fichier, appelant `restoreEverything` ; l'écriture du registre par le Worker (H29, H50) ; pour la voie 1 (`conformite/effacement-reel.ts`, socle) : `eraseForReal` retire un fichier du seul stockage de son préfixe, un dossier de commerce à référence libre rangé dans COMMERCES reste en production ; `restoreEverything` n'est pas exporté par `sauvegarde/index.ts`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A021 (bloquant), endroit : chantier/PLAN.md, SV05 ; C/sauvegarde/effacements.ts.
 - Constat de l'audit : Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire » : une restauration peut réintroduire les données supprimées si ce raccordement manque.
