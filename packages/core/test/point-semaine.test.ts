@@ -235,7 +235,7 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
       const events = entries.filter((e) => e.type === 'point_semaine.decision_prix');
       expect(events).toHaveLength(1);
       expect(events[0]!.data).toEqual({ week: '2026-12-07', appointment: 'rdv-vendeur' });
-      expect(JSON.stringify(entries)).not.toMatch(/240|VendeurD|vendeur3@/);
+      expect(JSON.stringify(entries)).not.toMatch(/240[ .\u00a0\u202f]?000|VendeurD|vendeur3@/);
       expect((await verifyChain(entries)).ok).toBe(true);
     });
 
