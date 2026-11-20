@@ -26,6 +26,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { Annonces } from './annonces.ts';
 import { MediasBien, type PublishedMedia } from './medias.ts';
 import { computeMentions, MentionsAnnonce } from './mentions.ts';
+import { surfacesFor, type SurfaceKind, type SurfaceSource } from './fiche-bien.ts';
 
 export const CHANNELS = ['site', 'reseaux', 'google', 'portails'] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -49,6 +50,11 @@ export interface ListingPayload {
    * quand la fiche porte son numéro ADEME ou ses valeurs (une annonce sans eux garde le même contenu qu'avant).
    */
   dpe?: ListingDpe;
+  /**
+   * AU063 · les surfaces que les portails reçoivent, chacune nommée, avec sa source : présentes seulement quand la fiche
+   * porte une surface Carrez ou utile (une annonce sans elles garde le même contenu qu'avant).
+   */
+  surfaces?: { kind: SurfaceKind; m2: number; source: SurfaceSource | null }[];
 }
 
 export interface ListingDpe {
@@ -160,12 +166,18 @@ export class Publication {
       : null;
     // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus, et ses
     // légendes se lisent sur cette même fiche (AU066).
-    const mediaSheet = (await this.annonces.factsFor(propertyId))?.sheetVersion ?? draft.sheetVersion;
+    const current = await this.annonces.factsFor(propertyId);
+    const mediaSheet = current?.sheetVersion ?? draft.sheetVersion;
+    const c = input?.sheet?.characteristics;
+    const surfaces =
+      current && (c?.carrezM2 !== undefined || c?.usableM2 !== undefined)
+        ? surfacesFor('portails', { kind: current.facts.kind, surfaceM2: current.facts.surfaceM2, carrezM2: c?.carrezM2 ?? null, usableM2: c?.usableM2 ?? null, ...(c?.surfaceSources ? { surfaceSources: c.surfaceSources } : {}) }).map((x) => ({ kind: x.kind, m2: x.m2, source: x.source }))
+        : null;
     return {
       draftId: draft.id,
       mediaSheet,
       draftSheet: draft.sheetVersion,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet), ...(dpe ? { dpe } : {}) },
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet), ...(dpe ? { dpe } : {}), ...(surfaces && surfaces.length > 0 ? { surfaces } : {}) },
     };
   }
 

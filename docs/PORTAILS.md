@@ -32,6 +32,7 @@ Un document XML en UTF-8, une annonce par bien, triées par référence. Une mê
 - `prix` : le prix publié, honoraires inclus quand l'acquéreur les paie, en euros entiers.
 - `mentions` : les mentions obligatoires calculées par le code, une par ligne.
 - `dpe` (AU064) : le diagnostic tel qu'il est rangé dans la fiche, pour le reprendre sans ressaisie : son numéro d'enregistrement à l'ADEME (`numero`, 13 caractères), l'énergie primaire en kWh/m²/an (`energie_primaire`), les émissions en kg CO₂/m²/an (`ges`), les deux classes et le jour du diagnostic. Seuls les attributs connus sont écrits ; sans numéro ni valeurs, l'élément est absent.
+- `surfaces` (AU063) : présentes quand la fiche porte une surface Carrez ou utile ; chaque `<surface type="habitable|carrez|utile" m2="61.35" source="mesurage|acte|vendeur"/>` dans l'ordre que la règle des portails fixe (un local : l'utile d'abord) ; la source n'est écrite que si elle est dite.
 
 ## Portails étrangers : format d'essai `aimmo-essai-international-1` (HX05)
 
