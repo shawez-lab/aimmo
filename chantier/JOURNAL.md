@@ -1514,3 +1514,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 15:16 · AU026 · quiz de chaque parcours et de chaque module passé depuis l'académie, réponses justes ou à revoir sans note, attestation à l'écran avec son empreinte, enregistrable, « Mes attestations » ; Codex rien à signaler ; fusionnée (#722, 69b04884) · prochaine : AU027
 - 2026-11-20 15:18 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU027
 - 2026-11-20 15:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 14:55 par une autre séance voie 2, active : AU077, push à 15:35, proposition #723)
+- 2026-11-20 16:05 · AU077 · visite groupée : plusieurs acquéreurs au même créneau de l'agent, chacun son rendez-vous, son bon et son compte rendu, l'agent tenu une fois ; Codex 4 P0 corrigés puis rien ; vérification GitHub verte ; fusionnée (#723, bdafbaff) · prochaine : AU078
+- 2026-11-20 16:05 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
+- 2026-11-20 16:05 · VOIE 2 : AU077, bdafbaff (main), relancé non

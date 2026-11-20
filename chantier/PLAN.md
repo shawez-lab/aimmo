@@ -829,7 +829,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU077 · Manque
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#723, bdafbaff), migration `4031`. Constat confirmé (le second acquéreur au même créneau était refusé `taken`). `Visites.schedule` et `POST /visites` acceptent `joinVisit` : même agent, même bien, même début et fin ; chacun son rendez-vous, sa visite, son bon et son compte rendu ; l'agent tenu une fois, ses tranches passent à un autre rendez-vous encore pris du groupe et ne sont libérées qu'avec le dernier ; huit au plus, entrée décidée dans l'instruction même ; agenda occupé revérifié [R33] ; jamais depuis le site ni l'espace client. Jamais vu : le compte rendu d'une visite groupée ne nomme aucun des acquéreurs venus ensemble, et l'IA ne les lit pas [R52, R15]. R32 et R52 précisées. Codex : 2 P0, puis 2 P0, corrigés, puis rien. Restent : un seul événement d'agenda pour le groupe ; bouton « ajouter un acquéreur à cette visite » à l'écran (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A077 (majeur), endroit : C/rendezvous/reservation.ts ; C/visites/visites.ts.
 - Constat de l'audit : Manque : une visite groupée avec plusieurs acquéreurs ne peut partager un même créneau d’agent sans être traitée comme des rendez-vous concurrents.
