@@ -910,7 +910,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU083 · Quand deux banques travaillent sur le dossier, leurs étapes se mélangent
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A083 (majeur), endroit : C/dossiers/financement.ts, `DeclaredStep`.
 - Constat de l'audit : Quand deux banques travaillent sur le dossier, leurs étapes se mélangent : aucune banque ni demande distincte n’est identifiée.
