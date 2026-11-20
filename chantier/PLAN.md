@@ -288,7 +288,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU022 · Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande
-- Statut : en cours
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (CANDIDATURE_NETWORK_ID non réglée, page « Bientôt »). Sans variable, le seul réseau de la base reçoit (1 en production) ; aucun ou plusieurs : page fermée ; base illisible : page fermée ; la variable l'emporte. Fusionnée (#711), Codex 1 P1 (tests à jour) corrigé
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A022 (majeur), endroit : `/rejoindre` en production ; A/worker.ts, `CANDIDATURE_NETWORK_ID`.
 - Constat de l'audit : Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande.
