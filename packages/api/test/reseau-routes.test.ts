@@ -78,9 +78,9 @@ describeWithSqlite('J12 · routes de M14', () => {
   /** L'adresse d'une route, ses identifiants remplacés par `id`. */
   const pathOf = (pattern: RegExp, id: string): string => pattern.source.replace(/\(\[A-Za-z0-9_-\]\{1,64\}\)/g, id).replace(/^\^/, '').replace(/\$$/, '');
   /** Les routes où l'appelant agit seulement sur ce qui est à lui : le rôle d'agent suffit, la couche métier fait le reste. */
-  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable', 'reseau.mon_bac_a_sable_ouvrir', 'reseau.mon_bac_a_sable_etape', 'reseau.mes_rappels_repris'];
+  const OWN = ['reseau.mon_dossier', 'reseau.import', 'reseau.academie', 'reseau.module_fait', 'reseau.ma_formation', 'reseau.entrainement_cas', 'reseau.entrainement', 'reseau.assistance', 'reseau.mes_primes', 'reseau.mon_referent', 'reseau.mon_bac_a_sable', 'reseau.mon_bac_a_sable_ouvrir', 'reseau.mon_bac_a_sable_etape', 'reseau.mes_rappels_repris', 'reseau.import_apercu'];
   /** Les routes d'agent sur la chose d'un autre : la couche métier refuse un agent tiers. */
-  const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin', 'reseau.import_suivi', 'reseau.rappel_repris_fait'];
+  const OTHERS = ['reseau.dossiers_couverts', 'reseau.entrainement_tour', 'reseau.entrainement_fin', 'reseau.import_suivi', 'reseau.rappel_repris_fait', 'reseau.import_dossier'];
   const refusals = async (t: Awaited<ReturnType<typeof setup>>) => (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
   /** Un appel sans corps lisible : le refus de droits doit venir avant toute lecture du corps. */
   const raw = async (t: Awaited<ReturnType<typeof setup>>, route: ReturnType<typeof reseauRoutes>[number], viewer: Viewer, id: string) => {
@@ -330,6 +330,27 @@ describeWithSqlite('J12 · routes de M14', () => {
     expect((await t.call(me, 'POST', '/reseau/import/rappels/fait', { id: rappel!.id })).status).toBe(200);
     expect((await t.call(me, 'GET', '/reseau/import/rappels')).body.data).toEqual([]);
     for (const table of ['send_log', 'trial_outbox', 'outbound_refs', 'send_reservations']) expect([table, await t.db.all(`SELECT * FROM ${table}`)]).toEqual([table, []]);
+  });
+
+  it('[R84] [R16] AU030 : l’aperçu compte chaque pièce écartée sans rien ranger, puis le dossier repris se lit sur le bien, jamais par un autre', async () => {
+    const t = await setup();
+    const agentId = await t.admitted('Rose', 'rose@exemple.test');
+    const me: Viewer = { role: 'agent', userId: agentId, networkId: t.network.id };
+    const properties = 'Référence,Type,Ville\nB1,Maison,Dijon';
+    const pieces = 'Référence bien,Type,Fichier,Lien\nB1,Photo,facade.jpg,\nB1,Mandat signé,mandat.pdf,\nB9,Photo,ailleurs.jpg,\nB1,Annonce,,http://annonce.exemple.test/b1';
+    const apercu = await t.call(me, 'POST', '/reseau/import/apercu', { format: 'excel', properties, pieces });
+    expect(apercu.status).toBe(200);
+    expect(apercu.body.data.dossier).toMatchObject({ kept: { photo: 1, mandate: 1 }, notTaken: { unknown_property: [4], unsafe_link: [5] } });
+    expect(await t.db.all('SELECT * FROM agent_import_property_pieces')).toEqual([]);
+    const r = await t.call(me, 'POST', '/reseau/import', { format: 'excel', properties, pieces });
+    expect(r.status).toBe(200);
+    expect(r.body.data.dossier).toEqual(apercu.body.data.dossier);
+    const [bien] = (await t.db.all('SELECT property_id FROM agent_import_properties')) as { property_id: string }[];
+    const dossier = await t.call(me, 'GET', `/reseau/import/dossier/${bien!.property_id}`);
+    expect(dossier.status).toBe(200);
+    expect(dossier.body.data.counts).toMatchObject({ photo: 1, mandate: 1 });
+    const tiers: Viewer = { role: 'agent', userId: 'agent-tiers', networkId: t.network.id };
+    expect((await t.call(tiers, 'GET', `/reseau/import/dossier/${bien!.property_id}`)).status).toBe(403);
   });
 
   it('[R16] [R85] J14 : l’agent lit son référent, ses modules faits et son premier parcours, sans l’identifiant d’un autre', async () => {
