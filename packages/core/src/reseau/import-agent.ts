@@ -505,7 +505,9 @@ export async function readAgentFollowUp(text: string, format: AgentExportFormat,
     const due = exportDay(first(row, 'due'));
     const rawStatus = first(row, 'status');
     const done = rawStatus !== null && DONE.has(key(rawStatus));
-    const rawBody = first(row, 'body');
+    // Objet, commentaire, compte rendu… : chaque texte de la ligne est gardé, dans l'ordre de l'export, sans doublon.
+    const texts = [...new Set((columns.get('body') ?? []).map((i) => clean(row[i])).filter((v): v is string => v !== null))];
+    const rawBody = texts.length === 0 ? null : texts.join(' · ');
     const truncated = rawBody !== null && rawBody.length > FOLLOW_UP_TEXT_MAX;
     const body = rawBody === null ? null : rawBody.slice(0, FOLLOW_UP_TEXT_MAX);
 
@@ -529,7 +531,8 @@ export async function readAgentFollowUp(text: string, format: AgentExportFormat,
       continue;
     }
     // Le jour et l'heure tels que l'export les écrit : deux appels du même jour, au même texte, restent deux appels.
-    const identity = [type, (first(row, 'date') ?? '').replace(/\s+/g, ' '), (first(row, 'due') ?? '').replace(/\s+/g, ' ')].join('|');
+    // Le texte entier, avant toute coupe, en fait partie : deux notes qui ne diffèrent qu'après la coupe restent deux.
+    const identity = [type, (first(row, 'date') ?? '').replace(/\s+/g, ' '), (first(row, 'due') ?? '').replace(/\s+/g, ' '), await digest(rawBody ?? '')].join('|');
     reading.lines.push({ line, contactOrigin: id === null ? null : await contactOriginById(agentId, format, id), emails, phones, entry, identity, body, truncated });
   }
   return reading;
@@ -819,7 +822,7 @@ export class ImportAgent {
       // Le contact tel que l'export le désigne, jamais la fiche du moment : deux fiches réunies depuis ne font pas
       // revenir un élément déjà repris, ni un rappel déjà fait [R18].
       const sourceContact = line.contactOrigin ?? contactIdentifiers({ emails: line.emails, phones: line.phones }).map((i) => `${i.kind}:${i.value}`).sort().join(',');
-      const origin = `import:${agentId}:${format}:suivi:${await digest([sourceContact, line.identity, line.body ?? ''].join('|'))}`;
+      const origin = `import:${agentId}:${format}:suivi:${await digest([sourceContact, line.identity].join('|'))}`;
       const stamp = at.toISOString();
       // Déjà repris, en échange ou en rappel : le même élément ne change pas de forme et n'est jamais doublé [R18].
       const already = await this.db.first<{ n: number }>(

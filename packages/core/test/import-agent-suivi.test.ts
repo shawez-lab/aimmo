@@ -205,6 +205,17 @@ describeWithSqlite("AU029 · la reprise d'un agent garde ses échanges, ses note
     expect(r.ok && [r.report.followUp.history, r.report.followUp.known]).toEqual([2, 1]);
   });
 
+  it("[R84] [R18] objet et compte rendu sont gardés ensemble ; deux notes qui ne diffèrent qu'après la coupe restent deux, chacune signalée", async () => {
+    await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS });
+    const both = await w.importer.run(me(), w.agent, { format: 'hektor', history: 'Id contact;Date;Type;Objet;Compte rendu\nC1;2027-07-01;Appel;Appel de suivi;Rappeler après le passage du diagnostiqueur' });
+    expect(both.ok && both.report.followUp.history).toBe(1);
+    expect((await w.db.first<{ body: string }>('SELECT body FROM agent_import_history'))?.body).toBe('Appel de suivi · Rappeler après le passage du diagnostiqueur');
+    const base = 'y'.repeat(FOLLOW_UP_TEXT_MAX);
+    const csv = ['Id contact;Date;Type;Note', `C2;2027-07-02;Note;${base}A`, `C2;2027-07-02;Note;${base}B`].join('\n');
+    const r = await w.importer.run(me(), w.agent, { format: 'hektor', history: csv });
+    expect(r.ok && [r.report.followUp.history, r.report.followUp.known, r.report.followUp.truncatedLines]).toEqual([2, 0, [2, 3]]);
+  });
+
   it('[R03] [R17] un rappel repris est une tâche de l’agent : rien ne part, il se marque fait une fois, jamais défait', async () => {
     let out = await count("SELECT count(*) AS n FROM messages WHERE direction = 'out'");
     await w.importer.run(me(), w.agent, { format: 'hektor', contacts: CONTACTS, history: HISTORY });
