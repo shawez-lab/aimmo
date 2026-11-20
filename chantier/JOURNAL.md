@@ -1545,3 +1545,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 23:39 · AU031 · l'adresse exacte des biens repris gardée dans l'espace privé du bien (agent du bien et direction, lecture au journal sans l'adresse), jamais dans le bien ni une sortie publique ; adresse incomplète au bilan dès l'aperçu ; R84 précisée ; Codex 1 P2 corrigé ; fusionnée (#734, 1d00f18e) · prochaine : AU032
 - 2026-11-20 23:40 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU032
 - 2026-11-20 23:40 · voie 3 · AU059b (#736) fusionnée ; AU060 ouverte (#737) ; AU063 (#733) corrigée, relecture en cours.
+- 2026-11-20 23:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:55 par une autre séance voie 2, active : push sur chantier/AU082 à 23:51)
