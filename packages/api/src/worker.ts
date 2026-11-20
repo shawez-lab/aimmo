@@ -7,7 +7,8 @@ import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
-import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
+import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
+import { D1SandboxStorage } from './bac-a-sable.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
@@ -23,6 +24,10 @@ import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
  */
 export interface Env {
   DB: D1Database;
+  /** AU025 : la base D1 à part des bacs à sable, en Europe, jamais celle du réseau. Absente, le bac à sable reste fermé. */
+  BAC_A_SABLE_DB?: D1Database;
+  /** AU025 : le module d'académie que vaut le premier parcours fini ; absent, le parcours ne compte pas à l'académie. */
+  BAC_A_SABLE_MODULE?: string;
   API_KEYS?: string;
   INTAKE_KEYS?: string;
   MODE?: string;
@@ -140,6 +145,13 @@ export function fichiersReprise(env: Pick<Env, 'MEDIA' | 'PIECES' | 'COMMERCES'>
   return buckets.length > 0 ? new R2FichiersPlages(buckets) : null;
 }
 
+function sandboxOptions(env: Env): NonNullable<ReseauOptions['sandbox']> | null {
+  if (!env.BAC_A_SABLE_DB || env.BAC_A_SABLE_DB === env.DB) return null;
+  const moduleId = env.BAC_A_SABLE_MODULE && /^[A-Za-z0-9_-]{1,64}$/.test(env.BAC_A_SABLE_MODULE) ? env.BAC_A_SABLE_MODULE : null;
+  // Aucune migration à jouer ici : la mise en ligne applique à cette base les mêmes migrations qu'à celle du réseau.
+  return { migrations: [], storage: new D1SandboxStorage(fromD1(env.BAC_A_SABLE_DB), fromD1(env.DB)), academyModuleId: moduleId };
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -152,8 +164,9 @@ export default {
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
-      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
-      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
+      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.
+      // AU025 : le bac à sable vit dans sa propre base D1, avec les migrations du réseau et aucune de ses lignes.
+      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null, sandbox: sandboxOptions(env) },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),

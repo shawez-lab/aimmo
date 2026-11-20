@@ -24,6 +24,8 @@ import {
   ImportAgent,
   Parrainage,
   ReponsesCandidats,
+  AGENT_PIECE_MAX_BYTES,
+  type AgentPieceExt,
   type AgentPieceStore,
   type BacASableOptions,
   type ObjectionCoach,
@@ -32,7 +34,7 @@ import {
 /** Le stockage R2 des pièces des dossiers d'agent : l'existence d'une référence, et le rangement d'un projet. */
 export interface R2AgentBucket {
   head(key: string): Promise<unknown | null>;
-  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+  put(key: string, value: string | Uint8Array, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
 }
 
 /**
@@ -54,6 +56,44 @@ export class R2AgentPieceStore implements AgentPieceStore {
     await this.bucket.put(ref, text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
     return ref;
   }
+
+  /** AU024 · Le fichier d'une pièce déposée depuis l'écran, sous un nom tiré au hasard ; jamais relu d'ici. */
+  async putFile(agentId: string, bytes: Uint8Array, ext: AgentPieceExt, contentType: string): Promise<string> {
+    const ref = `agents/${agentId}/${this.newId()}.${ext}`;
+    await this.bucket.put(ref, bytes, { httpMetadata: { contentType } });
+    return ref;
+  }
+}
+
+/**
+ * AU024 · Le fichier d'une pièce, lu dans le corps brut sans jamais dépasser le poids admis : la longueur annoncée
+ * d'abord, puis les octets reçus, par morceaux.
+ */
+async function readPieceFile(request: Request): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  const contentType = request.headers.get('content-type') ?? '';
+  const announced = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(announced) && announced > AGENT_PIECE_MAX_BYTES) return null;
+  if (!request.body) return { bytes: new Uint8Array(0), contentType };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > AGENT_PIECE_MAX_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.byteLength;
+  }
+  return { bytes, contentType };
 }
 
 export const TRIAL_MODE = 'essai';
@@ -146,6 +186,8 @@ const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
   module: 'direction',
   seance: 'direction',
   presence: 'direction',
+  formation_periode: 'direction',
+  formation_anterieure: 'direction',
   referent: 'direction',
   binome: 'direction',
   assistance_repondue: 'direction',
@@ -162,6 +204,7 @@ const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
   contenus: 'direction_or_compliance',
   dossier: 'self_or_compliance',
   piece: 'self',
+  piece_fichier: 'self',
   absence: 'self',
   formation: 'self',
   primes: 'self',
@@ -265,6 +308,16 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
         m.dossier ? reply(await m.dossier.addPiece(v, id!, { kind: b.kind, ref: b.ref, issuedOn: b.issuedOn, ...(b.validUntil === undefined ? {} : { validUntil: b.validUntil }) })) : noPieces(),
       ),
     ),
+    // AU024 · Le fichier même d'une pièce, déposé depuis l'écran : corps brut (PDF, JPEG, PNG), pièce et dates dans l'adresse.
+    route('POST', `${A}/pieces/fichier`, 'piece_fichier', async (s, v, [id], request) => {
+      const m = reseauServices(s, options);
+      if (!m.dossier) return noPieces();
+      const file = await readPieceFile(request);
+      if (!file) return json(413, { ok: false, rule: null, code: 'file_too_large' });
+      const q = new URL(request.url).searchParams;
+      const validUntil = q.get('validUntil');
+      return reply(await m.dossier.addPieceFile(v, id!, { kind: q.get('kind'), issuedOn: q.get('issuedOn'), ...(validUntil === null ? {} : { validUntil }) }, file));
+    }),
     route('POST', `${A}/projets`, 'projet_piece', write(['kind'], async (m, v, [id], b) => (m.dossier ? reply(await m.dossier.prepareDraft(v, id!, b.kind)) : noPieces()))),
 
     /* ---------- Import des contacts et des biens de l'agent : rien n'est envoyé [R84]. ---------- */
@@ -273,16 +326,25 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
       `${P}/import`,
       'import',
       write(
-        ['format', 'contacts', 'properties'],
+        ['format', 'contacts', 'properties', 'history'],
         async (m, v, _p, b) => {
-          if ((b.contacts !== undefined && typeof b.contacts !== 'string') || (b.properties !== undefined && typeof b.properties !== 'string')) return badBody();
-          const r = await m.import.run(v, v.userId, { format: b.format, ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }), ...(b.properties === undefined ? {} : { properties: b.properties as string }) });
+          if ((['contacts', 'properties', 'history'] as const).some((k) => b[k] !== undefined && typeof b[k] !== 'string')) return badBody();
+          const r = await m.import.run(v, v.userId, {
+            format: b.format,
+            ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }),
+            ...(b.properties === undefined ? {} : { properties: b.properties as string }),
+            ...(b.history === undefined ? {} : { history: b.history as string }),
+          });
           return reply(r.ok ? { ok: true, value: r.report } : r);
         },
         MAX_IMPORT_BYTES,
       ),
     ),
     route('GET', `${P}/import/a-reprendre`, 'import_direction', read(async (m, v) => reply(await m.import.referrals(v)))),
+    // AU029 : le suivi repris d'une fiche (échanges, notes, rappels), et les rappels repris de l'agent. Rien n'est envoyé.
+    route('GET', `${P}/import/suivi/${ID}`, 'import_suivi', read(async (m, v, [id]) => reply(await m.import.followUpOf(v, id!)))),
+    route('GET', `${P}/import/rappels`, 'mes_rappels_repris', read(async (m, v) => reply(await m.import.openReminders(v)))),
+    route('POST', `${P}/import/rappels/fait`, 'rappel_repris_fait', write(['id'], async (m, v, _p, b) => reply(await m.import.closeReminder(v, b.id)))),
 
     /* ---------- Académie : aucun horaire imposé, heures comptées par le code [R85]. ---------- */
     route('GET', `${P}/academie`, 'academie', read(async (m, v) => reply(await m.academie.tracks(v)))),
@@ -304,8 +366,30 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('POST', `${P}/academie/seances/${ID}/presence`, 'presence', write(['agentId', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.recordAttendance(v, id!, { agentId: b.agentId, recorderName: b.recorderName })))),
     route('GET', `${P}/ma-formation`, 'ma_formation', read(async (m, v) => reply(await m.academie.counter(v, v.userId)))),
     route('GET', `${A}/formation`, 'formation', read(async (m, v, [id]) => reply(await m.academie.counter(v, id!)))),
+    // AU028 : la direction reprend le cycle de formation d'avant l'arrivée, pièce et nom de la personne qui saisit à l'appui.
+    route(
+      'POST',
+      `${A}/formation/periode-anterieure`,
+      'formation_periode',
+      write(['cycleStart', 'proofRef', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.setPriorPeriod(v, id!, { cycleStart: b.cycleStart, proofRef: b.proofRef, recorderName: b.recorderName }))),
+    ),
+    route(
+      'POST',
+      `${A}/formation/anterieures`,
+      'formation_anterieure',
+      write(['heldOn', 'durationMinutes', 'topic', 'proofRef', 'recorderName'], async (m, v, [id], b) =>
+        reply(await m.academie.addPriorTraining(v, id!, b as Parameters<Academie['addPriorTraining']>[2])),
+      ),
+    ),
     // Le parcours d'essai de l'agent lui-même, sans son identifiant dans l'adresse (J14).
     route('GET', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable', read(async (m, v) => (m.sandbox ? reply(await m.sandbox.progress(v, v.userId)) : unavailable('Le bac à sable')))),
+    // AU025 : l'agent ouvre son exercice depuis son écran, puis y fait les étapes une à une ; lui seul [R16].
+    route('POST', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable_ouvrir', read(async (m, v) => {
+      if (!m.sandbox) return unavailable('Le bac à sable');
+      const opened = await m.sandbox.open(v);
+      return reply(opened.ok ? await m.sandbox.progress(v, v.userId) : opened);
+    })),
+    route('POST', `${P}/mon-bac-a-sable/etapes/([a-z_]{1,32})`, 'mon_bac_a_sable_etape', read(async (m, v, [step]) => (m.sandbox ? reply(await m.sandbox.act(v, step!)) : unavailable('Le bac à sable')))),
     route('GET', `${A}/bac-a-sable`, 'bac_a_sable', read(async (m, v, [id]) => (m.sandbox ? reply(await m.sandbox.progress(v, id!)) : unavailable('Le bac à sable')))),
 
     /* ---------- Entraînement aux objections, sur des cas inventés. ---------- */

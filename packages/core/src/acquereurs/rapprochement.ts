@@ -307,6 +307,7 @@ function compareScored(a: Scored, b: Scored): number {
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 const OUTDOOR_FEATURE: Record<string, BuyerFeature> = { jardin: 'garden', balcon: 'balcony', terrasse: 'terrace' };
+const AMENITY_FEATURE: Record<string, BuyerFeature> = { piscine: 'pool', cave: 'cellar', cheminee: 'fireplace' };
 
 export class Rapprochement {
   private readonly now: () => Date;
@@ -446,7 +447,7 @@ export class Rapprochement {
         const parsed: unknown = JSON.parse(sheet.data);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
-        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown; floor?: unknown; landM2?: unknown };
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown; floor?: unknown; landM2?: unknown; amenities?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
         if (c.dwelling === 'house' || c.dwelling === 'apartment') dwelling = c.dwelling;
         if (typeof c.floor === 'number') floor = c.floor;
@@ -456,6 +457,8 @@ export class Rapprochement {
         if (Array.isArray(c.outdoor)) for (const o of c.outdoor) if (typeof o === 'string' && OUTDOOR_FEATURE[o]) features.push(OUTDOOR_FEATURE[o]);
         if (c.elevator === true) features.push('elevator');
         if (typeof c.parkingSpaces === 'number' && c.parkingSpaces > 0) features.push('parking');
+        // AU061 · piscine, cave et cheminée dites sur la fiche répondent aux recherches qui les demandent.
+        if (Array.isArray(c.amenities)) for (const a of c.amenities) if (typeof a === 'string' && AMENITY_FEATURE[a]) features.push(AMENITY_FEATURE[a]);
       } catch {
         // Une fiche illisible ne donne rien de plus que la fiche de base ; l'écart est écrit au journal, sans donnée.
         await appendEvent(

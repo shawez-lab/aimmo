@@ -29,7 +29,7 @@ const PLACE_LABEL: Record<SignaturePlace, string> = { agence: 'à l’agence', h
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
-  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
+  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_tiers' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
 
 export interface AmendmentSignatureOptions {
   now?: () => Date;

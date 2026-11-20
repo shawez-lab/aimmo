@@ -5,6 +5,7 @@
  * Ne crée jamais d'accord de prospection [R03], n'efface rien [R17], n'écrit au journal que des identifiants
  * internes et des nombres [R13]. N'envoie rien.
  */
+import { contactKeyHash, keyLookupForms, storedForms } from '../fiche/empreinte.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Channel, IdentifierKind, Person } from '../db/types.ts';
@@ -218,14 +219,16 @@ export class RepriseSite {
     if (merged > 0) changed = true;
     if (apart.length > 0) outcome = 'apart';
 
-    // 3. Compléter : identifiants, nom, source.
+    // 3. Compléter : identifiants, nom, source. Une fiche effacée ne reprend que des empreintes : ni nom, ni source, ni
+    // demande, ni accord ; seules les exclusions passent, elles renforcent son arrêt [R04, R17] (AU020c).
+    const erased = await this.fiche.isErased(target.id);
     if (await this.complete(target, identifiers, contact)) changed = true;
-    if (await this.addContactSource(target, contact)) changed = true;
+    if (!erased && (await this.addContactSource(target, contact))) changed = true;
 
     // 4. Un projet par demande d'estimation, avec son accord et, pour « Perdu », l'exclusion.
     const exclusionsBefore = report.exclusions;
     for (const request of contact.requests) {
-      if (await this.importRequest(target, contact, request, identifiers, report)) changed = true;
+      if (!erased && (await this.importRequest(target, contact, request, identifiers, report))) changed = true;
       const reason = lostExclusion(request);
       if (reason) {
         const notedAt = new Date(request.statusAt ?? request.createdAt);
@@ -247,7 +250,7 @@ export class RepriseSite {
     if (report.exclusions > exclusionsBefore) changed = true;
 
     // 5. L'accord donné en ouvrant son compte sur le site, pour le suivi de ses demandes seulement.
-    if (contact.consentAt !== null) {
+    if (contact.consentAt !== null && !erased) {
       const proof = `${contact.origin} · accord du site`;
       if (await this.addConsents(target, identifiers, proof, new Date(contact.consentAt), report)) changed = true;
     }
@@ -417,6 +420,8 @@ export class RepriseSite {
 
   /** Les mêmes clés de contact que le rattachement des messages (C02) : un message et une reprise se retrouvent. */
   private async claimKeys(person: Person, keys: readonly string[], at: Date): Promise<void> {
+    // Une fiche effacée ne reçoit ses clés que sous empreinte (AU020c).
+    if (keys.length > 0 && (await this.fiche.isErased(person.id))) keys = await Promise.all(keys.map((k) => contactKeyHash(person.network_id, k)));
     await this.db.run(
       `INSERT INTO contact_keys (network_id, key, person_id, created_at)
        VALUES ${keys.map(() => '(?, ?, ?, ?)').join(', ')}
@@ -427,9 +432,10 @@ export class RepriseSite {
 
   private async keyOwners(keys: readonly string[]): Promise<Person[]> {
     if (keys.length === 0) return [];
+    const forms = await keyLookupForms(this.options.networkId, keys);
     const rows = await this.db.all<{ person_id: string }>(
-      `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(keys.length)})`,
-      [this.options.networkId, ...keys],
+      `SELECT DISTINCT person_id FROM contact_keys WHERE network_id = ? AND key IN (${placeholders(forms.length)})`,
+      [this.options.networkId, ...forms],
     );
     return this.existing(rows.map((row) => row.person_id));
   }
@@ -471,16 +477,19 @@ export class RepriseSite {
     let changed = false;
     for (const id of identifiers) {
       const kinds = id.kind === 'phone' ? ['phone', 'whatsapp'] : [id.kind];
+      const forms = await storedForms(target.network_id, id.kind, id.value);
       const known = await this.db.first<{ n: number }>(
         `SELECT count(*) AS n FROM person_identifiers
-         WHERE person_id IN (${placeholders(members.length)}) AND kind IN (${placeholders(kinds.length)}) AND value = ?`,
-        [...members, ...kinds, id.value],
+         WHERE person_id IN (${placeholders(members.length)}) AND kind IN (${placeholders(kinds.length)}) AND value IN (?, ?)`,
+        [...members, ...kinds, forms[0] ?? id.value, forms[1] ?? id.value],
       );
       if (Number(known?.n ?? 0) > 0) continue;
       await this.fiche.addIdentifier({ networkId: target.network_id, agentId: target.agent_id, personId: target.id, kind: id.kind, value: id.value });
       changed = true;
     }
     const at = this.now().toISOString();
+    // Une fiche effacée ne reprend pas de nom : seuls ses identifiants, sous empreinte, la reconnaissent (AU020c).
+    if (await this.fiche.isErased(target.id)) return changed;
     for (const [column, value] of [['first_name', contact.firstName], ['last_name', contact.lastName]] as const) {
       if (value === null) continue;
       const { changes } = await this.db.run(

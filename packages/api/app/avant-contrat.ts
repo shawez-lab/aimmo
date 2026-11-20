@@ -18,7 +18,7 @@
  */
 import { DEPOSIT_HOLDERS } from '../../core/src/avant-contrat/avant-contrat.ts';
 import { ALL_TERMS } from '../../core/src/avant-contrat/lecture-projet.ts';
-import { CONDITION_KINDS } from '../../core/src/offres/registre-offres.ts';
+import { CONDITION_KINDS, LOAN_TYPE_LABEL } from '../../core/src/offres/registre-offres.ts';
 
 /** Les termes à lire, en mots, dans l'ordre du cœur (testé égal). */
 export const AC_TERMS: Readonly<Record<(typeof ALL_TERMS)[number], string>> = Object.freeze({
@@ -88,6 +88,7 @@ export const AC_PDF_FAILED = 'Le projet est déposé au dossier, mais n’a pas 
 export const AVANT_CONTRAT_SCRIPT = `'use strict';
 globalThis.AIMMO_AVANT_CONTRAT = function (t) {
   var el = t.el, clear = t.clear, send = t.send;
+  var LOAN_TYPES = ${JSON.stringify(LOAN_TYPE_LABEL)};
   var TERMS = ${JSON.stringify(AC_TERMS)}, CONDS = ${JSON.stringify(AC_CONDITIONS)}, HOLDERS = ${JSON.stringify(AC_HOLDERS)}, NO = ${JSON.stringify(AC_REFUSALS)};
   var ROLE = ${JSON.stringify(AC_ROLE)}, WRITER = ${JSON.stringify(AC_WRITER)}, OFFLINE = ${JSON.stringify(AC_OFFLINE)}, FAILED = ${JSON.stringify(AC_FAILED)}, READ_FAILED = ${JSON.stringify(AC_READ_FAILED)}, BAD_TERM = ${JSON.stringify(AC_BAD_TERM)};
   var NO_BRIEF = ${JSON.stringify(AC_NO_BRIEF)}, NO_DRAFT = ${JSON.stringify(AC_NO_DRAFT)}, NO_DIFF = ${JSON.stringify(AC_NO_DIFF)}, STALE = ${JSON.stringify(AC_STALE)}, BLOCKED = ${JSON.stringify(AC_BLOCKED)};
@@ -124,6 +125,14 @@ globalThis.AIMMO_AVANT_CONTRAT = function (t) {
   }
   function act(box, label) { var b = el('button', label); b.setAttribute('type', 'button'); box.appendChild(b); return b; }
   function status(box) { var s = el('p', '', 'etat'); s.setAttribute('role', 'status'); box.appendChild(s); return s; }
+  /** Un taux écrit « 3,85 » ou « 3.85 % », en centièmes de point ; vide : null ; illisible ou hors de 0,01 à 20 % : NaN. */
+  function rateBp(v) {
+    var s = String(v || '').replace(/[\\s%]/g, '').replace(',', '.');
+    if (!s) return null;
+    if (!/^\\d{1,2}(\\.\\d{1,2})?$/.test(s)) return NaN;
+    var bp = Math.round(Number(s) * 100);
+    return bp >= 1 && bp <= 2000 ? bp : NaN;
+  }
   function int(v) { var s = String(v || '').trim(); if (!/^\\d{1,10}$/.test(s)) return null; return Number(s); }
 
   function drawState(box, s) {
@@ -279,11 +288,29 @@ globalThis.AIMMO_AVANT_CONTRAT = function (t) {
         line.appendChild(l);
         box2.appendChild(line);
         var page = labelled(box2, 'Page : ' + CONDS[k], 'input', 'number');
-        var amount = null, months = null;
-        if (k === 'pret') { amount = labelled(box2, 'Montant du prêt, en euros', 'input', 'number'); months = labelled(box2, 'Durée du prêt, en mois', 'input', 'number'); }
-        if (p) { page.value = String(p.page); if (amount && whole(p.amountEur) !== null) amount.value = String(p.amountEur); if (months && whole(p.durationMonths) !== null) months.value = String(p.durationMonths); }
+        var amount = null, months = null, rate = null, type = null;
+        if (k === 'pret') {
+          amount = labelled(box2, 'Montant du prêt, en euros', 'input', 'number');
+          months = labelled(box2, 'Durée du prêt, en mois', 'input', 'number');
+          /* Le taux maximal et le type, comparés à ceux de l'offre acceptée (AU079). */
+          rate = labelled(box2, 'Taux nominal maximal hors assurance, en % (vide si le projet n’en dit pas)', 'input');
+          rate.setAttribute('inputmode', 'decimal');
+          type = labelled(box2, 'Type de prêt selon le projet', 'select');
+          var t0 = el('option', 'Non précisé');
+          t0.setAttribute('value', '');
+          type.appendChild(t0);
+          Object.keys(LOAN_TYPES).forEach(function (t) { var o = el('option', LOAN_TYPES[t]); o.setAttribute('value', t); type.appendChild(o); });
+          type.value = '';
+        }
+        if (p) {
+          page.value = String(p.page);
+          if (amount && whole(p.amountEur) !== null) amount.value = String(p.amountEur);
+          if (months && whole(p.durationMonths) !== null) months.value = String(p.durationMonths);
+          if (rate && whole(p.maxRateBp) !== null) rate.value = Math.floor(p.maxRateBp / 100) + ',' + String(p.maxRateBp % 100).padStart(2, '0');
+          if (type && own(LOAN_TYPES, p.loanType) !== null) type.value = p.loanType;
+        }
         if (p) hint(box2, p);
-        return { kind: k, box: c, page: page, amount: amount, months: months };
+        return { kind: k, box: c, page: page, amount: amount, months: months, rate: rate, type: type };
       });
       var loanP = paged(pr.loanDeadline, true), deedP = paged(pr.deedBy, true);
       var loanIn = labelled(box2, 'Date limite d’obtention du prêt (vide si le projet n’en dit pas)', 'input', 'date');
@@ -334,9 +361,14 @@ globalThis.AIMMO_AVANT_CONTRAT = function (t) {
             if (am === null || am < 1 || mo === null || mo < 1) { out.textContent = 'Donnez le montant et la durée du prêt lus dans le projet.'; return; }
             item.amountEur = am;
             item.durationMonths = mo;
+            var bp = rateBp(c.rate.value);
+            if (Number.isNaN(bp)) { out.textContent = 'Le taux maximal du prêt s’écrit en %, de 0,01 à 20, deux décimales au plus, ou se laisse vide.'; return; }
+            if (bp !== null) item.maxRateBp = bp;
+            if (c.type.value) item.loanType = c.type.value;
           }
           body.conditions.push(item);
-          lines.push(CONDS[c.kind] + (item.amountEur ? ' de ' + euros(item.amountEur) + ' sur ' + item.durationMonths + ' mois' : '') + ', page ' + cp + '.');
+          lines.push(CONDS[c.kind] + (item.loanType ? ' ' + LOAN_TYPES[item.loanType] : '') + (item.amountEur ? ' de ' + euros(item.amountEur) + ' sur ' + item.durationMonths + ' mois' : '') +
+            (item.maxRateBp ? ', taux hors assurance ' + Math.floor(item.maxRateBp / 100) + ',' + String(item.maxRateBp % 100).padStart(2, '0') + ' % au plus' : '') + ', page ' + cp + '.');
         }
         if (!body.conditions.length) lines.push('Aucune condition suspensive.');
         var lo = dayTerm(loanIn, loanPage, 'la date limite du prêt'), de = dayTerm(deedIn, deedPage, 'la date de l’acte');

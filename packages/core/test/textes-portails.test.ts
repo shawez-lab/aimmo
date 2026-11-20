@@ -292,6 +292,29 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     expect(media[0]!.caption).toBe('Photo 1 sur 2 du bien. Lumière et cadrage retouchés.');
   });
 
+  it('[R478] AU066 · une photo ajoutée ou dite retouchée sans toucher au texte validé a la légende de la fiche du jour', async () => {
+    const t = await setup();
+    const row = await t.db.first<{ network_id: string; version: number; data: string; created_by: string }>('SELECT * FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const sheet = JSON.parse(row!.data) as { media: { ref: string; kind: string; edit: string }[] };
+    const version = (n: number) => t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [`fiche-${n}`, t.propertyId, row!.network_id, Number(row!.version) + n, JSON.stringify(sheet), row!.created_by, t.now().toISOString()]);
+    const added = { ref: `biens/${t.propertyId}/0b6f1d2e-1111-4a2b-8c3d-0000000000aa.jpg`, kind: 'photo', edit: 'aucune' };
+    sheet.media.push(added);
+    await version(1);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const caption = async () => (await t.tp.portalPayload(t.network.id, t.propertyId, 'seloger'))!.media.at(-1)!.caption;
+    expect(await caption()).not.toContain('retouchés');
+    // La même photo, dite retouchée ensuite, sans autre changement : une version de plus, et la légende le dit.
+    added.edit = 'lumiere_cadrage';
+    await version(2);
+    // Même si le passage est coupé juste après la version, avant le lien vers sa fiche : le suivant répare le lien.
+    await t.db.exec("CREATE TRIGGER coupure BEFORE INSERT ON listing_version_media_sheets BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.publication.sync(t.network.id, t.propertyId)).rejects.toThrow(/coupure/);
+    await t.db.exec('DROP TRIGGER coupure');
+    await t.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ?', [new Date(0).toISOString(), t.propertyId]);
+    expect((await t.publication.sync(t.network.id, t.propertyId)).created).toBe(false);
+    expect(await caption()).toContain('Lumière et cadrage retouchés.');
+  });
+
   it('AU114 · la page publique et la fiche imprimable portent la légende de chaque photo, en texte de remplacement et en légende visible', async () => {
     const t = await setup();
     const [p1, p2] = t.photos;
