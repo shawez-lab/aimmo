@@ -423,3 +423,78 @@ describe('J14 · écrans de M14 dans l’application', () => {
     expect(u.els.accueil!.hidden).toBe(false);
   });
 });
+
+describe('AU024 · déposer une pièce là où elle manque, depuis le téléphone', () => {
+  const PATH = '/v1/reseau/agents/ag1/pieces/fichier';
+  const RECEIPT = { kind: 'immatriculation_rsac', label: 'Immatriculation au registre spécial des agents commerciaux', version: 1, receivedAt: '2027-07-12T08:00:00.000Z', bytes: 245_760 };
+  const after = { ...FILE, lines: FILE.lines.map((l) => (l.kind === 'immatriculation_rsac' ? { ...l, state: 'valide', version: 1, issuedOn: '2027-07-01' } : l)) };
+  const photo = (extra: Record<string, unknown> = {}) => ({ name: 'kbis.jpg', type: 'image/jpeg', size: 245_760, ...extra });
+  /** Le bloc de dépôt d'une pièce : son résumé, son fichier, ses dates, son bouton. */
+  const box = (t: Awaited<ReturnType<typeof run>>, summary: string) => {
+    const d = t.body().all().find((e) => e.tagName === 'details' && e.children[0]?.textContent === summary);
+    if (!d) throw new Error(`bloc absent : ${summary}`);
+    const inputOf = (label: string) => d.all().find((e) => e.attributes.id === d.all().find((x) => x.tagName === 'label' && x.textContent === label)?.attributes.for);
+    return { d, inputOf, text: () => d.textContent, confirm: () => d.all().find((e) => e.tagName === 'button' && e.textContent === 'Confirmer l’envoi') };
+  };
+  const choose = async (t: Awaited<ReturnType<typeof run>>, input: FakeElement | undefined, file: unknown) => {
+    (input as unknown as { files: unknown[] }).files = [file];
+    input!.listeners.change!({});
+    await settle();
+  };
+
+  it('[R82] constat : chaque pièce manquante, en projet ou échue a son dépôt ; une pièce valide n’en a pas', async () => {
+    const t = await run();
+    await t.ouvrir('integration-ouvrir');
+    const summaries = t.body().all().filter((e) => e.tagName === 'summary').map((e) => e.textContent);
+    expect(summaries).toEqual(expect.arrayContaining(['Déposer la version signée', 'Déposer cette pièce', 'Déposer la nouvelle version']));
+    expect(summaries.filter((s) => s.startsWith('Déposer'))).toHaveLength(3);
+    const file = box(t, 'Déposer cette pièce').inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus')!;
+    expect(file.attributes).toMatchObject({ type: 'file', accept: 'application/pdf,image/jpeg,image/png' });
+    // L'assurance demande sa fin de validité ; l'immatriculation la propose ; le contrat n'en a pas.
+    expect(box(t, 'Déposer la nouvelle version').inputOf('Fin de validité, lue sur le document')).toBeDefined();
+    expect(box(t, 'Déposer cette pièce').inputOf('Fin de validité, si le document en porte une')).toBeDefined();
+  });
+
+  it('[R82] [R16] aperçu avant l’envoi, confirmation, fichier envoyé tel quel avec sa clé, puis l’accusé de réception du serveur', async () => {
+    const t = await run({ [`POST ${PATH}?kind=immatriculation_rsac&issuedOn=2027-07-01`]: ok({ ...after, receipt: RECEIPT }), 'GET /v1/reseau/mon-dossier': ok(FILE) });
+    await t.ouvrir('integration-ouvrir');
+    const b = box(t, 'Déposer cette pièce');
+    // Rien ne part sans document ni date.
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Choisissez d’abord le document, ou prenez-le en photo.');
+    const f = photo();
+    await choose(t, b.inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus'), f);
+    expect(b.text()).toContain('Avant l’envoi : « kbis.jpg », photo, 240 Ko. Vérifiez que c’est bien : Immatriculation au registre spécial des agents commerciaux.');
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Indiquez la date du document.');
+    expect(t.posts()).toEqual([]);
+    b.inputOf('Date du document')!.value = '2027-07-01';
+    await t.click(b.confirm());
+    const sent = t.calls.find((c) => c.method === 'POST')!;
+    expect(sent.url).toBe(`${PATH}?kind=immatriculation_rsac&issuedOn=2027-07-01`);
+    expect(sent.body).toBe(f);
+    expect(sent.auth).toBe(`Bearer ${KEY}`);
+    // L'écran est relu : la pièce est valide, et l'accusé de réception est dit.
+    expect(t.state()).toBe('Reçue le 12/07/2027 à 10:00 : Immatriculation au registre spécial des agents commerciaux, version 1, 240 Ko. Elle compte dès maintenant dans votre dossier.');
+  });
+
+  it('[R82] un fichier d’un autre type ou trop lourd n’est pas proposé ; un refus du serveur est dit en mots', async () => {
+    const t = await run({ [`POST ${PATH}?kind=assurance_rcp&issuedOn=2027-07-01&validUntil=2028-06-30`]: no(400, { ok: false, rule: null, code: 'bad_file' }) });
+    await t.ouvrir('integration-ouvrir');
+    const b = box(t, 'Déposer la nouvelle version');
+    const input = b.inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus');
+    await choose(t, input, { name: 'page.html', type: 'text/html', size: 10 });
+    expect(b.text()).toContain('Ce fichier n’est ni un PDF ni une photo JPEG ou PNG : choisissez-en un autre.');
+    await choose(t, input, { name: 'scan.pdf', type: 'application/pdf', size: 12 * 1024 * 1024 });
+    expect(b.text()).toContain('Ce fichier pèse 12,0 Mo : 10 Mo au plus.');
+    b.inputOf('Date du document')!.value = '2027-07-01';
+    await t.click(b.confirm());
+    expect(t.posts()).toEqual([]);
+    await choose(t, input, { name: 'scan.pdf', type: 'application/pdf', size: 90_000 });
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Cette pièce a une fin de validité : lisez-la sur le document et indiquez-la.');
+    b.inputOf('Fin de validité, lue sur le document')!.value = '2028-06-30';
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Ce fichier ne se lit pas comme il le dit : reprenez la photo ou le PDF.');
+  });
+});
