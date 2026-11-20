@@ -900,7 +900,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#735, 3ddaecb4). Constat confirmé (l'échéancier ne suivait que le prêt). `dossiers/conditions.ts` : vente d'un autre bien, permis, certificat d'urbanisme, autre condition, chacune avec responsable, date limite, état (en attente, réalisée, défaillie, renoncée) et justificatif rangé, en versions [R17] ; alertes à part (à saisir, 10 jours avant, échue en attente), une condition levée n'éteint pas les autres ; une condition que seul le compromis porte est dite `compromis` (Jamais vu). Migration 4034, routes `GET/POST /v1/dossiers/:id/conditions`, alertes dans `/dossiers/alertes`, étape du passage. R61 précisée. Codex : 1 P0 (preuve à la carte des fichiers) déjà corrigé, puis rien ; vérification GitHub verte. Reste : l'écran du dossier ne montre pas encore les conditions.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
 - Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.

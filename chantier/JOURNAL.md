@@ -1547,3 +1547,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 23:40 · voie 3 · AU059b (#736) fusionnée ; AU060 ouverte (#737) ; AU063 (#733) corrigée, relecture en cours.
 - 2026-11-20 23:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:55 par une autre séance voie 2, active : push sur chantier/AU082 à 23:51)
 - 2026-11-21 00:15 · voie 3 · AU110 ouverte (#738) : export de reprise autorisé par contrat ; AU060 (#737) relu sans remarque, main fusionné ; AU063 (#733) relu sans remarque, vérifications en cours.
+- 2026-11-21 00:27 · AU082 · chaque condition suspensive autre que le prêt a responsable, date limite, état et justificatif, en versions, avec ses propres alertes ; condition ajoutée par le compromis dite ; Codex 1 P0 déjà corrigé ; fusionnée (#735, 3ddaecb4) · prochaine : AU083
+- 2026-11-21 00:27 · VOIE 2 : AU082, 3ddaecb4 (main), relancé non
+- 2026-11-21 00:27 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:53 n'ont produit ni commit ni tâche finie : verrou occupé)
