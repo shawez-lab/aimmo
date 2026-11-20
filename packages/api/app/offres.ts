@@ -52,7 +52,7 @@ const REFUSALS = {
 const FIELDS = {
   buyerPersonId: 'Choisissez l’acquéreur.',
   amountEur: 'Le montant s’écrit en euros, en chiffres seulement.',
-  validUntil: 'Dernier jour de validité : à partir d’aujourd’hui, 60 jours au plus.',
+  validUntil: 'Dernier jour de validité : à partir d’aujourd’hui et du jour de réception, deux ans au plus.',
   receivedAt: 'Vérifiez le moment où l’offre a été reçue.',
   downPaymentEur: 'L’apport s’écrit en euros, en chiffres seulement (0 s’il n’y en a pas).',
   loanEur: 'Le prêt s’écrit en euros, en chiffres seulement (0 s’il n’y en a pas).',
@@ -326,6 +326,7 @@ globalThis.AIMMO_OFFRES = function (t) {
   };
   function lineText(l) {
     if (l.check === 'financement' && l.status === 'ecart') return 'Écart entre le montant et le financement déclaré : ' + money(l.missingEur) + '.';
+    if (l.check === 'validite_longue' && l.status === 'atypique') return 'Durée de validité inhabituelle : ' + l.days + ' jours, pour ' + l.usualDays + ' d’habitude. L’offre est gardée telle quelle : vérifiez la date sur l’offre signée.';
     if (l.check === 'pret' && l.status === 'different') return 'Prêt de la condition : ' + money(l.conditionLoanEur) + ', prêt déclaré : ' + money(l.declaredLoanEur) + '.';
     return (LINES[l.check] && LINES[l.check][l.status]) || 'Constat à relire.';
   }
@@ -460,7 +461,9 @@ globalThis.AIMMO_OFFRES = function (t) {
         return send(base(), 'POST', { buyerPersonId: who.value, amountEur: numbers[0], downPaymentEur: numbers[1], loanEur: numbers[2], conditions: conditions, validUntil: last.value, receivedAt: iso, signedRef: ref, requestKey: requestKey }).then(function (res) {
           if (res.gone || mine !== seq) return false;
           if (!res.ok) { state(why(res, 'L’offre n’est pas inscrite : réessayez.')); return false; }
-          return load('Offre inscrite au registre, avec son contrôle.');
+          // Une durée inhabituelle se dit tout de suite : l'offre est gardée, l'agent vérifie la date (AU080).
+          var long = (res.body && res.body.data && Array.isArray(res.body.data.lines) ? res.body.data.lines : []).filter(function (l) { return l && l.check === 'validite_longue'; })[0];
+          return load('Offre inscrite au registre, avec son contrôle.' + (long ? ' ' + lineText(long) : ''));
         });
       });
     })));
