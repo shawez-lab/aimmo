@@ -278,6 +278,22 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H29).
 
+### AU020b · Les tables en ajout seul du bien d'un vendeur effacé
+- Statut : à faire
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU020
+- Cahier : Conformité ; audit A020, endroit : packages/core/src/conformite/effacement-reel.ts ; `listing_drafts`, `property_sheets`.
+- Objectif : l'effacement réel d'un vendeur ne laisse plus « restantes » les lignes de `listing_drafts` et `property_sheets` qui ne sont qu'à lui : elles sont vidées de ses données par une voie prévue par la migration, ou rangées dans le plan comme pièces gardées avec leur raison.
+- Critères : le test AU020 qui attend `BLOCKED` passe à `remaining: []` et `complete: true` pour la vendeuse du jeu ; le rejeu `SqlPersonEraser` de la vendeuse réussit ; R17 et R231 mises à jour.
+- Attend : rien.
+
+### AU020c · Les identifiants gardés après un effacement passent sous empreinte
+- Statut : à faire
+- Qui : Claude, voie 1 (socle) · Relecture : forte · Dépend de : AU020
+- Cahier : Conformité ; endroit : packages/core/src/fiche/fusion.ts, reception/rattachement.ts, conformite/effacement-reel.ts (`IDENTIFIERS_KEPT`).
+- Objectif : après un effacement réel, les adresses et numéros de la personne ne restent que sous leur empreinte, et un message qui arrive de l'un d'eux est quand même reconnu et arrêté [R04].
+- Critères : après l'effacement, `person_identifiers.value` ne contient plus aucune valeur en clair de la personne (test) ; un message reçu de son adresse est rattaché à la fiche arrêtée et ne reçoit aucune réponse (test) ; le reçu repasse l'action à « empreinte ».
+- Attend : rien.
+
 ### AU021 · Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire »
 - Statut : à faire
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
