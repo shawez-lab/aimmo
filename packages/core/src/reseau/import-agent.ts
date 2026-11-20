@@ -17,11 +17,12 @@
 import { keyLookupForms } from '../fiche/empreinte.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import type { SqlDatabase, SqlValue } from '../db/sql.ts';
 import type { Channel, Dwelling, Person, PropertyKind } from '../db/types.ts';
 import type { DecisionEnvoi } from '../envoi/service.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { matchKey } from '../fiche/normalize.ts';
+import { personSubject } from '../acces/acces.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { parseCsv } from '../reprise/csv.ts';
@@ -398,6 +399,167 @@ export async function readAgentProperties(text: string, format: AgentExportForma
   return reading;
 }
 
+/* ---------- AU029 · Les échanges, notes de suivi et prochains rappels de l'ancien logiciel. ---------- */
+
+/** Ce qui s'est passé avec un contact, repris tel quel sur sa fiche. */
+export type ExchangeKind = 'call' | 'email' | 'sms' | 'whatsapp' | 'meeting' | 'visit' | 'note';
+/** Ce que l'agent a prévu de faire : une tâche, jamais un message envoyé. */
+export type ReminderAction = Exclude<ExchangeKind, 'note'> | 'task';
+
+/** Les raisons, en liste fermée, d'une ligne d'historique non reprise. */
+export const FOLLOW_UP_SKIPS = ['no_contact', 'unknown_contact', 'other_agent', 'ambiguous_contact', 'no_date', 'unknown_type', 'empty'] as const;
+export type FollowUpSkip = (typeof FOLLOW_UP_SKIPS)[number];
+
+/** Le texte gardé d'un échange ou d'une note, au plus. Au-delà, il est coupé et la ligne est signalée. */
+export const FOLLOW_UP_TEXT_MAX = 2000;
+
+type HistoryField = 'contactId' | 'email' | 'phone' | 'date' | 'due' | 'type' | 'body' | 'status';
+
+const HISTORY_HEADERS: Record<HistoryField, string[]> = {
+  contactId: ['idcontact', 'contactid', 'refcontact', 'referencecontact', 'numerocontact', 'ncontact', 'identifiantcontact', 'contactref'],
+  email: CONTACT_HEADERS.email,
+  phone: CONTACT_HEADERS.phone,
+  date: ['date', 'dateaction', 'datedelaction', 'dateechange', 'datehistorique', 'datecreation', 'creele', 'datenote', 'faitle', 'datedevenement', 'dateevenement'],
+  due: ['echeance', 'dateecheance', 'daterappel', 'rappelle', 'arappelerle', 'prochainrappel', 'prochaineaction', 'dateprochaineaction', 'duedate', 'pourle', 'aprevoirle', 'datelimite'],
+  type: ['type', 'typeaction', 'typedaction', 'action', 'nature', 'canal', 'typeevenement', 'evenement', 'typeechange', 'activite', 'typeactivite'],
+  body: ['note', 'notes', 'commentaire', 'commentaires', 'compterendu', 'objet', 'texte', 'description', 'detail', 'details', 'message', 'contenu', 'resume'],
+  status: ['statut', 'etat', 'fait', 'realise', 'termine', 'status', 'done', 'cloture', 'traite'],
+};
+
+/** Les types d'un export, ramenés à une liste fermée. Un type inconnu n'est jamais deviné : la ligne est signalée. */
+const EXCHANGE_TYPES: Readonly<Record<string, ExchangeKind | 'task'>> = Object.freeze({
+  appel: 'call', appeltelephonique: 'call', telephone: 'call', tel: 'call', call: 'call', phone: 'call', appelsortant: 'call', appelentrant: 'call',
+  mail: 'email', email: 'email', courriel: 'email', emailenvoye: 'email', emailrecu: 'email',
+  sms: 'sms', texto: 'sms',
+  whatsapp: 'whatsapp',
+  rdv: 'meeting', rendezvous: 'meeting', meeting: 'meeting', rencontre: 'meeting', estimation: 'meeting', rdvestimation: 'meeting', entretien: 'meeting',
+  visite: 'visit', visit: 'visit',
+  note: 'note', notes: 'note', commentaire: 'note', suivi: 'note', memo: 'note', remarque: 'note', compterendu: 'note',
+  rappel: 'task', relance: 'task', tache: 'task', todo: 'task', aprevoir: 'task', arappeler: 'task', task: 'task', reminder: 'task',
+});
+
+/** Un statut qui dit « fait ». Tout autre, vide compris, laisse un rappel ouvert. */
+const DONE = new Set(['fait', 'faite', 'realise', 'realisee', 'termine', 'terminee', 'done', 'completed', 'clos', 'close', 'cloture', 'cloturee', 'traite', 'traitee', 'oui', 'yes', 'true', '1', 'x']);
+
+export interface FollowUpLine {
+  line: number;
+  /** La clé d'origine du contact dans l'export des contacts (même format, même agent), s'il a un identifiant. */
+  contactOrigin: string | null;
+  emails: string[];
+  phones: string[];
+  entry: { as: 'history'; kind: ExchangeKind; on: string } | { as: 'reminder'; action: ReminderAction; on: string };
+  /**
+   * Ce qui identifie l'élément dans l'ancien logiciel (type, date, échéance), indépendamment de son classement du jour :
+   * une action à venir reprise en rappel reste le même élément quand sa date est passée [R18].
+   */
+  identity: string;
+  body: string | null;
+  truncated: boolean;
+}
+
+export interface FollowUpReading {
+  lines: FollowUpLine[];
+  /** Les lignes non reprises dès la lecture, par raison. */
+  skipped: { line: number; reason: FollowUpSkip }[];
+}
+
+/** La clé d'origine d'un contact d'export qui porte un identifiant, telle que `readAgentContacts` la fait. */
+async function contactOriginById(agentId: string, format: AgentExportFormat, id: string): Promise<string> {
+  return `import:${agentId}:${format}:id${await digest(id)}`;
+}
+
+/**
+ * Lit un export d'historique (actions, échanges, notes, rappels). Chaque ligne désigne son contact par l'identifiant
+ * de l'export des contacts, ou par son mail ou son téléphone. Une ligne datée dans le futur, ou une tâche pas faite,
+ * est un rappel ; une ligne passée est un échange (ou une note). Rien n'est deviné : une ligne sans date lisible, sans
+ * contact, d'un type inconnu ou d'une note vide est rendue avec sa raison.
+ */
+export async function readAgentFollowUp(text: string, format: AgentExportFormat, agentId: string, importedAt: Date): Promise<FollowUpReading> {
+  const [header, ...rows] = parseCsv(text);
+  const columns = columnsOf(header ?? [], HISTORY_HEADERS);
+  if ((!columns.has('date') && !columns.has('due')) || (!columns.has('contactId') && !columns.has('email') && !columns.has('phone'))) {
+    throw new Error("Export d'historique sans colonne de date ni de contact : voir docs/REPRISE.md, section « Import d'un agent ».");
+  }
+  const first = (row: string[], field: HistoryField): string | null => (columns.get(field) ?? []).map((i) => clean(row[i])).find((v) => v !== null) ?? null;
+  const all = (row: string[], field: HistoryField): string[] => (columns.get(field) ?? []).map((i) => clean(row[i])).filter((v): v is string => v !== null).flatMap(many);
+  const today = importedAt.toISOString().slice(0, 10);
+  const reading: FollowUpReading = { lines: [], skipped: [] };
+  for (const [index, row] of rows.entries()) {
+    const line = index + 2;
+    if (row.every((cell) => cell.trim() === '')) continue;
+    const id = first(row, 'contactId');
+    const emails = all(row, 'email');
+    const phones = all(row, 'phone');
+    if (id === null && contactIdentifiers({ emails, phones }).length === 0) {
+      reading.skipped.push({ line, reason: 'no_contact' });
+      continue;
+    }
+    const rawType = first(row, 'type');
+    // Sans type dit, une ligne est une note de suivi : son texte seul compte.
+    const type: ExchangeKind | 'task' | undefined = rawType === null ? 'note' : (EXCHANGE_TYPES[key(rawType)] ?? EXCHANGE_TYPES[key(rawType.split(/[\s/-]+/)[0] ?? '')]);
+    if (type === undefined) {
+      reading.skipped.push({ line, reason: 'unknown_type' });
+      continue;
+    }
+    const day = exportDay(first(row, 'date'));
+    const due = exportDay(first(row, 'due'));
+    const rawStatus = first(row, 'status');
+    const done = rawStatus !== null && DONE.has(key(rawStatus));
+    // Objet, commentaire, compte rendu… : chaque texte de la ligne est gardé, dans l'ordre de l'export, sans doublon.
+    const texts = [...new Set((columns.get('body') ?? []).map((i) => clean(row[i])).filter((v): v is string => v !== null))];
+    const rawBody = texts.length === 0 ? null : texts.join(' · ');
+    const truncated = rawBody !== null && rawBody.length > FOLLOW_UP_TEXT_MAX;
+    const body = rawBody === null ? null : rawBody.slice(0, FOLLOW_UP_TEXT_MAX);
+
+    let entry: FollowUpLine['entry'] | null = null;
+    // Un statut dit et qui n'est pas « fait » : l'action reste à faire, même passée.
+    const open = !done && rawStatus !== null;
+    if (!done && due !== null) entry = { as: 'reminder', action: type === 'note' ? 'task' : type, on: due };
+    else if (!done && day !== null && (type === 'task' || open || day > today)) entry = { as: 'reminder', action: type === 'note' ? 'task' : type, on: day };
+    else if (day !== null || due !== null) {
+      const on = day !== null && day <= today ? day : due !== null && due <= today ? due : null;
+      // Un échange daté dans le futur et déjà « fait » : la date ne dit pas vrai, rien n'est deviné.
+      if (on !== null) entry = { as: 'history', kind: type === 'task' ? 'note' : type, on };
+    }
+    if (entry === null) {
+      reading.skipped.push({ line, reason: 'no_date' });
+      continue;
+    }
+    // Une note sans texte ne garde rien ; un échange ou un rappel sans texte garde au moins son fait et sa date.
+    if (entry.as === 'history' && entry.kind === 'note' && body === null) {
+      reading.skipped.push({ line, reason: 'empty' });
+      continue;
+    }
+    // Le jour et l'heure tels que l'export les écrit : deux appels du même jour, au même texte, restent deux appels.
+    // Le texte entier, avant toute coupe, en fait partie : deux notes qui ne diffèrent qu'après la coupe restent deux.
+    const identity = [type, (first(row, 'date') ?? '').replace(/\s+/g, ' '), (first(row, 'due') ?? '').replace(/\s+/g, ' '), await digest(rawBody ?? '')].join('|');
+    reading.lines.push({ line, contactOrigin: id === null ? null : await contactOriginById(agentId, format, id), emails, phones, entry, identity, body, truncated });
+  }
+  return reading;
+}
+
+export interface ImportedExchange {
+  id: string;
+  kind: ExchangeKind;
+  /** `AAAA-MM-JJ`, la date de l'ancien logiciel. */
+  on: string;
+  body: string | null;
+  /** Le logiciel d'où il vient. */
+  from: string;
+}
+
+export interface ImportedReminder {
+  id: string;
+  personId: string;
+  action: ReminderAction;
+  dueOn: string;
+  body: string | null;
+  from: string;
+  done: boolean;
+  /** À faire et dont l'échéance est passée. */
+  late: boolean;
+}
+
 export interface AgentImportReport {
   format: AgentExportFormat;
   contacts: {
@@ -415,6 +577,20 @@ export interface AgentImportReport {
     incompleteConsentLines: number[];
   };
   properties: { read: number; created: number; known: number; unreadableLines: number[] };
+  /**
+   * Les échanges, notes de suivi et prochains rappels de l'ancien logiciel (AU029) : ce qui est repris sur chaque fiche,
+   * et le bilan de ce qui ne l'est pas, ligne par ligne, avec sa raison.
+   */
+  followUp: {
+    read: number;
+    history: number;
+    reminders: number;
+    /** Déjà repris par un import précédent, ou deux fois dans l'export : rien n'est doublé. */
+    known: number;
+    notTaken: Record<FollowUpSkip, number[]>;
+    /** Repris, mais le texte dépassait la longueur gardée : coupé, à regarder. */
+    truncatedLines: number[];
+  };
   /** Ce que l'agent peut faire maintenant, en une phrase par base. */
   summary: string[];
 }
@@ -428,7 +604,7 @@ export interface ImportAgentOptions {
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
 /** Le compte rendu d'un import, en français, sans aucune donnée personnelle. */
-export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'>): string[] {
+export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'properties'> & Partial<Pick<AgentImportReport, 'followUp'>>): string[] {
   const c = report.contacts;
   const plural = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
   const lines = [
@@ -440,6 +616,17 @@ export function importSummary(report: Pick<AgentImportReport, 'contacts' | 'prop
   const signaled = c.unreadableLines.length + c.partialLines.length + c.incompleteConsentLines.length + report.properties.unreadableLines.length;
   if (signaled > 0) lines.push(`${plural(signaled, 'ligne à regarder', 'lignes à regarder')}, listées par leur numéro.`);
   lines.push(`${plural(report.properties.created + report.properties.known, 'bien rangé', 'biens rangés')} en brouillon : rien n'est publié.`);
+  const f = report.followUp;
+  if (f && f.read + Object.values(f.notTaken).reduce((n, l) => n + l.length, 0) > 0) {
+    lines.push(`${plural(f.history, 'échange ou note repris', 'échanges et notes repris')} sur ${f.history > 1 ? 'leurs fiches' : 'sa fiche'}, à leur date d'origine.`);
+    lines.push(`${plural(f.reminders, 'rappel repris', 'rappels repris')} dans vos rappels : rien ne part tout seul.`);
+    const skipped = Object.values(f.notTaken).reduce((n, l) => n + l.length, 0);
+    lines.push(
+      skipped === 0
+        ? "Tout l'historique de l'export est repris."
+        : `${plural(skipped, 'élément non repris', 'éléments non repris')}, listés par leur numéro de ligne et leur raison.`,
+    );
+  }
   return lines;
 }
 
@@ -482,7 +669,7 @@ export class ImportAgent {
   async run(
     viewer: Viewer,
     agentId: string,
-    input: { format: unknown; contacts?: string; properties?: string },
+    input: { format: unknown; contacts?: string; properties?: string; history?: string },
   ): Promise<{ ok: true; report: AgentImportReport } | AgentImportRefusal> {
     const denied = await this.gate(viewer, agentId);
     if (denied) return denied;
@@ -492,9 +679,11 @@ export class ImportAgent {
     const at = this.now();
     let contacts: AgentContactsReading;
     let properties: AgentPropertiesReading;
+    let followUp: FollowUpReading;
     try {
       contacts = input.contacts === undefined ? { lines: [], unreadableLines: [], partialLines: [], incompleteConsentLines: [] } : await readAgentContacts(input.contacts, format, agentId, at);
       properties = input.properties === undefined ? { lines: [], unreadableLines: [] } : await readAgentProperties(input.properties, format, agentId);
+      followUp = input.history === undefined ? { lines: [], skipped: [] } : await readAgentFollowUp(input.history, format, agentId, at);
     } catch (error) {
       await appendEvent(this.journal, { type: 'reseau.import_refuse', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { format, code: 'unreadable_file' } }, this.now);
       return { ok: false, rule: null, code: error instanceof Error && error.message.includes('guillemets') ? 'malformed_file' : 'missing_columns' };
@@ -516,6 +705,14 @@ export class ImportAgent {
         incompleteConsentLines: contacts.incompleteConsentLines,
       },
       properties: { read: properties.lines.length, created: 0, known: 0, unreadableLines: properties.unreadableLines },
+      followUp: {
+        read: followUp.lines.length + followUp.skipped.length,
+        history: 0,
+        reminders: 0,
+        known: 0,
+        notTaken: Object.fromEntries(FOLLOW_UP_SKIPS.map((r) => [r, followUp.skipped.filter((x) => x.reason === r).map((x) => x.line)])) as Record<FollowUpSkip, number[]>,
+        truncatedLines: [],
+      },
       summary: [],
     };
     let changed = false;
@@ -613,9 +810,52 @@ export class ImportAgent {
       }
     }
 
+    // 5. L'historique : chaque ligne rejoint la fiche de l'agent qui porte son contact, sinon elle est au bilan (AU029).
+    for (const line of followUp.lines) {
+      const found = await this.followUpTarget(networkId, agentId, line);
+      if (typeof found === 'string') {
+        report.followUp.notTaken[found].push(line.line);
+        continue;
+      }
+      const personId = found.id;
+      const e = line.entry;
+      // Le contact tel que l'export le désigne, jamais la fiche du moment : deux fiches réunies depuis ne font pas
+      // revenir un élément déjà repris, ni un rappel déjà fait [R18].
+      const sourceContact = line.contactOrigin ?? contactIdentifiers({ emails: line.emails, phones: line.phones }).map((i) => `${i.kind}:${i.value}`).sort().join(',');
+      const origin = `import:${agentId}:${format}:suivi:${await digest([sourceContact, line.identity].join('|'))}`;
+      const stamp = at.toISOString();
+      // Déjà repris, en échange ou en rappel : le même élément ne change pas de forme et n'est jamais doublé [R18].
+      const already = await this.db.first<{ n: number }>(
+        `SELECT (SELECT count(*) FROM agent_import_history WHERE network_id = ? AND origin_key = ?) + (SELECT count(*) FROM agent_import_reminders WHERE network_id = ? AND origin_key = ?) AS n`,
+        [networkId, origin, networkId, origin],
+      );
+      const { changes } = Number(already?.n ?? 0) > 0
+        ? { changes: 0 }
+        : e.as === 'history'
+          ? await this.db.run(
+              `INSERT INTO agent_import_history (network_id, origin_key, agent_id, person_id, kind, happened_on, body, source_format, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+              [networkId, origin, agentId, personId, e.kind, e.on, line.body, format, stamp],
+            )
+          : await this.db.run(
+              `INSERT INTO agent_import_reminders (network_id, origin_key, agent_id, person_id, action, due_on, body, source_format, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+              [networkId, origin, agentId, personId, e.action, e.on, line.body, format, stamp],
+            );
+      if (changes === 1) {
+        changed = true;
+        if (e.as === 'history') report.followUp.history += 1;
+        else report.followUp.reminders += 1;
+        if (line.truncated) report.followUp.truncatedLines.push(line.line);
+      } else {
+        report.followUp.known += 1;
+      }
+    }
+
     report.summary = importSummary(report);
     const signaled = report.contacts.unreadableLines.length + report.contacts.partialLines.length + report.contacts.incompleteConsentLines.length + report.properties.unreadableLines.length;
-    if (changed || signaled > 0) {
+    const followUpSkipped = Object.values(report.followUp.notTaken).reduce((n, l) => n + l.length, 0);
+    if (changed || signaled > 0 || followUpSkipped > 0) {
       await appendEvent(
         this.journal,
         {
@@ -633,6 +873,9 @@ export class ImportAgent {
             consents: report.contacts.consents,
             properties: report.properties.created,
             signaledLines: signaled,
+            history: report.followUp.history,
+            reminders: report.followUp.reminders,
+            followUpNotTaken: followUpSkipped,
           },
         },
         this.now,
@@ -660,6 +903,141 @@ export class ImportAgent {
     const rows = await this.db.all<{ basis: LegalBasis }>(`SELECT DISTINCT basis FROM agent_import_contacts WHERE person_id IN (${placeholders(members.length)})`, members);
     const set = new Set(rows.map((r) => r.basis));
     return set.has('client') ? 'client' : set.has('consent') ? 'consent' : set.has('none') ? 'none' : null;
+  }
+
+  /**
+   * La fiche de l'agent à qui une ligne d'historique revient : par l'identifiant du contact de l'export d'abord, puis
+   * par son mail ou son téléphone. Une fiche d'un autre agent n'est jamais touchée ; deux fiches possibles : rien
+   * n'est deviné. Rend la fiche gardée, ou la raison de ne rien reprendre.
+   */
+  private async followUpTarget(networkId: string, agentId: string, line: FollowUpLine): Promise<Person | FollowUpSkip> {
+    const roots = new Set<string>();
+    if (line.contactOrigin !== null) {
+      const byOrigin = await this.db.first<{ target_id: string }>('SELECT target_id FROM import_keys WHERE network_id = ? AND key = ?', [networkId, line.contactOrigin]);
+      if (byOrigin) roots.add(await this.fiche.rootOf(byOrigin.target_id));
+    }
+    if (roots.size === 0) {
+      for (const id of contactIdentifiers({ emails: line.emails, phones: line.phones })) {
+        for (const p of await this.fiche.findByIdentifier(networkId, id.kind, id.value)) roots.add(p.id);
+      }
+    }
+    if (roots.size === 0) return 'unknown_contact';
+    const persons = (await Promise.all([...roots].map((id) => this.store.getPerson(id)))).filter((p): p is Person => p !== null);
+    const mine = persons.filter((p) => p.agent_id === agentId);
+    if (mine.length === 0) return persons.length === 0 ? 'unknown_contact' : 'other_agent';
+    if (persons.length > 1) return 'ambiguous_contact';
+    // Une fiche effacée ne reçoit jamais de texte en clair [R17] ; elle est dite introuvable, sans dire pourquoi.
+    if (await this.fiche.isErased(mine[0]!.id)) return 'unknown_contact';
+    return mine[0]!;
+  }
+
+  /** L'agent qui suit la fiche, ou la direction du réseau. Personne d'autre ; un refus est au journal [R16]. */
+  private async gatePerson(viewer: Viewer, personId: string, kind: string): Promise<{ person: Person } | AgentImportRefusal> {
+    const person = await this.store.getPerson(await this.fiche.rootOf(personId)).catch(() => null);
+    let code: string | null = null;
+    if (!person || person.network_id !== viewer.networkId) code = 'unknown';
+    else if (viewer.role === 'direction') return { person };
+    else if (viewer.role !== 'agent') code = 'role';
+    else if (person.agent_id !== viewer.userId) code = 'not_assigned';
+    else return { person };
+    await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `person:${personId}`, data: { rule: 'R16', role: String(viewer.role), kind, code } }, this.now);
+    return { ok: false, rule: code === 'unknown' ? null : 'R16', code };
+  }
+
+  /**
+   * Le suivi repris d'une fiche, toutes fiches réunies : ses échanges et notes, du plus récent au plus ancien, et ses
+   * rappels, du plus proche au plus lointain, chacun dit fait ou non, et en retard s'il est passé [R16].
+   */
+  async followUpOf(viewer: Viewer, personId: string): Promise<{ ok: true; value: { history: ImportedExchange[]; reminders: ImportedReminder[] } } | AgentImportRefusal> {
+    const gate = await this.gatePerson(viewer, personId, 'agent_import_follow_up');
+    if (!('person' in gate)) return gate;
+    const members = await this.fiche.membersOf(gate.person.id);
+    const history = await this.db.all<{ origin_key: string; kind: ExchangeKind; happened_on: string; body: string | null; source_format: AgentExportFormat }>(
+      `SELECT origin_key, kind, happened_on, body, source_format FROM agent_import_history WHERE network_id = ? AND person_id IN (${placeholders(members.length)})
+       ORDER BY happened_on DESC, origin_key`,
+      [viewer.networkId, ...members],
+    );
+    const reminders = await this.remindersWhere(viewer.networkId, `r.person_id IN (${placeholders(members.length)})`, members);
+    // La lecture est au journal avant que rien ne soit rendu [R16] : des nombres et des identifiants internes [R13].
+    await appendEvent(
+      this.journal,
+      {
+        type: 'fiche.lue',
+        actor: this.actor(viewer),
+        subject: personSubject(gate.person.id),
+        data: { rule: 'R16', role: String(viewer.role), via: 'import.suivi', history: history.length, reminders: reminders.length, members: members.map((m) => personSubject(m)) },
+      },
+      this.now,
+    );
+    return {
+      ok: true,
+      value: {
+        history: history.map((h) => ({ id: h.origin_key, kind: h.kind, on: h.happened_on, body: h.body, from: FORMAT_LABEL[h.source_format] })),
+        reminders,
+      },
+    };
+  }
+
+  /** Les rappels repris encore à faire de l'agent, du plus en retard au plus lointain. L'agent seul, pour lui-même. */
+  async openReminders(viewer: Viewer): Promise<{ ok: true; value: ImportedReminder[] } | AgentImportRefusal> {
+    if (viewer.role !== 'agent') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: null, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_import_reminders', code: 'role' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    // Les rappels suivent la fiche : ceux que l'agent a repris, et ceux des fiches qu'il suit aujourd'hui, réunies
+    // comprises ; puis seule compte la fiche gardée et son agent du moment.
+    const all = await this.remindersWhere(
+      viewer.networkId,
+      `(r.agent_id = ? OR r.person_id IN (SELECT id FROM persons WHERE agent_id = ? AND network_id = r.network_id)
+        OR r.person_id IN (SELECT m.merged_id FROM person_merges m JOIN persons p ON p.id = m.survivor_id WHERE m.undone_at IS NULL AND p.agent_id = ?))`,
+      [viewer.userId, viewer.userId, viewer.userId],
+    );
+    const open: ImportedReminder[] = [];
+    for (const r of all) {
+      if (r.done) continue;
+      const person = await this.store.getPerson(await this.fiche.rootOf(r.personId));
+      if (person && person.agent_id === viewer.userId) open.push({ ...r, personId: person.id });
+    }
+    await appendEvent(this.journal, { type: 'reseau.import_rappels_lus', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R16', count: open.length } }, this.now);
+    return { ok: true, value: open };
+  }
+
+  /** L'agent qui suit la fiche marque un rappel repris comme fait : une fois, jamais défait [R17]. */
+  async closeReminder(viewer: Viewer, reminderId: unknown): Promise<{ ok: true; value: { id: string; closedAt: string } } | AgentImportRefusal> {
+    if (typeof reminderId !== 'string' || reminderId.length === 0 || reminderId.length > 200) return { ok: false, rule: null, code: 'unknown' };
+    const row = await this.db.first<{ person_id: string }>('SELECT person_id FROM agent_import_reminders WHERE network_id = ? AND origin_key = ?', [viewer.networkId, reminderId]);
+    if (!row) return { ok: false, rule: null, code: 'unknown' };
+    const gate = await this.gatePerson(viewer, row.person_id, 'agent_import_reminder_close');
+    if (!('person' in gate)) return gate;
+    if (viewer.role !== 'agent') return { ok: false, rule: 'R16', code: 'role' };
+    const closedAt = this.now().toISOString();
+    const { changes } = await this.db.run(
+      'INSERT INTO agent_import_reminder_closures (network_id, origin_key, closed_by, closed_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [viewer.networkId, reminderId, viewer.userId, closedAt],
+    );
+    if (changes !== 1) return { ok: false, rule: null, code: 'already_done' };
+    await appendEvent(this.journal, { type: 'reseau.import_rappel_fait', actor: this.actor(viewer), subject: `person:${gate.person.id}`, data: {} }, this.now);
+    return { ok: true, value: { id: reminderId, closedAt } };
+  }
+
+  private async remindersWhere(networkId: string, where: string, params: SqlValue[]): Promise<ImportedReminder[]> {
+    const today = this.now().toISOString().slice(0, 10);
+    const rows = await this.db.all<{ origin_key: string; person_id: string; action: ReminderAction; due_on: string; body: string | null; source_format: AgentExportFormat; closed_at: string | null }>(
+      `SELECT r.origin_key, r.person_id, r.action, r.due_on, r.body, r.source_format, c.closed_at FROM agent_import_reminders r
+       LEFT JOIN agent_import_reminder_closures c ON c.network_id = r.network_id AND c.origin_key = r.origin_key
+       WHERE r.network_id = ? AND ${where} ORDER BY r.due_on, r.origin_key`,
+      [networkId, ...params],
+    );
+    return rows.map((r) => ({
+      id: r.origin_key,
+      personId: r.person_id,
+      action: r.action,
+      dueOn: r.due_on,
+      body: r.body,
+      from: FORMAT_LABEL[r.source_format],
+      done: r.closed_at !== null,
+      late: r.closed_at === null && r.due_on < today,
+    }));
   }
 
   /** Les fiches qui portent déjà une coordonnée de la ligne, ou ses clés de contact, ou son origine. */

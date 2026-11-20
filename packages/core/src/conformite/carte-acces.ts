@@ -411,6 +411,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   call_notes: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },
+  agent_import_history: { locate: by('person_id') },
+  agent_import_reminders: { locate: by('person_id') },
+  agent_import_reminder_closures: { locate: [via('origin_key', 'agent_import_reminders', 'origin_key')] },
   // I05 : les exports bruts de H15, déposés par la direction pour la reprise ; le texte n'est rattaché à aucune fiche
   // (les fiches reprises, elles, sont lues par la carte). Gardés pour relancer la reprise, puis purgés par la procédure
   // d'effacement de la conformité : leurs morceaux s'effacent, la reprise refuse alors un dépôt incomplet.

@@ -50,6 +50,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       prospecting_sequence_steps: ['body'],
       agent_import_contacts: ['agent_id', 'person_id'],
       agent_import_referrals: ['importing_agent_id', 'person_id', 'resolved_by'],
+      // AU029 : les échanges, notes de suivi et prochains rappels repris de l'ancien logiciel de l'agent.
+      agent_import_history: ['agent_id', 'person_id', 'body'],
+      agent_import_reminders: ['agent_id', 'person_id', 'body'],
+      agent_import_reminder_closures: ['closed_by'],
       // I05 : les exports de H15 déposés par la direction, gardés pour relancer la reprise.
       reprise_depots: ['agent_id', 'deposited_by', 'sha256', 'lines'],
       reprise_depot_morceaux: ['content'],
@@ -1439,6 +1443,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_file_alerts: ['piece_id', 'alert', 'network_id', 'created_at'],
   agent_import_contacts: ['network_id', 'origin_key', 'basis', 'created_at'],
   agent_import_referrals: ['network_id', 'origin_key', 'created_at', 'resolved_at'],
+  agent_import_history: ['network_id', 'origin_key', 'kind', 'happened_on', 'source_format', 'created_at'],
+  agent_import_reminders: ['network_id', 'origin_key', 'action', 'due_on', 'source_format', 'created_at'],
+  agent_import_reminder_closures: ['network_id', 'origin_key', 'closed_at'],
   agent_import_properties: ['network_id', 'origin_key', 'property_id', 'export_reference', 'created_at'],
   academy_modules: ['id', 'network_id', 'title', 'track', 'position', 'video_id', 'script_ref', 'duration_minutes', 'mandatory', 'created_at'],
   academy_completions: ['module_id', 'network_id', 'completed_at', 'completed_on'],

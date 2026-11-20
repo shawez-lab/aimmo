@@ -326,16 +326,25 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
       `${P}/import`,
       'import',
       write(
-        ['format', 'contacts', 'properties'],
+        ['format', 'contacts', 'properties', 'history'],
         async (m, v, _p, b) => {
-          if ((b.contacts !== undefined && typeof b.contacts !== 'string') || (b.properties !== undefined && typeof b.properties !== 'string')) return badBody();
-          const r = await m.import.run(v, v.userId, { format: b.format, ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }), ...(b.properties === undefined ? {} : { properties: b.properties as string }) });
+          if ((['contacts', 'properties', 'history'] as const).some((k) => b[k] !== undefined && typeof b[k] !== 'string')) return badBody();
+          const r = await m.import.run(v, v.userId, {
+            format: b.format,
+            ...(b.contacts === undefined ? {} : { contacts: b.contacts as string }),
+            ...(b.properties === undefined ? {} : { properties: b.properties as string }),
+            ...(b.history === undefined ? {} : { history: b.history as string }),
+          });
           return reply(r.ok ? { ok: true, value: r.report } : r);
         },
         MAX_IMPORT_BYTES,
       ),
     ),
     route('GET', `${P}/import/a-reprendre`, 'import_direction', read(async (m, v) => reply(await m.import.referrals(v)))),
+    // AU029 : le suivi repris d'une fiche (échanges, notes, rappels), et les rappels repris de l'agent. Rien n'est envoyé.
+    route('GET', `${P}/import/suivi/${ID}`, 'import_suivi', read(async (m, v, [id]) => reply(await m.import.followUpOf(v, id!)))),
+    route('GET', `${P}/import/rappels`, 'mes_rappels_repris', read(async (m, v) => reply(await m.import.openReminders(v)))),
+    route('POST', `${P}/import/rappels/fait`, 'rappel_repris_fait', write(['id'], async (m, v, _p, b) => reply(await m.import.closeReminder(v, b.id)))),
 
     /* ---------- Académie : aucun horaire imposé, heures comptées par le code [R85]. ---------- */
     route('GET', `${P}/academie`, 'academie', read(async (m, v) => reply(await m.academie.tracks(v)))),
