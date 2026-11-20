@@ -12,7 +12,9 @@
  *
  * Décidé, lecture prudente : un bien reçoit des offres seulement s'il peut être diffusé (mandat en cours, D05) ;
  * l'acquéreur doit être une fiche que celui qui enregistre voit en entier (une offre d'un client d'un autre agent passe
- * par la direction, en attendant les règles entre agents de M14) ; la durée de validité va de 1 à 60 jours ; le
+ * par la direction, en attendant les règles entre agents de M14) ; la durée de validité est gardée telle que l'offre la
+ * donne, jusqu'à deux ans (une saisie au-delà est une faute de frappe) ; au-delà de 60 jours elle est inhabituelle et le
+ * contrôle de l'offre le signale, sans jamais refuser le fait reçu (AU080) ; le
  * financement déclaré ne sert qu'à vérifier la cohérence des montants (O02), jamais à noter l'acquéreur [R14].
  */
 import type { Acces } from '../acces/acces.ts';
@@ -26,7 +28,14 @@ import type { JournalStore } from '../journal/types.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const OFFER_GENESIS = '0'.repeat(64);
-export const MAX_VALIDITY_DAYS = 60;
+/** La durée de validité usuelle d'une offre : au-delà, le contrôle signale une durée inhabituelle (AU080). */
+export const USUAL_VALIDITY_DAYS = 60;
+/** La plus longue durée de validité gardée : au-delà, une date mal saisie, jamais une offre réelle (AU080). */
+export const MAX_VALIDITY_DAYS = 730;
+
+/** Le nombre de jours entre le jour de réception (heure de Paris) et le dernier jour de validité. */
+export const validityDays = (receivedAt: string, validUntil: string): number =>
+  Math.round((Date.parse(`${validUntil}T12:00:00Z`) - Date.parse(`${localTime(new Date(receivedAt), TIME_ZONE).date}T12:00:00Z`)) / 86_400_000);
 /** Coacquéreurs d'une offre, en plus de l'acquéreur en tête (AU009). */
 export const MAX_CO_BUYERS = 3;
 

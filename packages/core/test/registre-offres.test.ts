@@ -113,7 +113,7 @@ describeWithSqlite('O01 · registre des offres', () => {
     expect(await bad({ amountEur: 205000.5 })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'amountEur' });
     expect(await bad({ validUntil: undefined })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
     expect(await bad({ validUntil: '2027-02-28' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
-    expect(await bad({ validUntil: '2027-05-01' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
+    expect(await bad({ validUntil: '2029-03-02' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
     expect(await bad({ validUntil: '2027-02-31' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
     expect(await bad({ conditions: [{ kind: 'financement_parents' }] })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'conditions.0' });
     expect(await bad({ receivedAt: '2027-03-02T09:00:00.000Z' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'receivedAt' });
