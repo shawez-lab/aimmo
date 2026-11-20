@@ -42,6 +42,8 @@ const DECISION_LABELS = { oui: 'Oui, il entre', non: 'Non', a_revoir: 'À revoir
 const PIECE_STATES = { manquante: 'Manquante', projet: 'Projet, à déposer signé', echue: 'Échue', valide: 'Valide' };
 const TRACK_LABELS = { entree: 'Parcours d’entrée', vente: 'Vente', location: 'Location', commerces: 'Commerces', investissement: 'Investissement', conformite: 'Conformité' };
 const TOPIC_LABELS = { general: '', deontologie: 'déontologie', non_discrimination: 'non-discrimination' };
+/** AU025 · Le geste de chaque étape du premier parcours, fait par l'agent depuis son écran. */
+const SANDBOX_GESTURE_LABELS = { contact_recu: 'Recevoir le message du vendeur', rappel_fait: 'Je l’ai rappelé', rendez_vous: 'Fixer le rendez-vous d’estimation', avis_valide: 'Valider l’avis de valeur' };
 const OBLIGATION_LABELS = { annuelle: 'Formation de l’année', triennale: 'Formation sur 3 ans', deontologie: 'Dont déontologie, sur 3 ans', non_discrimination: 'Dont non-discrimination, sur 3 ans' };
 
 /** Les raisons d'un refus, dites à la personne : jamais un code interne. */
@@ -52,7 +54,11 @@ const REFUSALS: Record<string, string> = {
   unknown_candidate: 'Candidature introuvable : rouvrez la liste.',
   unknown_module: 'Ce module n’existe plus : rouvrez l’académie.',
   unavailable: 'Pas encore en service.',
-  not_opened: 'Votre premier parcours n’est pas encore ouvert : la direction l’ouvre à votre entrée.',
+  not_opened: 'Votre premier parcours n’est pas encore ouvert.',
+  not_next_step: 'Faites d’abord l’étape d’avant : la liste est relue.',
+  completed: 'Votre premier parcours est déjà complet.',
+  step_failed: 'L’étape n’a pas abouti : réessayez dans un moment.',
+  agent_inactive: 'Votre compte d’agent n’est pas actif : voyez la direction.',
   broken_journal: 'Votre premier parcours est illisible : la direction est prévenue.',
   agent_file_incomplete: 'Votre dossier d’agent est incomplet : la direction doit le compléter.',
   bad_date: 'Date illisible : choisissez le jour et l’heure.',
@@ -171,6 +177,7 @@ globalThis.AIMMO_INTEGRATION = function (t) {
   var TRACKS = ${JSON.stringify(TRACK_LABELS)};
   var TOPICS = ${JSON.stringify(TOPIC_LABELS)};
   var OBLIGATIONS = ${JSON.stringify(OBLIGATION_LABELS)};
+  var GESTURES = ${JSON.stringify(SANDBOX_GESTURE_LABELS)};
   var INTEGRATION_REFUSALS = ${JSON.stringify(REFUSALS)};
   var VALIDITY = ${JSON.stringify(AGENT_PIECE_VALIDITY)};
   var TYPES = ${JSON.stringify(AGENT_PIECE_FILE_TYPES)};
@@ -332,6 +339,19 @@ globalThis.AIMMO_INTEGRATION = function (t) {
   function renderSandbox(res) {
     var box = part('Mon premier parcours');
     var p = data(res);
+    if (!p && !res.offline && res.body && res.body.code === 'not_opened') {
+      // AU025 : l'agent ouvre lui-même son exercice, dans une base à lui, sans aucun client réel.
+      box.appendChild(el('p', 'Un exercice à vous seul, sur un contact inventé, du premier message à l’avis de valeur : rien ne part jamais d’ici.', 'doux'));
+      box.appendChild(button('Ouvrir mon exercice', function () {
+        state('Ouverture…');
+        send('/v1/reseau/mon-bac-a-sable', 'POST').then(function (x) {
+          if (x.gone) return;
+          if (!x.ok) { state(refusal(x, 'L’exercice ne s’ouvre pas pour le moment.')); return; }
+          open('integration', 'Exercice ouvert : première étape ci-dessous.');
+        });
+      }));
+      return box;
+    }
     if (!p || !Array.isArray(p.steps)) return missing(box, res);
     box.appendChild(el('p', 'Sur un contact inventé, du premier message à l’avis de valeur : rien ne part jamais d’ici.', 'doux'));
     var ol = el('ol', null, 'liste');
@@ -339,6 +359,16 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       var li = el('li');
       li.appendChild(el('strong', s.label));
       li.appendChild(el('p', s.done ? 'Fait le ' + when(s.at) : 'À faire', s.done ? 'module-fait' : 'piece-manque'));
+      // Seule la prochaine étape a son geste ; la qualification se fait d'elle-même à l'arrivée du message.
+      var first = p.steps.filter(function (x) { return !x.done; })[0];
+      if (first === s && GESTURES[s.step]) li.appendChild(button(GESTURES[s.step], function () {
+        state('Envoi…');
+        send('/v1/reseau/mon-bac-a-sable/etapes/' + encodeURIComponent(s.step), 'POST').then(function (x) {
+          if (x.gone) return;
+          if (!x.ok) { state(refusal(x, 'L’étape n’a pas abouti.')); return; }
+          open('integration', 'Étape faite : votre progression est gardée.');
+        });
+      }));
       ol.appendChild(li);
     });
     box.appendChild(ol);
