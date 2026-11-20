@@ -43,8 +43,9 @@ const BASE: Record<string, Answer> = {
   'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'sur_place', channel: 'sms', codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'GET /v1/visites/v1/bon/a-signer': ok({ content: CONTENT, codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', copyLink: false, proof: { method: 'code', realSignature: false } }),
-  'GET /v1/visites/v1/bon/exemplaire': ok({ content: CONTENT, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } }),
 };
+const COPY = { content: CONTENT, proof: { slipHash: 'f'.repeat(64), signedAt: '2027-03-03T12:45:00.000Z', method: 'code', drawingHash: null, place: 'sur_place' } };
+const NOT_SIGNED = no(409, { ok: false, rule: null, code: 'not_signed' });
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
 };
@@ -52,7 +53,19 @@ const settle = async () => {
 async function visit(answers: Record<string, Answer> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const calls: Call[] = [];
-  const table: Record<string, Answer> = { ...BASE, ...answers };
+  // L'exemplaire n'existe qu'une fois le bon signé.
+  let signed = false;
+  const table: Record<string, Answer> = {
+    ...BASE,
+    'GET /v1/visites/v1/bon/exemplaire': (b) => (signed ? ok(COPY) : NOT_SIGNED)(b),
+    ...answers,
+  };
+  const sign = table['POST /v1/visites/v1/bon/signature-sur-place']!;
+  table['POST /v1/visites/v1/bon/signature-sur-place'] = async (b) => {
+    const r = await sign(b);
+    if (r.ok) signed = true;
+    return r;
+  };
   const ctx: Record<string, unknown> = {
     document,
     Intl,
@@ -80,7 +93,8 @@ async function visit(answers: Record<string, Answer> = {}) {
   const buttonIn = (root: FakeElement, text: string) => root.all().find((e) => e.tagName === 'button' && e.textContent === text);
   await click(buttonIn(els.rdv!, 'Ouvrir la visite'));
   const corps = () => els['visite-corps']!;
-  const part = () => corps().all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === LABEL);
+  let label = LABEL;
+  const part = () => corps().all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === label);
   const scripts = () => [els.fiche!, ...els.fiche!.all()].filter((e) => e.tagName === 'script' && e.attributes.src === '/app/bon-visite.js');
   const open = async () => {
     await click(part()!.children[0]);
@@ -92,10 +106,29 @@ async function visit(answers: Record<string, Answer> = {}) {
   const boxes = () => part()!.all().filter((e) => e.tagName === 'input' && e.attributes.type === 'checkbox');
   const posts = () => calls.filter((c) => c.method === 'POST');
   const answer = () => part()!.all().filter((e) => e.attributes.role === 'status').map((e) => e.textContent).filter(Boolean).at(-1) ?? '';
-  return { calls, part, scripts, open, btn, click, boxes, posts, answer };
+  return { calls, table, part, scripts, open, btn, click, boxes, posts, answer, setLabel: (l: string) => (label = l) };
 }
 
 describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', () => {
+  it('[R506] un bon déjà signé en ligne garde l’accès à son exemplaire ; un exemplaire illisible se redemande', async () => {
+    const t = await visit({ 'GET /v1/visites/v1': ok({ ...VISIT, slip: { ...VISIT.slip, signed: true, online: { status: 'signee', place: 'sur_place', copy: 'remis' } } }) });
+    t.setLabel('Montrer l’exemplaire signé');
+    let fails = 1;
+    t.table['GET /v1/visites/v1/bon/exemplaire'] = async (b) => (fails-- > 0 ? Promise.reject(new TypeError('hors ligne')) : ok(COPY)(b));
+    await t.open();
+    expect(t.part()!.textContent).toContain('Pas de réseau : l’exemplaire ne s’affiche pas pour le moment. Réessayez.');
+    expect(t.btn('Signer ici, sur mon téléphone')).toBeUndefined();
+    await t.click(t.btn('Montrer l’exemplaire'));
+    expect(t.part()!.textContent).toContain('Exemplaire du visiteur');
+    expect(t.part()!.textContent).toContain(CONTENT);
+    expect(t.part()!.textContent).not.toContain('ne s’affiche pas');
+    // Signé sur papier : ni signature ni exemplaire en ligne à l'écran.
+    const u = await visit({ 'GET /v1/visites/v1': ok({ ...VISIT, slip: { ...VISIT.slip, signed: true, online: null } }) });
+    expect(u.part()).toBeUndefined();
+    u.setLabel('Montrer l’exemplaire signé');
+    expect(u.part()).toBeUndefined();
+  });
+
   it('[R201] le geste est sur l’écran d’une visite au bon complet et non signé ; rien n’est chargé avant ; budgets tenus', async () => {
     const t = await visit();
     expect(t.part()).toBeDefined();
@@ -133,6 +166,7 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     expect(t.answer()).toContain('Signature d’essai');
     // L'exemplaire s'affiche aussitôt, en texte, avec sa preuve.
     expect(t.calls.at(-1)).toMatchObject({ method: 'GET', url: '/v1/visites/v1/bon/exemplaire' });
+    expect(t.btn('Montrer l’exemplaire')).toBeUndefined();
     const text = t.part()!.textContent;
     expect(text).toContain('Exemplaire du visiteur');
     expect(text).toContain(CONTENT);

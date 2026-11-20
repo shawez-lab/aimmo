@@ -90,20 +90,33 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       }));
     });
   }
-  // L'exemplaire du visiteur, à lui montrer : le bon tel qu'il l'a signé, puis sa preuve.
-  function showCopy(id, box, said) {
-    t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/exemplaire', 'GET').then(function (res) {
-      if (res.gone || !res.ok || !res.body || !res.body.data) return;
-      var d = res.body.data, p = d.proof || {};
-      if (typeof d.content !== 'string' || typeof p.slipHash !== 'string' || typeof p.signedAt !== 'string') return;
+  // L'exemplaire du visiteur, à lui montrer : le bon tel qu'il l'a signé, puis sa preuve. Illisible : un nouvel essai.
+  function showCopy(id, box, said, otherwise) {
+    return t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/exemplaire', 'GET').then(function (res) {
+      if (res.gone) return;
+      var d = res.ok && res.body && res.body.data, p = (d && d.proof) || {};
+      if (!d || typeof d.content !== 'string' || typeof p.slipHash !== 'string' || typeof p.signedAt !== 'string') {
+        if (otherwise && res.body && res.body.code === 'not_signed') return otherwise();
+        var why = el('p', (res.offline ? 'Pas de réseau : l’' : 'L’') + 'exemplaire ne s’affiche pas pour le moment. Réessayez.', 'alerte');
+        var again = t.button('Montrer l’exemplaire', function () { box.removeChild(why); box.removeChild(again); showCopy(id, box, said, otherwise); });
+        if (otherwise) said.textContent = '';
+        box.appendChild(why);
+        box.appendChild(again);
+        return;
+      }
       box.appendChild(el('h3', 'Exemplaire du visiteur'));
       box.appendChild(el('p', d.content, 'brouillon'));
       box.appendChild(el('p', 'Signé le ' + t.date(p.signedAt) + ' à ' + t.hour(p.signedAt) + ', par ' + (p.method === 'code_et_trace' ? 'code et tracé' : 'code') + '. Empreinte du bon : ' + p.slipHash + (typeof p.drawingHash === 'string' ? '. Empreinte du tracé : ' + p.drawingHash : '') + '.', 'doux'));
     });
   }
+  // Un bon déjà signé en ligne montre son exemplaire ; sinon, le bloc de signature.
   return function (id, box, said) {
     if (typeof id !== 'string' || !ID.test(id)) return;
     t.clear(box);
+    said.textContent = 'Lecture…';
+    return showCopy(id, box, said, function () { said.textContent = ''; start(id, box, said); });
+  };
+  function start(id, box, said) {
     box.appendChild(el('p', 'Le visiteur signe sans papier, ici, sur votre téléphone, avec le code qu’il reçoit. Il voit aussitôt son exemplaire et reçoit la preuve.', 'doux'));
     var agreed = t.checkbox(box, 'bon-accord', 'Le visiteur accepte de recevoir son code et son exemplaire');
     var bySms = t.checkbox(box, 'bon-sms', 'Par SMS plutôt que par mail');
@@ -120,6 +133,6 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       });
     }
     box.appendChild(t.button('Signer ici, sur mon téléphone', function () { open('sur_place'); }));
-  };
+  }
 };
 `;
