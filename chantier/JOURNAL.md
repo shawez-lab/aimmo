@@ -1484,3 +1484,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-19 · voie 3 · AU066 (#697) fusionnée, AU064 (#702) en conflit avec main ; AU057 (#708) et AU059 (#709) ouvertes ; AU056 (#707), AU058 (#706), AU061 (#703) corrigées après relecture.
 - 2026-11-19 · voie 3 · AU058 (#706) fusionnée ; AU111 ouverte (#710).
 - 2026-11-20 05:38 · AU022 · /rejoindre s'ouvre sur le seul réseau sans variable, la candidature arrive dans la file ; Codex 1 P1 corrigé ; fusionnée (#711) ; voie 1 a aussi fusionné AU056 (#707) et AU061 (#703), vertes et relues · prochaine : AU023
+- 2026-11-20 05:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:53 par une autre séance voie 2, qui a poussé sur chantier/AU020 à 05:32)
