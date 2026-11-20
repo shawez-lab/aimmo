@@ -6,6 +6,11 @@
  * Aucun nom d'acquéreur [R52]. L'agent ajoute ses prochaines actions et valide ; le point part alors par le contrôle
  * central (boîte d'essai), une seule fois par mandat et par lundi [R18].
  *
+ * AU078 : une décision de repositionnement du prix déjà convenue de vive voix peut y être consignée, seulement si
+ * l'agent la valide explicitement et la lie au rendez-vous tenu avec le vendeur. Sa phrase est faite par le code, le
+ * prix seul vient de l'agent ; elle ne change ni l'annonce, ni le mandat, ni la fiche, et ne prévient personne d'autre
+ * que le vendeur : aucune négociation ne part d'elle [R53].
+ *
  * Décidé, lecture prudente : le mandat est en cours quand la diffusion le permet, délai de rétractation compris ; les
  * vues sont « non communiquées » quand aucun canal n'en a rapporté pour la semaine ; l'avis d'un visiteur est son avis
  * validé, déjà sans nom ; le point est lu par le système comme le serait la mesure de P08 par la direction.
@@ -25,6 +30,7 @@ import { checkText, plain } from '../envoi/texte.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { shownPrice } from '../biens/prix-publie.ts';
 import { withoutContactDetails } from '../captation/premiere-reponse.ts';
 import { CONTACT, SELLER_UPDATE_PURPOSE, nameWords, type VisitReport } from './compte-rendu.ts';
 import { numbersIn } from '../envoi/texte.ts';
@@ -47,6 +53,30 @@ export interface WeeklyFigures {
   moreOpinions?: boolean;
 }
 
+/** La décision de prix convenue, telle que l'agent la valide : le rendez-vous tenu avec le vendeur, et le prix. */
+export interface PriceDecisionInput {
+  appointmentId: string;
+  priceEur: number;
+  /** L'agent confirme que la décision est déjà prise avec le vendeur : sans `true`, rien n'est consigné. */
+  confirmed: boolean;
+}
+
+/** La décision consignée, figée avec le point. */
+export interface PriceDecision {
+  appointmentId: string;
+  kind: 'estimation' | 'signature' | 'appel';
+  /** Le jour de Paris du rendez-vous, AAAA-MM-JJ. */
+  day: string;
+  priceEur: number;
+}
+
+const EXCHANGE_WORDS: Record<PriceDecision['kind'], string> = { estimation: 'notre rendez-vous', signature: 'notre rendez-vous', appel: 'notre échange téléphonique' };
+
+/** La phrase de la décision, faite par le code : jamais un mot de l'agent [R53]. */
+export function priceDecisionLine(d: PriceDecision): string {
+  return `Décision prise ensemble lors de ${EXCHANGE_WORDS[d.kind]} du ${dmy(d.day)} : le prix demandé pour votre bien passe à ${number(d.priceEur)} €. L’annonce change après votre accord écrit.`;
+}
+
 export type PointRefusal = { ok: false; rule: string | null; code: string };
 
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -54,7 +84,7 @@ const number = (n: number): string => new Intl.NumberFormat('fr-FR').format(n).r
 const dmy = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 
 /** Le texte du point, fait par le code : chiffres de la base, « non communiquée » pour une donnée absente [R53]. */
-export function weeklyPointText(firstName: string | null, f: WeeklyFigures, nextActions: readonly string[]): string {
+export function weeklyPointText(firstName: string | null, f: WeeklyFigures, nextActions: readonly string[], decision: PriceDecision | null = null): string {
   const end = addDays(f.week, 6);
   const lines = [
     `${firstName ? `Bonjour ${firstName},` : 'Bonjour,'} voici le point de la semaine du ${dmy(f.week)} au ${dmy(end)} pour votre bien.`,
@@ -62,6 +92,7 @@ export function weeklyPointText(firstName: string | null, f: WeeklyFigures, next
     `Contacts reçus : ${number(f.contacts)}.`,
     `Visites faites : ${number(f.visitsDone)} ; visites prévues : ${number(f.visitsPlanned)}.`,
     f.opinions.length > 0 ? `Avis des visiteurs : ${f.opinions.join(' / ')}${f.moreOpinions ? ' / et d’autres avis, que votre agent immobilier vous donne de vive voix.' : ''}` : 'Avis des visiteurs : non communiqués.',
+    ...(decision ? [priceDecisionLine(decision)] : []),
     nextActions.length > 0 ? `Prochaines actions : ${nextActions.join(' ; ')}.` : 'Prochaines actions : votre agent immobilier vous les précise de vive voix.',
   ];
   return lines.join('\n').replace(/[()]/g, '');
@@ -91,7 +122,11 @@ interface PointRow {
   delivery_status: 'sent' | 'waiting' | 'refused' | 'failed' | null;
   delivery_rule: string | null;
   validated_by: string | null;
+  price_decision: string | null;
 }
+
+const decisionOf = (row: PointRow): PriceDecision | null => (row.price_decision ? (JSON.parse(row.price_decision) as PriceDecision) : null);
+const parisDay = (iso: string): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
 
 export class PointSemaine {
   private readonly now: () => Date;
@@ -149,16 +184,17 @@ export class PointSemaine {
   }
 
   /** Le point préparé, pour l'agent du mandat ou la direction [R16]. */
-  async read(viewer: Viewer, mandateId: string, week: string): Promise<{ ok: true; figures: WeeklyFigures; text: string } | PointRefusal> {
+  async read(viewer: Viewer, mandateId: string, week: string): Promise<{ ok: true; figures: WeeklyFigures; priceDecision: PriceDecision | null; text: string } | PointRefusal> {
     const row = await this.access(viewer, mandateId, week);
     if (!row.ok) return row;
     const figures = JSON.parse(row.row.figures) as WeeklyFigures;
     const first = await this.firstName(row.row.person_id);
-    return { ok: true, figures, text: weeklyPointText(first, figures, row.row.next_actions ? (JSON.parse(row.row.next_actions) as string[]) : []) };
+    const decision = decisionOf(row.row);
+    return { ok: true, figures, priceDecision: decision, text: weeklyPointText(first, figures, row.row.next_actions ? (JSON.parse(row.row.next_actions) as string[]) : [], decision) };
   }
 
   /** L'agent valide, avec ses prochaines actions ; jamais une baisse de prix [R53]. Le point part alors. */
-  async validate(viewer: Viewer, mandateId: string, week: string, actions: readonly string[] = []): Promise<{ ok: true; delivery: string; rule: string | null } | PointRefusal> {
+  async validate(viewer: Viewer, mandateId: string, week: string, actions: readonly string[] = [], priceDecision: PriceDecisionInput | null = null): Promise<{ ok: true; delivery: string; rule: string | null } | PointRefusal> {
     const access = await this.access(viewer, mandateId, week);
     if (!access.ok) return access;
     const row = access.row;
@@ -181,24 +217,35 @@ export class PointSemaine {
       return CONTACT.test(a) || withoutContactDetails(a) !== a || people.words.some((w) => text.includes(` ${w} `)) || people.identifiers.some((x) => plain(a).includes(x));
     };
     if (nextActions.some(named)) return { ok: false, rule: 'R52', code: 'buyer_named' };
+    // Une décision de prix convenue : validée explicitement, liée au rendez-vous tenu avec le vendeur [R53].
+    let decision: PriceDecision | null = null;
+    if (priceDecision !== null && priceDecision !== undefined) {
+      const checked = await this.checkDecision(row, priceDecision);
+      if (!checked.ok) return checked;
+      decision = checked.decision;
+    }
     // Le texte entier passe le contrôle du texte avant d'être figé : une action refusée se corrige [R07, R08].
     const figures = JSON.parse(row.figures) as WeeklyFigures;
-    const preview = weeklyPointText(await this.firstName(row.person_id), figures, nextActions.map((a) => a.trim()));
+    const preview = weeklyPointText(await this.firstName(row.person_id), figures, nextActions.map((a) => a.trim()), decision);
     const problems = checkText(preview, {
       audience: 'client',
       channel: 'email',
       firstOfConversation: false,
       firstName: await this.firstName(row.person_id),
-      figures: this.allowedFigures(row.week, figures),
+      figures: this.allowedFigures(row.week, figures, decision),
       sellerNames: people.outsideGreeting,
     });
     if (problems.length > 0) return { ok: false, rule: problems[0]!.rule, code: 'text_refused' };
     const iso = this.now().toISOString();
     const { changes } = await this.db.run(
-      "UPDATE weekly_points SET next_actions = ?, status = 'valide', validated_by = ?, validated_at = ?, updated_at = ? WHERE mandate_id = ? AND week = ? AND status = 'prepare'",
-      [JSON.stringify(nextActions.map((a) => a.trim())), `${viewer.role}:${viewer.userId}`, iso, iso, mandateId, week],
+      "UPDATE weekly_points SET next_actions = ?, price_decision = ?, status = 'valide', validated_by = ?, validated_at = ?, updated_at = ? WHERE mandate_id = ? AND week = ? AND status = 'prepare'",
+      [JSON.stringify(nextActions.map((a) => a.trim())), decision ? JSON.stringify(decision) : null, `${viewer.role}:${viewer.userId}`, iso, iso, mandateId, week],
     );
-    if (changes === 1) await appendEvent(this.journal, { type: 'point_semaine.valide', actor: `${viewer.role}:${viewer.userId}`, subject: `mandate:${mandateId}`, data: { week } }, this.now);
+    if (changes === 1) {
+      await appendEvent(this.journal, { type: 'point_semaine.valide', actor: `${viewer.role}:${viewer.userId}`, subject: `mandate:${mandateId}`, data: { week } }, this.now);
+      // La décision est dite au journal par son rendez-vous, sans le prix ni personne [R13].
+      if (decision) await appendEvent(this.journal, { type: 'point_semaine.decision_prix', actor: `${viewer.role}:${viewer.userId}`, subject: `mandate:${mandateId}`, data: { week, appointment: decision.appointmentId } }, this.now);
+    }
     return this.send(mandateId, week);
   }
 
@@ -253,9 +300,39 @@ export class PointSemaine {
     return { words: [...words], outsideGreeting: [...words].filter((w) => !sellerWords.has(w)), identifiers: [...identifiers] };
   }
 
-  /** Les chiffres permis : ceux de la base, et ceux des avis venus de comptes rendus validés [R10]. */
-  private allowedFigures(week: string, f: WeeklyFigures): number[] {
+  /**
+   * La décision de prix, contrôlée : confirmée par l'agent ; un prix entier, plausible, différent de celui montré ; le
+   * rendez-vous est celui de l'agent du mandat avec le vendeur (sa fiche, fusions comprises), pour ce bien ou sans bien,
+   * tenu ou passé et jamais annulé ni manqué, depuis la signature du mandat [R53].
+   */
+  private async checkDecision(row: PointRow, input: PriceDecisionInput): Promise<{ ok: true; decision: PriceDecision } | PointRefusal> {
+    const refuse = (code: string): PointRefusal => ({ ok: false, rule: 'R53', code });
+    if (typeof input !== 'object' || input === null) return refuse('bad_price_decision');
+    if (input.confirmed !== true) return refuse('price_decision_not_confirmed');
+    if (typeof input.appointmentId !== 'string' || input.appointmentId === '') return refuse('bad_price_decision');
+    if (typeof input.priceEur !== 'number' || !Number.isInteger(input.priceEur) || input.priceEur < 1_000 || input.priceEur > 100_000_000) return refuse('bad_price');
+    const a = await this.db.first<{ network_id: string; agent_id: string; person_id: string; property_id: string | null; kind: string; status: string; start_at: string; end_at: string }>(
+      'SELECT network_id, agent_id, person_id, property_id, kind, status, start_at, end_at FROM appointments WHERE id = ?',
+      [input.appointmentId],
+    );
+    const seller = await this.fiche.view(row.person_id);
+    const sellerIds = new Set([seller.person.id, ...seller.members.map((m) => m.id)]);
+    if (!a || a.network_id !== row.network_id || !sellerIds.has(a.person_id) || a.agent_id !== row.agent_id || (a.property_id !== null && a.property_id !== row.property_id)) return refuse('exchange_unknown');
+    if (a.kind === 'visite') return refuse('exchange_unknown');
+    const now = this.now().toISOString();
+    if (!(a.status === 'honored' || (a.status === 'booked' && a.end_at <= now)) || a.start_at > now) return refuse('exchange_not_held');
+    const signed = await this.db.first<{ signed_at: string | null }>('SELECT signed_at FROM mandates WHERE id = ?', [row.mandate_id]);
+    if (!signed?.signed_at || a.start_at < signed.signed_at) return refuse('exchange_before_mandate');
+    const property = await this.db.first<{ price_eur: number | null }>('SELECT price_eur FROM properties WHERE id = ?', [row.property_id]);
+    const current = await shownPrice(this.db, row.property_id, property?.price_eur ?? null);
+    if (current !== null && Number(current) === input.priceEur) return refuse('same_price');
+    return { ok: true, decision: { appointmentId: input.appointmentId, kind: a.kind as PriceDecision['kind'], day: parisDay(a.start_at), priceEur: input.priceEur } };
+  }
+
+  /** Les chiffres permis : ceux de la base, ceux des avis venus de comptes rendus validés, et la décision validée [R10]. */
+  private allowedFigures(week: string, f: WeeklyFigures, decision: PriceDecision | null = null): number[] {
     return [
+      ...(decision ? [decision.priceEur, Number(decision.day.slice(8, 10)), Number(decision.day.slice(5, 7))] : []),
       f.views ?? 0,
       f.contacts,
       f.visitsDone,
@@ -303,11 +380,13 @@ export class PointSemaine {
     if (row.delivery_status === 'sent' || row.delivery_status === 'refused') return { ok: true, delivery: row.delivery_status, rule: row.delivery_rule };
     const figures = JSON.parse(row.figures) as WeeklyFigures;
     const actions = row.next_actions ? (JSON.parse(row.next_actions) as string[]) : [];
-    const text = weeklyPointText(await this.firstName(row.person_id), figures, actions);
+    const decision = decisionOf(row);
+    const text = weeklyPointText(await this.firstName(row.person_id), figures, actions, decision);
     let status: 'sent' | 'waiting' | 'refused' | 'failed';
     let rule: string | null;
     let messageId: string | null = null;
-    if (PRICE_DROP.test(plain(text))) {
+    // Hors de la phrase de la décision validée, faite par le code, rien ne parle de prix [R53].
+    if (PRICE_DROP.test(plain(weeklyPointText(await this.firstName(row.person_id), figures, actions)))) {
       status = 'refused';
       rule = 'R53';
     } else {
@@ -324,7 +403,7 @@ export class PointSemaine {
         subject: `point_semaine:${mandateId}:${week}`,
         fallbackTexts: [text],
         // Les chiffres de la base, et ceux des avis venus de comptes rendus validés ; jamais d'autres [R10].
-        figures: this.allowedFigures(week, figures),
+        figures: this.allowedFigures(week, figures, decision),
         // Aucun nom d'une personne venue pour ce bien [R52].
         sellerNames: (await this.peopleOf(row.network_id, row.property_id, row.person_id)).outsideGreeting,
       });

@@ -379,7 +379,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       newsletter_letters: ['person_id', 'message_id'],
       newsletter_unsubscribe_tokens: ['person_id'],
       agent_whatsapp_alerts: ['person_id', 'agent_id', 'confirmed_by'],
-      weekly_points: ['person_id', 'agent_id', 'figures', 'validated_by'],
+      weekly_points: ['person_id', 'agent_id', 'figures', 'validated_by', 'price_decision'],
     },
   },
   {
