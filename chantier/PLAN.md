@@ -641,7 +641,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU057b · Conditions du jour et rappel d'exclusivité après un avenant
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU057
 - Cahier : M06 Mandats et documents ; suite des remarques P2 de Codex sur #708.
 - Objectif : l'écran des conditions montre celles du jour et les avenants à venir à part ; le rappel de fin de période exclusive suit le type de mandat en vigueur.
@@ -696,7 +696,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU063 · Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A063 (majeur), endroit : C/annonces/fiche-bien.ts, `Characteristics`.
 - Constat de l'audit : Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce.
@@ -891,7 +891,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
 - Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.

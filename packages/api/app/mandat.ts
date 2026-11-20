@@ -293,6 +293,17 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (typeof c.priceEur === 'number') said.push('prix ' + c.priceEur.toLocaleString('fr-FR') + ' €');
       if (typeof c.durationMonths === 'number') said.push('durée ' + c.durationMonths + ' mois');
       if (said.length) line.textContent = 'En vigueur : ' + said.join(', ') + '.';
+      // AU057b · un avenant signé qui prend effet plus tard se dit à part, avec son jour.
+      (Array.isArray(c.pending) ? c.pending : []).forEach(function (a) {
+        if (!a || typeof a.effectiveOn !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(a.effectiveOn)) return;
+        var next = [];
+        if (typeof a.priceEur === 'number') next.push('prix ' + a.priceEur.toLocaleString('fr-FR') + ' €');
+        if (typeof a.durationMonths === 'number') next.push('durée ' + a.durationMonths + ' mois');
+        if (typeof a.feeEur === 'number') next.push('honoraires ' + a.feeEur.toLocaleString('fr-FR') + ' €');
+        if (a.feeCharge === 'vendeur' || a.feeCharge === 'acquereur') next.push('honoraires à la charge ' + (a.feeCharge === 'vendeur' ? 'du vendeur' : 'de l’acquéreur'));
+        if (a.mandateType === 'exclusif' || a.mandateType === 'simple') next.push('mandat ' + a.mandateType);
+        if (next.length) box.appendChild(el('p', 'À partir du ' + a.effectiveOn.slice(8, 10) + '/' + a.effectiveOn.slice(5, 7) + '/' + a.effectiveOn.slice(0, 4) + ' : ' + next.join(', ') + '.', 'doux'));
+      });
     });
   }
   function drawAmend(m, owners) {
