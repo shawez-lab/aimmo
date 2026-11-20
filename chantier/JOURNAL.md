@@ -1499,3 +1499,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 10:42 · AU021 · restauration complète : base et fichiers, puis registre rejoué par le véritable effaceur sur les stockages restaurés ; registre listé dans le compartiment des copies ; relecture forte 1 P1, Codex 1 P0 corrigés ; fusionnée (#716, a744788b) · prochaine : AU020b (nouvelle approche) ou tâche voie 2 libre
 - 2026-11-20 10:42 · VOIE 2 : AU021, a744788b (main), relancé non
 - 2026-11-20 10:42 · VOIE 2 : relance refusée, question 2 (la séance de 08:54 n'a produit ni commit ni tâche finie)
+- 2026-11-20 11:02 · AU020c · identifiants et clés de contact sous empreinte après un effacement, arrêt posé, message d'une personne effacée reconnu sans réponse ; relecture forte 2 P1 corrigés ; fusionnée (#717) · prochaine : AU025

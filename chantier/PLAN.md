@@ -289,7 +289,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU020c · Les identifiants gardés après un effacement passent sous empreinte
-- Statut : en cours
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#717, 2d0f65cc). Identifiants et clés de contact sous empreinte SHA-256 (réseau + valeur normalisée, préfixe `#sha256:`), arrêt `stop` posé s'il manquait, fiche effacée reconnue sans rien reprendre en clair (ni nom, source, accord) ; message privé Instagram reconnu par sa clé. Relecture forte 2 P1 corrigés ; Codex sans relecture après 15 min ; vérification GitHub verte. Reste : empreinte sans clé secrète (un numéro peut se retrouver par essai) ; `applyPendingHumanReplies` (relais) ne lit la clé qu'en clair, sans effet sur l'arrêt.
 - Qui : Claude, voie 1 (socle) · Relecture : forte · Dépend de : AU020
 - Cahier : Conformité ; endroit : packages/core/src/fiche/fusion.ts, reception/rattachement.ts, conformite/effacement-reel.ts (`IDENTIFIERS_KEPT`).
 - Objectif : après un effacement réel, les adresses et numéros de la personne ne restent que sous leur empreinte, et un message qui arrive de l'un d'eux est quand même reconnu et arrêté [R04].
