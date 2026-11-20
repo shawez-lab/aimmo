@@ -8,7 +8,7 @@
  * Les clés remises s'ajoutent à celles du secret `API_KEYS`, qui ne change jamais : aucune empreinte déjà présente
  * n'est perdue.
  */
-import { ROLES, SqlJournalStore, appendEvent, type SqlDatabase } from '@aimmo/core';
+import { ROLES, SqlJournalStore, appendEvent, type JournalStore, type SqlDatabase } from '@aimmo/core';
 import { MIN_KEY_LENGTH, sha256Hex, type ApiKeyEntry } from './auth.ts';
 
 export const INVITATION_PATH = '/v1/acces/invitation';
@@ -167,4 +167,92 @@ export async function handleInvitation(request: Request, db: SqlDatabase, now: D
     return new Response(JSON.stringify({ ok: false, error: { code: result.code, message: result.message } }), { status: result.status, headers: NO_STORE });
   }
   return new Response(JSON.stringify({ ok: true, data: { cles: result.keys.map((k) => ({ role: k.role, cle: k.key })) } }), { status: 200, headers: NO_STORE });
+}
+
+// ---------------------------------------------------------------- l'invitation d'un agent par la direction (AU023)
+
+/** Le lien remis : le jeton suit « # », que le navigateur n'envoie jamais au serveur. */
+export const INVITATION_LINK = '/app/#invitation=';
+
+export type InviteOutcome = { ok: true; value: unknown } | { ok: false; rule: 'R16' | 'R600' | 'R601' | null; code: string };
+
+const AGENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Qui la direction peut inviter : les agents actifs de son seul réseau, par leur nom, rien d'autre [R16]. */
+export async function invitableAgents(db: SqlDatabase, viewer: { networkId: string; role: string }): Promise<InviteOutcome> {
+  if (viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+  const rows = await db.all<{ id: string; first_name: string; last_name: string }>(
+    "SELECT id, first_name, last_name FROM agents WHERE network_id = ? AND status = 'active' ORDER BY last_name, first_name, id",
+    [viewer.networkId],
+  );
+  return { ok: true, value: rows.map((r) => ({ id: r.id, name: `${r.first_name} ${r.last_name}`.trim() })) };
+}
+
+/**
+ * La direction prépare le lien d'accès nominatif d'un agent actif de son réseau, sur la preuve de sa propre clé
+ * d'appareil pour cet agent (`modifier_droits`, `agent:<id>`) [R601]. Le lien sert une fois, 24 heures ; il ouvre
+ * l'application sur le téléphone de l'agent, qui y range ensuite la clé de cet appareil, sans jamais voir ni taper
+ * de clé [R600]. Le jeton n'existe que dans la réponse : la base n'en garde que l'empreinte, le journal ni l'un ni
+ * l'autre [R13].
+ *
+ * Appareil perdu ou volé (`retirerAnciens`) : les clés déjà remises à cet agent par un lien, ses liens encore
+ * inutilisés et les clés de ses appareils sont retirés d'abord ; seul le nouveau lien ouvre ensuite. Les clés du
+ * secret `API_KEYS` ne se lisent pas d'ici : elles restent, et la réponse le dit.
+ */
+export async function inviteAgent(
+  db: SqlDatabase,
+  journal: JournalStore,
+  viewer: { networkId: string; role: string; userId: string },
+  body: { userId?: unknown; stepUpId?: unknown; retirerAnciens?: unknown },
+  proof: (subject: string, stepUpId: unknown) => Promise<{ ok: true } | { ok: false; rule: 'R16' | 'R600' | 'R601'; code: string }>,
+  revokeDevice: (deviceId: string) => Promise<boolean>,
+  now: Date,
+): Promise<InviteOutcome> {
+  if (viewer.role !== 'direction') return { ok: false, rule: 'R16', code: 'role' };
+  const { userId, stepUpId, retirerAnciens } = body;
+  if (typeof userId !== 'string' || !AGENT_ID.test(userId) || typeof retirerAnciens !== 'boolean') return { ok: false, rule: null, code: 'bad_input' };
+  const agent = await db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [userId, viewer.networkId]);
+  // Un agent d'un autre réseau, parti ou inconnu : la même réponse, sans rien dire de plus.
+  if (!agent) return { ok: false, rule: 'R16', code: 'unknown' };
+  const subject = `agent:${userId}`;
+  const proved = await proof(subject, stepUpId);
+  if (!proved.ok) return proved;
+
+  const nowIso = now.toISOString();
+  let keysRevoked = 0;
+  let linksVoided = 0;
+  let devicesRevoked = 0;
+  if (retirerAnciens) {
+    keysRevoked = (
+      await db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND role = 'agent' AND user_id = ? AND revoked_at IS NULL", [nowIso, viewer.networkId, userId])
+    ).changes;
+    // Un lien encore inutilisé pour cet agent ne sert plus : il est daté comme servi, jamais effacé.
+    linksVoided = (
+      await db.run(
+        `UPDATE access_invitations SET used_at = ? WHERE network_id = ? AND used_at IS NULL AND EXISTS (
+           SELECT 1 FROM json_each(access_invitations.grants) g WHERE json_extract(g.value, '$.role') = 'agent' AND json_extract(g.value, '$.userId') = ?)`,
+        [nowIso, viewer.networkId, userId],
+      )
+    ).changes;
+    const devices = await db.all<{ id: string }>("SELECT id FROM security_devices WHERE network_id = ? AND user_role = 'agent' AND user_id = ? AND status <> 'retire'", [viewer.networkId, userId]);
+    for (const d of devices) if (await revokeDevice(d.id)) devicesRevoked += 1;
+  }
+
+  const token = randomToken(32);
+  const id = crypto.randomUUID();
+  const expiresAt = new Date(now.getTime() + INVITATION_TTL_MS).toISOString();
+  await db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', [
+    id,
+    viewer.networkId,
+    await sha256Hex(token),
+    JSON.stringify([{ role: 'agent', userId }]),
+    expiresAt,
+    nowIso,
+  ]);
+  await appendEvent(
+    journal,
+    { type: 'acces.invitation_creee', actor: `direction:${viewer.userId}`, subject, data: { rule: 'R600', invitation: id, retirerAnciens, keysRevoked, linksVoided, devicesRevoked } },
+    () => now,
+  );
+  return { ok: true, value: { lien: `${INVITATION_LINK}${token}`, expiresAt, keysRevoked, linksVoided, devicesRevoked } };
 }
