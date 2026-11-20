@@ -288,7 +288,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU022 · Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A022 (majeur), endroit : `/rejoindre` en production ; A/worker.ts, `CANDIDATURE_NETWORK_ID`.
 - Constat de l'audit : Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande.
@@ -594,7 +594,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU056 · Mes rendez-vous sont limités à quatre types et à leurs durées de réglage
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20) : fusionnée (#707) par la voie 1, vérification verte et Codex sans remarque
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A056 (majeur), endroit : C/rendezvous/creneaux.ts, `APPOINTMENT_KINDS` et durées.
 - Constat de l'audit : Mes rendez-vous sont limités à quatre types et à leurs durées de réglage, sans durée propre à un cas réel dans le modèle de créneau.
@@ -612,7 +612,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU058 · Le barème de vente se résume à un taux maximal et un minimum
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A058 (majeur), endroit : C/documents/controles.ts, `setFeeSchedule`.
 - Constat de l'audit : Le barème de vente se résume à un taux maximal et un minimum, sans tranches ni forfaits par prestation.
@@ -640,7 +640,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20) : fusionnée (#703) par la voie 1, vérification verte et Codex sans remarque
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
 - Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
@@ -1125,7 +1125,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU111 · Une fois « parti », je perds l’export agent
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A111 (majeur), endroit : C/reseau/depart.ts ; C/rapports/export-agent.ts, `make`.
 - Constat de l'audit : Une fois « parti », je perds l’export agent, alors que mon solde et mes pièces personnelles restent à récupérer.
