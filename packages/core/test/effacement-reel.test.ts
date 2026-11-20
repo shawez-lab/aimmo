@@ -420,7 +420,7 @@ describeWithSqlite('AU020c · après un effacement, les identifiants ne restent 
     // Ses clés de contact non plus ne reviennent pas en clair.
     expect(JSON.stringify(await t.db.all('SELECT key FROM contact_keys'))).not.toContain('lea');
     // La clé du message est réservée, sous empreinte seulement : la même que retrouvera le prochain message.
-    expect(after.contact_keys).toBe(before.contact_keys + 1);
+    expect(after.contact_keys).toBe((before.contact_keys ?? 0) + 1);
     expect(await t.db.first('SELECT person_id FROM contact_keys WHERE key = ?', [await contactKeyHash(t.network.id, 'email:lea.vendeuse@example.test')])).toEqual({ person_id: t.personId });
     // Rien ne lui répond, sur aucun canal.
     const conversationId = (await t.db.first<{ conversation_id: string }>('SELECT conversation_id FROM messages WHERE person_id = ? ORDER BY created_at DESC LIMIT 1', [t.personId]))!.conversation_id;
