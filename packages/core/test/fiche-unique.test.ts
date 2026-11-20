@@ -370,6 +370,11 @@ describe('[R17] le code n’efface aucune donnée', () => {
       let text = readFileSync(file, 'utf8').replace(/^\s*(--|\/\/|\*).*$/gm, '');
       // La seule exception, décidée par Shawez (H51) : `sale_files` refaite pour un second dossier, testée à part.
       if (file.endsWith('/1760_second_dossier.sql')) text = text.replace(SECOND_FILE_DROP, '');
+      // La procédure d'effacement que R17 prévoit (AU020) : un seul DELETE, ligne par ligne, dans `eraseForReal`.
+      if (file.endsWith('/conformite/effacement-reel.ts')) {
+        expect(text.match(/\bDELETE\s+FROM\b/gi), file).toHaveLength(1);
+        text = text.replace('`DELETE FROM "${p.table}" WHERE ${where.sql}`', '');
+      }
       expect(text, file).not.toMatch(/\bDELETE\s+FROM\b|\bDROP\s+(TABLE|INDEX|VIEW)\b|\bTRUNCATE\b|ON DELETE CASCADE/i);
     }
   });

@@ -89,6 +89,17 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', `/visites/${id}/confirmation`, { code: await t.sms(), lastName: 'Durand' })).body).toMatchObject({ ok: true, data: { confirmed: true } });
     expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.safety).toBe('confirmee');
 
+    // AU075 · Le bon signé sur le téléphone de l'agent : code au visiteur par SMS, bon lu à l'écran, code tapé, sans papier.
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent', extra: 1 })).status).toBe(400);
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent' })).body).toMatchObject({ ok: true, data: { place: 'sur_place', channel: 'sms', mode: 'essai' } });
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon/a-signer`)).body).toMatchObject({ ok: true, data: { paragraphs: expect.arrayContaining([expect.stringContaining('REF-T-1')]) } });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '000000' })).body).toMatchObject({ ok: false, code: 'wrong_code' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: await t.sms(), drawing: 'M0 0 L4 4' })).body).toMatchObject({ ok: true, data: { copy: 'remis', copyLink: false, proof: { method: 'code_et_trace', realSignature: false } } });
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon/exemplaire`)).body).toMatchObject({ ok: true, data: { paragraphs: expect.arrayContaining([expect.stringContaining('REF-T-1')]), proof: { place: 'sur_place' } } });
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ signed: true, online: { status: 'signee', place: 'sur_place', copy: 'remis' } });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature`, { signedAt: '2027-03-03T12:39:00.000Z', scanRef: 'scans/bon.pdf' })).body).toMatchObject({ ok: false, code: 'signed_online' });
+
     // Le compte rendu dicté : sans IA branchée, l'agent écrit, valide en un geste, le vendeur le reçoit sans le nom [R52].
     t.setClock(new Date('2027-03-03T14:10:00.000Z'));
     expect((await t.call('alex', 'POST', `/visites/${id}/compte-rendu/dictee`, { dictation: 'Inès a aimé la lumière et le balcon, cuisine à refaire.' })).body).toMatchObject({ ok: true, data: { report: null } });
@@ -109,6 +120,10 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect(list.body.data.points[0].text).toContain('Avis des visiteurs : Le visiteur a aimé la lumière du séjour');
     expect((await t.call('sam', 'GET', '/points?semaine=2027-03-01')).body.data.points).toEqual([]);
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Revoir le prix ensemble'] })).body).toMatchObject({ ok: false, rule: 'R53' });
+    // Une décision de prix : explicite et liée à un rendez-vous tenu avec le vendeur, sinon refusée (AU078) [R53].
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: 'baisse' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000, confirme: true } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'exchange_unknown' });
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000 } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'price_decision_not_confirmed' });
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Organiser de nouvelles visites cette semaine'] })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
     expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
 
@@ -151,6 +166,10 @@ describeWithSqlite('T08 · routes de M08', () => {
       ['sam', 'GET', `/visites/${id}`],
       ['sam', 'GET', `/visites/${id}/bon`],
       ['sam', 'POST', `/visites/${id}/bon/signature`, { signedAt: WEDNESDAY_14H, scanRef: 'scans/bon.pdf' }],
+      ['sam', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord' }],
+      ['sam', 'GET', `/visites/${id}/bon/a-signer`],
+      ['sam', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '123456' }],
+      ['sam', 'GET', `/visites/${id}/bon/exemplaire`],
       ['sam', 'POST', `/visites/${id}/annulation`],
       ['sam', 'POST', `/visites/${id}/code`, { consentProof: 'accord' }],
       ['sam', 'POST', `/visites/${id}/confirmation`, { code: '123456', lastName: 'Durand' }],
@@ -190,6 +209,57 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'GET', '/points?semaine=lundi')).status).toBe(400);
     expect((await t.call('alex', 'GET', '/acquereurs/inconnu')).status).toBe(404);
     expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
+  });
+
+  it('[R32] AU077 · POST /visites avec joinVisit : un second acquéreur rejoint la visite au même créneau ; joinVisit mal formé, 400', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const first = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    expect(first.status).toBe(200);
+    const leadId = first.body.data.visit.appointment.id as string;
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Léo', lastName: 'Martin' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: leo.id, kind: 'buy' });
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: 42 })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, code: 'taken' });
+    const joined = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: leadId });
+    expect(joined.status).toBe(200);
+    expect(joined.body.data.visit.appointment).toMatchObject({ person_id: leo.id, group_id: leadId, status: 'booked' });
+  });
+
+  it('[R32] AU056 · POST /rendez-vous : l’agent fixe un rendez-vous chez le notaire de 90 minutes, le conflit se contrôle sur 90 minutes', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    const start = WEDNESDAY_14H;
+    const body = { personId: t.buyer.id, kind: 'signature', start, durationMinutes: 90 };
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, durationMinutes: 22 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, salle: 'B' })).body).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'notaire' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'visite', durationMinutes: 20 })).body).toMatchObject({ ok: false, rule: 'R40', code: 'visit_route' });
+    expect((await t.call('sam', 'POST', '/rendez-vous', body)).status).toBe(403);
+    expect((await t.call('direction', 'POST', '/rendez-vous', body)).status).toBe(403);
+    const booked = await t.call('alex', 'POST', '/rendez-vous', body);
+    expect(booked.status).toBe(200);
+    const a = booked.body.data.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(90);
+    // Un appel 75 minutes après le début tombe dans les 90 minutes : refusé [R32].
+    const later = new Date(Date.parse(start) + 75 * 60_000).toISOString();
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: later })).body).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: new Date(Date.parse(start) + 90 * 60_000).toISOString(), durationMinutes: 10 })).status).toBe(200);
+  });
+
+  it('[R32] AU056 · POST /visites : une contre-visite de 20 minutes, durée choisie par l’agent seul', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const visit = { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H };
+    // La direction fixe une visite à la durée du type, jamais une durée propre.
+    expect((await t.call('direction', 'POST', '/visites', { ...visit, durationMinutes: 20 })).body).toMatchObject({ ok: false, code: 'bad_duration' });
+    expect((await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 7 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    const contre = await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 20 });
+    expect(contre.status).toBe(200);
+    const a = contre.body.data.visit.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(20);
   });
 });
 

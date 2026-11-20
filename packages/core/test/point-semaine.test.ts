@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   Acces,
   FicheClient,
@@ -202,4 +202,94 @@ describeWithSqlite('T07 · point de la semaine au vendeur', () => {
     expect(await t.inbox(s.person.id)).toHaveLength(0);
     expect(await t.db.first('SELECT delivery_status, delivery_rule FROM weekly_points WHERE mandate_id = ?', [s.mandateId])).toEqual({ delivery_status: 'refused', delivery_rule: 'R86' });
   });
+
+  describe('AU078 · une décision de prix déjà convenue, consignée dans le point [R53]', () => {
+    const meeting = async (t: Awaited<ReturnType<typeof setup>>, id: string, personId: string, propertyId: string | null, o: { kind?: string; status?: string; start?: string; agentId?: string } = {}) => {
+      const start = o.start ?? '2026-12-10T10:00:00.000Z';
+      await t.db.run(
+        "INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, ?)",
+        [id, t.network.id, o.agentId ?? t.alex.id, personId, propertyId, o.kind ?? 'estimation', start, new Date(Date.parse(start) + HOUR).toISOString(), o.status ?? 'honored', `h-${id}`, start, start],
+      );
+    };
+    const ready = async () => {
+      const t = await setup();
+      const s = await t.seller(3);
+      await meeting(t, 'rdv-vendeur', s.person.id, s.property.id);
+      await t.point.prepare(t.network.id);
+      t.setClock(MON1_8H + HOUR);
+      return { t, s, v: (d: Parameters<PointSemaine['validate']>[4], actions = ['organiser deux visites samedi']) => t.point.validate(t.as('agent', t.alex.id), s.mandateId, '2026-12-07', actions, d) };
+    };
+
+    it('constat : la décision convenue au rendez-vous du vendeur entre dans le point, sa phrase faite par le code', async () => {
+      const { t, s, v } = await ready();
+      expect(await v({ appointmentId: 'rdv-vendeur', priceEur: 240_000, confirmed: true })).toMatchObject({ ok: true, delivery: 'sent' });
+      const [sent] = await t.inbox(s.person.id);
+      expect(sent!.body).toContain('Décision prise ensemble lors de notre rendez-vous du 10/12 : le prix demandé pour votre bien passe à 240 000 €.');
+      expect(sent!.body).toContain('Prochaines actions : organiser deux visites samedi.');
+      const read = await t.point.read(t.as('agent', t.alex.id), s.mandateId, '2026-12-07');
+      expect(read).toMatchObject({ ok: true, priceDecision: { appointmentId: 'rdv-vendeur', kind: 'estimation', day: '2026-12-10', priceEur: 240_000 } });
+      // Figée avec le point validé [R17].
+      await expect(t.db.run('UPDATE weekly_points SET price_decision = NULL')).rejects.toThrow();
+      // Au journal : le rendez-vous, jamais le prix ni le nom [R13].
+      const entries = await t.journal.all();
+      const events = entries.filter((e) => e.type === 'point_semaine.decision_prix');
+      expect(events).toHaveLength(1);
+      expect(events[0]!.data).toEqual({ week: '2026-12-07', appointment: 'rdv-vendeur' });
+      expect(JSON.stringify(entries)).not.toMatch(/240[ .\u00a0\u202f]?000|VendeurD|vendeur3@/);
+      expect((await verifyChain(entries)).ok).toBe(true);
+    });
+
+    it('aucune négociation automatique : ni l’annonce, ni la fiche, ni le mandat, ni un autre message ne changent', async () => {
+      const { t, s, v } = await ready();
+      const before = {
+        property: await t.db.first('SELECT price_eur, status FROM properties WHERE id = ?', [s.property.id]),
+        mandate: await t.db.first('SELECT * FROM mandates WHERE id = ?', [s.mandateId]),
+        listings: await t.db.all('SELECT * FROM listing_versions'),
+        messages: Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM messages'))!.n),
+        offers: await t.db.all("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'offers'"),
+      };
+      expect(await v({ appointmentId: 'rdv-vendeur', priceEur: 230_000, confirmed: true })).toMatchObject({ ok: true, delivery: 'sent' });
+      expect(await t.db.first('SELECT price_eur, status FROM properties WHERE id = ?', [s.property.id])).toEqual(before.property);
+      expect(await t.db.first('SELECT * FROM mandates WHERE id = ?', [s.mandateId])).toEqual(before.mandate);
+      expect(await t.db.all('SELECT * FROM listing_versions')).toEqual(before.listings);
+      // Un seul message de plus : le point au vendeur.
+      expect(Number((await t.db.first<{ n: number }>('SELECT count(*) AS n FROM messages'))!.n)).toBe(before.messages + 1);
+      const types = (await t.journal.all()).map((e) => e.type);
+      expect(types.filter((x) => /offre|offer|annonce|listing|negoc|alerte/.test(x))).toEqual([]);
+    });
+
+    it('sans confirmation explicite, ou sans rendez-vous tenu avec ce vendeur, rien n’est consigné', async () => {
+      const { t, s, v } = await ready();
+      const other = await t.seller(4);
+      await meeting(t, 'rdv-autre', other.person.id, other.property.id);
+      await meeting(t, 'rdv-annule', s.person.id, s.property.id, { status: 'cancelled' });
+      await meeting(t, 'rdv-manque', s.person.id, s.property.id, { status: 'absent' });
+      await meeting(t, 'rdv-futur', s.person.id, s.property.id, { status: 'booked', start: '2026-12-16T10:00:00.000Z' });
+      await meeting(t, 'rdv-avant', s.person.id, s.property.id, { start: '2026-11-10T10:00:00.000Z' });
+      await meeting(t, 'rdv-sam', s.person.id, s.property.id, { agentId: t.sam.id });
+      await meeting(t, 'rdv-visite', s.person.id, s.property.id, { kind: 'visite' });
+      expect(await v({ appointmentId: 'rdv-vendeur', priceEur: 240_000, confirmed: false })).toEqual({ ok: false, rule: 'R53', code: 'price_decision_not_confirmed' });
+      for (const [id, code] of [['inconnu', 'exchange_unknown'], ['rdv-autre', 'exchange_unknown'], ['rdv-sam', 'exchange_unknown'], ['rdv-visite', 'exchange_unknown'], ['rdv-annule', 'exchange_not_held'], ['rdv-manque', 'exchange_not_held'], ['rdv-futur', 'exchange_not_held'], ['rdv-avant', 'exchange_before_mandate']] as const) {
+        expect(await v({ appointmentId: id, priceEur: 240_000, confirmed: true })).toEqual({ ok: false, rule: 'R53', code });
+      }
+      for (const priceEur of [0, 240_000.5, Number.NaN, 250_000]) expect(await v({ appointmentId: 'rdv-vendeur', priceEur, confirmed: true })).toMatchObject({ ok: false, rule: 'R53' });
+      expect(await t.inbox(s.person.id)).toEqual([]);
+      // Un rendez-vous passé, jamais marqué, mais pas annulé, suffit.
+      await meeting(t, 'rdv-passe', s.person.id, null, { status: 'booked', start: '2026-12-11T15:00:00.000Z', kind: 'appel' });
+      expect(await v({ appointmentId: 'rdv-passe', priceEur: 240_000, confirmed: true })).toMatchObject({ ok: true, delivery: 'sent' });
+      expect((await t.inbox(s.person.id))[0]!.body).toContain('lors de notre échange téléphonique du 11/12');
+    });
+
+    it('le prix reste interdit partout ailleurs : actions et avis des visiteurs [R53]', async () => {
+      const { t, s, v } = await ready();
+      expect(await v({ appointmentId: 'rdv-vendeur', priceEur: 240_000, confirmed: true }, ['baisser encore le prix'])).toEqual({ ok: false, rule: 'R53', code: 'price_drop' });
+      expect(await v({ appointmentId: 'rdv-vendeur', priceEur: 240_000, confirmed: true }, ['présenter le bien à 235 000 €'])).toMatchObject({ ok: false, rule: 'R53' });
+      expect(await t.inbox(s.person.id)).toEqual([]);
+      // Sans décision, le point n'en parle toujours pas.
+      expect(await v(null)).toMatchObject({ ok: true, delivery: 'sent' });
+      expect(plainBody((await t.inbox(s.person.id))[0]!.body)).not.toMatch(/prix|€/);
+    });
+  });
 });
+
+const plainBody = (b: string): string => b.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();

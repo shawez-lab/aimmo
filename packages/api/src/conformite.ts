@@ -19,6 +19,8 @@ import {
   FicheUnique,
   conformite,
   type Acces,
+  type CopyKey,
+  type ErasureLedgerStore,
   type JournalStore,
   type ScheduledJob,
   type SqlDatabase,
@@ -67,6 +69,11 @@ export interface ConformiteServices {
   stop: StopRecorder;
   vault: VaultFiles | null;
   now: () => Date;
+  /**
+   * L'effacement réel (AU020) : son mode, le registre des effacements et le stockage des objets. Absent, ou mode autre
+   * que `reel` écrit tel quel, la route refuse et rien n'est effacé : la mise en service attend H29.
+   */
+  erasure?: { mode: conformite.ErasureMode; ledger: { store: ErasureLedgerStore; key: CopyKey } | null; objects: conformite.ObjectEraser | null } | null;
 }
 
 export interface ConformiteRoute {
@@ -169,6 +176,12 @@ const services = (s: ConformiteServices) => {
     durees: new conformite.DureesProspects(s.db, s.journal, fiche, { now: s.now }),
     registre: new conformite.RelectureRegistre(s.db, s.journal, { now: s.now }),
     fuites: new conformite.Fuites(s.db, s.journal, fiche, { now: s.now }),
+    effacement: new conformite.EffacementReel(s.db, s.journal, fiche, {
+      mode: conformite.erasureModeOf(s.erasure?.mode),
+      ledger: s.erasure?.ledger ?? null,
+      objects: s.erasure?.objects ?? null,
+      now: s.now,
+    }),
   };
 };
 
@@ -276,6 +289,12 @@ export function conformiteRoutes(): ConformiteRoute[] {
     route('GET', '/demandes/alertes', 'demandes_alertes', async (s, v) => reply(await services(s).demandes.alerts(v))),
     route('GET', `/demandes/${ID}/acces`, 'demande_acces', async (s, v, [id]) => reply(await services(s).demandes.prepareAccess(v, id!))),
     route('GET', `/demandes/${ID}/effacement`, 'demande_effacement', async (s, v, [id]) => reply(await services(s).demandes.prepareErasure(v, id!))),
+    // L'effacement réel (AU020) : après le plan d'essai, par le responsable seul, noté au registre avant d'effacer [R17, R231].
+    route('POST', `/demandes/${ID}/effacer`, 'demande_effacer', write([], async (s, v, [id]) => {
+        const r = await services(s).effacement.erase(v, id!);
+        // Le seul succès qui n'est pas un essai : la réponse le dit.
+        return r.ok ? json(200, { ok: true, mode: 'reel', data: r.value }) : reply(r);
+      })),
     route('POST', `/demandes/${ID}/repondre`, 'demande_repondre', write(['answeredOn'], async (s, v, [id], b) => reply(await services(s).demandes.answer(v, id!, { answeredOn: b.answeredOn as string })))),
 
     // Le registre des traitements (L06) : sa relecture, tous les 12 mois [R95].

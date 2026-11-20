@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { applyMigrations, CopieBase, copyKeyFromSecret, expectedRestoreMonth, FicheClient, fromSyncSqlite, MemoryJournalStore, RecusRestauration, recordCopyRun, recordRestoreReceipt, RESTORE_LIMIT_MS, runRestoreTest, SqlJournalStore, type CopyStore, type SqlDatabase, type Viewer } from '@aimmo/core';
+import { applyMigrations, restoreCopy, copyObjects, OBJECT_STORAGES, type ObjectSource, type ObjectStorage, type StoredObject, CopieBase, copyKeyFromSecret, expectedRestoreMonth, FicheClient, fromSyncSqlite, MemoryJournalStore, RecusRestauration, recordCopyRun, recordRestoreReceipt, RESTORE_LIMIT_MS, runRestoreTest, SqlJournalStore, type CopyStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -18,9 +18,11 @@ const memory = () => {
   return { parts, store };
 };
 
-async function world() {
+async function world(options: { objects?: Partial<Record<ObjectStorage, Record<string, StoredObject>>> | null; cites?: string[] } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
+  await db.exec('CREATE TABLE essai_fichiers (ref TEXT, liste TEXT)');
+  for (const ref of options.cites ?? ['biens/b1/salon.jpg']) await db.run('INSERT INTO essai_fichiers (ref, liste) VALUES (?, ?)', [ref, JSON.stringify([{ kind: 'photo', ref }])]);
   const fiche = new FicheClient(db, { now });
   const network = await fiche.createNetwork('Réseau test');
   const agent = await fiche.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -28,14 +30,50 @@ async function world() {
   const { parts, store } = memory();
   const key = await copyKeyFromSecret(SECRET);
   const receipt = await new CopieBase(db, new MemoryJournalStore(), store, key, { now: () => new Date('2027-03-02T01:23:00.000Z') }).take();
+  if (options.objects !== null) await copyObjects(fichiers(options.objects ?? PHOTO), store, key, receipt.copyId);
   const noteCopy = () => recordCopyRun(db, { id: 'r1', startedAt: '2027-03-02T01:23:00.000Z', finishedAt: '2027-03-02T01:25:00.000Z', outcome: 'copiee', copyId: receipt.copyId, tables: receipt.tables, rows: receipt.rows, parts: receipt.parts });
   const journal = new SqlJournalStore(db);
   return { db, parts, store, receipt, noteCopy, journal, recus: new RecusRestauration(db, journal, { now }) };
 }
 
+// Les fichiers des quatre stockages, et une table qui cite l'un d'eux.
+const fichiers = (seed: Partial<Record<ObjectStorage, Record<string, StoredObject>>> = {}): Record<ObjectStorage, ObjectSource> =>
+  Object.fromEntries(OBJECT_STORAGES.map((n) => [n, { list: async () => Object.keys(seed[n] ?? {}), get: async (k: string) => seed[n]?.[k] ?? null }])) as Record<ObjectStorage, ObjectSource>;
+const PHOTO = { MEDIA: { 'biens/b1/salon.jpg': { bytes: Uint8Array.from({ length: 700 }, (_, i) => i % 13), contentType: 'image/jpeg' } } };
+
 const ticking = (...values: number[]) => () => values.shift() ?? 0;
 
 describeWithSqlite('SV03 · le test de restauration de chaque mois (Jamais vu)', () => {
+  it('[R224] AU019b : une copie de la seule base, sans ses fichiers, n’est pas une restauration réussie', async () => {
+    const t = await world({ objects: null });
+    await t.noteCopy();
+    expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'non_identique' });
+  });
+
+  it('[R224] AU019b : un fichier cité par la base, entier ou dans un JSON, et absent de la copie fait échouer le test', async () => {
+    for (const cites of [['biens/b1/salon.jpg', 'dossiers/d1/mandat.pdf'], ['coffre/n1/piece.pdf']]) {
+      const t = await world({ cites });
+      await t.noteCopy();
+      expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'non_identique' });
+    }
+  });
+
+  it('[R224] AU019b : un fichier abîmé dans la copie fait échouer le test ; l’empreinte du reçu couvre aussi les fichiers', async () => {
+    const t = await world();
+    await t.noteCopy();
+    const ok = await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now });
+    expect(ok.outcome).toBe('reussie');
+    if (ok.outcome !== 'reussie') throw new Error('attendu : réussi');
+    const baseSeule = await restoreCopy(fresh(), t.store, await copyKeyFromSecret(SECRET), t.receipt.copyId);
+    if (!baseSeule.ok) throw new Error('attendu : base restaurée');
+    expect(ok.digest).not.toBe(baseSeule.digest);
+    const place = [...t.parts.keys()].find((k) => /\/objets\/\d{7}$/.test(k))!;
+    const abime = Uint8Array.from(t.parts.get(place)!);
+    abime[20] = (abime[20] ?? 0) ^ 1;
+    t.parts.set(place, abime);
+    expect(await runRestoreTest({ db: t.db, secret: SECRET, store: t.store, fresh, now })).toMatchObject({ outcome: 'echouee', reason: 'non_identique' });
+  });
+
   it('[R232] la dernière copie se restaure : le reçu dit sa date, sa durée, ses comptes et une empreinte, et la direction le lit', async () => {
     const t = await world();
     await t.noteCopy();

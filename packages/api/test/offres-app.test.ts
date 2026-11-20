@@ -231,7 +231,7 @@ describe('O10 · écran des offres', () => {
     expect(t.state()).toBe('Joignez l’offre signée.');
     t.input('of-signee').files = [pdf()];
     await t.click(t.byText('Inscrire au registre'));
-    expect(t.state()).toBe('Dernier jour de validité : à partir d’aujourd’hui, 60 jours au plus.');
+    expect(t.state()).toBe('Dernier jour de validité : à partir d’aujourd’hui et du jour de réception, deux ans au plus.');
     const sent = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
     expect(sent[0]!.body).toMatchObject({ buyerPersonId: 'p1', amountEur: 205000, downPaymentEur: 70000, loanEur: 150000, conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240 }], signedRef: ref });
     t.table['POST /v1/offres/biens/b1'] = ok({ offer: { id: 'o1' }, lines: [] });
@@ -241,6 +241,76 @@ describe('O10 · écran des offres', () => {
     expect((both[1]!.body as { requestKey: string }).requestKey).toBe((both[0]!.body as { requestKey: string }).requestKey);
     expect(t.posts().filter((c) => c.url.endsWith('/fichiers/signee'))).toHaveLength(1);
     expect(t.state()).toContain('Offre inscrite au registre');
+  });
+
+  it('[R56] AU079 · le taux maximal hors assurance et le type du prêt partent avec la condition, et se relisent sur l’offre', async () => {
+    const ref = 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000079.pdf';
+    const t = await run({
+      [SUIVI]: ok(board([])),
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'p1', firstName: 'Acheteur', lastName: 'Exemple' }], more: false }),
+      'POST /v1/offres/biens/b1/fichiers/signee': ok({ ref }),
+      'POST /v1/offres/biens/b1': no(400, 'invalid', { field: 'validUntil' }),
+    });
+    await t.open();
+    await t.click(t.byText('Enregistrer une offre reçue'));
+    t.input('of-acquereur').value = 'p1';
+    t.input('of-montant').value = '205000';
+    t.input('of-apport').value = '70000';
+    t.input('of-pret').value = '150000';
+    t.input('of-recue').value = '2027-03-01T09:00';
+    t.input('of-validite').value = '2027-03-10';
+    (t.input('of-c-pret') as unknown as { checked: boolean }).checked = true;
+    t.input('of-c-montant').value = '150000';
+    t.input('of-c-duree').value = '240';
+    expect(t.input('of-c-type').children.map((o) => o.value)).toEqual(['', 'amortissable', 'in_fine', 'relais', 'ptz']);
+    for (const wrong of ['3,855', '25', 'trois', '0']) {
+      t.input('of-c-taux').value = wrong;
+      await t.click(t.byText('Inscrire au registre'));
+      expect(t.state()).toBe('Taux maximal du prêt : en %, de 0,01 à 20, deux décimales au plus, ou laissé vide.');
+    }
+    t.input('of-c-taux').value = '3,85 %';
+    t.input('of-c-type').value = 'amortissable';
+    t.input('of-signee').files = [pdf()];
+    await t.click(t.byText('Inscrire au registre'));
+    const sent = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(sent[0]!.body).toMatchObject({ conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240, maxRateBp: 385, loanType: 'amortissable' }] });
+    // Laissés vides : la condition part comme avant, sans taux ni type.
+    t.input('of-c-taux').value = '';
+    t.input('of-c-type').value = '';
+    await t.click(t.byText('Inscrire au registre'));
+    const again = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(again[1]!.body).toMatchObject({ conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240 }] });
+    expect(Object.keys((again[1]!.body as { conditions: Record<string, unknown>[] }).conditions[0]!)).toEqual(['kind', 'amountEur', 'durationMonths']);
+    // L'offre relue : le prêt dit son type et son taux.
+    const shown = await run({ [SUIVI]: ok(board([{ ...OFFER, conditionDetails: [{ kind: 'pret', amountEur: 150000, durationMonths: 240, maxRateBp: 385, loanType: 'amortissable' }] }])) });
+    await shown.open();
+    expect(shown.body().textContent).toContain('prêt amortissable de 150 000 € sur 240 mois, taux hors assurance 3,85 % au plus');
+  });
+
+  it('[R56] AU080 · une offre à longue validité s’inscrit, et sa durée inhabituelle se dit aussitôt, en mots', async () => {
+    const ref = 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000080.pdf';
+    const long = { check: 'validite_longue', status: 'atypique', days: 121, usualDays: 60 };
+    const t = await run({
+      [SUIVI]: ok(board([])),
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'p1', firstName: 'Acheteur', lastName: 'Exemple' }], more: false }),
+      'POST /v1/offres/biens/b1/fichiers/signee': ok({ ref }),
+      'POST /v1/offres/biens/b1': ok({ offer: { id: 'o1' }, lines: [{ check: 'validite', status: 'en_cours', lastDay: '2027-06-30' }, long] }),
+      'POST /v1/offres/o1/controle': ok([long]),
+    });
+    await t.open();
+    await t.click(t.byText('Enregistrer une offre reçue'));
+    t.input('of-acquereur').value = 'p1';
+    t.input('of-montant').value = '205000';
+    t.input('of-apport').value = '205000';
+    t.input('of-pret').value = '0';
+    t.input('of-recue').value = '2027-03-01T09:00';
+    t.input('of-validite').value = '2027-06-30';
+    t.input('of-signee').files = [pdf()];
+    t.table[SUIVI] = ok(board([{ ...OFFER, validUntil: '2027-06-30' }]));
+    await t.click(t.byText('Inscrire au registre'));
+    const sent = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(sent[0]!.body).toMatchObject({ validUntil: '2027-06-30' });
+    expect(t.state()).toBe('Offre inscrite au registre, avec son contrôle. Durée de validité inhabituelle : 121 jours, pour 60 d’habitude. L’offre est gardée telle quelle : vérifiez la date sur l’offre signée.');
   });
 
   it('[R26] [R56] tant que rien ne part vraiment, l’écran ne propose pas de transmettre par message', async () => {

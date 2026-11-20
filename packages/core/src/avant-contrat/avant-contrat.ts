@@ -30,7 +30,7 @@ import { fundsInOutgoing } from '../envoi/texte.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { CONDITION_KINDS, type ConditionKind, type OfferCondition } from '../offres/registre-offres.ts';
+import { CONDITION_KINDS, LOAN_TYPE_LABEL, parseLoan, rateText, type ConditionKind, type LoanCondition, type OfferCondition } from '../offres/registre-offres.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -122,7 +122,11 @@ const CONDITION_LABEL: Record<ConditionKind, string> = {
   autre: "autre condition, écrite dans l'offre signée",
 };
 
-const conditionText = (c: OfferCondition): string => (c.kind === 'pret' ? `${CONDITION_LABEL.pret} de ${euros(c.amountEur)} sur ${c.durationMonths} mois` : CONDITION_LABEL[c.kind]);
+/** Un prêt en mots : type quand il est déclaré, montant, durée, et taux maximal hors assurance quand il est déclaré (AU079). */
+const loanText = (c: LoanCondition): string =>
+  `${CONDITION_LABEL.pret}${c.loanType ? ` ${LOAN_TYPE_LABEL[c.loanType]}` : ''} de ${euros(c.amountEur)} sur ${c.durationMonths} mois` +
+  (c.maxRateBp !== undefined ? `, au taux nominal hors assurance de ${rateText(c.maxRateBp)} au plus` : '');
+const conditionText = (c: OfferCondition): string => (c.kind === 'pret' ? loanText(c) : CONDITION_LABEL[c.kind]);
 
 /** Le texte de la note au notaire, écrit par le code, sans nom ni coordonnée, et sans aucun appel à verser [R62]. */
 export function briefText(t: BriefTerms): string {
@@ -148,9 +152,10 @@ const LABELS: Record<string, string> = {
 
 /** Le texte d'une différence, pour l'agent, écrit par le code. */
 export function differenceText(d: Difference): string {
-  const condition = /^condition\.([a-z_]+)(?:\.(amountEur|durationMonths))?$/.exec(d.field);
+  const condition = /^condition\.([a-z_]+)(?:\.(amountEur|durationMonths|maxRateBp|loanType))?$/.exec(d.field);
+  const part: Record<string, string> = { amountEur: ', montant', durationMonths: ', durée', maxRateBp: ', taux maximal hors assurance', loanType: ', type de prêt' };
   const label = condition
-    ? `Condition suspensive « ${CONDITION_LABEL[condition[1] as ConditionKind] ?? condition[1]} »${condition[2] === 'amountEur' ? ', montant' : condition[2] === 'durationMonths' ? ', durée' : ''}`
+    ? `Condition suspensive « ${CONDITION_LABEL[condition[1] as ConditionKind] ?? condition[1]} »${condition[2] ? part[condition[2]] : ''}`
     : (LABELS[d.field] ?? d.field);
   const where = d.page ? ` (page ${d.page})` : '';
   return `${label} : ${d.expected ?? 'rien'} dans l'offre acceptée et le dossier, ${d.found ?? 'rien'} dans le projet du notaire${where}.${d.blocking ? " À faire corriger : le dépôt de garantie est reçu par le notaire, jamais par l'agence ni par le vendeur." : ''}`;
@@ -169,6 +174,9 @@ export function compareDraft(brief: BriefTerms, draft: DraftTerms): Difference[]
     else if (b && d && b.kind === 'pret' && d.kind === 'pret') {
       if (b.amountEur !== d.amountEur) push('condition.pret.amountEur', euros(b.amountEur), euros(d.amountEur), d.page);
       if (b.durationMonths !== d.durationMonths) push('condition.pret.durationMonths', `${b.durationMonths} mois`, `${d.durationMonths} mois`, d.page);
+      // Le taux maximal et le type : déclarés d'un côté seulement, ou différents, c'est une différence (AU079).
+      if (b.maxRateBp !== d.maxRateBp) push('condition.pret.maxRateBp', b.maxRateBp !== undefined ? rateText(b.maxRateBp) : null, d.maxRateBp !== undefined ? rateText(d.maxRateBp) : null, d.page);
+      if (b.loanType !== d.loanType) push('condition.pret.loanType', b.loanType ? LOAN_TYPE_LABEL[b.loanType] : null, d.loanType ? LOAN_TYPE_LABEL[d.loanType] : null, d.page);
     }
   }
   const dateDiff = (field: string, expected: string | null, found: Paged<string> | null) => {
@@ -188,8 +196,8 @@ function parseCondition(v: unknown, paged: boolean): OfferCondition | (OfferCond
   if (paged && !isPage(v.page)) return null;
   const page = paged ? { page: v.page as number } : {};
   if (v.kind === 'pret') {
-    if (!onlyKeys(v, ['kind', 'amountEur', 'durationMonths', ...extra]) || !isInt(v.amountEur, 1, 100_000_000) || !isInt(v.durationMonths, 1, 480)) return null;
-    return { kind: 'pret', amountEur: v.amountEur, durationMonths: v.durationMonths, ...page };
+    const loan = parseLoan(v, extra);
+    return loan.ok ? { ...loan.value, ...page } : null;
   }
   if (!onlyKeys(v, ['kind', ...extra])) return null;
   return { kind: v.kind, ...page } as OfferCondition;

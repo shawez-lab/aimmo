@@ -12,6 +12,7 @@
 import type { SqlDatabase } from '../db/sql.ts';
 import type { OutboundChannelName } from '../db/types.ts';
 import type { Viewer } from '../acces/droits.ts';
+import type { Acces } from '../acces/acces.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
@@ -30,6 +31,7 @@ import {
   conflictOf,
   freeSlots,
   isOnSite,
+  validDuration,
   withinAvailability,
   type AppointmentKind,
   type Availability,
@@ -64,7 +66,12 @@ export interface Appointment {
   confirmation_channel: OutboundChannelName | null;
   /** La coordonnée choisie à la réservation, que la confirmation et les rappels visent (V09). */
   confirmation_to: string | null;
+  /** La visite groupée (AU077) : l'identifiant du premier rendez-vous du groupe ; NULL hors groupe. */
+  group_id: string | null;
 }
+
+/** Au plus tant d'acquéreurs dans une même visite groupée, rendez-vous encore pris (AU077). */
+export const GROUP_VISIT_MAX = 8;
 
 export type BookingRefusal =
   | 'unknown_agent'
@@ -72,11 +79,20 @@ export type BookingRefusal =
   | 'unknown_property'
   | 'bad_kind'
   | 'bad_time'
+  | 'bad_duration'
   | 'too_soon'
   | 'no_availability'
   | 'outside_availability'
   | 'agenda_busy'
-  | 'taken';
+  | 'taken'
+  /** AU077 : la visite à rejoindre n'est plus prise, ou plus tenue. */
+  | 'group_closed'
+  /** AU077 : pas la même visite (autre agent, autre bien, autre heure, autre type). */
+  | 'group_mismatch'
+  | 'group_full'
+  | 'already_in_group'
+  /** AU077 : seul l'agent réunit des acquéreurs dans une visite ; jamais le site ni un décalage. */
+  | 'group_agent_only';
 
 export type BookingResult =
   | {
@@ -97,10 +113,20 @@ export interface BookingRequest {
   kind: AppointmentKind;
   start: Date;
   source: AppointmentSource;
+  /**
+   * La durée propre de ce rendez-vous, en minutes (AU056) : l'agent seul la choisit (`source: 'agent'`), le conflit se
+   * contrôle sur elle. Absente, celle du type dans les réglages.
+   */
+  durationMinutes?: number;
   /** Le canal de la confirmation ; absent, pas de message (la confirmation est rendue à l'appelant). */
   channel?: OutboundChannelName | null;
   /** La coordonnée choisie par la personne pour ce canal, normalisée (V09) ; absente : la première de la fiche. */
   to?: string | null;
+  /**
+   * AU077 : le rendez-vous d'une visite déjà prise que celui-ci rejoint, même agent, même bien, même heure de début et
+   * de fin. L'agent n'est pas compté deux fois : les tranches restent tenues par le groupe [R32].
+   */
+  joinGroupOf?: string | null;
 }
 
 export interface RendezVousOptions {
@@ -256,13 +282,13 @@ export class RendezVous {
   }
 
   /** Les créneaux libres d'un agent pour un type, entre deux instants (V01, avec la base et l'agenda). */
-  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date): Promise<Slot[]> {
+  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date, durationMinutes?: number): Promise<Slot[]> {
     const availability = await this.availabilityOf(agentId);
     if (!availability) return [];
     const travel = this.settings.travelMinutes * MINUTE;
     const booked = await this.bookedAround(agentId, new Date(from.getTime() - travel - 86_400_000), new Date(to.getTime() + travel + 86_400_000));
     const busy = await this.busyAround(agentId, from, to);
-    return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings });
+    return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings, ...(durationMinutes !== undefined ? { durationMinutes } : {}) });
   }
 
   /**
@@ -294,12 +320,75 @@ export class RendezVous {
     }
   }
 
+  /**
+   * Libère les tranches d'un rendez-vous. Dans une visite groupée (AU077), elles passent d'abord à un autre rendez-vous
+   * encore pris du groupe, par une seule instruction qui revérifie qu'il l'est toujours : deux annulations simultanées
+   * ne laissent jamais de tranches tenues par un rendez-vous annulé. Le dernier du groupe les libère.
+   */
   private async release(appointmentId: string): Promise<void> {
+    const own = await this.db.first<{ group_id: string | null }>('SELECT group_id FROM appointments WHERE id = ?', [appointmentId]);
+    if (own?.group_id) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const held = await this.db.first('SELECT 1 AS hit FROM appointment_holds WHERE appointment_id = ? AND released_at IS NULL LIMIT 1', [appointmentId]);
+        if (!held) return;
+        const heir = await this.db.first<{ id: string }>(
+          "SELECT id FROM appointments WHERE group_id = ? AND id <> ? AND status = 'booked' ORDER BY created_at, id LIMIT 1",
+          [own.group_id, appointmentId],
+        );
+        if (!heir) break;
+        const moved = await this.db.run(
+          `UPDATE appointment_holds SET appointment_id = ?
+           WHERE appointment_id = ? AND released_at IS NULL AND EXISTS (SELECT 1 FROM appointments WHERE id = ? AND status = 'booked')`,
+          [heir.id, appointmentId, heir.id],
+        );
+        if (moved.changes > 0) return;
+      }
+    }
     await this.db.run('UPDATE appointment_holds SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL', [this.now().toISOString(), appointmentId]);
   }
 
+  /** Un rendez-vous encore pris du groupe tient ses tranches (AU077). */
+  private async groupHeld(groupId: string): Promise<boolean> {
+    return (
+      (await this.db.first(
+        `SELECT 1 AS hit FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id
+         WHERE a.group_id = ? AND a.status = 'booked' AND h.released_at IS NULL LIMIT 1`,
+        [groupId],
+      )) !== null
+    );
+  }
+
+  /**
+   * La visite que rejoint une réservation (AU077) : prise, du même réseau, même agent, même bien, même type de visite,
+   * même début ; la fin est la sienne. Seul l'agent réunit des acquéreurs, jamais un décalage ni le site. Le premier
+   * rendez-vous reçoit l'identifiant du groupe, le sien.
+   */
+  private async groupToJoin(req: BookingRequest, replacesId: string | null): Promise<{ ok: true; groupId: string; end: Date } | { ok: false; rule: null; code: BookingRefusal }> {
+    if (req.source !== 'agent' || replacesId !== null) return { ok: false, rule: null, code: 'group_agent_only' };
+    const lead = await this.get(req.joinGroupOf!);
+    if (!lead || lead.network_id !== req.networkId) return { ok: false, rule: null, code: 'group_closed' };
+    if (lead.status !== 'booked') return { ok: false, rule: null, code: 'group_closed' };
+    if (
+      req.kind !== 'visite' ||
+      lead.kind !== 'visite' ||
+      lead.agent_id !== req.agentId ||
+      lead.property_id === null ||
+      lead.property_id !== (req.propertyId ?? null) ||
+      Date.parse(lead.start_at) !== req.start.getTime() ||
+      (req.durationMinutes !== undefined && Date.parse(lead.end_at) - Date.parse(lead.start_at) !== req.durationMinutes * MINUTE)
+    ) {
+      return { ok: false, rule: null, code: 'group_mismatch' };
+    }
+    const groupId = lead.group_id ?? lead.id;
+    const members = await this.db.all<{ person_id: string }>("SELECT person_id FROM appointments WHERE (group_id = ? OR id = ?) AND status = 'booked'", [groupId, lead.id]);
+    if (members.some((m) => m.person_id === req.personId)) return { ok: false, rule: null, code: 'already_in_group' };
+    if (members.length >= GROUP_VISIT_MAX) return { ok: false, rule: null, code: 'group_full' };
+    await this.db.run('UPDATE appointments SET group_id = ? WHERE id = ? AND group_id IS NULL', [groupId, lead.id]);
+    return { ok: true, groupId, end: new Date(lead.end_at) };
+  }
+
   async get(id: string): Promise<Appointment | null> {
-    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at, confirmation_status, confirmation_channel, confirmation_to FROM appointments WHERE id = ?', [id]);
+    return this.db.first<Appointment>('SELECT id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, source, replaces_id, created_at, updated_at, cancelled_at, confirmation_status, confirmation_channel, confirmation_to, group_id FROM appointments WHERE id = ?', [id]);
   }
 
   async byToken(token: string): Promise<Appointment | null> {
@@ -318,6 +407,10 @@ export class RendezVous {
     if (!APPOINTMENT_SOURCES.includes(req.source)) throw new Error('Source de réservation inconnue.');
     const start = req.start;
     if (Number.isNaN(start.getTime()) || start.getTime() % UNIT_MS !== 0) return { ok: false, rule: null, code: 'bad_time' };
+    // Une durée propre vient de l'agent, ou d'un rendez-vous décalé qui garde la sienne (AU056) ; jamais du site.
+    if (req.durationMinutes !== undefined && (!validDuration(req.durationMinutes) || (req.source !== 'agent' && replacesId === null))) {
+      return { ok: false, rule: null, code: 'bad_duration' };
+    }
     const agent = await this.db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [req.agentId, req.networkId]);
     if (!agent) return { ok: false, rule: null, code: 'unknown_agent' };
     const person = await this.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ? AND network_id = ?', [req.personId, req.networkId]);
@@ -328,30 +421,60 @@ export class RendezVous {
     }
     const now = this.now();
     if (start.getTime() < now.getTime() + this.settings.minNoticeMinutes * MINUTE) return { ok: false, rule: null, code: 'too_soon' };
-    const end = new Date(start.getTime() + this.settings.durations[req.kind] * MINUTE);
+    // AU077 : une visite groupée prend l'heure de fin de la visite qu'elle rejoint ; l'agent n'y est pas compté deux fois.
+    const group = req.joinGroupOf ? await this.groupToJoin(req, replacesId) : null;
+    if (group && !group.ok) return group;
+    const end = group?.ok ? group.end : new Date(start.getTime() + (req.durationMinutes ?? this.settings.durations[req.kind]) * MINUTE);
     const slot: Slot = { kind: req.kind, start, end };
     const availability = await this.availabilityOf(req.agentId);
     if (!availability) return { ok: false, rule: 'R33', code: 'no_availability' };
     if (!withinAvailability(slot, availability)) return { ok: false, rule: 'R33', code: 'outside_availability' };
-    const travel = this.settings.travelMinutes * MINUTE;
-    const booked = await this.bookedAround(req.agentId, new Date(start.getTime() - travel), new Date(end.getTime() + travel), replacesId);
-    const conflict = conflictOf(slot, booked, await this.busyAround(req.agentId, start, end), this.settings);
-    if (conflict) return { ok: false, rule: conflict, code: conflict === 'R32' ? 'taken' : 'agenda_busy' };
-
     const id = this.newId();
     const token = this.newToken();
-    // La base tranche : si un autre rendez-vous a pris une tranche entre-temps, rien n'est tenu [R32].
-    if (!(await this.hold(req.agentId, id, req.kind, start, end))) return { ok: false, rule: 'R32', code: 'taken' };
+    if (group) {
+      // La visite groupée ne lève que le chevauchement avec les rendez-vous du groupe [R32] : un événement occupé de
+      // l'agenda de l'agent, apparu depuis, refuse toujours la réservation [R33].
+      const busyConflict = conflictOf(slot, [], await this.busyAround(req.agentId, start, end), this.settings);
+      if (busyConflict) return { ok: false, rule: busyConflict, code: busyConflict === 'R32' ? 'taken' : 'agenda_busy' };
+    } else {
+      const travel = this.settings.travelMinutes * MINUTE;
+      const booked = await this.bookedAround(req.agentId, new Date(start.getTime() - travel), new Date(end.getTime() + travel), replacesId);
+      const conflict = conflictOf(slot, booked, await this.busyAround(req.agentId, start, end), this.settings);
+      if (conflict) return { ok: false, rule: conflict, code: conflict === 'R32' ? 'taken' : 'agenda_busy' };
+      // La base tranche : si un autre rendez-vous a pris une tranche entre-temps, rien n'est tenu [R32].
+      if (!(await this.hold(req.agentId, id, req.kind, start, end))) return { ok: false, rule: 'R32', code: 'taken' };
+    }
+    const groupId = group?.ok ? group.groupId : null;
     const at = now.toISOString();
+    const values = [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at, req.channel ?? null, req.channel ? (req.to ?? null) : null, groupId];
+    const columns = 'id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at, confirmation_channel, confirmation_to, group_id';
     try {
-      await this.db.run(
-        `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at, confirmation_channel, confirmation_to)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?)`,
-        [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at, req.channel ?? null, req.channel ? (req.to ?? null) : null],
-      );
+      if (groupId === null) {
+        await this.db.run(`INSERT INTO appointments (${columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?, ?)`, values);
+      } else {
+        // AU077 : l'entrée dans le groupe se décide dans la même instruction que l'écriture : deux acquéreurs qui
+        // rejoignent en même temps ne dépassent jamais huit, et le même acquéreur n'y entre qu'une fois.
+        const { changes } = await this.db.run(
+          `INSERT INTO appointments (${columns})
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE (SELECT COUNT(*) FROM appointments WHERE group_id = ? AND status = 'booked') < ?
+             AND NOT EXISTS (SELECT 1 FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?)`,
+          [...values, groupId, GROUP_VISIT_MAX, groupId, req.personId],
+        );
+        if (changes !== 1) {
+          const same = await this.db.first("SELECT 1 AS hit FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?", [groupId, req.personId]);
+          return { ok: false, rule: null, code: same ? 'already_in_group' : 'group_full' };
+        }
+      }
     } catch (error) {
       await this.release(id);
       throw error;
+    }
+    // AU077 : la visite rejointe a pu être annulée entre-temps, ses tranches libérées ; sans tranches tenues par le
+    // groupe, ce rendez-vous est défait : jamais un rendez-vous qui ne bloque pas l'agent [R32].
+    if (groupId !== null && !(await this.groupHeld(groupId))) {
+      await this.cancelQuietly(id);
+      return { ok: false, rule: null, code: 'group_closed' };
     }
     const appointment = (await this.get(id))!;
     try {
@@ -393,6 +516,44 @@ export class RendezVous {
       }
     }
     return { ok: true, appointment: (await this.get(id))!, token, confirmation };
+  }
+
+  /**
+   * Un rendez-vous pris par l'agent pour l'un de ses clients, avec sa durée propre s'il la choisit (AU056) : la
+   * signature chez le notaire de 90 minutes, l'appel de 10 minutes. Une visite (la contre-visite de 20 minutes comprise)
+   * passe par `Visites.schedule`, qui prend la même durée. Le conflit se contrôle sur cette durée
+   * [R32, R33]. Aucune confirmation ne part. La direction n'a pas d'agenda ; une fiche hors du portefeuille de l'agent,
+   * ou un bien qu'il ne peut pas lire, est refusé et le refus écrit au journal [R16].
+   */
+  async bookAsAgent(
+    viewer: Viewer,
+    acces: Acces,
+    input: { personId: string; propertyId?: string | null; kind: AppointmentKind; start: Date; durationMinutes?: number },
+  ): Promise<BookingResult | { ok: false; rule: 'R16' | 'R40'; code: string }> {
+    // Une visite passe par la sienne (`Visites.schedule`) : bien diffusable, bon de visite et fiche de visite [R40, R42].
+    if (input.kind === 'visite') return { ok: false, rule: 'R40', code: 'visit_route' };
+    if (viewer.role !== 'agent') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${input.personId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'appointment', code: 'not_agent' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'not_agent' };
+    }
+    const fiche = await acces.readFiche(viewer, input.personId);
+    if (!fiche.ok) return fiche;
+    if (fiche.view !== 'full') return { ok: false, rule: 'R16', code: 'not_assigned' };
+    if (input.propertyId) {
+      const property = await acces.readProperty(viewer, input.propertyId);
+      if (!property.ok) return property;
+    }
+    return this.book({
+      networkId: viewer.networkId,
+      agentId: viewer.userId,
+      personId: fiche.value.person.id,
+      propertyId: input.propertyId ?? null,
+      kind: input.kind,
+      start: input.start,
+      source: 'agent',
+      channel: null,
+      ...(input.durationMinutes !== undefined ? { durationMinutes: input.durationMinutes } : {}),
+    });
   }
 
   /** Défait une réservation qui n'a pas pu être menée au bout : annulée, créneau libéré, sans journal. */
@@ -471,6 +632,20 @@ export class RendezVous {
     await this.release(old.id);
     // L'ancien rendez-vous revient, avec ses tranches. Si un autre les a prises entre-temps, il reste annulé, et c'est noté.
     const restore = async (): Promise<void> => {
+      // AU077 : un rendez-vous d'une visite groupée encore tenue la rejoint, sans reprendre de tranche, s'il y reste une
+      // place : la place et la tenue se revérifient dans l'instruction même. Sinon il reste annulé, et c'est noté.
+      if (old.group_id !== null && (await this.groupHeld(old.group_id))) {
+        const back = await this.db.run(
+          `UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ?
+           WHERE id = ? AND status = 'cancelled'
+             AND (SELECT COUNT(*) FROM appointments WHERE group_id = ? AND status = 'booked') < ?
+             AND NOT EXISTS (SELECT 1 FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?)
+             AND EXISTS (SELECT 1 FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id WHERE a.group_id = ? AND a.status = 'booked' AND h.released_at IS NULL)`,
+          [this.now().toISOString(), old.id, old.group_id, GROUP_VISIT_MAX, old.group_id, old.person_id, old.group_id],
+        );
+        if (back.changes !== 1) await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
+        return;
+      }
       if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at))) {
         await this.db.run("UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ? WHERE id = ? AND status = 'cancelled'", [this.now().toISOString(), old.id]);
       } else {
@@ -480,7 +655,7 @@ export class RendezVous {
     let result: BookingResult;
     try {
       result = await this.book(
-        { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel, to: channel === old.confirmation_channel ? old.confirmation_to : null },
+        { networkId: old.network_id, agentId: old.agent_id, personId: old.person_id, propertyId: old.property_id, kind: old.kind, start, source: old.source, channel, to: channel === old.confirmation_channel ? old.confirmation_to : null, ...this.keptDuration(old) },
         old.id,
       );
     } catch (error) {
@@ -500,6 +675,15 @@ export class RendezVous {
       () => false,
     );
     return logged ? result : { ...result, warning: 'journal_failed' };
+  }
+
+  /**
+   * Un rendez-vous décalé garde sa durée quand elle n'est pas celle du type (AU056) : la contre-visite de 20 minutes
+   * reste de 20 minutes. Une durée hors des bornes revient à celle du type.
+   */
+  private keptDuration(old: Appointment): { durationMinutes?: number } {
+    const minutes = (Date.parse(old.end_at) - Date.parse(old.start_at)) / MINUTE;
+    return minutes !== this.settings.durations[old.kind] && validDuration(minutes) ? { durationMinutes: minutes } : {};
   }
 
   /** Les rendez-vous tenus d'un agent, pour vérifier qu'aucun ne se chevauche. */

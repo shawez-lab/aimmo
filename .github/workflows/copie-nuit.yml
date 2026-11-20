@@ -76,6 +76,9 @@ jobs:
           COPY_KEY: ${{ secrets.COPY_KEY }}
           COPIES_R2_ACCESS_KEY_ID: ${{ secrets.COPIES_R2_ACCESS_KEY_ID }}
           COPIES_R2_SECRET_ACCESS_KEY: ${{ secrets.COPIES_R2_SECRET_ACCESS_KEY }}
+          # Les fichiers des quatre stockages (AU019b), lus avec une clé en lecture seule (H74) : sans elle, « non sauvegardé ».
+          OBJETS_R2_ACCESS_KEY_ID: ${{ secrets.OBJETS_R2_ACCESS_KEY_ID }}
+          OBJETS_R2_SECRET_ACCESS_KEY: ${{ secrets.OBJETS_R2_SECRET_ACCESS_KEY }}
         run: node --experimental-transform-types --no-warnings packages/api/outils/copie-nuit.ts
       - name: Photo détruite
         if: always()

@@ -18,6 +18,14 @@ database_name = "aimmo"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "../../db/migrations"
 
+# AU025 : la base à part des bacs à sable du premier parcours, en Europe, avec les mêmes migrations ; jamais celle du
+# réseau. Son identifiant a son propre gabarit, rempli seulement par la mise en ligne, qui la crée si elle manque.
+[[d1_databases]]
+binding = "BAC_A_SABLE_DB"
+database_name = "aimmo-bac-a-sable"
+database_id = "00000000-0000-0000-0000-0000000000b5"
+migrations_dir = "../../db/migrations"
+
 [triggers]
 # Un seul déclencheur, chaque minute (BR65) : le passage des notifications aux agents (HX27) passe à chaque minute ; aux
 # minutes 0, 15, 30 et 45 seulement, le planificateur du socle (B02) passe les tâches dues à l'heure de Paris, une fois

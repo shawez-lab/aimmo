@@ -70,12 +70,14 @@ export const INDEX_HTML = `<!doctype html>
 <main>
 <section id="connexion" hidden>
 <h2>Connexion</h2>
-<p>Saisissez votre clé personnelle. Elle reste sur cet appareil.</p>
+<button id="entrer-appareil" type="button" hidden>Entrer avec la clé de cet appareil</button>
+<p>Nouveau téléphone, ou téléphone perdu : demandez à la direction votre lien d’accès. Il ouvre AIMMO d’un appui, rien à taper.</p>
+<details><summary>J’ai une clé personnelle</summary>
 <form id="form-connexion" autocomplete="off">
 <label for="cle">Clé personnelle</label>
 <input id="cle" name="cle" type="password" minlength="32" required autocomplete="off" spellcheck="false">
 <button type="submit">Entrer</button>
-</form>
+</form></details>
 <p id="erreur" role="alert" hidden></p>
 </section>
 <section id="invitation" hidden>
@@ -979,6 +981,8 @@ export const APP_JS = `'use strict';
     if (!slip) { box.appendChild(el('p', 'Le bon de visite n’est pas prêt.', 'alerte')); return box; }
     var state = slip.signed ? 'signé et rangé' : slip.status === 'complet' ? 'prêt à signer' : 'incomplet : complétez la fiche avant la visite';
     box.appendChild(el('p', 'Bon de visite ' + state + (slip.mode === 'essai' ? ' (modèle d’essai, en attente de validation juridique).' : '.'), slip.signed ? 'fait' : 'doux'));
+    if (!slip.signed && slip.status === 'complet') box.appendChild(lazyBlock('Faire signer, sans papier', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
+    else if (slip.online && slip.online.status === 'signee') box.appendChild(lazyBlock('Montrer l’exemplaire signé', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
     return box;
   }
   // L'alerte en un geste : un seul appui, sans confirmation. Le même identifiant sert jusqu'à ce qu'elle soit rangée.
@@ -1272,7 +1276,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Toute correction annule la validation : l’annonce est retirée des canaux jusqu’à ce que l’agent du bien la valide de nouveau.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Une correction reste en préparation : l’annonce en ligne y reste jusqu’à ce que l’agent du bien valide la nouvelle.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
@@ -2127,6 +2131,7 @@ ${LOUER_JS}
   function show(id, args) {
     ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
+    if (id === 'connexion') try { $('entrer-appareil').hidden = !localStorage.getItem('aimmo.appareil'); } catch (e) { /* sans mémoire */ }
     $('sortir').hidden = out;
     var a = JSON.stringify(args || null);
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
@@ -2269,6 +2274,12 @@ ${LOUER_JS}
     });
   } catch (e) { /* sans historique */ }
   document.addEventListener('DOMContentLoaded', function () {
+    // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
+    $('entrer-appareil').addEventListener('click', function () {
+      withCles(0, function (c) { return c.login(); }).then(function (r) {
+        if (r && r.token && writeKey(r.token)) enter(r.token); else { $('erreur').textContent = (r && r.text) || 'Pas de réseau. Réessayez dans un moment.'; $('erreur').hidden = false; }
+      });
+    });
     $('form-connexion').addEventListener('submit', function (event) {
       event.preventDefault();
       var key = $('cle').value.trim();

@@ -16,6 +16,7 @@
  * La file « à appeler » de l'agent réunit ces recommandations et celles des clients (M11, F01), seulement quand la
  * personne a un accord « recommandation » en cours : une recommandation sans accord n'y entre jamais [R142].
  */
+import { storedForms } from '../../fiche/empreinte.ts';
 import type { Acces } from '../../acces/acces.ts';
 import type { Viewer } from '../../acces/droits.ts';
 import { REFERRAL_CALL_HOURS, REFERRAL_PURPOSE, REFERRAL_SOURCE, mentionsReward } from '../../apres-vente/recommandations.ts';
@@ -322,8 +323,8 @@ export class RecommandationsGagner {
         const kinds = contact.kind === 'phone' ? ['phone', 'whatsapp'] : [contact.kind];
         guards.push({
           sql: `INSERT INTO partner_recommendation_race_guard (never)
-                SELECT 1 WHERE EXISTS (SELECT 1 FROM person_identifiers WHERE network_id = ? AND kind IN (${kinds.map(() => '?').join(', ')}) AND value = ?)`,
-          params: [networkId, ...kinds, normalizeIdentifier(contact.kind, contact.value)],
+                SELECT 1 WHERE EXISTS (SELECT 1 FROM person_identifiers WHERE network_id = ? AND kind IN (${kinds.map(() => '?').join(', ')}) AND value IN (?, ?))`,
+          params: [networkId, ...kinds, normalizeIdentifier(contact.kind, contact.value), (await storedForms(networkId, contact.kind, contact.value))[1] ?? null],
         });
       }
     }

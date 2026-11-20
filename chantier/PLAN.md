@@ -262,15 +262,16 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 
 ### AU019b · Brancher la copie des fichiers au travail de nuit et au test du mois
-- Statut : bloquée : vérification GitHub en échec sur des délais de 5 s dépassés (runner chargé), tests sans lien ; à fusionner dès qu'elle passe
-- Reste : proposition #700 (`324a04f4`), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
+- Statut : fait (2026-11-19)
+- Reste : fusionnée (#700, 72e89c4a), relecture forte 1 P0 corrigé, Codex 2 P0 1 P1 corrigés puis rien de majeur ; plafond R633 corrigé. Attend H74 pour tourner en vrai
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU019
 - Cahier : Architecture technique ; Conformité ; audit A019, endroit : packages/api/outils/copie-nuit.ts, test-restauration.ts, r2-copies.ts.
 - Objectif : chaque nuit, la copie prend la base ET les objets des quatre stockages (lecture S3 de R2, liste paginée) ; une nuit sans les objets se dit « non sauvegardé » ; le test du mois passe par `restoreExercise` avec un lecteur des références de fichiers lu dans les vraies tables.
 - Critères : un stockage illisible donne « non sauvegardé » avec sa raison (migration de `base_copy_runs`) ; le lecteur des références couvre chaque table qui cite un fichier, avec un test par table ; R224, R230 et R232 mis à jour.
 - Attend : une clé R2 en lecture seule sur les quatre compartiments des objets (à noter dans HUMAIN.md au moment de la tâche).
 ### AU020 · L’effacement réel et sa procédure validée restent à mettre en service
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#712, da703f02). Relecture forte : 2 P1 corrigés. Codex : 4 P0 et 2 P1 corrigés en quatre passes, puis rien. Route fermée tant que le mode n'est pas `reel` : le branchement au Worker attend H29. Suite : AU020b, AU020c (voie 1), AU021.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A020 (bloquant), endroit : chantier/PLAN.md, SV05 ; H29, `ERASURE_MODE`.
 - Constat de l'audit : L’effacement réel et sa procédure validée restent à mettre en service : je n’ai pas de parcours de suppression de production démontré.
@@ -278,8 +279,27 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H29).
 
+### AU020b · Les tables en ajout seul du bien d'un vendeur effacé
+- Statut : bloquée : garder d'office les textes du bien ne prouve pas qu'ils sont sans nom (3 P0 de Codex sur #715)
+- Décidé (2026-11-20, voie 2) : branche `chantier/AU020b` gardée, #715 ouverte sans fusion. Essai fait : une liste blanche `PROPERTY_DESCRIPTION` classait « garder » les tables en ajout seul qui décrivent le bien, et le lien de la personne au bien partait. Relecture forte, 1 P1 : texte libre de `property_details` et `diffusion_portal_feedback`. Codex, 3 P0 : liens et références importées, puis traductions corrigées, puis brouillons et textes des portails. Tous laissent passer un nom de vendeur. Prochaine approche : une migration prévoit une voie qui vide le texte libre de ces tables (table d'effacement des textes, lue par les lecteurs des annonces : lecteurs du socle, donc à voir avec la voie 1) ; seules les tables à valeurs fermées sont gardées d'office (`property_sheets`, sujets des photos, choix des portails, validations). Les tables qui portent l'adresse exacte (`sign_placements`, `pige_properties`) suivent la même voie.
+- Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU020
+- Cahier : Conformité ; audit A020, endroit : packages/core/src/conformite/effacement-reel.ts ; `listing_drafts`, `property_sheets`.
+- Objectif : l'effacement réel d'un vendeur ne laisse plus « restantes » les lignes de `listing_drafts` et `property_sheets` qui ne sont qu'à lui : elles sont vidées de ses données par une voie prévue par la migration, ou rangées dans le plan comme pièces gardées avec leur raison.
+- Critères : le test AU020 qui attend `BLOCKED` passe à `remaining: []` et `complete: true` pour la vendeuse du jeu ; le rejeu `SqlPersonEraser` de la vendeuse réussit ; R17 et R231 mises à jour.
+- Attend : rien.
+
+### AU020c · Les identifiants gardés après un effacement passent sous empreinte
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#717, 2d0f65cc), puis #718 pour les 2 P0 de Codex arrivés après la fusion (adresse commençant par `#sha256:` prise pour une empreinte ; reprise du site qui ajoutait source, demande et accord à une fiche effacée) et 1 P0 sur #718 (GLOB, R633), corrigés ; Codex rien à signaler, vérification verte. Identifiants et clés de contact sous empreinte SHA-256 (réseau + valeur normalisée, préfixe `#sha256:`), arrêt `stop` posé s'il manquait, fiche effacée reconnue sans rien reprendre en clair (ni nom, source, accord) ; message privé Instagram reconnu par sa clé. Relecture forte 2 P1 corrigés ; Codex sans relecture après 15 min ; vérification GitHub verte. Reste : empreinte sans clé secrète (un numéro peut se retrouver par essai) ; `applyPendingHumanReplies` (relais) ne lit la clé qu'en clair, sans effet sur l'arrêt.
+- Qui : Claude, voie 1 (socle) · Relecture : forte · Dépend de : AU020
+- Cahier : Conformité ; endroit : packages/core/src/fiche/fusion.ts, reception/rattachement.ts, conformite/effacement-reel.ts (`IDENTIFIERS_KEPT`).
+- Objectif : après un effacement réel, les adresses et numéros de la personne ne restent que sous leur empreinte, et un message qui arrive de l'un d'eux est quand même reconnu et arrêté [R04].
+- Critères : après l'effacement, `person_identifiers.value` ne contient plus aucune valeur en clair de la personne (test) ; un message reçu de son adresse est rattaché à la fiche arrêtée et ne reçoit aucune réponse (test) ; le reçu repasse l'action à « empreinte ».
+- Attend : rien.
+
 ### AU021 · Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire »
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#716, a744788b). Constat confirmé : `restoreWithErasures` ne restaurait que la base, `restoreExercise` rendait base et fichiers sans rejeu, et le compartiment des copies ne listait pas le registre. `sauvegarde/restauration-complete.ts`, `restoreEverything` : base et fichiers, puis rejeu par `SqlPersonEraser` sur les stockages restaurés ; un fichier est retiré de chaque stockage restauré hors du coffre ; `r2CopyStore.list(prefix)`, une page incomplète refusée (`completeListPage`). R231 en service. Relecture forte 1 P1 corrigé (fichier rangé hors du stockage de son préfixe) ; Codex 1 P0 corrigé (XML coupé lu comme registre vide), puis rien ; vérification GitHub verte. Restent : un outil de restauration réelle vers des compartiments R2 neufs qui savent retirer un fichier, appelant `restoreEverything` ; l'écriture du registre par le Worker (H29, H50) ; pour la voie 1 (`conformite/effacement-reel.ts`, socle) : `eraseForReal` retire un fichier du seul stockage de son préfixe, un dossier de commerce à référence libre rangé dans COMMERCES reste en production ; `restoreEverything` n'est pas exporté par `sauvegarde/index.ts`.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A021 (bloquant), endroit : chantier/PLAN.md, SV05 ; C/sauvegarde/effacements.ts.
 - Constat de l'audit : Le raccordement du véritable effaceur au registre de sauvegarde reste « à faire » : une restauration peut réintroduire les données supprimées si ce raccordement manque.
@@ -288,7 +308,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU022 · Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (CANDIDATURE_NETWORK_ID non réglée, page « Bientôt »). Sans variable, le seul réseau de la base reçoit (1 en production) ; aucun ou plusieurs : page fermée ; base illisible : page fermée ; la variable l'emporte. Fusionnée (#711), Codex 1 P1 (tests à jour) corrigé
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A022 (majeur), endroit : `/rejoindre` en production ; A/worker.ts, `CANDIDATURE_NETWORK_ID`.
 - Constat de l'audit : Le candidat arrive sur « Bientôt » sans formulaire ni moyen de laisser une demande.
@@ -297,7 +318,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU023 · Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de…
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (connexion par clé tapée seule, aucun lien d'agent hors du travail GitHub de Z02). Fusionnée (#713, f91839de). `POST /v1/cles/invitations` et `GET /v1/cles/invitations/agents` (direction, preuve `modifier_droits` pour `agent:<id>`), `GET /v1/cles/identite` ; écran de connexion « Entrer avec la clé de cet appareil », clé tapée repliée ; recours « téléphone perdu » : liens inutilisés datés d'abord, puis clés d'application et clés d'appareil retirées ; la clé neuve attend l'accord de la direction. Parcours et recours dans `docs/API.md`, R600 complétée. Codex : 1 P1 et 1 P2, puis 1 P0 (course entre recours et échange d'un ancien lien, test qui la rejoue), tous corrigés, puis rien à signaler ; vérification GitHub verte. Reste : H64 et H22 pour l'usage réel ; 180 octets libres sous la marge de 700 du budget de l'application (test BR103).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A023 (majeur), endroit : UI/fichiers.ts, connexion ; H22.
 - Constat de l'audit : Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de sa configuration par la direction.
@@ -306,7 +328,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H22).
 
 ### AU024 · Mon écran d’intégration liste les pièces manquantes
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (une pièce ne se rangeait que par une référence déjà stockée). Fusionnée (#714, 0bc1359e). `POST /v1/reseau/agents/<id>/pieces/fichier` : corps brut PDF, JPEG ou PNG, 10 Mo au plus, tout vérifié avant de ranger (droits, pièce, dates, type, premiers octets), réponse avec `receipt` (pièce, version, heure, poids, jamais la référence) ; `checkPiece` commun à `addPiece` et `addPieceFile`. Écran : bloc « Déposer… » sous chaque pièce manquante, en projet ou échue, aperçu avant l'envoi, confirmation, accusé de réception. R82 et `docs/API.md` complétées. Codex 1 P2 (type lu hors de la liste) corrigé, puis rien à signaler ; vérification GitHub verte. Reste : compartiment `aimmo-pieces` (H25, H45) pour l'usage réel.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A024 (majeur), endroit : UI/integration.ts, `renderFile`.
 - Constat de l'audit : Mon écran d’intégration liste les pièces manquantes, mais ne me permet pas de déposer les justificatifs à cet endroit.
@@ -315,16 +338,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU025 · Le premier parcours pédagogique annonce un outil d’exercice
-- Statut : à faire
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A025 (majeur), endroit : A/worker.ts, configuration `reseau` ; C/reseau/bac-a-sable.ts.
 - Constat de l'audit : Le premier parcours pédagogique annonce un outil d’exercice, mais le Worker ne lui fournit pas son stockage isolé.
 - Objectif : Un nouvel agent ouvre depuis son écran un exercice isolé et réalise les cinq étapes, progression persistante comprise.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#720, `e93c90a3`). Décidé : pas d'objet durable (R602 ne les admet pas) ; seconde base D1 `aimmo-bac-a-sable` en `eu`, mêmes migrations, créée, vérifiée et migrée par la mise en ligne, gabarit d'identifiant à part ; un réseau d'entraînement par agent dans cette base ; routes d'ouverture et d'étape, écran « Mon intégration ». Vérifié sous workerd. Codex : rien de majeur ; une remarque P2 restante (une tâche « rappeler » qui manquerait après une panne à la réception bloque l'étape du rappel), à reprendre si elle se voit.
 
 ### AU026 · Les quiz et attestations existent côté métier
-- Statut : à faire
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A026 (majeur), endroit : UI/integration.ts ; C/formation/quiz.ts.
 - Constat de l'audit : Les quiz et attestations existent côté métier, mais l’académie affichée ne donne pas d’accès pour les passer et les télécharger.
@@ -333,34 +357,37 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU027 · Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo
-- Statut : à faire
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A027 (majeur), endroit : C/reseau/academie.ts, `complete`, `compute`.
 - Constat de l'audit : Un clic « J’ai fini » suffit à créditer toute la durée d’une vidéo, sans preuve de suivi associée.
 - Objectif : Les heures déclarées sont distinguées des heures justifiées ; le compteur utilisable pour les obligations ne retient que des justificatifs vérifiables.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#724, `2b9b491d`). Décidé : justifié = présence rangée par la direction, ou module fait couvert par une attestation de quiz réussi (compté au jour de la première attestation) ; un « J'ai fini » seul est déclaré (`declaredMinutes`), montré à part, jamais compté ni dans les alertes ; R85 précisée. Codex rien à signaler. Le module crédité par le bac à sable (AU025) reste déclaré tant que son quiz n'est pas réussi.
 
 ### AU028 · Les périodes de formation repartent de mon arrivée au réseau
-- Statut : à faire
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A028 (majeur), endroit : C/reseau/academie.ts, `periodOf`, `startedOn`.
 - Constat de l'audit : Les périodes de formation repartent de mon arrivée au réseau, sans reprendre explicitement mon cycle antérieur.
 - Objectif : L’intégration importe les attestations antérieures et la période de référence applicable, sans remise à zéro artificielle.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#725, `888895fb`), migration `4040` (`academy_prior_entries`, ajout seul). Décidé : la direction range la période de référence du cycle d'avant (la dernière l'emporte) et chaque attestation d'avant (une fois par pièce), pièce et nom à l'appui, jamais après l'arrivée ; elles comptent comme justifiées ; routes `/v1/reseau/agents/<id>/formation/periode-anterieure` et `/anterieures`. Codex 1 P0 (attestation rangée deux fois) corrigé, puis rien. Écran de saisie côté direction à faire avec l'écran du réseau si besoin.
 
 ### AU029 · Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel
-- Statut : à faire
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A029 (majeur), endroit : docs/REPRISE.md, J05 ; C/reseau/import-agent.ts.
 - Constat de l'audit : Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel.
 - Objectif : Un import pilote rapproche les historiques et actions futures de chaque contact, avec bilan des éléments non repris.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#729, `c6f2e0b7`), migration `4041` (ajout seul). Décidé : `POST /reseau/import` accepte `history` ; chaque ligne rejoint la seule fiche de l'agent qui importe (identifiant du contact de l'export, sinon mail ou téléphone), jamais une fiche effacée ni celle d'un autre agent ; échanges passés et notes rangés à leur date, tâches pas faites, échéances et actions à venir en rappels (tâches, rien n'est envoyé), faits une fois ; bilan `followUp` des lignes non reprises par raison ; identité d'un élément tirée de l'export (contact, type, date et heure écrites, texte entier) : relancé, après l'échéance ou une réunion de fiches, rien ne double. Lecture du suivi au journal (`fiche.lue`). Codex : P0 (lecture non journalisée, fiche effacée) et 5 P2 corrigés ; reste un P2 : une fiche de l'agent réunie dans une fiche gardée sans agent cache son suivi à l'agent (à reprendre avec les droits de lecture de la fiche, `decideAccess`). Pas d'écran d'import pour l'instant.
 
 ### AU030 · Mes biens importés perdent leur dossier opérationnel
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A030 (majeur), endroit : C/reseau/import-agent.ts, champs de biens.
 - Constat de l'audit : Mes biens importés perdent leur dossier opérationnel : photos, diagnostics, mandats signés et diffusion ne sont pas repris.
@@ -594,7 +621,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU056 · Mes rendez-vous sont limités à quatre types et à leurs durées de réglage
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
+- Fusion : #707, par la voie 1, vérification verte et Codex sans remarque
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A056 (majeur), endroit : C/rendezvous/creneaux.ts, `APPOINTMENT_KINDS` et durées.
 - Constat de l'audit : Mes rendez-vous sont limités à quatre types et à leurs durées de réglage, sans durée propre à un cas réel dans le modèle de créneau.
@@ -612,7 +640,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU058 · Le barème de vente se résume à un taux maximal et un minimum
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A058 (majeur), endroit : C/documents/controles.ts, `setFeeSchedule`.
 - Constat de l'audit : Le barème de vente se résume à un taux maximal et un minimum, sans tranches ni forfaits par prestation.
@@ -621,7 +649,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU059 · Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A059 (majeur), endroit : C/documents/modeles.ts ; C/documents/controles.ts.
 - Constat de l'audit : Aucun parcours structuré ne me permet de faire signer un vendeur représenté par procuration.
@@ -640,7 +668,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU061 · Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
+- Fusion : #703, par la voie 1, vérification verte et Codex sans remarque
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A061 (majeur), endroit : C/annonces/fiche-bien.ts ; C/annonces/annonce-sourcee.ts.
 - Constat de l'audit : Une piscine, une cave, une cheminée ou des travaux ne disposent pas de faits structurés permettant de les décrire normalement dans l’annonce.
@@ -685,7 +714,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU066 · Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A066 (majeur), endroit : C/annonces/publication.ts ; UI/fichiers.ts, correction d’annonce.
 - Constat de l'audit : Une correction enregistrée annule la validation et prévoit le retrait de l’annonce active au passage suivant.
@@ -775,7 +804,16 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU075 · Pour signer un bon de visite, le parcours principal impose encore le papier et son scan
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#719, f70c5451), migration `4030`, R506 en service. Constat confirmé (seul le bon papier, date et scan, pour une visite sur place). `visites/signature-bon.ts`, `SignatureBon` : sur place, le visiteur lit son bon sur le téléphone de l'agent (rendu en texte, paragraphe par paragraphe, depuis le document rangé), tape le code reçu par SMS ou mail, trace s'il veut ; bon et signature rangés ensemble seulement si la signature est encore ouverte ; exemplaire et preuve affichés aussitôt (et rouvrables), preuve avec l'empreinte du bon envoyée par le contrôle central ; papier en secours, le premier qui signe ferme l'autre. Routes M08 `bon/signature-en-ligne`, `bon/a-signer`, `bon/signature-sur-place`, `bon/exemplaire` ; écran `/app/bon-visite.js` chargé au geste. Jamais vu : l'empreinte SHA-256 du bon signé, au caractère près, remise au visiteur. Codex : 2 P0, puis 1 P1, puis 1 P0 et 1 P2, puis 1 P0, tous corrigés, puis rien (👍). Restent : AU075b (voie 1) ; signature réelle (H24) ; canal réel (H05).
+
+### AU075b · Les pages publiques du bon de visite : signer à distance et rouvrir son exemplaire
 - Statut : à faire
+- Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU075
+- Cahier : M08 Acquéreurs et visites ; endroit : packages/api/src/app.ts ; C/visites/signature-bon.ts (`readByLink`, `signByLink`, `copy`, `renderSlipCopy`).
+- Objectif : servir sans clé, sous `/visite/signer/<jeton>` et `/visite/exemplaire/<jeton>`, la lecture et la signature à distance du bon et l'exemplaire signé, puis donner `signUrl` et `copyUrl` à `SignatureBon` dans les routes de M08 ; l'écran propose alors « Envoyer le lien pour signer à distance ».
+- Critères : sans page servie, `distance_not_served` (déjà testé) ; page servie : lien et code partent, le visiteur lit et signe par la page (test) ; le lien de l'exemplaire part avec la preuve et l'ouvre pendant un an (test) ; la page suit le système de design, sans script (test).
+- Attend : rien.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A075 (majeur), endroit : C/visites/visites.ts, bon de visite.
 - Constat de l'audit : Pour signer un bon de visite, le parcours principal impose encore le papier et son scan.
@@ -784,7 +822,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU076 · Mon bon de visite ne peut désigner le bien que par référence et commune
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#721, ef3091ff). Constat confirmé (le modèle refusait `{{bien.adresse}}`). Champ `bien.adresse` du bon, depuis la désignation la plus récente du bien dans le réseau (AU002) ; sans elle, bon incomplet, non signable [R40] ; l'adresse ne va ni dans un message, ni au journal, ni sur la fiche du bien [R19, précisée]. Codex : rien à signaler ; vérification GitHub verte. Reste : le modèle réel du bon (H08).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A076 (majeur), endroit : C/visites/visites.ts, `VISIT_SLIP_FIELDS`, R19.
 - Constat de l'audit : Mon bon de visite ne peut désigner le bien que par référence et commune, sans adresse privée sur l’exemplaire signé.
@@ -793,7 +832,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU077 · Manque
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#723, bdafbaff), migration `4031`. Constat confirmé (le second acquéreur au même créneau était refusé `taken`). `Visites.schedule` et `POST /visites` acceptent `joinVisit` : même agent, même bien, même début et fin ; chacun son rendez-vous, sa visite, son bon et son compte rendu ; l'agent tenu une fois, ses tranches passent à un autre rendez-vous encore pris du groupe et ne sont libérées qu'avec le dernier ; huit au plus, entrée décidée dans l'instruction même ; agenda occupé revérifié [R33] ; jamais depuis le site ni l'espace client. Jamais vu : le compte rendu d'une visite groupée ne nomme aucun des acquéreurs venus ensemble, et l'IA ne les lit pas [R52, R15]. R32 et R52 précisées. Codex : 2 P0, puis 2 P0, corrigés, puis rien. Restent : un seul événement d'agenda pour le groupe ; bouton « ajouter un acquéreur à cette visite » à l'écran (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A077 (majeur), endroit : C/rendezvous/reservation.ts ; C/visites/visites.ts.
 - Constat de l'audit : Manque : une visite groupée avec plusieurs acquéreurs ne peut partager un même créneau d’agent sans être traitée comme des rendez-vous concurrents.
@@ -802,7 +842,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU078 · Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#726, adcddb1e), migration `4032`. Constat confirmé (tout mot du prix refusé dans le point). `PointSemaine.validate` prend une décision `{ appointmentId, priceEur, confirmed }` (route : `decisionPrix`) : confirmée explicitement, liée au rendez-vous tenu avec le vendeur (sa fiche, l'agent du mandat, depuis la signature, ni annulé, ni manqué, ni une visite) ; une phrase faite par le code ; rien d'autre ne change (annonce, fiche, mandat, messages) ; figée avec le point ; au journal le rendez-vous seul. R53 précisée. Codex : rien ; vérification GitHub verte. Reste : choisir le rendez-vous à l'écran du point (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A078 (majeur), endroit : C/visites/point-semaine.ts, `PRICE_DROP`, R53.
 - Constat de l'audit : Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue : le vocabulaire du prix est interdit.
@@ -811,7 +852,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU079 · La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement…
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#727, 9d52d5de). Constat confirmé (un taux dans la condition de prêt était refusé). La condition `pret` garde, facultatifs, `maxRateBp` (taux nominal maximal hors assurance, centièmes de point, 0,01 à 20 %) et `loanType` (amortissable, in fine, relais, à taux zéro), dans un ordre fixe : sans eux, l'offre et son empreinte restent celles d'avant. Note au notaire [R510], comparaison du projet (différent, absent ou ajouté, avec la page) [R511], prélecture qui ne propose taux et type que retrouvés sur la page, écrans de l'offre et du projet. R56 et R511 précisées. Jamais vu : un plafond de taux ajouté par le projet alors que l'offre n'en portait pas est signalé. Codex : rien ; vérification GitHub verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A079 (majeur), endroit : C/offres/registre-offres.ts, `OfferCondition`.
 - Constat de l'audit : La condition de prêt ne garde ni taux maximal ni autres paramètres permettant de comparer correctement l’offre et le compromis.
@@ -820,7 +862,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU080 · Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement
-- Statut : à faire
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#728, 2e244f5b). Constat confirmé (une offre de 121 jours refusée `validUntil`). Échéance gardée telle que l'offre la donne, jusqu'à 730 jours (au-delà : faute de saisie, refusée) ; au-delà de 60 jours, ligne de contrôle `validite_longue : atypique` (jours, usage), dite aussi à l'écran dès l'inscription ; rien ne change dans la base ni l'empreinte ; contre-propositions toujours à 60 jours. R59 précisée. Au passage : test du point de la semaine (AU078) rendu stable (« 240 » pouvait sortir d'une empreinte). Codex : rien ; vérification GitHub verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A080 (majeur), endroit : C/offres/registre-offres.ts, `MAX_VALIDITY_DAYS`.
 - Constat de l'audit : Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement.
@@ -829,7 +872,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU081 · Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A081 (majeur), endroit : C/offres/registre-offres.ts, contrôle d’accès de l’acquéreur.
 - Constat de l'audit : Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction.
@@ -1125,7 +1168,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU111 · Une fois « parti », je perds l’export agent
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A111 (majeur), endroit : C/reseau/depart.ts ; C/rapports/export-agent.ts, `make`.
 - Constat de l'audit : Une fois « parti », je perds l’export agent, alors que mon solde et mes pièces personnelles restent à récupérer.

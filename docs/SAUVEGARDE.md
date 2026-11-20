@@ -22,7 +22,9 @@ Une copie de la seule base ne rend pas un dossier : les photos, les scans signé
 
 `restoreExercise` restaure la base dans une base neuve, puis chaque objet dans des stockages neufs, relit chacun et compare son empreinte, et vérifie que chaque fichier cité par la base restaurée est là. Une copie sans ses objets, un objet abîmé, manquant ou différent, un fichier cité absent : l'exercice échoue, jamais « restauré ».
 
-Reste (AU019b) : brancher cette copie au travail « Copie de nuit » et au test du mois, avec une clé de lecture des quatre stockages, et lire les références de fichiers de chaque table de la base.
+Chaque nuit (AU019b), le travail « Copie de nuit » prend la base puis tous les fichiers des quatre compartiments (`aimmo-medias`, `aimmo-pieces`, `aimmo-commerces`, `aimmo-coffre`), lus par l'API S3 de R2 en Europe, liste page après page, avec une clé en lecture seule à part (`OBJETS_R2_ACCESS_KEY_ID`, `OBJETS_R2_SECRET_ACCESS_KEY`, H74). Chaque fichier est ensuite relu depuis le compartiment des copies et comparé à son empreinte, sans tout tenir en mémoire. Chaque fichier cité par la photo de la base doit être dans la copie. Sans cette clé, si un compartiment ne se lit pas, ou si un fichier cité manque, la nuit est « non sauvegardée » : une base sans ses fichiers ne rend pas les dossiers.
+
+Le test du mois passe par `restoreExercise` : base et fichiers, et `fileReferences` relève dans toutes les tables (sauf le journal, qui cite des fichiers effacés depuis) chaque valeur, entière ou dans un JSON, qui a la forme d'une clé de stockage (voir `REFERENCE_PREFIXES` : biens, dossiers, preuves, offres, mandats, location, commerces, coffre…), et chaque colonne `storage_ref`. Un fichier cité absent de la copie : « non identique ». Une fausse alerte vaut mieux qu'un faux « restauré ». L'empreinte du reçu couvre la base et les fichiers.
 
 ## Garde
 
@@ -31,5 +33,7 @@ Reste (AU019b) : brancher cette copie au travail « Copie de nuit » et au test 
 ## Restaurer
 
 `restoreWithErasures` restaure dans une base neuve, prouve qu'elle est identique, puis refait chaque effacement fait depuis la copie, à partir du registre. Une restauration n'est finie qu'après ce rejeu. Une copie ne se restaure jamais par-dessus une base : rien n'est écrasé.
+
+`restoreEverything` (AU021, `sauvegarde/restauration-complete.ts`) est la restauration complète : la base et les fichiers de la même copie dans une base neuve et quatre stockages neufs, chacun relu contre son empreinte, puis le registre rejoué par le véritable effaceur (`SqlPersonEraser`, AU020), branché sur les stockages restaurés. Une ligne effacée emporte ses fichiers que plus rien ne cite ; un fichier qu'une autre personne cite encore reste, le coffre aussi. Un stockage restauré qui ne sait pas retirer un fichier est refusé avant toute écriture ; une entrée illisible, une ligne ou un fichier qui reste : la restauration n'est pas dite finie. Le registre se lit dans `aimmo-copies` par la liste S3 du préfixe `effacements/` (`r2CopyStore`), page après page ; une liste refusée ou coupée ne passe jamais pour un registre vide.
 
 Rien ne relit la base de production automatiquement ; passer une base restaurée en production reste un geste humain, à faire avec D1 et après relecture du résultat.

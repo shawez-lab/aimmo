@@ -20,7 +20,7 @@
  *   copie de la seule base), si un stockage manque, si un objet diffère, ou si la base cite un fichier absent.
  */
 import type { SqlDatabase } from '../db/sql.ts';
-import { COPY_ID, openAt, openBytesAt, restoreCopy, sealAt, sealBytesAt, type CopyKey, type CopyStore, type RestoreOutcome } from './copie.ts';
+import { COPY_ID, pagesOf, ROWID_COLUMN, openAt, openBytesAt, restoreCopy, sealAt, sealBytesAt, type CopyKey, type CopyStore, type RestoreOutcome } from './copie.ts';
 
 /** Les stockages d'objets du Worker : médias des biens, pièces des dossiers, dossiers des commerces, coffre. */
 export const OBJECT_STORAGES = ['MEDIA', 'PIECES', 'COMMERCES', 'COFFRE'] as const;
@@ -170,8 +170,9 @@ export async function restoreObjects(
     const back = await target.get(entry.key);
     if (!back || back.bytes.length !== entry.size || (await sha256(back.bytes)) !== entry.digest) problems.push({ kind: 'object_differs', storage: entry.storage });
   }
-  const present = new Set(manifest.objects.map((o) => `${o.storage}\n${o.key}`));
-  for (const ref of references) if (!present.has(`${ref.storage}\n${ref.key}`)) problems.push({ kind: 'reference_missing', storage: ref.storage });
+  // Cherché dans tous les stockages : une référence libre (dossier d'un commerce) peut vivre ailleurs que son début le dit.
+  const present = new Set(manifest.objects.map((o) => o.key));
+  for (const ref of references) if (!present.has(ref.key)) problems.push({ kind: 'reference_missing', storage: ref.storage });
 
   if (problems.length > 0) return { ok: false, code: 'not_identical', problems };
   return { ok: true, storages: manifest.storages.length, objects: manifest.objects.length, bytes: manifest.objects.reduce((n, o) => n + o.size, 0), digest: await digestOfAll(manifest.objects) };
@@ -205,10 +206,90 @@ export async function restoreExercise(input: {
   const clock = input.clock ?? (() => Date.now());
   const started = clock();
   if (typeof input.references !== 'function') return { ok: false, part: 'objets', objects: { ok: false, code: 'references_unchecked' } };
-  const base = await restoreCopy(input.target, input.store, input.key, input.copyId, { clock });
+  // La durée dite est celle de l'exercice entier, base et fichiers : l'horloge n'est lue qu'au début et à la fin.
+  const base = await restoreCopy(input.target, input.store, input.key, input.copyId);
   if (!base.ok) return { ok: false, part: 'base', base };
   const references = await input.references(input.target);
   const objects = await restoreObjects(input.targets, input.store, input.key, input.copyId, references);
   if (!objects.ok) return { ok: false, part: 'objets', objects };
   return { ok: true, base, objects, durationMs: clock() - started };
 }
+
+/**
+ * Un stockage neuf de vérification : il garde un objet jusqu'à sa relecture, puis l'oublie. La preuve de chaque nuit et
+ * le test du mois relisent ainsi chaque objet sans tenir en mémoire toutes les photos du réseau.
+ */
+export function verifyingTarget(): ObjectTarget {
+  const held = new Map<string, StoredObject>();
+  return {
+    list: async () => [...held.keys()],
+    put: async (k, o) => {
+      held.set(k, { ...o, bytes: Uint8Array.from(o.bytes) });
+    },
+    get: async (k) => {
+      const o = held.get(k) ?? null;
+      held.delete(k);
+      return o;
+    },
+  };
+}
+
+/**
+ * Le stockage où vit d'habitude chaque sorte de fichier, d'après le début de sa clé ; la clé est toujours donnée par le
+ * code. Le contrôle cherche un fichier cité dans tous les stockages : ce stockage ne sert qu'à dire où chercher d'abord
+ * et quoi rapporter. Un test du dépôt échoue si le code construit une clé d'un début absent d'ici. `signature-en-ligne/`
+ * n'en est pas un : c'est une marque en base, la copie signée vit dans la base elle-même.
+ */
+export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Object.freeze({
+  'biens/': 'MEDIA',
+  'dossiers/': 'PIECES',
+  'preuves/': 'PIECES',
+  'agents/': 'PIECES',
+  'partenaires/': 'PIECES',
+  'relations/': 'PIECES',
+  'mandats/': 'PIECES',
+  'offres/': 'PIECES',
+  'location/': 'PIECES',
+  'boite/': 'PIECES',
+  'mesure-sources/': 'PIECES',
+  'commerces/': 'COMMERCES',
+  'coffre/': 'COFFRE',
+});
+const PREFIXES = Object.keys(REFERENCE_PREFIXES).map((p) => p.slice(0, -1).replace(/-/g, '\\-'));
+const WHOLE_REFERENCE = new RegExp(`^(?:${PREFIXES.join('|')})\\/[A-Za-z0-9._\\/-]{1,300}$`);
+/** Une colonne qui ne garde que des références de stockage, quel que soit leur début. */
+const STORAGE_REF_COLUMNS = new Set(['storage_ref']);
+
+/** Les fichiers cités par une ligne : ses valeurs texte, entières ou dans un JSON, qui ont la forme d'une clé de stockage. */
+export function rowReferences(row: Readonly<Record<string, unknown>>): { storage: ObjectStorage; key: string }[] {
+  const found = new Map<string, { storage: ObjectStorage; key: string }>();
+  const add = (key: string, any = false): void => {
+    const prefix = Object.keys(REFERENCE_PREFIXES).find((p) => key.startsWith(p));
+    if (!prefix && !any) return;
+    if (key.endsWith('/') || key.includes('//') || key.split('/').some((s) => s === '.' || s === '..')) return;
+    found.set(key, { storage: prefix ? REFERENCE_PREFIXES[prefix]! : 'COMMERCES', key });
+  };
+  for (const [column, value] of Object.entries(row)) {
+    if (column === ROWID_COLUMN || typeof value !== 'string') continue;
+    if (STORAGE_REF_COLUMNS.has(column)) add(value, true);
+    else if (WHOLE_REFERENCE.test(value)) add(value);
+    else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
+  }
+  return [...found.values()];
+}
+
+/**
+ * Les fichiers cités par la base : chaque valeur texte de chaque table, entière ou dans un JSON, qui a la forme d'une
+ * clé de stockage. Toutes les tables sont lues, pour qu'une table ajoutée demain soit vérifiée sans y penser. Le journal
+ * n'est pas lu : il garde l'histoire, et cite des fichiers effacés depuis. Lecture prudente : une valeur qui ressemble à
+ * une clé sans en être une fait échouer l'exercice ; une fausse alerte vaut mieux qu'un faux « restauré ».
+ */
+export const fileReferences: ReferenceReader = async (db) => {
+  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' AND name <> 'erasure_object_targets' ORDER BY name");
+  // `erasure_object_targets` (AU020) ne cite pas un fichier gardé : il nomme ceux qu'un effacement doit retirer.
+  const found = new Map<string, { storage: ObjectStorage; key: string }>();
+  for (const { name } of tables) {
+    for await (const rows of pagesOf(db, name)) for (const row of rows) for (const ref of rowReferences(row)) found.set(ref.key, ref);
+  }
+  return [...found.values()];
+};

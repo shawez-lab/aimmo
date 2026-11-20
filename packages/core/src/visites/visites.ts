@@ -2,13 +2,15 @@
  * Visites et bon de visite (M08, T04). Une visite est un rendez-vous de V02 (`kind = 'visite'`) relié à un bien et au
  * projet d'achat d'un acquéreur. Le bien doit pouvoir être diffusé [R42]. Le bon de visite est rempli depuis la base
  * selon un modèle daté et versionné, gardé avec lui ; un champ absent le laisse « incomplet », jamais un texte inventé
- * [R40]. Aucune adresse exacte n'y figure, ni dans la confirmation au visiteur [R19]. Une visite annulée garde son bon
- * [R17]. Le rappel de la veille est celui de V04, pour tout rendez-vous.
+ * [R40]. Le bon peut porter l'adresse exacte du bien (AU076), jamais la confirmation au visiteur ni le journal [R19]. Une visite annulée garde son bon
+ * [R17]. Le rappel de la veille est celui de V04, pour tout rendez-vous. Plusieurs acquéreurs peuvent visiter ensemble
+ * (AU077) : chacun a son rendez-vous, sa visite, son bon et son compte rendu, l'agent n'est tenu qu'une fois [R32].
  *
  * Décidé, lecture prudente : la bibliothèque de D02 n'admet que les types de mandat (contrainte de sa table, qu'il
  * faudrait reconstruire) ; le bon de visite a ses propres modèles, aux mêmes règles : versions figées, créées par la
- * direction, validées par la conformité seule ; tant qu'aucune version n'est validée (H08), le bon est d'essai. La
- * signature se range sur papier (date et scan) ; la signature en ligne de D08 viendra pour le bon avec H24.
+ * direction, validées par la conformité seule ; tant qu'aucune version n'est validée (H08), le bon est d'essai. Le
+ * visiteur signe sans papier, sur le téléphone de l'agent ou à distance (`signature-bon.ts`, AU075) ; la signature sur
+ * papier (date et scan) reste en secours ; tant que H24 n'est pas réglé, la signature en ligne est d'essai.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -25,14 +27,22 @@ import type { JournalStore } from '../journal/types.ts';
 import { RendezVous, type Appointment, type BookingRefusal } from '../rendezvous/reservation.ts';
 import { RemiseAudit, type AuditNotice } from './remise-audit.ts';
 
+/** Qui a signé un bon en ligne, tel que `visit_slips.signed_by` le garde (AU075). */
+export const ONLINE_SLIP_SIGNER = 'visiteur:en_ligne';
+
 const TIME_ZONE = 'Europe/Paris';
 
-/** Les champs d'un bon de visite : rien qui situe le bien plus précisément que sa commune [R19]. */
+/**
+ * Les champs d'un bon de visite. Le bon est un document remis au seul visiteur, signé par lui : il peut désigner le bien
+ * par son adresse exacte, celle de sa désignation (AU002), pour qu'il n'y ait aucun doute sur le bien visité (AU076). Ce
+ * n'est pas un message : l'adresse ne va jamais dans la confirmation, le journal ni une annonce [R19].
+ */
 export const VISIT_SLIP_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
   'visiteur.nom': { source: 'base', label: 'nom du visiteur' },
   'bien.reference': { source: 'base', label: 'référence du bien' },
   'bien.type': { source: 'base', label: 'type de bien' },
   'bien.commune': { source: 'base', label: 'commune du bien' },
+  'bien.adresse': { source: 'base', label: 'adresse du bien' },
   'bien.surface': { source: 'base', label: 'surface du bien' },
   'bien.pieces': { source: 'base', label: 'nombre de pièces' },
   'bien.prix': { source: 'base', label: 'prix du bien' },
@@ -227,14 +237,25 @@ export class Visites {
       projectId: string;
       start: Date;
       channel?: OutboundChannelName | null;
+      /** La durée propre de la visite, choisie par l'agent : une contre-visite de 20 minutes (AU056). */
+      durationMinutes?: number;
       /**
        * Le client qui réserve lui-même depuis son espace (EC10) : `client:<séance>`, fixé par le serveur. Le rendez-vous
        * porte alors la source `espace`, et la visite cet auteur ; les contrôles restent ceux du lecteur [R165].
        */
       byClient?: string;
+      /**
+       * AU077 : le rendez-vous d'une visite déjà fixée, même bien, même agent, même heure, que cet acquéreur rejoint :
+       * une visite groupée. Il y a son propre rendez-vous, son bon et son compte rendu ; l'agent n'est pas compté deux
+       * fois [R32]. L'agent ou la direction seulement, jamais le client depuis son espace.
+       */
+      joinVisit?: string;
     },
   ): Promise<{ ok: true; visit: ScheduledVisit } | VisitRefusal> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, 'visit', 'role');
+    // La durée propre d'une visite est choisie par l'agent seul (AU056) ; la direction fixe une visite à la durée du type.
+    if (request.durationMinutes !== undefined && (viewer.role !== 'agent' || request.byClient)) return { ok: false, rule: null, code: 'bad_duration' };
+    if (request.joinVisit !== undefined && (request.byClient || typeof request.joinVisit !== 'string')) return { ok: false, rule: null, code: 'group_agent_only' };
     const project = await this.db.first<Project>("SELECT * FROM projects WHERE id = ? AND network_id = ? AND kind = 'buy'", [request.projectId, viewer.networkId]);
     if (!project) return this.refuse(viewer, 'visit', 'unknown', `project:${request.projectId}`);
     const fiche = await this.acces.readFiche(viewer, project.person_id);
@@ -263,6 +284,8 @@ export class Visites {
       start: request.start,
       source: request.byClient ? 'espace' : 'agent',
       channel: request.channel ?? null,
+      ...(request.durationMinutes !== undefined ? { durationMinutes: request.durationMinutes } : {}),
+      ...(request.joinVisit !== undefined ? { joinGroupOf: request.joinVisit } : {}),
     });
     if (!booking.ok) return { ok: false, rule: booking.rule, code: booking.code satisfies BookingRefusal };
     const appointment = booking.appointment;
@@ -407,7 +430,9 @@ export class Visites {
     if (changes === 1) {
       await appendEvent(this.journal, { type: 'bon_visite.signe', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { slip: row.id, mode: row.mode } }, this.now);
     }
-    const after = await this.db.first<SlipRow>('SELECT * FROM visit_slips WHERE id = ?', [row.id]);
+    const after = await this.db.first<SlipRow & { signed_by: string | null }>('SELECT * FROM visit_slips WHERE id = ?', [row.id]);
+    // AU075 : un bon déjà signé en ligne par le visiteur ne reçoit pas de scan ; le papier n'y range rien.
+    if (changes !== 1 && after?.signed_by === ONLINE_SLIP_SIGNER) return { ok: false, rule: null, code: 'signed_online' };
     return { ok: true, slip: toSlip(after!) };
   }
 
@@ -521,11 +546,20 @@ export class Visites {
     const agent = await this.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [agentId]);
     const network = await this.db.first<{ name: string }>('SELECT name FROM networks WHERE id = ?', [networkId]);
     const start = localTime(new Date(appointment.start_at), TIME_ZONE);
+    // L'adresse exacte, seulement si le modèle la demande : la désignation la plus récente du bien, dans le réseau (AU076).
+    // Sans désignation, le champ manque et le bon reste incomplet, jamais une adresse devinée [R40].
+    const designation = (JSON.parse(template.fields) as string[]).includes('bien.adresse')
+      ? await this.db.first<{ street: string; postal_code: string; city: string }>(
+          'SELECT street, postal_code, city FROM property_designations WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1',
+          [networkId, property.id],
+        )
+      : null;
     const values: Record<string, string | null> = {
       'visiteur.nom': first && last ? `${first} ${last}` : null,
       'bien.reference': text(property.reference),
       'bien.type': text(PROPERTY_KIND[property.kind] ?? null),
       'bien.commune': text([property.postal_code, property.city].filter(Boolean).join(' ')),
+      'bien.adresse': designation ? text(`${designation.street}, ${designation.postal_code} ${designation.city}`) : null,
       'bien.surface': property.surface_m2 === null ? null : `${fmt(property.surface_m2)} m²`,
       'bien.pieces': property.rooms === null ? null : String(property.rooms),
       'bien.prix': property.price_eur === null ? null : `${fmt(property.price_eur)} €`,

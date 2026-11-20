@@ -185,4 +185,21 @@ describeWithSqlite('BR07 · routes du quiz et des attestations de formation', ()
     for (const name of ['formation.quiz', 'formation.reponses', 'formation.attestations']) expect(OPEN_WITHOUT_AGENT_FILE.has(name), name).toBe(true);
     for (const name of ['formation.question', 'formation.question.retrait']) expect(OPEN_WITHOUT_AGENT_FILE.has(name), name).toBe(false);
   });
+
+  it('[R85] [R16] AU028 la direction reprend le cycle d’avant l’arrivée par l’API ; l’agent lit son compteur qui le continue', async () => {
+    const t = await setup();
+    const base = `/reseau/agents/${t.alexId}/formation`;
+    const periode = { cycleStart: '2015-01-01', proofRef: 'pieces/cycle-invente.pdf', recorderName: 'Direction inventée' };
+    expect((await t.http('alex', 'POST', `${base}/periode-anterieure`, periode)).status).toBe(403);
+    expect((await t.http('alex', 'POST', `${base}/anterieures`, { heldOn: '2015-03-01', durationMinutes: 60, proofRef: 'p', recorderName: 'Moi' })).status).toBe(403);
+    expect(await t.count('academy_prior_entries')).toBe(0);
+    expect((await t.http('direction', 'POST', `${base}/periode-anterieure`, { ...periode, extra: 1 })).status).toBe(400);
+    expect((await t.http('direction', 'POST', `${base}/periode-anterieure`, periode)).status).toBe(200);
+    const r = await t.http('direction', 'POST', `${base}/anterieures`, { heldOn: '2015-03-01', durationMinutes: 60, topic: 'deontologie', proofRef: 'pieces/formation-inventee.pdf', recorderName: 'Direction inventée' });
+    expect(r.status).toBe(200);
+    expect(await t.count('academy_prior_entries')).toBe(2);
+    const c = await t.http('alex', 'GET', '/reseau/ma-formation');
+    expect(c.status).toBe(200);
+    expect(c.body.data).toMatchObject({ startedOn: '2015-01-01', periodSource: 'cycle_anterieur' });
+  });
 });

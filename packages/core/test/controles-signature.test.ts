@@ -118,6 +118,41 @@ describeWithSqlite('D03 · contrôles avant signature', () => {
     expect(failed(await trial.controles.check(trial.agent, s.documentId))).toEqual(['trial_template']);
   });
 
+  it('[R41] AU058 · un barème à tranches ou à forfaits : le contrôle retrouve le plafond de la tranche du prix', async () => {
+    const t = await setup();
+    const dir = { role: 'direction', userId: 'd', networkId: t.network.id } as Viewer;
+    // Jusqu'à 100 000 € : un forfait de 8 000 € ; jusqu'à 250 000 € : 4 % ; au-delà : 3 %.
+    const tiers = [{ upToEur: 100_000, flatEur: 8_000 }, { upToEur: 250_000, ratePercent: 4 }, { upToEur: null, ratePercent: 3 }];
+    expect(await t.controles.setFeeSchedule(dir, { maxRatePercent: 10, minEur: 3000, tiers })).toEqual({ ok: true });
+    expect(await t.controles.readFeeSchedule(dir)).toMatchObject({ ok: true, value: { maxRatePercent: 10, minEur: 3000, tiers } });
+    const at = async (price: number, fee: number) => {
+      const s = await t.seller({ price, inputs: { ...INPUTS, 'honoraires.montant': fee } });
+      await t.identite(t.agent, s.personId, { piece: 'carte_identite', seenAt: NOW });
+      return failed(await t.controles.check(t.agent, s.documentId));
+    };
+    expect(await at(90_000, 8_000)).toEqual([]);
+    expect(await at(90_000, 8_001)).toEqual(['fee_above_schedule']);
+    expect(await at(200_000, 8_000)).toEqual([]);
+    expect(await at(200_000, 8_001)).toEqual(['fee_above_schedule']);
+    expect(await at(300_000, 9_000)).toEqual([]);
+    expect(await at(300_000, 9_001)).toEqual(['fee_above_schedule']);
+    // Des tranches mal faites sont refusées, rien n'est rangé.
+    for (const bad of [
+      [{ upToEur: 200_000, ratePercent: 4 }, { upToEur: 100_000, ratePercent: 3 }],
+      [{ upToEur: null, ratePercent: 4 }, { upToEur: 100_000, ratePercent: 3 }],
+      [{ upToEur: 100_000, ratePercent: 4, flatEur: 5000 }],
+      [{ upToEur: 100_000 }],
+      [{ upToEur: 100_000, ratePercent: 4.555 }],
+    ]) {
+      expect(await t.controles.setFeeSchedule(dir, { maxRatePercent: 10, minEur: 0, tiers: bad })).toEqual({ ok: false, rule: null, code: 'bad_tiers' });
+    }
+    // Une tranche qui ne s'écrit pas : le barème n'entre pas en vigueur, l'ancien reste, tranches comprises.
+    await t.db.exec("CREATE TRIGGER coupure BEFORE INSERT ON fee_schedule_tiers WHEN NEW.position = 2 BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.controles.setFeeSchedule(dir, { maxRatePercent: 20, minEur: 0, tiers: [{ upToEur: 100_000, ratePercent: 9 }, { upToEur: null, ratePercent: 8 }] })).rejects.toThrow(/coupure/);
+    await t.db.exec('DROP TRIGGER coupure');
+    expect(await t.controles.readFeeSchedule(dir)).toMatchObject({ ok: true, value: { maxRatePercent: 10, tiers } });
+  });
+
   it('[R41] sans barème réglé, rien ne passe ; seule la direction règle le barème, en ajout seul', async () => {
     const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
     await applyMigrations(db, loadMigrations());

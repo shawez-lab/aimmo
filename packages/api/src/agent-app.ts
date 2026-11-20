@@ -81,6 +81,7 @@ import { BANQUE_SCRIPT } from '../app/banque.ts';
 import { RAPPORTS_AGENT_SCRIPT, RAPPORTS_SCRIPT } from '../app/rapports.ts';
 import { VIAGER_SCRIPT } from '../app/viager.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
+import { BON_VISITE_SCRIPT } from '../app/bon-visite.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
@@ -288,6 +289,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/coffre.js': { body: COFFRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les visites réservées en ligne à rattacher (BR64), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/visites-en-ligne.js': { body: VISITES_EN_LIGNE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le bon de visite signé sans papier (AU075), chargé au premier geste depuis la visite, jamais gardé [R201].
+  '/app/bon-visite.js': { body: BON_VISITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Recommander un proche depuis la fiche (X22), chargé au premier geste, jamais gardé sur l'appareil [R201].
   '/app/recommandation.js': { body: RECOMMANDATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].

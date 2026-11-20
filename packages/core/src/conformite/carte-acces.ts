@@ -411,6 +411,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   call_notes: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },
+  agent_import_history: { locate: by('person_id') },
+  agent_import_reminders: { locate: by('person_id') },
+  agent_import_reminder_closures: { locate: [via('origin_key', 'agent_import_reminders', 'origin_key')] },
   // I05 : les exports bruts de H15, déposés par la direction pour la reprise ; le texte n'est rattaché à aucune fiche
   // (les fiches reprises, elles, sont lues par la carte). Gardés pour relancer la reprise, puis purgés par la procédure
   // d'effacement de la conformité : leurs morceaux s'effacent, la reprise refuse alors un dépôt incomplet.
@@ -505,6 +508,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   visit_dossiers: { locate: by('person_id'), secrets: ['token_hash'] },
   remote_visits: { locate: by('person_id') },
   remote_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash'] },
+  visit_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash', 'copy_token_hash'] },
   visit_safety: { locate: [via('appointment_id', 'appointments')], secrets: ['code_hash'] },
   safety_alerts: { locate: [via('appointment_id', 'appointments')] },
   visit_reports: { locate: [via('appointment_id', 'appointments')] },
@@ -535,6 +539,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
+  fee_schedule_tiers: out('sans_client', 'Tranches du barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
   mandate_clause_versions: out('sans_client', 'Texte d\'une clause du questionnaire de mandat, écrit par la direction.'),
@@ -581,6 +586,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   listing_translation_validations: { locate: [via('property_id', 'properties')] },
   translation_reviewers: { locate: [via('property_id', 'properties')] },
   listing_versions: { locate: [via('property_id', 'properties')] },
+  listing_version_media_sheets: { locate: [via('version_id', 'listing_versions')] },
   video_text_checks: { locate: [via('property_id', 'properties')] },
   agent_import_properties: { locate: [via('property_id', 'properties')] },
   // acquereurs
@@ -810,6 +816,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   quiz_questions: out('sans_client', 'Questions de formation des agents (HX63).'),
   quiz_attempts: out('agent', 'Quiz de formation de l\'agent, réponses lues par lui seul (HX63).'),
   quiz_attestations: out('agent', 'Attestations de formation de l\'agent (HX63).'),
+  academy_prior_entries: out('agent', 'Cycle de formation de l\'agent avant son arrivée (AU028).'),
   sandbox_runs: out('agent', 'Bac à sable de l\'agent, sur des clients inventés.'),
   sandbox_steps: out('agent', 'Étapes du bac à sable de l\'agent.'),
   training_cases: out('sans_client', 'Cas d\'entraînement inventés.'),
@@ -948,6 +955,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // droits-des-personnes
   person_requests: { locate: by('person_id') },
   person_request_outputs: { locate: [via('request_id', 'person_requests')] },
+  erasure_object_targets: { locate: [via('request_id', 'person_requests')] },
   person_request_answers: { locate: [via('request_id', 'person_requests')] },
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
   // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.

@@ -17,7 +17,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
+import { bindingHolds, fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 import { computeMentions, MentionsAnnonce, type MentionItem } from './mentions.ts';
 
@@ -155,6 +155,8 @@ export class Annonces {
       elevator: c?.elevator ?? null,
       energyClass: sheet?.energy?.energyClass ?? null,
       climateClass: sheet?.energy?.climateClass ?? null,
+      amenities: c?.amenities ?? [],
+      condition: c?.condition ?? null,
     };
     return { facts, sheetVersion: row ? Number(row.version) : null };
   }
@@ -297,16 +299,27 @@ export class Annonces {
   }
 
   /**
-   * Pour le système qui publie (P04) : le texte validé à publier, ou null. Seul le dernier brouillon compte, validé,
-   * sur la dernière version de la fiche ; sinon il n'y a rien à publier.
+   * Pour le système qui publie (P04) : le texte validé à publier, ou null. Le dernier brouillon validé compte : une
+   * correction en cours, pas encore validée, ne retire pas la version conforme déjà en ligne (AU066). Il reste publié
+   * tant que chacune de ses phrases est encore vraie pour la fiche du jour ; un fait changé qui le rend faux ou obsolète
+   * le retire [R47].
    */
   async publishable(networkId: string, propertyId: string): Promise<ListingDraft | null> {
-    const row = await this.db.first<DraftRow & { network_id: string }>(`${DRAFT_SELECT.replace('SELECT d.id,', 'SELECT d.network_id, d.id,')} WHERE d.property_id = ? ORDER BY d.seq DESC LIMIT 1`, [propertyId]);
+    const row = await this.db.first<DraftRow & { network_id: string }>(
+      `${DRAFT_SELECT.replace('SELECT d.id,', 'SELECT d.network_id, d.id,')} WHERE d.property_id = ? AND EXISTS (SELECT 1 FROM listing_validations v WHERE v.draft_id = d.id) ORDER BY d.seq DESC LIMIT 1`,
+      [propertyId],
+    );
     if (!row || row.network_id !== networkId) return null;
     const draft = toDraft(row);
     if (!draft.validated) return null;
     const f = await this.factsFor(propertyId);
-    if (!f || f.sheetVersion !== draft.sheetVersion) return null;
-    return traceListing(draft.title, draft.body, f.facts).ok ? draft : null;
+    if (!f) return null;
+    const fresh = traceListing(draft.title, draft.body, f.facts);
+    if (!fresh.ok) return null;
+    if (f.sheetVersion === draft.sheetVersion) return draft;
+    // La fiche a changé depuis la validation : chaque source rangée doit encore être vraie, dans son champ. Un étage
+    // corrigé que le nombre d'étages de l'immeuble « explique » encore rend la phrase fausse ; un autre champ devenu
+    // égal ne la rend pas fausse [R47].
+    return draft.sentences.every((s) => s.sources.every((x) => bindingHolds(x, f.facts))) ? draft : null;
   }
 }

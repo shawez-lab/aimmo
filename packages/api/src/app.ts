@@ -219,7 +219,7 @@ export interface ApiConfig {
    * la présentation (absente, le secours sans IA [R12]) et le début des liens du dossier (`DOSSIER_LINK_BASE`).
    */
   commerces?: Partial<Pick<CommercesServices, 'storage' | 'presentationWriter' | 'baseUrl'>>;
-  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
+  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, le seul réseau de la base s'il n'y en a qu'un (AU022), sinon page « bientôt ». */
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
   coffre?: VaultFiles | null;
@@ -320,6 +320,8 @@ export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
   'reseau.formation',
   'reseau.bac_a_sable',
   'reseau.mon_bac_a_sable',
+  'reseau.mon_bac_a_sable_ouvrir',
+  'reseau.mon_bac_a_sable_etape',
   'reseau.mon_referent',
   'reseau.entrainement_cas',
   'reseau.entrainement',
@@ -761,8 +763,9 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['maxRatePercent', 'minEur'].includes(k))) return failure(400, 'unexpected_field', 'Seuls maxRatePercent et minEur sont admis.');
-      const r = await controles(s).setFeeSchedule(viewer, { maxRatePercent: body.maxRatePercent as number, minEur: body.minEur as number });
+      if (Object.keys(body).some((k) => !['maxRatePercent', 'minEur', 'tiers'].includes(k))) return failure(400, 'unexpected_field', 'Seuls maxRatePercent, minEur et tiers sont admis.');
+      // AU058 · les tranches, chacune un plafond en taux ou en forfait, contrôlées par le socle.
+      const r = await controles(s).setFeeSchedule(viewer, { maxRatePercent: body.maxRatePercent as number, minEur: body.minEur as number, tiers: body.tiers });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
