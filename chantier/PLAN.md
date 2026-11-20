@@ -338,13 +338,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU025 · Le premier parcours pédagogique annonce un outil d’exercice
-- Statut : en cours
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A025 (majeur), endroit : A/worker.ts, configuration `reseau` ; C/reseau/bac-a-sable.ts.
 - Constat de l'audit : Le premier parcours pédagogique annonce un outil d’exercice, mais le Worker ne lui fournit pas son stockage isolé.
 - Objectif : Un nouvel agent ouvre depuis son écran un exercice isolé et réalise les cinq étapes, progression persistante comprise.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#720, `e93c90a3`). Décidé : pas d'objet durable (R602 ne les admet pas) ; seconde base D1 `aimmo-bac-a-sable` en `eu`, mêmes migrations, créée, vérifiée et migrée par la mise en ligne, gabarit d'identifiant à part ; un réseau d'entraînement par agent dans cette base ; routes d'ouverture et d'étape, écran « Mon intégration ». Vérifié sous workerd. Codex : rien de majeur ; une remarque P2 restante (une tâche « rappeler » qui manquerait après une panne à la réception bloque l'étape du rappel), à reprendre si elle se voit.
 
 ### AU026 · Les quiz et attestations existent côté métier
 - Statut : à faire

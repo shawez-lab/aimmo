@@ -1506,3 +1506,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 13:44 · AU075 · bon de visite signé sans papier sur le téléphone de l'agent, code du visiteur, exemplaire et preuve à l'écran, preuve avec l'empreinte du bon envoyée par le contrôle central ; signature à distance prête, refusée tant que ses pages publiques ne sont pas servies (AU075b, voie 1) ; Codex 4 P0, 1 P1, 1 P2 corrigés, puis 👍 ; fusionnée (#719, f70c5451) · prochaine : AU076
 - 2026-11-20 13:44 · VOIE 2 : AU075, f70c5451 (main), relancé non
 - 2026-11-20 13:44 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
+- 2026-11-20 14:23 · AU025 · bac à sable servi par le Worker : seconde base D1 en Europe, ouverture et cinq étapes depuis l'écran, progression gardée ; Codex rien de majeur (1 P2 noté) ; fusionnée (#720, e93c90a3) · prochaine : AU026
