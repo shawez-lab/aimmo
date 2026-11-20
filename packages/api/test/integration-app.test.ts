@@ -84,6 +84,7 @@ const AGENT: Record<string, Answer> = {
   'GET /v1/reseau/ma-formation': ok(COUNTER),
   'GET /v1/reseau/academie': ok(TRACKS),
   'POST /v1/reseau/academie/modules/m2/fait': ok(null, { already: false }),
+  'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [] }),
 };
 const DIRECTION: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'direction', firstName: null }),
@@ -172,13 +173,13 @@ describe('J14 · écrans de M14 dans l’application', () => {
     const screen = [...t.calls, ...d.calls].filter((c) => /^\/v1\/reseau\//.test(c.url) || !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous\/jour|usage|annonces$|offres\/a-tenir|apres-vente|pilotage)/.test(c.url));
     expect(screen.length).toBeGreaterThanOrEqual(9);
     for (const c of screen) {
-      expect(c.url.startsWith('/v1/reseau/'), c.url).toBe(true);
+      expect(/^\/v1\/(reseau|formation)\//.test(c.url), c.url).toBe(true);
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
     const routes = [...INTEGRATION_SCRIPT.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(6);
-    for (const r of routes) expect(r.startsWith('/v1/reseau/'), r).toBe(true);
+    for (const r of routes) expect(/^\/v1\/(reseau|formation)\//.test(r), r).toBe(true);
   });
 
   it('[R82] « Mon intégration » : chaque pièce et son état, l’étape suivante, le référent et le premier parcours ; tout texte reçu reste du texte', async () => {
@@ -257,7 +258,7 @@ describe('J14 · écrans de M14 dans l’application', () => {
     const t = await run();
     await t.ouvrir('academie-ouvrir');
     expect(t.els['integration-titre']!.textContent).toBe('Académie');
-    expect(sections(t)).toEqual(['Mes heures de formation', 'Parcours d’entrée']);
+    expect(sections(t)).toEqual(['Mes heures de formation', 'Parcours d’entrée', 'Mes attestations']);
     const text = t.body().textContent;
     // Les chiffres du serveur, tels quels : rien n'est recalculé ici.
     expect(text).toContain('2 h 30 sur 14 h');
@@ -541,5 +542,129 @@ describe('AU025 · le premier parcours se fait depuis l’écran', () => {
     await t.ouvrir('integration-ouvrir');
     await t.click(t.byText('Je l’ai rappelé'));
     expect(t.state()).toBe('Faites d’abord l’étape d’avant : la liste est relue.');
+  });
+
+});
+
+describe('AU026 · le quiz et l’attestation se passent depuis l’académie, sans appel manuel à l’API', () => {
+  const DRAWN = {
+    attemptId: 'q1',
+    questions: [
+      { questionId: 'x1', prompt: 'Qui signe le mandat ?', choices: ['Le vendeur', 'Le voisin'] },
+      { questionId: 'x2', prompt: INJECTED, choices: ['Oui', 'Non', 'Je ne sais pas'] },
+    ],
+  };
+  const FINGERPRINT = 'a'.repeat(64);
+  const ATTESTATION = {
+    attestationId: 'at1',
+    fingerprint: FINGERPRINT,
+    document: {
+      kind: 'aimmo.attestation-formation', version: 1, attestationId: 'at1', networkId: 'n1', agentId: 'ag1',
+      scope: { kind: 'track', ref: 'entree' },
+      modules: [{ moduleId: 'm1', title: 'Déontologie du mandat', durationMinutes: 120 }],
+      ruleIds: ['R570'], questionCount: 2, issuedOn: '2027-07-12',
+    },
+  };
+  const WRONG = {
+    allRight: false,
+    results: [
+      { questionId: 'x1', right: true, review: null },
+      { questionId: 'x2', right: false, review: { moduleId: 'm1', moduleTitle: 'Déontologie du mandat', videoId: 'abcdefghijk', ruleId: 'R570', ruleTitle: 'Quiz tiré des règles' } },
+    ],
+    modulesToDo: [],
+    attestation: null,
+  };
+  const PERFECT = { allRight: true, results: [{ questionId: 'x1', right: true, review: null }, { questionId: 'x2', right: true, review: null }], modulesToDo: [], attestation: ATTESTATION };
+  const quizButtons = (t: Awaited<ReturnType<typeof run>>) => t.body().all().filter((e) => e.tagName === 'button' && /quiz/i.test(e.textContent));
+  const answer = (t: Awaited<ReturnType<typeof run>>, values: string[]) => values.forEach((v, n) => { t.body().all().find((e) => e.attributes.id === `quiz-q-${n}`)!.value = v; });
+
+  it('[R570] chaque parcours et chaque module offrent leur quiz : tiré par le serveur, sans la bonne réponse', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN) });
+    await t.ouvrir('academie-ouvrir');
+    // Le constat de l'audit : sans ces boutons, le quiz ne se passait que par un appel manuel à l'API.
+    expect(quizButtons(t).map((b) => b.textContent)).toEqual(['Passer le quiz du parcours', 'Quiz de ce module', 'Quiz de ce module']);
+    await t.click(t.byText('Passer le quiz du parcours'));
+    expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/formation/quiz', JSON.stringify({ track: 'entree' })]]);
+    expect(t.els['integration-titre']!.textContent).toBe('Quiz · Parcours d’entrée');
+    expect(t.els['integration-retour']!.textContent).toBe('Retour à l’académie');
+    const text = t.body().textContent;
+    expect(text).toContain('Qui signe le mandat ?');
+    expect(text).toContain(INJECTED);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    // Un quiz de module se tire par son seul module.
+    const u = await run({ 'POST /v1/formation/quiz': ok(DRAWN) });
+    await u.ouvrir('academie-ouvrir');
+    await u.click(u.byText('Quiz de ce module', 1));
+    expect(u.posts().map((c) => c.body)).toEqual([JSON.stringify({ moduleId: 'm2' })]);
+  });
+
+  it('[R570] [R14] les réponses rendues une fois : juste ou à revoir, avec le module et la règle, sans note ni bonne réponse', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': ok(WRONG) });
+    await t.ouvrir('academie-ouvrir');
+    await t.click(t.byText('Passer le quiz du parcours'));
+    // Une question sans réponse : rien ne part.
+    answer(t, ['0', '']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.state()).toBe('Répondez à chaque question avant de rendre le quiz.');
+    expect(t.posts()).toHaveLength(1);
+    answer(t, ['0', '2']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.posts().map((c) => [c.url, c.body])[1]).toEqual(['/v1/formation/quiz/q1/reponses', JSON.stringify({ answers: [0, 2] })]);
+    const text = t.body().textContent;
+    expect(text).toContain('Juste');
+    expect(text).toContain('À revoir');
+    expect(text).toContain('Revoir le module « Déontologie du mandat », règle R570 : Quiz tiré des règles.');
+    expect(t.body().all().filter((e) => e.tagName === 'a').map((a) => a.attributes.href)).toEqual(['https://www.youtube-nocookie.com/embed/abcdefghijk']);
+    // Aucune note, aucun nombre de bonnes réponses, aucun pourcentage [R14].
+    expect(text).not.toMatch(/\d+\s*(\/|sur)\s*\d+|%|note|score/i);
+    expect(t.state()).toBe('Quiz rendu : revoyez les modules indiqués, puis tirez un nouveau quiz.');
+    // Rendu deux fois : le refus du serveur est dit en français.
+    const u = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': no(409, { ok: false, rule: null, code: 'already_submitted' }) });
+    await u.ouvrir('academie-ouvrir');
+    await u.click(u.byText('Passer le quiz du parcours'));
+    answer(u, ['0', '1']);
+    await u.click(u.byText('Rendre mes réponses'));
+    expect(u.state()).toBe('Ce quiz a déjà été rendu : tirez-en un nouveau pour qu’il compte.');
+    const v = await run({ 'POST /v1/formation/quiz': no(409, { ok: false, rule: null, code: 'not_enough_questions' }) });
+    await v.ouvrir('academie-ouvrir');
+    await v.click(v.byText('Passer le quiz du parcours'));
+    expect(v.state()).toBe('Pas encore assez de questions pour ce quiz : la direction en prépare. Revenez plus tard.');
+  });
+
+  it('[R571] un quiz sans faute donne l’attestation à l’écran : son empreinte, le document enregistré tel quel, la page de vérification', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': ok(PERFECT) });
+    const saved: { parts: unknown[]; download?: string }[] = [];
+    t.context.Blob = function (this: { parts: unknown[] }, parts: unknown[]) { this.parts = parts; saved.push({ parts }); };
+    t.context.URL = { createObjectURL: () => 'blob:essai', revokeObjectURL: () => undefined };
+    await t.ouvrir('academie-ouvrir');
+    await t.click(t.byText('Passer le quiz du parcours'));
+    answer(t, ['0', '0']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.state()).toBe('Sans faute : votre attestation est délivrée.');
+    const text = t.body().textContent;
+    expect(text).toContain('Parcours d’entrée · délivrée le ');
+    expect(text).toContain('Déontologie du mandat · 120 min');
+    expect(text).toContain(`Empreinte : ${FINGERPRINT}`);
+    expect(t.body().all().some((e) => e.tagName === 'a' && e.attributes.href === '/attestation')).toBe(true);
+    await t.click(t.byText('Enregistrer l’attestation'));
+    // Le document tel que rangé, seul : c'est lui que la page de vérification recalcule [R571].
+    expect(saved.map((x) => JSON.parse(String(x.parts[0])))).toEqual([ATTESTATION.document]);
+    expect(t.state()).toBe('Attestation enregistrée sur cet appareil.');
+  });
+
+  it('[R571] [R16] les attestations déjà obtenues se relisent et s’enregistrent depuis l’académie, par l’agent lui-même', async () => {
+    const t = await run({ 'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [ATTESTATION] }) });
+    await t.ouvrir('academie-ouvrir');
+    expect(t.calls.filter((c) => c.method === 'GET' && c.url.startsWith('/v1/formation/')).map((c) => [c.url, c.auth])).toEqual([['/v1/formation/agents/ag1/attestations', `Bearer ${KEY}`]]);
+    expect(t.body().textContent).toContain(`Empreinte : ${FINGERPRINT}`);
+    expect(t.byText('Enregistrer l’attestation')).toBeDefined();
+    const u = await run();
+    await u.ouvrir('academie-ouvrir');
+    expect(u.body().textContent).toContain('Aucune attestation pour le moment');
+    // Une empreinte douteuse n'est pas montrée comme une attestation.
+    const v = await run({ 'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [{ ...ATTESTATION, fingerprint: 'x' }] }) });
+    await v.ouvrir('academie-ouvrir');
+    expect(v.body().textContent).not.toContain('Empreinte');
+    expect(v.byText('Enregistrer l’attestation')).toBeUndefined();
   });
 });
