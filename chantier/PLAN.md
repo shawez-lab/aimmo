@@ -280,7 +280,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H29).
 
 ### AU020b · Les tables en ajout seul du bien d'un vendeur effacé
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU020
 - Cahier : Conformité ; audit A020, endroit : packages/core/src/conformite/effacement-reel.ts ; `listing_drafts`, `property_sheets`.
 - Objectif : l'effacement réel d'un vendeur ne laisse plus « restantes » les lignes de `listing_drafts` et `property_sheets` qui ne sont qu'à lui : elles sont vidées de ses données par une voie prévue par la migration, ou rangées dans le plan comme pièces gardées avec leur raison.
