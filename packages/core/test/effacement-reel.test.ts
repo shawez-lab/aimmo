@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
+import { ERASURE_WHY, PROPERTY_DESCRIPTION, PROPERTY_NOT_KEPT } from '../src/conformite/demandes-personnes.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { sealAt } from '../src/sauvegarde/copie.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -41,8 +42,21 @@ const countAll = async (db: SqlDatabase) => {
   return out;
 };
 
-// Les tables en ajout seul du bien de la vendeuse, que la base refuse d'effacer (AU020b).
-const BLOCKED = [{ table: 'listing_drafts', rows: 1 }, { table: 'property_sheets', rows: 1 }];
+// Les tables en ajout seul qui décrivent le bien de la vendeuse : gardées avec le bien, jamais « restantes » (AU020b).
+const DESCRIPTION = ['listing_drafts', 'property_sheets'];
+
+// Une table en ajout seul, inventée, que la carte retrouve par le projet de la personne : ce que la base refuse
+// d'effacer, pour vérifier que l'effacement ne se dit pas complet et que le chemin qui y mène reste.
+async function guardedNotes(t: Awaited<ReturnType<typeof setup>>) {
+  await t.db.exec(`CREATE TABLE essai_notes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, note TEXT NOT NULL);
+    CREATE TRIGGER essai_notes_garde BEFORE DELETE ON essai_notes BEGIN SELECT RAISE(ABORT, 'essai_notes : rien ne s''efface'); END;`);
+  const project = await t.db.first<{ id: string }>('SELECT id FROM projects WHERE person_id = ?', [t.personId]);
+  await t.db.run("INSERT INTO essai_notes (id, project_id, note) VALUES ('n1', ?, 'Inventée')", [project!.id]);
+  const relation = conformite.REGISTRE_TRAITEMENTS.find((x) => x.id === 'relation-clients')!;
+  const registre = conformite.REGISTRE_TRAITEMENTS.map((x) => (x === relation ? { ...x, tables: { ...x.tables, essai_notes: ['project_id', 'note'] } } : x));
+  const carte = { ...conformite.CARTE_ACCES, essai_notes: { locate: [{ column: 'project_id', from: 'projects', key: 'id' }] } } as typeof conformite.CARTE_ACCES;
+  return { carte, registre };
+}
 
 const FILES: [ObjectStorage, string][] = [
   ['PIECES', 'boite/appels/seule-a.ogg'],
@@ -151,13 +165,18 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Le fichier qu'elle seule citait est retiré ; le fichier partagé et le coffre restent.
     expect([...t.objects.held].sort()).toEqual(['COFFRE:coffre/essai/piece.pdf', 'PIECES:boite/appels/partage.ogg']);
     // Le reçu : ce qui part, ce qui reste et pourquoi, sans nom, sans coordonnée, sans identifiant. Le brouillon d'annonce
-    // et la fiche du bien sont en ajout seul : la base refuse de les effacer, le reçu le dit et l'effacement n'est pas
-    // dit complet (AU020b).
-    expect(receipt).toMatchObject({ mode: 'reel', records: 1, complete: false, remaining: BLOCKED, objectsRemoved: { PIECES: 1 }, objectsRemaining: 0, at: LATER.toISOString() });
-    // Le bien reste, cité par le mandat que la loi garde ; le projet et son lien au bien restent tant que la fiche du
-    // bien, que la base garde, reste : sans eux, le prochain passage ne la retrouverait plus [R17, R231].
-    expect(receipt.cited).toEqual([{ table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }, { table: 'properties', rows: 1 }]);
-    expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }]);
+    // et la fiche du bien, en ajout seul, décrivent le bien : gardés avec lui, avec leur raison, et l'effacement est
+    // complet (AU020b).
+    expect(receipt).toMatchObject({ mode: 'reel', records: 1, complete: true, remaining: [], objectsRemoved: { PIECES: 1 }, objectsRemaining: 0, at: LATER.toISOString() });
+    for (const table of DESCRIPTION) {
+      expect(after[table], table).toBe(before[table]);
+      expect(receipt.kept, table).toEqual(expect.arrayContaining([{ table, action: 'garder', rows: 1, why: ERASURE_WHY.property }]));
+    }
+    // Le bien reste, cité par le mandat que la loi garde ; le lien de la vendeuse au bien (son projet) part : la
+    // description gardée ne mène plus à elle [R17].
+    expect(receipt.cited).toEqual([{ table: 'properties', rows: 1 }]);
+    expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }, { table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }]);
+    expect(await t.db.all('SELECT id FROM projects WHERE person_id = ?', [t.personId])).toEqual([]);
     expect(receipt.pseudonymized).toEqual([{ table: 'persons', rows: 1 }]);
     expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'garder', why: IDENTIFIERS_KEPT })]));
     expect(receipt.kept.some((k) => k.action === 'empreinte')).toBe(false);
@@ -168,7 +187,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La preuve : l'empreinte du reçu gardée, au journal, puis reprise par la réponse notée.
     expect(await t.db.all("SELECT kind, mode, output_sha256 FROM person_request_outputs WHERE request_id = ? AND mode = 'reel'", [t.request.id])).toEqual([{ kind: 'plan_effacement', mode: 'reel', output_sha256: sha256 }]);
     const event = (await t.journal.bySubject(`person_request:${t.request.id}`)).at(-1)!;
-    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 1, remaining: 2, objects: 1, complete: false } });
+    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 6, pseudonymized: 1, remaining: 0, objects: 1, complete: true } });
     expect(JSON.stringify(event)).not.toContain('example.test');
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
     expect(await t.demandes.answer(t.responsable, t.request.id, { answeredOn: '2027-02-11' })).toMatchObject({ ok: true, value: { answerSha256: sha256 } });
@@ -189,15 +208,16 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     t.setClock(new Date(LATER.getTime() + 60_000));
     const again = await t.reel.erase(t.responsable, t.request.id);
     if (!again.ok) throw new Error(again.code);
-    expect(again.value.receipt).toMatchObject({ erased: [], pseudonymized: [], remaining: BLOCKED, objectsRemoved: {}, complete: false });
+    expect(again.value.receipt).toMatchObject({ erased: [], pseudonymized: [], remaining: [], objectsRemoved: {}, complete: true });
     const twice = await countAll(t.db);
     expect(Object.keys(twice).filter((k) => twice[k] !== once[k]).sort()).toEqual(['journal', 'person_request_outputs']);
     // Le registre, rejoué par l'effaceur réel, ne trouve plus rien à effacer.
     const eraser = new SqlPersonEraser({ objects: t.objects.eraser });
-    // Les lignes du bien que la base refuse d'effacer restent (AU020b) : le rejeu ne se dit pas fait [R231].
-    await expect(eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).rejects.toThrow();
+    // La description du bien est gardée avec lui (AU020b) : le rejeu de la vendeuse réussit, sans rien de plus [R231].
+    expect(await eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).toBe(0);
     const replay = await replayErasures(t.db, t.ledger.store, t.key, eraser, { copyTakenAt: NOW.toISOString(), now: t.now });
-    expect(replay).toEqual({ ok: false, code: 'erase_failed', replayed: 0 });
+    expect(replay).toMatchObject({ ok: true, replayed: 2 });
+    expect(await countAll(t.db)).toMatchObject({ calls: once.calls, projects: once.projects, property_sheets: once.property_sheets, listing_drafts: once.listing_drafts });
     // Une personne dont tout peut partir : le rejeu refait ne change rien de plus, et se dit fait.
     const entry = { requestId: 'demande-autre', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() };
     expect(await eraser.erase(t.db, entry)).toBeGreaterThan(0);
@@ -206,18 +226,15 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
 
   it('[R17] une ligne qu’une table en ajout seul refuse d’effacer est dite restante : l’effacement n’est pas dit complet', async () => {
     const t = await setup();
-    await t.db.exec(`CREATE TABLE essai_notes (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, note TEXT NOT NULL);
-      CREATE TRIGGER essai_notes_garde BEFORE DELETE ON essai_notes BEGIN SELECT RAISE(ABORT, 'essai_notes : rien ne s''efface'); END;`);
-    await t.db.run("INSERT INTO essai_notes (id, person_id, note) VALUES ('n1', ?, 'Inventée')", [t.personId]);
-    const relation = conformite.REGISTRE_TRAITEMENTS.find((x) => x.id === 'relation-clients')!;
-    const registre = conformite.REGISTRE_TRAITEMENTS.map((x) => (x === relation ? { ...x, tables: { ...x.tables, essai_notes: ['person_id', 'note'] } } : x));
-    const carte = { ...conformite.CARTE_ACCES, essai_notes: { locate: [{ column: 'person_id' }] } };
+    const { carte, registre } = await guardedNotes(t);
     const { outcome } = await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser });
-    expect(outcome.remaining).toEqual([{ table: 'essai_notes', rows: 1 }, ...BLOCKED]);
+    expect(outcome.remaining).toEqual([{ table: 'essai_notes', rows: 1 }]);
     expect(await t.db.all('SELECT id FROM essai_notes')).toEqual([{ id: 'n1' }]);
     // Le reste part quand même, et un second passage dit la même chose.
     expect(await t.db.all('SELECT id FROM call_notes')).toEqual([]);
-    expect((await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser })).outcome).toMatchObject({ erased: [], pseudonymized: [], remaining: [{ table: 'essai_notes', rows: 1 }, ...BLOCKED] });
+    expect((await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser })).outcome).toMatchObject({ erased: [], pseudonymized: [], remaining: [{ table: 'essai_notes', rows: 1 }] });
+    // Le rejeu d'une personne dont une ligne reste ne se dit pas fait [R231].
+    await expect(new SqlPersonEraser({ carte, registre, objects: t.objects.eraser }).erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).rejects.toThrow();
   });
 
   it('[R17] une ligne changée entre la lecture et l’effacement est dite restante, jamais partie', async () => {
@@ -290,11 +307,14 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
 
   it('[R17] [R231] une ligne gardée par la base reste retrouvable : le passage suivant la dit encore restante', async () => {
     const t = await setup();
-    const first = await eraseForReal(t.db, [t.personId], { objects: t.objects.eraser });
-    expect(first.outcome.remaining).toEqual(BLOCKED);
-    const again = await eraseForReal(t.db, [t.personId], { objects: t.objects.eraser });
-    expect(again.outcome.remaining).toEqual(BLOCKED);
-    expect(again.outcome.cited.map((c) => c.table)).toEqual(expect.arrayContaining(['project_properties', 'projects']));
+    const { carte, registre } = await guardedNotes(t);
+    const first = await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser });
+    expect(first.outcome.remaining).toEqual([{ table: 'essai_notes', rows: 1 }]);
+    // Le projet qui y mène reste, pour que le passage suivant la retrouve.
+    expect(first.outcome.cited.map((c) => c.table)).toEqual(expect.arrayContaining(['projects']));
+    const again = await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser });
+    expect(again.outcome.remaining).toEqual([{ table: 'essai_notes', rows: 1 }]);
+    expect(again.outcome.cited.map((c) => c.table)).toEqual(expect.arrayContaining(['projects']));
   });
 
   it('[R04] [R17] des fiches réunies : leur lien reste, et l’arrêt posé sur l’une vaut encore pour l’autre', async () => {
@@ -338,6 +358,46 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     const counting = { erase: async () => ++called };
     expect(await replayErasures(t.db, t.ledger.store, t.key, counting, { copyTakenAt: NOW.toISOString(), now: t.now })).toEqual({ ok: false, code: 'ledger_unreadable', replayed: 0 });
     expect(called).toBe(0);
+  });
+
+  it('[R17] [R19] [R46] AU020b : la description du bien, en ajout seul, est dite gardée dès le plan d’essai, jamais à effacer', async () => {
+    const t = await setup();
+    const plan = await t.demandes.prepareErasure(t.responsable, t.request.id);
+    if (!plan.ok) throw new Error(plan.code);
+    for (const table of DESCRIPTION) {
+      expect(plan.value.plan.lines.filter((l) => l.table === table), table).toEqual([expect.objectContaining({ table, action: 'garder', why: ERASURE_WHY.property })]);
+    }
+    // Chaque table de la description du bien est bien en ajout seul dans la base, retrouvée par le bien, et dans le
+    // traitement des biens : la liste ne garde rien que la base aurait pu effacer.
+    const triggers = await t.db.all<{ tbl_name: string; sql: string }>("SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger'");
+    const guarded = new Set(triggers.filter((r) => /BEFORE\s+DELETE/i.test(r.sql) && /RAISE\s*\(\s*ABORT/i.test(r.sql)).map((r) => r.tbl_name));
+    // Les colonnes inscrites de chaque table du traitement des biens.
+    const biens = conformite.REGISTRE_TRAITEMENTS.find((x) => x.id === 'biens-annonces')!;
+    expect(biens.baseLegale).not.toBe('obligation_legale');
+    const columns = new Map<string, readonly string[]>(Object.entries(biens.tables) as [string, readonly string[]][]);
+    for (const table of PROPERTY_DESCRIPTION) {
+      expect(guarded.has(table), table).toBe(true);
+      expect(columns.has(table), table).toBe(true);
+      // Ni nom, ni adresse exacte, ni personne dans ce qui est gardé [R19, R46].
+      expect(columns.get(table)!.filter((c) => /street|person|name|phone|email/.test(c)), table).toEqual([]);
+    }
+    // Et l'inverse : toute table en ajout seul du traitement des biens que la carte retrouve par le bien (ou par une table
+    // de la description) est dans la liste, sauf celles qui portent l'adresse exacte ou un texte libre non contrôlé (AU020d).
+    const carte = conformite.CARTE_ACCES as Record<string, { locate?: readonly { from?: string }[] }>;
+    const viaProperty = [...columns.keys()].filter((table) => guarded.has(table) && (carte[table]?.locate ?? []).some((l) => l.from === 'properties' || (l.from !== undefined && PROPERTY_DESCRIPTION.has(l.from))));
+    expect(viaProperty.filter((table) => !PROPERTY_DESCRIPTION.has(table)).sort()).toEqual(Object.keys(PROPERTY_NOT_KEPT).sort());
+    // Celles-là portent l'adresse exacte ou un texte libre que rien ne contrôle : la colonne qui les écarte existe.
+    for (const [table, column] of Object.entries(PROPERTY_NOT_KEPT)) {
+      expect((await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name), table).toContain(column);
+    }
+    // Et aucune table gardée n'inscrit une de ces colonnes de texte libre non contrôlé.
+    for (const table of PROPERTY_DESCRIPTION) {
+      const names = (await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name);
+      // Un texte gardé n'est que celui dont chaque phrase est sourcée par la fiche : l'annonce (P03, R47) et le texte d'un
+      // portail (R476). Une traduction corrigée par l'agent n'en est pas : elle n'est pas gardée.
+      const sourced = table === 'listing_drafts' || table === 'diffusion_portal_texts' ? ['body'] : [];
+      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number', 'value', 'export_reference', 'body'].includes(c) && !sourced.includes(c)), table).toEqual([]);
+    }
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
