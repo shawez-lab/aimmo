@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyMigrations, copyKeyFromSecret, fromSyncSqlite, recordErasure, replayErasures, type PersonEraser, type SqlDatabase } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
-import { CopyStoreError, r2CopyStore } from '../outils/r2-copies.ts';
+import { completeListPage, CopyStoreError, r2CopyStore } from '../outils/r2-copies.ts';
 
 // Tout est inventé : le compte, les clés, les réponses du compartiment et les personnes.
 const NOW = new Date('2027-03-10T12:00:00.000Z');
@@ -61,6 +61,23 @@ describe('AU021 · le compartiment des copies tient aussi le registre des efface
     expect(String(error)).not.toContain('autre-personne');
     const down = r2CopyStore({ accountId: 'compte', bucket: 'aimmo-copies', accessKeyId: 'id', secretAccessKey: 's', now: () => NOW, fetch: (async () => { throw new TypeError('coupure'); }) as typeof fetch });
     await expect(down.list('effacements/')).rejects.toBeInstanceOf(CopyStoreError);
+  });
+
+  it('[R231] une réponse 200 coupée ou mal formée ne passe jamais pour un registre vide', async () => {
+    const bad = [
+      '<ListBucketResult><Contents><Key>effacements/a</Key>',
+      '<ListBucketResult><Contents><Key>effacements/a</Key></Contents>',
+      '<ListBucketResult><Contents><Key>effacements/a</Key></Contents></ListBucketResult>',
+      '<ListBucketResult><Contents><Size>1</Size></Contents><IsTruncated>false</IsTruncated></ListBucketResult>',
+      '<Error><Code>InternalError</Code></Error>',
+      '',
+    ];
+    for (const xml of bad) {
+      expect(completeListPage(xml)).toBe(false);
+      const store = r2CopyStore({ accountId: 'compte', bucket: 'aimmo-copies', accessKeyId: 'id', secretAccessKey: 's', now: () => NOW, fetch: (async () => new Response(xml)) as typeof fetch });
+      await expect(store.list('effacements/')).rejects.toBeInstanceOf(CopyStoreError);
+    }
+    expect(completeListPage('<?xml version="1.0" encoding="UTF-8"?>\n<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated></ListBucketResult>')).toBe(true);
   });
 });
 

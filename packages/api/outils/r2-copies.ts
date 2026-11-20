@@ -110,7 +110,10 @@ export function r2CopyStore(config: R2CopiesConfig): ErasureLedgerStore {
           throw new CopyStoreError('Stockage des copies injoignable.');
         }
         if (!response.ok) throw new CopyStoreError(`Stockage des copies : liste refusée (${response.status}).`);
-        const { keys: found, next } = parseListPage(await response.text());
+        const xml = await response.text();
+        // Une réponse coupée ou mal formée ne passe jamais pour un registre complet, même vide [R231].
+        if (!completeListPage(xml)) throw new CopyStoreError('Stockage des copies : liste incomplète.');
+        const { keys: found, next } = parseListPage(xml);
         // Seules les clés du préfixe demandé : une réponse qui en mêlerait d'autres ne passe pas pour le registre.
         if (found.some((k) => !k.startsWith(prefix))) throw new CopyStoreError('Stockage des copies : liste hors du préfixe.');
         keys.push(...found);
@@ -149,6 +152,21 @@ const unescapeXml = (text: string): string =>
   text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (_, e: string) =>
     e.startsWith('#x') ? String.fromCodePoint(parseInt(e.slice(2), 16)) : e.startsWith('#') ? String.fromCodePoint(Number(e.slice(1))) : XML_ENTITIES[e]!,
   );
+
+/**
+ * Une page de `ListObjectsV2` entière : un seul document `ListBucketResult` fermé, son état de pagination dit, et chaque
+ * `Contents` ouvert, fermé et porteur d'une clé. Le registre des effacements ne se lit pas à moitié (AU021).
+ */
+export function completeListPage(xml: string): boolean {
+  const body = xml.replace(/^\s*<\?xml[^>]*\?>/, '').trim();
+  if (!/^<ListBucketResult[\s>]/.test(body) || !body.endsWith('</ListBucketResult>')) return false;
+  if ((body.match(/<ListBucketResult[\s>]/g) ?? []).length !== 1) return false;
+  if ((body.match(/<IsTruncated>\s*(true|false)\s*<\/IsTruncated>/g) ?? []).length !== 1) return false;
+  const opened = (body.match(/<Contents>/g) ?? []).length;
+  const closed = (body.match(/<\/Contents>/g) ?? []).length;
+  const keyed = (body.match(/<Contents>[\s\S]*?<Key>[\s\S]*?<\/Key>[\s\S]*?<\/Contents>/g) ?? []).length;
+  return opened === closed && opened === keyed;
+}
 
 /** Une page de `ListObjectsV2` : les clés, et le jeton de la suivante si la liste est coupée. */
 export function parseListPage(xml: string): { keys: string[]; next: string | null } {
