@@ -141,7 +141,8 @@ export class ConversationRelais {
     }
     if (reply.result?.status === 'sent') return { status: 'replied', conversationId, reply };
     // Une réponse qui n'a pas pu partir n'est jamais un silence : l'agent est prévenu [R12].
-    if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22') {
+    // La demande d'un portail sans réponse partie (aucune coordonnée lisible, refus) revient toujours à l'agent [R669].
+    if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22' || row.kind === 'portal_email') {
       await this.alert(row.person_id, conversationId, 'needs_reply', row.received_at);
     }
     return { status: 'not_sent', conversationId, reply };
