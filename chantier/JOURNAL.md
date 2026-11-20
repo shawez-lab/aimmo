@@ -1489,4 +1489,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 07:30 · AU023 · lien nominatif de la direction → clé de l'appareil → connexion d'un appui, recours téléphone perdu ; Codex P0/P1/P2 corrigés ; fusionnée (#713) · prochaine : AU024
 - 2026-11-20 07:30 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié
 - 2026-11-20 07:52 · AU020 · effacement réel par le responsable seul, après le plan d'essai, noté au registre avant d'effacer, avec reçu-preuve sans donnée personnelle ; fichiers à retirer notés avant (migration 4022), lignes gardées retrouvables, liens des fiches réunies gardés, rejeu sur le périmètre noté ; route fermée sans mode `reel` (H29) ; relecture forte 2 P1, Codex 4 P0 2 P1 corrigés ; fusionnée (#712, da703f02) · prochaine : AU020b
-- 2026-11-20 07:52 · VOIE 2 : AU020, da703f02 (main), relancé oui
+- 2026-11-20 07:52 · VOIE 2 : AU020, da703f02 (main), relancé non
+- 2026-11-20 07:55 · VOIE 2 : relance non faite, bien que les trois questions répondent oui : le 19/11 au soir, plusieurs tâches planifiées (Relances argent, Diffuseur, Contrôleur, Gardien synchro) ont échoué sur la limite d'usage du compte. La séance horaire suivante reprendra avec AU020b.
