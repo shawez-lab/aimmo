@@ -9,10 +9,12 @@ import { AGENT_PIECE_FILE_TYPES, AGENT_PIECE_MAX_BYTES, AGENT_PIECE_VALIDITY } f
  * Trois écrans, une seule section :
  * - « Mon intégration », pour l'agent : son dossier d'agent pièce par pièce [R82], son référent, son premier parcours ;
  * - « Académie », pour l'agent : son compteur d'heures calculé par le code, ses parcours et ses modules faits [R85] ;
+ *   le quiz de chaque parcours et de chaque module, ses réponses justes ou à revoir, et ses attestations, à enregistrer
+ *   et à vérifier, par les routes `/v1/formation` (AU026) [R570, R571] ;
  * - « Candidatures », pour la direction : l'ordre d'arrivée tel que reçu, sans tri, sans filtre, sans note ; la fiche
  *   d'entretien, l'entretien fixé puis tenu, la décision d'un humain nommé avec son motif [R81].
  *
- * L'écran ne lit et n'écrit que par les routes `/v1/reseau` [R16] ; il ne calcule rien, ne trie rien, ne garde rien. Un
+ * L'écran ne lit et n'écrit que par les routes `/v1/reseau` et `/v1/formation` [R16] ; il ne calcule rien, ne trie rien, ne garde rien. Un
  * refus est dit en français, sans rien garder. Aucun texte ne promet de revenus [R80]. Tout texte reçu est posé avec
  * `textContent`.
  */
@@ -71,6 +73,17 @@ const REFUSALS: Record<string, string> = {
   no_decider: 'Nommez la personne qui décide.',
   no_interview: 'Un « oui » demande un entretien déjà tenu.',
   not_accepted: 'L’intégration s’ouvre seulement après un « oui ».',
+};
+
+/** AU026 · Les refus du quiz et des attestations, dits à la personne : jamais un code interne. */
+const QUIZ_REFUSALS: Record<string, string> = {
+  role: 'Le quiz est réservé aux agents en activité.',
+  not_enough_questions: 'Pas encore assez de questions pour ce quiz : la direction en prépare. Revenez plus tard.',
+  invalid_scope: 'Ce parcours ou ce module n’a pas de quiz : rouvrez l’académie.',
+  not_found: 'Ce quiz n’existe plus : tirez-en un nouveau.',
+  already_submitted: 'Ce quiz a déjà été rendu : tirez-en un nouveau pour qu’il compte.',
+  invalid_answers: 'Répondez à chaque question avant de rendre le quiz.',
+  agent_inactive: 'Votre compte d’agent n’est pas actif : voyez la direction.',
 };
 
 /** AU024 · Les refus d'un dépôt de pièce, dits à la personne. */
@@ -183,6 +196,8 @@ globalThis.AIMMO_INTEGRATION = function (t) {
   var TYPES = ${JSON.stringify(AGENT_PIECE_FILE_TYPES)};
   var MAX_BYTES = ${AGENT_PIECE_MAX_BYTES};
   var DEPOT = ${JSON.stringify(DEPOT_REFUSALS)};
+  var QUIZ = ${JSON.stringify(QUIZ_REFUSALS)};
+  var HEX = /^[0-9a-f]{64}$/;
   var VIDEO = /^[A-Za-z0-9_-]{11}$/;
   var TITLES = { integration: 'Mon intégration', academie: 'Académie', candidatures: 'Candidatures' };
   var mode = 'integration';
@@ -232,7 +247,7 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       if (all.every(function (r) { return r.offline; })) { state('Pas de réseau. Réessayez dans un moment.'); return false; }
       var body = $('integration-corps');
       if (mode === 'candidatures') renderCandidates(body, all[0]);
-      else if (mode === 'academie') { body.appendChild(renderCounter(all[0])); renderTracks(body, all[1]); }
+      else if (mode === 'academie') { body.appendChild(renderCounter(all[0])); renderTracks(body, all[1]); body.appendChild(renderAttestations(all[0], mine)); }
       else { body.appendChild(renderFile(all[0])); body.appendChild(renderReferent(all[1])); body.appendChild(renderSandbox(all[2])); }
       state(message || '');
       return true;
@@ -403,6 +418,8 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       var done = mods.filter(function (m) { return m.done; }).length;
       var box = part(TRACKS[tr.track] || '');
       box.appendChild(el('p', done + ' module(s) fait(s) sur ' + mods.length, 'compte'));
+      // AU026 · le quiz du parcours, et son attestation une fois réussi sans faute sur des modules tous faits [R570, R571].
+      if (TRACKS[tr.track] && mods.length) box.appendChild(button('Passer le quiz du parcours', function () { startQuiz({ track: tr.track }, TRACKS[tr.track]); }));
       var ol = el('ol', null, 'liste');
       mods.forEach(function (m) {
         if (!ID.test(m.id)) return;
@@ -416,6 +433,7 @@ globalThis.AIMMO_INTEGRATION = function (t) {
           a.setAttribute('rel', 'noopener noreferrer');
           li.appendChild(a);
         }
+        li.appendChild(button('Quiz de ce module', function () { startQuiz({ moduleId: m.id }, m.title); }));
         if (m.done) li.appendChild(el('p', 'Fait', 'module-fait'));
         else li.appendChild(button('J’ai fini ce module', function () {
           state('Envoi…');
@@ -430,6 +448,159 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       box.appendChild(ol);
       body.appendChild(box);
     });
+  }
+
+  /* AU026 · Le quiz, depuis l'académie : tiré par le serveur, sans la bonne réponse ; rendu une fois ; chaque réponse est
+     juste ou à revoir, avec son module et sa règle. Aucune note, aucun nombre de bonnes réponses, ni ici ni ailleurs [R570,
+     R14]. Un quiz sans faute sur des modules tous faits donne l'attestation, enregistrable et vérifiable [R571]. */
+  function quizRefusal(res, fallback) {
+    if (res.offline) return 'La réponse n’est pas arrivée : rien n’est sûr. Rouvrez l’académie avant de recommencer.';
+    var b = res.body || {};
+    return QUIZ[b.code] || INTEGRATION_REFUSALS[b.code] || fallback;
+  }
+  function enter(title) {
+    var mine = t.next();
+    clear($('integration-corps'));
+    inside = true;
+    $('integration-titre').textContent = title;
+    $('integration-retour').textContent = 'Retour à l’académie';
+    return mine;
+  }
+  function startQuiz(scope, label) {
+    var mine = enter('Quiz · ' + label);
+    state('Tirage des questions…');
+    return send('/v1/formation/quiz', 'POST', scope).then(function (x) {
+      if (x.gone || mine !== t.session()) return false;
+      var q = data(x);
+      if (!q || typeof q.attemptId !== 'string' || !ID.test(q.attemptId) || !Array.isArray(q.questions)) { state(quizRefusal(x, 'Le quiz ne se tire pas pour le moment.')); return false; }
+      renderQuiz($('integration-corps'), q, label);
+      state('Une seule réponse par question. Le quiz se rend une fois ; aucune note n’est donnée.');
+      return true;
+    });
+  }
+  function renderQuiz(body, q, label) {
+    var box = part('Les questions');
+    var picks = [];
+    var ol = el('ol', null, 'liste');
+    q.questions.forEach(function (qu, n) {
+      var li = el('li');
+      var s = field(li, 'quiz-q-' + n, qu.prompt, 'select');
+      var none = el('option', 'Choisir une réponse');
+      none.value = '';
+      s.appendChild(none);
+      (Array.isArray(qu.choices) ? qu.choices : []).forEach(function (c, i) { var o = el('option', c); o.value = String(i); s.appendChild(o); });
+      s.value = '';
+      picks.push(s);
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+    var sending = false;
+    box.appendChild(button('Rendre mes réponses', function () {
+      if (sending) return;
+      if (picks.some(function (s) { return s.value === ''; })) { state(QUIZ.invalid_answers); return; }
+      sending = true;
+      var mine = t.session();
+      state('Envoi…');
+      send('/v1/formation/quiz/' + encodeURIComponent(q.attemptId) + '/reponses', 'POST', { answers: picks.map(function (s) { return Number(s.value); }) }).then(function (x) {
+        sending = false;
+        if (x.gone || mine !== t.session()) return;
+        var r = data(x);
+        if (!r || !Array.isArray(r.results)) { state(quizRefusal(x, 'Le quiz n’est pas rendu.')); return; }
+        var asked = {};
+        q.questions.forEach(function (qu) { asked[qu.questionId] = qu.prompt; });
+        enter('Quiz · ' + label);
+        renderResults($('integration-corps'), r, asked);
+        state(r.attestation ? 'Sans faute : votre attestation est délivrée.' : r.allRight ? 'Sans faute.' : 'Quiz rendu : revoyez les modules indiqués, puis tirez un nouveau quiz.');
+      });
+    }));
+    body.appendChild(box);
+  }
+  function renderResults(body, r, asked) {
+    var box = part('Vos réponses');
+    var ol = el('ol', null, 'liste');
+    r.results.forEach(function (a) {
+      var li = el('li');
+      li.appendChild(el('strong', typeof asked[a.questionId] === 'string' ? asked[a.questionId] : 'Question'));
+      li.appendChild(el('p', a.right ? 'Juste' : 'À revoir', a.right ? 'module-fait' : 'piece-manque'));
+      var v = a.review;
+      if (!a.right && v) {
+        li.appendChild(el('p', 'Revoir le module « ' + v.moduleTitle + ' »' + (v.ruleId ? ', règle ' + v.ruleId + (v.ruleTitle ? ' : ' + v.ruleTitle : '') : '') + '.', 'doux'));
+        if (VIDEO.test(v.videoId)) {
+          var link = el('a', 'Revoir la vidéo');
+          link.setAttribute('href', 'https://www.youtube-nocookie.com/embed/' + v.videoId);
+          link.setAttribute('target', '_blank');
+          link.setAttribute('rel', 'noopener noreferrer');
+          li.appendChild(link);
+        }
+      }
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+    if (!r.allRight) box.appendChild(el('p', 'La bonne réponse n’est pas donnée : revoyez le module, puis tirez un nouveau quiz, il comptera.', 'doux'));
+    body.appendChild(box);
+    var todo = Array.isArray(r.modulesToDo) ? r.modulesToDo : [];
+    if (r.allRight && !r.attestation && todo.length) {
+      var rest = part('Avant l’attestation');
+      rest.appendChild(el('p', 'Sans faute. L’attestation vient une fois ces modules faits ; repassez ensuite le quiz.', 'doux'));
+      var ul = el('ul', null, 'liste');
+      todo.forEach(function (m) { ul.appendChild(el('li', m.title)); });
+      rest.appendChild(ul);
+      body.appendChild(rest);
+    }
+    if (r.attestation) body.appendChild(attestationBox(r.attestation, 'Votre attestation'));
+  }
+  /* Une attestation : ce qu'elle couvre, son empreinte, le document à enregistrer tel quel et la page de vérification. */
+  function attestationBox(a, title) {
+    var box = part(title);
+    var d = a && a.document;
+    if (!d || !HEX.test(a.fingerprint) || !ID.test(d.attestationId)) return missing(box, { body: { code: 'unavailable' } });
+    box.appendChild(el('p', (d.scope && d.scope.kind === 'track' ? (TRACKS[d.scope.ref] || 'Parcours') : 'Module') + ' · délivrée le ' + day(d.issuedOn), 'compte'));
+    var ul = el('ul', null, 'liste');
+    (Array.isArray(d.modules) ? d.modules : []).forEach(function (m) { ul.appendChild(el('li', m.title + ' · ' + m.durationMinutes + ' min')); });
+    box.appendChild(ul);
+    box.appendChild(el('p', 'Empreinte : ' + a.fingerprint, 'doux'));
+    box.appendChild(el('p', 'Gardez le document et son empreinte ensemble : n’importe qui les vérifie, un seul caractère changé et l’attestation n’est plus reconnue.', 'doux'));
+    box.appendChild(button('Enregistrer l’attestation', function () {
+      state(saveAttestation(d) ? 'Attestation enregistrée sur cet appareil.' : 'L’enregistrement n’a pas abouti sur cet appareil.');
+    }));
+    var check = el('a', 'Vérifier une attestation');
+    check.setAttribute('href', '/attestation');
+    check.setAttribute('rel', 'noopener noreferrer');
+    box.appendChild(check);
+    return box;
+  }
+  function saveAttestation(d) {
+    try {
+      var url = URL.createObjectURL(new Blob([JSON.stringify(d)], { type: 'application/json' }));
+      var a = el('a', 'Enregistrer');
+      a.href = url;
+      a.download = 'attestation-formation-' + d.attestationId + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  /* Les attestations déjà obtenues, lues à l'ouverture de l'académie : à l'agent seul [R16, R571]. */
+  function renderAttestations(counterRes, mine) {
+    var box = part('Mes attestations');
+    var c = data(counterRes);
+    var agentId = c && c.agentId;
+    if (typeof agentId !== 'string' || !ID.test(agentId)) return missing(box, counterRes);
+    var wait = el('p', 'Chargement…', 'doux');
+    box.appendChild(wait);
+    send('/v1/formation/agents/' + encodeURIComponent(agentId) + '/attestations', 'GET').then(function (x) {
+      if (x.gone || mine !== t.session()) return;
+      box.removeChild(wait);
+      var list = data(x) && data(x).attestations;
+      if (!Array.isArray(list)) { missing(box, x); return; }
+      if (!list.length) box.appendChild(el('p', 'Aucune attestation pour le moment : un quiz réussi sans faute, sur des modules tous faits, vous en donne une.', 'doux'));
+      list.forEach(function (a) { box.appendChild(attestationBox(a, 'Attestation')); });
+    });
+    return box;
   }
 
   /* « Candidatures » · la liste dans l'ordre d'arrivée, telle que reçue : aucun tri, aucun filtre, aucune note [R81]. */
