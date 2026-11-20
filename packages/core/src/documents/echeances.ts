@@ -86,7 +86,8 @@ export class EcheancesMandats {
 
         // La période exclusive ne compte que si le mandat dure au-delà ; un mandat plus court n'y arrive jamais.
         // La durée en vigueur, avenants signés compris (D07).
-        const terms = await mandateTerms(this.db, row.mandate_id);
+        // Celles de ce jour : un avenant dont la date d'effet n'est pas venue ne déplace pas encore l'échéance (AU057).
+        const terms = await mandateTerms(this.db, row.mandate_id, this.now());
         const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
         const end = duration !== null ? mandateEndDay(signedAt, duration) : null;
         if (end !== null) due.push({ kind: 'fin_mandat', day: end, lead: this.settings.endLeadDays });
@@ -135,7 +136,7 @@ export class EcheancesMandats {
     const current: MandateTask[] = [];
     for (const r of rows) {
       const signed = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ?', [r.mandate_id]);
-      const terms = await mandateTerms(this.db, r.mandate_id);
+      const terms = await mandateTerms(this.db, r.mandate_id, this.now());
       if (signed && terms && terms.durationMonths !== null) {
         const end = mandateEndDay(new Date(signed.signed_at), terms.durationMonths);
         if (r.kind === 'fin_mandat' && r.due_day !== end) continue;

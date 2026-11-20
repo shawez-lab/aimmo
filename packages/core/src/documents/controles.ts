@@ -27,7 +27,8 @@ import { Identification } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
-import { mandateExpired } from './conditions.ts';
+import { mandateEndDay, mandateExpired, mandateTerms } from './conditions.ts';
+import { localTime } from '../envoi/horaires.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
 import { MANDATE_DESIGNATION_FIELDS } from './designation.ts';
@@ -202,7 +203,7 @@ export class ControlesSignature {
     return Array.isArray(fields) && MANDATE_DESIGNATION_FIELDS.every((f) => fields.includes(f));
   }
 
-  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
+  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date; signedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
       'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
@@ -235,11 +236,17 @@ export class ControlesSignature {
     lines.push({ check: 'champs', ok: complete, code: complete ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
-    lines.push(await this.fees(doc.network_id, doc.facts, amendment));
+    lines.push(await this.fees(doc.network_id, doc.facts, amendment, options.signedAt ?? options.identitySignedAt, doc.id));
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
+    // Une date d'effet se revoit à la signature : jamais après la fin du mandat telle qu'elle est ce jour-là, avenants
+    // signés depuis la préparation compris (AU057) [R42].
+    if (amendment) {
+      const end = await this.effectAfterEnd(doc.id, doc.facts, options.signedAt ?? options.identitySignedAt);
+      if (end) lines.push(end);
+    }
     // Un mandat préparé par questionnaire (HX33) : un écart de prix, un avis ou un prix absents doivent avoir été
     // montrés au vendeur par l'agent du bien avant toute signature [R441].
     // Une base d'avant la migration 2100 n'a aucun mandat par questionnaire.
@@ -269,6 +276,36 @@ export class ControlesSignature {
     return { ok: true, value: result };
   }
 
+  /**
+   * Aucun avenant différé ne prend effet après la fin du mandat : ni celui-ci, ni un avenant déjà signé dont la date
+   * d'effet viendrait après une fin avancée par celui-ci, rejoué à sa date de signature (AU057) [R42].
+   */
+  private async effectAfterEnd(documentId: string, rawFacts: string | null, signedAt?: Date): Promise<CheckLine | null> {
+    let facts: DocumentFacts | null = null;
+    try {
+      facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
+    } catch {
+      facts = null;
+    }
+    if (!facts?.mandateId) return null;
+    const base = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [facts.mandateId]);
+    if (!base) return null;
+    const candidate = { documentId, signedAt: (signedAt ?? this.now()).toISOString(), facts };
+    const all = await mandateTerms(this.db, facts.mandateId, undefined, candidate);
+    if (!all) return null;
+    const deferred = all.amendments.filter((a) => a.effectiveOn > localTime(new Date(a.signedAt), 'Europe/Paris').date);
+    if (deferred.length === 0) return null;
+    for (const a of deferred) {
+      // Les conditions de la veille de son effet : lui ne compte pas encore.
+      const eve = new Date(`${a.effectiveOn}T12:00:00.000Z`);
+      eve.setUTCDate(eve.getUTCDate() - 1);
+      const before = await mandateTerms(this.db, facts.mandateId, eve, candidate);
+      if (!before || before.durationMonths === null) continue;
+      if (a.effectiveOn >= mandateEndDay(new Date(base.signed_at), before.durationMonths)) return { check: 'mandat', ok: false, code: 'effect_after_end' };
+    }
+    return { check: 'mandat', ok: true, code: 'effect_before_end' };
+  }
+
   private async linkedMandate(networkId: string, mandateId: string | null): Promise<CheckLine> {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'mandat', ok, code });
     if (!mandateId) return line(false, 'no_mandate');
@@ -281,7 +318,7 @@ export class ControlesSignature {
     return line(true, 'mandate_in_force');
   }
 
-  private async fees(networkId: string, rawFacts: string | null, amendment = false): Promise<CheckLine> {
+  private async fees(networkId: string, rawFacts: string | null, amendment = false, signedAt?: Date, documentId = ''): Promise<CheckLine> {
     let facts: DocumentFacts | null = null;
     try {
       facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
@@ -289,9 +326,39 @@ export class ControlesSignature {
       facts = null;
     }
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
-    // Un avenant sans nouveau prix ne change pas les honoraires ; avec un nouveau prix, ils doivent rester au barème.
-    if (amendment && facts && facts.priceEur === null) return line(true, 'fees_unchanged');
-    if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
+    // Un avenant qui ne touche ni au prix ni aux honoraires ne les change pas ; sinon, les honoraires en vigueur après lui
+    // restent au barème, sur le prix en vigueur après lui (AU057).
+    if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true && facts.feeChargeChanged !== true) return line(true, 'fees_unchanged');
+    // Ce que l'avenant ne change pas se lit au contrôle, dans les conditions en vigueur, avenants signés depuis sa
+    // préparation compris : jamais une copie prise à la préparation, qui a pu changer depuis. Et chaque jour compte, du
+    // jour où il prend effet à chaque date d'effet d'un avenant déjà signé qui viendra après lui (AU057).
+    if (amendment && facts) {
+      if (!facts.mandateId) return line(false, 'fee_or_price_unknown');
+      // L'avenant est rejoué à sa date de signature parmi les avenants signés, comme les conditions le seront : chaque
+      // jour compte, du jour où il prend effet à chaque date d'effet qui viendra après lui (signature sur papier
+      // enregistrée plus tard comprise).
+      const candidate = { documentId, signedAt: (signedAt ?? this.now()).toISOString(), facts };
+      const all = await mandateTerms(this.db, facts.mandateId, undefined, candidate);
+      const own = all?.amendments.find((a) => a.documentId === documentId);
+      if (!all || !own) return line(false, 'fee_or_price_unknown');
+      const days = [own.effectiveOn, ...new Set(all.amendments.map((a) => a.effectiveOn).filter((d) => d > own.effectiveOn))].sort();
+      let last: CheckLine = line(false, 'fee_or_price_unknown');
+      for (const day of days) {
+        const inForce = await mandateTerms(this.db, facts.mandateId, new Date(`${day}T12:00:00.000Z`), candidate);
+        if (!inForce) return line(false, 'fee_or_price_unknown');
+        last = await this.scheduleLine(networkId, { priceEur: inForce.priceEur, feeEur: inForce.feeEur, feeCharge: inForce.feeCharge });
+        if (!last.ok) return last;
+      }
+      return last;
+    }
+    if (!facts) return line(false, 'fee_or_price_unknown');
+    return this.scheduleLine(networkId, facts);
+  }
+
+  /** Des honoraires au barème du réseau, sur un prix, avec qui les paie [R41]. */
+  private async scheduleLine(networkId: string, facts: Pick<DocumentFacts, 'priceEur' | 'feeEur' | 'feeCharge'>): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
+    if (facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
     const schedule = await this.db.first<{ id: string; max_rate_bp: number; min_eur: number }>('SELECT id, max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     if (!schedule) return line(false, 'no_fee_schedule');

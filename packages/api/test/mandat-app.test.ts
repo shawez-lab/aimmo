@@ -613,6 +613,26 @@ describe('D12 · écran « Mandat »', () => {
       expect(t.body().textContent).toContain('Avenant, préparé le');
     });
 
+    it('AU057 · les honoraires, leur charge, le type du mandat et la date d’effet partent avec l’avenant', async () => {
+      const t = await opened({ 'POST /v1/documents': ok({ id: 'd2' }) });
+      t.input('avenant-honoraires').value = '8000';
+      t.input('avenant-charge').value = 'acquereur';
+      t.input('avenant-type').value = 'exclusif';
+      t.input('avenant-effet').value = '2027-04-01';
+      await t.press(GO);
+      expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/documents', body: { kind: 'avenant_mandat', personId: 'p1', propertyId: 'b1', mandateId: 'm1', inputs: { 'avenant.honoraires': 8000, 'avenant.honoraires_charge': 'acquereur', 'avenant.type': 'exclusif', 'avenant.date_effet': '2027-04-01' } } }]);
+      // Une date d'effet seule ne change rien : rien ne part.
+      const alone = await opened();
+      alone.input('avenant-effet').value = '2027-04-01';
+      await alone.press(GO);
+      expect(alone.state()).toContain('Dites ce qui change');
+      expect(alone.posts()).toEqual([]);
+      const refused = await opened({ 'POST /v1/documents': no(400, 'no_evidence') });
+      refused.input('avenant-type').value = 'exclusif';
+      await refused.press(GO);
+      expect(refused.state()).toContain('clause d’exclusivité');
+    });
+
     it('plusieurs propriétaires : le mandant se choisit ; sans propriétaire, rien ne se prépare', async () => {
       const t = await opened({ 'GET /v1/biens/b1/mandat': read('allowed', [SIGNED], [OWNER, { personId: 'p2', firstName: 'Noé', lastName: 'Exemple' }]) });
       t.input('avenant-prix').value = '190000';

@@ -18,7 +18,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { localTime } from '../envoi/horaires.ts';
-import { mandateExpired } from './conditions.ts';
+import { mandateEndDay, mandateExpired, mandateTerms } from './conditions.ts';
 import { documentMandants } from './controles.ts';
 import { MANDATE_DESIGNATION_FIELDS, formatAddress, formatParcels, latestDesignation, latestDomicile } from './designation.ts';
 
@@ -66,7 +66,17 @@ export const TEMPLATE_FIELDS: Readonly<Record<string, { source: FieldSource; lab
   'avenant.objet': { source: 'base', label: 'objet de l’avenant' },
   'avenant.prix': { source: 'saisie', label: 'nouveau prix' },
   'avenant.duree_mois': { source: 'saisie', label: 'nouvelle durée du mandat' },
+  // AU057 · un avenant change aussi les honoraires, leur charge et le type du mandat, à une date d'effet.
+  'avenant.honoraires': { source: 'saisie', label: 'nouveaux honoraires' },
+  'avenant.honoraires_charge': { source: 'saisie', label: 'nouvelle charge des honoraires' },
+  'avenant.type': { source: 'saisie', label: 'nouveau type de mandat' },
+  'avenant.date_effet': { source: 'saisie', label: 'date d’effet de l’avenant' },
 });
+
+/** Les saisies d'un avenant (AU057) : chacune a sa place, ou passe par l'objet de l'avenant. */
+export const AMENDMENT_INPUTS = ['avenant.prix', 'avenant.duree_mois', 'avenant.honoraires', 'avenant.honoraires_charge', 'avenant.type', 'avenant.date_effet'] as const;
+/** Le type d'un mandat de vente, que l'avenant peut changer (AU057). */
+export type MandateType = 'simple' | 'exclusif';
 
 export interface TemplateInfo {
   id: string;
@@ -104,6 +114,18 @@ export interface DocumentFacts {
   durationMonths: number | null;
   /** Pour un avenant : le mandat modifié. Ses prix et durée sont alors les nouveaux, s'ils changent. */
   mandateId?: string | null;
+  /**
+   * Pour un avenant (AU057) : vrai s'il change le montant des honoraires (`feeEur` est alors le nouveau), ou leur charge
+   * (`feeCharge` est alors la nouvelle). Sinon, la valeur gardée n'est qu'une copie de la préparation, jamais appliquée.
+   */
+  feeChanged?: boolean;
+  feeChargeChanged?: boolean;
+  /** Pour un avenant (AU057) : le nouveau type du mandat, s'il change. */
+  mandateType?: MandateType;
+  /** Pour un avenant (AU057) : le jour, `AAAA-MM-JJ` à Paris, où il prend effet ; absent, le jour de sa signature. */
+  effectiveOn?: string;
+  /** Pour un avenant (AU057) : le prix en vigueur à sa préparation, pour contrôler de nouveaux honoraires au barème. */
+  priceInForceEur?: number | null;
 }
 
 /**
@@ -117,7 +139,17 @@ export interface GenerateRequest {
   personId: string;
   propertyId: string;
   /** Les champs saisis par l'agent : honoraires et durée ; pour un avenant, nouveau prix et nouvelle durée. */
-  inputs?: { 'honoraires.montant'?: unknown; 'honoraires.charge'?: unknown; 'mandat.duree_mois'?: unknown; 'avenant.prix'?: unknown; 'avenant.duree_mois'?: unknown };
+  inputs?: {
+    'honoraires.montant'?: unknown;
+    'honoraires.charge'?: unknown;
+    'mandat.duree_mois'?: unknown;
+    'avenant.prix'?: unknown;
+    'avenant.duree_mois'?: unknown;
+    'avenant.honoraires'?: unknown;
+    'avenant.honoraires_charge'?: unknown;
+    'avenant.type'?: unknown;
+    'avenant.date_effet'?: unknown;
+  };
   /** Pour un avenant : le mandat signé et numéroté qu'il modifie. */
   mandateId?: string;
   /**
@@ -417,14 +449,35 @@ export class Modeles {
     };
     // Les faits utiles aux contrôles avant signature (D03), tels qu'ils étaient à la génération.
     const raw = request.inputs ?? {};
+    // Un avenant part des conditions en vigueur, avenants signés compris (AU057).
+    const inForce = linked ? await mandateTerms(this.db, linked.id) : null;
+    const newFee = typeof raw['avenant.honoraires'] === 'number' ? raw['avenant.honoraires'] : null;
+    const newCharge = raw['avenant.honoraires_charge'] === 'vendeur' || raw['avenant.honoraires_charge'] === 'acquereur' ? raw['avenant.honoraires_charge'] : null;
+    const newType = raw['avenant.type'] === 'simple' || raw['avenant.type'] === 'exclusif' ? raw['avenant.type'] : null;
+    const effectiveOn = typeof raw['avenant.date_effet'] === 'string' ? raw['avenant.date_effet'] : null;
+    if (linked) {
+      // Une date d'effet se donne du jour même à un an ; un type de mandat qui ne change pas n'est pas un avenant.
+      if (effectiveOn !== null && (effectiveOn < day || effectiveOn > mandateEndDay(this.now(), 12))) return { ok: false, rule: 'R40', code: 'bad_input' };
+      // Ni après la fin du mandat en vigueur : un mandat échu ne reçoit plus d'avenant [R42].
+      const signedRow = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [linked.id]);
+      if (effectiveOn !== null && signedRow && typeof inForce?.durationMonths === 'number' && effectiveOn >= mandateEndDay(new Date(signedRow.signed_at), inForce.durationMonths)) return { ok: false, rule: 'R40', code: 'bad_input' };
+      if (newType !== null && newType === inForce?.mandateType) return { ok: false, rule: 'R40', code: 'bad_input' };
+      // Devenir exclusif : la clause d'exclusivité est mise en évidence sur l'avenant, comme sur un mandat exclusif.
+      if (newType === 'exclusif' && !template.body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
+    }
     const facts: DocumentFacts = linked
       ? {
-          // Un avenant : les honoraires du mandat, et les nouveaux prix et durée s'ils changent.
+          // Un avenant : les nouvelles conditions qu'il donne, et les honoraires en vigueur s'il n'y touche pas (AU057).
           priceEur: typeof raw['avenant.prix'] === 'number' ? raw['avenant.prix'] : null,
-          feeEur: linked.facts?.feeEur ?? null,
-          feeCharge: linked.facts?.feeCharge ?? null,
+          feeEur: newFee ?? inForce?.feeEur ?? linked.facts?.feeEur ?? null,
+          feeCharge: newCharge ?? inForce?.feeCharge ?? linked.facts?.feeCharge ?? null,
           durationMonths: typeof raw['avenant.duree_mois'] === 'number' ? raw['avenant.duree_mois'] : null,
           mandateId: linked.id,
+          feeChanged: newFee !== null,
+          feeChargeChanged: newCharge !== null,
+          ...(newType !== null ? { mandateType: newType } : {}),
+          ...(effectiveOn !== null ? { effectiveOn } : {}),
+          priceInForceEur: inForce?.priceEur ?? linked.facts?.priceEur ?? null,
         }
       : {
           priceEur: property.price_eur ?? null,
@@ -437,10 +490,10 @@ export class Modeles {
     if (coMandants.length > 0 && !fields.includes('mandant.nom')) return { ok: false, rule: 'R40', code: 'bad_co_mandants' };
     // Toute saisie doit figurer sur le document signé ; pour un avenant, l'objet écrit tous les changements.
     const supplied = Object.entries(request.inputs ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k]) => k);
-    const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (k === 'avenant.prix' || k === 'avenant.duree_mois'));
+    const rendered = (k: string): boolean => fields.includes(k) || (template.kind === 'avenant_mandat' && fields.includes('avenant.objet') && (AMENDMENT_INPUTS as readonly string[]).includes(k));
     if (supplied.some((k) => !rendered(k))) return { ok: false, rule: 'R40', code: 'bad_input' };
     if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
-    // Un avenant ne change que le prix et la durée par ses propres champs : les saisies du mandat n'y ont pas cours.
+    // Un avenant ne change les conditions que par ses propres champs : les saisies du mandat n'y ont pas cours.
     if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Une annexe (le questionnaire de HX33) s'ajoute au document même : ce qui se signe est ce qu'elle montre, et une
     // annexe d'essai ou incomplète rend le document entier d'essai ou incomplet [R40, R442].
@@ -556,19 +609,48 @@ export class Modeles {
 }
 
 /** Les saisies de l'agent, vérifiées : montant entier en euros, charge, durée en mois ; null si l'une est mal formée. */
-/** L'objet de l'avenant, écrit par le code depuis les saisies : prix, durée ; null si rien ne change. */
+/**
+ * L'objet de l'avenant, écrit par le code depuis les saisies : prix, durée, honoraires, leur charge, type du mandat, et
+ * la date d'effet (AU057) ; null si rien ne change (une date d'effet seule ne change rien).
+ */
 function amendmentObject(inputs: Record<string, string | null>): string | null {
   const parts = [
     inputs['avenant.prix'] ? `prix de vente porté à ${inputs['avenant.prix']}` : null,
     inputs['avenant.duree_mois'] ? `durée du mandat portée à ${inputs['avenant.duree_mois']}` : null,
+    inputs['avenant.honoraires'] ? `honoraires portés à ${inputs['avenant.honoraires']}` : null,
+    inputs['avenant.honoraires_charge'] ? `honoraires désormais ${inputs['avenant.honoraires_charge']}` : null,
+    inputs['avenant.type'] ? `mandat transformé en ${inputs['avenant.type']}` : null,
   ].filter((p): p is string => p !== null);
-  return parts.length === 0 ? null : parts.join(' ; ');
+  if (parts.length === 0) return null;
+  return `${parts.join(' ; ')}${inputs['avenant.date_effet'] ? `, à compter du ${inputs['avenant.date_effet']}` : ''}`;
 }
 
 function readInputs(raw: Record<string, unknown>): Record<string, string | null> | null {
-  const allowed = new Set(['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'avenant.prix', 'avenant.duree_mois']);
+  const allowed = new Set<string>(['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', ...AMENDMENT_INPUTS]);
   if (Object.keys(raw).some((k) => !allowed.has(k))) return null;
-  const out: Record<string, string | null> = { 'honoraires.montant': null, 'honoraires.charge': null, 'mandat.duree_mois': null, 'avenant.prix': null, 'avenant.duree_mois': null };
+  const out: Record<string, string | null> = Object.fromEntries([...allowed].map((k) => [k, null]));
+  const newFee = raw['avenant.honoraires'];
+  if (newFee !== undefined && newFee !== null) {
+    if (typeof newFee !== 'number' || !Number.isInteger(newFee) || newFee < 0 || newFee > 10_000_000) return null;
+    out['avenant.honoraires'] = `${number.format(newFee)} €`;
+  }
+  const newCharge = raw['avenant.honoraires_charge'];
+  if (newCharge !== undefined && newCharge !== null) {
+    if (newCharge !== 'vendeur' && newCharge !== 'acquereur') return null;
+    out['avenant.honoraires_charge'] = newCharge === 'vendeur' ? 'à la charge du vendeur' : 'à la charge de l’acquéreur';
+  }
+  const newType = raw['avenant.type'];
+  if (newType !== undefined && newType !== null) {
+    if (newType !== 'simple' && newType !== 'exclusif') return null;
+    out['avenant.type'] = newType === 'exclusif' ? 'mandat de vente exclusif' : 'mandat de vente simple';
+  }
+  const effect = raw['avenant.date_effet'];
+  if (effect !== undefined && effect !== null) {
+    if (typeof effect !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effect)) return null;
+    const d = new Date(`${effect}T12:00:00Z`);
+    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== effect) return null;
+    out['avenant.date_effet'] = `${effect.slice(8, 10)}/${effect.slice(5, 7)}/${effect.slice(0, 4)}`;
+  }
   const price = raw['avenant.prix'];
   if (price !== undefined && price !== null) {
     if (typeof price !== 'number' || !Number.isInteger(price) || price < 1 || price > 1_000_000_000) return null;

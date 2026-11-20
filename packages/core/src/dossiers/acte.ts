@@ -22,6 +22,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import type { DocumentFacts } from '../documents/modeles.ts';
+import { mandateTerms } from '../documents/conditions.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -115,9 +116,12 @@ export async function mandateFeeAt(
   } catch {
     facts = null;
   }
-  const fee = feeFrom(facts);
+  // Les honoraires en vigueur le jour du compromis : un avenant signé et en effet ce jour-là les a changés (AU057).
+  const terms = await mandateTerms(db, decision.mandateId, new Date(`${compromis}T11:00:00.000Z`));
+  const inForce = terms ? { feeEur: terms.feeEur, feeCharge: terms.feeCharge } : facts;
+  const fee = feeFrom(inForce);
   if (fee === null) return { ok: false, code: 'fee_unknown' };
-  return { ok: true, mandateId: decision.mandateId, feeEur: fee, feeCharge: facts?.feeCharge ?? null };
+  return { ok: true, mandateId: decision.mandateId, feeEur: fee, feeCharge: inForce?.feeCharge ?? null };
 }
 
 export interface Closing {
