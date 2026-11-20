@@ -340,7 +340,8 @@ export class SignatureEnLigne {
     }
     // Chaque mandant aussi : une fiche confiée depuis à un autre agent arrête la signature, dont le résultat dit l'état de
     // tous [R16].
-    for (const personId of await documentMandants(this.db, session.document_id, doc.person_id)) {
+    // Chaque représentant aussi, avant que le code ne serve (AU059).
+    for (const personId of await documentPersons(this.db, session.document_id, doc.person_id)) {
       if (personId !== doc.person_id && !(await this.seesInFull(viewer, personId, `signature:${sessionId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     if (session.status === 'signee') return { ok: false, rule: null, code: 'already_signed' };

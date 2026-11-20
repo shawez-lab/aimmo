@@ -181,6 +181,25 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     expect(await t.db.first("SELECT status FROM signature_sessions WHERE id = ?", [session.value.sessionId])).not.toEqual({ status: 'signee' });
   });
 
+  it('[R16, R96] le nom du représentant ne sort ni par le code de signature d’un agent qui ne le voit plus, ni par la réponse d’accès du mandant', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const paul = await t.owner('Paul', 'Tiers', undefined, false);
+    await t.identify(lea);
+    await t.identify(paul);
+    const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id)] });
+    if (!d.ok) throw new Error(d.code);
+    const access = JSON.stringify(await conformite.assembleAccess(t.db, [lea]));
+    expect(access).not.toContain('Paul Tiers');
+    const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, scans: { has: async (r) => r === REF(t.property.id) } });
+    const session = await online.start(t.agent, d.document.id, CONSENT);
+    if (!session.ok) throw new Error(session.code);
+    const sent = await t.codes();
+    await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, paul]);
+    expect(await online.sign(t.agent, session.value.sessionId, { code: sent[0]!.code })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.db.first('SELECT status FROM signature_sessions WHERE id = ?', [session.value.sessionId])).not.toEqual({ status: 'signee' });
+  });
+
   it('[R16] le document nomme le représentant : qui ne voit plus sa fiche ne lit plus le document', async () => {
     const t = await setup();
     const lea = await t.owner('Léa', 'Exemple');

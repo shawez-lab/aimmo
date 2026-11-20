@@ -103,7 +103,7 @@ export type AccessMapEntry =
        * Les colonnes `shared` ne le sont que pour les lignes dont `key` figure dans `from.column` : un mandat n'est à deux
        * parties que s'il a un autre mandant (AU001). Sans cela, toute ligne de la table est partagée.
        */
-      sharedIf?: { key: string; from: string; column: string };
+      sharedIf?: { key: string; from: string; column: string; alsoFrom?: readonly string[] };
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
       /**
        * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
@@ -122,7 +122,8 @@ const by = (...columns: string[]): DirectLocator[] => columns.map((column) => ({
 const via = (column: string, from: string, key = 'id', extra: Partial<ViaLocator> = {}): ViaLocator => ({ column, from, key, ...extra });
 const out = (excluded: ExclusionReason, why: string): AccessMapEntry => ({ excluded, why });
 /** Un document qui a d'autres mandants (AU001). */
-const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id' });
+// Un document nommant plusieurs personnes : des co-mandants (AU001) ou un représentant par procuration (AU059).
+const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id', alsoFrom: ['document_proxies'] });
 
 /** Le traitement dont le droit d'accès s'exerce auprès de la CNIL. */
 export const LCB_FT_TRAITEMENT = 'conformite-lcb-ft';
