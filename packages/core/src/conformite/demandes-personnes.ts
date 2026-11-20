@@ -428,7 +428,46 @@ export const ERASURE_WHY = {
   stop: 'L\'opposition et les exclusions restent, pour ne plus jamais écrire à la personne [R04].',
   identifiers: 'Identifiants gardés sous leur seule empreinte, pour reconnaître la personne et respecter son arrêt [R04].',
   shared: 'Ligne partagée avec une autre personne : pseudonymisée ou gardée, sur décision du responsable.',
+  property: 'Description et diffusion du bien, en ajout seul : gardées avec le bien, sans nom ni adresse exacte [R19, R46], détachées de la personne dont le lien au bien part [R17].',
 } as const;
+
+/**
+ * Les tables qui décrivent et diffusent un bien, en ajout seul (la base refuse de les effacer) : fiche, détails, liens,
+ * brouillons, validations, versions et traductions de l'annonce, contrôles des vidéos, choix et retours des portails,
+ * sujets des photos (AU020b), toutes du traitement des biens. Aucune ne porte le nom du vendeur ni l'adresse exacte [R19, R46] ; elles restent avec le
+ * bien, et c'est le lien de la personne au bien (son projet) qui part. Le plan les dit gardées, avec leur raison, au
+ * lieu de promettre un effacement que la base refuse.
+ *
+ * Pas ici, parce qu'elles portent l'adresse exacte : `sign_placements` (le panneau posé) et `pige_properties` (le bien
+ * venu de la pige). Elles restent à effacer, la base le refuse, et l'effacement n'est pas dit complet (AU020d), comme pour les tables en
+ * ajout seul d'autres traitements (commerces, départ d'un agent, assainissement).
+ */
+export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
+  'property_sheets',
+  'property_details',
+  'property_links',
+  'listing_drafts',
+  'listing_validations',
+  'listing_versions',
+  'listing_version_media_sheets',
+  'listing_translations',
+  'listing_translation_validations',
+  'translation_reviewers',
+  'video_text_checks',
+  'agent_import_properties',
+  'diffusion_portal_choices',
+  'diffusion_portal_suspensions',
+  'diffusion_portal_resumptions',
+  'diffusion_portal_feedback',
+  'diffusion_portal_checks',
+  'diffusion_portal_texts',
+  'diffusion_portal_text_validations',
+  'diffusion_photo_subjects',
+  'diffusion_photo_descriptions',
+]);
+
+/** Les tables en ajout seul du bien qui portent l'adresse exacte : jamais gardées d'office (AU020d). */
+export const PROPERTY_ADDRESS_HELD: ReadonlySet<string> = new Set(['sign_placements', 'pige_properties']);
 
 /**
  * Le plan d'effacement : chaque table de la réponse d'accès. Une obligation légale garde la table (registre des mandats
@@ -443,6 +482,7 @@ export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[
     if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
     else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
     else if (s.table === 'person_identifiers') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (PROPERTY_DESCRIPTION.has(s.table)) lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.property });
     else {
       const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
       if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });
