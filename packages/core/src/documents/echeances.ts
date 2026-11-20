@@ -13,7 +13,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
-import { mandateEndDay, mandateTerms } from './conditions.ts';
+import { mandateEndDay, mandateTerms, type MandateTerms } from './conditions.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const MANDATE_DEADLINES_JOB = 'mandats.echeances';
@@ -91,7 +91,10 @@ export class EcheancesMandats {
         const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
         const end = duration !== null ? mandateEndDay(signedAt, duration) : null;
         if (end !== null) due.push({ kind: 'fin_mandat', day: end, lead: this.settings.endLeadDays });
-        if (row.kind === 'mandat_vente_exclusif' && end !== null && mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS) < end) due.push({ kind: 'fin_periode_exclusive', day: mandateEndDay(signedAt, EXCLUSIVE_PERIOD_MONTHS), lead: this.settings.exclusiveLeadDays });
+        // Le type en vigueur, avenants compris : un mandat devenu exclusif compte sa période depuis la date d'effet de
+        // l'avenant ; devenu simple, il n'en a plus (AU057b).
+        const exclusiveFrom = exclusiveStart(row.kind, signedAt, terms);
+        if (exclusiveFrom !== null && end !== null && mandateEndDay(exclusiveFrom, EXCLUSIVE_PERIOD_MONTHS) < end) due.push({ kind: 'fin_periode_exclusive', day: mandateEndDay(exclusiveFrom, EXCLUSIVE_PERIOD_MONTHS), lead: this.settings.exclusiveLeadDays });
         for (const d of due) {
           // La tâche est rangée dès que le délai est atteint, jusqu'au jour de l'échéance compris.
           if (today < addDays(d.day, -d.lead) || today > d.day) continue;
@@ -141,6 +144,9 @@ export class EcheancesMandats {
         const end = mandateEndDay(new Date(signed.signed_at), terms.durationMonths);
         if (r.kind === 'fin_mandat' && r.due_day !== end) continue;
         if (r.kind === 'fin_periode_exclusive' && r.due_day >= end) continue;
+        // Devenu simple, ou exclusif depuis une autre date : l'ancienne fin de période n'est plus à faire (AU057b).
+        const from = exclusiveStart(null, new Date(signed.signed_at), terms);
+        if (r.kind === 'fin_periode_exclusive' && (from === null || r.due_day !== mandateEndDay(from, EXCLUSIVE_PERIOD_MONTHS))) continue;
       }
       current.push({ id: r.id, mandateId: r.mandate_id, kind: r.kind, dueDay: r.due_day, reason: REASON[r.kind], doneAt: r.done_at });
     }
@@ -157,4 +163,16 @@ export function mandateDeadlinesJob(db: SqlDatabase, journal: JournalStore, opti
       await new EcheancesMandats(db, journal, options).run();
     },
   };
+}
+
+/**
+ * Le début de la période exclusive en vigueur : la signature d'un mandat signé exclusif, ou la date d'effet du dernier
+ * avenant qui l'a rendu exclusif ; `null` si le mandat est simple en vigueur (AU057b). `kind` nul : lu dans les conditions.
+ */
+function exclusiveStart(kind: string | null, signedAt: Date, terms: MandateTerms | null): Date | null {
+  const type = terms?.mandateType ?? (kind === 'mandat_vente_exclusif' ? 'exclusif' : 'simple');
+  if (type !== 'exclusif') return null;
+  const last = [...(terms?.amendments ?? [])].reverse().find((a) => a.mandateType !== null);
+  if (last && last.mandateType === 'exclusif') return new Date(`${last.effectiveOn}T12:00:00.000Z`);
+  return signedAt;
 }
