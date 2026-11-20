@@ -298,6 +298,38 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect(r0.ok === false && 'check' in r0 && r0.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
   });
 
+  it('[R41] un avenant signé sur papier puis enregistré plus tard se contrôle depuis le jour de sa signature', async () => {
+    const t = await setup();
+    // Préparés le 1er mars : 15 000 € d'honoraires, et un prix porté à 300 000 €.
+    const fee = await t.amendment({ 'avenant.honoraires': 15000 });
+    const up = await t.amendment({ 'avenant.prix': 300000 });
+    if (!fee.ok || !up.ok) throw new Error('préparation');
+    t.now(new Date('2027-03-11T10:00:00.000Z'));
+    expect((await sign(t, up.document.id, 'h15', new Date('2027-03-10T09:00:00.000Z'))).ok).toBe(true);
+    // Signé le 5 mars : entre le 5 et le 10, le prix était 200 000 €, et 15 000 € dépassent 5 %.
+    const r = await sign(t, fee.document.id, 'h16', new Date('2027-03-05T09:00:00.000Z'));
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['fee_above_schedule']);
+    // Signé le 10 mars ou après, il passe.
+    expect((await sign(t, fee.document.id, 'h16', new Date('2027-03-11T09:00:00.000Z'))).ok).toBe(true);
+  });
+
+  it('[R42] une échéance n’est déplacée qu’à la date d’effet de l’avenant ; jamais au-delà de la fin du mandat', async () => {
+    const t = await setup();
+    // Le mandat finit le 10 février 2028 : une date d'effet ce jour-là ou après est refusée.
+    expect(await t.amendment({ 'avenant.duree_mois': 24, 'avenant.date_effet': '2028-02-10' })).toMatchObject({ ok: false, code: 'bad_input' });
+    const a = await t.amendment({ 'avenant.duree_mois': 24, 'avenant.date_effet': '2027-12-01' });
+    if (!a.ok) throw new Error(a.code);
+    expect((await sign(t, a.document.id, 'h17')).ok).toBe(true);
+    // En novembre, l'échéance de février compte encore : la tâche est rangée et montrée.
+    const echeances = new EcheancesMandats(t.db, t.journal, { now: () => new Date('2027-11-15T10:00:00.000Z') });
+    // Le délai de 30 jours n'est pas atteint le 15 novembre : rien ; le 15 janvier, avec l'avenant en effet, février n'est plus l'échéance.
+    expect(await echeances.run()).toBe(0);
+    const later = new EcheancesMandats(t.db, t.journal, { now: () => new Date('2028-01-15T10:00:00.000Z') });
+    expect(await later.run()).toBe(0);
+    expect((await mandateTerms(t.db, t.mandateId, new Date('2027-11-15T10:00:00.000Z')))?.durationMonths).toBe(12);
+    expect((await mandateTerms(t.db, t.mandateId, new Date('2027-12-01T10:00:00.000Z')))?.durationMonths).toBe(24);
+  });
+
   it('[R40] devenir exclusif demande la clause mise en évidence ; le même type n’est pas un avenant', async () => {
     const t = await setup();
     expect(await t.amendment({ 'avenant.type': 'exclusif' })).toEqual({ ok: false, rule: 'R40', code: 'no_evidence' });

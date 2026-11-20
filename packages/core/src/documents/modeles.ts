@@ -458,6 +458,9 @@ export class Modeles {
     if (linked) {
       // Une date d'effet se donne du jour même à un an ; un type de mandat qui ne change pas n'est pas un avenant.
       if (effectiveOn !== null && (effectiveOn < day || effectiveOn > mandateEndDay(this.now(), 12))) return { ok: false, rule: 'R40', code: 'bad_input' };
+      // Ni après la fin du mandat en vigueur : un mandat échu ne reçoit plus d'avenant [R42].
+      const signedRow = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [linked.id]);
+      if (effectiveOn !== null && signedRow && typeof inForce?.durationMonths === 'number' && effectiveOn >= mandateEndDay(new Date(signedRow.signed_at), inForce.durationMonths)) return { ok: false, rule: 'R40', code: 'bad_input' };
       if (newType !== null && newType === inForce?.mandateType) return { ok: false, rule: 'R40', code: 'bad_input' };
       // Devenir exclusif : la clause d'exclusivité est mise en évidence sur l'avenant, comme sur un mandat exclusif.
       if (newType === 'exclusif' && !template.body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };

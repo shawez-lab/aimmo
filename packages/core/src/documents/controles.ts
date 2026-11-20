@@ -161,7 +161,7 @@ export class ControlesSignature {
     return Array.isArray(fields) && MANDATE_DESIGNATION_FIELDS.every((f) => fields.includes(f));
   }
 
-  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
+  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date; signedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
       'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
@@ -194,7 +194,7 @@ export class ControlesSignature {
     lines.push({ check: 'champs', ok: complete, code: complete ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
-    lines.push(await this.fees(doc.network_id, doc.facts, amendment));
+    lines.push(await this.fees(doc.network_id, doc.facts, amendment, options.signedAt ?? options.identitySignedAt));
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
@@ -240,7 +240,7 @@ export class ControlesSignature {
     return line(true, 'mandate_in_force');
   }
 
-  private async fees(networkId: string, rawFacts: string | null, amendment = false): Promise<CheckLine> {
+  private async fees(networkId: string, rawFacts: string | null, amendment = false, signedAt?: Date): Promise<CheckLine> {
     let facts: DocumentFacts | null = null;
     try {
       facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
@@ -256,7 +256,8 @@ export class ControlesSignature {
     // jour où il prend effet à chaque date d'effet d'un avenant déjà signé qui viendra après lui (AU057).
     if (amendment && facts) {
       if (!facts.mandateId) return line(false, 'fee_or_price_unknown');
-      const today = localTime(this.now(), 'Europe/Paris').date;
+      // Un avenant signé sur papier, enregistré plus tard, prend effet au jour de sa signature : le contrôle part de là.
+      const today = localTime(signedAt ?? this.now(), 'Europe/Paris').date;
       const from = typeof facts.effectiveOn === 'string' && facts.effectiveOn > today ? facts.effectiveOn : today;
       const all = await mandateTerms(this.db, facts.mandateId);
       const days = [from, ...new Set((all?.amendments ?? []).map((a) => a.effectiveOn).filter((d) => d > from))].sort();
