@@ -800,7 +800,16 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU075 · Pour signer un bon de visite, le parcours principal impose encore le papier et son scan
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#719, f70c5451), migration `4030`, R506 en service. Constat confirmé (seul le bon papier, date et scan, pour une visite sur place). `visites/signature-bon.ts`, `SignatureBon` : sur place, le visiteur lit son bon sur le téléphone de l'agent (rendu en texte, paragraphe par paragraphe, depuis le document rangé), tape le code reçu par SMS ou mail, trace s'il veut ; bon et signature rangés ensemble seulement si la signature est encore ouverte ; exemplaire et preuve affichés aussitôt (et rouvrables), preuve avec l'empreinte du bon envoyée par le contrôle central ; papier en secours, le premier qui signe ferme l'autre. Routes M08 `bon/signature-en-ligne`, `bon/a-signer`, `bon/signature-sur-place`, `bon/exemplaire` ; écran `/app/bon-visite.js` chargé au geste. Jamais vu : l'empreinte SHA-256 du bon signé, au caractère près, remise au visiteur. Codex : 2 P0, puis 1 P1, puis 1 P0 et 1 P2, puis 1 P0, tous corrigés, puis rien (👍). Restent : AU075b (voie 1) ; signature réelle (H24) ; canal réel (H05).
+
+### AU075b · Les pages publiques du bon de visite : signer à distance et rouvrir son exemplaire
+- Statut : à faire
+- Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU075
+- Cahier : M08 Acquéreurs et visites ; endroit : packages/api/src/app.ts ; C/visites/signature-bon.ts (`readByLink`, `signByLink`, `copy`, `renderSlipCopy`).
+- Objectif : servir sans clé, sous `/visite/signer/<jeton>` et `/visite/exemplaire/<jeton>`, la lecture et la signature à distance du bon et l'exemplaire signé, puis donner `signUrl` et `copyUrl` à `SignatureBon` dans les routes de M08 ; l'écran propose alors « Envoyer le lien pour signer à distance ».
+- Critères : sans page servie, `distance_not_served` (déjà testé) ; page servie : lien et code partent, le visiteur lit et signe par la page (test) ; le lien de l'exemplaire part avec la preuve et l'ouvre pendant un an (test) ; la page suit le système de design, sans script (test).
+- Attend : rien.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A075 (majeur), endroit : C/visites/visites.ts, bon de visite.
 - Constat de l'audit : Pour signer un bon de visite, le parcours principal impose encore le papier et son scan.

@@ -1503,3 +1503,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 11:02 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU025
 - 2026-11-20 11:35 · AU020c · suite #718 : 2 P0 de Codex vus après la fusion de #717 (empreinte entière, reprise sur fiche effacée) et 1 P0 GLOB corrigés ; fusionnée · prochaine : AU025
 - 2026-11-20 12:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 10:53 par une autre séance voie 2, active : push sur chantier/AU075 à 12:49)
+- 2026-11-20 13:44 · AU075 · bon de visite signé sans papier sur le téléphone de l'agent, code du visiteur, exemplaire et preuve à l'écran, preuve avec l'empreinte du bon envoyée par le contrôle central ; signature à distance prête, refusée tant que ses pages publiques ne sont pas servies (AU075b, voie 1) ; Codex 4 P0, 1 P1, 1 P2 corrigés, puis 👍 ; fusionnée (#719, f70c5451) · prochaine : AU076
+- 2026-11-20 13:44 · VOIE 2 : AU075, f70c5451 (main), relancé non
+- 2026-11-20 13:44 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
