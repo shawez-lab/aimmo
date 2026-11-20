@@ -297,7 +297,7 @@ export class ControlesSignature {
     // droit dans le stockage [R41].
     const rights = await documentRights(this.db, doc.id);
     if (rights.length > 0) lines.push(await this.rightsLine(rights));
-    if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.identitySignedAt));
+    if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.signedAt ?? options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
     // Une date d'effet se revoit à la signature : jamais après la fin du mandat telle qu'elle est ce jour-là, avenants
@@ -347,12 +347,14 @@ export class ControlesSignature {
     return line(true, rights.some((r) => r.right !== 'pleine_propriete') ? 'dismembered_checked' : 'rights_checked');
   }
 
-  private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
+  private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string; grantedOn: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'procuration', ok, code });
     const mandantRoots = new Set<string>();
     for (const id of mandants) mandantRoots.add(await this.unique.rootOf(id));
     for (const p of proxies) {
       if (mandantRoots.has(await this.unique.rootOf(p.proxyId))) return line(false, 'proxy_is_mandant');
+      // Le représentant ne signe qu'à partir du jour de sa procuration (AU059b).
+      if (localTime(signedAt ?? at, 'Europe/Paris').date < p.grantedOn) return line(false, 'signed_before_power');
       // Sans stockage où la vérifier, la procuration n'est pas vérifiée : le document ne passe pas.
       const store = this.options.powers !== undefined ? this.options.powers : this.options.scans;
       if (!store) return line(false, 'depot_ferme');

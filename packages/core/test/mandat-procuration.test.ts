@@ -207,6 +207,22 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     expect(await t.db.first('SELECT status FROM signature_sessions WHERE id = ?', [session.value.sessionId])).not.toEqual({ status: 'signee' });
   });
 
+  it('[R41] AU059b · une signature papier datée avant le jour de la procuration n’est jamais inscrite', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const paul = await t.owner('Paul', 'Tiers', undefined, false);
+    await t.identify(lea);
+    await t.identify(paul);
+    const d = await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id, { grantedOn: '2027-02-10' })] });
+    if (!d.ok) throw new Error(d.code);
+    const papier = new SignaturePapier(t.db, t.acces, t.journal, { now: t.now, scans: { has: async () => true } });
+    const scanRef = `mandats/${t.property.id}/0000000a-0000-4000-8000-000000000000.pdf`;
+    const early = await papier.register(t.agent, d.document.id, { signedAt: new Date('2027-02-09T10:00:00.000Z'), place: 'agence', scanRef, source: 'referral' });
+    expect(early.ok === false && 'check' in early && early.check.lines.filter((l) => !l.ok).map((l) => l.code)).toContain('signed_before_power');
+    expect(await t.db.all('SELECT number FROM signed_documents WHERE document_id = ?', [d.document.id])).toEqual([]);
+    expect(await papier.register(t.agent, d.document.id, { signedAt: new Date(T0), place: 'agence', scanRef, source: 'referral' })).toMatchObject({ ok: true });
+  });
+
   it('[R16] le document nomme le représentant : qui ne voit plus sa fiche ne lit plus le document', async () => {
     const t = await setup();
     const lea = await t.owner('Léa', 'Exemple');
