@@ -221,12 +221,12 @@ export class ConditionsDossier {
         else if (l.status === 'en_attente' && addDays(l.day!, -this.noticeDays) <= today) task = { reason: 'avant_echeance', due: l.day! };
         if (!task) continue;
         const { changes } = await this.db.run(
-          'INSERT INTO sale_file_condition_tasks (file_id, network_id, agent_id, kind, reason, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_id, kind, reason, due_day, agent_id) DO NOTHING',
+          'INSERT INTO sale_file_condition_tasks (file_id, network_id, agent_id, kind, alert, due_day, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_id, kind, alert, due_day, agent_id) DO NOTHING',
           [f.id, networkId, f.agent_id, l.kind, task.reason, task.due, this.now().toISOString()],
         );
         if (changes !== 1) continue;
         created += 1;
-        await appendEvent(this.journal, { type: 'dossier.condition_alerte', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { rule: 'R61', kind: l.kind, reason: task.reason, ...(task.due ? { day: task.due } : {}) } }, this.now);
+        await appendEvent(this.journal, { type: 'dossier.condition_alerte', actor: 'system:dossiers', subject: `sale_file:${f.id}`, data: { rule: 'R61', kind: l.kind, alert: task.reason, ...(task.due ? { day: task.due } : {}) } }, this.now);
       }
     }
     return created;
@@ -245,7 +245,7 @@ export class ConditionsDossier {
     const agent = await this.db.first<{ network_id: string; status: string }>('SELECT network_id, status FROM agents WHERE id = ?', [viewer.userId]);
     if (!agent || agent.network_id !== viewer.networkId || agent.status !== 'active') return refuse('agent_inactive');
     const rows = await this.db.all<{ file_id: string; property_id: string; offer_id: string; kind: FileConditionKind; reason: ConditionTask['reason']; due_day: string; created_at: string }>(
-      `SELECT k.file_id, f.property_id, f.offer_id, k.kind, k.reason, k.due_day, k.created_at FROM sale_file_condition_tasks k JOIN sale_files f ON f.id = k.file_id
+      `SELECT k.file_id, f.property_id, f.offer_id, k.kind, k.alert AS reason, k.due_day, k.created_at FROM sale_file_condition_tasks k JOIN sale_files f ON f.id = k.file_id
        JOIN properties p ON p.id = f.property_id
        WHERE k.network_id = ? AND k.agent_id = ? AND p.agent_id = k.agent_id AND NOT EXISTS (SELECT 1 FROM sale_file_closings c WHERE c.file_id = k.file_id) AND ${openFile('f')}
        ORDER BY k.created_at, k.kind`,

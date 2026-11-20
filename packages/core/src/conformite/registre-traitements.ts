@@ -1361,7 +1361,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   offer_co_buyers: ['offer_id', 'network_id', 'position'],
   sale_file_tasks: ['file_id', 'network_id', 'deadline', 'due_day', 'created_at'],
   sale_file_conditions: ['file_id', 'network_id', 'kind', 'version', 'responsible', 'due_day', 'state', 'at'],
-  sale_file_condition_tasks: ['file_id', 'network_id', 'kind', 'reason', 'due_day', 'created_at'],
+  sale_file_condition_tasks: ['file_id', 'network_id', 'kind', 'alert', 'due_day', 'created_at'],
   sale_file_reminders: ['file_id', 'piece', 'day', 'network_id', 'side', 'status', 'rule', 'message_id', 'updated_at'],
   sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at'],
   sale_file_financing_alerts: ['file_id', 'network_id', 'kind', 'due_day', 'step_seq', 'created_at'],

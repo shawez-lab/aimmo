@@ -18,16 +18,16 @@ CREATE TABLE IF NOT EXISTS sale_file_conditions (
   by TEXT NOT NULL,
   PRIMARY KEY (file_id, kind, version)
 );
--- Les alertes de l'agent, une par condition, par raison et par date (`due_day` vide : à saisir).
+-- Les alertes de l'agent, une par condition, par sorte d'alerte et par date (`due_day` vide : à saisir).
 CREATE TABLE IF NOT EXISTS sale_file_condition_tasks (
   file_id TEXT NOT NULL REFERENCES sale_files (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   agent_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('vente_autre_bien', 'permis_construire', 'certificat_urbanisme', 'autre')),
-  reason TEXT NOT NULL CHECK (reason IN ('a_saisir', 'avant_echeance', 'echue')),
+  alert TEXT NOT NULL CHECK (alert IN ('a_saisir', 'avant_echeance', 'echue')),
   due_day TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  PRIMARY KEY (file_id, kind, reason, due_day, agent_id)
+  PRIMARY KEY (file_id, kind, alert, due_day, agent_id)
 );
 CREATE INDEX IF NOT EXISTS sale_file_condition_tasks_agent ON sale_file_condition_tasks (network_id, agent_id, created_at);
 CREATE TRIGGER IF NOT EXISTS sale_file_conditions_fige BEFORE UPDATE ON sale_file_conditions BEGIN SELECT RAISE(ABORT, 'sale_file_conditions : rien ne change'); END;
