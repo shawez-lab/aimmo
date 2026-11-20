@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DecisionEnvoi, FicheClient, FicheUnique, Planificateur, type Viewer } from '@aimmo/core';
+import { DecisionEnvoi, FicheClient, FicheUnique, Planificateur, copyKeyFromSecret, type ErasureLedgerStore, type Viewer } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { CONFORMITE_DAILY_JOB, CONFORMITE_HOURLY_JOB, R2VaultStorage, conformiteJobs, conformiteRoutes, type ConformiteServices, type R2VaultBucket } from '../src/conformite.ts';
 import { sha256Hex } from '../src/index.ts';
@@ -39,7 +39,7 @@ async function setup() {
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
-    options: { raw?: Uint8Array; type?: string; vault?: boolean } = {},
+    options: { raw?: Uint8Array; type?: string; vault?: boolean; erasure?: ConformiteServices['erasure'] } = {},
   ) => {
     const bare = `/conformite${path.split('?')[0]!}`;
     const route = routes.find((r) => r.method === method && r.pattern.test(bare));
@@ -50,7 +50,7 @@ async function setup() {
       : body === undefined
         ? { method }
         : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
-    const s: ConformiteServices = { db: t.db, journal: t.journal, acces: t.acces, stop, vault: options.vault === false ? null : vault, now: t.now };
+    const s: ConformiteServices = { db: t.db, journal: t.journal, acces: t.acces, stop, vault: options.vault === false ? null : vault, now: t.now, ...(options.erasure !== undefined ? { erasure: options.erasure } : {}) };
     const response = await route.handle(s, viewer, params, new Request(`https://api.exemple.test/v1/conformite${path}`, init));
     const type = response.headers.get('content-type') ?? '';
     return {
@@ -95,6 +95,7 @@ describeWithSqlite('L09 · routes de M12', () => {
       ['/signalements/s-1/decider', { decision: 'classe', reason: 'Test', validatorName: 'Responsable Test' }],
       ['/demandes', { personId: t.buyerId, kind: 'acces', channel: 'mail', receivedOn: '2027-03-01' }],
       ['/demandes/d-1/repondre', { answeredOn: '2027-03-01' }],
+      ['/demandes/d-1/effacer', {}],
       ['/registre/relecture', { reviewedOn: '2027-03-01', validatorName: 'Responsable Test' }],
       ['/fuites', { awareAt: '2027-03-01T08:00:00.000Z' }],
       ['/fuites/f-1/retablir', { cutId: 'c-1' }],
@@ -269,6 +270,42 @@ describeWithSqlite('L09 · routes de M12', () => {
     expect(recorded.status).toBe(200);
     expect(await t.db.first<{ n: number }>('SELECT count(*) AS n FROM exclusions WHERE person_id = ?', [t.buyerId])).toEqual({ n: 1 });
     expect((await t.call(t.compliance, 'GET', '/demandes')).body!.data).toHaveLength(1);
+  });
+
+  it('[R17] [R96] [R231] AU020 : l’effacement réel par sa route, fermé tant que le mode réel n’est pas écrit tel quel', async () => {
+    const t = await setup();
+    const recorded = await t.call(t.compliance, 'POST', '/demandes', { personId: t.buyerId, kind: 'effacement', channel: 'mail', receivedOn: '2027-03-01' });
+    const id = recorded.body!.data.id as string;
+    const parts = new Map<string, Uint8Array>();
+    const store: ErasureLedgerStore = { put: async (k, b) => void parts.set(k, b), get: async (k) => parts.get(k) ?? null, list: async (p) => [...parts.keys()].filter((k) => k.startsWith(p)).sort() };
+    const key = await copyKeyFromSecret(btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 3))));
+    const removed: string[] = [];
+    const ready = { ledger: { store, key }, objects: { remove: async (_s: string, k: string) => void removed.push(k) } };
+    const person = () => t.db.first<{ first_name: string | null }>('SELECT first_name FROM persons WHERE id = ?', [t.buyerId]);
+    const name = (await person())?.first_name ?? null;
+    expect(name).not.toBeNull();
+    // Le plan d'essai d'abord : sans lui, rien ne part [R96].
+    expect((await t.call(t.compliance, 'POST', `/demandes/${id}/effacer`, {}, { erasure: { mode: 'reel', ...ready } })).body).toMatchObject({ ok: false, rule: 'R96', code: 'plan_not_prepared' });
+    expect((await t.call(t.compliance, 'GET', `/demandes/${id}/effacement`)).status).toBe(200);
+    // Sans configuration, ou un mode qui n'est pas `reel` tel quel : refusé, rien n'est effacé ni noté.
+    for (const erasure of [undefined, null, { mode: 'REEL' as never, ...ready }, { mode: 'essai' as const, ...ready }]) {
+      const r = await t.call(t.compliance, 'POST', `/demandes/${id}/effacer`, {}, { erasure });
+      expect([r.status, r.body]).toEqual([409, { ok: false, rule: 'R17', code: 'trial_only' }]);
+    }
+    expect((await t.call(t.compliance, 'POST', `/demandes/${id}/effacer`, {}, { erasure: { mode: 'reel', ledger: null, objects: ready.objects } })).body).toMatchObject({ rule: 'R231', code: 'ledger_missing' });
+    expect(parts.size).toBe(0);
+    expect((await person())?.first_name).toBe(name);
+    // Un corps inattendu est refusé avant tout.
+    expect((await t.call(t.compliance, 'POST', `/demandes/${id}/effacer`, { personId: 'x' }, { erasure: { mode: 'reel', ...ready } })).status).toBe(400);
+    // En mode réel : noté au registre, effacé, et la réponse dit `reel` avec le reçu et son empreinte, sans nom.
+    const done = await t.call(t.compliance, 'POST', `/demandes/${id}/effacer`, {}, { erasure: { mode: 'reel', ...ready } });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ ok: true, mode: 'reel', data: { receipt: { requestId: id, mode: 'reel', records: 1 } } });
+    expect(done.body!.data.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(done.body)).not.toContain(name!);
+    expect(parts.size).toBeGreaterThan(0);
+    expect((await person())?.first_name ?? null).toBeNull();
+    expect((await t.journal.all()).at(-1)).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel' } });
   });
 
   it('[R97] la fuite par les routes : déclarée, évaluée, accès coupés puis rétablis, notification notée', async () => {

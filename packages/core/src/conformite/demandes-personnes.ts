@@ -108,6 +108,8 @@ export interface AccessDetail {
   response: AccessResponse;
   /** Par table, le nombre de lignes qui ne sont qu'à la personne : ni partagées avec une autre, ni en partie masquées. */
   exclusiveRows: Record<string, number>;
+  /** Ces lignes mêmes, telles que la base les garde, pour l'effacement réel (AU020). Jamais rendues à la personne. */
+  exclusiveData?: Record<string, Readonly<Record<string, SqlValue>>[]>;
 }
 
 /**
@@ -392,8 +394,12 @@ export async function assembleAccessDetail(
   }
   const notIncluded = (Object.keys(EXCLUSION_LABELS) as ExclusionReason[]).map((reason) => ({ reason, text: EXCLUSION_LABELS[reason] }));
   const exclusiveRows: Record<string, number> = {};
-  for (const s of sections) exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
-  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows };
+  const exclusiveData: Record<string, Readonly<Record<string, SqlValue>>[]> = {};
+  for (const s of sections) {
+    exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
+    exclusiveData[s.table] = [...(exclusive.get(s.table) ?? [])].map((key) => found.get(s.table)!.get(key)!.row);
+  }
+  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows, exclusiveData };
 }
 
 export interface ErasurePlanLine {
