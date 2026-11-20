@@ -367,13 +367,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#724, `2b9b491d`). Décidé : justifié = présence rangée par la direction, ou module fait couvert par une attestation de quiz réussi (compté au jour de la première attestation) ; un « J'ai fini » seul est déclaré (`declaredMinutes`), montré à part, jamais compté ni dans les alertes ; R85 précisée. Codex rien à signaler. Le module crédité par le bac à sable (AU025) reste déclaré tant que son quiz n'est pas réussi.
 
 ### AU028 · Les périodes de formation repartent de mon arrivée au réseau
-- Statut : en cours
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A028 (majeur), endroit : C/reseau/academie.ts, `periodOf`, `startedOn`.
 - Constat de l'audit : Les périodes de formation repartent de mon arrivée au réseau, sans reprendre explicitement mon cycle antérieur.
 - Objectif : L’intégration importe les attestations antérieures et la période de référence applicable, sans remise à zéro artificielle.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#725, `888895fb`), migration `4040` (`academy_prior_entries`, ajout seul). Décidé : la direction range la période de référence du cycle d'avant (la dernière l'emporte) et chaque attestation d'avant (une fois par pièce), pièce et nom à l'appui, jamais après l'arrivée ; elles comptent comme justifiées ; routes `/v1/reseau/agents/<id>/formation/periode-anterieure` et `/anterieures`. Codex 1 P0 (attestation rangée deux fois) corrigé, puis rien. Écran de saisie côté direction à faire avec l'écran du réseau si besoin.
 
 ### AU029 · Ma reprise de contacts ne transfère pas mes échanges, notes de suivi et prochains rappels de l’ancien logiciel
 - Statut : à faire

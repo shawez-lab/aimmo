@@ -1518,3 +1518,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 16:05 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
 - 2026-11-20 16:05 · VOIE 2 : AU077, bdafbaff (main), relancé non
 - 2026-11-20 16:07 · AU027 · un « J'ai fini » seul n'est plus qu'une heure déclarée, montrée à part ; seules les présences rangées et les modules couverts par un quiz réussi comptent ; R85 précisée ; Codex rien ; fusionnée (#724, 2b9b491d) · prochaine : AU028
+- 2026-11-20 17:24 · AU028 · cycle de formation d'avant l'arrivée repris par la direction (période de référence et attestations, pièce et nom à l'appui), compteur et alertes sans remise à zéro ; Codex 1 P0 corrigé puis rien ; fusionnée (#725, 888895fb) · prochaine : AU029
