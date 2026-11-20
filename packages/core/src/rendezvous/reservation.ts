@@ -431,7 +431,12 @@ export class RendezVous {
     if (!withinAvailability(slot, availability)) return { ok: false, rule: 'R33', code: 'outside_availability' };
     const id = this.newId();
     const token = this.newToken();
-    if (!group) {
+    if (group) {
+      // La visite groupée ne lève que le chevauchement avec les rendez-vous du groupe [R32] : un événement occupé de
+      // l'agenda de l'agent, apparu depuis, refuse toujours la réservation [R33].
+      const busyConflict = conflictOf(slot, [], await this.busyAround(req.agentId, start, end), this.settings);
+      if (busyConflict) return { ok: false, rule: busyConflict, code: busyConflict === 'R32' ? 'taken' : 'agenda_busy' };
+    } else {
       const travel = this.settings.travelMinutes * MINUTE;
       const booked = await this.bookedAround(req.agentId, new Date(start.getTime() - travel), new Date(end.getTime() + travel), replacesId);
       const conflict = conflictOf(slot, booked, await this.busyAround(req.agentId, start, end), this.settings);
@@ -441,12 +446,26 @@ export class RendezVous {
     }
     const groupId = group?.ok ? group.groupId : null;
     const at = now.toISOString();
+    const values = [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at, req.channel ?? null, req.channel ? (req.to ?? null) : null, groupId];
+    const columns = 'id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at, confirmation_channel, confirmation_to, group_id';
     try {
-      await this.db.run(
-        `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at, confirmation_channel, confirmation_to, group_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, req.networkId, req.agentId, req.personId, req.propertyId ?? null, req.kind, start.toISOString(), end.toISOString(), await tokenHash(token), req.source, replacesId, at, at, req.channel ?? null, req.channel ? (req.to ?? null) : null, groupId],
-      );
+      if (groupId === null) {
+        await this.db.run(`INSERT INTO appointments (${columns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?, ?)`, values);
+      } else {
+        // AU077 : l'entrée dans le groupe se décide dans la même instruction que l'écriture : deux acquéreurs qui
+        // rejoignent en même temps ne dépassent jamais huit, et le même acquéreur n'y entre qu'une fois.
+        const { changes } = await this.db.run(
+          `INSERT INTO appointments (${columns})
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE (SELECT COUNT(*) FROM appointments WHERE group_id = ? AND status = 'booked') < ?
+             AND NOT EXISTS (SELECT 1 FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?)`,
+          [...values, groupId, GROUP_VISIT_MAX, groupId, req.personId],
+        );
+        if (changes !== 1) {
+          const same = await this.db.first("SELECT 1 AS hit FROM appointments WHERE group_id = ? AND status = 'booked' AND person_id = ?", [groupId, req.personId]);
+          return { ok: false, rule: null, code: same ? 'already_in_group' : 'group_full' };
+        }
+      }
     } catch (error) {
       await this.release(id);
       throw error;

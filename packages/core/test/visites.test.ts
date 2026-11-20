@@ -639,4 +639,46 @@ describeWithSqlite('AU077 · visite groupée : plusieurs acquéreurs, un seul cr
     const zoe = await t.buyer('Zoé', 'Petit');
     expect(await t.visites.schedule(alex, { propertyId: p.id, projectId: zoe.project.id, start: WEDNESDAY_10H })).toMatchObject({ ok: false, code: 'taken' });
   });
+
+  it('AU077 · deux acquéreurs qui rejoignent en même temps ne dépassent jamais huit ; le même n’entre qu’une fois', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const ines = await t.buyer('Inès');
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const join = (projectId: string) => t.visites.schedule(alex, { propertyId: p.id, projectId, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id });
+    // Le même acquéreur, deux fois en même temps : une seule entrée.
+    const leo = await t.buyer('Léo', 'Martin');
+    const twice = await Promise.all([join(leo.project.id), join(leo.project.id)]);
+    expect(twice.filter((r) => r.ok)).toHaveLength(1);
+    expect(twice.find((r) => !r.ok)).toMatchObject({ ok: false, code: 'already_in_group' });
+    for (let i = 0; i < 5; i += 1) expect(await join((await t.buyer(`Acheteur${i}`, `Nom${i}`)).project.id)).toMatchObject({ ok: true });
+    // Sept pris ; deux arrivent ensemble pour la huitième place : un seul entre.
+    const [x, y] = [await t.buyer('Xavier', 'Nom'), await t.buyer('Yann', 'Nom')];
+    const race = await Promise.all([join(x.project.id), join(y.project.id)]);
+    expect(race.filter((r) => r.ok)).toHaveLength(1);
+    expect(race.find((r) => !r.ok)).toMatchObject({ ok: false, code: 'group_full' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked'")).toHaveLength(8);
+    expect((await held(t)).map((h) => h.appointment_id)).toEqual([first.visit.appointment.id]);
+  });
+
+  it('AU077 · un événement occupé apparu dans l’agenda de l’agent refuse toujours d’ajouter un acquéreur à la visite [R33]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), TEMPLATE);
+    const alex = t.as('agent', t.alex.id);
+    const p = await t.property();
+    const ines = await t.buyer('Inès');
+    const leo = await t.buyer('Léo', 'Martin');
+    const first = await t.visites.schedule(alex, { propertyId: p.id, projectId: ines.project.id, start: WEDNESDAY_10H });
+    if (!first.ok) throw new Error(first.code);
+    const now = (): Date => new Date(TUESDAY_10H);
+    const busy = { busy: async () => [{ start: new Date(WEDNESDAY_10H.getTime() + 10 * 60_000), end: new Date(WEDNESDAY_10H.getTime() + 20 * 60_000) }] };
+    const rdv = new RendezVous(t.db, t.journal, { now, agenda: busy });
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now });
+    const visites = new Visites(t.db, t.journal, acces, { diffusion: { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) }, rendezVous: rdv, now });
+    expect(await visites.schedule(alex, { propertyId: p.id, projectId: leo.project.id, start: WEDNESDAY_10H, joinVisit: first.visit.appointment.id })).toMatchObject({ ok: false, rule: 'R33', code: 'agenda_busy' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE person_id = ?", [leo.person.id])).toEqual([]);
+  });
 });
