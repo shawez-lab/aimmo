@@ -1542,3 +1542,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 22:14 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU031
 - 2026-11-20 22:45 · voie 3 · AU057b (#732) fusionnée ; AU064 (#702) retrouvée en attente : main fusionné, relecture redemandée.
 - 2026-11-20 23:05 · voie 3 · AU064 (#702) et AU059 (#709) fusionnées ; AU059b ouverte (signature datée avant la procuration).
+- 2026-11-20 23:39 · AU031 · l'adresse exacte des biens repris gardée dans l'espace privé du bien (agent du bien et direction, lecture au journal sans l'adresse), jamais dans le bien ni une sortie publique ; adresse incomplète au bilan dès l'aperçu ; R84 précisée ; Codex 1 P2 corrigé ; fusionnée (#734, 1d00f18e) · prochaine : AU032

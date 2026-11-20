@@ -397,13 +397,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#730, `b5335306`), migration `4042` (ajout seul). Décidé : `POST /reseau/import` accepte `pieces` (dossier des biens, une pièce par ligne, par la référence de l'export des biens) ; sortes photo, diagnostic, mandat (signature dite oui, non ou non dite ; une négation l'emporte, une valeur inconnue reste non dite), annonce (lien et portail, jamais republiée), document ; seulement sur un bien repris par le même agent et le même logiciel, qu'il suit toujours ; `POST /reseau/import/apercu` rend le même bilan sans rien ranger ; `GET /reseau/import/dossier/<bien>` lu par l'agent du bien ou la direction, au journal (`bien.lu`). Codex : 3 P0 corrigés (lecture non journalisée, signature inconnue, négation dans le type). Les octets des fichiers ne sont pas copiés (nom et lien d'origine gardés) ; pas d'écran d'import.
 
 ### AU031 · La migration jette volontairement l’adresse de mes biens, que je dois ressaisir pour travailler
-- Statut : en cours
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A031 (majeur), endroit : docs/REPRISE.md, « L’adresse n’est jamais lue ».
 - Constat de l'audit : La migration jette volontairement l’adresse de mes biens, que je dois ressaisir pour travailler.
 - Objectif : L’adresse exacte est importée dans un espace privé autorisé et reste exclue des sorties publiques.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#734, `1d00f18e`), migration `4043` (ajout seul). Décidé : l'adresse de l'export des biens (`Adresse`, `Rue`, `Voie`, `Numéro de voie`), validée par `readAddress`, est gardée une fois dans `agent_import_property_addresses`, jamais dans `properties` ; lue dans le dossier repris (`dossierOf`, `address`) par l'agent du bien ou la direction, au journal sans l'adresse ; bilan `addresses` (`kept`, `known`, `notTakenLines`) à l'aperçu et à l'import ; test de structure : seuls l'import et les cartes de conformité nomment la table. Codex : 1 P2 corrigé (aperçu), puis rien. Pas d'écran ; la désignation du mandat ne reprend pas encore cette adresse (parcelles à saisir).
 
 ### AU032 · La captation par mail dépend encore d’un routage et de variables marqués « plus tard »
 - Statut : à faire
