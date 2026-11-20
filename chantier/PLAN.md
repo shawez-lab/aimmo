@@ -298,7 +298,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU023 · Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de…
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A023 (majeur), endroit : UI/fichiers.ts, connexion ; H22.
 - Constat de l'audit : Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de sa configuration par la direction.
