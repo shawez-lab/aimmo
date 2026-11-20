@@ -1529,3 +1529,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 19:45 · VOIE 2 : AU079 et AU080, 9d52d5de et 2e244f5b (main), relancé oui
 - 2026-11-20 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, sur AU081)
 - 2026-11-20 19:05 · AU029 · l'import d'un agent reprend ses échanges, notes de suivi et rappels de l'ancien logiciel sur ses seules fiches, avec le bilan des lignes non reprises par raison ; rien envoyé ; Codex 2 P0 et 5 P2 corrigés, 1 P2 restant noté ; vérification GitHub verte ; fusionnée (#729, c6f2e0b7) · prochaine : AU030
+- 2026-11-20 19:07 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU030
