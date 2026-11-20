@@ -1527,3 +1527,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 18:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:55 par une autre séance voie 2, active : push sur chantier/AU080 à 18:39)
 - 2026-11-20 19:45 · AU080 · offre reçue gardée avec son échéance exacte jusqu'à 730 jours, durée de plus de 60 jours signalée au contrôle et à l'écran, sans refuser le fait reçu ; R59 précisée ; test AU078 stabilisé ; Codex rien ; fusionnée (#728, 2e244f5b) · prochaine : AU081
 - 2026-11-20 19:45 · VOIE 2 : AU079 et AU080, 9d52d5de et 2e244f5b (main), relancé oui
+- 2026-11-20 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, sur AU081)
