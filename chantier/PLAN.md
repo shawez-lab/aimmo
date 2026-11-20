@@ -880,7 +880,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU081 · Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#731, 19179940). Constat reproduit (offre de l'acquéreur d'un collègue refusée R16). Le collègue qui suit l'acquéreur le partage pour ce seul bien (`POST /v1/offres/biens/:id/partages`) ; l'agent du bien inscrit l'offre et son contrôle se fait, sans la direction, avec l'identifiant seul (jamais la fiche). Partage valable tant que le collègue suit l'acquéreur, reconnu sur toute la fiche réunie ; retiré par le collègue ou la direction, ligne figée [R17]. Table `offer_buyer_shares` (migration 4033), aux cartes d'accès, de reprise et au registre des traitements. R56 précisée. Codex : 2 P2 corrigés (fiche réunie, partage caduc qui en cachait un valable), puis rien. Pas encore couverts par le partage : suivi des offres avec nom, dossier de vente, compromis (ils restent au collègue ou à la direction).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A081 (majeur), endroit : C/offres/registre-offres.ts, contrôle d’accès de l’acquéreur.
 - Constat de l'audit : Pour présenter l’offre d’un acquéreur suivi par un collègue, je dois faire intervenir la direction.

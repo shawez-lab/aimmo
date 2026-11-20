@@ -1535,3 +1535,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 21:22 · voie 3 · AU111 (#710) fusionnée : accès de sortie d'un agent parti.
 - 2026-11-20 21:48 · voie 3 · AU057 (#708) fusionnée : l'avenant change honoraires, charge, type du mandat, à une date d'effet ; Codex : 2 P2 restants (écran des conditions au jour présent, rappel de fin d'exclusivité selon le type modifié) → AU057b.
 - 2026-11-20 21:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:47 par une autre séance voie 2, active : push sur chantier/AU081 à 21:25)
+- 2026-11-20 21:55 · AU081 · l'acquéreur suivi par un collègue partagé pour un seul bien : l'agent du bien inscrit et contrôle l'offre sans la direction ni la fiche ; partage caduc si le collègue ne suit plus l'acquéreur, retrait daté ; R56 précisée ; Codex 2 P2 corrigés puis rien ; fusionnée (#731, 19179940) · prochaine : AU082
+- 2026-11-20 21:55 · VOIE 2 : AU081, 19179940 (main), relancé non
+- 2026-11-20 21:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 18:55 et de la dernière heure n'ont produit ni commit ni tâche finie : verrou occupé)
