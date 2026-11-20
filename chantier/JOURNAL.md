@@ -1493,3 +1493,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 07:55 · VOIE 2 : relance non faite, bien que les trois questions répondent oui : le 19/11 au soir, plusieurs tâches planifiées (Relances argent, Diffuseur, Contrôleur, Gardien synchro) ont échoué sur la limite d'usage du compte. La séance horaire suivante reprendra avec AU020b.
 - 2026-11-20 08:47 · AU024 · pièce du dossier d'agent déposée depuis l'écran, aperçu, confirmation, accusé de réception ; Codex P2 corrigé ; fusionnée (#714) · prochaine : AU025
 - 2026-11-20 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 07:56 par une autre séance voie 2, active : push sur chantier/AU020b à 08:51)
+- 2026-11-20 09:15 · AU020b · bloquée : la liste blanche des tables du bien gardées d'office laisse passer un nom de vendeur dans les textes (relecture forte 1 P1, Codex 3 P0 corrigés l'un après l'autre, le troisième touche les brouillons eux-mêmes) ; #715 ouverte sans fusion, branche gardée, nouvelle approche notée au plan · prochaine : AU021
+- 2026-11-20 09:15 · VOIE 2 : AU020b, df14e077 (branche, #715, non fusionnée), relancé non
+- 2026-11-20 09:15 · VOIE 2 : relance refusée, question 2 (les séances de 05:55 et 06:55 n'ont produit ni commit ni tâche finie)
