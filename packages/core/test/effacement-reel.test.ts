@@ -278,7 +278,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     const again = await eraseForReal(t.db, [t.personId], { objects: flaky, target });
     expect(again.outcome).toMatchObject({ objectsRemaining: 0, objectsRemoved: { PIECES: 1 } });
     expect(removed).toEqual(['boite/appels/seule-a.ogg']);
-    expect(await t.db.all('SELECT storage, object_key, removed_at FROM erasure_object_targets WHERE object_key LIKE 'boite/%' ORDER BY object_key')).toEqual([{ storage: 'PIECES', object_key: 'boite/appels/seule-a.ogg', removed_at: NOW.toISOString() }, { storage: 'PIECES', object_key: 'boite/appels/partage.ogg', removed_at: null }].sort((a, b) => (a.object_key < b.object_key ? -1 : 1)));
+    expect(await t.db.all("SELECT storage, object_key, removed_at FROM erasure_object_targets WHERE object_key LIKE 'boite/%' ORDER BY object_key")).toEqual([{ storage: 'PIECES', object_key: 'boite/appels/seule-a.ogg', removed_at: NOW.toISOString() }, { storage: 'PIECES', object_key: 'boite/appels/partage.ogg', removed_at: null }].sort((a, b) => (a.object_key < b.object_key ? -1 : 1)));
     // La note ne cite pas un fichier gardé : la sauvegarde ne la lit pas comme une référence.
     expect((await fileReferences(t.db)).map((r) => r.key)).not.toContain('boite/appels/seule-a.ogg');
     // Un troisième passage ne retire rien de plus, et le fichier partagé, encore cité, reste.
