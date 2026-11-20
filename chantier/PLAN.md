@@ -841,7 +841,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU078 · Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#726, adcddb1e), migration `4032`. Constat confirmé (tout mot du prix refusé dans le point). `PointSemaine.validate` prend une décision `{ appointmentId, priceEur, confirmed }` (route : `decisionPrix`) : confirmée explicitement, liée au rendez-vous tenu avec le vendeur (sa fiche, l'agent du mandat, depuis la signature, ni annulé, ni manqué, ni une visite) ; une phrase faite par le code ; rien d'autre ne change (annonce, fiche, mandat, messages) ; figée avec le point ; au journal le rendez-vous seul. R53 précisée. Codex : rien ; vérification GitHub verte. Reste : choisir le rendez-vous à l'écran du point (voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A078 (majeur), endroit : C/visites/point-semaine.ts, `PRICE_DROP`, R53.
 - Constat de l'audit : Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue : le vocabulaire du prix est interdit.

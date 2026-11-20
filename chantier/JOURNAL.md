@@ -1520,3 +1520,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 16:07 · AU027 · un « J'ai fini » seul n'est plus qu'une heure déclarée, montrée à part ; seules les présences rangées et les modules couverts par un quiz réussi comptent ; R85 précisée ; Codex rien ; fusionnée (#724, 2b9b491d) · prochaine : AU028
 - 2026-11-20 17:24 · AU028 · cycle de formation d'avant l'arrivée repris par la direction (période de référence et attestations, pièce et nom à l'appui), compteur et alertes sans remise à zéro ; Codex 1 P0 corrigé puis rien ; fusionnée (#725, 888895fb) · prochaine : AU029
 - 2026-11-20 17:25 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU029
+- 2026-11-20 17:48 · AU078 · le point vendeur consigne une décision de prix déjà convenue, confirmée par l'agent et liée au rendez-vous tenu avec le vendeur, phrase faite par le code, aucune négociation déclenchée ; R53 précisée ; Codex rien ; fusionnée (#726, adcddb1e) · prochaine : AU079
+- 2026-11-20 17:48 · VOIE 2 : AU078, adcddb1e (main), relancé non
+- 2026-11-20 17:48 · VOIE 2 : relance refusée, question 2 (la séance de 15:54 n'a produit ni commit ni tâche finie)
