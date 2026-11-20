@@ -276,6 +276,10 @@ export class ControlesSignature {
     return { ok: true, value: result };
   }
 
+  /**
+   * Aucun avenant différé ne prend effet après la fin du mandat : ni celui-ci, ni un avenant déjà signé dont la date
+   * d'effet viendrait après une fin avancée par celui-ci, rejoué à sa date de signature (AU057) [R42].
+   */
   private async effectAfterEnd(documentId: string, rawFacts: string | null, signedAt?: Date): Promise<CheckLine | null> {
     let facts: DocumentFacts | null = null;
     try {
@@ -283,17 +287,23 @@ export class ControlesSignature {
     } catch {
       facts = null;
     }
-    if (!facts?.mandateId || typeof facts.effectiveOn !== 'string') return null;
+    if (!facts?.mandateId) return null;
     const base = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [facts.mandateId]);
     if (!base) return null;
     const candidate = { documentId, signedAt: (signedAt ?? this.now()).toISOString(), facts };
-    // Les conditions de la veille de son effet : lui ne compte pas encore.
-    const eve = new Date(`${facts.effectiveOn}T12:00:00.000Z`);
-    eve.setUTCDate(eve.getUTCDate() - 1);
-    const before = await mandateTerms(this.db, facts.mandateId, eve, candidate);
-    if (!before || before.durationMonths === null) return null;
-    const ok = facts.effectiveOn < mandateEndDay(new Date(base.signed_at), before.durationMonths);
-    return { check: 'mandat', ok, code: ok ? 'effect_before_end' : 'effect_after_end' };
+    const all = await mandateTerms(this.db, facts.mandateId, undefined, candidate);
+    if (!all) return null;
+    const deferred = all.amendments.filter((a) => a.effectiveOn > localTime(new Date(a.signedAt), 'Europe/Paris').date);
+    if (deferred.length === 0) return null;
+    for (const a of deferred) {
+      // Les conditions de la veille de son effet : lui ne compte pas encore.
+      const eve = new Date(`${a.effectiveOn}T12:00:00.000Z`);
+      eve.setUTCDate(eve.getUTCDate() - 1);
+      const before = await mandateTerms(this.db, facts.mandateId, eve, candidate);
+      if (!before || before.durationMonths === null) continue;
+      if (a.effectiveOn >= mandateEndDay(new Date(base.signed_at), before.durationMonths)) return { check: 'mandat', ok: false, code: 'effect_after_end' };
+    }
+    return { check: 'mandat', ok: true, code: 'effect_before_end' };
   }
 
   private async linkedMandate(networkId: string, mandateId: string | null): Promise<CheckLine> {

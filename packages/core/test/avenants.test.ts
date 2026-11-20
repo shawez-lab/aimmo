@@ -336,6 +336,18 @@ describeWithSqlite('AU057 · avenant : honoraires, charge, type du mandat et dat
     expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['effect_after_end']);
   });
 
+  it('[R42] un raccourcissement antidaté ne laisse jamais un avenant déjà signé prendre effet après la fin', async () => {
+    const t = await setup();
+    const longer = await t.amendment({ 'avenant.duree_mois': 24, 'avenant.date_effet': '2027-12-01' });
+    const shorter = await t.amendment({ 'avenant.duree_mois': 6 });
+    if (!longer.ok || !shorter.ok) throw new Error('préparation');
+    t.now(new Date('2027-03-03T10:00:00.000Z'));
+    expect((await sign(t, longer.document.id, 'h22', new Date('2027-03-02T09:00:00.000Z'))).ok).toBe(true);
+    // Signé le 1er mars, avant l'allongement : le mandat finirait le 10 août, et l'allongement du 1er décembre le ressusciterait.
+    const r = await sign(t, shorter.document.id, 'h23', new Date('2027-03-01T09:00:00.000Z'));
+    expect(r.ok === false && 'check' in r && r.check.lines.filter((l) => !l.ok).map((l) => l.code)).toEqual(['effect_after_end']);
+  });
+
   it('[R42] une échéance n’est déplacée qu’à la date d’effet de l’avenant ; jamais au-delà de la fin du mandat', async () => {
     const t = await setup();
     // Le mandat finit le 10 février 2028 : une date d'effet ce jour-là ou après est refusée.
