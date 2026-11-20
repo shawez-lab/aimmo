@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
+import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, recordErasure, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
 import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
 import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -310,7 +310,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(await t.fiche.membersOf(twin.id)).toEqual(expect.arrayContaining([t.personId, twin.id]));
   });
 
-  it('[R231] le rejeu efface la personne entière : toutes ses fiches réunies, pas la seule fiche de l’entrée', async () => {
+  it('[R231] le rejeu efface la personne entière notée au registre : ses fiches réunies d’alors, jamais plus', async () => {
     const t = await setup();
     const twin = await t.store.createPerson({ networkId: t.network.id, agentId: null, firstName: 'Noé', lastName: 'Double' });
     await t.fiche.merge({ survivorId: t.other.id, mergedId: twin.id, reason: 'Même personne (inventé)' });
@@ -319,9 +319,16 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
       [t.network.id, twin.id, NOW.toISOString(), NOW.toISOString()],
     );
     const eraser = new SqlPersonEraser({ objects: t.objects.eraser });
-    expect(await eraser.erase(t.db, { requestId: 'demande-double', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() })).toBeGreaterThan(0);
+    // Une entrée sans périmètre (d'avant AU020) ne vaut que pour sa fiche, même si la base dit une fusion.
+    await eraser.erase(t.db, { requestId: 'demande-seule', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() });
+    expect(await t.db.first("SELECT id FROM calls WHERE id = 'appel-double'")).toEqual({ id: 'appel-double' });
+    expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [twin.id])).toEqual({ first_name: 'Noé' });
+    // Le périmètre noté à l'effacement : les deux fiches.
+    expect(await eraser.erase(t.db, { requestId: 'demande-double', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString(), members: [t.other.id, twin.id] })).toBeGreaterThan(0);
     expect(await t.db.first("SELECT id FROM calls WHERE id = 'appel-double'")).toBeNull();
     expect(await t.db.first('SELECT first_name FROM persons WHERE id = ?', [twin.id])).toEqual({ first_name: null });
+    // Un périmètre qui ne contient pas la fiche de l'entrée n'est pas noté.
+    await expect(recordErasure(t.ledger.store, t.key, { requestId: 'x', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString(), members: [twin.id] })).rejects.toThrow();
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {

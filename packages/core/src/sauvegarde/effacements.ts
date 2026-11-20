@@ -33,6 +33,11 @@ export interface ErasureEntry {
   networkId: string;
   personId: string;
   erasedAt: string;
+  /**
+   * Les fiches réunies de la personne au moment de l'effacement (AU020) : le rejeu efface ce périmètre, jamais celui
+   * qu'une fusion défaite depuis et revenue avec la copie dirait. Absent dans les entrées d'avant : la fiche seule.
+   */
+  members?: string[];
 }
 
 /** La procédure réelle d'effacement, sans effet si tout est déjà effacé. Rend le nombre de lignes effacées. */
@@ -41,7 +46,8 @@ export interface PersonEraser {
 }
 
 const validEntry = (e: Partial<ErasureEntry> | null): e is ErasureEntry =>
-  !!e && [e.requestId, e.networkId, e.personId].every((v) => typeof v === 'string' && v !== '') && typeof e.erasedAt === 'string' && !Number.isNaN(Date.parse(e.erasedAt));
+  !!e && [e.requestId, e.networkId, e.personId].every((v) => typeof v === 'string' && v !== '') && typeof e.erasedAt === 'string' && !Number.isNaN(Date.parse(e.erasedAt)) &&
+  (e.members === undefined || (Array.isArray(e.members) && e.members.length > 0 && e.members.every((m) => typeof m === 'string' && m !== '') && e.members.includes(e.personId!)));
 
 /** Note un effacement fait, au plus tôt : tant qu'il n'est pas noté, il n'est pas dit fait. */
 export async function recordErasure(store: ErasureLedgerStore, key: CopyKey, entry: ErasureEntry): Promise<void> {

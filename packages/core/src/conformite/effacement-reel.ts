@@ -24,8 +24,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase, SqlValue } from '../db/sql.ts';
-import { FicheClient } from '../db/fiche-client.ts';
-import { FicheUnique } from '../fiche/fusion.ts';
+import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { CopyKey } from '../sauvegarde/copie.ts';
@@ -264,9 +263,9 @@ export class SqlPersonEraser implements PersonEraser {
   constructor(private readonly options: { carte?: Readonly<Record<string, AccessMapEntry>>; registre?: readonly Traitement[]; objects?: ObjectEraser | null } = {}) {}
 
   async erase(db: SqlDatabase, entry: ErasureEntry): Promise<number> {
-    // La personne entière, toutes ses fiches réunies : une ligne qui n'est qu'à elle peut citer deux de ses fiches, et
-    // n'être vue comme sienne qu'avec les deux (le lien des fiches réunies est gardé par l'effacement) [R231].
-    const members = await new FicheUnique(db, new FicheClient(db)).membersOf(entry.personId);
+    // La personne entière telle qu'elle était à l'effacement, notée au registre : une ligne qui n'est qu'à elle peut citer
+    // deux de ses fiches. Jamais les liens de la copie restaurée, qu'une fusion défaite depuis élargirait [R17, R231].
+    const members = entry.members ?? [entry.personId];
     const { outcome } = await eraseForReal(db, members, { ...this.options, target: { requestId: entry.requestId, networkId: entry.networkId, at: entry.erasedAt } });
     // Un rejeu qui laisse ce qui devait partir n'est pas un rejeu : la restauration n'est pas dite finie [R231].
     if (outcome.remaining.length > 0 || outcome.objectsRemaining > 0) throw new Error('effacement incomplet');
@@ -351,7 +350,7 @@ export class EffacementReel {
     const members = await this.fiche.membersOf(row.person_id);
     const at = this.now().toISOString();
     try {
-      for (const personId of members) await recordErasure(this.options.ledger.store, this.options.ledger.key, { requestId: row.id, networkId: row.network_id, personId, erasedAt: at });
+      for (const personId of members) await recordErasure(this.options.ledger.store, this.options.ledger.key, { requestId: row.id, networkId: row.network_id, personId, erasedAt: at, members: [...members] });
     } catch {
       return { ok: false, rule: 'R231', code: 'ledger_unwritable' };
     }
