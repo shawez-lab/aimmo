@@ -432,21 +432,22 @@ export const ERASURE_WHY = {
 } as const;
 
 /**
- * Les tables qui décrivent et diffusent un bien, en ajout seul (la base refuse de les effacer) : fiche, liens, brouillons,
- *, validations, versions et traductions de l'annonce, contrôles des vidéos, choix des portails,
- * sujets des photos (AU020b), toutes du traitement des biens. Aucune ne porte le nom du vendeur ni l'adresse exacte [R19, R46] ; elles restent avec le
- * bien, et c'est le lien de la personne au bien (son projet) qui part. Le plan les dit gardées, avec leur raison, au
- * lieu de promettre un effacement que la base refuse.
+ * Les tables qui décrivent et diffusent un bien, en ajout seul (la base refuse de les effacer) : fiche, brouillons,
+ * validations, versions et traductions de l'annonce, contrôles des vidéos, choix des portails, sujets des photos
+ * (AU020b), toutes du traitement des biens. Aucune ne porte le nom du vendeur ni l'adresse exacte [R19, R46] : leurs
+ * textes passent par les contrôles des annonces, et leurs autres valeurs sont fermées. Elles restent avec le bien, et
+ * c'est le lien de la personne au bien (son projet) qui part. Le plan les dit gardées, avec leur raison, au lieu de
+ * promettre un effacement que la base refuse.
  *
  * Pas ici, parce qu'elles portent l'adresse exacte ou un texte libre que rien ne contrôle : `sign_placements` (le
- * panneau posé), `pige_properties` (le bien venu de la pige), `property_details` (quartier et atout, importés) et
- * `diffusion_portal_feedback` (le motif écrit par le portail). Elles restent à effacer, la base le refuse, et
+ * panneau posé), `pige_properties` (le bien venu de la pige), `property_details` (quartier et atout, importés),
+ * `diffusion_portal_feedback` (le motif écrit par le portail), `property_links` (lien ou identifiant de publication
+ * gardé tel quel) et `agent_import_properties` (la référence de l'export, gardée telle quelle). Elles restent à effacer, la base le refuse, et
  * l'effacement n'est pas dit complet (AU020d), comme pour les tables en ajout seul d'autres traitements (commerces,
  * départ d'un agent, assainissement).
  */
 export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
   'property_sheets',
-  'property_links',
   'listing_drafts',
   'listing_validations',
   'listing_versions',
@@ -455,7 +456,6 @@ export const PROPERTY_DESCRIPTION: ReadonlySet<string> = new Set([
   'listing_translation_validations',
   'translation_reviewers',
   'video_text_checks',
-  'agent_import_properties',
   'diffusion_portal_choices',
   'diffusion_portal_suspensions',
   'diffusion_portal_resumptions',
@@ -472,6 +472,8 @@ export const PROPERTY_NOT_KEPT: Readonly<Record<string, string>> = Object.freeze
   pige_properties: 'street',
   property_details: 'highlight',
   diffusion_portal_feedback: 'detail',
+  property_links: 'value',
+  agent_import_properties: 'export_reference',
 });
 
 /**

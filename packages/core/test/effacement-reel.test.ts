@@ -393,7 +393,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Et aucune table gardée n'inscrit une de ces colonnes de texte libre non contrôlé.
     for (const table of PROPERTY_DESCRIPTION) {
       const names = (await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name);
-      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number'].includes(c)), table).toEqual([]);
+      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number', 'value', 'export_reference'].includes(c)), table).toEqual([]);
     }
   });
 
