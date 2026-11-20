@@ -151,4 +151,21 @@ describeWithSqlite('SV02 · la copie de chaque nuit, vue par la direction', () =
     expect(restoreWatchJob(t.db, t.journal, { now }).hours).toEqual([6, 7, 8]);
     await expect(t.db.run('DELETE FROM base_restore_alerts')).rejects.toThrow();
   });
+
+  it('[R232] AU109 · le dernier reçu décide : une restauration réussie puis ratée ne prouve plus rien et alerte', async () => {
+    const t = await world();
+    const recus = new RecusRestauration(t.db, t.journal, { now });
+    clock = new Date('2027-03-20T10:00:00.000Z');
+    await recordCopyRun(t.db, success('2027-03-20T02:00:00.000Z', 'c1'));
+    await recordRestoreReceipt(t.db, { id: 'rr1', testedAt: '2027-03-05T03:00:00.000Z', month: '2027-03', outcome: 'reussie', copyTakenAt: '2027-03-05T02:05:00.000Z', durationMs: 60_000, tables: 3, rows: 10, digest: 'a'.repeat(64) });
+    await recordRestoreReceipt(t.db, { id: 'rr2', testedAt: '2027-03-19T03:00:00.000Z', month: '2027-03', outcome: 'echouee', reason: 'non_identique', copyTakenAt: '2027-03-19T02:05:00.000Z', durationMs: 60_000, tables: 3, rows: 10 });
+    const s = await t.suivi.status(direction);
+    expect(s.ok && s.value).toMatchObject({ activation: 'non_prouvee', exerciseAt: null });
+    expect(await recus.watch()).toBe(true);
+    // Un nouveau test réussi rétablit la preuve.
+    await recordRestoreReceipt(t.db, { id: 'rr3', testedAt: '2027-03-20T03:00:00.000Z', month: '2027-03', outcome: 'reussie', copyTakenAt: '2027-03-20T02:05:00.000Z', durationMs: 60_000, tables: 3, rows: 10, digest: 'b'.repeat(64) });
+    const again = await t.suivi.status(direction);
+    expect(again.ok && again.value).toMatchObject({ activation: 'prouvee', exerciseAt: '2027-03-20T03:00:00.000Z' });
+    expect(await recus.watch()).toBe(false);
+  });
 });

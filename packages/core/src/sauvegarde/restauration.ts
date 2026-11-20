@@ -171,8 +171,9 @@ export class RecusRestauration {
   async watch(): Promise<boolean> {
     const at = this.now();
     const month = expectedRestoreMonth(at);
-    const ok = await this.db.first("SELECT id FROM base_restore_receipts WHERE month >= ? AND outcome = 'reussie' AND tested_at <= ? LIMIT 1", [month, at.toISOString()]);
-    if (ok) return false;
+    // Le dernier reçu décide : une réussite suivie d'un échec laisse l'alerte se lever [R232].
+    const latest = await this.db.first<{ outcome: string }>('SELECT outcome FROM base_restore_receipts WHERE month >= ? AND tested_at <= ? ORDER BY tested_at DESC, id DESC LIMIT 1', [month, at.toISOString()]);
+    if (latest?.outcome === 'reussie') return false;
     const last = await this.db.first<{ at: string | null }>('SELECT MAX(tested_at) AS at FROM base_restore_receipts WHERE tested_at <= ?', [at.toISOString()]);
     const { changes } = await this.db.run('INSERT INTO base_restore_alerts (month, last_receipt_at, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [month, last?.at ?? null, at.toISOString()]);
     if (changes !== 1) return false;

@@ -98,11 +98,12 @@ export class SuiviCopies {
     );
     const nights = await this.db.all<{ night: string }>('SELECT night FROM base_copy_alerts ORDER BY night DESC LIMIT ?', [SHOWN_NIGHTS]);
     const state: CopyState = lastSuccessAt === null ? 'jamais' : lastSuccessAt >= copyWindowStart(this.now()).toISOString() ? 'a_jour' : 'en_retard';
-    const exercise = await this.db.first<{ at: string | null }>(
-      "SELECT MAX(tested_at) AS at FROM base_restore_receipts WHERE month >= ? AND outcome = 'reussie' AND tested_at <= ?",
+    // Le dernier reçu décide : une restauration réussie puis une ratée ne prouve plus rien [R232].
+    const exercise = await this.db.first<{ at: string; outcome: string }>(
+      'SELECT tested_at AS at, outcome FROM base_restore_receipts WHERE month >= ? AND tested_at <= ? ORDER BY tested_at DESC, id DESC LIMIT 1',
       [expectedRestoreMonth(this.now()), this.now().toISOString()],
     );
-    const exerciseAt = exercise?.at ?? null;
+    const exerciseAt = exercise?.outcome === 'reussie' ? exercise.at : null;
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_copies' } }, this.now);
     return { ok: true, value: { state, lastSuccessAt, lastFailure: failure ?? null, missedNights: nights.map((n) => n.night), activation: state === 'a_jour' && exerciseAt !== null ? 'prouvee' : 'non_prouvee', exerciseAt } };
   }
