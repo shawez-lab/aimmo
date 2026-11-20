@@ -325,7 +325,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H22).
 
 ### AU024 · Mon écran d’intégration liste les pièces manquantes
-- Statut : en cours
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (une pièce ne se rangeait que par une référence déjà stockée). Fusionnée (#714, 0bc1359e). `POST /v1/reseau/agents/<id>/pieces/fichier` : corps brut PDF, JPEG ou PNG, 10 Mo au plus, tout vérifié avant de ranger (droits, pièce, dates, type, premiers octets), réponse avec `receipt` (pièce, version, heure, poids, jamais la référence) ; `checkPiece` commun à `addPiece` et `addPieceFile`. Écran : bloc « Déposer… » sous chaque pièce manquante, en projet ou échue, aperçu avant l'envoi, confirmation, accusé de réception. R82 et `docs/API.md` complétées. Codex 1 P2 (type lu hors de la liste) corrigé, puis rien à signaler ; vérification GitHub verte. Reste : compartiment `aimmo-pieces` (H25, H45) pour l'usage réel.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A024 (majeur), endroit : UI/integration.ts, `renderFile`.
 - Constat de l'audit : Mon écran d’intégration liste les pièces manquantes, mais ne me permet pas de déposer les justificatifs à cet endroit.
