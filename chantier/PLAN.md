@@ -639,6 +639,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU057b · Conditions du jour et rappel d'exclusivité après un avenant
+- Statut : en cours (voie 3)
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU057
+- Cahier : M06 Mandats et documents ; suite des remarques P2 de Codex sur #708.
+- Objectif : l'écran des conditions montre celles du jour et les avenants à venir à part ; le rappel de fin de période exclusive suit le type de mandat en vigueur.
+- Critères : test AU057b dans avenants.test.ts.
+- Attend : rien.
+
 ### AU058 · Le barème de vente se résume à un taux maximal et un minimum
 - Statut : fait (2026-11-19)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
