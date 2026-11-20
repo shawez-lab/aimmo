@@ -529,7 +529,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
   // Un mandat qui nomme plusieurs mandants (AU001) est, comme un bail, à plusieurs parties : la fiche de l'autre et le texte
   // qui les nomme tous ne sont jamais montrés, leur empreinte reste ; un mandat à un seul mandant est montré entier [R96].
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id'), via('id', 'document_proxies', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
   // AU059 : le mandant comme son représentant y trouvent la ligne qui les nomme.

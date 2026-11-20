@@ -547,7 +547,8 @@ export class SignatureEnLigne {
     if (!doc || doc.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_document' };
     if (!MANDATE_KINDS.includes(doc.kind)) return { ok: false, rule: null, code: 'not_a_mandate' };
     const mandants = await documentMandants(this.db, documentId, doc.person_id);
-    for (const personId of mandants) {
+    // Chaque mandant et chaque représentant, à chaque reprise de la remise aussi (AU059) [R16].
+    for (const personId of await documentPersons(this.db, documentId, doc.person_id)) {
       if (!(await this.seesInFull(viewer, personId, `document:${documentId}`))) return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
     const contentHash = await sha256(doc.content);

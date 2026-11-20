@@ -110,6 +110,8 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     expect(await t.generate(lea, { coMandantIds: [noe], proxies: [proxyOf(lea, noe, t.property.id)] })).toEqual(bad);
     expect(await t.generate(lea, { proxies: [proxyOf(paul, lea, t.property.id)] })).toEqual(bad);
     expect(await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id), proxyOf(lea, paul, t.property.id, { powerRef: REF(t.property.id, 2) })] })).toEqual(bad);
+    // Un même représentant pour deux mandants : refusé, chacun reçoit son propre code et son exemplaire.
+    expect(await t.generate(lea, { coMandantIds: [noe], proxies: [proxyOf(lea, paul, t.property.id), proxyOf(noe, paul, t.property.id, { powerRef: REF(t.property.id, 2) })] })).toEqual(bad);
     // Une procuration future, d'une autre sorte, ou dont le scan est rangé pour un autre bien.
     expect(await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id, { grantedOn: '2027-03-01' })] })).toEqual(bad);
     expect(await t.generate(lea, { proxies: [proxyOf(lea, paul, t.property.id, { powerKind: 'orale' })] })).toEqual(bad);
@@ -191,12 +193,17 @@ describeWithSqlite('AU059 · le vendeur représenté par procuration', () => {
     if (!d.ok) throw new Error(d.code);
     const access = JSON.stringify(await conformite.assembleAccess(t.db, [lea]));
     expect(access).not.toContain('Paul Tiers');
+    // Le représentant, lui, retrouve le document qui le nomme dans sa réponse d'accès, son texte masqué [R96].
+    const forPaul = await conformite.assembleAccess(t.db, [paul]);
+    expect(forPaul.sections.map((x) => x.table)).toEqual(expect.arrayContaining(['documents', 'document_proxies']));
     const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, scans: { has: async (r) => r === REF(t.property.id) } });
     const session = await online.start(t.agent, d.document.id, CONSENT);
     if (!session.ok) throw new Error(session.code);
     const sent = await t.codes();
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.id, paul]);
     expect(await online.sign(t.agent, session.value.sessionId, { code: sent[0]!.code })).toMatchObject({ ok: false, rule: 'R16' });
+    // La fin et toute reprise de la remise aussi.
+    expect(await online.finish(t.agent, d.document.id)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.db.first('SELECT status FROM signature_sessions WHERE id = ?', [session.value.sessionId])).not.toEqual({ status: 'signee' });
   });
 

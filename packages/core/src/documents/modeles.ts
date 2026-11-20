@@ -454,6 +454,8 @@ export class Modeles {
         if (!proxy.ok) return proxy;
         if (proxy.view !== 'full') return this.refuse(viewer, 'person', 'not_assigned', `person:${p.proxyId}`);
         if (proxy.value.members.some((m) => mandantMembers.has(m.id))) return { ok: false, rule: null, code: 'bad_proxies' };
+        // Un représentant pour un seul mandant : chacun reçoit son code et son exemplaire, jamais en double.
+        if (proxies.some((q) => q.proxyId === proxy.value.person.id)) return { ok: false, rule: null, code: 'bad_proxies' };
         proxies.push({
           mandantId: p.mandantId,
           proxyId: proxy.value.person.id,
