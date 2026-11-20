@@ -891,7 +891,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
 - Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.
