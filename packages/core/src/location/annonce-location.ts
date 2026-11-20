@@ -286,6 +286,8 @@ export class AnnoncesLocation {
       energyClass: facts.energyClass,
       climateClass: sheet.energy.climateClass,
       furnished: facts.furnished,
+      carrezM2: c?.carrezM2 ?? null,
+      usableM2: c?.usableM2 ?? null,
     };
     const controlled = await this.listings.rentControlledFor({ id: listingId, network_id: networkId }, facts.leaseStart);
     const mentions = rentalMentions(facts, fees, p.city, sheet.energy, controlled);

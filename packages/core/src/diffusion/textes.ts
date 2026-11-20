@@ -412,8 +412,10 @@ export class TextesPortails {
           climateClass: sheet.energy?.climateClass ?? null,
           amenities: c?.amenities ?? [],
           condition: c?.condition ?? null,
+          carrezM2: c?.carrezM2 ?? null,
+          usableM2: c?.usableM2 ?? null,
         }
-      : { ...f.facts, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null, energyClass: null, climateClass: null, amenities: [], condition: null };
+      : { ...f.facts, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null, energyClass: null, climateClass: null, amenities: [], condition: null, carrezM2: null, usableM2: null };
     return { current: f.facts, published, publishedSheet: sheet };
   }
 

@@ -37,6 +37,43 @@ export type Amenity = (typeof AMENITIES)[number];
 export const CONDITIONS = ['neuf', 'refait_a_neuf', 'bon_etat', 'travaux_a_prevoir', 'a_renover'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
+/**
+ * AU063 · Les surfaces d'un bien, chacune avec son unité (le m², au centième) et sa source : la surface habitable (celle
+ * du bien), la surface Carrez (lot de copropriété, loi du 18 décembre 1996) et la surface utile (commerce, bureau).
+ */
+export const SURFACE_KINDS = ['habitable', 'carrez', 'utile'] as const;
+export type SurfaceKind = (typeof SURFACE_KINDS)[number];
+/** D'où vient la surface : un mesurage d'un professionnel, l'acte ou le titre, ou le dire du vendeur. */
+export const SURFACE_SOURCES = ['mesurage', 'acte', 'vendeur'] as const;
+export type SurfaceSource = (typeof SURFACE_SOURCES)[number];
+export const SURFACE_LABEL: Readonly<Record<SurfaceKind, string>> = { habitable: 'surface habitable', carrez: 'surface Carrez', utile: 'surface utile' };
+export const SURFACE_SOURCE_LABEL: Readonly<Record<SurfaceSource, string>> = { mesurage: 'mesurage d’un professionnel', acte: 'acte de propriété', vendeur: 'déclarée par le vendeur' };
+/**
+ * La surface que chaque support affiche, dite une fois pour toutes (AU063) : un support ne choisit jamais seul. L'annonce
+ * et le site disent l'habitable, et la Carrez quand la fiche la porte ; un commerce dit sa surface utile ; les portails et
+ * la fiche commerciale reçoivent chacune, à sa place.
+ */
+export const SURFACE_DISPLAY: Readonly<Record<'annonce' | 'site' | 'portails' | 'fiche_commerciale', readonly SurfaceKind[]>> = {
+  annonce: ['habitable', 'carrez'],
+  site: ['habitable', 'carrez'],
+  portails: ['habitable', 'carrez', 'utile'],
+  fiche_commerciale: ['habitable', 'carrez', 'utile'],
+};
+export type SurfaceSupport = keyof typeof SURFACE_DISPLAY;
+
+/** Les surfaces qu'un support affiche, dans son ordre, avec leur libellé et leur source ; jamais une surface absente. */
+export function surfacesFor(
+  support: SurfaceSupport,
+  f: { kind?: string; surfaceM2: number | null; carrezM2?: number | null; usableM2?: number | null; surfaceSources?: Partial<Record<SurfaceKind, SurfaceSource>> },
+): { kind: SurfaceKind; m2: number; label: string; source: SurfaceSource | null }[] {
+  const value: Record<SurfaceKind, number | null> = { habitable: f.surfaceM2, carrez: f.carrezM2 ?? null, utile: f.usableM2 ?? null };
+  // Un local, des murs ou un fonds se disent d'abord par leur surface utile, partout où elle est rangée.
+  const kinds = f.kind === 'commercial' || f.kind === 'business_walls' || f.kind === 'business' ? (['utile', ...SURFACE_DISPLAY[support].filter((k) => k !== 'utile')] as SurfaceKind[]) : SURFACE_DISPLAY[support];
+  return kinds
+    .filter((k) => value[k] !== null)
+    .map((k) => ({ kind: k, m2: value[k]!, label: SURFACE_LABEL[k], source: f.surfaceSources?.[k] ?? null }));
+}
+
 export const MEDIA_KINDS = ['photo', 'video', 'visite_virtuelle'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
 
@@ -61,6 +98,11 @@ export interface Characteristics {
   amenities?: Amenity[];
   /** L'état du bien (AU061) ; absent tant qu'on ne l'a pas dit. */
   condition?: Condition;
+  /** La surface Carrez et la surface utile, en m² au centième (AU063) ; absentes tant qu'on ne les a pas dites. */
+  carrezM2?: number;
+  usableM2?: number;
+  /** La source de chaque surface dite (AU063). */
+  surfaceSources?: Partial<Record<SurfaceKind, SurfaceSource>>;
 }
 
 /**
@@ -176,7 +218,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   // Caractéristiques.
   const c = input.characteristics ?? {};
   if (!isRecord(c)) return bad('characteristics');
-  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling', 'amenities', 'condition'], 'characteristics');
+  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling', 'amenities', 'condition', 'carrezM2', 'usableM2', 'surfaceSources'], 'characteristics');
   if (cExtra) return bad(cExtra);
   const bedrooms = intOrNull(c.bedrooms, 0, 50);
   if (!bedrooms.ok) return bad('characteristics.bedrooms');
@@ -203,6 +245,21 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (!Array.isArray(amenitiesRaw) || amenitiesRaw.some((a) => !(AMENITIES as readonly unknown[]).includes(a)) || new Set(amenitiesRaw).size !== amenitiesRaw.length) return bad('characteristics.amenities');
   const condition = c.condition ?? null;
   if (condition !== null && !(CONDITIONS as readonly unknown[]).includes(condition)) return bad('characteristics.condition');
+  // AU063 · surfaces au centième de m², comme la surface du bien (AU062) ; chaque source dite d'une liste fermée.
+  const hundredths = (v: unknown): { ok: boolean; value: number | null } => {
+    if (v === undefined || v === null) return { ok: true, value: null };
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 100_000 || Number(v.toFixed(2)) !== v) return { ok: false, value: null };
+    return { ok: true, value: v };
+  };
+  const carrez = hundredths(c.carrezM2);
+  if (!carrez.ok) return bad('characteristics.carrezM2');
+  const usable = hundredths(c.usableM2);
+  if (!usable.ok) return bad('characteristics.usableM2');
+  const sourcesRaw = c.surfaceSources ?? {};
+  if (!isRecord(sourcesRaw) || Object.entries(sourcesRaw).some(([k, v]) => !(SURFACE_KINDS as readonly string[]).includes(k) || !(SURFACE_SOURCES as readonly unknown[]).includes(v))) return bad('characteristics.surfaceSources');
+  // Une source se dit pour une surface rangée, jamais seule.
+  if ((sourcesRaw.carrez !== undefined && carrez.value === null) || (sourcesRaw.utile !== undefined && usable.value === null)) return bad('characteristics.surfaceSources');
+  const surfaceSources = Object.fromEntries(SURFACE_KINDS.filter((k) => sourcesRaw[k] !== undefined).map((k) => [k, sourcesRaw[k]])) as Partial<Record<SurfaceKind, SurfaceSource>>;
   const characteristics: Characteristics = {
     bedrooms: bedrooms.value,
     floor: floor.value,
@@ -217,6 +274,9 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     ...(dwelling !== null ? { dwelling: dwelling as Dwelling } : {}),
     ...(amenitiesRaw.length > 0 ? { amenities: AMENITIES.filter((a) => (amenitiesRaw as unknown[]).includes(a)) } : {}),
     ...(condition !== null ? { condition: condition as Condition } : {}),
+    ...(carrez.value !== null ? { carrezM2: carrez.value } : {}),
+    ...(usable.value !== null ? { usableM2: usable.value } : {}),
+    ...(Object.keys(surfaceSources).length > 0 ? { surfaceSources } : {}),
   };
 
   // Diagnostic énergétique.

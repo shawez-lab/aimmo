@@ -31,7 +31,7 @@ import { agentState } from '../acces/etat-agent.ts';
 import { replyLanguage } from '../captation/premiere-reponse.ts';
 import { publicTextProblems, sentences } from './annonce-sourcee.ts';
 import { Annonces } from './annonces.ts';
-import { dpeXml, type PortalFormat } from './portails.ts';
+import { dpeXml, surfacesXml, type PortalFormat } from './portails.ts';
 import type { ListingPayload } from './publication.ts';
 
 /** Les langues des annonces traduites. Le français est la langue source, jamais traduite. */
@@ -758,6 +758,7 @@ export const INTERNATIONAL_TRIAL_FORMAT: PortalFormat = {
         `<mentions langue="fr">${xml(l.mentions ?? '')}</mentions>` +
         // AU064 · le diagnostic part aussi aux portails étrangers, tel qu'il est rangé.
         dpeXml(l.dpe) +
+        surfacesXml(l.surfaces) +
         `<medias>${media}</medias>` +
         `</annonce>`
       );
