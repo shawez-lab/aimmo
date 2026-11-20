@@ -829,7 +829,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU077 · Manque
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A077 (majeur), endroit : C/rendezvous/reservation.ts ; C/visites/visites.ts.
 - Constat de l'audit : Manque : une visite groupée avec plusieurs acquéreurs ne peut partager un même créneau d’agent sans être traitée comme des rendez-vous concurrents.
