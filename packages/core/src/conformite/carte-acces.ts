@@ -947,6 +947,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // droits-des-personnes
   person_requests: { locate: by('person_id') },
   person_request_outputs: { locate: [via('request_id', 'person_requests')] },
+  erasure_object_targets: { locate: [via('request_id', 'person_requests')] },
   person_request_answers: { locate: [via('request_id', 'person_requests')] },
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
   // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.
