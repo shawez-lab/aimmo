@@ -186,6 +186,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       visit_dossiers: ['person_id', 'payload_hash', 'content', 'content_hash', 'created_by'],
       remote_visits: ['person_id', 'started_by'],
       remote_slip_signatures: ['drawing_hash', 'proof', 'created_by'],
+      // AU075 : la signature sans papier du bon d'une visite sur place, et la remise de son exemplaire.
+      visit_slip_signatures: ['drawing_hash', 'proof', 'copy_token_hash', 'copy_status', 'created_by'],
     },
   },
   {
@@ -1310,6 +1312,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_dossiers: ['id', 'network_id', 'appointment_id', 'property_id', 'version_id', 'token_hash', 'expires_at', 'status', 'message_id', 'created_at'],
   remote_visits: ['appointment_id', 'network_id', 'property_id', 'started_at', 'ended_at'],
   remote_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
+  visit_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'place', 'channel', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
   weekly_points: ['mandate_id', 'week', 'network_id', 'property_id', 'next_actions', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],
   offer_register: ['id', 'network_id', 'property_id', 'seq', 'valid_until', 'down_payment_eur', 'loan_eur', 'received_at', 'at', 'prev_hash', 'hash', 'request_key'],
   offer_checks: ['id', 'offer_id', 'network_id', 'checked_at'],

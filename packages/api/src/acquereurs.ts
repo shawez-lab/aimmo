@@ -21,7 +21,10 @@
  *   POST /visites/modeles/:modele/validation            sa validation
  *   GET  /visites/:visite                               l'écran de la visite : bien, heure, bon, sécurité, compte rendu
  *   GET  /visites/:visite/bon                           le bon de visite
- *   POST /visites/:visite/bon/signature                 le bon signé sur papier
+ *   POST /visites/:visite/bon/signature                 le bon signé sur papier, en secours
+ *   POST /visites/:visite/bon/signature-en-ligne        { place: sur_place|distance, channel?, consentProof? } (AU075)
+ *   GET  /visites/:visite/bon/a-signer                  le bon à lire sur le téléphone de l'agent, sur place (AU075)
+ *   POST /visites/:visite/bon/signature-sur-place       { code, drawing? } : le visiteur signe sur place (AU075)
  *   POST /visites/:visite/annulation                    annuler la visite
  *   GET  /fiches/:fiche/visites-en-ligne                les visites réservées en ligne qui attendent (BR64)
  *   POST /visites/:rendez-vous/rattachement             { projectId } : la rattacher à la recherche, avec son bon (BR64)
@@ -50,6 +53,7 @@ import {
   Rapprochement,
   RendezVous,
   Secteurs,
+  SignatureBon,
   Visites,
   VisiteSecurisee,
   appendEvent,
@@ -167,6 +171,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
   const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now });
   const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
   const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
+  const signature = (s: M08Services) => new SignatureBon(s.db, s.journal, visites(s), { now: s.now });
   const points = (s: M08Services) => new PointSemaine(s.db, s.journal, s.acces, { now: s.now });
   const secteurs = (s: M08Services) => new Secteurs(s.db, s.acces, s.journal, options.geocoder ?? null, { now: s.now });
   const post = (name: string, path: string, run: (s: M08Services, v: Viewer, p: string[], body: Record<string, unknown>) => Promise<Response>): M08Route => ({
@@ -247,6 +252,16 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof scanRef !== 'string') return failure(400, 'invalid_scan', 'scanRef : la référence du bon numérisé.');
       return reply(await visites(s).recordPaperSignature(v, a!, { signedAt: new Date(signedAt), scanRef }));
     }),
+    // AU075 · Le bon signé sans papier : sur le téléphone de l'agent avec le code du visiteur, ou à distance [R40, R03].
+    post('visites.bon.en_ligne', `/visites/${ID}/bon/signature-en-ligne`, async (s, v, [a], body) => {
+      if (Object.keys(body).some((k) => !['place', 'channel', 'consentProof'].includes(k))) return failure(400, 'unexpected_field', 'place, channel et consentProof seulement.');
+      return reply(await signature(s).open(v, a!, { place: body.place, channel: body.channel, consentProof: body.consentProof }));
+    }),
+    get('visites.bon.a_signer', `/visites/${ID}/bon/a-signer`, async (s, v, [a]) => reply(await signature(s).readOnSite(v, a!))),
+    post('visites.bon.sur_place', `/visites/${ID}/bon/signature-sur-place`, async (s, v, [a], body) => {
+      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'code et drawing seulement.');
+      return reply(await signature(s).signOnSite(v, a!, { code: body.code, drawing: body.drawing }));
+    }),
     post('visites.annulation', `/visites/${ID}/annulation`, async (s, v, [a]) => reply(await visites(s).cancel(v, a!))),
     // BR64 · Les visites réservées en ligne d'une fiche, puis leur rattachement à la recherche [R16, R40, R42].
     get('visites.en_ligne', `/fiches/${ID}/visites-en-ligne`, async (s, v, [f], request) => {
@@ -308,6 +323,11 @@ async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: st
     'SELECT report, source, status, delivery_status FROM visit_reports WHERE appointment_id = ?',
     [appointmentId],
   );
+  // AU075 : l'état de la signature sans papier, jamais un code ni un lien.
+  const online = await s.db.first<{ status: string; place: string; copy_status: string | null }>(
+    `SELECT status, place, copy_status FROM visit_slip_signatures WHERE appointment_id = ? AND status <> 'remplacee' ORDER BY CASE status WHEN 'signee' THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
+    [appointmentId],
+  );
   const firstName = (await fiche.view(v.person_id)).members.map((m) => m.first_name).find((n) => n) ?? null;
   const confirmed = Boolean(safety?.phone_confirmed_at && safety.identity_confirmed_at);
   return {
@@ -318,7 +338,7 @@ async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: st
     property: { id: v.property_id, reference: v.reference, city: v.city },
     projectId: v.project_id,
     visitor: { firstName },
-    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null } : null,
+    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null, online: online ? { status: online.status, place: online.place, copy: online.copy_status } : null } : null,
     safety: confirmed ? 'confirmee' : safety?.code_hash ? 'code_envoye' : 'a_confirmer',
     report: report
       ? { status: report.status, source: report.source, report: report.report ? (JSON.parse(report.report) as VisitReport) : null, delivery: report.delivery_status }

@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS visit_slip_signatures (
   status TEXT NOT NULL CHECK (status IN ('ouverte', 'signee', 'bloquee', 'remplacee')),
   signed_at TEXT,
   drawing_hash TEXT,
-  proof TEXT CHECK (proof IS NULL OR json_valid(proof)),
+  proof TEXT,
   copy_token_hash TEXT UNIQUE CHECK (copy_token_hash IS NULL OR length(copy_token_hash) = 64),
   copy_status TEXT CHECK (copy_status IS NULL OR copy_status IN ('remis', 'refuse')),
   created_by TEXT NOT NULL,

@@ -505,6 +505,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   visit_dossiers: { locate: by('person_id'), secrets: ['token_hash'] },
   remote_visits: { locate: by('person_id') },
   remote_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash'] },
+  visit_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash', 'copy_token_hash'] },
   visit_safety: { locate: [via('appointment_id', 'appointments')], secrets: ['code_hash'] },
   safety_alerts: { locate: [via('appointment_id', 'appointments')] },
   visit_reports: { locate: [via('appointment_id', 'appointments')] },
