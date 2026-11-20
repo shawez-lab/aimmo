@@ -30,6 +30,13 @@ export type HeatingKind = (typeof HEATING_KINDS)[number];
 export const OUTDOOR_KINDS = ['balcon', 'terrasse', 'jardin', 'cour'] as const;
 export type OutdoorKind = (typeof OUTDOOR_KINDS)[number];
 
+/** AU061 · équipements courants, dits sur la fiche : seuls ceux-là peuvent être nommés dans l'annonce. */
+export const AMENITIES = ['piscine', 'cave', 'cheminee', 'grenier', 'veranda', 'climatisation'] as const;
+export type Amenity = (typeof AMENITIES)[number];
+/** AU061 · l'état du bien, dit sur la fiche : « travaux à prévoir » ou « refait à neuf » se disent depuis lui seul. */
+export const CONDITIONS = ['neuf', 'refait_a_neuf', 'bon_etat', 'travaux_a_prevoir', 'a_renover'] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
 export const MEDIA_KINDS = ['photo', 'video', 'visite_virtuelle'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
 
@@ -50,6 +57,10 @@ export interface Characteristics {
   elevator: boolean | null;
   /** Maison ou appartement, dit sur la fiche ; absent tant qu'on ne l'a pas dit (AU070). */
   dwelling?: Dwelling;
+  /** Les équipements courants du bien (AU061) ; absent tant qu'on n'en a dit aucun. */
+  amenities?: Amenity[];
+  /** L'état du bien (AU061) ; absent tant qu'on ne l'a pas dit. */
+  condition?: Condition;
 }
 
 /**
@@ -165,7 +176,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   // Caractéristiques.
   const c = input.characteristics ?? {};
   if (!isRecord(c)) return bad('characteristics');
-  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling'], 'characteristics');
+  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling', 'amenities', 'condition'], 'characteristics');
   if (cExtra) return bad(cExtra);
   const bedrooms = intOrNull(c.bedrooms, 0, 50);
   if (!bedrooms.ok) return bad('characteristics.bedrooms');
@@ -188,6 +199,10 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (elevator !== null && typeof elevator !== 'boolean') return bad('characteristics.elevator');
   const dwelling = c.dwelling ?? null;
   if (dwelling !== null && !(DWELLINGS as readonly unknown[]).includes(dwelling)) return bad('characteristics.dwelling');
+  const amenitiesRaw = c.amenities ?? [];
+  if (!Array.isArray(amenitiesRaw) || amenitiesRaw.some((a) => !(AMENITIES as readonly unknown[]).includes(a)) || new Set(amenitiesRaw).size !== amenitiesRaw.length) return bad('characteristics.amenities');
+  const condition = c.condition ?? null;
+  if (condition !== null && !(CONDITIONS as readonly unknown[]).includes(condition)) return bad('characteristics.condition');
   const characteristics: Characteristics = {
     bedrooms: bedrooms.value,
     floor: floor.value,
@@ -200,6 +215,8 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     parkingSpaces: parking.value,
     elevator: elevator as boolean | null,
     ...(dwelling !== null ? { dwelling: dwelling as Dwelling } : {}),
+    ...(amenitiesRaw.length > 0 ? { amenities: AMENITIES.filter((a) => (amenitiesRaw as unknown[]).includes(a)) } : {}),
+    ...(condition !== null ? { condition: condition as Condition } : {}),
   };
 
   // Diagnostic énergétique.

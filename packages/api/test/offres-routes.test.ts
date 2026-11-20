@@ -75,6 +75,22 @@ describeWithSqlite('O08 · routes de M09', () => {
     expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId))).body.data.offer.seq).toBe(2);
   });
 
+  it('[R16] AU081 : le collègue partage son acquéreur pour ce bien, l’agent du bien inscrit et contrôle l’offre, sans la direction', async () => {
+    const t = await setup();
+    await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [t.propertyId]);
+    const colleague = await t.store.createPerson({ networkId: t.network.id, agentId: t.sam.userId, firstName: 'Colin', lastName: 'Fictif' });
+    expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(colleague.id))).status).toBe(403);
+    const share = await t.call(t.sam, 'POST', `/offres/biens/${t.propertyId}/partages`, { buyerPersonId: colleague.id });
+    expect(share).toMatchObject({ status: 200, body: { ok: true, data: { buyerPersonId: colleague.id, revokedAt: null } } });
+    const rec = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(colleague.id));
+    expect(rec.status).toBe(200);
+    expect(rec.body.data.lines.map((l: { check: string }) => l.check)).toEqual(['identite', 'financement', 'pret', 'validite']);
+    expect(JSON.stringify(rec.body)).not.toMatch(/Colin|Fictif/);
+    expect((await t.call(t.agent, 'POST', `/offres/partages/${share.body.data.id}/retrait`)).status).toBe(403);
+    expect((await t.call(t.sam, 'POST', `/offres/partages/${share.body.data.id}/retrait`)).status).toBe(200);
+    expect((await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(colleague.id, { amountEur: 206000 }))).status).toBe(403);
+  });
+
   it('[R16] chaque route passe par les droits ; chaque refus rend 403 et écrit une ligne au journal', async () => {
     const t = await setup();
     const rec = await t.call(t.agent, 'POST', `/offres/biens/${t.propertyId}`, offerBody(t.buyerId));

@@ -34,4 +34,6 @@ Le test du mois passe par `restoreExercise` : base et fichiers, et `fileReferenc
 
 `restoreWithErasures` restaure dans une base neuve, prouve qu'elle est identique, puis refait chaque effacement fait depuis la copie, à partir du registre. Une restauration n'est finie qu'après ce rejeu. Une copie ne se restaure jamais par-dessus une base : rien n'est écrasé.
 
+`restoreEverything` (AU021, `sauvegarde/restauration-complete.ts`) est la restauration complète : la base et les fichiers de la même copie dans une base neuve et quatre stockages neufs, chacun relu contre son empreinte, puis le registre rejoué par le véritable effaceur (`SqlPersonEraser`, AU020), branché sur les stockages restaurés. Une ligne effacée emporte ses fichiers que plus rien ne cite ; un fichier qu'une autre personne cite encore reste, le coffre aussi. Un stockage restauré qui ne sait pas retirer un fichier est refusé avant toute écriture ; une entrée illisible, une ligne ou un fichier qui reste : la restauration n'est pas dite finie. Le registre se lit dans `aimmo-copies` par la liste S3 du préfixe `effacements/` (`r2CopyStore`), page après page ; une liste refusée ou coupée ne passe jamais pour un registre vide.
+
 Rien ne relit la base de production automatiquement ; passer une base restaurée en production reste un geste humain, à faire avec D1 et après relecture du résultat.

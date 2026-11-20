@@ -20,14 +20,15 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { Identification } from '../conformite/identification.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { DocumentFacts } from './modeles.ts';
-import { mandateExpired } from './conditions.ts';
+import { mandateEndDay, mandateExpired, mandateTerms } from './conditions.ts';
+import { localTime } from '../envoi/horaires.ts';
 
 import { IDENTITY_PIECES } from '../conformite/pieces-identite.ts';
 import { MANDATE_DESIGNATION_FIELDS } from './designation.ts';
@@ -66,10 +67,17 @@ export interface ControlSettings {
 export const DEFAULT_CONTROL_SETTINGS: ControlSettings = Object.freeze({ identityDays: 365 });
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
-type Problem = { ok: false; rule: null; code: 'bad_schedule' | 'bad_piece' | 'bad_date' | 'unknown_document' };
+type Problem = { ok: false; rule: null; code: 'bad_schedule' | 'bad_tiers' | 'bad_piece' | 'bad_date' | 'unknown_document' };
 
 const DAY = 86_400_000;
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
+
+/** Une tranche du barème (AU058) : jusqu'à ce prix (null : au-delà), un plafond en taux du prix ou en forfait. */
+export interface FeeTier {
+  upToEur: number | null;
+  ratePercent?: number;
+  flatEur?: number;
+}
 
 export class ControlesSignature {
   private readonly now: () => Date;
@@ -101,20 +109,55 @@ export class ControlesSignature {
   }
 
   /** Le barème en vigueur, ou null s'il n'y en a pas encore : la direction seule [R16, R41]. */
-  async readFeeSchedule(viewer: Viewer): Promise<{ ok: true; value: { maxRatePercent: number; minEur: number; setAt: string } | null } | Refusal> {
+  async readFeeSchedule(viewer: Viewer): Promise<{ ok: true; value: { maxRatePercent: number; minEur: number; setAt: string; tiers: FeeTier[] } | null } | Refusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'fee_schedule', 'role');
-    const row = await this.db.first<{ max_rate_bp: number; min_eur: number; set_at: string }>('SELECT max_rate_bp, min_eur, set_at FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [viewer.networkId]);
-    return { ok: true, value: row ? { maxRatePercent: Number(row.max_rate_bp) / 100, minEur: Number(row.min_eur), setAt: row.set_at } : null };
+    const row = await this.db.first<{ id: string; max_rate_bp: number; min_eur: number; set_at: string }>('SELECT id, max_rate_bp, min_eur, set_at FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [viewer.networkId]);
+    return { ok: true, value: row ? { maxRatePercent: Number(row.max_rate_bp) / 100, minEur: Number(row.min_eur), setAt: row.set_at, tiers: await this.tiersOf(row.id) } : null };
+  }
+
+  /** Les tranches d'un barème, dans l'ordre (AU058). */
+  private async tiersOf(scheduleId: string): Promise<FeeTier[]> {
+    // Une base d'avant la migration 4019 n'a aucune tranche : le barème y est un plafond seul.
+    if (!(await this.db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'fee_schedule_tiers'`))) return [];
+    const rows = await this.db.all<{ up_to_eur: number | null; rate_bp: number | null; flat_eur: number | null }>('SELECT up_to_eur, rate_bp, flat_eur FROM fee_schedule_tiers WHERE schedule_id = ? ORDER BY position', [scheduleId]);
+    return rows.map((r) => ({ upToEur: r.up_to_eur === null ? null : Number(r.up_to_eur), ...(r.rate_bp !== null ? { ratePercent: Number(r.rate_bp) / 100 } : { flatEur: Number(r.flat_eur) }) }));
   }
 
   /** Le barème des honoraires : la direction seule ; le dernier réglé est en vigueur. */
-  async setFeeSchedule(viewer: Viewer, schedule: { maxRatePercent: number; minEur: number }): Promise<{ ok: true } | Refusal | Problem> {
+  async setFeeSchedule(viewer: Viewer, schedule: { maxRatePercent: number; minEur: number; tiers?: unknown }): Promise<{ ok: true } | Refusal | Problem> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'fee_schedule', 'role');
-    const bp = Math.round(schedule.maxRatePercent * 100);
-    if (typeof schedule.maxRatePercent !== 'number' || !Number.isFinite(schedule.maxRatePercent) || bp < 1 || bp > 10_000 || Math.abs(bp - schedule.maxRatePercent * 100) > 1e-6) return { ok: false, rule: null, code: 'bad_schedule' };
+    const toBp = (v: unknown): number | null => {
+      if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+      const b = Math.round(v * 100);
+      return b >= 1 && b <= 10_000 && Math.abs(b - v * 100) <= 1e-6 ? b : null;
+    };
+    const bp = toBp(schedule.maxRatePercent);
+    if (bp === null) return { ok: false, rule: null, code: 'bad_schedule' };
     if (!Number.isInteger(schedule.minEur) || schedule.minEur < 0) return { ok: false, rule: null, code: 'bad_schedule' };
-    await this.db.run('INSERT INTO fee_schedules (id, network_id, max_rate_bp, min_eur, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)', [this.newId(), viewer.networkId, bp, schedule.minEur, this.actor(viewer), this.now().toISOString()]);
-    await appendEvent(this.journal, { type: 'bareme.regle', actor: this.actor(viewer), subject: null, data: { maxRateBp: bp, minEur: schedule.minEur } }, this.now);
+    // AU058 · des tranches de prix, chacune avec son plafond en taux ou en forfait ; bornes croissantes, seule la
+    // dernière peut rester ouverte.
+    const raw = schedule.tiers === undefined || schedule.tiers === null ? [] : schedule.tiers;
+    if (!Array.isArray(raw) || raw.length > 10) return { ok: false, rule: null, code: 'bad_tiers' };
+    const tiers: { upTo: number | null; rate: number | null; flat: number | null }[] = [];
+    for (const [i, t] of raw.entries()) {
+      if (typeof t !== 'object' || t === null || Object.keys(t).some((k) => !['upToEur', 'ratePercent', 'flatEur'].includes(k))) return { ok: false, rule: null, code: 'bad_tiers' };
+      const { upToEur, ratePercent, flatEur } = t as Record<string, unknown>;
+      const upTo = upToEur === null || upToEur === undefined ? null : Number.isInteger(upToEur) && (upToEur as number) >= 1 ? (upToEur as number) : NaN;
+      if (Number.isNaN(upTo) || (upTo === null && i !== raw.length - 1)) return { ok: false, rule: null, code: 'bad_tiers' };
+      const previous = tiers.at(-1);
+      if (previous && upTo !== null && previous.upTo !== null && upTo <= previous.upTo) return { ok: false, rule: null, code: 'bad_tiers' };
+      const rate = ratePercent === undefined ? null : toBp(ratePercent);
+      const flat = flatEur === undefined ? null : Number.isInteger(flatEur) && (flatEur as number) >= 0 ? (flatEur as number) : NaN;
+      if ((ratePercent === undefined) === (flatEur === undefined) || (ratePercent !== undefined && rate === null) || Number.isNaN(flat)) return { ok: false, rule: null, code: 'bad_tiers' };
+      tiers.push({ upTo, rate, flat });
+    }
+    const id = this.newId();
+    // Le barème et ses tranches en un seul lot, tout ou rien : jamais un barème en vigueur sans toutes ses tranches.
+    await runBatch(this.db, [
+      { sql: 'INSERT INTO fee_schedules (id, network_id, max_rate_bp, min_eur, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?)', params: [id, viewer.networkId, bp, schedule.minEur, this.actor(viewer), this.now().toISOString()] },
+      ...tiers.map((t, i) => ({ sql: 'INSERT INTO fee_schedule_tiers (schedule_id, position, up_to_eur, rate_bp, flat_eur) VALUES (?, ?, ?, ?, ?)', params: [id, i + 1, t.upTo, t.rate, t.flat] })),
+    ]);
+    await appendEvent(this.journal, { type: 'bareme.regle', actor: this.actor(viewer), subject: null, data: { maxRateBp: bp, minEur: schedule.minEur, tiers: tiers.length } }, this.now);
     return { ok: true };
   }
 
@@ -160,7 +203,7 @@ export class ControlesSignature {
     return Array.isArray(fields) && MANDATE_DESIGNATION_FIELDS.every((f) => fields.includes(f));
   }
 
-  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
+  async check(viewer: Viewer, documentId: string, options: { identitySignedAt?: Date; signedAt?: Date } = {}): Promise<{ ok: true; value: SignatureCheck } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, 'document', 'role', `document:${documentId}`);
     const doc = await this.db.first<{ id: string; network_id: string; kind: string; mode: string; status: string; person_id: string; property_id: string | null; facts: string | null; mandate_id: string | null }>(
       'SELECT id, network_id, kind, mode, status, person_id, property_id, facts, mandate_id FROM documents WHERE id = ?',
@@ -193,11 +236,17 @@ export class ControlesSignature {
     lines.push({ check: 'champs', ok: complete, code: complete ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
-    lines.push(await this.fees(doc.network_id, doc.facts, amendment));
+    lines.push(await this.fees(doc.network_id, doc.facts, amendment, options.signedAt ?? options.identitySignedAt, doc.id));
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
+    // Une date d'effet se revoit à la signature : jamais après la fin du mandat telle qu'elle est ce jour-là, avenants
+    // signés depuis la préparation compris (AU057) [R42].
+    if (amendment) {
+      const end = await this.effectAfterEnd(doc.id, doc.facts, options.signedAt ?? options.identitySignedAt);
+      if (end) lines.push(end);
+    }
     // Un mandat préparé par questionnaire (HX33) : un écart de prix, un avis ou un prix absents doivent avoir été
     // montrés au vendeur par l'agent du bien avant toute signature [R441].
     // Une base d'avant la migration 2100 n'a aucun mandat par questionnaire.
@@ -227,6 +276,36 @@ export class ControlesSignature {
     return { ok: true, value: result };
   }
 
+  /**
+   * Aucun avenant différé ne prend effet après la fin du mandat : ni celui-ci, ni un avenant déjà signé dont la date
+   * d'effet viendrait après une fin avancée par celui-ci, rejoué à sa date de signature (AU057) [R42].
+   */
+  private async effectAfterEnd(documentId: string, rawFacts: string | null, signedAt?: Date): Promise<CheckLine | null> {
+    let facts: DocumentFacts | null = null;
+    try {
+      facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
+    } catch {
+      facts = null;
+    }
+    if (!facts?.mandateId) return null;
+    const base = await this.db.first<{ signed_at: string }>('SELECT signed_at FROM signed_documents WHERE mandate_id = ? AND copy_content IS NOT NULL', [facts.mandateId]);
+    if (!base) return null;
+    const candidate = { documentId, signedAt: (signedAt ?? this.now()).toISOString(), facts };
+    const all = await mandateTerms(this.db, facts.mandateId, undefined, candidate);
+    if (!all) return null;
+    const deferred = all.amendments.filter((a) => a.effectiveOn > localTime(new Date(a.signedAt), 'Europe/Paris').date);
+    if (deferred.length === 0) return null;
+    for (const a of deferred) {
+      // Les conditions de la veille de son effet : lui ne compte pas encore.
+      const eve = new Date(`${a.effectiveOn}T12:00:00.000Z`);
+      eve.setUTCDate(eve.getUTCDate() - 1);
+      const before = await mandateTerms(this.db, facts.mandateId, eve, candidate);
+      if (!before || before.durationMonths === null) continue;
+      if (a.effectiveOn >= mandateEndDay(new Date(base.signed_at), before.durationMonths)) return { check: 'mandat', ok: false, code: 'effect_after_end' };
+    }
+    return { check: 'mandat', ok: true, code: 'effect_before_end' };
+  }
+
   private async linkedMandate(networkId: string, mandateId: string | null): Promise<CheckLine> {
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'mandat', ok, code });
     if (!mandateId) return line(false, 'no_mandate');
@@ -239,7 +318,7 @@ export class ControlesSignature {
     return line(true, 'mandate_in_force');
   }
 
-  private async fees(networkId: string, rawFacts: string | null, amendment = false): Promise<CheckLine> {
+  private async fees(networkId: string, rawFacts: string | null, amendment = false, signedAt?: Date, documentId = ''): Promise<CheckLine> {
     let facts: DocumentFacts | null = null;
     try {
       facts = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts) : null;
@@ -247,14 +326,52 @@ export class ControlesSignature {
       facts = null;
     }
     const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
-    // Un avenant sans nouveau prix ne change pas les honoraires ; avec un nouveau prix, ils doivent rester au barème.
-    if (amendment && facts && facts.priceEur === null) return line(true, 'fees_unchanged');
-    if (!facts || facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
+    // Un avenant qui ne touche ni au prix ni aux honoraires ne les change pas ; sinon, les honoraires en vigueur après lui
+    // restent au barème, sur le prix en vigueur après lui (AU057).
+    if (amendment && facts && facts.priceEur === null && facts.feeChanged !== true && facts.feeChargeChanged !== true) return line(true, 'fees_unchanged');
+    // Ce que l'avenant ne change pas se lit au contrôle, dans les conditions en vigueur, avenants signés depuis sa
+    // préparation compris : jamais une copie prise à la préparation, qui a pu changer depuis. Et chaque jour compte, du
+    // jour où il prend effet à chaque date d'effet d'un avenant déjà signé qui viendra après lui (AU057).
+    if (amendment && facts) {
+      if (!facts.mandateId) return line(false, 'fee_or_price_unknown');
+      // L'avenant est rejoué à sa date de signature parmi les avenants signés, comme les conditions le seront : chaque
+      // jour compte, du jour où il prend effet à chaque date d'effet qui viendra après lui (signature sur papier
+      // enregistrée plus tard comprise).
+      const candidate = { documentId, signedAt: (signedAt ?? this.now()).toISOString(), facts };
+      const all = await mandateTerms(this.db, facts.mandateId, undefined, candidate);
+      const own = all?.amendments.find((a) => a.documentId === documentId);
+      if (!all || !own) return line(false, 'fee_or_price_unknown');
+      const days = [own.effectiveOn, ...new Set(all.amendments.map((a) => a.effectiveOn).filter((d) => d > own.effectiveOn))].sort();
+      let last: CheckLine = line(false, 'fee_or_price_unknown');
+      for (const day of days) {
+        const inForce = await mandateTerms(this.db, facts.mandateId, new Date(`${day}T12:00:00.000Z`), candidate);
+        if (!inForce) return line(false, 'fee_or_price_unknown');
+        last = await this.scheduleLine(networkId, { priceEur: inForce.priceEur, feeEur: inForce.feeEur, feeCharge: inForce.feeCharge });
+        if (!last.ok) return last;
+      }
+      return last;
+    }
+    if (!facts) return line(false, 'fee_or_price_unknown');
+    return this.scheduleLine(networkId, facts);
+  }
+
+  /** Des honoraires au barème du réseau, sur un prix, avec qui les paie [R41]. */
+  private async scheduleLine(networkId: string, facts: Pick<DocumentFacts, 'priceEur' | 'feeEur' | 'feeCharge'>): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'honoraires', ok, code });
+    if (facts.feeEur === null || facts.priceEur === null) return line(false, 'fee_or_price_unknown');
     if (facts.feeCharge === null) return line(false, 'fee_payer_unknown');
-    const schedule = await this.db.first<{ max_rate_bp: number; min_eur: number }>('SELECT max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const schedule = await this.db.first<{ id: string; max_rate_bp: number; min_eur: number }>('SELECT id, max_rate_bp, min_eur FROM fee_schedules WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     if (!schedule) return line(false, 'no_fee_schedule');
-    // Calcul en entiers : honoraires × 10 000 ≤ prix × taux en points de base.
-    if (facts.feeEur * 10_000 > facts.priceEur * Number(schedule.max_rate_bp)) return line(false, 'fee_above_schedule');
+    // AU058 · la tranche du prix fait le plafond : son taux ou son forfait ; au-delà de la dernière tranche fermée, le
+    // taux maximal du barème.
+    const tier = (await this.tiersOf(schedule.id)).find((t) => t.upToEur === null || facts!.priceEur! <= t.upToEur);
+    if (tier && tier.flatEur !== undefined) {
+      if (facts.feeEur > tier.flatEur) return line(false, 'fee_above_schedule');
+    } else {
+      const rateBp = tier && tier.ratePercent !== undefined ? Math.round(tier.ratePercent * 100) : Number(schedule.max_rate_bp);
+      // Calcul en entiers : honoraires × 10 000 ≤ prix × taux en points de base.
+      if (facts.feeEur * 10_000 > facts.priceEur * rateBp) return line(false, 'fee_above_schedule');
+    }
     if (facts.feeEur < Number(schedule.min_eur)) return line(false, 'fee_below_minimum');
     return line(true, 'fee_in_schedule');
   }

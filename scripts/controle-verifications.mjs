@@ -63,7 +63,8 @@ function deploymentGuards(job, label) {
       errors.push(`${label} : une mutation distante n’est pas précédée de la garde du commit actuel.`);
     }
   });
-  if (mutations !== 3) errors.push(`${label} : les trois mutations protégées doivent rester explicites.`);
+  // Base du réseau et base des bacs à sable (AU025) : création et migrations de chacune, puis la mise en ligne.
+  if (mutations !== 5) errors.push(`${label} : les cinq mutations protégées doivent rester explicites.`);
   if (/continue-on-error|\|\|\s*(true|:|exit 0)/.test(job)) {
     errors.push(`${label} : un échec de la garde ou du déploiement ne peut être ignoré.`);
   }

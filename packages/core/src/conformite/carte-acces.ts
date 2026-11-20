@@ -271,6 +271,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   ad_campaign: { excluded: 'sans_client', why: 'Une campagne de publicité payante (HX54) : sa création, ses validations, son lancement, son arrêt et ses contacts comptés, sans donnée d\'un client ; les contacts se lisent dans ad_campaign_contacts par person_id.' },
   device: { excluded: 'agent', why: 'Une clé d\'accès d\'un appareil d\'un utilisateur du réseau (HX56) : rangement, accord, retrait, connexion.' },
   user: { excluded: 'agent', why: 'Un utilisateur du réseau, objet d\'une preuve de second facteur (HX56) : « ajouter un appareil ».' },
+  exit_access: { excluded: 'agent', why: 'Un accès de sortie d\'un agent parti (AU111) : un refus de son retrait, sans le lien ni donnée d\'un client.' },
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
   lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   bien: ENVOI('bien proposé à une personne, une seule fois [R05], relu par la lettre d\'information, HX53'),
@@ -411,6 +412,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   call_notes: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },
+  agent_import_history: { locate: by('person_id') },
+  agent_import_reminders: { locate: by('person_id') },
+  agent_import_reminder_closures: { locate: [via('origin_key', 'agent_import_reminders', 'origin_key')] },
   // I05 : les exports bruts de H15, déposés par la direction pour la reprise ; le texte n'est rattaché à aucune fiche
   // (les fiches reprises, elles, sont lues par la carte). Gardés pour relancer la reprise, puis purgés par la procédure
   // d'effacement de la conformité : leurs morceaux s'effacent, la reprise refuse alors un dépôt incomplet.
@@ -505,6 +509,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   visit_dossiers: { locate: by('person_id'), secrets: ['token_hash'] },
   remote_visits: { locate: by('person_id') },
   remote_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash'] },
+  visit_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash', 'copy_token_hash'] },
   visit_safety: { locate: [via('appointment_id', 'appointments')], secrets: ['code_hash'] },
   safety_alerts: { locate: [via('appointment_id', 'appointments')] },
   visit_reports: { locate: [via('appointment_id', 'appointments')] },
@@ -532,6 +537,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
+  fee_schedule_tiers: out('sans_client', 'Tranches du barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
   mandate_clause_versions: out('sans_client', 'Texte d\'une clause du questionnaire de mandat, écrit par la direction.'),
@@ -581,6 +587,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   listing_version_media_sheets: { locate: [via('version_id', 'listing_versions')] },
   video_text_checks: { locate: [via('property_id', 'properties')] },
   agent_import_properties: { locate: [via('property_id', 'properties')] },
+  agent_import_property_pieces: { locate: [via('property_id', 'properties')] },
   // acquereurs
   buyer_searches: { locate: by('person_id') },
   buyer_search_confirmations: { locate: [via('project_id', 'projects')] },
@@ -605,6 +612,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Les coacquéreurs (AU009) : leurs fiches ne sont pas montrées à l'acquéreur en tête qui demande ses données.
   // Un coacquéreur trouve l'offre par son lien ; la fiche de l'acquéreur en tête et la liste des autres lui sont masquées.
   offer_co_buyers: { locate: by('person_id') },
+  offer_buyer_shares: { locate: by('buyer_person_id') },
   offer_register: { locate: [...by('buyer_person_id'), via('id', 'offer_co_buyers', 'offer_id', { tag: 'coacquereur' })], own: { buyer_person_id: [] }, shared: ['co_buyers'] },
   // Ce qui suit l'offre est rendu à l'acquéreur en tête seul : son contrôle porte son identité ; un coacquéreur reçoit
   // l'offre et l'avancée du dossier, jamais le contrôle ni les échanges de l'autre (AU009) [R96].
@@ -681,6 +689,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
+  agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
+  agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },
   invoices: { locate: [via('draft_id', 'invoice_drafts')] },
@@ -808,6 +818,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   quiz_questions: out('sans_client', 'Questions de formation des agents (HX63).'),
   quiz_attempts: out('agent', 'Quiz de formation de l\'agent, réponses lues par lui seul (HX63).'),
   quiz_attestations: out('agent', 'Attestations de formation de l\'agent (HX63).'),
+  academy_prior_entries: out('agent', 'Cycle de formation de l\'agent avant son arrivée (AU028).'),
   sandbox_runs: out('agent', 'Bac à sable de l\'agent, sur des clients inventés.'),
   sandbox_steps: out('agent', 'Étapes du bac à sable de l\'agent.'),
   training_cases: out('sans_client', 'Cas d\'entraînement inventés.'),
@@ -946,6 +957,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // droits-des-personnes
   person_requests: { locate: by('person_id') },
   person_request_outputs: { locate: [via('request_id', 'person_requests')] },
+  erasure_object_targets: { locate: [via('request_id', 'person_requests')] },
   person_request_answers: { locate: [via('request_id', 'person_requests')] },
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
   // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.

@@ -50,6 +50,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       prospecting_sequence_steps: ['body'],
       agent_import_contacts: ['agent_id', 'person_id'],
       agent_import_referrals: ['importing_agent_id', 'person_id', 'resolved_by'],
+      // AU029 : les échanges, notes de suivi et prochains rappels repris de l'ancien logiciel de l'agent.
+      agent_import_history: ['agent_id', 'person_id', 'body'],
+      agent_import_reminders: ['agent_id', 'person_id', 'body'],
+      agent_import_reminder_closures: ['closed_by'],
       // I05 : les exports de H15 déposés par la direction, gardés pour relancer la reprise.
       reprise_depots: ['agent_id', 'deposited_by', 'sha256', 'lines'],
       reprise_depot_morceaux: ['content'],
@@ -186,6 +190,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       visit_dossiers: ['person_id', 'payload_hash', 'content', 'content_hash', 'created_by'],
       remote_visits: ['person_id', 'started_by'],
       remote_slip_signatures: ['drawing_hash', 'proof', 'created_by'],
+      // AU075 : la signature sans papier du bon d'une visite sur place, et la remise de son exemplaire.
+      visit_slip_signatures: ['drawing_hash', 'proof', 'copy_token_hash', 'copy_status', 'created_by'],
     },
   },
   {
@@ -213,6 +219,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       property_positions: ['lat', 'lon', 'set_by'],
       person_domiciles: ['person_id', 'street', 'postal_code', 'city', 'country', 'set_by'],
       fee_schedules: ['set_by'],
+      fee_schedule_tiers: [],
       identity_checks: ['person_id', 'checked_by'],
       document_checks: ['lines', 'checked_by'],
       // HX33 : le mandat par questionnaire ; ses clauses écrites et validées nomment leur auteur et leur relecteur.
@@ -278,6 +285,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       agent_language_declarations: ['agent_id', 'languages', 'declared_by'],
       video_text_checks: ['text_hash', 'checked_by'],
       agent_import_properties: ['agent_id'],
+      // AU030 : le dossier repris d'un bien (nom de fichier, lien, intitulé, portail de l'ancien logiciel).
+      agent_import_property_pieces: ['agent_id', 'label', 'file_name', 'link_url', 'portal'],
       // HX07 : la boutique de l'agent ; le support garde l'annonce publiée et la carte professionnelle de l'agent.
       shop_tariffs: ['set_by'],
       shop_orders: ['agent_id', 'target_url', 'html', 'content_hash', 'prepared_by'],
@@ -376,7 +385,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       newsletter_letters: ['person_id', 'message_id'],
       newsletter_unsubscribe_tokens: ['person_id'],
       agent_whatsapp_alerts: ['person_id', 'agent_id', 'confirmed_by'],
-      weekly_points: ['person_id', 'agent_id', 'figures', 'validated_by'],
+      weekly_points: ['person_id', 'agent_id', 'figures', 'validated_by', 'price_decision'],
     },
   },
   {
@@ -390,6 +399,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)'],
     tables: {
       offer_register: ['buyer_person_id', 'co_buyers', 'amount_eur', 'conditions', 'signed_ref', 'agent_id', 'actor'],
+      offer_buyer_shares: ['buyer_person_id', 'granted_by', 'revoked_by'],
       offer_checks: ['lines', 'checked_by'],
       offer_transmissions: ['by'],
       offer_responses: ['proof_ref', 'recorded_by'],
@@ -530,6 +540,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
       custom_reports: ['owner_id', 'owner_role', 'name'],
       agent_exports: ['agent_id'],
+      // AU111 : l'accès de sortie d'un agent parti, gardé par l'empreinte de son lien.
+      agent_exit_accesses: ['agent_id', 'token_hash', 'granted_by'],
+      agent_exit_access_revocations: ['revoked_by'],
     },
   },
   {
@@ -592,6 +605,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       quiz_questions: ['created_by', 'retired_by'],
       quiz_attempts: ['agent_id', 'question_ids'],
       quiz_attestations: ['agent_id'],
+      // AU028 : le cycle de formation d'avant l'arrivée, saisi par la direction.
+      academy_prior_entries: ['agent_id', 'topic', 'proof_ref', 'recorded_by', 'recorder_name'],
       sandbox_runs: ['agent_id'],
       sandbox_steps: ['agent_id'],
       training_cases: ['situation', 'replies', 'created_by'],
@@ -719,6 +734,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       person_request_outputs: ['output_sha256', 'created_by'],
       person_request_answers: ['answer_sha256', 'answered_by'],
       person_request_alerts: [],
+      erasure_object_targets: ['object_key', 'storage', 'removed_at'],
     },
   },
   {
@@ -1133,7 +1149,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   valuation_deliveries: ['network_id', 'channel', 'sent_at'],
   valuation_follow_ups: ['status', 'rule', 'message_id', 'mode', 'updated_at'],
   agent_availabilities: ['network_id', 'availability', 'updated_at'],
-  appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel'],
+  appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel', 'group_id'],
   appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at'],
   appointment_calendar: ['appointment_id', 'event_id', 'synced_status', 'synced_start', 'state', 'last_error', 'updated_at'],
   agenda_cursors: ['cursor', 'updated_at'],
@@ -1164,6 +1180,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
+  fee_schedule_tiers: ['schedule_id', 'position', 'up_to_eur', 'rate_bp', 'flat_eur'],
   identity_checks: ['id', 'network_id', 'piece', 'seen_at', 'created_at'],
   document_checks: ['id', 'network_id', 'document_id', 'passed', 'checked_at'],
   mandate_clause_versions: ['id', 'network_id', 'code', 'version', 'hash', 'created_at'],
@@ -1307,8 +1324,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_dossiers: ['id', 'network_id', 'appointment_id', 'property_id', 'version_id', 'token_hash', 'expires_at', 'status', 'message_id', 'created_at'],
   remote_visits: ['appointment_id', 'network_id', 'property_id', 'started_at', 'ended_at'],
   remote_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
+  visit_slip_signatures: ['id', 'network_id', 'appointment_id', 'slip_id', 'slip_hash', 'place', 'channel', 'token_hash', 'code_hash', 'code_expires_at', 'link_expires_at', 'attempts', 'status', 'signed_at', 'created_at'],
   weekly_points: ['mandate_id', 'week', 'network_id', 'property_id', 'next_actions', 'status', 'validated_at', 'delivery_status', 'delivery_rule', 'message_id', 'created_at', 'updated_at'],
   offer_register: ['id', 'network_id', 'property_id', 'seq', 'valid_until', 'down_payment_eur', 'loan_eur', 'received_at', 'at', 'prev_hash', 'hash', 'request_key'],
+  offer_buyer_shares: ['id', 'network_id', 'property_id', 'granted_at', 'revoked_at'],
   offer_checks: ['id', 'offer_id', 'network_id', 'checked_at'],
   offer_transmissions: ['offer_id', 'network_id', 'via', 'message_id', 'at'],
   offer_responses: ['offer_id', 'network_id', 'outcome', 'responded_at', 'at'],
@@ -1369,6 +1388,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
+  agent_exit_accesses: ['id', 'network_id', 'expires_on', 'granted_at'],
+  agent_exit_access_revocations: ['access_id', 'network_id', 'revoked_at'],
   mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],
   complaints: ['id', 'network_id', 'received_on', 'received_via', 'reply_channel', 'response_days', 'due_on', 'recorded_at'],
   complaint_answers: ['network_id', 'outcome', 'answered_on', 'late', 'at'],
@@ -1431,7 +1452,11 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   agent_file_alerts: ['piece_id', 'alert', 'network_id', 'created_at'],
   agent_import_contacts: ['network_id', 'origin_key', 'basis', 'created_at'],
   agent_import_referrals: ['network_id', 'origin_key', 'created_at', 'resolved_at'],
+  agent_import_history: ['network_id', 'origin_key', 'kind', 'happened_on', 'source_format', 'created_at'],
+  agent_import_reminders: ['network_id', 'origin_key', 'action', 'due_on', 'source_format', 'created_at'],
+  agent_import_reminder_closures: ['network_id', 'origin_key', 'closed_at'],
   agent_import_properties: ['network_id', 'origin_key', 'property_id', 'export_reference', 'created_at'],
+  agent_import_property_pieces: ['network_id', 'origin_key', 'property_id', 'category', 'dated_on', 'signed', 'source_format', 'export_line', 'created_at'],
   academy_modules: ['id', 'network_id', 'title', 'track', 'position', 'video_id', 'script_ref', 'duration_minutes', 'mandatory', 'created_at'],
   academy_completions: ['module_id', 'network_id', 'completed_at', 'completed_on'],
   academy_sessions: ['id', 'network_id', 'kind', 'title', 'duration_minutes', 'mandatory', 'created_at'],
@@ -1440,6 +1465,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   quiz_questions: ['id', 'network_id', 'module_id', 'rule_id', 'prompt', 'choices', 'correct_index', 'created_at', 'retired_at'],
   quiz_attempts: ['id', 'network_id', 'scope_kind', 'scope_ref', 'started_at', 'answers', 'all_right', 'submitted_at'],
   quiz_attestations: ['id', 'network_id', 'attempt_id', 'issued_on', 'document', 'fingerprint', 'issued_at'],
+  academy_prior_entries: ['id', 'network_id', 'kind', 'day', 'duration_minutes', 'recorded_at'],
   sandbox_runs: ['network_id', 'opened_at', 'completed_at'],
   sandbox_steps: ['network_id', 'step', 'done_at', 'checked_at'],
   training_cases: ['id', 'network_id', 'role', 'objection', 'title', 'opening', 'created_at'],
@@ -1473,6 +1499,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   person_request_outputs: ['request_id', 'kind', 'mode', 'created_at'],
   person_request_answers: ['request_id', 'answered_on', 'late', 'answered_at'],
   person_request_alerts: ['request_id', 'kind', 'created_at'],
+  erasure_object_targets: ['request_id', 'network_id', 'noted_at'],
   prospect_retention_cycles: ['id', 'network_id', 'reached_on', 'listed_on', 'answer_due_on', 'request_mode', 'created_at'],
   prospect_retention_outcomes: ['cycle_id', 'outcome', 'mode', 'decided_on', 'created_at'],
   data_breaches: ['id', 'network_id', 'aware_at', 'deadline_at', 'recorded_at'],

@@ -1,4 +1,4 @@
-import { ENERGY_CLASSES, HEATING_KINDS, OUTDOOR_KINDS } from '../../core/src/annonces/fiche-bien.ts';
+import { AMENITIES, ENERGY_CLASSES, HEATING_KINDS, OUTDOOR_KINDS } from '../../core/src/annonces/fiche-bien.ts';
 import type { PhotoSubject } from '../../core/src/diffusion/textes.ts';
 
 /**
@@ -38,6 +38,9 @@ const HEATING: Record<(typeof HEATING_KINDS)[number], string> = {
   autre: 'Autre',
 };
 const OUTDOOR: Record<(typeof OUTDOOR_KINDS)[number], string> = { balcon: 'Balcon', terrasse: 'Terrasse', jardin: 'Jardin', cour: 'Cour' };
+/** AU061 · équipements et état, que l'annonce ne nomme que s'ils sont dits ici. */
+const AMENITY: Record<(typeof AMENITIES)[number], string> = { piscine: 'Piscine', cave: 'Cave', cheminee: 'Cheminée', grenier: 'Grenier ou combles', veranda: 'Véranda', climatisation: 'Climatisation' };
+const CONDITION: Record<string, string> = { '': 'Je ne sais pas', neuf: 'Neuf', refait_a_neuf: 'Refait à neuf', bon_etat: 'Bon état', travaux_a_prevoir: 'Travaux à prévoir', a_renover: 'À rénover' };
 
 /** [clé rangée, libellé, groupe] des nombres de la fiche. */
 const NUMBERS: readonly (readonly [string, string])[] = [
@@ -57,6 +60,8 @@ const LABELS: Record<string, string> = {
   'characteristics.landM2': 'Terrain',
   'characteristics.parkingSpaces': 'Places de stationnement',
   'characteristics.dwelling': 'Logement : maison ou appartement',
+  'characteristics.amenities': 'Équipements du bien',
+  'characteristics.condition': 'État du bien',
   'energy.energyClass': 'Classe énergie du diagnostic',
   'energy.climateClass': 'Classe climat du diagnostic',
   'energy.annualCostMinEur': 'Coût annuel le plus bas du diagnostic, qui ne dépasse pas le plus haut',
@@ -75,7 +80,7 @@ const LABELS: Record<string, string> = {
 export const FICHE_BIEN_SCRIPT = `'use strict';
 globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
-  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
+  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, AMENITY = ${JSON.stringify(AMENITY)}, CONDITION = ${JSON.stringify(CONDITION)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
   var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
@@ -116,6 +121,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       outs[kind] = checkbox(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
       outs[kind].checked = (c.outdoor || []).indexOf(kind) >= 0;
     });
+    var ams = {};
+    Object.keys(AMENITY).forEach(function (kind) {
+      ams[kind] = checkbox(zone, 'fiche-bien-equip-' + kind, AMENITY[kind]);
+      ams[kind].checked = (c.amenities || []).indexOf(kind) >= 0;
+    });
+    var condition = select(zone, 'fiche-bien-etat', 'État du bien', CONDITION, c.condition || '');
     zone.appendChild(el('h4', 'Diagnostic énergétique'));
     var classes = {};
     CLASSES.forEach(function (x) { classes[x] = x; });
@@ -184,6 +195,9 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       }
       var out = { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: heating.value || null, outdoor: Object.keys(OUTDOOR).filter(function (x) { return outs[x].checked; }), landM2: null, parkingSpaces: null, elevator: bool(elevator.value) };
       if (dwelling.value) out.dwelling = dwelling.value;
+      var am = Object.keys(AMENITY).filter(function (x) { return ams[x].checked; });
+      if (am.length) out.amenities = am;
+      if (condition.value) out.condition = condition.value;
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
       // AU064 · le numéro ADEME ou une valeur saisis seuls ouvrent aussi le diagnostic : il est contrôlé, jamais perdu.

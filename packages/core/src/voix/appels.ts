@@ -15,6 +15,7 @@
  * Ni texte, ni numéro, ni référence d'enregistrement au journal [R13]. Le transcripteur ne reçoit que la référence de
  * l'enregistrement ; l'IA de qualification, que les paroles de l'appelant sans coordonnées [R15].
  */
+import { keyLookupForms } from '../fiche/empreinte.ts';
 import type { Acces, AccessResult } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
@@ -534,7 +535,7 @@ export class Appels {
 
   private async roots(networkId: string, phone: string, key: string): Promise<Person[]> {
     const persons = [...(await this.fiche.findByIdentifier(networkId, 'phone', phone))];
-    const owner = await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key = ?', [networkId, key]);
+    const owner = await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key IN (?, ?) ORDER BY key LIMIT 1', [networkId, ...(await keyLookupForms(networkId, [key]))]);
     if (owner) {
       const p = await this.store.getPerson(await this.fiche.rootOf(owner.person_id));
       if (p) persons.push(p);

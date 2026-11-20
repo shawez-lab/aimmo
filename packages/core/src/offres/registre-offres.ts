@@ -11,12 +11,16 @@
  * aucune offre ne peut lui être cachée sans que cela se voie.
  *
  * Décidé, lecture prudente : un bien reçoit des offres seulement s'il peut être diffusé (mandat en cours, D05) ;
- * l'acquéreur doit être une fiche que celui qui enregistre voit en entier (une offre d'un client d'un autre agent passe
- * par la direction, en attendant les règles entre agents de M14) ; la durée de validité va de 1 à 60 jours ; le
+ * l'acquéreur doit être une fiche que celui qui enregistre voit en entier, ou que le collègue qui la suit a partagée
+ * avec l'agent du bien pour ce seul bien (AU081) ; la durée de validité est gardée telle que l'offre la
+ * donne, jusqu'à deux ans (une saisie au-delà est une faute de frappe) ; au-delà de 60 jours elle est inhabituelle et le
+ * contrôle de l'offre le signale, sans jamais refuser le fait reçu (AU080) ; le
  * financement déclaré ne sert qu'à vérifier la cohérence des montants (O02), jamais à noter l'acquéreur [R14].
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique, type FicheComplete } from '../fiche/fusion.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { LIVE_MANDATES } from '../espaces/lecture.ts';
@@ -26,7 +30,14 @@ import type { JournalStore } from '../journal/types.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const OFFER_GENESIS = '0'.repeat(64);
-export const MAX_VALIDITY_DAYS = 60;
+/** La durée de validité usuelle d'une offre : au-delà, le contrôle signale une durée inhabituelle (AU080). */
+export const USUAL_VALIDITY_DAYS = 60;
+/** La plus longue durée de validité gardée : au-delà, une date mal saisie, jamais une offre réelle (AU080). */
+export const MAX_VALIDITY_DAYS = 730;
+
+/** Le nombre de jours entre le jour de réception (heure de Paris) et le dernier jour de validité. */
+export const validityDays = (receivedAt: string, validUntil: string): number =>
+  Math.round((Date.parse(`${validUntil}T12:00:00Z`) - Date.parse(`${localTime(new Date(receivedAt), TIME_ZONE).date}T12:00:00Z`)) / 86_400_000);
 /** Coacquéreurs d'une offre, en plus de l'acquéreur en tête (AU009). */
 export const MAX_CO_BUYERS = 3;
 
@@ -34,8 +45,20 @@ export const MAX_CO_BUYERS = 3;
 export const CONDITION_KINDS = ['pret', 'vente_autre_bien', 'permis_construire', 'certificat_urbanisme', 'autre'] as const;
 export type ConditionKind = (typeof CONDITION_KINDS)[number];
 
+/** Le type du prêt déclaré dans la condition, liste fermée (AU079). `ptz` : prêt à taux zéro. */
+export const LOAN_TYPES = ['amortissable', 'in_fine', 'relais', 'ptz'] as const;
+export type LoanType = (typeof LOAN_TYPES)[number];
+/** Le taux nominal annuel maximal hors assurance, en centièmes de point : 385 pour 3,85 % ; de 0,01 % à 20 %. */
+export const MAX_RATE_BP = 2000;
+
+/**
+ * La condition de prêt porte son montant et sa durée, et, quand l'offre les déclare, le taux nominal maximal hors
+ * assurance et le type de prêt (AU079). Facultatifs : une offre d'avant les garde absents, et son empreinte ne change pas.
+ */
+export type LoanCondition = { kind: 'pret'; amountEur: number; durationMonths: number; maxRateBp?: number; loanType?: LoanType };
+
 export type OfferCondition =
-  | { kind: 'pret'; amountEur: number; durationMonths: number }
+  | LoanCondition
   | { kind: 'vente_autre_bien' }
   | { kind: 'permis_construire' }
   | { kind: 'certificat_urbanisme' }
@@ -129,7 +152,28 @@ const validDay = (d: unknown): d is string => {
   return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
 };
 
-/** Contrôle les conditions suspensives : liste fermée, une fois chacune, le prêt avec son montant et sa durée. */
+/**
+ * Lit une condition de prêt : montant et durée exigés, taux maximal et type facultatifs, rangés dans un ordre fixe pour
+ * que deux saisies équivalentes donnent le même texte (et la même empreinte). `extra` : les clés admises en plus (`page`).
+ */
+export function parseLoan(c: Record<string, unknown>, extra: string[]): { ok: true; value: LoanCondition } | { ok: false; field: string | null } {
+  if (Object.keys(c).some((k) => !['kind', 'amountEur', 'durationMonths', 'maxRateBp', 'loanType', ...extra].includes(k))) return { ok: false, field: null };
+  if (!isInt(c.amountEur, 1, 100_000_000)) return { ok: false, field: 'amountEur' };
+  if (!isInt(c.durationMonths, 1, 480)) return { ok: false, field: 'durationMonths' };
+  if (c.maxRateBp !== undefined && !isInt(c.maxRateBp, 1, MAX_RATE_BP)) return { ok: false, field: 'maxRateBp' };
+  if (c.loanType !== undefined && !(LOAN_TYPES as readonly unknown[]).includes(c.loanType)) return { ok: false, field: 'loanType' };
+  const value: LoanCondition = { kind: 'pret', amountEur: c.amountEur, durationMonths: c.durationMonths };
+  if (c.maxRateBp !== undefined) value.maxRateBp = c.maxRateBp as number;
+  if (c.loanType !== undefined) value.loanType = c.loanType as LoanType;
+  return { ok: true, value };
+}
+
+/** Un taux en centièmes de point, écrit à la française : 385 → « 3,85 % ». */
+export const rateText = (bp: number): string => `${Math.floor(bp / 100)},${String(bp % 100).padStart(2, '0')} %`;
+
+export const LOAN_TYPE_LABEL: Record<LoanType, string> = { amortissable: 'amortissable', in_fine: 'in fine', relais: 'relais', ptz: 'à taux zéro' };
+
+/** Contrôle les conditions suspensives : liste fermée, une fois chacune, le prêt avec son montant et sa durée, son taux maximal et son type quand l'offre les déclare. */
 export function parseConditions(v: unknown): { ok: true; value: OfferCondition[] } | { ok: false; field: string } {
   if (!Array.isArray(v) || v.length > CONDITION_KINDS.length) return { ok: false, field: 'conditions' };
   const out: OfferCondition[] = [];
@@ -138,10 +182,9 @@ export function parseConditions(v: unknown): { ok: true; value: OfferCondition[]
     if (!isRecord(c) || !(CONDITION_KINDS as readonly unknown[]).includes(c.kind) || seen.has(String(c.kind))) return { ok: false, field: `conditions.${i}` };
     seen.add(String(c.kind));
     if (c.kind === 'pret') {
-      if (Object.keys(c).some((k) => !['kind', 'amountEur', 'durationMonths'].includes(k))) return { ok: false, field: `conditions.${i}` };
-      if (!isInt(c.amountEur, 1, 100_000_000)) return { ok: false, field: `conditions.${i}.amountEur` };
-      if (!isInt(c.durationMonths, 1, 480)) return { ok: false, field: `conditions.${i}.durationMonths` };
-      out.push({ kind: 'pret', amountEur: c.amountEur, durationMonths: c.durationMonths });
+      const loan = parseLoan(c, []);
+      if (!loan.ok) return { ok: false, field: loan.field ? `conditions.${i}.${loan.field}` : `conditions.${i}` };
+      out.push(loan.value);
     } else {
       if (Object.keys(c).some((k) => k !== 'kind')) return { ok: false, field: `conditions.${i}` };
       out.push({ kind: c.kind as Exclude<ConditionKind, 'pret'> });
@@ -153,9 +196,27 @@ export function parseConditions(v: unknown): { ok: true; value: OfferCondition[]
 }
 
 type Refusal = { ok: false; rule: 'R16'; code: string };
+
+/**
+ * Le partage d'un acquéreur avec l'agent d'un bien (AU081) : le collègue qui suit l'acquéreur autorise l'agent du bien à
+ * présenter son offre pour ce seul bien. L'agent du bien n'en reçoit aucune donnée de la fiche : seulement le droit
+ * d'inscrire l'offre au registre sous l'identifiant de l'acquéreur. Il ne vaut que tant que le collègue suit toujours
+ * l'acquéreur et peut l'ouvrir lui-même ; retiré, il ne sert plus, et les offres déjà inscrites restent [R17].
+ */
+export interface BuyerShare {
+  id: string;
+  propertyId: string;
+  buyerPersonId: string;
+  grantedBy: string;
+  grantedAt: string;
+  revokedAt: string | null;
+}
+type ShareRow = { id: string; network_id: string; property_id: string; buyer_person_id: string; granted_by: string; granted_at: string; revoked_at: string | null; revoked_by: string | null };
+const toShare = (r: ShareRow): BuyerShare => ({ id: r.id, propertyId: r.property_id, buyerPersonId: r.buyer_person_id, grantedBy: r.granted_by, grantedAt: r.granted_at, revokedAt: r.revoked_at });
+type BuyerRead = { ok: true; value: FicheComplete } | Refusal | { ok: false; rule: null; code: 'unknown_buyer' };
 type Problem =
   | { ok: false; rule: null; code: 'invalid'; field: string }
-  | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' }
+  | { ok: false; rule: null; code: 'unknown_property' | 'unknown_buyer' | 'busy' | 'unknown_share' | 'own_property' }
   | { ok: false; rule: null; code: 'buyer_is_seller'; field: 'buyerPersonId' | `coBuyerPersonIds.${number}` }
   | { ok: false; rule: null; code: 'same_buyer'; field: `coBuyerPersonIds.${number}` }
   | { ok: false; rule: 'R42'; code: 'not_on_sale' }
@@ -217,6 +278,7 @@ export class RegistreOffres {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly diffusion: Diffusion;
+  private readonly unique: FicheUnique;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -227,6 +289,7 @@ export class RegistreOffres {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.diffusion = new Diffusion(db, acces, journal, { now: this.now });
+    this.unique = new FicheUnique(db, new FicheClient(db), { now: this.now });
   }
 
   private actor(viewer: Viewer): string {
@@ -257,6 +320,91 @@ export class RegistreOffres {
     return { ok: true, networkId: p.value.network_id, agentId: p.value.agent_id };
   }
 
+  /**
+   * L'acquéreur d'une offre, vu par celui qui l'enregistre (AU081) [R16]. L'agent du bien qui ne suit pas l'acquéreur
+   * passe par le partage en cours du collègue qui le suit, pour ce bien : la fiche est relue sous les droits de ce
+   * collègue (lecture écrite au journal à son nom, comme toute lecture), et l'usage du partage est écrit au nom de
+   * l'agent du bien. Rien de la fiche n'est rendu à l'agent du bien : l'offre ne garde que l'identifiant.
+   */
+  async buyerFor(viewer: Viewer, propertyId: string, personId: string): Promise<BuyerRead> {
+    // Un acquéreur que l'agent suit lui-même ne passe jamais par un partage.
+    const own = viewer.role === 'agent' ? await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id = ?', [personId]) : null;
+    if (viewer.role === 'agent' && own !== null && own.agent_id !== viewer.userId) {
+      // Un partage donné sous une fiche réunie depuis vaut pour toute la fiche : il est cherché sur chacune de ses fiches.
+      const ids = await this.unique.membersOf(personId);
+      const shares = await this.db.all<ShareRow>(
+        `SELECT s.* FROM offer_buyer_shares s JOIN properties p ON p.id = s.property_id
+         WHERE s.property_id = ? AND s.buyer_person_id IN (${ids.map(() => '?').join(', ')}) AND s.revoked_at IS NULL AND s.network_id = ? AND p.agent_id = ? AND s.granted_by <> ?
+         ORDER BY s.granted_at DESC, s.id`,
+        [propertyId, ...ids, viewer.networkId, viewer.userId, viewer.userId],
+      );
+      // Le premier partage dont le collègue suit encore l'acquéreur sert ; un partage devenu caduc n'en cache pas un valable.
+      const tried = new Set<string>();
+      for (const share of shares) {
+        if (tried.has(share.granted_by)) continue;
+        tried.add(share.granted_by);
+        const colleague = { role: 'agent', userId: share.granted_by, networkId: viewer.networkId } as Viewer;
+        const read = await this.acces.readFiche(colleague, personId);
+        if (!read.ok || read.view !== 'full') continue;
+        await appendEvent(this.journal, { type: 'offre.partage_utilise', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', share: share.id } }, this.now);
+        return { ok: true, value: read.value };
+      }
+      // Aucun collègue qui a partagé ne suit plus l'acquéreur, ou ne peut plus l'ouvrir : le partage ne vaut plus.
+      if (shares.length > 0) return this.refuse(viewer, `person:${personId}`, 'share_lapsed');
+    }
+    const read = await this.acces.readFiche(viewer, personId);
+    if (!read.ok) return read.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (read as Refusal);
+    if (read.view !== 'full') return this.refuse(viewer, `person:${personId}`, 'not_assigned');
+    return { ok: true, value: read.value };
+  }
+
+  /**
+   * Le collègue qui suit un acquéreur autorise l'agent d'un bien du réseau à présenter l'offre de cet acquéreur, pour ce
+   * seul bien, sans la direction (AU081) [R16]. Il doit voir la fiche en entier et le bien (fichier commun) ; un partage
+   * déjà en cours est rendu tel quel. Au journal : le partage, le bien et la fiche en identifiants, aucun nom [R13].
+   */
+  async shareBuyer(viewer: Viewer, propertyId: string, buyerPersonId: unknown): Promise<{ ok: true; value: BuyerShare } | Refusal | Problem> {
+    if (typeof buyerPersonId !== 'string' || buyerPersonId.length === 0 || buyerPersonId.length > 64) return { ok: false, rule: null, code: 'invalid', field: 'buyerPersonId' };
+    if (viewer.role !== 'agent') return this.refuse(viewer, `property:${propertyId}`, 'role');
+    const p = await this.acces.readProperty(viewer, propertyId);
+    if (!p.ok) return p.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_property' } : (p as Refusal);
+    if (!p.value.agent_id) return { ok: false, rule: null, code: 'unknown_property' };
+    // L'agent du bien qui suit lui-même l'acquéreur n'a rien à partager.
+    if (p.value.agent_id === viewer.userId) return { ok: false, rule: null, code: 'own_property' };
+    const buyer = await this.acces.readFiche(viewer, buyerPersonId);
+    if (!buyer.ok) return buyer.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (buyer as Refusal);
+    if (buyer.view !== 'full') return this.refuse(viewer, `person:${buyerPersonId}`, 'not_assigned');
+    const ids = buyer.value.members.map((m) => m.id);
+    const live = await this.db.first<ShareRow>(
+      `SELECT * FROM offer_buyer_shares WHERE property_id = ? AND granted_by = ? AND revoked_at IS NULL AND buyer_person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY granted_at LIMIT 1`,
+      [propertyId, viewer.userId, ...ids],
+    );
+    if (live) return { ok: true, value: toShare(live) };
+    const row: ShareRow = {
+      id: this.newId(), network_id: viewer.networkId, property_id: propertyId, buyer_person_id: buyer.value.person.id,
+      granted_by: viewer.userId, granted_at: this.now().toISOString(), revoked_at: null, revoked_by: null,
+    };
+    await appendEvent(this.journal, { type: 'offre.partage_acquereur', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', share: row.id, person: `person:${row.buyer_person_id}` } }, this.now);
+    await this.db.run(
+      'INSERT INTO offer_buyer_shares (id, network_id, property_id, buyer_person_id, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [row.id, row.network_id, row.property_id, row.buyer_person_id, row.granted_by, row.granted_at],
+    );
+    return { ok: true, value: toShare(row) };
+  }
+
+  /** Le collègue qui l'a donné, ou la direction, retire le partage ; la ligne reste, datée, et les offres inscrites aussi [R17]. */
+  async revokeShare(viewer: Viewer, shareId: string): Promise<{ ok: true; value: BuyerShare } | Refusal | Problem> {
+    const row = await this.db.first<ShareRow>('SELECT * FROM offer_buyer_shares WHERE id = ?', [shareId]);
+    if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_share' };
+    const mine = viewer.role === 'agent' && viewer.userId === row.granted_by;
+    if (!mine && viewer.role !== 'direction') return this.refuse(viewer, `property:${row.property_id}`, 'not_assigned');
+    if (row.revoked_at !== null) return { ok: true, value: toShare(row) };
+    const at = this.now().toISOString();
+    await appendEvent(this.journal, { type: 'offre.partage_retire', actor: this.actor(viewer), subject: `property:${row.property_id}`, data: { rule: 'R16', share: row.id } }, this.now);
+    await this.db.run('UPDATE offer_buyer_shares SET revoked_at = ?, revoked_by = ? WHERE id = ? AND revoked_at IS NULL', [at, this.actor(viewer), shareId]);
+    return { ok: true, value: { ...toShare(row), revokedAt: at } };
+  }
+
   /** Enregistre une offre reçue et l'inscrit au registre du bien. */
   async record(viewer: Viewer, propertyId: string, input: OfferInput): Promise<{ ok: true; value: Offer } | Refusal | Problem> {
     const g = await this.gate(viewer, propertyId);
@@ -279,12 +427,12 @@ export class RegistreOffres {
       const received = typeof input.receivedAt === 'string' && Number.isFinite(Date.parse(input.receivedAt)) ? new Date(input.receivedAt).toISOString() : null;
       const same = conds.ok && received === early.receivedAt && input.amountEur === early.amountEur && JSON.stringify(conds.value) === JSON.stringify(early.conditions) &&
         input.validUntil === early.validUntil && input.downPaymentEur === early.downPaymentEur && input.loanEur === early.loanEur && input.signedRef === early.signedRef;
-      const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.acces.readFiche(viewer, input.buyerPersonId) : null;
+      const buyerRead = same && typeof input.buyerPersonId === 'string' ? await this.buyerFor(viewer, propertyId, input.buyerPersonId) : null;
       // Les coacquéreurs comparés par leur fiche d'aujourd'hui, comme l'acquéreur en tête : une fiche réunie depuis reste la même personne.
       const coIn = input.coBuyerPersonIds ?? [];
       let sameCo = Array.isArray(coIn) && coIn.length === early.coBuyerPersonIds.length;
       for (const [i, id] of (sameCo ? (coIn as unknown[]) : []).entries()) {
-        const read = typeof id === 'string' ? await this.acces.readFiche(viewer, id) : null;
+        const read = typeof id === 'string' ? await this.buyerFor(viewer, propertyId, id) : null;
         if (!read?.ok || read.value.person.id !== early.coBuyerPersonIds[i]) sameCo = false;
       }
       if (buyerRead?.ok && buyerRead.value.person.id === early.buyerPersonId && sameCo) return { ok: true, value: early };
@@ -307,10 +455,9 @@ export class RegistreOffres {
     if (!isInt(input.downPaymentEur, 0, 100_000_000)) return bad('downPaymentEur');
     if (!isInt(input.loanEur, 0, 100_000_000)) return bad('loanEur');
     if (typeof input.signedRef !== 'string' || !SIGNED_REF.test(input.signedRef)) return bad('signedRef');
-    // L'acquéreur : une fiche du réseau, que celui qui enregistre voit en entier [R16].
-    const buyer = await this.acces.readFiche(viewer, input.buyerPersonId);
-    if (!buyer.ok) return buyer.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (buyer as Refusal);
-    if (buyer.view !== 'full') return this.refuse(viewer, `person:${input.buyerPersonId}`, 'not_assigned');
+    // L'acquéreur : une fiche du réseau, que celui qui enregistre voit en entier, ou partagée pour ce bien (AU081) [R16].
+    const buyer = await this.buyerFor(viewer, propertyId, input.buyerPersonId);
+    if (!buyer.ok) return buyer;
     // Le mandant du bien, sous aucune de ses fiches, ne se fait une offre à lui-même.
     const members = new Set(buyer.value.members.map((m) => m.id));
     const sellers = await this.db.all<{ person_id: string }>(`SELECT person_id FROM (${LIVE_MANDATES}) WHERE property_id = ?`, [g.networkId, propertyId]);
@@ -320,9 +467,8 @@ export class RegistreOffres {
     const coBuyers: string[] = [];
     const seen = new Set(members);
     for (const [i, id] of (coInput as string[]).entries()) {
-      const co = await this.acces.readFiche(viewer, id);
-      if (!co.ok) return co.code === 'unknown' ? { ok: false, rule: null, code: 'unknown_buyer' } : (co as Refusal);
-      if (co.view !== 'full') return this.refuse(viewer, `person:${id}`, 'not_assigned');
+      const co = await this.buyerFor(viewer, propertyId, id);
+      if (!co.ok) return co;
       const its = co.value.members.map((m) => m.id);
       if (its.some((m) => seen.has(m))) return { ok: false, rule: null, code: 'same_buyer', field: `coBuyerPersonIds.${i}` };
       if (sellers.some((s) => its.includes(s.person_id))) return { ok: false, rule: null, code: 'buyer_is_seller', field: `coBuyerPersonIds.${i}` };

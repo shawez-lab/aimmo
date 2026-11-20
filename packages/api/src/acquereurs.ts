@@ -11,7 +11,8 @@
  *   GET  /acquereurs/biens/:bien/carte                  la carte de la demande du bien
  *   POST /acquereurs/biens/:bien/whatsapp/:projet       le lien WhatsApp de l'agent, après le contrôle central
  *   POST /acquereurs/whatsapp/:message/envoye           l'agent dit que son message est parti
- *   POST /visites                                       fixer une visite, avec son bon [R40]
+ *   POST /visites                                       fixer une visite, avec son bon [R40] ; durationMinutes ? (AU056) ; joinVisit ? (AU077)
+ *   POST /rendez-vous                                   { personId, propertyId?, kind, start, durationMinutes? } (AU056)
  *   GET  /visites/alertes                               les alertes de sécurité du réseau (direction)
  *   POST /visites/alertes/:alerte                       l'alerte en un geste
  *   GET  /visites/alertes/:alerte                       l'état de son alerte : palier, accusé réel, acquittement (AU008)
@@ -20,7 +21,12 @@
  *   POST /visites/modeles/:modele/validation            sa validation
  *   GET  /visites/:visite                               l'écran de la visite : bien, heure, bon, sécurité, compte rendu
  *   GET  /visites/:visite/bon                           le bon de visite
- *   POST /visites/:visite/bon/signature                 le bon signé sur papier
+ *   POST /visites/:visite/bon/signature                 le bon signé sur papier, en secours
+ *   POST /visites/:visite/bon/signature-en-ligne        { place: sur_place, channel?, consentProof? } (AU075) ; « distance »
+ *                                                       attend les pages publiques (voie 1) : refusé d'ici là
+ *   GET  /visites/:visite/bon/a-signer                  le bon à lire sur le téléphone de l'agent, sur place (AU075)
+ *   POST /visites/:visite/bon/signature-sur-place       { code, drawing? } : le visiteur signe sur place (AU075)
+ *   GET  /visites/:visite/bon/exemplaire                l'exemplaire signé et sa preuve, à montrer au visiteur (AU075)
  *   POST /visites/:visite/annulation                    annuler la visite
  *   GET  /fiches/:fiche/visites-en-ligne                les visites réservées en ligne qui attendent (BR64)
  *   POST /visites/:rendez-vous/rattachement             { projectId } : la rattacher à la recherche, avec son bon (BR64)
@@ -36,7 +42,9 @@
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
 import {
+  APPOINTMENT_KINDS,
   AlerteWhatsApp,
+  CUSTOM_DURATION,
   ComptesRendus,
   Diffusion,
   FicheAcquereur,
@@ -45,11 +53,15 @@ import {
   INTEREST_LEVELS,
   PointSemaine,
   Rapprochement,
+  RendezVous,
   Secteurs,
+  SignatureBon,
   Visites,
   VisiteSecurisee,
   appendEvent,
+  validDuration,
   type Acces,
+  type AppointmentKind,
   type DirectionNotifier,
   type Geocoder,
   type JournalStore,
@@ -131,6 +143,15 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
+const AGENT_BOOKING_FIELDS = new Set(['personId', 'propertyId', 'kind', 'start', 'durationMinutes']);
+const durationHelp = `durationMinutes : des minutes entières, par pas de ${CUSTOM_DURATION.step}, de ${CUSTOM_DURATION.min} à ${CUSTOM_DURATION.max}.`;
+
+/** La durée propre d'un rendez-vous (AU056) : absente, `{}` ; recevable, `{ durationMinutes }` ; sinon `null`. */
+function durationOf(value: unknown): { durationMinutes?: number } | null {
+  if (value === undefined || value === null) return {};
+  return validDuration(value) ? { durationMinutes: value } : null;
+}
+
 /** Une saisie de compte rendu : seulement la forme connue, le contenu est contrôlé par la couche métier [R52]. */
 function reportOf(value: unknown): VisitReport | undefined | null {
   if (value === undefined || value === null) return undefined;
@@ -152,6 +173,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
   const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now });
   const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
   const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
+  const signature = (s: M08Services) => new SignatureBon(s.db, s.journal, visites(s), { now: s.now });
   const points = (s: M08Services) => new PointSemaine(s.db, s.journal, s.acces, { now: s.now });
   const secteurs = (s: M08Services) => new Secteurs(s.db, s.acces, s.journal, options.geocoder ?? null, { now: s.now });
   const post = (name: string, path: string, run: (s: M08Services, v: Viewer, p: string[], body: Record<string, unknown>) => Promise<Response>): M08Route => ({
@@ -187,7 +209,26 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
         return failure(400, 'invalid_ids', 'propertyId et projectId attendus.');
       }
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
-      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start) }));
+      const duration = durationOf(body.durationMinutes);
+      if (duration === null) return failure(400, 'invalid_duration', durationHelp);
+      // AU077 · rejoindre une visite déjà fixée, même bien, même agent, même heure : une visite groupée.
+      const { joinVisit } = body;
+      if (joinVisit !== undefined && (typeof joinVisit !== 'string' || !new RegExp(`^${ID}$`).test(joinVisit))) return failure(400, 'invalid_ids', 'joinVisit : le rendez-vous de la visite à rejoindre.');
+      return reply(await visites(s).schedule(v, { propertyId, projectId, start: new Date(start), ...duration, ...(joinVisit !== undefined ? { joinVisit } : {}) }));
+    }),
+    // AU056 · Un rendez-vous de l'agent pour son client, avec sa durée propre : notaire 90 minutes, appel 10 minutes.
+    post('rendez-vous.agent', '/rendez-vous', async (s, v, _p, body) => {
+      const unknown = Object.keys(body).find((k) => !AGENT_BOOKING_FIELDS.has(k));
+      if (unknown) return failure(400, 'unknown_field', `Champ non prévu : ${unknown}.`);
+      const { personId, propertyId, kind, start } = body;
+      if (typeof personId !== 'string' || !new RegExp(`^${ID}$`).test(personId)) return failure(400, 'invalid_ids', 'personId attendu.');
+      if (propertyId !== undefined && propertyId !== null && (typeof propertyId !== 'string' || !new RegExp(`^${ID}$`).test(propertyId))) return failure(400, 'invalid_ids', 'propertyId non valable.');
+      if (typeof kind !== 'string' || !(APPOINTMENT_KINDS as readonly string[]).includes(kind)) return failure(400, 'invalid_kind', `kind attendu parmi : ${APPOINTMENT_KINDS.join(', ')}.`);
+      if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
+      const duration = durationOf(body.durationMinutes);
+      if (duration === null) return failure(400, 'invalid_duration', durationHelp);
+      const rdv = new RendezVous(s.db, s.journal, { now: s.now });
+      return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {
@@ -216,6 +257,17 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof scanRef !== 'string') return failure(400, 'invalid_scan', 'scanRef : la référence du bon numérisé.');
       return reply(await visites(s).recordPaperSignature(v, a!, { signedAt: new Date(signedAt), scanRef }));
     }),
+    // AU075 · Le bon signé sans papier : sur le téléphone de l'agent avec le code du visiteur, ou à distance [R40, R03].
+    post('visites.bon.en_ligne', `/visites/${ID}/bon/signature-en-ligne`, async (s, v, [a], body) => {
+      if (Object.keys(body).some((k) => !['place', 'channel', 'consentProof'].includes(k))) return failure(400, 'unexpected_field', 'place, channel et consentProof seulement.');
+      return reply(await signature(s).open(v, a!, { place: body.place, channel: body.channel, consentProof: body.consentProof }));
+    }),
+    get('visites.bon.a_signer', `/visites/${ID}/bon/a-signer`, async (s, v, [a]) => reply(await signature(s).readOnSite(v, a!))),
+    post('visites.bon.sur_place', `/visites/${ID}/bon/signature-sur-place`, async (s, v, [a], body) => {
+      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'code et drawing seulement.');
+      return reply(await signature(s).signOnSite(v, a!, { code: body.code, drawing: body.drawing }));
+    }),
+    get('visites.bon.exemplaire', `/visites/${ID}/bon/exemplaire`, async (s, v, [a]) => reply(await signature(s).copyOnSite(v, a!))),
     post('visites.annulation', `/visites/${ID}/annulation`, async (s, v, [a]) => reply(await visites(s).cancel(v, a!))),
     // BR64 · Les visites réservées en ligne d'une fiche, puis leur rattachement à la recherche [R16, R40, R42].
     get('visites.en_ligne', `/fiches/${ID}/visites-en-ligne`, async (s, v, [f], request) => {
@@ -256,7 +308,11 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     post('points.validation', `/points/${ID}/${WEEK}/validation`, async (s, v, [m, w], body) => {
       const actions = body.actions ?? [];
       if (!Array.isArray(actions)) return failure(400, 'invalid_actions', 'actions : une liste de phrases.');
-      return reply(await points(s).validate(v, m!, w!, actions as string[]));
+      // Une décision de prix convenue, validée explicitement et liée au rendez-vous tenu avec le vendeur [R53].
+      const decision = body.decisionPrix ?? null;
+      if (decision !== null && (typeof decision !== 'object' || Array.isArray(decision))) return failure(400, 'invalid_price_decision', 'decisionPrix : { rendezVous, prix, confirme }.');
+      const d = decision as { rendezVous?: unknown; prix?: unknown; confirme?: unknown } | null;
+      return reply(await points(s).validate(v, m!, w!, actions as string[], d ? { appointmentId: d.rendezVous as string, priceEur: d.prix as number, confirmed: d.confirme === true } : null));
     }),
   ];
 }
@@ -277,6 +333,11 @@ async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: st
     'SELECT report, source, status, delivery_status FROM visit_reports WHERE appointment_id = ?',
     [appointmentId],
   );
+  // AU075 : l'état de la signature sans papier, jamais un code ni un lien.
+  const online = await s.db.first<{ status: string; place: string; copy_status: string | null }>(
+    `SELECT status, place, copy_status FROM visit_slip_signatures WHERE appointment_id = ? AND status <> 'remplacee' ORDER BY CASE status WHEN 'signee' THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
+    [appointmentId],
+  );
   const firstName = (await fiche.view(v.person_id)).members.map((m) => m.first_name).find((n) => n) ?? null;
   const confirmed = Boolean(safety?.phone_confirmed_at && safety.identity_confirmed_at);
   return {
@@ -287,7 +348,7 @@ async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: st
     property: { id: v.property_id, reference: v.reference, city: v.city },
     projectId: v.project_id,
     visitor: { firstName },
-    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null } : null,
+    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null, online: online ? { status: online.status, place: online.place, copy: online.copy_status } : null } : null,
     safety: confirmed ? 'confirmee' : safety?.code_hash ? 'code_envoye' : 'a_confirmer',
     report: report
       ? { status: report.status, source: report.source, report: report.report ? (JSON.parse(report.report) as VisitReport) : null, delivery: report.delivery_status }

@@ -49,6 +49,31 @@ export interface AgentPieceStore {
   has(ref: string): Promise<boolean>;
   /** Range un document préparé par le réseau, rend sa référence. */
   putDraft(agentId: string, text: string): Promise<string>;
+  /** Relit une pièce, pour la remettre à l'agent parti par son lien de sortie (AU111) ; absent, rien ne se remet. */
+  read?(ref: string): Promise<{ body: Uint8Array; contentType: string } | null>;
+  /** Range le fichier d'une pièce déposée depuis l'écran (AU024), rend sa référence ; absent, le dépôt est fermé. */
+  putFile?(agentId: string, bytes: Uint8Array, ext: AgentPieceExt, contentType: string): Promise<string>;
+}
+
+/** AU024 · Les seuls fichiers qu'un agent dépose depuis son téléphone : un PDF, une photo JPEG ou PNG. */
+export const AGENT_PIECE_FILE_TYPES = Object.freeze({ 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' } as const);
+export type AgentPieceExt = (typeof AGENT_PIECE_FILE_TYPES)[keyof typeof AGENT_PIECE_FILE_TYPES];
+/** Le poids le plus lourd d'une pièce déposée : une photo de téléphone ou un PDF de quelques pages. */
+export const AGENT_PIECE_MAX_BYTES = 10 * 1024 * 1024;
+/** Le fichier dit-il vraiment ce que son type annonce ? Les premiers octets d'un PDF, d'un JPEG, d'un PNG. */
+function looksLike(ext: AgentPieceExt, b: Uint8Array): boolean {
+  if (ext === 'pdf') return b.length >= 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2d;
+  if (ext === 'jpg') return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  return b.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((x, i) => b[i] === x);
+}
+
+/** L'accusé de réception d'une pièce déposée : ce qui est rangé, sa version, l'heure ; jamais la référence. */
+export interface AgentPieceReceipt {
+  kind: AgentFilePiece;
+  label: string;
+  version: number;
+  receivedAt: string;
+  bytes: number;
 }
 
 export type AgentFileRefusal = { ok: false; rule: 'R16' | 'R15' | 'R82' | null; code: string };
@@ -165,14 +190,58 @@ export class DossierAgent {
   async addPiece(viewer: Viewer, agentId: string, input: { kind: unknown; ref: unknown; issuedOn: unknown; validUntil?: unknown }): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
     const denied = await this.gate(viewer, agentId, true);
     if (denied) return denied;
+    const checked = await this.checkPiece(viewer, agentId, input);
+    if (!checked.ok) return checked;
+    const prefix = `agents/${agentId}/`;
+    if (typeof input.ref !== 'string' || !input.ref.startsWith(prefix) || !REF_FILE.test(input.ref.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_ref' };
+    if (!(await this.pieces.has(input.ref))) return { ok: false, rule: null, code: 'not_stored' };
+    return this.record(viewer, agentId, checked.kind, input.ref, checked.issuedOn, checked.validUntil, false);
+  }
+
+  /**
+   * AU024 · L'agent (ou la direction) dépose le fichier même d'une pièce, depuis l'écran : tout est vérifié avant que
+   * rien ne soit rangé (droits, pièce, dates, type, poids, premiers octets), puis le fichier est rangé sous un nom tiré
+   * au hasard et la pièce enregistrée. L'accusé de réception dit la pièce, sa version et l'heure ; jamais la référence,
+   * ni au journal [R82, R15, R13].
+   */
+  async addPieceFile(
+    viewer: Viewer,
+    agentId: string,
+    input: { kind: unknown; issuedOn: unknown; validUntil?: unknown },
+    file: { bytes: Uint8Array; contentType: unknown },
+  ): Promise<{ ok: true; value: AgentFileStatus & { receipt: AgentPieceReceipt } } | AgentFileRefusal> {
+    const denied = await this.gate(viewer, agentId, true);
+    if (denied) return denied;
+    const checked = await this.checkPiece(viewer, agentId, input);
+    if (!checked.ok) return checked;
+    const type = typeof file.contentType === 'string' ? file.contentType.split(';')[0]!.trim().toLowerCase() : '';
+    // Seules les clés propres de la liste : `__proto__` ou `constructor` ne sont pas un type admis.
+    const ext = Object.hasOwn(AGENT_PIECE_FILE_TYPES, type) ? (AGENT_PIECE_FILE_TYPES as Record<string, AgentPieceExt>)[type] : undefined;
+    if (!ext) return { ok: false, rule: null, code: 'bad_file_type' };
+    if (file.bytes.length === 0) return { ok: false, rule: null, code: 'empty_file' };
+    if (file.bytes.length > AGENT_PIECE_MAX_BYTES) return { ok: false, rule: null, code: 'file_too_large' };
+    if (!looksLike(ext, file.bytes)) return { ok: false, rule: null, code: 'bad_file' };
+    if (!this.pieces.putFile) return { ok: false, rule: null, code: 'upload_unavailable' };
+    const ref = await this.pieces.putFile(agentId, file.bytes, ext, type);
+    const done = await this.record(viewer, agentId, checked.kind, ref, checked.issuedOn, checked.validUntil, false);
+    if (!done.ok) return done;
+    const line = done.value.lines.find((l) => l.kind === checked.kind)!;
+    const receipt: AgentPieceReceipt = { kind: checked.kind, label: line.label, version: Number(line.version), receivedAt: this.now().toISOString(), bytes: file.bytes.length };
+    return { ok: true, value: { ...done.value, receipt } };
+  }
+
+  /** La pièce et ses dates, vérifiées de la même façon pour une référence et pour un fichier déposé [R82, R15, R10]. */
+  private async checkPiece(
+    viewer: Viewer,
+    agentId: string,
+    input: { kind: unknown; issuedOn: unknown; validUntil?: unknown },
+  ): Promise<{ ok: true; kind: AgentFilePiece; issuedOn: string; validUntil: string | null } | AgentFileRefusal> {
     if (typeof input.kind === 'string' && (FORBIDDEN_PIECES as readonly string[]).includes(input.kind)) {
       await appendEvent(this.journal, { type: 'dossier_agent.piece_refusee', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { rule: 'R15', kind: input.kind } }, this.now);
       return { ok: false, rule: 'R15', code: 'forbidden_piece' };
     }
     if (typeof input.kind !== 'string' || !AGENT_FILE_PIECES.some((p) => p.kind === input.kind)) return { ok: false, rule: null, code: 'unknown_piece' };
     const kind = input.kind as AgentFilePiece;
-    const prefix = `agents/${agentId}/`;
-    if (typeof input.ref !== 'string' || !input.ref.startsWith(prefix) || !REF_FILE.test(input.ref.slice(prefix.length))) return { ok: false, rule: null, code: 'bad_ref' };
     const today = this.today();
     if (!validDay(input.issuedOn) || input.issuedOn > today) return { ok: false, rule: null, code: 'bad_date' };
     const rule = VALIDITY[kind];
@@ -182,8 +251,7 @@ export class DossierAgent {
       if (rule === 'none' || !validDay(input.validUntil) || input.validUntil < input.issuedOn) return { ok: false, rule: null, code: 'bad_valid_until' };
       validUntil = input.validUntil;
     } else if (rule === 'required') return { ok: false, rule: 'R82', code: 'valid_until_required' };
-    if (!(await this.pieces.has(input.ref))) return { ok: false, rule: null, code: 'not_stored' };
-    return this.record(viewer, agentId, kind, input.ref, input.issuedOn, validUntil, false);
+    return { ok: true, kind, issuedOn: input.issuedOn, validUntil };
   }
 
   private async record(viewer: Viewer, agentId: string, kind: AgentFilePiece, ref: string, issuedOn: string, validUntil: string | null, draft: boolean): Promise<{ ok: true; value: AgentFileStatus } | AgentFileRefusal> {
@@ -275,3 +343,4 @@ export class DossierAgent {
     return out;
   }
 }
+export const AGENT_PIECE_VALIDITY = VALIDITY;

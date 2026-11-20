@@ -21,7 +21,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from '../dossiers/acces-dossier.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { CONDITION_KINDS, type ConditionKind } from '../offres/registre-offres.ts';
+import { CONDITION_KINDS, LOAN_TYPES, MAX_RATE_BP, type ConditionKind, type LoanType } from '../offres/registre-offres.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
 
 /** Ce que reçoit le lecteur : des extraits de pages, jamais une page entière. */
@@ -40,7 +40,7 @@ type Paged<T> = { value: T; page: number };
 /** La prélecture : chaque terme retrouvé sur sa page, à confirmer par l'agent avant `recordDraft`. */
 export interface DraftProposal {
   priceEur: Paged<number> | null;
-  conditions: { kind: ConditionKind; page: number; amountEur?: number; durationMonths?: number }[];
+  conditions: { kind: ConditionKind; page: number; amountEur?: number; durationMonths?: number; maxRateBp?: number; loanType?: LoanType }[];
   loanDeadline: Paged<string> | null;
   deedBy: Paged<string> | null;
   /** Le montant seul : le destinataire est toujours à lire par l'agent [R512]. */
@@ -88,7 +88,7 @@ const ALLOWED_WORDS = new Set(
   (
     'prix vente vend vendu consentie consenti moyennant payable payé payée comptant euros euro eur ' +
     'condition conditions suspensive suspensives suspensif obtention obtenir prêt prêts pret prets emprunt emprunts financement montant maximum minimum ' +
-    'durée taux an ans mois jour jours ' +
+    'durée taux nominal annuel hors assurance assurances amortissable in fine relais zéro zero ptz an ans mois jour jours ' +
     'dépôt depot garantie séquestre sequestre acompte indemnité immobilisation somme versée versé verse versera verser remise remis remettra mains ' +
     'notaire notaires notarial office maître agence agent immobilier mandataire vendeur vendeurs cédant acquéreur acquéreurs acquereur ' +
     'acte authentique signature réitération reitération réitérée réitérer date limite plus tard tard avant après au aux à le la les l de du des d ' +
@@ -153,6 +153,25 @@ export function monthsOn(text: string, n: number): boolean {
   return n % 12 === 0 && new RegExp(`(?<![\\d.,])${n / 12} ?ans?\\b`, 'i').test(t);
 }
 
+/**
+ * Un taux en centièmes de point, écrit « 3,85 % », « 3.85% », « 3,850 % » ou « 4 % » quand il tombe juste, jamais pris
+ * dans un nombre plus long (AU079).
+ */
+export function rateOn(text: string, bp: number): boolean {
+  const units = Math.floor(bp / 100);
+  const cents = bp % 100;
+  const decimals = cents === 0 ? '(?:[.,]0{1,3})?' : cents % 10 === 0 ? `[.,]${cents / 10}0{0,2}` : `[.,]${String(cents).padStart(2, '0')}0?`;
+  return new RegExp(`(?<![\\d.,])${units}${decimals} ?%`).test(normalize(text));
+}
+
+/** Les mots qui nomment chaque type de prêt sur la page. */
+const LOAN_TYPE_WORDS: Record<LoanType, RegExp> = {
+  amortissable: /\bamortissable\b/i,
+  in_fine: /\bin fine\b/i,
+  relais: /\bpr[eê]t relais\b|\brelais\b/i,
+  ptz: /taux z[ée]ro|\bptz\b/i,
+};
+
 const CONDITION_WORDS: Record<ConditionKind, RegExp | null> = {
   pret: /\bpr[eê]ts?\b|emprunt|financement/i,
   vente_autre_bien: /vente d.un (?:autre )?bien|vente pr[ée]alable/i,
@@ -213,7 +232,18 @@ export function verifyReading(pages: string[], raw: unknown): { proposal: DraftP
         toRead.add('conditions');
         continue;
       }
-      conditions.push({ kind, page: c.page as number, amountEur: c.amountEur, durationMonths: c.durationMonths });
+      // Le taux maximal et le type, quand le lecteur les rend, doivent eux aussi se retrouver sur la page (AU079).
+      const rateOk = c.maxRateBp === undefined || (isInt(c.maxRateBp, 1, MAX_RATE_BP) && rateOn(text, c.maxRateBp));
+      const typeOk = c.loanType === undefined || ((LOAN_TYPES as readonly unknown[]).includes(c.loanType) && LOAN_TYPE_WORDS[c.loanType as LoanType].test(normalize(text)));
+      if (!rateOk || !typeOk) {
+        toRead.add('conditions');
+        continue;
+      }
+      conditions.push({
+        kind, page: c.page as number, amountEur: c.amountEur, durationMonths: c.durationMonths,
+        ...(c.maxRateBp !== undefined ? { maxRateBp: c.maxRateBp as number } : {}),
+        ...(c.loanType !== undefined ? { loanType: c.loanType as LoanType } : {}),
+      });
     } else conditions.push({ kind, page: c.page as number });
   }
 

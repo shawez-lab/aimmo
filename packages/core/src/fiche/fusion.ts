@@ -14,6 +14,7 @@ import type {
 import { consentInForce } from '../envoi/decision.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { HASHED_PREFIX, identifierHash, isHashedIdentifier } from './empreinte.ts';
 import { matchKey, normalizeIdentifier } from './normalize.ts';
 
 /** Un identifiant au format UUID, tiré dans la base : le journal le reconnaît et ne le prend jamais pour un numéro [R13]. */
@@ -96,22 +97,67 @@ export class FicheUnique {
   async addIdentifier(input: NewIdentifier): Promise<PersonIdentifier> {
     const value = normalizeIdentifier(input.kind, input.value);
     if (value === null) throw new Error(`Identifiant non valable (${input.kind}).`);
+    const hashed = await identifierHash(input.networkId, input.kind, value);
     const existing = await this.db.first<PersonIdentifier>(
-      'SELECT * FROM person_identifiers WHERE person_id = ? AND kind = ? AND value = ?',
-      [input.personId, input.kind, value],
+      'SELECT * FROM person_identifiers WHERE person_id = ? AND kind = ? AND value IN (?, ?) ORDER BY value LIMIT 1',
+      [input.personId, input.kind, value, hashed],
     );
-    return existing ?? this.store.addIdentifier(input);
+    if (existing) return existing;
+    // Une fiche effacée ne reçoit plus rien en clair : l'identifiant nouveau n'y est rangé que sous son empreinte, pour
+    // reconnaître la personne et tenir son arrêt [R04, R17] (AU020c).
+    if (await this.isErased(input.personId)) {
+      const row: PersonIdentifier = {
+        id: this.newId(),
+        network_id: input.networkId,
+        agent_id: input.agentId ?? null,
+        person_id: input.personId,
+        kind: input.kind,
+        value: hashed,
+        created_at: this.now().toISOString(),
+      } as PersonIdentifier;
+      await this.db.run('INSERT INTO person_identifiers (id, network_id, agent_id, person_id, kind, value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [
+        row.id,
+        row.network_id,
+        row.agent_id,
+        row.person_id,
+        row.kind,
+        row.value,
+        row.created_at,
+      ]);
+      return (await this.db.first<PersonIdentifier>('SELECT * FROM person_identifiers WHERE person_id = ? AND kind = ? AND value = ?', [input.personId, input.kind, hashed])) ?? row;
+    }
+    return this.store.addIdentifier(input);
   }
 
-  /** Les fiches du réseau qui portent cet identifiant, ramenées à leur fiche gardée. */
+  /** Vrai si la fiche, ou une fiche qui lui est réunie, a été effacée : ses identifiants ou ses clés sont sous empreinte (AU020c). */
+  async isErased(personId: string): Promise<boolean> {
+    const members = await this.membersOf(personId);
+    const q = placeholders(members.length);
+    // Les valeurs qui commencent comme une empreinte, puis le contrôle entier en code : une adresse acceptée peut aussi
+    // commencer par `#sha256:` sans en être une.
+    const ids = await this.db.all<{ v: string }>(`SELECT value AS v FROM person_identifiers WHERE person_id IN (${q}) AND substr(value, 1, ?) = ?`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    if (ids.some((r) => isHashedIdentifier(r.v))) return true;
+    // Les clés de contact (migration 0007) : une fiche qui n'a écrit qu'en message privé n'est reconnue que par elles.
+    let keys: { v: string }[];
+    try {
+      keys = await this.db.all<{ v: string }>(`SELECT key AS v FROM contact_keys WHERE person_id IN (${q}) AND substr(key, 1, ?) = ?`, [...members, HASHED_PREFIX.length, HASHED_PREFIX]);
+    } catch (error) {
+      if (/no such table/i.test(error instanceof Error ? error.message : String(error))) return false;
+      throw error;
+    }
+    return keys.some((r) => isHashedIdentifier(r.v));
+  }
+
+  /** Les fiches du réseau qui portent cet identifiant, en clair ou sous empreinte, ramenées à leur fiche gardée. */
   async findByIdentifier(networkId: string, kind: IdentifierKind, raw: string): Promise<Person[]> {
     const value = normalizeIdentifier(kind, raw);
     if (value === null) return [];
     const kinds = kind === 'phone' || kind === 'whatsapp' ? ['phone', 'whatsapp'] : [kind];
+    const hashed = await identifierHash(networkId, kind, value);
     const rows = await this.db.all<{ person_id: string }>(
       `SELECT DISTINCT person_id FROM person_identifiers
-       WHERE network_id = ? AND kind IN (${placeholders(kinds.length)}) AND value = ?`,
-      [networkId, ...kinds, value],
+       WHERE network_id = ? AND kind IN (${placeholders(kinds.length)}) AND value IN (?, ?)`,
+      [networkId, ...kinds, value, hashed],
     );
     const roots = [...new Set(await Promise.all(rows.map((r) => this.rootOf(r.person_id))))].sort();
     const persons = await Promise.all(roots.map((id) => this.store.getPerson(id)));
@@ -187,12 +233,19 @@ export class FicheUnique {
     };
 
     const byKey = new Map<string, string>();
+    // Une fiche effacée ne garde que des empreintes (AU020c) : dès qu'il y en a une, chaque valeur est comparée par son
+    // empreinte, pour qu'une fiche neuve de la même personne la retrouve et que son arrêt tienne [R04].
+    const anyHashed = rows.some((r) => isHashedIdentifier(r.value));
     for (const row of rows) {
       const person = root(row.person_id);
       if (!parent.has(person)) parent.set(person, person);
-      const normalized = normalizeIdentifier(row.kind, row.value);
-      if (normalized === null) continue;
-      const key = matchKey(row.kind, normalized);
+      let key: string;
+      if (isHashedIdentifier(row.value)) key = row.value;
+      else {
+        const normalized = normalizeIdentifier(row.kind, row.value);
+        if (normalized === null) continue;
+        key = anyHashed ? await identifierHash(networkId, row.kind, normalized) : matchKey(row.kind, normalized);
+      }
       const other = byKey.get(key);
       if (other === undefined) byKey.set(key, person);
       else union(other, person);

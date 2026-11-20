@@ -28,13 +28,14 @@ export type EntreeReprise =
 
 /** Les tables qui portent la colonne `network_id`. */
 export const TABLES_RESEAU: readonly string[] = `
-  academy_alerts academy_attendance academy_completions academy_modules academy_sessions access_invitations
+  academy_alerts academy_attendance academy_completions academy_modules academy_prior_entries academy_sessions access_invitations
   access_keys acquisition_fee_scales ad_campaign_contacts ad_campaigns address_score_mandates address_scores
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_handovers
-  agent_departure_reassignments agent_departures agent_exports agent_file_alerts agent_file_pieces
-  agent_import_contacts agent_import_properties agent_import_referrals agent_language_declarations
+  agent_departure_reassignments agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces
+  agent_import_contacts agent_import_history agent_import_properties agent_import_property_pieces agent_import_referrals
+  agent_import_reminder_closures agent_import_reminders agent_language_declarations
   agent_legal_mentions agent_likeness_consents agent_notification_settings agent_notifications agent_onboardings
   agent_pairs agent_public_cards agent_push_log agent_push_sends agent_pushes agent_referents agent_review_links
   agent_time_saved agent_whatsapp_alerts agent_zones agents alert_unsubscribe_tokens appointment_briefs
@@ -57,7 +58,7 @@ export const TABLES_RESEAU: readonly string[] = `
   custom_reports daily_plans data_breach_cuts data_breaches diffusion_photo_descriptions diffusion_photo_subjects diffusion_portal_checks
   diffusion_portal_choices diffusion_portal_feedback diffusion_portal_settings diffusion_portal_suspensions
   diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_templates documents person_domiciles property_designations property_positions property_sanitation local_hazard_orders dpe_alert_items
-  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops exclusions fee_schedules floor_plans 
+  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops erasure_object_targets exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
   investment_notes investor_alerts investor_profiles invoice_drafts invoice_real_numbers invoice_reminders invoices legal_basis_checks
@@ -69,7 +70,7 @@ export const TABLES_RESEAU: readonly string[] = `
   message_subjects messages missed_promise_tasks morning_reports neighbourhood_campaigns neighbourhood_drafts
   neighbourhood_facts neighbourhood_letters network_discount_dismissals network_discounts network_news
   network_news_deliveries new_programs newsletter_editions newsletter_letters newsletter_unsubscribe_tokens
-  notary_draft_differences notary_drafts offer_checks offer_co_buyers offer_proposals offer_register offer_responses offer_tasks
+  notary_draft_differences notary_drafts offer_buyer_shares offer_checks offer_co_buyers offer_proposals offer_register offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts offline_ops old_contact_followups old_contact_moments outbound_refs
   owner_booklets partner_addresses partner_agencies partner_credential_alerts partner_credential_mentions partner_credentials partner_documents
   partner_followups partner_optouts partner_prospect_mails partner_prospect_optouts partner_prospects
@@ -104,12 +105,13 @@ export const TABLES_RESEAU: readonly string[] = `
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
   viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photos visit_reports
-  visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_templates visit_slips visit_tasks visits vitrine_screens
+  visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_signatures visit_slip_templates visit_slips visit_tasks visits vitrine_screens
   voice_assistant_calls voice_assistant_lines voice_notes weekly_points
 `.trim().split(/\s+/);
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
 export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
+  fee_schedule_tiers: { via: [['schedule_id', 'fee_schedules', 'id']] },
   ad_campaign_approvals: { via: [['campaign_id', 'ad_campaigns', 'id']] },
   ad_campaign_launches: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_repauses: { via: [['approval_id', 'ad_campaign_stops', 'approval_id']] },
@@ -249,6 +251,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   access_invitations: ['token_sha256'],
   access_keys: ['sha256'],
   after_sale_unsubscribe_tokens: ['token_hash'],
+  agent_exit_accesses: ['token_hash'],
   alert_unsubscribe_tokens: ['token_hash'],
   appointment_links: ['token_hash'],
   appointments: ['token_hash'],
@@ -269,6 +272,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   photo_exports: ['certificate_token'],
   referral_requests: ['key_hash'],
   remote_slip_signatures: ['code_hash', 'token_hash'],
+  visit_slip_signatures: ['code_hash', 'copy_token_hash', 'token_hash'],
   rental_lease_signatures: ['code_hash'],
   rental_lease_cotenant_signatures: ['code_hash'],
   satisfaction_tokens: ['token_hash'],
@@ -289,29 +293,31 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
  * ce qu'elle désigne : aucune ligne du fichier ne désigne une ligne absente du fichier (test) [R658].
  */
 export const ORDRE_REPRISE: readonly string[] = `
+  fee_schedule_tiers
   rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
-  academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
+  academy_alerts academy_attendance academy_completions academy_prior_entries quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
   ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
   address_scores after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens
   agency_delegation_files agency_delegation_steps agency_partner_invoices agency_fee_statements agency_visits_done
   agency_visits commission_agency_shares agency_delegations agency_shares agenda_cursors agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_reassignments
-  agent_departure_handovers agent_departures agent_exports agent_file_alerts agent_file_pieces agent_import_contacts
-  agent_import_properties agent_import_referrals agent_language_declarations agent_legal_mentions
+  agent_departure_handovers agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces agent_import_reminder_closures
+  agent_import_reminders agent_import_history agent_import_contacts
+  agent_import_properties agent_import_property_pieces agent_import_referrals agent_language_declarations agent_legal_mentions
   agent_likeness_revocations generated_videos agent_likeness_consents agent_notification_settings
   agent_notifications agent_onboardings agent_pairs agent_public_cards agent_push_log agent_push_trial_outbox
   agent_push_sends agent_pushes agent_referents agent_review_links agent_time_saved agent_whatsapp_alerts
   agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
   appointment_reports appointment_tasks presentation_ratings property_key_partner_returns property_key_partner_loans property_key_returns property_key_loans safety_alerts
   visit_field_notes visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
-  visit_safety visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
+  visit_safety visit_slip_signatures visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
   attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers
   signature_validations signature_sessions signed_amendments
   signed_documents document_co_mandants documents person_domiciles property_designations property_positions property_sanitation local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
-  person_request_answers person_request_outputs person_requests exclusions gbp_claims gbp_sends gbp_validations
+  person_request_answers person_request_outputs person_requests erasure_object_targets exclusions gbp_claims gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
   virtual_tour_contacts inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
@@ -334,7 +340,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   registered_letters risk_statements sale_commissions sale_file_buyer_notices sale_file_closings sale_file_dates sale_file_financing
   sale_file_financing_alerts sale_file_pieces sale_file_reminders sale_file_sellers sale_file_steps sale_file_stops
   sale_file_tasks signature_circuit_annexes signature_circuit_events signature_circuit_signers signature_circuits
-  sale_files offer_co_buyers offer_register person_name_corrections business_buyer_profiles buyer_searches buyer_search_areas buyer_search_confirmations investment_notes
+  sale_files offer_co_buyers offer_buyer_shares offer_register person_name_corrections business_buyer_profiles buyer_searches buyer_search_areas buyer_search_confirmations investment_notes
   investment_calculations investor_profiles partner_documents partner_followups partner_referral_disclosures
   partner_referral_fees partner_referral_options partner_referral_steps partner_review_reads partner_reviews
   rental_management_links studio_option_requests partner_referrals project_properties sources projects

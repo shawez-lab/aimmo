@@ -260,14 +260,8 @@ const WHOLE_REFERENCE = new RegExp(`^(?:${PREFIXES.join('|')})\\/[A-Za-z0-9._\\/
 /** Une colonne qui ne garde que des références de stockage, quel que soit leur début. */
 const STORAGE_REF_COLUMNS = new Set(['storage_ref']);
 
-/**
- * Les fichiers cités par la base : chaque valeur texte de chaque table, entière ou dans un JSON, qui a la forme d'une
- * clé de stockage. Toutes les tables sont lues, pour qu'une table ajoutée demain soit vérifiée sans y penser. Le journal
- * n'est pas lu : il garde l'histoire, et cite des fichiers effacés depuis. Lecture prudente : une valeur qui ressemble à
- * une clé sans en être une fait échouer l'exercice ; une fausse alerte vaut mieux qu'un faux « restauré ».
- */
-export const fileReferences: ReferenceReader = async (db) => {
-  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' ORDER BY name");
+/** Les fichiers cités par une ligne : ses valeurs texte, entières ou dans un JSON, qui ont la forme d'une clé de stockage. */
+export function rowReferences(row: Readonly<Record<string, unknown>>): { storage: ObjectStorage; key: string }[] {
   const found = new Map<string, { storage: ObjectStorage; key: string }>();
   const add = (key: string, any = false): void => {
     const prefix = Object.keys(REFERENCE_PREFIXES).find((p) => key.startsWith(p));
@@ -275,17 +269,27 @@ export const fileReferences: ReferenceReader = async (db) => {
     if (key.endsWith('/') || key.includes('//') || key.split('/').some((s) => s === '.' || s === '..')) return;
     found.set(key, { storage: prefix ? REFERENCE_PREFIXES[prefix]! : 'COMMERCES', key });
   };
+  for (const [column, value] of Object.entries(row)) {
+    if (column === ROWID_COLUMN || typeof value !== 'string') continue;
+    if (STORAGE_REF_COLUMNS.has(column)) add(value, true);
+    else if (WHOLE_REFERENCE.test(value)) add(value);
+    else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
+  }
+  return [...found.values()];
+}
+
+/**
+ * Les fichiers cités par la base : chaque valeur texte de chaque table, entière ou dans un JSON, qui a la forme d'une
+ * clé de stockage. Toutes les tables sont lues, pour qu'une table ajoutée demain soit vérifiée sans y penser. Le journal
+ * n'est pas lu : il garde l'histoire, et cite des fichiers effacés depuis. Lecture prudente : une valeur qui ressemble à
+ * une clé sans en être une fait échouer l'exercice ; une fausse alerte vaut mieux qu'un faux « restauré ».
+ */
+export const fileReferences: ReferenceReader = async (db) => {
+  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' AND name <> 'erasure_object_targets' ORDER BY name");
+  // `erasure_object_targets` (AU020) ne cite pas un fichier gardé : il nomme ceux qu'un effacement doit retirer.
+  const found = new Map<string, { storage: ObjectStorage; key: string }>();
   for (const { name } of tables) {
-    for await (const rows of pagesOf(db, name)) {
-      for (const row of rows) {
-        for (const [column, value] of Object.entries(row)) {
-          if (column === ROWID_COLUMN || typeof value !== 'string') continue;
-          if (STORAGE_REF_COLUMNS.has(column)) add(value, true);
-          else if (WHOLE_REFERENCE.test(value)) add(value);
-          else if (value.startsWith('[') || value.startsWith('{')) for (const m of value.matchAll(/"([^"]{1,320})"/g)) if (WHOLE_REFERENCE.test(m[1]!)) add(m[1]!);
-        }
-      }
-    }
+    for await (const rows of pagesOf(db, name)) for (const row of rows) for (const ref of rowReferences(row)) found.set(ref.key, ref);
   }
   return [...found.values()];
 };

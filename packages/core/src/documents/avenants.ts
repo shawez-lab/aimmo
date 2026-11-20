@@ -29,7 +29,7 @@ const PLACE_LABEL: Record<SignaturePlace, string> = { agence: 'à l’agence', h
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
-  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
+  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_tiers' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
 
 export interface AmendmentSignatureOptions {
   now?: () => Date;
@@ -77,7 +77,7 @@ export class SignatureAvenant {
     if (doc.kind !== 'avenant_mandat') return { ok: false, rule: null, code: 'not_an_amendment' };
     if (!doc.mandate_id) return { ok: false, rule: null, code: 'no_mandate' };
 
-    const checked = await this.controles.check(viewer, documentId);
+    const checked = await this.controles.check(viewer, documentId, { signedAt: input.signedAt });
     if (!checked.ok) return checked;
     const existing = await this.db.first<{ document_id: string; mandate_id: string; copy_hash: string }>('SELECT document_id, mandate_id, copy_hash FROM signed_amendments WHERE document_id = ?', [documentId]);
     if (existing) {

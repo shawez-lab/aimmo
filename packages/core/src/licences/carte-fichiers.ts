@@ -53,6 +53,8 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'voice_notes.media_ref': F,
   'academy_modules.script_ref': F,
   'agent_file_pieces.ref': F,
+  // AU028 : la pièce qui prouve le cycle de formation d'avant l'arrivée.
+  'academy_prior_entries.proof_ref': P,
   'mailbox_attachments.ref': F,
   'partner_documents.ref': F,
   'rental_annexes.ref': F,

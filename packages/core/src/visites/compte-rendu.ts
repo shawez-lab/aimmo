@@ -203,13 +203,14 @@ export class ComptesRendus {
   private async draftReport(appointmentId: string, dictation: string): Promise<VisitReport | null> {
     const v = (await this.db.first<{ network_id: string; person_id: string; property_id: string }>('SELECT network_id, person_id, property_id FROM visits WHERE appointment_id = ?', [appointmentId]))!;
     const seller = await this.seller(v.network_id, v.property_id);
-    const names = [...(await this.buyerNames(v.person_id)), ...(seller ? await this.buyerNames(seller.person_id) : [])];
+    const buyers = await this.visitBuyers(appointmentId, v.person_id);
+    const names = [...(await Promise.all(buyers.map((b) => this.buyerNames(b)))).flat(), ...(seller ? await this.buyerNames(seller.person_id) : [])];
     let report: VisitReport | null = null;
     const writer = this.options.writer;
     if (writer) {
       try {
         const identifiers = [
-          ...(await this.fiche.view(v.person_id)).identifiers,
+          ...(await Promise.all(buyers.map(async (b) => (await this.fiche.view(b)).identifiers))).flat(),
           ...(seller ? (await this.fiche.view(seller.person_id)).identifiers : []),
         ].map((i) => i.value);
         // Les adresses mail entières d'abord, puis les coordonnées connues et les comptes, puis les noms [R15].
@@ -275,7 +276,7 @@ export class ComptesRendus {
       source = 'agent';
     }
     if (!report) return { ok: false, rule: null, code: 'no_report' };
-    const named = await this.namesBuyer(v.person_id, report);
+    const named = await this.refusalFor(appointmentId, report);
     if (named) return named;
     const at = this.now();
     const iso = at.toISOString();
@@ -306,7 +307,27 @@ export class ComptesRendus {
   /** Le refus d'un compte rendu qui nomme l'acquéreur de la visite ou porte une coordonnée de sa fiche [R52] ; null sinon. */
   async refusalFor(appointmentId: string, report: VisitReport): Promise<VisitReportRefusal | null> {
     const v = await this.db.first<{ person_id: string }>('SELECT person_id FROM visits WHERE appointment_id = ?', [appointmentId]);
-    return v ? this.namesBuyer(v.person_id, report) : { ok: false, rule: null, code: 'unknown' };
+    if (!v) return { ok: false, rule: null, code: 'unknown' };
+    // AU077 : dans une visite groupée, aucun des acquéreurs venus ensemble n'est nommé, ni sa coordonnée [R52].
+    for (const buyer of await this.visitBuyers(appointmentId, v.person_id)) {
+      const refusal = await this.namesBuyer(buyer, report);
+      if (refusal) return refusal;
+    }
+    return null;
+  }
+
+  /**
+   * L'acquéreur de la visite et, dans une visite groupée (AU077), ceux qui l'ont faite avec lui, le sien d'abord : leurs
+   * noms et coordonnées ne vont jamais au vendeur [R52], et ne sont jamais lus par l'IA.
+   */
+  private async visitBuyers(appointmentId: string, personId: string): Promise<string[]> {
+    // Les rendez-vous du groupe, rattachés ou non à une visite : une visite prise en ligne compte aussi.
+    const rows = await this.db.all<{ person_id: string }>(
+      `SELECT DISTINCT person_id FROM appointments
+       WHERE group_id IS NOT NULL AND group_id = (SELECT group_id FROM appointments WHERE id = ?)`,
+      [appointmentId],
+    );
+    return [personId, ...rows.map((r) => r.person_id).filter((p) => p !== personId)];
   }
 
   private async namesBuyer(buyerId: string, report: VisitReport): Promise<VisitReportRefusal | null> {

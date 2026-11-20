@@ -152,6 +152,16 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts()[0]!.body.energy).toEqual({ ...SHEET.energy, ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 });
   });
 
+  it('AU061 · les équipements et l’état du bien se cochent et partent avec la fiche ; rien coché, rien rangé', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    t.f('fiche-bien-equip-piscine').checked = true;
+    t.f('fiche-bien-equip-cheminee').checked = true;
+    t.f('fiche-bien-etat').value = 'travaux_a_prevoir';
+    await t.save();
+    expect(t.posts()[0]!.body.characteristics).toEqual({ ...SHEET.characteristics, amenities: ['piscine', 'cheminee'], condition: 'travaux_a_prevoir' });
+  });
+
   it('sans fiche : un formulaire vide à la version 0, où un champ vide reste « je ne sais pas »', async () => {
     const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
     await t.open();
