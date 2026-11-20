@@ -186,6 +186,8 @@ const ACCESS: Readonly<Record<string, Access>> = Object.freeze({
   module: 'direction',
   seance: 'direction',
   presence: 'direction',
+  formation_periode: 'direction',
+  formation_anterieure: 'direction',
   referent: 'direction',
   binome: 'direction',
   assistance_repondue: 'direction',
@@ -355,6 +357,21 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('POST', `${P}/academie/seances/${ID}/presence`, 'presence', write(['agentId', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.recordAttendance(v, id!, { agentId: b.agentId, recorderName: b.recorderName })))),
     route('GET', `${P}/ma-formation`, 'ma_formation', read(async (m, v) => reply(await m.academie.counter(v, v.userId)))),
     route('GET', `${A}/formation`, 'formation', read(async (m, v, [id]) => reply(await m.academie.counter(v, id!)))),
+    // AU028 : la direction reprend le cycle de formation d'avant l'arrivée, pièce et nom de la personne qui saisit à l'appui.
+    route(
+      'POST',
+      `${A}/formation/periode-anterieure`,
+      'formation_periode',
+      write(['cycleStart', 'proofRef', 'recorderName'], async (m, v, [id], b) => reply(await m.academie.setPriorPeriod(v, id!, { cycleStart: b.cycleStart, proofRef: b.proofRef, recorderName: b.recorderName }))),
+    ),
+    route(
+      'POST',
+      `${A}/formation/anterieures`,
+      'formation_anterieure',
+      write(['heldOn', 'durationMinutes', 'topic', 'proofRef', 'recorderName'], async (m, v, [id], b) =>
+        reply(await m.academie.addPriorTraining(v, id!, b as Parameters<Academie['addPriorTraining']>[2])),
+      ),
+    ),
     // Le parcours d'essai de l'agent lui-même, sans son identifiant dans l'adresse (J14).
     route('GET', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable', read(async (m, v) => (m.sandbox ? reply(await m.sandbox.progress(v, v.userId)) : unavailable('Le bac à sable')))),
     // AU025 : l'agent ouvre son exercice depuis son écran, puis y fait les étapes une à une ; lui seul [R16].

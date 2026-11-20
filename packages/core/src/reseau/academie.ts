@@ -10,7 +10,9 @@
  * attestation de quiz réussi, rangée avec son empreinte (HX63, R571). Un module seulement marqué « J'ai fini » est une
  * heure déclarée : elle est montrée à part et ne remplit aucune obligation (AU027). Par année d'activité (14 h), et par
  * période de 3 ans (42 h, dont 2 h de
- * déontologie et 2 h de non-discrimination). Les périodes partent du jour d'entrée de l'agent. Quand une obligation
+ * déontologie et 2 h de non-discrimination). Les périodes partent de la période de référence de l'agent : celle de son
+ * cycle d'avant l'arrivée quand la direction l'a reprise, avec ses attestations antérieures (AU028), sinon son jour
+ * d'entrée au réseau. Quand une obligation
  * manque, l'agent est prévenu 90 puis 30 jours avant l'échéance, une seule fois par palier ; les alertes sont rendues
  * au planificateur (J13), rien n'est envoyé ici.
  *
@@ -71,8 +73,12 @@ export interface ObligationStatus {
 
 export interface TrainingCounter {
   agentId: string;
-  /** Jour d'entrée de l'agent, d'où partent les périodes. */
+  /** Premier jour de la période de référence, d'où partent les périodes. */
   startedOn: string;
+  /** Jour d'entrée de l'agent au réseau. */
+  arrivedOn: string;
+  /** D'où vient la période : le cycle d'avant l'arrivée repris par la direction, ou l'arrivée faute de mieux (AU028). */
+  periodSource: 'cycle_anterieur' | 'arrivee';
   obligations: ObligationStatus[];
 }
 
@@ -307,12 +313,83 @@ export class Academie {
     return { ok: true, value: await this.compute(viewer.networkId, agentId, this.today()) };
   }
 
-  private async startedOn(networkId: string, agentId: string): Promise<string> {
+  private async arrivedOn(networkId: string, agentId: string): Promise<string> {
     const onboarding = await this.db.first<{ created_at: string }>('SELECT created_at FROM agent_onboardings WHERE agent_id = ? AND network_id = ?', [agentId, networkId]);
     const agent = await this.agent(networkId, agentId);
     const at = onboarding?.created_at ?? agent?.created_at;
     if (!at) throw new Error(`Agent inconnu : ${agentId}`);
     return this.today(new Date(at));
+  }
+
+  /** La période de référence reprise du cycle d'avant l'arrivée : la dernière rangée l'emporte (AU028). */
+  private async priorPeriod(networkId: string, agentId: string): Promise<string | null> {
+    const row = await this.db.first<{ day: string }>(
+      "SELECT day FROM academy_prior_entries WHERE agent_id = ? AND network_id = ? AND kind = 'periode' ORDER BY recorded_at DESC, rowid DESC LIMIT 1",
+      [agentId, networkId],
+    );
+    return row?.day ?? null;
+  }
+
+  private async priorInput(
+    viewer: Viewer,
+    agentId: string,
+    kind: 'periode' | 'formation',
+    input: { day: unknown; proofRef: unknown; recorderName: unknown },
+  ): Promise<{ ok: true; arrivedOn: string; day: string; proofRef: string; name: string } | AcademyRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `agent:${agentId}`, `academy_prior_${kind}`, 'role');
+    const agent = await this.agent(viewer.networkId, agentId);
+    if (!agent) return { ok: false, rule: null, code: 'unknown_agent' };
+    const name = typeof input.recorderName === 'string' ? input.recorderName.trim() : '';
+    if (name.length < 2 || name.length > 80) return { ok: false, rule: null, code: 'recorder_required' };
+    const proofRef = typeof input.proofRef === 'string' ? input.proofRef.trim() : '';
+    if (proofRef.length < 1 || proofRef.length > 200) return { ok: false, rule: null, code: 'proof_required' };
+    if (!validDay(input.day) || input.day < '1990-01-01') return { ok: false, rule: null, code: 'invalid_day' };
+    const arrivedOn = await this.arrivedOn(viewer.networkId, agentId);
+    // Repris du cycle d'avant : jamais après l'arrivée, ni dans l'avenir. Après l'arrivée, l'académie compte elle-même.
+    if (input.day > arrivedOn || input.day > this.today()) return { ok: false, rule: null, code: 'not_before_arrival' };
+    return { ok: true, arrivedOn, day: input.day, proofRef, name };
+  }
+
+  /**
+   * La direction reprend la période de référence de l'agent : le premier jour de son cycle de formation d'avant son
+   * arrivée, avec la pièce qui le prouve et le nom de l'humain qui le saisit. Les périodes en partent, sans remise à
+   * zéro à l'arrivée (AU028) [R85, R10]. Une correction est une nouvelle ligne : la dernière l'emporte [R17].
+   */
+  async setPriorPeriod(viewer: Viewer, agentId: string, input: { cycleStart: unknown; proofRef: unknown; recorderName: unknown }): Promise<{ ok: true } | AcademyRefusal> {
+    const checked = await this.priorInput(viewer, agentId, 'periode', { day: input.cycleStart, proofRef: input.proofRef, recorderName: input.recorderName });
+    if (!checked.ok) return checked;
+    const id = this.newId();
+    await this.db.run(
+      `INSERT INTO academy_prior_entries (id, network_id, agent_id, kind, day, duration_minutes, topic, proof_ref, recorded_by, recorder_name, recorded_at)
+       VALUES (?, ?, ?, 'periode', ?, NULL, NULL, ?, ?, ?, ?)`,
+      [id, viewer.networkId, agentId, checked.day, checked.proofRef, this.actor(viewer), checked.name, this.now().toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'academie.periode_reprise', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { entry: `academy_prior_entry:${id}` } }, this.now);
+    return { ok: true };
+  }
+
+  /**
+   * La direction reprend une formation suivie avant l'arrivée, sur son attestation : jour, durée, thème, référence de
+   * la pièce et nom de l'humain qui la saisit. Elle compte comme justifiée dans la période qui contient son jour (AU028).
+   */
+  async addPriorTraining(
+    viewer: Viewer,
+    agentId: string,
+    input: { heldOn: unknown; durationMinutes: unknown; topic?: unknown; proofRef: unknown; recorderName: unknown },
+  ): Promise<{ ok: true; entryId: string } | AcademyRefusal> {
+    const checked = await this.priorInput(viewer, agentId, 'formation', { day: input.heldOn, proofRef: input.proofRef, recorderName: input.recorderName });
+    if (!checked.ok) return checked;
+    if (!Number.isInteger(input.durationMinutes) || (input.durationMinutes as number) < 1 || (input.durationMinutes as number) > 2520) return { ok: false, rule: null, code: 'invalid_duration' };
+    const topic = input.topic ?? 'general';
+    if (typeof topic !== 'string' || !(ACADEMY_TOPICS as readonly string[]).includes(topic)) return { ok: false, rule: null, code: 'invalid_topic' };
+    const id = this.newId();
+    await this.db.run(
+      `INSERT INTO academy_prior_entries (id, network_id, agent_id, kind, day, duration_minutes, topic, proof_ref, recorded_by, recorder_name, recorded_at)
+       VALUES (?, ?, ?, 'formation', ?, ?, ?, ?, ?, ?, ?)`,
+      [id, viewer.networkId, agentId, checked.day, input.durationMinutes as number, topic, checked.proofRef, this.actor(viewer), checked.name, this.now().toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'academie.formation_reprise', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { entry: `academy_prior_entry:${id}`, minutes: input.durationMinutes as number, topic } }, this.now);
+    return { ok: true, entryId: id };
   }
 
   /**
@@ -352,16 +429,22 @@ export class Academie {
        WHERE a.agent_id = ? AND a.network_id = ? AND s.mandatory = 1`,
       [agentId, networkId],
     );
+    const prior = await this.db.all<{ day: string; minutes: number; topic: AcademyTopic }>(
+      "SELECT day, duration_minutes AS minutes, topic FROM academy_prior_entries WHERE agent_id = ? AND network_id = ? AND kind = 'formation'",
+      [agentId, networkId],
+    );
     const fromModules = modules.map((m): Done => {
       const proof = provedOn.get(m.id);
       if (proof === undefined) return { day: m.day, minutes: m.minutes, topic: m.topic, proved: false };
       return { day: proof > m.day ? proof : m.day, minutes: m.minutes, topic: m.topic, proved: true };
     });
-    return [...fromModules, ...sessions.map((x): Done => ({ ...x, proved: true }))];
+    return [...fromModules, ...sessions.map((x): Done => ({ ...x, proved: true })), ...prior.map((x): Done => ({ ...x, proved: true }))];
   }
 
   private async compute(networkId: string, agentId: string, today: string): Promise<TrainingCounter> {
-    const startedOn = await this.startedOn(networkId, agentId);
+    const arrivedOn = await this.arrivedOn(networkId, agentId);
+    const prior = await this.priorPeriod(networkId, agentId);
+    const startedOn = prior ?? arrivedOn;
     const done = await this.done(networkId, agentId);
     const s = this.settings;
     const sum = (proved: boolean, p: { from: string; until: string }, topic?: AcademyTopic): number =>
@@ -384,6 +467,8 @@ export class Academie {
     return {
       agentId,
       startedOn,
+      arrivedOn,
+      periodSource: prior === null ? 'arrivee' : 'cycle_anterieur',
       obligations: [
         line('annuelle', year, s.annualMinutes),
         line('triennale', three, s.triennialMinutes),

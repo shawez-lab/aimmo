@@ -399,6 +399,7 @@ globalThis.AIMMO_INTEGRATION = function (t) {
     var box = part('Mes heures de formation');
     var c = data(res);
     if (!c || !Array.isArray(c.obligations)) return missing(box, res);
+    if (c.periodSource === 'cycle_anterieur' && c.startedOn) box.appendChild(el('p', 'Vos périodes continuent votre cycle d’avant votre arrivée, commencé le ' + day(c.startedOn) + ' ; vos attestations d’avant y sont comptées.', 'doux'));
     box.appendChild(el('p', 'Comptées par la base depuis vos justificatifs : présences rangées et modules dont vous avez réussi le quiz. Aucun horaire imposé.', 'doux'));
     c.obligations.forEach(function (o) {
       box.appendChild(el('h4', OBLIGATIONS[o.obligation] || ''));

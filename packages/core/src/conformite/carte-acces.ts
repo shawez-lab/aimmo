@@ -810,6 +810,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   quiz_questions: out('sans_client', 'Questions de formation des agents (HX63).'),
   quiz_attempts: out('agent', 'Quiz de formation de l\'agent, réponses lues par lui seul (HX63).'),
   quiz_attestations: out('agent', 'Attestations de formation de l\'agent (HX63).'),
+  academy_prior_entries: out('agent', 'Cycle de formation de l\'agent avant son arrivée (AU028).'),
   sandbox_runs: out('agent', 'Bac à sable de l\'agent, sur des clients inventés.'),
   sandbox_steps: out('agent', 'Étapes du bac à sable de l\'agent.'),
   training_cases: out('sans_client', 'Cas d\'entraînement inventés.'),
