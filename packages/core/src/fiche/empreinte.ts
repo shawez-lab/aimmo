@@ -16,8 +16,14 @@ import { matchKey, normalizeIdentifier } from './normalize.ts';
 
 export const HASHED_PREFIX = '#sha256:';
 
+const HASHED = /^#sha256:[0-9a-f]{64}$/;
+
+/**
+ * Vrai seulement pour une empreinte entière : le préfixe et 64 chiffres hexadécimaux. Une adresse acceptée peut
+ * commencer par `#sha256:` (`#sha256:x@exemple.test`) : elle n'est pas une empreinte, et part comme les autres.
+ */
 export function isHashedIdentifier(value: unknown): boolean {
-  return typeof value === 'string' && value.startsWith(HASHED_PREFIX);
+  return typeof value === 'string' && HASHED.test(value);
 }
 
 /** L'empreinte d'une valeur déjà normalisée. */
