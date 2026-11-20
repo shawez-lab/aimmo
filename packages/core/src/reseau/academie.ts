@@ -377,17 +377,19 @@ export class Academie {
     agentId: string,
     input: { heldOn: unknown; durationMinutes: unknown; topic?: unknown; proofRef: unknown; recorderName: unknown },
   ): Promise<{ ok: true; entryId: string } | AcademyRefusal> {
+    // Une attestation (sa pièce) ne se range qu'une fois par agent : un second envoi est refusé, jamais compté deux fois.
     const checked = await this.priorInput(viewer, agentId, 'formation', { day: input.heldOn, proofRef: input.proofRef, recorderName: input.recorderName });
     if (!checked.ok) return checked;
     if (!Number.isInteger(input.durationMinutes) || (input.durationMinutes as number) < 1 || (input.durationMinutes as number) > 2520) return { ok: false, rule: null, code: 'invalid_duration' };
     const topic = input.topic ?? 'general';
     if (typeof topic !== 'string' || !(ACADEMY_TOPICS as readonly string[]).includes(topic)) return { ok: false, rule: null, code: 'invalid_topic' };
     const id = this.newId();
-    await this.db.run(
+    const { changes } = await this.db.run(
       `INSERT INTO academy_prior_entries (id, network_id, agent_id, kind, day, duration_minutes, topic, proof_ref, recorded_by, recorder_name, recorded_at)
-       VALUES (?, ?, ?, 'formation', ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'formation', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
       [id, viewer.networkId, agentId, checked.day, input.durationMinutes as number, topic, checked.proofRef, this.actor(viewer), checked.name, this.now().toISOString()],
     );
+    if (changes !== 1) return { ok: false, rule: null, code: 'proof_already_recorded' };
     await appendEvent(this.journal, { type: 'academie.formation_reprise', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { entry: `academy_prior_entry:${id}`, minutes: input.durationMinutes as number, topic } }, this.now);
     return { ok: true, entryId: id };
   }

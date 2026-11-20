@@ -238,6 +238,9 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     expect(await w.academie.setPriorPeriod(w.dir, a, { cycleStart: '2025-09-01', proofRef: 'pieces/attestation-cycle-inventee.pdf', recorderName: 'Shawez' })).toEqual({ ok: true });
     expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).ok).toBe(true);
     expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-11-02', durationMinutes: 120, topic: 'deontologie', proofRef: 'pieces/formation-inventee-2.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    // La même attestation envoyée deux fois n'est rangée qu'une fois : ses heures ne doublent jamais.
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-04-10', durationMinutes: 1260, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
     // Les périodes continuent le cycle d'avant : rien n'est remis à zéro, les heures d'avant comptent.
     expect(await line('triennale')).toEqual({ startedOn: '2025-09-01', arrivedOn: '2027-01-04', source: 'cycle_anterieur', from: '2025-09-01', until: '2028-08-31', done: 720, missing: 1800 });
     expect(await line('deontologie')).toMatchObject({ done: 120, missing: 0 });

@@ -20,5 +20,7 @@ CREATE TABLE IF NOT EXISTS academy_prior_entries (
   FOREIGN KEY (agent_id, network_id) REFERENCES agents (id, network_id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS academy_prior_entries_agent ON academy_prior_entries (agent_id, kind, recorded_at);
+-- Une attestation d'avant ne se range qu'une fois pour un agent : un second envoi ne double jamais ses heures.
+CREATE UNIQUE INDEX IF NOT EXISTS academy_prior_entries_preuve ON academy_prior_entries (agent_id, network_id, proof_ref) WHERE kind = 'formation';
 CREATE TRIGGER IF NOT EXISTS academy_prior_entries_garde BEFORE DELETE ON academy_prior_entries BEGIN SELECT RAISE(ABORT, 'academy_prior_entries : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS academy_prior_entries_fige BEFORE UPDATE ON academy_prior_entries BEGIN SELECT RAISE(ABORT, 'academy_prior_entries : une ligne rangée ne change plus'); END;
