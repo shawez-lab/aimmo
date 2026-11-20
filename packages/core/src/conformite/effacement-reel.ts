@@ -115,7 +115,20 @@ export async function eraseForReal(
   const toErase = new Set(plan.lines.filter((l) => l.action === 'effacer').map((l) => l.table));
   // Les enfants avant leurs parents : l'ordre de la carte, à l'envers.
   const order = [...accessOrder(carte)].reverse().filter((t) => toErase.has(t));
-  let pending: { table: string; row: Row; cited?: boolean }[] = order.flatMap((table) => (detail.exclusiveData?.[table] ?? []).filter((row) => !pseudonymized(table, row)).map((row) => ({ table, row })));
+  // Deux lignes en tout point pareilles partent par la même condition : une seule entrée, pour qu'un DELETE qui ne
+  // touche rien veuille toujours dire « la ligne n'est plus celle lue », jamais « déjà partie avec sa jumelle ».
+  const seen = new Set<string>();
+  let pending: { table: string; row: Row; cited?: boolean }[] = order.flatMap((table) =>
+    (detail.exclusiveData?.[table] ?? [])
+      .filter((row) => !pseudonymized(table, row))
+      .filter((row) => {
+        const k = JSON.stringify([table, Object.keys(row).sort().map((c) => [c, typeof row[c] === 'object' && row[c] !== null ? String(row[c]) : row[c]])]);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((row) => ({ table, row })),
+  );
   const cited = new Map<string, { storage: ObjectStorage; key: string }>();
   for (const p of pending) for (const ref of rowReferences(p.row)) cited.set(ref.key, ref);
 
@@ -128,6 +141,11 @@ export async function eraseForReal(
       const where = whereRow(p.row);
       try {
         const { changes } = await db.run(`DELETE FROM "${p.table}" WHERE ${where.sql}`, where.params);
+        if (changes === 0) {
+          // La ligne lue n'est plus là telle quelle (changée entre-temps) : elle n'est pas dite partie [R17].
+          next.push(p);
+          continue;
+        }
         bump(erased, p.table, changes);
         progress = true;
       } catch (error) {
@@ -272,7 +290,20 @@ export class EffacementReel {
     } catch {
       return { ok: false, rule: 'R231', code: 'ledger_unwritable' };
     }
-    const { plan, outcome } = await eraseForReal(this.db, members, { ...(this.options.carte ? { carte: this.options.carte } : {}), ...(this.options.registre ? { registre: this.options.registre } : {}), objects: this.options.objects });
+    let erasedNow: Awaited<ReturnType<typeof eraseForReal>>;
+    try {
+      erasedNow = await eraseForReal(this.db, members, { ...(this.options.carte ? { carte: this.options.carte } : {}), ...(this.options.registre ? { registre: this.options.registre } : {}), objects: this.options.objects });
+    } catch {
+      // Interrompu après la note au registre : la trace reste au journal, sans donnée de la personne ; le refaire, ou la
+      // restauration, finit le travail [R17, R231].
+      await appendEvent(
+        this.journal,
+        { type: 'rgpd.effacement', actor: this.actor(viewer), subject: `person_request:${row.id}`, data: { rule: 'R17', mode: 'reel', interrupted: true, complete: false } },
+        this.now,
+      );
+      return { ok: false, rule: 'R17', code: 'interrupted' };
+    }
+    const { plan, outcome } = erasedNow;
     const receipt: ErasureReceipt = {
       format: 1,
       requestId: row.id,

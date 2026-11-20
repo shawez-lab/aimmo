@@ -213,6 +213,47 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect((await eraseForReal(t.db, [t.personId], { carte, registre, objects: t.objects.eraser })).outcome).toMatchObject({ erased: [], pseudonymized: [], remaining: [{ table: 'essai_notes', rows: 1 }, ...BLOCKED] });
   });
 
+  it('[R17] une ligne changée entre la lecture et l’effacement est dite restante, jamais partie', async () => {
+    const t = await setup();
+    // La base change la note d'appel juste avant son DELETE : la ligne lue n'est plus celle de la base.
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      all: (sql, p) => t.db.all(sql, p),
+      first: (sql, p) => t.db.first(sql, p),
+      run: async (sql, p) => {
+        if (/^DELETE FROM "call_notes"/.test(sql)) await t.db.run("UPDATE call_notes SET outcome = 'changed' WHERE id = 'note-a'");
+        return t.db.run(sql, p);
+      },
+    };
+    const { outcome } = await eraseForReal(db, [t.personId], { objects: t.objects.eraser });
+    expect(outcome.remaining).toEqual(expect.arrayContaining([{ table: 'call_notes', rows: 1 }]));
+    expect(outcome.erased.find((c) => c.table === 'call_notes')).toBeUndefined();
+    expect(await t.db.all('SELECT id FROM call_notes')).toEqual([{ id: 'note-a' }]);
+  });
+
+  it('[R17] [R231] interrompu après la note au registre : refusé, et la trace reste au journal sans donnée de la personne', async () => {
+    const t = await setup();
+    await t.demandes.prepareErasure(t.responsable, t.request.id);
+    const db: SqlDatabase = {
+      ...t.db,
+      exec: (sql) => t.db.exec(sql),
+      run: (sql, p) => t.db.run(sql, p),
+      first: (sql, p) => t.db.first(sql, p),
+      // La relecture des fichiers cités, après les suppressions, échoue.
+      all: async (sql, p) => {
+        if (/sqlite_master/.test(sql)) throw new Error('base indisponible');
+        return t.db.all(sql, p);
+      },
+    };
+    const reel = new EffacementReel(db, t.journal, t.fiche, { mode: 'reel', ledger: { store: t.ledger.store, key: t.key }, objects: t.objects.eraser, now: t.now });
+    expect(await reel.erase(t.responsable, t.request.id)).toEqual({ ok: false, rule: 'R17', code: 'interrupted' });
+    expect(t.ledger.parts.size).toBeGreaterThan(0);
+    const last = (await t.journal.all()).at(-1)!;
+    expect(last).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', interrupted: true, complete: false } });
+    expect(JSON.stringify(last)).not.toContain('lea.vendeuse');
+  });
+
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {
     const t = await setup();
     const { plan, outcome } = await eraseForReal(t.db, [t.other.id], { objects: t.objects.eraser });
