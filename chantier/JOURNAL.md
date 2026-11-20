@@ -1486,3 +1486,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 05:38 · AU022 · /rejoindre s'ouvre sur le seul réseau sans variable, la candidature arrive dans la file ; Codex 1 P1 corrigé ; fusionnée (#711) ; voie 1 a aussi fusionné AU056 (#707) et AU061 (#703), vertes et relues · prochaine : AU023
 - 2026-11-20 05:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:53 par une autre séance voie 2, qui a poussé sur chantier/AU020 à 05:32)
 - 2026-11-20 06:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:55 par une autre séance voie 2, active : push sur chantier/AU020 à 06:44)
+- 2026-11-20 07:30 · AU023 · lien nominatif de la direction → clé de l'appareil → connexion d'un appui, recours téléphone perdu ; Codex P0/P1/P2 corrigés ; fusionnée (#713) · prochaine : AU024

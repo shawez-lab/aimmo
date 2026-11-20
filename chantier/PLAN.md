@@ -314,7 +314,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU023 · Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de…
-- Statut : en cours
+- Statut : fait (2026-11-20)
+- Décidé (2026-11-20) : constat confirmé (connexion par clé tapée seule, aucun lien d'agent hors du travail GitHub de Z02). Fusionnée (#713, f91839de). `POST /v1/cles/invitations` et `GET /v1/cles/invitations/agents` (direction, preuve `modifier_droits` pour `agent:<id>`), `GET /v1/cles/identite` ; écran de connexion « Entrer avec la clé de cet appareil », clé tapée repliée ; recours « téléphone perdu » : liens inutilisés datés d'abord, puis clés d'application et clés d'appareil retirées ; la clé neuve attend l'accord de la direction. Parcours et recours dans `docs/API.md`, R600 complétée. Codex : 1 P1 et 1 P2, puis 1 P0 (course entre recours et échange d'un ancien lien, test qui la rejoue), tous corrigés, puis rien à signaler ; vérification GitHub verte. Reste : H64 et H22 pour l'usage réel ; 180 octets libres sous la marge de 700 du budget de l'application (test BR103).
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A023 (majeur), endroit : UI/fichiers.ts, connexion ; H22.
 - Constat de l'audit : Pour démarrer sur un nouvel appareil, je dois encore manipuler une clé personnelle longue et dépendre de sa configuration par la direction.
