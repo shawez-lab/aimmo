@@ -393,7 +393,10 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Et aucune table gardée n'inscrit une de ces colonnes de texte libre non contrôlé.
     for (const table of PROPERTY_DESCRIPTION) {
       const names = (await t.db.all<{ name: string }>(`PRAGMA table_info("${table}")`)).map((c) => c.name);
-      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number', 'value', 'export_reference'].includes(c)), table).toEqual([]);
+      // Un texte gardé n'est que celui dont chaque phrase est sourcée par la fiche : l'annonce (P03, R47) et le texte d'un
+      // portail (R476). Une traduction corrigée par l'agent n'en est pas : elle n'est pas gardée.
+      const sourced = table === 'listing_drafts' || table === 'diffusion_portal_texts' ? ['body'] : [];
+      expect(names.filter((c) => ['detail', 'highlight', 'neighborhood', 'street', 'street_number', 'value', 'export_reference', 'body'].includes(c) && !sourced.includes(c)), table).toEqual([]);
     }
   });
 
