@@ -120,6 +120,10 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect(list.body.data.points[0].text).toContain('Avis des visiteurs : Le visiteur a aimé la lumière du séjour');
     expect((await t.call('sam', 'GET', '/points?semaine=2027-03-01')).body.data.points).toEqual([]);
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Revoir le prix ensemble'] })).body).toMatchObject({ ok: false, rule: 'R53' });
+    // Une décision de prix : explicite et liée à un rendez-vous tenu avec le vendeur, sinon refusée (AU078) [R53].
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: 'baisse' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000, confirme: true } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'exchange_unknown' });
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000 } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'price_decision_not_confirmed' });
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Organiser de nouvelles visites cette semaine'] })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
     expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
 

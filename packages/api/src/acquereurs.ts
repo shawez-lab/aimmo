@@ -308,7 +308,11 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     post('points.validation', `/points/${ID}/${WEEK}/validation`, async (s, v, [m, w], body) => {
       const actions = body.actions ?? [];
       if (!Array.isArray(actions)) return failure(400, 'invalid_actions', 'actions : une liste de phrases.');
-      return reply(await points(s).validate(v, m!, w!, actions as string[]));
+      // Une décision de prix convenue, validée explicitement et liée au rendez-vous tenu avec le vendeur [R53].
+      const decision = body.decisionPrix ?? null;
+      if (decision !== null && (typeof decision !== 'object' || Array.isArray(decision))) return failure(400, 'invalid_price_decision', 'decisionPrix : { rendezVous, prix, confirme }.');
+      const d = decision as { rendezVous?: unknown; prix?: unknown; confirme?: unknown } | null;
+      return reply(await points(s).validate(v, m!, w!, actions as string[], d ? { appointmentId: d.rendezVous as string, priceEur: d.prix as number, confirmed: d.confirme === true } : null));
     }),
   ];
 }
