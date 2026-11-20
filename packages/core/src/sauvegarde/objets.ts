@@ -285,7 +285,8 @@ export function rowReferences(row: Readonly<Record<string, unknown>>): { storage
  * une clé sans en être une fait échouer l'exercice ; une fausse alerte vaut mieux qu'un faux « restauré ».
  */
 export const fileReferences: ReferenceReader = async (db) => {
-  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' ORDER BY name");
+  const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name <> 'journal' AND name <> 'erasure_object_targets' ORDER BY name");
+  // `erasure_object_targets` (AU020) ne cite pas un fichier gardé : il nomme ceux qu'un effacement doit retirer.
   const found = new Map<string, { storage: ObjectStorage; key: string }>();
   for (const { name } of tables) {
     for await (const rows of pagesOf(db, name)) for (const row of rows) for (const ref of rowReferences(row)) found.set(ref.key, ref);

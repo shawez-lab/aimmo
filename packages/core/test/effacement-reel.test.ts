@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { DecisionEnvoi, FicheUnique, conformite, copyKeyFromSecret, replayErasures, verifyChain, type ErasureLedgerStore, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { EffacementReel, erasureModeOf, eraseForReal, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
-import type { ObjectStorage } from '../src/sauvegarde/objets.ts';
+import { EffacementReel, erasureModeOf, eraseForReal, IDENTIFIERS_KEPT, SqlPersonEraser, type ObjectEraser } from '../src/conformite/effacement-reel.ts';
+import { fileReferences, type ObjectStorage } from '../src/sauvegarde/objets.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -144,7 +144,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La fiche reste, citée par le mandat et la demande, mais son nom est vidé ; l'autre fiche ne change pas.
     expect(await t.db.first('SELECT first_name, last_name, last_contact_at FROM persons WHERE id = ?', [t.personId])).toEqual({ first_name: null, last_name: null, last_contact_at: null });
     expect(await t.db.first('SELECT first_name, last_name FROM persons WHERE id = ?', [t.other.id])).toEqual({ first_name: 'Noé', last_name: 'Autre' });
-    // Ce que la loi garde, l'arrêt et les identifiants sous empreinte restent tels quels.
+    // Ce que la loi garde, l'arrêt et les identifiants restent tels quels ; le reçu ne promet pas d'empreinte (AU020c).
     const after = await countAll(t.db);
     for (const table of ['mandates', 'mandate_register', 'documents', 'signed_documents', 'exclusions', 'person_identifiers', 'person_requests', 'persons']) expect(after[table], table).toBe(before[table]);
     // Le fichier qu'elle seule citait est retiré ; le fichier partagé et le coffre restent.
@@ -157,7 +157,8 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(receipt.cited).toEqual([{ table: 'properties', rows: 1 }]);
     expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }, { table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }]);
     expect(receipt.pseudonymized).toEqual([{ table: 'persons', rows: 1 }]);
-    expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'empreinte' })]));
+    expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'garder', why: IDENTIFIERS_KEPT })]));
+    expect(receipt.kept.some((k) => k.action === 'empreinte')).toBe(false);
     expect(receipt.alwaysKept.join(' ')).toContain('L561');
     const text = JSON.stringify(receipt);
     for (const secret of ['Exemple', 'Léa', 'example.test', t.personId, 'appel-a', 'seule-a']) expect(text).not.toContain(secret);
@@ -191,10 +192,14 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     expect(Object.keys(twice).filter((k) => twice[k] !== once[k]).sort()).toEqual(['journal', 'person_request_outputs']);
     // Le registre, rejoué par l'effaceur réel, ne trouve plus rien à effacer.
     const eraser = new SqlPersonEraser({ objects: t.objects.eraser });
-    expect(await eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).toBe(0);
+    // Les lignes du bien que la base refuse d'effacer restent (AU020b) : le rejeu ne se dit pas fait [R231].
+    await expect(eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).rejects.toThrow();
     const replay = await replayErasures(t.db, t.ledger.store, t.key, eraser, { copyTakenAt: NOW.toISOString(), now: t.now });
-    // Deux effacements notés (le premier, puis celui refait), chacun rejoué sans rien changer.
-    expect(replay).toEqual({ ok: true, replayed: 2, erasedRows: 0 });
+    expect(replay).toEqual({ ok: false, code: 'erase_failed', replayed: 0 });
+    // Une personne dont tout peut partir : le rejeu refait ne change rien de plus, et se dit fait.
+    const entry = { requestId: 'demande-autre', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() };
+    expect(await eraser.erase(t.db, entry)).toBeGreaterThan(0);
+    expect(await eraser.erase(t.db, entry)).toBe(0);
   });
 
   it('[R17] une ligne qu’une table en ajout seul refuse d’effacer est dite restante : l’effacement n’est pas dit complet', async () => {
@@ -252,6 +257,33 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     const last = (await t.journal.all()).at(-1)!;
     expect(last).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', interrupted: true, complete: false } });
     expect(JSON.stringify(last)).not.toContain('lea.vendeuse');
+  });
+
+  it('[R17] un fichier dont le retrait a échoué est retiré par l’effacement refait, même quand plus aucune ligne ne le cite', async () => {
+    const t = await setup();
+    let failing = true;
+    const removed: string[] = [];
+    const flaky: ObjectEraser = {
+      async remove(_storage, key) {
+        if (failing) throw new Error('stockage indisponible');
+        removed.push(key);
+      },
+    };
+    const target = { requestId: t.request.id, networkId: t.network.id, at: NOW.toISOString() };
+    const first = await eraseForReal(t.db, [t.personId], { objects: flaky, target });
+    expect(first.outcome.objectsRemaining).toBe(1);
+    // L'appel qui le citait est parti : sans la note d'avant, plus rien ne dirait qu'il reste à retirer.
+    expect(await t.db.first("SELECT id FROM calls WHERE id = 'appel-a1'")).toBeNull();
+    failing = false;
+    const again = await eraseForReal(t.db, [t.personId], { objects: flaky, target });
+    expect(again.outcome).toMatchObject({ objectsRemaining: 0, objectsRemoved: { PIECES: 1 } });
+    expect(removed).toEqual(['boite/appels/seule-a.ogg']);
+    expect(await t.db.all('SELECT storage, object_key, removed_at FROM erasure_object_targets WHERE object_key LIKE 'boite/%' ORDER BY object_key')).toEqual([{ storage: 'PIECES', object_key: 'boite/appels/seule-a.ogg', removed_at: NOW.toISOString() }, { storage: 'PIECES', object_key: 'boite/appels/partage.ogg', removed_at: null }].sort((a, b) => (a.object_key < b.object_key ? -1 : 1)));
+    // La note ne cite pas un fichier gardé : la sauvegarde ne la lit pas comme une référence.
+    expect((await fileReferences(t.db)).map((r) => r.key)).not.toContain('boite/appels/seule-a.ogg');
+    // Un troisième passage ne retire rien de plus, et le fichier partagé, encore cité, reste.
+    expect((await eraseForReal(t.db, [t.personId], { objects: flaky, target })).outcome.objectsRemoved).toEqual({});
+    expect(removed).toEqual(['boite/appels/seule-a.ogg']);
   });
 
   it('[R17] une personne sans pièce gardée : tout ce qui n’est qu’à elle part, l’effacement est complet', async () => {

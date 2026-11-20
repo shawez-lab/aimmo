@@ -52,6 +52,9 @@ export interface ObjectEraser {
   remove(storage: ObjectStorage, key: string): Promise<void>;
 }
 
+/** Ce que le reçu dit des identifiants gardés : en clair, pour reconnaître la personne et tenir son arrêt [R04]. */
+export const IDENTIFIERS_KEPT = 'Identifiants gardés en clair, seulement pour reconnaître la personne et respecter son arrêt [R04] ; leur passage sous empreinte est à venir (AU020c).';
+
 /** Le stockage jamais touché : le coffre de la lutte contre le blanchiment. */
 const NEVER_ERASED: ReadonlySet<ObjectStorage> = new Set(['COFFRE']);
 
@@ -106,7 +109,13 @@ const pseudonymized = (table: string, row: Row): boolean => (PSEUDONYMIZE[table]
 export async function eraseForReal(
   db: SqlDatabase,
   personIds: readonly string[],
-  options: { carte?: Readonly<Record<string, AccessMapEntry>>; registre?: readonly Traitement[]; objects?: ObjectEraser | null } = {},
+  options: {
+    carte?: Readonly<Record<string, AccessMapEntry>>;
+    registre?: readonly Traitement[];
+    objects?: ObjectEraser | null;
+    /** La demande qui efface : ses fichiers à retirer sont notés avant d'effacer les lignes qui les citent. */
+    target?: { requestId: string; networkId: string; at: string } | null;
+  } = {},
 ): Promise<{ plan: ErasurePlan; outcome: RealErasureOutcome }> {
   const carte = options.carte ?? CARTE_ACCES;
   const registre = options.registre ?? REGISTRE_TRAITEMENTS;
@@ -131,6 +140,17 @@ export async function eraseForReal(
   );
   const cited = new Map<string, { storage: ObjectStorage; key: string }>();
   for (const p of pending) for (const ref of rowReferences(p.row)) cited.set(ref.key, ref);
+  // Notés avant d'effacer : si le retrait échoue ou s'arrête, l'effacement refait les retrouve ici, alors que plus
+  // aucune ligne ne les cite ; repris ensuite, ceux encore à retirer d'un effacement d'avant.
+  const target = options.target ?? null;
+  if (target) {
+    for (const ref of cited.values()) {
+      if (NEVER_ERASED.has(ref.storage)) continue;
+      await db.run('INSERT INTO erasure_object_targets (request_id, network_id, storage, object_key, noted_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [target.requestId, target.networkId, ref.storage, ref.key, target.at]);
+    }
+    const earlier = await db.all<{ storage: ObjectStorage; object_key: string }>('SELECT storage, object_key FROM erasure_object_targets WHERE request_id = ? AND removed_at IS NULL ORDER BY object_key', [target.requestId]);
+    for (const e of earlier) if (!cited.has(e.object_key)) cited.set(e.object_key, { storage: e.storage, key: e.object_key });
+  }
 
   const erased = new Map<string, number>();
   // Une ligne peut en citer une autre de la même liste : on repasse tant qu'une ligne part.
@@ -191,6 +211,7 @@ export async function eraseForReal(
       try {
         await options.objects.remove(ref.storage, ref.key);
         objectsRemoved[ref.storage] = (objectsRemoved[ref.storage] ?? 0) + 1;
+        if (target) await db.run('UPDATE erasure_object_targets SET removed_at = ? WHERE request_id = ? AND storage = ? AND object_key = ? AND removed_at IS NULL', [target.at, target.requestId, ref.storage, ref.key]);
       } catch {
         objectsRemaining += 1;
       }
@@ -204,7 +225,9 @@ export class SqlPersonEraser implements PersonEraser {
   constructor(private readonly options: { carte?: Readonly<Record<string, AccessMapEntry>>; registre?: readonly Traitement[]; objects?: ObjectEraser | null } = {}) {}
 
   async erase(db: SqlDatabase, entry: ErasureEntry): Promise<number> {
-    const { outcome } = await eraseForReal(db, [entry.personId], this.options);
+    const { outcome } = await eraseForReal(db, [entry.personId], { ...this.options, target: { requestId: entry.requestId, networkId: entry.networkId, at: entry.erasedAt } });
+    // Un rejeu qui laisse ce qui devait partir n'est pas un rejeu : la restauration n'est pas dite finie [R231].
+    if (outcome.remaining.length > 0 || outcome.objectsRemaining > 0) throw new Error('effacement incomplet');
     return [...outcome.erased, ...outcome.pseudonymized].reduce((n, c) => n + c.rows, 0);
   }
 }
@@ -292,7 +315,7 @@ export class EffacementReel {
     }
     let erasedNow: Awaited<ReturnType<typeof eraseForReal>>;
     try {
-      erasedNow = await eraseForReal(this.db, members, { ...(this.options.carte ? { carte: this.options.carte } : {}), ...(this.options.registre ? { registre: this.options.registre } : {}), objects: this.options.objects });
+      erasedNow = await eraseForReal(this.db, members, { ...(this.options.carte ? { carte: this.options.carte } : {}), ...(this.options.registre ? { registre: this.options.registre } : {}), objects: this.options.objects, target: { requestId: row.id, networkId: row.network_id, at } });
     } catch {
       // Interrompu après la note au registre : la trace reste au journal, sans donnée de la personne ; le refaire, ou la
       // restauration, finit le travail [R17, R231].
@@ -312,7 +335,11 @@ export class EffacementReel {
       records: members.length,
       planSha256: await sha256Of(plan),
       ...outcome,
-      kept: plan.lines.filter((l): l is typeof l & { action: 'garder' | 'empreinte' | 'examiner' } => l.action !== 'effacer').map((l) => ({ table: l.table, action: l.action, rows: l.rows, why: l.why })),
+      // Les identifiants restent en clair tant que la fiche ne reconnaît pas une personne par leur empreinte (AU020c) :
+      // le reçu le dit tel quel, il ne promet pas une empreinte qui n'est pas faite.
+      kept: plan.lines
+        .filter((l): l is typeof l & { action: 'garder' | 'empreinte' | 'examiner' } => l.action !== 'effacer')
+        .map((l) => (l.action === 'empreinte' ? { table: l.table, action: 'garder' as const, rows: l.rows, why: IDENTIFIERS_KEPT } : { table: l.table, action: l.action, rows: l.rows, why: l.why })),
       alwaysKept: plan.alwaysKept,
       complete: outcome.remaining.length === 0 && outcome.objectsRemaining === 0,
     };
