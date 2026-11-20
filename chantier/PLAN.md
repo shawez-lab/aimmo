@@ -819,7 +819,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU076 · Mon bon de visite ne peut désigner le bien que par référence et commune
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#721, ef3091ff). Constat confirmé (le modèle refusait `{{bien.adresse}}`). Champ `bien.adresse` du bon, depuis la désignation la plus récente du bien dans le réseau (AU002) ; sans elle, bon incomplet, non signable [R40] ; l'adresse ne va ni dans un message, ni au journal, ni sur la fiche du bien [R19, précisée]. Codex : rien à signaler ; vérification GitHub verte. Reste : le modèle réel du bon (H08).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A076 (majeur), endroit : C/visites/visites.ts, `VISIT_SLIP_FIELDS`, R19.
 - Constat de l'audit : Mon bon de visite ne peut désigner le bien que par référence et commune, sans adresse privée sur l’exemplaire signé.

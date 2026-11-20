@@ -1508,3 +1508,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 13:44 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
 - 2026-11-20 14:23 · AU025 · bac à sable servi par le Worker : seconde base D1 en Europe, ouverture et cinq étapes depuis l'écran, progression gardée ; Codex rien de majeur (1 P2 noté) ; fusionnée (#720, e93c90a3) · prochaine : AU026
 - 2026-11-20 14:23 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU026
+- 2026-11-20 14:31 · AU076 · le bon de visite désigne le bien par son adresse exacte (désignation la plus récente du réseau), incomplet sans elle, jamais dans un message ni au journal ; R19 précisée ; Codex rien ; fusionnée (#721, ef3091ff) · prochaine : AU077
+- 2026-11-20 14:31 · VOIE 2 : AU076, ef3091ff (main), relancé non
+- 2026-11-20 14:31 · VOIE 2 : relance refusée, question 2 (la séance de 12:53 n'a produit ni commit ni tâche finie)
