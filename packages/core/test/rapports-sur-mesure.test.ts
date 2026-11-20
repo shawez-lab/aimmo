@@ -260,6 +260,14 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     const autre = (await t.db.first<{ person_id: string }>("SELECT person_id FROM attributions WHERE id = 'att-4'"))!.person_id;
     await t.db.run("INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, replaces_id, created_at, updated_at) VALUES ('rdv-autre', ?, ?, ?, NULL, 'visite', '2027-06-05T08:00:00.000Z', '2027-06-05T09:00:00.000Z', 'honored', 'hx', 'agent', NULL, '2027-06-05', '2027-06-05')", [t.network.id, t.alex.id, autre]);
     await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('fiche-alex', 'bien-alex', ?, 1, ?, 'agent', '2027-05-02')", [t.network.id, JSON.stringify({ media: [{ ref: 'biens/bien-alex/photo-1.jpg', kind: 'photo' }] })]);
+    // Deux mandats signés d'Alex : l'un pour son client, l'autre pour un client confié depuis à Sam.
+    await t.db.run("INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES ('man-autre', ?, ?, ?, NULL, NULL, '2027-06-21', 'site', NULL, NULL, ?, '2027-06-21')", [t.network.id, t.alex.id, autre, t.alex.id]);
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    for (const [doc, mandate, person, scan] of [['doc-a', 'man-9', client, 'mandats/x/scan-a.pdf'], ['doc-b', 'man-autre', autre, 'mandats/x/scan-b.pdf']] as const) {
+      await t.db.run("INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at) VALUES (?, ?, 't', 1, 'h', 'mandat_vente_simple', 'reel', 'complet', '[]', ?, ?, NULL, 'x', 'h', 'agent', '2027-06-20')", [doc, t.network.id, t.alex.id, person]);
+      await t.db.run("INSERT INTO signed_documents (document_id, network_id, signed_at, place, scan_ref, mandate_id, number, copy_content, copy_hash, registered_by, created_at) VALUES (?, ?, '2027-06-20', 'agence', ?, ?, NULL, NULL, NULL, 'agent', '2027-06-20')", [doc, t.network.id, scan, mandate]);
+    }
+    await t.db.run('PRAGMA foreign_keys = ON');
     // Le constat : l'export de l'agent seul porte des identifiants, sans fiche, et des références orphelines.
     const plain = await t.exports.make(t.agent);
     if (!plain.ok) throw new Error(plain.code);
@@ -281,9 +289,14 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(doc.tables.clients).toHaveLength(3);
     expect(doc.tables.clientIdentifiers).toEqual([{ person_id: client, kind: 'email', value: 'client.un@example.test' }]);
     expect(doc.tables.clientConsents).toMatchObject([{ person_id: client, purpose: 'suivi', channel: 'email' }]);
-    expect(doc.tables.files).toEqual([{ table: 'property_sheets', ref: 'biens/bien-alex/photo-1.jpg', property_id: 'bien-alex' }]);
-    // Ce qui n'est pas à lui est écarté et compté ; rien d'orphelin ne reste ; rien d'un autre agent n'y entre.
-    expect(doc.excluded).toEqual({ appointments: 1, sales: 3 });
+    expect(doc.tables.files).toEqual([
+      { table: 'signed_documents', ref: 'mandats/x/scan-a.pdf', mandate_id: 'man-9' },
+      { table: 'property_sheets', ref: 'biens/bien-alex/photo-1.jpg', property_id: 'bien-alex' },
+    ]);
+    // Ce qui n'est pas à lui est écarté et compté : le mandat et le scan du client confié à Sam, les ventes et parts hors
+    // de l'export ; rien d'orphelin ne reste ; rien d'un autre agent n'y entre.
+    expect(doc.excluded).toEqual({ appointments: 1, mandates: 1, sales: 3, commissionShares: 2, files: 1 });
+    expect(doc.tables.commissionShares).toEqual([]);
     expect(exportOrphans(doc)).toEqual([]);
     expect(JSON.stringify(doc)).not.toContain(autre);
     expect(JSON.stringify(doc)).not.toContain(t.sam.id);

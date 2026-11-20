@@ -78,6 +78,13 @@ export function exportOrphans(doc: AgentExport): string[] {
   check('mandates', t.mandates, 'property_id', props);
   check('sales', t.sales, 'mandate_id', mandates);
   if (t.clients) {
+    // L'export de reprise : chaque part a sa vente, chaque pièce signée son mandat, chaque photo son bien.
+    const sales = new Set((t.sales ?? []).map((r) => String(r.file_id)));
+    check('commissionShares', t.commissionShares, 'file_id', sales);
+    check('files', (t.files ?? []).filter((r) => r.mandate_id !== undefined), 'mandate_id', mandates);
+    check('files', (t.files ?? []).filter((r) => r.property_id !== undefined), 'property_id', props);
+  }
+  if (t.clients) {
     const clients = new Set(t.clients.map((r) => String(r.id)));
     for (const id of persons) if (!clients.has(id)) out.push(`clients.id:${id}`);
     check('clientIdentifiers', t.clientIdentifiers, 'person_id', clients);
@@ -224,12 +231,22 @@ export class ExportAgent {
       const sales = tables.sales.length;
       tables.sales = tables.sales.filter((r) => mandateIds.has(String(r.mandate_id)));
       if (tables.sales.length !== sales) excluded.sales = sales - tables.sales.length;
+      // Ses parts suivent ses ventes gardées : une part sur une vente hors de l'export est écartée et comptée.
+      const fileIds = new Set(tables.sales.map((r) => String(r.file_id)));
+      const shares = tables.commissionShares.length;
+      tables.commissionShares = tables.commissionShares.filter((r) => fileIds.has(String(r.file_id)));
+      if (tables.commissionShares.length !== shares) excluded.commissionShares = shares - tables.commissionShares.length;
       if (auth.scope === 'clients_pieces') {
         // Les pièces de son portefeuille : scans des mandats et avenants signés, et photos de ses biens.
         const files: Row[] = [
-          ...(await q(`SELECT 'signed_documents' AS "table", s.scan_ref AS ref FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE d.network_id = ? AND d.agent_id = ? AND s.scan_ref IS NOT NULL ORDER BY s.scan_ref`)),
-          ...(await q(`SELECT 'signed_amendments' AS "table", a.scan_ref AS ref FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE d.network_id = ? AND d.agent_id = ? AND a.scan_ref IS NOT NULL ORDER BY a.scan_ref`)),
-        ];
+          ...(await q(`SELECT 'signed_documents' AS "table", s.scan_ref AS ref, s.mandate_id FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE d.network_id = ? AND d.agent_id = ? AND s.scan_ref IS NOT NULL ORDER BY s.scan_ref`)),
+          ...(await q(`SELECT 'signed_amendments' AS "table", a.scan_ref AS ref, a.mandate_id FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE d.network_id = ? AND d.agent_id = ? AND a.scan_ref IS NOT NULL ORDER BY a.scan_ref`)),
+        ].filter((r) => {
+          // Le scan d'un mandat gardé seulement : un client confié depuis à un autre agent emporte ses pièces avec lui.
+          const kept = mandateIds.has(String(r.mandate_id));
+          if (!kept) excluded.files = (excluded.files ?? 0) + 1;
+          return kept;
+        });
         for (const p of tables.properties) {
           const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [String(p.id)]);
           let media: { ref?: unknown }[] = [];
