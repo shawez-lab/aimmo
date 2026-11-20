@@ -861,7 +861,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU080 · Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-20)
+- Reste : fusionnée (#728, 2e244f5b). Constat confirmé (une offre de 121 jours refusée `validUntil`). Échéance gardée telle que l'offre la donne, jusqu'à 730 jours (au-delà : faute de saisie, refusée) ; au-delà de 60 jours, ligne de contrôle `validite_longue : atypique` (jours, usage), dite aussi à l'écran dès l'inscription ; rien ne change dans la base ni l'empreinte ; contre-propositions toujours à 60 jours. R59 précisée. Au passage : test du point de la semaine (AU078) rendu stable (« 240 » pouvait sortir d'une empreinte). Codex : rien ; vérification GitHub verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M09 Offre ; audit A080 (majeur), endroit : C/offres/registre-offres.ts, `MAX_VALIDITY_DAYS`.
 - Constat de l'audit : Une offre reçue avec plus de 60 jours de validité ne peut pas être enregistrée fidèlement.
