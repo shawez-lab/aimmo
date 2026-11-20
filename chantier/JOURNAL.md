@@ -1502,3 +1502,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 11:02 · AU020c · identifiants et clés de contact sous empreinte après un effacement, arrêt posé, message d'une personne effacée reconnu sans réponse ; relecture forte 2 P1 corrigés ; fusionnée (#717) · prochaine : AU025
 - 2026-11-20 11:02 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU025
 - 2026-11-20 11:35 · AU020c · suite #718 : 2 P0 de Codex vus après la fusion de #717 (empreinte entière, reprise sur fiche effacée) et 1 P0 GLOB corrigés ; fusionnée · prochaine : AU025
+- 2026-11-20 12:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 10:53 par une autre séance voie 2, active : push sur chantier/AU075 à 12:49)
