@@ -259,4 +259,26 @@ describeWithSqlite('bac à sable du premier parcours (Jamais vu)', () => {
     expect(await again.progress(w.as(w.veteran), w.veteran)).toEqual({ ok: false, rule: null, code: 'not_opened' });
     expect(w.storage.bases.size).toBe(1);
   });
+
+  it('[R82] AU025 : une qualification tombée en panne ne bloque pas l\'exercice : un nouveau contact reçu le reprend', async () => {
+    const w = await setup();
+    const me = w.as(w.newcomer);
+    const opened = await w.bac.open(me);
+    if (!opened.ok) throw new Error(opened.code);
+    const sandbox = opened.world.db;
+    await sandbox.exec("CREATE TRIGGER panne BEFORE INSERT ON qualifications BEGIN SELECT RAISE(ABORT, 'panne'); END;");
+    const first = await w.bac.act(me, 'contact_recu');
+    if (!first.ok) throw new Error(first.code);
+    expect(first.value.steps.filter((s) => s.done).map((s) => s.step)).toEqual(['contact_recu']);
+    // Les autres gestes restent fermés ; la qualification n'est pas un geste.
+    expect(await w.bac.act(me, 'rappel_fait')).toEqual({ ok: false, rule: null, code: 'not_next_step' });
+    expect(await w.bac.act(me, 'qualification')).toEqual({ ok: false, rule: null, code: 'invalid_step' });
+    await sandbox.exec('DROP TRIGGER panne');
+    const again = await w.bac.act(me, 'contact_recu');
+    if (!again.ok) throw new Error(again.code);
+    expect(again.value.steps.filter((s) => s.done).map((s) => s.step)).toEqual(['contact_recu', 'qualification']);
+    for (const gesture of ['rappel_fait', 'rendez_vous', 'avis_valide']) expect([gesture, (await w.bac.act(me, gesture)).ok]).toEqual([gesture, true]);
+    const end = await w.bac.progress(me, w.newcomer);
+    expect(end.ok && end.value.completed).toBe(true);
+  });
 });

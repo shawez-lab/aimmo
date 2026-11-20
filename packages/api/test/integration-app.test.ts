@@ -529,6 +529,13 @@ describe('AU025 · le premier parcours se fait depuis l’écran', () => {
     expect(f.body().all().filter((e) => e.tagName === 'button' && /vendeur|rappelé|rendez-vous|avis/.test(e.textContent))).toEqual([]);
   });
 
+  it('une qualification manquée : un nouveau message relance le parcours', async () => {
+    const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(1)), 'POST /v1/reseau/mon-bac-a-sable/etapes/contact_recu': ok(progress(2)) });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Recevoir un nouveau message'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/reseau/mon-bac-a-sable/etapes/contact_recu']);
+  });
+
   it('une étape refusée est dite en clair, jamais par un code', async () => {
     const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(2)), 'POST /v1/reseau/mon-bac-a-sable/etapes/rappel_fait': no(400, { ok: false, rule: null, code: 'not_next_step' }) });
     await t.ouvrir('integration-ouvrir');

@@ -76,11 +76,14 @@ export interface SandboxProgress {
   countedAtAcademy: boolean;
 }
 
-/** Les contacts inventés qui écrivent à l'agent dans son bac à sable. Domaine réservé aux essais, aucune vraie personne. */
+/**
+ * Les contacts inventés qui écrivent à l'agent dans son bac à sable. Domaine réservé aux essais, aucune vraie personne.
+ * Chacun est pressé : il reçoit sa tâche « rappeler », pour qu'un nouveau contact puisse toujours reprendre le parcours.
+ */
 export const SANDBOX_CONTACTS: readonly { email: string; message: string }[] = Object.freeze([
   { email: 'vendeur.un@essai.example', message: 'Bonjour, je souhaite vendre ma maison à Talant rapidement. Pouvez-vous l’estimer ?' },
-  { email: 'vendeuse.deux@essai.example', message: 'Je voudrais vendre mon appartement à Talant, combien vaut-il ?' },
-  { email: 'vendeur.trois@essai.example', message: 'Nous vendons la maison de famille à Talant, pouvez-vous passer ?' },
+  { email: 'vendeuse.deux@essai.example', message: 'Je voudrais vendre rapidement mon appartement à Talant, combien vaut-il ?' },
+  { email: 'vendeur.trois@essai.example', message: 'Nous vendons rapidement la maison de famille à Talant, pouvez-vous passer ?' },
 ]);
 
 /** Des ventes inventées autour d'un point fictif de Talant. */
@@ -234,32 +237,42 @@ export class BacASable {
     const rootOf = async (personId: string | null): Promise<string | null> => (personId === null || !(await store.getPerson(personId)) ? null : fiche.rootOf(personId));
     const byAgent = (e: JournalEntry): boolean => e.actor === `agent:${agentId}`;
 
-    let person: string | null = null;
-    let seq = -1;
+    // Les contacts inventés arrivés, dans l'ordre. Le parcours suit le premier qui a été qualifié ; sans aucun qualifié
+    // (une qualification tombée en panne), le premier arrivé, et un nouveau contact peut alors être reçu (AU025).
+    const arrivals: { root: string | null; seq: number; at: string }[] = [];
     for (const e of entries) {
       if (e.type !== 'bac_a_sable.contact_recu' || e.actor !== 'system:bac_a_sable') continue;
       const p = id(e.subject, 'person');
       const invented = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM person_identifiers WHERE person_id = ? AND kind = 'email' AND value LIKE '%@essai.example'", [p]);
       const inbound = p === null ? null : await sandbox.first("SELECT 1 AS ok FROM messages WHERE person_id = ? AND direction = 'in'", [p]);
-      if (invented && inbound) {
-        person = await rootOf(p);
-        seq = e.seq;
-        done.set('contact_recu', e.at);
-        break;
-      }
+      if (invented && inbound) arrivals.push({ root: await rootOf(p), seq: e.seq, at: e.at });
     }
-    if (person === null) return { done, person };
-    const sameRoot = async (p: string | null): Promise<boolean> => (await rootOf(p)) === person;
+    if (arrivals.length === 0) return { done, person: null };
 
     // La qualification se fait pendant la réception : elle peut précéder l'arrivée rangée, pour la même personne.
-    for (const e of entries) {
-      if (e.type !== 'qualification.rangee' || !(await sameRoot(id(e.subject, 'person')))) continue;
-      const row = await sandbox.first<{ person_id: string }>('SELECT person_id FROM qualifications WHERE person_id = ?', [id(e.subject, 'person')]);
-      if (row) {
-        done.set('qualification', e.at);
+    const qualifiedAt = async (root: string | null): Promise<string | null> => {
+      for (const e of entries) {
+        if (e.type !== 'qualification.rangee' || (await rootOf(id(e.subject, 'person'))) !== root) continue;
+        const row = await sandbox.first<{ person_id: string }>('SELECT person_id FROM qualifications WHERE person_id = ?', [id(e.subject, 'person')]);
+        if (row) return e.at;
+      }
+      return null;
+    };
+    let chosen = arrivals[0]!;
+    let qualification: string | null = null;
+    for (const a of arrivals) {
+      qualification = await qualifiedAt(a.root);
+      if (qualification !== null) {
+        chosen = a;
         break;
       }
     }
+    const person = chosen.root;
+    let seq = chosen.seq;
+    done.set('contact_recu', chosen.at);
+    if (person === null) return { done, person };
+    if (qualification !== null) done.set('qualification', qualification);
+    const sameRoot = async (p: string | null): Promise<boolean> => (await rootOf(p)) === person;
     if (!done.has('qualification')) return { done, person };
 
     const next = async (step: SandboxStep, check: (e: JournalEntry) => Promise<boolean>): Promise<boolean> => {
@@ -348,7 +361,9 @@ export class BacASable {
     if (!before.ok) return before;
     const next = before.value.steps.find((s) => !s.done);
     if (!next) return { ok: false, rule: null, code: 'completed' };
-    if (next.step !== gesture) return { ok: false, rule: null, code: 'not_next_step' };
+    // Une qualification tombée en panne : un nouveau contact inventé reprend le parcours.
+    const expected = next.step === 'qualification' ? 'contact_recu' : next.step;
+    if (expected !== gesture) return { ok: false, rule: null, code: 'not_next_step' };
     if (!(await this.activeAgent(viewer, agentId))) return this.refuse(viewer, agentId, 'agent_inactive');
     const world = await this.world(agentId);
     const done = await this.gesture(world, gesture as SandboxGesture);

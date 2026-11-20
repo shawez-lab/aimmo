@@ -359,11 +359,14 @@ globalThis.AIMMO_INTEGRATION = function (t) {
       var li = el('li');
       li.appendChild(el('strong', s.label));
       li.appendChild(el('p', s.done ? 'Fait le ' + when(s.at) : 'À faire', s.done ? 'module-fait' : 'piece-manque'));
-      // Seule la prochaine étape a son geste ; la qualification se fait d'elle-même à l'arrivée du message.
+      // Seule la prochaine étape a son geste ; la qualification se fait d'elle-même à l'arrivée du message, et si elle a
+      // manqué, un nouveau message la relance.
       var first = p.steps.filter(function (x) { return !x.done; })[0];
-      if (first === s && GESTURES[s.step]) li.appendChild(button(GESTURES[s.step], function () {
+      var gesture = s.step === 'qualification' ? 'contact_recu' : s.step;
+      var label = s.step === 'qualification' ? 'Recevoir un nouveau message' : GESTURES[s.step];
+      if (first === s && label) li.appendChild(button(label, function () {
         state('Envoi…');
-        send('/v1/reseau/mon-bac-a-sable/etapes/' + encodeURIComponent(s.step), 'POST').then(function (x) {
+        send('/v1/reseau/mon-bac-a-sable/etapes/' + encodeURIComponent(gesture), 'POST').then(function (x) {
           if (x.gone) return;
           if (!x.ok) { state(refusal(x, 'L’étape n’a pas abouti.')); return; }
           open('integration', 'Étape faite : votre progression est gardée.');
