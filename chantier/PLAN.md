@@ -641,7 +641,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU057b · Conditions du jour et rappel d'exclusivité après un avenant
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-20)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU057
 - Cahier : M06 Mandats et documents ; suite des remarques P2 de Codex sur #708.
 - Objectif : l'écran des conditions montre celles du jour et les avenants à venir à part ; le rappel de fin de période exclusive suit le type de mandat en vigueur.
