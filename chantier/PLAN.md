@@ -324,7 +324,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H22).
 
 ### AU024 · Mon écran d’intégration liste les pièces manquantes
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M14 Réseau et académie ; audit A024 (majeur), endroit : UI/integration.ts, `renderFile`.
 - Constat de l'audit : Mon écran d’intégration liste les pièces manquantes, mais ne me permet pas de déposer les justificatifs à cet endroit.
