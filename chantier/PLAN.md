@@ -840,7 +840,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU078 · Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M08 Acquéreurs et visites ; audit A078 (majeur), endroit : C/visites/point-semaine.ts, `PRICE_DROP`, R53.
 - Constat de l'audit : Je ne peux pas consigner dans le point vendeur une décision de repositionnement de prix déjà convenue : le vocabulaire du prix est interdit.
