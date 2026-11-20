@@ -3,6 +3,7 @@ export * from './pieces.ts';
 export * from './obligations-locales.ts';
 export * from './depot.ts';
 export * from './echeancier.ts';
+export * from './conditions.ts';
 export * from './relances.ts';
 export * from './financement.ts';
 export * from './bouclier.ts';
