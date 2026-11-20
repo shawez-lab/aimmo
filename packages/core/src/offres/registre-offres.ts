@@ -34,8 +34,20 @@ export const MAX_CO_BUYERS = 3;
 export const CONDITION_KINDS = ['pret', 'vente_autre_bien', 'permis_construire', 'certificat_urbanisme', 'autre'] as const;
 export type ConditionKind = (typeof CONDITION_KINDS)[number];
 
+/** Le type du prêt déclaré dans la condition, liste fermée (AU079). `ptz` : prêt à taux zéro. */
+export const LOAN_TYPES = ['amortissable', 'in_fine', 'relais', 'ptz'] as const;
+export type LoanType = (typeof LOAN_TYPES)[number];
+/** Le taux nominal annuel maximal hors assurance, en centièmes de point : 385 pour 3,85 % ; de 0,01 % à 20 %. */
+export const MAX_RATE_BP = 2000;
+
+/**
+ * La condition de prêt porte son montant et sa durée, et, quand l'offre les déclare, le taux nominal maximal hors
+ * assurance et le type de prêt (AU079). Facultatifs : une offre d'avant les garde absents, et son empreinte ne change pas.
+ */
+export type LoanCondition = { kind: 'pret'; amountEur: number; durationMonths: number; maxRateBp?: number; loanType?: LoanType };
+
 export type OfferCondition =
-  | { kind: 'pret'; amountEur: number; durationMonths: number }
+  | LoanCondition
   | { kind: 'vente_autre_bien' }
   | { kind: 'permis_construire' }
   | { kind: 'certificat_urbanisme' }
@@ -129,7 +141,28 @@ const validDay = (d: unknown): d is string => {
   return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === d;
 };
 
-/** Contrôle les conditions suspensives : liste fermée, une fois chacune, le prêt avec son montant et sa durée. */
+/**
+ * Lit une condition de prêt : montant et durée exigés, taux maximal et type facultatifs, rangés dans un ordre fixe pour
+ * que deux saisies équivalentes donnent le même texte (et la même empreinte). `extra` : les clés admises en plus (`page`).
+ */
+export function parseLoan(c: Record<string, unknown>, extra: string[]): { ok: true; value: LoanCondition } | { ok: false; field: string | null } {
+  if (Object.keys(c).some((k) => !['kind', 'amountEur', 'durationMonths', 'maxRateBp', 'loanType', ...extra].includes(k))) return { ok: false, field: null };
+  if (!isInt(c.amountEur, 1, 100_000_000)) return { ok: false, field: 'amountEur' };
+  if (!isInt(c.durationMonths, 1, 480)) return { ok: false, field: 'durationMonths' };
+  if (c.maxRateBp !== undefined && !isInt(c.maxRateBp, 1, MAX_RATE_BP)) return { ok: false, field: 'maxRateBp' };
+  if (c.loanType !== undefined && !(LOAN_TYPES as readonly unknown[]).includes(c.loanType)) return { ok: false, field: 'loanType' };
+  const value: LoanCondition = { kind: 'pret', amountEur: c.amountEur, durationMonths: c.durationMonths };
+  if (c.maxRateBp !== undefined) value.maxRateBp = c.maxRateBp as number;
+  if (c.loanType !== undefined) value.loanType = c.loanType as LoanType;
+  return { ok: true, value };
+}
+
+/** Un taux en centièmes de point, écrit à la française : 385 → « 3,85 % ». */
+export const rateText = (bp: number): string => `${Math.floor(bp / 100)},${String(bp % 100).padStart(2, '0')} %`;
+
+export const LOAN_TYPE_LABEL: Record<LoanType, string> = { amortissable: 'amortissable', in_fine: 'in fine', relais: 'relais', ptz: 'à taux zéro' };
+
+/** Contrôle les conditions suspensives : liste fermée, une fois chacune, le prêt avec son montant et sa durée, son taux maximal et son type quand l'offre les déclare. */
 export function parseConditions(v: unknown): { ok: true; value: OfferCondition[] } | { ok: false; field: string } {
   if (!Array.isArray(v) || v.length > CONDITION_KINDS.length) return { ok: false, field: 'conditions' };
   const out: OfferCondition[] = [];
@@ -138,10 +171,9 @@ export function parseConditions(v: unknown): { ok: true; value: OfferCondition[]
     if (!isRecord(c) || !(CONDITION_KINDS as readonly unknown[]).includes(c.kind) || seen.has(String(c.kind))) return { ok: false, field: `conditions.${i}` };
     seen.add(String(c.kind));
     if (c.kind === 'pret') {
-      if (Object.keys(c).some((k) => !['kind', 'amountEur', 'durationMonths'].includes(k))) return { ok: false, field: `conditions.${i}` };
-      if (!isInt(c.amountEur, 1, 100_000_000)) return { ok: false, field: `conditions.${i}.amountEur` };
-      if (!isInt(c.durationMonths, 1, 480)) return { ok: false, field: `conditions.${i}.durationMonths` };
-      out.push({ kind: 'pret', amountEur: c.amountEur, durationMonths: c.durationMonths });
+      const loan = parseLoan(c, []);
+      if (!loan.ok) return { ok: false, field: loan.field ? `conditions.${i}.${loan.field}` : `conditions.${i}` };
+      out.push(loan.value);
     } else {
       if (Object.keys(c).some((k) => k !== 'kind')) return { ok: false, field: `conditions.${i}` };
       out.push({ kind: c.kind as Exclude<ConditionKind, 'pret'> });

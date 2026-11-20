@@ -243,6 +243,50 @@ describe('O10 · écran des offres', () => {
     expect(t.state()).toContain('Offre inscrite au registre');
   });
 
+  it('[R56] AU079 · le taux maximal hors assurance et le type du prêt partent avec la condition, et se relisent sur l’offre', async () => {
+    const ref = 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000079.pdf';
+    const t = await run({
+      [SUIVI]: ok(board([])),
+      'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'p1', firstName: 'Acheteur', lastName: 'Exemple' }], more: false }),
+      'POST /v1/offres/biens/b1/fichiers/signee': ok({ ref }),
+      'POST /v1/offres/biens/b1': no(400, 'invalid', { field: 'validUntil' }),
+    });
+    await t.open();
+    await t.click(t.byText('Enregistrer une offre reçue'));
+    t.input('of-acquereur').value = 'p1';
+    t.input('of-montant').value = '205000';
+    t.input('of-apport').value = '70000';
+    t.input('of-pret').value = '150000';
+    t.input('of-recue').value = '2027-03-01T09:00';
+    t.input('of-validite').value = '2027-03-10';
+    (t.input('of-c-pret') as unknown as { checked: boolean }).checked = true;
+    t.input('of-c-montant').value = '150000';
+    t.input('of-c-duree').value = '240';
+    expect(t.input('of-c-type').children.map((o) => o.value)).toEqual(['', 'amortissable', 'in_fine', 'relais', 'ptz']);
+    for (const wrong of ['3,855', '25', 'trois', '0']) {
+      t.input('of-c-taux').value = wrong;
+      await t.click(t.byText('Inscrire au registre'));
+      expect(t.state()).toBe('Taux maximal du prêt : en %, de 0,01 à 20, deux décimales au plus, ou laissé vide.');
+    }
+    t.input('of-c-taux').value = '3,85 %';
+    t.input('of-c-type').value = 'amortissable';
+    t.input('of-signee').files = [pdf()];
+    await t.click(t.byText('Inscrire au registre'));
+    const sent = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(sent[0]!.body).toMatchObject({ conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240, maxRateBp: 385, loanType: 'amortissable' }] });
+    // Laissés vides : la condition part comme avant, sans taux ni type.
+    t.input('of-c-taux').value = '';
+    t.input('of-c-type').value = '';
+    await t.click(t.byText('Inscrire au registre'));
+    const again = t.posts().filter((c) => c.url === '/v1/offres/biens/b1');
+    expect(again[1]!.body).toMatchObject({ conditions: [{ kind: 'pret', amountEur: 150000, durationMonths: 240 }] });
+    expect(Object.keys((again[1]!.body as { conditions: Record<string, unknown>[] }).conditions[0]!)).toEqual(['kind', 'amountEur', 'durationMonths']);
+    // L'offre relue : le prêt dit son type et son taux.
+    const shown = await run({ [SUIVI]: ok(board([{ ...OFFER, conditionDetails: [{ kind: 'pret', amountEur: 150000, durationMonths: 240, maxRateBp: 385, loanType: 'amortissable' }] }])) });
+    await shown.open();
+    expect(shown.body().textContent).toContain('prêt amortissable de 150 000 € sur 240 mois, taux hors assurance 3,85 % au plus');
+  });
+
   it('[R26] [R56] tant que rien ne part vraiment, l’écran ne propose pas de transmettre par message', async () => {
     const t = await run({ [SUIVI]: ok(board([OFFER])) });
     await t.open();
