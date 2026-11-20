@@ -1524,3 +1524,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 17:48 · VOIE 2 : AU078, adcddb1e (main), relancé non
 - 2026-11-20 17:48 · VOIE 2 : relance refusée, question 2 (la séance de 15:54 n'a produit ni commit ni tâche finie)
 - 2026-11-20 18:33 · AU079 · condition de prêt avec taux nominal maximal hors assurance et type, gardés au registre (empreinte d'avant inchangée sans eux), repris dans la note au notaire et comparés au projet (différent, absent ou ajouté, avec la page) ; R56 et R511 précisées ; Codex rien ; fusionnée (#727, 9d52d5de) · prochaine : AU080
+- 2026-11-20 18:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:55 par une autre séance voie 2, active : push sur chantier/AU080 à 18:39)
