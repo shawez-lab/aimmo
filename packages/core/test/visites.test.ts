@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   Acces,
+  Designations,
   FicheClient,
   FicheUnique,
   RendezVous,
@@ -51,8 +52,16 @@ async function setup() {
   // Un bien de Sam : le fichier commun le rend visitable par les clients d'Alex.
   const property = (overrides: { surfaceM2?: number } = {}) =>
     store.createProperty({ networkId: network.id, agentId: sam.id, reference: 'B-TALANT', kind: 'home', postalCode: '21240', city: 'Talant', priceEur: 280_000, surfaceM2: overrides.surfaceM2 ?? 95, rooms: 4, status: 'available' });
-  return { db, journal, store, fiche, visites, rdv, network, alex, sam, as, buyer, property, blocked };
+  const designations = new Designations(db, acces, journal, { now });
+  return { db, journal, store, fiche, visites, rdv, network, alex, sam, as, buyer, property, blocked, designations };
 }
+
+const SLIP_WITH_ADDRESS = [
+  'BON DE VISITE · {{reseau.nom}}',
+  'Je soussigné {{visiteur.nom}} reconnais avoir visité le bien {{bien.reference}}, situé {{bien.adresse}}, le {{visite.date}} à {{visite.heure}}, avec {{agent.nom}}.',
+  'Fait le {{signature.date}}.',
+].join('\n\n');
+const PARCELS = [{ section: 'AB', number: '0123' }];
 
 describeWithSqlite('T04 · visite et bon de visite', () => {
   it('une visite fixée produit son bon : bien, date et visiteur, sans adresse exacte, d’essai tant que le modèle n’est pas validé [R40]', async () => {
@@ -99,7 +108,7 @@ describeWithSqlite('T04 · visite et bon de visite', () => {
     const b = await t.buyer('Inès');
     const p = await t.property();
     expect(await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H })).toMatchObject({ ok: false, rule: 'R40', code: 'no_template' });
-    expect(await t.visites.createSlipTemplate(t.as('direction', 'd1'), 'Visite de {{bien.adresse}} par {{visiteur.nom}} le {{visite.date}}, {{bien.reference}}')).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect(await t.visites.createSlipTemplate(t.as('direction', 'd1'), 'Visite de {{bien.vendeur}} par {{visiteur.nom}} le {{visite.date}}, {{bien.reference}}')).toMatchObject({ ok: false, code: 'unknown_field' });
     expect(await t.visites.createSlipTemplate(t.as('direction', 'd1'), 'Visite de {{bien.reference}} le {{visite.date}}')).toMatchObject({ ok: false, code: 'missing_required_field' });
     expect(await t.visites.createSlipTemplate(t.as('agent', t.alex.id), TEMPLATE)).toMatchObject({ ok: false, rule: 'R16' });
     expect(await t.db.all('SELECT * FROM appointments')).toEqual([]);
@@ -444,5 +453,64 @@ describeWithSqlite('BR64 · les visites réservées en ligne qui attendent sur l
     if (!again.ok) throw new Error(again.code);
     const r2 = await t.visites.onlineToAttach(t.as('agent', t.alex.id), b.person.id);
     expect(r2.ok && r2.value.map((v) => v.appointmentId)).toEqual([again.appointment.id]);
+  });
+
+});
+
+describeWithSqlite('AU076 · le bon de visite désigne précisément le bien', () => {
+  it('AU076 · le bon désigne le bien par son adresse exacte, la plus récente, sans qu’elle aille dans la confirmation ni le journal [R19, R40]', async () => {
+    const t = await setup();
+    // Le constat : un modèle qui demande l'adresse du bien était refusé (« unknown_field »).
+    const tpl = await t.visites.createSlipTemplate(t.as('direction', 'd1'), SLIP_WITH_ADDRESS);
+    expect(tpl).toMatchObject({ ok: true, version: 1 });
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    // Sam, l'agent du bien, le désigne ; il corrige ensuite le numéro : la plus récente vaut.
+    expect(await t.designations.setProperty(t.as('agent', t.sam.id), p.id, { address: { street: '3 rue des Essais', postalCode: '21240', city: 'Talant' }, parcels: PARCELS })).toMatchObject({ ok: true });
+    expect(await t.designations.setProperty(t.as('agent', t.sam.id), p.id, { address: { street: '5 rue des Essais', postalCode: '21240', city: 'Talant' }, parcels: PARCELS })).toMatchObject({ ok: true });
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H, channel: 'email' });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.visit.slip).toMatchObject({ status: 'complet', missing: [] });
+    expect(r.visit.slip.content).toContain('situé 5 rue des Essais, 21240 Talant');
+    expect(r.visit.slip.content).not.toContain('3 rue des Essais');
+    // Le bon relu par l'agent de l'acquéreur est le même, au caractère près.
+    expect(await t.visites.slipOf(t.as('agent', t.alex.id), r.visit.appointment.id)).toMatchObject({ ok: true, slip: { contentHash: r.visit.slip.contentHash } });
+    // Hors du bon : ni aucun message (la confirmation est écrite par le code, sans adresse), ni le journal, ni la fiche du bien ne portent la rue [R19].
+    const bodies = await t.db.all<{ body: string }>('SELECT body FROM messages');
+    for (const m of bodies) expect(m.body).not.toContain('rue des Essais');
+    const events = await t.db.all<{ subject: string | null; data: string }>('SELECT subject, data FROM journal');
+    for (const e of events) expect(`${e.subject ?? ''} ${e.data}`).not.toContain('rue des Essais');
+    expect(JSON.stringify(await t.db.first('SELECT * FROM properties WHERE id = ?', [p.id]))).not.toContain('rue des Essais');
+  });
+
+  it('AU076 · sans désignation du bien, le bon reste incomplet et ne se signe pas ; jamais une adresse devinée [R40]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), SLIP_WITH_ADDRESS);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.visit.slip).toMatchObject({ status: 'incomplet', missing: ['bien.adresse'] });
+    expect(r.visit.slip.content).toContain('[à compléter : adresse du bien]');
+    expect(await t.visites.recordPaperSignature(t.as('agent', t.alex.id), r.visit.appointment.id, { signedAt: new Date(TUESDAY_10H), scanRef: 'scans/bon-1.pdf' })).toMatchObject({ ok: false, rule: 'R40' });
+  });
+
+  it('AU076 · la désignation d’un bien d’un autre réseau ne passe jamais dans le bon [R16]', async () => {
+    const t = await setup();
+    await t.visites.createSlipTemplate(t.as('direction', 'd1'), SLIP_WITH_ADDRESS);
+    const b = await t.buyer('Inès');
+    const p = await t.property();
+    const other = await t.store.createNetwork('Autre réseau');
+    // Une ligne glissée sous un autre réseau, pour le même bien : le bon ne la lit pas.
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run(
+      "INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES ('d-x', ?, ?, 1, '9 rue Étrangère', '21000', 'Dijon', '[]', 'agent:x', '2026-12-01T00:00:00.000Z')",
+      [other.id, p.id],
+    );
+    await t.db.run('PRAGMA foreign_keys = ON');
+    const r = await t.visites.schedule(t.as('agent', t.alex.id), { propertyId: p.id, projectId: b.project.id, start: WEDNESDAY_10H });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.visit.slip).toMatchObject({ status: 'incomplet', missing: ['bien.adresse'] });
+    expect(r.visit.slip.content).not.toContain('Étrangère');
   });
 });
