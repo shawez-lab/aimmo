@@ -170,6 +170,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.date': 'partage',
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
+  // Les conditions suspensives sont celles du compromis, signé par les deux parties (AU082).
+  'dossier.condition': 'partage',
+  'dossier.condition_alerte': 'partage',
   'dossier.piece_recue': 'partage',
   'dossier.depot': INTERNE('Fichier déposé par l\'agent, pas encore rangé comme pièce : sa référence, sans donnée d\'un client.'),
   'dossier.depot.refuse': INTERNE('Dépôt refusé pour un motif technique, sans donnée d\'un client.'),
