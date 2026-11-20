@@ -300,6 +300,7 @@ globalThis.AIMMO_MANDAT = function (t) {
         if (typeof a.priceEur === 'number') next.push('prix ' + a.priceEur.toLocaleString('fr-FR') + ' €');
         if (typeof a.durationMonths === 'number') next.push('durée ' + a.durationMonths + ' mois');
         if (typeof a.feeEur === 'number') next.push('honoraires ' + a.feeEur.toLocaleString('fr-FR') + ' €');
+        if (a.feeCharge === 'vendeur' || a.feeCharge === 'acquereur') next.push('honoraires à la charge ' + (a.feeCharge === 'vendeur' ? 'du vendeur' : 'de l’acquéreur'));
         if (a.mandateType === 'exclusif' || a.mandateType === 'simple') next.push('mandat ' + a.mandateType);
         if (next.length) box.appendChild(el('p', 'À partir du ' + a.effectiveOn.slice(8, 10) + '/' + a.effectiveOn.slice(5, 7) + '/' + a.effectiveOn.slice(0, 4) + ' : ' + next.join(', ') + '.', 'doux'));
       });
