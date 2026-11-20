@@ -324,7 +324,7 @@ export class Academie {
   /** La période de référence reprise du cycle d'avant l'arrivée : la dernière rangée l'emporte (AU028). */
   private async priorPeriod(networkId: string, agentId: string): Promise<string | null> {
     const row = await this.db.first<{ day: string }>(
-      "SELECT day FROM academy_prior_entries WHERE agent_id = ? AND network_id = ? AND kind = 'periode' ORDER BY recorded_at DESC, rowid DESC LIMIT 1",
+      "SELECT day FROM academy_prior_entries WHERE agent_id = ? AND network_id = ? AND kind = 'periode' ORDER BY recorded_at DESC, id DESC LIMIT 1",
       [agentId, networkId],
     );
     return row?.day ?? null;
