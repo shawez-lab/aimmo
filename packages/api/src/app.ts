@@ -320,6 +320,8 @@ export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
   'reseau.formation',
   'reseau.bac_a_sable',
   'reseau.mon_bac_a_sable',
+  'reseau.mon_bac_a_sable_ouvrir',
+  'reseau.mon_bac_a_sable_etape',
   'reseau.mon_referent',
   'reseau.entrainement_cas',
   'reseau.entrainement',

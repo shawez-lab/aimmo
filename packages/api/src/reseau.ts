@@ -357,6 +357,13 @@ export function reseauRoutes(options: ReseauOptions = {}): ReseauRoute[] {
     route('GET', `${A}/formation`, 'formation', read(async (m, v, [id]) => reply(await m.academie.counter(v, id!)))),
     // Le parcours d'essai de l'agent lui-même, sans son identifiant dans l'adresse (J14).
     route('GET', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable', read(async (m, v) => (m.sandbox ? reply(await m.sandbox.progress(v, v.userId)) : unavailable('Le bac à sable')))),
+    // AU025 : l'agent ouvre son exercice depuis son écran, puis y fait les étapes une à une ; lui seul [R16].
+    route('POST', `${P}/mon-bac-a-sable`, 'mon_bac_a_sable_ouvrir', read(async (m, v) => {
+      if (!m.sandbox) return unavailable('Le bac à sable');
+      const opened = await m.sandbox.open(v);
+      return reply(opened.ok ? await m.sandbox.progress(v, v.userId) : opened);
+    })),
+    route('POST', `${P}/mon-bac-a-sable/etapes/([a-z_]{1,32})`, 'mon_bac_a_sable_etape', read(async (m, v, [step]) => (m.sandbox ? reply(await m.sandbox.act(v, step!)) : unavailable('Le bac à sable')))),
     route('GET', `${A}/bac-a-sable`, 'bac_a_sable', read(async (m, v, [id]) => (m.sandbox ? reply(await m.sandbox.progress(v, id!)) : unavailable('Le bac à sable')))),
 
     /* ---------- Entraînement aux objections, sur des cas inventés. ---------- */

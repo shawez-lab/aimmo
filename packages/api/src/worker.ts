@@ -7,7 +7,11 @@ import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
-import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
+import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
+import { DurableSandboxStorage, type DurableNamespaceLike } from './bac-a-sable.ts';
+
+/** AU025 : l'objet durable des bacs à sable, une base SQLite par agent ; déclaré dans wrangler.toml. */
+export { BacASableBase } from './bac-a-sable.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
@@ -23,6 +27,10 @@ import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
  */
 export interface Env {
   DB: D1Database;
+  /** AU025 : les bacs à sable, une base à part par agent (objet durable). Absent, le bac à sable reste fermé. */
+  BAC_A_SABLE?: DurableNamespaceLike;
+  /** AU025 : le module d'académie que vaut le premier parcours fini ; absent, le parcours ne compte pas à l'académie. */
+  BAC_A_SABLE_MODULE?: string;
   API_KEYS?: string;
   INTAKE_KEYS?: string;
   MODE?: string;
@@ -140,6 +148,13 @@ export function fichiersReprise(env: Pick<Env, 'MEDIA' | 'PIECES' | 'COMMERCES'>
   return buckets.length > 0 ? new R2FichiersPlages(buckets) : null;
 }
 
+function sandboxOptions(env: Env): NonNullable<ReseauOptions['sandbox']> | null {
+  if (!env.BAC_A_SABLE) return null;
+  const moduleId = env.BAC_A_SABLE_MODULE && /^[A-Za-z0-9_-]{1,64}$/.test(env.BAC_A_SABLE_MODULE) ? env.BAC_A_SABLE_MODULE : null;
+  // Aucune migration à jouer : la base reçoit à sa première ouverture le schéma déjà en service.
+  return { migrations: [], storage: new DurableSandboxStorage(env.BAC_A_SABLE, fromD1(env.DB)), academyModuleId: moduleId };
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
@@ -152,8 +167,9 @@ export default {
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
-      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
-      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
+      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.
+      // AU025 : le bac à sable vit dans l'objet durable de l'agent, avec le schéma de la base du réseau, sans ses lignes.
+      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null, sandbox: sandboxOptions(env) },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
