@@ -533,6 +533,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
   // AU059 : le mandant comme son représentant y trouvent la ligne qui les nomme.
+  document_mandant_rights: { locate: [...by('person_id')] },
   document_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   signature_session_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.

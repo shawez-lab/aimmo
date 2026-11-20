@@ -51,6 +51,16 @@ export async function documentPersons(db: SqlDatabase, documentId: string, first
   return [...mandants, ...(await documentProxies(db, documentId)).map((p) => p.proxyId)];
 }
 
+/** Les droits des mandants sur le bien, s'ils sont dits (AU060) ; vide sinon, et pour une base d'avant la migration 4047. */
+export async function documentRights(db: SqlDatabase, documentId: string): Promise<{ personId: string; right: 'pleine_propriete' | 'usufruit' | 'nue_propriete'; proofRef: string | null }[]> {
+  if (!(await db.first(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_mandant_rights'`))) return [];
+  const rows = await db.all<{ person_id: string; right_kind: 'pleine_propriete' | 'usufruit' | 'nue_propriete'; proof_ref: string | null }>(
+    'SELECT person_id, right_kind, proof_ref FROM document_mandant_rights WHERE document_id = ? ORDER BY person_id',
+    [documentId],
+  );
+  return rows.map((r) => ({ personId: r.person_id, right: r.right_kind, proofRef: r.proof_ref }));
+}
+
 export const POWER_KINDS = ['notariee', 'sous_seing_prive'] as const;
 export type PowerKind = (typeof POWER_KINDS)[number];
 
@@ -66,7 +76,7 @@ export async function documentProxies(db: SqlDatabase, documentId: string): Prom
 }
 
 export { IDENTITY_PIECES, type IdentityPiece } from '../conformite/pieces-identite.ts';
-export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire', 'procuration'] as const;
+export const CHECK_NAMES = ['champs', 'modele', 'honoraires', 'mandants', 'identite', 'mandat', 'questionnaire', 'procuration', 'droits'] as const;
 export type CheckName = (typeof CHECK_NAMES)[number];
 
 export interface CheckLine {
@@ -283,6 +293,10 @@ export class ControlesSignature {
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un mandant représenté (AU059) : la procuration est dans le stockage, l'identité du représentant vérifiée, et le
     // représentant n'est pas devenu, par une réunion de fiches, l'un des mandants [R41].
+    // Un bien démembré (AU060) : usufruitier et nus-propriétaires signent ensemble, chacun avec le justificatif de son
+    // droit dans le stockage [R41].
+    const rights = await documentRights(this.db, doc.id);
+    if (rights.length > 0) lines.push(await this.rightsLine(rights));
     if (proxies.length > 0) lines.push(await this.proxyLine(doc.network_id, persons, proxies, at, options.identitySignedAt));
     // Un avenant ne modifie qu'un mandat signé, numéroté, ni annulé ni rétracté.
     if (amendment) lines.push(await this.linkedMandate(doc.network_id, doc.mandate_id));
@@ -319,6 +333,18 @@ export class ControlesSignature {
       this.now,
     );
     return { ok: true, value: result };
+  }
+
+  private async rightsLine(rights: { right: string; proofRef: string | null }[]): Promise<CheckLine> {
+    const line = (ok: boolean, code: string): CheckLine => ({ check: 'droits', ok, code });
+    if (rights.some((r) => r.right === 'usufruit') !== rights.some((r) => r.right === 'nue_propriete')) return line(false, 'dismembered_incomplete');
+    const store = this.options.powers !== undefined ? this.options.powers : this.options.scans;
+    for (const r of rights) {
+      if (r.right === 'pleine_propriete' && r.proofRef === null) continue;
+      if (!store) return line(false, 'depot_ferme');
+      if (!r.proofRef || !(await store.has(r.proofRef))) return line(false, 'proof_absent');
+    }
+    return line(true, rights.some((r) => r.right !== 'pleine_propriete') ? 'dismembered_checked' : 'rights_checked');
   }
 
   private async proxyLine(networkId: string, mandants: readonly string[], proxies: { mandantId: string; proxyId: string; powerRef: string }[], at: Date, signedAt?: Date): Promise<CheckLine> {
