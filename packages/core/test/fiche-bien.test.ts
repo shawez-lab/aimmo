@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { FicheBien, energyPriceText, parseSheet } from '../src/annonces/index.ts';
+import { FicheBien, SURFACE_DISPLAY, energyPriceText, parseSheet, surfacesFor } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -51,6 +51,24 @@ it('[R51] AU070 · la fiche dit maison ou appartement, ou rien ; une autre valeu
   const none = parseSheet({}, TODAY, PID);
   expect(none.ok && 'dwelling' in none.value.characteristics).toBe(false);
   expect(parseSheet({ characteristics: { dwelling: 'villa' } }, TODAY, PID)).toEqual({ ok: false, field: 'characteristics.dwelling' });
+});
+
+it('[R47] AU063 · surfaces habitable, Carrez et utile, au centième, chacune avec sa source ; chaque support dit la sienne', () => {
+  const r = parseSheet({ characteristics: { carrezM2: 61.35, usableM2: 70, surfaceSources: { carrez: 'mesurage', habitable: 'acte' } } }, TODAY, PID);
+  expect(r.ok && r.value.characteristics).toMatchObject({ carrezM2: 61.35, usableM2: 70, surfaceSources: { habitable: 'acte', carrez: 'mesurage' } });
+  // Avant : rien ne les distinguait, la clé était refusée.
+  for (const bad of [{ carrezM2: 61.355 }, { carrezM2: 0 }, { usableM2: -3 }, { surfaceSources: { carrez: 'oui' } }, { surfaceSources: { pieces: 'acte' } }, { surfaceSources: { carrez: 'acte' } }]) {
+    expect(parseSheet({ characteristics: bad }, TODAY, PID).ok).toBe(false);
+  }
+  const flat = { kind: 'home', surfaceM2: 64, carrezM2: 61.35, usableM2: null, surfaceSources: { carrez: 'mesurage' as const } };
+  expect(surfacesFor('annonce', flat)).toEqual([
+    { kind: 'habitable', m2: 64, label: 'surface habitable', source: null },
+    { kind: 'carrez', m2: 61.35, label: 'surface Carrez', source: 'mesurage' },
+  ]);
+  // Un local se dit d'abord par sa surface utile ; une surface absente n'est jamais affichée.
+  expect(surfacesFor('annonce', { kind: 'commercial', surfaceM2: 90, usableM2: 82 }).map((x) => x.kind)).toEqual(['utile', 'habitable']);
+  expect(surfacesFor('site', { kind: 'home', surfaceM2: null, carrezM2: 40 }).map((x) => x.kind)).toEqual(['carrez']);
+  expect(Object.keys(SURFACE_DISPLAY).sort()).toEqual(['annonce', 'fiche_commerciale', 'portails', 'site']);
 });
 
 it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () => {

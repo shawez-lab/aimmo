@@ -38,10 +38,13 @@ export interface ListingFacts {
   /** AU061 · équipements et état dits sur la fiche ; absents, ils ne sont jamais une source. */
   amenities?: Amenity[];
   condition?: Condition | null;
+  /** AU063 · surfaces Carrez et utile, au centième de m² ; absentes, elles ne sont jamais une source. */
+  carrezM2?: number | null;
+  usableM2?: number | null;
 }
 
 export const FACT_KEYS: readonly (keyof ListingFacts)[] = [
-  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass', 'amenities', 'condition',
+  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass', 'amenities', 'condition', 'carrezM2', 'usableM2',
 ];
 
 export type SentenceProblem =
@@ -215,6 +218,8 @@ function numericSources(f: ListingFacts): { field: keyof ListingFacts; value: nu
   push('floorsTotal', f.floorsTotal);
   push('buildYear', f.buildYear);
   push('landM2', f.landM2);
+  push('carrezM2', f.carrezM2 ?? null);
+  push('usableM2', f.usableM2 ?? null);
   push('parkingSpaces', f.parkingSpaces);
   if (f.postalCode !== null && /^\d{5}$/.test(f.postalCode)) push('postalCode', Number(f.postalCode));
   return out;
@@ -286,6 +291,16 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
     if (unit) fields = unit.fields;
     else if (/(?<![\p{L}])sur\s*$/u.test(before)) fields = ['floorsTotal'];
     else fields = NO_UNIT_FIELDS;
+    // AU063 · une surface dite « Carrez », « utile » ou « habitable » est celle-là, jamais une autre de même valeur.
+    if (unit && unit.fields.includes('surfaceM2')) {
+      // Le qualificatif se lit juste avant le nombre (depuis la dernière virgule), ou juste après son unité.
+      const ahead = before.slice(-30).split(/[,;:]/u).at(-1) ?? '';
+      const behind = /^\s*(?:m²|m2|metres? carres?|metres?)\s+([\p{L}]+)/u.exec(after)?.[1] ?? '';
+      const near = `${ahead} ${behind}`;
+      if (/(?<![\p{L}])carrez(?![\p{L}])/u.test(near)) fields = ['carrezM2'];
+      else if (/(?<![\p{L}])utiles?(?![\p{L}])/u.test(near)) fields = ['usableM2'];
+      else if (/(?<![\p{L}])habitables?(?![\p{L}])/u.test(near)) fields = ['surfaceM2'];
+    }
     const src = numbers.find((n) => fields.includes(n.field) && n.value === value);
     if (src) addSource(src.field, raw);
     else problems.push({ code: 'nombre_sans_source', value: raw });
@@ -419,6 +434,9 @@ export function fallbackListing(f: ListingFacts): { title: string; body: string 
     lines.push(`${list.charAt(0).toUpperCase()}${list.slice(1)}.`);
   }
   if (f.landM2 !== null && f.kind !== 'land') lines.push(`Terrain de ${fr(f.landM2)} m².`);
+  // AU063 · les autres surfaces, chacune nommée, telles que la fiche les porte.
+  if (f.carrezM2 !== null && f.carrezM2 !== undefined) lines.push(`Surface Carrez de ${fr(f.carrezM2)} m².`);
+  if (f.usableM2 !== null && f.usableM2 !== undefined) lines.push(`Surface utile de ${fr(f.usableM2)} m².`);
   if (f.parkingSpaces !== null && f.parkingSpaces > 0) lines.push(`${f.parkingSpaces} place${f.parkingSpaces > 1 ? 's' : ''} de stationnement.`);
   const heating = f.heating ? HEATING_LABEL[f.heating] : null;
   if (heating) lines.push(`${heating}.`);

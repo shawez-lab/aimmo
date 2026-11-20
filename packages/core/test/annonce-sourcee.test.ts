@@ -122,6 +122,21 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(bindingHolds({ field: 'rooms', value: 'beaucoup' }, { ...FACTS, rooms: 3 })).toBe(false);
   });
 
+  it('[R47] AU063 · une surface dite Carrez ou utile doit être celle de la fiche, jamais une autre de même valeur', () => {
+    const f: ListingFacts = { ...FACTS, carrezM2: 61.35, usableM2: null };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 61,35 m².', f).ok).toBe(true);
+    // La surface habitable n'est pas la Carrez : 61,35 m² habitables est faux, et une Carrez égale à l'habitable aussi.
+    expect(traceListing('Logement à Dijon', '61,35 m² habitables.', f).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', `Surface Carrez de ${String(FACTS.surfaceM2).replace('.', ',')} m².`, f).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface utile de 61,35 m².', f).ok).toBe(false);
+    // Deux surfaces dans une phrase : chacune la sienne.
+    expect(traceListing('Logement à Dijon', `Logement de ${String(FACTS.surfaceM2).replace('.', ',')} m², surface Carrez de 61,35 m².`, f).ok).toBe(true);
+    const text = fallbackListing({ ...f, usableM2: 70 });
+    expect(text.body).toContain('Surface Carrez de 61,35 m².');
+    expect(text.body).toContain('Surface utile de 70 m².');
+    expect(traceListing(text.title, text.body, { ...f, usableM2: 70 }).ok).toBe(true);
+  });
+
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
     expect(codes('Situé 12 rue des Essais.')).toContain('adresse:12 rue');
     expect(codes('Situé rue des Essais.')).toEqual(['adresse:rue des Essais.']);
