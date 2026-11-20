@@ -1541,3 +1541,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 22:13 · AU030 · le dossier des biens repris (photos, diagnostics, mandats et leur signature dite, annonces en simple lien, documents) rejoint chaque bien de l'agent, chaque pièce écartée comptée avec sa raison dès l'aperçu avant validation, rien publié ; PLAN.md rétabli (tronqué à 386 lignes par 5f2999d7) ; R84 précisée ; Codex 3 P0 corrigés ; fusionnée (#730, b5335306) · prochaine : AU031
 - 2026-11-20 22:14 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU031
 - 2026-11-20 22:45 · voie 3 · AU057b (#732) fusionnée ; AU064 (#702) retrouvée en attente : main fusionné, relecture redemandée.
+- 2026-11-20 23:05 · voie 3 · AU064 (#702) et AU059 (#709) fusionnées ; AU059b ouverte (signature datée avant la procuration).
