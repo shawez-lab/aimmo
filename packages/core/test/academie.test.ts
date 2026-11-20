@@ -222,6 +222,67 @@ describeWithSqlite('académie et heures de formation obligatoire', () => {
     expect(alerts.map((x) => [x.daysBefore, x.missingMinutes])).toEqual([[90, 120]]);
   });
 
+  it('[R85] [R10] AU028 la période de référence et les attestations d\'avant l\'arrivée sont reprises, sans remise à zéro', async () => {
+    at('2027-01-04');
+    const w = await setup();
+    const a = await w.newAgent('Jo');
+    const line = async (obligation: string) => {
+      const c = await w.academie.counter(w.as(a), a);
+      if (!c.ok) throw new Error('compteur');
+      const o = c.value.obligations.find((x) => x.obligation === obligation)!;
+      return { startedOn: c.value.startedOn, arrivedOn: c.value.arrivedOn, source: c.value.periodSource, from: o.from, until: o.until, done: o.doneMinutes, missing: o.missingMinutes };
+    };
+    // Le constat : sans reprise, la période de 3 ans repart de l'arrivée, comme si l'agent n'avait jamais été formé.
+    expect(await line('triennale')).toEqual({ startedOn: '2027-01-04', arrivedOn: '2027-01-04', source: 'arrivee', from: '2027-01-04', until: '2030-01-03', done: 0, missing: 2520 });
+    // La direction reprend son cycle d'avant (commencé le 1er septembre 2025) et deux attestations, pièce et nom à l'appui.
+    expect(await w.academie.setPriorPeriod(w.dir, a, { cycleStart: '2025-09-01', proofRef: 'pieces/attestation-cycle-inventee.pdf', recorderName: 'Shawez' })).toEqual({ ok: true });
+    expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    expect((await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-11-02', durationMinutes: 120, topic: 'deontologie', proofRef: 'pieces/formation-inventee-2.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    // La même attestation envoyée deux fois n'est rangée qu'une fois : ses heures ne doublent jamais.
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-03-10', durationMinutes: 600, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-04-10', durationMinutes: 1260, proofRef: 'pieces/formation-inventee-1.pdf', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'proof_already_recorded' });
+    // Les périodes continuent le cycle d'avant : rien n'est remis à zéro, les heures d'avant comptent.
+    expect(await line('triennale')).toEqual({ startedOn: '2025-09-01', arrivedOn: '2027-01-04', source: 'cycle_anterieur', from: '2025-09-01', until: '2028-08-31', done: 720, missing: 1800 });
+    expect(await line('deontologie')).toMatchObject({ done: 120, missing: 0 });
+    expect(await line('annuelle')).toMatchObject({ from: '2026-09-01', until: '2027-08-31', done: 120, missing: 720 });
+    // Une heure faite à l'académie s'ajoute au même cycle.
+    const m = await w.module(60);
+    await w.finish(a, m);
+    expect(await line('triennale')).toMatchObject({ done: 780, missing: 1740 });
+    // Une correction est une nouvelle ligne : la dernière période rangée l'emporte, rien ne s'efface ni ne change.
+    expect((await w.academie.setPriorPeriod(w.dir, a, { cycleStart: '2025-10-01', proofRef: 'pieces/attestation-cycle-corrigee.pdf', recorderName: 'Shawez' })).ok).toBe(true);
+    expect(await line('triennale')).toMatchObject({ from: '2025-10-01', until: '2028-09-30', done: 780 });
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_prior_entries'))?.n)).toBe(4);
+    await expect(w.db.run('DELETE FROM academy_prior_entries')).rejects.toThrow();
+    await expect(w.db.run("UPDATE academy_prior_entries SET day = '2020-01-01'")).rejects.toThrow();
+    // Les alertes lisent la même période : l'échéance du cycle repris, pas celle de l'arrivée.
+    at('2028-07-02');
+    const alerts = (await w.academie.dueAlerts(w.network.id)).filter((x) => x.agentId === a && x.obligation === 'triennale');
+    expect(alerts.map((x) => [x.until, x.daysBefore])).toEqual([['2028-09-30', 90]]);
+  });
+
+  it('[R85] [R16] AU028 la reprise du cycle d\'avant : direction seule, pièce et nom exigés, jamais après l\'arrivée ; au journal, des identifiants', async () => {
+    at('2027-01-04');
+    const w = await setup();
+    const a = await w.newAgent('Kim');
+    const ok = { cycleStart: '2025-09-01', proofRef: 'pieces/inventee.pdf', recorderName: 'Shawez' };
+    expect(await w.academie.setPriorPeriod(w.as(a), a, ok)).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await w.academie.addPriorTraining(w.as(a), a, { heldOn: '2026-01-01', durationMinutes: 60, proofRef: 'p', recorderName: 'Moi' })).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await w.academie.setPriorPeriod({ role: 'direction', userId: 'x', networkId: 'ailleurs' }, a, ok)).toEqual({ ok: false, rule: null, code: 'unknown_agent' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, proofRef: ' ' })).toEqual({ ok: false, rule: null, code: 'proof_required' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, recorderName: '' })).toEqual({ ok: false, rule: null, code: 'recorder_required' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, cycleStart: '2025-02-30' })).toEqual({ ok: false, rule: null, code: 'invalid_day' });
+    expect(await w.academie.setPriorPeriod(w.dir, a, { ...ok, cycleStart: '2027-01-05' })).toEqual({ ok: false, rule: null, code: 'not_before_arrival' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2027-02-01', durationMinutes: 60, proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'not_before_arrival' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-02-01', durationMinutes: 0, proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'invalid_duration' });
+    expect(await w.academie.addPriorTraining(w.dir, a, { heldOn: '2026-02-01', durationMinutes: 60, topic: 'cuisine', proofRef: 'p', recorderName: 'Shawez' })).toEqual({ ok: false, rule: null, code: 'invalid_topic' });
+    expect(Number((await w.db.first<{ n: number }>('SELECT count(*) AS n FROM academy_prior_entries'))?.n)).toBe(0);
+    expect((await w.academie.setPriorPeriod(w.dir, a, ok)).ok).toBe(true);
+    const journal = JSON.stringify(await w.journal.all());
+    expect(journal).toContain('academie.periode_reprise');
+    expect(journal).not.toMatch(/Shawez|inventee\.pdf|Kim/);
+  });
+
   it('[R14] [R85] l\'académie ne note pas l\'agent et n\'impose aucun horaire', async () => {
     const w = await setup();
     const tables = ['academy_modules', 'academy_completions', 'academy_sessions', 'academy_attendance', 'academy_alerts'];

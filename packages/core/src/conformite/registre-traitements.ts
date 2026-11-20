@@ -595,6 +595,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       quiz_questions: ['created_by', 'retired_by'],
       quiz_attempts: ['agent_id', 'question_ids'],
       quiz_attestations: ['agent_id'],
+      // AU028 : le cycle de formation d'avant l'arrivée, saisi par la direction.
+      academy_prior_entries: ['agent_id', 'topic', 'proof_ref', 'recorded_by', 'recorder_name'],
       sandbox_runs: ['agent_id'],
       sandbox_steps: ['agent_id'],
       training_cases: ['situation', 'replies', 'created_by'],
@@ -1446,6 +1448,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   quiz_questions: ['id', 'network_id', 'module_id', 'rule_id', 'prompt', 'choices', 'correct_index', 'created_at', 'retired_at'],
   quiz_attempts: ['id', 'network_id', 'scope_kind', 'scope_ref', 'started_at', 'answers', 'all_right', 'submitted_at'],
   quiz_attestations: ['id', 'network_id', 'attempt_id', 'issued_on', 'document', 'fingerprint', 'issued_at'],
+  academy_prior_entries: ['id', 'network_id', 'kind', 'day', 'duration_minutes', 'recorded_at'],
   sandbox_runs: ['network_id', 'opened_at', 'completed_at'],
   sandbox_steps: ['network_id', 'step', 'done_at', 'checked_at'],
   training_cases: ['id', 'network_id', 'role', 'objection', 'title', 'opening', 'created_at'],

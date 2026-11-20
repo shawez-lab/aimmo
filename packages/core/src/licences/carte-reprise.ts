@@ -28,7 +28,7 @@ export type EntreeReprise =
 
 /** Les tables qui portent la colonne `network_id`. */
 export const TABLES_RESEAU: readonly string[] = `
-  academy_alerts academy_attendance academy_completions academy_modules academy_sessions access_invitations
+  academy_alerts academy_attendance academy_completions academy_modules academy_prior_entries academy_sessions access_invitations
   access_keys acquisition_fee_scales ad_campaign_contacts ad_campaigns address_score_mandates address_scores
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
@@ -293,7 +293,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
 export const ORDRE_REPRISE: readonly string[] = `
   fee_schedule_tiers
   rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
-  academy_alerts academy_attendance academy_completions quiz_questions academy_modules academy_sessions access_keys
+  academy_alerts academy_attendance academy_completions academy_prior_entries quiz_questions academy_modules academy_sessions access_keys
   access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
   ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
   address_scores after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens

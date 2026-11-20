@@ -43,6 +43,8 @@ const SANDBOX = {
 const COUNTER = {
   agentId: 'ag1',
   startedOn: '2027-07-01',
+  arrivedOn: '2027-07-01',
+  periodSource: 'arrivee',
   obligations: [
     { obligation: 'annuelle', from: '2027-07-01', until: '2028-06-30', requiredMinutes: 840, doneMinutes: 150, declaredMinutes: 45, missingMinutes: 690, daysLeft: 354 },
     { obligation: 'deontologie', from: '2027-07-01', until: '2030-06-30', requiredMinutes: 120, doneMinutes: 120, declaredMinutes: 0, missingMinutes: 0, daysLeft: 1084 },
@@ -268,6 +270,11 @@ describe('J14 · écrans de M14 dans l’application', () => {
     // AU027 : les heures déclarées sans quiz réussi sont dites à part, jamais ajoutées au compte.
     expect(text).toContain('Plus 0 h 45 déclarées sans justificatif : réussissez le quiz du module pour qu’elles comptent.');
     expect(text.match(/déclarées sans justificatif/g)).toHaveLength(1);
+    // AU028 : rien n'est dit d'un cycle antérieur qui n'a pas été repris.
+    expect(text).not.toContain('cycle d’avant');
+    const repris = await run({ 'GET /v1/reseau/ma-formation': ok({ ...COUNTER, startedOn: '2025-09-01', periodSource: 'cycle_anterieur' }) });
+    await repris.ouvrir('academie-ouvrir');
+    expect(repris.body().textContent).toContain('Vos périodes continuent votre cycle d’avant votre arrivée, commencé le 01/09/2025 ; vos attestations d’avant y sont comptées.');
     expect(text).toContain('Aucun horaire imposé');
     expect(text).toContain('1 module(s) fait(s) sur 2');
     expect(text).toContain('120 min · déontologie · obligatoire');
