@@ -12,12 +12,12 @@ import { withoutContactDetails } from '../captation/premiere-reponse.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
+import { GeographieReseau } from '../geographie/communes.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Reception } from '../reception/reception.ts';
 import {
   CATEGORIES,
-  DEFAULT_COMMUNES,
   ROUTES,
   checkAiQualification,
   projectKindOf,
@@ -126,7 +126,7 @@ function parseCriteria(json: string): Criterion[] {
 export class Qualification {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly communes: readonly string[];
+  private readonly geographie: GeographieReseau;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -139,7 +139,7 @@ export class Qualification {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.communes = options.communes ?? DEFAULT_COMMUNES;
+    this.geographie = new GeographieReseau(db, journal, { now: this.now });
   }
 
   get(inboundId: string): Promise<QualificationRow | null> {
@@ -166,7 +166,9 @@ export class Qualification {
     });
     const propertyId = recognition.status === 'recognized' ? recognition.property.id : null;
     const text = [row.subject, row.body].filter((t): t is string => !!t).join('\n');
-    const rules = qualifyByRules(text, { propertyRecognized: propertyId !== null, communes: this.communes });
+    // Les communes du réseau, lues dans son paramétrage géographique, jamais dans le code [R679].
+    const communes = this.options.communes ?? (await this.geographie.names(row.network_id));
+    const rules = qualifyByRules(text, { propertyRecognized: propertyId !== null, communes });
 
     let q: Qualified = rules;
     let source: 'ai' | 'rules' = 'rules';
@@ -176,7 +178,7 @@ export class Qualification {
         text: withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name)),
         channel: row.channel,
         propertyRecognized: propertyId !== null,
-        communes: this.communes,
+        communes,
       };
       let raw: unknown;
       let failed = false;
@@ -185,7 +187,7 @@ export class Qualification {
       } catch {
         failed = true;
       }
-      const checked = failed ? null : checkAiQualification(raw, text, this.communes);
+      const checked = failed ? null : checkAiQualification(raw, text, communes);
       if (checked !== null && 'category' in checked) {
         q = checked;
         source = 'ai';

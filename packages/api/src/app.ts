@@ -43,6 +43,7 @@ import {
   Modeles,
   Designations,
   FicheUnique,
+  GeographieReseau,
   JourneeRendezVous,
   Qualification,
   ROUTES as NEXT_MODULES,
@@ -1010,16 +1011,38 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/attribution\/regles$/,
     name: 'attribution.regles',
     // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.
-    handle: async () =>
+    // Les communes sont celles du paramétrage géographique du réseau [R679].
+    handle: async (s, viewer) =>
       json(200, {
         ok: true,
         mode: TRIAL_MODE,
         data: {
           rules: ATTRIBUTION_RULES,
           callbackHours: { hot: DEFAULT_ATTRIBUTION_SETTINGS.hotCallbackHours, other: DEFAULT_ATTRIBUTION_SETTINGS.otherCallbackHours },
-          communes: DEFAULT_ATTRIBUTION_SETTINGS.communes,
+          communes: await new GeographieReseau(s.db, s.journal, { now: s.now }).names(viewer.networkId),
         },
       }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes',
+    // Le paramétrage géographique du réseau (AU039) : des noms de communes et leurs codes INSEE, rien de personnel [R679].
+    handle: async (s, viewer) => json(200, { ok: true, mode: TRIAL_MODE, data: await new GeographieReseau(s.db, s.journal, { now: s.now }).geography(viewer.networkId) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes.decision',
+    // La direction seule inscrit ou retire une commune, par une nouvelle version [R679, R16].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new GeographieReseau(s.db, s.journal, { now: s.now }).decide(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
   },
   {
     method: 'GET',

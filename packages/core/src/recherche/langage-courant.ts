@@ -26,6 +26,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { Project, Property } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { GeographieReseau } from '../geographie/communes.ts';
 import { DEFAULT_COMMUNES } from '../qualification/regles.ts';
 import {
   BUYER_FEATURES,
@@ -668,8 +669,7 @@ export const SEARCH_CONSENT_PURPOSE = 'buyer_search';
 const LIST_FIELD = new Set<PhraseField>(['propertyKinds', 'communes', 'features']);
 
 export class RechercheLangage {
-  private readonly communes: readonly string[];
-  private readonly neighbours: Map<string, string[]>;
+  private readonly geographie: GeographieReseau;
   private readonly tolerances: Tolerances;
   private readonly limit: number;
   private readonly now: () => Date;
@@ -680,14 +680,22 @@ export class RechercheLangage {
     private readonly reader: PropertyReader,
     private readonly diffusion: DiffusionGate,
     private readonly journal: JournalStore,
-    options: RechercheLangageOptions = {},
+    private readonly options: RechercheLangageOptions = {},
   ) {
-    this.communes = options.communes ?? DEFAULT_COMMUNES;
-    this.neighbours = neighbourMap(options.neighbours ?? DEFAULT_NEIGHBOURS, this.communes);
     this.tolerances = options.tolerances ?? DEFAULT_TOLERANCES;
     this.limit = options.limit ?? 20;
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.geographie = new GeographieReseau(db, journal, { now: this.now });
+  }
+
+  /** Les communes du réseau, lues dans son paramétrage géographique, jamais dans le code [R679]. */
+  private async communesOf(networkId: string): Promise<readonly string[]> {
+    return this.options.communes ?? (await this.geographie.names(networkId));
+  }
+
+  private async neighboursOf(networkId: string): Promise<Map<string, string[]>> {
+    return neighbourMap(this.options.neighbours ?? DEFAULT_NEIGHBOURS, await this.communesOf(networkId));
   }
 
   /**
@@ -695,11 +703,12 @@ export class RechercheLangage {
    * l'écran envoie ne devient un critère sans passer par la lecture de la phrase.
    */
   async build(networkId: string, phrase: string, steps: readonly SearchStep[] = []): Promise<PhraseSearch> {
-    const parsed = parsePhrase(phrase, this.communes);
+    const parsed = parsePhrase(phrase, await this.communesOf(networkId));
+    const neighbours = await this.neighboursOf(networkId);
     let search: PhraseSearch = { criteria: parsed.criteria, ignored: parsed.ignored, excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [], budgetStrict: parsed.budgetStrict === true };
     for (const step of steps.slice(0, 50)) {
       if ('acceptNeighbour' in step) {
-        const proposal = proposedNeighbours(search, this.neighbours).find((n) => n.commune === step.acceptNeighbour);
+        const proposal = proposedNeighbours(search, neighbours).find((n) => n.commune === step.acceptNeighbour);
         if (proposal) search = { ...search, criteria: [...search.criteria, { field: 'communes', value: proposal.commune, strength: 'must', source: { kind: 'voisine', of: proposal.of } }] };
         continue;
       }
@@ -719,7 +728,7 @@ export class RechercheLangage {
   /** Les biens qui répondent à la phrase : seulement des biens diffusables [R421], chacun avec ses raisons [R420]. */
   async search(networkId: string, phrase: string, steps: readonly SearchStep[] = []): Promise<PhraseResults> {
     const search = await this.build(networkId, phrase, steps);
-    const proposals = proposedNeighbours(search, this.neighbours);
+    const proposals = proposedNeighbours(search, await this.neighboursOf(networkId));
     const neighbourOf = new Map(proposals.map((p) => [p.commune, p.of]));
     const must = toBuyerSearch(search, 'must');
     const at = this.now();
@@ -843,7 +852,7 @@ export class RechercheLangage {
       changes.softCriteria = [...new Set([...before, ...now])];
     }
     if ('budgetMaxEur' in changes) changes.budgetStrict = must.budgetStrict === true;
-    const checked = checkSearchChanges(changes, this.communes);
+    const checked = checkSearchChanges(changes, await this.communesOf(viewer.networkId));
     if (!checked.ok) return this.refused(viewer, projectId, checked.rule === 'R16' ? 'R16' : 'R50', checked.code);
     const updated = await fiche.update(acces, viewer, projectId, checked.value);
     if (!updated.ok) return { ok: false, rule: updated.rule, code: updated.code };
