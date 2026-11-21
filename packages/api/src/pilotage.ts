@@ -174,6 +174,17 @@ export function pilotageRoutes(): PilotageRoute[] {
     { method: 'GET', pattern: new RegExp(`${P}/commissions$`), name: 'pilotage.commissions', handle: async (s, v) => reply(await services(s).commissions.list(v)) },
     { method: 'GET', pattern: new RegExp(`${P}/commissions/a-trancher$`), name: 'pilotage.commissions_a_trancher', handle: async (s, v) => reply(await services(s).commissions.blocked(v)) },
     {
+      // AU091 · la direction approuve, avec son motif, la régularisation qu'un avenant d'honoraires appelle ; le code
+      // recalcule tout, aucun montant n'entre [R678].
+      method: 'POST',
+      pattern: new RegExp(`${P}/commissions/${ID}/regularisation$`),
+      name: 'pilotage.commission_regularisation',
+      handle: withBody(async (s, v, [id], b) => {
+        if (typeof b.reason !== 'string' || (b.expectedVersion !== undefined && typeof b.expectedVersion !== 'number') || Object.keys(b).some((k) => k !== 'reason' && k !== 'expectedVersion')) return badBody();
+        return reply((await services(s).commissions.regularize(v, id!, { reason: b.reason, expectedVersion: b.expectedVersion })) as Outcome);
+      }),
+    },
+    {
       method: 'POST',
       pattern: new RegExp(`${P}/grille$`),
       name: 'pilotage.grille',

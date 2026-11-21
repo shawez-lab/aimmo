@@ -243,6 +243,7 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.attente': INTERNE('Rémunération de l\'agent.'),
   'commission.ecart': INTERNE('Rémunération de l\'agent.'),
   'commission.etape': INTERNE('Rémunération de l\'agent.'),
+  'commission.regularisation': INTERNE('Rémunération de l\'agent, régularisée après un avenant.'),
   'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
   // HX49 : rapprochement d'une facture et d'une ligne de banque (des identifiants) ; relance d'une facture impayée, qui porte la fiche du client.
   'banque.rapprochement': INTERNE('Rapprochement d\'une facture et d\'une ligne de banque du réseau : des identifiants, sans donnée d\'un client.'),
@@ -694,6 +695,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sale_commissions: out('agent', 'Honoraires et rémunération de l\'agent.'),
   commission_grids: out('sans_client', 'Grille de rémunération des agents.'),
   commission_tier_picks: out('agent', 'Palier retenu pour la rémunération d’une vente.'),
+  commission_revisions: out('agent', 'Versions d’une commission régularisée après un avenant d’honoraires.'),
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
   custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
