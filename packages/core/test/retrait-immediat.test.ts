@@ -87,4 +87,46 @@ describeWithSqlite('AU067 · le retrait urgent part tout de suite, sans attendre
     expect(await t.retraits.propertyOfMandate(t.network.id, t.mandateId)).toBe(t.propertyId);
     expect(await t.retraits.propertyOfMandate('autre-reseau', t.mandateId)).toBeNull();
   });
+  it('[R42] une annulation pendant un passage qui publie encore : le retrait part quand même, sur-le-champ', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    // Un passage planifié publie la version en vente, et reste bloqué sur un canal lent.
+    let release!: () => void;
+    t.channels[0]!.gate = new Promise<void>((r) => (release = r));
+    const running = t.publication.sync(t.network.id, t.propertyId);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination')).ok).toBe(true);
+    // Le retrait immédiat trouve le bien tenu ; le passage lent rend la main, et le retrait part.
+    const retraits = new RetraitsImmediats(t.db, t.acces, t.journal, {
+      now: t.now,
+      channels: t.channels,
+      sleep: async () => {
+        t.channels[0]!.gate = null;
+        release();
+        await running;
+      },
+    });
+    const r = await retraits.run(t.network.id, t.propertyId, 'direction:direction-1');
+    expect(r).toMatchObject({ state: 'retiree', busy: false });
+    for (const c of t.channels) expect(c.received.at(-1)?.state, c.channel).toBe('retiree');
+    expect((await t.db.first<{ state: string }>('SELECT state FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [t.propertyId]))!.state).toBe('retiree');
+  });
+
+  it('[R42] le passage lent lui-même relit ce qui doit être montré avant de rendre la main', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    let release!: () => void;
+    t.channels[0]!.gate = new Promise<void>((r) => (release = r));
+    const running = t.publication.sync(t.network.id, t.propertyId);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination')).ok).toBe(true);
+    t.channels[0]!.gate = null;
+    release();
+    expect(await running).toMatchObject({ state: 'retiree', created: true });
+    for (const c of t.channels) expect(c.received.map((p) => p.state), c.channel).toEqual(['en_vente', 'retiree']);
+  });
 });

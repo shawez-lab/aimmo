@@ -222,24 +222,30 @@ export class DiffusionPortails {
     const lease = await this.acquire(propertyId);
     if (!lease) return { ...out, busy: true };
     try {
-      const version = await this.latestVersion(propertyId);
-      const listing = version ? ({ ...(JSON.parse(version.payload) as Omit<ListingPayload, 'version'>), version: Number(version.seq) } as ListingPayload) : null;
-      for (const { portal, plan } of await this.portalsFor(networkId, propertyId)) {
-        if (!(await this.holds(propertyId, lease))) break;
-        const presence = await this.presence(propertyId, portal);
-        const action = DiffusionPortails.due(version, listing, plan === 'a_diffuser', presence);
-        if (!action || !version || !listing) continue;
-        // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
-        const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
-        // Un geste incertain encore voulu (même geste, même version) repart avec sa clé et son ordre ; tout autre geste
-        // prend le rang suivant, sous le bail : personne d'autre n'écrit pour ce bien pendant le passage.
-        const p = presence.pending;
-        const retry = p !== null && p.action === action && p.seq === Number(version.seq);
-        const order = retry ? p.order : Number((await this.db.first<{ n: number }>('SELECT COALESCE(MAX(n), 0) + 1 AS n FROM portal_operations WHERE property_id = ? AND portal = ?', [propertyId, portal]))!.n);
-        const key = retry ? p.key : `${propertyId}:${portal}:${order}`;
-        const mayBeOnline = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn;
-        const outcome = await this.send(networkId, propertyId, portal, version, action, sent, mayBeOnline, key, order, !retry, lease);
-        out[outcome === 'accuse' ? 'acknowledged' : outcome === 'essai' ? 'trial' : 'failed'].push(portal);
+      // AU067 : une version écrite pendant les envois (un retrait urgent) part dans ce même passage [R42, R668].
+      for (let round = 0; round < 3; round++) {
+        const version = await this.latestVersion(propertyId);
+        const listing = version ? ({ ...(JSON.parse(version.payload) as Omit<ListingPayload, 'version'>), version: Number(version.seq) } as ListingPayload) : null;
+        for (const { portal, plan } of await this.portalsFor(networkId, propertyId)) {
+          if (!(await this.holds(propertyId, lease))) break;
+          const presence = await this.presence(propertyId, portal);
+          const action = DiffusionPortails.due(version, listing, plan === 'a_diffuser', presence);
+          if (!action || !version || !listing) continue;
+          // Un retrait porte la version qui le décide ; il ne transporte que la référence, sans contenu.
+          const sent: ListingPayload = action === 'retirer' ? { reference: listing.reference, version: listing.version, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] } : listing;
+          // Un geste incertain encore voulu (même geste, même version) repart avec sa clé et son ordre ; tout autre geste
+          // prend le rang suivant, sous le bail : personne d'autre n'écrit pour ce bien pendant le passage.
+          const p = presence.pending;
+          const retry = p !== null && p.action === action && p.seq === Number(version.seq);
+          const order = retry ? p.order : Number((await this.db.first<{ n: number }>('SELECT COALESCE(MAX(n), 0) + 1 AS n FROM portal_operations WHERE property_id = ? AND portal = ?', [propertyId, portal]))!.n);
+          const key = retry ? p.key : `${propertyId}:${portal}:${order}`;
+          const mayBeOnline = presence.acknowledgedLive || presence.maybePublished || presence.maybeWithdrawn;
+          const outcome = await this.send(networkId, propertyId, portal, version, action, sent, mayBeOnline, key, order, !retry, lease);
+          for (const k of ['acknowledged', 'trial', 'failed'] as const) out[k] = out[k].filter((x) => x !== portal);
+          out[outcome === 'accuse' ? 'acknowledged' : outcome === 'essai' ? 'trial' : 'failed'].push(portal);
+        }
+        const after = await this.latestVersion(propertyId);
+        if (!after || (version !== null && after.seq === version.seq) || !(await this.holds(propertyId, lease))) break;
       }
       return out;
     } finally {

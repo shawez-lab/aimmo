@@ -28,18 +28,24 @@ export interface RetraitImmediat {
   busy: boolean;
 }
 
+/** Combien de fois, et à quel intervalle, on reprend la main sur un passage déjà en cours : dix secondes au plus. */
+const RETRIES = 40;
+const RETRY_MS = 250;
+
 export class RetraitsImmediats {
   private readonly now: () => Date;
   private readonly publication: Publication;
   private readonly portails: DiffusionPortails;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(
     private readonly db: SqlDatabase,
     acces: Acces,
     private readonly journal: JournalStore,
-    options: { now?: () => Date; channels?: readonly ListingChannel[]; portals?: readonly PortalConnector[] } = {},
+    options: { now?: () => Date; channels?: readonly ListingChannel[]; portals?: readonly PortalConnector[]; sleep?: (ms: number) => Promise<void> } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.publication = new Publication(db, acces, journal, { now: this.now, ...(options.channels ? { channels: options.channels } : {}) });
     this.portails = new DiffusionPortails(db, acces, journal, { now: this.now, ...(options.portals ? { connectors: options.portals } : {}) });
   }
@@ -52,9 +58,19 @@ export class RetraitsImmediats {
 
   /** Le passage de ce bien, maintenant : canaux puis portails, avec chaque accusé. */
   async run(networkId: string, propertyId: string, actor: string): Promise<RetraitImmediat> {
-    const r = await this.publication.sync(networkId, propertyId);
+    // Un passage tient déjà le bien : il relit ce qui doit être montré avant de rendre la main (AU067), et on reprend
+    // la main dès qu'il la rend, pour que le retrait et ses accusés partent bien ici [R42].
+    let r = await this.publication.sync(networkId, propertyId);
+    for (let i = 0; r.busy && i < RETRIES; i++) {
+      await this.sleep(RETRY_MS);
+      r = await this.publication.sync(networkId, propertyId);
+    }
     if (r.busy) return { propertyId, state: r.state, channels: { pushed: [], failed: [] }, portals: [], busy: true };
-    const p = await this.portails.sync(networkId, propertyId);
+    let p = await this.portails.sync(networkId, propertyId);
+    for (let i = 0; p.busy && i < RETRIES; i++) {
+      await this.sleep(RETRY_MS);
+      p = await this.portails.sync(networkId, propertyId);
+    }
     const receipts = await this.db.all<{ portal: string; receipt: string | null }>(
       `SELECT o.portal, o.receipt FROM portal_operations o
         WHERE o.property_id = ? AND o.outcome = 'accuse'
