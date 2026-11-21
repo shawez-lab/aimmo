@@ -365,10 +365,17 @@ export class RelancesImpayes {
       const closed = result.status !== 'sent' && result.rule === 'R553';
       const status: ReminderStatus = result.status === 'sent' ? 'envoyee' : closed ? 'close' : result.status === 'failed' || result.rule === 'R01' ? 'validee' : 'refusee';
       const rule = result.status === 'sent' ? null : closed ? ((await this.settled(r.invoice_id)) ?? 'R553') : result.rule;
-      await this.db.run(
-        "UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'validee'",
+      // Une relance partie est partie. Sinon, l'écriture finale ne passe que si aucune part ne l'a marquée entre-temps :
+      // une marque arrivée pendant l'envoi la remet à valider, jamais une validée qui repartirait avec l'ancien montant.
+      const fin = await this.db.run(
+        `UPDATE invoice_reminders SET status = ?, rule = ?, message_id = COALESCE(?, message_id), sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'validee'${status === 'envoyee' ? '' : " AND rule IS NOT 'paiement_partiel'"}`,
         [status, rule, result.messageId, this.now().toISOString(), r.id],
       );
+      if (fin.changes !== 1 && status !== 'envoyee') {
+        await this.db.run("UPDATE invoice_reminders SET sending_at = NULL WHERE id = ? AND status = 'validee' AND rule = 'paiement_partiel'", [r.id]);
+        await this.revertMarked(networkId);
+        continue;
+      }
       await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${r.file_id}`, data: { rule: rule ?? 'R553', client: `person:${r.person_id}`, invoice: r.invoice_id, rank: r.rank, status, mode: 'essai' } }, this.now);
       if (status === 'envoyee') sent += 1;
     }

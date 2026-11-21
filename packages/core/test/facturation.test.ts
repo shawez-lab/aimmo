@@ -583,6 +583,39 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect((await u.db.first<{ text: string }>('SELECT text FROM invoice_reminders WHERE id = ?', [v.id]))!.text).toContain('Nous en avons reçu 2 000,00 €');
   });
 
+  it('[R553] AU094b · une part arrivée juste avant l’écriture finale d’un envoi refusé pour l’heure : la relance revient à valider', async () => {
+    const t = await invoiced();
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.buyerId, kind: 'email', value: 'acheteur@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.buyerId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    let racing = false;
+    const watched = {
+      ...t.db,
+      run: async (sql: string, params?: unknown[]) => {
+        if (racing && sql.includes('SET status = ?, rule = ?, message_id')) {
+          racing = false;
+          await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('fin', ?, '2027-07-16', 100000, '[]', 'x', 'y')", [t.network.id]);
+          expect((await t.banque.allocate(t.direction, 'fin', [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
+        }
+        return t.db.run(sql, params as never);
+      },
+    } as typeof t.db;
+    const relances = new RelancesImpayes(watched, t.journal, { now: t.now });
+    t.setClock(at9('2027-07-20'));
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const v = (await t.db.first<{ id: string; prepared_at: string; text: string }>('SELECT id, prepared_at, text FROM invoice_reminders'))!;
+    expect(await relances.validate(t.direction, v.id, { preparedAt: v.prepared_at, text: v.text })).toEqual({ ok: true });
+    // La nuit, l'envoi est refusé pour l'heure (R01) ; la part tombe juste avant l'écriture de ce refus.
+    t.setClock(new Date('2027-07-20T22:30:00.000Z'));
+    racing = true;
+    expect(await relances.send(t.network.id)).toBe(0);
+    expect(await t.db.first('SELECT status, rule, validated_by, sending_at FROM invoice_reminders WHERE id = ?', [v.id])).toEqual({ status: 'a_valider', rule: 'paiement_partiel', validated_by: null, sending_at: null });
+    // Le jour suivant, rien ne part avant que le texte soit refait et revalidé.
+    t.setClock(at9('2027-07-21'));
+    expect(await relances.send(t.network.id)).toBe(0);
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    expect((await t.db.first<{ text: string }>('SELECT text FROM invoice_reminders WHERE id = ?', [v.id]))!.text).toContain('Nous en avons reçu 1 000,00 €');
+  });
+
   it('[R16] [R551] AU094 · la direction seule partage ; une ligne déjà rapprochée un à un, un débit ou une facture corrigée n’en prennent pas', async () => {
     const t = await invoiced();
     t.setClock(at9('2027-07-15'));
