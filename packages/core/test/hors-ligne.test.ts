@@ -412,3 +412,96 @@ describeWithSqlite('HX12 · l’appli sans réseau, côté serveur', () => {
     expect(await t.server.pack(t.direction)).toMatchObject({ ok: false, rule: 'R16' });
   });
 });
+
+describeWithSqlite('AU104 · le mode privé de la visite, côté serveur', () => {
+  const designate = async (t: Awaited<ReturnType<typeof setup>>, propertyId: string, street: string, version = 1) =>
+    t.db.run(
+      'INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [`des-${propertyId}-${version}`, t.network.id, propertyId, version, street, '21240', 'Talant', '[{"prefix":null,"section":"AB","number":"12"}]', 'agent:test', new Date(MONDAY_9H).toISOString()],
+    );
+  const endOf = async (t: Awaited<ReturnType<typeof setup>>, id: string) => Date.parse((await t.db.first<{ end_at: string }>('SELECT end_at FROM appointments WHERE id = ?', [id]))!.end_at);
+
+  it('[R278] constat : le paquet du jour ne donne ni l’adresse ni le numéro, rien pour trouver l’entrée en zone blanche', async () => {
+    const t = await setup();
+    await designate(t, t.property.id, '12 rue des Vignes');
+    await t.visit();
+    t.setClock(MONDAY_9H + 23 * HOUR);
+    const r = await t.server.pack(t.agentAlex);
+    expect(JSON.stringify(r)).not.toMatch(/rue des Vignes|06 12|\+336/);
+  });
+
+  it('[R676] le mode privé donne, pour les visites du jour à venir ou en cours, l’adresse du bien, le nom et le numéro de la personne, jamais son mail', async () => {
+    const t = await setup();
+    await designate(t, t.property.id, '3 rue Ancienne');
+    await designate(t, t.property.id, '12 rue des Vignes', 2);
+    const a = await t.visit();
+    const b = await t.visit(t.alex, t.land.id);
+    await t.visit(t.sam);
+    const cancelled = await t.visit();
+    await t.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [cancelled.id]);
+    // Une visite de mercredi : pas aujourd'hui, jamais dans le mode privé du mardi.
+    t.setClock(MONDAY_9H + 23 * HOUR);
+    const r = await t.server.privatePack(t.agentAlex);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.pack.day).toBe('2026-12-08');
+    expect(r.pack.visits.map((v) => v.appointmentId)).toEqual([a.id, b.id]);
+    expect(r.pack.visits[0]).toEqual({
+      appointmentId: a.id,
+      address: { street: '12 rue des Vignes', postalCode: '21240', city: 'Talant' },
+      contact: { name: 'Inès Durandal', phone: '+33612345678' },
+      wipeAt: new Date((await endOf(t, a.id)) + 2 * HOUR).toISOString(),
+    });
+    // Le terrain sans désignation : aucune adresse devinée.
+    expect(r.pack.visits[1]?.address).toBeNull();
+    expect(r.pack.validUntil).toBe(r.pack.visits[1]?.wipeAt);
+    const text = JSON.stringify(r.pack);
+    for (const secret of ['example.test', 'Victorine', 'Vendeuse', 'Sam', 'Bienveillant', 'rue Ancienne']) expect(text).not.toContain(secret);
+    // Lundi, la veille : la visite de mardi n'entre pas.
+    t.setClock(MONDAY_9H);
+    expect(await t.server.privatePack(t.agentAlex)).toMatchObject({ ok: true, pack: { day: '2026-12-07', visits: [] } });
+  });
+
+  it('[R676] une visite finie depuis deux heures n’est plus rendue ; l’effacement ne passe jamais minuit', async () => {
+    const t = await setup();
+    const a = await t.visit();
+    const b = await t.visit();
+    const endA = await endOf(t, a.id);
+    t.setClock(endA + 2 * HOUR);
+    const r = await t.server.privatePack(t.agentAlex);
+    expect(r.ok && r.pack.visits.map((v) => v.appointmentId)).toEqual([b.id]);
+    // Une visite qui finit à 23 h 30 : effacée à minuit, pas à 1 h 30.
+    await t.db.run('UPDATE appointments SET start_at = ?, end_at = ? WHERE id = ?', ['2026-12-08T21:45:00.000Z', '2026-12-08T22:30:00.000Z', b.id]);
+    const late = await t.server.privatePack(t.agentAlex);
+    expect(late.ok && late.pack.visits[0]?.wipeAt).toBe('2026-12-08T23:00:00.000Z');
+  });
+
+  it('[R676] [S04] la personne réunie en une autre fiche garde son nom ; son numéro vient de la fiche gardée', async () => {
+    const t = await setup();
+    const a = await t.visit();
+    const person = (await t.db.first<{ person_id: string }>('SELECT person_id FROM appointments WHERE id = ?', [a.id]))!.person_id;
+    await t.db.run("DELETE FROM person_identifiers WHERE person_id = ?", [person]).catch(() => undefined);
+    const kept = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Inès', lastName: 'Durandal-Roy' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: kept.id, kind: 'phone', value: '07 98 76 54 32' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: kept.id, kind: 'email', value: 'ines@example.test' });
+    const at = new Date(MONDAY_9H).toISOString();
+    await t.db.run('INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['merge-test-1', t.network.id, t.alex.id, kept.id, person, 'doublon', at, at]);
+    t.setClock(MONDAY_9H + 23 * HOUR);
+    const r = await t.server.privatePack(t.agentAlex);
+    expect(r.ok && r.pack.visits[0]?.contact).toEqual({ name: 'Inès Durandal', phone: '+33798765432' });
+    expect(JSON.stringify(r)).not.toContain('example.test');
+  });
+
+  it('[R676] [R16] [R13] seul l’agent en activité l’obtient ; la lecture est au journal, sans nom, adresse ni numéro', async () => {
+    const t = await setup();
+    await designate(t, t.property.id, '12 rue des Vignes');
+    const a = await t.visit();
+    t.setClock(MONDAY_9H + 23 * HOUR);
+    expect(await t.server.privatePack(t.direction)).toMatchObject({ ok: false, rule: 'R16' });
+    await t.server.privatePack(t.agentAlex);
+    const rows = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type IN ('hors_ligne.prive', 'acces.refuse')");
+    expect(rows.map((r) => r.type)).toEqual(['acces.refuse', 'hors_ligne.prive']);
+    expect(JSON.parse(rows[1]!.data)).toEqual({ rule: 'R676', day: '2026-12-08', appointments: [a.id], addresses: 1, phones: 1 });
+    expect(JSON.stringify(rows)).not.toMatch(/Durandal|Vignes|06 12|\+336/);
+  });
+});

@@ -25,6 +25,7 @@ import { parisDay } from '../studio/bibliotheque.ts';
 import { OP_KINDS, type OpKind, type OpResult } from './boite.ts';
 import { SKIP_REASONS, departureCheck, shotPlan, type DepartureCheck, type Shot } from './cadrage.ts';
 import { decodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type PhotoThresholds } from './photo.ts';
+import { privateVisits, type PrivatePack } from './prive.ts';
 
 export const MAX_OPS_PER_BATCH = 50;
 export const MAX_NOTE_LENGTH = 2000;
@@ -177,6 +178,40 @@ export class HorsLigne {
     }
     await appendEvent(this.journal, { type: 'hors_ligne.paquet', actor: this.actor(viewer), subject: `agent:${viewer.userId}`, data: { rule: 'R278', day, count: appointments.length } }, this.now);
     return { ok: true, pack: { day: day as string, validUntil: next.toISOString(), appointments } };
+  }
+
+  /**
+   * Le mode privé du jour, sur le geste de l'agent : pour ses visites et estimations d'aujourd'hui encore à venir ou en
+   * cours, l'adresse du bien et le nom et un numéro de la personne rencontrée, rien d'autre. Aujourd'hui seulement, jamais
+   * demain : rien d'un client ne passe la nuit sur un téléphone. La lecture est au journal avant d'être rendue, sans
+   * aucune donnée : les rendez-vous et le nombre d'adresses et de numéros [R676, R16, R13].
+   */
+  async privatePack(viewer: Viewer): Promise<{ ok: true; pack: PrivatePack } | Refusal> {
+    const refused = await this.activeAgent(viewer, `agent:${viewer.userId}`);
+    if (refused) return refused;
+    const now = this.now();
+    const day = parisDay(now);
+    const from = parisDayStart(day);
+    const next = parisDayStart(parisDay(new Date(from.getTime() + DAY + 3 * 3_600_000)));
+    const visits = await privateVisits(this.db, viewer.networkId, viewer.userId, from, next, now);
+    await appendEvent(
+      this.journal,
+      {
+        type: 'hors_ligne.prive',
+        actor: this.actor(viewer),
+        subject: `agent:${viewer.userId}`,
+        data: {
+          rule: 'R676',
+          day,
+          appointments: visits.map((v) => v.appointmentId),
+          addresses: visits.filter((v) => v.address).length,
+          phones: visits.filter((v) => v.contact.phone).length,
+        },
+      },
+      this.now,
+    );
+    const validUntil = visits.length ? visits.map((v) => v.wipeAt).sort().at(-1)! : now.toISOString();
+    return { ok: true, pack: { day, validUntil, visits } };
   }
 
   /** Ce qui manque avant de repartir, pour une visite ou une estimation de l'agent [R277]. */
