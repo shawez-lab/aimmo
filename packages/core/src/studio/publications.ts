@@ -473,9 +473,16 @@ export class Publications {
       }
     }
     if (options.requireLink && !tracked?.link) return this.bad(actor, subject, 'R156', 'sans_lien');
+    let liveSent = false;
     for (const w of wanted) {
       const channel = this.channels.get(w.channel)!;
       const live = channel.mode === 'reel';
+      // Juste avant chaque vraie publication, la porte de diffusion est relue : un mandat annulé entre-temps arrête
+      // tout ce qui n'est pas encore parti [R42].
+      if (live && !(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) {
+        await appendEvent(this.journal, { type: 'studio.publication.refuse', actor, subject, data: { rule: 'R42', code: 'bien_non_diffusable' } }, this.now);
+        break;
+      }
       const attempt = await this.claim(postId, w, actor, live);
       if (attempt === null) continue;
       let outcome: 'envoye' | 'echec' = 'envoye';
@@ -509,6 +516,7 @@ export class Publications {
           failure?.action ?? null,
           this.now().toISOString(),
         ]);
+        if (outcome === 'envoye') liveSent = true;
       } else {
         await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
       }
@@ -528,6 +536,9 @@ export class Publications {
         }
       }
     }
+    // La porte a pu se fermer pendant l'envoi (annulation du mandat en même temps) : ce qui vient de partir est retiré
+    // aussitôt, sans attendre le passage planifié [R42].
+    if (liveSent) await this.withdrawLive(post.value.network_id, post.value.property_id, actor);
     return { ok: true, value: (await this.view(postId))! };
   }
 
@@ -541,17 +552,19 @@ export class Publications {
     const out: LiveWithdrawal = { removed: [], failed: [], toVerify: [] };
     if ((await this.deps.diffusion.canDiffuse(networkId, propertyId, this.now())).allowed) return out;
     const subject = `property:${propertyId}`;
-    const rows = await this.db.all<{ attempt_id: string; post_id: string; channel: SocialChannelName; account: SocialAccount; outcome: 'envoye' | 'incertain'; post_ref: string | null }>(
+    // Un envoi encore en cours (réservé, sans issue) est compté à vérifier : l'envoi lui-même relit la porte après coup
+    // et retire ce qui est parti.
+    const rows = await this.db.all<{ attempt_id: string; post_id: string; channel: SocialChannelName; account: SocialAccount; outcome: 'envoye' | 'incertain' | null; post_ref: string | null }>(
       `SELECT a.id AS attempt_id, a.post_id, a.channel, a.account, s.outcome, s.post_ref
-       FROM social_posts p JOIN social_live_attempts a ON a.post_id = p.id JOIN social_live_sends s ON s.attempt_id = a.id
-       WHERE p.network_id = ? AND p.property_id = ? AND s.outcome IN ('envoye', 'incertain')
+       FROM social_posts p JOIN social_live_attempts a ON a.post_id = p.id LEFT JOIN social_live_sends s ON s.attempt_id = a.id
+       WHERE p.network_id = ? AND p.property_id = ? AND (s.outcome IS NULL OR s.outcome IN ('envoye', 'incertain'))
          AND NOT EXISTS (SELECT 1 FROM social_live_removals r WHERE r.attempt_id = a.id AND r.outcome = 'retire')
        ORDER BY a.channel, a.account, a.post_id`,
       [networkId, propertyId],
     );
     for (const r of rows) {
       const target = { channel: r.channel, account: r.account };
-      if (r.outcome === 'incertain' || r.post_ref === null) {
+      if (r.outcome !== 'envoye' || r.post_ref === null) {
         out.toVerify.push(target);
         await appendEvent(this.journal, { type: 'studio.publication.retrait', actor, subject, data: { post: r.post_id, channel: r.channel, account: r.account, outcome: 'a_verifier', rule: 'R42' } }, this.now);
         continue;

@@ -719,6 +719,22 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
     expect(await t2.pubs.publish(t2.alexV, id2, [both[0]])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'echec', code: 'limite_atteinte', action: 'reessayer' }] } });
   });
 
+  it('[R42] le mandat annulé pendant l’envoi : rien de plus ne part, et ce qui vient de partir est retiré aussitôt', async () => {
+    const g = fakeGraph();
+    let t!: Awaited<ReturnType<typeof setup>>;
+    const http = (async (input: string | URL | Request, init?: RequestInit) => {
+      // L'annulation arrive au moment où Facebook publie.
+      if (String(input).endsWith('/111/feed')) t.state.diffusable = false;
+      return g.fetch(input, init);
+    }) as typeof fetch;
+    t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, http }) });
+    const id = await t.ready();
+    const r = await t.pubs.publish(t.alexV, id, both);
+    expect(r.ok && r.value.sends.map((x) => [x.channel, x.outcome])).toEqual([['facebook', 'retiree']]);
+    expect(g.calls.filter((c) => c.method === 'DELETE').map((c) => c.path)).toEqual(['111_3']);
+    expect(g.calls.some((c) => c.path.startsWith('222'))).toBe(false);
+  });
+
   it('[R42] le bien ne peut plus être diffusé : chaque vraie publication est retirée chez le réseau, une fois ; une panne reste due', async () => {
     const g = fakeGraph();
     const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, http: g.fetch }) });
