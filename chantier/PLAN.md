@@ -930,7 +930,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU085 · Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A085 (majeur), endroit : C/dossiers/echeancier.ts, jours ouvrables.
 - Constat de l'audit : Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle.
