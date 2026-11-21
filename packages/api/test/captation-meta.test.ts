@@ -161,6 +161,21 @@ describeWithSqlite('AU033 · Instagram, Facebook et WhatsApp, canal par canal', 
     expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
   });
 
+  it('[R670] [R21] la réponse d’un humain reçue en écho du canal, dans le même lot que le premier message, vérifie le canal', async () => {
+    const w = await world();
+    const first = igDirect(IG_SENDER, 'Bonjour', T0);
+    first.entry[0]!.messaging.push({
+      sender: { id: IG_ID },
+      recipient: { id: IG_SENDER },
+      timestamp: T0 + 1000,
+      message: { mid: `ig-au033-echo-${(seq += 1)}`, text: 'Je vous réponds tout de suite.', is_echo: true },
+    } as never);
+    expect((await w.post(first)).status).toBe(200);
+    // L'assistant se tait : aucune réponse d'essai, mais la réponse de l'humain est passée par le canal.
+    expect(await w.db.all('SELECT * FROM trial_outbox')).toHaveLength(0);
+    expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
+  });
+
   it('[R670] un message vieux de plus de 30 jours garde le canal vérifié, mais ne compte plus dans les 30 jours', async () => {
     const w = await world();
     expect((await w.post(waMessage('33600000066', 'Bonjour', T0))).status).toBe(200);

@@ -93,11 +93,13 @@ export async function metaIntakeState(
        SELECT i.channel, i.status, i.received_at, i.person_id,
               CASE WHEN i.person_id IS NOT NULL AND (
                      -- Une réponse rangée ne suffit pas : un envoi coupé avant la livraison la laisse sans suite. Seule
-                     -- compte une réponse livrée (boîte d'essai, ou accusé du canal), ou une alerte à l'agent.
+                     -- compte une réponse livrée (boîte d'essai, accusé du canal, ou réponse d'un humain reçue en écho du canal), ou une
+                     -- alerte à l'agent.
                      EXISTS (SELECT 1 FROM messages m JOIN messages r ON r.conversation_id = m.conversation_id AND r.network_id = m.network_id
                               WHERE m.id = i.message_id AND m.conversation_id IS NOT NULL AND r.direction = 'out' AND r.created_at >= m.created_at
                                 AND (EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = r.id)
-                                     OR EXISTS (SELECT 1 FROM outbound_refs o WHERE o.message_id = r.id AND o.network_id = r.network_id)))
+                                     OR EXISTS (SELECT 1 FROM outbound_refs o WHERE o.message_id = r.id AND o.network_id = r.network_id)
+                                     OR EXISTS (SELECT 1 FROM human_replies h WHERE h.message_id = r.id AND h.network_id = r.network_id)))
                      OR EXISTS (SELECT 1 FROM messages m JOIN agent_alerts a ON a.conversation_id = m.conversation_id AND a.network_id = m.network_id
                                  WHERE m.id = i.message_id)
                    ) THEN 1 ELSE 0 END AS treated
