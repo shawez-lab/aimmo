@@ -42,21 +42,20 @@ export function eurosOf(value: unknown): number | null {
   return n > 0 ? Math.round(n) : null;
 }
 
-/** Les objets schema.org d'une page, à plat (y compris sous `@graph`). */
+/** Les objets de premier niveau des données schema.org d'une page, dans l'ordre (un tableau ou un `@graph` déplié). */
 export function structuredData(html: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  const walk = (v: unknown): void => {
-    if (Array.isArray(v)) v.forEach(walk);
+  const push = (v: unknown): void => {
+    if (Array.isArray(v)) v.forEach(push);
     else if (v && typeof v === 'object') {
-      out.push(v as Record<string, unknown>);
       const o = v as Record<string, unknown>;
-      if (o['@graph'] !== undefined) walk(o['@graph']);
-      for (const k of ['offers', 'mainEntity', 'itemOffered', 'about']) if (o[k] !== undefined) walk(o[k]);
+      if (o['@graph'] !== undefined) push(o['@graph']);
+      else out.push(o);
     }
   };
   for (const m of html.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     try {
-      walk(JSON.parse(m[1]!.trim()));
+      push(JSON.parse(m[1]!.trim()));
     } catch {
       // Un bloc illisible ne fait pas tomber les autres.
     }
@@ -64,7 +63,39 @@ export function structuredData(html: string): Record<string, unknown>[] {
   return out;
 }
 
-/** Le texte visible de la page, sans balises, scripts ni styles. */
+const LISTING_TYPES = new Set(['RealEstateListing', 'Offer', 'Product', 'Residence', 'House', 'Apartment', 'SingleFamilyResidence', 'Accommodation']);
+const typesOf = (o: Record<string, unknown>): string[] => (Array.isArray(o['@type']) ? o['@type'] : [o['@type']]).filter((t): t is string => typeof t === 'string');
+const sameUrl = (a: unknown, b: string): boolean => {
+  if (typeof a !== 'string') return false;
+  try {
+    const x = new URL(a, b);
+    const y = new URL(b);
+    return x.host === y.host && x.pathname.replace(/\/$/, '') === y.pathname.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * L'annonce relue parmi les données de la page : celle dont l'adresse est la page lue, sinon la première annonce de la
+ * page. Une annonce recommandée plus bas, vendue ou non, ne dit rien de celle-ci.
+ */
+export function mainListing(data: readonly Record<string, unknown>[], pageUrl?: string): Record<string, unknown> | null {
+  const candidates = data.filter((o) => typesOf(o).some((t) => LISTING_TYPES.has(t)) || o.offers !== undefined || o.price !== undefined);
+  if (pageUrl) {
+    const own = candidates.find((o) => sameUrl(o.url, pageUrl) || sameUrl(o['@id'], pageUrl));
+    if (own) return own;
+  }
+  return candidates[0] ?? null;
+}
+
+/** Les offres d'une annonce : elle-même, ses `offers`, et le prix de chacune. */
+const offersOf = (o: Record<string, unknown>): Record<string, unknown>[] => {
+  const raw = o.offers;
+  const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x));
+  return [...list, o];
+};
+
 const NAMED: Record<string, string> = {
   nbsp: '\u00a0', ensp: ' ', emsp: ' ', thinsp: '\u2009', euro: '€', amp: '&', quot: '"', apos: "'", lt: '<', gt: '>',
   laquo: '«', raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', hellip: '…', ndash: '–', mdash: '—', middot: '·',
@@ -90,7 +121,12 @@ export function decodeEntities(text: string): string {
 
 /** Le texte visible de la page, sans balises, scripts ni styles, références de caractères décodées. */
 export function visibleText(html: string): string {
-  const bare = html.replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+  // Une balise de mise en forme (« <strong>D</strong> ») ne coupe pas le texte ; une balise de bloc le sépare.
+  const bare = html
+    .replace(/<(script|style|noscript|template)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|del|dfn|em|font|i|ins|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var|wbr)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, ' ');
   return decodeEntities(bare).replace(/\s+/g, ' ').trim();
 }
 
@@ -100,13 +136,14 @@ const classIn = (text: string, words: RegExp): string | null => {
 };
 
 /** Ce qu'une page d'annonce dit, ou une erreur quand elle ne dit pas assez pour être comparée. */
-export function parseListingPage(html: string): OnlineListing {
-  const data = structuredData(html);
-  if (data.some((d) => typeof d.availability === 'string' && GONE.test(d.availability))) return { found: false };
+export function parseListingPage(html: string, pageUrl?: string): OnlineListing {
+  const main = mainListing(structuredData(html), pageUrl);
+  const offers = main ? offersOf(main) : [];
+  if (offers.some((d) => typeof d.availability === 'string' && GONE.test(d.availability))) return { found: false };
   const text = visibleText(html);
-  // Le premier prix lisible des données structurées ; un prix vide ou illisible laisse la place au texte.
+  // Le premier prix lisible de l'annonce relue ; un prix vide ou illisible laisse la place au texte.
   let priceEur: number | null = null;
-  for (const d of data) {
+  for (const d of offers) {
     const spec = d.priceSpecification && typeof d.priceSpecification === 'object' && !Array.isArray(d.priceSpecification) ? (d.priceSpecification as Record<string, unknown>) : null;
     priceEur = eurosOf(typeof d.price === 'string' ? decodeEntities(d.price) : d.price) ?? eurosOf(spec?.price);
     if (priceEur !== null) break;
@@ -154,7 +191,7 @@ export class HttpListingReader implements OnlineListingReader {
       if (length > max) throw new Error('page_trop_lourde');
       const html = await res.text();
       if (html.length > max) throw new Error('page_trop_lourde');
-      return parseListingPage(html);
+      return parseListingPage(html, u.href);
     } finally {
       if (timer) clearTimeout(timer);
     }

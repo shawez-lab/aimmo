@@ -48,6 +48,26 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(parseListingPage(`<script type="application/ld+json">${JSON.stringify({ '@type': 'Offer', price: 'sur demande', priceSpecification: { price: 199000 } })}</script><p>x</p>`)).toMatchObject({ priceEur: 199000 });
   });
 
+  it('[R473] seule l’annonce relue compte : une recommandation vendue ne la dit pas retirée, ni son prix n’est pris', () => {
+    const ld = (o: unknown) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`;
+    const main = { '@type': 'RealEstateListing', url: 'https://www.seloger.com/a/1.htm', offers: { '@type': 'Offer', price: 210000, availability: 'https://schema.org/InStock' } };
+    const other = { '@type': 'RealEstateListing', url: 'https://www.seloger.com/a/2.htm', offers: { '@type': 'Offer', price: 99000, availability: 'https://schema.org/SoldOut' } };
+    const body = '<p>Prix : 210 000 €</p>';
+    expect(parseListingPage(ld(main) + ld(other) + body)).toMatchObject({ found: true, priceEur: 210000 });
+    // La recommandation avant l'annonce : l'adresse de la page désigne la bonne.
+    expect(parseListingPage(ld(other) + ld(main) + body, 'https://www.seloger.com/a/1.htm?xtor=1')).toMatchObject({ found: true, priceEur: 210000 });
+    expect(parseListingPage(ld(other) + ld(main) + body, 'https://www.seloger.com/a/2.htm')).toEqual({ found: false });
+    // Un fil d'Ariane ou une organisation ne sont pas une annonce.
+    expect(parseListingPage(ld({ '@type': 'Organization', name: 'Portail' }) + ld({ '@type': 'BreadcrumbList' }) + body)).toMatchObject({ priceEur: 210000 });
+  });
+
+  it('[R473] une mise en forme dans le texte ne crée pas d’écart avec la mention publiée', () => {
+    const r = parseListingPage('<div><p>Prix : <strong>210 000 €</strong> honoraires inclus.</p><p>Classe énergie <strong>D</strong>, classe climat <b>C</b>.</p></div>');
+    expect(r.found && r.text).toContain('Classe énergie D, classe climat C.');
+    expect(r.found && r.text).toContain('Prix : 210 000 € honoraires inclus. Classe');
+    expect(r).toMatchObject({ energyClass: 'D', climateClass: 'C' });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);
