@@ -29,7 +29,7 @@ export type EntreeReprise =
 /** Les tables qui portent la colonne `network_id`. */
 export const TABLES_RESEAU: readonly string[] = `
   academy_alerts academy_attendance academy_completions academy_modules academy_prior_entries academy_sessions access_invitations
-  access_keys acquisition_fee_scales ad_campaign_contacts ad_campaigns address_score_mandates address_scores
+  access_keys acquisition_fee_scales ad_campaign_arrivals ad_campaign_contacts ad_campaigns address_score_mandates address_scores
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_handovers
@@ -113,6 +113,8 @@ export const TABLES_RESEAU: readonly string[] = `
 export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   fee_schedule_tiers: { via: [['schedule_id', 'fee_schedules', 'id']] },
   ad_campaign_approvals: { via: [['campaign_id', 'ad_campaigns', 'id']] },
+  ad_campaign_failures: { via: [['campaign_id', 'ad_campaigns', 'id']] },
+  ad_campaign_receipts: { via: [['campaign_id', 'ad_campaigns', 'id'], ['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_launches: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_repauses: { via: [['approval_id', 'ad_campaign_stops', 'approval_id']] },
   ad_campaign_spend: { via: [['campaign_id', 'ad_campaigns', 'id']] },
@@ -301,8 +303,8 @@ export const ORDRE_REPRISE: readonly string[] = `
   fee_schedule_tiers
   rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
   academy_alerts academy_attendance academy_completions academy_prior_entries quiz_questions academy_modules academy_sessions access_keys
-  access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
-  ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
+  access_invitations acquisition_fee_scales ad_campaign_receipts ad_campaign_launches ad_campaign_starts ad_campaign_repauses
+  ad_campaign_stops ad_campaign_approvals ad_campaign_arrivals ad_campaign_failures ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
   address_scores after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens
   agency_delegation_files agency_delegation_steps agency_partner_invoices agency_fee_statements agency_visits_done
   agency_visits commission_agency_shares agency_delegations agency_shares agenda_cursors agent_absences agent_alerts

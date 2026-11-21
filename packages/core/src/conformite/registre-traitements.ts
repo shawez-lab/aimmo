@@ -1005,6 +1005,10 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       ad_campaign_repauses: [],
       ad_campaign_launches: [],
       ad_campaign_contacts: ['person_id'],
+      // AU038 : l'accusé de la plateforme, ses échecs, et les demandes arrivées par le lien d'une campagne.
+      ad_campaign_receipts: ['external_ref'],
+      ad_campaign_failures: [],
+      ad_campaign_arrivals: ['inbound_id'],
     },
   },
   {
@@ -1347,6 +1351,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   ad_campaign_repauses: ['approval_id', 'asked_at', 'paused_at'],
   ad_campaign_launches: ['approval_id', 'outcome', 'done_at'],
   ad_campaign_contacts: ['campaign_id', 'network_id', 'arrived_at'],
+  ad_campaign_receipts: ['approval_id', 'campaign_id', 'mode', 'received_at'],
+  ad_campaign_failures: ['id', 'campaign_id', 'step', 'code', 'action', 'at'],
+  ad_campaign_arrivals: ['campaign_id', 'network_id', 'arrived_at', 'matched_at'],
   newsletter_editions: ['id', 'network_id', 'title', 'created_at'],
   newsletter_letters: ['edition_id', 'network_id', 'status', 'rule', 'properties', 'mode', 'created_at', 'updated_at'],
   newsletter_unsubscribe_tokens: ['token_hash', 'network_id', 'created_at', 'used_at'],
