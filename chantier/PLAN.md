@@ -1179,7 +1179,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H50).
 
 ### AU110 · L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A110 (majeur), endroit : C/rapports/export-agent.ts, `AgentExport`.
 - Constat de l'audit : L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon portefeuille, donc il ne suffit pas à une reprise opérationnelle autorisée.
