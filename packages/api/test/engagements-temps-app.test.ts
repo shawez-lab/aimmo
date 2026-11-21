@@ -199,6 +199,10 @@ describe('IN10 · engagements, temps gagné et disponibilité à l’écran', ()
     expect(late.texts('copies')).toContain('la clé de chiffrement manque');
     expect(late.texts('copies')).toContain('Nuits sans copie : 03/03/2027, 02/03/2027.');
     expect(late.texts('copies')).not.toMatch(/cle_absente/);
+    // AU109 · la preuve de l'allumage : prouvée avec une restauration réussie du mois, sinon « non prouvée ».
+    expect(late.texts('copies')).toContain('Copie non prouvée');
+    const proven = await run('direction', { [COPIES]: ok({ state: 'a_jour', lastSuccessAt: '2027-03-03T01:23:00.000Z', lastFailure: null, missedNights: [], activation: 'prouvee', exerciseAt: '2027-03-02T03:00:00.000Z' }) });
+    expect(proven.texts('copies')).toContain('Copie prouvée : copie à jour et restauration réussie le 2 mars 2027');
     const down = await run('direction', { [COPIES]: no(503, {}) });
     expect(down.state('copies')).toContain('Indisponible');
     expect(down.state('copies')).not.toContain('Dernière copie');

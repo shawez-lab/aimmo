@@ -9,7 +9,7 @@
  * Les passages : chaque heure, commissions, factures et reversements (`pilotage.passage`) ; à 6 h, les alertes de
  * pilotage, avec les échéances des pièces du dossier d'agent (M14) ; du lundi au vendredi à 7 h 30, le rapport du matin.
  */
-import { copyWatchJob, pilotage, RecusParcours, RecusRestauration, SuiviCopies, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer, type Acces } from '@aimmo/core';
+import { copyWatchJob, restoreWatchJob, pilotage, RecusParcours, RecusRestauration, SuiviCopies, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer, type Acces } from '@aimmo/core';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -242,5 +242,7 @@ export function pilotageJobs(db: SqlDatabase, journal: JournalStore, options: { 
     pilotage.morningReportJob(db, journal, options),
     // La copie de la nuit (SV02) : de 6 h à 8 h, une nuit sans copie réussie alerte la direction, sans aucun envoi [R230].
     copyWatchJob(db, journal, options),
+    // AU109 · le test de restauration du mois : sans reçu réussi, une alerte par mois, même si GitHub a cessé [R232].
+    restoreWatchJob(db, journal, options),
   ];
 }
