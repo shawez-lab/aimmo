@@ -71,8 +71,10 @@ describeWithSqlite('AU084 · installations du bien, déclarées avec preuve', ()
     expect(after.value.lines.map((l) => l.piece)).not.toEqual(expect.arrayContaining(['electricite']));
     expect(after.value.lines.some((l) => l.piece === 'gaz' || l.piece === 'electricite')).toBe(false);
     expect(after.value.installations.map((r) => `${r.installation}:${r.verdict}`)).toEqual(['electricite:recente', 'gaz:absente']);
-    // Une pièce devenue inutile n'est plus attendue : la ranger est refusée.
-    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'gaz', ref: t.upload(), issuedOn: '2027-02-20' })).toMatchObject({ ok: false, code: 'not_expected' });
+    // Une pièce devenue inutile n'est plus attendue, mais se range encore si l'âge du bâtiment la ferait demander : un
+    // diagnostic fait avant la déclaration n'est pas refusé. Elle ne compte pas pour dire le dossier complet.
+    expect((await t.pieces.add(t.agent, t.fileId, { piece: 'gaz', ref: t.upload(), issuedOn: '2027-02-20' })).ok).toBe(true);
+    expect(await t.pieces.add(t.agent, t.fileId, { piece: 'plomb', ref: t.upload(), issuedOn: '2027-02-20' })).toMatchObject({ ok: false, code: 'not_expected' });
     // Le diagnostiqueur trouve une chaudière au gaz posée avec la maison : la direction corrige, le gaz revient.
     expect(await t.inst.record(t.direction, t.propertyId, { installation: 'gaz', present: true, since: 2008, proof: 'facture_travaux', proofRef: PROOF })).toMatchObject({ ok: true, value: { version: 2 } });
     const corrected = await t.pieces.status(t.agent, t.fileId);
@@ -101,6 +103,8 @@ describeWithSqlite('AU084 · installations du bien, déclarées avec preuve', ()
     const late = await t.pieces.status(t.agent, t.fileId, { deedDay: '2027-12-20' });
     expect(late.ok && late.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_plus_15_ans');
     expect(late.ok && late.value.installations[0]).toMatchObject({ verdict: 'non_tranche', since: 2028 });
+    // Ce diagnostic exigé pour l'acte se range encore, même si la rénovation le rend inutile aujourd'hui (relecture de Codex).
+    expect((await t.pieces.add(t.agent, t.fileId, { piece: 'electricite', ref: t.upload(), issuedOn: '2027-12-01' })).ok).toBe(true);
   });
 
   it('[R16] seuls l’agent du bien et la direction déclarent ; chaque refus au journal, rien de rangé', async () => {
