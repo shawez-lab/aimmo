@@ -101,10 +101,10 @@ export async function metaIntakeState(
                                 AND (EXISTS (SELECT 1 FROM trial_outbox t WHERE t.message_id = r.id)
                                      OR EXISTS (SELECT 1 FROM outbound_refs o WHERE o.message_id = r.id AND o.network_id = r.network_id)
                                      OR EXISTS (SELECT 1 FROM human_replies h WHERE h.message_id = r.id AND h.network_id = r.network_id)))
-                     -- Une alerte compte si elle est ouverte, ou ouverte de nouveau après ce message : une alerte déjà vue avant
-                     -- lui ne dit rien de lui.
+                     -- Une alerte compte si elle est ouverte, ouverte de nouveau après ce message, ou vue après lui (elle le
+                     -- couvrait encore ouverte) : seule une alerte déjà vue avant lui ne dit rien de lui.
                      OR EXISTS (SELECT 1 FROM messages m JOIN agent_alerts a ON a.conversation_id = m.conversation_id AND a.network_id = m.network_id
-                                 WHERE m.id = i.message_id AND (a.seen_at IS NULL OR a.created_at >= m.created_at))
+                                 WHERE m.id = i.message_id AND (a.seen_at IS NULL OR a.created_at >= m.created_at OR a.seen_at >= m.created_at))
                    ) THEN 1 ELSE 0 END AS treated
          FROM inbound_messages i
         WHERE i.network_id = ? AND i.channel IN ('instagram', 'facebook', 'whatsapp'))

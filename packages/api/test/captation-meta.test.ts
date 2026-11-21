@@ -211,6 +211,11 @@ describeWithSqlite('AU033 · Instagram, Facebook et WhatsApp, canal par canal', 
     // L'alerte ouverte de nouveau pour ce message : il est traité.
     await w.db.run("UPDATE agent_alerts SET seen_at = NULL, created_at = ? WHERE id = 'al-1'", [day(1)]);
     expect(channelOf((await w.state()).body.data!, 'whatsapp')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
+    // Une alerte encore ouverte à l'arrivée du message, puis vue : le message reste traité.
+    await w.db.run("UPDATE agent_alerts SET created_at = ?, seen_at = NULL WHERE id = 'al-1'", [day(0)]);
+    expect(channelOf((await w.state()).body.data!, 'whatsapp')).toMatchObject({ treated30Days: 1 });
+    await w.db.run("UPDATE agent_alerts SET seen_at = ? WHERE id = 'al-1'", [day(2)]);
+    expect(channelOf((await w.state()).body.data!, 'whatsapp')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
   });
 
   it('[R670] un message vieux de plus de 30 jours garde le canal vérifié, mais ne compte plus dans les 30 jours', async () => {
