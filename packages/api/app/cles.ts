@@ -244,7 +244,8 @@ globalThis.AIMMO_CLES = function (t) {
           state('Envoi…');
           return send('/v1/cles/enregistrement/fin', 'POST', payload).then(function (y) {
             if (y.gone) return false;
-            if (y.offline || !y.body || y.status >= 500) { state(LOST); return false; }
+            /* Une réponse perdue : la clé a pu être rangée et la clé d'application retirée ; l'identité lue reste. */
+            if (y.offline || !y.body || y.status >= 500) { settled = true; state(LOST); return false; }
             if (!y.ok) { state(why(y, 'La clé n’est pas rangée.')); return false; }
             var d = y.body.data || {};
             settled = true;
