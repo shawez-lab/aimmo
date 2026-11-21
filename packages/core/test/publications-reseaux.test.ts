@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, annonces, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { EVENT_HEADLINES, Publications, trialSocialChannel, type CertifiedPhoto, type SocialChannel, type SocialPayload, type SocialWriter } from '../src/studio/index.ts';
+import { EVENT_HEADLINES, Publications, SocialSendError, caption, metaError, metaSocialChannels, trialSocialChannel, type CertifiedPhoto, type SocialChannel, type SocialPayload, type SocialWriter } from '../src/studio/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -30,9 +30,14 @@ it('les accroches des événements passent le contrôle des textes publics', () 
   for (const h of Object.values(EVENT_HEADLINES)) expect(publicTextProblems(h), h).toEqual([]);
 });
 
-it('[R26] [R134] un canal réel est refusé : seul le mode essai est en service', () => {
-  const real = { channel: 'instagram', mode: 'reel', post: async () => {} } as unknown as SocialChannel;
-  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { facts: {} as never, certs: {} as never, diffusion: {} as never, mentions: {} as never, consents: {} as never, channels: [real] })).toThrow(/mode essai/);
+it('[R26] [R134] un canal réel est refusé sans la mise en service explicite (AU036) ; un mode inconnu toujours', () => {
+  const real: SocialChannel = { channel: 'instagram', mode: 'reel', post: async () => ({ postRef: '1' }) };
+  const deps = { facts: {} as never, certs: {} as never, diffusion: {} as never, mentions: {} as never, consents: {} as never };
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] })).toThrow(/mode essai/);
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] }, { live: false })).toThrow(/mode essai/);
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] }, { live: true })).not.toThrow();
+  const odd = { channel: 'instagram', mode: 'direct', post: async () => {} } as unknown as SocialChannel;
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [odd] }, { live: true })).toThrow(/Mode inconnu/);
 });
 
 // Les mentions telles que M07 les calcule, inventées.
@@ -41,7 +46,7 @@ const MENTIONS = 'Prix : 230 000 € honoraires inclus, dont 4,55 % TTC à la ch
 const photo = (p: string, n: number) => `biens/${p}/0000000${n}-0000-4000-8000-000000000000.jpg`;
 const consent = (p: string, n: number) => `biens/${p}/accords/0000000${n}-0000-4000-8000-0000000000cc.pdf`;
 
-async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; origin?: NonNullable<ConstructorParameters<typeof Publications>[3]['origin']>; postRef?: string } = {}) {
+async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; origin?: NonNullable<ConstructorParameters<typeof Publications>[3]['origin']>; postRef?: string; live?: (propertyId: string) => SocialChannel[] } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = Date.parse('2027-10-10T08:00:00.000Z');
@@ -83,10 +88,10 @@ async function setup(opts: { writer?: SocialWriter | null; failing?: string[]; o
           return state.consents.has(r);
         },
       },
-      channels,
+      channels: opts.live ? [...channels.filter((c) => !opts.live!(p.id).some((l) => l.channel === c.channel)), ...opts.live(p.id)] : channels,
       ...(opts.origin ? { origin: opts.origin } : {}),
     },
-    { now, writer: opts.writer === undefined ? null : opts.writer, timeoutMs: 50 },
+    { now, writer: opts.writer === undefined ? null : opts.writer, timeoutMs: 50, ...(opts.live ? { live: true } : {}) },
   );
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id }) as never;
   const alexV = as('agent', alex.id);
@@ -462,5 +467,250 @@ describeWithSqlite('X05 · publications prêtes pour chaque événement', () => 
     expect(await t.db.all('SELECT post_id FROM social_post_attempts')).toEqual([]);
     const after = await t.pubs.read(t.alexV, prep.value.id);
     expect(after).toMatchObject({ ok: true, value: { validated: null } });
+  });
+});
+
+// AU036 : les vrais réseaux. L'API Graph est simulée ; le jeton est inventé.
+const TOKEN = 'jeton-invente-' + 'x'.repeat(24);
+const ACCOUNT = { pageId: '111', igUserId: '222', token: TOKEN };
+
+/** Une API Graph simulée : chaque appel est noté ; `fail` rend une erreur de Meta pour un chemin donné. */
+function fakeGraph(opts: { fail?: Record<string, { status: number; code: number }>; noPermalink?: boolean } = {}) {
+  const calls: { method: string; path: string; params: Record<string, string> }[] = [];
+  let n = 0;
+  const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    const params = Object.fromEntries(method === 'GET' ? url.searchParams : new URLSearchParams(String(init?.body ?? '')));
+    const path = url.pathname.replace(/^\/v[0-9.]+\//, '');
+    calls.push({ method, path, params });
+    const failing = Object.entries(opts.fail ?? {}).find(([k]) => path.endsWith(k));
+    if (failing) return new Response(JSON.stringify({ error: { message: 'texte du réseau à ne jamais garder', code: failing[1].code } }), { status: failing[1].status });
+    if (method === 'GET') {
+      if (opts.noPermalink) return new Response('{}', { status: 500 });
+      const field = params.fields!;
+      const host = field === 'permalink' ? 'www.instagram.com' : 'www.facebook.com';
+      return Response.json({ [field]: `https://${host}/p/${path}` });
+    }
+    if (path.endsWith('/feed')) return Response.json({ id: `111_${++n}` });
+    return Response.json({ id: String(9000 + ++n) });
+  }) as typeof globalThis.fetch;
+  return { calls, fetch };
+}
+
+const mediaUrl = (ref: string) => `https://reseau.exemple.test/medias/${ref}`;
+
+describeWithSqlite('AU036 · une publication validée part vraiment sur les comptes choisis', () => {
+  const both = [
+    { channel: 'facebook', account: 'reseau' },
+    { channel: 'instagram', account: 'reseau' },
+  ];
+
+  it('[R134] le constat : validée et envoyée, la publication est faite chez Facebook et Instagram, avec son vrai lien', async () => {
+    const g = fakeGraph();
+    const links: unknown[][] = [];
+    const t = await setup({
+      live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }),
+      origin: { studioLink: async () => ({ contentId: 'codecontenu1', link: 'https://reseau.exemple.test/biens/x?o=codecontenu1' }), linkPost: async (...a) => (links.push(a), { ok: true }) },
+    });
+    const id = await t.ready();
+    const r = await t.pubs.publish(t.alexV, id, both);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.sends).toEqual([
+      { channel: 'facebook', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'https://www.facebook.com/p/111_3', code: null, action: null },
+      { channel: 'instagram', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'https://www.instagram.com/p/9007', code: null, action: null },
+    ]);
+    // Facebook : deux photos rangées sans être publiées, puis un message qui les porte, le lien marqué à la fin.
+    const fb = g.calls.filter((c) => c.method === 'POST' && c.path.startsWith('111'));
+    expect(fb.map((c) => [c.method, c.path])).toEqual([
+      ['POST', '111/photos'],
+      ['POST', '111/photos'],
+      ['POST', '111/feed'],
+    ]);
+    expect(fb[0]!.params).toMatchObject({ url: mediaUrl(photo(t.p.id, 1)), published: 'false' });
+    expect(fb[2]!.params['attached_media[0]']).toBe(JSON.stringify({ media_fbid: '9001' }));
+    expect(fb[2]!.params['attached_media[1]']).toBe(JSON.stringify({ media_fbid: '9002' }));
+    expect(fb[2]!.params.message!.endsWith('\n\nImage n° 2 : aménagement virtuel.\n\nhttps://reseau.exemple.test/biens/x?o=codecontenu1')).toBe(true);
+    expect(fb[2]!.params.message!.startsWith('Nouveau bien à découvrir.')).toBe(true);
+    // Instagram : un carrousel de deux photos, puis sa publication ; le lien, qui n'y serait pas cliquable, n'y est pas.
+    const ig = g.calls.filter((c) => c.method === 'POST' && c.path.startsWith('222'));
+    expect(ig.map((c) => c.path)).toEqual(['222/media', '222/media', '222/media', '222/media_publish']);
+    expect(ig[0]!.params).toMatchObject({ is_carousel_item: 'true', image_url: mediaUrl(photo(t.p.id, 1)) });
+    expect(ig[2]!.params).toMatchObject({ media_type: 'CAROUSEL', children: '9004,9005' });
+    expect(ig[2]!.params.caption).not.toMatch(/https?:/);
+    expect(ig[3]!.params.creation_id).toBe('9006');
+    // Le lien public est relu chez le réseau, pas deviné.
+    expect(g.calls.filter((c) => c.method === 'GET').map((c) => [c.path, c.params.fields])).toEqual([
+      ['111_3', 'permalink_url'],
+      ['9007', 'permalink'],
+    ]);
+    // La référence de chaque réseau relie la publication à son contenu (AT18).
+    expect(links.map((l) => l[2])).toEqual(['facebook', 'instagram']);
+    // Une fois faite, elle ne se refait jamais.
+    const before = g.calls.length;
+    expect(await t.pubs.publish(t.alexV, id, both)).toMatchObject({ ok: true, value: { sends: [{ outcome: 'envoye' }, { outcome: 'envoye' }] } });
+    expect(g.calls.length).toBe(before);
+  });
+
+  it('[R13] ni le jeton, ni le texte, ni la réponse du réseau au journal ou en base ; le mode réel est dit', async () => {
+    const g = fakeGraph({ fail: { '222/media': { status: 400, code: 100 } } });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    await t.pubs.publish(t.alexV, id, both);
+    const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.publication.envoi'");
+    expect(ev.map((e) => JSON.parse(e.data))).toEqual([
+      { post: id, channel: 'facebook', account: 'reseau', mode: 'reel', outcome: 'envoye', rule: 'R134' },
+      { post: id, channel: 'instagram', account: 'reseau', mode: 'reel', outcome: 'echec', code: 'contenu_refuse', action: 'corriger', rule: 'R134' },
+    ]);
+    const dump = JSON.stringify([await t.db.all('SELECT * FROM journal'), await t.db.all('SELECT * FROM social_live_sends'), await t.db.all('SELECT * FROM social_live_attempts')]);
+    expect(dump).not.toContain(TOKEN);
+    expect(dump).not.toContain('texte du réseau');
+    expect(dump).not.toContain('Nouveau bien à découvrir');
+    // Le jeton ne part que vers l'API Graph de Meta.
+    expect(g.calls.every((c) => c.params.access_token === TOKEN)).toBe(true);
+  });
+
+  it('[R134] un échec dit ce que l’agent peut faire ; réessayer ou reconnecter repart au geste suivant, corriger jamais', async () => {
+    const fail: Record<string, { status: number; code: number }> = { '111/photos': { status: 400, code: 190 }, '222/media': { status: 400, code: 100 } };
+    const g = fakeGraph({ fail });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    expect(await t.pubs.publish(t.alexV, id, both)).toMatchObject({
+      ok: true,
+      value: {
+        sends: [
+          { channel: 'facebook', mode: 'reel', outcome: 'echec', url: null, code: 'jeton_expire', action: 'reconnecter' },
+          { channel: 'instagram', mode: 'reel', outcome: 'echec', url: null, code: 'contenu_refuse', action: 'corriger' },
+        ],
+      },
+    });
+    // Le jeton est reconnecté chez Meta ; le contenu refusé ne repart pas tel quel.
+    delete fail['111/photos'];
+    delete fail['222/media'];
+    const before = g.calls.filter((c) => c.path.startsWith('222')).length;
+    expect(await t.pubs.publish(t.alexV, id, both)).toMatchObject({
+      ok: true,
+      value: { sends: [{ channel: 'facebook', outcome: 'envoye', code: null, action: null }, { channel: 'instagram', outcome: 'echec', code: 'contenu_refuse', action: 'corriger' }] },
+    });
+    expect(g.calls.filter((c) => c.path.startsWith('222')).length).toBe(before);
+  });
+
+  it('[R134] une panne du réseau ou une limite atteinte se réessaie ; un compte d’agent pas encore relié le dit, sans appel', async () => {
+    const fail: Record<string, { status: number; code: number }> = { '111/photos': { status: 503, code: 2 }, '222/media': { status: 400, code: 4 } };
+    const g = fakeGraph({ fail });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    const r = await t.pubs.publish(t.alexV, id, [...both, { channel: 'facebook', account: 'agent' }]);
+    expect(r).toMatchObject({ ok: true });
+    if (!r.ok) return;
+    expect(r.value.sends.map((x) => [x.channel, x.account, x.outcome, x.code, x.action])).toEqual([
+      ['facebook', 'agent', 'echec', 'compte_non_relie', 'relier'],
+      ['facebook', 'reseau', 'echec', 'reseau_indisponible', 'reessayer'],
+      ['instagram', 'reseau', 'echec', 'limite_atteinte', 'reessayer'],
+    ]);
+    expect(g.calls.some((c) => c.params.message !== undefined)).toBe(false);
+    delete fail['111/photos'];
+    delete fail['222/media'];
+    const again = await t.pubs.publish(t.alexV, id, both);
+    expect(again.ok && again.value.sends.map((x) => [x.channel, x.account, x.outcome])).toEqual([
+      ['facebook', 'agent', 'echec'],
+      ['facebook', 'reseau', 'envoye'],
+      ['instagram', 'reseau', 'envoye'],
+    ]);
+  });
+
+  it('une photo sans adresse publique n’est pas envoyée ; un lien qui ne se relit pas laisse la publication faite, sans lien', async () => {
+    const g = fakeGraph({ noPermalink: true });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl: (ref) => (ref.endsWith('2-0000-4000-8000-000000000000.jpg') ? null : mediaUrl(ref)), fetch: g.fetch }) });
+    const id = await t.ready();
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'echec', code: 'visuel_sans_adresse', action: 'corriger' }] } });
+    expect(g.calls).toEqual([]);
+    const t2 = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id2 = await t2.ready();
+    expect(await t2.pubs.publish(t2.alexV, id2, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'envoye', url: null, code: null }] } });
+  });
+
+  it('[R134] un envoi réel sans issue rangée n’est jamais doublé : en cours, puis à vérifier ; sans référence, c’est un échec', async () => {
+    let calls = 0;
+    let hang = true;
+    const t = await setup({
+      live: () => [
+        { channel: 'facebook', mode: 'reel', post: async () => (calls++, hang ? new Promise<never>(() => {}) : { postRef: '1' }) },
+        { channel: 'instagram', mode: 'reel', post: async () => (calls++, undefined) },
+      ],
+    });
+    const id = await t.ready();
+    const first = t.pubs.publish(t.alexV, id, [{ channel: 'facebook', account: 'reseau' }]);
+    await new Promise((r) => setTimeout(r, 50));
+    hang = false;
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'en_cours' }] } });
+    t.setClock('2027-10-10T09:00:00.000Z');
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }] } });
+    expect(calls).toBe(1);
+    void first;
+    // Un canal réel qui ne rend aucune référence : rien ne prouve la publication, c'est un échec à réessayer.
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }, { channel: 'instagram', outcome: 'echec', code: 'reponse_illisible', action: 'reessayer' }] } });
+  });
+
+  it('[R26] un essai réussi avant la mise en service n’empêche pas la vraie publication de la même cible', async () => {
+    const g = fakeGraph();
+    const t = await setup();
+    const id = await t.ready();
+    await t.db.run("UPDATE properties SET status = 'available' WHERE id = ?", [t.p.id]);
+    const trial = await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'agent' }]);
+    expect(trial).toMatchObject({ ok: true, value: { sends: [{ channel: 'instagram', mode: 'essai', outcome: 'envoye' }] } });
+    // Même base, nouvelle classe mise en service : la cible du réseau part pour de vrai.
+    const live = new Publications(t.db, (t.pubs as unknown as { acces: never }).acces, t.journal, { ...(t.pubs as unknown as { deps: ConstructorParameters<typeof Publications>[3] }).deps, channels: metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) }, { live: true });
+    const r = await live.publish(t.alexV, id, [{ channel: 'instagram', account: 'reseau' }, { channel: 'instagram', account: 'agent' }]);
+    expect(r.ok && r.value.sends.map((x) => [x.account, x.mode, x.outcome, x.code])).toEqual([
+      ['agent', 'reel', 'echec', 'compte_non_relie'],
+      ['reseau', 'reel', 'envoye', null],
+    ]);
+  });
+});
+
+describe('AU036 · les codes de Meta et la légende', () => {
+  it('chaque erreur de l’API Graph devient un code fermé et une action', () => {
+    const cases: [number, number | null, string, string][] = [
+      [400, 190, 'jeton_expire', 'reconnecter'],
+      [403, 10, 'droits_manquants', 'reconnecter'],
+      [403, 200, 'droits_manquants', 'reconnecter'],
+      [400, 4, 'limite_atteinte', 'reessayer'],
+      [429, null, 'limite_atteinte', 'reessayer'],
+      [400, 368, 'contenu_refuse', 'corriger'],
+      [400, 100, 'contenu_refuse', 'corriger'],
+      [500, 2, 'reseau_indisponible', 'reessayer'],
+      [502, null, 'reseau_indisponible', 'reessayer'],
+      [400, 12345, 'erreur_reseau', 'reessayer'],
+    ];
+    for (const [status, code, want, action] of cases) {
+      const e = metaError(status, code === null ? 'pas du json' : { error: { code, message: 'secret' } });
+      expect(e).toBeInstanceOf(SocialSendError);
+      expect([e.code, e.action, e.message]).toEqual([want, action, want]);
+    }
+  });
+
+  it('la légende redit les images aménagées ; le lien seulement là où il est cliquable', () => {
+    const payload: SocialPayload = {
+      postId: 'p',
+      account: 'reseau',
+      text: 'Nouveau bien à découvrir.',
+      visuals: [
+        { ref: 'a', overlay: null, certificatePath: '/c/a' },
+        { ref: 'b', overlay: 'Aménagement virtuel', certificatePath: '/c/b' },
+        { ref: 'c', overlay: 'Aménagement virtuel', certificatePath: '/c/c' },
+      ],
+      link: 'https://reseau.exemple.test/biens/x',
+    };
+    expect(caption(payload, true)).toBe('Nouveau bien à découvrir.\n\nImages n° 2, 3 : aménagement virtuel.\n\nhttps://reseau.exemple.test/biens/x');
+    expect(caption({ ...payload, visuals: [payload.visuals[0]!] }, false)).toBe('Nouveau bien à découvrir.');
+  });
+
+  it('un compte Meta incomplet ne fait aucun canal ; un réseau injoignable se réessaie', async () => {
+    expect(() => metaSocialChannels({ network: { ...ACCOUNT, token: ' ' }, mediaUrl })).toThrow(/incomplet/);
+    expect(() => metaSocialChannels({ network: { ...ACCOUNT, pageId: 'page' }, mediaUrl })).toThrow(/incomplet/);
+    const [fb] = metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: (async () => { throw new TypeError('réseau'); }) as typeof fetch });
+    await expect(fb!.post({ postId: 'p', account: 'reseau', text: 't', visuals: [{ ref: 'a', overlay: null, certificatePath: '/c' }], link: null })).rejects.toMatchObject({ code: 'reseau_indisponible', action: 'reessayer' });
   });
 });

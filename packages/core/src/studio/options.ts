@@ -106,7 +106,11 @@ export class OptionsStudio {
     // Un visuel est publié quand sa publication est partie au moins une fois ; sa date est celle du premier envoi réussi.
     const posts = await this.db.all<{ post_id: string; visuals: string; sent_at: string }>(
       `SELECT p.id AS post_id, p.visuals, MIN(s.done_at) AS sent_at
-       FROM social_posts p JOIN social_post_attempts a ON a.post_id = p.id JOIN social_post_sends s ON s.attempt_id = a.id
+       FROM social_posts p JOIN (
+         SELECT a.post_id, d.outcome, d.done_at FROM social_post_attempts a JOIN social_post_sends d ON d.attempt_id = a.id
+         UNION ALL
+         SELECT a.post_id, d.outcome, d.done_at FROM social_live_attempts a JOIN social_live_sends d ON d.attempt_id = a.id
+       ) s ON s.post_id = p.id
        WHERE p.network_id = ? AND s.outcome = 'envoye'
        GROUP BY p.id ORDER BY sent_at DESC, p.id DESC`,
       [viewer.networkId],

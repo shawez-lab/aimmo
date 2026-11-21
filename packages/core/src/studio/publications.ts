@@ -11,8 +11,11 @@
  * Avant toute publication, chaque visuel a sa liste de contrôle validée par l'agent : aucune adresse lisible, aucune
  * personne reconnaissable sans son accord rangé, et la mention d'aménagement virtuel visible quand il le faut [R132].
  * Puis l'agent du bien valide la publication [R134]. Enfin, en un geste, elle part vers les comptes de l'agent et du
- * réseau, chaque réseau derrière une interface, toujours en mode essai : aucun canal réel n'est accepté [R26, R134]. La
- * porte de diffusion (D05) est relue à la préparation, à la validation et juste avant l'envoi [R42].
+ * réseau, chaque réseau derrière une interface, en mode essai tant que la publication n'est pas mise en service : un
+ * canal réel n'est admis qu'avec `live` (AU036), que seul le Worker donne quand le compte du réseau est rangé [R26,
+ * R134]. Un envoi réel garde la référence de la publication chez le réseau et son lien public relu chez lui ; un échec
+ * garde son code et ce que l'agent peut faire (réessayer, reconnecter, relier, corriger) ; un contenu refusé ne repart
+ * jamais tel quel. La porte de diffusion (D05) est relue à la préparation, à la validation et juste avant l'envoi [R42].
  *
  * Un commerce n'y passe jamais (RC07) : son prix et ses faits ne sont pas publics, sa présentation a son propre chemin
  * (M16, CE03) [R110]. Relu à la préparation, à la validation et juste avant l'envoi.
@@ -78,12 +81,32 @@ export interface SocialPayload {
   link: string | null;
 }
 
-/** Un réseau social, derrière une interface. Seul le mode essai existe tant que le plan ne l'a pas mis en service. */
+export const SOCIAL_MODES = ['essai', 'reel'] as const;
+export type SocialMode = (typeof SOCIAL_MODES)[number];
+/** Ce que l'agent peut faire d'un envoi en échec. */
+export const SEND_ACTIONS = ['reessayer', 'reconnecter', 'relier', 'corriger'] as const;
+export type SendAction = (typeof SEND_ACTIONS)[number];
+
+/** L'échec d'un envoi réel, dit par son canal : un code fermé et une action, jamais le texte du réseau [R13]. */
+export class SocialSendError extends Error {
+  constructor(
+    readonly code: string,
+    readonly action: SendAction,
+  ) {
+    super(code);
+    this.name = 'SocialSendError';
+  }
+}
+
+/** Un réseau social, derrière une interface. Le mode réel n'est admis qu'à la mise en service (AU036) [R26, R134]. */
 export interface SocialChannel {
   readonly channel: SocialChannelName;
-  readonly mode: 'essai';
-  /** Un réseau qui rend la référence de sa publication la relie à son contenu : un commentaire y sera reconnu (AT18). */
-  post(payload: SocialPayload): Promise<void | { postRef: string }>;
+  readonly mode: SocialMode;
+  /**
+   * Un réseau qui rend la référence de sa publication la relie à son contenu : un commentaire y sera reconnu (AT18).
+   * Un canal réel rend toujours sa référence, et le lien public relu chez lui (null s'il n'a pas pu être relu).
+   */
+  post(payload: SocialPayload): Promise<void | { postRef: string; url?: string | null }>;
 }
 
 /** Le canal d'essai : rien ne part ; l'essai est rangé avec son issue. */
@@ -97,7 +120,20 @@ export interface SocialPost {
   origin: 'ia' | 'secours';
   visuals: { ref: string; overlay: 'Aménagement virtuel' | null; certificatePath: string; check: 'admis' | 'refuse' | null }[];
   validated: { by: string; at: string } | null;
-  sends: { channel: SocialChannelName; account: SocialAccount; outcome: 'envoye' | 'echec' | 'en_cours' }[];
+  /**
+   * Le dernier état de chaque cible. En réel : le lien public de la publication chez le réseau, ou le code de l'échec
+   * et ce que l'agent peut faire ; un envoi réel passe devant un essai de la même cible.
+   */
+  sends: {
+    channel: SocialChannelName;
+    account: SocialAccount;
+    mode: SocialMode;
+    /** « a_verifier » : un envoi réel parti sans issue rangée depuis plus de 10 minutes ; il n'est jamais doublé. */
+    outcome: 'envoye' | 'echec' | 'en_cours' | 'a_verifier';
+    url: string | null;
+    code: string | null;
+    action: SendAction | null;
+  }[];
   createdAt: string;
 }
 
@@ -137,6 +173,8 @@ export interface PublicationsOptions {
   timeoutMs?: number;
   now?: () => Date;
   newId?: () => string;
+  /** La mise en service des vrais réseaux (AU036) : sans elle, un canal réel est refusé [R26, R134]. */
+  live?: boolean;
 }
 
 interface PostRow {
@@ -156,6 +194,18 @@ const MAX_BODY = 1800;
 const MAX_ATTEMPTS = 10;
 /** Un essai réservé sans issue depuis moins que cela est tenu pour en cours : on ne le double pas. */
 const IN_FLIGHT_MS = 10 * 60_000;
+/** La référence d'une publication chez un réseau, et le code fermé d'un échec. */
+const POST_REF = /^[A-Za-z0-9_-]{1,128}$/;
+const CODE = /^[a-z_]{1,40}$/;
+/** Un lien public de publication : en https, chez un réseau connu, sans identifiant ni mot de passe. */
+function safeUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && u.username === '' && u.password === '' && url.length <= 500 && /(^|\.)(facebook|instagram|linkedin|google|tiktok|youtube)\.com$/.test(u.hostname);
+  } catch {
+    return false;
+  }
+}
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 
 /** Contrôle d'un texte public : chaque phrase, et le texte entier d'un bloc [R46]. */
@@ -184,8 +234,9 @@ export class Publications {
     this.timeoutMs = options.timeoutMs ?? 8000;
     this.channels = new Map();
     for (const c of deps.channels) {
-      // Aucun canal réel tant que le plan ne l'a pas mis en service [R26, R134].
-      if (c.mode !== 'essai') throw new Error(`Canal ${String(c.channel)} refusé : seul le mode essai est en service`);
+      // Aucun canal réel sans la mise en service explicite (AU036) [R26, R134].
+      if (!(SOCIAL_MODES as readonly unknown[]).includes(c.mode)) throw new Error('Mode inconnu');
+      if (c.mode !== 'essai' && options.live !== true) throw new Error(`Canal ${String(c.channel)} refusé : seul le mode essai est en service`);
       if (!(SOCIAL_CHANNELS as readonly string[]).includes(c.channel)) throw new Error('Canal inconnu');
       this.channels.set(c.channel, c);
     }
@@ -389,18 +440,44 @@ export class Publications {
     }
     if (options.requireLink && !tracked?.link) return this.bad(actor, subject, 'R156', 'sans_lien');
     for (const w of wanted) {
-      const attempt = await this.claim(postId, w, actor);
-      if (attempt === null) continue;
       const channel = this.channels.get(w.channel)!;
+      const live = channel.mode === 'reel';
+      const attempt = await this.claim(postId, w, actor, live);
+      if (attempt === null) continue;
       let outcome: 'envoye' | 'echec' = 'envoye';
-      let sent: void | { postRef: string } = undefined;
+      let sent: void | { postRef: string; url?: string | null } = undefined;
+      let failure: { code: string; action: SendAction } | null = null;
       try {
         sent = await channel.post({ postId, account: w.account, text: post.value.text, visuals: current.visuals.map(({ ref, overlay, certificatePath }) => ({ ref, overlay, certificatePath })), link: tracked?.link ?? null });
-      } catch {
+        // Un envoi réel sans référence chez le réseau n'est pas prouvé : il est tenu pour un échec, à réessayer.
+        if (live && !(sent && typeof sent.postRef === 'string' && POST_REF.test(sent.postRef))) {
+          outcome = 'echec';
+          failure = { code: 'reponse_illisible', action: 'reessayer' };
+          sent = undefined;
+        }
+      } catch (error) {
         outcome = 'echec';
+        failure = error instanceof SocialSendError && CODE.test(error.code) && (SEND_ACTIONS as readonly string[]).includes(error.action) ? { code: error.code, action: error.action } : { code: 'erreur', action: 'reessayer' };
       }
-      await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
-      await appendEvent(this.journal, { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: 'essai', outcome, rule: 'R26' } }, this.now);
+      if (live) {
+        const url = outcome === 'envoye' && typeof sent?.url === 'string' && safeUrl(sent.url) ? sent.url : null;
+        await this.db.run('INSERT INTO social_live_sends (attempt_id, outcome, post_ref, url, error_code, action, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+          attempt,
+          outcome,
+          outcome === 'envoye' ? sent!.postRef : null,
+          url,
+          failure?.code ?? null,
+          failure?.action ?? null,
+          this.now().toISOString(),
+        ]);
+      } else {
+        await this.db.run('INSERT INTO social_post_sends (attempt_id, outcome, done_at) VALUES (?, ?, ?)', [attempt, outcome, this.now().toISOString()]);
+      }
+      await appendEvent(
+        this.journal,
+        { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: channel.mode, outcome, ...(failure && live ? { code: failure.code, action: failure.action } : {}), rule: live ? 'R134' : 'R26' } },
+        this.now,
+      );
       // Relié seulement une fois l'envoi noté : rien ne se glisse entre un envoi et sa trace.
       if (sent && tracked && this.deps.origin) {
         try {
@@ -450,18 +527,33 @@ export class Publications {
   }
 
   /** Réserve l'essai suivant pour une cible : null s'il est déjà envoyé, en cours, ou pris par un autre passage. */
-  private async claim(postId: string, w: { channel: SocialChannelName; account: SocialAccount }, actor: string): Promise<string | null> {
-    const rows = await this.db.all<{ id: string; attempt: number; claimed_at: string; outcome: string | null }>(
-      `SELECT a.id, a.attempt, a.claimed_at, s.outcome FROM social_post_attempts a LEFT JOIN social_post_sends s ON s.attempt_id = a.id
-       WHERE a.post_id = ? AND a.channel = ? AND a.account = ? ORDER BY a.attempt`,
-      [postId, w.channel, w.account],
-    );
+  /**
+   * Réserve l'essai suivant pour une cible : null s'il est déjà envoyé, en cours, pris par un autre passage, ou, en
+   * réel, refusé pour son contenu (il faut une nouvelle publication). Les envois réels ont leurs propres tables : un
+   * essai réussi avant la mise en service n'empêche pas la vraie publication.
+   */
+  private async claim(postId: string, w: { channel: SocialChannelName; account: SocialAccount }, actor: string, live: boolean): Promise<string | null> {
+    const rows = live
+      ? await this.db.all<{ id: string; attempt: number; claimed_at: string; outcome: string | null; action: string | null }>(
+          `SELECT a.id, a.attempt, a.claimed_at, s.outcome, s.action FROM social_live_attempts a LEFT JOIN social_live_sends s ON s.attempt_id = a.id
+           WHERE a.post_id = ? AND a.channel = ? AND a.account = ? ORDER BY a.attempt`,
+          [postId, w.channel, w.account],
+        )
+      : await this.db.all<{ id: string; attempt: number; claimed_at: string; outcome: string | null; action: string | null }>(
+          `SELECT a.id, a.attempt, a.claimed_at, s.outcome, NULL AS action FROM social_post_attempts a LEFT JOIN social_post_sends s ON s.attempt_id = a.id
+           WHERE a.post_id = ? AND a.channel = ? AND a.account = ? ORDER BY a.attempt`,
+          [postId, w.channel, w.account],
+        );
     if (rows.some((r) => r.outcome === 'envoye')) return null;
-    if (rows.some((r) => r.outcome === null && this.now().getTime() - Date.parse(r.claimed_at) < IN_FLIGHT_MS)) return null;
+    if (rows.some((r) => r.action === 'corriger')) return null;
+    // Un envoi réel sans issue n'est jamais doublé : il a pu partir. Sa cible attend qu'on la regarde chez le réseau.
+    if (rows.some((r) => r.outcome === null && (live || this.now().getTime() - Date.parse(r.claimed_at) < IN_FLIGHT_MS))) return null;
     if (rows.length >= MAX_ATTEMPTS) return null;
     const id = this.newId();
     const { changes } = await this.db.run(
-      "INSERT INTO social_post_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, 'essai', ?, ?) ON CONFLICT DO NOTHING",
+      live
+        ? "INSERT INTO social_live_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, 'reel', ?, ?) ON CONFLICT DO NOTHING"
+        : "INSERT INTO social_post_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES (?, ?, ?, ?, ?, 'essai', ?, ?) ON CONFLICT DO NOTHING",
       [id, postId, w.channel, w.account, rows.length, actor, this.now().toISOString()],
     );
     return changes === 1 ? id : null;
@@ -499,11 +591,23 @@ export class Publications {
       `SELECT a.channel, a.account, s.outcome FROM social_post_attempts a LEFT JOIN social_post_sends s ON s.attempt_id = a.id WHERE a.post_id = ? ORDER BY a.channel, a.account, a.attempt`,
       [postId],
     );
+    const liveAttempts = await this.db.all<{ channel: SocialChannelName; account: SocialAccount; claimed_at: string; outcome: 'envoye' | 'echec' | null; url: string | null; error_code: string | null; action: SendAction | null }>(
+      `SELECT a.channel, a.account, a.claimed_at, s.outcome, s.url, s.error_code, s.action FROM social_live_attempts a LEFT JOIN social_live_sends s ON s.attempt_id = a.id WHERE a.post_id = ? ORDER BY a.channel, a.account, a.attempt`,
+      [postId],
+    );
     const last = new Map<string, SocialPost['sends'][number]>();
     for (const a of attempts) {
       const key = `${a.channel}/${a.account}`;
       if (last.get(key)?.outcome === 'envoye') continue;
-      last.set(key, { channel: a.channel, account: a.account, outcome: a.outcome ?? 'en_cours' });
+      last.set(key, { channel: a.channel, account: a.account, mode: 'essai', outcome: a.outcome ?? 'en_cours', url: null, code: null, action: null });
+    }
+    // Le réel passe devant l'essai de la même cible ; son dernier état est celui que l'agent voit.
+    const real = new Set<string>();
+    for (const a of liveAttempts) {
+      const key = `${a.channel}/${a.account}`;
+      if (real.has(key) && last.get(key)?.outcome === 'envoye') continue;
+      real.add(key);
+      last.set(key, { channel: a.channel, account: a.account, mode: 'reel', outcome: a.outcome ?? (this.now().getTime() - Date.parse(a.claimed_at) < IN_FLIGHT_MS ? 'en_cours' : 'a_verifier'), url: a.url, code: a.error_code, action: a.action });
     }
     return {
       id: row.id,
