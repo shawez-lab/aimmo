@@ -94,7 +94,7 @@ async function setup(options: { provider?: Partial<PigeProviderSettings> | null 
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; rule?: string | null; code?: string; reason?: string } };
   };
   const tick = () => runScheduler({ db, mode: 'essai', now, pigeProvider: wired });
-  const runs = () => db.all<{ outcome: string; reason: string | null; received: number; added: number; no_agency: number; outside: number }>('SELECT outcome, reason, received, added, no_agency, outside FROM pige_runs ORDER BY ran_at, rowid');
+  const runs = () => db.all<{ outcome: string; reason: string | null; received: number; added: number; no_agency: number; outside: number }>('SELECT outcome, failure AS reason, received, added, no_agency, outside FROM pige_runs ORDER BY ran_at, id');
   const events = async (type: string) => (await journal.all()).filter((e) => e.type === type);
   return {
     db,
@@ -208,8 +208,18 @@ describeWithSqlite('AU034 · la pige relevée chaque jour chez un vrai fournisse
       return { ok: true, status: 200, json: async () => (first ? { ads: [{ a: 1 }], next: 'https://ailleurs.example.test/v1/annonces?page=2' } : { pas: 'de liste' }) };
     };
     const source = new HttpPigeSource(fetcher, { url: PROVIDER_URL, token: PROVIDER_TOKEN });
-    expect(await source.ads('n', new Date('2026-12-01T00:00:00.000Z'))).toHaveLength(1);
+    // La suite annoncée ailleurs n'est jamais lue, et la relève n'est pas dite finie : une panne.
+    await expect(source.ads('n', new Date('2026-12-01T00:00:00.000Z'))).rejects.toEqual(new PigeSourceError('releve_incomplete'));
     expect(calls).toHaveLength(1);
+    for (const next of [42, 'http://[mal formée', 'https://moi:secret@pige.fournisseur.example.test/v1/annonces?page=2', 'https://pige.fournisseur.example.test/autre?page=2']) {
+      const one: PigeFetcher = async () => ({ ok: true, status: 200, json: async () => ({ ads: [{}], next }) });
+      await expect(new HttpPigeSource(one, { url: PROVIDER_URL, token: PROVIDER_TOKEN }).ads('n', new Date()), String(next)).rejects.toEqual(new PigeSourceError('releve_incomplete'));
+    }
+    // Sans suite (absente, null ou vide), la relève est finie.
+    for (const next of [undefined, null, '']) {
+      const one: PigeFetcher = async () => ({ ok: true, status: 200, json: async () => ({ ads: [{}], next }) });
+      expect(await new HttpPigeSource(one, { url: PROVIDER_URL, token: PROVIDER_TOKEN }).ads('n', new Date())).toHaveLength(1);
+    }
     await expect(source.ads('n', new Date('2026-12-02T00:00:00.000Z'))).rejects.toEqual(new PigeSourceError('reponse_illisible'));
     expect(() => new HttpPigeSource(fetcher, { url: 'http://pige.example.test/', token: PROVIDER_TOKEN })).toThrow();
   });
@@ -265,7 +275,7 @@ describeWithSqlite('AU034 · la pige relevée chaque jour chez un vrai fournisse
   it('[R17] une relève rangée ne change ni ne s’efface', async () => {
     const t = await setup();
     await t.tick();
-    await expect(t.db.run("UPDATE pige_runs SET outcome = 'panne', reason = 'autre'")).rejects.toThrow(/rien ne change/);
+    await expect(t.db.run("UPDATE pige_runs SET outcome = 'panne', failure = 'autre'")).rejects.toThrow(/rien ne change/);
     await expect(t.db.run('DELETE FROM pige_runs')).rejects.toThrow(/rien ne s'efface/);
   });
 });

@@ -128,16 +128,22 @@ export class HttpPigeSource implements PigeSource {
     return out;
   }
 
-  /** La page suivante, seulement sous la même origine et le même chemin : jamais ailleurs, ni sans la clé attendue. */
+  /**
+   * La page suivante, seulement sous la même origine et le même chemin : jamais ailleurs. Sans `next` (absent, null ou
+   * vide), la relève est finie ; un `next` illisible ou ailleurs laisse des annonces non lues : la relève est incomplète,
+   * une panne, jamais une réussite sur une partie [R671].
+   */
   private nextPage(next: unknown): string | null {
-    if (typeof next !== 'string' || next === '') return null;
+    if (next === undefined || next === null || next === '') return null;
+    if (typeof next !== 'string') throw new PigeSourceError('releve_incomplete');
     let url: URL;
     try {
       url = new URL(next, this.base);
     } catch {
-      return null;
+      throw new PigeSourceError('releve_incomplete');
     }
-    return url.origin === this.base.origin && url.pathname === this.base.pathname && !url.username && !url.password ? url.href : null;
+    if (url.origin !== this.base.origin || url.pathname !== this.base.pathname || url.username || url.password) throw new PigeSourceError('releve_incomplete');
+    return url.href;
   }
 }
 
@@ -164,7 +170,7 @@ export async function runPigeCollect(
   source: PigeSource,
   now: () => Date = () => new Date(),
 ): Promise<PigeRunResult> {
-  const previous = await db.first<{ outcome: string }>('SELECT outcome FROM pige_runs WHERE network_id = ? ORDER BY ran_at DESC, rowid DESC LIMIT 1', [networkId]);
+  const previous = await db.first<{ outcome: string }>('SELECT outcome FROM pige_runs WHERE network_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1', [networkId]);
   let result: PigeRunResult;
   // Le compte des annonces reçues est pris à la source, avant la porte commune.
   let received = 0;
@@ -184,7 +190,7 @@ export async function runPigeCollect(
   }
   const at = now().toISOString();
   await db.run(
-    'INSERT INTO pige_runs (id, network_id, ran_at, outcome, received, added, no_agency, outside, unreadable, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO pige_runs (id, network_id, ran_at, outcome, received, added, no_agency, outside, unreadable, failure) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [crypto.randomUUID(), networkId, at, result.outcome, result.received, result.added, result.noAgency, result.outside, result.unreadable, result.reason],
   );
   if (result.outcome === 'panne') {
@@ -252,10 +258,10 @@ export async function pigeCollectState(
   const missing = missingPigeSettings(settings);
   const configured = missing.length === 0 && (settings.networkId ?? '').trim() === viewer.networkId;
   const last = await db.first<{ ran_at: string; outcome: 'ok' | 'panne'; reason: PigeFailureReason | null; received: number; added: number }>(
-    'SELECT ran_at, outcome, reason, received, added FROM pige_runs WHERE network_id = ? ORDER BY ran_at DESC, rowid DESC LIMIT 1',
+    'SELECT ran_at, outcome, failure AS reason, received, added FROM pige_runs WHERE network_id = ? ORDER BY ran_at DESC, id DESC LIMIT 1',
     [viewer.networkId],
   );
-  const ok = await db.first<{ ran_at: string }>("SELECT ran_at FROM pige_runs WHERE network_id = ? AND outcome = 'ok' ORDER BY ran_at DESC, rowid DESC LIMIT 1", [viewer.networkId]);
+  const ok = await db.first<{ ran_at: string }>("SELECT ran_at FROM pige_runs WHERE network_id = ? AND outcome = 'ok' ORDER BY ran_at DESC, id DESC LIMIT 1", [viewer.networkId]);
   const lastCollectedAt = ok?.ran_at ?? null;
   let alert: PigeAlert | null = null;
   if (!configured) alert = 'non_reglee';

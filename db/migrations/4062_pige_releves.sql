@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS pige_runs (
   no_agency INTEGER NOT NULL DEFAULT 0 CHECK (no_agency >= 0),
   outside INTEGER NOT NULL DEFAULT 0 CHECK (outside >= 0),
   unreadable INTEGER NOT NULL DEFAULT 0 CHECK (unreadable >= 0),
-  reason TEXT CHECK (reason IS NULL OR reason IN ('acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'releve_incomplete', 'reseau', 'autre')),
-  CHECK ((outcome = 'ok' AND reason IS NULL) OR (outcome = 'panne' AND reason IS NOT NULL))
+  failure TEXT CHECK (failure IS NULL OR failure IN ('acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'releve_incomplete', 'reseau', 'autre')),
+  CHECK ((outcome = 'ok' AND failure IS NULL) OR (outcome = 'panne' AND failure IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS pige_runs_network ON pige_runs (network_id, ran_at);
 CREATE TRIGGER IF NOT EXISTS pige_runs_fige BEFORE UPDATE ON pige_runs BEGIN SELECT RAISE(ABORT, 'pige_runs : rien ne change'); END;
