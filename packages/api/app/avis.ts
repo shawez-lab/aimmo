@@ -79,6 +79,15 @@ export const AVIS_JS = `
 /** Le script de l'écran, servi à part (`/app/avis.js`). Il ne garde rien une fois l'écran quitté. */
 export const AVIS_SCRIPT = `'use strict';
 globalThis.AIMMO_AVIS = function (t) {
+  // AU105 · les brouillons de cet appareil, rangés par ce qu'ils concernent ; la sortie les efface.
+  var DRAFTS = 'aimmo.brouillons';
+  function dAll() { try { var a = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return a && typeof a === 'object' && !Array.isArray(a) ? a : {}; } catch (e) { return {}; } }
+  function dPut(a) { try { localStorage.setItem(DRAFTS, JSON.stringify(a)); return true; } catch (e) { return false; } }
+  var drafts = {
+    get: function (k) { var d = dAll()[k]; return d && typeof d === 'object' ? d : null; },
+    set: function (k, v) { var a = dAll(); a[k] = { at: new Date().toISOString(), value: v }; return dPut(a); },
+    drop: function (k) { var a = dAll(); if (k in a) { delete a[k]; dPut(a); } },
+  };
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)};
   var cur = null, seq = 0;
@@ -169,6 +178,22 @@ globalThis.AIMMO_AVIS = function (t) {
     text.value = r.text;
     text.setAttribute('rows', '12');
     function amount(f) { return Number(String(f.value).replace(/[\\s€]/g, '')); }
+    // AU105 · une correction non enregistrée reste sur cet appareil, pour cet avis, jusqu'à l'enregistrer ou l'abandonner.
+    var key = 'avis:' + r.id;
+    function keep() {
+      if (low.value === String(r.low) && high.value === String(r.high) && text.value === r.text) drafts.drop(key);
+      else drafts.set(key, { updatedAt: r.updatedAt, low: low.value, high: high.value, text: text.value });
+    }
+    [low, high, text].forEach(function (f) { f.addEventListener('input', keep); });
+    var kept = drafts.get(key);
+    if (kept && kept.value && typeof kept.value.text === 'string') {
+      var note = el('div', null, 'retard');
+      note.setAttribute('role', 'status');
+      note.appendChild(el('p', kept.value.updatedAt === r.updatedAt ? 'Une correction de cet avis n’a pas été enregistrée sur cet appareil.' : 'Une correction de cet avis n’a pas été enregistrée sur cet appareil, mais l’avis a changé depuis : relisez-la avant de l’enregistrer.'));
+      note.appendChild(button('Reprendre la correction', function () { low.value = String(kept.value.low); high.value = String(kept.value.high); text.value = kept.value.text; box.removeChild(note); }));
+      note.appendChild(button('Abandonner la correction', function () { drafts.drop(key); box.removeChild(note); }));
+      box.insertBefore(note, box.firstChild);
+    }
     function change() {
       var c = {};
       if (amount(low) !== r.low) c.low = amount(low);
@@ -193,6 +218,7 @@ globalThis.AIMMO_AVIS = function (t) {
       return save(c).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (!res.ok) { lock(false); state(why(res, 'Rien n’est enregistré : réessayez.')); return false; }
+        drafts.drop(key);
         return load('Enregistré.');
       });
     }));
@@ -206,6 +232,7 @@ globalThis.AIMMO_AVIS = function (t) {
       return send('/v1/avis/' + encodeURIComponent(r.id) + '/validation', 'POST', { updatedAt: r.updatedAt }).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (!res.ok) { lock(false); state(why(res, 'L’avis n’est pas validé : réessayez.')); return false; }
+        drafts.drop(key);
         return load('Avis validé.');
       });
     }));

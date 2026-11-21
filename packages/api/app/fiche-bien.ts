@@ -85,11 +85,24 @@ const LABELS: Record<string, string> = {
 export const FICHE_BIEN_SCRIPT = `'use strict';
 globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
+  // AU105 · chaque champ dessiné est suivi : une saisie non enregistrée devient un brouillon de cet appareil.
+  var tracking = null;
+  function fieldT(box, id, label, kind) { var f = field(box, id, label, kind); if (tracking) tracking.push(f); return f; }
+  function checkboxT(box, id, label) { var f = checkbox(box, id, label); if (tracking) tracking.push(f); return f; }
+  // AU105 · les brouillons de cet appareil, rangés par ce qu'ils concernent ; la sortie les efface.
+  var DRAFTS = 'aimmo.brouillons';
+  function dAll() { try { var a = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return a && typeof a === 'object' && !Array.isArray(a) ? a : {}; } catch (e) { return {}; } }
+  function dPut(a) { try { localStorage.setItem(DRAFTS, JSON.stringify(a)); return true; } catch (e) { return false; } }
+  var drafts = {
+    get: function (k) { var d = dAll()[k]; return d && typeof d === 'object' ? d : null; },
+    set: function (k, v) { var a = dAll(); a[k] = { at: new Date().toISOString(), value: v }; return dPut(a); },
+    drop: function (k) { var a = dAll(); if (k in a) { delete a[k]; dPut(a); } },
+  };
   var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, AMENITY = ${JSON.stringify(AMENITY)}, CONDITION = ${JSON.stringify(CONDITION)}, SURFACE_SOURCE = ${JSON.stringify(SURFACE_SOURCE)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
   var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
-    var f = field(box, id, label, 'select');
+    var f = fieldT(box, id, label, 'select');
     var blank = el('option', 'Je ne sais pas encore');
     blank.setAttribute('value', '');
     f.appendChild(blank);
@@ -105,12 +118,13 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
   function bool(v) { return v === 'oui' ? true : v === 'non' ? false : null; }
   function text(v) { return v === null || v === undefined ? '' : String(v); }
   function number(box, id, label, value) {
-    var f = field(box, id, label);
+    var f = fieldT(box, id, label);
     f.setAttribute('inputmode', 'numeric');
     f.value = text(value);
     return f;
   }
-  function draw(zone, o, version, sheet) {
+  function draw(zone, o, version, sheet, resumed) {
+    tracking = [];
     var c = sheet.characteristics || {}, e = sheet.energy || {}, k = sheet.coownership || {}, media = sheet.media || [];
     clear(zone);
     if (o.validated) zone.appendChild(el('p', 'Cette annonce est validée. Une nouvelle version de la fiche annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce qu’un texte à jour soit validé.', 'retard'));
@@ -123,12 +137,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     var dwelling = select(zone, 'fiche-bien-logement', 'Logement : maison ou appartement', DWELLING, c.dwelling);
     var outs = {};
     Object.keys(OUTDOOR).forEach(function (kind) {
-      outs[kind] = checkbox(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
+      outs[kind] = checkboxT(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
       outs[kind].checked = (c.outdoor || []).indexOf(kind) >= 0;
     });
     var ams = {};
     Object.keys(AMENITY).forEach(function (kind) {
-      ams[kind] = checkbox(zone, 'fiche-bien-equip-' + kind, AMENITY[kind]);
+      ams[kind] = checkboxT(zone, 'fiche-bien-equip-' + kind, AMENITY[kind]);
       ams[kind].checked = (c.amenities || []).indexOf(kind) >= 0;
     });
     var condition = select(zone, 'fiche-bien-etat', 'État du bien', CONDITION, c.condition || '');
@@ -136,8 +150,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     zone.appendChild(el('h4', 'Surfaces'));
     var srcs = c.surfaceSources || {};
     var surfaces = {
-      carrez: field(zone, 'fiche-bien-carrez', 'Surface Carrez (lot de copropriété), en m²'),
-      utile: field(zone, 'fiche-bien-utile', 'Surface utile (local, bureau), en m²'),
+      carrez: fieldT(zone, 'fiche-bien-carrez', 'Surface Carrez (lot de copropriété), en m²'),
+      utile: fieldT(zone, 'fiche-bien-utile', 'Surface utile (local, bureau), en m²'),
     };
     surfaces.carrez.setAttribute('inputmode', 'decimal');
     surfaces.utile.setAttribute('inputmode', 'decimal');
@@ -157,10 +171,10 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       annualCostMinEur: number(zone, 'fiche-bien-cout-min', 'Coût annuel le plus bas, en euros', e.annualCostMinEur),
       annualCostMaxEur: number(zone, 'fiche-bien-cout-max', 'Coût annuel le plus haut, en euros', e.annualCostMaxEur),
       // AU065 · une année, ou celles que le diagnostic cite (« 2021, 2022, 2023 »), telles qu'il les écrit.
-      costReferenceYear: field(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
-      diagnosedOn: field(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
+      costReferenceYear: fieldT(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
+      diagnosedOn: fieldT(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
       // AU064 · repris du diagnostic pour les portails, sans ressaisie ensuite.
-      ademeNumber: field(zone, 'fiche-bien-dpe-numero', 'Numéro ADEME du diagnostic (13 caractères)'),
+      ademeNumber: fieldT(zone, 'fiche-bien-dpe-numero', 'Numéro ADEME du diagnostic (13 caractères)'),
       primaryEnergyKwhM2: number(zone, 'fiche-bien-dpe-ep', 'Énergie primaire, en kWh/m²/an', e.primaryEnergyKwhM2),
       ghgKgM2: number(zone, 'fiche-bien-dpe-ges', 'Émissions, en kg CO₂/m²/an', e.ghgKgM2),
     };
@@ -261,7 +275,26 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     }
     var said = el('p', null, 'doux');
     said.setAttribute('role', 'status');
-    var start = JSON.stringify(read().sheet);
+    // Le point de départ est la fiche rangée : un brouillon repris ne devient pas la version lue.
+    var start = resumed ? resumed.start : JSON.stringify(read().sheet);
+    var key = 'fiche-bien:' + o.base;
+    var fields = tracking;
+    tracking = null;
+    function keep() {
+      var now = read().sheet, text = JSON.stringify(now);
+      if (text === start) drafts.drop(key); else drafts.set(key, { version: version, start: start, sheet: now });
+    }
+    fields.forEach(function (f) { f.addEventListener('input', keep); f.addEventListener('change', keep); });
+    var kept = resumed ? null : drafts.get(key);
+    if (kept && kept.value && kept.value.sheet && kept.value.start !== JSON.stringify(kept.value.sheet)) {
+      var note = el('div', null, 'retard');
+      note.setAttribute('role', 'status');
+      var same = Number(kept.value.version) === version;
+      note.appendChild(el('p', same ? 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil.' : 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil, mais la fiche a changé depuis : la reprendre repart de la version rangée, relisez chaque champ.'));
+      note.appendChild(button('Reprendre la saisie', function () { draw(zone, o, version, kept.value.sheet, { start: same ? kept.value.start : start }); }));
+      note.appendChild(button('Abandonner la saisie', function () { drafts.drop(key); zone.removeChild(note); }));
+      zone.insertBefore(note, zone.firstChild);
+    }
     var go = button('Enregistrer la fiche', function () {
       if (t.sending()) return;
       var form = read();
@@ -287,6 +320,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
             : 'La fiche n’a pas pu être rangée.';
           return false;
         }
+        drafts.drop(key);
         return t.saved(mine, res.body.data && res.body.data.version);
       });
     });

@@ -21,9 +21,9 @@ const BASE: Record<string, Answer> = {
   'GET /v1/annonces': ok([{ id: 'b1', reference: 'AV-1', city: 'Dijon', state: null }]),
 };
 
-async function run(answers: Record<string, Answer>) {
+async function run(answers: Record<string, Answer>, kept: Record<string, string> = {}) {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
-  const storage = new Map<string, string>([['aimmo.cle', KEY]]);
+  const storage = new Map<string, string>([['aimmo.cle', KEY], ...Object.entries(kept)]);
   const calls: Call[] = [];
   const table: Record<string, Answer> = { ...BASE, ...answers };
   const context: Record<string, unknown> = {
@@ -62,7 +62,7 @@ async function run(answers: Record<string, Answer>) {
     s[0]!.listeners.load!({});
     await settle();
   };
-  return { els, calls, table, body, state, byText, click, input, open };
+  return { els, calls, table, body, state, byText, click, input, open, storage };
 }
 
 describe('E10 · écran de l’avis de valeur', () => {
@@ -214,3 +214,40 @@ describe('E10 · écran de l’avis de valeur', () => {
     expect(AVIS_SCRIPT).not.toContain('innerHTML');
   });
 });
+
+describe('AU105 · une correction de l’avis non enregistrée se retrouve, ou s’abandonne en le disant', () => {
+  const answers = () => ({ 'GET /v1/biens/b1/avis': ok([DRAFT]), 'POST /v1/avis/r1/ajustement': ok({ ...DRAFT, text: 'Texte corrigé' }) });
+  it('[R276] saisie, écran quitté, application fermée puis rouverte : la correction revient, et part à l’enregistrement', async () => {
+    const t = await run(answers());
+    await t.open();
+    const text = t.input('avis-texte');
+    text.value = 'Texte corrigé';
+    text.listeners.input!({});
+    const kept = t.storage.get('aimmo.brouillons')!;
+    expect(JSON.parse(kept)['avis:r1']).toMatchObject({ value: { text: 'Texte corrigé', updatedAt: DRAFT.updatedAt } });
+    const again = await run(answers(), { 'aimmo.brouillons': kept });
+    await again.open();
+    expect(again.input('avis-texte').value).toBe(DRAFT.text);
+    expect(again.body().textContent).toContain('Une correction de cet avis n’a pas été enregistrée sur cet appareil.');
+    await again.click(again.byText('Reprendre la correction'));
+    expect(again.input('avis-texte').value).toBe('Texte corrigé');
+    await again.click(again.byText('Enregistrer'));
+    expect(again.calls.filter((c) => c.method === 'POST').at(-1)).toMatchObject({ url: '/v1/avis/r1/ajustement', body: { text: 'Texte corrigé' } });
+    expect(JSON.parse(again.storage.get('aimmo.brouillons')!)).toEqual({});
+  });
+
+  it('[R276] abandonner la correction la retire de l’appareil ; l’avis rangé reste tel quel', async () => {
+    const t = await run(answers());
+    await t.open();
+    const text = t.input('avis-texte');
+    text.value = 'Autre';
+    text.listeners.input!({});
+    const again = await run(answers(), { 'aimmo.brouillons': t.storage.get('aimmo.brouillons')! });
+    await again.open();
+    await again.click(again.byText('Abandonner la correction'));
+    expect(again.body().textContent).not.toContain('n’a pas été enregistrée');
+    expect(again.input('avis-texte').value).toBe(DRAFT.text);
+    expect(JSON.parse(again.storage.get('aimmo.brouillons')!)).toEqual({});
+  });
+});
+
