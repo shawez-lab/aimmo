@@ -22,7 +22,7 @@ async function setup(options: { site?: ApiConfig['cles']; apiKeys?: boolean; lim
     alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
     direction: { role: 'direction', userId: t.direction.userId, networkId: t.network.id },
   };
-  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), expiresOn: "2099-12-31", ...ids[w] }))));
   const config: ApiConfig = {
     db: t.db,
     apiKeys: options.apiKeys === false ? undefined : apiKeys,

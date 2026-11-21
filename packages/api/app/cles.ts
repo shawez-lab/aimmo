@@ -90,7 +90,7 @@ export const CLES_JS = `
         try { delete globalThis.AIMMO_CLES; } catch (e) { /* rien */ }
         if (mine !== session) { resolve(false); return; }
         if (typeof make !== 'function') { if (out) out.textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        clesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } });
+        clesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; }, handoff: function (text) { forgetKey(currentKey); refuse(text); } });
         resolve(act(clesTools));
       });
       s.addEventListener('error', function () {
@@ -239,6 +239,11 @@ globalThis.AIMMO_CLES = function (t) {
             var d = y.body.data || {};
             return whoAsk.then(function (i) {
               keepWho(i);
+              /* AU108 · la clé d'application vient de cesser : l'appareil entre désormais par sa propre clé. */
+              if (y.body.handoff === true && typeof t.handoff === 'function') {
+                t.handoff(d.status === 'actif' ? 'Clé de cet appareil rangée : elle est active. Entrez avec la clé de cet appareil.' : 'Clé de cet appareil rangée : elle attend l’accord de la direction. Une fois acceptée, entrez avec la clé de cet appareil.');
+                return true;
+              }
               return show(place, d.status === 'actif' ? 'Clé de cet appareil rangée : elle est active.' : 'Clé de cet appareil rangée : elle attend l’accord de la direction avant de servir.');
             });
           });

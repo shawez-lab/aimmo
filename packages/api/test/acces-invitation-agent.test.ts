@@ -20,8 +20,8 @@ async function setup() {
   const other = await store.createNetwork('Autre réseau');
   const stranger = await store.createAgent({ networkId: other.id, firstName: 'Lou', lastName: 'Ailleurs' });
   const apiKeys = JSON.stringify([
-    { sha256: await sha256Hex(DIRECTION_KEY), role: 'direction', userId: t.direction.userId, networkId: t.network.id },
-    { sha256: await sha256Hex(ALEX_SECRET_KEY), role: 'agent', userId: t.alexId, networkId: t.network.id },
+    { sha256: await sha256Hex(DIRECTION_KEY), expiresOn: "2099-12-31", role: 'direction', userId: t.direction.userId, networkId: t.network.id },
+    { sha256: await sha256Hex(ALEX_SECRET_KEY), expiresOn: "2099-12-31", role: 'agent', userId: t.alexId, networkId: t.network.id },
   ]);
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] } };
   const call = async (method: string, path: string, init: { bearer?: string; body?: unknown } = {}): Promise<{ status: number; body: Body }> => {
@@ -36,7 +36,7 @@ async function setup() {
     const c = await call('POST', '/cles/enregistrement/debut', { bearer });
     const done = await call('POST', '/cles/enregistrement/fin', { bearer, body: await device.register(c.body.data as Challenge) });
     if (done.status !== 200) throw new Error(`enregistrement ${done.body.code}`);
-    return { device, id: done.body.data.id as string, status: done.body.data.status as string };
+    return { device, id: done.body.data.id as string, status: done.body.data.status as string, handoff: (done.body as { handoff?: boolean }).handoff === true };
   };
   const prove = async (bearer: string, device: FakeAuthenticator, action: string, subject: string) => {
     const c = await call('POST', '/cles/preuve/debut', { bearer, body: { action, subject } });
@@ -200,7 +200,9 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     const appKey = opened.key!;
     const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
     expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(200);
-    const { device } = await t.enroll(appKey, 41);
+    const { device, handoff } = await t.enroll(appKey, 41);
+    // La réponse le dit à l'application, qui quitte la clé retirée.
+    expect(handoff).toBe(true);
     // Le constat de l'audit : la clé d'application restait un accès parallèle, permanent, gardé sur l'appareil.
     expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(401);
     expect((await t.journal.all()).filter((e) => e.type === 'acces.cle_application_retiree')).toEqual([
@@ -256,5 +258,12 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     expect(await status(today, new Date('2027-01-01T22:30:00.000Z'))).toBe(200);
     expect(await status(today, new Date('2027-01-01T23:30:00.000Z'))).toBe(401);
     expect(await status('01/01/2027', new Date('2026-12-01T10:00:00.000Z'))).toBe(503);
+    // Sans date de fin, avec les séances réglées, elle n'ouvre rien : ce serait un accès permanent à côté des séances.
+    expect(await status(undefined, new Date('2026-12-01T10:00:00.000Z'))).toBe(401);
+    const bare = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'agent', userId: t.sam.userId, networkId: t.network.id }]);
+    const without = { ...t.config, apiKeys: bare };
+    delete (without as { cles?: unknown }).cles;
+    // Sans site WebAuthn réglé, aucune séance n'existe : la clé reste le seul accès.
+    expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${KEY}` } }), without)).status).toBe(200);
   });
 });

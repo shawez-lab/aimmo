@@ -34,7 +34,7 @@ async function setup(limits?: ApiConfig['mcpPublicLimits']) {
     alexMcp: { role: 'agent', userId: t.alexId, networkId: t.network.id, scope: 'mcp' },
     samMcp: { role: 'agent', userId: t.sam.userId, networkId: t.network.id, scope: 'mcp' },
   };
-  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), expiresOn: "2099-12-31", ...ids[w] }))));
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] }, ...(limits ? { mcpPublicLimits: limits } : {}) };
   const send = async (path: string, init: { who?: Who; token?: string; method?: string; body?: unknown; raw?: string; ip?: string } = {}): Promise<{ status: number; body: Body | null }> => {
     const headers: Record<string, string> = {};

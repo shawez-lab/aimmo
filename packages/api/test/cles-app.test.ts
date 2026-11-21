@@ -153,6 +153,26 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     expect(t.storage.get('aimmo.appareil')).not.toContain(KEY);
   });
 
+  it('[R600] AU108 · la clé d’application cesse en rangeant celle de l’appareil : l’application la quitte et propose l’entrée par l’appareil', async () => {
+    const who = { networkId: 'n-1', role: 'agent', userId: 'agent-1' };
+    const t = await run({
+      'GET /v1/cles/mes-appareils': ok([]),
+      'GET /v1/cles/identite': ok(who),
+      'POST /v1/cles/enregistrement/fin': async () => Response.json({ ok: true, mode: 'essai', data: device({ id: 'd-4', label: 'Mon téléphone', status: 'actif' }), handoff: true }),
+    });
+    await t.voir();
+    t.input('cles-accueil-nom').value = 'Mon téléphone';
+    await t.click(t.find('Ranger la clé de cet appareil'));
+    await settle();
+    // Pas de rechargement de la liste avec la clé retirée : l'appareil retient qui il sert, la clé est effacée.
+    const after = t.calls.slice(t.calls.findIndex((c) => c.url === '/v1/cles/enregistrement/fin') + 1).map((c) => c.url);
+    expect(after).not.toContain('/v1/cles/mes-appareils');
+    expect(t.storage.get('aimmo.cle')).toBeUndefined();
+    expect(JSON.parse(t.storage.get('aimmo.appareil')!)).toEqual(who);
+    expect(t.els.erreur!.textContent).toBe('Clé de cet appareil rangée : elle est active. Entrez avec la clé de cet appareil.');
+    expect(t.els['entrer-appareil']!.hidden).toBe(false);
+  });
+
   it('[R600] la clé de cet appareil se range par navigator.credentials.create sur le défi du serveur ; la clé publique n’est jamais montrée', async () => {
     const t = await run();
     await t.voir();

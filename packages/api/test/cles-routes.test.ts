@@ -31,7 +31,7 @@ async function setup(site: ApiConfig['cles'] = { rpId: RP, origins: [ORIGIN] }) 
     partenaire: { role: 'partner', userId: 'partenaire-1', networkId: t.network.id },
     autre: { role: 'direction', userId: 'dir-9', networkId: other },
   };
-  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), expiresOn: "2099-12-31", ...ids[w] }))));
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: site };
   const http = async (who: Who, method: string, path: string, body?: unknown): Promise<{ status: number; body: Body }> => {
     const headers: Record<string, string> = { authorization: `Bearer ${KEYS[who]}` };
