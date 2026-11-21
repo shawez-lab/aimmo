@@ -458,7 +458,8 @@ export class FicheGoogle {
     const ref = typeof input.locationRef === 'string' ? input.locationRef.trim() : '';
     const title = typeof input.title === 'string' ? input.title.trim() : '';
     const site = typeof input.websiteUri === 'string' ? input.websiteUri.trim() : '';
-    if (!/^locations\/[A-Za-z0-9_-]{1,190}$/.test(ref) || title.length < 2 || title.length > 100 || /[<>]/.test(title) || !/^https:\/\/[^\s"'<>]{4,290}$/.test(site)) return { ok: false, rule: null, code: 'invalide' };
+    // AU037 : la référence complète (`accounts/…/locations/…`), qu'il faut à Google pour les avis et les publications.
+    if (!/^(?:accounts\/[0-9]{1,30}\/)?locations\/[A-Za-z0-9_-]{1,150}$/.test(ref) || title.length < 2 || title.length > 100 || /[<>]/.test(title) || !/^https:\/\/[^\s"'<>]{4,290}$/.test(site)) return { ok: false, rule: null, code: 'invalide' };
     if ((await checkGbpText(title, { kind: 'publication', authorTokenHashes: [], clientFirstNames: new Set(), clientLastNames: new Set() }, viewer.networkId)).length > 0) return { ok: false, rule: null, code: 'invalide' };
     await this.db.run('INSERT INTO gbp_locations (id, network_id, agent_id, location_ref, title, website_uri, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       this.newId(), viewer.networkId, agentId, ref, title, site, this.actor(viewer), this.now().toISOString(),
@@ -906,6 +907,17 @@ export class FicheGoogle {
     if (last?.error_code === 'connexion') return { state: 'a_reconnecter', action: 'reconnecter', info };
     if (last?.error_code === 'droits' || last?.error_code === 'fiche_introuvable') return { state: 'a_relier', action: 'relier', info };
     return { state: 'pret', action: null, info };
+  }
+
+  /**
+   * La mise à jour des informations de la fiche, demandée par la direction depuis l'écran (AU037) : en mode réel, elle
+   * rend l'accusé de Google, ou l'échec avec le geste qui le règle ; en essai, rien ne part [R26].
+   */
+  async sendInfo(viewer: Viewer, agentId: string): Promise<{ ok: true; changed: boolean; mode: 'essai' | 'reel' } | GbpRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const allowed = await this.allowed(viewer, agentId);
+    if (!allowed.ok) return allowed;
+    return this.syncInfo(viewer.networkId, agentId);
   }
 
   /** La fiche, ses avis et ses publications, chaque texte avec son état, décidé ici. Lecture seule. */

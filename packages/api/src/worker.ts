@@ -21,6 +21,7 @@ import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
 import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
+import { gbpFromEnv } from './fiche-google-reelle.ts';
 
 /**
  * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
@@ -61,6 +62,11 @@ export interface Env {
   META_IG_USER_ID?: string;
   META_PAGE_TOKEN?: string;
   RESEAUX_MEDIA_BASE?: string;
+  /** AU037 : `reel` met en service la vraie fiche Google, avec `GBP_CLIENT_ID`, `GBP_CLIENT_SECRET` et `GBP_REFRESH_TOKEN` (deux secrets). */
+  GBP_MODE?: string;
+  GBP_CLIENT_ID?: string;
+  GBP_CLIENT_SECRET?: string;
+  GBP_REFRESH_TOKEN?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
   /** L'adresse du fichier JSON du registre des gels (BR85) ; absente, celle de la documentation de la DG Trésor. */
@@ -215,6 +221,8 @@ export default {
       // AU025 : le bac à sable vit dans sa propre base D1, avec les migrations du réseau et aucune de ses lignes.
       reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null, sandbox: sandboxOptions(env) },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      // AU037 : la vraie fiche Google seulement quand tout est rangé (H07) ; sinon, essai.
+      attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,

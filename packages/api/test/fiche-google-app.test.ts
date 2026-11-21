@@ -345,12 +345,12 @@ describe('AT14 · écran « Fiche Google »', () => {
 
     it('elle règle la fiche ; un refus est dit en français', async () => {
       const t = await direction({ 'POST /v1/attirer/google/agents/ag-1/fiche': no(400, { ok: false, rule: null, code: 'invalide' }) });
-      expect(t.input('Référence de la fiche chez Google (locations/…)').value).toBe('locations/42');
+      expect(t.input('Référence de la fiche chez Google (accounts/…/locations/…)').value).toBe('locations/42');
       t.input('Nom affiché sur la fiche').value = 'Camille Essai';
-      t.input('Référence de la fiche chez Google (locations/…)').value = 'locations/43';
+      t.input('Référence de la fiche chez Google (accounts/…/locations/…)').value = 'locations/43';
       await t.click(t.buttons('Enregistrer la fiche')[0]);
       expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ title: 'Camille Essai', locationRef: 'locations/43', websiteUri: LOCATION.websiteUri });
-      expect(t.state()).toContain('référence qui commence par locations/');
+      expect(t.state()).toContain('une référence accounts/…/locations/…');
       t.table['POST /v1/attirer/google/agents/ag-1/fiche'] = ok(null);
       await t.click(t.buttons('Enregistrer la fiche')[0]);
       expect(t.state()).toBe('Fiche enregistrée.');

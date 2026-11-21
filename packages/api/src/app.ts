@@ -259,10 +259,11 @@ export interface ApiConfig {
   gagner?: Pick<GagnerServices, 'proofs' | 'uploads' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
   /**
    * M01 (AT11) : les IA des réponses aux avis et des pages de quartier (absentes, les textes de secours contrôlés). Les
-   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow et la fiche Google réelle ne sont
-   * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
+   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow n'est jamais passé d'ici : aucune
+   * page n'est indexée en mode essai [R26]. AU037 : `gbp` est le vrai client de la fiche Google, rangé par le Worker
+   * seulement quand tout est réglé (H07) ; il met la fiche seule en mode réel.
    */
-  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter' | 'gbp'>;
   /**
    * La copropriété et l'urbanisme résumés (RC52, BR87) : la Base adresse nationale, le Géoportail de l'urbanisme et le
    * lecteur IA de la prélecture. Absents, le géocodeur de l'estimation et le Géoportail lu par `fetchPublicData` ; sans
@@ -1846,7 +1847,7 @@ function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   }));
 }
 
-/** Les services de M01 sur ceux du socle, toujours en mode essai : ni IndexNow ni fiche Google réels [R26]. */
+/** Les services de M01 sur ceux du socle, en mode essai : IndexNow n'est jamais réel ; la fiche Google l'est avec son vrai client (AU037) [R26]. */
 function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'estimationLimits' | 'attirer' | 'candidatureNetworkId'>): AttirerServices {
   const diffusion = new Diffusion(db, acces, journal, { now });
   return {
@@ -1856,7 +1857,8 @@ function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: 
     mode: 'essai',
     priceSales: config.estimation?.sales ?? null,
     indexNow: null,
-    gbp: null,
+    gbp: config.attirer?.gbp ?? null,
+    gbpMode: config.attirer?.gbp ? 'reel' : 'essai',
     gbpWriter: config.attirer?.gbpWriter ?? null,
     neighbourhoodWriter: config.attirer?.neighbourhoodWriter ?? null,
     diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
