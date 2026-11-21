@@ -269,6 +269,38 @@ export function readTargeting(raw: unknown): AdResult<{ communes: string[]; radi
   return { ok: true, value: { communes: [...communes].sort(), radiusKm: typeof r === 'number' ? r : null } };
 }
 
+export interface AdArrivalSignals {
+  link?: unknown;
+  landingPage?: unknown;
+}
+
+/**
+ * Une demande arrivée par le lien d'une campagne lancée (AU038) : un seul code `o`, celui d'une campagne du réseau.
+ * Seuls le message et la campagne sont gardés, jamais l'adresse de la page [R156]. Rangée une fois ; elle devient un
+ * contact de la campagne au rapprochement, quand le message est rattaché à une fiche [R588].
+ */
+export async function recordAdArrival(db: SqlDatabase, journal: JournalStore, now: () => Date, networkId: string, inboundId: string, signals: AdArrivalSignals): Promise<{ campaignId: string } | null> {
+  for (const raw of [signals.link, signals.landingPage]) {
+    if (typeof raw !== 'string' || raw.length > 2_000) continue;
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      continue;
+    }
+    const codes = url.searchParams.getAll(CARRIER);
+    if (codes.length !== 1) continue;
+    const c = await db.first<{ id: string }>('SELECT c.id FROM ad_campaigns c WHERE c.code = ? AND c.network_id = ? AND EXISTS (SELECT 1 FROM ad_campaign_starts s WHERE s.campaign_id = c.id)', [codes[0]!, networkId]);
+    if (!c) continue;
+    const m = await db.first<{ received_at: string }>('SELECT received_at FROM inbound_messages WHERE id = ? AND network_id = ?', [inboundId, networkId]);
+    if (!m) return null;
+    const { changes } = await db.run('INSERT INTO ad_campaign_arrivals (inbound_id, campaign_id, network_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [inboundId, c.id, networkId, m.received_at]);
+    if (changes === 1) await appendEvent(journal, { type: 'publicite.demande', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, now);
+    return { campaignId: c.id };
+  }
+  return null;
+}
+
 export class PublicitePayante {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -771,33 +803,9 @@ export class PublicitePayante {
     return { days, failures };
   }
 
-  /**
-   * Une demande arrivée par le lien d'une campagne lancée : un seul code `o`, celui d'une campagne du réseau. Seuls le
-   * message et la campagne sont gardés, jamais l'adresse de la page [R156]. Rangée une fois.
-   */
-  async recordArrival(networkId: string, inboundId: string, signals: { link?: string | null | undefined; landingPage?: string | null | undefined }): Promise<{ campaignId: string } | null> {
-    for (const raw of [signals.link, signals.landingPage]) {
-      if (typeof raw !== 'string' || raw.length > 2_000) continue;
-      let url: URL;
-      try {
-        url = new URL(raw);
-      } catch {
-        continue;
-      }
-      const codes = url.searchParams.getAll(CARRIER);
-      if (codes.length !== 1) continue;
-      const c = await this.db.first<{ id: string }>(
-        'SELECT c.id FROM ad_campaigns c WHERE c.code = ? AND c.network_id = ? AND EXISTS (SELECT 1 FROM ad_campaign_starts s WHERE s.campaign_id = c.id)',
-        [codes[0]!, networkId],
-      );
-      if (!c) continue;
-      const m = await this.db.first<{ received_at: string }>('SELECT received_at FROM inbound_messages WHERE id = ? AND network_id = ?', [inboundId, networkId]);
-      if (!m) return null;
-      const { changes } = await this.db.run('INSERT INTO ad_campaign_arrivals (inbound_id, campaign_id, network_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [inboundId, c.id, networkId, m.received_at]);
-      if (changes === 1) await appendEvent(this.journal, { type: 'publicite.demande', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
-      return { campaignId: c.id };
-    }
-    return null;
+  /** Une demande arrivée par le lien d'une campagne lancée, rangée une fois (voir `recordAdArrival`). */
+  async recordArrival(networkId: string, inboundId: string, signals: AdArrivalSignals): Promise<{ campaignId: string } | null> {
+    return recordAdArrival(this.db, this.journal, this.now, networkId, inboundId, signals);
   }
 
   /** Le rapprochement : chaque demande arrivée par une campagne et désormais rattachée à une fiche en devient un contact [R588]. */

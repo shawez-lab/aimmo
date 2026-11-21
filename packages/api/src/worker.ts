@@ -22,6 +22,7 @@ import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
 import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
 import { gbpFromEnv } from './fiche-google-reelle.ts';
+import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
 
 /**
  * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
@@ -67,6 +68,26 @@ export interface Env {
   GBP_CLIENT_ID?: string;
   GBP_CLIENT_SECRET?: string;
   GBP_REFRESH_TOKEN?: string;
+  /**
+   * AU038 : `ADS_MODE` = `reel` met en service la publicité payante avec son plafond (`ADS_PLAFOND_CENTS`), sa page
+   * d'arrivée, les lieux des communes et les réglages de chaque plateforme (`publicite-reelle.ts`, H63).
+   */
+  ADS_MODE?: AdsEnv['ADS_MODE'];
+  ADS_PLAFOND_CENTS?: string;
+  ADS_LANDING_URL?: string;
+  ADS_LIEUX?: string;
+  GOOGLE_ADS_CLIENT_ID?: string;
+  GOOGLE_ADS_CLIENT_SECRET?: string;
+  GOOGLE_ADS_REFRESH_TOKEN?: string;
+  GOOGLE_ADS_DEVELOPER_TOKEN?: string;
+  GOOGLE_ADS_CUSTOMER_ID?: string;
+  GOOGLE_ADS_LOGIN_CUSTOMER_ID?: string;
+  GOOGLE_ADS_MOTS?: string;
+  GOOGLE_ADS_TITRES?: string;
+  GOOGLE_ADS_TEXTES?: string;
+  META_ADS_TOKEN?: string;
+  META_ADS_ACCOUNT_ID?: string;
+  META_ADS_TEXTE?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
   /** L'adresse du fichier JSON du registre des gels (BR85) ; absente, celle de la documentation de la DG Trésor. */
@@ -223,6 +244,8 @@ export default {
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
       // AU037 : la vraie fiche Google seulement quand tout est rangé (H07) ; sinon, essai.
       attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },
+      // AU038 : la publicité payante réelle, plateforme par plateforme, seulement quand tout est rangé (H63).
+      ads: adsFromEnv(env, fetch.bind(globalThis)),
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
@@ -307,6 +330,11 @@ export default {
     if (env.MODE === TRIAL_MODE && social) {
       const db = fromD1(env.DB);
       await runLiveWithdrawals(db, new SqlJournalStore(db), () => new Date(), social);
+    }
+    // AU038 : les demandes venues des campagnes rapprochées, la dépense lue chez la plateforme, le seuil contrôlé [R588].
+    {
+      const db = fromD1(env.DB);
+      await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));
     }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {

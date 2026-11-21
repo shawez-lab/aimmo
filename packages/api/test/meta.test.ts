@@ -399,6 +399,10 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // chaque réponse ou publication est validée par un humain (R154), la mise à jour est un geste de la
               // direction. Ce ne sont pas des messages à une personne.
               'attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },',
+              // La vraie publicité payante (AU038), seulement mise en service quand tout est rangé (H63) : chaque
+              // campagne est validée par la direction, sous un plafond [R587]. Ce ne sont pas des messages à une personne.
+              'ads: adsFromEnv(env, fetch.bind(globalThis)),',
+              'await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));',
       // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
       '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
               // Le fichier public du registre des gels de la DG Trésor (BR85), lu en GET au seul appui du responsable de
