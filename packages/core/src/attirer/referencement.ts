@@ -22,7 +22,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { sitePaths } from './accueil-site.ts';
-import { LEGAL_PATHS, MentionsSite } from './mentions-site.ts';
+import { LEGAL_PATHS, MentionsSite, siteReady } from './mentions-site.ts';
 import { PageAgent } from './page-agent.ts';
 import { ProgrammesNeufs } from '../neuf-viager/neuf.ts';
 
@@ -454,8 +454,9 @@ export class Referencement {
    * service est rangée « echec » et au journal, sans données, puis la page est signalée de nouveau au passage suivant.
    */
   async signalChanges(networkId: string): Promise<{ mode: SeoMode; signalled: number; failed: number }> {
-    // Une mention légale manque : le site reste en essai, rien ne part aux moteurs [R221].
-    const complete = this.mode === 'reel' && (await new MentionsSite(this.db, this.journal, { now: this.now }).read(networkId)).missing.length === 0;
+    // Une mention légale manque, ou une preuve de mise en service n'est pas valide : le site reste en essai, rien ne
+    // part aux moteurs [R221, R675].
+    const complete = this.mode === 'reel' && siteReady(await new MentionsSite(this.db, this.journal, { now: this.now }).read(networkId));
     const mode: SeoMode = complete ? 'reel' : 'essai';
     const current = await this.currentPages(networkId);
     const last = await this.db.all<{ url: string; change: SeoChange; fingerprint: string }>(

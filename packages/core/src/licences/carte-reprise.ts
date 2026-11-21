@@ -99,7 +99,7 @@ export const TABLES_RESEAU: readonly string[] = `
   sign_pickup_tasks sign_placements sign_removals signature_circuit_annexes signature_circuit_events
   signature_circuit_signers signature_circuits signature_dossiers signature_remises signature_session_proxies signature_sessions signature_validations
   signed_amendments signed_documents signs
-  site_legal_mentions site_page_views social_calendar_rules social_calendar_slots social_posts
+  site_legal_mentions launch_proofs site_page_views social_calendar_rules social_calendar_slots social_posts
   sources sponsorships studio_option_requests supplier_invoice_reads supplier_invoices 
    thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
@@ -390,7 +390,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   referral_requests referral_settings referrals region_decisions registry_review_alerts registry_reviews
   rental_lease_templates reprise_avancement review_requests satisfaction_answers satisfaction_tokens
   security_challenges security_sessions security_step_ups security_devices send_quota_slots seo_signals
-  service_commitments shop_tariffs signs site_legal_mentions supplier_invoices supplier_invoice_reads
+  service_commitments shop_tariffs signs site_legal_mentions launch_proofs supplier_invoices supplier_invoice_reads
   thank_you_tasks training_cases verified_review_invites verified_reviews viager_calculations visit_slip_templates
   voice_notes networks rental_sends
 `.trim().split(/\s+/);
