@@ -467,6 +467,10 @@ describeWithSqlite('AU091 · une baisse d’honoraires signée après le comprom
     await avenant(t, 7000, '2027-04-20T09:00:00.000Z', 3);
     expect(await t.commissions().regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.' })).toEqual({ ok: false, rule: null, code: 'partage_inconnu' });
     expect((await t.db.all<{ kind: string }>('SELECT kind FROM commission_shares WHERE file_id = ? ORDER BY seq', [t.fileId])).map((x) => x.kind)).toEqual(['reseau', 'agent', 'partage', 'parrainage']);
+    // Un partage disparu depuis le compromis : les parts ne changeraient pas que de montant, refus, rien n'est écrit [R17].
+    const solo = t.commissions({ partages: { of: async () => [] }, primes: { of: async () => ({ parrainId: 'parrain-1', amountCents: 1 }) } });
+    expect(await solo.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.' })).toEqual({ ok: false, rule: null, code: 'parts_changees' });
+    await expect(t.db.run('UPDATE commission_shares SET amount_cents = 1 WHERE file_id = ? AND seq = 1', [t.fileId])).rejects.toThrow();
     // Une vue d'écran ancienne ne rejoue rien.
     expect(await c.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
   });

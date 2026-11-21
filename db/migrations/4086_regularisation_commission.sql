@@ -1,7 +1,7 @@
 -- AU091 · Régularisation d'une commission prévue après une baisse (ou une hausse) d'honoraires signée après le compromis
 -- [R678, R63, R67, R69, R17]. La direction approuve, avec son motif, un recalcul fait par le code depuis l'avenant signé
 -- en vigueur : jamais un montant saisi. Chaque version garde les honoraires et les parts d'avant et d'après ; la
--- commission et ses parts ne changent que par une version rangée dans la même écriture, et seulement tant que la
+-- commission et le montant de ses parts ne changent que par une version rangée dans la même écriture, et seulement tant que la
 -- commission n'est pas due (rien n'est facturé ni versé). Une vente avec une agence partenaire (HX59) ne se régularise
 -- pas ici : sa part et son relevé restent ceux du compromis (AU091b).
 CREATE TABLE IF NOT EXISTS commission_revisions (
@@ -51,15 +51,20 @@ WHEN NOT (
 )
 BEGIN SELECT RAISE(ABORT, 'commissions : rien ne change'); END;
 
--- Les parts d'avant ne s'effacent que dans l'écriture d'une version qui les garde, pas encore appliquée.
-DROP TRIGGER IF EXISTS commission_shares_garde;
-CREATE TRIGGER IF NOT EXISTS commission_shares_garde BEFORE DELETE ON commission_shares
+-- Les parts gardent leur rang, leur sorte et leur bénéficiaire : seul leur montant change, à celui que la dernière
+-- version, pas encore appliquée, a rangé pour ce rang. Rien ne s'efface.
+DROP TRIGGER IF EXISTS commission_shares_fige;
+CREATE TRIGGER IF NOT EXISTS commission_shares_fige BEFORE UPDATE ON commission_shares
 WHEN NOT (
-  EXISTS (
+  NEW.file_id IS OLD.file_id AND NEW.seq IS OLD.seq AND NEW.kind IS OLD.kind
+  AND NEW.beneficiary_id IS OLD.beneficiary_id AND NEW.reason IS OLD.reason
+  AND EXISTS (
     SELECT 1 FROM commission_revisions r JOIN commissions c ON c.file_id = r.file_id
      WHERE r.file_id = OLD.file_id AND r.fee_before_cents = c.fee_cents AND r.charge_before IS c.fee_charge
        AND r.version = (SELECT MAX(x.version) FROM commission_revisions x WHERE x.file_id = OLD.file_id)
+       AND json_extract(r.shares_after, '$[' || (OLD.seq - 1) || '].amountCents') IS NEW.amount_cents
+       AND json_extract(r.shares_after, '$[' || (OLD.seq - 1) || '].kind') IS OLD.kind
   )
   AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = OLD.file_id AND s.status <> 'prevue')
 )
-BEGIN SELECT RAISE(ABORT, 'commission_shares : rien ne s''efface'); END;
+BEGIN SELECT RAISE(ABORT, 'commission_shares : rien ne change'); END;
