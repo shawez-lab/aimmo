@@ -55,6 +55,8 @@ export interface ReminderFacts {
   alreadySent?: number;
   label: string;
   amountCents: number;
+  /** AU094 · ce qui en est déjà reçu par des parts de lignes de banque. */
+  receivedCents?: number;
   issuedOn: string;
   dueOn: string;
 }
@@ -67,7 +69,9 @@ export function unpaidReminderText(f: ReminderFacts): string {
   return [
     hello,
     '',
-    `la facture ${f.label} de ${euros(f.amountCents)} €, émise le ${frenchDay(f.issuedOn)}, arrivait à échéance le ${frenchDay(f.dueOn)}. Elle n'apparaît pas encore dans nos encaissements.`,
+    f.receivedCents && f.receivedCents > 0
+      ? `la facture ${f.label} de ${euros(f.amountCents)} €, émise le ${frenchDay(f.issuedOn)}, arrivait à échéance le ${frenchDay(f.dueOn)}. Nous en avons reçu ${euros(f.receivedCents)} € ; ${euros(f.amountCents - f.receivedCents)} € n'apparaissent pas encore dans nos encaissements.`
+      : `la facture ${f.label} de ${euros(f.amountCents)} €, émise le ${frenchDay(f.issuedOn)}, arrivait à échéance le ${frenchDay(f.dueOn)}. Elle n'apparaît pas encore dans nos encaissements.`,
     ...(f.alreadySent ? ['', `C'est notre ${ORDINALS[Math.min(f.alreadySent, ORDINALS.length - 1)]} message à ce sujet.`] : []),
     '',
     'Si elle a déjà été réglée, par vous ou par l’étude du notaire, une simple réponse à ce message nous permet de mettre nos comptes à jour.',
@@ -77,7 +81,8 @@ export function unpaidReminderText(f: ReminderFacts): string {
 /** Les chiffres permis dans le texte : ceux de la facture, tels que le texte les écrit [R10]. */
 function figuresOf(f: ReminderFacts): string[] {
   // Passés tels que le texte les écrit : le contrôle en tire lui-même les nombres (« 10 000,00 » reste 10000.00).
-  return [f.label, `${euros(f.amountCents)} €`, frenchDay(f.issuedOn), frenchDay(f.dueOn)];
+  const received = f.receivedCents && f.receivedCents > 0 ? [`${euros(f.receivedCents)} €`, `${euros(f.amountCents - f.receivedCents)} €`] : [];
+  return [f.label, `${euros(f.amountCents)} €`, ...received, frenchDay(f.issuedOn), frenchDay(f.dueOn)];
 }
 
 type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' };
@@ -115,7 +120,9 @@ export class RelancesImpayes {
     const at = this.now().toISOString();
     await this.db.run(
       `UPDATE invoice_reminders SET status = 'close', rule = 'rapprochee', updated_at = ? WHERE network_id = ? AND status IN ('a_valider', 'validee')
-         AND EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = invoice_reminders.invoice_id)`,
+         AND (EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = invoice_reminders.invoice_id)
+           OR (SELECT COALESCE(SUM(a.amount_cents), 0) FROM bank_allocations a WHERE a.invoice_id = invoice_reminders.invoice_id)
+              >= (SELECT i.amount_cents FROM invoices i WHERE i.id = invoice_reminders.invoice_id))`,
       [at, networkId],
     );
     await this.db.run(
@@ -139,9 +146,16 @@ export class RelancesImpayes {
     await this.closeSettled(networkId);
   }
 
+  /** AU094 · ce qu'une facture a déjà reçu par des parts de lignes de banque. */
+  private async receivedOf(invoiceId: string): Promise<number> {
+    return Number((await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM bank_allocations WHERE invoice_id = ?', [invoiceId]))?.n ?? 0);
+  }
+
   /** Pourquoi une facture n'est plus impayée : rapprochée, corrigée par un avoir, encaissée ; `null` si elle l'est encore. */
   private async settled(invoiceId: string): Promise<'rapprochee' | 'avoir' | 'encaissee' | null> {
     if (await this.db.first('SELECT 1 FROM bank_reconciliations WHERE invoice_id = ?', [invoiceId])) return 'rapprochee';
+    // AU094 · soldée par des parts de lignes de banque, au centime.
+    if (await this.db.first('SELECT 1 FROM invoices i WHERE i.id = ? AND (SELECT COALESCE(SUM(a.amount_cents), 0) FROM bank_allocations a WHERE a.invoice_id = i.id) >= i.amount_cents', [invoiceId])) return 'rapprochee';
     if (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [invoiceId])) return 'avoir';
     if (await this.db.first('SELECT 1 FROM invoices i JOIN commission_receipts cr ON cr.file_id = i.file_id WHERE i.id = ?', [invoiceId])) return 'encaissee';
     return null;
@@ -157,6 +171,7 @@ export class RelancesImpayes {
        FROM invoices i JOIN invoice_drafts d ON d.id = i.draft_id
        WHERE i.network_id = ? AND i.kind = 'honoraires' AND i.issued_on <= ?
          AND NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = i.id)
+         AND (SELECT COALESCE(SUM(p.amount_cents), 0) FROM bank_allocations p WHERE p.invoice_id = i.id) < i.amount_cents
          AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = i.id)
          AND NOT EXISTS (SELECT 1 FROM commission_receipts cr WHERE cr.file_id = i.file_id)
        ORDER BY i.issued_on, i.number`,
@@ -165,9 +180,11 @@ export class RelancesImpayes {
     let made = 0;
     for (const inv of invoices) {
       if (!inv.person_id) continue;
-      const last = await this.db.first<{ rank: number; status: ReminderStatus; updated_at: string }>('SELECT rank, status, updated_at FROM invoice_reminders WHERE invoice_id = ? ORDER BY rank DESC LIMIT 1', [inv.id]);
+      const last = await this.db.first<{ rank: number; status: ReminderStatus; rule: string | null; updated_at: string }>('SELECT rank, status, rule, updated_at FROM invoice_reminders WHERE invoice_id = ? ORDER BY rank DESC LIMIT 1', [inv.id]);
       if (last) {
-        if (last.status === 'a_valider' || last.status === 'validee' || last.status === 'close') continue;
+        // Fermée par une nouvelle part de paiement (AU094) : le reste dû se relance, avec son montant à jour.
+        const replaced = last.status === 'close' && last.rule === 'paiement_partiel';
+        if (last.status === 'a_valider' || last.status === 'validee' || (last.status === 'close' && !replaced)) continue;
         if (last.rank >= MAX_REMINDERS) continue;
         if (today < addDays(todayInParis(new Date(last.updated_at)), this.gapDays)) continue;
       }
@@ -178,6 +195,7 @@ export class RelancesImpayes {
         alreadySent: sentBefore?.n ?? 0,
         label: inv.label,
         amountCents: inv.amount_cents,
+        receivedCents: await this.receivedOf(inv.id),
         issuedOn: inv.issued_on,
         dueOn: addDays(inv.issued_on, this.paymentDays),
       };
@@ -248,7 +266,7 @@ export class RelancesImpayes {
       if (claim.changes !== 1) continue;
       const inv = await this.db.first<{ amount_cents: number; issued_on: string; label: string }>(`SELECT amount_cents, issued_on, ${LABEL_SQL()} AS label FROM invoices WHERE id = ?`, [r.invoice_id]);
       if (!inv) continue;
-      const facts: ReminderFacts = { firstName: null, label: inv.label, amountCents: inv.amount_cents, issuedOn: inv.issued_on, dueOn: addDays(inv.issued_on, this.paymentDays) };
+      const facts: ReminderFacts = { firstName: null, label: inv.label, amountCents: inv.amount_cents, receivedCents: await this.receivedOf(r.invoice_id), issuedOn: inv.issued_on, dueOn: addDays(inv.issued_on, this.paymentDays) };
       const result = await this.controle.send({
         networkId,
         agentId: r.agent_id,

@@ -17,6 +17,7 @@ import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReade
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
+import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -86,6 +87,23 @@ export interface Env {
   ESPACE_BASE?: string;
   /** Secret : les clés du relevé prouvé de l'espace, `nom:secret` séparées par des virgules ; absent, relevé indisponible [R164]. */
   ESPACE_RELEVE_KEYS?: string;
+  /** AU034 : l'adresse https des annonces du fournisseur de pige retenu par le réseau ; absente, aucune relève. */
+  PIGE_SOURCE_URL?: string;
+  /** AU034, secret : la clé donnée par le fournisseur de pige. */
+  PIGE_SOURCE_TOKEN?: string;
+  /** AU034 : le réseau dont le fournisseur couvre le secteur ; seul lui relève. */
+  PIGE_NETWORK_ID?: string;
+}
+
+/** Les réglages du fournisseur de pige (AU034), tels quels : leur forme est contrôlée par la couche métier. */
+export function pigeProvider(env: Pick<Env, 'PIGE_SOURCE_URL' | 'PIGE_SOURCE_TOKEN' | 'PIGE_NETWORK_ID'>): PigeProviderSettings {
+  return { url: env.PIGE_SOURCE_URL, token: env.PIGE_SOURCE_TOKEN, networkId: env.PIGE_NETWORK_ID };
+}
+
+/** Le vrai fournisseur de pige, seulement quand aucun réglage ne manque ; sinon aucune source [R671]. */
+export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {
+  if (missingPigeSettings(settings).length > 0) return null;
+  return { networkId: (settings.networkId ?? '').trim(), source: new HttpPigeSource(fetcher, { url: settings.url ?? '', token: settings.token ?? '' }) };
 }
 
 /** L'adresse du registre des gels : une adresse https seule, sinon celle de la documentation de la DG Trésor (BR85). */
@@ -190,6 +208,9 @@ export default {
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
       ...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),
+      // AU034 : le vrai fournisseur de la pige, et ses réglages pour l'état de la relève [R671].
+      pigeSource: pigeSourceOf(pigeProvider(env))?.source ?? null,
+      pigeProvider: pigeProvider(env),
       // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
       registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       // BR87 : la zone du résumé de copropriété lue en GET à la Base adresse nationale puis au Géoportail, au seul appui
@@ -234,6 +255,8 @@ export default {
       // BR112 : le calendrier de publication lit les certificats et les accords dans `MEDIA` ; la lettre attend son lien.
       studioFiles: env.MEDIA ? mediaFiles(env.MEDIA) : null,
       letterUnsubscribeBase: letterUnsubscribeBase(env.LETTRE_DESINSCRIPTION_BASE),
+      // AU034 : la relève quotidienne de la pige, seulement avec le fournisseur réglé.
+      pigeProvider: pigeSourceOf(pigeProvider(env)),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));

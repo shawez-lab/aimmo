@@ -344,6 +344,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
+      // AU034 : les passages de la relève, des nombres et une raison de panne de liste fermée, jamais une annonce.
+      pige_runs: [],
       pige_ads: ['commune', 'postal_code'],
       pige_oppositions: ['noted_by'],
       pige_drafts: ['agent_id', 'body'],
@@ -515,6 +517,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       supplier_invoices: ['vat_lines', 'recorded_by'],
       bank_lines: ['amount_cents', 'imported_by'],
       bank_reconciliations: ['by'],
+      bank_allocations: ['amount_cents', 'by'],
       invoice_reminders: ['person_id', 'text', 'validated_by'],
       // HX65 : le poste de chaque facture fournisseur et les réglages du coût complet de l'agent moyen.
       agent_cost_assignments: ['assigned_by'],
@@ -1294,6 +1297,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
+  pige_runs: ['id', 'network_id', 'ran_at', 'outcome', 'received', 'added', 'no_agency', 'outside', 'unreadable', 'failure'],
   pige_ads: ['id', 'network_id', 'source', 'source_ref', 'fingerprint', 'kind', 'surface_m2', 'rooms', 'price_eur', 'published_at', 'collected_at'],
   pige_oppositions: ['network_id', 'fingerprint', 'noted_at'],
   pige_drafts: ['id', 'network_id', 'fingerprint', 'ad_id', 'gap_pct', 'market_source', 'market_last_sale', 'created_at'],
@@ -1444,6 +1448,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   supplier_invoices: ['id', 'network_id', 'read_id', 'supplier', 'number', 'issued_on', 'ht_cents', 'vat_cents', 'ttc_cents', 'corrected', 'created_at'],
   bank_lines: ['id', 'network_id', 'day', 'invoice_refs', 'created_at'],
   bank_reconciliations: ['line_id', 'invoice_id', 'network_id', 'mode', 'created_at'],
+  bank_allocations: ['line_id', 'invoice_id', 'network_id', 'created_at'],
   invoice_reminders: ['id', 'network_id', 'invoice_id', 'rank', 'status', 'rule', 'message_id', 'sending_at', 'prepared_at', 'validated_at', 'updated_at'],
   agent_cost_assignments: ['invoice_id', 'network_id', 'version', 'category', 'assigned_at'],
   agent_cost_settings: ['network_id', 'version', 'valid_from', 'provision_bp', 'margin_bp', 'set_at'],

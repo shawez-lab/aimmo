@@ -2,7 +2,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { GAGNER_SCRIPT } from '../app/gagner.ts';
-import { PIGE_REFUSALS, PIGE_SCRIPT } from '../app/pige.ts';
+import { PIGE_ALERTS, PIGE_REFUSALS, PIGE_SCRIPT } from '../app/pige.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -80,6 +80,7 @@ const BASE: Record<string, Answer> = {
   'GET /v1/gagner/lettres': ok({ campaigns: [], properties: [] }),
   'GET /v1/pige': ok(QUEUE),
   'GET /v1/pige/rapport': ok(REPORT),
+  'GET /v1/pige/etat': ok({ configured: true, missing: [], lastCollectedAt: '2027-10-09T05:00:00.000Z', lastRun: { at: '2027-10-09T05:00:00.000Z', outcome: 'ok', reason: null, received: 4, added: 1 }, alert: null }),
   'POST /v1/pige/annonces/a1/message': ok({ draftId: 'd1', body: 'Bonjour', sent: false }),
   'POST /v1/pige/messages/d2/validation': ok({ body: 'Bonjour, texte remis à coller.', channel: 'annonce', sent: false, toPaste: true }),
   'POST /v1/pige/annonces/a1/adresses': ok(PROPOSAL),
@@ -329,5 +330,36 @@ describe('BR33 · écran de la pige des annonces de particuliers', () => {
     expect(text.match(/Ma file \(/g)).toHaveLength(1);
     expect(text.match(/Ce que la pige vous a rapporté/g)).toHaveLength(1);
     expect(text).toContain('Ma file (3)');
+  });
+
+  it('[R671] la date de la dernière relève est dite en tête ; une panne est dite en mots, jamais par son code', async () => {
+    let t = await run();
+    await t.openPige();
+    let text = t.pigePart().textContent;
+    expect(text).toMatch(/Annonces relevées le /);
+    expect(text).not.toContain(PIGE_ALERTS.panne);
+    t = await run({ 'GET /v1/pige/etat': ok({ configured: true, missing: [], lastCollectedAt: '2027-10-08T05:00:00.000Z', lastRun: { outcome: 'panne', reason: 'acces_refuse' }, alert: 'panne' }) });
+    await t.openPige();
+    text = t.pigePart().textContent;
+    expect(text).toContain(PIGE_ALERTS.panne);
+    expect(text).not.toContain('acces_refuse');
+    const alert = t.pigePart().all().find((e) => e.attributes.role === 'alert');
+    expect(alert?.textContent).toBe(PIGE_ALERTS.panne);
+    t = await run({ 'GET /v1/pige/etat': ok({ configured: false, missing: [], lastCollectedAt: null, lastRun: null, alert: 'non_reglee' }) });
+    await t.openPige();
+    text = t.pigePart().textContent;
+    expect(text).toContain('Annonces jamais relevées.');
+    expect(text).toContain(PIGE_ALERTS.non_reglee);
+    // Sans réponse de l'état, la file reste lisible, et l'écran dit que la relève n'a pas pu être vérifiée.
+    t = await run({ 'GET /v1/pige/etat': no(500, { ok: false, code: 'erreur' }) });
+    await t.openPige();
+    expect(t.items()).toHaveLength(3);
+    expect(t.pigePart().textContent).toContain('La dernière relève des annonces n’a pas pu être vérifiée');
+    expect(t.pigePart().textContent).not.toMatch(/Annonces relevées le /);
+    // Hors ligne pour l'état seulement : dit aussi.
+    t = await run({ 'GET /v1/pige/etat': async () => Promise.reject(new TypeError('hors ligne')) });
+    await t.openPige();
+    expect(t.items()).toHaveLength(3);
+    expect(t.pigePart().textContent).toContain('n’a pas pu être vérifiée');
   });
 });
