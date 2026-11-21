@@ -24,7 +24,7 @@ async function setup() {
     direction: { role: 'direction', userId: t.direction.userId, networkId: t.network.id },
     partenaire: { role: 'partner', userId: 'partenaire-1', networkId: t.network.id },
   };
-  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), ...ids[w] }))));
+  const apiKeys = JSON.stringify(await Promise.all((Object.keys(KEYS) as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), expiresOn: "2099-12-31", ...ids[w] }))));
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] } };
   /** `bearer` : une clé de `KEYS`, ou un jeton (séance, clé d'assistant). */
   const send = async (path: string, init: { who?: Who; bearer?: string; method?: string; body?: unknown } = {}): Promise<{ status: number; body: Body | null }> => {
@@ -196,7 +196,7 @@ describeWithSqlite('BR09 · l’agent crée et retire lui-même la clé de son a
 
   it('[R16] sans site WebAuthn, les routes de la clé de l’assistant sont fermées', async () => {
     const t = await setup();
-    const config: ApiConfig = { db: t.db, apiKeys: JSON.stringify([{ sha256: await sha256Hex(KEYS.alex), role: 'agent', userId: t.alexId, networkId: t.network.id }]), mode: 'essai', now: t.now };
+    const config: ApiConfig = { db: t.db, apiKeys: JSON.stringify([{ sha256: await sha256Hex(KEYS.alex), expiresOn: "2099-12-31", role: 'agent', userId: t.alexId, networkId: t.network.id }]), mode: 'essai', now: t.now };
     const r = await handleRequest(new Request('https://aimmo-api.example.test/v1/cles/assistant', { headers: { authorization: `Bearer ${KEYS.alex}` } }), config);
     expect(r.status).toBe(503);
   });

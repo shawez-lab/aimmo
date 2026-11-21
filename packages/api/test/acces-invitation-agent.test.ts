@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
-import { exchangeInvitation, invitedKeys, inviteAgent } from '../src/acces.ts';
+import { exchangeInvitation, invitedKeys, inviteAgent, randomToken } from '../src/acces.ts';
 import type { SqlDatabase } from '@aimmo/core';
 import type { Challenge } from '../../core/src/securite/index.ts';
 import { FakeAuthenticator, ORIGIN, RP } from '../../core/test/appareil-simule.ts';
@@ -20,8 +20,8 @@ async function setup() {
   const other = await store.createNetwork('Autre réseau');
   const stranger = await store.createAgent({ networkId: other.id, firstName: 'Lou', lastName: 'Ailleurs' });
   const apiKeys = JSON.stringify([
-    { sha256: await sha256Hex(DIRECTION_KEY), role: 'direction', userId: t.direction.userId, networkId: t.network.id },
-    { sha256: await sha256Hex(ALEX_SECRET_KEY), role: 'agent', userId: t.alexId, networkId: t.network.id },
+    { sha256: await sha256Hex(DIRECTION_KEY), expiresOn: "2099-12-31", role: 'direction', userId: t.direction.userId, networkId: t.network.id },
+    { sha256: await sha256Hex(ALEX_SECRET_KEY), expiresOn: "2099-12-31", role: 'agent', userId: t.alexId, networkId: t.network.id },
   ]);
   const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, cles: { rpId: RP, origins: [ORIGIN] } };
   const call = async (method: string, path: string, init: { bearer?: string; body?: unknown } = {}): Promise<{ status: number; body: Body }> => {
@@ -36,7 +36,7 @@ async function setup() {
     const c = await call('POST', '/cles/enregistrement/debut', { bearer });
     const done = await call('POST', '/cles/enregistrement/fin', { bearer, body: await device.register(c.body.data as Challenge) });
     if (done.status !== 200) throw new Error(`enregistrement ${done.body.code}`);
-    return { device, id: done.body.data.id as string, status: done.body.data.status as string };
+    return { device, id: done.body.data.id as string, status: done.body.data.status as string, handoff: (done.body as { handoff?: boolean }).handoff === true };
   };
   const prove = async (bearer: string, device: FakeAuthenticator, action: string, subject: string) => {
     const c = await call('POST', '/cles/preuve/debut', { bearer, body: { action, subject } });
@@ -61,7 +61,7 @@ async function setup() {
     if (c.status !== 200) return c;
     return call('POST', '/cles/connexion/fin', { body: { ...(await device.sign(c.body.data as Challenge)) } });
   };
-  return { ...t, other, stranger, call, enroll, prove, directionDevice, invite, open, login };
+  return { ...t, config, other, stranger, call, enroll, prove, directionDevice, invite, open, login };
 }
 
 describeWithSqlite('AU023 · une invitation nominative mène à une connexion par clé d’appareil', () => {
@@ -134,11 +134,12 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
     // Un second lien préparé mais pas encore ouvert.
     const unused = (await t.invite(t.sam.userId, false)).body.data.lien as string;
-    // Sans « appareil perdu », l'ancien accès reste.
-    expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(200);
+    // Sans « appareil perdu », l'ancien accès reste : la clé de l'appareil. Sa clé d'application a cessé en la rangeant [AU108].
+    expect((await t.login(who, lost.device)).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(401);
 
     const recovery = await t.invite(t.sam.userId, true);
-    expect(recovery).toMatchObject({ status: 200, body: { data: { keysRevoked: 1, linksVoided: 1, devicesRevoked: 1 } } });
+    expect(recovery).toMatchObject({ status: 200, body: { data: { keysRevoked: 0, linksVoided: 1, devicesRevoked: 1 } } });
     // Le téléphone perdu n'ouvre plus rien : ni sa clé d'application, ni sa clé d'appareil, ni le lien resté de côté.
     expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(401);
     expect((await t.login(who, lost.device)).status).toBe(403);
@@ -157,7 +158,7 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     // Les clés retirées restent, datées : rien n'est effacé.
     expect(await t.db.all("SELECT status FROM security_devices WHERE user_id = ? ORDER BY created_at, id", [t.sam.userId])).toEqual(expect.arrayContaining([{ status: 'retire' }, { status: 'actif' }]));
     const event = (await t.journal.all()).filter((e) => e.type === 'acces.invitation_creee').at(-1);
-    expect(event?.data).toMatchObject({ retirerAnciens: true, keysRevoked: 1, linksVoided: 1, devicesRevoked: 1 });
+    expect(event?.data).toMatchObject({ retirerAnciens: true, keysRevoked: 0, linksVoided: 1, devicesRevoked: 1 });
   });
 
   it('[R600] appareil perdu : un ancien lien ouvert pendant le recours n’échappe jamais au retrait', async () => {
@@ -192,4 +193,141 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
       expect((await invitedKeys(t.db)).filter((k) => k.userId === t.sam.userId)).toEqual([]);
     }
   });
+
+  it('[R600] AU108 · la clé d’application ne sert qu’à ranger la clé de l’appareil : elle cesse aussitôt, l’appareil entre par ses séances', async () => {
+    const t = await setup();
+    const opened = await t.open((await t.invite(t.sam.userId, false)).body.data.lien);
+    const appKey = opened.key!;
+    const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
+    expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(200);
+    const { device, handoff } = await t.enroll(appKey, 41);
+    // La réponse le dit à l'application, qui quitte la clé retirée.
+    expect(handoff).toBe(true);
+    // Le constat de l'audit : la clé d'application restait un accès parallèle, permanent, gardé sur l'appareil.
+    expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(401);
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.cle_application_retiree')).toEqual([
+      expect.objectContaining({ actor: `agent:${t.sam.userId}`, data: { rule: 'R600', reason: 'cle_appareil_rangee' } }),
+    ]);
+    const row = await t.db.first<{ revoked_at: string | null }>('SELECT revoked_at FROM access_keys WHERE sha256 = ?', [await sha256Hex(appKey)]);
+    expect(row?.revoked_at).toBe(t.now().toISOString());
+    // La séance de l'appareil expire : 12 heures.
+    const session = await t.login(who, device);
+    expect(session.status).toBe(200);
+    expect(Date.parse(session.body.data.expiresAt) - t.now().getTime()).toBe(12 * 3600 * 1000);
+  });
+
+  it('[R600] AU108 · une clé d’application jamais servie à ranger une clé d’appareil cesse au bout de 7 jours', async () => {
+    const t = await setup();
+    const opened = await t.open((await t.invite(t.sam.userId, false)).body.data.lien);
+    const at = (days: number) => async (path: string) => {
+      const config: ApiConfig = { ...t.config, now: () => new Date(t.now().getTime() + days * 86_400_000) };
+      return (await handleRequest(new Request(`https://aimmo-api.example.test/v1${path}`, { headers: { authorization: `Bearer ${opened.key!}` } }), config)).status;
+    };
+    expect(await (at(6.9))('/moi')).toBe(200);
+    expect(await (at(7.1))('/moi')).toBe(401);
+  });
+
+  it('[R600] AU108 · un appareil perdu se coupe seul : sa clé retirée, ses séances cessent ; l’autre appareil de l’agent continue', async () => {
+    const t = await setup();
+    const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
+    const phone = await t.enroll((await t.open((await t.invite(t.sam.userId, false)).body.data.lien)).key!, 51);
+    const laptop = await t.enroll((await t.open((await t.invite(t.sam.userId, false)).body.data.lien)).key!, 52);
+    // La seconde clé attend l'accord de la direction.
+    const ok = await t.prove(DIRECTION_KEY, t.directionDevice, 'approuver_appareil', `device:${laptop.id}`);
+    expect((await t.call('POST', `/cles/appareils/${laptop.id}/accord`, { bearer: DIRECTION_KEY, body: { stepUpId: ok } })).status).toBe(200);
+    const phoneSession = (await t.login(who, phone.device)).body.data.token as string;
+    const laptopSession = (await t.login(who, laptop.device)).body.data.token as string;
+    // Le téléphone est perdu : la direction retire sa seule clé.
+    expect((await t.call('POST', `/cles/appareils/${phone.id}/retrait`, { bearer: DIRECTION_KEY })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: phoneSession })).status).toBe(401);
+    expect((await t.login(who, phone.device)).status).toBe(403);
+    // L'ordinateur de l'agent n'a rien perdu.
+    expect((await t.call('GET', '/moi', { bearer: laptopSession })).status).toBe(200);
+    expect((await t.login(who, laptop.device)).status).toBe(200);
+  });
+
+  it('[R600] AU108 · une clé rangée à la main dans le secret porte sa date de fin : passée, elle est refusée ; mal écrite, l’API ferme', async () => {
+    const t = await setup();
+    const KEY = 'test-cle-au108-secours-ssssssssssssssssssssssss';
+    const today = '2027-01-01';
+    const status = async (expiresOn: unknown, now: Date) => {
+      const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'agent', userId: t.sam.userId, networkId: t.network.id, expiresOn }]);
+      return (await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${KEY}` } }), { ...t.config, apiKeys, now: () => now })).status;
+    };
+    // Le dernier jour de Paris compte encore : 23 h 30 à Paris le 1er janvier, c'est 22 h 30 en UTC.
+    expect(await status(today, new Date('2027-01-01T22:30:00.000Z'))).toBe(200);
+    expect(await status(today, new Date('2027-01-01T23:30:00.000Z'))).toBe(401);
+    expect(await status('01/01/2027', new Date('2026-12-01T10:00:00.000Z'))).toBe(503);
+    // Sans date de fin, avec les séances réglées, elle n'ouvre rien : ce serait un accès permanent à côté des séances.
+    expect(await status(undefined, new Date('2026-12-01T10:00:00.000Z'))).toBe(401);
+    const bare = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'agent', userId: t.sam.userId, networkId: t.network.id }]);
+    const without = { ...t.config, apiKeys: bare };
+    delete (without as { cles?: unknown }).cles;
+    // Sans site WebAuthn réglé, aucune séance n'existe : la clé reste le seul accès.
+    expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${KEY}` } }), without)).status).toBe(200);
+  });
+
+  it('[R600] AU108 · une invitation à deux rôles (agent et direction) garde ses deux clés : une séance d’appareil ne porte qu’une identité', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-deux', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const r = await t.call('POST', '/acces/invitation', { body: { jeton: token } });
+    const keys = r.body.data.cles as { role: string; cle: string }[];
+    const agentKey = keys.find((k) => k.role === 'agent')!.cle;
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    const { handoff } = await t.enroll(agentKey, 61);
+    expect(handoff).toBe(false);
+    expect((await t.call('GET', '/moi', { bearer: agentKey })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(200);
+    // Ni l'une ni l'autre ne cesse au bout de 7 jours, pour passer d'un rôle à l'autre ; au bout de 90 jours, si.
+    const at = (days: number): ApiConfig => ({ ...t.config, now: () => new Date(t.now().getTime() + days * 86_400_000) });
+    const status = async (key: string, days: number) => (await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${key}` } }), at(days))).status;
+    for (const key of [agentKey, directionKey]) {
+      expect(await status(key, 8)).toBe(200);
+      expect(await status(key, 91)).toBe(401);
+    }
+  });
+
+  it('[R600] AU108 · un appareil perdu de la personne aux deux rôles : retirer sa clé coupe aussi ses deux clés d’application', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-perdu', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const keys = (await t.call('POST', '/acces/invitation', { body: { jeton: token } })).body.data.cles as { role: string; cle: string }[];
+    const agentKey = keys.find((k) => k.role === 'agent')!.cle;
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    const phone = await t.enroll(agentKey, 81);
+    expect((await t.call('POST', `/cles/appareils/${phone.id}/retrait`, { bearer: DIRECTION_KEY })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: agentKey })).status).toBe(401);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(401);
+    // La direction du secret, elle, garde son accès.
+    expect((await t.call('GET', '/moi', { bearer: DIRECTION_KEY })).status).toBe(200);
+  });
+
+  it('[R600] AU108 · un échange repris après une panne ne fait pas passer une invitation à un rôle pour une invitation à deux rôles', async () => {
+    const t = await setup();
+    const lien = (await t.invite(t.sam.userId, false)).body.data.lien as string;
+    const inv = await t.db.first<{ id: string }>('SELECT id FROM access_invitations ORDER BY created_at DESC, id DESC LIMIT 1');
+    // Une première tentative a tiré une clé, retirée par l'échange interrompu.
+    await t.db.run("INSERT INTO access_keys (sha256, network_id, role, user_id, invitation_id, created_at, revoked_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", ['a'.repeat(64), t.network.id, t.sam.userId, inv!.id, t.now().toISOString(), t.now().toISOString()]);
+    const key = (await t.open(lien)).key!;
+    const { handoff } = await t.enroll(key, 71);
+    expect(handoff).toBe(true);
+    expect((await t.call('GET', '/moi', { bearer: key })).status).toBe(401);
+  });
+
+  it('[R600] AU108 · « téléphone perdu » pour la personne aux deux rôles coupe aussi sa clé de direction restée sur le téléphone', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-recours', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const keys = (await t.call('POST', '/acces/invitation', { body: { jeton: token } })).body.data.cles as { role: string; cle: string }[];
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(200);
+    expect((await t.invite(t.sam.userId, true)).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(401);
+    expect((await t.call('GET', '/moi', { bearer: DIRECTION_KEY })).status).toBe(200);
+  });
 });
+

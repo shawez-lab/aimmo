@@ -54,15 +54,62 @@ export function parseGrants(raw: string): Grant[] | null {
 }
 
 /** Les clés remises par invitation et non retirées, sous la même forme que celles du secret `API_KEYS`. */
-export async function invitedKeys(db: SqlDatabase): Promise<ApiKeyEntry[]> {
-  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string }>(
+/**
+ * AU108 · avec les séances par clé d'appareil (BR06), la clé d'application d'un agent, de la direction ou de la
+ * conformité ne sert qu'à ranger la clé de son appareil : elle cesse dès qu'elle l'a fait, et au plus tard
+ * `APP_KEY_DAYS` jours après sa remise. Le partenaire, qui n'a pas de clé d'appareil, garde la sienne.
+ */
+export const APP_KEY_DAYS = 7;
+/** AU108 · la durée des clés d'une invitation à plusieurs rôles, qui servent à passer d'un rôle à l'autre. */
+export const APP_KEY_MULTI_DAYS = 90;
+export const DEVICE_KEY_ROLES: readonly string[] = ['agent', 'direction', 'compliance'];
+
+export async function invitedKeys(db: SqlDatabase, options: { now?: Date } = {}): Promise<ApiKeyEntry[]> {
+  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string; created_at: string; siblings: number }>(
     // Seulement les clés d'une invitation qui a servi : celles d'un échange interrompu n'ouvrent rien.
-    `SELECT k.sha256, k.role, k.user_id, k.network_id FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
+    // Le nombre de rôles de l'invitation : ses rôles distincts (un échange repris tire une clé de plus du même rôle).
+    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at, (SELECT COUNT(DISTINCT s.role) FROM access_keys s WHERE s.invitation_id = k.invitation_id) AS siblings
+     FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
      WHERE k.revoked_at IS NULL AND i.used_at IS NOT NULL ORDER BY k.created_at, k.sha256`,
   );
   return rows
     .filter((r) => (ROLES as readonly string[]).includes(r.role))
-    .map((r) => ({ sha256: r.sha256, role: r.role as ApiKeyEntry['role'], userId: r.user_id, networkId: r.network_id }));
+    // Les clés d'une invitation à plusieurs rôles (Z02 : agent et direction) servent à passer d'un rôle à l'autre, une
+    // séance d'appareil ne portant qu'une identité : elles ne cessent pas au rangement de la clé de l'appareil, mais
+    // au plus tard `APP_KEY_MULTI_DAYS` jours après leur remise, et dès qu'une clé d'appareil de la personne est retirée.
+    .filter((r) => {
+      if (options.now === undefined || !DEVICE_KEY_ROLES.includes(r.role)) return true;
+      const days = Number(r.siblings) > 1 ? APP_KEY_MULTI_DAYS : APP_KEY_DAYS;
+      return r.created_at >= new Date(options.now.getTime() - days * 86_400_000).toISOString();
+    })
+    .map((r) => ({ sha256: r.sha256, role: r.role as ApiKeyEntry['role'], userId: r.user_id, networkId: r.network_id, fromInvitation: true as const }));
+}
+
+/** AU108 · la clé d'application qui vient de ranger la clé de cet appareil cesse : l'appareil entre par ses séances. */
+export async function retireApplicationKey(db: SqlDatabase, journal: JournalStore, sha256: string, actor: string, now: () => Date): Promise<boolean> {
+  // Une clé d'une invitation à plusieurs rôles n'est pas retirée : l'autre rôle en dépend.
+  const done = await db.run(
+    'UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL AND (SELECT COUNT(DISTINCT s.role) FROM access_keys s WHERE s.invitation_id = access_keys.invitation_id) = 1',
+    [now().toISOString(), sha256],
+  );
+  if (done.changes !== 1) return false;
+  await appendEvent(journal, { type: 'acces.cle_application_retiree', actor, subject: null, data: { rule: 'R600', reason: 'cle_appareil_rangee' } }, now);
+  return true;
+}
+
+/**
+ * AU108 · une clé d'appareil retirée (appareil perdu) coupe aussi les clés d'application encore valables de cette
+ * personne : celles d'une invitation à plusieurs rôles, qui ne cessent pas au rangement de la clé de l'appareil.
+ */
+export async function retireApplicationKeysOf(db: SqlDatabase, journal: JournalStore, deviceId: string, actor: string, now: () => Date): Promise<number> {
+  const device = await db.first<{ network_id: string; user_role: string; user_id: string }>('SELECT network_id, user_role, user_id FROM security_devices WHERE id = ?', [deviceId]);
+  if (!device) return 0;
+  const { changes } = await db.run(
+    'UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND invitation_id IN (SELECT invitation_id FROM access_keys WHERE network_id = ? AND role = ? AND user_id = ?)',
+    [now().toISOString(), device.network_id, device.network_id, device.user_role, device.user_id],
+  );
+  if (changes > 0) await appendEvent(journal, { type: 'acces.cle_application_retiree', actor, subject: null, data: { rule: 'R600', reason: 'cle_appareil_retiree', keys: changes } }, now);
+  return changes;
 }
 
 /**
@@ -231,7 +278,12 @@ export async function inviteAgent(
       linksVoided += (await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL', [nowIso, inv.id])).changes;
     }
     keysRevoked = (
-      await db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND role = 'agent' AND user_id = ? AND revoked_at IS NULL", [nowIso, viewer.networkId, userId])
+      // Ses clés d'application, et avec elles les autres clés des mêmes liens (AU108 : la clé de la direction d'une
+      // invitation à deux rôles, restée sur le téléphone perdu).
+      await db.run(
+        "UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND invitation_id IN (SELECT invitation_id FROM access_keys WHERE network_id = ? AND role = 'agent' AND user_id = ?)",
+        [nowIso, viewer.networkId, viewer.networkId, userId],
+      )
     ).changes;
     const devices = await db.all<{ id: string }>("SELECT id FROM security_devices WHERE network_id = ? AND user_role = 'agent' AND user_id = ? AND status <> 'retire'", [viewer.networkId, userId]);
     for (const d of devices) if (await revokeDevice(d.id)) devicesRevoked += 1;

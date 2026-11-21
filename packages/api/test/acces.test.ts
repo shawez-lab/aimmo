@@ -175,7 +175,7 @@ describeWithSqlite('Z02 · lien d’invitation à usage unique', () => {
   it('les empreintes déjà présentes dans API_KEYS restent toutes valables, et l’API reste fermée sans aucune clé', async () => {
     const w = await world();
     w.sql("INSERT INTO networks (id, name, created_at) VALUES ('reseau-essai', 'Essai', '2026-01-01T00:00:00.000Z')");
-    const secret = JSON.stringify([{ sha256: await sha256Hex(SECRET_KEY), role: 'direction', userId: 'dir-1', networkId: 'reseau-essai' }]);
+    const secret = JSON.stringify([{ sha256: await sha256Hex(SECRET_KEY), expiresOn: "2099-12-31", role: 'direction', userId: 'dir-1', networkId: 'reseau-essai' }]);
     const closed = await call(w.db, '/v1/moi', { headers: { authorization: `Bearer ${SECRET_KEY}` } });
     expect(closed.status).toBe(503);
     const before = await call(w.db, '/v1/moi', { headers: { authorization: `Bearer ${SECRET_KEY}` } }, secret);
