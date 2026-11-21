@@ -387,12 +387,13 @@ export class Commissions {
     const day = closing?.signed_on ?? localTime(this.now(), 'Europe/Paris').date;
     const terms = await mandateTerms(this.db, c.mandate_id, new Date(`${day}T11:00:00.000Z`));
     if (!terms || terms.feeEur === null) return null;
-    // Seul un avenant qui prend effet après le jour du compromis : avant, il était déjà compté par la commission prévue.
-    const after = terms.amendments.filter((a) => a.effectiveOn > c.compromis_on && (a.feeEur !== null || a.feeCharge !== null));
-    if (after.length === 0) return null;
     const feeCents = terms.feeEur * 100;
+    // Comparé aux honoraires en cours, régularisés ou non : une version approuvée avant un acte rapporté à une date où
+    // son avenant ne valait pas encore ne rend rien dû ; elle se régularise de nouveau, vers le mandat seul.
     if (feeCents === c.fee_cents && terms.feeCharge === c.fee_charge) return null;
-    return { amendmentId: after.at(-1)!.documentId, feeCents, feeCharge: terms.feeCharge };
+    // La source : le dernier avenant pris en effet après le compromis, ou le mandat lui-même s'il n'y en a aucun.
+    const after = terms.amendments.filter((a) => a.effectiveOn > c.compromis_on && (a.feeEur !== null || a.feeCharge !== null));
+    return { amendmentId: after.at(-1)?.documentId ?? `mandat:${c.mandate_id}`, feeCents, feeCharge: terms.feeCharge };
   }
 
   private async sharesOf(fileId: string): Promise<CommissionShare[]> {

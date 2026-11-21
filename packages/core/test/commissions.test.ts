@@ -470,4 +470,27 @@ describeWithSqlite('AU091 · une baisse d’honoraires signée après le comprom
     // Une vue d'écran ancienne ne rejoue rien.
     expect(await c.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
   });
+
+  it('[R678] une version approuvée avant l’acte se revérifie à la date réelle de l’acte', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    await c.sync(t.network.id);
+    // Avenant signé le 15 juin, régularisé le 16 ; l'acte du 10 juin est rapporté le 20.
+    await avenant(t, 8000, '2027-06-15T09:00:00.000Z');
+    t.setClock(at9('2027-06-16'));
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Avenant de baisse signé le 15 juin.' })).toMatchObject({ ok: true, value: { feeAfterCents: 800_000 } });
+    await t.acte();
+    // L'avenant ne valait pas au jour de l'acte : rien n'est dû à 8 000 €, la direction tranche.
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'avenant_honoraires' }] });
+    // Une nouvelle version revient aux honoraires du mandat, versionnée ; puis la commission est due à 10 000 €.
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Acte du 10 juin, avant l’avenant : retour au mandat.' })).toMatchObject({ ok: true, value: { version: 2, feeBeforeCents: 800_000, feeAfterCents: 1_000_000 } });
+    const m = (await t.db.first<{ mandate_id: string }>('SELECT mandate_id FROM commissions WHERE file_id = ?', [t.fileId]))!;
+    expect((await t.db.first<{ amendment_id: string }>('SELECT amendment_id FROM commission_revisions WHERE version = 2'))!.amendment_id).toBe(`mandat:${m.mandate_id}`);
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+    const list = await c.list(t.direction);
+    expect(list.ok && list.value[0]).toMatchObject({ feeCents: 1_000_000, status: 'due' });
+  });
 });
