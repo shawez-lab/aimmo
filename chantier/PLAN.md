@@ -931,7 +931,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU085 · Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#750, bbffd9e4). Constat confirmé (le commentaire d'`echeancier.ts` disait ignorer ces jours). `dossiers/calendrier.ts` : Vendredi saint et 26 décembre fériés en plus pour les codes postaux 57, 67, 68. Lecture prudente : la commune suit le lieu du bien (dernière désignation, sinon fiche), la rétractation de chaque acquéreur le lieu du bien ou son domicile (cherché sur ses fiches réunies), un bien au lieu inconnu prend ce calendrier ; chaque délai dit son calendrier et pourquoi ; le recommandé (R460) suit. R61 précisée. Codex : 1 P0 corrigé (fiches réunies), puis rien ; vérification GitHub verte. Reste : `documents/retractation.ts` et `commerces/cession.ts` ont leurs propres jours ouvrables, sans ce calendrier.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A085 (majeur), endroit : C/dossiers/echeancier.ts, jours ouvrables.
 - Constat de l'audit : Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle.
