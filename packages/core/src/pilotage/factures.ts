@@ -13,8 +13,8 @@
  * comptable, au format tableur, recompte les montants au centime.
  *
  * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau. Le reversement suit le régime de TVA de l'agent
- * qui le facture, lu dans son identité réelle (AU093) : la part de l'agent est hors taxe ; soumis à la TVA, il facture
- * cette part et 20 % de TVA en plus ; en franchise en base, la part seule, avec la mention de son exonération ; son
+ * qui le facture, lu dans son identité réelle (AU093) : la part de l'agent est toutes taxes (R624) ; soumis à la TVA, il
+ * la facture TVA de 20 % comprise ; en franchise en base, sans TVA, avec la mention de son exonération ; son
  * identité absente, aucune TVA, ce que la facture dit, en attendant la validation de l'expert-comptable (H26) ; chaque facture d'essai porte
  * « facture d'essai, sans valeur comptable » ; la prime de parrainage n'est facturée qu'après l'encaissement (K03, R83) ;
  * une part nulle ne donne pas de facture ; aucune coordonnée bancaire nulle part [R15].
@@ -42,16 +42,13 @@ export const DEFAULT_VAT_BP = { honoraires: 2000, reversement: 0 } as const;
 export const STANDARD_VAT_BP = 2000;
 
 /**
- * AU093 · le reversement d'une part hors taxe, selon le régime de l'agent qui le facture : le montant toutes taxes et
- * son taux. Le hors taxe recompté par `splitVat` est toujours la part, au centime.
+ * AU093 · le taux du reversement, selon le régime de l'agent qui le facture. La part de l'agent est un montant toutes
+ * taxes, comme le coût de l'agent la compte (R624) : soumis à la TVA, il en facture 20 % comprise ; en franchise en
+ * base, aucune ; son régime inconnu, le taux réglé.
  */
-export function reversementAmount(shareHtCents: number, regime: RegimeTva | null, fallbackBp: number): { ttcCents: number; vatBp: number } {
-  if (regime === null) return { ttcCents: shareHtCents, vatBp: fallbackBp };
-  if (regime.category === 'E') return { ttcCents: shareHtCents, vatBp: 0 };
-  let ttc = shareHtCents + Math.round((shareHtCents * STANDARD_VAT_BP) / 10_000);
-  // Un arrondi qui ne rendrait pas la part au centime est repris d'un centime, dans le sens qui la rend.
-  for (let i = 0; i < 3 && splitVat(ttc, STANDARD_VAT_BP).htCents !== shareHtCents; i++) ttc += splitVat(ttc, STANDARD_VAT_BP).htCents < shareHtCents ? 1 : -1;
-  return { ttcCents: ttc, vatBp: STANDARD_VAT_BP };
+export function reversementVatBp(regime: RegimeTva | null, fallbackBp: number): number {
+  if (regime === null) return fallbackBp;
+  return regime.category === 'S' ? STANDARD_VAT_BP : 0;
 }
 
 export type InvoiceKind = 'honoraires' | 'reversement' | 'avoir';
@@ -306,8 +303,7 @@ export class Factures {
         if (s.amount_cents <= 0) continue;
         const issuer = `agent:${s.beneficiary_id}`;
         const seller = await this.regimeOf(networkId, issuer);
-        const r = reversementAmount(s.amount_cents, seller, this.vat.reversement);
-        await add(f.file_id, 'reversement', issuer, null, r.ttcCents, r.vatBp);
+        await add(f.file_id, 'reversement', issuer, null, s.amount_cents, reversementVatBp(seller, this.vat.reversement));
       }
     }
     return made;
@@ -591,8 +587,8 @@ export class Factures {
    */
   async issueOnDeed(networkId: string): Promise<number> {
     const today = localTime(this.now(), TIME_ZONE).date;
-    const rows = await this.db.all<{ id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; amount_cents: number }>(
-      `SELECT d.id, d.file_id, d.kind, d.issuer, d.amount_cents FROM invoice_drafts d JOIN sale_file_closings c ON c.file_id = d.file_id
+    const rows = await this.db.all<{ id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; amount_cents: number; vat_bp: number }>(
+      `SELECT d.id, d.file_id, d.kind, d.issuer, d.amount_cents, d.vat_bp FROM invoice_drafts d JOIN sale_file_closings c ON c.file_id = d.file_id
        WHERE d.network_id = ? AND c.signed_on <= ? AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.draft_id = d.id)
        ORDER BY d.created_at, CASE d.kind WHEN 'honoraires' THEN 0 ELSE 1 END, d.issuer, d.round`,
       [networkId, today],
