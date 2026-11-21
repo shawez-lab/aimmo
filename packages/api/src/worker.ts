@@ -14,7 +14,7 @@ import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
-import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, annonces, httpDvfReader } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
@@ -25,6 +25,8 @@ import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProvide
  * `MAIL_NETWORK_ID`, `MAIL_FORWARD_TO` et `MAIL_OWN_ADDRESSES` servent à la réception des mails (C06).
  */
 export interface Env {
+  /** AU068 · « oui » : la relecture des annonces en ligne lit les pages publiques des portails (H10). Absent : aucune relecture. */
+  RELECTURE_PORTAILS?: string;
   DB: D1Database;
   /** AU025 : la base D1 à part des bacs à sable, en Europe, jamais celle du réseau. Absente, le bac à sable reste fermé. */
   BAC_A_SABLE_DB?: D1Database;
@@ -251,6 +253,7 @@ export default {
     await runScheduler({
       db: fromD1(env.DB),
       mode: env.MODE,
+      listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,

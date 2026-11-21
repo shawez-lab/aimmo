@@ -595,6 +595,34 @@ export class DiffusionSurveillee {
     return { ok: true, outcome, gaps };
   }
 
+  /**
+   * AU068 · La relecture de toutes les annonces acceptées d'un réseau, portail par portail, par le lecteur réel : une
+   * baisse de prix pas encore en ligne, ou une annonce retirée encore visible, ouvre une tâche datée [R473]. Une page
+   * en panne n'arrête pas les autres. Rend le décompte, sans donnée.
+   */
+  async verifyAll(networkId: string, reader: OnlineListingReader): Promise<{ checked: number; outcomes: Partial<Record<CheckOutcome, number>>; failed: number }> {
+    const rows = await this.db.all<{ property_id: string; portal: string }>(
+      `SELECT DISTINCT f.property_id, f.portal FROM diffusion_portal_feedback f JOIN properties p ON p.id = f.property_id
+        WHERE f.network_id = ? AND p.network_id = ? AND f.outcome = 'acceptee' ORDER BY f.property_id, f.portal`,
+      [networkId, networkId],
+    );
+    const outcomes: Partial<Record<CheckOutcome, number>> = {};
+    let checked = 0;
+    let failed = 0;
+    for (const r of rows) {
+      try {
+        const v = await this.verify(networkId, r.property_id, r.portal, reader);
+        if (!v.ok) continue;
+        checked++;
+        outcomes[v.outcome] = (outcomes[v.outcome] ?? 0) + 1;
+      } catch {
+        failed++;
+        await appendEvent(this.journal, { type: 'diffusion.relecture_echec', actor: 'system:diffusion', subject: `property:${r.property_id}`, data: { rule: 'R473', portal: r.portal } }, this.now);
+      }
+    }
+    return { checked, outcomes, failed };
+  }
+
   // ------------------------------------------------------------------ Lectures
 
   /** Les tâches de correction ouvertes : l'agent, celles de ses biens ; la direction, toutes [R471]. */
