@@ -176,6 +176,43 @@ describeWithSqlite('AU033 · Instagram, Facebook et WhatsApp, canal par canal', 
     expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
   });
 
+  it('[R670] [R21] deux messages, chacun avec sa réponse humaine dans le même lot, l’horloge qui avance : deux traités', async () => {
+    const w = await world();
+    for (const [i, text] of ['Bonjour', 'Et le prix ?'].entries()) {
+      const at = T0 + i * 3_600_000;
+      w.tick(i === 0 ? 0 : 3_600_000);
+      const batch = igDirect(IG_SENDER, text, at);
+      batch.entry[0]!.messaging.push({
+        sender: { id: IG_ID },
+        recipient: { id: IG_SENDER },
+        timestamp: at + 1000,
+        message: { mid: `ig-au033-echo-${(seq += 1)}`, text: 'Réponse de l’agent.', is_echo: true },
+      } as never);
+      expect((await w.post(batch)).status).toBe(200);
+    }
+    expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'verifiee', last30Days: 2, treated30Days: 2 });
+  });
+
+  it('[R670] une alerte déjà vue avant un nouveau message ne le dit pas traité', async () => {
+    const w = await world();
+    const day = (n: number) => new Date(T0 + n * 86_400_000).toISOString();
+    const r = { net: w.network.id, agent: w.agent.id, person: w.known.id };
+    await w.db.run(
+      "INSERT INTO agent_alerts (id, network_id, agent_id, person_id, conversation_id, reason, created_at, seen_at) VALUES ('al-1', ?, ?, ?, 'conv-vue', 'exchanges', ?, ?)",
+      [r.net, r.agent, r.person, day(0), day(0)],
+    );
+    await w.db.run("INSERT INTO messages (id, network_id, agent_id, person_id, conversation_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m-nouveau', ?, ?, ?, 'conv-vue', 'whatsapp', 'in', 'person', 'Bonjour', ?, ?)", [r.net, r.agent, r.person, day(1), day(1)]);
+    await w.db.run(
+      "INSERT INTO inbound_messages (id, network_id, agent_id, dedup_key, channel, kind, body, status, person_id, message_id, received_at, created_at) VALUES ('in-vue', ?, ?, 'whatsapp:vue', 'whatsapp', 'direct', 'Bonjour', 'processed', ?, 'm-nouveau', ?, ?)",
+      [r.net, r.agent, r.person, day(1), day(1)],
+    );
+    w.tick(86_400_000);
+    expect(channelOf((await w.state()).body.data!, 'whatsapp')).toMatchObject({ status: 'non_verifiee', last30Days: 1, treated30Days: 0 });
+    // L'alerte ouverte de nouveau pour ce message : il est traité.
+    await w.db.run("UPDATE agent_alerts SET seen_at = NULL, created_at = ? WHERE id = 'al-1'", [day(1)]);
+    expect(channelOf((await w.state()).body.data!, 'whatsapp')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
+  });
+
   it('[R670] un message vieux de plus de 30 jours garde le canal vérifié, mais ne compte plus dans les 30 jours', async () => {
     const w = await world();
     expect((await w.post(waMessage('33600000066', 'Bonjour', T0))).status).toBe(200);
